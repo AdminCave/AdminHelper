@@ -8,7 +8,8 @@
 #     current code, not a published tag) under throwaway local tags;
 #   - publish the gateway on high, per-run host ports (ITEST_*_PORT) instead of
 #     the fixed 443/8444 — `!override` REPLACES the base ports (a plain merge
-#     keeps 443 and collides with a real stack or a parallel run);
+#     keeps 443 and collides with a real stack or a parallel run) — on the host
+#     address ITEST_BIND_IP if set, else with no address, as the base does;
 #   - publish Postgres and Redis on 127.0.0.1 only (ITEST_PG_PORT,
 #     ITEST_REDIS_PORT), for the tests that need a real database or Redis and run
 #     on the host (stack_pytest.sh). Production keeps them network-internal;
@@ -52,12 +53,14 @@ services:
     image: adminhelper-test/gateway:latest
     build:
       context: apps/gateway
+    # ITEST_BIND_IP: a loopback address per stack lets two stacks side by side each
+    # hold 8444 (lib_e2e_stack.sh, e2e_init <mtls> a|b).
     ports: !override
-      - "${ITEST_HTTPS_PORT:-18443}:443"
+      - "${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_HTTPS_PORT:-18443}:443"
       # Enroll plane stays on 8444: the desktop app derives it as <host>:8444.
-      - "${ITEST_ENROLL_PORT:-8444}:8444"
+      - "${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_ENROLL_PORT:-8444}:8444"
       # Repo plane, so integration_stack_test can assert its path filtering (6.63/6.125).
-      - "${ITEST_REPO_PORT:-8445}:8445"
+      - "${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_REPO_PORT:-8445}:8445"
 
   ca-issuer:
     image: adminhelper-test/ca-issuer:latest

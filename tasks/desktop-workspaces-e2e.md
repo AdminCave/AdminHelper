@@ -34,8 +34,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)
 Abhängt von: T25
 
-### T29 — E2E-Stack: zwei Installationen nebeneinander  [ ]
+### T29 — E2E-Stack: zwei Installationen nebeneinander  [x]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, docker-compose.test.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dd0f8824 2026-10-20T13:58:25+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T29.verdict.json)
 Änderung: `e2e_init` (`lib_e2e_stack.sh:93`) bekommt einen optionalen Stack-Schlüssel (`a`/`b`) mit eigenem Projekt, Arbeitsverzeichnis, Ports (Daten-, Postgres-, Redis-Port mit Versatz), Bind-Adresse (`a` = `127.0.0.1`, `b` = `127.0.0.2`; ohne Schlüssel wie heute), `FRP_BIND_PORT`/`FRP_HTTPS_PORT` (`b`: 7001/7444) und `E2E_SERVER_URL`; `e2e_stack_use <a|b>` schaltet die globalen Variablen um, der Teardown räumt beide Stacks ab. `docker-compose.test.yml` (Gateway-Ports `:55-60`) veröffentlicht unter `${ITEST_BIND_IP:-0.0.0.0}`, damit beide Stacks die feste Enrollment-Ebene :8444 auf ihrer eigenen Loopback-Adresse halten. Bestehende Orchestratoren bleiben unverändert. `lib_e2e_stack_test.sh` (ohne Docker): zwei Stacks haben disjunkte Ports, Projekte, Arbeitsverzeichnisse und URLs; ohne Schlüssel bleibt alles wie bisher. Nicht gefahren: Veröffentlichung auf `127.0.0.2`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)

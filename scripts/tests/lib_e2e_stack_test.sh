@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # lib_e2e_stack_test.sh — hermetic test for what e2e_init hands the tests that
-# run on the host against the stack: ITEST_DATABASE_URL and ITEST_REDIS_URL.
+# run on the host against the stack: ITEST_DATABASE_URL and ITEST_REDIS_URL; and
+# for two stacks side by side (e2e_init <mtls> a|b, e2e_stack_use).
 #
 # The URLs only work if three things agree — the ports e2e_init writes into the
 # throwaway .env, the password it generates there, and the loopback bindings in
@@ -52,6 +53,9 @@ export STUB_LOG="$WORK/log"; mkdir -p "$STUB_LOG"
 OUT=$(PATH="$SHIM:$PATH" TMPDIR="$WORK" bash -c '
   . "$1/scripts/tests/lib_e2e_stack.sh"
   e2e_init false
+  echo "PID=$$"
+  echo "PROJECT=$E2E_PROJECT"
+  echo "URL=$E2E_SERVER_URL"
   echo "WORK=$E2E_WORK"
   echo "DB=$ITEST_DATABASE_URL"
   echo "REDIS=$ITEST_REDIS_URL"
@@ -107,6 +111,20 @@ done
   && ok "Postgres, Redis and the data plane get ports from separate ranges below 32768 for the first two" \
   || bad "ports: https=$HTTPS_PORT pg=$PG_PORT redis=$REDIS_PORT"
 
+# ── without a stack key: as before two stacks could run ──────────────────────
+# Every suite but the two-installations one calls e2e_init without a key; for them the
+# project, the ports, the URL and the .env stay what they were.
+PID="$(val PID)"
+[ -n "$PID" ] && [ "$(val PROJECT)" = "ah-e2e-$PID" ] \
+  && [ "$HTTPS_PORT" = $(( 21000 + PID % 18000 )) ] && [ "$PG_PORT" = $(( 11000 + PID % 5000 )) ] \
+  && [ "$REDIS_PORT" = $(( 16000 + PID % 5000 )) ] && [ "$(val URL)" = "https://localhost:$HTTPS_PORT" ] \
+  && ok "without a key: project ah-e2e-<pid>, ports from the pid, the URL on localhost" \
+  || bad "without a key: pid '$PID', project '$(val PROJECT)', https=$HTTPS_PORT pg=$PG_PORT redis=$REDIS_PORT, URL '$(val URL)'"
+ENV_KEYS="$(sed 's/=.*//' "$STUB_LOG/env" 2>/dev/null | tr '\n' ' ')"
+[ "$ENV_KEYS" = "DOMAIN SECRET_KEY POSTGRES_PASSWORD CA_ROOT_PASSPHRASE MONITOR_API_KEY ADMIN_PASSWORD MTLS_ENFORCE ITEST_HTTPS_PORT ITEST_ENROLL_PORT ITEST_REPO_PORT ITEST_PG_PORT ITEST_REDIS_PORT " ] \
+  && ok "without a key: the .env names no bind address and no FRP ports (gateway with no host address, frps on 7000/7443)" \
+  || bad "without a key, the .env names: $ENV_KEYS"
+
 # ── what docker was asked ────────────────────────────────────────────────────
 WORKDIR="$(val WORK)"
 grep -qF -- "-f $REPO_ROOT/docker-compose.yml -f $REPO_ROOT/docker-compose.test.yml --env-file $WORKDIR/.env up -d postgres redis" "$STUB_LOG/docker.args" 2>/dev/null \
@@ -118,6 +136,120 @@ grep -q -- 'down -v --remove-orphans' "$STUB_LOG/docker.args" 2>/dev/null \
   || bad "pkill stub not called"
 [ -n "$WORKDIR" ] && [ ! -e "$WORKDIR" ] && ok "the teardown removes the run's work dir" \
   || bad "work dir '$WORKDIR' still there"
+
+# ── two stacks side by side ──────────────────────────────────────────────────
+# e2e_init <mtls> a and b in one shell, as the two-installations suite runs them. Their
+# work dirs land in a dir of their own: whatever the teardown leaves, or a rejected key
+# creates, shows there. show <S> prints every global a stack owns as <S>.<name>.
+TWO="$WORK/two"; mkdir -p "$TWO"
+: > "$STUB_LOG/docker.args"; : > "$STUB_LOG/pkill.args"
+OUT2=$(PATH="$SHIM:$PATH" TMPDIR="$TWO" bash -c '
+  . "$1/scripts/tests/lib_e2e_stack.sh"
+  show() {
+    local v
+    for v in E2E_PROJECT E2E_WORK E2E_HTTPS_PORT E2E_ENROLL_PORT E2E_REPO_PORT E2E_PG_PORT \
+      E2E_REDIS_PORT E2E_BIND_IP E2E_FRP_BIND_PORT E2E_FRP_HTTPS_PORT E2E_SERVER_URL \
+      E2E_ADMIN_PW ITEST_DATABASE_URL ITEST_REDIS_URL; do echo "$1.$v=${!v}"; done
+  }
+  echo "PID=$$"
+  e2e_init false c 2>/dev/null; echo "INIT_C=$?"
+  e2e_init false a; echo "INIT_A=$?"; show A; cp "$E2E_WORK/.env" "$STUB_LOG/env.a"
+  e2e_init false b; echo "INIT_B=$?"; show B; cp "$E2E_WORK/.env" "$STUB_LOG/env.b"
+  e2e_stack_use a; echo "USE_A=$?"; show UA
+  bash -c "echo CHILD_A_DB=\$ITEST_DATABASE_URL"
+  e2e_dc up -d gateway
+  e2e_stack_use b; echo "USE_B=$?"; show UB
+  e2e_stack_use c 2>/dev/null; echo "USE_C=$?"
+  e2e_stack_use "" 2>/dev/null; echo "USE_EMPTY=$?"
+  show KEPT
+' _ "$REPO_ROOT" 2>&1); rc=$?
+v2()   { sed -n "s/^$1=//p" <<<"$OUT2" | head -1; }
+blk()  { sed -n "s/^$1\.//p" <<<"$OUT2"; }
+envf() { sed -n "s/^$2=//p" "$STUB_LOG/env.$1" 2>/dev/null | head -1; }
+PID2="$(v2 PID)"; A_WORK="$(v2 A.E2E_WORK)"; B_WORK="$(v2 B.E2E_WORK)"
+
+[ "$rc" = 0 ] && [ "$(v2 INIT_A)" = 0 ] && [ "$(v2 INIT_B)" = 0 ] && [ "$(v2 USE_A)" = 0 ] && [ "$(v2 USE_B)" = 0 ] \
+  && ok "two stacks: e2e_init a and b, e2e_stack_use a and b return 0" || bad "two stacks: rc=$rc, $OUT2"
+[ -n "$PID2" ] && [ "$(v2 A.E2E_PROJECT)" = "ah-e2e-$PID2-a" ] && [ "$(v2 B.E2E_PROJECT)" = "ah-e2e-$PID2-b" ] \
+  && ok "two stacks: projects ah-e2e-<pid>-a and ah-e2e-<pid>-b" \
+  || bad "two stacks: projects '$(v2 A.E2E_PROJECT)' and '$(v2 B.E2E_PROJECT)' (pid '$PID2')"
+[ -n "$A_WORK" ] && [ -n "$B_WORK" ] && [ "$A_WORK" != "$B_WORK" ] \
+  && [ "${A_WORK%/*}" = "$TWO" ] && [ "${B_WORK%/*}" = "$TWO" ] \
+  && ok "two stacks: a work dir each" || bad "two stacks: work dirs '$A_WORK' and '$B_WORK'"
+
+# Postgres and Redis of both sit on 127.0.0.1 and frps of both on every interface, so
+# these ten must all differ; the data plane would not have to (two addresses).
+PORTS="$(for s in A B; do for p in HTTPS PG REDIS FRP_BIND FRP_HTTPS; do v2 "$s.E2E_${p}_PORT"; done; done)"
+[ "$(sort -u <<<"$PORTS" | grep -c .)" = 10 ] \
+  && ok "two stacks: data plane, Postgres, Redis and both frps ports, ten different ports" \
+  || bad "two stacks: ports $(tr '\n' ' ' <<<"$PORTS")"
+in_ranges=1
+for s in A B; do
+  h="$(v2 "$s.E2E_HTTPS_PORT")"; p="$(v2 "$s.E2E_PG_PORT")"; r="$(v2 "$s.E2E_REDIS_PORT")"
+  { [ "${p:-0}" -ge 11000 ] && [ "$p" -lt 16000 ] && [ "${r:-0}" -ge 16000 ] && [ "$r" -lt 21000 ] \
+    && [ "${h:-0}" -ge 21000 ] && [ "$h" -lt 39000 ]; } || in_ranges=0
+done
+[ "$in_ranges" = 1 ] && ok "two stacks: both keep the port ranges of a stack without a key" \
+  || bad "two stacks: a port out of its range: $(tr '\n' ' ' <<<"$PORTS")"
+[ "$(v2 A.E2E_BIND_IP)" = 127.0.0.1 ] && [ "$(v2 B.E2E_BIND_IP)" = 127.0.0.2 ] \
+  && [ "$(v2 A.E2E_ENROLL_PORT)" = 8444 ] && [ "$(v2 B.E2E_ENROLL_PORT)" = 8444 ] \
+  && [ "$(v2 A.E2E_REPO_PORT)" = 8445 ] && [ "$(v2 B.E2E_REPO_PORT)" = 8445 ] \
+  && ok "two stacks: both gateways hold 8444 and 8445, a on 127.0.0.1, b on 127.0.0.2" \
+  || bad "two stacks: a $(v2 A.E2E_BIND_IP):$(v2 A.E2E_ENROLL_PORT)/$(v2 A.E2E_REPO_PORT), b $(v2 B.E2E_BIND_IP):$(v2 B.E2E_ENROLL_PORT)/$(v2 B.E2E_REPO_PORT)"
+[ "$(v2 A.E2E_FRP_BIND_PORT)/$(v2 A.E2E_FRP_HTTPS_PORT)" = 7000/7443 ] \
+  && [ "$(v2 B.E2E_FRP_BIND_PORT)/$(v2 B.E2E_FRP_HTTPS_PORT)" = 7001/7444 ] \
+  && ok "two stacks: frps on 7000/7443 for a, on 7001/7444 for b" \
+  || bad "two stacks: frps a $(v2 A.E2E_FRP_BIND_PORT)/$(v2 A.E2E_FRP_HTTPS_PORT), b $(v2 B.E2E_FRP_BIND_PORT)/$(v2 B.E2E_FRP_HTTPS_PORT)"
+[ "$(v2 A.E2E_SERVER_URL)" = "https://127.0.0.1:$(v2 A.E2E_HTTPS_PORT)" ] \
+  && [ "$(v2 B.E2E_SERVER_URL)" = "https://127.0.0.2:$(v2 B.E2E_HTTPS_PORT)" ] \
+  && ok "two stacks: each URL on its stack's address, so the app finds its enrollment plane there" \
+  || bad "two stacks: URLs '$(v2 A.E2E_SERVER_URL)' and '$(v2 B.E2E_SERVER_URL)'"
+
+# env_is <a|b> <S> — the .env of stack a or b carries what the globals <S>.* say.
+env_is() {
+  [ -n "$(envf "$1" ITEST_BIND_IP)" ] && [ -n "$(envf "$1" FRP_BIND_PORT)" ] && [ -n "$(envf "$1" FRP_HTTPS_PORT)" ] \
+    && [ "$(envf "$1" ITEST_BIND_IP)" = "$(v2 "$2.E2E_BIND_IP")" ] \
+    && [ "$(envf "$1" FRP_BIND_PORT)" = "$(v2 "$2.E2E_FRP_BIND_PORT")" ] \
+    && [ "$(envf "$1" FRP_HTTPS_PORT)" = "$(v2 "$2.E2E_FRP_HTTPS_PORT")" ] \
+    && [ "$(envf "$1" ITEST_HTTPS_PORT)" = "$(v2 "$2.E2E_HTTPS_PORT")" ] \
+    && [ "$(envf "$1" ITEST_PG_PORT)" = "$(v2 "$2.E2E_PG_PORT")" ] \
+    && [ "$(envf "$1" ITEST_REDIS_PORT)" = "$(v2 "$2.E2E_REDIS_PORT")" ] \
+    && [ "$(envf "$1" ADMIN_PASSWORD)" = "$(v2 "$2.E2E_ADMIN_PW")" ] \
+    && [ "$(v2 "$2.ITEST_DATABASE_URL")" = "postgresql+psycopg://adminhelper:$(envf "$1" POSTGRES_PASSWORD)@127.0.0.1:$(v2 "$2.E2E_PG_PORT")/adminhelper" ]
+}
+env_is a A && env_is b B \
+  && ok "two stacks: each .env names its stack's bind address, FRP ports, ports and admin password" \
+  || bad "two stacks: .env a: $(tr '\n' ' ' < "$STUB_LOG/env.a" 2>/dev/null) .env b: $(tr '\n' ' ' < "$STUB_LOG/env.b" 2>/dev/null)"
+[ -n "$(envf a POSTGRES_PASSWORD)" ] && [ "$(envf a POSTGRES_PASSWORD)" != "$(envf b POSTGRES_PASSWORD)" ] \
+  && [ -n "$(envf a SECRET_KEY)" ] && [ "$(envf a SECRET_KEY)" != "$(envf b SECRET_KEY)" ] \
+  && [ -n "$(v2 A.E2E_ADMIN_PW)" ] && [ "$(v2 A.E2E_ADMIN_PW)" != "$(v2 B.E2E_ADMIN_PW)" ] \
+  && ok "two stacks: secrets of their own" || bad "two stacks: a secret is shared or empty"
+
+# e2e_stack_use puts every global back, the export included, and a key it does not know
+# changes nothing.
+[ -n "$(blk A)" ] && [ "$(blk UA)" = "$(blk A)" ] && [ "$(blk UB)" = "$(blk B)" ] \
+  && ok "e2e_stack_use a and b: every global of the stack, as e2e_init set it" \
+  || bad "e2e_stack_use: a after use '$(blk UA | tr '\n' ' ')', b after use '$(blk UB | tr '\n' ' ')'"
+[ "$(v2 CHILD_A_DB)" = "$(v2 A.ITEST_DATABASE_URL)" ] \
+  && ok "e2e_stack_use a: a child process sees stack a's ITEST_DATABASE_URL" \
+  || bad "e2e_stack_use a: the child sees '$(v2 CHILD_A_DB)'"
+[ "$(v2 USE_C)" != 0 ] && [ "$(v2 USE_EMPTY)" != 0 ] && [ "$(blk KEPT)" = "$(blk B)" ] \
+  && ok "e2e_stack_use c and '': non-zero, the globals stay stack b's" \
+  || bad "e2e_stack_use c: rc '$(v2 USE_C)', '': rc '$(v2 USE_EMPTY)', globals '$(blk KEPT | tr '\n' ' ')'"
+[ "$(v2 INIT_C)" != 0 ] && ok "e2e_init with key c: non-zero (rc $(v2 INIT_C))" || bad "e2e_init with key c returned '$(v2 INIT_C)'"
+
+DC_A="-p ah-e2e-$PID2-a -f $REPO_ROOT/docker-compose.yml -f $REPO_ROOT/docker-compose.test.yml --env-file $A_WORK/.env"
+DC_B="-p ah-e2e-$PID2-b -f $REPO_ROOT/docker-compose.yml -f $REPO_ROOT/docker-compose.test.yml --env-file $B_WORK/.env"
+grep -qxF -- "compose $DC_A up -d gateway" "$STUB_LOG/docker.args" 2>/dev/null \
+  && ok "e2e_dc after e2e_stack_use a: stack a's project and .env" \
+  || bad "e2e_dc after use a: $(cat "$STUB_LOG/docker.args" 2>/dev/null)"
+grep -qxF -- "compose $DC_A down -v --remove-orphans" "$STUB_LOG/docker.args" 2>/dev/null \
+  && grep -qxF -- "compose $DC_B down -v --remove-orphans" "$STUB_LOG/docker.args" 2>/dev/null \
+  && ok "the EXIT teardown takes both stacks down" \
+  || bad "two stacks, teardown: $(cat "$STUB_LOG/docker.args" 2>/dev/null)"
+[ -s "$STUB_LOG/pkill.args" ] && [ -d "$TWO" ] && [ -z "$(ls -A "$TWO")" ] \
+  && ok "the teardown removes both work dirs; key c made none" \
+  || bad "two stacks: pkill $(wc -l < "$STUB_LOG/pkill.args") call(s), left in $TWO: $(ls -A "$TWO" 2>&1)"
 
 # ── the compose files ────────────────────────────────────────────────────────
 # ports_of <file> <service> — the entries under one service's `ports:` key.
@@ -134,6 +266,14 @@ ports_of() {
 [ "$(ports_of "$REPO_ROOT/docker-compose.test.yml" redis)" = '127.0.0.1:${ITEST_REDIS_PORT:-16379}:6379' ] \
   && ok "the overlay publishes Redis on 127.0.0.1:ITEST_REDIS_PORT only" \
   || bad "redis ports: $(ports_of "$REPO_ROOT/docker-compose.test.yml" redis)"
+# The gateway's three planes under ITEST_BIND_IP, the address e2e_init writes for a key;
+# unset, no host address at all, exactly as before.
+GW_WANT='${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_HTTPS_PORT:-18443}:443
+${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_ENROLL_PORT:-8444}:8444
+${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_REPO_PORT:-8445}:8445'
+[ "$(ports_of "$REPO_ROOT/docker-compose.test.yml" gateway)" = "$GW_WANT" ] \
+  && ok "the overlay publishes the gateway's three ports on ITEST_BIND_IP, with no host address unless set" \
+  || bad "gateway ports: $(ports_of "$REPO_ROOT/docker-compose.test.yml" gateway | tr '\n' ' ')"
 # Production stays network-internal — the overlay is the only place they open.
 [ -z "$(ports_of "$REPO_ROOT/docker-compose.yml" postgres)$(ports_of "$REPO_ROOT/docker-compose.yml" redis)" ] \
   && ok "docker-compose.yml publishes neither" \
