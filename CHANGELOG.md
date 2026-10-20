@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Monitoring: Check-Typ `system_state` fuer den Systemzustand eines Linux-Hosts (R-0423):** Der Agent schickt ab
+  Report-Version 3 unter Linux den Block `system_state`: Neustart noetig (`/var/run/reboot-required` bzw.
+  `needs-restarting -r`), Uhr synchronisiert (`timedatectl show`), offene Sicherheits-Updates
+  (`apt-get -s dist-upgrade` bzw. `dnf -C -q updateinfo list --security`, nur aus den lokalen Paketlisten, ohne Netz,
+  hoechstens einmal je Stunde) und OOM-Kills seit dem letzten erfolgreich gesendeten Report (`/proc/vmstat`). Der
+  neue Push-Check `system_state` ist `warning`, sobald ein Punkt ein Problem zeigt, nie `critical`; die Uhr bewertet
+  er erst ab 15 Minuten Uptime. Je Punkt schaltet ein Schalter (`check_reboot`, `check_time_sync`,
+  `check_security_updates`, `check_oom`, je Default `true`, nur `true` oder `false`) die Bewertung ab. Ohne den Block
+  (aeltere Agents, Windows) bleibt der Check `ok` mit „Not evaluated: no system state in report“. Ein OOM-Kill steht
+  nur in einem Report und meldet deshalb nur mit `consecutive_fails` 1. Nicht verifiziert: ob Debian und Proxmox VE
+  `/var/run/reboot-required` bei einem Kernel-Update anlegen, und der Weg der RPM-Distributionen. Doku:
+  Monitoring-Administration (DE+EN).
 - **Monitoring: `agent_resources` bewertet Swap, Inodes und Load je CPU (R-0423):** Neben CPU, RAM, Platten und
   Temperaturen bewertet der Check die Swap-Belegung (`swap_warn`/`swap_crit`, Default 80/95 %, nur mit Swap-Geraet),
   die Inode-Belegung je Platte (`inode_warn`/`inode_crit`, 80/90 %) und die Load je CPU, `load_5m` geteilt durch die

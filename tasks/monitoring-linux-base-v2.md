@@ -113,8 +113,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_system_stat
 Doku: keine (Typ und Konfiguration zusammen in T12)
 Abhängt von: T3
 
-### T12 — Monitoring: Konfiguration `system_state` und Doku Systemzustand  [ ]
+### T12 — Monitoring: Konfiguration `system_state` und Doku Systemzustand  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_check_configs.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4c8fea4e 2026-10-20T09:39:33+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T12.verdict.json)
 Änderung: `SystemStateConfig` mit `check_reboot`, `check_time_sync`, `check_security_updates`, `check_oom` (je `StrictBool`, Default true; Kommentar wie `check_configs.py:110-111`), Eintrag in `CONFIG_MODELS` (`:134-146`). Tests: Defaults true, `false` angenommen, `"false"`, `0`, `1` über `POST /checks` mit 422 (Muster `TestAlertOnUnavailable`, `test_check_configs.py:84`), unbekannter Schlüssel abgelehnt, `{}` gültig.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py
 Doku: docs/admin/monitoring.html + EN: Zeile `system_state` in der Typ-Tabelle (`:41-51`), Push-Hinweis `:60` um `system_state`, Konfig-Tabelle (`:128-136`), neuer Abschnitt „Systemzustand“ (`id="system-state"`, vor `#plugin-ausfall` bzw. `#plugin-outage`): die vier Punkte, Quellen (`reboot-required`/`needs-restarting`, `timedatectl`, `apt-get -s`/`dnf -C`, `/proc/vmstat`), kein Netz, Updates stündlich, Zeit-Sync erst ab 15 min Uptime, OOM je Report, nur Linux ab Agent v3 (sonst „Not evaluated“), Lücke „Neustart nötig“ auf Debian/Proxmox, RPM-Weg nicht verifiziert; CHANGELOG.md (`### Added`: Check-Typ system_state)

@@ -21,6 +21,7 @@ from pydantic.fields import FieldInfo
 
 from app.builtin_templates import seed_builtin_templates
 from app.check_configs import CONFIG_MODELS, _DiskOverride, _TempOverride, validate_check_config
+from app.checkers.system import SystemStateChecker
 from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
 from app.template_sync import record_override_baseline
@@ -126,6 +127,59 @@ class TestAlertOnUnavailable:
         )
         assert r.status_code == 422
         assert "valid boolean" in r.text
+
+
+_SYSTEM_STATE_SWITCHES = ("check_reboot", "check_time_sync", "check_security_updates", "check_oom")
+_SYSTEM_STATE_ALL_BAD = {
+    "uptime_seconds": 3600,
+    "system_state": {
+        "reboot_required": True,
+        "time_synchronized": False,
+        "security_updates": 3,
+        "oom_kills": 2,
+    },
+}
+
+
+class TestSystemStateConfig:
+    """system_state (R-0423): one switch per point, each on by default; the checker
+    switches a point off only on a real false, so the boundary takes nothing else."""
+
+    def test_empty_config_is_valid_and_every_point_is_on(self):
+        validate_check_config("system_state", {})
+        config = CONFIG_MODELS["system_state"]()
+        assert config.model_dump() == dict.fromkeys(_SYSTEM_STATE_SWITCHES, True)
+
+    @pytest.mark.parametrize("key", _SYSTEM_STATE_SWITCHES)
+    def test_off_is_accepted_and_switches_off_the_point_the_checker_reads(self, key):
+        # The model's keys must be the checker's: a key the checker does not read
+        # would pass the boundary and switch nothing off.
+        validate_check_config("system_state", {key: False})
+        _, _, on = SystemStateChecker().evaluate({}, _SYSTEM_STATE_ALL_BAD)
+        _, _, off = SystemStateChecker().evaluate({key: False}, _SYSTEM_STATE_ALL_BAD)
+        assert len(on["_details"]["problems"]) == 4
+        assert len(off["_details"]["problems"]) == 3
+
+    def test_unknown_key_is_rejected_with_the_key_named(self):
+        with pytest.raises(ValueError, match=r"\scheck_reboto: Extra inputs"):
+            validate_check_config("system_state", {"check_reboto": False})
+
+    # A lax bool would take "false", 0 and 1 and store them as sent.
+    @pytest.mark.parametrize("value", ["false", 0, 1], ids=repr)
+    @pytest.mark.parametrize("key", _SYSTEM_STATE_SWITCHES)
+    def test_non_bool_is_422(self, client_db, monkeypatch, key, value):
+        # Should the boundary let it through, keep the check's job out of the
+        # process-wide scheduler.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        r = client.post(
+            "/checks",
+            json={"name": "c", "check_type": "system_state", "config": {key: value}},
+        )
+        assert r.status_code == 422
+        assert "valid boolean" in r.text
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
 
 
 _BOOL_SWITCHES = [

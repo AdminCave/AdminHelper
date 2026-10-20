@@ -153,6 +153,15 @@ class DiskForecastConfig(_StrictConfig):
     crit_hours: float = Field(8, ge=1, le=8760, strict=True)
 
 
+class SystemStateConfig(_StrictConfig):
+    # Strict: configs are stored as sent, and the checker switches a point off only on
+    # a real false; a lax "false" or 0 would be stored and keep the point on.
+    check_reboot: StrictBool = True
+    check_time_sync: StrictBool = True
+    check_security_updates: StrictBool = True
+    check_oom: StrictBool = True
+
+
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "ping": PingConfig,
     "tcp": TcpConfig,
@@ -165,6 +174,7 @@ CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "zfs_health": ZfsHealthConfig,
     "docker_health": DockerHealthConfig,
     "disk_forecast": DiskForecastConfig,
+    "system_state": SystemStateConfig,
 }
 
 
