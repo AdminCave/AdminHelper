@@ -117,16 +117,35 @@ def default_admin_subscription(user_id: int) -> NotificationSubscription:
     )
 
 
-def resolve_recipients(db: Session, event: IncomingEvent) -> list[tuple[User, _Channels]]:
-    """Return (user, channels) for every user a subscription routes this event to.
+def _server_label(server: Server | None, server_id: str) -> str:
+    return (server.name if server is not None else None) or server_id
+
+
+def resolve_recipients(
+    db: Session, event: IncomingEvent
+) -> list[tuple[User, _Channels, list[str]]]:
+    """Return (user, channels, servers) for every user a subscription routes this
+    event to.
 
     A user with several matching subscriptions is collapsed into one entry whose
     external channels are the union (so one bell row, e-mail if any matching rule
-    asked for it)."""
-    server: Server | None = None
-    if event.source_id:
-        server = db.query(Server).filter(Server.id == event.source_id).first()
-    tags = _server_tags(server)
+    asked for it).
+
+    A bundled event (source_ids) is resolved server by server under the same
+    rules as a single one: a user is a recipient if one of their subscriptions
+    covers at least one server they may see, and `servers` lists exactly those
+    (name, else id) in event order. For a single event `servers` is empty."""
+    targets: list[tuple[Server | None, str]]
+    if event.source_ids is not None:
+        ids = list(dict.fromkeys(event.source_ids))
+        known = {s.id: s for s in db.query(Server).filter(Server.id.in_(ids)).all()}
+        targets = [(known.get(sid), sid) for sid in ids]
+    else:
+        server: Server | None = None
+        if event.source_id:
+            server = db.query(Server).filter(Server.id == event.source_id).first()
+        targets = [(server, event.source_id or "")]
+    tags = [_server_tags(server) for server, _ in targets]
 
     subs = (
         db.query(NotificationSubscription).filter(NotificationSubscription.enabled.is_(True)).all()
@@ -134,6 +153,7 @@ def resolve_recipients(db: Session, event: IncomingEvent) -> list[tuple[User, _C
 
     per_user_channels: dict[int, _Channels] = {}
     per_user: dict[int, User] = {}
+    per_user_hits: dict[int, set[int]] = {}
     user_cache: dict[int, User | None] = {}  # a user with several subs loads once
     for sub in subs:
         if sub.user_id not in user_cache:
@@ -141,20 +161,33 @@ def resolve_recipients(db: Session, event: IncomingEvent) -> list[tuple[User, _C
         user = user_cache[sub.user_id]
         if user is None:
             continue
-        if not _user_can_see(user, server):
-            continue
-        if not _scope_matches(sub, server, tags):
-            continue
         if not severity_at_least(event.severity, sub.min_severity):
             continue
         if not _category_matches(sub, event.category):
+            continue
+        hits = [
+            i
+            for i, (server, _) in enumerate(targets)
+            if _user_can_see(user, server) and _scope_matches(sub, server, tags[i])
+        ]
+        if not hits:
             continue
         ch = per_user_channels.setdefault(user.id, _Channels())
         ch.email = ch.email or sub.channel_email
         ch.telegram = ch.telegram or sub.channel_telegram
         per_user[user.id] = user
+        per_user_hits.setdefault(user.id, set()).update(hits)
 
-    return [(per_user[uid], ch) for uid, ch in per_user_channels.items()]
+    if event.source_ids is None:
+        return [(per_user[uid], ch, []) for uid, ch in per_user_channels.items()]
+    return [
+        (
+            per_user[uid],
+            ch,
+            [_server_label(*targets[i]) for i in sorted(per_user_hits[uid])],
+        )
+        for uid, ch in per_user_channels.items()
+    ]
 
 
 def ingest_event(db: Session, event: IncomingEvent) -> int:
@@ -164,14 +197,21 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
     notified = 0
     notified_user_ids: list[int] = []
     max_id = 0
-    for user, channels in recipients:
+    for user, channels, servers in recipients:
+        title, body = event.title, event.body
+        if event.source_ids is not None:
+            # Count and lines are the user's own: nobody learns of a server they
+            # may not see, not even that there was one.
+            title = f"{event.title} ({len(servers)})"
+            lines = "\n".join(f"- {name}" for name in servers)
+            body = f"{event.body}\n{lines}" if event.body else lines
         notif = Notification(
             user_id=user.id,
             severity=event.severity,
             category=event.category,
             event_type=event.event_type,
-            title=event.title,
-            body=event.body,
+            title=title,
+            body=body,
             source_type=event.source_type,
             source_id=event.source_id,
         )

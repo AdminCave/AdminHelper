@@ -102,8 +102,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py tes
 Doku: docs/admin/monitoring.html + EN (Dämpfung: Disk Forecast meldet die Entwarnung nach einem ok) · CHANGELOG
 Abhängt von: T4, T7
 
-### T9 — Server: Sammel-Event `source_ids`, Empfänger je Nutzer  [ ]
+### T9 — Server: Sammel-Event `source_ids`, Empfänger je Nutzer  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/service.py, apps/server/tests/test_notifications.py, apps/server/tests/test_text_bounds.py, apps/server/tests/openapi.snapshot.json, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a17f5a9e 2026-10-20T11:04:15+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T9.verdict.json)
 Änderung: `IncomingEvent.source_ids` (`schemas.py:20-34`): Liste, 1–500 Einträge, je ≤ 256 Zeichen, nicht zusammen mit `source_id` (Validator → 422). `resolve_recipients`/`ingest_event` (`service.py:120-210`): mit `source_ids` die Server in einer Abfrage laden und je Nutzer die sichtbaren und vom Abo erfassten Server sammeln (`_user_can_see :62-69`, `_scope_matches :72-84`, Severity/Kategorie wie bisher; unbekannte IDs nur für Admins); je Nutzer mit Treffer eine Zeile: Titel `<title> (<n>)`, Text `body` plus eine Zeile je sichtbarem Server (Name, sonst ID), `source_id` NULL, Outbox wie bisher. Ohne `source_ids` unverändert. Snapshot neu schreiben. Tests: Admin sieht alle drei, ein Nutzer mit zwei zugeordneten Servern bekommt `(2)` und nur deren Namen, ein Nutzer ohne Zuordnung nichts; Tag- und Server-Scope; unbekannte ID nur für Admins; `min_severity` und Kategorie; Mail-Outbox einmal je Nutzer; `source_id` + `source_ids` → 422, 501 Einträge → 422, leere Liste → 422; NUL in einem Eintrag → 422 (`test_text_bounds.py:96-128`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications.py tests/test_text_bounds.py tests/test_openapi_snapshot.py
 Doku: docs/developer/server.html + EN (Resolver `:187-188`: Sammel-Events mit `source_ids`)

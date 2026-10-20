@@ -247,6 +247,159 @@ class TestResolver:
         assert _count(db_session, normal) == 0
 
 
+# --- bundled events (source_ids) --------------------------------------------
+
+
+def _bundle(source_ids, severity="critical", category="monitoring", body="Heartbeat lost"):
+    return IncomingEvent(
+        event_type="monitoring.check.transition",
+        severity=severity,
+        category=category,
+        title="Agents not reporting",
+        body=body,
+        source_type="server",
+        source_ids=source_ids,
+        new_status="critical",
+    )
+
+
+def _rows(db, user):
+    return db.query(Notification).filter(Notification.user_id == user.id).all()
+
+
+class TestBundleResolver:
+    """monitoring-alert-quality T9: a bundled event names several servers. Each
+    user gets one row about exactly the servers they may see and subscribe to —
+    title count and lines are per user, so nobody learns of a foreign server."""
+
+    def _three(self, db):
+        return (
+            _server(db, "srv-1", name="web01", tags=["prod"]),
+            _server(db, "srv-2", name="db01", tags=["prod"]),
+            _server(db, "srv-3", name="mail01", tags=["dev"]),
+        )
+
+    def test_admin_gets_one_row_listing_all_three(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (3)"
+        assert row.body == "Heartbeat lost\n- web01\n- db01\n- mail01"
+        assert row.source_type == "server"
+        assert row.source_id is None
+
+    def test_assigned_user_sees_only_their_servers(self, db_session):
+        srv1, srv2, _ = self._three(db_session)
+        member = _user(db_session, "member", servers=[srv1, srv2])
+        _sub(db_session, member, scope_type="all")
+        outsider = _user(db_session, "outsider")
+        _sub(db_session, outsider, scope_type="all")
+        assert ingest_event(db_session, _bundle(["srv-3", "srv-2", "srv-1"])) == 1
+        [row] = _rows(db_session, member)
+        assert row.title == "Agents not reporting (2)"
+        # Event order, and no trace of mail01.
+        assert row.body == "Heartbeat lost\n- db01\n- web01"
+        assert _count(db_session, outsider) == 0
+
+    def test_tag_scope_counts_only_tagged_servers(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="tag", scope_ref="prod")
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (2)"
+        assert row.body == "Heartbeat lost\n- web01\n- db01"
+
+    def test_server_scope_counts_only_its_server(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-3")
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (1)"
+        assert row.body == "Heartbeat lost\n- mail01"
+
+    def test_no_scope_hit_means_no_row(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-9")
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 0
+        assert _count(db_session, admin) == 0
+
+    def test_subscriptions_of_one_user_merge_into_one_row(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-3")
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-1")
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (2)"
+        assert row.body == "Heartbeat lost\n- web01\n- mail01"
+
+    def test_unknown_id_is_listed_for_admins_only(self, db_session):
+        srv1, _, _ = self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        member = _user(db_session, "member", servers=[srv1])
+        _sub(db_session, member, scope_type="all")
+        assert ingest_event(db_session, _bundle(["srv-1", "ghost"])) == 2
+        [admin_row] = _rows(db_session, admin)
+        assert admin_row.title == "Agents not reporting (2)"
+        assert admin_row.body == "Heartbeat lost\n- web01\n- ghost"
+        [member_row] = _rows(db_session, member)
+        assert member_row.title == "Agents not reporting (1)"
+        assert member_row.body == "Heartbeat lost\n- web01"
+
+    def test_only_unknown_ids_reach_no_plain_user(self, db_session):
+        member = _user(db_session, "member", servers=[_server(db_session, "srv-1")])
+        _sub(db_session, member, scope_type="all")
+        assert ingest_event(db_session, _bundle(["ghost-1", "ghost-2"])) == 0
+
+    def test_min_severity_threshold(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all", min_severity="critical")
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2"], severity="warning")) == 0
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2"], severity="critical")) == 1
+
+    def test_category_filter(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all", categories=["pki"])
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2"], category="monitoring")) == 0
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2"], category="pki")) == 1
+
+    def test_one_mail_per_user(self, db_session):
+        srv1, srv2, srv3 = self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True, email="a@b.de")
+        _sub(db_session, admin, scope_type="all", email=True)
+        member = _user(db_session, "member", servers=[srv1, srv2, srv3], email="m@x.de")
+        _sub(db_session, member, scope_type="all", email=True)
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 2
+        for user, address in ((admin, "a@b.de"), (member, "m@x.de")):
+            rows = db_session.query(NotificationOutbox).filter_by(user_id=user.id).all()
+            assert [(r.channel, r.address) for r in rows] == [("email", address)]
+
+    def test_without_body_the_lines_are_the_text(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        ingest_event(db_session, _bundle(["srv-1", "srv-2"], body=None))
+        [row] = _rows(db_session, admin)
+        assert row.body == "- web01\n- db01"
+
+    def test_a_repeated_id_counts_once(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-1"]))
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (2)"
+        assert row.body == "Heartbeat lost\n- web01\n- db01"
+
+
 # --- direct delivery to chosen users ---------------------------------------
 
 
@@ -522,6 +675,51 @@ class TestIngress:
         assert res.status_code == 202, res.text
         assert res.json() == {"notified": 1}
         assert _count(db_session, admin) == 1
+
+    def _bundle_payload(self, source_ids):
+        payload = {**self._payload(), "source_ids": source_ids}
+        del payload["source_id"]
+        return payload
+
+    def test_bundle_fans_out_per_user(self, test_client, db_session, monkeypatch):
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        srv1 = _server(db_session, "srv-1", name="web01")
+        _server(db_session, "srv-2", name="db01")
+        member = _user(db_session, "member", servers=[srv1])
+        _sub(db_session, member, scope_type="all")
+        res = test_client.post(
+            self._PATH,
+            headers={"X-Internal-Key": "secret"},
+            json=self._bundle_payload(["srv-1", "srv-2"]),
+        )
+        assert res.status_code == 202, res.text
+        assert res.json() == {"notified": 1}
+        [row] = _rows(db_session, member)
+        assert row.title == "CPU critical on web01 (1)"
+        assert row.body == "- web01"
+
+    def test_bundle_takes_500_ids(self, test_client, monkeypatch):
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        ids = [f"srv-{i}" for i in range(500)]
+        ids[0] = "x" * 256
+        res = test_client.post(
+            self._PATH, headers={"X-Internal-Key": "secret"}, json=self._bundle_payload(ids)
+        )
+        assert res.status_code == 202, res.text
+
+    def test_bundle_shape_is_bounded(self, test_client, monkeypatch):
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        both = {**self._payload(), "source_ids": ["srv-2"]}
+        # The error type pins which bound refused it, not just that one did.
+        for payload, error in (
+            (both, "value_error"),
+            (self._bundle_payload([f"srv-{i}" for i in range(501)]), "too_long"),
+            (self._bundle_payload([]), "too_short"),
+            (self._bundle_payload(["srv-1", "x" * 257]), "string_too_long"),
+        ):
+            res = test_client.post(self._PATH, headers={"X-Internal-Key": "secret"}, json=payload)
+            assert res.status_code == 422, f"{error}: {res.status_code} {res.text}"
+            assert [d["type"] for d in res.json()["detail"]] == [error], res.text
 
 
 class TestAlertTriggeredHook:
