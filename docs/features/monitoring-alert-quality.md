@@ -295,10 +295,10 @@ VictoriaMetrics bleiben unverändert.
 - **Verhaltensänderung für alle bestehenden Checks:** Die Migration setzt `consecutive_oks = 2`; jede Entwarnung kommt
   ein Intervall später, bei einem `1h`-Check (Disk Forecast) eine Stunde, bei `24h` einen Tag. Wer das nicht will,
   setzt 1 am Check. → Offene Frage 6, CHANGELOG „Changed“.
-- **Host-Ping auf Hosts ohne ICMP** (nur über FRP erreichbar, ICMP gefiltert, IPv6-Literal als Hostname — der
-  `ping`-Check erlaubt nur `[a-zA-Z0-9._-]`, `checkers/ping.py:10`): Der Host-Ping steht `critical` und
+- **Host-Ping auf Hosts ohne ICMP** (nur über FRP erreichbar, ICMP gefiltert): Der Host-Ping steht `critical` und
   **unterdrückt alle übrigen Alarme dieses Servers**. Gemildert: Template ist opt-in, der Host-Ping selbst meldet,
-  Doku warnt.
+  Doku warnt. Ein IPv6-Literal als Hostname lehnt der `ping`-Check ab (`[a-zA-Z0-9._-]`, `checkers/ping.py:10`):
+  Der Host-Ping steht dann `unknown`, meldet keinen Ausfall und unterdrückt nichts (korrigiert nach T7).
 - **Sammelmeldung verzögert Einzelalarme** der Heartbeats um bis zu 5½ Minuten (Trade-off 4).
 - **Server und Monitoring müssen zusammen ausgerollt werden** (Vertrag `source_ids`); Sammelmeldungen gingen sonst
   nur an Admins.
