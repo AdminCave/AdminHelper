@@ -125,7 +125,7 @@ kommt nur dorthin.
   `… | None = None` in `CheckUpdate` (Muster `cooldown_minutes`, `schemas.py:57`; die Grenzen je Feld im Schema
   prüfen: ein `IntColumn = Field(…)` verliert die Grenze still). Antwort `consecutiveOks` in `MonitorCheck.to_dict`.
 - Template-Definitionen: Der Default 2 ist Schema-Default, `_without_defaults` (`builtin_templates.py:197-207`)
-  lässt ihn aus dem Hash: **die Hashes der fünf mitgelieferten Templates bleiben gleich** (bis T17; T17 ändert Disk Forecast und hebt `linux-base`/`windows-base` auf Version 2) — der bestehende Test
+  lässt ihn aus dem Hash: **die Hashes der fünf mitgelieferten Templates bleiben gleich** (bis T17; T17 ändert Disk Forecast und hebt `windows-base` auf Version 2 und `linux-base` auf Version 3 — nach dem Merge von monitoring-linux-base-v2, das `linux-base` schon auf 2 hob und die v1-Hashes einfror) — der bestehende Test
   `test_shipped_definitions_change_only_with_a_new_version` (`tests/test_seed.py:209-225`) ist der Beweis und bleibt
   unverändert. Eine Definition ohne Schlüssel gilt als 2 (`_template_check_values`).
 - `consecutive_oks` wird Template-Feld (`TEMPLATE_CHECK_FIELDS`, ans Ende): eine Änderung am Check gilt als
