@@ -208,8 +208,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- termsrv
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T17
 
-### T41 — Nach „Passwort merken“ über das gespeicherte Passwort starten  [ ]
+### T41 — Nach „Passwort merken“ über das gespeicherte Passwort starten  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @153c50ab 2026-10-20T18:34:40+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T41.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20 (Bauer T17): Hakt man beim Verbinden „Passwort merken“ an und `savePassword` gelingt, startet `connectFlow` die Verbindung danach über den Weg mit gespeichertem Passwort (`useStoredPassword: true`) statt mit dem getippten. Unter Windows nimmt so der Start-Eintrag `TERMSRV` (T17) das Passwort, und mstsc fragt nicht ein zweites Mal; unter Linux ist das Ergebnis dasselbe. Scheitert das Speichern, wie bisher mit dem getippten Passwort; ein nicht gemerktes Passwort geht wie bisher mit (unter Windows verwirft Rust es, mstsc fragt). Tests: gemerkt und gespeichert → Start mit `useStoredPassword`; Speichern scheitert → Start mit dem getippten Passwort und Fehlermeldung; nicht gemerkt → Start mit dem getippten Passwort.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts
 Doku: keine (intern; Doku mit T33)
