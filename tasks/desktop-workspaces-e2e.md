@@ -12,7 +12,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-20: R-0431 baut in drei Spuren mit je eigenem Teil-Ledger, Branch und Worktree, damit die disjunkten Blöcke parallel laufen: Windows-RDP und Doku in `tasks/desktop-workspaces.md` (`feature/desktop-workspaces`), Oberfläche in `tasks/desktop-workspaces-ui.md` (`feature/desktop-workspaces-ui`), Live-E2E in `tasks/desktop-workspaces-e2e.md` (`feature/desktop-workspaces-e2e`). Die Teil-Branches werden in `feature/desktop-workspaces` gemergt, nie direkt in `main`; je Ledger höchstens ein Bauer.
 
-Reihenfolge in dieser Spur: zuerst T25, T27, T29, T30, T31 (hängen nur an Block A/B und an dieser Spur); T26 (braucht T22) und T28 (braucht T20) erst, wenn die Oberfläche in `feature/desktop-workspaces` gemergt und hierher geholt ist; T32 zuletzt.
+Reihenfolge in dieser Spur: zuerst T25, T27, T29, T30, T44 (hängen nur an Block A/B und an dieser Spur); T31 (braucht T19/T20), T26 (braucht T22) und T28 (braucht T20) erst, wenn die Oberfläche in `feature/desktop-workspaces` gemergt und hierher geholt ist; T32 zuletzt.
 
 ## Block E — Live-E2E
 
@@ -52,19 +52,19 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T25
 
-### T31 — Live-Specs: zwei Installationen, derselbe Visitor-Port  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-add-server.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js
-Änderung: `workspace-add-server.live.js` (SPDX-Header, Launcher): legt den Server-Workspace „Kunde B“ mit `AH_E2E_SERVER_URL_B` an und schreibt seine Id in die Datei aus `AH_E2E_WS_B_FILE`. `two-installations.workspaces.js` (SPDX-Header, Multiremote): `wsA` (Standard, Stack A) und `wsB` (Kunde B, Stack B) registrieren sich je mit ihrem Token (`AH_ENROLL_TOKEN_A`/`_B`), melden sich an und starten den Tunnel; `tunnel_status` beider zeigt denselben Server-Port und verschiedene lokale Ports; jeder öffnet seine SSH-Verbindung; `wsB` findet vor der Registrierung keine Identität (`is_device_enrolled` false), obwohl `wsA` registriert ist; ein zweiter Start `--workspace standard` aus Node endet mit Exit 3, während `wsA` läuft. Verify ist der Lint; Beweis im Sammellauf (T32).
-Verify: bash scripts/dev/verify.sh desktop-e2e --strict
-Doku: keine (Test)
-Abhängt von: T30
-
 ### T44 — E2E-Stack: Schlüssel zuerst prüfen, gemischte Nutzung ablehnen  [ ]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, docker-compose.test.yml
 Änderung: Aus den Reviews von T29: `e2e_init` prüft den Stack-Schlüssel, bevor es irgendeine globale Variable setzt (heute setzt es `E2E_BIND_IP` und die FRP-Ports vor der Ablehnung, die Globals eines bestehenden Stacks passen danach nicht mehr zusammen); es lehnt einen zweiten `e2e_init` mit demselben Schlüssel und das Mischen eines Stacks ohne Schlüssel mit einem mit Schlüssel ab (sonst bleiben Projekt und Arbeitsverzeichnis beim Teardown liegen). Der Kopfkommentar in `docker-compose.test.yml` nennt die frps-Ports 7001/7444 von Stack b. Tests: unbekannter Schlüssel nach `e2e_init a` lässt die Globals von a unverändert; doppeltes `a` und gemischte Nutzung ergeben rc 1 ohne neues Verzeichnis.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)
 Abhängt von: T29
+
+### T31 — Live-Specs: zwei Installationen, derselbe Visitor-Port  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-add-server.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js
+Änderung: `workspace-add-server.live.js` (SPDX-Header, Launcher): legt den Server-Workspace „Kunde B“ mit `AH_E2E_SERVER_URL_B` an und schreibt seine Id in die Datei aus `AH_E2E_WS_B_FILE`. `two-installations.workspaces.js` (SPDX-Header, Multiremote): `wsA` (Standard, Stack A) und `wsB` (Kunde B, Stack B) registrieren sich je mit ihrem Token (`AH_ENROLL_TOKEN_A`/`_B`), melden sich an und starten den Tunnel; `tunnel_status` beider zeigt denselben Server-Port und verschiedene lokale Ports; jeder öffnet seine SSH-Verbindung; `wsB` findet vor der Registrierung keine Identität (`is_device_enrolled` false), obwohl `wsA` registriert ist; ein zweiter Start `--workspace standard` aus Node endet mit Exit 3, während `wsA` läuft. Verify ist der Lint; Beweis im Sammellauf (T32). Nachtrag (2026-10-20): Der Spec `workspace-add-server.live.js` legt den Workspace über den Picker und den Editor der Oberfläche an (T19, T20 in `tasks/desktop-workspaces-ui.md`); T31 baut deshalb erst, wenn die Oberfläche in `feature/desktop-workspaces` gemergt und hierher geholt ist, und steht hinter T44.
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Test)
+Abhängt von: T30
 
 ### T26 — Live-Helfer und Specs mit fester Workspace-URL  [ ]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/login-error.live.js, apps/desktop/e2e/test/specs/enroll-form.live.js, apps/desktop/e2e/test/specs/enroll-trust-dialog.live.js
