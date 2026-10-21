@@ -87,9 +87,9 @@ pub fn open_rdp(
         .map(|value| value.trim())
         .unwrap_or("");
 
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, target_os = "windows")))]
     let _ = password;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, target_os = "windows")))]
     let _ = app;
     #[cfg(not(unix))]
     let _ = client;
@@ -102,16 +102,7 @@ pub fn open_rdp(
 
     #[cfg(target_os = "windows")]
     {
-        return open_rdp_windows(
-            host,
-            port,
-            username,
-            domain,
-            connection,
-            rdp.window_mode,
-            rdp.custom_size,
-            rdp.performance_profile,
-        );
+        return open_rdp_windows(app, connection, host, port, username, domain, rdp, password);
     }
 
     #[cfg(unix)]
@@ -154,31 +145,41 @@ pub fn open_rdp(
     }
 }
 
+/// Starts mstsc with a `.rdp` file for `host:port`; a stored `password` holds a `TERMSRV/…`
+/// entry for that address only for the start (`password::start_mstsc`, R-0431). The app data dir
+/// of `app` keeps the holds of all workspaces on such entries.
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 fn open_rdp_windows(
+    app: &tauri::AppHandle,
+    connection: &Connection,
     host: &str,
     port: u16,
     username: &str,
     domain: &str,
-    connection: &Connection,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
+    password: Option<&str>,
 ) -> Result<(), AppError> {
     use std::process::Command;
 
+    // The `TERMSRV/…` names of the start are those of the address in the file, so both take
+    // the same host, without spaces around it.
+    let host = host.trim();
+    let base = crate::storage::app_data_dir(app)?;
     let rdp_path = write_rdp_file(
         host,
         port,
         username,
         domain,
         connection.trust_cert,
-        rdp_window_mode,
-        rdp_custom_size,
-        rdp_performance_profile,
+        rdp.window_mode,
+        rdp.custom_size,
+        rdp.performance_profile,
     )?;
-    Command::new("mstsc").arg(rdp_path).spawn()?;
-    Ok(())
+    crate::password::start_mstsc(&base, host, port, connection, password, || {
+        Command::new("mstsc").arg(&rdp_path).spawn()?;
+        Ok(())
+    })
 }
 
 #[cfg(unix)]
@@ -260,7 +261,7 @@ fn build_rdp_args(
     args.push(linux_keyboard_layout_arg_from_ui_language(ui_language));
 
     args.push("+clipboard".to_string());
-    let title = crate::validation::sanitize_window_title(&connection.name);
+    let title = window_title(&connection.name);
     if !title.is_empty() {
         args.push(format!("/title:{title}"));
     }
@@ -268,6 +269,32 @@ fn build_rdp_args(
     args.extend(performance_args(rdp.performance_profile));
 
     Ok(args)
+}
+
+/// The connection's name, in a workspace process after `[<workspace name>] `, so the windows of
+/// one host in two workspaces tell apart. Each name is sanitized on its own and the brackets come
+/// after: the sanitizer drops `[` and `]`, so neither name can forge another workspace's prefix.
+/// A workspace name of which the sanitizer leaves nothing (only emoji or symbols) gives way to
+/// the workspace id, which is safe as it is. Without a workspace (the launcher, or before the
+/// start sets one) the name stands alone.
+#[cfg(unix)]
+fn window_title(connection_name: &str) -> String {
+    let name = crate::validation::sanitize_window_title(connection_name);
+    let workspace = crate::workspace::current()
+        .map(|workspace| {
+            let name = crate::validation::sanitize_window_title(&workspace.name);
+            if name.is_empty() {
+                workspace.id.to_string()
+            } else {
+                name
+            }
+        })
+        .unwrap_or_default();
+    if workspace.is_empty() {
+        name
+    } else {
+        format!("[{workspace}] {name}").trim_end().to_string()
+    }
 }
 
 #[cfg(unix)]
@@ -825,6 +852,57 @@ mod args_tests {
             !title.contains(';') && !title.contains('$'),
             "title metacharacters not sanitized: {title}"
         );
+    }
+
+    fn title_of(name: &str) -> Option<String> {
+        build_rdp_args(&conn(name, false), "h", 3389, None, opts(), None)
+            .unwrap()
+            .into_iter()
+            .find_map(|a| a.strip_prefix("/title:").map(str::to_string))
+    }
+
+    fn enter_workspace(name: &str) -> crate::workspace::EnteredWorkspace {
+        crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse("kunde-a").unwrap(),
+            name: name.to_string(),
+            legacy_keys: false,
+        })
+    }
+
+    #[test]
+    fn per_process_rdp_title_without_a_workspace_is_the_connection_name() {
+        assert_eq!(title_of("Web 01").as_deref(), Some("Web 01"));
+        assert_eq!(title_of(";$").as_deref(), None, "nothing left, no title");
+    }
+
+    #[test]
+    fn per_process_rdp_title_starts_with_the_workspace_name() {
+        let _workspace = enter_workspace("Kunde A");
+        assert_eq!(title_of("Web 01").as_deref(), Some("[Kunde A] Web 01"));
+        assert_eq!(
+            title_of(";$").as_deref(),
+            Some("[Kunde A]"),
+            "the workspace alone still names the window"
+        );
+    }
+
+    #[test]
+    fn per_process_rdp_title_sanitizes_the_workspace_name_before_the_brackets() {
+        // A bracket in either name would let it forge the prefix of another workspace.
+        let _workspace = enter_workspace("Kunde] [B; $x");
+        assert_eq!(
+            title_of("[Kunde C] Web").as_deref(),
+            Some("[Kunde B x] Kunde C Web")
+        );
+    }
+
+    // A name of only emoji or symbols leaves nothing after sanitizing; the windows of two such
+    // workspaces still tell apart by the id.
+    #[test]
+    fn per_process_rdp_title_without_a_sanitized_workspace_name_takes_the_workspace_id() {
+        let _workspace = enter_workspace("🚀 ;$");
+        assert_eq!(title_of("Web 01").as_deref(), Some("[kunde-a] Web 01"));
+        assert_eq!(title_of(";$").as_deref(), Some("[kunde-a]"));
     }
 
     #[test]

@@ -15,7 +15,8 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
   - In single mode: tree is grouped by tags
   - In grouped mode: list is grouped by host/IP, tree is grouped by tags (with host groups inside)
 - **Tags + search** for fast filtering
-- **Sync mode**: load connections from a remote **HTTPS JSON** on startup and on a schedule
+- **Workspaces**: several servers, sync sources and sets of local connections side by side, each in a window and process of its own; a picker on start opens them
+- **Sync workspaces**: load connections from a remote **HTTPS JSON** on startup and on a schedule
 - **Secure by design**: passwords are **not stored by default** (optional per-device storage)
 - **Localization**: German + English, auto-detected on first start (changeable later)
 - **AdminCave design**: monochrome, dark-first theme with an equivalent light mode (toggle in the sidebar footer), bundled Geist font
@@ -39,17 +40,24 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 - **Passwords are not saved by default**. Optional per-device storage uses the OS keychain/credential store.
 - Password storage is currently **RDP-only**. SSH uses keys and does not store passwords; Web connections do not have password fields.
 - On Linux RDP, the password dialog is shown in-app and passed to FreeRDP via **stdin**.
-- On Windows RDP, stored credentials are written to the Windows Credential Manager and used by `mstsc`.
+- On Windows RDP, a stored password lives in the Windows Credential Manager in the app's namespace, per workspace and connection. For a start the app writes `TERMSRV/<address>` for this logon session only, which `mstsc` reads, and removes it 60 s later (not yet verified with `mstsc` on Windows).
 - Local data files are written with **0600 permissions** on Unix systems.
 
 ## Data & settings
 
 The app stores data in the OS-specific *app data directory*:
 
-- `connections.json`
-- `settings.json`
+- `prefs.json` — the settings of all workspaces on this device
+- `workspaces.json` — the list of workspaces
+- `workspaces/<id>/workspace.json` — kind, name, colour, URL and the settings of one workspace
+- `workspaces/<id>/connections.json` (server/sync cache) or `connections.local.json` (local connections)
+- `port-registry.json` — the local ports of the tunnel visitors of all workspaces
 
-You can find the folder by searching for those filenames on your system.
+The files from before workspaces (`settings.json`, `connections*.json`) stay where they were after the move into
+workspaces; a `settings.json` that cannot be read is set aside as `settings.json.unreadable-<time>` and **Standard**
+starts as a local workspace (see [Troubleshooting](docs/en/admin/troubleshooting.html#unreadable-settings)). Each
+process writes its own log: `adminhelper.log` (launcher), `adminhelper-<id>.log` (workspace). You can find the folder
+by searching for `workspaces.json` on your system.
 
 ### Sync format (HTTPS JSON)
 
@@ -79,23 +87,40 @@ Notes:
 - `kind` = `ssh` | `rdp` | `web`
 - `trustCert` only affects RDP
 - Sync requires **https://** URLs
-- In **Sync mode**, editing/creating/deleting connections is disabled
+- In a **Sync workspace**, editing/creating/deleting connections is disabled
 - Passwords are **never** included in sync data
 
 ### Settings
 
-- **Mode**: Local, Sync, or Server
-- **Sync URL** and **interval** (Sync mode only)
-- **Server URL** (Server mode only)
-- **Language**: German/English
-- **Store passwords locally**: Optional, per-device, OS keychain (RDP only)
-- **RDP scaling mode**: `auto`, `normal`, `hdpi`
+- **This workspace**: name, colour and URL (shown; the workspace list changes them while the workspace is closed),
+  sign-out, self-signed certificates and the pinned certificate, device identity and enrollment token, browser
+  certificate, notification rules, and the **interval** of a sync workspace
+- **All workspaces on this device**: **language** (German/English), **store passwords locally** (optional, OS
+  keychain, RDP only), RDP options (**scaling mode** `auto`, `normal`, `hdpi`, window, performance), OS notifications,
+  diagnostics
 
-### Server mode (JWT + Tunnel)
+### Workspaces
 
-In **Server mode**, the client connects to an AdminHelper server with JWT authentication:
+A workspace has a fixed kind (**Server**, **Sync** or **Local**), a name, a colour and, for Server and Sync, a URL.
+Starting `adminhelper` opens the **launcher**: a picker with all workspaces, the one used last preselected (Enter
+opens it). There you create workspaces, and edit or delete a closed one; once the workspace runs, the launcher closes,
+and **Workspaces…** in the window brings it back. Each workspace runs in a window and process of its own, with its
+own sign-in, tunnel, device identity, stored RDP passwords and connections (the migrated workspaces share the keyring
+entries from before); one workspace never runs twice, and a second start of the app opens the launcher. The window
+title, a chip at the top of the sidebar, a colour stripe, confirmations, OS notifications (`[<name>] …`) and, on
+Linux, the RDP window title name the workspace. Deleting a server workspace first revokes its device at the server;
+deleting a local one loses its connections.
 
-1. Set mode to **Server** in settings, enter the server URL
+On the first start of this version the data so far moves into the workspace **Standard** in the previous mode; local
+connections, a sync URL or a server URL the previous mode left unused become the workspaces **Lokal**, **Sync** and
+**Server** beside it. They share the keyring entries from before among themselves, so stored passwords and the device
+identity stay usable.
+
+### Server workspace (JWT + Tunnel)
+
+In a **server workspace**, the client connects to an AdminHelper server with JWT authentication:
+
+1. Create a **Server** workspace with the server URL in the picker and open it
 2. Login with username/password — the session stays in the client's memory; no token in the OS keyring or in the UI
 3. Connections are loaded from the server API
 4. **frpc** starts automatically as a visitor to establish STCP/HTTPS tunnels
@@ -106,7 +131,11 @@ In **Server mode**, the client connects to an AdminHelper server with JWT authen
 6. A tunnel indicator in the sidebar shows connection status
 7. Cards show a green **"via Tunnel"** badge for tunneled connections
 
-In Server mode you sign in with your password on every start; server URL and username are pre-filled. While the app runs, the client renews the session by itself; if that fails, it returns to the login screen with the notice "Session expired". Local and Sync modes remain fully functional.
+In a server workspace you sign in with your password every time you open it; the server URL is the workspace's and the username is pre-filled. A user of one installation signs in in one workspace only. While the workspace runs, the client renews the session by itself; if that fails, it returns to the login screen with the notice "Session expired". Sync and local workspaces need no sign-in.
+
+The desktop refuses a connection to a loopback address (`127.0.0.1`, `localhost`, …) whose port the port map gives
+the tunnel of another workspace; start the tunnel of this workspace instead. The developer docs name the limits of
+this check.
 
 ---
 
@@ -118,7 +147,7 @@ The optional **AdminHelper Server** enables centralized management and shared ac
 
 - **Web admin panel** for instance administration: users, API keys, hooks, FRP server config
 - **Desktop client** as the operational cockpit: server inventory, connections, FRP tunnels,
-  monitoring and Ansible are all managed there in server mode
+  monitoring and Ansible are all managed there in a server workspace
 - **User roles**: Admin (full access) and User (scoped server access via the desktop client)
 - **API keys** for programmatic access and client sync
 - **JWT authentication** with refresh-token mechanism
@@ -142,7 +171,7 @@ curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/
 ```
 
 It prints the admin login and an **enrollment token**. Redeem the token in the
-desktop client under *"Enroll this device with a token"* (server URL + token) — the client
+desktop client in a server workspace under *"Enroll this device with a token"* (server URL + token) — the client
 generates its mTLS cert **on-device** — then log in normally; export the browser
 `.p12` afterwards from the desktop. Flags: `--admin-password … --yes`
 (non-interactive), `--permissive` (opt out of enforced mTLS). Updates:
@@ -217,10 +246,15 @@ File-based server data is stored in the `./data/` directory in the project root 
 ### Configuring client sync
 
 1. In the server web interface: create an API key with the **"Read-only"** permission
-2. In the desktop client: Settings → Mode: **Sync** → URL:
+2. In the desktop client: create a **Sync** workspace in the picker with the URL:
    ```
    https://<server>/api/connections?api_key=<key>
    ```
+
+A sync workspace presents no device certificate. Against an installation that enforces mTLS (the default of
+`install.sh`) the sync therefore fails in the TLS handshake: for your own installation take a **Server** workspace
+there, which loads the same connections after the sign-in. A sync workspace against your own installation works only
+without enforced mTLS (`--permissive`, `MTLS_ENFORCE=false`).
 
 ### Server API
 
@@ -366,7 +400,7 @@ The integrated **Ansible management** enables playbook management and local exec
 
 ### Features
 
-- **Playbook CRUD** in the desktop client (server mode, admin)
+- **Playbook CRUD** in the desktop client (server workspace, admin)
 - **YAML validation** on creating and editing
 - **Tag-based filtering** and search
 - **Run workflow** in the desktop client with a 3-step flow:

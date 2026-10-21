@@ -7,6 +7,7 @@ import {
   getIntervalMinutes,
   getSettingsDefaults,
   validateSettings,
+  validateWindowSettings,
   RDP_CUSTOM_SIZE_PATTERN,
 } from './settings';
 
@@ -69,6 +70,32 @@ describe('validateSettings', () => {
     );
     expect(
       validateSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: '1920x1080' }).ok,
+    ).toBe(true);
+  });
+});
+
+// The settings of a workspace window edit neither its kind nor its URL (R-0431).
+describe('validateWindowSettings', () => {
+  const base = getSettingsDefaults();
+
+  it('takes no URL for an input: a workspace without one, or with any, passes', () => {
+    for (const serverUrl of [null, '', 'http://evil.example']) {
+      expect(validateWindowSettings({ ...base, mode: 'server', serverUrl }).ok).toBe(true);
+    }
+    for (const url of [null, '', 'http://x']) {
+      expect(validateWindowSettings({ ...base, mode: 'sync', url }).ok).toBe(true);
+    }
+  });
+
+  it('checks the interval of a sync workspace and the custom RDP size', () => {
+    expect(validateWindowSettings({ ...base, mode: 'sync', intervalMinutes: Number.NaN }).ok).toBe(
+      false,
+    );
+    expect(
+      validateWindowSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: 'foo' }).ok,
+    ).toBe(false);
+    expect(
+      validateWindowSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: '1920x1080' }).ok,
     ).toBe(true);
   });
 });

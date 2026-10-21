@@ -14,6 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     saveSettings,
     logoutAndReload,
   } from '$lib/stores/settings';
+  import { context, reloadContextForUrl } from '$lib/stores/workspace';
   import { t, currentLocale } from '$lib/i18n';
   import {
     resetServerCertPin,
@@ -37,7 +38,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type {
     DeviceIdentity,
     Settings,
-    SyncMode,
     RdpWindowMode,
     RdpPerformanceProfile,
     RdpScalingMode,
@@ -45,8 +45,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { ensureNotificationPermission } from '$lib/osNotify';
   import NotificationPrefs from './NotificationPrefs.svelte';
 
-  let mode = $state<SyncMode>('local');
-  let url = $state('');
+  // The kind of the workspace of this window: fixed, as are its name, colour and URL, which the
+  // workspace list changes while the workspace is closed.
+  let mode = $derived($settings?.mode ?? 'local');
+  // Null only when the context of this window did not load.
+  let workspace = $derived($context?.workspace ?? null);
+  // Where a reset goes: the server signed in to, else the URL of the workspace as the window
+  // shows it (Rust takes it for the one it keeps). Never the URL in the settings: after a save
+  // Rust refused (a device identity, but no URL) they have none, and the reset is the way out.
+  let resetTarget = $derived($session?.serverUrl ?? workspace?.url ?? '');
   let intervalMinutes = $state(1);
   let language = $state<'de' | 'en'>('de');
   let storePasswords = $state(false);
@@ -55,7 +62,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpWindowMode = $state<RdpWindowMode>('fit');
   let rdpCustomSize = $state('1920x1080');
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>('auto');
-  let serverUrl = $state('');
   let osNotifications = $state(false);
   let pinResetMsgKey = $state('');
   let deviceEnrolled = $state(false);
@@ -82,8 +88,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   $effect(() => {
     if (!$settingsModalOpen) return;
     const s = $settings ?? getSettingsDefaults();
-    mode = s.mode;
-    url = s.url ?? '';
     intervalMinutes = getIntervalMinutes(s);
     language = s.language === 'en' ? 'en' : 'de';
     storePasswords = Boolean(s.storePasswords);
@@ -92,7 +96,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdpWindowMode = s.rdpWindowMode ?? 'fit';
     rdpCustomSize = s.rdpCustomSize ?? '1920x1080';
     rdpPerformanceProfile = s.rdpPerformanceProfile ?? 'auto';
-    serverUrl = s.serverUrl ?? '';
     osNotifications = Boolean(s.osNotifications);
     pinResetMsgKey = '';
     deviceResetMsgKey = '';
@@ -152,7 +155,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   async function onResetPin(): Promise<void> {
-    const target = (mode === 'sync' ? url : serverUrl).trim();
+    const target = resetTarget;
     if (!target) {
       pinResetMsgKey = 'settings.resetCertPin.missingUrl';
       return;
@@ -169,7 +172,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onResetDeviceIdentity(): Promise<void> {
-    const target = (mode === 'sync' ? url : serverUrl).trim();
+    const target = resetTarget;
     if (!target) {
       deviceResetMsgKey = 'settings.resetCertPin.missingUrl';
       return;
@@ -214,6 +217,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     } finally {
       enrollBusy = false;
     }
+    // A workspace without a URL took the one it registered at: the settings show it from now on.
+    await reloadContextForUrl();
     // frpc reads the identity only when it starts (export_identity). After a reset
     // it may still run on the old identity — the reset clears the keyring, not the
     // process — and a start next to it fails ("frpc laeuft bereits"). Stopping is a
@@ -267,12 +272,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onSave(): Promise<void> {
-    // Rust writes settings.json whole: a field this dialog does not edit (lastUsername)
-    // has to come from the current settings, or saving drops it.
+    // Rust writes the fields of the workspace whole: one this dialog does not edit
+    // (lastUsername) has to come from the current settings, or saving drops it. The kind and
+    // the URL go back as they came.
     const next: Settings = {
-      ...$settings,
-      mode,
-      url: url.trim(),
+      ...($settings ?? getSettingsDefaults()),
       intervalMinutes,
       language,
       storePasswords,
@@ -281,7 +285,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
       rdpWindowMode,
       rdpCustomSize: rdpCustomSize.trim(),
       rdpPerformanceProfile,
-      serverUrl: serverUrl.trim(),
       osNotifications,
     };
     await saveSettings(next);
@@ -346,257 +349,242 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button class="btn ghost small" onclick={closeSettings}>{$t('editor.close')}</button>
       </div>
 
-      <div class="sm-section">
-        <div class="sm-section-title">{$t('settings.section.mode')}</div>
-        <div class="sm-radio-group">
-          <label class="sm-radio">
-            <input
-              type="radio"
-              name="syncMode"
-              value="local"
-              checked={mode === 'local'}
-              onchange={() => (mode = 'local')}
-            />
-            <span>{$t('settings.mode.local')}</span>
-          </label>
-          <label class="sm-radio">
-            <input
-              type="radio"
-              name="syncMode"
-              value="sync"
-              checked={mode === 'sync'}
-              onchange={() => (mode = 'sync')}
-            />
-            <span>{$t('settings.mode.syncLabel')}</span>
-          </label>
-          <label class="sm-radio">
-            <input
-              type="radio"
-              name="syncMode"
-              value="server"
-              checked={mode === 'server'}
-              onchange={() => (mode = 'server')}
-            />
-            <span>{$t('settings.mode.server')}</span>
-          </label>
-        </div>
-      </div>
-
-      {#if mode === 'sync'}
-        <label class="field">
-          <span class="field-label">{$t('settings.syncUrl')}</span>
-          <input type="url" bind:value={url} placeholder={$t('settings.syncUrl.placeholder')} />
-        </label>
-        <label class="field">
-          <span class="field-label">{$t('settings.interval')}</span>
-          <input type="number" min="1" max="1440" bind:value={intervalMinutes} />
-        </label>
-      {:else if mode === 'server'}
-        <label class="field">
-          <span class="field-label">{$t('settings.serverUrl')}</span>
-          <input
-            type="url"
-            bind:value={serverUrl}
-            placeholder={$t('settings.serverUrl.placeholder')}
-          />
-        </label>
-        {#if $session}
-          <div class="sm-session-row">
-            <span class="field-label">{$t('settings.loggedInAs')}</span>
-            <strong>{$session.username}</strong>
-            <button class="btn ghost small" onclick={onLogout}>{$t('settings.logout')}</button>
+      <section class="sm-group" data-group="workspace">
+        <h3 class="sm-group-title">{$t('settings.group.workspace')}</h3>
+        {#if workspace}
+          <div class="sm-workspace">
+            <span class="workspace-dot" style:background={workspace.color} aria-hidden="true"
+            ></span>
+            <strong data-testid="settings-workspace-name">{workspace.name}</strong>
           </div>
-          <div class="sm-browser-cert">
-            <span class="field-label">{$t('settings.browserCert.hint')}</span>
-            <div class="sm-browser-cert-row">
-              <input
-                type="password"
-                data-action="browser-cert-password"
-                bind:value={browserCertPassword}
-                placeholder={$t('settings.browserCert.passwordPlaceholder')}
-              />
-              <button
-                class="btn ghost small"
-                data-action="browser-cert-export"
-                onclick={onExportBrowserCert}
-                disabled={browserCertBusy}
+          {#if mode !== 'local'}
+            <div class="field">
+              <span class="field-label"
+                >{$t(mode === 'sync' ? 'settings.syncUrl' : 'settings.serverUrl')}</span
               >
-                {$t('settings.browserCert.export')}
-              </button>
-            </div>
-            {#if browserCertMsg}<span class="sm-browser-cert-msg">{browserCertMsg}</span>{/if}
-          </div>
-        {/if}
-      {/if}
-
-      {#if mode === 'sync' || mode === 'server'}
-        <!-- TLS trust applies to BOTH remote modes: server-mode login/enrollment
-             reads this setting too, so it must not hide in the sync branch (the
-             bootstrap against the standard own-PKI install depends on it). -->
-        <label class="field checkbox">
-          <input type="checkbox" bind:checked={allowSelfSignedCerts} />
-          <span>{$t('settings.allowSelfSigned')}</span>
-        </label>
-        <div class="sm-reset-pin">
-          <button class="btn ghost small" onclick={onResetPin}>{$t('settings.resetCertPin')}</button
-          >
-          <span class="field-label">{$t('settings.resetCertPin.hint')}</span>
-          {#if pinResetMsgKey}<span class="sm-reset-msg">{$t(pinResetMsgKey)}</span>{/if}
-        </div>
-      {/if}
-
-      <!-- With a session only: the radio above may say "server" before anyone signed
-           in, and an enrollment then had no session URL and no tunnel to start. -->
-      {#if mode === 'server' && $session}
-        {#if deviceEnrolled}
-          <!-- One inline sentence, not a flex row: a gap would tear the comma off the name. -->
-          {#if identityLine}
-            <div
-              class="sm-identity-row"
-              data-msg="device-identity"
-              data-state={identityLine.status}
-            >
-              {#if identityLine.status === 'unreadable'}
-                {$t('settings.deviceIdentity.unreadable')}
-              {:else if identityLine.status === 'expired'}
-                {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>,
-                {$t('settings.deviceIdentity.expired', { date: identityLine.date })}
-              {:else}
-                {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>
-                {$t('settings.deviceIdentity.until', {
-                  date: identityLine.date,
-                })}{#if identityLine.status === 'soon'},
-                  <span class="sm-identity-soon">{$t('settings.deviceIdentity.expiresSoon')}</span
-                  >{/if}
-              {/if}
+              <span class="sm-workspace-url" data-testid="settings-workspace-url"
+                >{workspace.url ?? $t('settings.workspace.noUrl')}</span
+              >
             </div>
           {/if}
+          <span class="field-label"
+            >{$t(
+              mode === 'local' ? 'settings.workspace.fixedLocal' : 'settings.workspace.fixed',
+            )}</span
+          >
+        {/if}
+
+        {#if mode === 'sync'}
+          <label class="field">
+            <span class="field-label">{$t('settings.interval')}</span>
+            <input type="number" min="1" max="1440" bind:value={intervalMinutes} />
+          </label>
+        {:else if mode === 'server'}
+          {#if $session}
+            <div class="sm-session-row">
+              <span class="field-label">{$t('settings.loggedInAs')}</span>
+              <strong>{$session.username}</strong>
+              <button class="btn ghost small" onclick={onLogout}>{$t('settings.logout')}</button>
+            </div>
+            <div class="sm-browser-cert">
+              <span class="field-label">{$t('settings.browserCert.hint')}</span>
+              <div class="sm-browser-cert-row">
+                <input
+                  type="password"
+                  data-action="browser-cert-password"
+                  bind:value={browserCertPassword}
+                  placeholder={$t('settings.browserCert.passwordPlaceholder')}
+                />
+                <button
+                  class="btn ghost small"
+                  data-action="browser-cert-export"
+                  onclick={onExportBrowserCert}
+                  disabled={browserCertBusy}
+                >
+                  {$t('settings.browserCert.export')}
+                </button>
+              </div>
+              {#if browserCertMsg}<span class="sm-browser-cert-msg">{browserCertMsg}</span>{/if}
+            </div>
+          {/if}
+        {/if}
+
+        {#if mode === 'sync' || mode === 'server'}
+          <!-- TLS trust applies to BOTH remote modes: server-mode login/enrollment
+             reads this setting too, so it must not hide in the sync branch (the
+             bootstrap against the standard own-PKI install depends on it). -->
+          <label class="field checkbox">
+            <input type="checkbox" bind:checked={allowSelfSignedCerts} />
+            <span>{$t('settings.allowSelfSigned')}</span>
+          </label>
           <div class="sm-reset-pin">
-            <button
-              class="btn ghost small danger"
-              data-action="device-reset"
-              onclick={onResetDeviceIdentity}>{$t('settings.resetDeviceId')}</button
+            <button class="btn ghost small" onclick={onResetPin}
+              >{$t('settings.resetCertPin')}</button
             >
-            <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
+            <span class="field-label">{$t('settings.resetCertPin.hint')}</span>
+            {#if pinResetMsgKey}<span class="sm-reset-msg">{$t(pinResetMsgKey)}</span>{/if}
           </div>
-        {:else}
-          <div class="sm-enroll">
-            <span class="field-label">{$t('settings.enroll.hint')}</span>
-            <div class="sm-enroll-row">
+        {/if}
+
+        <!-- With a session only: without one an enrollment has no session URL and no
+           tunnel to start. A sync workspace has no device identity (Rust refuses its reset). -->
+        {#if mode === 'server' && $session}
+          {#if deviceEnrolled}
+            <!-- One inline sentence, not a flex row: a gap would tear the comma off the name. -->
+            {#if identityLine}
+              <div
+                class="sm-identity-row"
+                data-msg="device-identity"
+                data-state={identityLine.status}
+              >
+                {#if identityLine.status === 'unreadable'}
+                  {$t('settings.deviceIdentity.unreadable')}
+                {:else if identityLine.status === 'expired'}
+                  {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>,
+                  {$t('settings.deviceIdentity.expired', { date: identityLine.date })}
+                {:else}
+                  {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>
+                  {$t('settings.deviceIdentity.until', {
+                    date: identityLine.date,
+                  })}{#if identityLine.status === 'soon'},
+                    <span class="sm-identity-soon">{$t('settings.deviceIdentity.expiresSoon')}</span
+                    >{/if}
+                {/if}
+              </div>
+            {/if}
+            <div class="sm-reset-pin">
+              <button
+                class="btn ghost small danger"
+                data-action="device-reset"
+                onclick={onResetDeviceIdentity}>{$t('settings.resetDeviceId')}</button
+              >
+              <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
+            </div>
+          {:else}
+            <div class="sm-enroll">
+              <span class="field-label">{$t('settings.enroll.hint')}</span>
+              <div class="sm-enroll-row">
+                <input
+                  type="text"
+                  data-action="enroll-token"
+                  aria-label={$t('login.enroll.token')}
+                  bind:value={enrollToken}
+                  placeholder={$t('login.enroll.token.placeholder')}
+                  autocomplete="off"
+                />
+                <button
+                  class="btn ghost small"
+                  data-action="enroll-submit"
+                  onclick={onEnroll}
+                  disabled={enrollBusy}
+                >
+                  {enrollBusy ? $t('login.enroll.working') : $t('login.enroll.submit')}
+                </button>
+              </div>
+            </div>
+          {/if}
+          <!-- Outside the two branches: the reset message used to sit in the
+             enrolled branch, which disappears the moment the reset succeeds. -->
+          {#if deviceResetMsgKey}<span class="sm-reset-msg" data-msg="device-reset"
+              >{$t(
+                deviceResetMsgKey,
+              )}{#if deviceResetLocal && deviceResetMsgKey === 'settings.resetDeviceId.done'}
+                <span data-msg="device-reset-local">{$t('settings.resetDeviceId.localOnly')}</span
+                >{/if}</span
+            >{/if}
+          {#if enrollMsg}<span class="sm-reset-msg" data-msg="enroll">{enrollMsg}</span>{/if}
+        {/if}
+
+        {#if $session}
+          <div class="sm-section">
+            <div class="sm-section-title">{$t('settings.section.notificationRules')}</div>
+            <NotificationPrefs />
+          </div>
+        {/if}
+      </section>
+
+      <section class="sm-group" data-group="device">
+        <h3 class="sm-group-title">{$t('settings.group.device')}</h3>
+
+        <div class="sm-section">
+          <div class="sm-section-title">{$t('settings.section.language')}</div>
+          <label class="field">
+            <select bind:value={language}>
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="sm-section">
+          <div class="sm-section-title">{$t('settings.section.passwords')}</div>
+          <label class="field checkbox">
+            <input type="checkbox" bind:checked={storePasswords} />
+            <span>{$t('settings.storePasswords')}</span>
+          </label>
+        </div>
+
+        <div class="sm-section">
+          <div class="sm-section-title">{$t('settings.section.rdp')}</div>
+          <label class="field">
+            <span class="field-label">{$t('settings.rdp.scaling')}</span>
+            <select bind:value={rdpScalingMode}>
+              {#each RDP_SCALING_MODES as m (m)}
+                <option value={m}>{rdpScalingLabel(m)}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">{$t('settings.rdp.windowMode')}</span>
+            <select bind:value={rdpWindowMode}>
+              {#each RDP_WINDOW_MODES as m (m)}
+                <option value={m}>{rdpWindowLabel(m)}</option>
+              {/each}
+            </select>
+          </label>
+          {#if rdpWindowMode === 'custom'}
+            <label class="field">
+              <span class="field-label">{$t('settings.rdp.customSize')}</span>
               <input
                 type="text"
-                data-action="enroll-token"
-                aria-label={$t('login.enroll.token')}
-                bind:value={enrollToken}
-                placeholder={$t('login.enroll.token.placeholder')}
-                autocomplete="off"
+                bind:value={rdpCustomSize}
+                placeholder={$t('settings.rdp.customSize.placeholder')}
               />
-              <button
-                class="btn ghost small"
-                data-action="enroll-submit"
-                onclick={onEnroll}
-                disabled={enrollBusy}
-              >
-                {enrollBusy ? $t('login.enroll.working') : $t('login.enroll.submit')}
-              </button>
-            </div>
-          </div>
-        {/if}
-        <!-- Outside the two branches: the reset message used to sit in the
-             enrolled branch, which disappears the moment the reset succeeds. -->
-        {#if deviceResetMsgKey}<span class="sm-reset-msg" data-msg="device-reset"
-            >{$t(
-              deviceResetMsgKey,
-            )}{#if deviceResetLocal && deviceResetMsgKey === 'settings.resetDeviceId.done'}
-              <span data-msg="device-reset-local">{$t('settings.resetDeviceId.localOnly')}</span
-              >{/if}</span
-          >{/if}
-        {#if enrollMsg}<span class="sm-reset-msg" data-msg="enroll">{enrollMsg}</span>{/if}
-      {/if}
-
-      <div class="sm-section">
-        <div class="sm-section-title">{$t('settings.section.language')}</div>
-        <label class="field">
-          <select bind:value={language}>
-            <option value="de">Deutsch</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="sm-section">
-        <div class="sm-section-title">{$t('settings.section.passwords')}</div>
-        <label class="field checkbox">
-          <input type="checkbox" bind:checked={storePasswords} />
-          <span>{$t('settings.storePasswords')}</span>
-        </label>
-      </div>
-
-      <div class="sm-section">
-        <div class="sm-section-title">{$t('settings.section.rdp')}</div>
-        <label class="field">
-          <span class="field-label">{$t('settings.rdp.scaling')}</span>
-          <select bind:value={rdpScalingMode}>
-            {#each RDP_SCALING_MODES as m (m)}
-              <option value={m}>{rdpScalingLabel(m)}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="field">
-          <span class="field-label">{$t('settings.rdp.windowMode')}</span>
-          <select bind:value={rdpWindowMode}>
-            {#each RDP_WINDOW_MODES as m (m)}
-              <option value={m}>{rdpWindowLabel(m)}</option>
-            {/each}
-          </select>
-        </label>
-        {#if rdpWindowMode === 'custom'}
+            </label>
+          {/if}
           <label class="field">
-            <span class="field-label">{$t('settings.rdp.customSize')}</span>
-            <input
-              type="text"
-              bind:value={rdpCustomSize}
-              placeholder={$t('settings.rdp.customSize.placeholder')}
-            />
+            <span class="field-label">{$t('settings.rdp.performance')}</span>
+            <select bind:value={rdpPerformanceProfile}>
+              {#each RDP_PERFORMANCE_PROFILES as m (m)}
+                <option value={m}>{rdpPerfLabel(m)}</option>
+              {/each}
+            </select>
           </label>
-        {/if}
-        <label class="field">
-          <span class="field-label">{$t('settings.rdp.performance')}</span>
-          <select bind:value={rdpPerformanceProfile}>
-            {#each RDP_PERFORMANCE_PROFILES as m (m)}
-              <option value={m}>{rdpPerfLabel(m)}</option>
-            {/each}
-          </select>
-        </label>
-      </div>
-
-      <div class="sm-section">
-        <div class="sm-section-title">{$t('settings.section.notifications')}</div>
-        <label class="field checkbox">
-          <input
-            type="checkbox"
-            checked={osNotifications}
-            onchange={(e) => onToggleOsNotifications(e.currentTarget.checked)}
-          />
-          <span>{$t('settings.osNotifications')}</span>
-        </label>
-        {#if $session}
-          <NotificationPrefs />
-        {:else}
-          <span class="field-label">{$t('settings.notifications.serverOnly')}</span>
-        {/if}
-      </div>
-
-      <div class="sm-section">
-        <div class="sm-section-title">{$t('settings.section.diagnostics')}</div>
-        <span class="field-label">{$t('settings.diagnostics.hint')}</span>
-        <div>
-          <button class="btn ghost small" onclick={onGenerateDiagnostics} disabled={diagBusy}>
-            {$t('settings.diagnostics.create')}
-          </button>
         </div>
-        {#if diagMsg}<span class="sm-diag-msg">{diagMsg}</span>{/if}
-      </div>
+
+        <div class="sm-section">
+          <div class="sm-section-title">{$t('settings.section.notifications')}</div>
+          <label class="field checkbox">
+            <input
+              type="checkbox"
+              checked={osNotifications}
+              onchange={(e) => onToggleOsNotifications(e.currentTarget.checked)}
+            />
+            <span>{$t('settings.osNotifications')}</span>
+          </label>
+        </div>
+
+        <div class="sm-section">
+          <div class="sm-section-title">{$t('settings.section.diagnostics')}</div>
+          <span class="field-label">{$t('settings.diagnostics.hint')}</span>
+          <div>
+            <button class="btn ghost small" onclick={onGenerateDiagnostics} disabled={diagBusy}>
+              {$t('settings.diagnostics.create')}
+            </button>
+          </div>
+          {#if diagMsg}<span class="sm-diag-msg">{diagMsg}</span>{/if}
+        </div>
+      </section>
 
       <div class="panel-actions">
         <div style="flex: 1;"></div>
@@ -656,16 +644,33 @@ SPDX-License-Identifier: GPL-3.0-or-later
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
-  .sm-radio-group {
+  .sm-group {
     display: flex;
-    gap: var(--sp-4);
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: var(--sp-3);
   }
-  .sm-radio {
+  .sm-group + .sm-group {
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
+  }
+  .sm-group-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .sm-workspace {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    cursor: pointer;
+  }
+  /* A value inside .field, whose global rule styles labels: no caps, spacing or
+     muted colour — paths and queries are case-sensitive. */
+  .sm-workspace-url {
+    font-size: 13px;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
+    word-break: break-all;
   }
   .field {
     display: flex;

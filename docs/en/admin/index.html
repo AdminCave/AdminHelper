@@ -37,7 +37,7 @@
           <div class="card-grid">
             <div class="card"><h3>Server</h3><p>FastAPI monolith with PostgreSQL 17 + Redis, per-module routers, Alembic migrations, APScheduler, hook system.</p></div>
             <div class="card"><h3>Web Panel</h3><p>Svelte 5 SPA served by the server, hash router, i18n DE/EN.</p></div>
-            <div class="card"><h3>Desktop Client</h3><p>Tauri 2 + Rust + Svelte 5, OS keyring, RDP/SSH/web launcher. In server mode it is also the operational cockpit: server inventory, connections, tunnels, monitoring, and Ansible are managed here.</p></div>
+            <div class="card"><h3>Desktop Client</h3><p>Tauri 2 + Rust + Svelte 5, OS keyring, RDP/SSH/web launcher. In a server workspace it is also the operational cockpit: server inventory, connections, tunnels, monitoring, and Ansible are managed here.</p></div>
             <div class="card"><h3>Agents</h3><p>Go-Agent (<code>apps/agent/</code>) for Linux &amp; Windows – monitoring, FRP, provisioning.</p></div>
             <div class="card"><h3>Monitoring</h3><p>Dedicated FastAPI service, VictoriaMetrics storage, agent push + scheduler pull.</p></div>
             <div class="card"><h3>FRP</h3><p>Managed mTLS PKI (10 y CA / 1 y client certs), TCP/HTTP/STCP tunnels.</p></div>
@@ -49,7 +49,7 @@
             <li><a href="./operations.html">Operations &amp; Config</a> – Environment variables, data directories, backups, logging.</li>
             <li><a href="./users.html">Users &amp; Access</a> – Roles, API keys, rate limits, audit log.</li>
             <li><a href="./agent-deployment.html">Agent Deployment</a> – Install Linux/Windows agents, provision flow.</li>
-            <li><a href="./monitoring.html">Monitoring</a> – Check types, alerts, charts (managed in the desktop client, server mode).</li>
+            <li><a href="./monitoring.html">Monitoring</a> – Check types, alerts, charts (managed in the desktop client, server workspace).</li>
             <li><a href="./frp-tunnel.html">FRP Tunnel</a> – PKI, visitor ports, certificate rotation (tunnels in the desktop client; frps server config in the web panel).</li>
             <li><a href="./ansible.html">Ansible</a> – Playbook management and local execution (in the desktop client).</li>
             <li><a href="./troubleshooting.html">Troubleshooting</a> – Structured error diagnosis.</li>
@@ -60,10 +60,21 @@
             <div>
               <div class="callout-title">Web admin panel vs. desktop client (since v0.32.0)</div>
               <p>
-                Operational management has moved into the <strong>desktop client</strong>: server inventory, connections, FRP tunnels, monitoring checks, and Ansible playbooks are maintained in the server-centric <em>"Infrastructure"</em> hub (server mode only). The <strong>web admin panel</strong> is now pure instance management: users (the default page after login), API keys, hooks, the FRP <em>server</em> configuration, and login. The user&harr;server assignment stays in the web panel (in the user dialog).
+                Operational management has moved into the <strong>desktop client</strong>: server inventory, connections, FRP tunnels, monitoring checks, and Ansible playbooks are maintained in the server-centric <em>"Infrastructure"</em> hub (in a server workspace only). The <strong>web admin panel</strong> is now pure instance management: users (the default page after login), API keys, hooks, the FRP <em>server</em> configuration, and login. The user&harr;server assignment stays in the web panel (in the user dialog).
               </p>
             </div>
           </div>
+
+          <h2>Desktop client: workspaces</h2>
+          <p>The desktop client works in <strong>workspaces</strong>. A workspace has a fixed kind – <em>Server</em> (sign-in at an AdminHelper installation), <em>Sync</em> (a connection list from an HTTPS URL) or <em>Local</em> (connections on this device only) –, a name, a colour and, for Server and Sync, a URL; several per kind are allowed. Whoever looks after several installations, say those of two customers, creates a server workspace per installation and has them open side by side, without signing out or enrolling the device again. Each workspace runs in a window and process of its own, with its own sign-in, tunnel, device identity, stored RDP passwords, connections and log file (the workspaces taken over from the previous version share the keyring entries from before, see below).</p>
+          <ul>
+            <li><strong>Picker:</strong> <code>adminhelper</code> opens the launcher with the list of all workspaces (colour, name, kind, host, “open”); the one used last is preselected, Enter opens it. There you create workspaces (<em>New workspace</em>) and edit or delete closed ones; only the picker changes name, colour and URL. Once the opened workspace runs, the launcher closes, and <em>Workspaces…</em> in the window brings it back. One workspace never runs twice.</li>
+            <li><strong>Recognisable:</strong> the window title “&lt;name&gt; — AdminHelper”, a chip with a colour dot and the name at the top of the sidebar and a colour stripe at the edge of the window; confirmations, OS notifications (“[&lt;name&gt;] …”) and, on Linux, the title of the RDP window name the workspace.</li>
+            <li><strong>Sign-in per workspace:</strong> a server workspace asks for a sign-in every time it opens. The server URL is the workspace's and is fixed; the login screen shows a URL field only while the workspace has none. A user of one installation signs in in one workspace only: if another workspace has already signed in as this user at the same installation, the sign-in is refused and names that workspace. Sync and local workspaces open without a sign-in and enroll no device; for your own installation under enforced mTLS you therefore need a server workspace (see <a href="./users.html">Users &amp; Access → API keys</a>).</li>
+            <li><strong>Settings:</strong> the dialog separates <em>This workspace</em> (sign-out, certificates, device identity and token, browser certificate, notification rules, sync interval) from <em>All workspaces on this device</em> (language, passwords, RDP, OS notifications, diagnostics).</li>
+            <li><strong>Deleting</strong> works only in the picker and only while the workspace is closed; the confirmation names it. If a server workspace has a device identity, the desktop first revokes it at the server; then it deletes the data of the workspace on this device, stored RDP passwords included, for workspaces taken over (see below) only with the last of them, as they share the keys. If the server does not revoke it, for example because it cannot be reached, the picker reports “On this device only”, and the device stays valid at the server until an administrator revokes it (see <a href="./users.html">Users &amp; Access → Devices and revocation</a>). Deleting a local workspace loses its connections for good.</li>
+          </ul>
+          <p>The first start after the update creates the workspace “Standard” in the previous mode from the data so far; local connections, a sync URL or a server URL the previous mode left unused become “Lokal”, “Sync” and “Server” beside it. These workspaces taken over share the entries in the system keyring from before, so stored RDP passwords and a device identity stay usable. Without data from before there is just “Standard” (local) at first. If the previous <code>settings.json</code> could not be read, “Standard” starts as a local workspace and the file is set aside; how to carry on is in <a href="./troubleshooting.html#unreadable-settings">Troubleshooting → Unreadable settings</a>. Technical details are in the <a href="../developer/desktop.html">Developer Guide → Desktop client</a>.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

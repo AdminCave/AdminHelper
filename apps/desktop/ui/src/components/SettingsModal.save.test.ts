@@ -49,12 +49,7 @@ vi.mock('$lib/bridge', () => {
     isDeviceEnrolled: async () => false,
     deviceIdentity: async () => null,
     saveSettings: h.saveSettings,
-    // What saving in server mode with a session does next: reload the list, ask the tunnel.
-    fetchConnectionsJwt: async () => [],
-    tunnelStatus: async () => ({ running: true }),
     apiProxy: h.apiProxy,
-    // Saving in local mode reloads the list from connections.json.
-    loadConnections: async () => [],
   };
   const passthrough = new Set(['then', '__esModule', 'default']);
   return new Proxy(
@@ -83,8 +78,6 @@ vi.mock('$lib/stores/session', async () => {
     session: readable(session),
     currentSession: () => session,
     refreshSettings: vi.fn(async () => undefined),
-    // Leaving server mode ends the session.
-    dropSession: vi.fn(async () => undefined),
   };
 });
 
@@ -140,12 +133,12 @@ describe('SettingsModal — saving keeps the fields it does not edit (R-0429)', 
   });
 });
 
-// The live spec settings-mode.live.js saved through the first `.sm-panel .btn.primary`.
-// With a session the notification prefs in the dialog have a primary button of their own,
-// ahead of the dialog's in the DOM; once they had loaded before the spec looked, the spec
-// saved the notification prefs, and the mode switch it waited for never happened.
+// A live spec saved through the first `.sm-panel .btn.primary`. With a session the
+// notification prefs in the dialog have a primary button of their own, ahead of the dialog's
+// in the DOM; once they had loaded before the spec looked, the spec saved the notification
+// prefs, and the change it waited for never happened.
 describe('SettingsModal — the dialog save has a hook of its own', () => {
-  it('switches to local through data-action="settings-save" next to the notification prefs', async () => {
+  it('saves through data-action="settings-save" next to the notification prefs', async () => {
     settingsModalOpen.set(true);
     const { container } = render(SettingsModal);
     await waitFor(() =>
@@ -154,7 +147,7 @@ describe('SettingsModal — the dialog save has a hook of its own', () => {
       ).toContain(tNow('notifPrefs.save')),
     );
 
-    await fireEvent.click(container.querySelector('.sm-panel input[value="local"]')!);
+    await fireEvent.change(languageSelect(container), { target: { value: 'en' } });
     const save = container.querySelector<HTMLButtonElement>(
       '.sm-panel [data-action="settings-save"]',
     );
@@ -162,7 +155,7 @@ describe('SettingsModal — the dialog save has a hook of its own', () => {
     await fireEvent.click(save!);
 
     await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
-    expect(h.saveSettings).toHaveBeenCalledWith({ ...h.stored, mode: 'local' });
+    expect(h.saveSettings).toHaveBeenCalledWith({ ...h.stored, language: 'en' });
     expect(h.apiProxy).not.toHaveBeenCalledWith('PUT', expect.anything(), expect.anything());
   });
 });

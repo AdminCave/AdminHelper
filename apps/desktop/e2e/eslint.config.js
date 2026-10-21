@@ -28,4 +28,14 @@ export default [
       },
     },
   },
+  {
+    // The multiremote sessions of wdio.workspaces.conf.js, globals only in its specs.
+    files: ['test/specs/**/*.workspaces.js'],
+    languageOptions: {
+      globals: {
+        wsA: 'readonly',
+        wsB: 'readonly',
+      },
+    },
+  },
 ];

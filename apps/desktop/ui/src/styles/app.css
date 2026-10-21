@@ -160,6 +160,11 @@ body {
   --sidebar-width: 64px;
 }
 
+/* The window of a workspace carries its colour along the top edge (R-0431). */
+.app-shell.workspace-stripe {
+  border-top: 4px solid var(--workspace-color);
+}
+
 /* ── Sidebar ───────────────────────────────────────────────────────── */
 .sidebar {
   grid-row: 1 / -1;
@@ -278,16 +283,41 @@ body {
   white-space: nowrap;
 }
 
-.sidebar-badge {
-  margin-left: auto;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-bg);
-  color: var(--accent);
-  border: 1px solid rgba(77, 159, 255, 0.2);
+/* Workspace chip: the workspace of this window; a click brings up the launcher. */
+.workspace-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) var(--sp-2) 0;
+  padding: 6px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: var(--font);
+  text-align: left;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.workspace-chip:hover {
+  background: var(--hover);
+  border-color: var(--border-hover);
+}
+
+.workspace-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.workspace-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -343,7 +373,7 @@ body {
 
 .app-shell.sidebar-collapsed .sidebar-brand-text,
 .app-shell.sidebar-collapsed .sidebar-label,
-.app-shell.sidebar-collapsed .sidebar-badge,
+.app-shell.sidebar-collapsed .workspace-chip-name,
 .app-shell.sidebar-collapsed .sidebar-version,
 .app-shell.sidebar-collapsed .tunnel-label {
   display: none;
@@ -357,6 +387,12 @@ body {
 .app-shell.sidebar-collapsed .sidebar-item {
   justify-content: center;
   padding: 10px;
+}
+
+.app-shell.sidebar-collapsed .workspace-chip {
+  justify-content: center;
+  margin: var(--sp-3) var(--sp-1) 0;
+  padding: 6px;
 }
 
 .app-shell.sidebar-collapsed .sidebar-item.active::before {

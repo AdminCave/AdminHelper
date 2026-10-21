@@ -2,12 +2,16 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::net::{Ipv4Addr, Ipv6Addr};
+
 use serde::{Deserialize, Serialize};
+use url::{Host, Url};
 
 use crate::auth;
 use crate::error::AppError;
 use crate::models::{Connection, ConnectionKind, VisitorBinding};
 use crate::session::SessionState;
+use crate::validation::validate_web_url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -158,6 +162,182 @@ fn to_visitor(connection: &mut Connection, local_port: u16, web: bool) {
     connection.port = Some(local_port);
     if web {
         connection.url = Some(format!("http://127.0.0.1:{local_port}"));
+    }
+}
+
+/// Rejects `connection` if it goes to this machine at a port of another workspace's tunnel:
+/// `others` are the local ports the port map gives the visitors of the other workspaces
+/// (`PortRegistry::local_ports_of_others`), `bindings` where the visitors of this workspace's
+/// frpc listen. Without a frpc of its own, a target at `127.0.0.1:<server port>` would reach the
+/// frpc of another workspace and through it a machine of another server. A port a visitor of
+/// this workspace listens on is its own. The target is the host at its port as the starter takes
+/// them (see [`host_targets`]), for a web connection also its URL. A host the check cannot read
+/// may name this machine at any port, so it is refused while the map holds a port of another
+/// workspace.
+///
+/// Every port of the map counts, so through the visitors it sends, a server can also keep the
+/// connections of another workspace from a loopback port that is no tunnel of anyone. That fails
+/// safe: a refusal, never a connection elsewhere.
+pub fn reject_foreign_port(
+    connection: &Connection,
+    others: &[u16],
+    bindings: &[VisitorBinding],
+) -> Result<(), AppError> {
+    let at_url = connection
+        .url
+        .as_deref()
+        .filter(|_| connection.kind == ConnectionKind::Web)
+        // Read as the browser gets it, a URL without a scheme included.
+        .and_then(|raw| Url::parse(&validate_web_url(raw).ok()?).ok())
+        .and_then(|url| {
+            let loopback = url.host().is_some_and(|host| is_loopback(&host));
+            loopback.then_some(Loopback::At(url.port_or_known_default()?))
+        });
+    let own = |port: u16| bindings.iter().any(|binding| binding.local_port == port);
+    let foreign = |port: &u16| others.contains(port) && !own(*port);
+    for target in host_targets(connection).into_iter().chain(at_url) {
+        match target {
+            Loopback::At(port) if foreign(&port) => {
+                return Err(AppError::Connection(format!(
+                    "port {port} on this machine belongs to the tunnel of another workspace; \
+                     start the tunnel of this workspace to connect"
+                )))
+            }
+            // Its own tunnel would not help: no port of it is in `others`.
+            Loopback::Unread if others.iter().any(foreign) => {
+                return Err(AppError::Connection(
+                    "the host of this connection cannot be read and may lead to the tunnel of \
+                     another workspace on this machine; write the host as a name or an address, \
+                     and the user and the port in their own fields"
+                        .to_string(),
+                ))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Where a target reaches this machine.
+enum Loopback {
+    At(u16),
+    /// A host the check cannot read: it may name this machine, at a port it carries itself.
+    Unread,
+}
+
+/// Where the host of `connection` reaches this machine, as the starter takes host and port:
+/// without a port, the one `ssh` and `rdp` take. Empty without a host, for another machine, and
+/// for a web connection's host without a port.
+///
+/// `ssh` reads a destination `ssh://…` itself, and the port in it counts unless `-p` names
+/// another (`ssh.rs` passes `-p` only for a port other than 22); any other destination it splits
+/// at the last `@`, the host being what follows. An RDP host may carry a port, `host:port` or
+/// `[IPv6 address]:port`.
+fn host_targets(connection: &Connection) -> Vec<Loopback> {
+    let Some(host) = connection
+        .host
+        .as_deref()
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+    else {
+        return Vec::new();
+    };
+    let at = |host: &str, ports: &[u16]| match host_is_loopback(host) {
+        Some(true) => ports.iter().map(|&port| Loopback::At(port)).collect(),
+        Some(false) => Vec::new(),
+        None => vec![Loopback::Unread],
+    };
+    match connection.kind {
+        // Only a lower-case `ssh://` is a URI to OpenSSH; no other spelling reads as a host.
+        ConnectionKind::Ssh if host.starts_with("ssh://") => match ssh_uri(host) {
+            Some((host, uri_port)) => {
+                let port = match connection.port {
+                    Some(port) if port != 22 => port,
+                    _ => uri_port.unwrap_or(22),
+                };
+                at(host, &[port])
+            }
+            None => vec![Loopback::Unread],
+        },
+        ConnectionKind::Ssh => {
+            let host = host.rsplit_once('@').map_or(host, |(_user, host)| host);
+            at(host, &[connection.port.unwrap_or(22)])
+        }
+        ConnectionKind::Rdp => {
+            let port = connection.port.unwrap_or(3389);
+            match (host_is_loopback(host), rdp_host_port(host)) {
+                // Not verified which of the two ports FreeRDP (`/v:host:port:port`) or mstsc
+                // (`full address:s:host:port:port`) takes, so both count.
+                (None, Some((host, in_host))) => at(host, &[in_host, port]),
+                _ => at(host, &[port]),
+            }
+        }
+        ConnectionKind::Web => at(host, connection.port.as_slice()),
+    }
+}
+
+/// Host and port of an RDP host `host:port` or `[IPv6 address]:port`; an IPv6 address carries a
+/// port only in brackets.
+pub(crate) fn rdp_host_port(host: &str) -> Option<(&str, u16)> {
+    let (host, port) = match host.strip_prefix('[') {
+        Some(bracketed) => {
+            let (address, rest) = bracketed.split_once(']')?;
+            (address, rest.strip_prefix(':')?)
+        }
+        None => host.split_once(':')?,
+    };
+    Some((host, port.parse().ok()?))
+}
+
+/// Host and port of an OpenSSH destination `ssh://[user[;params]@]host[:port][/]`, split as
+/// OpenSSH's `parse_uri` splits it: the user up to the first `@`, then a host in brackets or up
+/// to the first `:` or `/`. `None` for what it reads otherwise or refuses (a path, a port by
+/// service name such as `x11`).
+fn ssh_uri(destination: &str) -> Option<(&str, Option<u16>)> {
+    let rest = destination.strip_prefix("ssh://")?;
+    let rest = rest.split_once('@').map_or(rest, |(_, host)| host);
+    let (host, tail) = match rest.strip_prefix('[') {
+        Some(bracketed) => bracketed.split_once(']')?,
+        None => rest.split_at(rest.find([':', '/']).unwrap_or(rest.len())),
+    };
+    let port = match tail.strip_prefix(':') {
+        Some(port) => {
+            let port = port.strip_suffix('/').unwrap_or(port);
+            match port {
+                "" => None,
+                _ => Some(port.parse::<u16>().ok().filter(|&port| port > 0)?),
+            }
+        }
+        None if tail.is_empty() || tail == "/" => None,
+        None => return None,
+    };
+    Some((host, port))
+}
+
+/// Whether the host of a connection, as `ssh`, `xfreerdp` or `mstsc` take it, names this
+/// machine; `None` if the check cannot read it. The URL host parser reads IPv4 in the forms the
+/// system resolver takes as well (`127.1`, `0x7f.0.0.1`, `2130706433`). It reads no IPv6 zone
+/// (`fe80::1%eth0`), nor a user or a port in the host.
+pub(crate) fn host_is_loopback(host: &str) -> Option<bool> {
+    if let Ok(ip) = host.parse::<Ipv6Addr>() {
+        return Some(is_loopback(&Host::<&str>::Ipv6(ip)));
+    }
+    Host::parse(host).ok().map(|host| is_loopback(&host))
+}
+
+/// `127.0.0.0/8`, `::1` and `localhost`, and what reaches this machine as well: `0.0.0.0` and
+/// `::`, IPv4 mapped into IPv6, and the names under `localhost` that some resolvers map to it.
+fn is_loopback<S: AsRef<str>>(host: &Host<S>) -> bool {
+    let v4 = |ip: Ipv4Addr| ip.is_loopback() || ip.is_unspecified();
+    match host {
+        Host::Ipv4(ip) => v4(*ip),
+        Host::Ipv6(ip) => {
+            ip.is_loopback() || ip.is_unspecified() || ip.to_ipv4_mapped().is_some_and(v4)
+        }
+        Host::Domain(name) => {
+            let name = name.as_ref().trim_end_matches('.').to_ascii_lowercase();
+            name == "localhost" || name.ends_with(".localhost")
+        }
     }
 }
 
@@ -488,6 +668,285 @@ mod tests {
             let resolved = resolve_connection(conn, &tunnels, bindings);
             assert_eq!(json(&resolved.connection), json(conn), "{case}");
         }
+    }
+
+    /// The local ports the port map gives the visitors of other workspaces in the tests below.
+    const OTHERS: [u16; 2] = [6000, 23010];
+
+    /// The refusal of a target at `port`.
+    fn refusal(port: u16) -> String {
+        format!(
+            "port {port} on this machine belongs to the tunnel of another workspace; start the \
+             tunnel of this workspace to connect"
+        )
+    }
+
+    /// A web connection that opens `url`.
+    fn web(url: &str) -> Connection {
+        Connection {
+            kind: ConnectionKind::Web,
+            host: None,
+            port: None,
+            url: Some(url.to_string()),
+            ..connection("web")
+        }
+    }
+
+    #[test]
+    fn foreign_port_on_loopback_without_an_own_binding_is_refused() {
+        let ssh = |host: &str, port: u16| literal(ConnectionKind::Ssh, host, port);
+        for (case, conn, port) in [
+            ("127.0.0.1", ssh("127.0.0.1", 6000), 6000),
+            ("127.0.0.0/8", ssh("127.0.0.2", 23010), 23010),
+            ("localhost", ssh("localhost", 6000), 6000),
+            ("LOCALHOST.", ssh("LOCALHOST.", 6000), 6000),
+            ("a name under localhost", ssh("db.localhost", 6000), 6000),
+            ("::1", ssh("::1", 6000), 6000),
+            ("[::1]", ssh("[::1]", 6000), 6000),
+            ("127.1", ssh("127.1", 6000), 6000),
+            ("hex", ssh("0x7f.0.0.1", 6000), 6000),
+            ("decimal", ssh("2130706433", 6000), 6000),
+            ("0.0.0.0", ssh("0.0.0.0", 6000), 6000),
+            ("IPv4 mapped", ssh("::ffff:127.0.0.1", 6000), 6000),
+            ("padded", ssh(" 127.0.0.1 ", 6000), 6000),
+            // ssh takes the host from after the last `@`.
+            ("a user in the host", ssh("root@127.0.0.1", 6000), 6000),
+            (
+                "an IPv6 zone in the user",
+                ssh("fe80::1%@127.0.0.1", 6000),
+                6000,
+            ),
+            (
+                "rdp, a port in the host",
+                literal(ConnectionKind::Rdp, "127.0.0.1:6000", 3389),
+                6000,
+            ),
+            (
+                "rdp, a port in the host of an IPv6 address",
+                literal(ConnectionKind::Rdp, "[::1]:6000", 3389),
+                6000,
+            ),
+            (
+                "rdp, the port field next to a port in the host",
+                literal(ConnectionKind::Rdp, "localhost:3390", 23010),
+                23010,
+            ),
+            (
+                "rdp",
+                literal(ConnectionKind::Rdp, "127.0.0.1", 23010),
+                23010,
+            ),
+            (
+                "web without a URL yet",
+                literal(ConnectionKind::Web, "127.0.0.1", 6000),
+                6000,
+            ),
+        ] {
+            let refused = reject_foreign_port(&conn, &OTHERS, &[]);
+            assert_eq!(
+                refused.map_err(|e| e.to_string()),
+                Err(refusal(port)),
+                "{case}"
+            );
+        }
+
+        // Without a port, the target is at the one `rdp` takes.
+        let rdp = Connection {
+            port: None,
+            ..literal(ConnectionKind::Rdp, "localhost", 3389)
+        };
+        let refused = reject_foreign_port(&rdp, &[3389], &[]);
+        assert_eq!(refused.map_err(|e| e.to_string()), Err(refusal(3389)));
+    }
+
+    /// The refusal of a host the check cannot read.
+    const UNREAD: &str = "the host of this connection cannot be read and may lead to the tunnel \
+                          of another workspace on this machine; write the host as a name or an \
+                          address, and the user and the port in their own fields";
+
+    #[test]
+    fn foreign_port_in_an_ssh_uri_is_refused() {
+        // OpenSSH reads a destination `ssh://` itself; its port counts unless `-p` comes, and
+        // `ssh.rs` passes `-p` only for a port other than 22.
+        let ssh = |host: &str, port: Option<u16>| Connection {
+            port,
+            ..literal(ConnectionKind::Ssh, host, 0)
+        };
+        for (host, port, refused) in [
+            ("ssh://127.0.0.1:6000", Some(22), 6000),
+            ("ssh://127.0.0.1:6000", None, 6000),
+            ("ssh://[127.0.0.1]:6000/", None, 6000),
+            ("ssh://127.0.0.1:6000/", None, 6000),
+            ("ssh://admin;opt=1@localhost:23010", None, 23010),
+            // The user ends at the first `@`.
+            ("ssh://server.internal/@127.0.0.1:6000", None, 6000),
+            ("ssh://server.internal?@127.0.0.1:6000", None, 6000),
+            // `-p` wins.
+            ("ssh://127.0.0.1:6001", Some(23010), 23010),
+        ] {
+            let case = format!("{host} at {port:?}");
+            let result = reject_foreign_port(&ssh(host, port), &OTHERS, &[]);
+            assert_eq!(
+                result.map_err(|e| e.to_string()),
+                Err(refusal(refused)),
+                "{case}"
+            );
+        }
+
+        for (host, port) in [
+            ("ssh://127.0.0.1:6000", Some(2222)),
+            ("ssh://127.0.0.1", None),
+            ("ssh://127.0.0.1:", Some(22)),
+            ("ssh://server.internal:6000", None),
+            ("ssh://127.0.0.1@server.internal:6000", None),
+        ] {
+            let result = reject_foreign_port(&ssh(host, port), &OTHERS, &[]);
+            assert!(result.is_ok(), "{host} at {port:?}");
+        }
+
+        for (case, host) in [
+            ("a port by service name, x11 is 6000", "ssh://127.0.0.1:x11"),
+            ("a path, which ssh refuses", "ssh://127.0.0.1:6000/x"),
+            ("upper case, no URI to ssh", "SSH://127.0.0.1:6000"),
+        ] {
+            let result = reject_foreign_port(&ssh(host, None), &OTHERS, &[]);
+            assert_eq!(
+                result.map_err(|e| e.to_string()),
+                Err(UNREAD.to_string()),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn foreign_port_with_a_host_the_check_cannot_read() {
+        // It may name this machine at any port, so every port of another workspace counts.
+        let unread = [
+            // ssh takes no port from the host; a user `ssh://x` would make it a URI that does.
+            literal(ConnectionKind::Ssh, "127.0.0.1:6000", 22),
+            // No zone is read, so a link-local address with one is refused as well.
+            literal(ConnectionKind::Ssh, "fe80::1%eth0", 22),
+            literal(ConnectionKind::Rdp, "127.0.0.1:6000:7000", 3389),
+            literal(ConnectionKind::Rdp, "x@127.0.0.1:6000", 3389),
+        ];
+        for conn in &unread {
+            let result = reject_foreign_port(conn, &OTHERS, &[]);
+            assert_eq!(
+                result.map_err(|e| e.to_string()),
+                Err(UNREAD.to_string()),
+                "{conn:?}"
+            );
+            assert!(reject_foreign_port(conn, &[], &[]).is_ok(), "{conn:?}");
+        }
+    }
+
+    #[test]
+    fn foreign_port_an_own_visitor_listens_on_is_allowed() {
+        let target = literal(ConnectionKind::Ssh, "127.0.0.1", 6000);
+        let own = [binding("db-visitor", 6000, 6000)];
+        assert!(reject_foreign_port(&target, &OTHERS, &own).is_ok());
+        assert!(reject_foreign_port(&web("http://localhost:6000"), &OTHERS, &own).is_ok());
+
+        // An own visitor at another local port leaves 6000 to the other workspace.
+        let elsewhere = [binding("db-visitor", 6000, 23005)];
+        assert!(reject_foreign_port(&target, &OTHERS, &elsewhere).is_err());
+        // Resolved through that visitor, the target is its local port.
+        let resolved = resolve_connection(&target, &[], &elsewhere).connection;
+        assert!(reject_foreign_port(&resolved, &OTHERS, &elsewhere).is_ok());
+    }
+
+    #[test]
+    fn foreign_port_on_another_host_is_allowed() {
+        for (case, conn) in [
+            (
+                "a name",
+                literal(ConnectionKind::Ssh, "server.internal", 6000),
+            ),
+            (
+                "an address",
+                literal(ConnectionKind::Rdp, "192.0.2.10", 23010),
+            ),
+            (
+                "a user in the host",
+                literal(ConnectionKind::Ssh, "root@server.example.com", 6000),
+            ),
+            (
+                "loopback as the user in the host",
+                literal(ConnectionKind::Ssh, "127.0.0.1@server.example.com", 6000),
+            ),
+            (
+                "rdp, a port in the host",
+                literal(ConnectionKind::Rdp, "server:3390", 3389),
+            ),
+            (
+                "rdp, a foreign port in the host of another machine",
+                literal(ConnectionKind::Rdp, "192.0.2.10:6000", 3389),
+            ),
+            (
+                "a name that starts like loopback",
+                literal(ConnectionKind::Ssh, "127.0.0.1.example.com", 6000),
+            ),
+            (
+                "a name that starts like localhost",
+                literal(ConnectionKind::Ssh, "localhost.example.com", 6000),
+            ),
+            ("a web URL", web("https://server.internal:6000/")),
+            (
+                "loopback only as the user of a web URL",
+                web("http://127.0.0.1@server.internal:6000/"),
+            ),
+            (
+                "loopback in the URL of a connection that is no web one",
+                Connection {
+                    url: Some("http://127.0.0.1:6000".to_string()),
+                    ..literal(ConnectionKind::Ssh, "server.internal", 6000)
+                },
+            ),
+        ] {
+            assert!(reject_foreign_port(&conn, &OTHERS, &[]).is_ok(), "{case}");
+        }
+    }
+
+    #[test]
+    fn foreign_port_in_a_web_url_is_refused() {
+        for (url, port) in [
+            ("http://127.0.0.1:6000", 6000),
+            ("https://localhost:6000/path?q=1", 6000),
+            ("http://[::1]:23010/", 23010),
+            ("http://127.1:6000", 6000),
+            // The browser gets it as https://127.0.0.1:6000.
+            ("127.0.0.1:6000", 6000),
+        ] {
+            let refused = reject_foreign_port(&web(url), &OTHERS, &[]);
+            assert_eq!(
+                refused.map_err(|e| e.to_string()),
+                Err(refusal(port)),
+                "{url}"
+            );
+        }
+        // Next to a host of its own that is no loopback.
+        let both = Connection {
+            host: Some("server.internal".to_string()),
+            port: Some(443),
+            ..web("http://127.0.0.1:6000")
+        };
+        assert!(reject_foreign_port(&both, &OTHERS, &[]).is_err());
+    }
+
+    #[test]
+    fn foreign_port_without_an_entry_is_allowed() {
+        let targets = [
+            literal(ConnectionKind::Ssh, "127.0.0.1", 6000),
+            literal(ConnectionKind::Rdp, "localhost", 23010),
+            web("http://127.0.0.1:6000"),
+        ];
+        for conn in &targets {
+            assert!(reject_foreign_port(conn, &[], &[]).is_ok(), "{conn:?}");
+        }
+        // A loopback port of no other workspace.
+        let free = literal(ConnectionKind::Ssh, "127.0.0.1", 6001);
+        assert!(reject_foreign_port(&free, &OTHERS, &[]).is_ok());
+        assert!(reject_foreign_port(&web("http://127.0.0.1"), &OTHERS, &[]).is_ok());
     }
 
     /// Serve HTTP on a fresh loopback port, one request per connection: the n-th request gets

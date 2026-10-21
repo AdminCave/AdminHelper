@@ -140,7 +140,7 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           <p>The command copies the binary to <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registers the service <code>AdminHelper-Agent</code> (auto-start, LocalSystem account, restarted 60&nbsp;s after a failure) and starts it. Then provision the host as in the next section. The agent sets up no frpc service on Windows.</p>
 
           <h2>Provisioning</h2>
-          <p>In the desktop client (server mode): <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
+          <p>In the desktop client, in the server workspace of the installation the agent is to report to: <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code># Linux

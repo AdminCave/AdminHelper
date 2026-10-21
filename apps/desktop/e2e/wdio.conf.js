@@ -15,14 +15,15 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import net from 'net';
 import { SevereServiceError } from 'webdriverio';
+import { appArgs } from './test/lib/app-args.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const desktopDir = path.resolve(__dirname, '..');
 // Auto-debug artifacts (screenshot + page source on a failing spec). iter.sh
 // pulls this dir back via -artifact-glob; run.sh exports AH_OUT_DIR (repo-root default).
-const ahOutDir = process.env.AH_OUT_DIR || path.resolve(desktopDir, '../../.ah-out');
+export const ahOutDir = process.env.AH_OUT_DIR || path.resolve(desktopDir, '../../.ah-out');
 // The debug binary tauri-driver launches. Cargo's package name is `adminhelper`.
-const application = path.resolve(desktopDir, 'src-tauri/target/debug/adminhelper');
+export const application = path.resolve(desktopDir, 'src-tauri/target/debug/adminhelper');
 
 // WebKitGTK under a virtual framebuffer (Xvfb / headless CI) hangs trying to use
 // DMABUF/GPU compositing that isn't there — the WebDriver session then never
@@ -37,7 +38,7 @@ let exiting = false;
 // Poll until tauri-driver's WebDriver port accepts a connection (or time out).
 // Spawning the driver and immediately opening a session races the port bind —
 // especially in multi-spec runs where the previous driver may still hold :4444 (4.99).
-const waitPort = (port, ms) =>
+export const waitPort = (port, ms) =>
   new Promise((res, rej) => {
     const t0 = Date.now();
     (function probe() {
@@ -62,7 +63,8 @@ export const config = {
   capabilities: [
     {
       maxInstances: 1,
-      'tauri:options': { application },
+      // AH_E2E_WORKSPACE opens that workspace, else the launcher; a bad id stops here.
+      'tauri:options': { application, args: appArgs(process.env) },
     },
   ],
   // JUnit next to the screenshots (webdriver.io/docs/junit-reporter). heavy.sh collects

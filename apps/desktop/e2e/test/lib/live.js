@@ -62,6 +62,37 @@ export async function enrollIfAsked() {
   enrolled = true;
 }
 
+// The server URL on the login card, in the login and in the enroll form. A workspace without
+// a URL asks for one in a field; from its first successful sign-in or registration on, the URL
+// is fixed and only shown (R-0431). With the field this fills in SERVER_URL, without it it
+// checks that the workspace is fixed on the server of this stack. Rust spells the URL its own
+// way (a path "/" added, user part, query values and fragment masked), so the origins are
+// compared, as in workspace-add-server.live.js.
+export async function fillServerUrlIfAsked() {
+  if (!SERVER_URL) {
+    throw new Error(
+      "AH_SERVER_URL is not set: run the live specs through scripts/tests/desktop_e2e_*.sh",
+    );
+  }
+  const field = '.login-card input[type="url"]';
+  const shown = '.login-card [data-testid="workspace-url"]';
+  await browser.waitUntil(
+    async () => (await $(field).isExisting()) || (await $(shown).isExisting()),
+    {
+      timeout: 10000,
+      timeoutMsg: "the login card shows neither a server URL field nor the URL of the workspace",
+    },
+  );
+  if (await $(field).isExisting()) {
+    await $(field).setValue(SERVER_URL);
+    return;
+  }
+  const url = await $(shown).getText();
+  if (new URL(url).origin !== new URL(SERVER_URL).origin) {
+    throw new Error(`the workspace is fixed on ${url}, not on ${SERVER_URL}`);
+  }
+}
+
 export async function login() {
   // Fail fast with a clear pointer to the wrapper: reading these unset from the env
   // otherwise surfaces as a cryptic setValue(undefined) after the ~20-min build.
@@ -80,10 +111,10 @@ export async function login() {
   // handed to the enroll command as `undefined`.
   await enrollIfAsked();
   await $(".login-card").waitForExist({ timeout: 20000 });
-  const inputs = await $$(".login-card input"); // serverUrl, username, password
-  await inputs[0].setValue(SERVER_URL);
-  await inputs[1].setValue(USER);
-  await inputs[2].setValue(PASS);
+  await fillServerUrlIfAsked();
+  // By field type, not position: a workspace with its URL has no URL field.
+  await $('.login-card input[type="text"]').setValue(USER);
+  await $('.login-card input[type="password"]').setValue(PASS);
   await browser.keys("Enter");
   await $(".sidebar-nav").waitForExist({ timeout: 20000 });
 }
@@ -263,6 +294,15 @@ export async function clickInModal(selector) {
   await jsClick(await $(`${MODAL} ${selector}`));
 }
 
+// The text of `el` as the DOM holds it, for a name the UI cuts off with `overflow: hidden;
+// text-overflow: ellipsis; white-space: nowrap` (the names in the picker). On the lane VM,
+// WebKitWebDriver's getText() gave "" for such a `.picker-name` while the DOM and the
+// screenshot showed "Standard" (R-0431). Whether that is a WebKit bug or the "rendered text"
+// of the WebDriver spec is not verified.
+export async function textContentOf(el) {
+  return browser.execute((node) => node.textContent.trim(), el);
+}
+
 // Text of every element matching `selector`.
 export async function texts(selector) {
   const out = [];
@@ -307,7 +347,8 @@ export async function openRowByName(rowSel, nameSel, name) {
   );
 }
 
-// Click the item (e.g. a server card) whose name matches.
+// Click the item (e.g. a server card) whose name matches. The name is read through
+// textContentOf: the picker cuts its names off with an ellipsis.
 export async function clickItemByName(itemSel, nameSel, name) {
   // Same staleness guard as openRowByName: re-query per pass so a re-render between
   // the list load and the click doesn't throw on a stale handle (4.97).
@@ -315,7 +356,7 @@ export async function clickItemByName(itemSel, nameSel, name) {
     async () => {
       try {
         for (const item of await $$(itemSel)) {
-          if ((await item.$(nameSel).getText()) === name) {
+          if ((await textContentOf(await item.$(nameSel))) === name) {
             await item.click();
             return true;
           }

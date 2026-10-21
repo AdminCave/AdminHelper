@@ -124,6 +124,11 @@ mod tests {
         // An enrolled identity that can't build an mTLS client: the identity path fails and the
         // path without it doesn't, so each result shows which client came back, cached or not.
         let _keyring = keyring_store::memory();
+        let _standard = crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        });
         for key in ["enroll|key", "enroll|cert", "enroll|ca"] {
             keyring_store::set(key, "not a pem").unwrap();
         }

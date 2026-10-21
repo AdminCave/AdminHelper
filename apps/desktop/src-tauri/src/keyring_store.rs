@@ -10,9 +10,9 @@
 //!
 //! On Unix this is the `keyring` crate; on Windows it delegates to the Windows
 //! Credential Manager wrappers in [`crate::password`] (the platform storage
-//! layer). The RDP password store in `password` keeps its own OS-specific
-//! `TERMSRV/` logic — that credential must be readable by `mstsc.exe`, so it is
-//! not a generic app key and cannot go through this abstraction.
+//! layer). The RDP passwords live here on Windows as well (R-0431); only for a
+//! start of `mstsc.exe` does `password` write a `TERMSRV/` entry of its own,
+//! which mstsc reads, and removes it after the start (`password::termsrv_plan`).
 //!
 //! In tests, [`memory`] switches this thread's keyring to an empty map for as long
 //! as its guard lives (R-0294). Without the guard a test build answers like a
