@@ -33,7 +33,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: CHANGELOG (Changed); CLAUDE.md und tasks/README.md sind selbst die Regeln
 Abhängt von: T1
 
-### T3 — /feature-plan und /feature-build: Freigabe am Gate, `  [x]
+### T3 — /feature-plan und /feature-build: Freigabe am Gate, Fragen-Tasks aus dem Gate, Notiz bei `status`  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, scripts/tests/ledger_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ee216de0 2026-10-21T10:32:58+02:00
 Review: approve (.ah-out/review/harness-self-approve/T3.verdict.json)
