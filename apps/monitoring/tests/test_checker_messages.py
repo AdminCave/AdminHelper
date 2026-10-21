@@ -32,9 +32,11 @@ from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceP
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.checkers.smart import SmartHealthChecker
 from app.checkers.system import SystemStateChecker
-from app.core.ssrf import UrlVerdict
+from app.core.ssrf import Target, UrlVerdict
 from app.core.time import utcnow_naive
 from app.models import Base, MonitorCheck, MonitorState
+
+from ._helpers import no_env_proxy
 
 NOW = datetime(2026, 7, 19, 12, 0, 0)
 
@@ -431,10 +433,8 @@ _PUBLIC = "http://93.184.216.34/"
 def _reply(status_code, text="", location=None):
     headers = {"location": location} if location else {}
 
-    def respond(method, url, **kwargs):
-        return httpx.Response(
-            status_code, text=text, headers=headers, request=httpx.Request(method, url)
-        )
+    def respond(_transport, request):
+        return httpx.Response(status_code, text=text, headers=headers, request=request)
 
     return respond
 
@@ -447,7 +447,10 @@ def _raise(exc):
 
 
 def _http(mp, respond, **config):
-    mp.setattr(http_mod.httpx, "request", respond)
+    # Answered below the pin, where the connection would be made; without a proxy from
+    # the shell, so the request takes the pinned path.
+    no_env_proxy(mp)
+    mp.setattr(httpx.HTTPTransport, "handle_request", respond)
     return http_mod.HttpChecker().run({"url": _PUBLIC, **config})
 
 
@@ -479,7 +482,7 @@ def _tcp(mp, connect):
 
 
 def _private(mp):
-    mp.setattr(http_mod, "classify_url", lambda url: UrlVerdict.PRIVATE)
+    mp.setattr(http_mod, "check_target", lambda url: Target(UrlVerdict.PRIVATE, "93.184.216.34"))
     return http_mod.HttpChecker().run({"url": _PUBLIC})
 
 
