@@ -13,7 +13,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Kevin 2026-10-21: R-0603 diktiert, damit Kevins Wort für die Harness-Pfade dieses Vorhabens (CLAUDE.md §4). Alle
 Tasks berühren Risikopfade (`scripts/tests/run.sh`, `scripts/tests/heavy.sh`, `scripts/vm/*`, `.claude/*`): zum
 Review jeder Task kommt `security`. Geprüft gegen `origin/main@8dec2275`. Die Tasks laufen in Ledger-Reihenfolge;
-T1–T7 hängen nicht an T8–T12. T11 und T12 warten auf Kevins Antwort (Spec „Offene Fragen“). Gebaut wird nur im
+T1–T7 hängen nicht an T8–T12. T11 und T12 hat Kevin am 2026-10-21 beantwortet (Spec „Offene Fragen“). Gebaut wird nur im
 Worktree: Im Haupt-Checkout läuft womöglich `heavy.sh`, und ein laufendes bash-Skript darf nicht in place geändert
 werden. In den einfach gequoteten awk- und python-Programmen von `heavy.sh` steht kein Apostroph. Neue Test-Adressen
 nur aus RFC 5737 (192.0.2.x). Gemergt wird nach dem Beta-Release.

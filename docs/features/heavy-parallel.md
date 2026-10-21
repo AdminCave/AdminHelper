@@ -220,13 +220,14 @@ Kevins eigener Schnell-Loop nutzt weiter `desktop`; die GUI-Box gehört dem Samm
 `.claude/skills/vm/SKILL.md` (`warm.sh gui`, `iter.sh --slot`, `reap.sh --role`), `.claude/rules/testing.md`
 (Flags von `run.sh`), `CHANGELOG.md` (Fixed: Schritt-Tabelle; Changed: zwei Boxen).
 
-## Offene Fragen (Kevins Bereich, je mit Empfehlung)
+## Offene Fragen (Kevins Bereich, je mit Empfehlung; beantwortet 2026-10-21)
 
 1. **GUI-Box nach dem Lauf:** freigeben, wenn ihr Teil grün ist (Empfehlung), oder 8 h warm halten? Warm halten
    spart dem GUI-Teil etwa 40 min, die Wandzeit aber kaum, weil `rest` sie bestimmt; dafür bleiben 6 GiB bis zu
-   8 h belegt. → T11 `[?]`.
+   8 h belegt. → T11. **Kevin 2026-10-21:** nach einem grünen GUI-Teil freigeben, bei Rot bleibt sie stehen.
 2. **Zweite Box nicht zu bekommen:** GUI-Teil seriell auf der ersten Box (Empfehlung; ein Lauf mit ~100 min statt
-   eines verlorenen) oder `UNVERIFIED`? → T12 `[?]`.
+   eines verlorenen) oder `UNVERIFIED`? → T12. **Kevin 2026-10-21:** ohne zweite Box seriell auf der ersten, mit
+   einer Notiz im Report.
 
 ## Nicht verifiziert
 
