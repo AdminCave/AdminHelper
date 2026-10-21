@@ -9,7 +9,10 @@ hub suite with an ImportError.
 seed_bell_check, bell_record and overlap_first_hub_post drive two dispatches of one check through
 real sessions; test_alerter_hub runs them on SQLite, test_check_engine_concurrency on Postgres.
 
-assert_every_reader_reads is the one check of a checker's _details that the checker tests share."""
+assert_every_reader_reads is the one check of a checker's _details that the checker tests share.
+
+no_env_proxy keeps a proxy from the developer's shell off the webhook tests that mean the direct,
+pinned connection."""
 
 import json
 import math
@@ -248,3 +251,12 @@ def assert_every_reader_reads(details):
             except OverflowError:
                 finite = False
             assert finite, f"number not representable as a finite float: {str(value)[:20]}"
+
+
+def no_env_proxy(monkeypatch):
+    """Clears the proxy variables, upper and lower case. With a proxy for the URL's scheme
+    pinned_client hands the request to the proxy, unpinned, so a test of the direct path
+    would pass in a shell that sets one without ever reaching the pin."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
