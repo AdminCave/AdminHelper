@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent Windows: Datenverzeichnis mit festen Rechten anlegen — Task-Ledger
-Status: bereit · Branch: feature/agent-windows-datadir · Review: pro Task
+Status: erledigt · Branch: feature/agent-windows-datadir · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-16)
 Heavy: linux-full + windows — `apps/agent/internal/config` und die Aufrufer in `monitor`, `frpc` und `enroll` liegen auf dem Provisionierungs- und Enrollment-Pfad des Agents und laufen im Sammellauf über `main` (`/feature-build` §5); `windows` über den CI-Job `agent-windows` (go test nativ unter Windows; der Pool hat keine Windows-Vorlage)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
