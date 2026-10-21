@@ -463,6 +463,43 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und einen CSP-Fix fuer den Browser. Nur Dev-Werkzeug, nicht im ausgelieferten Bundle; `npm audit --audit-level=high`
   vorher je 1 high, nachher 0 in beiden Projekten und in `apps/desktop/e2e`.
 
+- **certifi 2026.5.20 → 2026.10.19** in server und monitoring (gehashte Locks neu generiert, R-0657): behebt
+  PYSEC-2026-4320 (GHSA-6q48-6c7w-9gw2). Das gebuendelte CA-Paket enthielt die Wurzel `emSign ECC Root CA - G3`, unter
+  der acht widerrufene eMudhra-Zwischenzertifikate mit kompromittierten privaten Schluesseln haengen; wer einen davon
+  hat und im Netzweg sitzt, kann TLS-Verbindungen abfangen. 2026.10.19 nimmt diese Wurzel heraus, die uebrigen
+  emSign-Wurzeln bleiben. Mit den Mozilla-Staenden dazwischen entfallen ausserdem `Atos TrustedRoot 2011` und
+  `SecureSign Root CA12`, neu sind je zwei Wurzeln von SECOM (2024) und Telia (v3). `certifi` kommt transitiv ueber
+  `httpx`/`httpcore` und ist deren Vertrauensanker, wenn ausgehendes HTTPS das Zertifikat prueft (etwa die HTTP-Checks
+  des Monitorings mit `verify_ssl`). Vom woechentlichen Dependency-Audit (`pip-audit`) erkannt. Nur der Lock-Stand: im
+  Diff aendern sich Version und Hashes von `certifi`, `requirements.in` bleibt; beide Locks installieren mit
+  `--require-hashes` unter Python 3.12, `pip-audit` ohne Befund.
+
+- **Desktop-Backend: `rustls-webpki` 0.103.15 → 0.103.16 und `webpki-roots` 1.0.7 → 1.0.10 (R-0657):** schliesst
+  RUSTSEC-2026-0382 und RUSTSEC-2026-0381 (beide CVE-2026-111943) zu denselben acht widerrufenen
+  eMudhra-Zwischenzertifikaten wie bei certifi oben. `webpki-roots` 1.0.10 entzieht ihnen das Vertrauen, indem es die
+  Wurzel `emSign ECC Root CA - G3` herausnimmt; mit den Mozilla-Staenden dazwischen wechseln dieselben Wurzeln wie bei
+  certifi (`Atos TrustedRoot 2011` und `SecureSign Root CA12` entfallen, je zwei von SECOM (2024) und Telia (v3) kommen
+  dazu). `rustls-webpki` 0.103.16 lehnt jeden Zertifikatspfad ab, der den oeffentlichen Schluessel eines dieser
+  Zwischenzertifikate enthaelt, gleich unter welcher Wurzel. Wirksam ist das auf dem Weg mit oeffentlicher CA, den der
+  Desktop nimmt, wenn er weder mit Geraete-Identitaet (mTLS) noch mit TOFU verbindet, und bei der Probe, ob ein
+  Server-Zertifikat oeffentlich vertraut ist: Dort ist `webpki-roots` ueber das reqwest-Feature `rustls-tls` der
+  Vertrauensanker, und `rustls-webpki` prueft die Kette. Ein enrolltes Geraet prueft gegen die bei der Registrierung
+  gepinnte CA, der TOFU-Weg pinnt das Blattzertifikat ohne Kettenpruefung; beide vertrauen keiner Wurzel aus
+  `webpki-roots`. Gefunden vom woechentlichen Dependency-Audit; nur der Lockfile-Stand, im Diff aendern sich Version und
+  Checksumme der zwei Pakete, `Cargo.toml` bleibt. `cargo audit` meldet jetzt nur noch die erlaubten Warnungen.
+
+- **Web und Desktop-UI: `vite` 8.0.16 → 8.1.6 (R-0657):** schliesst GHSA-587h-7wmj-h5pm (high), GHSA-698v-4r3x-3vcv
+  und GHSA-r825-w8mm-5pxw im eingebauten `launch-editor` (jetzt 2.14.2), mit dem der Vite-Dev-Server ueber
+  `/__open-in-editor` eine Quelldatei im Editor oeffnet. Unter Windows konnte ein praeparierter Dateipfad dabei Befehle
+  ausfuehren, unter WSL mit Vim oder Emacs ein Pfad, der mit `-` oder `+` beginnt. Betroffen ist nur der Dev-Server
+  (`npm run dev`, `tauri dev`); die ausgelieferten Bundles von Web-Panel und Desktop enthalten weder Vite noch
+  `launch-editor`. Die Untergrenze in beiden `package.json` steht jetzt auf `^8.1.6`. Mit Vite 8.1 baut `rolldown`
+  1.1.5 statt 1.0.3 die Bundles; im Lockfile ziehen ausserdem `picomatch` 4.0.7, `@oxc-project/types` 0.139.0 und die
+  nur unter WebAssembly geladenen `@emnapi/*`, `@napi-rs/wasm-runtime` und `@tybys/wasm-util` nach, alles
+  Abhaengigkeiten von Vite selbst. `npm run build` laeuft in beiden Projekten, die erzeugte `index.html` ist bis auf den
+  Hash des Skripts gleich. Gefunden vom woechentlichen Dependency-Audit; `npm audit --audit-level=high` meldete vorher
+  in beiden Projekten 1 high (vite) und meldet jetzt nichts mehr.
+
 ### Fixed
 
 - **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor
