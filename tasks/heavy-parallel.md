@@ -56,8 +56,10 @@ Tests in `lib_vm_test.sh`: Hält der Test die Sperre 2 s lang (`flock` im Hinter
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_vm_test
 Doku: keine (intern)
 
-### T5 — warm.sh: zweiter Warm-Slot gui  [ ]
+### T5 — warm.sh: zweiter Warm-Slot gui  [x]
 Komponente: scripts · Dateien: scripts/vm/warm.sh, scripts/vm/profiles.json, scripts/vm/tests/test_vm.py, scripts/tests/vm_wrappers_test.sh, .claude/skills/vm/SKILL.md, .claude/skills/test/SKILL.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a048ec25 2026-10-21T14:59:39+02:00
+Review: approve (.ah-out/review/heavy-parallel/T5.verdict.json)
 Änderung: `warm.sh gui` (`:166-171`) wärmt einen zweiten Slot derselben Lane: `warm_role gui linux-full full`, also `vm.py clone --profile linux-full --role gui --ttl …`, Bootstrap `full`, Schlüssel `gui`, `gui_name`, `gui_ttl`. Kopf (`:11-15`) und Usage (`:170`) nennen `gui`. `profiles.json`: Rolle `gui` mit der Form von `desktop` (`"memory": 6144, "cores": 6`, neben `:26`), damit `vm.py` ihren RAM vor dem Klon prüft und `doctor --roles gui` sie kennt. Der Slot `desktop` bleibt unberührt.
 Tests: `test_vm.py` `test_the_roles_the_wrappers_use_all_exist` (`:487-501`) nennt `gui`; ein neuer Test hält `gui` und `desktop` in Speicher und Kernen gleich. `vm_wrappers_test.sh`: `warm.sh gui` ruft `clone --profile linux-full --role gui --ttl 8h`, schreibt `gui`/`gui_name`/`gui_ttl` und lässt einen vorhandenen `desktop`-Slot stehen; ein laufender `gui`-Slot wird wiederverwendet; eine Box mit Rolle `desktop` auf der VMID des `gui`-Slots wird nicht übernommen („carries role desktop, not gui — re-warming“).
 Verify: bash scripts/dev/verify.sh scripts --strict -- vm_wrappers_test

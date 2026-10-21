@@ -492,6 +492,7 @@ def test_the_roles_the_wrappers_use_all_exist():
     for role in (
         "server",
         "desktop",
+        "gui",
         "agent",
         "tunnel",
         "visitor",
@@ -501,6 +502,14 @@ def test_the_roles_the_wrappers_use_all_exist():
         "bake",
     ):
         assert role in roles
+
+
+def test_the_gui_role_has_the_shape_of_the_desktop_role():
+    # warm.sh gui is the second full box of a heavy run: the GUI suites move from
+    # the desktop box to it, so it needs the same RAM and cores.
+    roles = vm.load_profiles()["roles"]
+    assert roles["gui"]["memory"] == roles["desktop"]["memory"]
+    assert roles["gui"]["cores"] == roles["desktop"]["cores"]
 
 
 def test_an_unreadable_profiles_file_is_a_usage_error(tmp_path):

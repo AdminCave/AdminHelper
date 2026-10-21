@@ -242,6 +242,51 @@ FAKE_RUN_OUT="MB_SID=s MB_PTOK=p MB_ADMIN_PW=w MB_MONITOR_KEY=k" bash "$WARM" po
   && [ "$(grep '^clone' "$FAKE_LOG" | head -1 | grep -c linux-server)" = "1" ] \
   && ok "pond warms the server first, then the desktop" || bad "pond: $(grep '^clone' "$FAKE_LOG")"
 
+echo "── warm.sh: the gui slot, a second full box of the lane ──"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\ndesktop_ttl=8h\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3002 FAKE_NAME=ah-gui-main-bbbb bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^clone --profile linux-full --role gui --ttl 8h$' "$FAKE_LOG" \
+  && grep -q "^run 3002 --sync --timeout 2700 -- AH_BOOTSTRAP_PROFILE=full bash scripts/vm/bootstrap_linux.sh$" "$FAKE_LOG" \
+  && ok "warm.sh gui clones the full profile with the gui role and bootstraps it full" \
+  || bad "gui clone: rc=$rc out=$OUT log=$(cat "$FAKE_LOG")"
+[ "$(slot gui)" = 3002 ] && [ "$(slot gui_name)" = ah-gui-main-bbbb ] && [ "$(slot gui_ttl)" = 8h ] \
+  && ok "... and records gui, gui_name and gui_ttl" || bad "gui slot: $(cat "$AH_VM_STATE_DIR/warm.env")"
+[ "$(slot desktop)" = 3001 ] && [ "$(slot desktop_name)" = ah-desktop-main-aaaa ] && [ "$(slot desktop_ttl)" = 8h ] \
+  && ! grep -q '^run 3001' "$FAKE_LOG" && ! grep -q -- '--role desktop' "$FAKE_LOG" \
+  && ok "... and leaves the desktop slot standing" || bad "desktop slot after gui: $(cat "$AH_VM_STATE_DIR/warm.env")"
+reset_state
+printf 'desktop=3001\ngui=3002\ngui_name=ah-gui-main-bbbb\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$(running_json 3002 main gui ah-gui-main-bbbb)" bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "reuse gui box 3002 (already warm)" <<<"$OUT" && ! grep -q '^clone' "$FAKE_LOG" && ! grep -q '^run' "$FAKE_LOG" \
+  && ok "a running gui slot is reused" || bad "gui reuse: rc=$rc out=$OUT log=$(cat "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ngui=3002\ngui_name=ah-gui-main-bbbb\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_NAME=ah-gui-main-cccc FAKE_LIST_JSON="$(running_json 3002 main desktop ah-gui-main-bbbb)" bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "recorded gui VM 3002 carries role desktop, not gui — re-warming" <<<"$OUT" \
+  && ! grep -q "reuse gui box" <<<"$OUT" && ! grep -q '^run 3002' "$FAKE_LOG" \
+  && [ "$(slot gui)" = 3005 ] && [ "$(slot gui_name)" = ah-gui-main-cccc ] && [ "$(slot desktop)" = 3001 ] \
+  && ok "a desktop box on the gui slot's VMID is not taken over; a new gui box takes the slot" \
+  || bad "gui other role: rc=$rc out=$OUT log=$(cat "$FAKE_LOG") warm=$(cat "$AH_VM_STATE_DIR/warm.env")"
+
+echo "── warm.sh: a warm.env it cannot write is no ready box ──"
+# lib.sh's warm_set returns 1 when warm.env.lock is not free within 30 s. A flock
+# that gives up at once stands in for that lock, as in lib_vm_test.sh.
+BUSY="$WORK/flock-busy"; mkdir -p "$BUSY"
+printf '#!/bin/sh\nexit 1\n' > "$BUSY/flock"; chmod +x "$BUSY/flock"
+reset_state
+OUT=$(PATH="$BUSY:$PATH" FAKE_NEWID=3002 FAKE_NAME=ah-gui-main-bbbb bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "warm.env not written on 3002 — box kept for inspection" <<<"$OUT" && grep -q "vm.py destroy 3002" <<<"$OUT" \
+  && ! grep -q "warm boxes ready" <<<"$OUT" && [ -z "$(slot gui)" ] \
+  && ok "warm_role: a lock that never comes free fails warm.sh, names the box, claims no slot" \
+  || bad "gui unwritten: rc=$rc out=$OUT warm=$(cat "$AH_VM_STATE_DIR/warm.env" 2>/dev/null)"
+reset_state
+OUT=$(PATH="$BUSY:$PATH" FAKE_NEWID=3002 FAKE_RUN_OUT="MB_SID=s MB_PTOK=p MB_ADMIN_PW=w MB_MONITOR_KEY=k" bash "$WARM" server 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "warm.env not written on 3002 — box kept for inspection" <<<"$OUT" \
+  && ! grep -q "warm boxes ready" <<<"$OUT" && ! grep -q "server stack up" <<<"$OUT" && [ -z "$(slot server)" ] \
+  && ok "warm_server: the same, no stack reported up" \
+  || bad "server unwritten: rc=$rc out=$OUT warm=$(cat "$AH_VM_STATE_DIR/warm.env" 2>/dev/null)"
+
 echo "── warm.sh: an unknown role ──"
 reset_state
 OUT=$(bash "$WARM" bogus 2>&1); rc=$?

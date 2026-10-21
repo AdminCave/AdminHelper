@@ -143,8 +143,10 @@ the `--delete` sync, so on a REUSED box those build trees survive → cargo/npm 
 incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 min (3.4×).
 
 1. **Warm once** (idempotent — reuses `.vm/warm.env` if the VM is still running):
-   `bash scripts/vm/warm.sh <desktop|server|pond>`
+   `bash scripts/vm/warm.sh <desktop|gui|server|pond>`
    - `desktop` = full box (docker+go+node+rust+tauri) — the general workhorse for `run.sh`.
+   - `gui`     = a second full box of the same lane, a slot of its own, for the GUI part of
+     the weekly run (`heavy.sh all`); your own loop stays on `desktop`.
    - `server`  = server box with the stack UP + admin/monitor creds stashed.
    - `pond`    = server (stack up) + desktop, for the distributed desktop loop.
 2. **Iterate** after each change:
