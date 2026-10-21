@@ -256,6 +256,46 @@ clear_logs
 rc=0; setup ../AdminHelper-omicron omicron || rc=$?
 [ "$rc" = 0 ] && grep -qx "createdb pw=p@ss%w --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test?sslmode=disable adminhelper_test_omicron" "$PG_LOG" \
   && ok "%40 and %25 arrive in PGPASSWORD as @ and %, sslmode= stays in the URL" || bad "omicron: rc=$rc pg=$(cat "$PG_LOG")"
+
+echo "── setup: a password that is the user name ──"
+# A test report masks a URL as user:***@: with the user as the password, the mask
+# names it. Decoded as SQLAlchemy decodes both, so pl%63hold is plchold.
+for pair in "sigma postgresql+psycopg://plchold:plchold@localhost:5432/adminhelper_test" \
+            "upsilon postgresql+psycopg://pl%63hold:plchold@localhost:5432/adminhelper_test"; do
+  slug="${pair%% *}" url="${pair#* }"
+  printf 'export AH_TEST_DB="%s"\n' "$url" > "$MAIN/.devenv.sh"
+  new_wt "$slug"
+  clear_logs
+  rc=0; setup "../AdminHelper-$slug" "$slug" || rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug/.devenv.sh" ] \
+    && [ "$(cat "$WORK/AdminHelper-$slug/.vm/lane" 2>&1)" = "$slug" ] \
+    && grep -qF "has a password that is the user name" "$WORK/out.log" && grep -qF "DEVELOPMENT.md" "$WORK/out.log" \
+    && ! grep -qiF -e plchold -e 'pl%63hold' "$WORK/out.log" \
+    && ok "$slug: exit 1, no createdb, no .devenv.sh; the reason and DEVELOPMENT.md printed, the value not" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") $(out)"
+done
+printf 'export AH_TEST_DB="%s"\n' "postgresql+psycopg://plchold:Plchold@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+new_wt phi
+clear_logs
+rc=0; setup ../AdminHelper-phi phi || rc=$?
+[ "$rc" = 0 ] && grep -qx "createdb pw=Plchold --maintenance-db=postgresql://plchold@localhost:5432/adminhelper_test adminhelper_test_phi" "$PG_LOG" \
+  && ok "phi: a password that differs from the user in case only is one of its own" || bad "phi: rc=$rc pg=$(cat "$PG_LOG") $(out)"
+# Teardown does not refuse it: a worktree made before the switch still comes down.
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+new_wt chi
+setup ../AdminHelper-chi chi || bad "setup chi: $(out)"
+printf 'export AH_TEST_DB="%s"\n' "postgresql+psycopg://plchold:plchold@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+clear_logs
+rc=0; teardown ../AdminHelper-chi chi || rc=$?
+[ "$rc" = 0 ] && [ ! -e "$WORK/AdminHelper-chi" ] \
+  && grep -qx "dropdb pw=plchold --if-exists --maintenance-db=postgresql://plchold@localhost:5432/adminhelper_test adminhelper_test_chi" "$PG_LOG" \
+  && ok "chi: teardown under such a URL takes the worktree down, dropdb runs" || bad "chi: rc=$rc pg=$(cat "$PG_LOG") $(out)"
+# Giving the role a password of its own moves every worktree along: its .devenv.sh
+# sources the main one and swaps only the database name.
+printf 'export AH_TEST_DB="%s"\n' "postgresql+psycopg://ah:other@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+[ "$(env_in "$WA" AH_TEST_DB)" = "postgresql+psycopg://ah:other@localhost:5432/adminhelper_test_alpha" ] \
+  && ok "alpha, set up with ah:secret, reads ah:other once the main AH_TEST_DB changes" \
+  || bad "alpha after the switch: $(env_in "$WA" AH_TEST_DB)"
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
 echo "── a worktree keeps its lane ──"

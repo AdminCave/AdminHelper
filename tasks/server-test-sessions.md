@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Tests: keine Sitzung an der Rollback-Klammer vorbei, die Test-Rolle mit eigenem Passwort — Task-Ledger
-Status: aktiv · Branch: feature/server-test-sessions · Review: pro Task
+Status: bereit · Branch: feature/server-test-sessions · Review: pro Task
 Spec: Roadmap R-0526, R-0529
 Heavy: none — T1 ändert nur `apps/server/tests/` und den Absatz „Tests“ der Entwickler-Doku, T2 nur die Einrichtung der Worktrees unter `scripts/dev/`, ihre Tests und `DEVELOPMENT.md`. Kein API-, Gateway-, PKI-, Stack-, Compose- oder Install-Pfad, `app/` bleibt unverändert. Die volle Server-Suite und den `schemathesis`-Schritt, auf die die Schranke aus T1 wirkt, fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -28,8 +28,10 @@ Dedup-Key: ref:server:tests:direct-sessionlocal-users
 HEAD: 82e4a7b8
 Kosten: Planer-Lauf, 2 × pytest auf Wegwerf-Datenbanken (394 Tests in 230 s, 190 Tests in 62 s)
 
-### T2 — Worktree-Einrichtung lehnt eine Test-URL ab, deren Passwort der Benutzername ist (R-0529)  [ ]
+### T2 — Worktree-Einrichtung lehnt eine Test-URL ab, deren Passwort der Benutzername ist (R-0529)  [x]
 Komponente: scripts · Dateien: scripts/dev/pg-url.sh, scripts/dev/worktree-setup.sh, scripts/tests/pg_url_test.sh, scripts/tests/worktree_setup_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4ed8c7df 2026-10-21T10:53:37+02:00
+Review: approve (.ah-out/review/server-test-sessions/T2.verdict.json)
 Änderung: Harness-Task auf Kevins Wort vom 2026-10-21; zum Review kommt `security`. Zuerst die Tests (unten), auf HEAD dreimal identisch rot, die Summary-Zeilen in den Commit-Body.
 `pg-url.sh`: `pg_url_split` (`:27`) liefert zusätzlich `PG_URL_USER`, den Benutzer vor dem Passwort, dekodiert wie das Passwort (`urllib.parse.unquote`, so liest SQLAlchemy beide). Die Dekodier-Schleife (`:43-58`) wird dafür eine Funktion, die beide Teile nutzen. Gesetzt ist `PG_URL_USER` nur im Zweig mit `benutzer:passwort@` (`:39`), sonst bleibt er leer, ebenso nach jeder Ablehnung. Ergibt ein Benutzer mit `%00` oder ohne UTF-8 nach dem Dekodieren keine Zeichenkette, bleibt `PG_URL_USER` leer, und nichts wird abgelehnt. Die Menge der angenommenen und abgelehnten URLs bleibt, wie sie ist; die bestehenden Fälle in `pg_url_test.sh:60-90` bleiben unverändert grün. Der Vertrag im Kopf (`:11-13`) nennt `PG_URL_USER`.
 `worktree-setup.sh`: Direkt nach `pg_url_split` (`:75`), vor `createdb`, endet das Skript mit 1, wenn `PG_URL_PASS` nicht leer und gleich `PG_URL_USER` ist. Die Meldung sagt, warum: Die maskierte Form einer URL in Testberichten (`benutzer:***@`) nennt den Benutzer. Und sie sagt, wohin: `DEVELOPMENT.md`. Den Wert nennt sie nie. `.vm/lane` steht dann schon wie bei jedem anderen Fehler nach `:62`; es entsteht keine Datenbank und keine `.devenv.sh`. `worktree-teardown.sh` bleibt unverändert: Ein Worktree lässt sich auch vor der Umstellung abbauen.
