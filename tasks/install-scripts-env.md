@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Ops-Skripte und die `.env`: byte-treu lesen, ohne Rückfrage ersetzen, mit allen Kopien deinstallieren — Task-Ledger
-Status: geplant · Branch: feature/install-scripts-env · Review: pro Task
+Status: aktiv · Branch: feature/install-scripts-env · Review: pro Task
 Spec: Roadmap R-0530, R-0538; T3 nach Kevin 2026-10-21 (keine eigene Spec-Datei)
 Heavy: linux-full — nur nach CLAUDE.md §5 (Install/Update im Diff, Sammellauf über `main`); real deckt er hier fast nichts: `upgrade_path_test.sh` Schritt 4 startet die `update.sh` dieses Stands nur bis zur Übergabe an den Updater des Release (`:34-36`), `install.sh` und `uninstall.sh` startet kein schwerer Lauf. Kein `scenario`: kein `multibox.sh`-Flag ruft `install.sh`, `update.sh` oder `uninstall.sh` auf (`box_*.sh` und `multibox.sh` nennen nur `agent-install.sh`); `init-secrets.sh` läuft dort nur auf einer frischen `.env` ohne Terminal (`box_serverbox.sh:203`). Die geänderten Pfade (Bytes außerhalb von UTF-8, NUL-Byte, schreibgeschützte Datei bei einem Terminal auf stdin, Kopien neben der `.env`) erreichen nur die hermetischen Tests am echten Skript; die fährt die PR-CI (Job „Ops scripts“, `run.sh unit --strict --only scripts`) als Nutzer ohne root-Rechte
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
