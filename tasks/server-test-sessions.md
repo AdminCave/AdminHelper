@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Tests: keine Sitzung an der Rollback-Klammer vorbei, die Test-Rolle mit eigenem Passwort — Task-Ledger
-Status: aktiv · Branch: feature/server-test-sessions · Review: pro Task
+Status: bereit · Branch: feature/server-test-sessions · Review: pro Task
 Spec: Roadmap R-0526, R-0529
 Heavy: none — T1 ändert nur `apps/server/tests/` und den Absatz „Tests“ der Entwickler-Doku, T2 nur die Einrichtung der Worktrees unter `scripts/dev/`, ihre Tests und `DEVELOPMENT.md`. Kein API-, Gateway-, PKI-, Stack-, Compose- oder Install-Pfad, `app/` bleibt unverändert. Die volle Server-Suite und den `schemathesis`-Schritt, auf die die Schranke aus T1 wirkt, fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -44,8 +44,10 @@ Orakel: contract — Eine Test-URL, deren Passwort der Benutzername ist, führt 
 Dedup-Key: ref:server:tests:local-user-equals-password
 HEAD: 82e4a7b8
 
-### T3 — Worktree-Einrichtung: eine Test-URL ohne Passwort bleibt erlaubt (Branch-Prüfung)  [ ]
+### T3 — Worktree-Einrichtung: eine Test-URL ohne Passwort bleibt erlaubt (Branch-Prüfung)  [x]
 Komponente: scripts · Dateien: scripts/tests/worktree_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8b420986 2026-10-21T11:14:35+02:00
+Review: approve (.ah-out/review/server-test-sessions/T3.verdict.json)
 Änderung: Aus der Branch-Prüfung (`tester`, 2026-10-21): Den Teil `[ -n "$PG_URL_PASS" ]` der neuen Prüfung in `worktree-setup.sh:78` deckt kein Test. Ohne ihn lehnte die Einrichtung jede URL ohne Passwort (Peer, Trust, `.pgpass`) mit der falschen Meldung ab. `worktree_setup_test.sh`, Abschnitt „setup: a password that is the user name“: Ein Fall mit `postgresql+psycopg://ah@localhost:5432/adminhelper_test` als Haupt-URL endet mit 0 und ruft genau `createdb pw=<unset> --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_<slug>` (die Form, die der Stub für ein ungesetztes `PGPASSWORD` schreibt, `:49`). Danach die Haupt-`.devenv.sh` wie in den Nachbarfällen zurücksetzen. Rot-Beweis: Die Bedingung in einer Scratch-Kopie von `worktree-setup.sh` auf `[ "$PG_URL_PASS" = "$PG_URL_USER" ]` verkürzt macht den neuen Fall rot, dreimal identisch; die Summary-Zeilen kommen in den Commit-Body. `worktree-setup.sh` und `pg-url.sh` bleiben unverändert. Nur Platzhalter, kein Wert erreicht eine Datenbank.
 Verify: bash scripts/dev/verify.sh scripts --strict -- worktree_setup_test
 Doku: keine (nur ein Test)

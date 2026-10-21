@@ -22,7 +22,7 @@
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
-unset AH_LANE AH_TEST_DB AH_VENV AH_VM_STATE_DIR GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset AH_LANE AH_TEST_DB AH_VENV AH_VM_STATE_DIR GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE PGPASSWORD
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -296,6 +296,17 @@ printf 'export AH_TEST_DB="%s"\n' "postgresql+psycopg://ah:other@localhost:5432/
 [ "$(env_in "$WA" AH_TEST_DB)" = "postgresql+psycopg://ah:other@localhost:5432/adminhelper_test_alpha" ] \
   && ok "alpha, set up with ah:secret, reads ah:other once the main AH_TEST_DB changes" \
   || bad "alpha after the switch: $(env_in "$WA" AH_TEST_DB)"
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+# No password at all (peer, trust, .pgpass): nothing stands in the mask, so setup
+# goes on, and createdb gets no PGPASSWORD (unset at the top, so none inherited).
+printf 'export AH_TEST_DB="%s"\n' "postgresql+psycopg://ah@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+new_wt eta
+clear_logs
+rc=0; setup ../AdminHelper-eta eta || rc=$?
+[ "$rc" = 0 ] && grep -qx "createdb pw=<unset> --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_eta" "$PG_LOG" \
+  && [ "$(wc -l < "$PG_LOG")" -eq 1 ] \
+  && ok "eta: a URL without a password is no password equal to the user, createdb runs without one" \
+  || bad "eta: rc=$rc pg=$(cat "$PG_LOG") $(out)"
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
 echo "── a worktree keeps its lane ──"
