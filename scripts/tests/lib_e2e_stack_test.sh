@@ -12,7 +12,7 @@
 # docker-compose.test.yml — and none of that is visible before a real stack is
 # up on a VM. Here docker, pkill and openssl are PATH stubs: nothing starts, and
 # e2e_teardown's `pkill -9 -f tauri-driver` can never reach a real process.
-# Only the e2e_keyring_start cases start real processes: a gnome-keyring-daemon,
+# Only the keyring cases start real processes: a gnome-keyring-daemon,
 # each in a D-Bus session, runtime dir and home of the test's own (see there).
 #
 # Run: bash scripts/tests/lib_e2e_stack_test.sh
@@ -617,6 +617,14 @@ kr_session() {
   kr_env bash -c '. "$1/scripts/tests/lib_e2e_stack.sh"; dbus-run-session -- bash -c "$2"' \
     _ "$REPO_ROOT" "$1"
 }
+# kr_box <extra PATH dir> — the copy of box_desktopbox.sh for one spec, as iter.sh calls it,
+# with $KR/boxbin on PATH; sets KOUT and rc, empties $KR/box.log first.
+kr_box() {
+  : > "$KR/box.log"
+  KOUT=$(kr_env env -u AH_E2E_WORKSPACE -u AH_DESKTOP_ENROLL_TOKENS PATH="$1$KR/boxbin:$PATH" \
+    bash "$BOX/scripts/tests/box_desktopbox.sh" 192.0.2.10 pw key one.live.js 2>&1)
+  rc=$?
+}
 kv() { sed -n "s/^$1=//p" <<<"$KOUT" | head -1; }
 PLACEHOLDER=""
 kr_placeholder_stop() {
@@ -676,6 +684,30 @@ while True:
     && ok "keyring (a): after the session the placeholder is the same socket, listening, alone in \$XDG_RUNTIME_DIR/keyring" \
     || bad "keyring (a): after the session \$XDG_RUNTIME_DIR/keyring holds: $(ls -Ai "$KR/run/keyring" 2>&1 | tr '\n' ' ')(inode before: $ino)"
 
+  # box_desktopbox.sh sources no lib and starts the keyring inline as e2e_keyring_start does.
+  # Its copy from the box section above runs with the real dbus-run-session and daemon; npm
+  # is a stub, and so is xvfb-run, which notes what the spec would find in the session.
+  mkdir -p "$KR/boxbin"
+  printf '#!/bin/sh\nexit 0\n' > "$KR/boxbin/npm"
+  cat > "$KR/boxbin/xvfb-run" <<'EOF'
+#!/usr/bin/env bash
+{ echo "OWNER=$(kr_owner)"; echo "GKC=${GNOME_KEYRING_CONTROL-}"
+  echo "OWN=$(kr_own "$XDG_RUNTIME_DIR" | wc -l)"; } >> "$KR/box.log"
+EOF
+  chmod +x "$KR/boxbin/npm" "$KR/boxbin/xvfb-run"
+  kr_box ""
+  gkc=$(sed -n 's/^GKC=//p' "$KR/box.log")
+  [ "$rc" = 0 ] && grep -qx 'DESKTOP_SPEC_OK one.live.js' <<<"$KOUT" \
+    && [ "$(sed -n 's/^OWNER=//p' "$KR/box.log")" = yes ] && [[ $gkc == "$KR/tmp/"?* ]] \
+    && [ "$(sed -n 's/^OWN=//p' "$KR/box.log")" -ge 1 ] 2>/dev/null \
+    && ok "keyring, box_desktopbox.sh (a): the spec runs with an owner of org.freedesktop.secrets, a control directory under TMPDIR, the test's runtime dir" \
+    || bad "keyring, box_desktopbox.sh (a): rc $rc, the spec saw '$(tr '\n' ' ' < "$KR/box.log")': $KOUT"
+  kr_gone || true
+  [ "$(stat -c %i "$KR/run/keyring/control" 2>/dev/null)" = "$ino" ] && kr_connect "$KR/run/keyring/control" \
+    && [ "$(ls -A "$KR/run/keyring")" = control ] && [ -n "$gkc" ] && [ ! -e "$gkc" ] \
+    && ok "keyring, box_desktopbox.sh (a): afterwards the placeholder is the same socket, listening, and the control directory is gone" \
+    || bad "keyring, box_desktopbox.sh (a): afterwards \$XDG_RUNTIME_DIR/keyring holds: $(ls -Ai "$KR/run/keyring" 2>&1 | tr '\n' ' ')(inode before: $ino), control directory '$gkc'$([ -e "$gkc" ] && echo ' still there')"
+
   # Counter-check: the inline start the suites had before, in a session of the same kind.
   # It waits for the owner as e2e_keyring_start does, so the daemon is up when the session ends.
   KOUT=$(kr_session '
@@ -713,10 +745,19 @@ while True:
     && ok "keyring (b): the message on stderr, and the daemon's stderr with it" \
     || bad "keyring (b): stderr '$err'"
 
+  # The same daemon in the box: the spec is red without having run, with the message.
+  kr_box "$KR/stub:"
+  [ "$rc" = 1 ] && grep -qx 'DESKTOP_SPEC_FAIL one.live.js' <<<"$KOUT" && [ ! -s "$KR/box.log" ] \
+    && grep -qx 'keyring: no unlocked secret service on this session bus' <<<"$KOUT" \
+    && grep -qx 'gnome-keyring-daemon stub: no daemon today' <<<"$KOUT" \
+    && ok "keyring, box_desktopbox.sh (b): a daemon that serves no bus: the spec fails unrun (rc 1), with the message and the daemon's stderr" \
+    || bad "keyring, box_desktopbox.sh (b): rc $rc, the spec saw '$(tr '\n' ' ' < "$KR/box.log")': $KOUT"
+
   # (d) The control directory goes with the session shell: e2e_keyring_start leaves an EXIT
   # trap there. The block ends as a suite's does, `cd … && <command>`, and the session keeps
   # that command's status. Checked once the daemon is gone: it outlives the directory until
-  # the bus goes and must not bring it back. (a) and (b) left nothing under TMPDIR either.
+  # the bus goes and must not bring it back. (a), (b) and the box's runs left nothing under
+  # TMPDIR either.
   KOUT=$(kr_session '
     e2e_keyring_start || exit 1
     echo "GKC=$GNOME_KEYRING_CONTROL"
@@ -760,11 +801,85 @@ done
 if [ -z "$KR_MISSING" ]; then
   keyring_cases
 else
-  for c in "(a) the user's keyring socket stays" "(b) no owner is rc 1" \
+  for c in "(a) the user's keyring socket stays" "box_desktopbox.sh (a) the same in the box" \
+    "(b) no owner is rc 1" "box_desktopbox.sh (b) no owner fails the spec" \
     "(d) the control directory goes with the session" "(c) no daemon is left"; do
     skip "keyring $c: not available:$KR_MISSING"
   done
 fi
+
+# ── who starts gnome-keyring-daemon ──────────────────────────────────────────
+# A desktop suite starts its keyring through e2e_keyring_start, and box_desktopbox.sh, which
+# sources no lib, through its copy of it (R-0566): a start without --control-directory takes
+# the user's $XDG_RUNTIME_DIR/keyring. Left out: the lib, and this file, whose cases hold the
+# start of before and a stub of that name.
+# kr_starts <file> — each start of the daemon in the file, as a logical line (joined at a
+# trailing backslash), comment lines left out. A start: the name with an option after it, or
+# in a command position (line start, after | ; & or $( ). A name in a list, as e2e_require
+# and desktop_e2e_skip_test.sh's stubs take it, is none.
+kr_starts() {
+  sed -e :a -e '/\\$/N; s/\\\n//; ta' "$1" | grep -vE '^[[:space:]]*#' \
+    | grep -E 'gnome-keyring-daemon[[:space:]]+-|(^|[|;&]|\$\()[[:space:]]*gnome-keyring-daemon([^-[:alnum:]_.]|$)'
+}
+# kr_lint <dir> — "<file>: <start>" for each start in <dir>/*.sh that must not be there.
+kr_lint() {
+  local f b
+  for f in "$1"/*.sh; do
+    b=${f##*/}
+    case "$b" in
+      lib_e2e_stack.sh|lib_e2e_stack_test.sh) ;;
+      box_desktopbox.sh) kr_starts "$f" | grep -vF -- --control-directory | sed "s|^|$b: |" ;;
+      *) kr_starts "$f" | sed "s|^|$b: |" ;;
+    esac
+  done
+}
+# kr_require <dir> — "<file>: <tool>" for each tool e2e_keyring_start runs that a suite in
+# <dir> calling it leaves out of its e2e_require, or "none" when no suite calls it. Without
+# dbus-send in e2e_require a machine without it fails the session instead of reporting SKIP.
+kr_require() {
+  local f b t req n=0
+  for f in "$1"/*.sh; do
+    b=${f##*/}
+    case "$b" in lib_e2e_stack.sh|lib_e2e_stack_test.sh) continue ;; esac
+    grep -qE '^[^#]*e2e_keyring_start' "$f" || continue
+    n=$((n + 1))
+    req=$(grep -E '^[[:space:]]*e2e_require ' "$f")
+    for t in dbus-run-session dbus-send gnome-keyring-daemon; do
+      grep -qw -- "$t" <<<"$req" || echo "$b: $t"
+    done
+  done
+  [ "$n" -gt 0 ] || echo none
+}
+LINT_OUT=$(kr_lint "$HERE")
+[ -z "$LINT_OUT" ] \
+  && ok "lint: no scripts/tests/*.sh but the lib starts gnome-keyring-daemon, box_desktopbox.sh only with --control-directory" \
+  || bad "lint: started outside e2e_keyring_start:"$'\n'"$(sed 's/^/    /' <<<"$LINT_OUT")"
+[ "$(kr_starts "$HERE/box_desktopbox.sh" | grep -cF -- --control-directory)" = 1 ] \
+  && ok "lint: box_desktopbox.sh starts the daemon in one place, with --control-directory" \
+  || bad "lint: box_desktopbox.sh starts: $(kr_starts "$HERE/box_desktopbox.sh")"
+LINT_OUT=$(kr_require "$HERE")
+[ -z "$LINT_OUT" ] \
+  && ok "lint: each suite that calls e2e_keyring_start requires dbus-run-session, dbus-send and gnome-keyring-daemon" \
+  || bad "lint: e2e_require of a suite that calls e2e_keyring_start leaves out: ${LINT_OUT//$'\n'/, }"
+
+# Counter-check: a copy of scripts/tests, with the start of before in a suite, the box's
+# start without its control directory and a suite's e2e_require without dbus-send.
+LINT="$WORK/lint"; mkdir -p "$LINT"
+cp "$HERE"/*.sh "$LINT/"
+OLD_START='eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true'
+printf '    %s\n' "$OLD_START" >> "$LINT/desktop_e2e_crud.sh"
+sed -i 's/ --control-directory="[^"]*"//' "$LINT/box_desktopbox.sh"
+sed -i 's/^\(e2e_require .*\) dbus-send /\1 /' "$LINT/desktop_e2e_live.sh"
+LINT_OUT=$(kr_lint "$LINT")
+grep -qxF "desktop_e2e_crud.sh:     $OLD_START" <<<"$LINT_OUT" \
+  && grep -q '^box_desktopbox\.sh: .*gnome-keyring-daemon --unlock' <<<"$LINT_OUT" \
+  && [ "$(grep -c . <<<"$LINT_OUT")" = 2 ] \
+  && ok "lint, counter-check: the copy is reported for the start of before and the box's start without --control-directory, nothing else" \
+  || bad "lint, counter-check: reported for the copy:"$'\n'"$(sed 's/^/    /' <<<"$LINT_OUT")"
+LINT_OUT=$(kr_require "$LINT")
+[ "$LINT_OUT" = "desktop_e2e_live.sh: dbus-send" ] \
+  && ok "lint, counter-check: the copy is reported for the e2e_require without dbus-send, nothing else" \
+  || bad "lint, counter-check: e2e_require in the copy, reported: '${LINT_OUT//$'\n'/, }'"
 
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed, $SKIP skipped"

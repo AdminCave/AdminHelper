@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-E2E: eigener Keyring je D-Bus-Session — Task-Ledger
-Status: aktiv · Branch: feature/e2e-keyring-control · Review: am Ende
+Status: bereit · Branch: feature/e2e-keyring-control · Review: am Ende
 Spec: Roadmap R-0566
 Heavy: linux-full — ändert den Keyring-Start aller Desktop-E2E-Suiten und der Desktop-Box des Multibox; läuft im Sammellauf über `main`. Vor dem Merge zusätzlich `desktop_e2e_crud` und `desktop_e2e_workspaces` als Einzelschritte auf der warmen Box (je drei Sessions hintereinander), weil ein Fehler hier alle GUI-Suiten des Sammellaufs rot machen würde
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -30,8 +30,10 @@ Dedup-Key: bug:desktop-e2e:desktop_e2e_crud.sh:gnome-keyring-unlock
 HEAD: 82e4a7b8
 Semantik: keine Stelle in docs/ — gesucht: keyring, gnome-keyring, dbus, D-Bus, E2E in docs/developer/*.html und docs/en/developer/*.html. Die Absicht steht in `apps/desktop/e2e/README.md:28` („isolates the app config + keyring“) und `scripts/tests/desktop_e2e_live.sh:57` („Fresh D-Bus session + empty gnome-keyring → a CLEAN app keyring“).
 
-### T2 — Alle Desktop-E2E-Suiten und die Desktop-Box starten den Keyring über die Funktion  [ ]
+### T2 — Alle Desktop-E2E-Suiten und die Desktop-Box starten den Keyring über die Funktion  [x]
 Komponente: scripts · Dateien: scripts/tests/desktop_e2e_connect.sh, scripts/tests/desktop_e2e_connect_tunnel.sh, scripts/tests/desktop_e2e_crud.sh, scripts/tests/desktop_e2e_live.sh, scripts/tests/desktop_e2e_misc.sh, scripts/tests/desktop_e2e_monitoring.sh, scripts/tests/desktop_e2e_sse_push.sh, scripts/tests/desktop_e2e_tunnel.sh, scripts/tests/desktop_e2e_workspaces.sh, scripts/tests/box_desktopbox.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/desktop_e2e_skip_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b3f18ac5 2026-10-21T10:41:01+02:00
+Review: am Ende (Branch-Review)
 Änderung: Die 15 Inline-Starts (`desktop_e2e_connect.sh:109`, `desktop_e2e_connect_tunnel.sh:167`, `desktop_e2e_crud.sh:63`, `:85`, `:100`, `desktop_e2e_live.sh:62`, `desktop_e2e_misc.sh:96`, `desktop_e2e_monitoring.sh:62`, `desktop_e2e_sse_push.sh:57`, `desktop_e2e_tunnel.sh:74`, `:88`, `desktop_e2e_workspaces.sh:204`, `:221`, `:271`, `box_desktopbox.sh:79`) samt der folgenden `export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK`-Zeile werden zu `e2e_keyring_start || exit 1`. Die Session endet dann rot mit der Meldung, wdio startet nicht. `dbus-send` kommt in das `e2e_require` jeder dieser Suiten. `box_desktopbox.sh` sourct die Lib nicht: Dort steht derselbe Start inline (eigenes kurzes Control-Verzeichnis, Besitzer-Prüfung), mit einem Kommentar auf `e2e_keyring_start`; die Box hat `dbus-send` aus dem Bootstrap. Lint-Fall in `lib_e2e_stack_test.sh`: Kein `scripts/tests/*.sh` außer `lib_e2e_stack.sh` und `box_desktopbox.sh` ruft `gnome-keyring-daemon` selbst auf, und `box_desktopbox.sh` nur mit `--control-directory`. Gegenprobe: Eine Kopie mit dem alten Inline-Start macht den Fall rot. `desktop_e2e_skip_test.sh` legt für jede Binärdatei aus `e2e_require` einen Stub an (`:38-42`); `dbus-send` kommt in diese Liste, sonst endet jede Suite dort am fehlenden `dbus-send` statt an `cargo`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test desktop_e2e_skip_test box_scripts_guard_test
 Doku: keine (Test-Infrastruktur)
