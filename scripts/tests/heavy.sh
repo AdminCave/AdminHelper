@@ -8,7 +8,10 @@
 #   bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm]
 #                                 [--notify]
 #
-#     all       scripts/vm/warm.sh desktop  ->  scripts/vm/iter.sh all --strict
+#     all       scripts/vm/warm.sh desktop, then two parts at once on two boxes:
+#                 rest  scripts/vm/iter.sh all --strict --part rest
+#                 gui   scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
+#               PASS only with both parts green
 #     capstone  scripts/tests/multibox.sh --capstone --strict
 #     weekly    all, then capstone — serially, capstone only after `all` has a
 #               verdict (seven VMs must not burn into an already-known failure)
@@ -120,7 +123,9 @@ mask_stream() {  # mask_stream < text -> URL hosts, /nodes/<name>, UPIDs, user@h
   LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#(^|[^A-Za-z0-9_.-])nodes/[^/[:space:]]+#\1nodes/<node>#g; s#UPID[^/[:space:]]*#<upid>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g'
 }
 mask_addr() { printf '%s' "$1" | mask_stream; }  # mask_addr <text> -> the same, for one value
-note()      { NOTES+=("$1"); echo "  $(mask_addr "$1")"; }
+# A part of `all` runs in a background subshell, where NOTES dies with it: there
+# NOTE_FILE is set, and run_all reads the file back into NOTES after the wait.
+note()      { NOTES+=("$1"); [ -z "${NOTE_FILE:-}" ] || printf '%s\n' "$1" >> "$NOTE_FILE"; echo "  $(mask_addr "$1")"; }
 
 # ── pre-flight ────────────────────────────────────────────────────────────────
 # Kevin's own warm boxes and other lanes' ponds are none of this run's business:
@@ -129,14 +134,10 @@ note()      { NOTES+=("$1"); echo "  $(mask_addr "$1")"; }
 # Returns 2 when the provider could not be ASKED. "No strays" and "no answer"
 # must never look the same: the second one would let the run claim a clean
 # hypervisor it never saw and then lease eight boxes on top of whatever is there.
-foreign_boxes() {
-  local json
-  # The exit code is not the question: `list` answers 74 when it FINDS something
-  # (a VM of our lane nobody claims), and that JSON is exactly what this guard
-  # wants to read. Emptiness is the failure — then the hypervisor was not asked.
-  json="$(vm_py list --json 2>/dev/null)"
-  [ -n "$json" ] || return 2
-  printf '%s' "$json" | python3 -c '
+foreign_boxes() {  # foreign_boxes <list-json>
+  # Emptiness is the failure — then the hypervisor was not asked.
+  [ -n "$1" ] || return 2
+  printf '%s' "$1" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -157,6 +158,33 @@ for vm in data.get("vms", []):
 ' "$(vm_lane)"
 }
 
+# slots_to_clone <list-json> -> the slots of `all` (desktop, gui) that warm.sh
+# will have to clone, comma-separated, possibly none. A slot whose box is running
+# counts as nothing: doctor would otherwise reserve a second box on top of the
+# one it already holds, and with two slots that is two boxes too many.
+slots_to_clone() {
+  printf '%s' "$1" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except ValueError:
+    data = {}
+lane, slots = sys.argv[1], sys.argv[2:]
+running = {str(v.get("vmid")): v for v in data.get("vms", []) if v.get("status") == "running"}
+need = []
+for i in range(0, len(slots), 3):
+    slot, vmid, name = slots[i:i + 3]
+    v = running.get(vmid) if vmid else None
+    # The test warm.sh applies before it reuses a slot (slot_state): a box it
+    # would not take over is one it clones.
+    if (not v or v.get("lane") != lane or (v.get("role") or "") != slot or v.get("scenario")
+            or (name and (v.get("name") or "") != name)):
+        need.append(slot)
+print(",".join(need))
+' "$(vm_lane)" desktop "$(warm_get desktop)" "$(warm_get desktop_name)" \
+    gui "$(warm_get gui)" "$(warm_get gui_name)"
+}
+
 preflight() {
   echo "== pre-flight =="
   # The lane first, before the hypervisor is asked anything: in a worktree that
@@ -168,21 +196,28 @@ preflight() {
     return 74
   fi
   vm_load_env || { set_infra "vm.py env not loaded (~/.config/adminhelper/pve.env, .claude/settings.local.json)"; return 74; }
+  # The listing first: which roles doctor must fit depends on it, and the
+  # foreign-box check below reads the same answer. The exit code is not the
+  # question: `list` answers 74 when it FINDS something (a VM of our lane nobody
+  # claims), and that JSON is exactly what the guard wants to read.
+  local json; json="$(vm_py list --json 2>/dev/null)"
   # --roles: doctor's capacity check needs to know what the run is about to ask
-  # for, or it reports "fits" against a single probe box. `all` warms one desktop
-  # box, `capstone` clones the seven of the multibox scenario.
-  # weekly starts with `all`, so one desktop box is what it needs HERE; the
-  # capstone that follows runs its own doctor over its seven roles before it
-  # clones anything (multibox.sh).
-  local roles="desktop"
-  [ "$MODE" = capstone ] && roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
+  # for, or it reports "fits" against a single probe box. `all` warms the desktop
+  # and the gui slot, but clones only the ones without a running box — an empty
+  # list is a check against nothing new. `capstone` clones the seven of the
+  # multibox scenario. weekly starts with `all`, so its slots are what it needs
+  # HERE; the capstone that follows runs its own doctor over its seven roles
+  # before it clones anything (multibox.sh).
+  local roles
+  if [ "$MODE" = capstone ]; then roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
+  else roles="$(slots_to_clone "$json")"; fi
   if ! vm_py doctor --roles "$roles" >"$OUT/doctor.log" 2>&1; then
     set_infra "vm.py doctor red (see doctor.log)"
     tail -5 "$OUT/doctor.log" | mask_stream | sed 's/^/  /'
     return 74
   fi
   note "vm.py doctor ok"
-  local strays rc=0; strays="$(foreign_boxes | paste -sd'; ' -)" || rc=$?
+  local strays rc=0; strays="$(foreign_boxes "$json" | paste -sd'; ' -)" || rc=$?
   if [ "$rc" != 0 ]; then
     set_infra "vm.py list unavailable — cannot rule out foreign boxes"
     note "vm.py list did not answer — not starting a run on an unknown hypervisor"
@@ -201,16 +236,19 @@ preflight() {
 # The wrappers print their result; heavy.sh copies the line VERBATIM instead of
 # re-deriving it. A re-derived number is a second source of truth, and the point
 # of the report is that it can be checked against the run.
-# iter.sh pulls the box's .ah-out back into the pull directory (its $AH_OUT_DIR),
-# where the NEXT run overwrites it. The report points at $OUT, so what it points
-# at has to be there — copied, not moved, so a following `iter.sh` on the same box
-# still finds what it expects.
+# iter.sh pulls the box's .ah-out back into the pull directory (its $AH_OUT_DIR):
+# each part of `all` has its own under $OUT, so the screenshots and service logs
+# stay there, per part, where the report points (Artefakte: $OUT). The JUnit XMLs
+# of both parts go together into $OUT/junit, which the report counts — their
+# names are unique per step. Nothing overwrites a part's directory afterwards: a
+# retry of a red step pulls into the shared $AH_OUT_DIR.
 collect_artifacts() {  # collect_artifacts <pull-dir>
   local d
-  for d in screenshots logs junit; do
-    [ -d "$1/$d" ] || continue
-    cp -r "$1/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
+  for d in screenshots logs; do
+    [ -d "$1/$d" ] && note "artifacts: $d/ in $1"
   done
+  [ -d "$1/junit" ] || return 0
+  mkdir -p "$OUT/junit" && cp -r "$1/junit/." "$OUT/junit/" 2>/dev/null && note "artifacts: junit/ -> $OUT/junit"
 }
 
 capture_summary() {  # capture_summary <logfile> <grep-pattern> [<label>]
@@ -255,8 +293,11 @@ infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or not
 # run.sh stamps every artifact with the head and tree_hash the client passed in.
 # An artifact from another tree is a leftover, not evidence of this run.
 # When it is not ours, stdout names what the artifact claims, for the note.
-artifact_is_ours() {  # artifact_is_ours <artifact> -> exit 0 = ours; else stdout "head <h>, tree_hash <t>"
-  python3 - "$1" "$COMMIT" "$TREE" <<'PY' 2>/dev/null
+# It also names the part it ran (run.sh --part). One of this tree but of another
+# part is no leftover: the box ran something other than it was told, and a green
+# artifact of the rest part must never stand in for the GUI suites.
+artifact_is_ours() {  # artifact_is_ours <artifact> <part> -> 0 = ours; 1 = another tree, stdout "head <h>, tree_hash <t>"; 3 = another part, stdout its part as JSON
+  python3 - "$1" "$COMMIT" "$TREE" "$2" <<'PY' 2>/dev/null
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -269,41 +310,96 @@ head, tree = d.get("head", ""), d.get("tree_hash", "")
 if (head and head != sys.argv[2]) or (tree and tree != sys.argv[3]):
     print("head %s, tree_hash %s" % (head or "-", tree or "-"))
     sys.exit(1)
+# run.sh writes the field on every run, empty without --part: a missing one is
+# not this run.sh either.
+if d.get("part") != sys.argv[4]:
+    print(json.dumps(d.get("part")))
+    sys.exit(3)
 PY
 }
 
-read_steps() {  # read_steps <artifact> -> lines "<name>\t<result>\t<seconds>"
+read_steps() {  # read_steps <artifact> <part> -> lines "<name>\t<result>\t<seconds>\t<part>"
   [ -f "$1" ] || return 1
-  python3 - "$1" <<'PY' 2>/dev/null
+  python3 - "$1" "$2" <<'PY' 2>/dev/null
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
     sys.exit(1)
 for s in d.get("steps", []):
-    print("%s\t%s\t%s" % (s.get("name", "?"), s.get("result", "?"), s.get("seconds", 0)))
+    print("%s\t%s\t%s\t%s" % (s.get("name", "?"), s.get("result", "?"), s.get("seconds", 0), sys.argv[2]))
 PY
 }
 
 # ── the two layers ────────────────────────────────────────────────────────────
-run_all() {
-  echo "== all: warm box + run.sh all --strict =="
-  local log="$OUT/all.log" rc=0 t_layer0=$SECONDS
-  # One retry: the first real run died because the PROVIDER's own guest bootstrap
-  # raced cloud-init for the apt lists lock on a fresh VM — transient, and it cost
-  # the whole run. A second attempt is minutes; a lost weekly is a week.
-  # Keyed on the exit status, not on warm.env: the file says which box, not
-  # whether THIS call succeeded, and a stale entry would read as success.
-  local warm_rc=0 t_wall0
-  t_wall0="$(date +%s)"
-  bash "$WRAPPERS/warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
+# One retry: the first real run died because the PROVIDER's own guest bootstrap
+# raced cloud-init for the apt lists lock on a fresh VM — transient, and it cost
+# the whole run. A second attempt is minutes; a lost weekly is a week.
+# Keyed on the exit status, not on warm.env: the file says which box, not
+# whether THIS call succeeded, and a stale entry would read as success.
+warm_lease() {  # warm_lease <slot> <log> -> the exit code of the last warm.sh call
+  local rc=0
+  bash "$WRAPPERS/warm.sh" "$1" >"$2" 2>&1 </dev/null || rc=$?
   # Exit 2 is warm.sh refusing (a usage error, or lane state it will not read), not
   # the race above: a second attempt would only repeat it and blame the bootstrap.
-  if [ "$warm_rc" != 0 ] && [ "$warm_rc" != 2 ]; then
-    note "warm lease failed — retrying once (the guest bootstrap is racy on a fresh VM)"
-    warm_rc=0
-    bash "$WRAPPERS/warm.sh" desktop >>"$OUT/warm.log" 2>&1 || warm_rc=$?
+  if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+    note "warm lease ($1) failed — retrying once (the guest bootstrap is racy on a fresh VM)"
+    rc=0
+    bash "$WRAPPERS/warm.sh" "$1" >>"$2" 2>&1 </dev/null || rc=$?
   fi
+  return "$rc"
+}
+
+# `all` runs as two parts at once (run.sh --part): `rest` on the box of the slot
+# desktop, `gui` — the desktop GUI E2E, ~30 min at the end of a single run, which
+# need nothing the other steps do — on a second box of the lane (slot gui). The
+# GUI box is leased while rest already runs: a cold one (bootstrap + Tauri build)
+# would otherwise sit in front of everything. Each part logs to its own file and
+# pulls into its own directory, so neither can overwrite the other's evidence.
+#
+# part_job runs in the background. It leases its slot unless that is desktop
+# (run_all holds that box already), runs the part and writes $OUT/<part>.rc:
+# "<exit code> <seconds> <stage>", stage `lease` when the box was never had.
+# The file, not the status of `wait`: wait answers 127 for a pid that is no child
+# of this shell, and that must never be read as a result. The seconds include the
+# lease — a cold GUI box is part of what its part costs.
+part_job() {  # part_job <part> <slot>
+  local part="$1" slot="$2" rc=0 t0=$SECONDS slot_flag=()
+  NOTE_FILE="$OUT/$part.notes"
+  if [ "$slot" != desktop ]; then
+    warm_lease "$slot" "$OUT/warm-$slot.log" || rc=$?
+    if [ "$rc" != 0 ]; then
+      echo "$rc $((SECONDS - t0)) lease" > "$OUT/$part.rc"
+      return 0
+    fi
+    slot_flag=(--slot "$slot")
+  fi
+  AH_OUT_DIR="$OUT/$part" bash "$WRAPPERS/iter.sh" ${slot_flag[@]+"${slot_flag[@]}"} \
+    all --strict --part "$part" >"$OUT/all-$part.log" 2>&1 </dev/null || rc=$?
+  echo "$rc $((SECONDS - t0)) run" > "$OUT/$part.rc"
+}
+
+# A background job of a non-interactive shell ignores SIGINT, and none of them
+# hears a signal sent to heavy.sh: Ctrl-C in the tmux window, or a kill, would end
+# heavy.sh and leave both suites running on their boxes. So the trap ends each job
+# with everything it started (iter.sh, vm.py, ssh) — a process before its
+# children, so it starts no next command once the current one dies.
+PART_PIDS=()
+kill_tree() {  # kill_tree <pid>
+  local kids c
+  kids="$(pgrep -P "$1" 2>/dev/null)"
+  kill -TERM "$1" 2>/dev/null
+  for c in $kids; do kill_tree "$c"; done
+}
+stop_parts() {
+  local p
+  for p in ${PART_PIDS[@]+"${PART_PIDS[@]}"}; do kill_tree "$p"; done
+}
+
+run_all() {
+  echo "== all: warm box + run.sh all --strict, parts rest and gui on two boxes =="
+  local t_layer0=$SECONDS warm_rc=0
+  warm_lease desktop "$OUT/warm.log" || warm_rc=$?
   if [ "$warm_rc" = 2 ]; then
     set_infra "warm.sh refused (exit 2), see warm.log"
     tail -5 "$OUT/warm.log" | mask_stream | sed 's/^/  /'
@@ -319,34 +415,103 @@ run_all() {
     FINDINGS+=("all|-|infra|$((SECONDS - t_layer0))|-|warm box could not be leased")
     return 74
   fi
-  local box; box="$(warm_get desktop)"; box="${box:-?}"
-  note "warm box: $box"
-  # The pull directory: iter.sh pulls the box's .ah-out into its $AH_OUT_DIR.
-  local pull="$AH_OUT_DIR"
-  # Drop the previous run's artifact FIRST. If the box dies before the pull, the
-  # old file stays behind and its steps would be filed under today's date, commit
-  # and tree hash — two green rows for steps that never ran. run.sh deletes its
-  # own artifact for the same reason: missing evidence is honest, stale is not.
-  rm -f "$pull/last-all.json"
-  # The same for the JUnit XMLs: the pull merges into this directory, so a file
-  # from an earlier run or a local verify.sh would be copied and counted as today's.
-  rm -rf "$pull/junit"
-  local t0=$SECONDS
-  bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
-  evaluate_all "$log" "$rc" "$box" "$pull" "$((SECONDS - t0))" "" desktop "$t_wall0"
+  local -A part_box=() part_res=() part_detail=() part_secs=()
+  part_box[rest]="$(warm_get desktop)"
+  note "warm box: ${part_box[rest]:-?} (part rest)"
+  local part slot rc s stage line
+  : > "$OUT/steps-all.tsv"
+  for part in rest gui; do
+    # The pull directory of the part. Drop a previous run's artifact FIRST: the run
+    # directory is named by the minute, so a run started in the same minute left
+    # its files here. If the box dies before the pull, the old file stays behind
+    # and its steps would be filed under today's date, commit and tree hash — green
+    # rows for steps that never ran. run.sh deletes its own artifact for the same
+    # reason: missing evidence is honest, stale is not. The same for the JUnit
+    # XMLs: the pull merges into this directory, so an old file would be copied
+    # and counted as today's.
+    mkdir -p "$OUT/$part"
+    rm -f "$OUT/$part/last-all.json" "$OUT/$part.rc" "$OUT/$part.notes"
+    rm -rf "$OUT/$part/junit"
+  done
+  # The stamp of both parts for the freshness check of their box capture: the
+  # moment their jobs start.
+  local t0=$SECONDS since
+  since="$(date +%s)"
+  trap 'stop_parts; exit 130' INT
+  trap 'stop_parts; exit 143' TERM
+  trap 'stop_parts; exit 129' HUP
+  PART_PIDS=()
+  part_job rest desktop & PART_PIDS+=("$!")
+  part_job gui gui & PART_PIDS+=("$!")
+  wait "${PART_PIDS[@]}"
+  trap - INT TERM HUP
+  PART_PIDS=()
+  local wall=$((SECONDS - t0))
+
+  for part in rest gui; do
+    slot=desktop; [ "$part" = gui ] && slot=gui
+    if [ -f "$OUT/$part.notes" ]; then
+      while IFS= read -r line; do NOTES+=("$line"); done < "$OUT/$part.notes"
+    fi
+    rc=74 s=0 stage=none
+    [ -f "$OUT/$part.rc" ] && read -r rc s stage < "$OUT/$part.rc"
+    case "$rc$s" in ''|*[!0-9]*) rc=74 s=0 stage=none ;; esac
+    part_secs[$part]="$s"
+    part_box[$part]="$(warm_get "$slot")"; part_box[$part]="${part_box[$part]:-?}"
+    case "$stage" in
+      run)
+        evaluate_all "$OUT/all-$part.log" "$rc" "${part_box[$part]}" "$OUT/$part" "$part" "$slot" "$since" ;;
+      lease)
+        part_box[$part]="-"
+        tail -5 "$OUT/warm-$slot.log" | mask_stream | sed 's/^/  /'
+        if [ "$rc" = 2 ]; then
+          PART_RESULT=infra PART_DETAIL="warm.sh refused (exit 2), see warm-$slot.log"
+        else
+          PART_RESULT=infra PART_DETAIL="warm box could not be leased"
+          note "warm box ($slot) could not be leased after a retry (see warm-$slot.log)"
+        fi ;;
+      *)
+        PART_RESULT=infra PART_DETAIL="the part ended without a result (no $part.rc)" ;;
+    esac
+    part_res[$part]="$PART_RESULT"; part_detail[$part]="$PART_DETAIL"
+    note "part $part: $PART_RESULT after $s s on ${part_box[$part]}${PART_DETAIL:+ — $PART_DETAIL}"
+  done
+
+  # One verdict from two parts. Infra in either makes the run UNVERIFIED, and the
+  # reason names a red part as well, whichever of the two was judged first:
+  # set_fail after set_infra keeps nothing, so the FAIL would vanish. Otherwise a
+  # red part makes it FAIL. PASS only with two green parts.
+  local result=pass why="" failed=""
+  for part in rest gui; do
+    case "${part_res[$part]}" in
+      infra) why="${why:+$why; }${part_detail[$part]} ($part)" ;;
+      fail)  failed="${failed:+$failed, }$part" ;;
+    esac
+  done
+  if [ -n "$why" ]; then
+    result=infra; set_infra "$why${failed:+; FAIL in part $failed}"
+  elif [ -n "$failed" ]; then
+    result=fail; set_fail
+  fi
+  FINDINGS+=("all|-|$result|$wall|${part_box[rest]}+${part_box[gui]}|rest ${part_secs[rest]} s, gui ${part_secs[gui]} s")
 }
 
-# One finished `all` run, judged: its summary line, the artifact it pulled, its
-# red steps re-run on the box of its slot, and the layer row. The label (empty for
-# the single run) prefixes its summary line; <since> is the epoch second its lease
-# started, the stamp that tells this run's box capture from a leftover.
-evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <secs> <label> <slot> <since>
-  local log="$1" rc="$2" box="$3" pull="$4" secs_layer="$5" label="$6" slot="$7" since="$8"
+# One finished part of `all`, judged: its summary line, the artifact it pulled and
+# its red steps, re-run on the box of its slot. The label names the part (rest or
+# gui): it prefixes the summary line, tags the part's rows in steps-all.tsv and
+# has to match the artifact's own. <since> is the epoch second the part's job
+# started, the stamp that tells this run's box capture from a leftover. Sets
+# PART_RESULT (pass, fail or infra) and PART_DETAIL; run_all combines the two parts
+# into the verdict and the one layer row.
+PART_RESULT=""; PART_DETAIL=""
+evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <since>
+  local log="$1" rc="$2" box="$3" pull="$4" label="$5" slot="$6" since="$7" logname="${1##*/}"
+  PART_RESULT="pass"; PART_DETAIL=""
   # iter.sh tees the box's stdout into this file as well as showing it, so the
   # summary line survives a wrapper that died before printing one itself. The first
   # real run reported PASS from an exit code alone for want of it — the summary and
   # last-all.json were on disk the whole time, just not where this script looked.
-  local box_out="$pull/last.out.log"
+  local box_out="$pull/last.out.log" summary=0
   tail -25 "$log" | mask_stream | sed 's/^/  /'
   # $log first — iter.sh passes the box's output through — then where it also
   # captured it, but only if that file belongs to THIS run. $box_out is a fixed
@@ -354,69 +519,75 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <secs> <label> <slo
   # run's summary is still sitting there, and adopting it is the same lie as a
   # stale artifact. The artifact carries a tree hash to check; a log does not, so
   # its mtime is the only honest stamp.
-  if ! capture_summary "$log" 'run\.sh\[all\]:' "$label"; then
-    if [ -f "$box_out" ] && [ "$(stat -c %Y "$box_out" 2>/dev/null || echo 0)" -ge "$since" ]; then
-      capture_summary "$box_out" 'run\.sh\[all\]:' "$label" || note "no run.sh[all] summary line in $log or $box_out"
-    else
-      note "no summary line: $log has none and $box_out predates this run"
-    fi
+  if capture_summary "$log" 'run\.sh\[all\]:' "$label"; then
+    summary=1
+  elif [ -f "$box_out" ] && [ "$(stat -c %Y "$box_out" 2>/dev/null || echo 0)" -ge "$since" ]; then
+    if capture_summary "$box_out" 'run\.sh\[all\]:' "$label"; then summary=1
+    else note "no run.sh[all] summary line in $log or $box_out"; fi
+  else
+    note "no summary line: $log has none and $box_out predates this run"
   fi
   collect_artifacts "$pull"
 
-  # INFRA first, and it ends the layer: a step that could not RUN says nothing
+  # INFRA first, and it ends the part: a step that could not RUN says nothing
   # about the code, and re-running it three times would only spend VM time on an
   # environment problem. Never a regression (spec: classification rule 1).
   local marker; marker="$(infra_marker "$log")"
   if [ -n "$marker" ]; then
-    set_infra "the 'all' layer could not run: $marker"
-    note "infra marker in all.log: $marker"
-    FINDINGS+=("all|-|infra|$secs_layer|$box|$marker")
+    note "infra marker in $logname: $marker"
+    PART_RESULT=infra PART_DETAIL="the 'all' layer could not run: $marker"
     return 0
   fi
   if [ "$rc" = 74 ]; then
-    set_infra "iter.sh all exited 74 (infrastructure)"
-    FINDINGS+=("all|-|infra|$secs_layer|$box|wrapper exit 74")
+    PART_RESULT=infra PART_DETAIL="iter.sh all exited 74 (infrastructure)"
     return 0
   fi
 
   # Whatever the exit code says, the artifact is what the box actually did.
-  local art="$pull/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0 theirs
-  # Both identities in the note, so the report carries the cause: a bare
-  # "another tree" went unexplained for 16 runs (R-0603).
-  if [ -f "$art" ] && ! theirs="$(artifact_is_ours "$art")"; then
-    note "last-all.json describes another tree — ignored (evidence must match this run): artifact ${theirs:-?}; this run head $COMMIT, tree_hash $TREE"
-    rm -f "$art"
+  local art="$pull/last-all.json" tsv="$OUT/steps-all.tsv" name result secs part verdict
+  local reds=0 redsteps=0 steps_read=0 theirs ours=0
+  if [ -f "$art" ]; then
+    theirs="$(artifact_is_ours "$art" "$label")" || ours=$?
+    if [ "$ours" = 3 ]; then
+      note "last-all.json of part $label names part $theirs — the box did not run part $label"
+      PART_RESULT=infra PART_DETAIL="the box ran part $theirs, not $label"
+      return 0
+    fi
+    # Both identities in the note, so the report carries the cause: a bare
+    # "another tree" went unexplained for 16 runs (R-0603).
+    if [ "$ours" != 0 ]; then
+      note "last-all.json describes another tree — ignored (evidence must match this run): artifact ${theirs:-?}; this run head $COMMIT, tree_hash $TREE"
+      rm -f "$art"
+    fi
   fi
-  if read_steps "$art" > "$OUT/steps-all.tsv"; then
+  if read_steps "$art" "$label" >> "$tsv"; then
     steps_read=1
-    cp "$art" "$OUT/last-all.json" 2>/dev/null || true
     # A required step the box could not RUN (strict-failed = SKIP under --strict,
     # since the box rule made every heavy step required) says nothing about the
-    # code: INFRA for the layer, never a red step, no retries — and the weekly
+    # code: INFRA for the part, never a red step, no retries — and the weekly
     # must not burn seven capstone VMs behind it. The box prints the strict-failed
-    # line into its own capture, not into all.log, so the artifact is the only
-    # place this is visible from here.
+    # line into its own capture, not into the part's log, so the artifact is the
+    # only place this is visible from here.
     local strict_steps
-    strict_steps="$(awk -F'\t' '$2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$OUT/steps-all.tsv")"
+    strict_steps="$(awk -F'\t' -v p="$label" '$4 == p && $2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$tsv")"
     if [ -n "$strict_steps" ]; then
-      while IFS="$(printf '\t')" read -r name result secs <&3; do
-        [ -n "$name" ] || continue
+      while IFS="$(printf '\t')" read -r name result secs part <&3; do
+        [ -n "$name" ] && [ "$part" = "$label" ] || continue
         local detail=""
         case "$result" in
           strict-failed) result="infra"; detail="strict-failed on the box (required step could not run)" ;;
           fail)          detail="not classified (layer infra)" ;;
         esac
         FINDINGS+=("all|$name|$result|$secs|$box|$detail")
-      done 3< "$OUT/steps-all.tsv"
-      set_infra "required step(s) could not run on the box (strict-failed): $strict_steps"
-      FINDINGS+=("all|-|infra|$secs_layer|$box|strict-failed: $strict_steps")
+      done 3< "$tsv"
+      PART_RESULT=infra PART_DETAIL="required step(s) could not run on the box (strict-failed): $strict_steps"
       return 0
     fi
     # fd 3, not stdin: classify_red_step leases and drives boxes, and anything
     # in there that reaches ssh without its own stdin would read the rest of this
     # file and end the loop after the first red step (R-0092).
-    while IFS="$(printf '\t')" read -r name result secs <&3; do
-      [ -n "$name" ] || continue
+    while IFS="$(printf '\t')" read -r name result secs part <&3; do
+      [ -n "$name" ] && [ "$part" = "$label" ] || continue
       verdict="$result"; STEP_DETAIL=""
       if [ "$result" = "fail" ]; then
         redsteps=$((redsteps + 1))
@@ -428,40 +599,37 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <secs> <label> <slo
         case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
       fi
       FINDINGS+=("all|$name|$verdict|$secs|$box|$STEP_DETAIL")
-    done 3< "$OUT/steps-all.tsv"
+    done 3< "$tsv"
   else
-    note "no readable last-all.json — per-step results unavailable"
+    note "no readable last-all.json from part $label — per-step results unavailable"
     # Exit 2 is a refusal (vm.py run declining a box of another lane, or a usage
     # error): nothing ran, so there is no red step to count, see below.
     [ "$rc" = 0 ] || [ "$rc" = 2 ] || reds=1
   fi
 
   if [ "$reds" -gt 0 ]; then
-    set_fail; FINDINGS+=("all|-|fail|$secs_layer|$box|$reds step(s) red after retries")
+    PART_RESULT=fail PART_DETAIL="$reds step(s) red after retries"
   elif [ "$redsteps" -gt 0 ]; then
     # Red steps, all of them green again on a retry: the wrapper's non-zero exit
     # is explained, and a quarantined flake is not a failing run (spec 3b).
-    FINDINGS+=("all|-|pass|$secs_layer|$box|$redsteps flaky step(s), quarantined")
+    PART_DETAIL="$redsteps flaky step(s), quarantined"
   elif [ "$rc" = 0 ]; then
     # "The wrapper exited 0" is not evidence — it is a claim. Without a summary
     # line AND without a readable artifact, nothing is known about which steps
-    # ran, so the run is UNVERIFIED rather than green. This is the rule the whole
+    # ran, so the part is UNVERIFIED rather than green. This is the rule the whole
     # stage is built on, applied to heavy.sh itself (found by the first real run,
-    # which reported PASS from an exit code and an empty step table).
-    if [ "$steps_read" = 0 ] && [ "${#SUMMARY_LINES[@]}" -eq 0 ]; then
-      set_infra "the layer exited 0 but produced no evidence (no summary line, no artifact)"
-      FINDINGS+=("all|-|infra|$secs_layer|$box|exit 0 without evidence")
-      return 0
+    # which reported PASS from an exit code and an empty step table). Counted per
+    # part: the other part's summary line says nothing about this one.
+    if [ "$steps_read" = 0 ] && [ "$summary" = 0 ]; then
+      PART_RESULT=infra PART_DETAIL="the layer exited 0 but produced no evidence (no summary line, no artifact)"
     fi
-    FINDINGS+=("all|-|pass|$secs_layer|$box|")
   elif [ "$rc" = 2 ]; then
     # A refusal says nothing about the code: UNVERIFIED, never a regression.
-    set_infra "iter.sh all refused (exit 2), see all.log"
-    FINDINGS+=("all|-|infra|$secs_layer|$box|iter.sh all refused (exit 2)")
+    PART_RESULT=infra PART_DETAIL="iter.sh all refused (exit 2), see $logname"
   else
     # Every step green but the wrapper red: something outside the step list said
     # no (a crashed run, a strict layer that ran nothing). Not quietly a pass.
-    set_fail; FINDINGS+=("all|-|fail|$secs_layer|$box|wrapper exit $rc without a red step")
+    PART_RESULT=fail PART_DETAIL="wrapper exit $rc without a red step"
   fi
 }
 

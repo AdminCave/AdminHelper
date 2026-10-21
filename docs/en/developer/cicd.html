@@ -160,18 +160,36 @@
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
-          <p><code>all</code> = warm box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
-          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially. The capstone
+          <p><code>all</code> = <code>run.sh all --strict</code> on <strong>two boxes at once</strong>: part
+          <code>rest</code> (<code>--part rest</code>) on the warm box of the <code>desktop</code> slot, part
+          <code>gui</code> (<code>--part gui</code>, the desktop GUI E2E and their smoke test) on a second box
+          of the same lane (slot <code>gui</code>), leased while <code>rest</code> is already running. The
+          verdict is <code>PASS</code> only with two green parts: a part that did not run or brought no
+          evidence (neither a summary line nor an artifact, or an artifact of the other part) makes the run
+          UNVERIFIED, otherwise a red part makes it FAIL; the reason names the part
+          (<code>&hellip; (gui)</code>) and a red other part (<code>FAIL in part rest</code>). If
+          <code>heavy.sh</code> is interrupted, it ends both parts. <code>capstone</code> =
+          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially, and the capstone
+          gets the box of the <code>desktop</code> slot. The capstone
           is skipped <strong>only</strong> when the <code>all</code> layer ended UNVERIFIED (seven VMs must
           not burn into a broken environment) &ndash; a plain FAIL does not stop it.
-          Beforehand it checks <code>vm.py doctor</code> and <code>vm.py list</code>: a foreign box means
+          Beforehand it checks <code>vm.py doctor</code> (for <code>all</code> only for the slots whose box is
+          not already running) and <code>vm.py list</code>: a foreign box means
           the capacity is not there, and the run stops before spending a single VM.</p>
           <p>The report lands in <code>.ah-out/weekly/&lt;yyyy-mm-dd-hhmm&gt;/report.md</code>. Its
           <strong>first line</strong> is the verdict and is quoted verbatim, never paraphrased; then come the
-          wrappers' summary lines <strong>verbatim</strong>, the step table, the &ldquo;Kevin sichtet&rdquo;
-          section, the notes, the <code>audit.yml</code> verdict and the VM list. Facts, never a judgement. The history is
+          wrappers' summary lines <strong>verbatim</strong> (for <code>all</code> one per part, labelled:
+          <code>[rest] run.sh[all]: &hellip;</code>), the step table (every step of both parts with its seconds
+          and box, plus <strong>one</strong> layer row with the wall time,
+          <code>&lt;box-rest&gt;+&lt;box-gui&gt;</code> and <code>rest &lt;s&gt; s, gui &lt;s&gt; s</code>), the
+          &ldquo;Kevin sichtet&rdquo;
+          section, the notes, the <code>audit.yml</code> verdict and the VM list. Each part has its log
+          (<code>all-rest.log</code>, <code>all-gui.log</code>) and its directory (<code>rest/</code>,
+          <code>gui/</code>) with the box's artifact, screenshots and logs; the JUnit XML of both parts lie
+          together in <code>junit/</code>. Facts, never a judgement. The history is
           <code>tasks/private/history.csv</code>
-          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>), committed in the private
+          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>; the layer row of
+          <code>all</code> names both boxes in <code>vm</code>), committed in the private
           repo and never pushed.</p>
           <table>
             <thead><tr><th>Result</th><th>How it is reached</th><th>What it means</th></tr></thead>

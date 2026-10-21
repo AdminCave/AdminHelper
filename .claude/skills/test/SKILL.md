@@ -46,11 +46,12 @@ timer, no cron, no "while I'm at it". But once Kevin says
 3. Watch it with a background waiter (a `tmux has-session` poll every 2–5 min, or the
    Monitor tool on `.ah-out/weekly/*/report.md`). Do not poll by hand, do not end the
    task early; other lanes may lease VMs meanwhile (`vm.py` checks the host's RAM before every
-   clone). `all` takes ~1.5 h,
-   `capstone` ~3 h, `weekly` both. If the session is compacted or resumed, re-attach the
-   waiter first (`tmux has-session -t ah-<mode>`); the run itself is not affected.
-4. When it ends: quote the report's FIRST line verbatim (the verdict), the two summary
-   lines (`run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
+   clone). `all` takes about 1 h on its two boxes (not verified until the first run; ~1.5 h
+   on one box before), `capstone` ~3 h, `weekly` both. If the session is compacted or
+   resumed, re-attach the waiter first (`tmux has-session -t ah-<mode>`); the run itself is
+   not affected.
+4. When it ends: quote the report's FIRST line verbatim (the verdict), the summary lines
+   (`[rest] run.sh[all]`, `[gui] run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
    (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
    `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
    through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
@@ -93,7 +94,13 @@ The same line is on the `AH-STATUS` block's fourth line at session start.
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warm box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone --strict`;
+- `all` = `run.sh all --strict` on two boxes at once: part `rest` (`--part rest`) on the warm
+  box of slot `desktop`, part `gui` (`--part gui`, the desktop GUI E2E) on a second box of the
+  lane (`warm.sh gui`, `iter.sh --slot gui`). PASS only with both parts green; a part that
+  did not run or brought no evidence makes it UNVERIFIED (the reason names the part, and a
+  red other part as `FAIL in part …`). One layer row `all|-|…|<wall>|<box-rest>+<box-gui>|rest
+  <s> s, gui <s> s`; each part has `all-<part>.log` and its pull directory `<part>/`.
+  `capstone` = `multibox.sh --capstone --strict`;
   `weekly` = both, serially. The capstone is skipped only when the `all` layer ended
   UNVERIFIED (seven VMs must not burn into a broken environment) — a plain FAIL does not
   stop it.

@@ -1274,17 +1274,32 @@ tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warme Box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone
-  --strict`; `weekly` = beides seriell. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
+- `all` = `run.sh all --strict` auf **zwei Boxen gleichzeitig**: Teil `rest`
+  (`--part rest`) auf der warmen Box des Slots `desktop`, Teil `gui` (`--part gui`, die
+  Desktop-GUI-E2E samt Smoke-Test) auf einer zweiten Box derselben Lane (`warm.sh gui`,
+  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. `PASS` nur mit zwei
+  gruenen Teilen: ein Teil, der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch
+  Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
+  roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
+  (`FAIL in part rest`). Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile.
+  `capstone` = `multibox.sh --capstone --strict`; `weekly` = beides seriell, der Capstone
+  bekommt die Box des Slots `desktop`. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
   UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL
   stoppt ihn nicht.
-- **Vorab:** `vm.py doctor --roles <was der Modus klont>`, und `vm.py list --json` darf keine
+- **Vorab:** `vm.py doctor --roles <was der Modus klont>` — bei `all` die Slots `desktop` und
+  `gui`, deren Box nicht schon laeuft (laufen beide, ein leeres `--roles`) —, und
+  `vm.py list --json` darf keine
   Box einer fremden Lane und nichts Geleaktes auf der eigenen zeigen — sonst ist die
   Kapazitaet nicht da und der Lauf bricht ab, bevor er eine VM verbraucht.
 - **Report:** `.ah-out/weekly/<jjjj-mm-tt-hhmm>/report.md`. Erste Zeile ist das Urteil
   (`PASS` | `FAIL` | `UNVERIFIED (<grund>)`), dann die Summary-Zeilen der Wrapper
-  **woertlich**, die Schritt-Tabelle, „Kevin sichtet", die Notizen, die `audit.yml`-Zeile und
-  die VM-Liste danach. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
+  **woertlich** (bei `all` je Teil mit Etikett: `[rest] run.sh[all]: …`, `[gui] …`), die
+  Schritt-Tabelle (alle Schritte beider Teile mit Sekunden und Box, dazu **eine** Ebenen-Zeile
+  mit Wandzeit, `<box-rest>+<box-gui>` und `rest <s> s, gui <s> s`), „Kevin sichtet", die
+  Notizen, die `audit.yml`-Zeile und die VM-Liste danach. Jeder Teil hat sein Log
+  (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis (`rest/`, `gui/`: Artefakt,
+  Screenshots, Logs der Box); `steps-all.tsv` fuehrt die Schritte beider Teile, den Teil in der
+  vierten Spalte. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
   Session-Start in Zeile 4 des `AH-STATUS`-Blocks. Die `audit.yml`-Zeile erzeugt bei rot genau
   **eine** REL-Zeile je roter Phase: der Eintrag bleibt in `seen.md` offen (`deps-audit · open`),
   bis ein Lauf mit `success` ihn schliesst (`resolved`) — abgebrochene oder uebersprungene Laeufe
@@ -1299,23 +1314,26 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   `web-playwright.xml` bzw. `web-live.xml` (nur mit gesetztem `AH_OUT_DIR`, sonst schriebe der
   Reporter auf stdout) und die Desktop-E2E je `wdio run` eine `desktop-e2e-<ms>-<cid>.xml`
   (`@wdio/junit-reporter`). Jeder `run.sh`-Lauf verwirft vorher die XMLs des
-  letzten, und `heavy.sh` leert das lokale `junit/` vor dem Lauf: der Pull von der Box loescht
-  nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert das gezogene `junit/`
-  nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die Report-Zeile `JUnit:` nennt, wie viele
-  XMLs dort liegen.
+  letzten, und `heavy.sh` leert das `junit/` im Zieh-Verzeichnis jedes Teils vor dem Lauf: der
+  Pull von der Box loescht nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert
+  das gezogene `junit/` beider Teile nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die
+  Report-Zeile `JUnit:` nennt, wie viele XMLs dort liegen.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
-  steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
+  steht also auch `skip` in der Spalte — eine Zeile je Schritt (Spalte `vm` = Box seines
+  Teils) plus eine Ebenen-Zeile (bei `all` mit `vm` = `<box-rest>+<box-gui>`),
   committet im privaten Repo, **nie** gepusht; Felder mit Komma oder Anfuehrungszeichen
   sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
   Layer Pflicht (Box-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
   `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
-- **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
+- **Klassifikation.** `infra` gilt fuer die **ganze Ebene** (bei `all` fuer den ganzen Teil),
+  nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `vm.py: capacity` oder
   `privilege` (und auf der Ein-Box-Ebene zusaetzlich `vm.py: no ip|no ssh|timeout|sync failed|
-  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report hat dann bewusst keine
+  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene bzw. den
+  Teil sofort — er hat dann bewusst keine Zeilen in der
   Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine Regression. Meldet das
   Box-Artefakt einen Pflicht-Schritt als `strict-failed` (SKIP unter `--strict`), ist die Ebene
   ebenfalls `infra`, die Schritt-Tabelle bleibt aber stehen: gelaufene Schritte `pass`, die
@@ -1329,7 +1347,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Folgefehler, endet die Ebene UNVERIFIED mit dem Grund „capstone infra: …" und der
   Multibox-Summary-Zeile; jeder FAIL, der nicht auf einen Abbruch seiner Rolle folgt,
   macht die Ebene FAIL. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert:
-  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
+  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`; im Teil
+  `gui` mit `iter.sh --slot gui`) — ein gruener Lauf ⇒ `flaky`
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
   (Worktree `.ah-worktrees/w2`, Lane `w2`): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile

@@ -1089,6 +1089,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
+  gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
+  `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
+  waehrend `rest` schon laeuft. Der Pre-flight fragt `vm.py doctor` nur nach den Slots, deren Box nicht schon laeuft.
+  Das Urteil heisst `PASS` nur mit zwei gruenen Teilen; ein Teil, der nicht lief oder keinen eigenen Beleg brachte
+  (weder Summary-Zeile noch Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf `UNVERIFIED`, und der
+  Grund nennt den Teil und einen roten anderen Teil („FAIL in part rest“). Rote Schritte werden auf der Box ihres
+  Teils wiederholt. Der Report setzt das Etikett des Teils vor seine Summary-Zeile (`[rest] run.sh[all]: …`), fuehrt
+  die Schritte beider Teile mit Sekunden und Box und **eine** Ebenen-Zeile mit Wandzeit, beiden Boxen
+  (`<box-rest>+<box-gui>`) und den Sekunden je Teil; `steps-all.tsv` nennt den Teil in einer vierten Spalte, jeder
+  Teil hat sein Log (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis, die JUnit-XML beider Teile liegen in
+  `junit/`. `history.csv` behaelt ihr Format. Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile. Doku:
+  DEVELOPMENT, CI/CD fuer Entwickler (DE+EN), `/test`-Skill.
+
 - **Plaene gibt die Session selbst frei (Entwickler-Werkzeuge, Kevin 2026-10-21):** Nach dem Plan-Commit von
   `/feature-plan` setzt die Session `roadmap.py approve` selbst und baut. Kevin behaelt seine Entscheidungen aus
   `CLAUDE.md` §2 (Roadmap, sichtbares Verhalten, API-Vertraege, Datenmigrationen, Restrisiko, Release); eine offene

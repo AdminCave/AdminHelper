@@ -163,17 +163,34 @@
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
-          <p><code>all</code> = warme Box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
-          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = beides seriell. Der
+          <p><code>all</code> = <code>run.sh all --strict</code> auf <strong>zwei Boxen gleichzeitig</strong>:
+          Teil <code>rest</code> (<code>--part rest</code>) auf der warmen Box des Slots <code>desktop</code>,
+          Teil <code>gui</code> (<code>--part gui</code>, die Desktop-GUI-E2E samt Smoke-Test) auf einer
+          zweiten Box derselben Lane (Slot <code>gui</code>), die geleast wird, w&auml;hrend <code>rest</code>
+          schon l&auml;uft. Das Urteil hei&szlig;t <code>PASS</code> nur mit zwei gr&uuml;nen Teilen: ein Teil,
+          der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch Artefakt, oder ein Artefakt des
+          anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein roter Teil FAIL; der Grund nennt den
+          Teil (<code>&hellip; (gui)</code>) und einen roten anderen Teil (<code>FAIL in part rest</code>).
+          Wird <code>heavy.sh</code> abgebrochen, beendet es beide Teile. <code>capstone</code> =
+          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = beides seriell, der Capstone
+          bekommt die Box des Slots <code>desktop</code>. Der
           Capstone entf&auml;llt <strong>nur</strong>, wenn die <code>all</code>-Ebene UNVERIFIED endete
-          (sieben VMs brennen sonst in eine kaputte Umgebung) &ndash; ein reines FAIL stoppt ihn nicht. Vorab pr&uuml;ft er <code>vm.py doctor</code> und <code>vm.py list</code>: eine fremde
+          (sieben VMs brennen sonst in eine kaputte Umgebung) &ndash; ein reines FAIL stoppt ihn nicht. Vorab pr&uuml;ft er <code>vm.py doctor</code>
+          (bei <code>all</code> nur f&uuml;r die Slots, deren Box nicht schon l&auml;uft) und <code>vm.py list</code>: eine fremde
           Box hei&szlig;t, die Kapazit&auml;t ist nicht da, und der Lauf bricht ab, bevor er eine VM verbraucht.</p>
           <p>Der Report liegt unter <code>.ah-out/weekly/&lt;jjjj-mm-tt-hhmm&gt;/report.md</code>. Seine
           <strong>erste Zeile</strong> ist das Urteil und wird w&ouml;rtlich zitiert, nie paraphrasiert; danach
-          folgen die Summary-Zeilen der Wrapper <strong>w&ouml;rtlich</strong>, die Schritt-Tabelle, der
+          folgen die Summary-Zeilen der Wrapper <strong>w&ouml;rtlich</strong> (bei <code>all</code> je Teil mit
+          Etikett: <code>[rest] run.sh[all]: &hellip;</code>), die Schritt-Tabelle (alle Schritte beider Teile
+          mit Sekunden und Box, dazu <strong>eine</strong> Ebenen-Zeile mit Wandzeit,
+          <code>&lt;box-rest&gt;+&lt;box-gui&gt;</code> und <code>rest &lt;s&gt; s, gui &lt;s&gt; s</code>), der
           Abschnitt &bdquo;Kevin sichtet", die Notizen, die <code>audit.yml</code>-Zeile und die VM-Liste.
+          Jeder Teil hat sein Log (<code>all-rest.log</code>, <code>all-gui.log</code>) und sein
+          Verzeichnis (<code>rest/</code>, <code>gui/</code>) mit Artefakt, Screenshots und Logs der Box; die
+          JUnit-XML beider Teile liegen zusammen in <code>junit/</code>.
           Nie eine Bewertung, nur Fakten. Die Historie steht in <code>tasks/private/history.csv</code>
-          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>) und wird im privaten Repo
+          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>; die Ebenen-Zeile von
+          <code>all</code> nennt in <code>vm</code> beide Boxen) und wird im privaten Repo
           committet, nie gepusht.</p>
           <table>
             <thead><tr><th>Ergebnis</th><th>Wie es zustande kommt</th><th>Was es hei&szlig;t</th></tr></thead>
