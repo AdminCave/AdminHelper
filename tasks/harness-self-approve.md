@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness: die Session gibt geplante Vorhaben selbst frei — Task-Ledger
-Status: bereit · Branch: feature/harness-self-approve · Review: pro Task
+Status: erledigt · Branch: feature/harness-self-approve · Review: pro Task
 Spec: docs/features/harness-self-approve.md (Roadmap R-0567)
 Heavy: none — Regel- und Skill-Texte, `scripts/dev/roadmap.py` (Python-Stdlib) und Shell-Tests unter `scripts/` mit hermetischen Fixtures; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
