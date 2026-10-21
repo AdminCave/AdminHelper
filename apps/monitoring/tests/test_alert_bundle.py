@@ -7,13 +7,14 @@ on each channel on its own, one message from BUNDLE_MIN members on, single
 messages below; flush_agent_alerts collects the open heartbeats, bundles BUNDLE_MIN
 or more and lets fewer wait BUNDLE_WINDOW, at most until a minute before their next
 check, before they go out on their own. Real
-SQLite session; mail is captured at _send_email, the webhook and the hub at
-httpx.post."""
+SQLite session; mail is captured at _send_email, the webhook below the SSRF pin
+(httpx.HTTPTransport) and the hub at httpx.post."""
 
 import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -30,7 +31,7 @@ from app.alert_bundle import (
     send_bundle,
 )
 from app.core import database
-from app.core.ssrf import UrlVerdict
+from app.core.ssrf import Target, UrlVerdict
 from app.models import (
     Base,
     MonitorAlertLog,
@@ -41,6 +42,8 @@ from app.models import (
     MonitorTemplate,
     MonitorTemplateAssignment,
 )
+
+from ._helpers import no_env_proxy
 
 _NOW = datetime(2026, 10, 20, 12, 0)
 _SHOWN = _NOW - timedelta(hours=1)
@@ -76,19 +79,28 @@ def channels(monkeypatch):
         return True, None
 
     def fake_post(url, **kwargs):
-        if url == _HUB:
-            out.events.append(kwargs["json"])
-            out.timeline.append("post")
-            code = out.hub_codes.pop(0) if out.hub_codes else out.hub_code
-            return SimpleNamespace(status_code=code)
-        out.webhooks.append(kwargs["json"])
-        return SimpleNamespace(status_code=200)
+        # Only the hub posts through httpx.post; the webhook goes through pinned_client.
+        assert url == _HUB, url
+        out.events.append(kwargs["json"])
+        out.timeline.append("post")
+        code = out.hub_codes.pop(0) if out.hub_codes else out.hub_code
+        return SimpleNamespace(status_code=code)
 
+    def fake_send(_transport, request):
+        out.webhooks.append(json.loads(request.read()))
+        return httpx.Response(200, request=request)
+
+    no_env_proxy(monkeypatch)
     monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
     monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
     monkeypatch.setattr(alerter, "_send_email", fake_email)
-    monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.ALLOWED)
+    monkeypatch.setattr(
+        alerter,
+        "check_target",
+        lambda url: Target(UrlVerdict.ALLOWED, "hooks.example.org", ("93.184.216.34",)),
+    )
     monkeypatch.setattr(alerter.httpx, "post", fake_post)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
     return out
 
 

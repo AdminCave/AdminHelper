@@ -26,7 +26,7 @@ import httpx
 import psycopg
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.ssrf import UrlVerdict, classify_url
+from app.core.ssrf import UrlVerdict, check_target, pinned_client
 
 # Cap the reflected body so a large internal response can't flood the worker's
 # memory (the hook may echo it back through the result dict).
@@ -58,17 +58,22 @@ def _read_capped_body(resp: httpx.Response) -> tuple[str, Any]:
 def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> dict:
     # The URL can come straight from an attacker-controlled webhook payload, so guard
     # against SSRF and never follow a redirect into an internal target (3.37).
-    verdict = classify_url(url)
-    if verdict is UrlVerdict.UNRESOLVED:
+    target = check_target(url)
+    if target.verdict is UrlVerdict.UNRESOLVED:
         raise ValueError(
             "Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard: "
             f"{url}"
         )
-    if verdict is not UrlVerdict.ALLOWED:
+    if target.verdict is not UrlVerdict.ALLOWED:
         raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
-    with httpx.stream(
-        "GET", url, headers=headers or {}, timeout=timeout, follow_redirects=False
-    ) as resp:
+    # pinned_client connects to an address check_target checked, not to whatever a second
+    # lookup answers (DNS rebinding).
+    with (
+        pinned_client(url, target) as client,
+        client.stream(
+            "GET", url, headers=headers or {}, timeout=timeout, follow_redirects=False
+        ) as resp,
+    ):
         text, j = _read_capped_body(resp)
         return {"status": resp.status_code, "body": text, "json": j}
 
@@ -76,22 +81,25 @@ def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> 
 def _safe_http_post(
     url: str, json_data: Any = None, headers: dict | None = None, timeout: int = 10
 ) -> dict:
-    verdict = classify_url(url)
-    if verdict is UrlVerdict.UNRESOLVED:
+    target = check_target(url)
+    if target.verdict is UrlVerdict.UNRESOLVED:
         raise ValueError(
             "Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard: "
             f"{url}"
         )
-    if verdict is not UrlVerdict.ALLOWED:
+    if target.verdict is not UrlVerdict.ALLOWED:
         raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
-    with httpx.stream(
-        "POST",
-        url,
-        json=json_data,
-        headers=headers or {},
-        timeout=timeout,
-        follow_redirects=False,
-    ) as resp:
+    with (
+        pinned_client(url, target) as client,
+        client.stream(
+            "POST",
+            url,
+            json=json_data,
+            headers=headers or {},
+            timeout=timeout,
+            follow_redirects=False,
+        ) as resp,
+    ):
         text, j = _read_capped_body(resp)
         return {"status": resp.status_code, "body": text, "json": j}
 
