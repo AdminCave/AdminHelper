@@ -465,6 +465,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: ein Ansible-Lauf laesst Playbook und Inventory nicht mehr im Temp-Verzeichnis liegen (R-0549):** Jeder
+  Lauf hinterliess beide Dateien im Temp-Verzeichnis des Systems. Unter Linux loescht das Terminal sie jetzt, sobald
+  `ansible-playbook` endet, gleich mit welchem Ergebnis und auch dann, wenn das Terminal waehrend des Laufs geschlossen
+  wird; scheitert der Start (kein `ansible-playbook`, kein Terminal), loescht der Desktop sie sofort. Unter Windows
+  bleiben sie nach einem gestarteten Lauf liegen. Doku: Admin-Doku Ansible, Desktop fuer Entwickler (DE+EN).
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
