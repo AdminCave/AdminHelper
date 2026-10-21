@@ -93,7 +93,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: `DEVELOPMENT.md` Wochenlauf und `cicd.html` DE/EN (Absatz zur zweiten VM, DE `:188-195`, EN `:186-193`): ein Satz zur Freigabe.
 Abhängt von: T6, T9
 
-### T11 — heavy.sh: die GUI-Box nach einem grünen GUI-Teil freigeben  [?] (Kevin: GUI-Box nach dem Lauf freigeben (Empfehlung) oder 8 h warm halten? Spec „Offene Fragen“ 1)
+### T11 — heavy.sh: die GUI-Box nach einem grünen GUI-Teil freigeben  [ ]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/skills/test/SKILL.md
 Änderung: Empfehlung gebaut: Am Ende von `all` gibt `heavy.sh` die GUI-Box frei (`reap.sh --role gui`), wenn Teil `gui` grün ist (kein roter Schritt nach der Klassifikation, kein `infra`); ist er rot, bleibt sie zur Sichtung stehen, sofern T10 sie nicht schon freigegeben hat, und die Notiz nennt `vm.py ssh <vmid>`. Warum (Kommentar): Die Wandzeit bestimmt Teil `rest`; eine warm gehaltene GUI-Box spart dem Lauf kaum Zeit, hielte aber ihren RAM bis zum Ablauf ihrer Frist.
 Tests in `heavy_test.sh`: `gui` grün → `reap.sh --role gui` am Ende, die Notiz nennt es; `gui` rot (flaky ausgenommen) → kein `reap.sh`, die Notiz nennt die Box; Modus `capstone` → kein `reap.sh`.
@@ -101,7 +101,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: `DEVELOPMENT.md` Wochenlauf, `cicd.html` DE/EN, `.claude/skills/test/SKILL.md` (welche Box nach dem Lauf stehen bleibt).
 Abhängt von: T10
 
-### T12 — heavy.sh: zweite Box nicht zu bekommen, Teil gui seriell auf der ersten  [?] (Kevin: GUI-Teil seriell auf der Box desktop (Empfehlung) oder UNVERIFIED? Spec „Offene Fragen“ 2)
+### T12 — heavy.sh: zweite Box nicht zu bekommen, Teil gui seriell auf der ersten  [ ]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
 Änderung: Empfehlung gebaut: Scheitert `warm.sh gui` auch im Retry (nicht bei Exit 2, das bleibt `UNVERIFIED`), fährt `heavy.sh` nach Teil `rest` den Teil `gui` auf der Box `desktop`: `iter.sh all --strict --part gui`, Auswertung wie in T9 mit Etikett `gui`. Der Report sagt es in einer Notiz mit der letzten Zeile aus `warm.log` (maskiert wie jede Notiz). Der Pre-flight fragt `doctor` dann nur nach `desktop` (wenn ihr Slot keine laufende Box hat); ob die GUI-Box passt, entscheidet die Kapazitätsprüfung von `vm.py clone`. Das Urteil bleibt: `PASS` nur mit zwei grünen Teilen.
 Tests in `heavy_test.sh`: `SHIM_WARM_RC_GUI=1` → Teil `gui` läuft danach mit Slot `desktop` und `--part gui`, das Urteil folgt den beiden Artefakten, die Notiz nennt den seriellen Lauf; `SHIM_WARM_RC_GUI=2` → `UNVERIFIED`, kein serieller Lauf; `doctor` wird nicht mit `gui` gefragt.
