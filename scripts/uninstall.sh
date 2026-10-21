@@ -8,7 +8,8 @@
 #   2. Daten-Volumes        — ALLE Named Volumes, inkl. ca-pki (die Root-CA!),
 #                             postgres-data, victoria-data  (unwiederbringlich)
 #   3. Host-Daten           — die Bind-Mounts ./data und ./certs (uid 10001)
-#   4. Secrets              — .env (+ eine evtl. .env.restored aus einem Restore)
+#   4. Secrets              — .env (+ eine evtl. .env.restored aus einem Restore
+#                             und die Arbeitskopien .env.ah-* der Skripte)
 #   5. Backups              — ./backups/   (Default: BEHALTEN)
 #   6. Docker-Images        — die Stack-Images   (Default: BEHALTEN)
 #
@@ -40,7 +41,7 @@ while [ $# -gt 0 ]; do
         --purge-backups) PURGE_BACKUPS=1 ;;
         --rmi) REMOVE_IMAGES=1 ;;
         --yes|-y) ASSUME_YES=1 ;;
-        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -135,7 +136,8 @@ fi
 
 # --- Host-Daten (gehören uid 10001 — als root im Container löschen) ----------
 # Kein sudo voraussetzen: docker ist ohnehin Pflicht. Nur fest verdrahtete
-# Pfadnamen (kein User-Input) im Repo-Root entfernen.
+# Pfadnamen und Treffer eines festen Musters (kein User-Input) im Repo-Root
+# entfernen.
 nuke_path() {
     local rel="$1"
     [ -e "$rel" ] || return 0
@@ -151,7 +153,13 @@ nuke_path() {
 }
 
 if [ "$DEL_HOSTDATA" = 1 ]; then nuke_path data; nuke_path certs; nuke_path repo; fi
-if [ "$DEL_ENV" = 1 ]; then nuke_path .env; nuke_path .env.restored; fi
+# Die Arbeitskopien, die install.sh, update.sh und init-secrets.sh neben die .env
+# legen, tragen dieselben Secrets. Ohne Treffer bleibt das Muster wörtlich stehen,
+# nuke_path findet dann nichts.
+if [ "$DEL_ENV" = 1 ]; then
+    nuke_path .env; nuke_path .env.restored
+    for copy in .env.ah-*; do nuke_path "$copy"; done
+fi
 if [ "$DEL_BACKUPS" = 1 ]; then nuke_path backups; fi
 
 # --- Zusammenfassung --------------------------------------------------------
@@ -162,7 +170,7 @@ echo "  Deinstallation abgeschlossen."
 echo "  Entfernt:   Container + Netzwerk"
 if [ "$DEL_VOLUMES" = 1 ];  then echo "              Named Volumes (inkl. Root-CA, DB, Metriken)"; else echo "              [behalten] Named Volumes — Daten bleiben erhalten"; fi
 if [ "$DEL_HOSTDATA" = 1 ]; then echo "              ./data + ./certs + ./repo"; else echo "              [behalten] ./data + ./certs + ./repo"; fi
-if [ "$DEL_ENV" = 1 ];      then echo "              .env (Secrets)"; else echo "              [behalten] .env (Secrets)"; fi
+if [ "$DEL_ENV" = 1 ];      then echo "              .env + .env.restored + .env.ah-* (Secrets)"; else echo "              [behalten] .env + .env.restored + .env.ah-* (Secrets)"; fi
 if [ "$DEL_BACKUPS" = 1 ];  then echo "              ./backups/"; elif [ -d backups ]; then echo "              [behalten] ./backups/  (löschen: --purge-backups)"; fi
 if [ "$DEL_IMAGES" = 1 ];   then echo "              Docker-Images"; else echo "              [behalten] Docker-Images  (löschen: --rmi)"; fi
 echo "----------------------------------------------------------------------------"

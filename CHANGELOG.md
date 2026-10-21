@@ -465,6 +465,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Ops-Skripte: eine `.env` mit einem NUL-Byte oder mit Bytes ausserhalb von UTF-8 verliert keine Zeilen mehr
+  (R-0530):** `grep` haelt eine Datei mit einem NUL-Byte oder mit einem Byte, das die Locale des Aufrufers nicht
+  dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und laesst Zeilen aus: die Zeilen
+  mit einem solchen Byte, bei einem NUL-Byte alle. Setzten `install.sh`, `update.sh` oder `init-secrets.sh` einen
+  Schluessel, fehlten diese Zeilen danach in der `.env`. `init-secrets.sh`, das `install.sh` und `update.sh` aufrufen,
+  hielt ein gesetztes Secret in einer solchen Zeile fuer leer und erzeugte es neu, bei einem NUL-Byte alle vier, auch
+  `POSTGRES_PASSWORD` und `CA_ROOT_PASSPHRASE`, die dann nicht mehr zu den Volumes passten. Bei einem NUL-Byte nannte
+  `update.sh` die Installation ausserdem `:latest`, und der Rollback nach einem gescheiterten Neustart oder
+  Healthcheck hinterliess eine `.env` ohne Image-Pins. Jetzt lesen die Skripte die `.env` in jeder Locale Byte fuer
+  Byte (`LC_ALL=C grep -a`).
+- **Ops-Skripte: eine schreibgeschuetzte `.env` haelt `install.sh`, `update.sh` und `init-secrets.sh` an einem
+  Terminal nicht mehr an (R-0538):** `mv` fragt vor dem Ersetzen einer Datei ohne Schreibrecht nach, wenn die Eingabe
+  ein Terminal ist, und wartet auf die Antwort. War die `.env` schreibgeschuetzt, blieben so `install.sh` und
+  `init-secrets.sh` beim Setzen eines Schluessels stehen und `update.sh` beim Pinnen der Images und in beiden
+  Rollbacks; ein Update endete dann weder fertig noch zurueckgerollt, und unter einem Wrapper, der die Ausgabe
+  einsammelt, war die Frage nicht zu sehen. Jetzt ersetzen die Skripte jede Datei der Installation ohne Rueckfrage
+  (`mv -f`), wie schon bisher ohne Terminal.
 - **Server: der Visitor-Port eines FRP-Tunnels ist ein Port von 1 bis 65535 (R-0533):**
   `POST`/`PUT /api/frp/tunnels` nahmen als `visitor_port` jeden INTEGER-Wert an und speicherten ihn; der Server schrieb
   ihn als `bindPort` in die Visitor-TOML, und der Desktop wies die ganze Visitor-TOML ab. `0` vergab still einen freien
@@ -1126,6 +1143,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Deinstallation: der Schritt „Secrets“ entfernt auch die Kopien der `.env`:** `install.sh`, `update.sh` und
+  `init-secrets.sh` schreiben die `.env` ueber eine Kopie daneben (`.env.ah-XXXXXX`, `.env.ah-new`), die nach einem
+  Abbruch liegen bleiben kann und dieselben Secrets traegt. Beantwortet man in `uninstall.sh` die Frage nach der
+  Secrets-Datei mit Ja (auch mit `--yes`), entfernt das Skript neben `.env` und `.env.restored` jetzt auch jede Datei
+  und jedes Verzeichnis `.env.ah-*` im Install-Verzeichnis; `.env.example` bleibt. Ohne Ja bleiben alle liegen.
+  Doku: Installation (DE+EN); sie nennt bei den Host-Daten jetzt auch `./repo`, das das Skript schon bisher entfernt.
 - **Agent: der Windows-Dienst meldet ein nicht gesichertes Log-Verzeichnis im Ereignisprotokoll (R-0556):** Laesst
   sich das Log-Verzeichnis nicht sichern, schreibt der Agent wie bisher nur auf stdout und keine `agent.log`; unter
   dem Dienststeuerungs-Manager sah das niemand. Laeuft er als Windows-Dienst, schreibt er dann beim Start genau eine
