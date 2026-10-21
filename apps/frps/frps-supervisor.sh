@@ -24,7 +24,8 @@
 # while only the supervisor may read it, its TLS paths pointed at current/, and swapped in as
 # current/, which frps reads and cannot write and no other user reads (FRPS_ACTIVE_DIR 0711,
 # current/ 0750, its files 0640, all the supervisor's and in the group of FRPS_USER, which root
-# is in). frps always runs from current/, so a half-written or invalid input never reaches it.
+# is in). A current/ left from an earlier run gets these modes at the start, whatever it had.
+# frps always runs from current/, so a half-written or invalid input never reaches it.
 # At the start, and after that whenever the input has changed and then stayed the same for two
 # polls in a row (FRPS_POLL_SECONDS apart, one second while a start of frps is due; a file
 # still being written is not taken for a new one):
@@ -55,8 +56,9 @@
 #
 # frps exiting on its own is started again from current/ after 2, 4, 8 … FRPS_BACKOFF_MAX
 # seconds; the third exit within FRPS_CRASH_WINDOW seconds makes the state crashloop, until
-# frps has run that long again. TERM or INT stop frps (KILL after FRPS_STOP_SECONDS) and end
-# the supervisor with 0.
+# frps has run that long again. TERM or INT KILL every child of the supervisor but frps (the
+# pause between polls, the requests to the dashboard), stop frps (KILL after
+# FRPS_STOP_SECONDS) and end the supervisor with 0, with no child of it left.
 #
 # The state goes to $FRPS_STATE_DIR/status.json, rewritten at every poll as a heartbeat; its
 # format is the contract the server reads, apps/server/app/modules/frp/supervisor_status.py.
@@ -68,10 +70,10 @@
 # puts each answer as frps gave it into $FRPS_STATE_DIR/proxy-<type>.json (fetch_proxies);
 # a failed request or an answer over 1 MiB removes the file of its type, frps not running or
 # no webServer.port all of them. curl runs as FRPS_FETCH_USER (default frps-fetch, a user the
-# image creates for it alone), whose UID is neither root nor that of FRPS_USER: it holds no
-# capability, reads nothing of current/, and kill_left, which KILLs the processes of
-# FRPS_USER, never hits a request under way. The supervisor opens the file each answer goes
-# to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
+# image creates for it alone), whose UID is neither root nor that of FRPS_USER and who is not
+# in the group of FRPS_USER: it holds no capability, reads nothing of current/, and kill_left,
+# which KILLs the processes of FRPS_USER, never hits a request under way. The supervisor opens
+# the file each answer goes to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
 
 set -u
 export LC_ALL=C
@@ -711,9 +713,10 @@ dashboard_port() {
 # for each of PROXY_TYPES, with webServer.user and webServer.password of current/frps.toml,
 # which go to curl on stdin, never on a command line; curl runs as FRPS_FETCH_USER, and the
 # supervisor opens the file it writes to. The requests run side by side, each for
-# FRPS_READ_SECONDS at the most, and TERM or INT ends them at once (on_signal), so that a
-# dashboard that does not answer holds up a poll no longer than that. The answers are not
-# parsed: the name and the mtime of a file are the supervisor's (keep_proxy).
+# FRPS_READ_SECONDS at the most, and TERM or INT KILLs them at once (on_signal, kill_children:
+# FETCH_PIDS serves the wait below alone), so that a dashboard that does not answer holds up a
+# poll no longer than that. The answers are not parsed: the name and the mtime of a file are
+# the supervisor's (keep_proxy).
 fetch_proxies() {
     port=$(dashboard_port)
     if [ -z "$port" ]; then
@@ -724,7 +727,7 @@ fetch_proxies() {
     password=$(top_value "$CURRENT/frps.toml" webServer.password)
     for type in $PROXY_TYPES; do
         # -q first: no curlrc is read. No proxy from the environment gets the credentials.
-        # su-exec execs curl: $! is the pid of curl, which on_signal ends.
+        # su-exec execs curl: the child, $!, is curl itself, which on_signal ends.
         ${FRPS_FETCH_USER:+su-exec "$FRPS_FETCH_USER"} curl -q --config - --silent --fail \
             --noproxy '*' --max-time "$FRPS_READ_SECONDS" --max-filesize "$INPUT_MAX" \
             "http://127.0.0.1:$port/api/proxy/$type" \
@@ -795,24 +798,44 @@ poll() {
 # pause <seconds> — a sleep that TERM and INT cut short: a trapped signal ends wait at once.
 pause() {
     sleep "$1" &
-    PAUSE_PID=$!
-    wait "$PAUSE_PID" && PAUSE_PID=""
+    wait "$!"
+}
+
+# kill_children — KILL to every child of the supervisor but frps (FRPS_PID), the pause and the
+# requests to the dashboard among them. The children are found by their PPid, not by the pids
+# the supervisor keeps: the shell runs a trap once the command under way is done, so a signal
+# right after `… &` comes before $! is kept. KILL, since a child just forked holds the trap of
+# the shell until it has reset its traps, and a TERM in that time is lost (dash). From /proc,
+# not FRPS_PROC_ROOT: it hits children of this shell alone, in the tests too.
+kill_children() {
+    for status in /proc/[0-9]*/status; do
+        pid=${status%/status}
+        pid=${pid##*/}
+        [ "$pid" != "$FRPS_PID" ] || continue
+        state=""
+        ppid=""
+        # A process that ended in the meantime has no file left to read.
+        {
+            while read -r key value _; do
+                case $key in
+                State:) state=$value ;;
+                PPid:)
+                    ppid=$value
+                    break
+                    ;;
+                esac
+            done < "$status"
+        } 2>/dev/null
+        if [ "$ppid" = "$$" ] && [ "$state" != Z ]; then kill -KILL "$pid" 2>/dev/null; fi
+    done
 }
 
 on_signal() {
     trap '' TERM INT
     log "stopping"
-    if [ -n "$PAUSE_PID" ]; then
-        kill "$PAUSE_PID" 2>/dev/null
-        wait "$PAUSE_PID" 2>/dev/null
-    fi
-    if [ -n "$FETCH_PIDS" ]; then
-        # shellcheck disable=SC2086 # one pid a word
-        kill $FETCH_PIDS 2>/dev/null
-        # shellcheck disable=SC2086
-        wait $FETCH_PIDS 2>/dev/null
-    fi
+    kill_children
     stop_frps
+    wait
     drop_proxies
     exit 0
 }
@@ -867,6 +890,14 @@ if [ -n "$FRPS_FETCH_USER" ]; then
     [ "$fetch_uid" != 0 ] || die "FRPS_FETCH_USER must not be root"
     # kill_left would hit the requests under way.
     [ "$fetch_uid" != "$FRPS_UID" ] || die "FRPS_FETCH_USER must not share the UID of FRPS_USER"
+    # The group of FRPS_USER reads the copy (open_to_frps).
+    if [ -n "$FRPS_GID" ]; then
+        fetch_gids=$(id -G "$FRPS_FETCH_USER" 2>/dev/null) \
+            || die "FRPS_FETCH_USER $FRPS_FETCH_USER has no group"
+        case " $fetch_gids " in
+        *" $FRPS_GID "*) die "FRPS_FETCH_USER must not be in the group of FRPS_USER" ;;
+        esac
+    fi
 elif [ "$(id -u)" -eq 0 ]; then
     die "FRPS_FETCH_USER must name the user the dashboard is asked as, not be empty under root"
 fi
@@ -880,6 +911,16 @@ if ! { mkdir -p "$FRPS_STATE_DIR" && chmod 0755 "$FRPS_STATE_DIR"; }; then
     log "cannot set up $FRPS_STATE_DIR" >&2
 fi
 recover
+# frps may run from a copy an earlier run left (degraded), which activate never saw: it gets
+# the same modes here, its content stays.
+if [ -d "$CURRENT" ]; then
+    open_to_frps "$CURRENT" 0750 || die "cannot set up $CURRENT"
+    for file in frps.toml applied.sha256 $PEMS; do
+        if [ -e "$CURRENT/$file" ]; then
+            open_to_frps "$CURRENT/$file" 0640 || die "cannot set up $CURRENT"
+        fi
+    done
+fi
 # No frps runs yet: proxy lists of an earlier run go.
 drop_proxies
 
@@ -898,7 +939,6 @@ if [ -d "$CURRENT" ]; then COPY_HASH=$(copy_hash); fi
 REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0
-PAUSE_PID=""
 FETCH_PIDS=""
 CHANGING_SINCE=""
 UNSTABLE=0
