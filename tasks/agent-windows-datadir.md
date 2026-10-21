@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent Windows: Datenverzeichnis mit festen Rechten anlegen — Task-Ledger
-Status: bereit · Branch: feature/agent-windows-datadir · Review: pro Task
+Status: aktiv · Branch: feature/agent-windows-datadir · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-16)
 Heavy: linux-full + windows — `apps/agent/internal/config` und die Aufrufer in `monitor`, `frpc` und `enroll` liegen auf dem Provisionierungs- und Enrollment-Pfad des Agents und laufen im Sammellauf über `main` (`/feature-build` §5); `windows` über den CI-Job `agent-windows` (go test nativ unter Windows; der Pool hat keine Windows-Vorlage)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -90,3 +90,11 @@ Review: approve (.ah-out/review/agent-windows-datadir/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: CHANGELOG.md (Changed) · docs/developer/agent.html + docs/en/developer/agent.html (DE+EN)
 Abhängt von: T2
+
+### T9 — Windows: Tabellentest für die Dichte-Entscheidung (`aclClosed`)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/config/securedir_windows_test.go
+Änderung: `aclClosed` (`securedir_windows.go`) entscheidet, ob ein behaltener Ordner als dicht gilt und damit, ob ein Kind mit anderem Eigentümer übernommen oder entfernt wird. Die Tests pinnen bisher nur drei DACL-Formen. Ein windows-getaggter Tabellentest SDDL → DACL → `aclClosed` hält die fail-closed-Zweige fest, ohne Produktcode zu ändern: NULL-DACL → offen; unbekannter, Objekt- oder Callback-Eintrag → offen; ein Schreibrecht unterhalb von FA für ein anderes Konto (etwa die von `%ProgramData%` geerbte Form für BU oder ein Eintrag für CREATOR OWNER) → offen; Inherit-Only-Einträge für SY/BA zählen nicht als die vererbbare Form → offen; die geschützte OICI-Form, die vererbte Form (OICIID) und die Form des alten `SecureDir` → dicht; die Entfernungs-Sperre → offen. Jede Zeile scheitert, wenn der zugehörige Zweig in `aclClosed` umgedreht wird.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (intern)
+Abhängt von: T6
+Beweis: tester Branch 2026-10-21 an 4255d204: kein DACL-String in `securedir_windows_test.go` erreicht `aclClosed` `:570` (NULL-DACL), `:584` (Inherit-Only), `:589` (Schreibrecht unter FA), `:594-597` (unbekannter Typ); ein umgedrehtes `return false` an `:571` oder `:597` bliebe grün (Code-Lesung)
