@@ -8,7 +8,7 @@ import time
 
 import httpx
 
-from app.core.ssrf import UrlVerdict, classify_url
+from app.core.ssrf import UrlVerdict, check_target, pinned_client
 
 # Redirects are followed manually (see run) so every hop is re-checked against the
 # SSRF guard; cap the chain length like a browser would.
@@ -31,14 +31,14 @@ class HttpChecker:
         if not url:
             return "unknown", "No URL given", None
 
-        verdict = classify_url(url)
-        if verdict is UrlVerdict.UNRESOLVED:
+        target = check_target(url)
+        if target.verdict is UrlVerdict.UNRESOLVED:
             return (
                 "unknown",
                 "URL host could not be resolved (DNS error or timeout), rejected by the SSRF guard",
                 None,
             )
-        if verdict is not UrlVerdict.ALLOWED:
+        if target.verdict is not UrlVerdict.ALLOWED:
             return (
                 "unknown",
                 "URL points to a private/reserved address, rejected by the SSRF guard",
@@ -47,13 +47,10 @@ class HttpChecker:
 
         try:
             start = time.monotonic()
-            resp = httpx.request(
-                method,
-                url,
-                timeout=timeout,
-                verify=verify_ssl,
-                follow_redirects=False,
-            )
+            # pinned_client connects to an address check_target checked, not to whatever
+            # a second lookup answers; it parses the URL already, so it sits in the try.
+            with pinned_client(url, target, verify=verify_ssl) as client:
+                resp = client.request(method, url, timeout=timeout, follow_redirects=False)
             # Follow redirects manually and re-check the SSRF guard on every hop.
             # follow_redirects=True would let a public URL 302 into the internal
             # network (VictoriaMetrics, other services, cloud metadata) unchecked.
@@ -65,27 +62,23 @@ class HttpChecker:
                 if not location:
                     break
                 next_url = str(resp.url.join(location))
-                hop = classify_url(next_url)
-                if hop is UrlVerdict.UNRESOLVED:
+                hop = check_target(next_url)
+                if hop.verdict is UrlVerdict.UNRESOLVED:
                     return (
                         "critical",
                         "Redirect target could not be resolved (DNS error or timeout), "
                         "rejected by the SSRF guard",
                         None,
                     )
-                if hop is not UrlVerdict.ALLOWED:
+                if hop.verdict is not UrlVerdict.ALLOWED:
                     return (
                         "critical",
                         "Redirect to a private/reserved address, rejected by the SSRF guard",
                         None,
                     )
-                resp = httpx.request(
-                    method,
-                    next_url,
-                    timeout=timeout,
-                    verify=verify_ssl,
-                    follow_redirects=False,
-                )
+                # A client of its own per hop: it connects only to the hop's checked host.
+                with pinned_client(next_url, hop, verify=verify_ssl) as client:
+                    resp = client.request(method, next_url, timeout=timeout, follow_redirects=False)
                 redirects += 1
             if resp.is_redirect:
                 return "critical", f"Too many redirects (>{_MAX_REDIRECTS})", None

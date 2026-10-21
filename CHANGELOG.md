@@ -1109,6 +1109,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `service uninstall` entfernt sie wieder; scheitert das, gibt der Befehl eine Warnung aus. Bei einem Dienst, den eine
   fruehere Version eingerichtet hat, fehlt die Beschreibung, der Text steht dann in den Ereignisdaten. Doku:
   Agent-Deployment und Entwickler-Doku Agent (DE+EN).
+- **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook und der HTTP-Check des
+  Monitorings (dieser fuer die erste URL und jeden Redirect-Hop) sowie die Hook-Helfer `http_get`/`http_post` des
+  Servers loesen das Ziel einmal auf, pruefen alle Adressen und verbinden zu einer davon (der Reihe nach, bis eine
+  annimmt), statt dass httpx den Namen beim Verbinden ein zweites Mal aufloest; Host-Header und TLS-Name (SNI,
+  Zertifikatspruefung) bleiben der Hostname. Ist fuer das Schema der URL ein Proxy aus `HTTP_PROXY`, `HTTPS_PROXY`
+  oder `ALL_PROXY` gesetzt (bei den Hook-Helfern `HTTP_PROXY` oder `HTTPS_PROXY`, die der Hook-Runner durchreicht),
+  geht die Anfrage wie bisher ueber den Proxy. Doku: Monitoring-Administration, Monitoring- und
+  Hook-Entwicklerdoku (DE+EN).
 - **Desktop: Workspaces statt Moduswechsel (R-0431):** Der Modus in den Einstellungen entfaellt: Die Art legt ein
   Workspace beim Anlegen fest, Name, Farbe und URL aendert der Picker, solange der Workspace geschlossen ist; im
   Fenster stehen sie als Anzeige. Die Einstellungen trennen „Dieser Workspace“ (Abmelden, Zertifikate,
