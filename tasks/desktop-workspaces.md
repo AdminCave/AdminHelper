@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces — Task-Ledger
-Status: bereit · Branch: feature/desktop-workspaces · Review: pro Task
+Status: aktiv · Branch: feature/desktop-workspaces · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — der Desktop startet anders (Launcher, Workspace-Prozess, Migration), alle Live-Specs ziehen mit und die neue Suite `desktop_e2e_workspaces` (zwei Stacks) läuft im e2e-Layer, `docker-compose.test.yml` ändert sich: Sammellauf; `scenario`, weil `box_desktopbox.sh` (Capstone `--desktop`) den Standard-Workspace startet und Tunnel-Laufzeitdateien und Portkarten-Besitzer je Workspace wechseln (FRP-Datenpfad); `windows` = CI-Job `rust-windows` (abgekoppelter Prozessstart, Datei-Locks, Keyring-TargetName, TERMSRV); mstsc selbst ist ohne Windows-Vorlage im Pool nicht verifiziert, dafür die Prüfanleitung aus T33 für Kevin
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -271,4 +271,11 @@ Review: approve (.ah-out/review/desktop-workspaces/T47.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts src/lib/i18n/i18n.test.ts
 Doku: keine (Admin-Doku mit T34)
 Abhängt von: T34
+
+### T48 — Abweisung fremder Ports in den Commands live belegen  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/two-installations.workspaces.js
+Änderung: Aus der Branch-Prüfung (tester, wichtig): Die Abweisung eines Loopback-Ziels mit dem Port eines anderen Workspace sitzt in `open_connection`, `open_connection_stored` (vor dem Laden des Passworts) und `resolve_connection` (`commands.rs`); kein Test deckt diese Aufrufe, nur `tunnel::reject_foreign_port` und den Helfer. Der Multiremote-Spec ruft, sobald `bindingA` und `bindingB` bekannt sind, in wsA `resolve_connection` und `open_connection` für `{kind:'ssh', host:'127.0.0.1', port: bindingB.localPort}` (Ausweichport von wsB, für den wsA keinen Visitor hat) und erwartet je die Meldung `port <n> on this machine belongs to the tunnel of another workspace` (wörtlich aus `tunnel.rs`); `open_connection_stored` ebenso, falls ohne gespeichertes Passwort aufrufbar. Nicht `bindingA.localPort` in wsB (das ist der Server-Port des wsB-Visitors und wird korrekt aufgelöst). Kein Aufruf darf eine Verbindung zum SSH-Ziel aufbauen (Zählung am Ziel in `desktop_e2e_workspaces.sh`). Beweis: erneuter Lauf von `desktop_e2e_workspaces` auf der Lane-VM.
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Test)
+Abhängt von: T31
 
