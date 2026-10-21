@@ -54,8 +54,10 @@ The app stores data in the OS-specific *app data directory*:
 - `port-registry.json` — the local ports of the tunnel visitors of all workspaces
 
 The files from before workspaces (`settings.json`, `connections*.json`) stay where they were after the move into
-workspaces. Each process writes its own log: `adminhelper.log` (launcher), `adminhelper-<id>.log` (workspace). You can
-find the folder by searching for `workspaces.json` on your system.
+workspaces; a `settings.json` that cannot be read is set aside as `settings.json.unreadable-<time>` and **Standard**
+starts as a local workspace (see [Troubleshooting](docs/en/admin/troubleshooting.html#unreadable-settings)). Each
+process writes its own log: `adminhelper.log` (launcher), `adminhelper-<id>.log` (workspace). You can find the folder
+by searching for `workspaces.json` on your system.
 
 ### Sync format (HTTPS JSON)
 

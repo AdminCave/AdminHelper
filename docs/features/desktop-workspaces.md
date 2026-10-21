@@ -136,7 +136,8 @@ Keine Server-API, keine Alembic-Migration. Die **lokale Datenmigration** ist Tei
 **Layout im App-Datenordner** (`identifier` bleibt `com.admincave.adminhelper`):
 ```
 prefs.json                 globale Einstellungen; Schreiber: alle Prozesse, unter prefs.lock
-workspaces.json            Registry {workspaces:[{id}], lastUsed, migratedNotice}; Schreiber: Migration, Launcher
+workspaces.json            Registry {workspaces:[{id}], lastUsed, migratedNotice, unreadableSettings}; Schreiber:
+                           Migration, Launcher
 migrate.lock               Sperre der Migration
 port-registry.json (+lock) aus R-0430; Besitzer = Workspace-Id
 workspaces/<id>/workspace.json   {kind, name, color, url, intervalMinutes, allowSelfSignedCerts, lastUsername,
@@ -148,7 +149,8 @@ legacy-secrets.json        Namen der RDP-Schlüssel ohne Präfix, die der Purge 
 workspaces/<id>/instance.lock    Lock je Workspace
 workspaces/<id>/run/             visitor.toml, identity/ (Unix 0700), nur solange der Tunnel läuft
 ```
-Altdateien (`settings.json`, `connections*.json`) bleiben unverändert liegen.
+Altdateien (`settings.json`, `connections*.json`) bleiben unverändert liegen; nur eine unlesbare `settings.json`
+benennt die Migration in `settings.json.unreadable-<UTC-Zeit>` um (T49).
 
 **Ids:** migriert `standard`, `lokal`, `sync`, `server`; neu `w-<8 hex>`. An jeder Grenze (argv, IPC) gegen
 `^[a-z0-9-]{1,32}$` geprüft (Zeichenklasse ausgeschrieben, unabhängig von der Locale).
@@ -185,7 +187,13 @@ eigenes Binding hält.
 Sonst aus `settings.json` (fehlt sie: Vorgaben, also lokal) Standard bauen, Dateien in `<id>.partial/` kopieren und
 umbenennen, ggf. „Lokal“, „Sync“, „Server“, dann `prefs.json`, dann die Portkarte, zuletzt `workspaces.json`
 atomar als Commit-Marker. Ein Abbruch an beliebiger Stelle wird beim nächsten Start neu aufgebaut, weil die
-Altdateien die Quelle bleiben.
+Altdateien die Quelle bleiben. Lässt sich `settings.json` nicht lesen oder parsen (T49, Entscheidung Kevin
+2026-10-21), benennt die Migration sie unverändert in `settings.json.unreadable-<UTC-Zeit>` um (belegter Name:
+`-2`, `-3` …) und baut weiter wie ohne Einstellungen (nur „Standard“, lokal; die übrigen Altdaten wie sonst, die
+Portkarten-Einträge verfallen); die Registry merkt sich den Namen in `unreadableSettings` für einen einmaligen
+Hinweis im Picker (T50). Ein Lauf nach einem Abbruch hinter dem Umbenennen findet den Namen wieder; scheitert das
+Umbenennen (Windows: Datei von einem anderen Prozess offen), bricht die Migration ab wie bisher. Die Logzeile nennt
+Datei und Fehlerstelle, nie einen Wert; ein Workspace-Prozess loggt die Migration nicht (Logger nach `startup`).
 
 **Tauri-IPC (intern, UI ↔ Rust):**
 - `Settings` behält Form und Feldnamen (`types.ts`, Parität unverändert): `load_settings` setzt sie aus
@@ -194,7 +202,8 @@ Altdateien die Quelle bleiben.
   Origin; Sync-Quelle: jede andere Schreibweise), ebenso eine erste Server-URL, solange der Workspace eine
   Geräte-Identität hält.
 - Neu: `workspace_context` → `{launcher, workspace?: WorkspaceInfo}`; Launcher-only `list_workspaces` →
-  `WorkspaceList{workspaces: WorkspaceInfo[], lastUsed, migratedNotice}`, `save_workspace(draft: WorkspaceDraft)`,
+  `WorkspaceList{workspaces: WorkspaceInfo[], lastUsed, migratedNotice, unreadableSettings?}` (Dateiname der
+  gesicherten `settings.json` ohne Pfad, einmal wie `migratedNotice`; T49), `save_workspace(draft: WorkspaceDraft)`,
   `delete_workspace(id)` → `ResetOutcome`, `open_workspace(id)`; Workspace-only `open_launcher`.
   `WorkspaceInfo{id, name, color, kind, host, url?, open}` (`url` mit Benutzerteil als `***@`, Query-Werte und Fragment maskiert; T42/T43/T45), `WorkspaceDraft{id?, kind, name, color, url?}`; `kind` ist
   `SyncMode`. Launcher-Commands lehnen im Workspace-Prozess ab und umgekehrt; ohne Workspace-Kontext liefern
@@ -301,7 +310,8 @@ nicht für eine Adresse auf dieser Maschine; Löschen entfernt beides.
 - **E2E-Reihenfolge:** nach dem ersten erfolgreichen Login ist die URL fest; `live.js` und die Specs mit URL-Feld
   arbeiten mit und ohne Feld.
 - **Rollback:** Revert des Merges. Die ältere Version liest wieder `settings.json` und die Altdateien (Stand vor der
-  Migration); Änderungen aus der Workspace-Zeit sieht sie nicht. Keyring-Einträge mit Präfix bleiben ungenutzt
+  Migration; eine beiseitegelegte unlesbare `settings.json` fehlt ihr, sie startet dann lokal); Änderungen aus der
+  Workspace-Zeit sieht sie nicht. Keyring-Einträge mit Präfix bleiben ungenutzt
   liegen; Windows-RDP-Passwörter im App-Namensraum kennt die ältere Version nicht.
 
 ## Doku-Impact

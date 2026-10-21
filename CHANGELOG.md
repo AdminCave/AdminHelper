@@ -1097,8 +1097,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   („Standard“ oder „Server“). Die migrierten Workspaces teilen sich die Eintraege im System-Schluesselbund von
   vorher, gespeicherte RDP-Passwoerter und eine Geraete-Identitaet bleiben nutzbar. Die Altdateien (`settings.json`,
   `connections*.json`) bleiben unveraendert liegen; eine aeltere Version liest sie nach einem Downgrade wieder,
-  Aenderungen aus der Workspace-Zeit sieht sie nicht. Der Picker nennt die Migration einmal. Doku: Desktop fuer
-  Entwickler (DE+EN), README.
+  Aenderungen aus der Workspace-Zeit sieht sie nicht. Der Picker nennt die Migration einmal. Ist die bisherige
+  `settings.json` nicht lesbar, startet der Desktop trotzdem: Er benennt sie unveraendert in
+  `settings.json.unreadable-<UTC-Zeit>` um, legt nur „Standard“ an, lokal, mit den lokalen Verbindungen oder, gab es
+  keine lokale Datei, den Verbindungen aus dem bisherigen Cache, setzt die Einstellungen fuer alle Workspaces auf die
+  Vorgaben und nennt die Datei einmal im Picker; fuer einen Server legt man dann einen neuen Server-Workspace an und
+  registriert das Geraet dort neu. Doku: Desktop fuer Entwickler (DE+EN), README, Troubleshooting (DE+EN).
 - **Desktop: ein zweiter Start oeffnet den Launcher (R-0431):** Ein zweiter Programmstart holt den laufenden Launcher
   nach vorn oder oeffnet ihn, statt das Fenster der laufenden App zu zeigen; Workspaces laufen nebeneinander in
   eigenen Prozessen. Logdatei und Diagnose-Bericht gehoeren je einem Prozess (`adminhelper.log` fuer den Launcher,
