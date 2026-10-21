@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Images server, ca-issuer, monitoring: Programme nur ausführbar, Prozesse von app nicht dumpable — Task-Ledger
-Status: bereit · Branch: feature/images-exec-only · Review: pro Task
+Status: erledigt · Branch: feature/images-exec-only · Review: pro Task
 Spec: keine eigene Datei (Härtung der Images server/scheduler, ca-issuer und monitoring nach dem Muster des frps-Image, Kevin 2026-10-21)
 Heavy: linux-full — T1 und T3 ändern die Images von server und scheduler (`Dockerfile`), `apps/ca-issuer/Dockerfile` und `apps/monitoring/Dockerfile` (CLAUDE.md §5), T2 die Stack-Prüfung `scripts/tests/integration_stack_test.sh`; die gebauten Images fährt der Job `integration-stack` im Sammellauf über `main`; auf PRs läuft er nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/images-exec-only`. Der Job `docker-build` baut alle Images auf dem PR. Kein `scenario`: `docker-compose.yml`, Install/Update, FRP und PKI bleiben unverändert; kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
