@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Dependency Audit 2026-10-21: certifi, rustls-webpki, webpki-roots, vite — Task-Ledger
-Status: aktiv · Branch: feature/deps-audit-1021 · Review: am Ende
+Status: bereit · Branch: feature/deps-audit-1021 · Review: am Ende
 Spec: Roadmap R-0657
 Heavy: linux-full — `rustls-webpki` und `webpki-roots` prüfen die Zertifikatsketten im Desktop-Binary (reqwest `rustls-tls`, mTLS-Client), `vite` baut die Desktop-UI; die Desktop-Journeys laufen im Beta-Sammellauf über `main`, den Session adminhelper-fe direkt nach dem Merge startet. Kein `scenario`: weder FRP-Datenpfad noch PKI-Ausstellung noch Install/Update ändern sich
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -36,8 +36,10 @@ Dedup-Key: rel:deps-audit
 HEAD: e73912f4
 Semantik: docs/developer/cicd.html:43 — wie T1
 
-### T3 — vite 8.1.6 in web und desktop-ui  [ ]
+### T3 — vite 8.1.6 in web und desktop-ui  [x]
 Komponente: web · Dateien: apps/web/package.json, apps/web/package-lock.json, apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick] web desktop-ui: 2 passed, 0 failed, 16 skipped @680f542e 2026-10-21T16:17:53+02:00
+Review: am Ende (Branch-Review)
 Änderung: In beiden Paketen `vite` auf 8.1.6 heben und die Untergrenze in `package.json` von `^8.0.16` auf `^8.1.6` setzen (wie die Untergrenze bei pyjwt), damit eine betroffene Version nicht mehr auflösbar ist. Im Lock-Diff nur `vite` und, falls 8.1.6 sie verlangt, ihre eigenen Abhängigkeiten; jede weitere Änderung nennen. Die hart verlinkten `node_modules` des Worktrees nur per `npm ci` ersetzen (es löscht den Ordner zuerst), nie in place ändern. Orakel: `npm audit --audit-level=high` wie in `audit.yml` in beiden Verzeichnissen vorher rot (vite), danach grün; dazu `npm run build` in beiden.
 Verify: bash scripts/dev/verify.sh web desktop-ui --strict
 Doku: CHANGELOG.md (Security: vite 8.0.16 → 8.1.6, nur Dev-Server, nicht ausgeliefert)

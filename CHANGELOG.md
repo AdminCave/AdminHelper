@@ -488,6 +488,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `webpki-roots`. Gefunden vom woechentlichen Dependency-Audit; nur der Lockfile-Stand, im Diff aendern sich Version und
   Checksumme der zwei Pakete, `Cargo.toml` bleibt. `cargo audit` meldet jetzt nur noch die erlaubten Warnungen.
 
+- **Web und Desktop-UI: `vite` 8.0.16 → 8.1.6 (R-0657):** schliesst GHSA-587h-7wmj-h5pm (high), GHSA-698v-4r3x-3vcv
+  und GHSA-r825-w8mm-5pxw im eingebauten `launch-editor` (jetzt 2.14.2), mit dem der Vite-Dev-Server ueber
+  `/__open-in-editor` eine Quelldatei im Editor oeffnet. Unter Windows konnte ein praeparierter Dateipfad dabei Befehle
+  ausfuehren, unter WSL mit Vim oder Emacs ein Pfad, der mit `-` oder `+` beginnt. Betroffen ist nur der Dev-Server
+  (`npm run dev`, `tauri dev`); die ausgelieferten Bundles von Web-Panel und Desktop enthalten weder Vite noch
+  `launch-editor`. Die Untergrenze in beiden `package.json` steht jetzt auf `^8.1.6`. Mit Vite 8.1 baut `rolldown`
+  1.1.5 statt 1.0.3 die Bundles; im Lockfile ziehen ausserdem `picomatch` 4.0.7, `@oxc-project/types` 0.139.0 und die
+  nur unter WebAssembly geladenen `@emnapi/*`, `@napi-rs/wasm-runtime` und `@tybys/wasm-util` nach, alles
+  Abhaengigkeiten von Vite selbst. `npm run build` laeuft in beiden Projekten, die erzeugte `index.html` ist bis auf den
+  Hash des Skripts gleich. Gefunden vom woechentlichen Dependency-Audit; `npm audit --audit-level=high` meldete vorher
+  in beiden Projekten 1 high (vite) und meldet jetzt nichts mehr.
+
 ### Fixed
 
 - **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor
