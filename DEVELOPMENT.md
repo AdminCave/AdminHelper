@@ -1216,7 +1216,9 @@ Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Tes
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
   `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
-  auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf, mit
+  auf der warmen Box. Ein vorangestelltes `--slot gui` (Layer-Form und `--cmd`) faehrt auf
+  der Box des Slots `gui` statt `desktop`, mit deren Namen und Frist; mit `--desktop` gibt
+  es kein `--slot`. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf, mit
   `--role <desktop|server|gui>` nur diesen einen Slot samt seinen Eintraegen in `warm.env`
   (beim Server auch die Zugangsdaten); die anderen Slots bleiben stehen. Bei Fehler
   bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
@@ -1253,8 +1255,8 @@ Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Tes
   Unter der Summary nennt der Lauf die Go-Version, mit der die Server-Box das Agent-Binary
   der Pakete gebaut hat (`go version (agent .deb, server box): …`, aus dem Binary gelesen).
   Die Frist der Warm-Box kommt aus `AH_WARM_TTL` (Default 8h); `iter.sh` verlaengert bei
-  jedem Lauf um genau diese Frist (warm.sh merkt sie als `desktop_ttl` in `.vm/warm.env`),
-  eine bewusst kurze Box bleibt also kurz.
+  jedem Lauf um genau diese Frist (warm.sh merkt sie je Slot als `desktop_ttl` bzw.
+  `gui_ttl` in `.vm/warm.env`), eine bewusst kurze Box bleibt also kurz.
 
 ### Wochenlauf (heavy.sh)
 

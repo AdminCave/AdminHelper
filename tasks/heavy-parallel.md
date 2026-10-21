@@ -74,8 +74,10 @@ Tests in `vm_wrappers_test.sh`: `reap.sh` ohne Flag zerstört die Slots `desktop
 Verify: bash scripts/dev/verify.sh scripts --strict -- vm_wrappers_test
 Doku: `.claude/skills/vm/SKILL.md:21` (`reap.sh [--lane l] [--all] [--role <rolle>]`), `DEVELOPMENT.md` Absatz Schneller Loop (`:1206-1220`).
 
-### T7 — iter.sh: --slot wählt die warme Box, --part geht an run.sh  [ ]
+### T7 — iter.sh: --slot wählt die warme Box, --part geht an run.sh  [x]
 Komponente: scripts · Dateien: scripts/vm/iter.sh, scripts/tests/iter_flags_test.sh, scripts/tests/vm_wrappers_test.sh, .claude/skills/vm/SKILL.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0f6846f7 2026-10-21T15:22:26+02:00
+Review: approve (.ah-out/review/heavy-parallel/T7.verdict.json)
 Änderung: Ein führendes `--slot <desktop|gui>` (Default `desktop`) vor der Form; gilt für die Layer-Form und `--cmd`, mit `--desktop` (Pond) ist es Exit 2, ein anderer Wert ebenso, beides vor `vm_load_env`. Der Slot bestimmt den `warm.sh`-Aufruf (`:140`, `:208`), die Box (`:141`, `:209`), den Namen für `--expect-name` (`:95`), die Frist (`:52`, `<slot>_ttl`) und den Hinweis bei einer Ablehnung (`:103`, `warm.sh <slot>`). Die Flag-Liste der Layer-Form (`:166`) nimmt `--part`; es geht wie `--step` gequotet an `run.sh`. Kopf (`:11-19`) nennt beides.
 Tests: `iter_flags_test.sh` (Trockenlauf): `all --strict --part gui` → der Befehl endet auf `run.sh all --strict --part gui`; `--slot nope lint` und `--slot gui --desktop` → Exit 2, `vm.py` nicht gerufen. `vm_wrappers_test.sh` (Fake-`vm.py`): mit `desktop=3001`/`gui=3002` und Namen in `warm.env` fährt `iter.sh --slot gui lint` `run 3002 … --extend <gui_ttl> --expect-name <gui-name>`, ohne `--slot` weiter `run 3001`; `iter.sh --slot gui --cmd true` fährt auf 3002.
 Verify: bash scripts/dev/verify.sh scripts --strict -- iter_flags_test vm_wrappers_test

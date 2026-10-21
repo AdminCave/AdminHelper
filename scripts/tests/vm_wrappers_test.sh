@@ -491,6 +491,39 @@ OUT=$(FAKE_LIST_JSON="$RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="a suite line that en
   && ok "a line of the box's own output is no refusal by vm.py: the run stays a red run" \
   || bad "box output: rc=$rc out=$OUT"
 
+echo "── iter.sh --slot gui: box, name and frist come from the gui slot ──"
+# heavy.sh runs the GUI part of `all` on the lane's second full box; a run
+# without --slot stays on desktop. Distinct frists show whose one is renewed.
+TWO_RUNNING='{"vms": [{"vmid": 3001, "status": "running", "lane": "main", "role": "desktop", "name": "ah-desktop-main-aaaa", "scenario": ""}, {"vmid": 3002, "status": "running", "lane": "main", "role": "gui", "name": "ah-gui-main-bbbb", "scenario": ""}]}'
+two_slots() {  # a fresh state with a warm desktop and a warm gui slot, names and frists recorded
+  reset_state
+  printf '%s\n' desktop=3001 desktop_name=ah-desktop-main-aaaa desktop_ttl=8h \
+    gui=3002 gui_name=ah-gui-main-bbbb gui_ttl=3h > "$AH_VM_STATE_DIR/warm.env"
+}
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" --slot gui lint 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "^run 3002 --sync --timeout 3000 --out $WORK/out --extend 3h --expect-name ah-gui-main-bbbb -- .*bash scripts/tests/run.sh lint$" "$FAKE_LOG" \
+  && [ "$(grep -c '^run' "$FAKE_LOG")" = 1 ] && ! grep -q '^clone' "$FAKE_LOG" \
+  && ok "iter.sh --slot gui runs on the gui box, renews with gui_ttl and names gui_name" \
+  || bad "--slot gui: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" lint 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "^run 3001 --sync --timeout 3000 --out $WORK/out --extend 8h --expect-name ah-desktop-main-aaaa -- .*bash scripts/tests/run.sh lint$" "$FAKE_LOG" \
+  && ! grep -q '^run 3002' "$FAKE_LOG" \
+  && ok "without --slot the run stays on the desktop box, with its frist and name" \
+  || bad "no --slot: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" --slot gui --cmd true 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "^run 3002 --sync --timeout 3000 --out $WORK/out --extend 3h --expect-name ah-gui-main-bbbb -- .*true$" "$FAKE_LOG" \
+  && ! grep -q '^run 3001' "$FAKE_LOG" \
+  && ok "iter.sh --slot gui --cmd runs the command on the gui box" \
+  || bad "--slot gui --cmd: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="vm.py: 3002 is named ah-gui-main-cccc, not ah-gui-main-bbbb — refusing" \
+  AH_OUT_DIR="$WORK/out" bash "$ITER" --slot gui lint 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "nothing was synced; next: bash scripts/vm/warm.sh gui$" <<<"$OUT" \
+  && ok "a gui box vm.py refuses by name points at warm.sh gui" || bad "gui refused: rc=$rc out=$OUT"
+
 echo "── warm.sh: the server slot and the clone's name ──"
 reset_state
 printf 'server=3002\nserver_name=ah-server-main-aaaa\n' > "$AH_VM_STATE_DIR/warm.env"
