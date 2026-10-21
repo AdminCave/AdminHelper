@@ -597,7 +597,9 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   Gate lesen es dort, nicht aus der Notiz. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
   die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
   ist Exit 2.
-- `approve` ist `geplant` -> `freigegeben`, Kevins Freigabe; `--revoke` nimmt sie zurueck.
+- `approve` ist `geplant` -> `freigegeben`, die Freigabe, die die Session nach dem Plan-Commit von `/feature-plan`
+  setzt (CLAUDE.md §4); `--revoke` nimmt sie zurueck. Beide lassen die Notiz der Zeile stehen, anders als `status`
+  ohne `--note`.
 - `sync` fragt `gh pr list --state merged`: eine Zeile im Status `pr`, deren PR-Spalte nur
   gemergte PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Eine Zeile in einem anderen
   Status (etwa eine Stufe mit mehreren PRs, noch `aktiv`) meldet es nur; `sync` ueberspringt

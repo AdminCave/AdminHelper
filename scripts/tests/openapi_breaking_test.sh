@@ -176,7 +176,7 @@ esac
 # ── called by a relative path from another directory ─────────────────────────
 # The script finds both files next to itself. Resolved only after its cd into
 # --root, a relative $0 points nowhere: both files read as missing, and the
-# gate reports the thirteen and the two bound WARN as ERR.
+# gate reports the named exceptions and the two bound WARN as ERR.
 REPO="$WORK/r9"; fixture "$REPO" yes
 rc=0; out=$(cd "$HERE" && FAKE_RC=0 bash ../dev/openapi-breaking.sh server --base HEAD --root "$REPO" 2>&1) || rc=$?
 LAST=$(grep -v '^base-operand:' "$FAKE_LOG" | tail -1)
@@ -215,12 +215,13 @@ fi
 # line contains its text (strings.Contains), and the path it compares exactly is
 # the line's first field starting with "/" (checker/ignore.go,
 # api_change.go:131 @v1.32.0). So this holds two things. The file, byte for byte,
-# is the list below — date, roadmap id, reason and finding text of all thirteen
-# lines (Kevin 2026-10-17); a further exception is Kevin's call and changes the
-# list. And every line, the next one too, has the form <date> <R-id> <reason>:
-# <METHOD> <path> <text>, its reason only letters, digits, blanks and hyphens:
-# no backtick and no quote, so no finding text can hide in it, and no slash, so
-# the path stays the field after the method. The rules: docs/developer/cicd.html.
+# is the list below — date, roadmap id, reason and finding text of all seventeen
+# lines (Kevin 2026-10-17, 2026-10-21); a further exception is Kevin's call and
+# changes the list. And every line, the next one too, has the form <date> <R-id>
+# <reason>: <METHOD> <path> <text>, its reason only letters, digits, blanks and
+# hyphens: no backtick and no quote, so no finding text can hide in it, and no
+# slash, so the path stays the field after the method. The rules:
+# docs/developer/cicd.html.
 IGNORE="$HERE/../dev/oasdiff-err-ignore.txt"
 if [ -r "$IGNORE" ]; then
   # LC_ALL=C: under de_DE a bracket range like [0-9] matches more than ASCII digits.
@@ -242,13 +243,17 @@ if [ -r "$IGNORE" ]; then
 2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `vhost_https_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
 2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `vhost_https_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
 2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `max_ports_per_client/anyOf[subschema #1]/` request property's min was increased to `0.00`
+2026-10-21 R-0533 tighter visitor port bounds: POST /api/frp/tunnels the `visitor_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
+2026-10-21 R-0533 tighter visitor port bounds: POST /api/frp/tunnels the `visitor_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
+2026-10-21 R-0533 tighter visitor port bounds: PUT /api/frp/tunnels/{tunnel_id} the `visitor_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
+2026-10-21 R-0533 tighter visitor port bounds: PUT /api/frp/tunnels/{tunnel_id} the `visitor_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
 EXPECTED_EXCEPTIONS
 )
   # diff against the file itself, not a $(…) copy of it: that would drop
   # trailing blank lines, and the comparison must see every byte. Its exit code
   # decides, not an empty output: a diff that could not run prints nothing too.
   DRIFT_RC=0; DRIFT=$(diff <(printf '%s\n' "$EXPECTED_IGNORE") "$IGNORE" 2>&1) || DRIFT_RC=$?
-  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the thirteen expected lines, reasons included" \
+  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the seventeen expected lines, reasons included" \
     || bad "the exception file drifted from the expected lines (diff rc=$DRIFT_RC): $DRIFT"
   # oasdiff checks no path for a component or a security change: a line with the
   # word "components" or "security" could match one of those by its text alone.
@@ -263,22 +268,26 @@ fi
 # it contains "<method> <path>", and it contains the finding's whole text, value
 # included — all case-insensitive (checker/api_change.go:131 @v1.32.0). The base
 # carries the FRP request bodies with the INTEGER bounds IntColumn published, the
-# head the narrowed ones, as in the server snapshot: the same thirteen texts. Base
-# and head also carry one more port field and one more endpoint, so a case can
-# narrow those too.
+# head the narrowed ones, as in the server snapshot: the same seventeen texts.
+# Base and head also carry one more port field and one more endpoint, so a case
+# can narrow those too.
 int_schema() { printf '{"type":"integer","minimum":%s,"maximum":%s}' "$1" "$2"; }
 or_null()    { printf '{"anyOf":[%s,{"type":"null"}]}' "$1"; }
 # props <name> <schema> [<name> <schema> ...] — the members of a properties object
 props() { local sep=""; while [ $# -gt 1 ]; do printf '%s"%s":%s' "$sep" "$1" "$2"; sep=","; shift 2; done; }
 body()  { printf '{"requestBody":{"content":{"application/json":{"schema":{"type":"object","properties":{%s}}}}},"responses":{"200":{"description":"ok"}}}' "$1"; }
-# frp_spec <post-props> <put-props> <other-endpoint-props>
+# frp_spec <post-props> <put-props> <other-endpoint-props> <tunnel-props>
 # /api/frp/server is a prefix of /api/frp/server-config: "post /api/frp/server"
 # is a substring of every POST line, so only the exact path rule keeps it out.
+# The tunnel props go to POST /api/frp/tunnels and PUT /api/frp/tunnels/{tunnel_id}
+# alike: both bodies carry the same visitor_port schema in the server snapshot.
 frp_spec() {
   printf '{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{'
   printf '"/api/frp/server-config":{"post":%s},' "$(body "$1")"
   printf '"/api/frp/server-config/{config_id}":{"parameters":[{"name":"config_id","in":"path","required":true,"schema":{"type":"string"}}],"put":%s},' "$(body "$2")"
-  printf '"/api/frp/server":{"post":%s}}}\n' "$(body "$3")"
+  printf '"/api/frp/server":{"post":%s},' "$(body "$3")"
+  printf '"/api/frp/tunnels":{"post":%s},' "$(body "$4")"
+  printf '"/api/frp/tunnels/{tunnel_id}":{"parameters":[{"name":"tunnel_id","in":"path","required":true,"schema":{"type":"string"}}],"put":%s}}}\n' "$(body "$4")"
 }
 WIDE=$(int_schema -2147483648 2147483647)
 PORT=$(int_schema 1 65535)
@@ -293,8 +302,10 @@ head_props() {
   props bind_port "$1" vhost_http_port "$2" vhost_https_port "$(or_null "$PORT")" \
     dashboard_port "$(or_null "$PORT")" max_ports_per_client "$(or_null "$COUNT")"
 }
-FRP_BASE=$(frp_spec "$BASE_PROPS" "$BASE_PUT" "$OTHER_WIDE")
-FRP_HEAD=$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE")
+TUNNEL_WIDE=$(props visitor_port "$(or_null "$WIDE")")
+TUNNEL_PORT=$(props visitor_port "$(or_null "$PORT")")
+FRP_BASE=$(frp_spec "$BASE_PROPS" "$BASE_PUT" "$OTHER_WIDE" "$TUNNEL_WIDE")
+FRP_HEAD=$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE" "$TUNNEL_PORT")
 
 # frp_fixture <dir> <head-spec> — fixture() with the FRP base and this head
 # (bash locals are visible to the functions this one calls)
@@ -328,30 +339,37 @@ if [ -n "$REAL_OASDIFF" ]; then
   echo "  (real $("$REAL_OASDIFF" --version 2>&1 | head -1))"
 
   REPO="$WORK/f1"; frp_fixture "$REPO" "$FRP_HEAD"
-  real_case "no exception file: all thirteen are ERR" 1 13 "/api/frp/server-config" \
+  real_case "no exception file: all seventeen are ERR" 1 17 "/api/frp/" \
     -- "$NOIGN/openapi-breaking.sh" server --base HEAD --root "$REPO"
-  real_case "with the file: the thirteen pass" 0 0 "" \
+  real_case "with the file: the seventeen pass" 0 0 "" \
     -- "$CHECK" server --base HEAD --root "$REPO"
-  # The same by a relative path from another directory: none, not fifteen.
-  RUN_DIR="$HERE" real_case "relative call from another directory: the thirteen pass" 0 0 "" \
+  # The same by a relative path from another directory: none, not nineteen.
+  RUN_DIR="$HERE" real_case "relative call from another directory: the seventeen pass" 0 0 "" \
     -- ../dev/openapi-breaking.sh server --base HEAD --root "$REPO"
 
   # Same endpoint, another port field, the very same bounds: the field name binds.
   REPO="$WORK/f2"
-  frp_fixture "$REPO" "$(frp_spec "$(head_props "$PORT" "$(or_null "$PORT")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE")"
+  frp_fixture "$REPO" "$(frp_spec "$(head_props "$PORT" "$(or_null "$PORT")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE" "$TUNNEL_PORT")"
   real_case "another field at POST /api/frp/server-config stays ERR" 1 2 "in API POST /api/frp/server-config | the \`vhost_http_port/anyOf[subschema #1]/\`" \
     -- "$CHECK" server --base HEAD --root "$REPO"
 
   # Another endpoint, the same field and bounds, so the very same text.
   REPO="$WORK/f3"
-  frp_fixture "$REPO" "$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(props bind_port "$PORT")")"
+  frp_fixture "$REPO" "$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(props bind_port "$PORT")" "$TUNNEL_PORT")"
   real_case "the same change at another endpoint stays ERR" 1 2 "in API POST /api/frp/server | the \`bind_port\`" \
     -- "$CHECK" server --base HEAD --root "$REPO"
 
   # The same field, narrowed further: the value is part of the text.
   REPO="$WORK/f4"
-  frp_fixture "$REPO" "$(frp_spec "$(head_props "$(int_schema 1 1024)" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE")"
+  frp_fixture "$REPO" "$(frp_spec "$(head_props "$(int_schema 1 1024)" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE" "$TUNNEL_PORT")"
   real_case "a tighter bound on the same field stays ERR" 1 1 "the \`bind_port\` request property's max was decreased to \`1024.00\`" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # visitor_port with the minimum 0, not 1: the two min findings stay ERR, at
+  # both tunnel endpoints; the max to 65535 is still the named one.
+  REPO="$WORK/f5"
+  frp_fixture "$REPO" "$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE" "$(props visitor_port "$(or_null "$(int_schema 0 65535)")")")"
+  real_case "visitor_port with the minimum 0 stays ERR" 1 2 "the \`visitor_port/anyOf[subschema #1]/\` request property's min was increased to \`0.00\`" \
     -- "$CHECK" server --base HEAD --root "$REPO"
 else
   echo "  SKIP: oasdiff not installed — the exceptions are not checked against its matcher"

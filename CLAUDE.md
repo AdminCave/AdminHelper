@@ -21,9 +21,10 @@ Alles zusammen: `bash scripts/tests/run.sh quick --strict` (lint + unit, dep-gat
 Doku nachlesen. Die Dev-Box hat Docker, aber kein Display; schwere Suiten laufen auf Proxmox-VMs (`/test`).
 
 ## 2. Betriebsmodell
-Kevin startet jede Session und entscheidet: Reihenfolge und Inhalt der Roadmap, Freigabe eines Plans, sichtbares
-Verhalten, API-Verträge und Datenmigrationen, hingenommenes Restrisiko, Geld- und Zeitdeckel, Release, Tag,
-Ruleset, Repo-Einstellungen, sudo, Tokens, Passwörter. Alles andere innerhalb eines freigegebenen Vorhabens
+Kevin startet jede Session und entscheidet: Reihenfolge und Inhalt der Roadmap, sichtbares Verhalten,
+API-Verträge und Datenmigrationen, hingenommenes Restrisiko, Geld- und Zeitdeckel, Release, Tag, Ruleset,
+Repo-Einstellungen, sudo, Tokens, Passwörter. Den Plan eines Vorhabens gibt die Session selbst frei (§4, Kevin
+2026-10-21). Alles andere innerhalb eines freigegebenen Vorhabens
 entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt und mit Empfehlung.
 Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut die Task im Worktree des Vorhabens,
 ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
@@ -59,10 +60,15 @@ oder nicht sauber. Sonst keine Warnung und keine Bestätigungsfrage für Routine
 
 ## 4. Lebenslauf eines Vorhabens
 Zeile in `tasks/private/ROADMAP.md` (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE) → `/feature-plan` schreibt
-`docs/features/<slug>.md` und `tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → Kevin
-gibt frei: er tippt `! python3 scripts/dev/roadmap.py approve R-nnnn`; die Freigabe ist dieser Roadmap-Status →
+`docs/features/<slug>.md` und `tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → die
+Session gibt sofort danach selbst frei, wenn Kevin die Zeile angenommen (`/roadmap triage`) oder das Vorhaben
+diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21; die Notiz der Zeile bleibt); die
+Freigabe ist dieser Roadmap-Status →
 `/feature-build` setzt beim Start im Worktree den Ledger-Kopf von `geplant` auf `aktiv` (`chore(ledger)`, nur wenn
 die Roadmap-Zeile `freigegeben` ist) und baut Task für Task → Abschluss (§5, §6) → PR → Merge → `roadmap.py sync`.
+Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in dieser Session oder in der
+Notiz der Zeile) schon trifft, stellt das Gate als Frage mit Empfehlung; die Task, die an ihr hängt, steht auf `[?]`,
+bis er antwortet, die übrigen baut die Session. Hängt jede Task an einer solchen Frage, bleibt die Zeile `geplant`.
 Die Roadmap ist die einzige Reihenfolge-Wahrheit, das Ledger die einzige Fortschritts-Wahrheit
 (`[ ]`/`[x]`/`[~]`/`[?]`, Format `tasks/README.md`). Keine Session sucht sich Arbeit außerhalb dieser zwei Dateien.
 Harness-Pfade ändert eine Session nur auf Kevins Wort oder bei belegtem Produktschaden (roter Produkttest, falscher
@@ -124,8 +130,8 @@ Arbeit: nur nach `git add` oder wenn Verwerfen der Zweck ist.
 ## 8. Roadmap, Ledger, Worktrees
 `tasks/private/` ist ein eigenes privates Repo (Sicherheitsfunde, Homelab-Namen): nie im öffentlichen Baum. Die
 Roadmap schreibt nur `python3 scripts/dev/roadmap.py` (`add`, `status`, `approve`, `sync`, `lint`), nie ein Edit; „Als
-Nächstes“ pflegt Kevin von Hand. Statuswechsel: neu → geplant → freigegeben (nur Kevin) → aktiv → bereit → pr →
-abgeschlossen (`sync`); `zurückgestellt`/`blockiert` mit `--note` und Datum.
+Nächstes“ pflegt Kevin von Hand. Statuswechsel: neu → geplant → freigegeben (die Session nach dem Plan-Commit, §4) →
+aktiv → bereit → pr → abgeschlossen (`sync`); `zurückgestellt`/`blockiert` mit `--note` und Datum.
 Jedes Vorhaben baut in einem eigenen Worktree: `git worktree add ../AdminHelper-<slug> feature/<slug>` und
 `bash scripts/dev/worktree-setup.sh ../AdminHelper-<slug> <slug>` (eigene Test-DB, Venv, `node_modules`, Sidecar,
 `.vm/lane`); erst danach den Ledger-Kopf im Worktree ändern (das Ledger liegt nur auf dem Branch). Nach dem Merge
@@ -136,7 +142,8 @@ Pfad, nie per Glob. Nach jedem Vorhaben `git worktree list` und `vm.py list` sau
 ## 9. Arbeitsweise
 Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Python, Go und verteilten Systemen.
 
-- **Erst denken, dann coden.** Nicht-triviale Änderung: Plan mit Annahmen und Trade-offs, auf Bestätigung warten.
+- **Erst denken, dann coden.** Nicht-triviale Änderung außerhalb eines Vorhabens: Plan mit Annahmen und Trade-offs,
+  auf Bestätigung warten; den Plan eines Vorhabens gibt die Session nach dem Gate selbst frei (§4).
   Tippfehler und Style-Fixes brauchen das nicht.
 - **Mehrdeutigkeit benennen, nicht still entscheiden.** Mehrere plausible Lesarten → alle nennen, fragen.
 - **Root-Cause vor Symptom.** Keine Workarounds, die das Problem nur verschieben.
@@ -168,7 +175,8 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
 
 ## 11. Claude tut nie
 Pushen auf `main` des öffentlichen Repos, taggen, publizieren, Ruleset oder Repo-Einstellungen ändern (das private
-Roadmap-Repo pusht die Session nach jeder Änderung) · einen Harness-Pfad nebenbei ändern · eine Freigabe setzen ·
+Roadmap-Repo pusht die Session nach jeder Änderung) · einen Harness-Pfad nebenbei ändern · eine Zeile freigeben, die
+Kevin nicht angenommen oder diktiert hat oder die keinen committeten Plan hat ·
 einen Haken ohne Summary-Zeile · einen Test abschalten oder schwächen, um grün zu werden · VMs außerhalb des Pools
 `adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
 Dateien schreiben · `env` ausgeben · in geteilten Temp-Verzeichnissen per Glob löschen · einen zweiten Bauer auf

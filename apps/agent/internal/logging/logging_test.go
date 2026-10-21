@@ -6,7 +6,10 @@ package logging
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,5 +64,72 @@ func TestLoggerInfofRespectsLevelFilter(t *testing.T) {
 
 	if buf.Len() != 0 {
 		t.Errorf("INFO must be suppressed at WARN level, got: %q", buf.String())
+	}
+}
+
+// stubInitSeams has securing the log directory end with ensureErr and runs Init as a
+// service with a reporter of its own, or interactively without one; it restores both
+// seams and the default logger afterwards. It returns what the reporter received.
+func stubInitSeams(t *testing.T, ensureErr error, asService bool) *[]string {
+	t.Helper()
+	var msgs []string
+	origEnsure, origReporter, prevLogger := ensureLogDir, serviceReporter, slog.Default()
+	ensureLogDir = func() error { return ensureErr }
+	serviceReporter = func() reportFunc {
+		if !asService {
+			return nil
+		}
+		return func(msg string) error { msgs = append(msgs, msg); return nil }
+	}
+	t.Cleanup(func() {
+		ensureLogDir, serviceReporter = origEnsure, origReporter
+		slog.SetDefault(prevLogger)
+	})
+	return &msgs
+}
+
+// As a service, Init reports a log directory it cannot secure once, with the directory,
+// the reason and the consequences, and logs to stdout only. With the directory secured,
+// or in an interactive run, it reports nothing.
+func TestInitReportsAnUnsecuredLogDirOnlyAsAService(t *testing.T) {
+	reason := errors.New("a child of another account is held open")
+	cases := []struct {
+		name      string
+		ensureErr error
+		asService bool
+		want      int
+	}{
+		{"unsecured, as a service", reason, true, 1},
+		{"secured, as a service", nil, true, 0},
+		{"unsecured, interactive", reason, false, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logDir := filepath.Join(t.TempDir(), "logs")
+			t.Setenv("ADMINHELPER_LOG_DIR", logDir)
+			msgs := stubInitSeams(t, tc.ensureErr, tc.asService)
+
+			Init("info")
+
+			if len(*msgs) != tc.want {
+				t.Fatalf("Init reported %d messages, want %d: %q", len(*msgs), tc.want, *msgs)
+			}
+			for _, msg := range *msgs {
+				for _, want := range []string{logDir, reason.Error(), "stdout only", "FRP sync changes nothing"} {
+					if !strings.Contains(msg, want) {
+						t.Errorf("the report %q is missing %q", msg, want)
+					}
+				}
+			}
+			// A secured directory gets the file logger, which a line would open; on Windows
+			// the open file would keep the temp directory from being removed.
+			if tc.ensureErr == nil {
+				return
+			}
+			slog.Info("a line after Init")
+			if _, err := os.Lstat(filepath.Join(logDir, "agent.log")); !os.IsNotExist(err) {
+				t.Fatalf("agent.log exists although the log directory could not be secured (Lstat: %v)", err)
+			}
+		})
 	}
 }

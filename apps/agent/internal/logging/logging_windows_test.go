@@ -7,13 +7,23 @@
 package logging
 
 import (
+	"bytes"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"adminhelper-agent/internal/config"
 )
 
 // requireProtected fails unless the Administrators own the directory path and its
@@ -108,8 +118,9 @@ func holdForeignChild(t *testing.T, dir, name string) {
 	t.Cleanup(func() { windows.CloseHandle(h) })
 }
 
-// When the log directory cannot be secured, Init logs to stdout only, silently: no
-// agent.log appears, also after a log line. The open data root holds a child of
+// When the log directory cannot be secured, Init logs to stdout only: no agent.log
+// appears, also after a log line. The test binary does not run as a service, so Init
+// stays silent, as in any interactive run. The open data root holds a child of
 // another account that is held open, so that it cannot be removed.
 func TestInitLogsToStdoutOnlyWhenTheLogDirCannotBeSecured(t *testing.T) {
 	root := t.TempDir()
@@ -125,5 +136,86 @@ func TestInitLogsToStdoutOnlyWhenTheLogDirCannotBeSecured(t *testing.T) {
 
 	if _, err := os.Lstat(filepath.Join(logDir, "agent.log")); !os.IsNotExist(err) {
 		t.Fatalf("agent.log exists although the log directory could not be secured (Lstat: %v)", err)
+	}
+}
+
+// loggedEvent is what the test reads of an entry in the XML of wevtutil.
+type loggedEvent struct {
+	EventID uint32   `xml:"System>EventID"`
+	Level   int      `xml:"System>Level"`
+	Data    []string `xml:"EventData>Data"`
+}
+
+// queryEvents returns the newest entries of source in the Application log. It waits up
+// to 10 s for the first one: whether an entry is readable as soon as ReportEvent
+// returns is not verified.
+func queryEvents(t *testing.T, source string) []loggedEvent {
+	t.Helper()
+	query := "/q:*[System[Provider[@Name='" + source + "']]]"
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out, err := exec.Command("wevtutil", "qe", "Application", query, "/rd:true", "/c:5", "/f:xml").CombinedOutput()
+		if err != nil {
+			t.Fatalf("wevtutil qe: %v: %s", err, out)
+		}
+		var events []loggedEvent
+		dec := xml.NewDecoder(bytes.NewReader(out))
+		for {
+			var ev loggedEvent
+			if err := dec.Decode(&ev); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				t.Fatalf("parse the output of wevtutil: %v: %s", err, out)
+			}
+			events = append(events, ev)
+		}
+		if len(events) > 0 || time.Now().After(deadline) {
+			return events
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// As a Windows service, Init writes a log directory it cannot secure once as a warning
+// to the Application log, with the directory and the reason in the event data. The
+// open data root holds a child of another account that is held open, so that it cannot
+// be removed. The source has a name of its own, so that the query finds only what this
+// run wrote; it is not registered, so Windows keeps the entry without a description,
+// and the test reads the XML.
+func TestInitWritesAnUnsecuredLogDirToTheEventLogAsAService(t *testing.T) {
+	root := t.TempDir()
+	logDir := filepath.Join(root, "logs")
+	holdForeignChild(t, root, "a-held.txt")
+	t.Setenv("ADMINHELPER_MONITOR_DIR", root)
+	t.Setenv("ADMINHELPER_LOG_DIR", logDir)
+	source := fmt.Sprintf("%s-Test-%d-%d", EventSource, os.Getpid(), time.Now().UnixNano())
+	var reason error
+	origEnsure, origReporter, prev := ensureLogDir, serviceReporter, slog.Default()
+	ensureLogDir = func() error { reason = config.EnsureLogDir(); return reason }
+	serviceReporter = func() reportFunc { return eventLogWarning(source) }
+	t.Cleanup(func() {
+		ensureLogDir, serviceReporter = origEnsure, origReporter
+		slog.SetDefault(prev)
+	})
+
+	Init("info")
+
+	if reason == nil {
+		t.Fatal("EnsureLogDir succeeded although a child of another account is held open in the data root")
+	}
+	events := queryEvents(t, source)
+	if len(events) != 1 {
+		t.Fatalf("the Application log holds %d entries of %s, want 1: %+v", len(events), source, events)
+	}
+	ev := events[0]
+	// Level 3 is a warning.
+	if ev.EventID != unsecuredLogDirEventID || ev.Level != 3 {
+		t.Errorf("event ID %d, level %d, want %d and 3 (warning)", ev.EventID, ev.Level, unsecuredLogDirEventID)
+	}
+	data := strings.Join(ev.Data, "\n")
+	for _, want := range []string{logDir, reason.Error()} {
+		if !strings.Contains(data, want) {
+			t.Errorf("the event data %q is missing %q", data, want)
+		}
 	}
 }

@@ -13,7 +13,7 @@
     status <id> <status> [--note N] [--ledger L] [--pr P]
                                 set the status; the row moves to its section;
                                 --ledger and --pr fill their columns, also on the same status
-    approve <id> [--revoke]     geplant -> freigegeben, or back
+    approve <id> [--revoke]     geplant -> freigegeben, or back; the note stays
     show [<id>] [--wip]         one row, the WIP counters, or the overview
     next [--status S] [--exclude-components C …]
                                 the next row to build; exit 1 when there is none
@@ -734,7 +734,11 @@ def cmd_approve(args: argparse.Namespace) -> int:
         _, row = roadmap.find(args.id)
         if row.state != was:
             raise UsageError(f"{args.id} is {row.status or 'without status'}, not {was}")
+        # Only the word changes, unlike `status` without --note: the note of a
+        # geplant row often carries Kevin's word for the plan.
+        note = row.cells[STATUS][len(row.status) :]
         roadmap.set_status(args.id, new, None, args.today)
+        row.cells[STATUS] = new + note
         return args.id
 
     detail = " --revoke" if args.revoke else ""
@@ -1149,7 +1153,10 @@ def main(argv: list[str] | None = None) -> int:
         "--pr", help="the PR column that sync reads, e.g. '#42'; also on the same status"
     )
     st.set_defaults(func=cmd_status)
-    ap = sub.add_parser("approve", help="geplant -> freigegeben (Kevin's approval)")
+    ap = sub.add_parser(
+        "approve",
+        help="geplant -> freigegeben (the session's approval after the plan commit); the note stays",
+    )
     ap.add_argument("id")
     ap.add_argument("--revoke", action="store_true", help="freigegeben -> geplant")
     ap.set_defaults(func=cmd_approve)
