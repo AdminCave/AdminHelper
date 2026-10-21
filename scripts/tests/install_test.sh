@@ -8,9 +8,13 @@
 # guards against the two silently drifting (audit 6.8). `docker` is stubbed so no
 # real stack is touched. Covers: signed-bundle bootstrap + .env pinning, the
 # fail-closed abort when a release tag has no bundle (audit 3.29), tamper detection,
-# and an .env write that hits a full disk (R-0496).
+# an .env write that hits a full disk (R-0496), an .env with bytes outside UTF-8
+# or a NUL byte (R-0530), and a read-only .env with a terminal on stdin (R-0538).
 #
-# Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign)
+# Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign,
+#      the locale C.UTF-8: without it test 6 cannot run, and the test ends with 75;
+#      script from util-linux and a user that file rights bind: as root or without
+#      script test 7 cannot run, and the test ends with 75 as well)
 
 # ok()/bad() never fail, so `cond && ok || bad` is deliberate (not if-then-else).
 # shellcheck disable=SC2015,SC2001
@@ -184,7 +188,76 @@ out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password sikrit
 [ "$(cat "$INST/.env")" = DOMAIN=new.example ] && ok "one-key .env rewritten to the new DOMAIN" \
   || bad "one-key .env: $(tr '\n' ' ' < "$INST/.env")"
 
+# ── 6. bytes outside UTF-8 and a NUL byte in .env: no line lost (R-0530) ─────
+# grep takes a file for binary once it holds a NUL byte or a byte the caller's
+# locale cannot decode, and leaves lines out (exit 0, "binary file matches" on
+# stderr): upsert_env wrote .env back without them, with a NUL byte as nothing
+# but DOMAIN. The run uses C.UTF-8; the test reads .env byte for byte (-a,
+# LC_ALL=C) and holds it against lines written down apart, never read back from
+# the file. Without C.UTF-8 the case cannot run, and the test then ends with 75.
+LOCALE_SKIP=""
+if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
+  LOCALE_SKIP="test 6 (bytes outside UTF-8 in .env) needs the locale C.UTF-8, this system has none"
+  echo "  SKIP $LOCALE_SKIP"
+else
+  INST="$WORK/inst6"; mkdir -p "$INST/scripts"
+  cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+  cp "$SRC"/scripts/*.sh "$INST/scripts/"
+  printf 'SECRET_KEY=already-set\nSMTP_FROM=M\374ller\nX=a\0b\nPOSTGRES_PASSWORD=already-set\n' > "$WORK/inst6.keep"
+  { printf 'DOMAIN=old.example\n'; cat "$WORK/inst6.keep"; } > "$INST/.env"
+  out=$(cd "$INST" && LC_ALL=C.UTF-8 bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes 2>&1); rc=$?
+  [ $rc -eq 0 ] && ok "install over a .env with a Latin-1 and a NUL byte exit 0" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "Latin-1/NUL .env: exit $rc"; }
+  LC_ALL=C grep -a -v '^DOMAIN=' "$INST/.env" | cmp -s - "$WORK/inst6.keep" \
+    && ok "every line but DOMAIN byte for byte as it was, the Latin-1 and the NUL line too" \
+    || bad "Latin-1/NUL .env now: $(cat -v "$INST/.env" | tr '\n' ' ')"
+  [ "$(LC_ALL=C grep -a '^DOMAIN=' "$INST/.env")" = DOMAIN=new.example ] \
+    && ok "Latin-1/NUL .env: DOMAIN rewritten, one line" || bad "Latin-1/NUL .env: DOMAIN lines $(LC_ALL=C grep -a '^DOMAIN=' "$INST/.env" | tr '\n' ' ')"
+fi
+
+# ── 7. a read-only .env and a terminal on stdin: replaced without a question ─
+# GNU mv asks before it replaces a file it may not write when stdin is a terminal
+# and -f is missing, and waits for the answer: install.sh hung at upsert_env on a
+# .env 0444, the question unseen under a wrapper that collects the output
+# (R-0538). The run gets a pseudo-terminal from script (util-linux) whose input
+# never comes and never ends: a FIFO this test holds open, so no process outlives
+# the test. With /dev/null, script passes on an EOF, mv takes it for "no" and
+# leaves the file out instead of waiting. timeout ends a run that waits with 124.
+# mv asks only about a file it may not write, so as root the case proves nothing;
+# that and a system without script mean it cannot run, and the test then ends
+# with 75.
+TTY_SKIP=""
+probe="$WORK/rights-probe"; : > "$probe"; chmod 000 "$probe"
+if ! command -v script >/dev/null 2>&1; then
+  TTY_SKIP="test 7 (a read-only .env on a terminal) needs script from util-linux, this system has none"
+elif ( : >> "$probe" ) 2>/dev/null || ( : < "$probe" ) 2>/dev/null; then
+  TTY_SKIP="test 7 (a read-only .env on a terminal) needs a user that file rights bind, $(id -un) is not one"
+fi
+if [ -n "$TTY_SKIP" ]; then
+  echo "  SKIP $TTY_SKIP"
+else
+  mkfifo "$WORK/tty-in"; exec {TTY_IN}<>"$WORK/tty-in"
+  # "$@" in dir $1 on that terminal; prints the output without the terminal's \r.
+  on_tty() {
+    local dir="$1"; shift
+    ( cd "$dir" && SHELL="$BASH" timeout 60 script -qec "$(printf '%q ' "$@")" /dev/null <&"$TTY_IN" ) | tr -d '\r'
+    return "${PIPESTATUS[0]}"
+  }
+  INST="$WORK/inst7"; mkdir -p "$INST/scripts"
+  cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+  cp "$SRC"/scripts/*.sh "$INST/scripts/"
+  printf 'DOMAIN=old.example\n' > "$INST/.env"; chmod 444 "$INST/.env"
+  out=$(on_tty "$INST" bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes 2>&1); rc=$?
+  [ $rc -eq 0 ] && ok "install over a read-only .env on a terminal exit 0, no question" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "read-only .env on a terminal: exit $rc (124: mv waited for an answer)"; }
+  [ "$(cat "$INST/.env")" = DOMAIN=new.example ] && ok "read-only .env on a terminal rewritten to the new DOMAIN" \
+    || bad "read-only .env on a terminal: $(tr '\n' ' ' < "$INST/.env")"
+fi
+
 echo
 echo "──────────────────────────────────────────"
 echo "  install_test: ${PASS} passed, ${FAIL} failed"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+[ -z "$LOCALE_SKIP" ] || echo "SKIP: $LOCALE_SKIP"
+[ -z "$TTY_SKIP" ] || echo "SKIP: $TTY_SKIP"
+[ -z "$LOCALE_SKIP$TTY_SKIP" ] || exit 75

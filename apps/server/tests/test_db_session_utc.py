@@ -19,10 +19,13 @@ from sqlalchemy import text
 
 from app.core import database
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL", "").strip(),
-    reason="needs DATABASE_URL: the app engine connects to it",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not os.environ.get("DATABASE_URL", "").strip(),
+        reason="needs DATABASE_URL: the app engine connects to it",
+    ),
+    pytest.mark.app_engine,
+]
 
 
 @pytest.fixture()

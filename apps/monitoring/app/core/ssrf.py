@@ -147,6 +147,12 @@ class Target:
 def check_target(url: str) -> Target:
     """Resolves the URL's host once and checks every address (R-0045).
 
+    The host resolved is the name the request carries as Host header and TLS name:
+    httpx's raw_host, IDNA 2008-encoded. Not urlparse's Unicode name, which
+    getaddrinfo encodes by IDNA 2003 into another name for ß or ς. A URL httpx
+    cannot read (a host it cannot encode, a port that is no number) is rejected like
+    an unreadable URL: the request would fail on it at the same place.
+
     Both rejections fail closed; the reason only lets a caller tell an operator
     whether the target resolves to a blocked address (PRIVATE, an unreadable
     address included) or does not resolve at all (UNRESOLVED: no host, a DNS error,
@@ -157,10 +163,18 @@ def check_target(url: str) -> Target:
     try:
         hostname = urlparse(url).hostname
     except ValueError:
-        # urlparse raises on a malformed IPv6 literal ("http://[::1"); an unreadable
-        # URL fails closed like an unreadable address below (R-0181).
+        # The name resolved is httpx's; urlparse only goes first because it raises on a
+        # malformed IPv6 literal ("http://[::1"), which httpx reads as the host "%5B".
+        # An unreadable URL fails closed like an unreadable address below (R-0181).
         return Target(UrlVerdict.PRIVATE)
     if not hostname:
+        return Target(UrlVerdict.UNRESOLVED)
+    try:
+        hostname = httpx.URL(url).raw_host.decode("ascii")
+    except httpx.InvalidURL:
+        return Target(UrlVerdict.PRIVATE)
+    if not hostname:
+        # urlparse skips leading whitespace, httpx reads such a URL as relative.
         return Target(UrlVerdict.UNRESOLVED)
     addr_info = _resolve(hostname, _DNS_TIMEOUT_S)
     if not addr_info:
@@ -281,9 +295,9 @@ def pinned_client(
         # target host, not from sni_hostname, so a pinned address would be checked
         # against the certificate instead of the name.
         return httpx.Client(verify=verify)
-    # Compared in httpx's own form. Neither urlparse's hostname (target.host) nor
-    # httpx's URL.host fits every spelling: URL.host decodes IDNA only when the whole
-    # host starts with xn-- (www.bücher.example stays encoded) and keeps the case of
-    # an IPv6 literal. raw_host is IDNA-encoded throughout; lower() does the rest.
+    # Compared in httpx's own form. httpx's URL.host does not fit every spelling: it
+    # decodes IDNA only when the whole host starts with xn-- (www.bücher.example stays
+    # encoded) and keeps the case of an IPv6 literal. raw_host is IDNA-encoded
+    # throughout; lower() does the rest.
     raw_host = httpx.URL(url).raw_host.lower()
     return httpx.Client(transport=_PinnedTransport(raw_host, target.addresses, verify=verify))
