@@ -23,7 +23,7 @@ FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker go
+e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker go
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
@@ -59,8 +59,7 @@ echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.ad
 echo "[mon] running the monitoring-check spec under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/monitoring-check.live.js
 ' && ok "monitoring-check GUI spec passed" || bad "monitoring-check GUI spec failed"

@@ -52,7 +52,7 @@ wait_rdp_log() {  # container timeout
     return 1
 }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker go
+e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker go
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
@@ -72,10 +72,12 @@ CONFIG_ID=$(e2e_api "$TOKEN" config e2e-frps localhost 7000) || { bad "seed FRP 
 
 # Dedicated SSH target (a clean log: any connection here came through the tunnel).
 SSH_C="ah-e2e-tssh-$$"
+# Listed before the start: docker creates the container even when publishing its port
+# fails, and cleanup_extra removes only what is listed.
+TARGETS+=("$SSH_C")
 docker run -d --name "$SSH_C" -p 127.0.0.1:2222:2222 \
     -e PASSWORD_ACCESS=true -e USER_NAME=e2e -e USER_PASSWORD=e2e -e LOG_STDOUT=true \
     "$SSH_IMAGE" >/dev/null || { echo "[e2e] SSH target ($SSH_C) failed to start — is 127.0.0.1:2222 in use? (4.126)" >&2; exit 1; }
-TARGETS+=("$SSH_C")
 wait_log "$SSH_C" "listening on port 2222" 40 && ok "SSH target up on :2222" || { bad "SSH target never came up"; docker logs --tail 20 "$SSH_C"; exit 1; }
 
 # An SSH connection + an STCP tunnel LINKED to it (local_port 2222 -> the SSH
@@ -89,8 +91,8 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-ssh-tun 2222 ssh "$CO
 
 # Dedicated Web target (nginx) + a Web connection + linked STCP tunnel.
 WEB_C="ah-e2e-tweb-$$"
+TARGETS+=("$WEB_C")  # before the start, as the SSH target's
 docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null || { echo "[e2e] web target ($WEB_C) failed to start — is 127.0.0.1:8080 in use? (4.126)" >&2; exit 1; }
-TARGETS+=("$WEB_C")
 wait_log "$WEB_C" "worker process" 30 && ok "Web target up on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
 WCONN_ID=$(e2e_api "$TOKEN" web-connection web-tunnel "http://127.0.0.1:9") || { bad "seed web connection"; exit 1; }
 e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-web-tun 8080 web "$WCONN_ID" >/dev/null \
@@ -98,8 +100,8 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-web-tun 8080 web "$WC
 
 # Dedicated RDP target (xrdp) + an RDP connection + linked STCP tunnel.
 RDP_C="ah-e2e-trdp-$$"
+TARGETS+=("$RDP_C")  # before the start, as the SSH target's
 docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null || { echo "[e2e] RDP target ($RDP_C) failed to start — is 127.0.0.1:3389 in use? (4.126)" >&2; exit 1; }
-TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 RCONN_ID=$(e2e_api "$TOKEN" connection rdp-tunnel rdp 127.0.0.1 39999 e2e) || { bad "seed rdp connection"; exit 1; }
 e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-rdp-tun 3389 rdp "$RCONN_ID" >/dev/null \
@@ -135,11 +137,11 @@ grep -q "frpc.toml geschrieben" "$E2E_WORK/agent-prov.log" \
 
 # Run that frpc config as the STCP SERVER (exposes the SSH container via frps).
 FRPC_C="ah-e2e-frpc-$$"
+TARGETS+=("$FRPC_C")  # before the start, as the SSH target's
 # No `-c` arg: the snowdreamtech/frpc image already defaults to
 # `frpc -c /etc/frp/frpc.toml`, and its su-exec entrypoint mangles extra args.
 docker run -d --name "$FRPC_C" --network host -v "$FRP_VOL:/etc/frp" -v "$ID_VOL:/etc/adminhelper" \
     "$FRPC_IMAGE" >/dev/null || { echo "[e2e] frpc container ($FRPC_C) failed to start (4.126)" >&2; exit 1; }
-TARGETS+=("$FRPC_C")
 # Poll for the frps registration instead of a fixed sleep — it can lag on a loaded box (6.137).
 frps_ok=0
 for _ in $(seq 1 15); do e2e_dc logs frps 2>/dev/null | grep -qiE "new proxy|start proxy success|stcp" && { frps_ok=1; break; }; sleep 1; done
@@ -164,8 +166,7 @@ export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E
        AH_ENROLL_TOKEN="$ENROLL_TOKEN" E2E_DIR
 export PATH="$SHIM_DIR:$PATH"  # the app inherits this -> open::that finds the xdg-open shim
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/tunnel-connect.live.js
 ' && ok "GUI: enrolled, tunnels connected, opened ssh/web/rdp over the tunnels" || bad "GUI tunnel-connect spec failed"
 

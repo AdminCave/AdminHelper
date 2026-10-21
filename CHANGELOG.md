@@ -484,6 +484,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/frp` mit `0700`); scheitert das, bricht er mit dem Verzeichnis
   im Fehler ab und schreibt, loescht, startet und stoppt nichts. Ein Lauf ohne Aenderung sichert nichts. Doku:
   Entwickler-Doku Agent (DE+EN).
+- **Desktop: „Passwort merken“ im Server-Workspace nur fuer Verbindungen, die der Server fuehrt (R-0551):** Wer im
+  Editor eine neue RDP-Verbindung vor dem Speichern verband und das Passwort merken liess, legte es im
+  Schluesselbund unter einer `id` des Clients ab, die der Server beim Speichern durch eine eigene ersetzt; der Eintrag
+  gehoerte danach zu keiner Verbindung. Im Server-Workspace bietet der Passwort-Dialog das Merken jetzt nur fuer eine
+  Verbindung an, die schon in der Liste steht; fuer eine noch nicht gespeicherte gilt das getippte Passwort nur fuer
+  diesen Start. Lokal und Sync bleiben unveraendert. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein abgebrochenes Schreiben laesst keine Temp-Datei dauerhaft im Datenordner liegen (R-0553):** Endete
+  der Desktop, waehrend er eine Datei auf einmal ersetzte (`prefs.json`, `workspaces.json`, eine `workspace.json`,
+  `secrets.json`), blieb deren Temp-Datei `<Dateiname>.<pid>.tmp` im Datenordner der App liegen. Jetzt loescht das
+  naechste Schreiben derselben Datei sie, sobald sie mindestens zehn Minuten alt ist; eine juengere kann einem anderen
+  Prozess gehoeren, der gerade schreibt, und bleibt. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein Ansible-Lauf laesst Playbook und Inventory nicht mehr im Temp-Verzeichnis liegen (R-0549):** Jeder
+  Lauf hinterliess beide Dateien im Temp-Verzeichnis des Systems. Unter Linux loescht das Terminal sie jetzt, sobald
+  `ansible-playbook` endet, gleich mit welchem Ergebnis und auch dann, wenn das Terminal waehrend des Laufs geschlossen
+  wird; scheitert der Start (kein `ansible-playbook`, kein Terminal), loescht der Desktop sie sofort. Unter Windows
+  bleiben sie nach einem gestarteten Lauf liegen. Doku: Admin-Doku Ansible, Desktop fuer Entwickler (DE+EN).
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
@@ -1109,6 +1125,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `service uninstall` entfernt sie wieder; scheitert das, gibt der Befehl eine Warnung aus. Bei einem Dienst, den eine
   fruehere Version eingerichtet hat, fehlt die Beschreibung, der Text steht dann in den Ereignisdaten. Doku:
   Agent-Deployment und Entwickler-Doku Agent (DE+EN).
+- **Plaene gibt die Session selbst frei (Entwickler-Werkzeuge, Kevin 2026-10-21):** Nach dem Plan-Commit von
+  `/feature-plan` setzt die Session `roadmap.py approve` selbst und baut. Kevin behaelt seine Entscheidungen aus
+  `CLAUDE.md` §2 (Roadmap, sichtbares Verhalten, API-Vertraege, Datenmigrationen, Restrisiko, Release); eine offene
+  Frage aus seinem Bereich haelt nur die Task, die an ihr haengt (`[?]`). `roadmap.py approve` behaelt die Notiz der
+  Zeile. Regeln: `CLAUDE.md` §2, §4, §8, §11 und `tasks/README.md`.
+
 - **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook und der HTTP-Check des
   Monitorings (dieser fuer die erste URL und jeden Redirect-Hop) sowie die Hook-Helfer `http_get`/`http_post` des
   Servers loesen das Ziel einmal auf, pruefen alle Adressen und verbinden zu einer davon (der Reihe nach, bis eine
