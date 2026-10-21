@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Schutz: zur geprüften Adresse verbinden — Task-Ledger
-Status: aktiv · Branch: feature/ssrf-pin · Review: pro Task
+Status: bereit · Branch: feature/ssrf-pin · Review: pro Task
 Spec: docs/features/ssrf-pin.md
 Heavy: none — kein HTTP-Endpunkt, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert werden nur die ausgehenden Anfragen von HTTP-Check, Alert-Webhook (Monitoring) und Hook-Helfern `http_get`/`http_post` (Server), und keine schwere Suite fährt diese Wege (`scripts/tests/` kennt weder HTTP-Check noch Webhook noch `http_get`); belegt wird am Verbindungsaufbau (`socket.create_connection`) und mit einem echten TLS-Handshake gegen einen lokalen Server
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -60,8 +60,10 @@ Beweis: origin/main@82e4a7b8 · Probe: `_resolve` → `93.184.216.34`, `socket.c
 Orakel: contract — die Adresse am Verbindungsaufbau ist eine aus `check_target(<url des Hops>).addresses`
 HEAD: 82e4a7b8
 
-### T4 — Hook-Helfer `http_get`/`http_post` verbinden zur geprüften Adresse  [ ]
+### T4 — Hook-Helfer `http_get`/`http_post` verbinden zur geprüften Adresse  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_worker.py, apps/server/tests/test_hooks_http_ssrf.py, docs/developer/hooks.html, docs/en/developer/hooks.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @533459ed 2026-10-21T10:36:51+02:00
+Review: approve (.ah-out/review/ssrf-pin/T4.verdict.json)
 Änderung: `_safe_http_get` und `_safe_http_post` (`script_worker.py:58-96`): `check_target(url)` statt `classify_url` (`:61`, `:79`), Fehlertexte unverändert; die Anfrage über `with pinned_client(url, target) as client, client.stream(..., follow_redirects=False) as resp:` statt `httpx.stream` (`:69-71`, `:87-94`); `_read_capped_body` unverändert. Zuerst der rote Test in `test_hooks_http_ssrf.py`, für beide Helfer: `_resolve` liefert eine öffentliche Adresse, `socket.create_connection` zeichnet auf; erwartet `(<geprüfte Adresse>, <port>)`. Dazu: mit `HTTP_PROXY` gesetzt (der Runner reicht es durch, `script_runner.py:116-125`) geht `http_get` auf eine `http://`-URL wie bisher an den Proxy, ungepinnt, und die Prüfung läuft vorher. Umzug der Stubs: `test_safe_http_get_disables_redirects_and_caps_body` (`:34-61`, `follow_redirects` und Kappung unter dem Pin) und `test_unresolvable_target_is_named_as_such` (`:64-73`). Doku: Punkt `http_get`/`http_post` (`docs/developer/hooks.html:77`, EN `:77`): die Anfrage geht an eine geprüfte Adresse, Host-Header und TLS-Name bleiben der Hostname; ist ein Proxy für das Schema gesetzt, verbindet der Proxy wie bisher. Vor dem Bau `origin/main` hineinmergen und `:77` neu greppen: ein paralleles Doku-Vorhaben schreibt denselben Satz neu. `CHANGELOG.md`: den Eintrag aus T2 um die Hook-Helfer ergänzen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_http_ssrf.py tests/test_ssrf_parity.py
 Doku: docs/developer/hooks.html + docs/en/developer/hooks.html, CHANGELOG
