@@ -661,16 +661,25 @@ class ServiceProcessChecker:
         throttled push.
         """
         systemd = report.get("systemd")
-        if not systemd:
+        if not isinstance(systemd, dict) or not systemd:
             return "unknown", "No service data in report", None
 
         ignore = self._parse_ignore(config.get("ignore", []))
 
-        failed_raw = self._capped(systemd.get("failed"))
-        for s in self._capped(systemd.get("all_services")):
-            if s.get("active_state") == "failed" and s["unit"] not in failed_raw:
-                failed_raw.append(s["unit"])
-        enabled_inactive_raw = self._capped(systemd.get("enabled_inactive"))
+        # Only a string is a unit name. Any other entry is skipped after the cap, so it still
+        # counts toward it and the work on a flooded list stays bounded (R-0552).
+        failed_raw = [u for u in self._capped(systemd.get("failed")) if isinstance(u, str)]
+        for s in capped_objects(systemd.get("all_services")):
+            unit = s.get("unit")
+            if (
+                isinstance(unit, str)
+                and s.get("active_state") == "failed"
+                and unit not in failed_raw
+            ):
+                failed_raw.append(unit)
+        enabled_inactive_raw = [
+            u for u in self._capped(systemd.get("enabled_inactive")) if isinstance(u, str)
+        ]
 
         failed = [u for u in failed_raw if not self._is_ignored(u, ignore)]
         enabled_inactive = [u for u in enabled_inactive_raw if not self._is_ignored(u, ignore)]
