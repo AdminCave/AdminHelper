@@ -465,6 +465,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor
+  dem HTTP-Check und dem Alert-Webhook des Monitorings sowie vor den Hook-Helfern `http_get`/`http_post` des Servers
+  prueft einen internationalisierten Hostnamen jetzt in der Form, die die Anfrage als Host-Header und TLS-Name traegt
+  (IDNA 2008, etwa `xn--strae-oqa.example`). Bisher loeste er bei scharfem s oder finalem Sigma einen anderen Namen auf
+  (IDNA 2003) und verband zu dessen Adressen, und die Anfrage konnte am Zertifikat oder am vhost scheitern. Ein
+  Hostname, den httpx nicht kodieren kann, wird schon vom Guard abgelehnt wie eine unlesbare URL, ebenso eine URL, die
+  httpx sonst nicht liest (etwa ein Port, der keine Zahl ist): Die Hook-Helfer werfen dafuer wie dokumentiert einen
+  `ValueError` statt `httpx.InvalidURL`, HTTP-Check und Alert-Webhook melden ein privates/reserviertes Ziel.
 - **Ops-Skripte: eine `.env` mit einem NUL-Byte oder mit Bytes ausserhalb von UTF-8 verliert keine Zeilen mehr
   (R-0530):** `grep` haelt eine Datei mit einem NUL-Byte oder mit einem Byte, das die Locale des Aufrufers nicht
   dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und laesst Zeilen aus: die Zeilen
