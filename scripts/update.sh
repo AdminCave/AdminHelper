@@ -189,11 +189,14 @@ upsert_env() {
     # steps worked: a full disk must not leave a cut-down .env in its place.
     # LC_ALL=C grep -a, on every read of .env: grep takes a file with a NUL byte or
     # a byte the caller's locale cannot decode for binary and leaves lines out,
-    # which would drop them from .env or hide its SERVER_IMAGE.
+    # which would drop them from .env or hide its SERVER_IMAGE. mv -f, here, in the
+    # swap and in both rollbacks: without it, mv asks before it replaces a file it
+    # may not write when stdin is a terminal, and waits for an answer that a
+    # wrapper collecting the output never shows.
     tmp=$(mktemp .env.ah-XXXXXX) || return 1
     { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
-        && mv "$tmp" .env; } \
+        && mv -f "$tmp" .env; } \
         || { rm -f "$tmp"; return 1; }
 }
 
@@ -489,7 +492,7 @@ rollback_before_deploy() {
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # Copy next to .env, then rename: an interrupted restore leaves no half .env.
     # -T: a directory .env.ah-new in the way fails the restore, it takes no copy.
-    { cp -pT "${TMP}/env.prev" .env.ah-new && mv -T .env.ah-new .env; } \
+    { cp -pT "${TMP}/env.prev" .env.ah-new && mv -fT .env.ah-new .env; } \
         || { log "WARN: .env-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
         || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
@@ -514,7 +517,7 @@ swap_runtime_files() {
         rel="${rel#./}"
         [ -e "$rel" ] || [ -L "$rel" ] || ADDED_PATHS+="${rel}"$'\n'
         mkdir -p "$(dirname "$rel")" || return 1
-        { cp -T "${EXTRACT}/${rel}" "${rel}.ah-new" && mv -T "${rel}.ah-new" "$rel"; } \
+        { cp -T "${EXTRACT}/${rel}" "${rel}.ah-new" && mv -fT "${rel}.ah-new" "$rel"; } \
             || { rm -f "${rel}.ah-new"; return 1; }
         case "$rel" in scripts/*.sh) chmod +x "$rel" || return 1 ;; esac
     done <<< "$MANIFEST_PATHS"
@@ -605,7 +608,7 @@ rollback_after_deploy() {
     { ( umask 077
         { LC_ALL=C grep -a -vE "$pins" .env || [ $? -eq 1 ]; } > .env.ah-new \
             && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
-      ) && mv -T .env.ah-new .env; } \
+      ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     docker compose up -d >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }

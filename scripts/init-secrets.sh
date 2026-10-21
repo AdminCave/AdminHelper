@@ -60,12 +60,14 @@ upsert() {
     # CA_ROOT_PASSPHRASE that no longer matches the volumes. Matches update.sh.
     # LC_ALL=C grep -a, as in is_set_safely: grep takes a file with a NUL byte or a
     # byte the caller's locale cannot decode for binary and leaves lines out, which
-    # would drop them here and read a set secret as empty there.
+    # would drop them here and read a set secret as empty there. mv -f: without it,
+    # mv asks before it replaces a file it may not write when stdin is a terminal,
+    # and waits for an answer that a wrapper collecting the output never shows.
     local tmp failed="Fehler: ${key} konnte nicht in $ENV_FILE geschrieben werden — Abbruch. $ENV_FILE bleibt beim letzten vollstaendigen Stand."
     tmp=$(mktemp "${ENV_FILE}.ah-XXXXXX") || { echo "$failed" >&2; exit 1; }
     { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
-        && mv "$tmp" "$ENV_FILE"; } \
+        && mv -f "$tmp" "$ENV_FILE"; } \
         || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }
 }
 

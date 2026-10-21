@@ -475,6 +475,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `update.sh` die Installation ausserdem `:latest`, und der Rollback nach einem gescheiterten Neustart oder
   Healthcheck hinterliess eine `.env` ohne Image-Pins. Jetzt lesen die Skripte die `.env` in jeder Locale Byte fuer
   Byte (`LC_ALL=C grep -a`).
+- **Ops-Skripte: eine schreibgeschuetzte `.env` haelt `install.sh`, `update.sh` und `init-secrets.sh` an einem
+  Terminal nicht mehr an (R-0538):** `mv` fragt vor dem Ersetzen einer Datei ohne Schreibrecht nach, wenn die Eingabe
+  ein Terminal ist, und wartet auf die Antwort. War die `.env` schreibgeschuetzt, blieben so `install.sh` und
+  `init-secrets.sh` beim Setzen eines Schluessels stehen und `update.sh` beim Pinnen der Images und in beiden
+  Rollbacks; ein Update endete dann weder fertig noch zurueckgerollt, und unter einem Wrapper, der die Ausgabe
+  einsammelt, war die Frage nicht zu sehen. Jetzt ersetzen die Skripte jede Datei der Installation ohne Rueckfrage
+  (`mv -f`), wie schon bisher ohne Terminal.
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
