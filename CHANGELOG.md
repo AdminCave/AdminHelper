@@ -1080,6 +1080,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
+  ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin` und
+  `/usr/sbin` (jede ELF-Datei mit x-Bit) root und sind fuer alle anderen nur noch ausfuehrbar (`chmod go-r`: aus
+  `0755` wird `0711`, Eigentuemer und setuid-Bits bleiben), wie im frps-Image `frps` und `curl`. Prozesse des
+  Nutzers `app` (UID 10001), die der Entrypoint ueber `gosu` startet, sind damit nicht dumpable: Ihre Eintraege unter
+  `/proc/<pid>` gehoeren root. Skripte und Symlinks bleiben, wie sie sind; es zaehlt das Programm, das ein Skript
+  ausfuehrt (`python3.12`, `dash`, `perl`). Der Schritt ist der letzte `RUN` jedes der drei Images und erfasst so
+  alles, was die Schritte darueber installieren. Die UID 10001 sollte auf dem Host keinem anderen Konto oder Dienst
+  gehoeren. Doku: Betrieb (DE+EN).
+
 - **Plaene gibt die Session selbst frei (Entwickler-Werkzeuge, Kevin 2026-10-21):** Nach dem Plan-Commit von
   `/feature-plan` setzt die Session `roadmap.py approve` selbst und baut. Kevin behaelt seine Entscheidungen aus
   `CLAUDE.md` §2 (Roadmap, sichtbares Verhalten, API-Vertraege, Datenmigrationen, Restrisiko, Release); eine offene

@@ -27,6 +27,15 @@ RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
  && mkdir -p /app/data \
  && chown -R app:app /app
 
+# Every program in the bin directories, an ELF file with an x bit, is root's and for anyone else
+# to execute only (go-r): a process of app, started from one of them through gosu, is then not
+# dumpable and the entries in /proc/<pid> are root's, as in the frps image. Scripts stay
+# readable; what counts is the program that runs them. This stays the last RUN, so that it
+# takes in every program the steps above install.
+RUN find /usr/local/bin /usr/local/sbin /usr/bin /usr/sbin -type f -perm /111 \
+    -exec sh -c '[ "$(head -c 4 "$1")" = "$(printf "\177ELF")" ]' sh {} \; \
+    -exec chmod go-r {} +
+
 EXPOSE 8080
 
 ENTRYPOINT ["/bin/sh", "/docker-entrypoint.sh"]
