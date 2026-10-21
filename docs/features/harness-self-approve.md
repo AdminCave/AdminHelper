@@ -48,8 +48,9 @@ sie sind.
 
 **Ziel:** Eine knappe, eindeutige Regel an jeder Stelle oben:
 
-- **Wer:** die Session. **Wann:** sofort nach dem Plan-Commit von `/feature-plan` (Gate). **Wie:**
-  `python3 scripts/dev/roadmap.py approve R-nnnn` (beim Bündel je Zeile); `approve` behält die Notiz der Zeile.
+- **Wer:** die Session. **Wann:** sofort nach dem Plan-Commit von `/feature-plan` (Gate), und nur für eine Zeile, die
+  Kevin angenommen (`/roadmap triage`) oder als Vorhaben diktiert hat. **Wie:** `python3 scripts/dev/roadmap.py
+  approve R-nnnn` (beim Bündel je Zeile); `approve` behält die Notiz der Zeile.
 - **Was Kevin bleibt:** alles aus CLAUDE.md §2 außer der Freigabe des Plans: Reihenfolge und Inhalt der Roadmap
   (also auch, welche Zeile überhaupt `geplant` wird), sichtbares Verhalten, API-Verträge, Datenmigrationen,
   hingenommenes Restrisiko, Geld- und Zeitdeckel, Release, Tag, Ruleset, Repo-Einstellungen, sudo, Tokens,
@@ -60,7 +61,8 @@ sie sind.
   einer solchen Frage, bleibt die Zeile `geplant` (ein Ledger `aktiv` ohne offene `[ ]`-Task verletzt die Invariante
   aus `tasks/README.md`, `ledger.sh lint` meldet das).
 - **Nie:** eine Zeile ohne committeten Plan freigeben (eine in der Triage angenommene Zeile ist `geplant`, hat aber
-  noch kein Ledger).
+  noch kein Ledger), und nie eine Zeile, die Kevin weder angenommen noch diktiert hat (ein eigener Fund der Session
+  bleibt `neu`, bis Kevin ihn annimmt).
 
 **Nicht-Ziele:**
 
@@ -93,13 +95,19 @@ Keine.
 - §2 (`:24-27`): „Freigabe eines Plans,“ entfällt aus der Liste; nach dem ersten Satz neu: „Den Plan eines Vorhabens
   gibt die Session selbst frei (§4, Kevin 2026-10-21).“
 - §4 (`:61-65`): „→ Kevin gibt frei: er tippt `! python3 scripts/dev/roadmap.py approve R-nnnn`; die Freigabe ist
-  dieser Roadmap-Status →“ wird „→ die Session gibt sofort danach selbst frei: `python3 scripts/dev/roadmap.py approve
-  R-nnnn` (Kevin 2026-10-21; die Notiz der Zeile bleibt); die Freigabe ist dieser Roadmap-Status →“. Hinter dem Satz
-  bis `roadmap.py sync` neu: „Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort
-  schon trifft, stellt das Gate als Frage mit Empfehlung; die Task, die an ihr hängt, steht auf `[?]`, bis er
-  antwortet, die übrigen baut die Session. Hängt jede Task an einer solchen Frage, bleibt die Zeile `geplant`.“
+  dieser Roadmap-Status →“ wird „→ die Session gibt sofort danach selbst frei, wenn Kevin die Zeile angenommen
+  (`/roadmap triage`) oder das Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin
+  2026-10-21; die Notiz der Zeile bleibt); die Freigabe ist dieser Roadmap-Status →“. Hinter dem Satz bis
+  `roadmap.py sync` neu: „Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in
+  dieser Session oder in der Notiz der Zeile) schon trifft, stellt das Gate als Frage mit Empfehlung; die Task, die an
+  ihr hängt, steht auf `[?]`, bis er antwortet, die übrigen baut die Session. Hängt jede Task an einer solchen Frage,
+  bleibt die Zeile `geplant`.“
 - §8 (`:127`): „freigegeben (nur Kevin)“ wird „freigegeben (die Session nach dem Plan-Commit, §4)“.
-- §11 (`:171`): „eine Freigabe setzen“ wird „eine Zeile ohne committeten Plan freigeben“.
+- §9 (`:139`): „Nicht-triviale Änderung: Plan mit Annahmen und Trade-offs, auf Bestätigung warten.“ wird
+  „Nicht-triviale Änderung außerhalb eines Vorhabens: Plan mit Annahmen und Trade-offs, auf Bestätigung warten; den
+  Plan eines Vorhabens gibt die Session nach dem Gate selbst frei (§4).“
+- §11 (`:171`): „eine Freigabe setzen“ wird „eine Zeile freigeben, die Kevin nicht angenommen oder diktiert hat oder
+  die keinen committeten Plan hat“.
 
 **tasks/README.md**
 
@@ -127,16 +135,17 @@ Keine.
   tasks/<slug>.md`.““ wird „… **alle offenen Fragen** herausgestellt, je mit Empfehlung und den `[?]`-Tasks, dazu
   jede `Test-Löschung:`.“
 - `:142` wird „**Freigabe:** gleich nach dem Bericht gibt die Session frei, `python3 scripts/dev/roadmap.py approve
-  R-nnnn` (beim Bündel je Zeile; die Notiz bleibt), außer jede Task steht auf `[?]`; danach
-  `/feature-build tasks/<slug>.md`. Nie für eine Zeile ohne committeten Plan (CLAUDE.md §4, §11).“
+  R-nnnn` (beim Bündel je Zeile; die Notiz bleibt), wenn Kevin die Zeile angenommen oder das Vorhaben diktiert hat
+  und nicht jede Task auf `[?]` steht; danach `/feature-build tasks/<slug>.md`. Nie für eine Zeile ohne committeten
+  Plan (CLAUDE.md §4, §11).“
 
 **.claude/skills/feature-build/SKILL.md**
 
 - `:3` (description): „Nutzen, nachdem Kevin die Roadmap-Zeile freigegeben hat.“ wird „Nutzen, sobald die
   Roadmap-Zeile freigegeben ist; die Session gibt sie nach dem Plan-Commit selbst frei (CLAUDE.md §4).“
 - §2 `:31` „Roadmap nicht `freigegeben` → melden, nicht bauen. Die Freigabe ist Kevins `roadmap.py approve`.“ wird zu
-  zwei Punkten: „Roadmap `geplant`, Kopf `geplant`, das Ledger auf `feature/<slug>` committet und nicht jede Task
-  `[?]` → die Session gibt frei (`python3 scripts/dev/roadmap.py approve R-nnnn`, CLAUDE.md §4), dann wie im ersten
+  zwei Punkten: „Roadmap `geplant` (von Kevin angenommen oder diktiert, CLAUDE.md §4), Kopf `geplant`, das Ledger
+  auf `feature/<slug>` committet und nicht jede Task `[?]` → die Session gibt frei (`python3 scripts/dev/roadmap.py approve R-nnnn`, CLAUDE.md §4), dann wie im ersten
   Punkt.“ und „Sonst nicht `freigegeben` → melden, nicht bauen.“ Unter der Liste neu: „Jeder `roadmap.py
   status`-Aufruf dieses Skills gibt eine Notiz der Zeile wörtlich mit `--note` wieder mit (`status` ohne `--note`
   löscht sie).“

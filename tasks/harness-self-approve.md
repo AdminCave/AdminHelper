@@ -24,8 +24,10 @@ HEAD: 82e4a7b8
 Verify: bash scripts/dev/verify.sh scripts --strict -- session_status_test
 Doku: DEVELOPMENT.md („Die Roadmap als Skript“, `approve`)
 
-### T2 — CLAUDE.md und tasks/README.md: die Session gibt nach dem Plan-Commit selbst frei  [ ]
+### T2 — CLAUDE.md und tasks/README.md: die Session gibt nach dem Plan-Commit selbst frei  [x]
 Komponente: scripts · Dateien: CLAUDE.md, tasks/README.md, CHANGELOG.md, docs/features/harness-self-approve.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @91680e41 2026-10-21T10:23:15+02:00
+Review: approve (.ah-out/review/harness-self-approve/T2.verdict.json)
 Änderung: Die Texte der Spec für CLAUDE.md §2 (`:24-27`), §4 (`:61-65`), §8 (`:127`), §11 (`:171`) und `tasks/README.md` (`:21`, `:88-89`); der CHANGELOG-Eintrag der Spec oben unter `## [Unreleased]` → `### Changed` (umlautfrei). Kein neuer Test: reiner Regeltext ohne Code; den mechanischen Teil der neuen Regel (`[?]` im Plan, `aktiv` nur mit offener `[ ]`-Task) prüft der Test aus T3. Prüf-grep danach leer (heute sechs Treffer): `grep -n -E 'Freigabe eines Plans|freigegeben \(nur Kevin\)|er tippt .*approve|eine Freigabe setzen|Kevins .roadmap.py approve.|den Kevin liest' CLAUDE.md tasks/README.md`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: CHANGELOG (Changed); CLAUDE.md und tasks/README.md sind selbst die Regeln
