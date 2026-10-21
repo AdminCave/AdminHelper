@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes 3: Hook-Laufzeit in hooks.html, RFC-5737-Adressen im Webhook-Beispiel — Task-Ledger
-Status: aktiv · Branch: feature/doc-fixes-3 · Review: am Ende
+Status: bereit · Branch: feature/doc-fixes-3 · Review: am Ende
 Spec: Roadmap R-0528, R-0532
 Heavy: none — nur Doku unter `docs/` (`hooks.html` DE+EN) und ein Kommentar in `docs/examples`; keine API-, Gateway-, PKI-, Agent-, Compose-, Install- oder Desktop-Journey-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -81,8 +81,10 @@ Dedup-Key: ref:docs:examples:rfc5737-ips
 HEAD: 82e4a7b8
 Semantik: keine Stelle in docs/ — gesucht mit `git grep -n -E '5737|192\.0\.2'` über `docs`, `.claude`, `CLAUDE.md`, `DEVELOPMENT.md` und `scripts/dev`, kein Treffer. Maßstab ist RFC 5737 §3 (rfc-editor.org/rfc/rfc5737, gelesen 2026-10-21) — „The blocks 192.0.2.0/24 (TEST-NET-1), 198.51.100.0/24 (TEST-NET-2), and 203.0.113.0/24 (TEST-NET-3) are provided for use in documentation.“ Falsche Stelle: `docs/examples/webhook_http_import.py:24-25` — die Beispielantwort der externen API nennt zwei Adressen aus `10.0.0.0/8`.
 
-### T4 — Branch-Review zu T1: Hook-Parallelität je Server-Prozess, Kill der Prozessgruppe  [ ]
+### T4 — Branch-Review zu T1: Hook-Parallelität je Server-Prozess, Kill der Prozessgruppe  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1e87c53a 2026-10-21T09:56:10+02:00
+Review: am Ende (Branch-Review)
 Änderung: DE und EN, gleiche Zeilen in der Liste unter Environment-Modell; sonst bleibt die Seite unverändert.
 - Parallelität (`:90`): Die Grenze von 8 gilt je Server-Prozess, nicht für den ganzen Server. `_hook_semaphore` ist eine modulglobale `BoundedSemaphore` (`apps/server/app/modules/hooks/script_runner.py:69-70`). Hooks laufen in jedem Uvicorn-Worker (`--workers "${WEB_CONCURRENCY:-1}"`, `apps/server/docker-entrypoint.sh:57`) und im eigenen Scheduler-Dienst (`RUN_MODE=scheduler`, `docker-compose.yml:140`; Schedule-Hooks über `apps/server/app/modules/hooks/scheduler.py:130`). Jeder dieser Prozesse hat seine eigenen 8 Plätze. Der Rest des Punkts bleibt (kein Warten, sofort `success: false` mit `error` „Server ausgelastet (Hook-Limit erreicht)“).
 - Timeout (`:87`): Der Kill der Gruppe erreicht keine Kindprozesse, die eine eigene Session oder eine eigene Prozessgruppe öffnen (`os.killpg(proc.pid, …)` trifft nur die Gruppe `proc.pid`, `script_runner.py:193-197`); bisher nennt die Seite nur die eigene Session.
