@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring service_process (auto): Einträge des Reports, die keine Unit-Namen sind, überspringen — Task-Ledger
-Status: bereit · Branch: feature/monitoring-service-process-auto · Review: am Ende
+Status: erledigt · Branch: feature/monitoring-service-process-auto · Review: am Ende
 Spec: Roadmap R-0552
 Heavy: none — nur `ServiceProcessChecker._evaluate_auto` in `apps/monitoring/app/checkers/agent.py` (reine `evaluate`-Funktion), ihre Tests und die Entwickler-Doku; keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung, kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad und kein Pfad aus `scripts/dev/review-risk.txt` (die `linux-full`-Liste in CLAUDE.md §5 nennt `apps/monitoring` nicht). Die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
