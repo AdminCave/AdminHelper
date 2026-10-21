@@ -254,18 +254,21 @@ def agent_report(
             # Extract structured details
             details = metrics.pop("_details", None) if metrics else None
 
-            if metrics:
-                check_lines.extend(
-                    victoria.build_check_result_lines(
-                        check_id=check.id,
-                        check_type=check.check_type,
-                        server_id=server_id,
-                        name=check.name,
-                        status=result_status,
-                        duration_ms=0,
-                        extra_metrics=metrics,
-                    )
+            # The status point for every evaluated check, also one without measured values
+            # (system_state; Docker, ZFS or Proxmox without readable data): the status
+            # timeline reads only monitor_check_status. The duration (always 0 here) only
+            # comes with measured values, so such a check gets no flat 0 ms series.
+            check_lines.extend(
+                victoria.build_check_result_lines(
+                    check_id=check.id,
+                    check_type=check.check_type,
+                    server_id=server_id,
+                    name=check.name,
+                    status=result_status,
+                    duration_ms=0 if metrics else None,
+                    extra_metrics=metrics,
                 )
+            )
 
             # Same transition pipeline as the scheduler path — one implementation
             # in check_engine, not a copy (B3). A report without a 'resources'

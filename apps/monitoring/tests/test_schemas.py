@@ -49,3 +49,40 @@ def test_rejects_bad_interval():
 def test_rejects_bad_severity():
     with pytest.raises(ValidationError):
         TemplateCheckDef(**_def(severity="fatal"))
+
+
+# --- consecutive_oks (alert-quality T3) -------------------------------------
+
+
+def test_consecutive_oks_defaults_to_two():
+    assert TemplateCheckDef(**_def()).consecutive_oks == 2
+
+
+@pytest.mark.parametrize("value", [0, 101])
+def test_rejects_consecutive_oks_out_of_range(value):
+    with pytest.raises(ValidationError):
+        TemplateCheckDef(**_def(consecutive_oks=value))
+
+
+@pytest.mark.parametrize("value,error", [(0, "greater_than_equal"), (101, "less_than_equal")])
+def test_template_route_rejects_consecutive_oks_out_of_range(client_db, value, error):
+    client, _ = client_db
+    r = client.post(
+        "/templates", json={"name": "t", "check_definitions": [_def(consecutive_oks=value)]}
+    )
+    assert r.status_code == 422, r.text
+    assert {"type": error, "loc": ["body", "check_definitions", 0, "consecutive_oks"]} in [
+        {"type": e["type"], "loc": e["loc"]} for e in r.json()["detail"]
+    ], r.text
+
+
+@pytest.mark.parametrize("model", ["CheckCreate", "CheckUpdate", "TemplateCheckDef"])
+def test_published_schema_bounds_consecutive_oks(model):
+    # Per model, in the schema the API publishes: a bound carried in nested
+    # Annotated metadata has been dropped silently before, and the integer lint
+    # (test_openapi_integer_bounds.py) is content with IntColumn's own maximum.
+    from app.main import app
+
+    prop = app.openapi()["components"]["schemas"][model]["properties"]["consecutive_oks"]
+    integers = [s for s in prop.get("anyOf", [prop]) if s.get("type") == "integer"]
+    assert [(s["minimum"], s["maximum"]) for s in integers] == [(1, 100)]

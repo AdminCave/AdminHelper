@@ -115,6 +115,37 @@ def effective_status(
     return result_status
 
 
+def next_ok_count(result_status: str, prev_ok_count: int) -> int:
+    """Counts consecutive 'ok' results — the counterpart of next_fail_count.
+    Any other status resets to 0."""
+    if result_status == "ok":
+        return prev_ok_count + 1
+    return 0
+
+
+def holds_recovery(
+    result_status: str,
+    new_ok_count: int,
+    consecutive_oks: int,
+    old_status: str,
+    notified_status: str | None,
+) -> bool:
+    """True as long as an 'ok' result on a check that carries a reported problem
+    has not yet reached the required number of consecutive oks (R-0424).
+
+    Only a reported problem is held (Kevin 2026-10-20): the last reported status
+    is warning/critical and the check still stands at warning, critical or
+    unknown — a reported problem that comes back via unknown must not skip the
+    hold. A problem muted by maintenance or host-down was never reported and
+    recovers on the first ok, silently; holding it would catch it up as a fresh
+    alert. pending -> ok and ok -> ok never hold, and consecutive_oks 1 is the
+    behaviour from before the hold.
+    """
+    if result_status != "ok" or notified_status not in ("warning", "critical"):
+        return False
+    return old_status in ("warning", "critical", "unknown") and new_ok_count < consecutive_oks
+
+
 def resolve_config_server_id(
     config: dict | None, check_type: str, server_id: str | None
 ) -> dict | None:
@@ -147,7 +178,8 @@ def apply_result(
     """Write one check result into its MonitorState and decide on notification.
 
     The read-modify-write both result paths share: damping (next_fail_count /
-    effective_status), the transition log line and the sent-state decision. It
+    effective_status), the recovery hold (next_ok_count / holds_recovery), the
+    transition log line and the sent-state decision. It
     used to exist twice — here for the scheduler and as a hand-kept copy in
     routers/agent.py — which is exactly the duplicate truth that drifts (B3).
 
@@ -166,18 +198,30 @@ def apply_result(
     Returns (old_status, effective status, notification decision).
     """
     old_status = state.status if state else "pending"
+    notified_status = state.notified_status if state else None
     prev_fail_count = state.fail_count if state else 0
     new_fail_count = next_fail_count(result_status, prev_fail_count)
+    new_ok_count = next_ok_count(result_status, state.ok_count if state else 0)
 
     # Effective status, taking consecutive_fails into account.
     eff_status = effective_status(
         result_status, new_fail_count, check.consecutive_fails, old_status
     )
-    # Cut before the damping suffix, so "(failure n/m)" always stays visible.
+    # ...and consecutive_oks: a held recovery stands at the reported problem, not
+    # at a worse status reached while muted — the hold must not escalate.
+    held = holds_recovery(
+        result_status, new_ok_count, check.consecutive_oks, old_status, notified_status
+    )
+    if held:
+        eff_status = notified_status
+    # Cut before the damping suffix, so "(failure n/m)" or "(recovery n/m)"
+    # always stays visible.
     if len(message) > MAX_MESSAGE:
         message = message[: MAX_MESSAGE - 1] + "…"
     if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
         message = f"{message} (failure {new_fail_count}/{check.consecutive_fails})"
+    elif held:
+        message = f"{message} (recovery {new_ok_count}/{check.consecutive_oks})"
 
     has_details = (details is not None) if keep_previous_details_when_absent else bool(details)
     details_json = json.dumps(details) if has_details else None
@@ -189,6 +233,7 @@ def apply_result(
             since=now,
             last_check=now,
             fail_count=new_fail_count,
+            ok_count=new_ok_count,
             message=message,
             details=details_json,
         )
@@ -208,6 +253,7 @@ def apply_result(
             )
         state.status = eff_status
         state.fail_count = new_fail_count
+        state.ok_count = new_ok_count
         state.last_check = now
         state.message = message
         if has_details or not keep_previous_details_when_absent:
@@ -311,7 +357,10 @@ def execute_check(check_id: str) -> None:
         # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
         # scheduler pool and misfire following checks. Pass the id, not the
         # session-bound check — the pool thread reloads it in its own session (5.3).
-        if decision == "notify":
+        # A heartbeat's discrepancy stays open for the agent alert bundle
+        # (alert_bundle.flush_agent_alerts), which reports agents that go silent
+        # or come back together in one message.
+        if decision == "notify" and check.check_type != "agent_ping":
             _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
 
     except Exception:

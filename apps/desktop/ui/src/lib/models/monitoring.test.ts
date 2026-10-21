@@ -182,7 +182,7 @@ describe('buildAlignedData (4.102)', () => {
 });
 
 describe('isPushOnlyCheck / canRunManually', () => {
-  // All six push-evaluated types, so a typo in any single list entry shows up —
+  // All seven push-evaluated types, so a typo in any single list entry shows up —
   // the component test only ever touches smart_health.
   const pushOnly = [
     'agent_resources',
@@ -191,6 +191,7 @@ describe('isPushOnlyCheck / canRunManually', () => {
     'zfs_health',
     'docker_health',
     'smart_health',
+    'system_state',
   ];
 
   it('flags every push-evaluated type', () => {

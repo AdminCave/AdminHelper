@@ -37,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ['interval', 'monitoring.checkEdit.interval'],
     ['severity', 'monitoring.checkEdit.severity'],
     ['consecutive_fails', 'monitoring.checkEdit.consecutiveFails'],
+    ['consecutive_oks', 'monitoring.checkEdit.consecutiveOks'],
   ]);
 
   interface Props {

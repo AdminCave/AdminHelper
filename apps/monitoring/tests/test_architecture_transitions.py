@@ -26,13 +26,21 @@ _ENGINE_ONLY = (
     "next_fail_count(",
     "effective_status(",
     "is_suppressed(",
+    "next_ok_count(",
+    "holds_recovery(",
     "\"Check '%s': %s -> %s (%s)\"",
 )
 
 # The pure helpers by bare name. Importing one outside the engine is the start of
 # a second pipeline even when the call site is aliased (`… as nfc`), which the
 # token scan below would never see.
-_PIPELINE_NAMES = {"next_fail_count", "effective_status", "is_suppressed"}
+_PIPELINE_NAMES = {
+    "next_fail_count",
+    "effective_status",
+    "is_suppressed",
+    "next_ok_count",
+    "holds_recovery",
+}
 
 
 def _imports_a_pipeline_helper(source: str) -> bool:

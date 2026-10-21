@@ -147,7 +147,8 @@ SECTION_OF = {
 }
 CLOSED = frozenset({"abgeschlossen", "abgelehnt"})
 ALIASES = {"geparkt": "zurückgestellt", "erledigt": "abgeschlossen"}
-# The header's counters, in the order it prints them; the caps are CLAUDE.md's.
+# The header's counters, in the order it prints them. Only `add` enforces one (neu); the
+# others are shown, not held: CLAUDE.md section 2 runs in parallel wherever it can.
 WIP_CAPS = (("aktiv", 2), ("bereit", 2), ("pr", 3), ("neu", 20))
 NEU_CAP = dict(WIP_CAPS)["neu"]
 # Which status may follow which (the Ledger chain of the spec, plus the ways

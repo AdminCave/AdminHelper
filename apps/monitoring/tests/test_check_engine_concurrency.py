@@ -43,8 +43,11 @@ import os
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta
 
 import pytest
+
+from ._helpers import bell_record, overlap_first_hub_post, seed_bell_check
 
 DB_URL = os.environ.get("DATABASE_URL", "").strip()
 
@@ -344,3 +347,83 @@ def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypa
     )
     session.close()
     assert notified == "critical"
+
+
+# --- R-0424 T6 review: the bell's slot across two dispatches of one check -----
+# The bell decides under the claim lock and reserves its slot (hub_status,
+# hub_sent_at) with the claim commit; a failed hub POST hands it back with a
+# conditional UPDATE. The same scenarios run on SQLite in test_alerter_hub;
+# here the reservation, the IS NOT DISTINCT FROM and the timestamp equality of
+# the release run on Postgres. The second dispatch runs inside the first one's
+# hub POST, on its own session and connection.
+
+# Microseconds on purpose: the release compares hub_sent_at for equality.
+_BELL_NOW = datetime(2026, 10, 20, 12, 0, 0, 123456)
+
+
+def test_bell_recovery_during_the_alarm_post_reaches_the_bell(pg_sessionmaker, monkeypatch):
+    from app import alerter
+    from app.check_engine import _dispatch_alert_bg
+
+    monkeypatch.setattr(alerter, "utcnow_naive", lambda: _BELL_NOW)
+    cid = seed_bell_check(pg_sessionmaker, status="critical", notified_status="ok")
+    posted = overlap_first_hub_post(monkeypatch, pg_sessionmaker, cid, "ok")
+
+    _dispatch_alert_bg(cid, "ok", "critical")
+
+    assert posted == ["critical", "ok"]
+    assert bell_record(pg_sessionmaker, cid) == ("ok", _BELL_NOW)
+
+
+@pytest.mark.parametrize("first_code", [202, 403])
+def test_bell_newer_reservation_outlives_the_first_post(pg_sessionmaker, monkeypatch, first_code):
+    from app import alerter
+    from app.check_engine import _dispatch_alert_bg
+
+    monkeypatch.setattr(alerter, "utcnow_naive", lambda: _BELL_NOW)
+    shown_at = _BELL_NOW - timedelta(minutes=40)
+    cid = seed_bell_check(
+        pg_sessionmaker,
+        status="ok",
+        notified_status="critical",
+        hub_status="critical",
+        hub_sent_at=shown_at,
+    )
+    posted = overlap_first_hub_post(monkeypatch, pg_sessionmaker, cid, "critical", first_code)
+
+    _dispatch_alert_bg(cid, "critical", "ok")
+
+    assert posted == ["ok", "critical"]
+    assert bell_record(pg_sessionmaker, cid) == ("critical", _BELL_NOW)
+
+
+@pytest.mark.parametrize(
+    ("status", "notified", "hub_before"),
+    [
+        ("critical", "ok", (None, None)),
+        ("critical", "ok", ("ok", datetime(2026, 10, 20, 11, 0, 0, 654321))),
+        ("ok", "critical", ("critical", datetime(2026, 10, 20, 11, 55, 0, 654321))),
+        ("ok", "critical", ("critical", None)),
+    ],
+    ids=["alarm-first", "alarm-after-cooldown", "recovery", "recovery-after-backfill"],
+)
+def test_bell_failed_post_without_a_newer_dispatch_changes_nothing(
+    pg_sessionmaker, monkeypatch, status, notified, hub_before
+):
+    from app import alerter
+    from app.check_engine import _dispatch_alert_bg
+
+    monkeypatch.setattr(alerter, "utcnow_naive", lambda: _BELL_NOW)
+    cid = seed_bell_check(
+        pg_sessionmaker,
+        status=status,
+        notified_status=notified,
+        hub_status=hub_before[0],
+        hub_sent_at=hub_before[1],
+    )
+    posted = overlap_first_hub_post(monkeypatch, pg_sessionmaker, cid, status, first_code=403)
+
+    _dispatch_alert_bg(cid, notified, status)
+
+    assert posted == [status]
+    assert bell_record(pg_sessionmaker, cid) == hub_before

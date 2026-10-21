@@ -437,10 +437,11 @@ def _builtin(factory, slug="linux-base") -> str:
 
 
 def _ship_version_2(monkeypatch, slug="linux-base") -> dict:
-    """Ship version 2 of one standard template: system-resources warns every minute."""
+    """Ship a new version of one standard template (the shipped one + 1):
+    system-resources warns every minute."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     tpl = next(t for t in shipped if t["slug"] == slug)
-    tpl["version"] = 2
+    tpl["version"] += 1
     tpl["check_definitions"] = [
         {**d, "severity": "warning", "interval": "1m"} if d["def_id"] == "system-resources" else d
         for d in tpl["check_definitions"]
@@ -483,17 +484,23 @@ def test_builtin_update_compares_current_and_shipped_definitions(client, monkeyp
     c, factory = client
     tid = _builtin(factory)
     _edit_builtin(c, tid)
-    _ship_version_2(monkeypatch)
+    v2 = _ship_version_2(monkeypatch)
 
     r = c.get(f"/templates/{tid}/builtin-update")
 
     assert r.status_code == 200, r.text
     got = r.json()
-    assert (got["currentVersion"], got["shippedVersion"]) == (1, 2)
+    assert (got["currentVersion"], got["shippedVersion"]) == (v2["version"] - 1, v2["version"])
     assert (got["current"]["alertDefinitions"], got["shipped"]["alertDefinitions"]) == ([], [])
     current = got["current"]["checkDefinitions"]
     shipped = got["shipped"]["checkDefinitions"]
-    common = ["agent-heartbeat", "disk-forecast", "service-health", "system-resources"]
+    common = [
+        "agent-heartbeat",
+        "disk-forecast",
+        "service-health",
+        "system-resources",
+        "system-state",
+    ]
     assert sorted(d["def_id"] for d in current) == sorted([*common, "def-ping"])
     assert sorted(d["def_id"] for d in shipped) == sorted([*common, "smart-health"])
     # Only version 2 differs; the definitions the editor saved unchanged do not
@@ -572,10 +579,14 @@ def test_taking_the_update_replaces_the_definitions_and_keeps_check_overrides(cl
     assert r.status_code == 200, r.text
     got = r.json()
     assert got["checkDefinitions"] == v2["check_definitions"]
-    assert (got["name"], got["builtinVersion"], got["builtinEdited"]) == ("Our Linux", 2, False)
+    assert (got["name"], got["builtinVersion"], got["builtinEdited"]) == (
+        "Our Linux",
+        v2["version"],
+        False,
+    )
     assert got["builtinUpdateAvailable"] is False
-    # SMART comes back, the ping the user added goes, the other four follow v2
-    assert got["syncResult"] == {"created": 1, "updated": 4, "deleted": 1, "servers": 1}
+    # SMART comes back, the ping the user added goes, the other five follow v2
+    assert got["syncResult"] == {"created": 1, "updated": 5, "deleted": 1, "servers": 1}
     # The answer is the stored template, as PUT /templates returns it
     stored = c.get(f"/templates/{tid}").json()
     assert {k: v for k, v in got.items() if k != "syncResult"} == {
@@ -601,7 +612,8 @@ def test_taking_without_a_newer_version_is_409_and_changes_nothing(client):
 
     assert c.post(f"/templates/{tid}/builtin-update").status_code == 409
     got = c.get(f"/templates/{tid}").json()
-    assert (got["checkDefinitions"], got["builtinVersion"]) == (current, 1)
+    shipped_version = builtin_templates.shipped_builtin("linux-base")["version"]
+    assert (got["checkDefinitions"], got["builtinVersion"]) == (current, shipped_version)
 
 
 def test_taking_the_update_decides_on_the_row_a_startup_reconcile_committed(client, monkeypatch):
@@ -611,13 +623,13 @@ def test_taking_the_update_decides_on_the_row_a_startup_reconcile_committed(clie
     # syncs the same update a second time.
     _c, factory = client
     tid = _builtin(factory)
-    _ship_version_2(monkeypatch)
+    v2 = _ship_version_2(monkeypatch)
     with factory() as stale, factory() as other:
         # Held on purpose: the identity map keeps an unchanged row only weakly,
         # without this reference the next query would load it fresh anyway.
         loaded = stale.get(MonitorTemplate, tid)
-        assert loaded.builtin_version == 1
+        assert loaded.builtin_version == v2["version"] - 1
         assert builtin_templates.reconcile_builtin_templates(other) == 1
 
         assert builtin_templates.apply_builtin_update(stale, tid) is None
-        assert loaded.builtin_version == 2
+        assert loaded.builtin_version == v2["version"]

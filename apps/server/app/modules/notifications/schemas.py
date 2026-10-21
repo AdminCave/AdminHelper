@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import Field, field_validator, model_validator
 
@@ -28,10 +28,22 @@ class IncomingEvent(RequestModel):
     body: Optional[str] = None
     source_type: Optional[str] = Field(default=None, max_length=64)
     source_id: Optional[str] = Field(default=None, max_length=256)
+    # A bundled monitoring alert (several agents at once) names its servers
+    # here instead of in source_id; the hub routes it per user, to the servers
+    # each one may see (service.resolve_recipients).
+    source_ids: Optional[list[Annotated[str, Field(min_length=1, max_length=256)]]] = Field(
+        default=None, min_length=1, max_length=500
+    )
     # Monitoring transitions only: the status the check moved TO. severity is
     # the worse of old/new (so recoveries reach warning subscribers) — this
     # field lets the ingest tell an actual alert from a recovery.
     new_status: Optional[str] = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def _check_single_or_bundle(self) -> "IncomingEvent":
+        if self.source_id is not None and self.source_ids is not None:
+            raise ValueError("source_id and source_ids are mutually exclusive")
+        return self
 
 
 class MarkReadRequest(RequestModel):

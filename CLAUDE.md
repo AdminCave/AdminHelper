@@ -27,8 +27,13 @@ Ruleset, Repo-Einstellungen, sudo, Tokens, Passwörter. Alles andere innerhalb e
 entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt und mit Empfehlung.
 Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut die Task im Worktree des Vorhabens,
 ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
-Ledger. Zwei freigegebene, disjunkte Vorhaben baut die Session parallel (Deckel `aktiv` 2 in `roadmap.py`), je in
-eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Jeden eigenen
+Ledger. Parallel, wo es geht (Kevin 2026-10-20): Die Session hält so viele unabhängige Stränge gleichzeitig am Laufen,
+wie Dateien, Ressourcen (RAM, Platte, VMs) und die Regeln zulassen: freigegebene, disjunkte Vorhaben je in eigenem
+Worktree (Kriterien `/feature-plan` §4), Bauer verschiedener Ledger, Reviewer und `security` gleichzeitig, CI- und
+VM-Läufe, sobald ihr Gegenstand steht. Je Ledger baut höchstens ein Bauer, seine Tasks nacheinander; hat ein großes
+Vorhaben disjunkte Blöcke, teilt die Session es auf Kevins Wort in Teil-Ledger mit Teil-Branches, die in den
+Vorhabens-Branch gemergt werden. Seriell bleibt, was sich Contract-Dateien, eine Test-DB oder eine Abhängigkeit teilt:
+Parallelität darf keine Prüfung kosten. Jeden eigenen
 PR merged die Session selbst, auch einen, der `CLAUDE.md`, `.claude/` oder `scripts/` ändert, sobald er grün ist und
 alle Prüfer `approve` gesagt haben (Kevin, 2026-10-17). Grün heißt: die CI im ersten Anlauf grün und die Läufe, die §5
 vor dem Merge verlangt, grün; eine Ersatzprüfung der Session (§6, auch in einem Task-Commit) ist kein `approve`. Die
@@ -156,8 +161,9 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
   "Kevin Stenzel" --license GPL-3.0-or-later <datei>`. Drittanbieter stehen in `THIRD_PARTY_LICENSES.md`.
 - **Kommentare nur fürs nicht-offensichtliche Warum** (versteckte Constraints, Invarianten, Workarounds für konkrete Bugs).
 - **Doku im selben Commit** (DE + EN, README, DEVELOPMENT, CHANGELOG; Regeln in `.claude/rules/docs.md`).
-- **Release-Kanäle** (von Hand): `beta` nach jedem grünen Wochenlauf, `rc` schneidet Kevin, `stable` frühestens 7 Tage
-  nach dem RC ohne Fix und ohne Rückmeldung, `hotfix` als einziger Weg daran vorbei. Release-Bump: zuerst
+- **Release-Kanäle** (von Hand): `beta` ist der Tag `vX.Y.Z` ohne Suffix nach jedem grünen Wochenlauf, veröffentlicht
+  als „Pre-release“; `stable` setzt Kevin dasselbe Release ohne neuen Tag auf „Latest“, frühestens 7 Tage nach dem Beta
+  ohne Fix und ohne Rückmeldung, `hotfix` als einziger Weg daran vorbei. Release-Bump: zuerst
   `.claude/rules/release.md` lesen.
 
 ## 11. Claude tut nie

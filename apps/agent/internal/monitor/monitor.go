@@ -186,7 +186,8 @@ func Push(ctx context.Context) error {
 		return fmt.Errorf("Config unvollstaendig — bitte erneut mit init einrichten")
 	}
 
-	report := BuildReport(cfg.Services)
+	reportStatePath := config.MonitorReportStateFile()
+	report, nextReportState := buildReportWithState(cfg.Services, loadReportState(reportStatePath), time.Now())
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(ctx, PushReportParams{
@@ -205,6 +206,11 @@ func Push(ctx context.Context) error {
 		if err := saveInventoryState(statePath, newState); err != nil {
 			logger.Warnf("Inventory-State speichern fehlgeschlagen: %v", err)
 		}
+	}
+	// Saved only after the push went through, so a lost one leaves the window the next CPU share is
+	// measured over open instead of moving it.
+	if err := saveReportState(reportStatePath, nextReportState); err != nil {
+		logger.Warnf("saving the report state failed: %v", err)
 	}
 	logger.Infof("Report gesendet")
 	return nil

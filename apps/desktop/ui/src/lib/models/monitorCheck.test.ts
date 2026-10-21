@@ -7,6 +7,7 @@ import type { MonitorCheck } from '$lib/api/types';
 import {
   emptyCheckForm,
   checkToForm,
+  failsAfterTypeChange,
   formToInput,
   validateCheckForm,
   CHECK_TYPES,
@@ -23,6 +24,7 @@ describe('emptyCheckForm', () => {
     expect(f.interval).toBe('5m');
     expect(f.severity).toBe('critical');
     expect(f.consecutiveFails).toBe(3);
+    expect(f.consecutiveOks).toBe(2);
     expect(f.config).toEqual({});
   });
 
@@ -44,6 +46,7 @@ describe('checkToForm', () => {
       interval: '1m',
       severity: 'warning',
       consecutiveFails: 2,
+      consecutiveOks: 4,
       description: null,
       enabled: true,
       config,
@@ -57,6 +60,7 @@ describe('checkToForm', () => {
       interval: '1m',
       severity: 'warning',
       consecutiveFails: 2,
+      consecutiveOks: 4,
       description: '',
       config: { target: 'host.lan', timeout: 5 },
     });
@@ -64,7 +68,7 @@ describe('checkToForm', () => {
     expect(f.config).not.toBe(config);
   });
 
-  it('defaults missing serverId/consecutiveFails/config', () => {
+  it('defaults missing serverId/consecutiveFails/consecutiveOks/config', () => {
     const c: MonitorCheck = {
       id: 'm2',
       name: 'x',
@@ -76,6 +80,7 @@ describe('checkToForm', () => {
     const f = checkToForm(c);
     expect(f.serverId).toBe('');
     expect(f.consecutiveFails).toBe(3);
+    expect(f.consecutiveOks).toBe(2);
     expect(f.config).toEqual({});
   });
 });
@@ -89,6 +94,7 @@ describe('formToInput', () => {
       interval: '15m',
       severity: 'info',
       consecutiveFails: 5,
+      consecutiveOks: 4,
       description: '  notes  ',
       config: { url: 'https://x', method: 'GET' },
     });
@@ -99,6 +105,7 @@ describe('formToInput', () => {
       interval: '15m',
       severity: 'info',
       consecutive_fails: 5,
+      consecutive_oks: 4,
       description: 'notes',
       config: { url: 'https://x', method: 'GET' },
     });
@@ -113,6 +120,11 @@ describe('formToInput', () => {
   it('falls back consecutive_fails to 3 when zero/falsy', () => {
     const input = formToInput({ ...emptyCheckForm('srv-1'), name: 'x', consecutiveFails: 0 });
     expect(input.consecutive_fails).toBe(3);
+  });
+
+  it('falls back consecutive_oks to 2 when zero/falsy', () => {
+    const input = formToInput({ ...emptyCheckForm('srv-1'), name: 'x', consecutiveOks: 0 });
+    expect(input.consecutive_oks).toBe(2);
   });
 
   it('copies config rather than aliasing the form config', () => {
@@ -137,8 +149,38 @@ describe('validateCheckForm', () => {
 describe('constants', () => {
   it('expose every check type, interval and severity', () => {
     expect(CHECK_TYPES).toContain('smart_health');
-    expect(CHECK_TYPES).toHaveLength(11); // + disk_forecast (T29)
+    expect(CHECK_TYPES).toContain('system_state');
+    expect(CHECK_TYPES).toHaveLength(12); // + disk_forecast (T29), + system_state (R-0423)
     expect(INTERVALS).toEqual(['1m', '5m', '15m', '30m', '1h', '6h', '12h', '24h']);
     expect(SEVERITIES).toEqual(['critical', 'warning', 'info']);
+  });
+});
+
+// monitoring-linux-base-v2 T20 (R-0423): an OOM kill is in one report only, so
+// a system_state check needs one fail in a row to report it.
+describe('failsAfterTypeChange', () => {
+  it('suggests 1 for system_state over the default and over a value entered', () => {
+    expect(failsAfterTypeChange('ping', 'system_state', 3)).toBe(1);
+    expect(failsAfterTypeChange('agent_resources', 'system_state', 5)).toBe(1);
+  });
+
+  it('goes back to 3 when system_state is left with its 1 untouched', () => {
+    expect(failsAfterTypeChange('system_state', 'ping', 1)).toBe(3);
+  });
+
+  // monitoring-linux-base-v2 T28: the value from before the pick comes back.
+  it('goes back to the remembered value when system_state is left with its 1 untouched', () => {
+    expect(failsAfterTypeChange('system_state', 'ping', 1, 5)).toBe(5);
+    expect(failsAfterTypeChange('system_state', 'ping', 2, 5)).toBe(2);
+    expect(failsAfterTypeChange('ping', 'tcp', 1, 5)).toBe(1);
+  });
+
+  it('keeps a value changed under system_state', () => {
+    expect(failsAfterTypeChange('system_state', 'ping', 2)).toBe(2);
+  });
+
+  it('keeps the value between other types, a 1 included', () => {
+    expect(failsAfterTypeChange('ping', 'tcp', 5)).toBe(5);
+    expect(failsAfterTypeChange('ping', 'tcp', 1)).toBe(1);
   });
 });
