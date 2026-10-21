@@ -30,19 +30,21 @@ const HELD_CONNECTION = 'web-tunnel';
 const FALLBACK_FIRST = 23000;
 const FALLBACK_LAST = 23999;
 
-// A Tauri command through the bridge; a rejection fails the spec with its message.
+// A Tauri command through the bridge; a rejection fails the spec with its message. It comes
+// back as { rejected }: webdriver takes a script result with an `error` key for a failed
+// command (logout.live.js).
 async function invoke(cmd, args = {}) {
   const out = await browser.executeAsync(
     (c, a, done) => {
       window.__TAURI__.core
         .invoke(c, a)
         .then((value) => done({ value }))
-        .catch((e) => done({ error: String((e && e.message) || e) }));
+        .catch((e) => done({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,
   );
-  if (out.error !== undefined) throw new Error(`${cmd} failed: ${out.error}`);
+  if (out.rejected !== undefined) throw new Error(`${cmd} failed: ${out.rejected}`);
   return out.value;
 }
 

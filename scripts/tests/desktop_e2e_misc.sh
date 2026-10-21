@@ -51,7 +51,7 @@ if [ -n "${AH_SPEC:-}" ]; then
     esac
 fi
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon
+e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 
@@ -93,8 +93,7 @@ for s in $SPECS; do
     # one may hold an enrolled identity whose pinned CA rejects this throwaway
     # stack's gateway cert (is_enrolled() true → login fails CA-pin/MITM).
     if dbus-run-session -- bash -c '
-        eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-        export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+        e2e_keyring_start || exit 1
         cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec "$SPEC"
     '; then
         echo "spec $s: pass"; ok "spec $s"
