@@ -954,7 +954,8 @@ bash scripts/tests/desktop_e2e_connect_tunnel.sh
 
 # Desktop-Live-E2E: zwei Installationen nebeneinander in zwei Workspaces
 # (zwei Stacks, zwei PKIs, derselbe Visitor-Port; jedes SSH-Ziel sieht genau
-# den SSH-Client seines Fensters)
+# den SSH-Client seines Fensters; zuletzt loescht der Launcher "Kunde B", und
+# Stack b fuehrt dessen Geraet als von sich selbst widerrufen)
 bash scripts/tests/desktop_e2e_workspaces.sh
 
 # SSE-Push: Cross-Instance-Fan-out ueber echtes Redis. Zwei Server-Instanzen

@@ -17,6 +17,7 @@ ops:
     provision-token <server_id>                    -> prints a fresh provision token
     connection <name> <kind> <host> <port> <user>  -> prints the new connection id
     web-connection <name> <url>                    -> prints the new web connection id
+    devices <username>                             -> prints "<id> <revoked reason or ->" per device
 """
 
 import json
@@ -146,6 +147,16 @@ def main(argv):
                 base, token, "POST", "/api/connections", {"name": name, "kind": "web", "url": url}
             )["id"]
         )
+    elif op == "devices":
+        # The devices of a user (R-0224), one line each: the id and how the device was
+        # revoked (self, admin, replaced), "-" while it is not.
+        (username,) = rest
+        users = _call(base, token, "GET", "/api/users")
+        user_id = next((u["id"] for u in users if u["username"] == username), None)
+        if user_id is None:
+            sys.exit(f"no user {username}")
+        for device in _call(base, token, "GET", f"/api/users/{user_id}/devices"):
+            print(device["id"], device["revoked_reason"] or "-")
     else:
         sys.exit(f"unknown op: {op}")
 
