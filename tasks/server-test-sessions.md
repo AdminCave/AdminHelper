@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Tests: keine Sitzung an der Rollback-Klammer vorbei, die Test-Rolle mit eigenem Passwort — Task-Ledger
-Status: bereit · Branch: feature/server-test-sessions · Review: pro Task
+Status: aktiv · Branch: feature/server-test-sessions · Review: pro Task
 Spec: Roadmap R-0526, R-0529
 Heavy: none — T1 ändert nur `apps/server/tests/` und den Absatz „Tests“ der Entwickler-Doku, T2 nur die Einrichtung der Worktrees unter `scripts/dev/`, ihre Tests und `DEVELOPMENT.md`. Kein API-, Gateway-, PKI-, Stack-, Compose- oder Install-Pfad, `app/` bleibt unverändert. Die volle Server-Suite und den `schemathesis`-Schritt, auf die die Schranke aus T1 wirkt, fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -43,6 +43,15 @@ Beweis: origin/main@82e4a7b8 · `DEVELOPMENT.md:194` legt die Test-Rolle mit `PA
 Orakel: contract — Eine Test-URL, deren Passwort der Benutzername ist, führt zu keiner neuen Worktree-Datenbank
 Dedup-Key: ref:server:tests:local-user-equals-password
 HEAD: 82e4a7b8
+
+### T3 — Worktree-Einrichtung: eine Test-URL ohne Passwort bleibt erlaubt (Branch-Prüfung)  [ ]
+Komponente: scripts · Dateien: scripts/tests/worktree_setup_test.sh
+Änderung: Aus der Branch-Prüfung (`tester`, 2026-10-21): Den Teil `[ -n "$PG_URL_PASS" ]` der neuen Prüfung in `worktree-setup.sh:78` deckt kein Test. Ohne ihn lehnte die Einrichtung jede URL ohne Passwort (Peer, Trust, `.pgpass`) mit der falschen Meldung ab. `worktree_setup_test.sh`, Abschnitt „setup: a password that is the user name“: Ein Fall mit `postgresql+psycopg://ah@localhost:5432/adminhelper_test` als Haupt-URL endet mit 0 und ruft genau `createdb pw=<unset> --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_<slug>` (die Form, die der Stub für ein ungesetztes `PGPASSWORD` schreibt, `:49`). Danach die Haupt-`.devenv.sh` wie in den Nachbarfällen zurücksetzen. Rot-Beweis: Die Bedingung in einer Scratch-Kopie von `worktree-setup.sh` auf `[ "$PG_URL_PASS" = "$PG_URL_USER" ]` verkürzt macht den neuen Fall rot, dreimal identisch; die Summary-Zeilen kommen in den Commit-Body. `worktree-setup.sh` und `pg-url.sh` bleiben unverändert. Nur Platzhalter, kein Wert erreicht eine Datenbank.
+Verify: bash scripts/dev/verify.sh scripts --strict -- worktree_setup_test
+Doku: keine (nur ein Test)
+Beweis: feature/server-test-sessions@44e4b9b8 · Mutation `[ "$PG_URL_PASS" = "$PG_URL_USER" ]` in `worktree-setup.sh:78` → `worktree_setup_test: 67 passed, 0 failed`
+Orakel: mutation-sample
+HEAD: 44e4b9b8
 
 ## Prüfung (Planer, 2026-10-21)
 - **T1: Warum eine Schranke an der Engine und nicht eine zentrale Bindung von `SessionLocal`?** Eine autouse-Bindung an die Test-Verbindung in jedem `db_session`-Test änderte, was viele Tests sehen. `get_db` hängt ebenfalls an `SessionLocal`. Code in Threads (`run_in_threadpool` im Stream) teilte sich eine Verbindung mit dem Test. Tests ohne `db_session` erreichten die App-Engine weiter. Die Probe fand eine einzige ungebundene Stelle. Die Schranke macht jede weitere zum roten Test, gebunden wird dort, wo ein Test die Daten braucht. Der Planer von R-0520 hat die zentrale Bindung aus denselben Gründen verworfen (`tasks/server-test-events.md`, Prüfung).
