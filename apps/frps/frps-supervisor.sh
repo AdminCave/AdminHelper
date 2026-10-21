@@ -24,7 +24,8 @@
 # while only the supervisor may read it, its TLS paths pointed at current/, and swapped in as
 # current/, which frps reads and cannot write and no other user reads (FRPS_ACTIVE_DIR 0711,
 # current/ 0750, its files 0640, all the supervisor's and in the group of FRPS_USER, which root
-# is in). frps always runs from current/, so a half-written or invalid input never reaches it.
+# is in). A current/ left from an earlier run gets these modes at the start, whatever it had.
+# frps always runs from current/, so a half-written or invalid input never reaches it.
 # At the start, and after that whenever the input has changed and then stayed the same for two
 # polls in a row (FRPS_POLL_SECONDS apart, one second while a start of frps is due; a file
 # still being written is not taken for a new one):
@@ -69,10 +70,10 @@
 # puts each answer as frps gave it into $FRPS_STATE_DIR/proxy-<type>.json (fetch_proxies);
 # a failed request or an answer over 1 MiB removes the file of its type, frps not running or
 # no webServer.port all of them. curl runs as FRPS_FETCH_USER (default frps-fetch, a user the
-# image creates for it alone), whose UID is neither root nor that of FRPS_USER: it holds no
-# capability, reads nothing of current/, and kill_left, which KILLs the processes of
-# FRPS_USER, never hits a request under way. The supervisor opens the file each answer goes
-# to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
+# image creates for it alone), whose UID is neither root nor that of FRPS_USER and who is not
+# in the group of FRPS_USER: it holds no capability, reads nothing of current/, and kill_left,
+# which KILLs the processes of FRPS_USER, never hits a request under way. The supervisor opens
+# the file each answer goes to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
 
 set -u
 export LC_ALL=C
@@ -889,6 +890,14 @@ if [ -n "$FRPS_FETCH_USER" ]; then
     [ "$fetch_uid" != 0 ] || die "FRPS_FETCH_USER must not be root"
     # kill_left would hit the requests under way.
     [ "$fetch_uid" != "$FRPS_UID" ] || die "FRPS_FETCH_USER must not share the UID of FRPS_USER"
+    # The group of FRPS_USER reads the copy (open_to_frps).
+    if [ -n "$FRPS_GID" ]; then
+        fetch_gids=$(id -G "$FRPS_FETCH_USER" 2>/dev/null) \
+            || die "FRPS_FETCH_USER $FRPS_FETCH_USER has no group"
+        case " $fetch_gids " in
+        *" $FRPS_GID "*) die "FRPS_FETCH_USER must not be in the group of FRPS_USER" ;;
+        esac
+    fi
 elif [ "$(id -u)" -eq 0 ]; then
     die "FRPS_FETCH_USER must name the user the dashboard is asked as, not be empty under root"
 fi
@@ -902,6 +911,16 @@ if ! { mkdir -p "$FRPS_STATE_DIR" && chmod 0755 "$FRPS_STATE_DIR"; }; then
     log "cannot set up $FRPS_STATE_DIR" >&2
 fi
 recover
+# frps may run from a copy an earlier run left (degraded), which activate never saw: it gets
+# the same modes here, its content stays.
+if [ -d "$CURRENT" ]; then
+    open_to_frps "$CURRENT" 0750 || die "cannot set up $CURRENT"
+    for file in frps.toml applied.sha256 $PEMS; do
+        if [ -e "$CURRENT/$file" ]; then
+            open_to_frps "$CURRENT/$file" 0640 || die "cannot set up $CURRENT"
+        fi
+    done
+fi
 # No frps runs yet: proxy lists of an earlier run go.
 drop_proxies
 

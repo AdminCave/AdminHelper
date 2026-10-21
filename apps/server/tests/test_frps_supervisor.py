@@ -11,21 +11,22 @@ files are read only as regular files of at most 1 MiB and within a time limit; a
 anything else or a larger file is unreadable. A valid input is copied into current/ of the
 working directory (the directory 0711, current/ 0750 and files 0640, root's and in the group of
 frps: frps reads the copy under a user of its own and writes none of it, no other user reads
-it) with its TLS paths pointed there, and frps runs from
-current/, each time only while the copy is still the one the supervisor took over (one that
-changed goes, with the event copy_changed) and has passed the check again. An invalid input
-starts nothing, or frps from the last valid current/ (degraded); a missing frps.toml removes
-current/. Every status file it writes (0644) passes the server's reader.
+it; a copy left from an earlier run gets these modes at the start) with its TLS paths pointed
+there, and frps runs from current/, each time only while the copy is still the one the
+supervisor took over (one that changed goes, with the event copy_changed) and has passed the
+check again. An invalid input starts nothing, or frps from the last valid current/ (degraded);
+a missing frps.toml removes current/. Every status file it writes (0644) passes the server's
+reader.
 
 After the start it polls the input: a change that stayed the same for two polls is taken over
 like at the start, restarting frps only for a new valid input, and one that keeps changing shows
 as unstable; frps exiting on its own is restarted after a growing delay, three exits in a row
 make a crash loop; TERM and INT stop frps and leave no process behind; `health` judges the
 state. While frps runs from a copy with a webServer.port, every poll puts the proxy lists of
-its dashboard, fetched over loopback under a user of their own (neither root nor that of frps)
-with the credentials kept off every command line, into the state directory (proxy-<type>.json,
-0644), each answer as it came; a failed request or an answer over 1 MiB leaves no file of its
-type, and without frps or a webServer.port none is left.
+its dashboard, fetched over loopback under a user of their own (neither root nor that of frps,
+nor in the group of frps) with the credentials kept off every command line, into the state
+directory (proxy-<type>.json, 0644), each answer as it came; a failed request or an answer over
+1 MiB leaves no file of its type, and without frps or a webServer.port none is left.
 
 The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
 off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
@@ -819,6 +820,63 @@ def test_a_swap_cut_short_between_its_two_renames_is_rolled_back_at_the_next_sta
     assert (box.read().state, box.read().reason) == ("degraded", "token_invalid")
     assert [p.name for p in box.active.iterdir()] == ["current"]
     assert box.calls()[-1] == f"-c {box.current}/frps.toml"
+
+
+@pytest.mark.parametrize(
+    ("left", "missing"),
+    [("current", None), ("prev", None), ("current", "applied.sha256")],
+    ids=["current/", "prev/", "current/ without applied.sha256"],
+)
+def test_a_copy_from_an_earlier_run_gets_the_modes_of_a_new_one_at_the_start(box, left, missing):
+    box.write_input()
+    box.run(frps=True)
+    box.stop()
+    if missing:
+        (box.current / missing).unlink()
+    copy = {p.name: p.read_bytes() for p in box.current.iterdir()}
+    # The modes an older image gave the copy: open to every user.
+    box.current.chmod(0o755)
+    for path in box.current.iterdir():
+        path.chmod(0o644)
+    if left == "prev":
+        box.current.rename(box.active / "prev")
+    box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+
+    box.run(frps=True)
+
+    # frps runs from that copy, which is the same but for its modes.
+    assert (box.read().state, box.read().reason) == ("degraded", "cert_expired")
+    assert box.calls()[-1] == f"-c {box.current}/frps.toml"
+    assert [p.name for p in box.active.iterdir()] == ["current"]
+    assert {p.name: p.read_bytes() for p in box.current.iterdir()} == copy
+    assert _mode(box.current) == 0o750
+    assert {name: _mode(box.current / name) for name in copy} == dict.fromkeys(copy, 0o640)
+
+
+# Stands in for chmod: fails for current/ and what is in it, and leaves the rest to the real
+# chmod.
+CHMOD = """#!/bin/sh
+case $2 in */current | */current/*) exit 1 ;; esac
+exec {real} "$@"
+"""
+
+
+def test_a_copy_from_an_earlier_run_whose_modes_cannot_be_set_stops_the_supervisor(box):
+    box.write_input()
+    box.run(frps=True)
+    box.stop()
+    real = shutil.which("chmod")
+    assert real, "chmod"
+    stub = box.root / "bin" / "chmod"
+    stub.write_text(CHMOD.format(real=real))
+    stub.chmod(0o755)
+    box.status_file.unlink()
+    (box.stub / "calls").unlink()
+
+    result = box.once()
+
+    assert result.returncode == 1 and f"cannot set up {box.current}" in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
 
 
 def _sha256(text: str) -> str:
@@ -1800,6 +1858,63 @@ def test_a_fetch_user_that_is_root_no_user_or_the_user_of_frps_stops_the_supervi
 
     assert result.returncode == 1 and "FRPS_FETCH_USER" in result.stderr
     assert box.calls() == [] and not box.status_file.exists()
+
+
+# Stands in for id: knows one user more, fetch-test, with the UID and the groups the test gives
+# it (none: id -G fails), and leaves every other question to the real id.
+ID = """#!/bin/sh
+case "$*" in
+"-u fetch-test") echo {uid} ;;
+"-G fetch-test") [ -n "{groups}" ] && echo "{groups}" ;;
+*) exec {real} "$@" ;;
+esac
+"""
+
+
+def _fetch_user_in(box: Box, groups: str):
+    """frps as the test's own user (_as_user), the requests as fetch-test, a user of another UID
+    in groups (as id -G prints them, the primary one first)."""
+    _as_user(box)
+    real = shutil.which("id")
+    assert real, "id"
+    stub = box.root / "bin" / "id"
+    stub.write_text(ID.format(uid=os.getuid() + 1, groups=groups, real=real))
+    stub.chmod(0o755)
+    box.env["FRPS_FETCH_USER"] = "fetch-test"
+
+
+@pytest.mark.parametrize(
+    ("groups", "error"),
+    [
+        ("{gid}", "must not be in the group of FRPS_USER"),
+        ("{other} {gid}", "must not be in the group of FRPS_USER"),
+        ("", "fetch-test has no group"),
+    ],
+    ids=["primary group", "supplementary group", "no group"],
+)
+def test_a_fetch_user_in_the_group_of_the_frps_user_or_in_none_stops_the_supervisor(
+    box, groups, error
+):
+    gid = pwd.getpwuid(os.getuid()).pw_gid
+    _fetch_user_in(box, groups.format(gid=gid, other=gid + 1))
+    box.write_input()
+
+    result = box.once()
+
+    assert result.returncode == 1, result.stderr
+    assert f"FRPS_FETCH_USER {error}" in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
+
+
+def test_a_fetch_user_outside_the_group_of_the_frps_user_passes_the_start_check(box):
+    gid = pwd.getpwuid(os.getuid()).pw_gid
+    # Groups whose numbers hold that of the group of frps, none of them that group.
+    _fetch_user_in(box, f"{gid}0 1{gid} {gid + 1}")
+    box.write_input()
+
+    box.run(frps=True)
+
+    assert (box.read().state, box.read().reason) == ("running", "none")
 
 
 def _status_doc(state: str) -> str:
