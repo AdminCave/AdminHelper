@@ -55,8 +55,9 @@
 #
 # frps exiting on its own is started again from current/ after 2, 4, 8 … FRPS_BACKOFF_MAX
 # seconds; the third exit within FRPS_CRASH_WINDOW seconds makes the state crashloop, until
-# frps has run that long again. TERM or INT stop frps (KILL after FRPS_STOP_SECONDS) and end
-# the supervisor with 0.
+# frps has run that long again. TERM or INT KILL every child of the supervisor but frps (the
+# pause between polls, the requests to the dashboard), stop frps (KILL after
+# FRPS_STOP_SECONDS) and end the supervisor with 0, with no child of it left.
 #
 # The state goes to $FRPS_STATE_DIR/status.json, rewritten at every poll as a heartbeat; its
 # format is the contract the server reads, apps/server/app/modules/frp/supervisor_status.py.
@@ -711,9 +712,10 @@ dashboard_port() {
 # for each of PROXY_TYPES, with webServer.user and webServer.password of current/frps.toml,
 # which go to curl on stdin, never on a command line; curl runs as FRPS_FETCH_USER, and the
 # supervisor opens the file it writes to. The requests run side by side, each for
-# FRPS_READ_SECONDS at the most, and TERM or INT ends them at once (on_signal), so that a
-# dashboard that does not answer holds up a poll no longer than that. The answers are not
-# parsed: the name and the mtime of a file are the supervisor's (keep_proxy).
+# FRPS_READ_SECONDS at the most, and TERM or INT KILLs them at once (on_signal, kill_children:
+# FETCH_PIDS serves the wait below alone), so that a dashboard that does not answer holds up a
+# poll no longer than that. The answers are not parsed: the name and the mtime of a file are
+# the supervisor's (keep_proxy).
 fetch_proxies() {
     port=$(dashboard_port)
     if [ -z "$port" ]; then
@@ -724,7 +726,7 @@ fetch_proxies() {
     password=$(top_value "$CURRENT/frps.toml" webServer.password)
     for type in $PROXY_TYPES; do
         # -q first: no curlrc is read. No proxy from the environment gets the credentials.
-        # su-exec execs curl: $! is the pid of curl, which on_signal ends.
+        # su-exec execs curl: the child, $!, is curl itself, which on_signal ends.
         ${FRPS_FETCH_USER:+su-exec "$FRPS_FETCH_USER"} curl -q --config - --silent --fail \
             --noproxy '*' --max-time "$FRPS_READ_SECONDS" --max-filesize "$INPUT_MAX" \
             "http://127.0.0.1:$port/api/proxy/$type" \
@@ -795,24 +797,44 @@ poll() {
 # pause <seconds> — a sleep that TERM and INT cut short: a trapped signal ends wait at once.
 pause() {
     sleep "$1" &
-    PAUSE_PID=$!
-    wait "$PAUSE_PID" && PAUSE_PID=""
+    wait "$!"
+}
+
+# kill_children — KILL to every child of the supervisor but frps (FRPS_PID), the pause and the
+# requests to the dashboard among them. The children are found by their PPid, not by the pids
+# the supervisor keeps: the shell runs a trap once the command under way is done, so a signal
+# right after `… &` comes before $! is kept. KILL, since a child just forked holds the trap of
+# the shell until it has reset its traps, and a TERM in that time is lost (dash). From /proc,
+# not FRPS_PROC_ROOT: it hits children of this shell alone, in the tests too.
+kill_children() {
+    for status in /proc/[0-9]*/status; do
+        pid=${status%/status}
+        pid=${pid##*/}
+        [ "$pid" != "$FRPS_PID" ] || continue
+        state=""
+        ppid=""
+        # A process that ended in the meantime has no file left to read.
+        {
+            while read -r key value _; do
+                case $key in
+                State:) state=$value ;;
+                PPid:)
+                    ppid=$value
+                    break
+                    ;;
+                esac
+            done < "$status"
+        } 2>/dev/null
+        if [ "$ppid" = "$$" ] && [ "$state" != Z ]; then kill -KILL "$pid" 2>/dev/null; fi
+    done
 }
 
 on_signal() {
     trap '' TERM INT
     log "stopping"
-    if [ -n "$PAUSE_PID" ]; then
-        kill "$PAUSE_PID" 2>/dev/null
-        wait "$PAUSE_PID" 2>/dev/null
-    fi
-    if [ -n "$FETCH_PIDS" ]; then
-        # shellcheck disable=SC2086 # one pid a word
-        kill $FETCH_PIDS 2>/dev/null
-        # shellcheck disable=SC2086
-        wait $FETCH_PIDS 2>/dev/null
-    fi
+    kill_children
     stop_frps
+    wait
     drop_proxies
     exit 0
 }
@@ -898,7 +920,6 @@ if [ -d "$CURRENT" ]; then COPY_HASH=$(copy_hash); fi
 REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0
-PAUSE_PID=""
 FETCH_PIDS=""
 CHANGING_SINCE=""
 UNSTABLE=0

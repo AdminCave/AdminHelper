@@ -1248,6 +1248,34 @@ def test_a_signal_stops_frps_and_leaves_no_process_behind(box, sig, valid):
     assert box.runs() == (1 if valid else 0)
 
 
+# Stands in for sleep: takes no TERM, as a child the supervisor has just forked does until it
+# has dropped the trap of its shell, records its pid, then becomes the real sleep.
+DEAF_SLEEP = """#!/bin/sh
+trap '' TERM
+echo $$ >> "$STUB_DIR/sleeps"
+exec {real} "$@"
+"""
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT], ids=["TERM", "INT"])
+def test_a_signal_ends_even_a_child_that_takes_no_term(box, sig):
+    real = shutil.which("sleep")
+    assert real, "sleep"
+    (box.root / "bin" / "sleep").write_text(DEAF_SLEEP.format(real=real))
+    (box.root / "bin" / "sleep").chmod(0o755)
+    sleeps = box.stub / "sleeps"
+    box.run(frps=False)
+    # The pause before the hourly poll of Box, the one sleep of a supervisor without input.
+    box.wait_until(lambda: sleeps.exists() and sleeps.read_text().strip(), "the pause")
+    (pause,) = [int(pid) for pid in sleeps.read_text().split()]
+    assert _alive(pause)
+
+    box.supervisor.send_signal(sig)
+
+    assert box.supervisor.wait(timeout=WAIT) == 0
+    _wait_gone(box.supervisor.pid)
+
+
 def test_frps_that_ignores_term_is_killed(box):
     (box.stub / "ignore-term").touch()
     box.env["FRPS_STOP_SECONDS"] = "1"
