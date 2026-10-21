@@ -26,8 +26,10 @@ Nicht in diesem Ledger: der Abschnitt Fehlerverhalten (`hooks.html:96-98` DE+EN)
 `app.modules.hooks.scheduler` in `docs/admin/betrieb.html:122` bzw. `docs/en/admin/operations.html:81`. Ob dort der Code
 oder die Doku zu ändern ist, ist eine Verhaltensfrage und gehört in eine eigene Zeile.
 
-### T1 — R-0528: hooks.html, Environment-Modell und SSRF-Satz wie Runner und Guard  [ ]
+### T1 — R-0528: hooks.html, Environment-Modell und SSRF-Satz wie Runner und Guard  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9ee1755c 2026-10-21T09:35:15+02:00
+Review: am Ende (Branch-Review)
 Änderung: DE und EN, gleiche Zeilen. Code-Stellen ohne Pfad liegen in `apps/server/app/modules/hooks/script_runner.py`.
 (1) Environment-Modell `:82-89`. Der Einleitungssatz `:83` bleibt und nennt die Quelle: `run_hook_script` in `apps/server/app/modules/hooks/script_runner.py`. Die Punkte:
 - Reduziertes Env (`:85`): Der Worker bekommt `PATH`, `HOME` (fehlt es, `/tmp`), `LANG` (fehlt es, `C.UTF-8`), `PYTHONPATH` (das Server-Verzeichnis), `DATABASE_URL` und `DATA_DIR` (`:107-115`). `HTTP_PROXY`, `HTTPS_PROXY` und `NO_PROXY`, auch kleingeschrieben, reicht der Runner nur durch, wenn der Server sie gesetzt hat (`:116-125`), damit `http_get` und `http_post` einen konfigurierten Proxy nutzen (Kommentar `:104-106`). Laut httpx-Doku (python-httpx.org/environment_variables, gelesen 2026-10-21) liest httpx `HTTP_PROXY`, `HTTPS_PROXY` und `NO_PROXY` standardmäßig. Ob es die kleingeschriebenen Formen liest, ist nicht verifiziert; die Doku behauptet es nicht. Alles andere fällt weg, etwa `ADMIN_PASSWORD`, `MONITOR_API_KEY` und `REDIS_URL` (`:100-101`). Der Satz zu `SECRET_KEY` und DB-Zugang („kein Secret-Jail“) bleibt.

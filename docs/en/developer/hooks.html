@@ -40,7 +40,7 @@
 ├── models.py          Hook
 ├── schemas.py         Pydantic schemas
 ├── scheduler.py       Schedule-hook cron + notification outbox
-├── script_runner.py   Async subprocess spawn
+├── script_runner.py   Subprocess spawn (blocking)
 └── script_worker.py   Child process: stdin=JSON, stdout/stderr capture</code></pre>
 
           <h2>Event Catalogue</h2>
@@ -74,18 +74,20 @@
           <p>Besides the context keys, the worker (<code>apps/server/app/modules/hooks/script_worker.py</code>) provides these names to every script:</p>
           <ul>
             <li><code>load_connections()</code> returns all connections as a list of dicts. <code>save_connections(list)</code> syncs the connections with the list (upsert): existing IDs are updated, new ones inserted, and connections missing from the list deleted. <code>uuid4()</code> returns a new UUID as a string.</li>
-            <li><code>http_get(url, headers=None, timeout=10)</code> and <code>http_post(url, json_data=None, headers=None, timeout=10)</code> return a dict with <code>status</code>, <code>body</code> and <code>json</code> (<code>None</code> if the body is not JSON). They reject targets that point at a private, reserved or link-local address or cannot be resolved (SSRF guard), and follow no redirect. A rejected target and a response over 1,000,000 bytes raise a <code>ValueError</code>.</li>
+            <li><code>http_get(url, headers=None, timeout=10)</code> and <code>http_post(url, json_data=None, headers=None, timeout=10)</code> return a dict with <code>status</code>, <code>body</code> and <code>json</code> (<code>None</code> if the body is not JSON). They reject a target (SSRF guard) if any of its resolved addresses is private, loopback, link-local, reserved, multicast or unspecified (<code>0.0.0.0</code>, <code>::</code>) or lies in <code>0.0.0.0/8</code> or <code>100.64.0.0/10</code>; an IPv4-mapped IPv6 address counts as its IPv4 address. They also reject a URL that cannot be parsed or has no host, and a name that does not resolve within 5&nbsp;s. They follow no redirect. A rejected target and a response over 1,000,000 bytes raise a <code>ValueError</code>.</li>
             <li><code>result</code> (dict) is returned to the caller. <code>log(msg)</code> and <code>print(...)</code> write a line to <code>logs</code> (list), not to stdout; at most 1000 lines of 4096 characters each are kept, longer lines are truncated, further ones dropped.</li>
             <li>If a context key carries the name of one of these helpers, the hook fails with an error before the script runs.</li>
           </ul>
 
           <h2>Environment Model</h2>
-          <p>Hook scripts run in a dedicated Python subprocess with a reduced environment — this is crash/timeout isolation, <strong>not</strong> a security sandbox:</p>
+          <p>Hook scripts run in a dedicated Python subprocess with a reduced environment, started by <code>run_hook_script</code> in <code>apps/server/app/modules/hooks/script_runner.py</code> — this is crash/timeout isolation, <strong>not</strong> a security sandbox:</p>
           <ul>
-            <li><strong>Reduced env</strong>: only <code>PATH</code>, <code>PYTHONPATH</code>, <code>DATABASE_URL</code> and <code>DATA_DIR</code> are passed through (<code>ADMIN_PASSWORD</code>, <code>MONITOR_API_KEY</code>, <code>REDIS_URL</code> are dropped). <code>SECRET_KEY</code> and the DB credentials stay reachable, however (via <code>DATA_DIR/.secret_key</code> resp. <code>DATABASE_URL</code>) — <strong>no secret jail</strong>.</li>
+            <li><strong>Reduced env</strong>: the worker gets <code>PATH</code>, <code>HOME</code> (if the server has none, <code>/tmp</code>), <code>LANG</code> (if the server has none, <code>C.UTF-8</code>), <code>PYTHONPATH</code> (the server directory), <code>DATABASE_URL</code> and <code>DATA_DIR</code>. The runner passes <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code> and <code>NO_PROXY</code>, lowercase too, through only if the server has them set, so that <code>http_get</code> and <code>http_post</code> use a configured proxy. Everything else is dropped, such as <code>ADMIN_PASSWORD</code>, <code>MONITOR_API_KEY</code> and <code>REDIS_URL</code>. <code>SECRET_KEY</code> and the DB credentials stay reachable, however (via <code>DATA_DIR/.secret_key</code> resp. <code>DATABASE_URL</code>) — <strong>no secret jail</strong>.</li>
             <li><strong>CWD</strong> is the server directory (<code>server_dir</code>), not a temp directory.</li>
-            <li><strong>Timeout</strong> via <code>subprocess.run(timeout=…)</code>, default 30 s; on expiry the worker process is killed, not necessarily its child processes.</li>
-            <li><strong>No output limit</strong> and <strong>no user switch</strong>: stdout/stderr are captured in full, and the worker runs as the same user as the server.</li>
+            <li><strong>Timeout</strong>: default 30&nbsp;s. The worker runs in its own process group (<code>start_new_session=True</code>); on expiry the runner kills the whole group. Child processes the script started die with it, except those that open a session of their own. The hook then ends with <code>success: false</code> and <code>error: "Timeout nach 30s"</code>.</li>
+            <li><strong>Output limit</strong>: the runner reads up to 8,388,608 characters each from the worker's stdout and stderr, 8&nbsp;MiB for ASCII. If it reads more, it kills the worker; the hook then ends with <code>success: false</code> and <code>error: "Hook-Ausgabe zu gross (Limit ueberschritten)"</code>. The worker writes its JSON reply including <code>result</code> and <code>logs</code> to stdout, so a very large <code>result</code> counts too.</li>
+            <li><strong>No user switch</strong>: the worker runs as the same user as the server.</li>
+            <li><strong>Concurrency</strong>: at most 8 hook processes run at the same time. If all are busy, a further call does not wait but ends at once with <code>success: false</code> and <code>error: "Server ausgelastet (Hook-Limit erreicht)"</code>.</li>
           </ul>
 
           <div class="callout callout-warn" data-reveal>
@@ -96,33 +98,6 @@
           <h2>Failure behaviour</h2>
           <p>If a hook fails (<code>exit_code != 0</code> or timeout), the error is logged: event and schedule hooks via <code>logger.exception</code> in the server log, the webhook trigger additionally in the response body (<code>success: false</code>, <code>error</code>). There is currently no automatic retry and no <code>hook.failed</code> meta-event; a failed hook blocks neither other hooks nor the triggering request.</p>
           <p>If a hook stops with an error of the database layer (<code>sqlalchemy.exc.SQLAlchemyError</code> or <code>psycopg.Error</code>), <code>error</code> and the log line <code>Fehler: …</code> in <code>logs</code> name only the error's type, such as <code>OperationalError</code>, not the driver's text. Any other error of a hook appears there with its text.</p>
-
-          <h2>Script Runner Implementation</h2>
-          <div class="code-header"><span>python</span></div>
-<pre><code>SCRIPT_TIMEOUT_SECONDS = 30
-
-def run_hook_script(script, hook_type, context, timeout=SCRIPT_TIMEOUT_SECONDS):
-    payload = json.dumps({"script": script, "context": context}, default=str)
-
-    # Reduced env: drops ADMIN_PASSWORD, MONITOR_API_KEY, REDIS_URL. NOT a jail —
-    # DATABASE_URL is deliberately inherited (hooks need DB), SECRET_KEY stays
-    # reachable via DATA_DIR/.secret_key. Hooks = trusted code.
-    server_dir = str(Path(__file__).parents[3])
-    worker_env = {
-        "PATH": os.environ.get("PATH", ""),
-        "PYTHONPATH": server_dir,
-        "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
-        "DATA_DIR": os.environ.get("DATA_DIR", ""),
-    }
-    try:
-        proc = subprocess.run(
-            [sys.executable, _WORKER_SCRIPT],  # runs the script via a Python worker
-            input=payload, capture_output=True, text=True,
-            timeout=timeout, cwd=server_dir, env=worker_env,
-        )
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": f"Timeout nach {timeout}s"}
-    return _parse_worker_output(proc)  # success/result/logs from stdout</code></pre>
 
           <h2>Firing Custom Events</h2>
           <p>Internal code can emit events at any time:</p>
