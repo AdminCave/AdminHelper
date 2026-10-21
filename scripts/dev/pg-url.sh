@@ -10,7 +10,11 @@
 #
 #   pg_url_split <url> <forms>   -> 0: PG_URL_OUT (the URL without the password)
 #                                      PG_URL_PASS (the password, decoded)
-#                                   1: PG_URL_ERR (why not; never a value)
+#                                      PG_URL_USER (the user before the password,
+#                                        decoded; empty without a password, or
+#                                        when it decodes to no shell string)
+#                                   1: PG_URL_ERR (why not; never a value), the
+#                                      other three empty
 #
 # <forms> names the URL forms the caller takes; it ends the message for a URL that
 # is no postgresql:// one.
@@ -22,6 +26,27 @@
 # AH_TEST_DB (sqlalchemy/engine/url.py): a password the suites take out of the URL
 # is one these scripts take out too.
 
+# _pg_url_unquote <raw> <name> — the caller's variable <name> gets <raw> decoded
+# as urllib.parse.unquote does it, which SQLAlchemy uses for user and password: %XX
+# with two hex digits becomes that byte, every other % stays (50%zz, a trailing %).
+# The class is spelled out: a range matches more under de_DE.UTF-8. printf -v keeps
+# a decoded newline at the end, which $(…) would cut off. An encoded NUL returns 1
+# with <name> empty: a shell string cannot hold one, bash would drop it without a
+# word. Called from pg_url_split, under its LC_ALL=C.
+_pg_url_unquote() {
+  local raw="$1" out="" ch hex='^%([0123456789abcdefABCDEF]{2})'
+  printf -v "$2" '%s' ""
+  while [ -n "$raw" ]; do
+    if [[ "$raw" =~ $hex ]]; then
+      [ "${BASH_REMATCH[1]}" != 00 ] || return 1
+      printf -v ch "\\x${BASH_REMATCH[1]}"; out+="$ch"; raw="${raw:3}"
+    else
+      out+="${raw:0:1}"; raw="${raw:1}"
+    fi
+  done
+  printf -v "$2" '%s' "$out"
+}
+
 # The PG_URL_* results are the caller's to read.
 # shellcheck disable=SC2034
 pg_url_split() {
@@ -29,8 +54,8 @@ pg_url_split() {
   # under any locale, and a multibyte one can read a byte after a character as part
   # of it. The UTF-8 checks name their encoding themselves.
   local LC_ALL=C
-  local url="$1" forms="$2" pass="" split=0
-  PG_URL_OUT="" PG_URL_PASS="" PG_URL_ERR=""
+  local url="$1" forms="$2" pass="" user="" split=0
+  PG_URL_OUT="" PG_URL_PASS="" PG_URL_USER="" PG_URL_ERR=""
   # SQLAlchemy reads AH_TEST_DB as a UTF-8 string: a URL that is no UTF-8 is refused first.
   if ! printf '%s' "$url" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
     PG_URL_ERR="AH_TEST_DB is no UTF-8"
@@ -38,30 +63,24 @@ pg_url_split() {
   fi
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
     split=1
-    local raw="${BASH_REMATCH[2]}" ch hex='^%([0123456789abcdefABCDEF]{2})'
+    local raw="${BASH_REMATCH[2]}" raw_user="${BASH_REMATCH[1]#postgresql://}"
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
-    # Decoded as urllib.parse.unquote does it, which SQLAlchemy uses: %XX with two
-    # hex digits becomes that byte, every other % stays (50%zz, a trailing %). The
-    # class is spelled out: a range matches more under de_DE.UTF-8. printf -v keeps
-    # a decoded newline at the end, which $(…) would cut off.
-    while [ -n "$raw" ]; do
-      if [[ "$raw" =~ $hex ]]; then
-        # A NUL cannot travel in PGPASSWORD; bash would drop it without a word.
-        if [ "${BASH_REMATCH[1]}" = 00 ]; then
-          PG_URL_ERR="AH_TEST_DB has a password with a NUL byte"
-          return 1
-        fi
-        printf -v ch "\\x${BASH_REMATCH[1]}"; pass+="$ch"; raw="${raw:3}"
-      else
-        pass+="${raw:0:1}"; raw="${raw:1}"
-      fi
-    done
+    # A NUL cannot travel in PGPASSWORD.
+    if ! _pg_url_unquote "$raw" pass; then
+      PG_URL_ERR="AH_TEST_DB has a password with a NUL byte"
+      return 1
+    fi
     # SQLAlchemy reads bytes that are no UTF-8 as U+FFFD: that would be another
     # password than the one in the URL, so neither is sent.
     if ! printf '%s' "$pass" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
       PG_URL_ERR="AH_TEST_DB has a password that is no UTF-8 once decoded"
       return 1
     fi
+    # The user only for a caller to hold against the password. One that decodes to
+    # no shell string (a NUL, no UTF-8) stays empty and refuses nothing: libpq reads
+    # the user from PG_URL_OUT, where it stays as the URL writes it.
+    _pg_url_unquote "$raw_user" user || user=""
+    printf '%s' "$user" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1 || user=""
   fi
   # A user:password the pattern did not take apart would go into an argument
   # unchanged: stop before either program runs. The part before the password may
@@ -110,6 +129,6 @@ pg_url_split() {
     *) PG_URL_ERR="AH_TEST_DB is no postgresql:// URL ($forms)"
        return 1 ;;
   esac
-  PG_URL_OUT="$url" PG_URL_PASS="$pass"
+  PG_URL_OUT="$url" PG_URL_PASS="$pass" PG_URL_USER="$user"
   return 0
 }

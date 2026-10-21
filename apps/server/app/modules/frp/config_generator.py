@@ -109,6 +109,28 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     return kept
 
 
+def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out stcp tunnels whose visitor_port is no port from 1 to 65535.
+
+    The schema keeps new values in range (R-0533); rows from before, and the stcp rows
+    migration f1a2b3c4d5e6 left without a port, stay as they are. Written as bindPort,
+    such a value makes the desktop refuse the whole visitor TOML, and None is no TOML
+    at all. Only the visitor is left out: the agent's frpc config keeps the proxy."""
+    kept = []
+    for tunnel in tunnels:
+        if tunnel.tunnel_type == "stcp" and not _is_port(tunnel.visitor_port):
+            logger.warning(
+                "FRP tunnel %s: visitor_port %r is outside %d-%d, left out of the visitor config",
+                tunnel.name,
+                tunnel.visitor_port,
+                PORT_MIN,
+                PORT_MAX,
+            )
+            continue
+        kept.append(tunnel)
+    return kept
+
+
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, and stcp only
     with a secret. Without one, the text carries no frps token; config-hash, config
@@ -296,8 +318,9 @@ def generate_visitor_toml(
 ) -> str:
     """Generates a visitor frpc.toml for the admin PC.
 
-    Aggregates all STCP tunnels and emits one [[visitors]] block each. The TLS
-    block points at the desktop's enrolled identity (F2), which it supplies itself.
+    Aggregates all STCP tunnels with a secret and a usable visitor port and emits
+    one [[visitors]] block each. The TLS block points at the desktop's enrolled
+    identity (F2), which it supplies itself.
     """
     lines = [
         f'serverAddr = "{config.server_addr}"',
@@ -310,10 +333,10 @@ def generate_visitor_toml(
 
     lines.extend(_tls_client_block())
 
-    stcp_tunnels = without_secretless_stcp(
-        [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
+    stcp_tunnels = without_unbindable_visitor(
+        without_secretless_stcp([t for t in tunnels if t.tunnel_type == "stcp" and t.enabled])
     )
-    stcp_tunnels.sort(key=lambda t: t.visitor_port or 0)
+    stcp_tunnels.sort(key=lambda t: t.visitor_port)
 
     for tunnel in stcp_tunnels:
         # FRP registers proxies as "{agent_user}.{proxy_name}".

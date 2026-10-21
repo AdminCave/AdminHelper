@@ -7,11 +7,17 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/windows/registry"
+	"golang.org/x/sys/windows/svc/eventlog"
+
+	"adminhelper-agent/internal/logging"
 )
 
 const serviceName = "AdminHelper-Agent"
@@ -55,6 +61,12 @@ func Install() error {
 		return fmt.Errorf("Service registrieren: %s (%w)", string(out), err)
 	}
 
+	// Without a registered source, Windows keeps the agent's entries in the Application
+	// log without a description.
+	if err := registerEventSource(logging.EventSource); err != nil {
+		fmt.Printf("WARNING: register the event source %s: %v\n", logging.EventSource, err)
+	}
+
 	// Recovery: restart after failure (after 60 seconds). Log a failure like the sc start below —
 	// silently ignoring it left a missing auto-restart policy invisible (4.85).
 	if out, err := exec.Command("sc", "failure", serviceName,
@@ -84,6 +96,35 @@ func Uninstall() error {
 		return fmt.Errorf("Service entfernen: %s (%w)", string(out), err)
 	}
 
+	if err := removeEventSource(logging.EventSource); err != nil {
+		fmt.Printf("WARNING: remove the event source %s: %v\n", logging.EventSource, err)
+	}
+
 	fmt.Printf("Windows Service '%s' deinstalliert.\n", serviceName)
+	return nil
+}
+
+// eventSourcesKey is the registry key below HKEY_LOCAL_MACHINE that holds the sources
+// of the Application log; eventlog installs and removes them there.
+const eventSourcesKey = `SYSTEM\CurrentControlSet\Services\EventLog\Application`
+
+// registerEventSource registers source for the Application log with EventCreate.exe as
+// its message file, for errors, warnings and information. A source that is already
+// registered is no error and stays as it is.
+func registerEventSource(source string) error {
+	// eventlog.Install reports an existing source only as an error text, so look first.
+	if k, err := registry.OpenKey(registry.LOCAL_MACHINE, eventSourcesKey+`\`+source, registry.QUERY_VALUE); err == nil {
+		k.Close()
+		return nil
+	}
+	return eventlog.InstallAsEventCreate(source, eventlog.Error|eventlog.Warning|eventlog.Info)
+}
+
+// removeEventSource removes the registration of source from the Application log. A
+// source that is not registered is no error.
+func removeEventSource(source string) error {
+	if err := eventlog.Remove(source); err != nil && !errors.Is(err, registry.ErrNotExist) {
+		return err
+	}
 	return nil
 }

@@ -142,6 +142,66 @@ def test_an_unresolved_host_has_no_addresses(monkeypatch, answer):
     assert target.addresses == ()
 
 
+@pytest.mark.parametrize(
+    ("host", "idna"),
+    [
+        # IDNA 2003, the socket module's codec, maps ß to ss and ς to σ; IDNA 2008, which
+        # httpx sends, keeps them: two names, each with addresses of its own.
+        ("straße.example", "xn--strae-oqa.example"),
+        ("faß.de", "xn--fa-hia.de"),
+        ("βόλος.example", "xn--nxasmm1c.example"),
+        # Both standards agree on this one.
+        ("www.bücher.example", "www.xn--bcher-kva.example"),
+    ],
+)
+def test_the_resolver_gets_the_name_the_request_carries(monkeypatch, host, idna):
+    asked: list = []
+
+    def _getaddrinfo(name, *_args, **_kwargs):
+        asked.append(name)
+        return _addr_info(_V4)
+
+    monkeypatch.setattr(socket, "getaddrinfo", _getaddrinfo)
+    url = f"https://{host}/x"
+
+    target = check_target(url)
+
+    # As CPython puts the argument on the wire: a str through the idna codec, bytes as
+    # they are.
+    on_the_wire = [name.encode("idna") if isinstance(name, str) else name for name in asked]
+    assert on_the_wire == [idna.encode("ascii")]
+    assert httpx.URL(url).raw_host == idna.encode("ascii")
+    assert target.verdict is UrlVerdict.ALLOWED
+    assert target.addresses == (_V4,)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://☃.example/",  # no IDNA 2008 label
+        "https://ｅｘａｍｐｌｅ.com/",  # full width: IDNA 2008 without UTS 46 does not map it
+        "http://1.2.3.999/",  # httpx reads an IPv4 address here, and it is none
+    ],
+)
+def test_a_host_httpx_cannot_send_is_rejected_without_resolving(monkeypatch, url):
+    asked = _resolving_to(monkeypatch, _V4)
+
+    target = check_target(url)
+
+    assert target == Target(UrlVerdict.PRIVATE)
+    assert asked == []
+
+
+def test_a_url_without_a_host_for_httpx_is_unresolved_without_resolving(monkeypatch):
+    # urlparse skips the leading space and finds a host; httpx reads a relative URL.
+    asked = _resolving_to(monkeypatch, _V4)
+
+    target = check_target(" https://pinned.example/x")
+
+    assert target == Target(UrlVerdict.UNRESOLVED)
+    assert asked == []
+
+
 # --- pinned_client: where the connection goes -----------------------------------
 
 
@@ -230,16 +290,21 @@ def test_an_error_after_connecting_does_not_try_the_next_address(monkeypatch, er
         ("www.bücher.example", "www.xn--bcher-kva.example"),
         ("xn--bcher-kva.example", "xn--bcher-kva.example"),
         ("WWW.XN--BCHER-KVA.example", "www.xn--bcher-kva.example"),
+        ("straße.example", "xn--strae-oqa.example"),
     ],
 )
 def test_host_header_and_tls_name_stay_the_hostname(monkeypatch, host, idna):
-    _resolving_to(monkeypatch, _V4)
+    asked = _resolving_to(monkeypatch, _V4)
     seen = _below_the_pin(monkeypatch, lambda _n: httpx.Response(200))
     url = f"https://{host}:8443/x?q=1"
+    target = check_target(url)
 
-    with pinned_client(url, check_target(url)) as client:
+    with pinned_client(url, target) as client:
         resp = client.get(url, timeout=_TIMEOUT)
 
+    # The guard resolved exactly the name that goes out as Host and TLS name.
+    assert asked == [idna]
+    assert target.host == idna
     (sent,) = seen
     assert sent.url == httpx.URL(f"https://{_V4}:8443/x?q=1")
     assert sent.headers["host"] == f"{idna}:8443"

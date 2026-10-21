@@ -73,6 +73,11 @@ if [[ "$URL" =~ ^postgresql\+[abcdefghijklmnopqrstuvwxyz0123456789]+:// ]]; then
 # shellcheck source=scripts/dev/pg-url.sh
 . "$ROOT/scripts/dev/pg-url.sh"
 pg_url_split "$URL" "postgresql+<driver>:// counts as one" || fail "$PG_URL_ERR"
+# A test report masks a URL as user:***@, and a password that is the user name
+# stands in the mask. No new database on such a URL; teardown still takes one down.
+if [ -n "$PG_URL_PASS" ] && [ "$PG_URL_PASS" = "$PG_URL_USER" ]; then
+  fail "AH_TEST_DB has a password that is the user name, and a test report that masks it as user:***@ still names it — give the role a password of its own (DEVELOPMENT.md, \"Python-Tests lokal\")"
+fi
 DB="adminhelper_test_${SLUG//-/_}"
 # The worktree's .devenv.sh is written only once createdb went through, so when it
 # names the database an earlier run made it: createdb has no "if not exists".
