@@ -222,6 +222,37 @@ func holdOpen(t *testing.T, path string) (release func()) {
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)
 	}
+	return keepHandle(t, h)
+}
+
+// pendDelete marks path for deletion with the plain disposition, through a handle it
+// keeps open: the name stays until that handle is closed, and every other open of it
+// fails with STATUS_DELETE_PENDING. The handle is closed, and the name goes, when the
+// returned func is called or the test ends.
+func pendDelete(t *testing.T, path string) (release func()) {
+	t.Helper()
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(name, windows.DELETE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	release = keepHandle(t, h)
+	deleteFile := uint8(1)
+	if err := windows.NtSetInformationFile(h, &windows.IO_STATUS_BLOCK{}, &deleteFile,
+		uint32(unsafe.Sizeof(deleteFile)), windows.FileDispositionInformation); err != nil {
+		t.Fatalf("mark %s for deletion: %v", path, err)
+	}
+	return release
+}
+
+// keepHandle closes h when the returned func is first called or the test ends.
+func keepHandle(t *testing.T, h windows.Handle) (release func()) {
+	t.Helper()
 	closed := false
 	release = func() {
 		if !closed {
@@ -329,6 +360,21 @@ func stopAt(t *testing.T, dir, stop string) {
 	}()
 	if !reached {
 		t.Fatalf("the run on %s ended without reaching %s: %v", dir, stop, err)
+	}
+}
+
+// vanishAt returns an owner lookup that answers like ownerByName but, when it is asked
+// about the entry gone, removes it first: the agent has just opened gone to classify
+// it, and the step that follows finds it no longer there.
+func vanishAt(t *testing.T, gone string) ownerLookup {
+	t.Helper()
+	return func(h windows.Handle, path string) (string, error) {
+		if path == gone {
+			if err := os.Remove(path); err != nil {
+				t.Errorf("remove %s: %v", path, err)
+			}
+		}
+		return ownerByName(h, path)
 	}
 }
 
@@ -772,6 +818,100 @@ func TestEnsureSecureDirLeavesAClosedDirClosedWhenItStops(t *testing.T) {
 	if got, err := os.ReadFile(child); err != nil || string(got) != "provisioned" {
 		t.Fatalf("the kept child: %q, %v", got, err)
 	}
+}
+
+// A child that is gone when the step after its classification reaches it, as a temp
+// file renamed meanwhile, counts as removed: the run goes on, cleans the sibling listed
+// after it and succeeds. The child is a file or a directory, one the agent would keep
+// (closed dir) or remove (open dir).
+func TestEnsureSecureDirSkipsAChildThatVanishes(t *testing.T) {
+	cases := []struct {
+		name  string
+		open  bool
+		child string
+		isDir bool
+	}{
+		{"kept file", false, "a.conf", false},
+		{"kept dir", false, "a-sub", true},
+		{"removed file", true, "foreign.conf", false},
+		{"removed dir", true, "foreign-dir", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mkdir := keptClosedDir
+			if c.open {
+				mkdir = keptOpenDir
+			}
+			dir := mkdir(t, t.TempDir(), "secret")
+			child := filepath.Join(dir, c.child)
+			if c.isDir {
+				if err := os.Mkdir(child, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeFile(t, child, "x")
+			}
+			later := filepath.Join(dir, "z.conf")
+			writeFile(t, later, "kept")
+			setOwner(t, later, administrators(t))
+			setDACL(t, later, "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)")
+
+			if err := ensureSecureDir(dir, vanishAt(t, child)); err != nil {
+				t.Fatalf("ensureSecureDir: %v", err)
+			}
+			requireGone(t, child)
+			requireProtected(t, dir)
+			requireInheritedOnly(t, later)
+		})
+	}
+}
+
+// A child marked for deletion while another handle keeps it, which refuses every new
+// open, does not count as removed: the run stops there with an error, before the
+// sibling listed after it, which keeps its descriptor. With the handle closed the
+// child is gone, and the next run succeeds.
+func TestEnsureSecureDirFailsOnAChildWithAPendingDelete(t *testing.T) {
+	dir := keptOpenDir(t, t.TempDir(), "secret")
+	child := filepath.Join(dir, "frpc.toml.tmp")
+	writeFile(t, child, "x")
+	later := filepath.Join(dir, "z.conf")
+	writeFile(t, later, "kept")
+	setOwner(t, later, administrators(t))
+	setDACL(t, later, "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)")
+	laterSD := readDescriptor(t, later).String()
+	release := pendDelete(t, child)
+
+	if err := ensureSecureDir(dir, ownerByName); err == nil {
+		t.Fatal("first run: no error for a child with a pending delete")
+	}
+	requireUnchanged(t, later, laterSD, "kept")
+	release()
+	if err := ensureSecureDir(dir, ownerByName); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	requireGone(t, child)
+	requireProtected(t, dir)
+	requireInheritedOnly(t, later)
+}
+
+// An entry about to be deleted below a directory the agent removes fails the run, and
+// the foreign directory stays; with the handle closed the next run removes it.
+func TestEnsureSecureDirFailsToRemoveADirWithAPendingDelete(t *testing.T) {
+	dir := keptOpenDir(t, t.TempDir(), "secret")
+	foreignDir := filepath.Join(dir, "foreign-dir")
+	pending := filepath.Join(foreignDir, "pending.conf")
+	writeFile(t, pending, "x")
+	release := pendDelete(t, pending)
+
+	if err := ensureSecureDir(dir, ownerByName); err == nil {
+		t.Fatal("first run: no error for a foreign dir that still holds an entry")
+	}
+	requireExists(t, foreignDir)
+	release()
+	if err := ensureSecureDir(dir, ownerByName); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	requireGone(t, foreignDir)
 }
 
 // OwnByAdministrators hands a file the agent wrote, here one the test account owns,

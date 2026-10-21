@@ -112,7 +112,8 @@ type fileBasicInfo struct {
 // propagation, for itself only), then enumerated,
 // and deleted with POSIX semantics, the read-only attribute ignored, like Go's
 // internal/syscall/windows.Deleteat, with a fall back to the plain disposition. If a
-// step fails, EnsureSecureDir returns the error (fail closed).
+// step fails, EnsureSecureDir returns the error (fail closed), except where a step on
+// an entry below dir no longer finds that entry (isGone): that entry counts as removed.
 //
 // The directories above dir are not checked: a caller secures the data root before a
 // directory in it (EnsureDataDir).
@@ -267,8 +268,16 @@ func cleanChildren(h windows.Handle, path string, closed bool, d descriptors, ow
 // entry another account owns is removed unless parent was closed, in which case it is
 // taken over (owner Administrators) and kept. A kept directory is cleaned the same
 // way, but as an open one if it was only just taken over, since its former owner
-// could set its DACL. A kept entry ends with the inherited form of the DACL.
-func cleanChild(parent windows.Handle, name, path string, parentClosed bool, d descriptors, ownerOf ownerLookup) error {
+// could set its DACL. A kept entry ends with the inherited form of the DACL. An entry
+// that a step no longer finds counts as removed (isGone); an entry below it that a
+// step no longer finds has already been handled at its own level, so such an error
+// that reaches the end here concerns name itself.
+func cleanChild(parent windows.Handle, name, path string, parentClosed bool, d descriptors, ownerOf ownerLookup) (err error) {
+	defer func() {
+		if isGone(err) {
+			err = nil
+		}
+	}()
 	e, err := classifyAt(parent, name, path, ownerOf)
 	if err != nil {
 		return err
@@ -407,7 +416,8 @@ func removeEntry(parent windows.Handle, name, path string, d descriptors) error 
 // the directory over first, without a condition (owner Administrators, the removal
 // DACL, which is not passed on, no propagation, for itself only), so that its own
 // DACL can no longer keep the agent from deleting its entries; then it enumerates and
-// deletes, from the top down. A reparse point is deleted without being entered.
+// deletes, from the top down. A reparse point is deleted without being entered. An
+// entry that its removal no longer finds counts as removed (isGone).
 func removeDir(parent windows.Handle, name, path string, d descriptors) error {
 	if err := lockEntry(parent, name, path, windows.FILE_DIRECTORY_FILE, d.removal); err != nil {
 		return err
@@ -427,12 +437,21 @@ func removeDir(parent windows.Handle, name, path string, d descriptors) error {
 			return err
 		}
 		for _, n := range names {
-			if err := removeEntry(h, n, filepath.Join(path, n), d); err != nil {
+			if err := removeEntry(h, n, filepath.Join(path, n), d); err != nil && !isGone(err) {
 				return err
 			}
 		}
 	}
 	return markDeleted(h, path)
+}
+
+// isGone reports whether err says that the entry a step works on is no longer there,
+// by name or by path. Such an entry below dir counts as removed. An entry about to be
+// deleted (STATUS_DELETE_PENDING) does not: it stays until its last handle is closed,
+// so the run fails like on an entry held open, and the next run cleans up.
+func isGone(err error) bool {
+	return errors.Is(err, windows.STATUS_OBJECT_NAME_NOT_FOUND) || errors.Is(err, windows.STATUS_OBJECT_PATH_NOT_FOUND) ||
+		errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND)
 }
 
 // markDeleted deletes the entry open as h once h is closed. It asks for POSIX

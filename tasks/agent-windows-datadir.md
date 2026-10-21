@@ -62,8 +62,10 @@ Doku: keine (intern)
 Abhängt von: T1
 Test-Löschung: apps/agent/internal/config/securedir_linux_test.go::TestSecureDirRestrictsToOwner — `config.SecureDir` entfällt mit T4; gleichwertig prüft `TestEnsureSecureDirRestrictsToOwner` (Fall „existing and open“: ein Verzeichnis mit 0777 wird 0700) dasselbe über `EnsureSecureDir`
 
-### T7 — Windows: ein Eintrag, der beim Aufräumen verschwindet, gilt als weg  [?] (Kevin 2026-10-20: ausstehendes Loeschen bleibt ein Fehler, siehe Aenderung)
+### T7 — Windows: ein Eintrag, der beim Aufräumen verschwindet, gilt als weg  [x]
 Komponente: agent · Dateien: apps/agent/internal/config/securedir_windows.go, apps/agent/internal/config/securedir_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fb7b3834 2026-10-21T06:33:55+02:00
+Review: approve (.ah-out/review/agent-windows-datadir/T7.verdict.json)
 Änderung: `cleanChild` (`securedir_windows.go`) wertet heute nur einen Eintrag als weg, der schon beim Einordnen (`classifyAt`) fehlt. Verschwindet er danach, etwa eine Temp-Datei, die der laufende Dienst gerade umbenennt (`frpc.toml.tmp`), scheitert der ganze Lauf; aus `Store` heraus geschieht das nach der Enrollment-Anfrage, die das alte Zertifikat schon ersetzt. Neu gilt ein Kind, dessen Folgeschritte (Übernehmen, DACL zurücksetzen, Sperren, Öffnen, Entfernen) mit „nicht gefunden“ (Name oder Pfad) scheitern, als weg, und der Lauf geht weiter; ein ausstehendes Löschen bleibt ein Fehler, der nächste Lauf räumt auf (Kevin 2026-10-20). Für `dir` selbst bleibt es bei T2 (neu anlegen oder Fehler). Tests windows-getaggt, zuerst rot: ein Kind, das zwischen Einordnen und Folgeschritt verschwindet (Naht), lässt den Lauf gelingen, als Datei und als Ordner; ein Kind mit ausstehendem Löschen führt zum Fehler und ist nach dem Schließen seines Handles beim nächsten Lauf weg; ein Kind, das sich nicht öffnen lässt, weil es offen gehalten wird, führt weiter zum Fehler.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)
