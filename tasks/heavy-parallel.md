@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness: Sammellauf mit Sekunden je Schritt und auf zwei Boxen parallel — Task-Ledger
-Status: aktiv · Branch: feature/heavy-parallel · Review: pro Task
+Status: bereit · Branch: feature/heavy-parallel · Review: pro Task
 Spec: docs/features/heavy-parallel.md (Roadmap R-0603)
 Heavy: linux-full — ein realer Beweislauf vor dem Merge (Kevin 2026-10-21): `bash scripts/tests/heavy.sh all` aus dem Worktree, in tmux nach CLAUDE.md §2, mit zwei Boxen der Lane des Vorhabens (beide kalt). Erwartet: beide Teile laufen gleichzeitig, der Report nennt je Schritt Ergebnis und Sekunden, das Gesamturteil steht in Zeile 1, `vm.py list` danach ohne Leck. Voraussetzung: keine laufende Box einer fremden Lane (sonst bricht der Pre-flight mit 74 ab), also kein gleichzeitiger Sammellauf aus dem Haupt-Checkout. Die Historie des Beweislaufs bleibt im Worktree (`tasks/private` gibt es dort nicht im Repo), nicht in der echten `history.csv`. T1 zeigt sich real erst im ersten Sammellauf aus dem Haupt-Checkout nach dem Merge (aus einem Worktree hat die Box kein Repo); bis dahin belegt ihn `run_flags_test.sh`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -123,8 +123,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: `DEVELOPMENT.md` Wochenlauf, `cicd.html` DE/EN, `.claude/skills/test/SKILL.md` (welche Box nach dem Lauf stehen bleibt).
 Abhängt von: T10
 
-### T12 — heavy.sh: zweite Box nicht zu bekommen, Teil gui seriell auf der ersten  [ ]
+### T12 — heavy.sh: zweite Box nicht zu bekommen, Teil gui seriell auf der ersten  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @89c7ab89 2026-10-21T18:06:56+02:00
+Review: approve (.ah-out/review/heavy-parallel/T12.verdict.json)
 Änderung: Empfehlung gebaut: Scheitert `warm.sh gui` auch im Retry (nicht bei Exit 2, das bleibt `UNVERIFIED`), fährt `heavy.sh` nach Teil `rest` den Teil `gui` auf der Box `desktop`: `iter.sh all --strict --part gui`, Auswertung wie in T9 mit Etikett `gui`. Der Report sagt es in einer Notiz mit der letzten Zeile aus `warm.log` (maskiert wie jede Notiz). Der Pre-flight fragt `doctor` dann nur nach `desktop` (wenn ihr Slot keine laufende Box hat); ob die GUI-Box passt, entscheidet die Kapazitätsprüfung von `vm.py clone`. Das Urteil bleibt: `PASS` nur mit zwei grünen Teilen.
 Tests in `heavy_test.sh`: `SHIM_WARM_RC_GUI=1` → Teil `gui` läuft danach mit Slot `desktop` und `--part gui`, das Urteil folgt den beiden Artefakten, die Notiz nennt den seriellen Lauf; `SHIM_WARM_RC_GUI=2` → `UNVERIFIED`, kein serieller Lauf; `doctor` wird nicht mit `gui` gefragt.
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test

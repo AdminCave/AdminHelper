@@ -70,8 +70,14 @@ SHIM
 # SHIM_ITER_OUT<n>, SHIM_ITER_RC, SHIM_NO_PULL); the gui slot has its own, with
 # -gui and _GUI (iter-gui.n, artifact-gui.json, SHIM_ITER_OUT<n>_GUI, …).
 # artifact-<slot>.json is the slot's artifact; desktop falls back to artifact.json.
+# A call of part gui (--part gui) keeps the gui names wherever it runs: without a
+# GUI box heavy.sh runs that part on the desktop slot, and it still brings its own
+# artifact and output. ARGS in iter-gui.args then shows the call without --slot.
 # SHIM_ITER_SLEEP makes the first call of each slot last that long, with its pid
-# and the start and end of that span written down (pid-<slot>, span-<slot>.*).
+# and the start and end of that span written down (pid-<slot>, span-<slot>.*);
+# SHIM_ITER_SLEEP_GUI, if set, does so for the gui names alone. SHIM_GUI_CAPTURE
+# is a line the first call of the desktop slot (part rest) leaves in part gui's
+# capture file (gui/last.out.log), before its sleep.
 # Every call also lands in order.log, one file with the reap.sh, multibox.sh and
 # second-box warm.sh shims: which of them ran first is what the GUI-box cases read.
 cat > "$WRAP/iter.sh" <<'SHIM'
@@ -79,6 +85,7 @@ cat > "$WRAP/iter.sh" <<'SHIM'
 args="$*"
 slot=desktop
 if [ "${1:-}" = --slot ]; then slot="$2"; shift 2; fi
+case " $* " in *" --part gui "*) slot=gui ;; esac
 sfx="" var=""
 [ "$slot" = desktop ] || { sfx="-$slot"; var="_$(printf '%s' "$slot" | tr '[:lower:]' '[:upper:]')"; }
 n=$(cat "$SHIM_STATE/iter$sfx.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$SHIM_STATE/iter$sfx.n"
@@ -97,10 +104,14 @@ if [ "$n" = 1 ] && [ -z "$nopull" ]; then
     mkdir -p "$AH_OUT_DIR/screenshots" && cp "$SHIM_STATE/screenshots$sfx/"* "$AH_OUT_DIR/screenshots/"
   fi
 fi
-if [ "$n" = 1 ] && [ -n "${SHIM_ITER_SLEEP:-}" ]; then
+if [ "$n" = 1 ] && [ "$slot" = desktop ] && [ -n "${SHIM_GUI_CAPTURE:-}" ]; then
+  mkdir -p "$AH_OUT_DIR/../gui" && printf '%s\n' "$SHIM_GUI_CAPTURE" > "$AH_OUT_DIR/../gui/last.out.log"
+fi
+eval "nap=\${SHIM_ITER_SLEEP$var:-\${SHIM_ITER_SLEEP:-}}"
+if [ "$n" = 1 ] && [ -n "$nap" ]; then
   echo "$$" > "$SHIM_STATE/pid-$slot"
   date +%s.%N > "$SHIM_STATE/span-$slot.start"
-  sleep "$SHIM_ITER_SLEEP"
+  sleep "$nap"
   date +%s.%N > "$SHIM_STATE/span-$slot.end"
 fi
 echo "iter shim call $n ($slot): $args (AH_NO_SYNC=${AH_NO_SYNC:-unset} AH_SPEC=${AH_SPEC:-unset})"
@@ -221,7 +232,7 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
   rm -rf "$AH_VM_STATE_DIR"; mkdir -p "$AH_VM_STATE_DIR"
   unset SHIM_ITER_SEQ SHIM_ITER_OUT1 SHIM_ITER_OUT2 SHIM_ITER_OUT3 SHIM_ITER_OUT4 SHIM_NO_PULL
   unset SHIM_ITER_SEQ_GUI SHIM_ITER_OUT1_GUI SHIM_ITER_OUT2_GUI SHIM_ITER_OUT3_GUI SHIM_ITER_OUT4_GUI
-  unset SHIM_NO_PULL_GUI SHIM_ITER_SLEEP
+  unset SHIM_NO_PULL_GUI SHIM_ITER_SLEEP SHIM_ITER_SLEEP_GUI SHIM_GUI_CAPTURE
   unset SHIM_DOCTOR_OUT SHIM_WARM_OUT
   # Defaults: healthy provider, one own box, everything green.
   export SHIM_DOCTOR_RC=0
@@ -1068,20 +1079,22 @@ grep -q '^doctor' "$SHIM_STATE/vmpy.args" 2>/dev/null && ! grep -q 'no .vm/lane'
   && ok "with AH_LANE=main the pre-flight goes on to doctor" || bad "AH_LANE=main: rc=$rc head=$h"
 
 # ── 5b2: doctor is asked for the roles the mode will actually clone ──────────
-# `all` warms a desktop and a gui box; the capstone clones seven. Asking for
-# `probe` would let a run start that the hypervisor cannot carry.
+# `all` must have a desktop box; the capstone clones seven. Asking for `probe`
+# would let a run start that the hypervisor cannot carry. The gui box is never
+# asked for: without it part gui runs on the desktop box (section 11d), so a
+# doctor that refused for it would cost the run it can still make.
 mk_case
 artifact "ruff check:pass:3"
 bash "$HEAVY" all >/dev/null 2>&1
-grep -qx 'doctor --roles desktop,gui' "$SHIM_STATE/vmpy.args" \
-  && ok "the all layer asks doctor for a desktop and a gui box" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
+grep -qx 'doctor --roles desktop' "$SHIM_STATE/vmpy.args" \
+  && ok "the all layer asks doctor for the desktop box, not the gui box" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
 # A slot whose box runs is reused, not cloned: doctor must not count it again.
 mk_case
 artifact "ruff check:pass:3"
 printf 'desktop=3001\ndesktop_name=ah-desktop-main-0001\n' > "$AH_VM_STATE_DIR/warm.env"
 bash "$HEAVY" all >/dev/null 2>&1
-grep -qx 'doctor --roles gui' "$SHIM_STATE/vmpy.args" \
-  && ok "a running desktop box: doctor is asked for the gui box only" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
+grep -qx 'doctor --roles ' "$SHIM_STATE/vmpy.args" \
+  && ok "a running desktop box: doctor gets an empty --roles, the gui box is not asked for" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
 mk_case
 artifact "ruff check:pass:3"
 export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "role": "desktop", "lane": "main", "scenario": "", "status": "running"},
@@ -1096,14 +1109,22 @@ mk_case
 artifact "ruff check:pass:3"
 printf 'desktop=3001\ndesktop_name=ah-desktop-main-0099\n' > "$AH_VM_STATE_DIR/warm.env"
 bash "$HEAVY" all >/dev/null 2>&1
-grep -qx 'doctor --roles desktop,gui' "$SHIM_STATE/vmpy.args" \
+grep -qx 'doctor --roles desktop' "$SHIM_STATE/vmpy.args" \
   && ok "a slot whose VMID now carries another name counts as a clone" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
 mk_case
 artifact "ruff check:pass:3"
 printf 'gui=3001\n' > "$AH_VM_STATE_DIR/warm.env"
 bash "$HEAVY" all >/dev/null 2>&1
-grep -qx 'doctor --roles desktop,gui' "$SHIM_STATE/vmpy.args" \
-  && ok "a gui slot pointing at a desktop box counts as a clone" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
+grep -qx 'doctor --roles desktop' "$SHIM_STATE/vmpy.args" \
+  && ok "a gui slot, even one pointing at a desktop box, never reaches doctor" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
+mk_case
+artifact "ruff check:pass:3"
+export SHIM_LIST_JSON='{"vms": [{"vmid": 3002, "name": "ah-gui-main-0002", "role": "gui", "lane": "main", "scenario": "", "status": "running"}],
+ "untagged": 0, "leaked": []}'
+printf 'desktop=3002\ndesktop_name=ah-gui-main-0002\n' > "$AH_VM_STATE_DIR/warm.env"
+bash "$HEAVY" all >/dev/null 2>&1
+grep -qx 'doctor --roles desktop' "$SHIM_STATE/vmpy.args" \
+  && ok "a desktop slot pointing at a box of another role counts as a clone" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
 mk_case
 bash "$HEAVY" capstone >/dev/null 2>&1
 grep -qx 'doctor --roles server,agent,moncheck,rpm,tunnel,visitor,desktop' "$SHIM_STATE/vmpy.args" \
@@ -1627,29 +1648,112 @@ h="$(report_of | head -1)"
 [ "$rc" = 74 ] && grep -qF -- '-8192 MiB (rest); FAIL in part gui)' <<<"$h" \
   && ok "rest infra, gui red (judged later) -> UNVERIFIED, the reason names the FAIL in gui" || bad "rest infra + gui red -> rc=$rc head '$h'"
 
-# ── 11d: the GUI box cannot be had -> UNVERIFIED, never PASS ─────────────────
+# ── 11d: no GUI box -> part gui runs after part rest, on the desktop box ─────
+# Kevin 2026-10-21: when warm.sh gui fails on its retry too, part gui runs after
+# part rest on the desktop box, and the notes say so with the last line of
+# warm-gui.log. The verdict follows the two artifacts: PASS only with both parts
+# green. A refusal (exit 2) is no missing box: UNVERIFIED, nothing runs serially.
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\n' > "$AH_VM_STATE_DIR/warm.env"
+export SHIM_WARM_RC_GUI=1 SHIM_ITER_SLEEP=1
+export SHIM_WARM_OUT="vm.py: capacity: 8192 MiB free - 4096 reserve - 6144 owed by ours - 6144 for gui = -8192 MiB"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+rep="$(report_of)"
+[ "$rc" = 0 ] && [ "$(head -1 <<<"$rep")" = PASS ] \
+  && ok "no GUI box, both parts green on the desktop box -> PASS" || bad "gui serial -> rc=$rc head '$(head -1 <<<"$rep")'"
+[ "$(grep -cx gui "$SHIM_STATE/warm.args")" = 2 ] && ok "the gui lease is retried once" || bad "leases: $(cat "$SHIM_STATE/warm.args")"
+# The retry note is written in the background job; it still reaches the report.
+grep -qF -- '- warm lease (gui) failed — retrying once' <<<"$rep" \
+  && ok "the note of the background part reaches the report" || bad "notes: $(sed -n '/^## Notizen/,/^## audit/p' <<<"$rep")"
+grep -q 'AH_NO_SYNC=unset .*/weekly/[^/]*/gui ARGS=all --strict --part gui$' "$SHIM_STATE/iter-gui.args" 2>/dev/null \
+  && [ "$(grep -c . "$SHIM_STATE/iter-gui.args")" = 1 ] && ! grep -qF -- '--slot' "$SHIM_STATE/order.log" \
+  && ok "part gui runs once, on the desktop slot (no --slot), with --part gui, into gui/" \
+  || bad "iter args: $(cat "$SHIM_STATE"/iter*.args 2>/dev/null)"
+a1=$(cat "$SHIM_STATE/span-desktop.end" 2>/dev/null); b0=$(cat "$SHIM_STATE/span-gui.start" 2>/dev/null)
+[ -n "$a1" ] && [ -n "$b0" ] && awk -v a1="$a1" -v b0="$b0" 'BEGIN { exit !(b0 + 0 >= a1 + 0) }' \
+  && ok "part gui starts only after part rest has ended" || bad "spans: rest ends $a1, gui starts $b0"
+grep -qxF -- '- part gui runs serially on the desktop box 3001 after part rest: no GUI box, warm.sh gui failed after a retry (vm.py: capacity: 8192 MiB free - 4096 reserve - 6144 owed by ours - 6144 for gui = -8192 MiB)' <<<"$rep" \
+  && ok "the notes say so, with the last line of warm-gui.log" || bad "notes: $(sed -n '/^## Notizen/,/^## audit/p' <<<"$rep")"
+grep -qF '[gui] run.sh[all]: 2 passed, 0 failed' <<<"$rep" \
+  && ok "the summary line of part gui, with its label" || bad "summary lines: $(grep -F 'run.sh[all]' <<<"$rep")"
+rows="$(history_of)"
+grep -q ',all,desktop_e2e_misc,pass,300,3001$' <<<"$rows" && grep -qE ',all,-,pass,[0-9]+,3001\+3001$' <<<"$rows" \
+  && ok "history.csv: the GUI steps and the layer row name the desktop box" || bad "rows: $rows"
+[ ! -e "$SHIM_STATE/reap.args" ] && ! grep -qF -- '- gui box' <<<"$rep" \
+  && ok "the desktop box is no GUI box: no reap.sh, no note about a GUI box" \
+  || bad "reap: $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
+# Masked on the way out like every note; the report keeps it word for word.
+mk_case
+artifact "ruff check:pass:3"
+export SHIM_WARM_RC_GUI=1 SHIM_WARM_OUT="vm.py: no ssh: adminhelper@192.0.2.7 refused for 900s"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 0 ] && ! grep -qF 192.0.2.7 <<<"$out" \
+  && grep -qF 'warm.sh gui failed after a retry (vm.py: no ssh: <user>@<host> refused for 900s)' <<<"$out" \
+  && report_of | grep -qF 'warm.sh gui failed after a retry (vm.py: no ssh: adminhelper@192.0.2.7 refused for 900s)' \
+  && ok "the note goes out masked, the report keeps the line" \
+  || bad "masking (rc=$rc): $(grep -F 'serially' <<<"$out"); $(report_of | grep -F 'serially')"
+# Red on the desktop box: the retries run there too (no --slot), never on a GUI
+# box iter.sh would have to warm first.
 mk_case
 artifact "ruff check:pass:3"
 printf 'desktop=3001\n' > "$AH_VM_STATE_DIR/warm.env"
 export SHIM_WARM_RC_GUI=1
+artifact_for gui "desktop-e2e smoke:pass:7" "desktop_e2e_misc:fail:300"
+export SHIM_ITER_SEQ_GUI="1" SHIM_ITER_SEQ="0 1 1 1"
+export SHIM_ITER_OUT1_GUI="  FAIL  desktop_e2e_misc
+  run.sh[all]: 1 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+export SHIM_ITER_OUT2="  FAIL  first way" SHIM_ITER_OUT3="  FAIL  second way" SHIM_ITER_OUT4="  FAIL  third way"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && [ "$(report_of | head -1)" = "UNVERIFIED (warm box could not be leased (gui))" ] \
-  && ok "gui box not leasable, rest green -> UNVERIFIED" || bad "gui lease -> rc=$rc head '$(report_of | head -1)'"
-[ "$(grep -cx gui "$SHIM_STATE/warm.args")" = 2 ] && ok "the gui lease is retried once" || bad "leases: $(cat "$SHIM_STATE/warm.args")"
-# The retry note is written in the background job; it still reaches the report.
-report_of | grep -qF -- '- warm lease (gui) failed — retrying once' \
-  && ok "the note of the background part reaches the report" || bad "notes: $(report_of | sed -n '/^## Notizen/,/^## audit/p')"
-[ ! -f "$SHIM_STATE/iter-gui.n" ] && [ "$(cat "$SHIM_STATE/iter.n" 2>/dev/null)" = 1 ] \
-  && ok "part gui never ran, part rest did" || bad "runs: gui $(cat "$SHIM_STATE/iter-gui.n" 2>/dev/null), rest $(cat "$SHIM_STATE/iter.n" 2>/dev/null)"
-history_of | grep -qE ',all,-,infra,[0-9]+,3001\+-$' \
-  && ok "history.csv: the layer row is infra, without a gui box" || bad "rows: $(history_of)"
+[ "$rc" = 1 ] && [ "$(report_of | head -1)" = FAIL ] \
+  && ok "part gui red on the desktop box, rest green -> FAIL" || bad "gui serial red -> rc=$rc head '$(report_of | head -1)'"
+[ "$(grep -c '^AH_NO_SYNC=1 .*ARGS=all --strict --step desktop_e2e_misc$' "$SHIM_STATE/iter.args")" = 3 ] \
+  && ! grep -qF -- '--slot' "$SHIM_STATE/order.log" \
+  && ok "its three retries ran on the desktop slot, without a sync" || bad "args: $(cat "$SHIM_STATE"/iter*.args)"
+history_of | grep -q ',all,desktop_e2e_misc,fail,300,3001$' && [ ! -e "$SHIM_STATE/reap.args" ] \
+  && ! report_of | grep -qF 'kept for inspection' \
+  && ok "the red GUI step is filed on the desktop box, no GUI box is freed or kept" \
+  || bad "rows: $(history_of); reap: $(cat "$SHIM_STATE/reap.args" 2>/dev/null)"
+# Its own stamp: a capture in gui/ from while part rest ran is older than the
+# serial run of part gui, so it is no summary line of it.
 mk_case
 artifact "ruff check:pass:3"
+export SHIM_WARM_RC_GUI=1 SHIM_ITER_SLEEP=1 SHIM_NO_PULL_GUI=1 SHIM_ITER_OUT_GUI=""
+export SHIM_GUI_CAPTURE="  run.sh[all]: 2 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && report_of | head -1 | grep -qF 'produced no evidence (no summary line, no artifact) (gui))' \
+  && ! report_of | grep -qF '[gui] run.sh[all]' && [ -s "$(ls "$AH_OUT_DIR"/weekly/*/gui/last.out.log 2>/dev/null)" ] \
+  && ok "the serial part gui stamps its own start: an older capture does not count" \
+  || bad "stale capture (rc=$rc): head '$(report_of | head -1)'"
+# A signal ends the serial part as well.
+mk_case
+artifact "ruff check:pass:3"
+export SHIM_WARM_RC_GUI=1 SHIM_ITER_SLEEP_GUI=30
+bash "$HEAVY" all >"$WORK/trap.out" 2>&1 </dev/null &
+hp=$!
+for _ in $(seq 1 100); do [ -s "$SHIM_STATE/pid-gui" ] && break; sleep 0.1; done
+pg=$(cat "$SHIM_STATE/pid-gui" 2>/dev/null)
+kill -TERM "$hp" 2>/dev/null
+for _ in $(seq 1 100); do kill -0 "$hp" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$hp" 2>/dev/null && kill -KILL "$hp" 2>/dev/null
+wait "$hp"; hrc=$?
+for _ in $(seq 1 50); do { [ -n "$pg" ] && kill -0 "$pg" 2>/dev/null; } || break; sleep 0.1; done
+[ -n "$pg" ] && ! kill -0 "$pg" 2>/dev/null && [ "$hrc" = 143 ] && [ ! -f "$SHIM_STATE/span-gui.end" ] \
+  && ok "TERM to heavy.sh ends the serial part gui (exit 143)" \
+  || bad "after TERM: heavy.sh rc=$hrc, gui pid ${pg:-none} $(kill -0 "$pg" 2>/dev/null && echo alive)"
+unset SHIM_ITER_SLEEP_GUI
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\n' > "$AH_VM_STATE_DIR/warm.env"
 export SHIM_WARM_RC_GUI=2
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && [ "$(grep -cx gui "$SHIM_STATE/warm.args")" = 1 ] \
   && report_of | head -1 | grep -qF 'warm.sh refused (exit 2), see warm-gui.log (gui)' \
   && ok "a refused gui lease is not retried, and the run is UNVERIFIED" || bad "gui refused -> rc=$rc head '$(report_of | head -1)'"
+[ ! -e "$SHIM_STATE/iter-gui.n" ] && [ "$(cat "$SHIM_STATE/iter.n" 2>/dev/null)" = 1 ] \
+  && ! report_of | grep -qF 'runs serially' && history_of | grep -qE ',all,-,infra,[0-9]+,3001\+-$' \
+  && ok "after a refusal part gui does not run on the desktop box" \
+  || bad "refused gui ran: gui $(cat "$SHIM_STATE/iter-gui.n" 2>/dev/null), rest $(cat "$SHIM_STATE/iter.n" 2>/dev/null); $(history_of | grep ',all,-,')"
 
 # ── 11e: each part needs its own evidence ────────────────────────────────────
 # Without an artifact and without a summary line, part gui is UNVERIFIED — the
@@ -1869,13 +1973,14 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
   && report_of | grep -qF -- '- gui box 3002 kept for inspection (part gui: infra): python3 scripts/vm/vm.py ssh 3002 ' \
   && ok "part gui infra after its lease: the box stays, the notes name it" \
   || bad "gui infra (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(report_of | grep -F 'gui box')"
-# A GUI box the run never had: nothing to free, nothing to keep.
+# A GUI box the run never had (part gui ran on the desktop box): nothing to
+# free, nothing to keep.
 mk_case
 artifact "ruff check:pass:3"
 export SHIM_WARM_RC_GUI=1
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 rep="$(report_of)"
-[ "$rc" = 74 ] && [ ! -e "$SHIM_STATE/reap.args" ] && ! grep -qF -- '- gui box' <<<"$rep" \
+[ "$rc" = 0 ] && [ ! -e "$SHIM_STATE/reap.args" ] && ! grep -qF -- '- gui box' <<<"$rep" \
   && ok "the GUI box was never leased: no reap.sh, no note about it" \
   || bad "unleased gui (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
 # A failed release after the run is a note; the verdict stays.

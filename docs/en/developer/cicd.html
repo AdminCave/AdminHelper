@@ -168,7 +168,13 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           evidence (neither a summary line nor an artifact, or an artifact of the other part) makes the run
           UNVERIFIED, otherwise a red part makes it FAIL; the reason names the part
           (<code>&hellip; (gui)</code>) and a red other part (<code>FAIL in part rest</code>). If
-          <code>heavy.sh</code> is interrupted, it ends both parts. After the run, <code>heavy.sh</code> frees
+          <code>heavy.sh</code> is interrupted, it ends both parts. If the second box cannot be had on the retry
+          either, part <code>gui</code> runs after part <code>rest</code>, serially, on the box of the
+          <code>desktop</code> slot (<code>iter.sh all --strict --part gui</code>, retries of red steps there
+          too): a longer run instead of a lost one. The notes say so with the last line of
+          <code>warm-gui.log</code>, the layer row names the same box twice, and the verdict stays
+          <code>PASS</code> only with two green parts. If <code>warm.sh gui</code> refuses (exit 2), nothing
+          runs serially and the run is UNVERIFIED. After the run, <code>heavy.sh</code> frees
           the GUI box (<code>reap.sh --role gui</code>) when part <code>gui</code> is green (a <code>flaky</code>
           step does not count as red); when it is red or <code>infra</code>, the box stays for inspection until
           its TTL runs out, and the notes name <code>vm.py ssh &lt;vmid&gt;</code> &ndash; unless it already went
@@ -177,8 +183,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           gets the box of the <code>desktop</code> slot. The capstone
           is skipped <strong>only</strong> when the <code>all</code> layer ended UNVERIFIED (seven VMs must
           not burn into a broken environment) &ndash; a plain FAIL does not stop it.
-          Beforehand it checks <code>vm.py doctor</code> (for <code>all</code> only for the slots whose box is
-          not already running) and <code>vm.py list</code>: a foreign box means
+          Beforehand it checks <code>vm.py doctor</code> (for <code>all</code> only for the <code>desktop</code>
+          slot, when its box is not already running; whether the GUI box fits is for <code>vm.py clone</code> to
+          say) and <code>vm.py list</code>: a foreign box means
           the capacity is not there, and the run stops before spending a single VM.</p>
           <p>The report lands in <code>.ah-out/weekly/&lt;yyyy-mm-dd-hhmm&gt;/report.md</code>. Its
           <strong>first line</strong> is the verdict and is quoted verbatim, never paraphrased; then come the

@@ -1282,6 +1282,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
   roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
   (`FAIL in part rest`). Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile.
+  Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach Teil
+  `rest` seriell auf der Box des Slots `desktop` (`iter.sh all --strict --part gui`): ein
+  laengerer Lauf statt eines verlorenen. Die Notizen sagen es mit der letzten Zeile aus
+  `warm-gui.log`, die Ebenen-Zeile nennt zweimal dieselbe Box, eine GUI-Box gibt es nicht
+  freizugeben, und das Urteil bleibt `PASS` nur mit zwei gruenen Teilen. Verweigert `warm.sh gui`
+  (Exit 2), laeuft nichts seriell, der Lauf ist UNVERIFIED.
   Nach dem Lauf gibt `heavy.sh` die GUI-Box frei (`reap.sh --role gui`), wenn Teil `gui` gruen
   ist (ein `flaky` Schritt zaehlt nicht als rot); ist er rot oder `infra`, bleibt sie zur Sichtung
   stehen, bis ihre Frist ablaeuft, und die Notizen nennen `python3 scripts/vm/vm.py ssh <vmid>` —
@@ -1290,8 +1296,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   bekommt die Box des Slots `desktop`. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
   UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL
   stoppt ihn nicht.
-- **Vorab:** `vm.py doctor --roles <was der Modus klont>` — bei `all` die Slots `desktop` und
-  `gui`, deren Box nicht schon laeuft (laufen beide, ein leeres `--roles`) —, und
+- **Vorab:** `vm.py doctor --roles <was der Modus klont>` — bei `all` nur der Slot `desktop`,
+  wenn seine Box nicht schon laeuft (sonst ein leeres `--roles`); ob die GUI-Box passt,
+  entscheidet die Kapazitaetspruefung von `vm.py clone` —, und
   `vm.py list --json` darf keine
   Box einer fremden Lane und nichts Geleaktes auf der eigenen zeigen — sonst ist die
   Kapazitaet nicht da und der Lauf bricht ab, bevor er eine VM verbraucht.
@@ -1352,7 +1359,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Multibox-Summary-Zeile; jeder FAIL, der nicht auf einen Abbruch seiner Rolle folgt,
   macht die Ebene FAIL. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert:
   bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`; im Teil
-  `gui` mit `iter.sh --slot gui`) — ein gruener Lauf ⇒ `flaky`
+  `gui` mit `iter.sh --slot gui`, nach einem seriellen Lauf auf der Box `desktop`) — ein
+  gruener Lauf ⇒ `flaky`
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
   (Worktree `.ah-worktrees/w2`, Lane `w2`): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile

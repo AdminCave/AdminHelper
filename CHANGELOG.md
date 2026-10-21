@@ -1092,7 +1092,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
   gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
   `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
-  waehrend `rest` schon laeuft. Der Pre-flight fragt `vm.py doctor` nur nach den Slots, deren Box nicht schon laeuft.
+  waehrend `rest` schon laeuft. Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach
+  Teil `rest` seriell auf der Box `desktop`, und die Notizen sagen es mit der letzten Zeile aus `warm-gui.log`; nur
+  wenn `warm.sh gui` verweigert (Exit 2), bleibt der Lauf `UNVERIFIED`. Der Pre-flight fragt `vm.py doctor` deshalb
+  nur nach dem Slot `desktop`, wenn seine Box nicht schon laeuft; ob die GUI-Box passt, entscheidet `vm.py clone`.
   Das Urteil heisst `PASS` nur mit zwei gruenen Teilen; ein Teil, der nicht lief oder keinen eigenen Beleg brachte
   (weder Summary-Zeile noch Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf `UNVERIFIED`, und der
   Grund nennt den Teil und einen roten anderen Teil („FAIL in part rest“). Rote Schritte werden auf der Box ihres

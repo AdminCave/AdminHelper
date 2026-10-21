@@ -11,6 +11,7 @@
 #     all       scripts/vm/warm.sh desktop, then two parts at once on two boxes:
 #                 rest  scripts/vm/iter.sh all --strict --part rest
 #                 gui   scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
+#               no GUI box after a retry: part gui after part rest, on the desktop box
 #               PASS only with both parts green
 #     capstone  scripts/tests/multibox.sh --capstone --strict
 #     weekly    all, then capstone — serially, capstone only after `all` has a
@@ -158,10 +159,12 @@ for vm in data.get("vms", []):
 ' "$(vm_lane)"
 }
 
-# slots_to_clone <list-json> -> the slots of `all` (desktop, gui) that warm.sh
-# will have to clone, comma-separated, possibly none. A slot whose box is running
-# counts as nothing: doctor would otherwise reserve a second box on top of the
-# one it already holds, and with two slots that is two boxes too many.
+# slots_to_clone <list-json> -> the slots of `all` that warm.sh will have to
+# clone, comma-separated, possibly none. A slot whose box is running counts as
+# nothing: doctor would otherwise reserve a second box on top of the one it
+# already holds. Only the desktop slot is asked: a GUI box that does not fit no
+# longer stops the run, part gui then runs on the desktop box (run_all), and
+# whether it fits is the capacity check of vm.py clone to say.
 slots_to_clone() {
   printf '%s' "$1" | python3 -c '
 import json, sys
@@ -181,8 +184,7 @@ for i in range(0, len(slots), 3):
             or (name and (v.get("name") or "") != name)):
         need.append(slot)
 print(",".join(need))
-' "$(vm_lane)" desktop "$(warm_get desktop)" "$(warm_get desktop_name)" \
-    gui "$(warm_get gui)" "$(warm_get gui_name)"
+' "$(vm_lane)" desktop "$(warm_get desktop)" "$(warm_get desktop_name)"
 }
 
 preflight() {
@@ -202,12 +204,12 @@ preflight() {
   # claims), and that JSON is exactly what the guard wants to read.
   local json; json="$(vm_py list --json 2>/dev/null)"
   # --roles: doctor's capacity check needs to know what the run is about to ask
-  # for, or it reports "fits" against a single probe box. `all` warms the desktop
-  # and the gui slot, but clones only the ones without a running box — an empty
-  # list is a check against nothing new. `capstone` clones the seven of the
-  # multibox scenario. weekly starts with `all`, so its slots are what it needs
-  # HERE; the capstone that follows runs its own doctor over its seven roles
-  # before it clones anything (multibox.sh).
+  # for, or it reports "fits" against a single probe box. `all` must have the
+  # desktop slot, cloned only without a running box — an empty list is a check
+  # against nothing new; its gui slot it can do without (slots_to_clone).
+  # `capstone` clones the seven of the multibox scenario. weekly starts with
+  # `all`, so its slots are what it needs HERE; the capstone that follows runs
+  # its own doctor over its seven roles before it clones anything (multibox.sh).
   local roles
   if [ "$MODE" = capstone ]; then roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
   else roles="$(slots_to_clone "$json")"; fi
@@ -356,6 +358,7 @@ warm_lease() {  # warm_lease <slot> <log> -> the exit code of the last warm.sh c
 # GUI box is leased while rest already runs: a cold one (bootstrap + Tauri build)
 # would otherwise sit in front of everything. Each part logs to its own file and
 # pulls into its own directory, so neither can overwrite the other's evidence.
+# Without a GUI box part gui runs after part rest on the desktop box (run_all).
 #
 # part_job runs in the background. It leases its slot unless that is desktop
 # (run_all holds that box already), runs the part and writes $OUT/<part>.rc:
@@ -444,12 +447,31 @@ run_all() {
   part_job rest desktop & PART_PIDS+=("$!")
   part_job gui gui & PART_PIDS+=("$!")
   wait "${PART_PIDS[@]}"
+  local -A part_slot=([rest]=desktop [gui]=gui) part_since=([rest]="$since" [gui]="$since")
+  # No GUI box even on the retry (Kevin 2026-10-21): part gui runs after part
+  # rest on the desktop box — a longer run instead of a lost one. A refusal
+  # (exit 2) is no missing box and stays UNVERIFIED. Its own stamp: a capture in
+  # gui/ written while part rest ran is older than this run of part gui and must
+  # not pass for its own.
+  rc=0 stage=none
+  [ -f "$OUT/gui.rc" ] && read -r rc _ stage < "$OUT/gui.rc"
+  if [ "$stage" = lease ] && [ "$rc" != 2 ]; then
+    tail -5 "$OUT/warm-gui.log" | mask_stream | sed 's/^/  /'
+    line="$(tail -1 "$OUT/warm-gui.log" 2>/dev/null | sed 's/^[[:space:]]*//')"
+    note "part gui runs serially on the desktop box ${part_box[rest]:-?} after part rest: no GUI box, warm.sh gui failed after a retry (${line:-warm-gui.log is empty})"
+    rm -f "$OUT/gui.rc"
+    part_slot[gui]=desktop
+    part_since[gui]="$(date +%s)"
+    PART_PIDS=()
+    part_job gui desktop & PART_PIDS+=("$!")
+    wait "${PART_PIDS[@]}"
+  fi
   trap - INT TERM HUP
   PART_PIDS=()
   local wall=$((SECONDS - t0))
 
   for part in rest gui; do
-    slot=desktop; [ "$part" = gui ] && slot=gui
+    slot="${part_slot[$part]}"
     if [ -f "$OUT/$part.notes" ]; then
       while IFS= read -r line; do NOTES+=("$line"); done < "$OUT/$part.notes"
     fi
@@ -460,18 +482,16 @@ run_all() {
     part_box[$part]="$(warm_get "$slot")"; part_box[$part]="${part_box[$part]:-?}"
     case "$stage" in
       run)
-        # Its part leased the GUI box, so this run holds it (release_gui_box).
-        [ "$part" = gui ] && GUI_HELD=1
-        evaluate_all "$OUT/all-$part.log" "$rc" "${part_box[$part]}" "$OUT/$part" "$part" "$slot" "$since" ;;
+        # A part on the gui slot leased the GUI box, so this run holds it
+        # (release_gui_box). Run on the desktop box, part gui holds none.
+        [ "$slot" = gui ] && GUI_HELD=1
+        evaluate_all "$OUT/all-$part.log" "$rc" "${part_box[$part]}" "$OUT/$part" "$part" "$slot" "${part_since[$part]}" ;;
       lease)
+        # Only a refusal is left here: any other failed lease has run the part
+        # on the desktop box (above).
         part_box[$part]="-"
         tail -5 "$OUT/warm-$slot.log" | mask_stream | sed 's/^/  /'
-        if [ "$rc" = 2 ]; then
-          PART_RESULT=infra PART_DETAIL="warm.sh refused (exit 2), see warm-$slot.log"
-        else
-          PART_RESULT=infra PART_DETAIL="warm box could not be leased"
-          note "warm box ($slot) could not be leased after a retry (see warm-$slot.log)"
-        fi ;;
+        PART_RESULT=infra PART_DETAIL="warm.sh refused (exit $rc), see warm-$slot.log" ;;
       *)
         PART_RESULT=infra PART_DETAIL="the part ended without a result (no $part.rc)" ;;
     esac

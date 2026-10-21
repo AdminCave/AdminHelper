@@ -171,7 +171,13 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch Artefakt, oder ein Artefakt des
           anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein roter Teil FAIL; der Grund nennt den
           Teil (<code>&hellip; (gui)</code>) und einen roten anderen Teil (<code>FAIL in part rest</code>).
-          Wird <code>heavy.sh</code> abgebrochen, beendet es beide Teile. Nach dem Lauf gibt
+          Wird <code>heavy.sh</code> abgebrochen, beendet es beide Teile. Ist die zweite Box auch im zweiten
+          Versuch nicht zu bekommen, l&auml;uft Teil <code>gui</code> nach Teil <code>rest</code> seriell auf der
+          Box des Slots <code>desktop</code> (<code>iter.sh all --strict --part gui</code>, Wiederholungen roter
+          Schritte ebenfalls dort): ein l&auml;ngerer Lauf statt eines verlorenen. Die Notizen sagen es mit der
+          letzten Zeile aus <code>warm-gui.log</code>, die Ebenen-Zeile nennt zweimal dieselbe Box, und das Urteil
+          bleibt <code>PASS</code> nur mit zwei gr&uuml;nen Teilen. Verweigert <code>warm.sh gui</code> (Exit 2),
+          l&auml;uft nichts seriell, der Lauf ist UNVERIFIED. Nach dem Lauf gibt
           <code>heavy.sh</code> die GUI-Box frei (<code>reap.sh --role gui</code>), wenn Teil <code>gui</code>
           gr&uuml;n ist (ein <code>flaky</code> Schritt z&auml;hlt nicht als rot); ist er rot oder
           <code>infra</code>, bleibt sie zur Sichtung stehen, bis ihre Frist abl&auml;uft, und die Notizen nennen
@@ -181,7 +187,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           bekommt die Box des Slots <code>desktop</code>. Der
           Capstone entf&auml;llt <strong>nur</strong>, wenn die <code>all</code>-Ebene UNVERIFIED endete
           (sieben VMs brennen sonst in eine kaputte Umgebung) &ndash; ein reines FAIL stoppt ihn nicht. Vorab pr&uuml;ft er <code>vm.py doctor</code>
-          (bei <code>all</code> nur f&uuml;r die Slots, deren Box nicht schon l&auml;uft) und <code>vm.py list</code>: eine fremde
+          (bei <code>all</code> nur f&uuml;r den Slot <code>desktop</code>, wenn seine Box nicht schon l&auml;uft; ob
+          die GUI-Box passt, entscheidet <code>vm.py clone</code>) und <code>vm.py list</code>: eine fremde
           Box hei&szlig;t, die Kapazit&auml;t ist nicht da, und der Lauf bricht ab, bevor er eine VM verbraucht.</p>
           <p>Der Report liegt unter <code>.ah-out/weekly/&lt;jjjj-mm-tt-hhmm&gt;/report.md</code>. Seine
           <strong>erste Zeile</strong> ist das Urteil und wird w&ouml;rtlich zitiert, nie paraphrasiert; danach
