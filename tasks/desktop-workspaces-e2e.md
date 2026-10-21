@@ -98,3 +98,11 @@ Verify: bash scripts/dev/verify.sh scripts desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T29, T31
 
+### T52 — Live: Server-Workspace löschen widerruft das Gerät  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-delete-server.live.js, scripts/tests/desktop_e2e_workspaces.sh, scripts/tests/e2e_api.py, apps/desktop/e2e/README.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] desktop-e2e scripts: 7 passed, 0 failed, 11 skipped @5fb28c28 2026-10-21T05:53:04+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T52.verdict.json)
+Änderung: Aus der Branch-Prüfung (Reviewer, Nit, von der Session aufgenommen): Kein Test beweist, dass das Löschen eines Server-Workspace mit echtem Widerruf funktioniert (Purge-Kind, `block_on(enrollment::reset_identity)` in `main.rs`, Exit 10). Neuer Launcher-Spec (SPDX-Header): nach dem Multiremote-Lauf (beide Fenster geschlossen) „Kunde B“ im Picker löschen (`[data-action="workspace-delete"]`), die Rückfrage bestätigen, `revoked` (kein `localOnly`) erwarten, Workspace weg aus Liste und Bridge. Die Suite prüft danach über die API von Stack b, dass das Gerät widerrufen ist (Geräteliste/`revoked`), und dass `workspaces/<id B>/` fehlt. Läuft mit leerem `AH_E2E_WORKSPACE` in eigenem `dbus-run-session` mit demselben Keyring wie der Multiremote-Lauf (die Identität von B muss auffindbar sein).
+Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
+Doku: keine (Test)
+Abhängt von: T32

@@ -20,6 +20,9 @@
 # Afterwards each SSH target must have seen exactly one SSH client, the window of its own
 # installation, and each workspace dir must hold the connection of its own server only.
 # The suite itself opens no connection through the tunnels.
+# Last, in the launcher again, workspace-delete-server.live.js deletes "Kunde B" in the
+# picker: its purge revokes the device at stack b, which the suite checks there (open before,
+# revoked by itself after), and its directory goes.
 #
 # Shared boot/seed/teardown via lib_e2e_stack.sh; SKIPs (exit 75) when a tool is missing.
 # Run: bash scripts/tests/desktop_e2e_workspaces.sh
@@ -250,6 +253,33 @@ for pair in "standard a b" "$WS_B b a"; do
         bad "workspaces/$ws: connections.json lists '${ids//$'\n'/ }', not ${!want} of stack $own${leak:+; the connection of stack $other is in $leak}"
     fi
 done
+
+# Deleting a server workspace revokes its device first (R-0431). The device wsB registered is
+# the one device of the admin at stack b that is not revoked, until the delete.
+e2e_stack_use b
+DEVICE_B=$(e2e_api "$TOKEN_b" devices admin | awk '$2 == "-" { print $1 }')
+[ -n "$DEVICE_B" ] && [ "$(grep -c . <<<"$DEVICE_B")" = 1 ] \
+    && ok "stack b lists the device of $WS_B, not revoked" \
+    || bad "stack b lists not one open device of the admin, but: '${DEVICE_B//$'\n'/ }'"
+
+# In the launcher again, with the XDG_DATA_HOME of the runs before: gnome-keyring keeps its
+# login keyring under it, and the daemon of this D-Bus session unlocks it anew, so the purge
+# finds the identity of wsB.
+echo "[ws] deleting the workspace of stack b in the launcher under xvfb..."
+AH_E2E_WORKSPACE='' AH_E2E_WORKSPACE_B="$WS_B" AH_E2E_SERVER_URL_B="$URL_b" \
+dbus-run-session -- bash -c '
+    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
+    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/workspace-delete-server.live.js
+' && ok "launcher: deleted the workspace of stack b" || bad "launcher delete spec failed"
+
+[ ! -e "$APP_DATA/workspaces/$WS_B" ] && ok "workspaces/$WS_B is gone" \
+    || bad "workspaces/$WS_B is still there"
+REASON_B=$(e2e_api "$TOKEN_b" devices admin | DEVICE="$DEVICE_B" awk '$1 == ENVIRON["DEVICE"] { print $2 }')
+[ -n "$DEVICE_B" ] && [ "$REASON_B" = self ] \
+    && ok "stack b lists the device of $WS_B as revoked by itself" \
+    || bad "the device '$DEVICE_B' at stack b is revoked '${REASON_B:-not at all}', not by itself"
 
 echo ""
 echo "desktop_e2e_workspaces: $PASS passed, $FAIL failed"

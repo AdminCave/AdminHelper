@@ -110,6 +110,14 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   SSH client, and that each workspace dir holds the connection of its own server
   only. Both workspaces start with `--workspace`: opening one from the picker is
   proven by the Rust tests alone.
+- **`test/specs/workspace-delete-server.live.js`** — in the launcher (no
+  `AH_E2E_WORKSPACE`), after the spec above: deletes "Kunde B" in the picker,
+  confirms the question and expects a delete without the note of a revoke left
+  undone (`localOnly`); the workspace is gone from the picker and from Rust. Its
+  purge finds the identity of `wsB` in the keyring the runs before left under the
+  same `XDG_DATA_HOME`. The same `desktop_e2e_workspaces.sh` run then checks at
+  stack b that this device, open before, is revoked by itself, and that
+  `workspaces/<id of Kunde B>/` is gone.
 
 ## Prerequisites (Linux)
 
