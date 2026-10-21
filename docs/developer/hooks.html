@@ -109,7 +109,7 @@ fire_event("server.updated", {"id": server.id, "name": server.name})</code></pre
           <p><code>fire_event</code> ist non-blocking: Der Dispatch läuft im Thread-Pool, der Aufruf kehrt sofort zurück. Die HTTP-Response des Auslösers wartet also <strong>nicht</strong> auf den Hook.</p>
 
           <h2>Test-Execution</h2>
-          <p>Im Web-Panel kann jeder Hook mit einem Beispiel-Event geprüft werden: <code>POST /api/hooks/{id}/test</code>. Der Execution-Log zeigt stdout/stderr/exit_code in Echtzeit – praktisch beim Script-Debugging.</p>
+          <p>Im Web-Panel startet „Ausführen“ einen Hook von Hand über <code>POST /api/hooks/{id}/run</code>; der Endpunkt verlangt Admin-Rechte. Der Context enthält dabei keine Event-Daten, er ist so belegt, wie die <a href="./api-reference.html">API-Referenz</a> es für diesen Endpunkt beschreibt. Sobald der Lauf endet, zeigt ein Dialog das Ergebnis als JSON: <code>success</code>, <code>result</code>, <code>logs</code> und bei einem Fehler <code>error</code>. Eigene Felder für stdout, stderr oder <code>exit_code</code> gibt es nicht; endet der Worker-Prozess mit einem Exit-Code ungleich 0, steht sein stderr in <code>error</code> und <code>logs</code>.</p>
 
           <div class="page-nav">
             <a class="prev" href="./api-reference.html"><span class="label">← Vorheriges Kapitel</span><span class="title">API-Referenz</span></a>

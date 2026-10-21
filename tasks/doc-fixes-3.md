@@ -52,8 +52,10 @@ Semantik: Soll ist der Code:
 Doku, die das Soll trägt: `docs/developer/hooks.html:34` — „registrierte Scripts laufen in einer sanitisierten Subprozess-Umgebung mit harter Timeout-Grenze“.
 Falsche Doku-Stellen: `:85` — „Nur <code>PATH</code>, <code>PYTHONPATH</code>, <code>DATABASE_URL</code> und <code>DATA_DIR</code> werden durchgereicht“; `:87` — „beim Ablauf wird der Worker-Prozess gekillt, nicht zwingend dessen Kindprozesse“; `:88` — „<strong>Kein Output-Limit</strong>“; `:77` — „die auf eine private, reservierte oder Link-Local-Adresse zeigen“.
 
-### T2 — Beifang zu R-0528: hooks.html, Test-Lauf über `/run` wie Router und Web-Panel  [ ]
+### T2 — Beifang zu R-0528: hooks.html, Test-Lauf über `/run` wie Router und Web-Panel  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b0075543 2026-10-21T09:41:48+02:00
+Review: am Ende (Branch-Review)
 Änderung: DE und EN, Absatz `:137` unter Test-Execution; die Überschrift bleibt. Der Absatz sagt:
 - Im Web-Panel startet „Ausführen“ (EN „Run“, `action.run`) einen Hook von Hand über `POST /api/hooks/{id}/run`, nur für Admins (`apps/server/app/modules/hooks/router.py:336-338`, `apps/web/src/lib/api/hooks.ts:41`, `apps/web/src/pages/Hooks.svelte:84-98`).
 - Der Context ist kein Beispiel-Event. Er ist so belegt, wie die API-Referenz es beschreibt, mit Verweis dorthin (`router.py:345-356`, `docs/developer/api-reference.html:121`).

@@ -109,7 +109,7 @@ fire_event("server.updated", {"id": server.id, "name": server.name})</code></pre
           <p><code>fire_event</code> is non-blocking: the dispatch runs in a thread pool, the call returns immediately. The HTTP response of the emitter does <strong>not</strong> wait on the hook.</p>
 
           <h2>Test Execution</h2>
-          <p>Every hook can be tested from the web panel with a sample event: <code>POST /api/hooks/{id}/test</code>. The execution log shows stdout/stderr/exit_code in real time – handy for script debugging.</p>
+          <p>In the web panel, "Run" starts a hook by hand via <code>POST /api/hooks/{id}/run</code>; the endpoint requires admin rights. The context carries no event data; it is filled as the <a href="./api-reference.html">API reference</a> describes for this endpoint. Once the run ends, a dialog shows the result as JSON: <code>success</code>, <code>result</code>, <code>logs</code> and, on failure, <code>error</code>. There are no separate fields for stdout, stderr or <code>exit_code</code>; if the worker process exits with a non-zero code, its stderr is in <code>error</code> and <code>logs</code>.</p>
 
           <div class="page-nav">
             <a class="prev" href="./api-reference.html"><span class="label">← Previous chapter</span><span class="title">API Reference</span></a>
