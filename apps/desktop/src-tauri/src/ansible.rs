@@ -142,11 +142,30 @@ fn is_confined_ansible_path(path: &str) -> bool {
 
 /// Starts ansible-playbook in a native terminal.
 pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), AppError> {
+    launch_ansible_with(inventory_path, playbook_path, start_in_terminal)
+}
+
+/// `launch_ansible` with the start passed in. A start that fails takes both files with it, as no
+/// run will; a path that fails the check is never removed, it may not be ours.
+fn launch_ansible_with(
+    inventory_path: &str,
+    playbook_path: &str,
+    start: impl FnOnce(&str, &str) -> Result<(), AppError>,
+) -> Result<(), AppError> {
     if !is_confined_ansible_path(inventory_path) || !is_confined_ansible_path(playbook_path) {
         return Err(AppError::Validation(
             "Ansible-Pfad ausserhalb des erlaubten Temp-Verzeichnisses".to_string(),
         ));
     }
+    let started = start(inventory_path, playbook_path);
+    if started.is_err() {
+        let _ = std::fs::remove_file(inventory_path);
+        let _ = std::fs::remove_file(playbook_path);
+    }
+    started
+}
+
+fn start_in_terminal(inventory_path: &str, playbook_path: &str) -> Result<(), AppError> {
     if which("ansible-playbook").is_none() {
         return Err(AppError::Connection(
             "ansible-playbook wurde nicht gefunden. Bitte Ansible installieren.".to_string(),
@@ -163,29 +182,293 @@ pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), A
             ],
         )
     } else {
-        let ansible_cmd = format!(
-            "ansible-playbook -i {} {}",
-            shell_escape(inventory_path),
-            shell_escape(playbook_path)
-        );
         let bash_args = vec![
             "-c".to_string(),
-            format!(
-                "{}; echo ''; echo 'Ansible beendet. Druecke Enter zum Schliessen.'; read",
-                ansible_cmd
-            ),
+            linux_run_script(inventory_path, playbook_path),
         ];
         open_linux_terminal("bash", &bash_args)
     }
 }
 
+/// The `bash -c` script of a Linux run. It removes both files once ansible-playbook ends,
+/// whatever its exit code. On SIGHUP (terminal closed mid-run) or SIGTERM bash would die at once
+/// and run the EXIT trap while ansible-playbook may still be running; trapping both to `exit`
+/// defers that, as bash runs such a trap only after the foreground ansible-playbook has ended.
+/// INT stays untrapped: bash runs an INT trap even when ansible-playbook caught Ctrl-C itself, so
+/// `exit` there would close the terminal over its output, and on SIGINT bash waits for
+/// ansible-playbook anyway and, if that died of it, runs the EXIT trap (the Ctrl-C test pins
+/// both).
+fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
+    let inventory = shell_escape(inventory_path);
+    let playbook = shell_escape(playbook_path);
+    format!(
+        "ah_cleanup() {{ rm -f -- {inventory} {playbook}; }}; \
+         trap ah_cleanup EXIT; trap exit HUP TERM; \
+         ansible-playbook -i {inventory} {playbook}; ah_cleanup; \
+         echo ''; echo 'Ansible beendet. Druecke Enter zum Schliessen.'; read"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        create_temp_file, generate_inventory, is_confined_ansible_path, write_playbook_temp,
-        AnsibleTarget,
+        create_temp_file, generate_inventory, is_confined_ansible_path, launch_ansible_with,
+        write_playbook_temp, AnsibleTarget,
     };
+    use crate::error::AppError;
     use std::fs;
+    use std::path::Path;
+
+    fn one_target() -> Vec<AnsibleTarget> {
+        vec![AnsibleTarget {
+            hostname: "web01".to_string(),
+            groups: vec!["web".to_string()],
+        }]
+    }
+
+    /// A directory holding a stub `ansible-playbook`: it runs `before`, records its arguments in
+    /// `args` (only if both files exist while it runs), then runs `then`. A test acts once `args`
+    /// is there, so what must hold by then (a trap) goes in `before`.
+    #[cfg(unix)]
+    fn stub_ansible_playbook(case: &str, before: &str, then: &str) -> std::path::PathBuf {
+        use crate::terminal::shell_escape;
+        use std::os::unix::fs::PermissionsExt;
+        let dir =
+            std::env::temp_dir().join(format!("ah-ansible-stub-{case}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let args = shell_escape(dir.join("args").to_str().unwrap());
+        let partial = shell_escape(dir.join("args.partial").to_str().unwrap());
+        let stub = dir.join("ansible-playbook");
+        fs::write(
+            &stub,
+            format!(
+                "#!/bin/sh\n{before}\n[ -f \"$2\" ] && [ -f \"$3\" ] && printf '%s\\n' \"$*\" \
+                 > {partial} && mv {partial} {args}\n{then}\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        dir
+    }
+
+    /// `bash -c` with the script of a Linux run, the stub first on PATH (only in the child's
+    /// environment) and stdin at EOF, so the closing `read` returns at once.
+    #[cfg(unix)]
+    fn run_script_command(
+        stub_dir: &Path,
+        inventory: &str,
+        playbook: &str,
+    ) -> std::process::Command {
+        use std::process::Stdio;
+        let mut dirs = vec![stub_dir.to_path_buf()];
+        dirs.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let mut command = std::process::Command::new("bash");
+        command
+            .arg("-c")
+            .arg(super::linux_run_script(inventory, playbook))
+            .env("PATH", std::env::join_paths(dirs).unwrap())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        command
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_run_script_removes_both_files_when_ansible_playbook_ends() {
+        for code in [0, 2] {
+            let stub = stub_ansible_playbook(&format!("exit{code}"), "", &format!("exit {code}"));
+            let inventory = generate_inventory(&one_target()).unwrap();
+            let playbook = write_playbook_temp("it's a run.yml", "- hosts: all\n").unwrap();
+
+            let status = run_script_command(&stub, &inventory, &playbook)
+                .status()
+                .unwrap();
+            let args = fs::read_to_string(stub.join("args")).unwrap_or_default();
+            let left = (
+                Path::new(&inventory).exists(),
+                Path::new(&playbook).exists(),
+            );
+            let _ = fs::remove_file(&inventory);
+            let _ = fs::remove_file(&playbook);
+            let _ = fs::remove_dir_all(&stub);
+
+            assert_eq!(
+                args,
+                format!("-i {inventory} {playbook}\n"),
+                "the stub did not run on both files (exit {code}, bash {status})"
+            );
+            assert_eq!(left, (false, false), "files left after exit {code}");
+        }
+    }
+
+    #[cfg(unix)]
+    struct MidRun {
+        started: bool,
+        ended: bool,
+        left: (bool, bool),
+        stdout: String,
+    }
+
+    /// Runs the script in a process group of its own with a stub that runs `before` and `then`
+    /// (see [`stub_ansible_playbook`]), and once the stub runs on both files sends `signal` to
+    /// the whole group, as the terminal does to bash and the run alike on close or Ctrl-C.
+    #[cfg(unix)]
+    fn signal_mid_run(case: &str, before: &str, then: &str, signal: &str) -> MidRun {
+        use std::io::Read;
+        use std::os::unix::process::CommandExt;
+        use std::time::{Duration, Instant};
+        let stub = stub_ansible_playbook(case, before, then);
+        let inventory = generate_inventory(&one_target()).unwrap();
+        let playbook = write_playbook_temp(&format!("{case}.yml"), "- hosts: all\n").unwrap();
+
+        let mut child = run_script_command(&stub, &inventory, &playbook)
+            .stdout(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = format!("-{}", child.id());
+        let marker = stub.join("args");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !marker.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let started = marker.exists();
+        let _ = std::process::Command::new("kill")
+            .args([signal, "--", &group])
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut ended = None;
+        while ended.is_none() && Instant::now() < deadline {
+            ended = child.try_wait().unwrap();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if ended.is_none() {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", "--", &group])
+                .status();
+            let _ = child.wait();
+        }
+        let mut stdout = String::new();
+        let _ = child.stdout.take().unwrap().read_to_string(&mut stdout);
+        let left = (
+            Path::new(&inventory).exists(),
+            Path::new(&playbook).exists(),
+        );
+        let _ = fs::remove_file(&inventory);
+        let _ = fs::remove_file(&playbook);
+        let _ = fs::remove_dir_all(&stub);
+        MidRun {
+            started,
+            ended: ended.is_some(),
+            left,
+            stdout,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_run_script_removes_both_files_when_the_terminal_hangs_up_mid_run() {
+        let run = signal_mid_run("hangup", "", "exec sleep 30", "-HUP");
+        assert!(run.started, "the stub never ran on both files");
+        assert!(run.ended, "bash did not end after SIGHUP");
+        assert_eq!(run.left, (false, false), "files left after SIGHUP");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_run_script_removes_both_files_after_ctrl_c_mid_run() {
+        // ansible-playbook catches Ctrl-C and exits 99: the run still goes on to the prompt.
+        let caught = signal_mid_run(
+            "interrupt-caught",
+            "trap 'exit 99' INT",
+            "while :; do sleep 1; done",
+            "-INT",
+        );
+        assert!(caught.started, "the stub never ran on both files");
+        assert!(caught.ended, "bash did not end after SIGINT");
+        assert_eq!(caught.left, (false, false), "files left after SIGINT");
+        assert!(
+            caught.stdout.contains("Ansible beendet."),
+            "Ctrl-C mid-run closed before the prompt: {:?}",
+            caught.stdout
+        );
+
+        // A run killed by it: bash dies of SIGINT too, and its EXIT trap takes the files.
+        let killed = signal_mid_run("interrupt-killed", "", "exec sleep 30", "-INT");
+        assert!(killed.started, "the stub never ran on both files");
+        assert!(killed.ended, "bash did not end after SIGINT");
+        assert_eq!(killed.left, (false, false), "files left after SIGINT");
+    }
+
+    #[test]
+    fn launch_ansible_removes_both_files_when_the_start_fails() {
+        let inventory = generate_inventory(&one_target()).unwrap();
+        let playbook = write_playbook_temp("failed_start.yml", "- hosts: all\n").unwrap();
+
+        let mut seen = None;
+        let result = launch_ansible_with(&inventory, &playbook, |inv, pb| {
+            seen = Some((inv.to_string(), pb.to_string()));
+            Err(AppError::Connection("Kein Terminal gefunden".to_string()))
+        });
+        let left = (
+            Path::new(&inventory).exists(),
+            Path::new(&playbook).exists(),
+        );
+        let _ = fs::remove_file(&inventory);
+        let _ = fs::remove_file(&playbook);
+
+        assert!(matches!(result, Err(AppError::Connection(_))), "{result:?}");
+        assert_eq!(seen, Some((inventory.clone(), playbook.clone())));
+        assert_eq!(left, (false, false), "files left after a failed start");
+    }
+
+    #[test]
+    fn launch_ansible_leaves_the_files_to_the_run_when_the_start_succeeds() {
+        // The terminal starts asynchronously and reads both files later: removing them on a
+        // successful start would break every run.
+        let inventory = generate_inventory(&one_target()).unwrap();
+        let playbook = write_playbook_temp("started.yml", "- hosts: all\n").unwrap();
+
+        let result = launch_ansible_with(&inventory, &playbook, |_, _| Ok(()));
+        let left = (
+            Path::new(&inventory).exists(),
+            Path::new(&playbook).exists(),
+        );
+        let _ = fs::remove_file(&inventory);
+        let _ = fs::remove_file(&playbook);
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(left, (true, true), "files gone after a successful start");
+    }
+
+    #[test]
+    fn launch_ansible_never_removes_a_path_that_fails_the_check() {
+        let foreign =
+            std::env::temp_dir().join(format!("evil_playbook_keep_{}.yml", std::process::id()));
+        fs::write(&foreign, b"- hosts: all\n").unwrap();
+        let inventory = generate_inventory(&one_target()).unwrap();
+
+        let mut started = false;
+        let result = launch_ansible_with(&inventory, foreign.to_str().unwrap(), |_, _| {
+            started = true;
+            Err(AppError::Connection("Kein Terminal gefunden".to_string()))
+        });
+        let left = (Path::new(&inventory).exists(), foreign.exists());
+        let _ = fs::remove_file(&inventory);
+        let _ = fs::remove_file(&foreign);
+
+        assert!(matches!(result, Err(AppError::Validation(_))), "{result:?}");
+        assert!(!started, "started despite a rejected path");
+        assert_eq!(
+            left,
+            (true, true),
+            "a file was removed after a rejected path"
+        );
+    }
 
     #[test]
     fn generate_inventory_rejects_host_and_group_injection() {
@@ -208,7 +491,8 @@ mod tests {
             hostname: "web01.example.com".to_string(),
             groups: vec!["web".to_string()],
         }];
-        assert!(generate_inventory(&ok).is_ok());
+        let path = generate_inventory(&ok).unwrap();
+        let _ = fs::remove_file(path);
     }
 
     #[test]

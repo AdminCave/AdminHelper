@@ -25,13 +25,17 @@ const ADDED_TUNNEL = 'e2e-ssh-added';
 const ADDED_VISITOR = `${ADDED_TUNNEL}-visitor`;
 
 // tunnel_status through the bridge: whether frpc runs, since when, which visitors it applied.
-function tunnelStatus() {
-  return browser.executeAsync((done) => {
+// A rejection fails the spec with its message. It comes back as { rejected }: webdriver takes
+// a script result with an `error` key for a failed command (logout.live.js).
+async function tunnelStatus() {
+  const out = await browser.executeAsync((done) => {
     window.__TAURI__.core
       .invoke('tunnel_status')
-      .then((status) => done(status))
-      .catch((e) => done({ error: String((e && e.message) || e) }));
+      .then((value) => done({ value }))
+      .catch((e) => done({ rejected: String((e && e.message) || e) }));
   });
+  if (out.rejected !== undefined) throw new Error(`tunnel_status failed: ${out.rejected}`);
+  return out.value;
 }
 
 // The indicator goes connecting → connected once frpc has started.

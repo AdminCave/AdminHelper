@@ -11,6 +11,7 @@
 #   token=$(e2e_admin_token)         # admin JWT through the gateway
 #   e2e_login [curl-args...]         # one admin login: E2E_JWT, or E2E_LOGIN_ERR + rc 1
 #   e2e_dc <compose-args...>         # raw `docker compose` for this run
+#   e2e_keyring_start                # in a dbus-run-session: a keyring of its own, or rc 1
 #
 # Everything is hermetic: throwaway secrets, images built from THIS checkout
 # under local tags (docker-compose.test.yml), per-run host ports + named volumes,
@@ -43,6 +44,49 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
 # desktop suites seed the settings.json of a version before workspaces, which the app moves
 # into the workspace "standard" at its first start (R-0431); no other id is there to open.
 export AH_E2E_WORKSPACE=standard
+
+# e2e_keyring_start — in the `dbus-run-session -- bash -c` block of a desktop suite: an
+# unlocked gnome-keyring (empty password) for the app on that session bus. Exports
+# GNOME_KEYRING_CONTROL and SSH_AUTH_SOCK. Returns 1, with the daemon's stderr on stderr,
+# when org.freedesktop.secrets gets no owner on the bus within 5 s. Exported like the
+# variables above, so the block can call it.
+#
+# The control directory is its own (R-0566). Without one the daemon takes the user's
+# $XDG_RUNTIME_DIR/keyring: on a box systemd's gnome-keyring-daemon.socket listens there,
+# and the session's daemon replaced it and removed the directory when it quit; on a
+# developer's machine the running keyring sits there. With --control-directory the daemon
+# looks nowhere else. A fresh mktemp -d, no deeper work dir: the socket path has at most
+# 107 bytes (sun_path), beyond that the daemon fails with "couldn't bind to control socket".
+# An EXIT trap in the calling shell removes the directory again. That assumes the block has
+# no EXIT trap of its own, which this one would replace; the suites' blocks have none. The
+# daemon outlives its directory until the bus goes with the session: it keeps the name,
+# then quits and recreates nothing.
+# The owner check: a session without a daemon on its bus let D-Bus start one at the app's
+# first call, its password prompt failed without a display, and the specs ran into their
+# 20 s timeouts. NameHasOwner asks the bus and starts nothing.
+e2e_keyring_start() {
+    local dir reply end
+    dir=$(mktemp -d "${TMPDIR:-/tmp}/ah-keyring.XXXXXX") || return 1
+    # The path goes into the trap now, so it holds once the function has returned.
+    # shellcheck disable=SC2064
+    trap "rm -rf -- $(printf '%q' "$dir")" EXIT
+    eval "$(printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
+        --control-directory="$dir" 2>"$dir/stderr")"
+    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    end=$((SECONDS + 5))
+    while :; do
+        reply=$(dbus-send --session --print-reply --reply-timeout=1000 \
+            --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+            org.freedesktop.DBus.NameHasOwner string:org.freedesktop.secrets 2>/dev/null)
+        [[ $reply == *"boolean true"* ]] && return 0
+        [ "$SECONDS" -lt "$end" ] || break
+        sleep 0.1
+    done
+    echo "keyring: no unlocked secret service on this session bus" >&2
+    cat "$dir/stderr" >&2
+    return 1
+}
+export -f e2e_keyring_start
 
 # Populated by e2e_init.
 E2E_WORK=""

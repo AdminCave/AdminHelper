@@ -120,10 +120,10 @@ describe('ansible store: runPlaybook + toggleTag (6.41)', () => {
 // R-0261: a network error from the backend carries the ERR_* codes in its source chain
 // (error.rs); they are for the code, the page shows the prose.
 const PIN_MISMATCH =
-  'error sending request for url (https://x/api/x): client error (Connect): ' +
+  'error sending request: client error (Connect): ' +
   'ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für x hat sich geändert';
 const PROSE =
-  'error sending request for url (https://x/api/x): client error (Connect): ' +
+  'error sending request: client error (Connect): ' +
   'AdminHelper TOFU: Das Server-Zertifikat für x hat sich geändert';
 
 describe('ansible store: a failed load without the machine codes (R-0261)', () => {
