@@ -77,8 +77,10 @@ Metrik: `grep -rn 'error sending request for url' apps/desktop/ui/src | wc -l` 1
 Dedup-Key: ref:desktop-ui:tests:reqwest-error-fixtures
 HEAD: 82e4a7b8
 
-### T6 — ConnectionEditor: „zuletzt benutzt“ als Wert, nicht in Großbuchstaben (R-0564)  [ ]
+### T6 — ConnectionEditor: „zuletzt benutzt“ als Wert, nicht in Großbuchstaben (R-0564)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.lastused.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @100bf5b7 2026-10-21T10:43:47+02:00
+Review: approve (.ah-out/review/desktop-fixes-2/T6.verdict.json)
 Änderung: Die Wertanzeige „zuletzt benutzt“ (`ConnectionEditor.svelte:227-230`) steht in einem `.field` und erbt dessen `text-transform: uppercase` und `letter-spacing` (Beschriftungs-Stil, `app.css` `.field`). Sie bekommt wie die Wertanzeigen aus R-0431 T54 (`Login.svelte` `.login-url`, `SettingsModal.svelte` `.sm-workspace-url`) `text-transform: none; letter-spacing: normal` (inline neben dem vorhandenen `style="color: var(--text-muted)"` oder als eigene Klasse; jsdom muss den Stil per `getComputedStyle` sehen) und ein `data-testid`. Neuer Test (SPDX-Kopf): Der Editor einer Verbindung mit `lastUsed` zeigt den Wert, und dessen berechneter `text-transform` ist `none`; zuerst rot.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.lastused.test.ts
 Doku: keine (Darstellung)
