@@ -1216,7 +1216,9 @@ Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Tes
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
   `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
-  auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf. Bei Fehler
+  auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf, mit
+  `--role <desktop|server|gui>` nur diesen einen Slot samt seinen Eintraegen in `warm.env`
+  (beim Server auch die Zugangsdaten); die anderen Slots bleiben stehen. Bei Fehler
   bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
   landen automatisch lokal unter `.ah-out/`.
 - **Parallele Lanes.** Jedes Vorhaben baut in einem eigenen Git-Worktree

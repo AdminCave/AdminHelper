@@ -18,7 +18,7 @@ jeder Lauf ist ein Befehl, den jemand tippt.
 | `bash scripts/vm/iter.sh <layer> [--strict] [--only …] [--step …]` | `run.sh <layer>` auf der warmen Box, Artefakte nach `.ah-out/` |
 | `bash scripts/vm/iter.sh --cmd '<befehl>'` | ein einzelner Befehl auf der warmen Box (das `Verify:` einer Task) |
 | `bash scripts/vm/iter.sh --desktop [spec…]` | die echte Tauri-GUI auf der Desktop-Box gegen die Server-Box |
-| `bash scripts/vm/reap.sh [--lane l] [--all]` | warme Boxen zerstören, Abgelaufenes wegräumen, `.vm/warm.env` leeren |
+| `bash scripts/vm/reap.sh [--lane l] [--all] [--role <rolle>]` | warme Boxen zerstören, Abgelaufenes wegräumen, `.vm/warm.env` leeren; `--role <desktop\|server\|gui>` nur diesen einen Slot samt seinen Einträgen (beim Server auch die Zugangsdaten), die anderen bleiben stehen |
 | `bash scripts/vm/bake.sh <linux-full\|linux-server>` | neues Template bauen (~45 min, **provisioniert eine VM**) |
 
 `iter.sh` verlängert bei jedem Lauf die Frist der warmen Box; eine vergessene Box stirbt

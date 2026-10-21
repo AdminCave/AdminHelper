@@ -65,8 +65,10 @@ Tests: `test_vm.py` `test_the_roles_the_wrappers_use_all_exist` (`:487-501`) nen
 Verify: bash scripts/dev/verify.sh scripts --strict -- vm_wrappers_test
 Doku: `.claude/skills/vm/SKILL.md:17` (`warm.sh <desktop|gui|server|pond>`, `gui` = zweite volle Box für den GUI-Teil des Sammellaufs), `.claude/skills/test/SKILL.md:145-149` (Liste der Rollen), `DEVELOPMENT.md:1208`.
 
-### T6 — reap.sh: Slot gui und --role gibt genau einen Slot frei  [ ]
+### T6 — reap.sh: Slot gui und --role gibt genau einen Slot frei  [x]
 Komponente: scripts · Dateien: scripts/vm/reap.sh, scripts/tests/vm_wrappers_test.sh, .claude/skills/vm/SKILL.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e9eb5bbb 2026-10-21T15:10:24+02:00
+Review: approve (.ah-out/review/heavy-parallel/T6.verdict.json)
 Änderung: Die Slot-Schleife (`:43`) nimmt `desktop server gui`. Neu `--role <desktop|server|gui>`: nur dieser Slot geht an `vm.py destroy` (derselbe Aufruf wie heute, `:66-70`: `--lane`, `--role`, `--no-scenario`, `--expect-name`), und nur seine Schlüssel werden geleert (`<rolle>` und `<rolle>_*`, beim Server also auch die Zugangsdaten); der Ablauf-Sweep und die abschließende Liste laufen wie bisher. Ein anderer Wert oder `--role` ohne Wert ist Exit 2, bevor `vm.py` gerufen wird. Kopf (`:11-15`) nennt das Flag.
 Tests in `vm_wrappers_test.sh`: `reap.sh` ohne Flag zerstört die Slots `desktop`, `server` und `gui` (je ein `destroy`); `reap.sh --role gui` ruft genau ein `destroy --lane main --role gui --no-scenario --expect-name <name> <vmid>`, leert `gui`, `gui_name`, `gui_ttl` und lässt `desktop` und `desktop_name` stehen; `--role nope` → Exit 2, kein Eintrag im `FAKE_LOG`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- vm_wrappers_test

@@ -385,6 +385,51 @@ reset_state
 OUT=$(bash "$REAP" --bogus 2>&1); rc=$?
 [ $rc -eq 2 ] && ok "an unknown flag is rejected" || bad "unknown flag: rc=$rc out=$OUT"
 
+echo "── reap.sh: the gui slot, and --role frees exactly one slot ──"
+three_slots() {  # a fresh state with a desktop, a server (credentials and all) and a gui slot
+  reset_state
+  printf '%s\n' desktop=3001 desktop_name=ah-desktop-main-aaaa desktop_ttl=8h \
+    server=3002 server_ip=192.0.2.42 server_admin_pw=pw server_ptok=p \
+    gui=3003 gui_name=ah-gui-main-cccc gui_ttl=8h > "$AH_VM_STATE_DIR/warm.env"
+}
+three_slots
+OUT=$(bash "$REAP" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qx 'destroy --lane main --role desktop --no-scenario --expect-name ah-desktop-main-aaaa 3001' "$FAKE_LOG" \
+  && grep -qx 'destroy --lane main --role server --no-scenario 3002' "$FAKE_LOG" \
+  && grep -qx 'destroy --lane main --role gui --no-scenario --expect-name ah-gui-main-cccc 3003' "$FAKE_LOG" \
+  && [ "$(grep -c '^destroy' "$FAKE_LOG")" = 3 ] && ! grep -q . "$AH_VM_STATE_DIR/warm.env" \
+  && ok "without --role, the desktop, server and gui slots go in a destroy each, and warm.env is emptied" \
+  || bad "three slots: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") warm=$(cat "$AH_VM_STATE_DIR/warm.env")"
+three_slots
+OUT=$(bash "$REAP" --role gui 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(grep '^destroy' "$FAKE_LOG")" = 'destroy --lane main --role gui --no-scenario --expect-name ah-gui-main-cccc 3003' ] \
+  && ok "--role gui sends exactly the gui slot to vm.py destroy, with lane, role, --no-scenario and its name" \
+  || bad "--role gui destroy: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
+[ -z "$(slot gui)" ] && [ -z "$(slot gui_name)" ] && [ -z "$(slot gui_ttl)" ] \
+  && [ "$(slot desktop)" = 3001 ] && [ "$(slot desktop_name)" = ah-desktop-main-aaaa ] && [ "$(slot desktop_ttl)" = 8h ] \
+  && [ "$(slot server)" = 3002 ] && [ "$(slot server_ip)" = 192.0.2.42 ] && [ "$(slot server_ptok)" = p ] \
+  && ok "... clears gui, gui_name and gui_ttl and leaves the desktop and server slots standing" \
+  || bad "--role gui warm.env: $(cat "$AH_VM_STATE_DIR/warm.env")"
+grep -q '^reap$' "$FAKE_LOG" && [ "$(tail -1 "$FAKE_LOG")" = list ] \
+  && ok "... and the expiry sweep and the closing list run as without it" || bad "--role gui sweep: $(cat "$FAKE_LOG")"
+three_slots
+OUT=$(bash "$REAP" --role server 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(grep '^destroy' "$FAKE_LOG")" = 'destroy --lane main --role server --no-scenario 3002' ] \
+  && [ -z "$(slot server)" ] && [ -z "$(slot server_ip)" ] && [ -z "$(slot server_admin_pw)" ] && [ -z "$(slot server_ptok)" ] \
+  && [ "$(slot desktop)" = 3001 ] && [ "$(slot gui)" = 3003 ] && [ "$(slot gui_name)" = ah-gui-main-cccc ] \
+  && ok "--role server takes the server's credentials with its slot, the other slots stay" \
+  || bad "--role server: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") warm=$(cat "$AH_VM_STATE_DIR/warm.env")"
+role_refused() {  # role_refused <reap.sh args…> — exit 2, vm.py never called, warm.env as it was
+  three_slots
+  OUT=$(bash "$REAP" "$@" 2>&1); rc=$?
+  [ $rc -eq 2 ] && [ ! -s "$FAKE_LOG" ] && [ "$(slot gui)" = 3003 ] && [ "$(slot desktop)" = 3001 ] \
+    && ok "reap.sh $*: exit 2 before vm.py is called, warm.env untouched" \
+    || bad "reap.sh $*: rc=$rc log=$(cat "$FAKE_LOG") out=$OUT"
+}
+role_refused --role nope
+role_refused --role
+role_refused --role --all
+
 # ══ iter.sh renews with the box's own frist (R-0049) ══════════════════════════
 # A box warmed for 20 minutes must not become an 8-hour box because a lint ran
 # on it. warm.sh records the frist as desktop_ttl; iter.sh renews with that,
