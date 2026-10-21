@@ -66,8 +66,10 @@ Dedup-Key: ref:server:test_hook_isolation:env-fallbacks
 HEAD: 6f05b316
 Semantik: `docs/developer/hooks.html:85` — „Der Worker bekommt <code>PATH</code>, <code>HOME</code> (fehlt es dem Server, <code>/tmp</code>), <code>LANG</code> (fehlt es dem Server, <code>C.UTF-8</code>), … <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code> und <code>NO_PROXY</code>, auch kleingeschrieben, reicht der Runner nur durch, wenn der Server sie gesetzt hat“
 
-### T4 — Web: `HookRunResult` wie die Antwort von `/run` (R-0562)  [ ]
+### T4 — Web: `HookRunResult` wie die Antwort von `/run` (R-0562)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/types.ts, apps/web/src/lib/api/hooks.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @5e7863c8 2026-10-21T13:24:45+02:00
+Review: approve (.ah-out/review/hooks-followups/T4.verdict.json)
 Änderung: `HookRunResult` (`apps/web/src/lib/api/types.ts:132-139`) wird `{ success: boolean; result: unknown; logs: string[]; error?: string }`; `output`, `exit_code`, `duration_ms` und die Index-Signatur entfallen. Quelle: `apps/server/app/modules/hooks/router.py:358-363`, `apps/server/app/modules/hooks/script_runner.py:127-262`, `apps/server/app/modules/hooks/script_worker.py:184-193`; `result` ist, was das Script dort ablegt (`docs/developer/api-reference.html:54`, Spec Trade-off 4). `hooks.ts`, `Hooks.svelte` und `HookRunResultModal.svelte` bleiben (sie lesen keines der entfallenden Felder). Neue Testdatei `apps/web/src/lib/api/hooks.test.ts` mit SPDX-Header wie `users.test.ts` und `vi.mock('./client', …)` wie dort: (a) `run('a/b')` postet an `/api/hooks/a%2Fb/run` mit `{}` und gibt die Antwort `{ success: false, result: {}, logs: ['Fehler: x'], error: 'x' }` unverändert zurück; (b) Typ-Pins mit `// @ts-expect-error <Grund>`: ein Zugriff auf `exit_code` und ein `HookRunResult` ohne `result` und `logs` sind Typfehler; `npm run check` prüft die Datei (`apps/web/tsconfig.json`, `include` `src/**/*.ts`). Zuerst rot: `npm run check` auf HEAD mit der neuen Testdatei.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/hooks.test.ts
 Doku: keine (intern; die Felder nennt schon `docs/developer/hooks.html:112`)
