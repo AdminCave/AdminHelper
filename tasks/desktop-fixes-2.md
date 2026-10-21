@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Fixes 2: Temp-Reste, „Passwort merken“ im Server-Modus, E2E- und Test-Fixtures — Task-Ledger
-Status: aktiv · Branch: feature/desktop-fixes-2 · Review: pro Task
+Status: bereit · Branch: feature/desktop-fixes-2 · Review: pro Task
 Spec: Roadmap R-0549, R-0553, R-0551, R-0544, R-0555 (keine eigene Datei: fünf kleine Desktop-Funde, ein Bündel der Session 2026-10-21)
 Heavy: linux-full — T4 ändert die E2E-Specs der Tunnel- und Registrierungs-Journeys (`tunnel-connect.live.js`, `tunnel-start.live.js`, `settings-enroll.live.js`), die nur in der GUI-E2E des Sammellaufs laufen (`desktop_e2e_connect_tunnel.sh`, `desktop_e2e_tunnel.sh`); T2 ändert das Schreiben von `prefs.json`, `workspaces.json`, `workspace.json` und `secrets.json`, das jede Desktop-Journey nutzt; T3 ändert den RDP-Connect-Flow. Kein `scenario` (kein FRP-Datenpfad, keine PKI, kein Install); kein `windows`: der Windows-Weg des Ansible-Starts bleibt, und die neuen Rust-Tests ohne `cfg(unix)` laufen unter Windows im Job `rust-windows` der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -89,8 +89,10 @@ Semantik: R-0431 T54 („Feste URL und Werte im Formular nicht in Großbuchstabe
 Dedup-Key: bug:desktop-ui:ConnectionEditor.svelte:last-used-uppercase
 HEAD: 82e4a7b8
 
-### T7 — E2E-Skript connect_tunnel: Container vor dem Start zum Aufräumen eintragen (R-0563)  [ ]
+### T7 — E2E-Skript connect_tunnel: Container vor dem Start zum Aufräumen eintragen (R-0563)  [x]
 Komponente: scripts · Dateien: scripts/tests/desktop_e2e_connect_tunnel.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b3bab66c 2026-10-21T10:58:51+02:00
+Review: approve (.ah-out/review/desktop-fixes-2/T7.verdict.json)
 Änderung: `desktop_e2e_connect_tunnel.sh` trägt seine Container erst nach erfolgreichem `docker run -d` in `TARGETS` ein (`:78` SSH, `:93` Web, `:102` RDP, `:142` frpc); scheitert das Veröffentlichen eines Ports, legt docker den Container trotzdem an, und die Aufräum-Falle (`:36`) erreicht ihn nie. Neu steht `TARGETS+=("$X")` vor dem jeweiligen `docker run`, wie in `desktop_e2e_workspaces.sh:101`/`:135` („before the start, as the SSH target's“). Kein neuer registrierter Test (die Registrierung in `scripts/tests/run.sh` wäre ein Harness-Pfad); Beleg im Commit-Body: je Container steht die Zeile `TARGETS+=` vor dem `docker run` (grep mit Zeilennummern vorher und nachher), der echte Lauf erfolgt in der Desktop-E2E des Sammellaufs. `shellcheck` bleibt sauber.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test-Hygiene)
