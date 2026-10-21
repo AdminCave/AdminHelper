@@ -881,24 +881,27 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 
 ---
 
-## Client-Modi testen
+## Client-Workspaces testen
 
-Der Desktop-Client unterstuetzt drei Modi:
+Der Desktop-Client startet als Launcher mit dem Picker; jeder Workspace hat eine feste Art (Lokal, Sync oder Server)
+und laeuft in einem eigenen Prozess (`adminhelper --workspace <id>`). Ohne Altdaten legt der erste Start den Workspace
+„Standard“ (Lokal) an, weitere legt man im Picker unter „Neuer Workspace“ an. Daten und Logs liegen je Workspace
+getrennt (`workspaces/<id>/` im App-Datenordner, `adminhelper-<id>.log`); Details in `docs/developer/desktop.html`.
 
-### Lokal-Modus
+### Lokal
 
-Standard. Connections werden lokal in `connections.json` gespeichert. Kein Server noetig.
+Standard. Connections liegen in `workspaces/<id>/connections.local.json` im App-Datenordner. Kein Server noetig.
 
-### Sync-Modus
+### Sync
 
-Client laedt Connections per HTTPS-URL + API-Key. Im Client: Einstellungen -> Modus: Sync -> URL eingeben.
+Client laedt Connections per HTTPS-URL + API-Key. Im Picker einen Sync-Workspace mit der URL anlegen.
 
-### Server-Modus (JWT + Tunnel)
+### Server (JWT + Tunnel)
 
 Vollstaendige Integration mit dem AdminHelper-Server:
 
 1. **Server + frps starten** (siehe oben)
-2. Im Client: Einstellungen -> Modus: **Server** -> Server-URL: `https://localhost`
+2. Im Picker einen Server-Workspace mit der Server-URL `https://localhost` anlegen und oeffnen
 3. Login mit dem beim Setup angelegten Admin — lokal am schnellsten via `ADMIN_PASSWORD=dev` in der `.env` (→ `admin` / `dev`, siehe Erstanmeldung oben); es gibt **keinen** `admin`/`admin`-Default
 4. Connections werden per JWT-API geladen
 5. frpc-Visitor startet automatisch im Hintergrund (wenn frpc-Binary vorhanden)
@@ -948,6 +951,12 @@ bash scripts/tests/desktop_e2e_connect.sh
 # Desktop-Live-E2E: SSH/Web/RDP ueber FRP-Tunnel, voller Durchstich
 # (Desktop-Visitor -> frps -> agent-frpc -> sshd/nginx/xrdp)
 bash scripts/tests/desktop_e2e_connect_tunnel.sh
+
+# Desktop-Live-E2E: zwei Installationen nebeneinander in zwei Workspaces
+# (zwei Stacks, zwei PKIs, derselbe Visitor-Port; jedes SSH-Ziel sieht genau
+# den SSH-Client seines Fensters; zuletzt loescht der Launcher "Kunde B", und
+# Stack b fuehrt dessen Geraet als von sich selbst widerrufen)
+bash scripts/tests/desktop_e2e_workspaces.sh
 
 # SSE-Push: Cross-Instance-Fan-out ueber echtes Redis. Zwei Server-Instanzen
 # (8081/8082) an einem Postgres+Redis; SSE-Stream gegen A, Event gegen B ->

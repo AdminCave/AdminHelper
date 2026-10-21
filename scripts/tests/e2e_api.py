@@ -13,9 +13,11 @@ ops:
     config <name> <server_addr> <bind_port>        -> prints the new FRP config id
     tunnel <server_id> <config_id> <name> <port>   -> prints the new tunnel id
     count-tunnels <server_id>                       -> prints the tunnel count
+    visitor-port <name>                            -> prints the visitor port of tunnel <name>
     provision-token <server_id>                    -> prints a fresh provision token
     connection <name> <kind> <host> <port> <user>  -> prints the new connection id
     web-connection <name> <url>                    -> prints the new web connection id
+    devices <username>                             -> prints "<id> <revoked reason or ->" per device
 """
 
 import json
@@ -78,6 +80,11 @@ def main(argv):
         (server_id,) = rest
         tunnels = _call(base, token, "GET", "/api/frp/tunnels")
         print(sum(1 for t in tunnels if server_id in (t.get("serverId"), t.get("server_id"))))
+    elif op == "visitor-port":
+        # Empty if no tunnel has that name or it has no visitor port (not STCP).
+        (name,) = rest
+        tunnels = _call(base, token, "GET", "/api/frp/tunnels")
+        print(next((t.get("visitorPort") or "" for t in tunnels if t.get("name") == name), ""))
     elif op == "tunnel-conn":
         # STCP tunnel linked to a connection (so the desktop resolves the
         # connection through it). protocol is ssh/rdp/web.
@@ -140,6 +147,16 @@ def main(argv):
                 base, token, "POST", "/api/connections", {"name": name, "kind": "web", "url": url}
             )["id"]
         )
+    elif op == "devices":
+        # The devices of a user (R-0224), one line each: the id and how the device was
+        # revoked (self, admin, replaced), "-" while it is not.
+        (username,) = rest
+        users = _call(base, token, "GET", "/api/users")
+        user_id = next((u["id"] for u in users if u["username"] == username), None)
+        if user_id is None:
+            sys.exit(f"no user {username}")
+        for device in _call(base, token, "GET", f"/api/users/{user_id}/devices"):
+            print(device["id"], device["revoked_reason"] or "-")
     else:
         sys.exit(f"unknown op: {op}")
 

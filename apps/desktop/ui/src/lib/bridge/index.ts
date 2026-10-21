@@ -28,6 +28,9 @@ import type {
   TunnelMapping,
   TunnelRefresh,
   TunnelStatus,
+  WorkspaceContext,
+  WorkspaceDraft,
+  WorkspaceList,
 } from './types';
 
 // ─────────────────────────── Persistence ──────────────────────────
@@ -46,6 +49,46 @@ export function loadSettings(): Promise<Settings> {
 
 export function saveSettings(settings: Settings): Promise<void> {
   return invoke('save_settings', { settings });
+}
+
+// ─────────────────────────── Workspaces ───────────────────────────
+// The launcher manages the workspaces; each one runs in a process of its own. A command
+// for the launcher rejects in a workspace process and the other way round.
+
+/** Which process this webview talks to: the launcher, or the workspace it serves. */
+export function workspaceContext(): Promise<WorkspaceContext> {
+  return invoke<WorkspaceContext>('workspace_context');
+}
+
+/** Launcher only: the workspaces, whether each is open, and the one used last. */
+export function listWorkspaces(): Promise<WorkspaceList> {
+  return invoke<WorkspaceList>('list_workspaces');
+}
+
+/** Launcher only: makes the workspace (no id) or edits the closed one; resolves to its id. */
+export function saveWorkspace(draft: WorkspaceDraft): Promise<string> {
+  return invoke<string>('save_workspace', { draft });
+}
+
+/**
+ * Launcher only: deletes the closed workspace. A server workspace revokes its device first;
+ * the outcome says how that went (as resetDeviceIdentity). Takes up to two minutes.
+ */
+export function deleteWorkspace(id: string): Promise<ResetOutcome> {
+  return invoke<ResetOutcome>('delete_workspace', { id });
+}
+
+/**
+ * Launcher only: opens the workspace in a process of its own and waits up to 10 s until it
+ * runs; then the launcher ends, so on success the promise may never settle.
+ */
+export function openWorkspace(id: string): Promise<void> {
+  return invoke('open_workspace', { id });
+}
+
+/** Workspace only: "Workspaces…" starts the launcher or brings up the one that runs. */
+export function openLauncher(): Promise<void> {
+  return invoke('open_launcher');
 }
 
 // ─────────────────────────── Diagnostics ──────────────────────────

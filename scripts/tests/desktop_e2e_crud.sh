@@ -2,7 +2,8 @@
 #
 # desktop_e2e_crud.sh — live desktop E2E for CRUD journeys through the GUI:
 # create/rename/delete a connection, a tunnel, and create/delete a server. Each
-# spec verifies itself via the reloaded list (GUI → gateway → server → DB).
+# spec verifies itself via the reloaded list (GUI → gateway → server → DB). Last,
+# in the launcher, the picker makes, renames and deletes a local workspace.
 #
 # Boots the stack permissive, seeds an admin + a server + an FRP config (context
 # for the connection/tunnel tabs), then drives the real app under xvfb + a fresh
@@ -43,8 +44,12 @@ e2e_api "$TOKEN" config e2e-frps localhost 7000 >/dev/null || { bad "seed FRP co
 ok "seeded a server + FRP config"
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
-SETTINGS_JSON="$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
-mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
+APP_DATA="$XDG_DATA_HOME/com.admincave.adminhelper"
+SETTINGS_JSON="$APP_DATA/settings.json"
+# Where the app keeps the settings of the workspace the specs open (AH_E2E_WORKSPACE,
+# lib_e2e_stack.sh) once it has moved settings.json there at its first start (R-0431).
+STANDARD_JSON="$APP_DATA/workspaces/standard/workspace.json"
+mkdir -p "$APP_DATA"
 
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 
@@ -60,11 +65,15 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/enroll-trust-dialog.live.js
 ' && ok "trust-dialog spec passed" || bad "trust-dialog spec failed"
-grep -Eq '"allowSelfSignedCerts": ?true' "$SETTINGS_JSON" \
+grep -Eq '"allowSelfSignedCerts": ?true' "$STANDARD_JSON" \
     && ok "accepting the dialog persisted allowSelfSignedCerts=true" \
-    || bad "settings.json does not carry the persisted opt-in"
+    || bad "workspaces/standard/workspace.json does not carry the persisted opt-in"
 
-# Known-good seed for the remaining specs, independent of the outcome above.
+# Known-good seed for the remaining specs, independent of the outcome above. The app
+# moves settings.json only while workspaces.json is missing; without these the specs
+# would open what the trust-dialog spec left.
+rm -rf -- "$APP_DATA/workspaces.json" "$APP_DATA/workspaces" "$APP_DATA/prefs.json" \
+    || { bad "could not remove the workspaces of the trust-dialog spec"; exit 1; }
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$SETTINGS_JSON"
 
 echo "[e2e-crud] running the CRUD specs under xvfb..."
@@ -80,9 +89,23 @@ dbus-run-session -- bash -c '
         --spec test/specs/connection-crud.live.js \
         --spec test/specs/tunnel-crud.live.js \
         --spec test/specs/provisioning.live.js \
-        --spec test/specs/server-crud.live.js \
-        --spec test/specs/settings-mode.live.js
-' && ok "GUI specs (enroll / connection / tunnel / provisioning / server / settings) passed" || bad "GUI specs failed"
+        --spec test/specs/server-crud.live.js
+' && ok "GUI specs (enroll / connection / tunnel / provisioning / server) passed" || bad "GUI specs failed"
+
+# The picker replaces the switch of the app mode (R-0431). A run of its own: an empty
+# AH_E2E_WORKSPACE opens the launcher (test/lib/app-args.js). Last: the runs above opened
+# "standard" and listed nothing, so the note on the migration is still due.
+echo "[e2e-crud] running the picker spec in the launcher under xvfb..."
+AH_E2E_WORKSPACE='' dbus-run-session -- bash -c '
+    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
+    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/workspace-picker.live.js
+' && ok "picker spec passed" || bad "picker spec failed"
+# The spec deletes the workspace it made, and its directory goes with it.
+LEFT=$(find "$APP_DATA/workspaces" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | sort)
+[ "$LEFT" = "standard" ] && ok "only workspaces/standard is left after the picker spec" \
+    || bad "workspaces/ holds: ${LEFT//$'\n'/ }"
 
 echo ""
 echo "desktop_e2e_crud: $PASS passed, $FAIL failed"

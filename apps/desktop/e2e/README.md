@@ -43,9 +43,12 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 - **`test/specs/provisioning.live.js`** — mint an agent-enrollment token through
   the GUI; the server issues it and the GUI lists it (round-trip). Runs in the
   same `desktop_e2e_crud.sh` boot.
-- **`test/specs/settings-mode.live.js`** — switch the app mode (server → local) in
-  Settings; the server session ends and the server-only UI (mode badge, the
-  Infrastructure nav) changes. Runs last in the `desktop_e2e_crud.sh` boot.
+- **`test/specs/workspace-picker.live.js`** — the picker of the launcher (no
+  `AH_E2E_WORKSPACE`): it lists the migrated "Standard" as a server workspace with
+  the note on the migration once, then a local workspace is made with a colour,
+  renamed and deleted (the question names it and warns of the data lost). Its own
+  `wdio` run at the end of `desktop_e2e_crud.sh`, which then checks that only
+  `workspaces/standard/` is left.
 - **`test/specs/login-error.live.js`** — the negative auth path: a wrong password
   surfaces the inline error and never reaches the app shell. Orchestrated by
   **`../../../scripts/tests/desktop_e2e_misc.sh`**.
@@ -89,6 +92,32 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   (one agent, three STCP proxies) → sshd / nginx / xrdp. Orchestrated by
   **`../../../scripts/tests/desktop_e2e_connect_tunnel.sh`** (provisions a real
   agent for the server side, runs its frpc.toml under `snowdreamtech/frpc`).
+- **`test/specs/workspace-add-server.live.js`** — in the launcher (no
+  `AH_E2E_WORKSPACE`): makes the server workspace "Kunde B" of a second
+  installation through the picker and its editor and writes its id into a file
+  for the spec below. Orchestrated by
+  **`../../../scripts/tests/desktop_e2e_workspaces.sh`**.
+- **`test/specs/two-installations.workspaces.js`** — two workspace processes at
+  once, through `wdio.workspaces.conf.js` (WebdriverIO multiremote, the sessions
+  `wsA` and `wsB`, a tauri-driver each; `npm test` does not run it): "Standard" at
+  stack a and "Kunde B" at stack b, two stacks with two PKIs. A second start of
+  "Standard" ends with exit 3; `wsB` holds no device identity while `wsA`
+  registers; then each window registers at its stack, signs in and starts its
+  tunnel, both visitors at the same server port on different local ports, and
+  opens its SSH connection through its own tunnel. Orchestrated by the same
+  `desktop_e2e_workspaces.sh` run (stack b on `127.0.0.2`, a fresh app data dir and
+  keyring), which then checks from the targets that each SSH target saw exactly one
+  SSH client, and that each workspace dir holds the connection of its own server
+  only. Both workspaces start with `--workspace`: opening one from the picker is
+  proven by the Rust tests alone.
+- **`test/specs/workspace-delete-server.live.js`** — in the launcher (no
+  `AH_E2E_WORKSPACE`), after the spec above: deletes "Kunde B" in the picker,
+  confirms the question and expects a delete without the note of a revoke left
+  undone (`localOnly`); the workspace is gone from the picker and from Rust. Its
+  purge finds the identity of `wsB` in the keyring the runs before left under the
+  same `XDG_DATA_HOME`. The same `desktop_e2e_workspaces.sh` run then checks at
+  stack b that this device, open before, is revoked by itself, and that
+  `workspaces/<id of Kunde B>/` is gone.
 
 ## Prerequisites (Linux)
 

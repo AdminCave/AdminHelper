@@ -22,6 +22,13 @@ pub fn open_connection(
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
+    // On Windows a typed password goes to no store, not even for the start, and mstsc asks for
+    // it as before R-0431: only a stored one holds a `TERMSRV/…` entry for the start.
+    #[cfg(target_os = "windows")]
+    let password: Option<&str> = {
+        let _ = password;
+        None
+    };
     match connection.kind {
         ConnectionKind::Ssh => ssh::open_ssh(connection),
         ConnectionKind::Rdp => rdp::open_rdp(
@@ -64,6 +71,9 @@ pub fn open_connection_stored(
             app,
             connection,
             source,
+            // The resolution the check took the opened connection for: a mapping of the
+            // connection counts, with a running visitor or without.
+            resolve_connection(source, credential.tunnels, credential.bindings).via_tunnel,
             client,
             rdp,
             ui_language,
@@ -157,24 +167,33 @@ fn check_credential_connection(
     }
 }
 
+/// Opens `connection` with the password stored for `source`; `via_tunnel` if the start goes
+/// through a tunnel of `source`.
+#[allow(clippy::too_many_arguments)]
 fn open_rdp_with_stored_password(
     app: &tauri::AppHandle,
     connection: &Connection,
     source: &Connection,
+    via_tunnel: bool,
     client: Option<&ClientInfo>,
     rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
-    // Only the unix launcher passes a password through to xfreerdp's stdin; the
-    // Windows (.rdp file) and unsupported-OS paths pass none. Both connections
-    // are already validated and matched by the sole caller, open_connection_stored.
-    #[cfg(unix)]
-    let password = crate::password::load_password_keyring(source)?;
-    #[cfg(not(unix))]
-    let password: Option<String> = {
-        let _ = source;
-        None
+    // Both connections are already validated and matched by the sole caller,
+    // open_connection_stored. xfreerdp reads the password from its stdin; mstsc finds it in a
+    // `TERMSRV/…` entry that holds it only for the start (R-0431), after a migrated workspace
+    // took over the entry of a version before for a connection without a tunnel (T40).
+    #[cfg(target_os = "windows")]
+    let password = crate::password::load_password_for_mstsc(
+        &crate::storage::app_data_dir(app)?,
+        source,
+        via_tunnel,
+    )?;
+    #[cfg(not(target_os = "windows"))]
+    let password = {
+        let _ = via_tunnel;
+        crate::password::load_password_keyring(&crate::storage::app_data_dir(app)?, source)?
     };
     rdp::open_rdp(
         connection,

@@ -27,7 +27,6 @@ vi.mock('$lib/stores/session', async () => {
     ready: writable(true),
     needsLogin: writable(true),
     login: h.login,
-    setMode: vi.fn(async () => {}),
     setAllowSelfSignedCerts: vi.fn(async () => {}),
     settings: writable({
       mode: 'server',

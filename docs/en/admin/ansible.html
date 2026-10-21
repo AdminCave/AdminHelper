@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Ansible</h1>
-          <p class="lead">Ansible management separates <strong>central maintenance</strong> from <strong>local execution</strong>: playbooks are stored and versioned on the server; they are created, edited, deleted <strong>and</strong> run via the desktop client (server mode, <em>Ansible</em> page) using a locally installed <code>ansible-playbook</code>. The server itself runs <strong>no</strong> playbooks.</p>
+          <p class="lead">Ansible management separates <strong>central maintenance</strong> from <strong>local execution</strong>: playbooks are stored and versioned on the server; they are created, edited, deleted <strong>and</strong> run via the desktop client (in a server workspace, <em>Ansible</em> page) using a locally installed <code>ansible-playbook</code>. The server itself runs <strong>no</strong> playbooks.</p>
 
           <h2>Playbook CRUD in the desktop client</h2>
           <p>Playbooks are managed via <code>/api/ansible/playbooks</code> — all write operations are <strong>admin-only</strong>. Each playbook has metadata in the database (table <code>ansible_playbooks</code>) and a YAML file on disk at <code>DATA_DIR/ansible/playbooks/&lt;id&gt;/&lt;filename&gt;</code>.</p>
@@ -64,7 +64,7 @@ DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)</code></pre
             <li><strong>Select target servers</strong> — two modes: <em>Servers</em> (individual checkbox selection) or <em>Tags</em> (one chip per tag selects all servers carrying that tag).</li>
             <li><strong>Run</strong> — summary (playbook + server count), then launch via <code>ansible-playbook</code> in a native terminal.</li>
           </ol>
-          <p>On run, the client fetches the YAML content fresh from the server (<code>/{id}/content</code>), writes it to a temporary file, generates the inventory and starts the run. The server inventory and playbooks are sourced directly from the AdminHelper server — nothing is maintained locally.</p>
+          <p>On run, the client fetches the YAML content fresh from the server (<code>/{id}/content</code>), writes it to a temporary file, generates the inventory and starts the run. The server inventory and playbooks are sourced directly from the AdminHelper server of the workspace — nothing is maintained locally.</p>
 
           <h2>Inventory Generation</h2>
           <p>The desktop client automatically builds an <strong>INI-format</strong> inventory file from the selected servers in a temporary directory. All selected hosts go under <code>[all]</code>; in addition, one group per server tag is created (sorted alphabetically) listing the matching hosts.</p>

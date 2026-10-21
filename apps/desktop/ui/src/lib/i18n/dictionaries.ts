@@ -145,9 +145,8 @@ export const translations: Translations = {
     'notifications.close': 'Schließen',
     'notifications.osSummary': '{count} neue Benachrichtigungen',
     'settings.section.notifications': 'Benachrichtigungen',
+    'settings.section.notificationRules': 'Benachrichtigungsregeln',
     'settings.osNotifications': 'Desktop-Benachrichtigungen anzeigen',
-    'settings.notifications.serverOnly':
-      'Im Server-Modus anmelden, um Benachrichtigungs-Regeln zu verwalten.',
     'notifPrefs.loading': 'Lädt …',
     'notifPrefs.email': 'E-Mail-Adresse für Benachrichtigungen',
     'notifPrefs.emailPlaceholder': 'name@beispiel.de',
@@ -197,11 +196,16 @@ export const translations: Translations = {
 
     // ── Desktop: SettingsModal ────────────────────────────────────────
     'settings.title': 'Einstellungen',
-    'settings.section.mode': 'Modus',
+    'settings.group.workspace': 'Dieser Workspace',
+    'settings.group.device': 'Alle Workspaces auf diesem Gerät',
+    'settings.workspace.noUrl': 'Noch keine URL',
+    'settings.workspace.fixed':
+      'Name, Farbe und URL änderst du in der Workspace-Liste („Workspaces…“), solange dieser Workspace geschlossen ist.',
+    'settings.workspace.fixedLocal':
+      'Name und Farbe änderst du in der Workspace-Liste („Workspaces…“), solange dieser Workspace geschlossen ist.',
     'settings.section.language': 'Sprache',
     'settings.section.passwords': 'Passwoerter',
     'settings.section.rdp': 'RDP',
-    'settings.mode.syncLabel': 'Sync (JSON)',
     'settings.syncUrl': 'Sync-URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Intervall (Minuten)',
@@ -293,6 +297,48 @@ export const translations: Translations = {
     'editor.status.saved': 'Gespeichert',
     'editor.status.deleted': 'Geloescht',
 
+    // ── Desktop: WorkspaceEditor ──────────────────────────────────────
+    'workspace.editor.title.new': 'Neuer Workspace',
+    'workspace.editor.title.edit': 'Workspace bearbeiten',
+    'workspace.editor.kind': 'Art',
+    'workspace.editor.color': 'Farbe',
+    'workspace.editor.urlChanged':
+      'Anmeldung und Geräte-Identität gehören zur bisherigen Installation. Eine andere Installation ist ein neuer Workspace.',
+    'workspace.editor.maskedValues':
+      'Die mit *** verborgenen Werte der bisherigen URL werden so gespeichert, wie sie hier stehen: bitte neu eintragen.',
+
+    // ── Desktop: Picker ───────────────────────────────────────────────
+    'workspace.picker.title': 'Workspace öffnen',
+    'workspace.picker.list': 'Workspaces',
+    'workspace.picker.new': 'Neuer Workspace',
+    'workspace.picker.open': 'Öffnen',
+    'workspace.picker.opening': 'Wird geöffnet…',
+    'workspace.picker.isOpen': 'geöffnet',
+    'workspace.picker.openHint':
+      '„{name}“ ist schon in einem eigenen Fenster geöffnet. Öffnen, Bearbeiten und Löschen gehen erst, wenn dieses Fenster geschlossen ist.',
+    'workspace.picker.migrated':
+      'Neu: Workspaces. Deine bisherigen Einstellungen und Verbindungen liegen jetzt im Workspace „Standard“; was zu einem anderen Modus gehörte, liegt in einem eigenen Workspace. Jeder Workspace öffnet in einem eigenen Fenster.',
+    'workspace.picker.migratedShort':
+      'Neu: Workspaces. Jeder Workspace öffnet in einem eigenen Fenster.',
+    'workspace.picker.unreadableSettings':
+      'Die Einstellungen von vorher waren nicht lesbar. „Standard“ ist deshalb lokal gestartet: mit den lokalen Verbindungen dieses Geräts oder, gab es keine, mit den Verbindungen aus dem bisherigen Cache als lokale Verbindungen. Die alte Datei liegt als „{name}“ im Datenordner. Hat dieses Gerät mit einem Server gearbeitet, lege für ihn einen neuen Server-Workspace an und registriere das Gerät dort neu, mit einem Einmal-Token vom Admin.',
+    'workspace.picker.empty': 'Noch kein Workspace. Lege mit „Neuer Workspace“ einen an.',
+    'workspace.picker.listFailed': 'Die Workspaces ließen sich nicht laden: {error}',
+    'workspace.picker.delete.confirm.server':
+      'Workspace „{name}“ löschen? Hat er eine Geräte-Identität, wird sie zuerst beim Server widerrufen; die Daten des Workspace auf diesem Gerät werden in jedem Fall gelöscht.',
+    'workspace.picker.delete.confirm.sync':
+      'Workspace „{name}“ löschen? Die Daten des Workspace auf diesem Gerät werden gelöscht, die Sync-Quelle bleibt unberührt.',
+    'workspace.picker.delete.confirm.local':
+      'Workspace „{name}“ löschen? Achtung: Seine Verbindungen gibt es nur auf diesem Gerät, sie gehen unwiderruflich verloren.',
+    'workspace.picker.deleting': '„{name}“ wird gelöscht…',
+    'workspace.picker.deleted': 'Workspace „{name}“ gelöscht.',
+    'workspace.picker.deleted.localOnly':
+      'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Es bleibt am Server gültig, bis ein Admin das Gerät widerruft; keine spätere Registrierung löst es ab.',
+
+    // ── Desktop: Workspace-Fenster ────────────────────────────────────
+    'workspace.openLauncher': 'Workspaces…',
+    'workspace.chip.title': '{name} — Workspaces…',
+
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP-Anmeldung',
     'passwordPrompt.hint.default': 'Bitte Benutzername und Passwort eingeben.',
@@ -306,6 +352,7 @@ export const translations: Translations = {
     // ── Desktop: Login ────────────────────────────────────────────────
     'login.title': 'AdminHelper',
     'login.subtitle': 'Mit Server verbinden',
+    'login.signInTo': 'Anmelden bei',
     'login.serverUrl': 'Server URL',
     'login.serverUrl.placeholder': 'https://adminhelper.example.com',
     'login.signingIn': 'Anmelden…',
@@ -334,7 +381,8 @@ export const translations: Translations = {
     'login.enroll.back': 'Zurück zur Anmeldung',
     'login.enroll.done': 'Gerät registriert — jetzt anmelden.',
     'login.sessionExpired': 'Sitzung abgelaufen — bitte neu anmelden.',
-    'login.useLocal': 'Ohne Server fortfahren (nur lokale Verbindungen)',
+    'login.notSaved':
+      'Angemeldet, aber dieser Workspace konnte Server und Benutzer nicht speichern ({message}). Hält er eine Geräte-Identität ohne Server-URL, setze sie in den Einstellungen zurück und melde dich neu an.',
     'login.resetPin': 'Gepinntes Server-Zertifikat zurücksetzen',
     'login.resetDeviceId': 'Geräte-Identität zurücksetzen',
     'login.resetPin.done':
@@ -737,6 +785,8 @@ export const translations: Translations = {
     'error.monitoring': 'Monitoring: {message}',
     'error.tunnel': 'Tunnel: {message}',
     'validation.name.empty': 'Name darf nicht leer sein',
+    'validation.workspaceName.tooLong': 'Name darf höchstens {max} Zeichen haben',
+    'validation.workspaceName.control': 'Name darf keine Steuerzeichen enthalten',
     'validation.url.empty': 'URL darf nicht leer sein',
     'validation.url.scheme': 'Nur http/https-URLs erlaubt',
     'validation.host.empty': 'Host darf nicht leer sein',
@@ -887,8 +937,8 @@ export const translations: Translations = {
     'notifications.close': 'Close',
     'notifications.osSummary': '{count} new notifications',
     'settings.section.notifications': 'Notifications',
+    'settings.section.notificationRules': 'Notification rules',
     'settings.osNotifications': 'Show desktop notifications',
-    'settings.notifications.serverOnly': 'Sign in to a server to manage notification rules.',
     'notifPrefs.loading': 'Loading …',
     'notifPrefs.email': 'E-mail address for notifications',
     'notifPrefs.emailPlaceholder': 'name@example.com',
@@ -938,11 +988,16 @@ export const translations: Translations = {
 
     // ── Desktop: SettingsModal ────────────────────────────────────────
     'settings.title': 'Settings',
-    'settings.section.mode': 'Mode',
+    'settings.group.workspace': 'This workspace',
+    'settings.group.device': 'All workspaces on this device',
+    'settings.workspace.noUrl': 'No URL yet',
+    'settings.workspace.fixed':
+      'You change the name, colour and URL in the workspace list (“Workspaces…”) while this workspace is closed.',
+    'settings.workspace.fixedLocal':
+      'You change the name and colour in the workspace list (“Workspaces…”) while this workspace is closed.',
     'settings.section.language': 'Language',
     'settings.section.passwords': 'Passwords',
     'settings.section.rdp': 'RDP',
-    'settings.mode.syncLabel': 'Sync (JSON)',
     'settings.syncUrl': 'Sync URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Interval (minutes)',
@@ -1032,6 +1087,48 @@ export const translations: Translations = {
     'editor.status.saved': 'Saved',
     'editor.status.deleted': 'Deleted',
 
+    // ── Desktop: WorkspaceEditor ──────────────────────────────────────
+    'workspace.editor.title.new': 'New workspace',
+    'workspace.editor.title.edit': 'Edit workspace',
+    'workspace.editor.kind': 'Type',
+    'workspace.editor.color': 'Colour',
+    'workspace.editor.urlChanged':
+      'The sign-in and the device identity belong to the previous installation. Another installation is a new workspace.',
+    'workspace.editor.maskedValues':
+      'The values of the previous URL hidden as *** are saved as they stand here: enter them again.',
+
+    // ── Desktop: Picker ───────────────────────────────────────────────
+    'workspace.picker.title': 'Open a workspace',
+    'workspace.picker.list': 'Workspaces',
+    'workspace.picker.new': 'New workspace',
+    'workspace.picker.open': 'Open',
+    'workspace.picker.opening': 'Opening…',
+    'workspace.picker.isOpen': 'open',
+    'workspace.picker.openHint':
+      '"{name}" is already open in a window of its own. It can be opened, edited and deleted once that window is closed.',
+    'workspace.picker.migrated':
+      'New: workspaces. Your settings and connections so far are now in the workspace "Standard"; what belonged to another mode is in a workspace of its own. Each workspace opens in a window of its own.',
+    'workspace.picker.migratedShort':
+      'New: workspaces. Each workspace opens in a window of its own.',
+    'workspace.picker.unreadableSettings':
+      'The previous settings could not be read, so "Standard" has started as a local workspace: with the local connections of this device or, if there were none, with the connections from the previous cache as local connections. The old file is in the data folder as "{name}". If this device worked with a server, make a new server workspace for it and register the device there again with a one-time token from your administrator.',
+    'workspace.picker.empty': 'No workspace yet. Make one with "New workspace".',
+    'workspace.picker.listFailed': 'The workspaces did not load: {error}',
+    'workspace.picker.delete.confirm.server':
+      'Delete the workspace "{name}"? If it has a device identity, that is revoked at the server first; the data of the workspace on this device is deleted either way.',
+    'workspace.picker.delete.confirm.sync':
+      'Delete the workspace "{name}"? The data of the workspace on this device is deleted, the sync source is left as it is.',
+    'workspace.picker.delete.confirm.local':
+      'Delete the workspace "{name}"? Warning: its connections exist on this device only and are lost for good.',
+    'workspace.picker.deleting': 'Deleting "{name}"…',
+    'workspace.picker.deleted': 'Workspace "{name}" deleted.',
+    'workspace.picker.deleted.localOnly':
+      'On this device only: the server did not revoke the old certificate. It stays valid at the server until an administrator revokes the device; no later registration replaces it.',
+
+    // ── Desktop: Workspace window ─────────────────────────────────────
+    'workspace.openLauncher': 'Workspaces…',
+    'workspace.chip.title': '{name} — Workspaces…',
+
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP sign-in',
     'passwordPrompt.hint.default': 'Please enter username and password.',
@@ -1045,6 +1142,7 @@ export const translations: Translations = {
     // ── Desktop: Login ────────────────────────────────────────────────
     'login.title': 'AdminHelper',
     'login.subtitle': 'Connect to server',
+    'login.signInTo': 'Sign in to',
     'login.serverUrl': 'Server URL',
     'login.serverUrl.placeholder': 'https://adminhelper.example.com',
     'login.signingIn': 'Signing in…',
@@ -1073,7 +1171,8 @@ export const translations: Translations = {
     'login.enroll.back': 'Back to sign in',
     'login.enroll.done': 'Device enrolled — sign in now.',
     'login.sessionExpired': 'Session expired — please sign in again.',
-    'login.useLocal': 'Continue without a server (local connections only)',
+    'login.notSaved':
+      'Signed in, but this workspace could not keep its server and user ({message}). If it holds a device identity without a server URL, reset it in the settings and sign in again.',
     'login.resetPin': 'Reset pinned server certificate',
     'login.resetDeviceId': 'Reset device identity',
     'login.resetPin.done':
@@ -1475,6 +1574,8 @@ export const translations: Translations = {
     'error.monitoring': 'Monitoring: {message}',
     'error.tunnel': 'Tunnel: {message}',
     'validation.name.empty': 'Name must not be empty',
+    'validation.workspaceName.tooLong': 'Name must have at most {max} characters',
+    'validation.workspaceName.control': 'Name must not contain control characters',
     'validation.url.empty': 'URL must not be empty',
     'validation.url.scheme': 'Only http/https URLs are allowed',
     'validation.host.empty': 'Host must not be empty',

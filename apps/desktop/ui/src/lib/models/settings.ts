@@ -46,14 +46,36 @@ export interface SettingsValidation {
   error?: string;
 }
 
+/** The URL of a workspace of the kind `next.mode` and what the window of one edits. */
 export function validateSettings(next: Settings): SettingsValidation {
+  const url = validateUrl(next);
+  return url.ok ? validateWindowSettings(next) : url;
+}
+
+/**
+ * What the settings of a workspace window edit: the interval of a sync workspace and the RDP
+ * size. Its kind and URL are no input there (Rust keeps them), so a URL it lacks, as after a
+ * save Rust refused (a device identity, but no URL), does not block a save of the language.
+ */
+export function validateWindowSettings(next: Settings): SettingsValidation {
+  if (next.mode === 'sync' && !Number.isFinite(Number(next.intervalMinutes))) {
+    return { ok: false, error: tNow('validation.interval.invalid') };
+  }
+  if (next.rdpWindowMode === 'custom') {
+    const size = (next.rdpCustomSize ?? '').trim();
+    if (!RDP_CUSTOM_SIZE_PATTERN.test(size)) {
+      return { ok: false, error: tNow('validation.rdpSize.invalid') };
+    }
+  }
+  return { ok: true };
+}
+
+// The URL rules by kind; the workspace list checks a URL with them (validateDraft).
+function validateUrl(next: Settings): SettingsValidation {
   if (next.mode === 'sync') {
     const url = (next.url ?? '').trim();
     if (!url) return { ok: false, error: tNow('validation.syncUrl.required') };
     if (!url.startsWith('https://')) return { ok: false, error: tNow('validation.syncUrl.https') };
-    if (!Number.isFinite(Number(next.intervalMinutes))) {
-      return { ok: false, error: tNow('validation.interval.invalid') };
-    }
   }
   if (next.mode === 'server') {
     const url = (next.serverUrl ?? '').trim();
@@ -65,12 +87,6 @@ export function validateSettings(next: Settings): SettingsValidation {
     const loopback = /^http:\/\/(localhost|127(\.\d{1,3}){3}|\[::1\])(:|\/|$)/i;
     if (!/^https:\/\//i.test(url) && !loopback.test(url)) {
       return { ok: false, error: tNow('validation.serverUrl.https') };
-    }
-  }
-  if (next.rdpWindowMode === 'custom') {
-    const size = (next.rdpCustomSize ?? '').trim();
-    if (!RDP_CUSTOM_SIZE_PATTERN.test(size)) {
-      return { ok: false, error: tNow('validation.rdpSize.invalid') };
     }
   }
   return { ok: true };

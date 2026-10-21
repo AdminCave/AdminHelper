@@ -36,7 +36,7 @@ function invoke(cmd, args = {}) {
 }
 
 async function openSettings() {
-  // The gear in the sidebar footer opens the settings (as in settings-mode.live.js).
+  // The gear in the sidebar footer opens the settings.
   await $('.sidebar-bottom .sidebar-item').click();
   await $('.sm-panel').waitForExist({ timeout: 10000 });
 }

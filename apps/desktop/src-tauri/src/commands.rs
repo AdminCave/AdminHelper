@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::future::Future;
+use std::path::Path;
 use std::time::Duration;
 
 use tauri::State;
@@ -12,17 +14,20 @@ use crate::connection;
 use crate::enrollment;
 use crate::error::AppError;
 use crate::frpc;
+use crate::launcher::{self, Spawner};
 use crate::models::{
     AuthSession, ClientInfo, Connection, DeviceIdentity, PasswordState, RdpOptions, Settings,
-    TunnelRefresh, TunnelStatus,
+    TunnelRefresh, TunnelStatus, VisitorBinding, WorkspaceContext, WorkspaceDraft, WorkspaceList,
 };
 use crate::password;
+use crate::port_registry::PortRegistry;
 use crate::proxy;
 use crate::session::SessionState;
 use crate::storage;
 use crate::sync;
 use crate::tofu;
 use crate::tunnel;
+use crate::workspace::{self, Meta, Side, WorkspaceId};
 
 /// Resolve the "allow self-signed certs" flag: an explicit per-call override, else
 /// the persisted setting (default false on a missing/corrupt settings.json). The
@@ -51,9 +56,18 @@ fn rdp_options(settings: &Settings) -> RdpOptions<'_> {
 /// Checks whether the server certificate is valid. Returns true only if the
 /// server is reachable with a publicly-trusted cert; any error (self-signed/
 /// invalid cert, but also DNS/timeout/connection failures) returns false.
+/// Only the server of this workspace ([`sign_in_target`]).
 #[tauri::command]
-pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
-    proxy::check_server_cert(&server_url).await
+pub async fn check_server_cert(
+    app: tauri::AppHandle,
+    server_url: String,
+) -> Result<bool, AppError> {
+    check_server_cert_in(&storage::app_data_dir(&app)?, &server_url).await
+}
+
+/// [`check_server_cert`] in the app data dir `base`.
+async fn check_server_cert_in(base: &Path, sent: &str) -> Result<bool, AppError> {
+    proxy::check_server_cert(&sign_in_target(base, sent, None)?).await
 }
 
 /// Build a redacted diagnostics report (version, OS, recent log tail) for a bug
@@ -65,10 +79,18 @@ pub fn generate_diagnostics(app: tauri::AppHandle) -> Result<String, AppError> {
 
 /// Forget the pinned (TOFU) certificate for a server, so the next connection
 /// re-pins on first use. For recovering from a legitimate certificate rotation
-/// after the pin-mismatch error.
+/// after the pin-mismatch error. The pins belong to the device, not to a
+/// workspace: only the server or sync source of this workspace
+/// ([`workspace::own_url`]), never that of another one.
 #[tauri::command]
-pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
-    tofu::forget_pin(&server_url);
+pub fn reset_server_cert_pin(app: tauri::AppHandle, server_url: String) -> Result<(), AppError> {
+    reset_server_cert_pin_in(&storage::app_data_dir(&app)?, &server_url)
+}
+
+/// [`reset_server_cert_pin`] in the app data dir `base`.
+fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
+    let (_, meta) = own_meta(base)?;
+    tofu::forget_pin(&workspace::own_url(&meta, sent)?);
     Ok(())
 }
 
@@ -103,19 +125,53 @@ pub fn is_device_enrolled() -> bool {
 /// pin in the same step lets that fallback re-pin instead of being rejected by
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
-/// UI whether that happened.
+/// UI whether that happened. Only at the server of this workspace
+/// ([`sign_in_target`]), where its purge would revoke it too.
 #[tauri::command]
 pub async fn reset_device_identity(
+    app: tauri::AppHandle,
     server_url: String,
 ) -> Result<enrollment::ResetOutcome, AppError> {
+    reset_device_identity_in(&storage::app_data_dir(&app)?, &server_url).await
+}
+
+/// [`reset_device_identity`] in the app data dir `base`.
+async fn reset_device_identity_in(
+    base: &Path,
+    sent: &str,
+) -> Result<enrollment::ResetOutcome, AppError> {
+    let server_url = sign_in_target(base, sent, None)?;
     let outcome = enrollment::reset_identity(&server_url).await;
     tofu::forget_pin(&server_url);
     Ok(outcome)
 }
 
+/// The workspace of this process and its `workspace.json`, in the app data dir `base`. The
+/// launcher has none.
+fn own_meta(base: &Path) -> Result<(WorkspaceId, Meta), AppError> {
+    let ws = workspace::current()?;
+    let meta = workspace::load_meta(&ws.id, &ws.data_dir(base))?;
+    Ok((ws.id, meta))
+}
+
+/// The URL a sign-in, an enrollment or a reset of the device identity of the workspace of this
+/// process goes to, in the app data dir `base`, `sent` being the one the webview names
+/// ([`workspace::sign_in_url`]); for a sign-in as `username`, only while no other workspace
+/// signs in to that server as that user ([`workspace::check_sign_in_once`]). The launcher signs
+/// in nowhere.
+fn sign_in_target(base: &Path, sent: &str, username: Option<&str>) -> Result<String, AppError> {
+    let (id, meta) = own_meta(base)?;
+    let url = workspace::sign_in_url(&meta, sent)?;
+    if let Some(username) = username {
+        workspace::check_sign_in_once(&id, &url, username, &workspace::metas(base)?)?;
+    }
+    Ok(url)
+}
+
 /// Decoupled enrollment (ADR 0003): enroll using a one-time token an admin minted
 /// out-of-band and handed over, WITHOUT a prior login. Lets a brand-new client
 /// obtain its cert under enforced mTLS, where it cannot reach the login on :443.
+/// Only at the server of this workspace ([`sign_in_target`]).
 #[tauri::command]
 pub async fn enroll_with_token(
     app: tauri::AppHandle,
@@ -123,8 +179,43 @@ pub async fn enroll_with_token(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
     let self_signed = self_signed_setting(&app, allow_self_signed);
-    enrollment::enroll_with_token(&server_url, &token, self_signed).await
+    enroll_with_token_in(
+        &base,
+        &server_url,
+        |url| async move { enrollment::enroll_with_token(&url, &token, self_signed).await },
+        |url| async move { enrollment::reset_identity(&url).await },
+    )
+    .await
+}
+
+/// [`enroll_with_token`] in the app data dir `base`, `enroll` registering this device at the URL
+/// it gets: the server of this workspace ([`sign_in_target`]). A workspace without a URL takes
+/// the one of a registration that succeeded at once ([`storage::keep_enrolled_url`]): the
+/// identity is that server's, and the purge revokes it there. A workspace that does not keep it
+/// (it took another server while the registration waited, or its file does not write) would
+/// hold an identity its purge cannot revoke where it was issued: `reset` revokes it there at
+/// once (`enrollment::reset_identity`), and the registration fails.
+async fn enroll_with_token_in<E, EnrollFut, R, ResetFut>(
+    base: &Path,
+    sent: &str,
+    enroll: E,
+    reset: R,
+) -> Result<(), AppError>
+where
+    E: FnOnce(String) -> EnrollFut,
+    EnrollFut: Future<Output = Result<(), AppError>>,
+    R: FnOnce(String) -> ResetFut,
+    ResetFut: Future<Output = enrollment::ResetOutcome>,
+{
+    let server_url = sign_in_target(base, sent, None)?;
+    enroll(server_url.clone()).await?;
+    if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
+        reset(server_url).await;
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Enroll a long-lived browser cert (A5c) at the signed-in server, write it as a
@@ -158,9 +249,10 @@ pub fn load_connections(app: tauri::AppHandle) -> Result<Vec<Connection>, AppErr
     storage::load_connections(&app)
 }
 
+/// What the webview reads is the base against which `save_settings` tells what it changed.
 #[tauri::command]
 pub fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
-    storage::load_settings(&app)
+    storage::load_settings_for_webview(&app)
 }
 
 #[tauri::command]
@@ -208,15 +300,38 @@ where
     }
 }
 
+/// Rejects `connection` if it goes to a loopback port of another workspace's tunnel
+/// ([`tunnel::reject_foreign_port`]), by the port map in the app data dir `base` and the
+/// workspace of this process; the launcher has none and opens nothing. The map's file lock may
+/// wait: on a blocking thread only.
+fn reject_foreign_port(
+    base: &Path,
+    connection: &Connection,
+    bindings: &[VisitorBinding],
+) -> Result<(), AppError> {
+    let owner = crate::workspace::current()?.id.to_string();
+    let others = PortRegistry::new(base).local_ports_of_others(&owner)?;
+    tunnel::reject_foreign_port(connection, &others, bindings)
+}
+
+/// Opens nothing at a loopback port of another workspace's tunnel; one a visitor of the frpc that
+/// runs for the current sign-in listens on is this workspace's own.
 #[tauri::command]
 pub async fn open_connection(
     app: tauri::AppHandle,
+    state: State<'_, frpc::FrpcState>,
+    session: State<'_, SessionState>,
     connection: Connection,
     password: Option<String>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
+        None => Vec::new(),
+    };
     run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
         let rdp = rdp_options(&settings);
@@ -236,7 +351,8 @@ pub async fn open_connection(
 /// A stored password opens only the target Rust resolves the credential connection (without one,
 /// the opened connection) to, with the tunnel mappings and server connections the session fetched
 /// (not ones the webview sends) and the bindings of the frpc that runs for that sign-in, all read
-/// at one moment as the connection opens. Without a session there are none of them.
+/// at one moment as the connection opens. Without a session there are none of them. A target at
+/// a loopback port of another workspace's tunnel is refused before the password loads.
 #[tauri::command]
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
@@ -255,6 +371,7 @@ pub async fn open_connection_stored(
         None => Default::default(),
     };
     run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
         let rdp = rdp_options(&settings);
@@ -283,15 +400,21 @@ pub fn password_state(connection: Connection) -> Result<PasswordState, AppError>
 }
 
 #[tauri::command]
-pub fn save_password(connection: Connection, password: String) -> Result<(), AppError> {
-    password::save_password(&connection, &password)
+pub fn save_password(
+    app: tauri::AppHandle,
+    connection: Connection,
+    password: String,
+) -> Result<(), AppError> {
+    password::save_password(&storage::app_data_dir(&app)?, &connection, &password)
 }
 
 #[tauri::command]
-pub fn delete_password(connection: Connection) -> Result<(), AppError> {
-    password::delete_password(&connection)
+pub fn delete_password(app: tauri::AppHandle, connection: Connection) -> Result<(), AppError> {
+    password::delete_password(&storage::app_data_dir(&app)?, &connection)
 }
 
+/// Signs in at the server of this workspace, as a user no other workspace signs in to it as
+/// ([`sign_in_target`]); both are checked before the password leaves.
 #[tauri::command]
 pub async fn login(
     app: tauri::AppHandle,
@@ -301,6 +424,7 @@ pub async fn login(
     password: String,
     allow_self_signed: Option<bool>,
 ) -> Result<AuthSession, AppError> {
+    let server_url = sign_in_target(&storage::app_data_dir(&app)?, &server_url, Some(&username))?;
     let self_signed = self_signed_setting(&app, allow_self_signed);
     auth::login(
         session.inner(),
@@ -381,9 +505,11 @@ pub async fn fetch_tunnels(
 }
 
 /// Resolves against where the visitors of the frpc that runs for the current sign-in listen;
-/// while none runs for it, and without a session, a tunnel target stays as it is.
+/// while none runs for it, and without a session, a tunnel target stays as it is. A target that
+/// ends at a loopback port of another workspace's tunnel is an error.
 #[tauri::command]
 pub async fn resolve_connection(
+    app: tauri::AppHandle,
     state: State<'_, frpc::FrpcState>,
     session: State<'_, SessionState>,
     connection: Connection,
@@ -393,7 +519,118 @@ pub async fn resolve_connection(
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
         None => Vec::new(),
     };
-    Ok(tunnel::resolve_connection(&connection, &tunnels, &bindings))
+    let resolved = tunnel::resolve_connection(&connection, &tunnels, &bindings);
+    let target = resolved.connection.clone();
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &target, &bindings)
+    })
+    .await?;
+    Ok(resolved)
+}
+
+// ── Workspaces (R-0431): the launcher manages them, a workspace brings the launcher up ──
+
+/// Fails unless this process is the one `side` names ([`workspace::check_side`]).
+fn only(side: Side) -> Result<(), AppError> {
+    workspace::check_side(side, workspace::current().ok().as_ref())
+}
+
+/// Runs `work`, which may wait (for the lock of a workspace, the registry, a process it
+/// started), on a blocking thread: neither the main thread, where a command without `async`
+/// runs, nor an async worker waits with it.
+async fn blocking<T, F>(work: F) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "the command did not finish: {e}"
+            )))
+        })?
+}
+
+/// Which process the webview talks to: the launcher, or the workspace this process serves.
+#[tauri::command]
+pub fn workspace_context(app: tauri::AppHandle) -> Result<WorkspaceContext, AppError> {
+    workspace::context(&storage::app_data_dir(&app)?)
+}
+
+fn list_workspaces_in(base: &Path) -> Result<WorkspaceList, AppError> {
+    only(Side::Launcher)?;
+    launcher::list(base)
+}
+
+/// Launcher only: the workspaces the picker lists ([`launcher::list`]).
+#[tauri::command]
+pub async fn list_workspaces(app: tauri::AppHandle) -> Result<WorkspaceList, AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || list_workspaces_in(&base)).await
+}
+
+fn save_workspace_in(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError> {
+    only(Side::Launcher)?;
+    launcher::save(base, draft)
+}
+
+/// Launcher only: makes the workspace `draft` describes, or edits the closed one it names, and
+/// gives its id ([`launcher::save`]; an edit waits up to 2 s for the lock of the workspace).
+#[tauri::command]
+pub async fn save_workspace(
+    app: tauri::AppHandle,
+    draft: WorkspaceDraft,
+) -> Result<WorkspaceId, AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || save_workspace_in(&base, &draft)).await
+}
+
+fn delete_workspace_in(
+    base: &Path,
+    id: &str,
+    spawner: &impl Spawner,
+) -> Result<enrollment::ResetOutcome, AppError> {
+    only(Side::Launcher)?;
+    launcher::delete(base, &WorkspaceId::parse(id)?, spawner)
+}
+
+/// Launcher only: deletes the closed workspace `id` through its purge and gives how its device
+/// identity went ([`launcher::delete`]; waits up to 120 s for the purge).
+#[tauri::command]
+pub async fn delete_workspace(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<enrollment::ResetOutcome, AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || delete_workspace_in(&base, &id, &launcher::AppSpawner::new()?)).await
+}
+
+fn open_workspace_in(base: &Path, id: &str, spawner: &impl Spawner) -> Result<(), AppError> {
+    only(Side::Launcher)?;
+    launcher::open(base, &WorkspaceId::parse(id)?, spawner)
+}
+
+/// Launcher only: opens the workspace `id` in a process of its own and waits up to 10 s until
+/// that process holds it ([`launcher::open`]); then the launcher ends.
+#[tauri::command]
+pub async fn open_workspace(app: tauri::AppHandle, id: String) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || open_workspace_in(&base, &id, &launcher::AppSpawner::new()?)).await?;
+    app.exit(0);
+    Ok(())
+}
+
+fn open_launcher_with(spawner: &impl Spawner) -> Result<(), AppError> {
+    only(Side::Workspace)?;
+    launcher::open_launcher(spawner)
+}
+
+/// Workspace only: "Workspaces…" starts the launcher, or brings up the one that runs
+/// ([`launcher::open_launcher`]).
+#[tauri::command]
+pub fn open_launcher() -> Result<(), AppError> {
+    open_launcher_with(&launcher::AppSpawner::new()?)
 }
 
 #[tauri::command]
@@ -415,9 +652,24 @@ pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::run_with_deadline;
+    use super::{
+        check_server_cert_in, delete_workspace_in, enroll_with_token_in, list_workspaces_in,
+        open_launcher_with, open_workspace_in, reject_foreign_port, reset_device_identity_in,
+        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target,
+    };
+    use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
+    use crate::keyring_store;
+    use crate::launcher::{Spawned, Spawner};
+    use crate::models::{Connection, ConnectionKind, Settings, SyncMode, WorkspaceDraft};
+    use crate::port_registry::PortRegistry;
+    use crate::storage;
+    use crate::workspace::{self, Meta, Registry, RegistryEntry, PALETTE};
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+    use std::process::ExitStatus;
     use std::time::Duration;
+    use std::{fs, io};
 
     #[tokio::test]
     async fn run_with_deadline_returns_ok_for_fast_work() {
@@ -445,5 +697,685 @@ mod tests {
         })
         .await;
         assert!(matches!(r, Err(AppError::Connection(_))));
+    }
+
+    /// `127.0.0.1`:`port` over SSH.
+    fn loopback(port: u16) -> Connection {
+        Connection {
+            id: "c1".to_string(),
+            name: "Test".to_string(),
+            kind: ConnectionKind::Ssh,
+            host: Some("127.0.0.1".to_string()),
+            port: Some(port),
+            username: None,
+            domain: None,
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: Vec::new(),
+            trust_cert: false,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    /// The workspace `id` on this thread while the guard lives.
+    fn entered(id: &str) -> workspace::EnteredWorkspace {
+        workspace::enter(workspace::Workspace {
+            id: workspace::WorkspaceId::parse(id).unwrap(),
+            name: id.to_string(),
+            legacy_keys: false,
+        })
+    }
+
+    #[test]
+    fn foreign_port_check_reads_the_port_map_as_the_workspace_of_this_process() {
+        let dir =
+            std::env::temp_dir().join(format!("ah-commands-foreign-port-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        PortRegistry::new(&dir).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
+
+        // The launcher has no workspace and so opens nothing.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = reject_foreign_port(&dir, &loopback(23005), &[]);
+        assert_eq!(refused.unwrap_err().to_string(), no_workspace);
+        {
+            let _other = entered("w-0000000a");
+            let refused = reject_foreign_port(&dir, &loopback(23005), &[]).unwrap_err();
+            assert!(
+                refused
+                    .to_string()
+                    .starts_with("port 23005 on this machine"),
+                "{refused}"
+            );
+            assert!(reject_foreign_port(&dir, &loopback(23006), &[]).is_ok());
+        }
+        {
+            let _owner = entered("w-0000000b");
+            assert!(reject_foreign_port(&dir, &loopback(23005), &[]).is_ok());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Workspaces: which process a command runs in ──
+
+    /// A directory of its own for one test case under the system temp dir, gone with the guard.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(case: &str) -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("ah-commands-{case}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A program that runs on and holds no lock.
+    struct Running;
+
+    impl Spawned for Running {
+        fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+            Ok(None)
+        }
+    }
+
+    /// Notes the arguments of every start.
+    #[derive(Default)]
+    struct Starts(RefCell<Vec<Vec<String>>>);
+
+    impl Spawner for Starts {
+        type Child = Running;
+
+        fn spawn(&self, args: &[&str]) -> io::Result<Running> {
+            self.0
+                .borrow_mut()
+                .push(args.iter().map(|arg| arg.to_string()).collect());
+            Ok(Running)
+        }
+    }
+
+    /// Lays out `base` with the closed server workspace `w-0a1b2c3d`, as the launcher lists it.
+    fn one_workspace(base: &Path) {
+        Meta {
+            kind: SyncMode::Server,
+            name: "Kunde A".to_string(),
+            color: PALETTE[0].to_string(),
+            url: Some("https://ah.example.com".to_string()),
+            interval_minutes: 1,
+            allow_self_signed_certs: false,
+            last_username: None,
+            legacy_keys: false,
+        }
+        .store(&base.join("workspaces").join("w-0a1b2c3d"))
+        .unwrap();
+        Registry {
+            workspaces: vec![RegistryEntry {
+                id: workspace::WorkspaceId::parse("w-0a1b2c3d").unwrap(),
+            }],
+            last_used: None,
+            migrated_notice: false,
+            unreadable_settings: None,
+        }
+        .store(base)
+        .unwrap();
+    }
+
+    fn new_draft() -> WorkspaceDraft {
+        WorkspaceDraft {
+            id: None,
+            kind: SyncMode::Local,
+            name: "Lokal".to_string(),
+            color: PALETTE[1].to_string(),
+            url: None,
+        }
+    }
+
+    /// The names in `base/workspaces`, sorted.
+    fn workspace_dirs(base: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(base.join("workspaces"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn assert_refused<T: std::fmt::Debug>(result: Result<T, AppError>, says: &str, case: &str) {
+        assert!(
+            matches!(&result, Err(AppError::Validation(msg)) if msg.contains(says)),
+            "{case}: {result:?}"
+        );
+    }
+
+    #[test]
+    fn the_commands_of_the_launcher_refuse_to_run_in_a_workspace() {
+        let scratch = Scratch::new("launcher-only");
+        let base = &scratch.0;
+        one_workspace(base);
+        let registry = fs::read(base.join("workspaces.json")).unwrap();
+        let starts = Starts::default();
+        {
+            let _in_a_workspace = entered("standard");
+            let only = "only the launcher";
+            assert_refused(list_workspaces_in(base), only, "list");
+            assert_refused(save_workspace_in(base, &new_draft()), only, "save");
+            assert_refused(
+                delete_workspace_in(base, "w-0a1b2c3d", &starts),
+                only,
+                "delete",
+            );
+            assert_refused(open_workspace_in(base, "w-0a1b2c3d", &starts), only, "open");
+        }
+        assert_eq!(
+            starts.0.borrow().len(),
+            0,
+            "a refused command started a process"
+        );
+        assert_eq!(fs::read(base.join("workspaces.json")).unwrap(), registry);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+
+        // The same commands in the launcher.
+        let list = list_workspaces_in(base).unwrap();
+        assert_eq!(list.workspaces.len(), 1);
+        assert_eq!(list.workspaces[0].id.to_string(), "w-0a1b2c3d");
+        let made = save_workspace_in(base, &new_draft()).unwrap().to_string();
+        let mut dirs = vec![made, "w-0a1b2c3d".to_string()];
+        dirs.sort();
+        assert_eq!(workspace_dirs(base), dirs);
+    }
+
+    #[test]
+    fn open_launcher_refuses_to_run_in_the_launcher() {
+        let starts = Starts::default();
+        assert_refused(
+            open_launcher_with(&starts),
+            "only the process of a workspace",
+            "open_launcher",
+        );
+        assert_eq!(
+            starts.0.borrow().len(),
+            0,
+            "the launcher started a launcher"
+        );
+
+        let _in_a_workspace = entered("standard");
+        open_launcher_with(&starts).unwrap();
+        assert_eq!(*starts.0.borrow(), [Vec::<String>::new()]);
+    }
+
+    #[test]
+    fn the_commands_of_the_launcher_refuse_a_bad_workspace_id_and_start_nothing() {
+        let scratch = Scratch::new("bad-id");
+        let base = &scratch.0;
+        one_workspace(base);
+        let registry = fs::read(base.join("workspaces.json")).unwrap();
+        let starts = Starts::default();
+        for id in ["", "../w-0a1b2c3d", "W-0A1B2C3D", "w-0a1b2c3d/..", "äöü"] {
+            assert_refused(
+                delete_workspace_in(base, id, &starts),
+                "invalid workspace id",
+                id,
+            );
+            assert_refused(
+                open_workspace_in(base, id, &starts),
+                "invalid workspace id",
+                id,
+            );
+        }
+        assert_eq!(starts.0.borrow().len(), 0);
+        assert_eq!(fs::read(base.join("workspaces.json")).unwrap(), registry);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+    }
+
+    #[test]
+    fn a_workspace_draft_crosses_the_bridge_under_its_wire_names_and_with_a_valid_id_only() {
+        let draft: WorkspaceDraft = serde_json::from_value(serde_json::json!({
+            "kind": "server",
+            "name": "Kunde A",
+            "color": PALETTE[2],
+            "url": "https://ah.example.com",
+        }))
+        .unwrap();
+        assert!(draft.id.is_none());
+        assert_eq!(draft.kind, SyncMode::Server);
+        assert_eq!(draft.url.as_deref(), Some("https://ah.example.com"));
+
+        let edit: WorkspaceDraft = serde_json::from_value(serde_json::json!({
+            "id": "w-0a1b2c3d",
+            "kind": "local",
+            "name": "Lokal",
+            "color": PALETTE[2],
+            "url": null,
+        }))
+        .unwrap();
+        assert_eq!(
+            edit.id.map(|id| id.to_string()).as_deref(),
+            Some("w-0a1b2c3d")
+        );
+
+        let bad = serde_json::from_value::<WorkspaceDraft>(serde_json::json!({
+            "id": "../standard",
+            "kind": "local",
+            "name": "Lokal",
+            "color": PALETTE[2],
+        }));
+        assert!(bad.is_err(), "{bad:?}");
+    }
+
+    // ── Where the workspace of this process signs in ──
+
+    /// Lays out `base` with the server workspaces `workspaces`: id, name, URL and the user it
+    /// last signed in as.
+    fn server_workspaces(base: &Path, workspaces: &[(&str, &str, Option<&str>, Option<&str>)]) {
+        for (id, name, url, user) in workspaces {
+            Meta {
+                kind: SyncMode::Server,
+                name: name.to_string(),
+                color: PALETTE[0].to_string(),
+                url: url.map(String::from),
+                interval_minutes: 1,
+                allow_self_signed_certs: false,
+                last_username: user.map(String::from),
+                legacy_keys: false,
+            }
+            .store(&base.join("workspaces").join(id))
+            .unwrap();
+        }
+        Registry {
+            workspaces: workspaces
+                .iter()
+                .map(|(id, ..)| RegistryEntry {
+                    id: workspace::WorkspaceId::parse(id).unwrap(),
+                })
+                .collect(),
+            last_used: None,
+            migrated_notice: false,
+            unreadable_settings: None,
+        }
+        .store(base)
+        .unwrap();
+    }
+
+    #[test]
+    fn login_binding_signs_in_at_the_server_of_the_workspace_once_per_user() {
+        let scratch = Scratch::new("sign-in");
+        let base = &scratch.0;
+        server_workspaces(
+            base,
+            &[
+                (
+                    "w-0000000a",
+                    "Kunde A",
+                    Some("https://ah.example.com"),
+                    Some("admin"),
+                ),
+                (
+                    "w-0000000b",
+                    "Kunde B",
+                    Some("https://ah.example.com/"),
+                    None,
+                ),
+                ("w-0000000c", "Neu", None, None),
+            ],
+        );
+
+        // The launcher signs in nowhere.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        for username in [Some("ops"), None] {
+            let refused = sign_in_target(base, "https://ah.example.com", username).unwrap_err();
+            assert_eq!(refused.to_string(), no_workspace);
+        }
+        {
+            let _b = entered("w-0000000b");
+            // Its own server, at the URL it keeps.
+            for username in [Some("ops"), None] {
+                assert_eq!(
+                    sign_in_target(base, "https://AH.example.com:443", username).unwrap(),
+                    "https://ah.example.com/"
+                );
+            }
+            // Another server, for a sign-in and an enrollment alike.
+            for username in [Some("ops"), None] {
+                assert_refused(
+                    sign_in_target(base, "https://other.example.com", username),
+                    "this workspace belongs to the server https://ah.example.com;",
+                    &format!("{username:?}"),
+                );
+            }
+            // The user another workspace signs in to that server as: refused for a sign-in.
+            assert_refused(
+                sign_in_target(base, "https://ah.example.com", Some("Admin")),
+                "the workspace \"Kunde A\" signs in to this server as this user",
+                "same user",
+            );
+        }
+        {
+            let _a = entered("w-0000000a");
+            assert_eq!(
+                sign_in_target(base, "https://ah.example.com", Some("admin")).unwrap(),
+                "https://ah.example.com"
+            );
+        }
+        {
+            // Without a URL of its own, the one sent; but not as that user at that server.
+            let _c = entered("w-0000000c");
+            assert_eq!(
+                sign_in_target(base, " https://other.example.com ", Some("admin")).unwrap(),
+                "https://other.example.com"
+            );
+            assert_refused(
+                sign_in_target(base, "https://ah.example.com:443/", Some("admin")),
+                "\"Kunde A\"",
+                "first URL",
+            );
+        }
+    }
+
+    /// The URL in the `workspace.json` of `id` in `base`.
+    fn url_of(base: &Path, id: &str) -> Option<String> {
+        Meta::load(&base.join("workspaces").join(id)).unwrap().url
+    }
+
+    /// The reset of a registration the workspace does not keep: none comes in these cases.
+    fn no_reset(url: String) -> std::future::Ready<ResetOutcome> {
+        panic!("the registration at {url} was reset")
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_registration_gives_a_workspace_without_a_url_the_one_it_went_to() {
+        let scratch = Scratch::new("enroll-url");
+        let base = &scratch.0;
+        server_workspaces(
+            base,
+            &[
+                (
+                    "w-0000000a",
+                    "Kunde A",
+                    Some("https://ah.example.com"),
+                    None,
+                ),
+                ("w-0000000c", "Neu", None, None),
+                ("w-0000000d", "Neu 2", None, None),
+            ],
+        );
+        let asked = RefCell::new(Vec::new());
+        let succeeds = |url: String| {
+            asked.borrow_mut().push(url);
+            async { Ok::<(), AppError>(()) }
+        };
+
+        // The launcher registers nowhere.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = enroll_with_token_in(base, "https://ah.example.com", succeeds, no_reset)
+            .await
+            .unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        {
+            // Without a URL: registered at the one sent, which the workspace keeps from then on.
+            let _c = entered("w-0000000c");
+            enroll_with_token_in(base, " https://other.example.com/ ", succeeds, no_reset)
+                .await
+                .unwrap();
+            assert_eq!(
+                url_of(base, "w-0000000c").as_deref(),
+                Some("https://other.example.com/")
+            );
+        }
+        {
+            // A registration that fails gives no URL.
+            let _d = entered("w-0000000d");
+            let failed = enroll_with_token_in(
+                base,
+                "https://other.example.com",
+                |url| {
+                    asked.borrow_mut().push(url);
+                    async { Err(AppError::Connection("unreachable".to_string())) }
+                },
+                no_reset,
+            )
+            .await;
+            assert!(matches!(failed, Err(AppError::Connection(_))), "{failed:?}");
+            assert_eq!(url_of(base, "w-0000000d"), None);
+        }
+        {
+            // With a URL: registered there, and the URL stays as it is; another server is refused
+            // before the token leaves.
+            let _a = entered("w-0000000a");
+            enroll_with_token_in(base, "https://AH.example.com:443/", succeeds, no_reset)
+                .await
+                .unwrap();
+            assert_refused(
+                enroll_with_token_in(base, "https://other.example.com", succeeds, no_reset).await,
+                "this workspace belongs to the server https://ah.example.com;",
+                "other server",
+            );
+            assert_eq!(
+                url_of(base, "w-0000000a").as_deref(),
+                Some("https://ah.example.com")
+            );
+        }
+        assert_eq!(
+            *asked.borrow(),
+            [
+                "https://other.example.com/",
+                "https://other.example.com",
+                "https://ah.example.com"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_registration_the_workspace_does_not_keep_is_revoked_at_once() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("enroll-taken");
+        let base = &scratch.0;
+        server_workspaces(base, &[("w-0000000c", "Neu", None, None)]);
+        // Held, not freed: nobody answers at the server the device registers at.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let registered_at = format!("https://127.0.0.1:{port}");
+        let other = "https://other.example.com";
+        let _c = entered("w-0000000c");
+        let prefix = workspace::current().unwrap().keyring_prefix();
+        let reset_at = RefCell::new(Vec::new());
+
+        let result = enroll_with_token_in(
+            base,
+            &registered_at,
+            |_| async {
+                // While the registration waits for its server, a save of the settings gives the
+                // workspace another first URL; then the identity arrives.
+                let settings = Settings {
+                    server_url: Some(other.to_string()),
+                    ..Settings::default()
+                };
+                storage::save_settings_at(base, &settings)?;
+                enrolled(&prefix);
+                Ok(())
+            },
+            |url| {
+                reset_at.borrow_mut().push(url.clone());
+                async move { enrollment::reset_identity(&url).await }
+            },
+        )
+        .await;
+
+        assert_refused(
+            result,
+            "this workspace took the URL of another server while this device registered",
+            "taken",
+        );
+        // Revoked where it was issued, and gone here; the workspace keeps the URL it took.
+        assert_eq!(*reset_at.borrow(), [registered_at]);
+        assert!(!enrollment::is_enrolled());
+        assert!(!enrollment::holds_identity(&prefix).unwrap());
+        assert_eq!(url_of(base, "w-0000000c").as_deref(), Some(other));
+    }
+
+    // ── Reset, pins and the cert check at the server of the workspace ──
+
+    /// An identity behind the keyring prefix `prefix`, as an enrollment leaves it.
+    fn enrolled(prefix: &str) {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec![])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap()
+            .pem();
+        for (entry, pem) in [
+            ("enroll|key", key.serialize_pem()),
+            ("enroll|cert", cert.clone()),
+            ("enroll|ca", cert),
+        ] {
+            keyring_store::set(&format!("{prefix}{entry}"), &pem).unwrap();
+        }
+    }
+
+    /// The keyring key of the pin of `host_port` (`tofu|cert|<host:port>`, one for the device).
+    fn pin(host_port: &str) -> String {
+        format!("tofu|cert|{host_port}")
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_reset_of_the_identity_goes_to_the_server_of_the_workspace() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("reset-identity");
+        let base = &scratch.0;
+        // Held, not freed: nobody answers at the server of the workspace.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let kept = format!("https://127.0.0.1:{port}");
+        server_workspaces(
+            base,
+            &[("w-0000000a", "Kunde A", Some(kept.as_str()), None)],
+        );
+        let own_pin = pin(&format!("127.0.0.1:{port}"));
+        let other_pin = pin("other.example.com:443");
+        for key in [&own_pin, &other_pin] {
+            keyring_store::set(key, "pinned").unwrap();
+        }
+
+        // The launcher has no identity to reset.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = reset_device_identity_in(base, &kept).await.unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+
+        let _a = entered("w-0000000a");
+        enrolled(&workspace::current().unwrap().keyring_prefix());
+        // Another server: refused before a thing is revoked, deleted or forgotten.
+        for other in [
+            "https://other.example.com".to_string(),
+            format!("http://127.0.0.1:{port}"),
+        ] {
+            assert_refused(
+                reset_device_identity_in(base, &other).await,
+                &format!("this workspace belongs to the server {kept};"),
+                &other,
+            );
+            assert!(enrollment::is_enrolled(), "{other}");
+            for key in [&own_pin, &other_pin] {
+                assert!(keyring_store::get(key).is_some(), "{other}: {key}");
+            }
+        }
+        // Its own server, however the webview spells it.
+        let outcome = reset_device_identity_in(base, &format!("https://127.0.0.1:{port}/x"))
+            .await
+            .unwrap();
+        assert_eq!(outcome, ResetOutcome::LocalOnly);
+        assert!(!enrollment::is_enrolled());
+        assert_eq!(keyring_store::get(&own_pin), None);
+        assert!(keyring_store::get(&other_pin).is_some());
+    }
+
+    #[tokio::test]
+    async fn login_binding_the_pin_reset_and_the_cert_check_name_the_server_of_the_workspace() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("reset-pin");
+        let base = &scratch.0;
+        server_workspaces(
+            base,
+            &[
+                (
+                    "w-0000000a",
+                    "Kunde A",
+                    Some("https://ah.example.com"),
+                    None,
+                ),
+                ("w-0000000c", "Neu", None, None),
+            ],
+        );
+        Meta {
+            kind: SyncMode::Sync,
+            name: "Sync".to_string(),
+            color: PALETTE[0].to_string(),
+            url: Some("https://sync.example.com/connections.json".to_string()),
+            interval_minutes: 1,
+            allow_self_signed_certs: false,
+            last_username: None,
+            legacy_keys: false,
+        }
+        .store(&base.join("workspaces").join("w-0000000d"))
+        .unwrap();
+        let [own, sync, other] = [
+            "ah.example.com:443",
+            "sync.example.com:443",
+            "other.example.com:443",
+        ]
+        .map(pin);
+        for key in [&own, &sync, &other] {
+            keyring_store::set(key, "pinned").unwrap();
+        }
+        let pinned = || [&own, &sync, &other].map(|key| keyring_store::get(key).is_some());
+
+        // The launcher forgets no pin and checks no server.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = reset_server_cert_pin_in(base, "https://ah.example.com").unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        let refused = check_server_cert_in(base, "https://ah.example.com")
+            .await
+            .unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        assert_eq!(pinned(), [true, true, true]);
+        {
+            let _a = entered("w-0000000a");
+            let says = "this workspace belongs to the server https://ah.example.com;";
+            assert_refused(
+                reset_server_cert_pin_in(base, "https://other.example.com"),
+                says,
+                "pin",
+            );
+            assert_refused(
+                check_server_cert_in(base, "https://other.example.com").await,
+                says,
+                "cert check",
+            );
+            assert_eq!(pinned(), [true, true, true]);
+            reset_server_cert_pin_in(base, "https://AH.example.com/").unwrap();
+            assert_eq!(pinned(), [false, true, true]);
+        }
+        {
+            // A sync workspace: the server of its source.
+            let _d = entered("w-0000000d");
+            assert_refused(
+                reset_server_cert_pin_in(base, "https://other.example.com"),
+                "this workspace belongs to the server https://sync.example.com;",
+                "sync",
+            );
+            reset_server_cert_pin_in(base, "https://sync.example.com").unwrap();
+            assert_eq!(pinned(), [false, false, true]);
+        }
+        {
+            // Without a URL of its own, the one sent: the login screen before the first sign-in.
+            let _c = entered("w-0000000c");
+            reset_server_cert_pin_in(base, "https://other.example.com").unwrap();
+            assert_eq!(pinned(), [false, false, false]);
+        }
     }
 }

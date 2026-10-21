@@ -7,7 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { onMount } from 'svelte';
   import { hydrate, ready, needsLogin } from '$lib/stores/session';
+  import { context } from '$lib/stores/workspace';
   import { t } from '$lib/i18n';
+  import Picker from './components/Picker.svelte';
   import Login from './components/Login.svelte';
   import AppShell from './components/AppShell.svelte';
   import ConfirmDialog from './components/ui/ConfirmDialog.svelte';
@@ -21,6 +23,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="app-shell" style="display: flex; align-items: center; justify-content: center;">
     <div style="color: var(--text-muted);">{$t('loading.generic')}</div>
   </div>
+{:else if $context?.launcher}
+  <Picker />
 {:else if $needsLogin}
   <Login />
 {:else}

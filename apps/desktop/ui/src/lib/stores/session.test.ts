@@ -4,27 +4,27 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import type { AuthSession, Settings } from '$lib/bridge/types';
+import type { AuthSession, Settings, WorkspaceContext } from '$lib/bridge/types';
 
 // Mock the bridge + collaborators: the session lifecycle (hydrate/login/
-// dropSession) is what we test; persistence and i18n are side channels. The
+// logout) is what we test; persistence and i18n are side channels. The
 // connections store is no longer imported here — it is wired in via
 // registerConnectionsSync (see the "connections sync hooks" block below).
 vi.mock('$lib/bridge', () => ({
+  workspaceContext: vi.fn(),
   loadSettings: vi.fn(),
   saveSettings: vi.fn(async () => {}),
   login: vi.fn(),
   logout: vi.fn(async () => {}),
   fetchConnectionsJwt: vi.fn(async () => []),
 }));
-vi.mock('$lib/i18n', () => ({ setLanguage: vi.fn() }));
+vi.mock('$lib/i18n', () => ({ setLanguage: vi.fn(), tNow: (key: string) => key }));
 
 import * as bridge from '$lib/bridge';
 import {
   hydrate,
   login,
   logout,
-  dropSession,
   needsLogin,
   isAuthenticated,
   ready,
@@ -33,6 +33,7 @@ import {
   setAllowSelfSignedCerts,
   registerConnectionsSync,
 } from './session';
+import { context } from './workspace';
 
 const baseSettings = (over: Partial<Settings> = {}): Settings => ({
   mode: 'local',
@@ -56,9 +57,31 @@ const aSession: AuthSession = {
   isAdmin: true,
 };
 
+const launcher: WorkspaceContext = { launcher: true, workspace: null };
+const serverWorkspace: WorkspaceContext = {
+  launcher: false,
+  workspace: {
+    id: 'standard',
+    name: 'Standard',
+    color: '#3b82f6',
+    kind: 'server',
+    host: 'srv.example.com',
+    open: true,
+  },
+};
+
+/** The session module as the app starts it: not ready, no workspace context. */
+async function freshStart() {
+  vi.resetModules();
+  const freshBridge = await import('$lib/bridge');
+  const freshSession = await import('./session');
+  return { bridge: freshBridge, session: freshSession };
+}
+
 describe('session store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(bridge.workspaceContext).mockResolvedValue(serverWorkspace);
   });
 
   describe('hydrate (no silent restore)', () => {
@@ -81,6 +104,58 @@ describe('session store', () => {
       expect(get(isAuthenticated)).toBe(true);
     });
 
+    it('the launcher never asks for a login, not even while it hydrates', async () => {
+      const fresh = await freshStart();
+      // The launcher's settings come without a workspace (mode local); `server` here proves
+      // that the context, not the mode, keeps the login away.
+      vi.mocked(fresh.bridge.workspaceContext).mockResolvedValue(launcher);
+      vi.mocked(fresh.bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+      );
+      const seen: boolean[] = [];
+      const stop = fresh.session.needsLogin.subscribe((value) => seen.push(value));
+      try {
+        await fresh.session.hydrate();
+      } finally {
+        stop();
+      }
+      expect(get(fresh.session.ready)).toBe(true);
+      expect(get(fresh.session.needsLogin)).toBe(false);
+      expect(seen).not.toContain(true);
+    });
+
+    it('the context decides: the launcher no login, a server workspace without a session the login', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+      );
+      vi.mocked(bridge.workspaceContext).mockResolvedValue(launcher);
+      await hydrate();
+      expect(get(needsLogin)).toBe(false);
+
+      vi.mocked(bridge.workspaceContext).mockResolvedValue(serverWorkspace);
+      await hydrate();
+      expect(get(session)).toBeNull();
+      expect(get(needsLogin)).toBe(true);
+    });
+
+    it('without a context a server workspace still asks for the login (fail closed)', async () => {
+      const fresh = await freshStart();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        vi.mocked(fresh.bridge.workspaceContext).mockRejectedValue(new Error('no data dir'));
+        vi.mocked(fresh.bridge.loadSettings).mockResolvedValue(
+          baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+        );
+        await fresh.session.hydrate();
+        expect(get(fresh.session.ready)).toBe(true);
+        expect(get(fresh.session.settings)?.mode).toBe('server');
+        expect(get(fresh.session.needsLogin)).toBe(true);
+        expect(error).toHaveBeenCalledWith('workspace context failed', expect.any(Error));
+      } finally {
+        error.mockRestore();
+      }
+    });
+
     it('the real bridge module exports no keyring session-restore call', async () => {
       // 6.44: `'checkSession' in bridge` against the mock above is tautological — it only checks the
       // mock's shape. Assert against the ACTUAL module so adding a real keyring-restore export (a
@@ -90,53 +165,87 @@ describe('session store', () => {
     });
   });
 
-  describe('dropSession', () => {
-    it('ends the session in Rust and clears the in-memory one', async () => {
-      vi.mocked(bridge.loadSettings).mockResolvedValue(
-        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
-      );
-      vi.mocked(bridge.login).mockResolvedValue(aSession);
-      await hydrate();
-      await login('https://srv.example.com', 'alice', 'pw');
-      expect(get(session)).not.toBeNull();
-
-      await dropSession();
-      expect(bridge.logout).toHaveBeenCalledOnce();
-      expect(get(session)).toBeNull();
-      expect(get(needsLogin)).toBe(true);
-    });
-
-    it('still clears the local session when the server logout call fails', async () => {
-      vi.mocked(bridge.loadSettings).mockResolvedValue(
-        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
-      );
-      vi.mocked(bridge.login).mockResolvedValue(aSession);
-      vi.mocked(bridge.logout).mockRejectedValueOnce(new Error('offline'));
-      await hydrate();
-      await login('https://srv.example.com', 'alice', 'pw');
-
-      await dropSession();
-      expect(get(session)).toBeNull();
-    });
-  });
-
   describe('login persists prefill data', () => {
-    it('saves the trimmed server URL + username, never the password', async () => {
+    it('saves the server URL of the session and the trimmed username, never the password', async () => {
       vi.mocked(bridge.loadSettings).mockResolvedValue(
         baseSettings({ mode: 'server', serverUrl: '' }),
       );
-      vi.mocked(bridge.login).mockResolvedValue(aSession);
+      // Rust names the URL the workspace keeps, not the one the window sent (masked, say).
+      const kept = 'https://bob:pw@srv.example.com/?token=t0k';
+      vi.mocked(bridge.login).mockResolvedValue({ ...aSession, serverUrl: kept });
       await hydrate();
-      await login('  https://srv.example.com  ', '  alice  ', 'secret');
+      await login('https://***@srv.example.com/?token=***', '  alice  ', 'secret');
 
       expect(bridge.saveSettings).toHaveBeenCalledWith(
-        expect.objectContaining({
-          serverUrl: 'https://srv.example.com',
-          lastUsername: 'alice',
-        }),
+        expect.objectContaining({ serverUrl: kept, lastUsername: 'alice' }),
       );
       const saved = vi.mocked(bridge.saveSettings).mock.calls[0][0];
       expect(JSON.stringify(saved)).not.toContain('secret');
+    });
+  });
+
+  // The save after the sign-in gives a workspace without a URL its first one (R-0431): the
+  // context names it only once loaded anew, and the settings of the window read it there.
+  describe('login loads the context anew after the first URL', () => {
+    const withUrl: WorkspaceContext = {
+      launcher: false,
+      workspace: { ...serverWorkspace.workspace!, url: 'https://srv.example.com/' },
+    };
+
+    beforeEach(() => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', serverUrl: null }),
+      );
+      vi.mocked(bridge.login).mockResolvedValue(aSession);
+    });
+
+    it('a workspace without a URL shows the one the save gave it', async () => {
+      await hydrate();
+      expect(get(context)?.workspace?.url ?? null).toBeNull();
+      vi.mocked(bridge.workspaceContext).mockResolvedValue(withUrl);
+
+      await login('https://srv.example.com', 'alice', 'pw');
+
+      expect(bridge.workspaceContext).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(bridge.saveSettings).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(bridge.workspaceContext).mock.invocationCallOrder[1],
+      );
+      expect(get(context)?.workspace?.url).toBe('https://srv.example.com/');
+    });
+
+    it('a save Rust refused leaves the context as it was', async () => {
+      await hydrate();
+      vi.mocked(bridge.saveSettings).mockRejectedValueOnce(new Error('identity without URL'));
+
+      await login('https://srv.example.com', 'alice', 'pw');
+
+      expect(bridge.workspaceContext).toHaveBeenCalledOnce();
+      expect(get(session)).not.toBeNull();
+    });
+
+    it('a workspace that has its URL is not asked again', async () => {
+      vi.mocked(bridge.workspaceContext).mockResolvedValue(withUrl);
+      await hydrate();
+
+      await login('https://srv.example.com', 'alice', 'pw');
+
+      expect(bridge.workspaceContext).toHaveBeenCalledOnce();
+    });
+
+    it('a context that does not load again keeps the sign-in', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await hydrate();
+        vi.mocked(bridge.workspaceContext).mockRejectedValueOnce(new Error('no data dir'));
+
+        await login('https://srv.example.com', 'alice', 'pw');
+
+        expect(get(session)).toEqual(aSession);
+        expect(get(context)?.workspace?.url ?? null).toBeNull();
+        expect(error).toHaveBeenCalledWith('workspace context failed', expect.any(Error));
+      } finally {
+        error.mockRestore();
+      }
     });
   });
 

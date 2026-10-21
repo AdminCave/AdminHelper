@@ -19,7 +19,6 @@ const MISMATCH =
 
 const h = vi.hoisted(() => ({
   login: vi.fn(),
-  setMode: vi.fn(async () => {}),
   setAllowSelfSignedCerts: vi.fn(async () => {}),
   enrollWithToken: vi.fn(),
   resetServerCertPin: vi.fn(),
@@ -31,7 +30,6 @@ vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return {
     login: h.login,
-    setMode: h.setMode,
     setAllowSelfSignedCerts: h.setAllowSelfSignedCerts,
     settings: writable({
       mode: 'server',

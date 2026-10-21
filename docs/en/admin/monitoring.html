@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Monitoring</h1>
-          <p class="lead">Define checks, set thresholds, wire alerts into hooks. Since v0.32.0 checks, alert rules, and templates are maintained in the <strong>desktop client</strong> (server mode) – on the fleet-wide <em>Monitoring</em> page and per server in the <em>Monitoring</em> tab under <em>Infrastructure</em>. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage (configurable retention, default 90 days).</p>
+          <p class="lead">Define checks, set thresholds, wire alerts into hooks. Since v0.32.0 checks, alert rules, and templates are maintained in the <strong>desktop client</strong> (in a server workspace) – on the fleet-wide <em>Monitoring</em> page and per server in the <em>Monitoring</em> tab under <em>Infrastructure</em>. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage (configurable retention, default 90 days).</p>
 
           <h2>Check Types</h2>
           <p>The type identifier (<code>check_type</code>) is exactly the value the desktop client shows in its dropdown. Server-side probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run inside the monitoring container; all <code>agent_*</code> and plugin checks evaluate data pushed by the agent; <code>disk_forecast</code> reads the metric history from VictoriaMetrics.</p>
@@ -133,7 +133,7 @@
 
           <h2>Creating a check</h2>
           <ol>
-            <li>Desktop client (server mode) → <em>Monitoring → New check</em> (or per server: <em>Infrastructure → Server → Monitoring tab</em>)</li>
+            <li>Desktop client (server workspace) → <em>Monitoring → New check</em> (or per server: <em>Infrastructure → Server → Monitoring tab</em>)</li>
             <li>Pick the type, choose the target (server or URL)</li>
             <li>Fill in the parameters – type-specific, e.g. for <code>http</code>: URL, expected status code, timeout</li>
             <li>Set the interval, severity (<code>severity</code>), <code>consecutive_fails</code> and <code>consecutive_oks</code> (1–100, default 2) – the thresholds themselves live in the type-specific configuration (next section)</li>
@@ -349,13 +349,13 @@
 
           <h3>What is delivered</h3>
           <ul>
-            <li><strong>Bell</strong> in the desktop client (header): a personal feed with an unread counter that refreshes <strong>in real time</strong> (server push, while a server session is active) — a new notification appears immediately, without waiting for the next poll. Opening it marks the entries as read.</li>
-            <li><strong>Desktop notifications</strong> (native OS alerts): optional, enabled under <em>Settings → Notifications</em> (asks for the system permission once).</li>
+            <li><strong>Bell</strong> in the desktop client (header): a personal feed with an unread counter that refreshes <strong>in real time</strong> (server push, while a server session is active) — a new notification appears immediately, without waiting for the next poll. Opening it marks the entries as read. Each signed-in server workspace has a bell of its own with the feed of its sign-in.</li>
+            <li><strong>Desktop notifications</strong> (native OS alerts): optional, enabled under <em>Settings → All workspaces on this device → Notifications</em> (asks for the system permission once); the switch applies to all workspaces of the device, and the title of each alert names the workspace (“[&lt;name&gt;] …”).</li>
             <li><strong>Email</strong>: additionally, when enabled in a rule and a contact email is set.</li>
           </ul>
 
           <h3>Configure your own rules</h3>
-          <p>Under <em>Settings → Notifications</em> in the desktop client every user maintains a contact email and any number of rules. Each rule consists of:</p>
+          <p>Under <em>Settings → This workspace → Notification rules</em> in the desktop client (in a server workspace you are signed in to; the rules are kept at the server of this workspace) every user maintains a contact email and any number of rules. Each rule consists of:</p>
           <table>
             <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
             <tbody>
