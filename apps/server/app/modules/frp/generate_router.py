@@ -19,6 +19,7 @@ from app.modules.frp.config_generator import (
     generate_frps_toml,
     generate_visitor_toml,
     without_secretless_stcp,
+    without_unbindable_visitor,
 )
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
@@ -117,11 +118,14 @@ def gen_visitor_toml(
         if not user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    tunnels = without_secretless_stcp(_visible_stcp_tunnels(db, config, user))
+    tunnels = without_unbindable_visitor(
+        without_secretless_stcp(_visible_stcp_tunnels(db, config, user))
+    )
     # The visitor TOML embeds the shared frps auth token; without visible STCP
     # tunnels the user has no legitimate reason for it, so refuse rather than hand
     # the global secret to any authenticated (non-admin, server-less) user (3.33).
-    # Tunnels without a secret count as none: the generator would leave them out.
+    # Tunnels without a secret or a usable visitor port count as none: the generator
+    # would leave them out.
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
@@ -143,7 +147,9 @@ def gen_visitor_bundle(
     empty for backward compatibility with the desktop's response shape."""
     config = _resolve_config(db, config_id)
 
-    tunnels = without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
+    tunnels = without_unbindable_visitor(
+        without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
+    )
     # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
     # visible, usable STCP tunnels (3.33).
     if not tunnels:
@@ -197,7 +203,12 @@ def gen_bulk_zip(
             frpc = generate_frpc_toml(config, tunnels, server.name, allow_users)
             zf.writestr(f"clients/{server.name}/frpc.toml", frpc)
 
-        stcp_tunnels = [t for t in all_tunnels if t.tunnel_type == "stcp"]
+        # Once as well, after the frpc.toml files: a tunnel without a usable visitor port
+        # keeps its proxy above, no visitor TOML carries it, and it is warned about once,
+        # not per user; a user whose tunnels all lack one gets no visitor TOML.
+        stcp_tunnels = without_unbindable_visitor(
+            [t for t in all_tunnels if t.tunnel_type == "stcp"]
+        )
         users_with_servers = db.query(User).filter(User.servers.any()).all()
         if users_with_servers:
             for user in users_with_servers:

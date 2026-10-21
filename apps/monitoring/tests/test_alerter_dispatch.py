@@ -122,9 +122,9 @@ def test_failed_webhook_stores_a_fixed_reason(monkeypatch, caplog, exc, reason):
 
 
 def test_a_url_httpx_cannot_read_stores_a_fixed_reason(monkeypatch, caplog):
-    # urlparse reads the host, so the guard passes the URL; httpx refuses the port while
-    # pinned_client builds the client. That is a failed request like any other, not a
-    # rule that could not be dispatched.
+    # The guard, stubbed here, rejects this URL already; should pinned_client still be
+    # handed one, httpx refuses the port while it builds the client. That is a failed
+    # request like any other, not a rule that could not be dispatched.
     no_env_proxy(monkeypatch)
     monkeypatch.setattr(alerter, "check_target", lambda url: _ALLOWED)
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _no_request)

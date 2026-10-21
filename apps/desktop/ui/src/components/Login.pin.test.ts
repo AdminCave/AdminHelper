@@ -14,9 +14,9 @@ import type { ResetOutcome } from '$lib/bridge';
 
 // What a pin verifier leaves at the end of the reqwest source chain (error.rs).
 const TOFU =
-  'error sending request for url (https://srv.example/api/auth/login): client error (Connect): ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für srv.example hat sich geändert';
+  'error sending request: client error (Connect): ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für srv.example hat sich geändert';
 const CA =
-  'error sending request for url (https://srv.example/api/auth/login): client error (Connect): ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der gepinnten CA gedeckt (mögliche MITM-Attacke)';
+  'error sending request: client error (Connect): ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der gepinnten CA gedeckt (mögliche MITM-Attacke)';
 
 const RESET_PIN = 'Gepinntes Server-Zertifikat zurücksetzen';
 const RESET_IDENTITY = 'Geräte-Identität zurücksetzen';

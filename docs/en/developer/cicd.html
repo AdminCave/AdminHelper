@@ -371,7 +371,9 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <code>scripts/vm/bootstrap_linux.sh</code>, and <code>scripts/dev/toolchain-lockstep.sh</code> holds
           version and SHA-256 equal at both places. Today it names the thirteen changes of the tighter port
           bounds at <code>POST /api/frp/server-config</code> and
-          <code>PUT /api/frp/server-config/{config_id}</code> (R-0411, Kevin 2026-10-17).</p>
+          <code>PUT /api/frp/server-config/{config_id}</code> (R-0411, Kevin 2026-10-17) and the four of the
+          tighter <code>visitor_port</code> bounds at <code>POST /api/frp/tunnels</code> and
+          <code>PUT /api/frp/tunnels/{tunnel_id}</code> (R-0533, Kevin 2026-10-21).</p>
           <p><code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
           SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
           <code>go 1.26</code> and the workflows run with <code>GOTOOLCHAIN=local</code>, so a source build
