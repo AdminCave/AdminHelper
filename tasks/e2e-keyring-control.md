@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-E2E: eigener Keyring je D-Bus-Session — Task-Ledger
-Status: geplant · Branch: feature/e2e-keyring-control · Review: am Ende
+Status: aktiv · Branch: feature/e2e-keyring-control · Review: am Ende
 Spec: Roadmap R-0566
 Heavy: linux-full — ändert den Keyring-Start aller Desktop-E2E-Suiten und der Desktop-Box des Multibox; läuft im Sammellauf über `main`. Vor dem Merge zusätzlich `desktop_e2e_crud` und `desktop_e2e_workspaces` als Einzelschritte auf der warmen Box (je drei Sessions hintereinander), weil ein Fehler hier alle GUI-Suiten des Sammellaufs rot machen würde
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
