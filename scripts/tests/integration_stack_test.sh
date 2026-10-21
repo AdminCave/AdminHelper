@@ -633,6 +633,122 @@ else
     ok "frps (frpedge) cannot reach auth-less redis:6379 / victoria:8428 (3.28)"
 fi
 
+# ── 13. Processes of app in server, scheduler, ca-issuer and monitoring are not dumpable ──
+# Their images leave every ELF program in the bin directories for anyone but root to execute
+# only (the last RUN of each Dockerfile). A process the entrypoint starts as app through gosu
+# runs from a program its user cannot read, so it is not dumpable and /proc/<pid> is root's.
+# Checked from inside each container, as root, once PID 1 runs the service as app: before
+# that the entrypoint is still at work, and a look at /proc would catch whichever helper it
+# runs at that moment. A readable copy of sleep, started the same way, shows the check can fail.
+APP_UID=10001
+APP_SERVICES=(server scheduler ca-issuer monitoring)
+# The directories whose ELF programs the step of the Dockerfiles leaves execute-only.
+EXEC_ONLY_DIRS=(/usr/local/bin /usr/local/sbin /usr/bin /usr/sbin)
+
+# app_procs <service> — "<pid> <owner of /proc/<pid>/status> <name>" for each process of app
+# (Uid APP_UID) in the service; non-zero when the exec fails.
+app_procs() {
+    local out pid uid owner name
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    out=$(e2e_dc exec -T "$1" sh -c 'for d in /proc/[0-9]*; do
+        s=$(cat "$d/status" 2>/dev/null) && o=$(stat -c %u:%g "$d/status" 2>/dev/null) || continue
+        printf "%s\n" "$s" | { n=; u=
+            while read -r k v; do case $k in Name:) n=$v ;; Uid:) u=${v%%[!0-9]*} ;; esac; done
+            echo "${d#/proc/} $u $o $n"; }
+    done' 2>/dev/null) || return 1
+    while read -r pid uid owner name; do
+        [ "$uid" != "$APP_UID" ] || echo "$pid $owner $name"
+    done <<<"$out"
+}
+
+# app_started — LAST: the services in which PID 1 is not yet a process of app other than the
+# entrypoint's sh; 0 when there is none.
+app_started() {
+    local svc
+    LAST=""
+    for svc in "${APP_SERVICES[@]}"; do
+        app_procs "$svc" | awk '$1 == 1 && $3 != "sh" { found = 1 } END { exit !found }' || LAST+=" $svc"
+    done
+    [ -z "$LAST" ]
+}
+
+# elf_modes <service> — "<mode> <path>" for each ELF file with an x bit in EXEC_ONLY_DIRS of the
+# service; non-zero when the exec, find, head or stat fails.
+elf_modes() {
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    e2e_dc exec -T "$1" sh -c 'elf=$(printf "\177ELF"); files=$(find "$@" -type f -perm /111) || exit 1
+        printf "%s\n" "$files" | while IFS= read -r f; do
+            m=$(head -c 4 "$f") || exit 1
+            [ "$m" != "$elf" ] || stat -c "%a %n" "$f" || exit 1
+        done' _ "${EXEC_ONLY_DIRS[@]}" 2>/dev/null
+}
+
+copy_seen() { LAST=$(app_procs server | awk '$3 == "sleep-readable"'); [ -n "$LAST" ]; }
+
+app_not_dumpable() {
+    local svc procs others modes mode path readable n gid copy=/tmp/sleep-readable
+
+    # server and ca-issuer run since the gateway came up, victoria since 12, the scheduler since
+    # 11b unless that stopped before it; --no-deps as in 11b, so neither server nor ca-issuer is
+    # recreated.
+    if ! e2e_dc up -d --no-deps --build scheduler monitoring >"$E2E_WORK/app-up.log" 2>&1; then
+        bad "scheduler/monitoring did not come up"; tail -20 "$E2E_WORK/app-up.log"; return
+    fi
+    if ! until_ok 60 app_started; then
+        bad "within 60 s PID 1 did not become a process of app (UID $APP_UID) other than the entrypoint's" \
+            "sh in:$LAST"
+        return
+    fi
+
+    for svc in "${APP_SERVICES[@]}"; do
+        # a. Every process of app has /proc/<pid> owned by root.
+        if ! procs=$(app_procs "$svc"); then
+            bad "$svc: could not read the processes"
+        elif others=$(awk '$2 != "0:0"' <<<"$procs" | paste -sd ';') && [ -n "$procs" ] && [ -z "$others" ]; then
+            ok "$svc: processes of app: $(wc -l <<<"$procs")" \
+                "($(awk '{ print $3 }' <<<"$procs" | sort -u | paste -sd ' ')), each /proc/<pid> owned by 0:0"
+        else
+            bad "$svc: processes of app whose /proc/<pid> is not 0:0 (pid owner name): ${others:-none of app}"
+        fi
+        # b. No ELF program with an x bit in the bin directories is readable by group or others.
+        if ! modes=$(elf_modes "$svc"); then
+            bad "$svc: could not list the programs in ${EXEC_ONLY_DIRS[*]}"; continue
+        fi
+        n=0 readable=()
+        while read -r mode path; do
+            [ -n "$mode" ] || continue
+            n=$((n + 1))
+            if (( 8#$mode & 8#044 )); then readable+=("$path ($mode)"); fi
+        done <<<"$modes"
+        if [ "$n" -gt 0 ] && [ "${#readable[@]}" -eq 0 ]; then
+            ok "$svc: none of its $n ELF programs in ${EXEC_ONLY_DIRS[*]} is readable by group or others"
+        else
+            bad "$svc: ${#readable[@]} of $n ELF programs in ${EXEC_ONLY_DIRS[*]} readable by group or others" \
+                "(first ones: ${readable[*]:0:5})"
+        fi
+    done
+
+    # Counter-check in server: started the same way from a readable copy of sleep, a process of
+    # app keeps /proc/<pid> as its own, so the check above can fail.
+    gid=$(e2e_dc exec -T server id -g app 2>/dev/null | tr -d '\r\n')
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    if ! e2e_dc exec -T server sh -c 'cp /usr/bin/sleep "$1" && chmod 0755 "$1"' _ "$copy" >/dev/null 2>&1 \
+        || ! e2e_dc exec -d -T server gosu app:app "$copy" 120 >/dev/null 2>&1; then
+        bad "server: could not start a readable copy of sleep as app"; return
+    fi
+    if ! until_ok 10 copy_seen; then
+        bad "server: the readable copy of sleep did not show up as a process of app"
+    elif [ "${LAST#* }" = "$APP_UID:$gid sleep-readable" ]; then
+        ok "counter-check: a readable copy of sleep started through gosu keeps /proc/<pid> as $APP_UID:$gid"
+    else
+        bad "counter-check: the readable copy of sleep has '$LAST', expected $APP_UID:$gid" \
+            "— the check could not fail"
+    fi
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    e2e_dc exec -T server sh -c 'kill "$1"; rm -f "$2"' _ "${LAST%% *}" "$copy" >/dev/null 2>&1
+}
+app_not_dumpable
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"
