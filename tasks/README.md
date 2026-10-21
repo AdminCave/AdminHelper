@@ -18,7 +18,7 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 
 | `Status:` | Bedeutung |
 |---|---|
-| `geplant` | von `/feature-plan` erstellt. Die Freigabe ist Kevins `roadmap.py approve` für die Roadmap-Zeile; erst dann setzt `/feature-build` den Kopf im Worktree auf `aktiv` (CLAUDE.md §4). |
+| `geplant` | von `/feature-plan` erstellt. Die Freigabe ist `roadmap.py approve` für die Roadmap-Zeile, die die Session gleich nach dem Plan-Commit selbst setzt; erst dann setzt `/feature-build` den Kopf im Worktree auf `aktiv` (CLAUDE.md §4). |
 | `freigegeben` | Form älterer Ledger, deren Kopf die Freigabe trug; `/feature-build` behandelt sie wie `geplant` mit freigegebener Roadmap-Zeile. |
 | `aktiv` | wird gebaut, in einem eigenen Worktree — **nie zwei Bauer auf demselben Ledger**. |
 | `bereit` | alle Tasks sind zu; Abschluss (`tester`, Branch-Review) und PR stehen aus. |
@@ -86,7 +86,7 @@ Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die Beschreibung au
 `it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[test]` (Rust).
 
 1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** Sie kommt mit dem
-   Plan-Commit, den Kevin liest. `task-close.sh` nimmt einen Commit zurück (Exit 4), der eine
+   Plan-Commit, und der Bericht am Gate nennt sie Kevin. `task-close.sh` nimmt einen Commit zurück (Exit 4), der eine
    `Test-Löschung:`-Zeile ändert. Wer unterwegs merkt, dass ein Test gehen muss, setzt `[?]` und
    fragt.
 2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form `<pfad>::<name> — <Grund>`; ohne Grund
