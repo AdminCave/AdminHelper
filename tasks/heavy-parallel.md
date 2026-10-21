@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness: Sammellauf mit Sekunden je Schritt und auf zwei Boxen parallel — Task-Ledger
-Status: bereit · Branch: feature/heavy-parallel · Review: pro Task
+Status: aktiv · Branch: feature/heavy-parallel · Review: pro Task
 Spec: docs/features/heavy-parallel.md (Roadmap R-0603)
 Heavy: linux-full — ein realer Beweislauf vor dem Merge (Kevin 2026-10-21): `bash scripts/tests/heavy.sh all` aus dem Worktree, in tmux nach CLAUDE.md §2, mit zwei Boxen der Lane des Vorhabens (beide kalt). Erwartet: beide Teile laufen gleichzeitig, der Report nennt je Schritt Ergebnis und Sekunden, das Gesamturteil steht in Zeile 1, `vm.py list` danach ohne Leck. Voraussetzung: keine laufende Box einer fremden Lane (sonst bricht der Pre-flight mit 74 ab), also kein gleichzeitiger Sammellauf aus dem Haupt-Checkout. Die Historie des Beweislaufs bleibt im Worktree (`tasks/private` gibt es dort nicht im Repo), nicht in der echten `history.csv`. T1 zeigt sich real erst im ersten Sammellauf aus dem Haupt-Checkout nach dem Merge (aus einem Worktree hat die Box kein Repo); bis dahin belegt ihn `run_flags_test.sh`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -132,3 +132,16 @@ Tests in `heavy_test.sh`: `SHIM_WARM_RC_GUI=1` → Teil `gui` läuft danach mit 
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: `DEVELOPMENT.md` Wochenlauf, `cicd.html` DE/EN: was ohne zweite Box geschieht.
 Abhängt von: T9
+
+### T13 — run.sh: der Smoke-Schritt frischt auch die Abhängigkeiten von apps/desktop/ui auf  [ ]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Änderung: Fund aus der Branch-Prüfung. Bisher frischte `desktop-ui vitest` (`npm_ci_if_stale` in `apps/desktop/ui`) die `node_modules` von `ui/` auf, bevor `desktop-e2e smoke` lief; mit `--part gui` liegt dieser Schritt im anderen Teil. Der Smoke-Schritt (`run.sh`, `desktop-e2e smoke`) frischt nur `apps/desktop/e2e` auf, sein `npm test` baut die App aber über `onPrepare` (`cargo tauri build`, `beforeBuildCommand` `npm --prefix ui run build`). Auf der GUI-Box baut er damit gegen die `node_modules` des Templates, nicht gegen den Lockfile des Laufs. Fix: Der Smoke-Schritt ruft `npm_ci_if_stale` auch in `apps/desktop/ui` vor dem Build, wie `e2e_npm_ready ui e2e` (`lib_e2e_stack.sh`) für die GUI-Suiten; ein Kommentar sagt das Warum.
+Tests in `run_flags_test.sh` (Stubs für npm und die Display-Werkzeuge, keine Suite startet): Mit `ui/node_modules` älter als `ui/package-lock.json` ruft der Smoke-Schritt `npm ci` in `ui` vor `npm test` in `e2e`; mit frischen `node_modules` kein `npm ci` in `ui`. Auf HEAD rot.
+Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
+Doku: keine (intern)
+
+### T14 — heavy_test.sh: ein Teil ohne Ergebnisdatei ist nie grün  [ ]
+Komponente: scripts · Dateien: scripts/tests/heavy_test.sh
+Änderung: Fund aus der Branch-Prüfung (tester). Den Zweig in `heavy.sh`, der einen Teil ohne `<teil>.rc` als `infra` wertet („the part ended without a result (no <teil>.rc)“), deckt kein Test: Auf `*) ;;` verkürzt bleibt `heavy_test.sh` grün, und ein Lauf, dessen Teil-Job vor dem Schreiben von `gui.rc` stirbt, endet `PASS` mit dem Ergebnis des anderen Teils. Neuer Fall: Der `iter.sh`-Shim beendet bei `--slot gui` seinen Teil-Job vor dem Schreiben der Ergebnisdatei (Schalter wie `SHIM_KILL_PARENT_GUI`) → Exit 74, `UNVERIFIED`, der Grund nennt „no gui.rc“ und den Teil, keine Ebenen-Zeile `pass`. Dazu eine kaputte `<teil>.rc` (Exit-Code oder Sekunden nicht numerisch) → `infra`, nie `PASS`. Beide mit der Mutation des Zweigs rot (Probe im Scratch, Zahlen in den Commit-Body).
+Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
+Doku: keine (Test)
