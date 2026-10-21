@@ -1099,6 +1099,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent: der Windows-Dienst meldet ein nicht gesichertes Log-Verzeichnis im Ereignisprotokoll (R-0556):** Laesst
+  sich das Log-Verzeichnis nicht sichern, schreibt der Agent wie bisher nur auf stdout und keine `agent.log`; unter
+  dem Dienststeuerungs-Manager sah das niemand. Laeuft er als Windows-Dienst, schreibt er dann beim Start genau eine
+  Warnung ins Windows-Ereignisprotokoll (Windows-Protokolle → Anwendung, Quelle `AdminHelper-Agent`, Ereignis-ID 1)
+  mit dem Verzeichnis, dem Grund und den Folgen: bis zum Neustart des Dienstes nur stdout, und der FRP-Sync aendert
+  nichts, solange sich das Datenverzeichnis nicht sichern laesst. Ein Aufruf von Hand bleibt ohne Hinweis, Linux ist
+  unveraendert. Doku: Agent-Deployment und Entwickler-Doku Agent (DE+EN).
 - **Desktop: Workspaces statt Moduswechsel (R-0431):** Der Modus in den Einstellungen entfaellt: Die Art legt ein
   Workspace beim Anlegen fest, Name, Farbe und URL aendert der Picker, solange der Workspace geschlossen ist; im
   Fenster stehen sie als Anzeige. Die Einstellungen trennen „Dieser Workspace“ (Abmelden, Zertifikate,

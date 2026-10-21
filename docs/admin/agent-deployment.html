@@ -201,6 +201,7 @@ sudo adminhelper-agent run --once          # ein Durchlauf von Hand: Sync + Push
             <li>Windows: <code>%ProgramData%\AdminHelper\logs\agent.log</code></li>
           </ul>
           <p>Format wie auf stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (Komponente: <code>agent</code>, <code>frpc</code> oder <code>monitor</code>). Rotation bei 10&nbsp;MB, 5 komprimierte Archive. Die Ausführlichkeit steuert <code>LOG_LEVEL</code> (Env) bzw. <code>--log-level debug|info|warn|error</code>.</p>
+          <p>Unter Windows sichert der Agent das Log-Verzeichnis, bevor er die Datei öffnet. Gelingt das nicht, schreibt er bis zum nächsten Start nur auf stdout und keine <code>agent.log</code>; der FRP-Abgleich ändert nichts, solange sich das Datenverzeichnis nicht sichern lässt. Läuft er als Dienst, steht der Grund in der Ereignisanzeige unter <em>Windows-Protokolle → Anwendung</em>: eine Warnung der Quelle <code>AdminHelper-Agent</code> (Ereignis-ID 1) mit dem Verzeichnis, dem Fehler und diesen Folgen. Ein Aufruf von Hand, etwa ohne Administratorrechte, schreibt keinen Eintrag.</p>
           <p>Für einen Bug-Report erzeugt <code>adminhelper-agent diagnostics</code> einen <strong>redaktierten</strong> Bericht (Version, OS, Config ohne Secrets, Log-Auszug) unter <code>/tmp/</code> — kurz durchsehen und an ein GitHub-Issue anhängen.</p>
 
           <h2 id="upgrade">Upgrade</h2>

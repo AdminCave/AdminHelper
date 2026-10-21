@@ -200,6 +200,7 @@ sudo adminhelper-agent run --once          # one run by hand: sync + push</code>
             <li>Windows: <code>%ProgramData%\AdminHelper\logs\agent.log</code></li>
           </ul>
           <p>Same format as stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (component: <code>agent</code>, <code>frpc</code> or <code>monitor</code>). Rotates at 10&nbsp;MB, 5 compressed archives. Verbosity is set via <code>LOG_LEVEL</code> (env) or <code>--log-level debug|info|warn|error</code>.</p>
+          <p>On Windows the agent secures the log directory before it opens the file. If that fails, it logs to stdout only and writes no <code>agent.log</code> until its next start; the FRP sync changes nothing as long as the data directory cannot be secured. When it runs as a service, the reason is in the Event Viewer under <em>Windows Logs → Application</em>: a warning from the source <code>AdminHelper-Agent</code> (event ID 1) with the directory, the error and these consequences. A run by hand, for example without administrator rights, writes no entry.</p>
           <p>For a bug report, <code>adminhelper-agent diagnostics</code> writes a <strong>redacted</strong> report (version, OS, config without secrets, log excerpt) to <code>/tmp/</code> — review it and attach it to a GitHub issue.</p>
 
           <h2 id="upgrade">Upgrade</h2>
