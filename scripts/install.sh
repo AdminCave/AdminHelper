@@ -190,9 +190,12 @@ upsert_env() {
     # 0600, same file system, so mv is a rename) and replaces it only once both
     # steps worked: a full disk must not leave a cut-down .env in its place, which
     # the stack would then start on without its secrets. Matches update.sh.
+    # LC_ALL=C grep -a: grep takes a file with a NUL byte or a byte the caller's
+    # locale cannot decode for binary and leaves lines out, which would drop them
+    # from .env.
     local tmp failed="FEHLER: ${key} konnte nicht in die .env geschrieben werden — Abbruch. Die .env bleibt beim letzten vollstaendigen Stand; Stack, Admin und Enroll-Token werden nicht angelegt."
     tmp=$(mktemp .env.ah-XXXXXX) || { echo "$failed" >&2; exit 1; }
-    { { grep -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
+    { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
         && mv "$tmp" .env; } \
         || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }

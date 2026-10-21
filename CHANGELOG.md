@@ -465,6 +465,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Ops-Skripte: eine `.env` mit einem NUL-Byte oder mit Bytes ausserhalb von UTF-8 verliert keine Zeilen mehr
+  (R-0530):** `grep` haelt eine Datei mit einem NUL-Byte oder mit einem Byte, das die Locale des Aufrufers nicht
+  dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und laesst Zeilen aus: die Zeilen
+  mit einem solchen Byte, bei einem NUL-Byte alle. Setzten `install.sh`, `update.sh` oder `init-secrets.sh` einen
+  Schluessel, fehlten diese Zeilen danach in der `.env`. `init-secrets.sh`, das `install.sh` und `update.sh` aufrufen,
+  hielt ein gesetztes Secret in einer solchen Zeile fuer leer und erzeugte es neu, bei einem NUL-Byte alle vier, auch
+  `POSTGRES_PASSWORD` und `CA_ROOT_PASSPHRASE`, die dann nicht mehr zu den Volumes passten. Bei einem NUL-Byte nannte
+  `update.sh` die Installation ausserdem `:latest`, und der Rollback nach einem gescheiterten Neustart oder
+  Healthcheck hinterliess eine `.env` ohne Image-Pins. Jetzt lesen die Skripte die `.env` in jeder Locale Byte fuer
+  Byte (`LC_ALL=C grep -a`).
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder

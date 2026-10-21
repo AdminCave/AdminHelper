@@ -12,12 +12,15 @@
 # .env write error in the migration, what a rollback removes, what the texts name
 # for a floating tag, the temp dir a self-update leaves, the check of .env values
 # before the first compose call, held against the real `docker compose`, a failed
-# swap of the runtime files, a failed rm or tar in the snapshot restore, and a
-# migration that cannot append to .env or read the new .env.example.
+# swap of the runtime files, a failed rm or tar in the snapshot restore, a
+# migration that cannot append to .env or read the new .env.example, and an update,
+# a rollback and --check on a floating tag over a .env with bytes outside UTF-8 and
+# a NUL byte.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign,
 #      docker compose; no daemon; a user that file rights bind: as root test 38
-#      cannot run, and the test ends with 75)
+#      cannot run, and the test ends with 75; the locale C.UTF-8: without it test 39
+#      cannot run, and the test ends with 75 as well)
 
 # ok()/bad() never fail, so the `cond && ok || bad` assertions are deliberate
 # (not if-then-else); the │-prefix sed is a readability nicety.
@@ -1046,8 +1049,70 @@ else
   done
 fi
 
+# ── 39. bytes outside UTF-8 and a NUL byte in .env: update and rollback keep them
+# grep takes a file for binary once it holds a NUL byte or a byte the caller's
+# locale cannot decode, and leaves lines out (exit 0, "binary file matches" on
+# stderr). With a NUL byte upsert_env wrote .env back as nothing but the pins,
+# installed_version found no SERVER_IMAGE, so the texts named the install
+# ":latest", and the rollback after a failed health check put the pins back the
+# same way (R-0530). The runs use C.UTF-8; the test reads .env byte for byte (-a,
+# LC_ALL=C) and holds it against lines written down apart, never read back from
+# the file. Without C.UTF-8 the case cannot run, and the test then ends with 75.
+LOCALE_SKIP=""
+if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
+  LOCALE_SKIP="test 39 (bytes outside UTF-8 in .env) needs the locale C.UTF-8, this system has none"
+  echo "  SKIP $LOCALE_SKIP"
+else
+  make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+  PINS='^(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE='
+  # Every image pin in the .env of install dir $1 on version $2, one line each.
+  pinned_on() {
+    local k
+    for k in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+      [ "$(LC_ALL=C grep -a -c -x -F "${k%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${k#*:}:$2" "$1/.env")" = 1 ] \
+        || return 1
+    done
+  }
+  for how in update health-fail; do
+    INST="$WORK/inst39-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+    # What has to stay: the fresh install's lines but the pins (plain ASCII), then
+    # the two new ones, appended to both. A key stands behind the NUL byte: grep
+    # without -a ends the line there, and the migration took NEW_FEATURE_FLAG for set.
+    grep -vE "$PINS" "$INST/.env" > "$INST.keep"
+    printf 'SMTP_FROM=M\374ller\nX=a\0NEW_FEATURE_FLAG=off\n' | tee -a "$INST/.env" >> "$INST.keep"
+    health=0; [ "$how" = update ] || health=1
+    out=$(LC_ALL=C.UTF-8 AH_TEST_HEALTH=$health run_update "$INST" 2>&1); rc=$?
+    echo "$out" | sed 's/^/    │ /'
+    if [ "$how" = update ]; then
+      { [ $rc -eq 0 ] && grep -q 'Update 0\.33\.0 -> 0\.34\.0' <<<"$out" && ! grep -q ':latest' <<<"$out"; } \
+        && ok "$how over a Latin-1 and a NUL line exits 0 and names 0.33.0 as installed" || bad "$how: rc=$rc"
+      pinned_on "$INST" 0.34.0 && ok "$how over a Latin-1 and a NUL line pins every image on 0.34.0" \
+        || bad "$how: pins $(LC_ALL=C grep -a -E "$PINS" "$INST/.env" | tr '\n' ' ')"
+      [ "$(LC_ALL=C grep -a -c -x NEW_FEATURE_FLAG=on "$INST/.env")" = 1 ] \
+        && ok "$how over a Latin-1 and a NUL line migrates NEW_FEATURE_FLAG, one line" \
+        || bad "$how: $(LC_ALL=C grep -a -c '^NEW_FEATURE_FLAG=' "$INST/.env") NEW_FEATURE_FLAG lines"
+    else
+      { [ $rc -ne 0 ] && grep -q 'FEHLER: .*zurueckgerollt auf 0\.33\.0\.' <<<"$out"; } \
+        && ok "$how over a Latin-1 and a NUL line rolls back to 0.33.0" || bad "$how: rc=$rc"
+      pinned_on "$INST" 0.33.0 && ok "$how over a Latin-1 and a NUL line puts every pin back on 0.33.0" \
+        || bad "$how: pins $(LC_ALL=C grep -a -E "$PINS" "$INST/.env" | tr '\n' ' ')"
+    fi
+    LC_ALL=C grep -a -v -E "$PINS|^NEW_FEATURE_FLAG=" "$INST/.env" | cmp -s - "$INST.keep" \
+      && ok "$how over a Latin-1 and a NUL line: every other line byte for byte as it was, both of them too" \
+      || bad "$how: .env now $(cat -v "$INST/.env" | tr '\n' ' ')"
+  done
+  # A floating tag has no version, so installed_label reads SERVER_IMAGE itself.
+  INST="$WORK/inst39-main"; make_install main "$SRC_OLD" "$INST"
+  printf 'X=a\0b\n' >> "$INST/.env"
+  out=$(LC_ALL=C.UTF-8 run_update "$INST" --check 2>&1); rc=$?
+  { [ $rc -eq 0 ] && grep -q 'Installiert: :main ' <<<"$out"; } \
+    && ok "--check on :main over a NUL line names :main" || bad "--check on :main over a NUL line: rc=$rc $out"
+fi
+
 echo
 echo "──────────────────────────────────────────"
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ] || exit 1
-[ -z "$RIGHTS_SKIP" ] || { echo "SKIP: $RIGHTS_SKIP"; exit 75; }
+[ -z "$LOCALE_SKIP" ] || echo "SKIP: $LOCALE_SKIP"
+[ -z "$RIGHTS_SKIP" ] || echo "SKIP: $RIGHTS_SKIP"
+[ -z "$LOCALE_SKIP$RIGHTS_SKIP" ] || exit 75

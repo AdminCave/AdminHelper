@@ -5,10 +5,11 @@
 # Pure .env manipulation (openssl-generated secrets + upsert), no docker. Covers:
 # fresh generation, idempotence (a re-run leaves existing secrets stable — the
 # POSTGRES_PASSWORD stability the stale-volume auth guard depends on), placeholder
-# replacement, quoted-value recognition (audit 6.71), and a write that hits a full
-# disk (R-0516).
+# replacement, quoted-value recognition (audit 6.71), a write that hits a full
+# disk (R-0516), and a .env with bytes outside UTF-8 or a NUL byte (R-0530).
 #
-# Run: bash scripts/tests/init-secrets_test.sh   (needs bash, openssl, coreutils)
+# Run: bash scripts/tests/init-secrets_test.sh   (needs bash, openssl, coreutils, the
+#      locale C.UTF-8: without it test 7 cannot run, and the test ends with 75)
 
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -104,7 +105,41 @@ done
 { [ "$allgen" = 1 ] && [ "$(grep -c '^SECRET_KEY=' "$ENV")" -eq 1 ]; } \
   && ok "one-key .env: all four secrets generated, one SECRET_KEY line" || bad "one-key .env: not all four secrets or a duplicate SECRET_KEY line"
 
+# ── 7. bytes outside UTF-8 or a NUL byte: no line lost, no set secret renewed ─
+# grep takes a file for binary once it holds a NUL byte or a byte the caller's
+# locale cannot decode, and leaves lines out (exit 0, "binary file matches" on
+# stderr): with a Latin-1 byte the lines that hold one, with a NUL byte all of
+# them. upsert wrote .env back without them, and is_set_safely read a set
+# POSTGRES_PASSWORD as empty and made a new one (R-0530). The runs use C.UTF-8;
+# the test reads .env byte for byte (-a, LC_ALL=C) and holds it against lines
+# written down apart, never read back from the file. Without C.UTF-8 the case
+# cannot run, and not run is not green: the test then ends with 75.
+LOCALE_SKIP=""
+if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
+  LOCALE_SKIP="test 7 (bytes outside UTF-8 in .env) needs the locale C.UTF-8, this system has none"
+  echo "  SKIP $LOCALE_SKIP"
+else
+  for how in latin1 nul; do
+    ENV="$WORK/env-$how"
+    case $how in
+      latin1) printf 'MONITOR_API_KEY=m\nPOSTGRES_PASSWORD=gr\374n\n# Zug\344nge\nCA_ROOT_PASSPHRASE=c\n' > "$ENV.keep" ;;
+      nul)    printf 'MONITOR_API_KEY=m\nX=a\0b\nPOSTGRES_PASSWORD=p\nCA_ROOT_PASSPHRASE=c\n' > "$ENV.keep" ;;
+    esac
+    { printf 'SECRET_KEY=\n'; cat "$ENV.keep"; } > "$ENV"
+    out=$(LC_ALL=C.UTF-8 bash "$INIT" "$ENV" 2>&1); rc=$?
+    [ $rc -eq 0 ] && ok "$how: exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "$how: exit $rc"; }
+    LC_ALL=C grep -a -v '^SECRET_KEY=' "$ENV" | cmp -s - "$ENV.keep" \
+      && ok "$how: every line but SECRET_KEY byte for byte as it was" \
+      || bad "$how: .env now $(cat -v "$ENV" | tr '\n' ' ')"
+    [ "$(LC_ALL=C grep -a -c -x -E 'SECRET_KEY=[0-9a-f]{64}' "$ENV")" = 1 ] \
+      && ok "$how: SECRET_KEY generated (64-hex), one line" || bad "$how: no single 64-hex SECRET_KEY line"
+    grep -qxF "→ Generiert in $ENV: SECRET_KEY" <<<"$out" \
+      && ok "$how: only SECRET_KEY reported as generated" || bad "$how: output $out"
+  done
+fi
+
 echo
 echo "──────────────────────────────────────────"
 echo "  init-secrets_test: ${PASS} passed, ${FAIL} failed"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+[ -z "$LOCALE_SKIP" ] || { echo "SKIP: $LOCALE_SKIP"; exit 75; }

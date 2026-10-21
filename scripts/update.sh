@@ -187,8 +187,11 @@ upsert_env() {
     # fine; 2 is an error (a write error too). The copy sits next to .env (mktemp:
     # 0600, same file system, so mv is a rename) and replaces it only once both
     # steps worked: a full disk must not leave a cut-down .env in its place.
+    # LC_ALL=C grep -a, on every read of .env: grep takes a file with a NUL byte or
+    # a byte the caller's locale cannot decode for binary and leaves lines out,
+    # which would drop them from .env or hide its SERVER_IMAGE.
     tmp=$(mktemp .env.ah-XXXXXX) || return 1
-    { { grep -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
+    { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
         && mv "$tmp" .env; } \
         || { rm -f "$tmp"; return 1; }
@@ -198,7 +201,7 @@ upsert_env() {
 # or "unknown" for a floating tag (:latest/:main) where a semver compare is moot.
 installed_version() {
     local tag=""
-    [ -f .env ] && tag=$(grep -E '^SERVER_IMAGE=' .env | head -1 | sed 's/.*://')
+    [ -f .env ] && tag=$(LC_ALL=C grep -a -E '^SERVER_IMAGE=' .env | head -1 | sed 's/.*://')
     case "$tag" in
         [0-9]*.[0-9]*.[0-9]*) printf '%s' "$tag" ;;
         *) printf 'unknown' ;;
@@ -212,7 +215,7 @@ installed_label() {
     local ver ref="" tag
     ver=$(installed_version)
     if [ "$ver" != unknown ]; then printf '%s' "$ver"; return 0; fi
-    [ -f .env ] && ref=$(grep -E '^SERVER_IMAGE=' .env | head -1)
+    [ -f .env ] && ref=$(LC_ALL=C grep -a -E '^SERVER_IMAGE=' .env | head -1)
     ref="${ref#SERVER_IMAGE=}"; ref="${ref##*/}"
     tag="${ref#"${ref%%[:@]*}"}"
     printf '%s' "${tag:-:latest}"
@@ -543,7 +546,7 @@ migrate_env() {
             case "$line" in
                 [A-Z_]*=*)
                     key="${line%%=*}"
-                    rc=0; grep -qE "^#?[[:space:]]*${key}=" .env || rc=$?
+                    rc=0; LC_ALL=C grep -a -qE "^#?[[:space:]]*${key}=" .env || rc=$?
                     case $rc in
                         0) ;;
                         1) printf '%s\n' "$line" >> .env || return 1; log ".env: neuen Key ${key} ergaenzt" ;;
@@ -597,10 +600,11 @@ rollback_after_deploy() {
     # "unknown" for a floating tag (:latest/:main): pins left on the target make
     # the next run call the install current. A pin the old .env lacked stays
     # absent. grep exits 1 for "no line selected", which is fine on either side.
+    # LC_ALL=C grep -a, as in upsert_env: a file grep takes for binary loses lines.
     local pins='^#?[[:space:]]*(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE='
     { ( umask 077
-        { grep -vE "$pins" .env || [ $? -eq 1 ]; } > .env.ah-new \
-            && { grep -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
+        { LC_ALL=C grep -a -vE "$pins" .env || [ $? -eq 1 ]; } > .env.ah-new \
+            && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
       ) && mv -T .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     docker compose up -d >/dev/null \
