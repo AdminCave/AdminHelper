@@ -40,7 +40,7 @@
 ├── models.py          Hook
 ├── schemas.py         Pydantic-Schemas
 ├── scheduler.py       Schedule-Hook-Cron + Notification-Outbox
-├── script_runner.py   Subprocess-Spawn (async)
+├── script_runner.py   Subprocess-Spawn (blockierend)
 └── script_worker.py   Child-Prozess: stdin=JSON, stdout/stderr capture</code></pre>
 
           <h2>Event-Katalog</h2>
@@ -74,18 +74,20 @@
           <p>Neben den Context-Keys stellt der Worker (<code>apps/server/app/modules/hooks/script_worker.py</code>) jedem Script diese Namen bereit:</p>
           <ul>
             <li><code>load_connections()</code> liefert alle Verbindungen als Liste von Dicts. <code>save_connections(list)</code> gleicht die Verbindungen mit der Liste ab (Upsert): vorhandene IDs werden aktualisiert, neue eingefügt, und Verbindungen, die in der Liste fehlen, gelöscht. <code>uuid4()</code> liefert eine neue UUID als String.</li>
-            <li><code>http_get(url, headers=None, timeout=10)</code> und <code>http_post(url, json_data=None, headers=None, timeout=10)</code> liefern ein Dict mit <code>status</code>, <code>body</code> und <code>json</code> (<code>None</code>, wenn der Body kein JSON ist). Sie lehnen Ziele ab, die auf eine private, reservierte oder Link-Local-Adresse zeigen oder sich nicht auflösen lassen (SSRF-Schutz), und folgen keinem Redirect. Ein abgelehntes Ziel und eine Antwort über 1&nbsp;000&nbsp;000 Bytes werfen einen <code>ValueError</code>. Die Anfrage geht an eine der bei der Prüfung aufgelösten Adressen, der Reihe nach, bis eine die Verbindung annimmt, und Host-Header und TLS-Name (SNI und Zertifikatsprüfung) bleiben der Hostname der URL; ist für das Schema der URL ein Proxy gesetzt (<code>HTTP_PROXY</code> oder <code>HTTPS_PROXY</code>, die der Hook-Runner durchreicht), verbindet wie bisher der Proxy und löst den Namen selbst auf (ein Ziel unter <code>NO_PROXY</code> direkt über den Namen), geprüft wird das Ziel auch dann vorher.</li>
+            <li><code>http_get(url, headers=None, timeout=10)</code> und <code>http_post(url, json_data=None, headers=None, timeout=10)</code> liefern ein Dict mit <code>status</code>, <code>body</code> und <code>json</code> (<code>None</code>, wenn der Body kein JSON ist). Sie lehnen ein Ziel ab (SSRF-Schutz), wenn eine seiner aufgelösten Adressen privat, Loopback, Link-Local, reserviert, Multicast oder unspezifiziert (<code>0.0.0.0</code>, <code>::</code>) ist oder in <code>0.0.0.0/8</code> oder <code>100.64.0.0/10</code> liegt; IPv4-gemappte IPv6-Adressen zählen wie ihre IPv4-Adresse. Abgelehnt wird auch eine URL, die sich nicht lesen lässt oder keinen Host hat, und ein Name, der sich nicht binnen 5&nbsp;s auflösen lässt. Sie folgen keinem Redirect. Ein abgelehntes Ziel und eine Antwort über 1&nbsp;000&nbsp;000 Bytes werfen einen <code>ValueError</code>. Die Anfrage geht an eine der bei der Prüfung aufgelösten Adressen, der Reihe nach, bis eine die Verbindung annimmt, und Host-Header und TLS-Name (SNI und Zertifikatsprüfung) bleiben der Hostname der URL; ist für das Schema der URL ein Proxy gesetzt (<code>HTTP_PROXY</code> oder <code>HTTPS_PROXY</code>, die der Hook-Runner durchreicht), verbindet wie bisher der Proxy und löst den Namen selbst auf (ein Ziel unter <code>NO_PROXY</code> direkt über den Namen), geprüft wird das Ziel auch dann vorher.</li>
             <li><code>result</code> (Dict) geht an den Aufrufer zurück. <code>log(msg)</code> und <code>print(...)</code> schreiben eine Zeile in <code>logs</code> (Liste), nicht nach stdout; gespeichert werden höchstens 1000 Zeilen zu je 4096 Zeichen, längere Zeilen werden gekürzt, weitere verworfen.</li>
             <li>Trägt ein Context-Key den Namen eines dieser Helfer, bricht der Hook mit Fehler ab, bevor das Script läuft.</li>
           </ul>
 
           <h2>Environment-Modell</h2>
-          <p>Hook-Scripts laufen in einem eigenen Python-Subprozess mit reduziertem Environment — das ist Crash-/Timeout-Isolation, <strong>kein</strong> Security-Sandbox:</p>
+          <p>Hook-Scripts laufen in einem eigenen Python-Subprozess mit reduziertem Environment, den <code>run_hook_script</code> in <code>apps/server/app/modules/hooks/script_runner.py</code> startet — das ist Crash-/Timeout-Isolation, <strong>kein</strong> Security-Sandbox:</p>
           <ul>
-            <li><strong>Reduziertes Env</strong>: Nur <code>PATH</code>, <code>PYTHONPATH</code>, <code>DATABASE_URL</code> und <code>DATA_DIR</code> werden durchgereicht (<code>ADMIN_PASSWORD</code>, <code>MONITOR_API_KEY</code>, <code>REDIS_URL</code> fallen weg). <code>SECRET_KEY</code> und die DB-Zugangsdaten bleiben aber erreichbar (über <code>DATA_DIR/.secret_key</code> bzw. <code>DATABASE_URL</code>) — <strong>kein Secret-Jail</strong>.</li>
+            <li><strong>Reduziertes Env</strong>: Der Worker bekommt <code>PATH</code>, <code>HOME</code> (fehlt es dem Server, <code>/tmp</code>), <code>LANG</code> (fehlt es dem Server, <code>C.UTF-8</code>), <code>PYTHONPATH</code> (das Server-Verzeichnis), <code>DATABASE_URL</code> und <code>DATA_DIR</code>. <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code> und <code>NO_PROXY</code>, auch kleingeschrieben, reicht der Runner nur durch, wenn der Server sie gesetzt hat, damit <code>http_get</code> und <code>http_post</code> einen konfigurierten Proxy nutzen. Alles andere fällt weg, etwa <code>ADMIN_PASSWORD</code>, <code>MONITOR_API_KEY</code> und <code>REDIS_URL</code>. <code>SECRET_KEY</code> und die DB-Zugangsdaten bleiben aber erreichbar (über <code>DATA_DIR/.secret_key</code> bzw. <code>DATABASE_URL</code>) — <strong>kein Secret-Jail</strong>.</li>
             <li><strong>CWD</strong> ist das Server-Verzeichnis (<code>server_dir</code>), kein Temp-Verzeichnis.</li>
-            <li><strong>Timeout</strong> über <code>subprocess.run(timeout=…)</code>, Default 30 s; beim Ablauf wird der Worker-Prozess gekillt, nicht zwingend dessen Kindprozesse.</li>
-            <li><strong>Kein Output-Limit</strong> und <strong>kein User-Switch</strong>: stdout/stderr werden vollständig eingesammelt, der Worker läuft als derselbe Benutzer wie der Server.</li>
+            <li><strong>Timeout</strong>: Default 30&nbsp;s. Der Worker läuft in einer eigenen Prozessgruppe (<code>start_new_session=True</code>); läuft der Timeout ab, killt der Runner die ganze Gruppe. Damit sterben auch Kindprozesse, die das Script gestartet hat, außer solchen, die eine eigene Session oder eine eigene Prozessgruppe öffnen. Der Hook endet dann mit <code>success: false</code> und <code>error: "Timeout nach 30s"</code>.</li>
+            <li><strong>Ausgabe-Limit</strong>: Der Runner liest stdout und stderr des Workers je bis 8&nbsp;388&nbsp;608 Zeichen, bei ASCII 8&nbsp;MiB. Liest er mehr, killt er die ganze Prozessgruppe des Workers; der Hook endet dann mit <code>success: false</code> und <code>error: "Hook-Ausgabe zu gross (Limit ueberschritten)"</code>. Auf stdout schreibt der Worker seine JSON-Antwort samt <code>result</code> und <code>logs</code>; ein sehr großes <code>result</code> zählt also mit.</li>
+            <li><strong>Kein User-Switch</strong>: Der Worker läuft als derselbe Benutzer wie der Server.</li>
+            <li><strong>Parallelität</strong>: Jeder Server-Prozess lässt höchstens 8 Hook-Prozesse gleichzeitig laufen; die Grenze gilt je Prozess, nicht für den ganzen Server. Hooks laufen in jedem Uvicorn-Worker (<code>WEB_CONCURRENCY</code>, Default 1) und im eigenen Scheduler-Dienst (<code>RUN_MODE=scheduler</code>), der die Schedule-Hooks startet; jeder dieser Prozesse hat seine eigenen 8 Plätze. Sind alle Plätze eines Prozesses belegt, wartet ein weiterer Aufruf nicht, sondern endet sofort mit <code>success: false</code> und <code>error: "Server ausgelastet (Hook-Limit erreicht)"</code>.</li>
           </ul>
 
           <div class="callout callout-warn" data-reveal>
@@ -97,33 +99,6 @@
           <p>Schlägt ein Hook fehl (<code>exit_code != 0</code> oder Timeout), wird der Fehler protokolliert: Event- und Schedule-Hooks per <code>logger.exception</code> im Server-Log, der Webhook-Trigger zusätzlich im Response-Body (<code>success: false</code>, <code>error</code>). Einen automatischen Retry oder ein <code>hook.failed</code>-Meta-Event gibt es aktuell nicht; ein fehlgeschlagener Hook blockiert weder andere Hooks noch den auslösenden Request.</p>
           <p>Bricht ein Hook mit einem Fehler der Datenbankanbindung ab (<code>sqlalchemy.exc.SQLAlchemyError</code> oder <code>psycopg.Error</code>), nennen <code>error</code> und die Log-Zeile <code>Fehler: …</code> in <code>logs</code> nur den Typ des Fehlers, etwa <code>OperationalError</code>, nicht den Text des Treibers. Jeder andere Fehler eines Hooks erscheint dort mit seinem Text.</p>
 
-          <h2>Script-Runner-Implementierung</h2>
-          <div class="code-header"><span>python</span></div>
-<pre><code>SCRIPT_TIMEOUT_SECONDS = 30
-
-def run_hook_script(script, hook_type, context, timeout=SCRIPT_TIMEOUT_SECONDS):
-    payload = json.dumps({"script": script, "context": context}, default=str)
-
-    # Reduziertes Env: entfernt ADMIN_PASSWORD, MONITOR_API_KEY, REDIS_URL. KEIN
-    # Jail — DATABASE_URL ist bewusst vererbt (Hooks brauchen DB), SECRET_KEY bleibt
-    # ueber DATA_DIR/.secret_key erreichbar. Hooks = vertrauenswuerdiger Code.
-    server_dir = str(Path(__file__).parents[3])
-    worker_env = {
-        "PATH": os.environ.get("PATH", ""),
-        "PYTHONPATH": server_dir,
-        "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
-        "DATA_DIR": os.environ.get("DATA_DIR", ""),
-    }
-    try:
-        proc = subprocess.run(
-            [sys.executable, _WORKER_SCRIPT],  # fuehrt das Script via Python-Worker aus
-            input=payload, capture_output=True, text=True,
-            timeout=timeout, cwd=server_dir, env=worker_env,
-        )
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": f"Timeout nach {timeout}s"}
-    return _parse_worker_output(proc)  # success/result/logs aus stdout</code></pre>
-
           <h2>Eigene Events feuern</h2>
           <p>Interner Code kann jederzeit Events feuern:</p>
           <div class="code-header"><span>python</span></div>
@@ -134,7 +109,7 @@ fire_event("server.updated", {"id": server.id, "name": server.name})</code></pre
           <p><code>fire_event</code> ist non-blocking: Der Dispatch läuft im Thread-Pool, der Aufruf kehrt sofort zurück. Die HTTP-Response des Auslösers wartet also <strong>nicht</strong> auf den Hook.</p>
 
           <h2>Test-Execution</h2>
-          <p>Im Web-Panel kann jeder Hook mit einem Beispiel-Event geprüft werden: <code>POST /api/hooks/{id}/test</code>. Der Execution-Log zeigt stdout/stderr/exit_code in Echtzeit – praktisch beim Script-Debugging.</p>
+          <p>Im Web-Panel startet „Ausführen“ einen Hook von Hand über <code>POST /api/hooks/{id}/run</code>; der Endpunkt verlangt Admin-Rechte. Der Context enthält dabei keine Event-Daten, er ist so belegt, wie die <a href="./api-reference.html">API-Referenz</a> es für diesen Endpunkt beschreibt. Sobald der Lauf endet, zeigt ein Dialog das Ergebnis als JSON: <code>success</code>, <code>result</code>, <code>logs</code> und bei einem Fehler <code>error</code>. Eigene Felder für stdout, stderr oder <code>exit_code</code> gibt es nicht; endet der Worker-Prozess mit einem Exit-Code ungleich 0, steht sein stderr in <code>error</code> und <code>logs</code>.</p>
 
           <div class="page-nav">
             <a class="prev" href="./api-reference.html"><span class="label">← Vorheriges Kapitel</span><span class="title">API-Referenz</span></a>
