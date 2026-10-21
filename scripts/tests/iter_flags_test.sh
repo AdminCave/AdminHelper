@@ -183,7 +183,7 @@ grep -q "^run 3001 --sync --timeout 3000 --out $AH_OUT_DIR --extend 8h --expect-
 [ -f "$AH_OUT_DIR/last.out.log" ] && ok "the box output is kept as a file for heavy.sh"   || bad "no $AH_OUT_DIR/last.out.log"
 
 : > "$REC"; bash "$ITER" all --strict >/dev/null 2>&1
-grep -q -- '--timeout 6000 ' "$REC" && ok "the 'all' layer gets its own headroom"   || bad "all timeout: $(grep '^run' "$REC")"
+grep -q -- '--timeout 9000 ' "$REC" && ok "the 'all' layer gets its own headroom"   || bad "all timeout: $(grep '^run' "$REC")"
 
 : > "$REC"; AH_NO_SYNC=1 bash "$ITER" quick >/dev/null 2>&1
 grep -q -- '--sync' "$REC" && bad "AH_NO_SYNC still synced: $(grep '^run' "$REC")"   || ok "AH_NO_SYNC drops the sync"
