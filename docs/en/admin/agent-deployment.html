@@ -137,7 +137,7 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           <div class="code-header"><span>powershell</span></div>
 <pre><code># PowerShell as Administrator, in the download folder
 .\adminhelper-agent-windows-x86_64.exe service install</code></pre>
-          <p>The command copies the binary to <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registers the service <code>AdminHelper-Agent</code> (auto-start, LocalSystem account, restarted 60&nbsp;s after a failure) and starts it. Then provision the host as in the next section. The agent sets up no frpc service on Windows.</p>
+          <p>The command copies the binary to <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registers the service <code>AdminHelper-Agent</code> (auto-start, LocalSystem account, restarted 60&nbsp;s after a failure) and starts it. It also registers the source of the same name for the Windows event log (Application), so that the agent's entries there have a description (see Logs); <code>service uninstall</code> removes the service and the source again. If the source cannot be registered or removed, the command prints a warning; the service is not affected. Then provision the host as in the next section. The agent sets up no frpc service on Windows.</p>
 
           <h2>Provisioning</h2>
           <p>In the desktop client, in the server workspace of the installation the agent is to report to: <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
@@ -200,6 +200,7 @@ sudo adminhelper-agent run --once          # one run by hand: sync + push</code>
             <li>Windows: <code>%ProgramData%\AdminHelper\logs\agent.log</code></li>
           </ul>
           <p>Same format as stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (component: <code>agent</code>, <code>frpc</code> or <code>monitor</code>). Rotates at 10&nbsp;MB, 5 compressed archives. Verbosity is set via <code>LOG_LEVEL</code> (env) or <code>--log-level debug|info|warn|error</code>.</p>
+          <p>On Windows the agent secures the log directory before it opens the file. If that fails, it logs to stdout only and writes no <code>agent.log</code> until its next start; the FRP sync changes nothing as long as the data directory cannot be secured. When it runs as a service, the reason is in the Event Viewer under <em>Windows Logs → Application</em>: a warning from the source <code>AdminHelper-Agent</code> (event ID 1) with the directory, the error and these consequences. The entry has a description if <code>service install</code> registered the source; for a service set up by an earlier version it has none, and the text is in the event data. A run by hand, for example without administrator rights, writes no entry.</p>
           <p>For a bug report, <code>adminhelper-agent diagnostics</code> writes a <strong>redacted</strong> report (version, OS, config without secrets, log excerpt) to <code>/tmp/</code> — review it and attach it to a GitHub issue.</p>
 
           <h2 id="upgrade">Upgrade</h2>

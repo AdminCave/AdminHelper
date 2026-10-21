@@ -473,6 +473,36 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Hostname, den httpx nicht kodieren kann, wird schon vom Guard abgelehnt wie eine unlesbare URL, ebenso eine URL, die
   httpx sonst nicht liest (etwa ein Port, der keine Zahl ist): Die Hook-Helfer werfen dafuer wie dokumentiert einen
   `ValueError` statt `httpx.InvalidURL`, HTTP-Check und Alert-Webhook melden ein privates/reserviertes Ziel.
+- **Server: der Visitor-Port eines FRP-Tunnels ist ein Port von 1 bis 65535 (R-0533):**
+  `POST`/`PUT /api/frp/tunnels` nahmen als `visitor_port` jeden INTEGER-Wert an und speicherten ihn; der Server schrieb
+  ihn als `bindPort` in die Visitor-TOML, und der Desktop wies die ganze Visitor-TOML ab. `0` vergab still einen freien
+  Port. Jetzt lehnt der Server einen `visitor_port` ausserhalb 1–65535, auch `0`, mit `422` ab, und nichts wird
+  gespeichert. Ist das Feld `null` oder fehlt es beim Anlegen, vergibt der Server einem STCP-Tunnel wie bisher einen
+  freien Port. Ein schon gespeicherter Wert ausserhalb 1–65535 und ein STCP-Tunnel ohne Visitor-Port (`NULL` aus einer
+  frueheren Migration) bleiben in der Datenbank; statt den Wert als `bindPort` zu schreiben (bei `NULL`
+  `bindPort = None`, kein gueltiges TOML), laesst der Server diesen Visitor jetzt aus der Visitor-TOML weg
+  (`/api/frp/generate/visitor-toml`, `visitor-bundle`, `bulk-zip`) und schreibt eine Warnung ins Server-Log. Sind alle sichtbaren STCP-Tunnel eines Nutzers so, antworten `visitor-toml` und
+  `visitor-bundle` mit `404`. Die frpc-Konfiguration der Agents behaelt den Tunnel. Doku: FRP-Tunnel und API-Referenz
+  (DE+EN).
+- **Agent: nach `dnf upgrade` laufen Timer und frpc weiter (R-0527):** Beim Upgrade des RPM stoppte das `%preun` des
+  alten Pakets `adminhelper-agent.timer` und `frpc.service`, nachdem das `%post` des neuen sie gestartet hatte; beide
+  blieben aktiviert, liefen aber bis zum naechsten Neustart nicht. Jetzt stoppt und deaktiviert `%preun` sie nur bei
+  der Deinstallation, und das neue Paket aktiviert sie erst am Ende der Transaktion (`%posttrans`): den Timer immer,
+  `frpc.service` nur mit `/etc/frp/frpc.toml`, und frpc startet dabei neu, damit es auf dem neuen Binary laeuft. Das
+  gilt auch fuer ein Upgrade von einem bisherigen Paket. Das deb war nicht betroffen.
+- **Agent: `provision` loest den Einmal-Token erst nach dem Sichern des Datenverzeichnisses ein (R-0557):** Bisher
+  loeste `provision` den Token ein, bevor es das Datenverzeichnis zum ersten Mal sicherte; liess sich das Verzeichnis
+  danach nicht sichern, brach es ab, und der Token war verbraucht. Jetzt sichert `provision` zuerst die Datenwurzel
+  (Windows: `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/adminhelper` mit `0700`, auch ohne Monitor);
+  scheitert das, bricht es mit dem Verzeichnis im Fehler ab, und der Token bleibt gueltig. Doku: Entwickler-Doku
+  Agent (DE+EN).
+- **Agent: der FRP-Sync aendert Dateien nur in einem gesicherten Verzeichnis (R-0556):** Bisher schrieb und loeschte
+  der Sync (`run`, `frpc sync`) `frpc.toml`, `admin.conf` und die Hash-Dateien im FRP-Verzeichnis, ohne es im selben
+  Lauf zu sichern; der Windows-Dienst laeuft auch weiter, wenn er die Datenwurzel beim Start nicht sichern konnte.
+  Jetzt sichert der Sync vor seiner ersten Aenderung, Schreiben wie Loeschen, das FRP-Verzeichnis (Windows: zuerst
+  `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/frp` mit `0700`); scheitert das, bricht er mit dem Verzeichnis
+  im Fehler ab und schreibt, loescht, startet und stoppt nichts. Ein Lauf ohne Aenderung sichert nichts. Doku:
+  Entwickler-Doku Agent (DE+EN).
 - **Desktop: „Passwort merken“ im Server-Workspace nur fuer Verbindungen, die der Server fuehrt (R-0551):** Wer im
   Editor eine neue RDP-Verbindung vor dem Speichern verband und das Passwort merken liess, legte es im
   Schluesselbund unter einer `id` des Clients ab, die der Server beim Speichern durch eine eigene ersetzt; der Eintrag
@@ -1104,6 +1134,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent: der Windows-Dienst meldet ein nicht gesichertes Log-Verzeichnis im Ereignisprotokoll (R-0556):** Laesst
+  sich das Log-Verzeichnis nicht sichern, schreibt der Agent wie bisher nur auf stdout und keine `agent.log`; unter
+  dem Dienststeuerungs-Manager sah das niemand. Laeuft er als Windows-Dienst, schreibt er dann beim Start genau eine
+  Warnung ins Windows-Ereignisprotokoll (Windows-Protokolle → Anwendung, Quelle `AdminHelper-Agent`, Ereignis-ID 1)
+  mit dem Verzeichnis, dem Grund und den Folgen: bis zum Neustart des Dienstes nur stdout, und der FRP-Sync aendert
+  nichts, solange sich das Datenverzeichnis nicht sichern laesst. Ein Aufruf von Hand bleibt ohne Hinweis, Linux ist
+  unveraendert. `service install` registriert die Quelle, damit der Eintrag eine Beschreibung hat, und
+  `service uninstall` entfernt sie wieder; scheitert das, gibt der Befehl eine Warnung aus. Bei einem Dienst, den eine
+  fruehere Version eingerichtet hat, fehlt die Beschreibung, der Text steht dann in den Ereignisdaten. Doku:
+  Agent-Deployment und Entwickler-Doku Agent (DE+EN).
 - **Plaene gibt die Session selbst frei (Entwickler-Werkzeuge, Kevin 2026-10-21):** Nach dem Plan-Commit von
   `/feature-plan` setzt die Session `roadmap.py approve` selbst und baut. Kevin behaelt seine Entscheidungen aus
   `CLAUDE.md` §2 (Roadmap, sichtbares Verhalten, API-Vertraege, Datenmigrationen, Restrisiko, Release); eine offene
