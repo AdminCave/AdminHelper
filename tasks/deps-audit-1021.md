@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Dependency Audit 2026-10-21: certifi, rustls-webpki, webpki-roots, vite — Task-Ledger
-Status: bereit · Branch: feature/deps-audit-1021 · Review: am Ende
+Status: erledigt · Branch: feature/deps-audit-1021 · Review: am Ende
 Spec: Roadmap R-0657
 Heavy: linux-full — `rustls-webpki` und `webpki-roots` prüfen die Zertifikatsketten im Desktop-Binary (reqwest `rustls-tls`, mTLS-Client), `vite` baut die Desktop-UI; die Desktop-Journeys laufen im Beta-Sammellauf über `main`, den Session adminhelper-fe direkt nach dem Merge startet. Kein `scenario`: weder FRP-Datenpfad noch PKI-Ausstellung noch Install/Update ändern sich
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
