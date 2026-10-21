@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes 3: Hook-Laufzeit in hooks.html, RFC-5737-Adressen im Webhook-Beispiel — Task-Ledger
-Status: aktiv · Branch: feature/doc-fixes-3 · Review: am Ende
+Status: bereit · Branch: feature/doc-fixes-3 · Review: am Ende
 Spec: Roadmap R-0528, R-0532
 Heavy: none — nur Doku unter `docs/` (`hooks.html` DE+EN) und ein Kommentar in `docs/examples`; keine API-, Gateway-, PKI-, Agent-, Compose-, Install- oder Desktop-Journey-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -68,8 +68,10 @@ Dedup-Key: bug:docs:hooks.html:test-execution
 HEAD: 82e4a7b8
 Semantik: Soll ist der Code: `apps/server/app/modules/hooks/router.py:336-363` (`@router.post("/{hook_id}/run")`, `get_current_admin`, Context `:345-356`), `apps/web/src/lib/api/hooks.ts:41`, `apps/web/src/modals/HookRunResultModal.svelte:24-27` (`JSON.stringify(result, null, 2)`). Doku: `docs/developer/api-reference.html:121` — „Manueller Test-Lauf. Im Context sind <code>payload</code>, <code>headers</code>, <code>params</code> und <code>event_data</code> leer und <code>event_type</code> ist <code>null</code>“; `:54` — „Das <code>result</code> von <code>POST /api/hooks/{id}/run</code> und <code>/api/hooks/trigger</code> ist, was das Skript zur&uuml;ckgibt.“ Falsche Doku-Stelle: `docs/developer/hooks.html:137` — „Im Web-Panel kann jeder Hook mit einem Beispiel-Event geprüft werden: <code>POST /api/hooks/{id}/test</code>. Der Execution-Log zeigt stdout/stderr/exit_code in Echtzeit“.
 
-### T3 — R-0532: Webhook-Beispiel mit Adressen aus RFC 5737  [ ]
+### T3 — R-0532: Webhook-Beispiel mit Adressen aus RFC 5737  [x]
 Komponente: server · Dateien: docs/examples/webhook_http_import.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @01b93011 2026-10-21T09:44:26+02:00
+Review: am Ende (Branch-Review)
 Änderung: Die Beispielantwort im Kopfkommentar (`:24-25`) nennt `192.0.2.1` (`web-01`) und `192.0.2.2` (`db-01`) statt der zwei Adressen aus `10.0.0.0/8`. Sonst ändert sich nichts, auch nicht die Ausrichtung der Spalten. Der Test parst jede Datei unter `docs/examples/*.py` und prüft die Aufrufe von `http_get`/`http_post` (`apps/server/tests/test_hook_examples.py`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_examples.py
 Doku: docs/examples/webhook_http_import.py (die Task ist die Doku); kein CHANGELOG
