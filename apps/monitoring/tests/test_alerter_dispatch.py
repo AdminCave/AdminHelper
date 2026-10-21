@@ -20,7 +20,9 @@ import pytest
 
 import app.alerter as alerter
 from app.alerter import _dispatch, _send_email
-from app.core.ssrf import UrlVerdict
+from app.core.ssrf import Target, UrlVerdict
+
+from ._helpers import no_env_proxy
 
 CHECK = SimpleNamespace(id="c1", name="c", check_type="ping", severity="critical", server_id="s1")
 MSG = {"subject": "S", "text": "T"}
@@ -71,7 +73,7 @@ def test_refused_dispatch_writes_english_error(monkeypatch, rule, error):
     # R-0488: the error lands in the alert log, and the desktop shows it verbatim, also in the
     # English UI. The real _dispatch routes to each refusal; nothing may go out on the way.
     monkeypatch.setattr(alerter, "SMTP_HOST", "")
-    monkeypatch.setattr(alerter.httpx, "post", _no_request)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _no_request)
     monkeypatch.setattr(alerter.smtplib, "SMTP", _no_request)
     monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", _no_request)
     assert _dispatch(rule, CHECK, MSG) == (False, error)
@@ -80,6 +82,7 @@ def test_refused_dispatch_writes_english_error(monkeypatch, rule, error):
 # A failed send stores a fixed reason in the alert log; the exception text, which can name
 # hosts, mail server replies or channel config values, goes to the service log only.
 _MARK = "exc-marke"
+_ALLOWED = Target(UrlVerdict.ALLOWED, "hooks.example.com", ("93.184.216.34",))
 
 
 def _alerter_lines(caplog) -> list[str]:
@@ -87,10 +90,10 @@ def _alerter_lines(caplog) -> list[str]:
 
 
 def _raising(exc):
-    def post(*a, **k):
+    def send(*a, **k):
         raise exc
 
-    return post
+    return send
 
 
 @pytest.mark.parametrize(
@@ -105,8 +108,10 @@ def _raising(exc):
     ids=["read-timeout", "connect-timeout", "connect-error", "protocol-error", "other"],
 )
 def test_failed_webhook_stores_a_fixed_reason(monkeypatch, caplog, exc, reason):
-    monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.ALLOWED)
-    monkeypatch.setattr(alerter.httpx, "post", _raising(exc))
+    no_env_proxy(monkeypatch)
+    monkeypatch.setattr(alerter, "check_target", lambda url: _ALLOWED)
+    # Raised below the pin, where the connection and the request really fail.
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _raising(exc))
     rule = _rule(config={"url": "https://hooks.example.com/x"})
 
     with caplog.at_level(logging.INFO, logger="monitor.alerter"):
@@ -114,6 +119,21 @@ def test_failed_webhook_stores_a_fixed_reason(monkeypatch, caplog, exc, reason):
 
     assert _alerter_lines(caplog) == [f"Webhook failed: c -> hooks.example.com: {exc}"]
     assert _MARK in _alerter_lines(caplog)[0]
+
+
+def test_a_url_httpx_cannot_read_stores_a_fixed_reason(monkeypatch, caplog):
+    # urlparse reads the host, so the guard passes the URL; httpx refuses the port while
+    # pinned_client builds the client. That is a failed request like any other, not a
+    # rule that could not be dispatched.
+    no_env_proxy(monkeypatch)
+    monkeypatch.setattr(alerter, "check_target", lambda url: _ALLOWED)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _no_request)
+    rule = _rule(config={"url": "https://hooks.example.com:abc/x"})
+
+    with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+        assert _dispatch(rule, CHECK, MSG) == (False, "Webhook request failed (InvalidURL)")
+
+    assert _alerter_lines(caplog) == ["Webhook failed: c -> hooks.example.com: Invalid port: 'abc'"]
 
 
 class _FailingSMTP:

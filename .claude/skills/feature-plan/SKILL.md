@@ -1,13 +1,13 @@
 ---
 name: feature-plan
-description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus kleinen, autonom abarbeitbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate zur menschlichen Freigabe — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --bundle <komponente> die REF-Zeilen einer Komponente als Sammel-Ledger.
+description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus kleinen, autonom abarbeitbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate mit Bericht an Kevin; danach gibt die Session die Zeile selbst frei — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --bundle <komponente> die REF-Zeilen einer Komponente als Sammel-Ledger.
 ---
 
 # Feature planen & in autonome Tasks zerlegen
 
 Diese Phase macht aus einer Idee zwei Artefakte: eine **Spec** und eine **Task-Ledger**
 aus so kleinen, unabhängig verifizierbaren Aufgaben, dass `/feature-build` sie ohne
-Rückfragen abarbeiten kann. **Am Ende: Design-Gate — stoppen, auf Freigabe warten.
+Rückfragen abarbeiten kann. **Am Ende: Design-Gate — Bericht an Kevin, dann gibt die Session selbst frei (4).
 In dieser Phase entsteht KEIN Produktivcode.** Spec und Ledger werden am Gate der erste
 Commit auf dem Feature-Branch (R-0065).
 
@@ -66,7 +66,10 @@ passenden Flags, bleibt ask-first); `windows` (die Windows-VM).
   `bash scripts/dev/verify.sh <komponente> --strict [-- <test>]`. Schwere Läufe stehen in `Heavy:`,
   nie in einer Task.
 - Jede Task ist unabhängig testbar; Reihenfolge nur bei echter Abhängigkeit.
-- Steckt in einer Task eine Design-Entscheidung, gehört sie als offene Frage in die Spec.
+- Steckt in einer Task eine Design-Entscheidung, gehört sie als offene Frage in die Spec. Ist es eine Entscheidung
+  aus Kevins Bereich (CLAUDE.md §2), die weder die Roadmap-Zeile noch sein Wort schon trifft, trägt die Task
+  `[?] (<Frage>)` in der Überschrift (die Form von `ledger.sh mark-question`) und wird erst nach seiner Antwort
+  gebaut.
 - Neue Datei ⇒ die Task nennt den SPDX-Header. Neuer Flow ⇒ die Task enthält den Test.
 - `Doku:` nach Augenmaß; die meisten Tasks sind `Doku: keine (intern)`.
 - `Komponente:` ist der Name aus `verify.sh` (`server`, `web`, `desktop-ui` …), kein Pfad: `task-close.sh`
@@ -118,7 +121,8 @@ Beim Bündel gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
 - **Roadmap:** Hat das Vorhaben noch keine Zeile, trägt das Gate sie ein
   (`python3 scripts/dev/roadmap.py add --class <K> --title "…" --source "kevin <datum>" --ledger
   tasks/<slug>.md`) und setzt sie auf `geplant`; eine bestehende `neu`- oder `geplant`-Zeile wird
-  `roadmap.py status R-nnnn geplant --ledger tasks/<slug>.md`. Beides nur für ein Vorhaben, das Kevin
+  `roadmap.py status R-nnnn geplant --ledger tasks/<slug>.md`; trägt die Zeile eine Notiz, gibt das Gate sie
+  wörtlich mit `--note` wieder mit (`status` ohne `--note` löscht sie). Beides nur für ein Vorhaben, das Kevin
   diktiert oder angenommen hat; ein eigener Fund bleibt `neu` bis zu Kevins Bestätigung. Nie ein Edit
   an der Datei.
 - **Plan auf den Branch:** `git switch --no-track -c feature/<slug> origin/main`, Spec und Ledger
@@ -134,10 +138,12 @@ Beim Bündel gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
   R-nnnn: ja/nein — <Grund>“; überlappt es, seriell empfehlen. Danach einen Partner suchen:
   `python3 scripts/dev/roadmap.py next --status geplant --exclude-components <Komponenten dieses Ledgers>`, ohne
   Treffer dasselbe mit `--status neu` (SEC ausgenommen); Contract-Dateien und Platz selbst prüfen. Vorschlag:
-  „parallel baubar: R-nnnn — <Grund>“ (`geplant`, Kevin kann beide freigeben) oder „parallel planbar:
-  R-nnnn“ (`neu`, erst planen).
+  „parallel baubar: R-nnnn — <Grund>“ (`geplant` mit Plan auf seinem Branch: die Session gibt beide frei) oder
+  „parallel planbar: R-nnnn“ (`neu`, erst planen).
 - Präsentieren: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify), **alle offenen
-  Fragen** herausgestellt, und den Satz: „Freigabe: `! python3 scripts/dev/roadmap.py approve R-nnnn` (beim
-  Bündel je Zeile); danach `/feature-build tasks/<slug>.md`.“
-- **Die Freigabe ist Kevins** `roadmap.py approve` (CLAUDE.md §4); die Session setzt sie nie.
+  Fragen** herausgestellt, je mit Empfehlung und den `[?]`-Tasks, dazu jede `Test-Löschung:`.
+- **Freigabe:** gleich nach dem Bericht gibt die Session frei, `python3 scripts/dev/roadmap.py approve R-nnnn`
+  (beim Bündel je Zeile; die Notiz bleibt), wenn Kevin die Zeile angenommen oder das Vorhaben diktiert hat und
+  nicht jede Task auf `[?]` steht; danach `/feature-build tasks/<slug>.md`. Nie für eine Zeile ohne committeten Plan
+  (CLAUDE.md §4, §11).
 - **Implementiere nichts.** Kein Produktivcode, kein weiterer Branch, nichts auf `main`.

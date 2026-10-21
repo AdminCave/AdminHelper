@@ -100,10 +100,10 @@ describe('NotificationPrefs — save error path', () => {
 // R-0261: a network error from the backend carries the ERR_* codes in its source chain
 // (error.rs); they are for the code, the editor shows the prose.
 const PIN_MISMATCH =
-  'error sending request for url (https://t/api/notifications/prefs): client error (Connect): ' +
+  'error sending request: client error (Connect): ' +
   'ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für t hat sich geändert';
 const PROSE =
-  'error sending request for url (https://t/api/notifications/prefs): client error (Connect): ' +
+  'error sending request: client error (Connect): ' +
   'AdminHelper TOFU: Das Server-Zertifikat für t hat sich geändert';
 
 describe('NotificationPrefs — errors without the machine codes (R-0261)', () => {

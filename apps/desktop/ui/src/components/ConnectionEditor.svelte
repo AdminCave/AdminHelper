@@ -225,7 +225,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         <div class="field" style="grid-column: span 2;">
           <span class="field-label">{$t('editor.field.lastUsed')}</span>
-          <div style="color: var(--text-muted);">
+          <!-- A value inside .field, whose global rule styles labels: no caps, no spacing. -->
+          <div
+            data-testid="editor-last-used"
+            style="color: var(--text-muted); text-transform: none; letter-spacing: normal;"
+          >
             {form.lastUsed ? new Date(form.lastUsed).toLocaleString() : '-'}
           </div>
         </div>

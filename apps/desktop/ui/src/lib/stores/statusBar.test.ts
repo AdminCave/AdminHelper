@@ -34,12 +34,12 @@ describe('statusBar store', () => {
   // chain (error.rs); they are for the code, the status bar shows the prose.
   it('reportError drops a code buried in the message, as a failed tunnel start reports it', () => {
     reportError(
-      'Tunnel: error sending request for url (https://x/api/frp/generate/visitor-bundle): ' +
+      'Tunnel: error sending request: ' +
         'client error (Connect): ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat ' +
         'für x hat sich seit dem ersten Verbinden geändert',
     );
     expect(get(status)?.text).toBe(
-      'Tunnel: error sending request for url (https://x/api/frp/generate/visitor-bundle): ' +
+      'Tunnel: error sending request: ' +
         'client error (Connect): AdminHelper TOFU: Das Server-Zertifikat ' +
         'für x hat sich seit dem ersten Verbinden geändert',
     );

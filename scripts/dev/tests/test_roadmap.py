@@ -963,6 +963,19 @@ def test_approve_and_revoke(tmp_path: pathlib.Path) -> None:
     assert placed(p, "R-0003")[1].status == "geplant"
 
 
+def test_approve_and_revoke_keep_the_note(tmp_path: pathlib.Path) -> None:
+    """The note of a geplant row often carries Kevin's word for the plan:
+    approve changes only the word, both ways."""
+    p = aged(write(tmp_path, CLEAN.replace("| geplant |", "| geplant (Semantik-Frage: x) |")))
+    assert approve(p, "R-0003") == 0
+    section, r = placed(p, "R-0003")
+    assert (section, r.cells[roadmap.STATUS]) == ("Geplant", "freigegeben (Semantik-Frage: x)")
+    assert approve(p, "R-0003", "--revoke") == 0
+    section, r = placed(p, "R-0003")
+    assert (section, r.cells[roadmap.STATUS]) == ("Geplant", "geplant (Semantik-Frage: x)")
+    assert findings(p.read_text(encoding="utf-8")) == []
+
+
 @pytest.mark.parametrize(
     ("rid", "args"), [("R-0005", []), ("R-0003", ["--revoke"]), ("R-0007", [])]
 )
