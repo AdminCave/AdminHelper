@@ -153,7 +153,8 @@ Kevins eigener Schnell-Loop nutzt weiter `desktop`; die GUI-Box gehört dem Samm
 ### 4. `heavy.sh all` mit zwei Teilen
 
 1. **Pre-flight:** `vm.py doctor --roles` nennt die Rollen, deren Slot im Listing keine laufende Box hat (heute
-   immer `desktop`, auch wenn die Box wiederverwendet wird; mit zwei Rollen würde das doppelt zählen).
+   immer `desktop`, auch wenn die Box wiederverwendet wird; mit zwei Rollen würde das doppelt zählen). Gebaut (T12):
+   nur `desktop`; ob die GUI-Box passt, entscheidet die Kapazitätsprüfung von `vm.py clone`.
 2. **Box `desktop` leasen** wie heute (ein Retry, Exit 2 ohne Retry); scheitert das, ist der Lauf `UNVERIFIED`, und
    nichts startet.
 3. **Beide Teile starten:** Teil `gui` im Hintergrund: `warm.sh gui` (ein Retry), dann
@@ -163,7 +164,9 @@ Kevins eigener Schnell-Loop nutzt weiter `desktop`; die GUI-Box gehört dem Samm
    abgebrochen wird.
 4. **Warten, dann je Teil auswerten** mit der heutigen Logik (Summary-Zeile, Infra-Marker, Artefakt-Prüfung,
    `strict-failed`, Schritte, Klassifikation). Wiederholungen roter Schritte laufen auf der Box **ihres** Teils
-   (`iter.sh --slot <slot>`, `AH_NO_SYNC=1`), die Zweit-VM-Prüfung wie heute in der Lane `w2`.
+   (`iter.sh --slot <slot>`, `AH_NO_SYNC=1`), die Zweit-VM-Prüfung wie heute in der Lane `w2`. Gebaut (T10): die
+   Zweit-VM-Prüfungen laufen erst nach den Wiederholungen beider Teile, damit 7 die GUI-Box nicht vor einer
+   GUI-Wiederholung freigibt.
 5. **Kombinieren:** Infra in einem Teil (Box nicht zu bekommen, Infra-Marker, Exit 74, `strict-failed`, kein Beleg)
    macht den Lauf `UNVERIFIED`; der Grund nennt den Teil und, falls der andere Teil rot ist, auch das (heute würde
    `set_fail` nach `set_infra` still verworfen, `heavy.sh:104-112`). Sonst `FAIL`, wenn ein Teil nach der
@@ -176,9 +179,9 @@ Kevins eigener Schnell-Loop nutzt weiter `desktop`; die GUI-Box gehört dem Samm
    GUI-Box frei (`reap.sh --role gui`). Mit zwei gehaltenen Boxen passt die `w2`-Box bzw. passen die
    Capstone-Rollen sonst nicht, und ein Kandidat endete `unbestaetigt` statt `reg`/`extern` — das wäre eine
    Verschlechterung gegenüber heute.
-8. **Nach dem Lauf** (offene Frage 1, Empfehlung): Ist Teil `gui` grün, gibt `heavy.sh` die GUI-Box frei; ist er rot,
+8. **Nach dem Lauf** (offene Frage 1, Kevin 2026-10-21): Ist Teil `gui` grün, gibt `heavy.sh` die GUI-Box frei; ist er rot,
    bleibt sie zur Sichtung stehen (Frist wie jede Warm-Box), sofern 7 sie nicht schon freigegeben hat.
-9. **Zweite Box nicht zu bekommen** (offene Frage 2, Empfehlung): Teil `gui` läuft nach Teil `rest` seriell auf der
+9. **Zweite Box nicht zu bekommen** (offene Frage 2, Kevin 2026-10-21): Teil `gui` läuft nach Teil `rest` seriell auf der
    Box `desktop`, der Report sagt es in einer Notiz. Ohne diese Task ist der Lauf dann `UNVERIFIED`.
 
 ## Trade-offs & Alternativen
