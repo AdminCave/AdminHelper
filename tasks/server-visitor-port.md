@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Visitor-Port eines STCP-Tunnels auf 1–65535 begrenzen — Task-Ledger
-Status: aktiv · Branch: feature/server-visitor-port · Review: am Ende
+Status: bereit · Branch: feature/server-visitor-port · Review: am Ende
 Spec: Roadmap R-0533
 Heavy: linux-full — Request-Schema von `POST`/`PUT /api/frp/tunnels` (OpenAPI-Snapshot) und der Visitor-Generator im frp-Modul (`config_generator.py`, `generate_router.py`); läuft im Sammellauf. Kein `scenario`: Für jeden Tunnel mit einem Visitor-Port von 1 bis 65535 erzeugt der Generator dieselbe `visitor.toml` wie heute, weggelassen wird nur ein Visitor, dessen TOML der Desktop schon heute ganz abweist; die frpc-Config der Agents ändert sich nicht. Kein `windows`: kein Agent- und kein Desktop-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -42,8 +42,10 @@ Dedup-Key: bug:server:frp/schemas.py:visitor-port-range
 HEAD: 82e4a7b8
 Semantik: wie T1; für das Lesen von Altwerten docs/admin/frp-tunnel.html:82 — „Ein schon gespeicherter Wert außerhalb dieser Grenzen bleibt in der Datenbank; der Generator ersetzt ihn beim Schreiben der Konfiguration … und schreibt dazu eine Warnung ins Server-Log.“ (Ports der FRP-Server-Config, R-0411)
 
-### T3 — openapi-compat: die engere Grenze von `visitor_port` als benannte Ausnahme  [ ]
+### T3 — openapi-compat: die engere Grenze von `visitor_port` als benannte Ausnahme  [x]
 Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1663897a 2026-10-21T10:18:05+02:00
+Review: am Ende (Branch-Review)
 Änderung: **Harness-Pfad** (`scripts/dev/*`), nur mit Kevins Entscheidung (Frage am Gate, wie R-0411 am 2026-10-17). T1 meldet in `openapi-breaking.sh server` gegen origin/main genau vier ERR (`request-property-max-decreased`/`-min-increased`), belegt mit oasdiff 1.32.0 auf dem Snapshot von 82e4a7b8 mit den T1-Grenzen. `oasdiff-err-ignore.txt` bekommt je ERR eine Zeile im Format von `cicd.html`, `<Datum> R-0533 tighter visitor port bounds: <METHODE> <Pfad> <Text>` mit dem Datum von Kevins Entscheidung und dem Text wörtlich: `` POST /api/frp/tunnels the `visitor_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00` `` und `` … min was increased to `1.00` ``, dasselbe Paar für `PUT /api/frp/tunnels/{tunnel_id}`. Probe: Mit diesen vier Zeilen meldet oasdiff keinen Fund, mit einem Minimum `0` statt `1` bleiben die zwei min-Funde ERR. Test zuerst rot in `openapi_breaking_test.sh`: `EXPECTED_IGNORE` (`:231-245`) um die vier Zeilen erweitern; die Fixture der echten oasdiff-Fälle (`frp_spec`, `:277`) bekommt `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{tunnel_id}` mit `visitor_port` (Basis INTEGER-Grenzen, Kopf 1–65535), sodass „ohne Datei: alle ERR“ (`:331`) siebzehn zählt und „mit der Datei“ (`:333`, `:336`) keinen; dazu ein Fall, in dem `visitor_port` am Kopf das Minimum `0` trägt und ERR bleibt. Meldungen mit „thirteen“ an die neue Zahl anpassen. Vor dem Commit zusätzlich `bash scripts/dev/openapi-breaking.sh server` → Exit 0, die Ausgabe in den Commit-Body.
 Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: docs/developer/cicd.html (`:343-345`) + docs/en/developer/cicd.html (`:337-339`): neben den dreizehn Änderungen von R-0411 die vier von `visitor_port` an `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{tunnel_id}` (R-0533, Kevin <Datum>)
