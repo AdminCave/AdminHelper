@@ -114,7 +114,7 @@ Doku: `DEVELOPMENT.md` Wochenlauf und `cicd.html` DE/EN (Absatz zur zweiten VM, 
 Abhängt von: T6, T9
 
 ### T11 — heavy.sh: die GUI-Box nach einem grünen GUI-Teil freigeben  [ ]
-Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/skills/test/SKILL.md
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/skills/test/SKILL.md, CHANGELOG.md
 Änderung: Empfehlung gebaut: Am Ende von `all` gibt `heavy.sh` die GUI-Box frei (`reap.sh --role gui`), wenn Teil `gui` grün ist (kein roter Schritt nach der Klassifikation, kein `infra`); ist er rot, bleibt sie zur Sichtung stehen, sofern T10 sie nicht schon freigegeben hat, und die Notiz nennt `vm.py ssh <vmid>`. Warum (Kommentar): Die Wandzeit bestimmt Teil `rest`; eine warm gehaltene GUI-Box spart dem Lauf kaum Zeit, hielte aber ihren RAM bis zum Ablauf ihrer Frist.
 Tests in `heavy_test.sh`: `gui` grün → `reap.sh --role gui` am Ende, die Notiz nennt es; `gui` rot (flaky ausgenommen) → kein `reap.sh`, die Notiz nennt die Box; Modus `capstone` → kein `reap.sh`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
