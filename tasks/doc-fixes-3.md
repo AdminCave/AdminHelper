@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes 3: Hook-Laufzeit in hooks.html, RFC-5737-Adressen im Webhook-Beispiel — Task-Ledger
-Status: geplant · Branch: feature/doc-fixes-3 · Review: am Ende
+Status: aktiv · Branch: feature/doc-fixes-3 · Review: am Ende
 Spec: Roadmap R-0528, R-0532
 Heavy: none — nur Doku unter `docs/` (`hooks.html` DE+EN) und ein Kommentar in `docs/examples`; keine API-, Gateway-, PKI-, Agent-, Compose-, Install- oder Desktop-Journey-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
