@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes 3: Hook-Laufzeit in hooks.html, RFC-5737-Adressen im Webhook-Beispiel — Task-Ledger
-Status: bereit · Branch: feature/doc-fixes-3 · Review: am Ende
+Status: aktiv · Branch: feature/doc-fixes-3 · Review: am Ende
 Spec: Roadmap R-0528, R-0532
 Heavy: none — nur Doku unter `docs/` (`hooks.html` DE+EN) und ein Kommentar in `docs/examples`; keine API-, Gateway-, PKI-, Agent-, Compose-, Install- oder Desktop-Journey-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -80,3 +80,16 @@ Metrik: Adressen aus `10.0.0.0/8` unter `docs/examples`: 2 → 0 (`git grep` wie
 Dedup-Key: ref:docs:examples:rfc5737-ips
 HEAD: 82e4a7b8
 Semantik: keine Stelle in docs/ — gesucht mit `git grep -n -E '5737|192\.0\.2'` über `docs`, `.claude`, `CLAUDE.md`, `DEVELOPMENT.md` und `scripts/dev`, kein Treffer. Maßstab ist RFC 5737 §3 (rfc-editor.org/rfc/rfc5737, gelesen 2026-10-21) — „The blocks 192.0.2.0/24 (TEST-NET-1), 198.51.100.0/24 (TEST-NET-2), and 203.0.113.0/24 (TEST-NET-3) are provided for use in documentation.“ Falsche Stelle: `docs/examples/webhook_http_import.py:24-25` — die Beispielantwort der externen API nennt zwei Adressen aus `10.0.0.0/8`.
+
+### T4 — Branch-Review zu T1: Hook-Parallelität je Server-Prozess, Kill der Prozessgruppe  [ ]
+Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html
+Änderung: DE und EN, gleiche Zeilen in der Liste unter Environment-Modell; sonst bleibt die Seite unverändert.
+- Parallelität (`:90`): Die Grenze von 8 gilt je Server-Prozess, nicht für den ganzen Server. `_hook_semaphore` ist eine modulglobale `BoundedSemaphore` (`apps/server/app/modules/hooks/script_runner.py:69-70`). Hooks laufen in jedem Uvicorn-Worker (`--workers "${WEB_CONCURRENCY:-1}"`, `apps/server/docker-entrypoint.sh:57`) und im eigenen Scheduler-Dienst (`RUN_MODE=scheduler`, `docker-compose.yml:140`; Schedule-Hooks über `apps/server/app/modules/hooks/scheduler.py:130`). Jeder dieser Prozesse hat seine eigenen 8 Plätze. Der Rest des Punkts bleibt (kein Warten, sofort `success: false` mit `error` „Server ausgelastet (Hook-Limit erreicht)“).
+- Timeout (`:87`): Der Kill der Gruppe erreicht keine Kindprozesse, die eine eigene Session oder eine eigene Prozessgruppe öffnen (`os.killpg(proc.pid, …)` trifft nur die Gruppe `proc.pid`, `script_runner.py:193-197`); bisher nennt die Seite nur die eigene Session.
+- Ausgabe-Limit (`:88`): Liest der Runner mehr als das Limit, killt er die ganze Prozessgruppe des Workers, nicht nur den Worker (`os.killpg` in `_drain`, `script_runner.py:165-171`, und `:229-235`).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/hooks.html + docs/en/developer/hooks.html (die Task ist die Doku); kein CHANGELOG
+Beweis: feature/doc-fixes-3@ccb2a725 · `grep -n -o -E 'Höchstens 8 Hook-Prozesse laufen gleichzeitig|at most 8 hook processes run at the same time|eine eigene Session öffnen|open a session of their own|killt er den Worker;|it kills the worker;' docs/developer/hooks.html docs/en/developer/hooks.html` → je Seite `:87`, `:88`, `:90`; nach der Task leer · je Seite `grep -c -E 'Uvicorn-Worker|Uvicorn worker' <seite>` → `0`, danach `1`
+Dedup-Key: bug:docs:hooks.html:hook-concurrency-per-process
+HEAD: ccb2a725
+Semantik: Soll ist der Code: `apps/server/app/modules/hooks/script_runner.py:69-70`, `:165-171`, `:193-197`, `:229-235`; `apps/server/docker-entrypoint.sh:30-32` (Scheduler in genau einem eigenen Prozess), `:57`; `docker-compose.yml:140`; `apps/server/app/modules/hooks/scheduler.py:130`. Falsche Doku-Stellen (aus T1): `docs/developer/hooks.html:90` — „Höchstens 8 Hook-Prozesse laufen gleichzeitig“; `:87` — „außer solchen, die eine eigene Session öffnen“; `:88` — „Liest er mehr, killt er den Worker“. Fund des Branch-Reviews (wichtig: 8 je Prozess, Standard-Installation erlaubt 16) plus zwei Präzisierungen derselben Liste.
