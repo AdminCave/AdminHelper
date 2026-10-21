@@ -634,16 +634,18 @@ else
 fi
 
 # ── 13. Processes of app in server, scheduler, ca-issuer and monitoring are not dumpable ──
-# Their images leave every ELF program in the bin directories for anyone but root to execute
-# only (the last RUN of each Dockerfile). A process the entrypoint starts as app through gosu
-# runs from a program its user cannot read, so it is not dumpable and /proc/<pid> is root's.
+# Their images leave every ELF program in the bin directories and below /usr/lib/postgresql for
+# anyone but root to execute only (the last RUN of each Dockerfile). A process the entrypoint
+# starts as app through gosu runs from a program its user cannot read, so it is not dumpable and
+# the entries in /proc/<pid> are root's.
 # Checked from inside each container, as root, once PID 1 runs the service as app: before
 # that the entrypoint is still at work, and a look at /proc would catch whichever helper it
 # runs at that moment. A readable copy of sleep, started the same way, shows the check can fail.
 APP_UID=10001
 APP_SERVICES=(server scheduler ca-issuer monitoring)
-# The directories whose ELF programs the step of the Dockerfiles leaves execute-only.
-EXEC_ONLY_DIRS=(/usr/local/bin /usr/local/sbin /usr/bin /usr/sbin)
+# The directories whose ELF programs the step of the Dockerfiles leaves execute-only; one an
+# image lacks (ca-issuer has no /usr/lib/postgresql) is skipped, as the step skips it.
+EXEC_ONLY_DIRS=(/usr/local/bin /usr/local/sbin /usr/bin /usr/sbin /usr/lib/postgresql)
 
 # app_procs <service> — "<pid> <owner of /proc/<pid>/status> <name>" for each process of app
 # (Uid APP_UID) in the service; non-zero when the exec fails.
@@ -672,11 +674,13 @@ app_started() {
     [ -z "$LAST" ]
 }
 
-# elf_modes <service> — "<mode> <path>" for each ELF file with an x bit in EXEC_ONLY_DIRS of the
-# service; non-zero when the exec, find, head or stat fails.
+# elf_modes <service> — "<mode> <path>" for each ELF file with an x bit in those of EXEC_ONLY_DIRS
+# the service has; non-zero when the exec, find, head or stat fails or it has none of them.
 elf_modes() {
     # shellcheck disable=SC2016 # expanded by the container's sh
-    e2e_dc exec -T "$1" sh -c 'elf=$(printf "\177ELF"); files=$(find "$@" -type f -perm /111) || exit 1
+    e2e_dc exec -T "$1" sh -c 'for d; do shift; if [ -d "$d" ]; then set -- "$@" "$d"; fi; done
+        [ "$#" -gt 0 ] || exit 1
+        elf=$(printf "\177ELF"); files=$(find "$@" -type f -perm /111) || exit 1
         printf "%s\n" "$files" | while IFS= read -r f; do
             m=$(head -c 4 "$f") || exit 1
             [ "$m" != "$elf" ] || stat -c "%a %n" "$f" || exit 1
@@ -701,16 +705,16 @@ app_not_dumpable() {
     fi
 
     for svc in "${APP_SERVICES[@]}"; do
-        # a. Every process of app has /proc/<pid> owned by root.
+        # a. Every process of app has /proc/<pid>/status owned by root.
         if ! procs=$(app_procs "$svc"); then
             bad "$svc: could not read the processes"
         elif others=$(awk '$2 != "0:0"' <<<"$procs" | paste -sd ';') && [ -n "$procs" ] && [ -z "$others" ]; then
             ok "$svc: processes of app: $(wc -l <<<"$procs")" \
-                "($(awk '{ print $3 }' <<<"$procs" | sort -u | paste -sd ' ')), each /proc/<pid> owned by 0:0"
+                "($(awk '{ print $3 }' <<<"$procs" | sort -u | paste -sd ' ')), each /proc/<pid>/status owned by 0:0"
         else
-            bad "$svc: processes of app whose /proc/<pid> is not 0:0 (pid owner name): ${others:-none of app}"
+            bad "$svc: processes of app whose /proc/<pid>/status is not 0:0 (pid owner name): ${others:-none of app}"
         fi
-        # b. No ELF program with an x bit in the bin directories is readable by group or others.
+        # b. No ELF program with an x bit in EXEC_ONLY_DIRS is readable by group or others.
         if ! modes=$(elf_modes "$svc"); then
             bad "$svc: could not list the programs in ${EXEC_ONLY_DIRS[*]}"; continue
         fi
@@ -729,7 +733,7 @@ app_not_dumpable() {
     done
 
     # Counter-check in server: started the same way from a readable copy of sleep, a process of
-    # app keeps /proc/<pid> as its own, so the check above can fail.
+    # app keeps /proc/<pid>/status as its own, so the check above can fail.
     gid=$(e2e_dc exec -T server id -g app 2>/dev/null | tr -d '\r\n')
     # shellcheck disable=SC2016 # expanded by the container's sh
     if ! e2e_dc exec -T server sh -c 'cp /usr/bin/sleep "$1" && chmod 0755 "$1"' _ "$copy" >/dev/null 2>&1 \
@@ -739,7 +743,7 @@ app_not_dumpable() {
     if ! until_ok 10 copy_seen; then
         bad "server: the readable copy of sleep did not show up as a process of app"
     elif [ "${LAST#* }" = "$APP_UID:$gid sleep-readable" ]; then
-        ok "counter-check: a readable copy of sleep started through gosu keeps /proc/<pid> as $APP_UID:$gid"
+        ok "counter-check: a readable copy of sleep started through gosu keeps /proc/<pid>/status as $APP_UID:$gid"
     else
         bad "counter-check: the readable copy of sleep has '$LAST', expected $APP_UID:$gid" \
             "— the check could not fail"

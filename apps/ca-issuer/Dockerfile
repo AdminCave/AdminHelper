@@ -25,14 +25,21 @@ RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
  && mkdir -p /app/data \
  && chown -R app:app /app
 
-# Every program in the bin directories, an ELF file with an x bit, is root's and for anyone else
-# to execute only (go-r): a process of app, started from one of them through gosu, is then not
-# dumpable and the entries in /proc/<pid> are root's, as in the frps image. Scripts stay
-# readable; what counts is the program that runs them. This stays the last RUN, so that it
-# takes in every program the steps above install.
-RUN find /usr/local/bin /usr/local/sbin /usr/bin /usr/sbin -type f -perm /111 \
-    -exec sh -c '[ "$(head -c 4 "$1")" = "$(printf "\177ELF")" ]' sh {} \; \
-    -exec chmod go-r {} +
+# Every program in the bin directories and below /usr/lib/postgresql (the PostgreSQL clients),
+# an ELF file with an x bit, is root's and for anyone else to execute only (go-r): a process of
+# app, started from one of them through gosu, is then not dumpable and the entries in
+# /proc/<pid> are root's, as in the frps image. Scripts stay readable; what counts is the
+# program that runs them. A directory of the list the image lacks is skipped. The PostgreSQL
+# clients cannot read their own program: pg_isready writes `invalid binary "...": Permission
+# denied` to stderr and runs on, and the entrypoints send that stderr to /dev/null; psql stops,
+# so no entrypoint runs it (monitoring creates its database through psycopg). This stays the
+# last RUN, so that it takes in every program the steps above install.
+RUN for dir in /usr/local/bin /usr/local/sbin /usr/bin /usr/sbin /usr/lib/postgresql; do \
+        [ ! -d "$dir" ] || find "$dir" -type f -perm /111 \
+            -exec sh -c '[ "$(head -c 4 "$1")" = "$(printf "\177ELF")" ]' sh {} \; \
+            -exec chmod go-r {} + \
+        || exit 1; \
+    done
 
 EXPOSE 8090
 

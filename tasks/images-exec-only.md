@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Images server, ca-issuer, monitoring: Programme nur ausführbar, Prozesse von app nicht dumpable — Task-Ledger
-Status: aktiv · Branch: feature/images-exec-only · Review: pro Task
+Status: bereit · Branch: feature/images-exec-only · Review: pro Task
 Spec: keine eigene Datei (Härtung der Images server/scheduler, ca-issuer und monitoring nach dem Muster des frps-Image, Kevin 2026-10-21)
 Heavy: linux-full — T1 und T3 ändern die Images von server und scheduler (`Dockerfile`), `apps/ca-issuer/Dockerfile` und `apps/monitoring/Dockerfile` (CLAUDE.md §5), T2 die Stack-Prüfung `scripts/tests/integration_stack_test.sh`; die gebauten Images fährt der Job `integration-stack` im Sammellauf über `main`; auf PRs läuft er nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/images-exec-only`. Der Job `docker-build` baut alle Images auf dem PR. Kein `scenario`: `docker-compose.yml`, Install/Update, FRP und PKI bleiben unverändert; kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 Abhängt von: T1
 
-### T3 — Images server und monitoring: auch die PostgreSQL-Clientprogramme nur ausführbar  [ ]
+### T3 — Images server und monitoring: auch die PostgreSQL-Clientprogramme nur ausführbar  [x]
 Komponente: server · Dateien: Dockerfile, apps/ca-issuer/Dockerfile, apps/monitoring/Dockerfile, apps/server/tests/test_images_exec_only.py, scripts/tests/integration_stack_test.sh, CHANGELOG.md, apps/monitoring/docker-entrypoint.sh
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a0498033 2026-10-21T14:31:02+02:00
+Review: approve (.ah-out/review/images-exec-only/T3.verdict.json)
 Änderung: Der Schritt aus T1 nimmt in allen drei Dockerfiles, weiter Zeichen für Zeichen gleich, `/usr/lib/postgresql` (die Clientprogramme unter `/usr/lib/postgresql/<version>/bin`, gestartet über den Perl-Wrapper `/usr/bin/pg_isready` bzw. `/usr/bin/psql`) in die Liste auf; ein Verzeichnis der Liste, das es im Image nicht gibt (ca-issuer), überspringt er. Die PostgreSQL-Clients prüfen beim Start, ob sie ihr eigenes Programm lesen können, schreiben sonst `invalid binary "<pfad>": Permission denied` auf stderr und laufen weiter (Probe: `pg_isready --version`, `psql --version` Exit 0). In den Entrypoints gehen stderr von `pg_isready` (`apps/server/docker-entrypoint.sh:21`, `apps/monitoring/docker-entrypoint.sh:19`) und des `psql`-SELECT (`apps/monitoring/docker-entrypoint.sh:35-36`) nach `/dev/null`; sichtbar ist die Zeile nur, wenn monitoring beim ersten Start seine Datenbank anlegt (`:38-39`). Der Kommentar im Dockerfile nennt das. Test zuerst rot: der statische Test aus T1 verlangt zusätzlich `/usr/lib/postgresql` in der Liste; der Docker-Test aus T1 läuft auf einem Verzeichnis der Liste, das es im Basis-Image nicht gibt, ohne Fehler durch. Die Variable der Verzeichnisse in `integration_stack_test.sh` (T2) bekommt `/usr/lib/postgresql`, soweit vorhanden.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py
 Doku: CHANGELOG (den Eintrag aus T1 um die PostgreSQL-Clients und die stderr-Zeile ergänzen) · `docs/admin/betrieb.html`/`docs/en/admin/operations.html` keine (der Absatz aus T1 gilt unverändert)
