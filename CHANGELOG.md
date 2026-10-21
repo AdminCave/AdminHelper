@@ -1190,6 +1190,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   naechste Fenster. Im ersten Lauf, wenn der letzte erfolgreiche Report mehr als 15 Minuten zurueckliegt, nach einem
   Neustart, bei einem Zeitstempel in der Zukunft und beim Test-Push von `monitor init` misst er weiter die
   1-s-Stichprobe. Doku: Entwickler-Doku Agent und Monitoring (DE+EN).
+- **Agent: Datenverzeichnis unter Windows mit festen Rechten:** Unter Windows legt der Agent sein Datenverzeichnis
+  `%ProgramData%\AdminHelper` samt `frp`, `frp\pki`, `logs` und `identity` vor der ersten Nutzung mit festen Rechten
+  an: Eigentuemer Administratoren, Zugriff nur fuer SYSTEM und Administratoren, nichts von `%ProgramData%` geerbt. Ein
+  vorhandenes Verzeichnis mit anderem Eigentuemer uebernimmt er nicht, er entfernt es samt Inhalt und legt es neu an;
+  eines von SYSTEM oder den Administratoren, etwa aus einer frueheren Version, behaelt er samt Inhalt und setzt seine
+  Rechte neu. Eintraege darin mit anderem Eigentuemer entfernt er, ausser der Ordner war schon vorher nur fuer SYSTEM
+  und Administratoren beschreibbar; dann uebernimmt er sie. Dateien, die der Agent dort anlegt, gehoeren den
+  Administratoren. Bisher verwarf der Agent einen Fehler beim Sichern: Laesst sich die Datenwurzel, `frp` oder
+  `frp\pki` nicht sichern, bricht `provision` jetzt mit einem Fehler ab, bei der Datenwurzel auch `monitor init`;
+  laesst sich `identity` nicht sichern, ueberspringt `provision` das Enrollment und laeuft mit dem API-Key weiter, und
+  eine faellige Erneuerung des Client-Zertifikats im Dienstlauf unterbleibt mit einer Warnung. Laesst sich das
+  Log-Verzeichnis nicht sichern, etwa ohne Administratorrechte, schreibt er keine Log-Datei, nur auf stdout. Unter
+  Linux bleibt es bei `0700`. Doku: Entwickler-Doku Agent (DE+EN).
 - **Release: ein Beta ist ein Tag ohne Suffix (R-0014):** Ein Beta ist jetzt der Tag `vX.Y.Z` ohne Suffix,
   veroeffentlicht als GitHub-Pre-release; schon der Draft entsteht als Pre-release. Stable wird dasselbe Release
   spaeter ohne neuen Tag. Die Images `:latest` setzt `docker.yml` nicht mehr beim Tag-Push, sondern erst, wenn das

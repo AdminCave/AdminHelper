@@ -159,8 +159,10 @@ func TestLockIdentityKeepsConcurrentStoresAMatchingPair(t *testing.T) {
 	keyB, respB := storableIdentity(t, "srv-b")
 	trials := 3000
 	if runtime.GOOS == "windows" {
-		// SecureDir starts icacls twice there, about 80 ms per Store in CI: 3000 trials
-		// would outlast the test timeout. The Linux run is the proof of the race.
+		// Every LockIdentity and Store secures the directory again there (EnsureDataDir:
+		// owner, ACL and each entry, through handles), so a trial costs far more than on
+		// Linux: 3000 trials would outlast the test timeout. The Linux run is the proof
+		// of the race.
 		trials = 20
 	}
 	mismatches := 0

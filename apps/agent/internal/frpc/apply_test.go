@@ -174,7 +174,7 @@ func TestWriteSyncConfigStoresKeyAndPinnedCA(t *testing.T) {
 	if got, _ := os.ReadFile(config.FrpCACert()); string(got) != "PINNED-CA" {
 		t.Fatalf("ca.crt = %q, want the pinned CA copied", got)
 	}
-	// Mode bits mean nothing on Windows, SecureDir sets the ACL there.
+	// Mode bits mean nothing on Windows, EnsureDataDir sets the ACL there.
 	if runtime.GOOS != "windows" {
 		for path, want := range map[string]os.FileMode{config.FrpAdminHelperConf(): 0o600, config.FrpDir(): 0o700} {
 			info, err := os.Stat(path)

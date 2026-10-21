@@ -7,9 +7,11 @@
 // Output goes to BOTH stdout (so the systemd journal / Windows service log keep
 // capturing it) AND a size-rotated file under config.LogDir(), so an operator
 // has a durable, self-contained log to inspect or attach to a bug report —
-// independent of the service manager. stdout is written first in the MultiWriter
-// so a non-writable log directory (e.g. an interactive non-root run) never
-// suppresses console output; the file write just fails silently in that case.
+// independent of the service manager. If the log directory cannot be secured
+// (config.EnsureLogDir, Windows only, e.g. a run without administrator rights),
+// the agent logs to stdout only. On Linux, as before, stdout is written first in
+// the MultiWriter so a non-writable log directory (e.g. an interactive non-root
+// run) never suppresses console output; the file write just fails silently then.
 //
 // Format is slog's human-readable text (key=value with an RFC3339 timestamp),
 // not JSON: the agent logs sparsely and operators read this directly.
@@ -29,13 +31,20 @@ import (
 
 // Init installs the default slog logger. Call once at startup, before any
 // command runs. level is one of debug/info/warn/error (default info).
+//
+// The log directory is secured first (config.EnsureLogDir, Windows only), since
+// the file logger would create it with inherited rights. If that fails, the agent
+// logs to stdout only, silently, as with a non-writable log directory.
 func Init(level string) {
-	writer := io.MultiWriter(os.Stdout, &lumberjack.Logger{
-		Filename:   config.LogFile(),
-		MaxSize:    10, // megabytes per file
-		MaxBackups: 5,  // keep 5 rotated files
-		Compress:   true,
-	})
+	var writer io.Writer = os.Stdout
+	if config.EnsureLogDir() == nil {
+		writer = io.MultiWriter(os.Stdout, &lumberjack.Logger{
+			Filename:   config.LogFile(),
+			MaxSize:    10, // megabytes per file
+			MaxBackups: 5,  // keep 5 rotated files
+			Compress:   true,
+		})
+	}
 	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{Level: parseLevel(level)})
 	slog.SetDefault(slog.New(handler))
 }

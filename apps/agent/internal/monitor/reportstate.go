@@ -7,6 +7,8 @@ package monitor
 import (
 	"encoding/json"
 	"os"
+
+	"adminhelper-agent/internal/config"
 )
 
 // reportState is what the next report is measured against, persisted in config.MonitorReportStateFile
@@ -76,5 +78,5 @@ func saveReportState(path string, st reportState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return config.WriteFile(path, data, 0600)
 }
