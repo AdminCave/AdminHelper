@@ -446,30 +446,45 @@ json_list() {  # json_list <item…>
   for i in "$@"; do [ "$first" = 1 ] && first=0 || printf ', '; json_str "$i"; done
   printf ']'
 }
-# The evidence fields: the box's own git first, the CLIENT's values second. The
-# sync carries .git along, but only from the main checkout is it a repository;
-# from a worktree it is a pointer into a directory the box does not have, and a
-# box without git — or a tree that arrived by any other route — answers nothing
-# at all. The fields would then be empty on exactly the machine the heavy runs
-# happen on, so the client that synced the tree passes both values in (iter.sh).
+# The evidence fields: the CLIENT's values first, the box's own git second
+# (Kevin, 2026-09-25: the box needs no repository, iter.sh passes head and tree
+# hash in from the client that synced the tree). The box's own hash is the wrong
+# measuring point: it is computed at the END of the run, over a tree the sync
+# shaped (the tracked apps/server/data/.gitkeep stays home) and the run changed.
+# Synced from the main checkout, where .git arrives as a whole repository, it
+# therefore never matched the client's, and heavy.sh discarded every artifact as
+# one from another tree. From a worktree .git is a dead pointer, and the box's
+# git answers nothing at all.
 #
-# The client's values describe the CLIENT's tree, which is not byte-for-byte the box's: the sync
-# excludes what scripts/vm/rsync-exclude.txt lists (today apps/server/data), while the hash
-# excludes tasks/ and the output dirs. The hash therefore only stays truthful as
-# long as no exclude in rsync-exclude.txt covers a tracked source path.
+# iter.sh passes the values only on a run WITH sync; a run without one keeps the
+# answer of its own git. run.sh cannot tell a box from a dev machine: wherever
+# the two variables are set, they are stamped. A local run answers from its own
+# git only while nothing sets them — task-close.sh, whose tree check needs this
+# run's own measurement, unsets both before its Verify. A client value counts
+# only as exactly 40 lowercase hex characters: anything else is no identity, and
+# stamping it would be wrong evidence rather than missing evidence.
 #
-# Fall back on an EMPTY answer, not on a non-zero exit: a git that exits 0 without
-# printing (or one answering for a foreign repo the tree happens to sit in) would
-# otherwise silently win over the value the client computed.
-evidence_field() {  # evidence_field <command…> -- <fallback>
-  local v; v="$("${@:1:$#-1}" 2>/dev/null)"
+# The client's values describe the CLIENT's tree, which is not byte-for-byte the
+# box's: the sync excludes what scripts/vm/rsync-exclude.txt lists, the hash
+# excludes tasks/ and the output dirs. They stay truthful only as long as no
+# exclude covers tracked source beyond that empty .gitkeep.
+#
+# The box's own answer must be hex as well: a git that exits 0 with nothing, or
+# with anything else, on stdout leaves the field empty instead of filling it.
+# The classes are spelled out because a range like 0-9a-f may follow the locale.
+evidence_field() {  # evidence_field <client value> <command…>
+  local c="$1" v; shift
+  if [ "${#c}" -eq 40 ]; then
+    case "$c" in *[!0123456789abcdef]*) ;; *) printf '%s' "$c"; return 0 ;; esac
+  fi
+  v="$("$@" 2>/dev/null)"
   case "$v" in
-    *[!0-9a-f]*|"") printf '%s' "${@: -1}" ;;
-    *)              printf '%s' "$v" ;;
+    *[!0123456789abcdef]*|"") ;;
+    *) printf '%s' "$v" ;;
   esac
 }
-evidence_head()      { evidence_field git rev-parse HEAD "${AH_HEAD:-}"; }
-evidence_tree_hash() { evidence_field bash "$ROOT/scripts/dev/tree-hash.sh" "${AH_TREE_HASH:-}"; }
+evidence_head()      { evidence_field "${AH_HEAD:-}" git rev-parse HEAD; }
+evidence_tree_hash() { evidence_field "${AH_TREE_HASH:-}" bash "$ROOT/scripts/dev/tree-hash.sh"; }
 
 write_artifact() {
   local f="$AH_OUT_DIR/last-$LAYER.json" e name result secs first=1

@@ -537,17 +537,34 @@ grep -q '"head": "1111111111111111111111111111111111111111"' "$WORK/out4/last-li
 grep -q '"tree_hash": "2222222222222222222222222222222222222222"' "$WORK/out4/last-lint.json" \
   && ok "no .git: tree_hash comes from the client" || bad "tree_hash: $(grep tree_hash "$WORK/out4/last-lint.json")"
 
-# ...and where git DOES answer, its answer wins over whatever the client claims.
-# Checked with a stub rather than the surrounding checkout: "a real repo that
-# answers" is not a precondition this test can assume — that is exactly what made
-# the first heavy run red.
+# A client value that is not exactly 40 hex characters is no identity: with no
+# git to ask, the field stays empty instead of carrying it.
+OUT=$(PATH="$NOGIT" AH_OUT_DIR="$WORK/out4b" \
+      AH_HEAD=111111111111111111111111111111111111111 \
+      AH_TREE_HASH=not-a-tree-hash \
+      "$NOGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": ""' "$WORK/out4b/last-lint.json" && grep -q '"tree_hash": ""' "$WORK/out4b/last-lint.json" \
+  && ok "no .git and a malformed client value: the fields stay empty" \
+  || bad "malformed client value: $(grep -E '"(head|tree_hash)"' "$WORK/out4b/last-lint.json" | tr -d '\n')"
+
+# ...and where git DOES answer, the client's values still win (Kevin, 2026-09-25:
+# the box needs no repository, head and tree hash come from the client). Synced
+# from the main checkout the box's git does answer — but over a tree the sync
+# shaped and the run changed, so its tree hash never matched the client's and
+# heavy.sh threw away every artifact. Checked with a stub rather than the
+# surrounding checkout: "a real repo that answers" is not a precondition this test
+# can assume — that is exactly what made the first heavy run red.
 FAKEGIT="$WORK/bin-fakegit"; mkdir -p "$FAKEGIT"
 cp -a "$BARE/." "$FAKEGIT/"
 rm -f "$FAKEGIT/git"
-cat > "$FAKEGIT/git" <<'EOF'
+# Answers run.sh's own question and every call scripts/dev/tree-hash.sh makes:
+# the checkout as toplevel, add/rm into its throwaway index, write-tree.
+cat > "$FAKEGIT/git" <<EOF
 #!/bin/sh
-case "$*" in
-  "rev-parse HEAD") echo 3333333333333333333333333333333333333333; exit 0 ;;
+case "\$*" in
+  "rev-parse HEAD"|write-tree) echo 3333333333333333333333333333333333333333; exit 0 ;;
+  "rev-parse --show-toplevel") echo "$REPO_ROOT"; exit 0 ;;
+  "add "*|"rm "*) exit 0 ;;
 esac
 exit 128
 EOF
@@ -555,9 +572,53 @@ chmod +x "$FAKEGIT/git"
 OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out5" \
       AH_HEAD=1111111111111111111111111111111111111111 \
       "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
-grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out5/last-lint.json" \
-  && ok "a git that answers wins over the client value" \
+grep -q '"head": "1111111111111111111111111111111111111111"' "$WORK/out5/last-lint.json" \
+  && ok "the client's head wins over a git that answers" \
   || bad "precedence: $(grep '"head"' "$WORK/out5/last-lint.json")"
+OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out6" \
+      AH_TREE_HASH=2222222222222222222222222222222222222222 \
+      "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"tree_hash": "2222222222222222222222222222222222222222"' "$WORK/out6/last-lint.json" \
+  && ok "the client's tree_hash wins over a git that answers tree-hash.sh" \
+  || bad "tree_hash precedence: $(grep '"tree_hash"' "$WORK/out6/last-lint.json")"
+
+# Without client values the box keeps asking its own git (a run without sync, or
+# a local one). This is also the proof that the stub answers tree-hash.sh: if it
+# did not, the case above would pass on the fallback alone.
+OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out7" \
+      "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out7/last-lint.json" \
+  && grep -q '"tree_hash": "3333333333333333333333333333333333333333"' "$WORK/out7/last-lint.json" \
+  && ok "without client values the box's git answers both fields" \
+  || bad "no client values: $(grep -E '"(head|tree_hash)"' "$WORK/out7/last-lint.json" | tr -d '\n')"
+
+# A client value counts only as exactly 40 lowercase hex characters; anything
+# else is not an identity, and the box's git answers instead.
+n=0
+for v in 111111111111111111111111111111111111111 \
+         11111111111111111111111111111111111111111 \
+         111111111111111111111111111111111111111g \
+         AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA; do
+  n=$((n + 1))
+  OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out8-$n" AH_HEAD="$v" AH_TREE_HASH="$v" \
+        "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+  grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out8-$n/last-lint.json" \
+    && grep -q '"tree_hash": "3333333333333333333333333333333333333333"' "$WORK/out8-$n/last-lint.json" \
+    && ok "client value '$v' (${#v} chars) does not count — the box's git answers" \
+    || bad "client value '$v': $(grep -E '"(head|tree_hash)"' "$WORK/out8-$n/last-lint.json" | tr -d '\n')"
+done
+
+# The box's own answer counts only as hex too: a git that exits 0 with text
+# that is no commit leaves the field empty instead of filling it.
+TEXTGIT="$WORK/bin-textgit"; mkdir -p "$TEXTGIT"
+cp -a "$BARE/." "$TEXTGIT/"
+rm -f "$TEXTGIT/git"
+printf '#!/bin/sh\necho "not a commit"\nexit 0\n' > "$TEXTGIT/git"; chmod +x "$TEXTGIT/git"
+OUT=$(PATH="$TEXTGIT" AH_OUT_DIR="$WORK/out9" \
+      "$TEXTGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": ""' "$WORK/out9/last-lint.json" \
+  && ok "a git answering with text that is no hex leaves head empty" \
+  || bad "non-hex git answer: $(grep '"head"' "$WORK/out9/last-lint.json")"
 
 # A strict-failed SKIP carries its own verdict rather than being folded into
 # "fail" or "skip" — the summary counts it twice, the artifact must not.

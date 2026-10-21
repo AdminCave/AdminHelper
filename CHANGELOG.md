@@ -465,6 +465,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Sammellauf: Schritt-Tabelle und Sekunden je Schritt wieder im Report (R-0603):** Bei einem Sammellauf aus dem
+  Haupt-Checkout verwarf `heavy.sh` seit dem 2026-09-18 jedes Artefakt der Box („last-all.json describes another
+  tree — ignored“): `run.sh` nahm Kopf und Tree-Hash zuerst vom `git` der Box, und deren Hash, am Ende des Laufs ueber
+  einen vom Sync geformten Baum gerechnet, traf den des Clients nie. Der Report hatte deshalb nur die Ebenen-Zeile,
+  `steps-all.tsv` blieb leer, und die Historie bekam keine Schritt-Zeilen. Jetzt gehen die Werte, die `iter.sh` vom
+  Client mitgibt, vor dem `git` der Box; als Wert zaehlen nur genau 40 Hex-Zeichen. Ein Lauf ohne Sync und ein
+  lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
+  `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
+  vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder

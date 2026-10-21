@@ -226,6 +226,11 @@ else
   esac
 fi
 echo "── verify.sh $VERIFY_COMPONENTS --strict ${VERIFY_ARGS:+-- $VERIFY_ARGS}"
+# The tree check after the run needs the hash run.sh measures over THIS checkout.
+# run.sh stamps a client's AH_TREE_HASH/AH_HEAD instead (what iter.sh passes to a
+# box), so values left in this environment would stand in for the measurement.
+# task-close.sh never runs on a box: here they have no business at all.
+unset AH_HEAD AH_TREE_HASH
 # Word lists, not a shell line: `set -f` keeps a `*` in the ledger from being
 # expanded against the repo root, and quotes in it stay characters either way.
 set -f

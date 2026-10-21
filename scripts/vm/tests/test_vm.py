@@ -1595,7 +1595,7 @@ def reachable(http, monkeypatch):
 def test_the_exclude_list_never_hides_tracked_source():
     """The invariant the file itself states, checked against the real index.
 
-    The box builds its evidence hash from what it RECEIVED, so an exclude over
+    The artifact of a synced run carries the CLIENT's tree hash, so an exclude over
     tracked source would make every artifact describe a tree the box never had —
     green, and about something else. This used to be checked by comparing the
     list against crabbox's; with crabbox gone, check the property directly.
@@ -1633,8 +1633,8 @@ def test_the_exclude_list_never_hides_tracked_source():
             hits = [t for t in tracked if entry in t.split("/")]
         assert not hits, "%s excludes tracked source: %s" % (entry, hits[:3])
     # .git is not excluded (R-0095: vm.py stays as it is). Synced from the main
-    # checkout, the box's own git answers for the tree it holds; from a worktree
-    # it is a dead pointer, and run.sh takes head and tree_hash from the client.
+    # checkout it is a repository, from a worktree a dead pointer; either way
+    # run.sh takes head and tree_hash from the client when iter.sh passes them in.
     assert ".git" not in ours
     # Our own local state never travels — it describes THIS machine's leases.
     assert {".vm", ".ah-out"} <= set(ours)

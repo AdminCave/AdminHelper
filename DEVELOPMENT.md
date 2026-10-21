@@ -1233,8 +1233,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   dem naechsten Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
-  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der
-  Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `worktree-teardown.sh <pfad> <slug>`
+  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit, und diese Werte gehen
+  vor dem `git` der Box, auch wenn der Sync aus dem Haupt-Checkout ein Repo mitbringt.
+  Ein Test, der auf der Box `git` voraussetzt, gehoert deshalb nicht auf die Box.
+  `worktree-teardown.sh <pfad> <slug>`
   zerstoert die VMs der Lane und raeumt Worktree, Test-DB, Venv und den gemergten Branch ab —
   auch dann, wenn der Worktree schon von Hand entfernt wurde.
   Ablauf eines Vorhabens im eigenen Worktree: `CLAUDE.md` §8.
