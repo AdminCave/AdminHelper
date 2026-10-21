@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Ops-Skripte und die `.env`: byte-treu lesen, ohne Rückfrage ersetzen, mit allen Kopien deinstallieren — Task-Ledger
-Status: aktiv · Branch: feature/install-scripts-env · Review: pro Task
+Status: bereit · Branch: feature/install-scripts-env · Review: pro Task
 Spec: Roadmap R-0530, R-0538; T3 nach Kevin 2026-10-21 (keine eigene Spec-Datei)
 Heavy: linux-full — nur nach CLAUDE.md §5 (Install/Update im Diff, Sammellauf über `main`); real deckt er hier fast nichts: `upgrade_path_test.sh` Schritt 4 startet die `update.sh` dieses Stands nur bis zur Übergabe an den Updater des Release (`:34-36`), `install.sh` und `uninstall.sh` startet kein schwerer Lauf. Kein `scenario`: kein `multibox.sh`-Flag ruft `install.sh`, `update.sh` oder `uninstall.sh` auf (`box_*.sh` und `multibox.sh` nennen nur `agent-install.sh`); `init-secrets.sh` läuft dort nur auf einer frischen `.env` ohne Terminal (`box_serverbox.sh:203`). Die geänderten Pfade (Bytes außerhalb von UTF-8, NUL-Byte, schreibgeschützte Datei bei einem Terminal auf stdin, Kopien neben der `.env`) erreichen nur die hermetischen Tests am echten Skript; die fährt die PR-CI (Job „Ops scripts“, `run.sh unit --strict --only scripts`) als Nutzer ohne root-Rechte
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -43,8 +43,10 @@ Dedup-Key: bug:scripts:update.sh:mv-prompts-on-readonly-env
 HEAD: 82e4a7b8
 Semantik: docs/admin/installation.html:213 — „Scheitert der Tausch der Laufzeit-Dateien, die Migration der `.env` (neue Keys, Secrets, Image-Pins) … rollt das Skript Laufzeit-Dateien und Image-Pins automatisch auf den alten Stand zurück“; ein Update, das auf eine Antwort wartet, endet weder fertig noch zurückgerollt. Für `install.sh` und `init-secrets.sh` keine Stelle in docs/ (gesucht nach `0444`, `schreibgeschützt`, `read-only`, `mv`); dass die `.env` danach 0600 ist, steht im Code (`chmod 600`, Zeilen oben).
 
-### T3 — uninstall.sh: der Schritt „Secrets“ entfernt auch die Kopien der `.env`  [ ]
+### T3 — uninstall.sh: der Schritt „Secrets“ entfernt auch die Kopien der `.env`  [x]
 Komponente: scripts · Dateien: scripts/uninstall.sh, scripts/tests/uninstall_test.sh, docs/admin/installation.html, docs/en/admin/installation.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @58563f2c 2026-10-21T10:53:35+02:00
+Review: approve (.ah-out/review/install-scripts-env/T3.verdict.json)
 Änderung: Schritt 4 („Secrets-Datei .env löschen?“, `uninstall.sh:112`) entfernt heute `.env` und `.env.restored` (`:154`). Neu entfernt er im Install-Verzeichnis auch die Arbeitskopien, die die Skripte neben der `.env` anlegen: `.env.ah-XXXXXX` aus `install.sh:194`, `init-secrets.sh:62` und `update.sh:190`, `.env.ah-new` aus `update.sh:489` und `:602`. Jeder Pfad, auf den das Muster `.env.ah-*` passt, geht über `nuke_path` (auch ein Verzeichnis dieses Namens); ohne Treffer bleibt das Muster wörtlich stehen und `nuke_path` tut nichts (`:141`). Andere Dateien bleiben, ausdrücklich `.env.example` (Laufzeit-Datei, `:18-19`). Die Frage bleibt im Wortlaut; der Kopfkommentar (`:11`) und die Zusammenfassung (`:165`) nennen die Kopien. Test zuerst rot in `uninstall_test.sh`: `seed` (`:38-44`) legt zusätzlich `.env.restored`, eine Datei `.env.ah-<zufall>` (0600), `.env.ah-new` und `.env.example` an; nach `--yes` (Fall 1, `:52-59`) sind `.env`, `.env.restored` und beide Kopien weg, `.env.example` bleibt; ein Verzeichnis `.env.ah-new/` mit Inhalt geht ebenso. Bestehende Fälle bleiben unverändert grün.
 Verify: bash scripts/dev/verify.sh scripts --strict -- uninstall_test
 Doku: docs/admin/installation.html (`:239`, Absatz „Abgefragt/entfernt …“: „die Secrets-Datei `.env` samt `.env.restored` und den Arbeitskopien `.env.ah-*`“; dazu `./repo` bei den Host-Daten, das `uninstall.sh:111`, `:153` schon entfernt) + docs/en/admin/installation.html (`:187`, ebenso); CHANGELOG.md (`### Changed` `:1081`, Eintrag „Deinstallation: …“, umlautfrei)

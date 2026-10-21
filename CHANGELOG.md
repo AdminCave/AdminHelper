@@ -1097,6 +1097,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Deinstallation: der Schritt „Secrets“ entfernt auch die Kopien der `.env`:** `install.sh`, `update.sh` und
+  `init-secrets.sh` schreiben die `.env` ueber eine Kopie daneben (`.env.ah-XXXXXX`, `.env.ah-new`), die nach einem
+  Abbruch liegen bleiben kann und dieselben Secrets traegt. Beantwortet man in `uninstall.sh` die Frage nach der
+  Secrets-Datei mit Ja (auch mit `--yes`), entfernt das Skript neben `.env` und `.env.restored` jetzt auch jede Datei
+  und jedes Verzeichnis `.env.ah-*` im Install-Verzeichnis; `.env.example` bleibt. Ohne Ja bleiben alle liegen.
+  Doku: Installation (DE+EN); sie nennt bei den Host-Daten jetzt auch `./repo`, das das Skript schon bisher entfernt.
 - **Desktop: Workspaces statt Moduswechsel (R-0431):** Der Modus in den Einstellungen entfaellt: Die Art legt ein
   Workspace beim Anlegen fest, Name, Farbe und URL aendert der Picker, solange der Workspace geschlossen ist; im
   Fenster stehen sie als Anzeige. Die Einstellungen trennen „Dieser Workspace“ (Abmelden, Zertifikate,
