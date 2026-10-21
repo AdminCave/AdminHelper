@@ -72,8 +72,10 @@ Doku: keine (intern)
 Abhängt von: T6
 Beweis: reviewer T4 2026-10-20 an 0a53e340, Code-Lesung `cleanChild` (`securedir_windows.go:287-300`): `gone` nur aus `classifyAt`, Folgeschritte geben „nicht gefunden“ als Fehler zurück; auf Windows nicht nachgestellt, der erste Test der Task zeigt es
 
-### T8 — Monitor: die Zustandsdatei des Reports über `config.WriteFile`  [ ]
+### T8 — Monitor: die Zustandsdatei des Reports über `config.WriteFile`  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b571f1ac 2026-10-21T06:53:19+02:00
+Review: approve (.ah-out/review/agent-windows-datadir/T8.verdict.json)
 Änderung: `saveReportState` (`monitor/reportstate.go:74-79`, mit `feature/monitoring-linux-base-v2` auf main gekommen) schreibt die Zustandsdatei unter `MonitorDir()` mit `os.WriteFile`; wie alle anderen Schreibstellen in monitor und frpc seit T3 geht sie über `config.WriteFile`, damit sie unter Windows den Administratoren gehört (unter Linux unverändert). Test windows-getaggt in `reportstate_windows_test.go` (neu, SPDX): eine vorhandene Zustandsdatei, die dem Testkonto gehört, gehört nach `saveReportState` den Administratoren und trägt den neuen Inhalt. Die bestehenden Tests in `reportstate_test.go` bleiben grün.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)
