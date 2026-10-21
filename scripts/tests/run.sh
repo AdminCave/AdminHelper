@@ -931,8 +931,12 @@ layer_e2e() {
   # Smoke first (cheapest, no backend): tauri-driver->WebKitWebDriver->window+mount.
   # Needs only a display; `npm test` matches the *.e2e.js glob (smoke), not the
   # *.live.js wrappers. Fastest fault localization when all live specs go red (6.141).
+  # ui/ is brought up to its lockfile first: `npm test` builds the app (wdio
+  # onPrepare -> tauri build -> `npm --prefix ui run build`), and the step that
+  # installed ui/ before, desktop-ui vitest, is not in this layer and under --part
+  # gui not on this box — the build would take the template's node_modules.
   if have_node && have_display; then
-    run_step desktop-e2e-smoke "desktop-e2e smoke" -- bash -c 'cd apps/desktop/e2e && npm_ci_if_stale && npm test'
+    run_step desktop-e2e-smoke "desktop-e2e smoke" -- bash -c '(cd apps/desktop/ui && npm_ci_if_stale) && cd apps/desktop/e2e && npm_ci_if_stale && npm test'
   else skip desktop-e2e-smoke "desktop-e2e smoke" "node + display required"; fi
 
   if ! have_docker || ! have_display; then

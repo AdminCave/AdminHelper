@@ -133,8 +133,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: `DEVELOPMENT.md` Wochenlauf, `cicd.html` DE/EN: was ohne zweite Box geschieht.
 Abhängt von: T9
 
-### T13 — run.sh: der Smoke-Schritt frischt auch die Abhängigkeiten von apps/desktop/ui auf  [ ]
+### T13 — run.sh: der Smoke-Schritt frischt auch die Abhängigkeiten von apps/desktop/ui auf  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d4fb1b52 2026-10-21T19:29:27+02:00
+Review: approve (.ah-out/review/heavy-parallel/T13.verdict.json)
 Änderung: Fund aus der Branch-Prüfung. Bisher frischte `desktop-ui vitest` (`npm_ci_if_stale` in `apps/desktop/ui`) die `node_modules` von `ui/` auf, bevor `desktop-e2e smoke` lief; mit `--part gui` liegt dieser Schritt im anderen Teil. Der Smoke-Schritt (`run.sh`, `desktop-e2e smoke`) frischt nur `apps/desktop/e2e` auf, sein `npm test` baut die App aber über `onPrepare` (`cargo tauri build`, `beforeBuildCommand` `npm --prefix ui run build`). Auf der GUI-Box baut er damit gegen die `node_modules` des Templates, nicht gegen den Lockfile des Laufs. Fix: Der Smoke-Schritt ruft `npm_ci_if_stale` auch in `apps/desktop/ui` vor dem Build, wie `e2e_npm_ready ui e2e` (`lib_e2e_stack.sh`) für die GUI-Suiten; ein Kommentar sagt das Warum.
 Tests in `run_flags_test.sh` (Stubs für npm und die Display-Werkzeuge, keine Suite startet): Mit `ui/node_modules` älter als `ui/package-lock.json` ruft der Smoke-Schritt `npm ci` in `ui` vor `npm test` in `e2e`; mit frischen `node_modules` kein `npm ci` in `ui`. Auf HEAD rot.
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test

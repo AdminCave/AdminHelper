@@ -881,6 +881,62 @@ grep -qx 'docker info' "$GUI_STUB_LOG" && [ -z "$others" ] \
   && ok "no suite started (the stubs saw nothing but docker info)" \
   || bad "stub calls: $(tr '\n' '|' < "$GUI_STUB_LOG")"
 
+# The smoke step's `npm test` builds the app, and that build runs `npm --prefix ui
+# run build`; in part gui no other step installs ui/, so the smoke step must, by
+# npm_ci_if_stale's rule. A root of its own, because the rule reads mtimes and this
+# test must not touch the checkout's node_modules. npm is a stub that logs where it
+# was called: nothing is installed, no app is built. No docker on this PATH, so the
+# GUI suites stay behind their guard row.
+echo "── smoke: ui dependencies ──"
+SMOKE_ROOT="$WORK/smoke-root"
+mkdir -p "$SMOKE_ROOT/scripts/tests" "$SMOKE_ROOT/apps/desktop/ui/node_modules" "$SMOKE_ROOT/apps/desktop/e2e/node_modules"
+cp "$RUN" "$SMOKE_ROOT/scripts/tests/run.sh"
+touch "$SMOKE_ROOT/apps/desktop/ui/package-lock.json" "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
+SMOKESTUB="$WORK/bin-smokestub"; mkdir -p "$SMOKESTUB"
+cp -a "$BARE/." "$SMOKESTUB/"
+NPM_LOG="$WORK/npm.log"
+for t in node xvfb-run WebKitWebDriver tauri-driver; do
+  rm -f "$SMOKESTUB/$t"
+  printf '#!/bin/sh\nexit 0\n' > "$SMOKESTUB/$t"; chmod +x "$SMOKESTUB/$t"
+done
+rm -f "$SMOKESTUB/npm"
+cat > "$SMOKESTUB/npm" <<EOF
+#!/bin/sh
+echo "\$(pwd) npm \$*" >> "$NPM_LOG"
+[ "\$1" = ci ] && [ -n "\${SMOKE_NPM_CI_FAIL:-}" ] && exit 1
+exit 0
+EOF
+chmod +x "$SMOKESTUB/npm"
+smoke_run() {  # smoke_run <mtime of ui/node_modules> <mtime of ui/package-lock.json>
+  touch -d "$1" "$SMOKE_ROOT/apps/desktop/ui/node_modules"
+  touch -d "$2" "$SMOKE_ROOT/apps/desktop/ui/package-lock.json"
+  # e2e/ is fresh every time, so an `npm ci` in the log can only be ui's.
+  touch -d 2026-01-01 "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
+  touch -d 2026-01-02 "$SMOKE_ROOT/apps/desktop/e2e/node_modules"
+  : > "$NPM_LOG"
+  OUT=$(PATH="$SMOKESTUB" AH_OUT_DIR="$WORK/out-smoke" AH_ALLOW_REAL=1 \
+        "$SMOKESTUB/bash" "$SMOKE_ROOT/scripts/tests/run.sh" e2e --part gui 2>&1); rc=$?
+}
+smoke_line() { sed -n "\\#$1\$#{=;q}" "$NPM_LOG"; }  # number of the first log line ending in $1
+smoke_run 2026-01-01 2026-01-02
+UI_CI=$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')
+E2E_TEST=$(smoke_line '/apps/desktop/e2e npm test')
+[ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$UI_CI" ] && [ -n "$E2E_TEST" ] && [ "$UI_CI" -lt "$E2E_TEST" ] \
+  && ok "smoke: ui/node_modules older than its lockfile -> npm ci in ui before npm test in e2e" \
+  || bad "smoke, stale ui: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+smoke_run 2026-01-02 2026-01-01
+[ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$(smoke_line '/apps/desktop/e2e npm test')" ] && ! grep -q ' npm ci ' "$NPM_LOG" \
+  && ok "smoke: fresh ui/node_modules -> no npm ci, npm test still runs" \
+  || bad "smoke, fresh ui: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+# A failed install in ui/ must not let the build go on with the old node_modules.
+SMOKE_NPM_CI_FAIL=1 smoke_run 2026-01-01 2026-01-02
+[ $rc -eq 1 ] && grep -q "FAIL  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')" ] && ! grep -q ' npm test' "$NPM_LOG" \
+  && ok "smoke: a failed npm ci in ui fails the step before npm test" \
+  || bad "smoke, failed ui install: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+
 # ── run.sh: the shared lock for the heavy python steps (T2, T6) ─────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a
 # stub: pip succeeds, pytest writes when it starts and ends and sleeps between.
