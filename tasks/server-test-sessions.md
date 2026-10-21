@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Tests: keine Sitzung an der Rollback-Klammer vorbei, die Test-Rolle mit eigenem Passwort — Task-Ledger
-Status: bereit · Branch: feature/server-test-sessions · Review: pro Task
+Status: erledigt · Branch: feature/server-test-sessions · Review: pro Task
 Spec: Roadmap R-0526, R-0529
 Heavy: none — T1 ändert nur `apps/server/tests/` und den Absatz „Tests“ der Entwickler-Doku, T2 nur die Einrichtung der Worktrees unter `scripts/dev/`, ihre Tests und `DEVELOPMENT.md`. Kein API-, Gateway-, PKI-, Stack-, Compose- oder Install-Pfad, `app/` bleibt unverändert. Die volle Server-Suite und den `schemathesis`-Schritt, auf die die Schranke aus T1 wirkt, fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
