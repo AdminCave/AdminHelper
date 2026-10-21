@@ -72,6 +72,14 @@ Doku: keine (intern)
 Abhängt von: T6
 Beweis: reviewer T4 2026-10-20 an 0a53e340, Code-Lesung `cleanChild` (`securedir_windows.go:287-300`): `gone` nur aus `classifyAt`, Folgeschritte geben „nicht gefunden“ als Fehler zurück; auf Windows nicht nachgestellt, der erste Test der Task zeigt es
 
+### T8 — Monitor: die Zustandsdatei des Reports über `config.WriteFile`  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_windows_test.go
+Änderung: `saveReportState` (`monitor/reportstate.go:74-79`, mit `feature/monitoring-linux-base-v2` auf main gekommen) schreibt die Zustandsdatei unter `MonitorDir()` mit `os.WriteFile`; wie alle anderen Schreibstellen in monitor und frpc seit T3 geht sie über `config.WriteFile`, damit sie unter Windows den Administratoren gehört (unter Linux unverändert). Test windows-getaggt in `reportstate_windows_test.go` (neu, SPDX): eine vorhandene Zustandsdatei, die dem Testkonto gehört, gehört nach `saveReportState` den Administratoren und trägt den neuen Inhalt. Die bestehenden Tests in `reportstate_test.go` bleiben grün.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (intern)
+Abhängt von: T3
+Beweis: Merge von origin/main (2026-10-21): `reportstate.go:79` `return os.WriteFile(path, data, 0600)`; Hinweis der Session adminhelper-a9 (Abstimmung: wer zweiter merged, zieht nach)
+
 ### T5 — Doku und CHANGELOG  [ ]
 Komponente: agent · Dateien: CHANGELOG.md, docs/developer/agent.html, docs/en/developer/agent.html
 Änderung: CHANGELOG unter `## [Unreleased]`, `### Changed`: Der Agent legt unter Windows sein Datenverzeichnis vor der ersten Nutzung mit festen Rechten an (nur SYSTEM und Administratoren) und übernimmt kein vorhandenes Verzeichnis mit anderem Eigentümer. `docs/developer/agent.html:78` und `docs/en/developer/agent.html:78`: den Absatz zur Härtung des Datenverzeichnisses entsprechend ergänzen (DE und EN im selben Commit).
