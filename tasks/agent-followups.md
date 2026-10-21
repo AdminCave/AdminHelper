@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: RPM-Upgrade, Provisionierung und Sync mit gesichertem Datenverzeichnis, Meldung im Ereignisprotokoll — Task-Ledger
-Status: aktiv · Branch: feature/agent-followups · Review: pro Task
+Status: bereit · Branch: feature/agent-followups · Review: pro Task
 Spec: keine eigene Datei (drei Folgezeilen des Agents, Roadmap R-0527, R-0556, R-0557)
 Heavy: linux-full + windows — `apps/agent` (Provisionierung, frpc-Sync, Logger, Windows-Dienst) liegt auf dem Provisionierungs- und Sync-Pfad und läuft im Sammellauf über `main` (der Schritt `agent_monitoring` provisioniert echt, `/feature-build` §5); `windows` über den CI-Job „Go Agent (test, Windows)“ (der Pool hat keine Windows-Vorlage, Belege über Probe-Branches, unten); kein `scenario --rpm`: T1 ändert nur Scriptlets, und die Multibox-RPM-Strecke installiert im Container ohne systemd, sie sähe die Reihenfolge nicht; den Beleg liefert die rpm-Probe in T1
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -80,8 +80,10 @@ Beweis: Hinweis aus dem Review des Branches `agent-windows-datadir` (2026-10-20/
 Dedup-Key: bug:agent:windows:service-unsecured-root-silent
 HEAD: 82e4a7b8
 
-### T5 — `service install` registriert die Ereignisquelle, `service uninstall` entfernt sie  [ ]
+### T5 — `service install` registriert die Ereignisquelle, `service uninstall` entfernt sie  [x]
 Komponente: agent · Dateien: apps/agent/internal/service/service_windows.go, apps/agent/internal/service/service_windows_test.go, CHANGELOG.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @88ed0fa5 2026-10-21T10:51:37+02:00
+Review: approve (.ah-out/review/agent-followups/T5.verdict.json)
 Änderung: Ohne registrierte Quelle schreibt Windows den Eintrag aus T4 ins Anwendungsprotokoll, aber ohne Beschreibung (RegisterEventSource, oben). `Install` (`service_windows.go:21`) registriert nach `sc create` die Quelle `AdminHelper-Agent` mit `eventlog.InstallAsEventCreate` (Fehler, Warnung, Information); eine schon vorhandene Quelle ist kein Fehler, jeder andere Fehler eine WARNUNG wie bei `sc failure`. `Uninstall` (`:77`) entfernt sie nach `sc delete` mit `eventlog.Remove`; eine fehlende Quelle ist kein Fehler. Den Quellnamen teilen sich T4 und der Dienst als eine Konstante. Test windows-getaggt (`service_windows_test.go`, neu, SPDX) über die beiden Helfer mit einem eindeutigen Testnamen: zweimal registrieren ohne Fehler, der Schlüssel `HKLM\SYSTEM\CurrentControlSet\Services\EventLog\Application\<name>` ist da; zweimal entfernen ohne Fehler, der Schlüssel ist weg. `Install` und `Uninstall` selbst (sc.exe) bleiben wie bisher ohne Test (Plattform-I/O). Entfällt (`[~]`), wenn Kevin die Variante ohne Registrierung wählt.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/admin/agent-deployment.html:140 + docs/en/admin/agent-deployment.html:140 (`service install` registriert die Ereignisquelle, `service uninstall` entfernt sie) · CHANGELOG.md (Eintrag aus T4 ergänzt)

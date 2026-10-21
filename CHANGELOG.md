@@ -1105,7 +1105,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Warnung ins Windows-Ereignisprotokoll (Windows-Protokolle → Anwendung, Quelle `AdminHelper-Agent`, Ereignis-ID 1)
   mit dem Verzeichnis, dem Grund und den Folgen: bis zum Neustart des Dienstes nur stdout, und der FRP-Sync aendert
   nichts, solange sich das Datenverzeichnis nicht sichern laesst. Ein Aufruf von Hand bleibt ohne Hinweis, Linux ist
-  unveraendert. Doku: Agent-Deployment und Entwickler-Doku Agent (DE+EN).
+  unveraendert. `service install` registriert die Quelle, damit der Eintrag eine Beschreibung hat, und
+  `service uninstall` entfernt sie wieder; scheitert das, gibt der Befehl eine Warnung aus. Bei einem Dienst, den eine
+  fruehere Version eingerichtet hat, fehlt die Beschreibung, der Text steht dann in den Ereignisdaten. Doku:
+  Agent-Deployment und Entwickler-Doku Agent (DE+EN).
 - **Desktop: Workspaces statt Moduswechsel (R-0431):** Der Modus in den Einstellungen entfaellt: Die Art legt ein
   Workspace beim Anlegen fest, Name, Farbe und URL aendert der Picker, solange der Workspace geschlossen ist; im
   Fenster stehen sie als Anzeige. Die Einstellungen trennen „Dieser Workspace“ (Abmelden, Zertifikate,
