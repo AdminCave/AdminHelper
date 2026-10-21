@@ -66,3 +66,23 @@ Beweis: security-Prüfer desktop-hardening T1, 2026-10-19 (Nit) · Code-Lesung o
 Metrik: `grep -rn 'error sending request for url' apps/desktop/ui/src | wc -l` 11 → 0 (GNU grep); dazu die gezielten Suiten vor und nach dem Diff grün (beide Summary-Zeilen)
 Dedup-Key: ref:desktop-ui:tests:reqwest-error-fixtures
 HEAD: 82e4a7b8
+
+### T6 — ConnectionEditor: „zuletzt benutzt“ als Wert, nicht in Großbuchstaben (R-0564)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.lastused.test.ts
+Änderung: Die Wertanzeige „zuletzt benutzt“ (`ConnectionEditor.svelte:227-230`) steht in einem `.field` und erbt dessen `text-transform: uppercase` und `letter-spacing` (Beschriftungs-Stil, `app.css` `.field`). Sie bekommt wie die Wertanzeigen aus R-0431 T54 (`Login.svelte` `.login-url`, `SettingsModal.svelte` `.sm-workspace-url`) `text-transform: none; letter-spacing: normal` (inline neben dem vorhandenen `style="color: var(--text-muted)"` oder als eigene Klasse; jsdom muss den Stil per `getComputedStyle` sehen) und ein `data-testid`. Neuer Test (SPDX-Kopf): Der Editor einer Verbindung mit `lastUsed` zeigt den Wert, und dessen berechneter `text-transform` ist `none`; zuerst rot.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.lastused.test.ts
+Doku: keine (Darstellung)
+Beweis: Code-Lesung `ConnectionEditor.svelte:227-230` an 82e4a7b8; Bau R-0431 T54 (2026-10-21) belegt dieselbe Vererbung im WebKitWebDriver-Lauf
+Semantik: R-0431 T54 („Feste URL und Werte im Formular nicht in Großbuchstaben“): Werte stehen in Originalschreibung, nur Beschriftungen in Großbuchstaben
+Dedup-Key: bug:desktop-ui:ConnectionEditor.svelte:last-used-uppercase
+HEAD: 82e4a7b8
+
+### T7 — E2E-Skript connect_tunnel: Container vor dem Start zum Aufräumen eintragen (R-0563)  [ ]
+Komponente: scripts · Dateien: scripts/tests/desktop_e2e_connect_tunnel.sh
+Änderung: `desktop_e2e_connect_tunnel.sh` trägt seine Container erst nach erfolgreichem `docker run -d` in `TARGETS` ein (`:78` SSH, `:93` Web, `:102` RDP, `:142` frpc); scheitert das Veröffentlichen eines Ports, legt docker den Container trotzdem an, und die Aufräum-Falle (`:36`) erreicht ihn nie. Neu steht `TARGETS+=("$X")` vor dem jeweiligen `docker run`, wie in `desktop_e2e_workspaces.sh:101`/`:135` („before the start, as the SSH target's“). Kein neuer registrierter Test (die Registrierung in `scripts/tests/run.sh` wäre ein Harness-Pfad); Beleg im Commit-Body: je Container steht die Zeile `TARGETS+=` vor dem `docker run` (grep mit Zeilennummern vorher und nachher), der echte Lauf erfolgt in der Desktop-E2E des Sammellaufs. `shellcheck` bleibt sauber.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Test-Hygiene)
+Beweis: Review R-0431 T32 (2026-10-20), Code-Lesung `desktop_e2e_connect_tunnel.sh:32-142` gegen `desktop_e2e_workspaces.sh:54-135` an 82e4a7b8
+Semantik: `desktop_e2e_workspaces.sh:135` (Kommentar „before the start“): ein Test hinterlässt keine Container auf der Test-Box
+Dedup-Key: ref:scripts:desktop_e2e_connect_tunnel.sh:targets-before-run
+HEAD: 82e4a7b8
