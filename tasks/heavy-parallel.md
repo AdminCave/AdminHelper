@@ -124,7 +124,7 @@ Doku: `DEVELOPMENT.md` Wochenlauf, `cicd.html` DE/EN, `.claude/skills/test/SKILL
 Abhängt von: T10
 
 ### T12 — heavy.sh: zweite Box nicht zu bekommen, Teil gui seriell auf der ersten  [ ]
-Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
 Änderung: Empfehlung gebaut: Scheitert `warm.sh gui` auch im Retry (nicht bei Exit 2, das bleibt `UNVERIFIED`), fährt `heavy.sh` nach Teil `rest` den Teil `gui` auf der Box `desktop`: `iter.sh all --strict --part gui`, Auswertung wie in T9 mit Etikett `gui`. Der Report sagt es in einer Notiz mit der letzten Zeile aus `warm.log` (maskiert wie jede Notiz). Der Pre-flight fragt `doctor` dann nur nach `desktop` (wenn ihr Slot keine laufende Box hat); ob die GUI-Box passt, entscheidet die Kapazitätsprüfung von `vm.py clone`. Das Urteil bleibt: `PASS` nur mit zwei grünen Teilen.
 Tests in `heavy_test.sh`: `SHIM_WARM_RC_GUI=1` → Teil `gui` läuft danach mit Slot `desktop` und `--part gui`, das Urteil folgt den beiden Artefakten, die Notiz nennt den seriellen Lauf; `SHIM_WARM_RC_GUI=2` → `UNVERIFIED`, kein serieller Lauf; `doctor` wird nicht mit `gui` gefragt.
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
