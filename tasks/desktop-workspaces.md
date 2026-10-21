@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces — Task-Ledger
-Status: bereit · Branch: feature/desktop-workspaces · Review: pro Task
+Status: aktiv · Branch: feature/desktop-workspaces · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — der Desktop startet anders (Launcher, Workspace-Prozess, Migration), alle Live-Specs ziehen mit und die neue Suite `desktop_e2e_workspaces` (zwei Stacks) läuft im e2e-Layer, `docker-compose.test.yml` ändert sich: Sammellauf; `scenario`, weil `box_desktopbox.sh` (Capstone `--desktop`) den Standard-Workspace startet und Tunnel-Laufzeitdateien und Portkarten-Besitzer je Workspace wechseln (FRP-Datenpfad); `windows` = CI-Job `rust-windows` (abgekoppelter Prozessstart, Datei-Locks, Keyring-TargetName, TERMSRV); mstsc selbst ist ohne Windows-Vorlage im Pool nicht verifiziert, dafür die Prüfanleitung aus T33 für Kevin
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -325,3 +325,10 @@ Review: approve (.ah-out/review/desktop-workspaces/T54.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login src/components/SettingsModal
 Doku: keine (intern)
 Abhängt von: T22, T23
+
+### T55 — Picker: Migrationshinweis nach unlesbaren Einstellungen ohne falsche Aussagen  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Branch-Review Runde 2 (Nit) und Kevin 2026-10-21 („Prüfe was stimmt“): Bei gesicherter unlesbarer `settings.json` zeigt der Picker heute den Migrationshinweis („Deine bisherigen Einstellungen und Verbindungen liegen jetzt im Workspace „Standard“; was zu einem anderen Modus gehörte, liegt in einem eigenen Workspace …“) über dem T50-Hinweis. Am Code geprüft (`migration.rs` `plan` mit `Settings::default()`, `build`/`migrate_between`): In diesem Fall stimmen die Aussagen über die Einstellungen und über die anderen Modi nicht (Einstellungen sind die Vorgaben; außer „Standard“ entsteht kein Workspace; der Cache bleibt bei vorhandener lokaler Datei als Datei liegen); nur „Neu: Workspaces … Jeder Workspace öffnet in einem eigenen Fenster“ stimmt. Der T50-Hinweis stimmt. Ist `unreadableSettings` gesetzt, zeigt der Picker unter `data-msg="migrated"` die kurze Fassung (neuer Schlüssel `workspace.picker.migratedShort`, DE+EN: nur die Einführung der Workspaces und das eigene Fenster) und darunter den T50-Hinweis; ohne Sicherung unverändert. `[data-msg="migrated"]` bleibt genau einmal (Live-Spec). Test: mit Sicherung kurze Fassung ohne die falschen Aussagen plus T50-Hinweis; ohne Sicherung die volle Fassung.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts src/lib/i18n/i18n.test.ts
+Doku: keine (intern)
+Abhängt von: T50
