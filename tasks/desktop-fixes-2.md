@@ -65,8 +65,10 @@ Metrik: `grep -rn 'done({ error' apps/desktop/e2e/test | wc -l` 3 → 0 (GNU gre
 Dedup-Key: ref:desktop-e2e:specs:executeasync-error-key
 HEAD: 82e4a7b8
 
-### T5 — Desktop-UI-Testfixtures im Fehlerformat ohne URL (R-0555)  [ ]
+### T5 — Desktop-UI-Testfixtures im Fehlerformat ohne URL (R-0555)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/errors.test.ts, apps/desktop/ui/src/components/Login.pin.test.ts, apps/desktop/ui/src/lib/stores/statusBar.test.ts, apps/desktop/ui/src/components/NotificationPrefs.test.ts, apps/desktop/ui/src/lib/stores/ansible.pipeline.test.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d782d057 2026-10-21T10:34:38+02:00
+Review: approve (.ah-out/review/desktop-fixes-2/T5.verdict.json)
 Änderung: Die Fixture-Texte und die daraus erwarteten Texte nennen den Netzwerkfehler so, wie Rust ihn seit `error.rs:112` (`without_url`) liefert: `error sending request: client error (Connect): …` statt `error sending request for url (<URL>): client error (Connect): …` (reqwest 0.12.28, `src/error.rs:231` und `:267`: „for url (…)“ folgt nur bei gesetzter URL). Frisch gegrept, mehr Stellen als die Zeile nennt: `errors.test.ts:20`, `Login.pin.test.ts:17,19`, `statusBar.test.ts:37,42`, `NotificationPrefs.test.ts:103,106`, `ansible.pipeline.test.ts:123,126`, `monitoring.test.ts:153,156`. Nur dieses Präfix ändert sich; Assertions, Testnamen und Produktcode bleiben. Mechanisch, daher eine Task über sechs Dateien.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/utils/errors.test.ts src/components/Login.pin.test.ts src/lib/stores/statusBar.test.ts src/components/NotificationPrefs.test.ts src/lib/stores/ansible.pipeline.test.ts src/lib/stores/monitoring.test.ts
 Doku: keine (Test)
