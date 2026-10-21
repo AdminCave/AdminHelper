@@ -33,8 +33,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: CHANGELOG (Changed); CLAUDE.md und tasks/README.md sind selbst die Regeln
 Abhängt von: T1
 
-### T3 — /feature-plan und /feature-build: Freigabe am Gate, `[?]` aus dem Gate, Notiz bei `status`  [ ]
+### T3 — /feature-plan und /feature-build: Freigabe am Gate, `  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, scripts/tests/ledger_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ee216de0 2026-10-21T10:32:58+02:00
+Review: approve (.ah-out/review/harness-self-approve/T3.verdict.json)
 Änderung: Die Texte der Spec für feature-plan (`:3`, `:10`, `:69`, `:118-121`, `:137`, `:139-142`) und feature-build (`:3`, §2 `:27-31` samt dem Satz zur Notiz unter der Liste, §3 vor `:66`, §4.1 `:70-71`). `ledger_test.sh` bekommt im Abschnitt „lint“ den Gate-Weg als Fall: ein Ledger mit `Status: geplant`, dessen eine Task per `ledger.sh mark-question` auf `[?]` steht, lintet sauber (Exit 0); derselbe Ledger mit `Status: aktiv` und nur noch `[?]`-Tasks, keiner `[ ]`, ist Exit 1 mit „no open [ ] task left“, der Grund, warum eine Zeile, deren Tasks alle an Kevin-Fragen hängen, `geplant` bleibt. Prüf-grep danach leer (heute sieben Treffer): `grep -n -E 'menschlichen Freigabe|auf Freigabe warten|Kevin kann beide freigeben|Freigabe ist Kevins|nachdem Kevin die Roadmap-Zeile|! python3 scripts/dev/roadmap.py approve' .claude/skills/feature-plan/SKILL.md .claude/skills/feature-build/SKILL.md`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: keine weitere (die Skill-Texte sind die Anleitung)

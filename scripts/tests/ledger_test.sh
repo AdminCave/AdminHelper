@@ -208,6 +208,31 @@ l lint fixture
   && ok "Status: aktiv without an open task is an error (tasks/README.md invariant)" \
   || bad "lint invariant: rc=$rc out=$OUT"
 
+# The gate's way (CLAUDE.md §4): a plan whose every task waits on a question to
+# Kevin stays geplant and lints clean; set aktiv it has no open task left, which
+# is why the session does not approve such a row.
+cat > "$FIX" <<'MD'
+# Fixture — Task-Ledger
+Status: geplant · Branch: feature/fixture · Review: pro Task
+Spec: docs/features/fixture.md
+
+### T1 — die einzige Aufgabe  [ ]
+Komponente: scripts · Dateien: scripts/dev/a.sh
+Änderung: hängt an einer Entscheidung aus Kevins Bereich
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine
+MD
+l mark-question fixture T1 "welche Semantik?"
+[ $rc -eq 0 ] && [ "$(head_of T1)" = "### T1 — die einzige Aufgabe  [?] (welche Semantik?)" ] \
+  && ok "the gate puts the one task on [?]" || bad "gate question: rc=$rc $(head_of T1)"
+l lint fixture
+[ $rc -eq 0 ] && grep -q "ok$" <<<"$OUT" && ! grep -q "no open" <<<"$OUT" \
+  && ok "Status: geplant with only [?] tasks lints clean" || bad "lint geplant [?]: rc=$rc out=$OUT"
+sed -i 's|^Status: geplant|Status: aktiv|' "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "no open \[ \] task left" <<<"$OUT" \
+  && ok "the same ledger set aktiv, only [?] and no [ ], is an error" || bad "lint aktiv [?]: rc=$rc out=$OUT"
+
 fresh_fixture
 sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
 l lint fixture
