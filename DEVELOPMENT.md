@@ -191,14 +191,31 @@ Test-Rolle + -DB anlegen. Wichtig: `CREATEDB` ist Pflicht, weil die Alembic-Smok
 
 ```bash
 sudo -u postgres psql \
-  -c "CREATE ROLE adminhelper LOGIN CREATEDB PASSWORD 'adminhelper';" \
+  -c "CREATE ROLE adminhelper LOGIN CREATEDB;" \
   -c "CREATE DATABASE adminhelper_test OWNER adminhelper;"
+# Passwort setzen: am Prompt \password adminhelper eingeben, danach \q
+sudo -u postgres psql
 
 # DATABASE_URL NUR für die server-Suite setzen — global gesetzt würde es
 # monitorings Alembic-Smoke fälschlich gegen das falsche Schema aktivieren:
-DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_test" \
+DATABASE_URL="postgresql+psycopg://adminhelper:<passwort>@localhost:5432/adminhelper_test" \
   apps/server/.venv/bin/python -m pytest -q
 ```
+
+Das Passwort steht nicht im Befehl: `\password` fragt es ab, verschlüsselt es und schickt es als
+`ALTER ROLE` an den Server, ohne Klartext in der History oder im Server-Log (psql-Doku). Als Wert
+eignet sich `openssl rand -hex 16`; Hex braucht in der URL keine Prozent-Kodierung. Dieselbe URL
+setzt die `.devenv.sh` des Haupt-Checkouts als
+`export AH_TEST_DB="postgresql+psycopg://adminhelper:<passwort>@localhost:5432/adminhelper_test"`.
+
+**Umstellen.** Eine Einrichtung nach der älteren Anleitung hat als Passwort den Rollennamen. Die
+Rolle setzt ihr neues Passwort selbst, ohne sudo (PostgreSQL-Doku zu `ALTER ROLE`: „Ordinary roles
+can only change their own password.“): `psql "postgresql://adminhelper@localhost:5432/adminhelper_test"`
+fragt das alte Passwort ab, am Prompt `\password` eingeben, danach `\q`. Dann die Zeile `AH_TEST_DB`
+der `.devenv.sh` des Haupt-Checkouts auf das neue Passwort ändern. Die Worktrees folgen von selbst:
+Ihre `.devenv.sh` sourct die des Haupt-Checkouts und ersetzt nur den Datenbanknamen. Umstellen nur,
+solange kein lokaler Server-Lauf läuft, die Sperre aus „Die schweren Python-Schritte laufen
+nacheinander“ (unten) also frei ist: Ein laufender Lauf öffnet neue Verbindungen mit der alten URL.
 
 **Ein Worktree hat seine eigene Test-DB.** `bash scripts/dev/worktree-setup.sh <pfad> <slug>` legt
 auf demselben Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt dem
@@ -211,7 +228,11 @@ keine DB an. Ein Passwort oder ein anderes Geheimnis in der Query (`password`, `
 `oauth_client_secret`, `scram_client_key`, `scram_server_key`, in jeder Schreibweise) lehnt es ebenso
 ab, auch einen prozentkodierten Schlüssel der Query (libpq dekodiert auch Schlüssel). Eine andere Form
 als eine URL `postgresql://` oder `postgresql+<treiber>://`, etwa die Keyword-Form von libpq
-(`host=… dbname=…`), nimmt es nicht an. Eine Besitzmarke gibt es nicht (Kevin, 2026-10-14): der
+(`host=… dbname=…`), nimmt es nicht an. Ist das Passwort der Benutzername (beide dekodiert, wie
+SQLAlchemy sie liest; Groß- und Kleinschreibung zählen), endet `worktree-setup.sh` mit 1 und legt keine
+DB an: Die maskierte Form der URL in Testberichten (`benutzer:***@`) nennt den Benutzer und damit das
+Passwort. Abhilfe ist der Absatz „Umstellen“ oben; `worktree-teardown.sh` baut einen Worktree auch mit
+einer solchen URL ab. Eine Besitzmarke gibt es nicht (Kevin, 2026-10-14): der
 Teardown löscht die DB und das Venv, die zum Slug gehören.
 
 **Die schweren Python-Schritte laufen nacheinander.** `server-pytest` und `schemathesis` holen
@@ -744,7 +765,9 @@ Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface und API-D
 
 **Erstanmeldung:** Es gibt keinen Default-Login mehr. Im Log nach `Setup-Token` suchen, dann mit dem Token einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
 
-Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden (siehe `.env.example`).
+Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden (siehe `.env.example`); uvicorn liest sie nur mit `--env-file ../../.env`, der Server selbst liest keine `.env`.
+
+**Datenbank:** Ohne `DATABASE_URL` meldet sich der Server mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper` an (`apps/server/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann gehoert `DATABASE_URL` mit dem Passwort in die `.env`.
 
 ### Server + frps (Docker, empfohlen)
 

@@ -42,6 +42,7 @@ MARKER = Path(__file__).with_name("marker")
 
 
 @pytest.mark.event_threads
+@pytest.mark.app_engine
 def test_an_event_task_outlives_the_test(pg_engine, monkeypatch):
     dropped = threading.Event()
     event.listen(Base.metadata, "after_drop", lambda *args, **kw: dropped.set())
