@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Schutz: zur geprüften Adresse verbinden — Task-Ledger
-Status: geplant · Branch: feature/ssrf-pin · Review: pro Task
+Status: aktiv · Branch: feature/ssrf-pin · Review: pro Task
 Spec: docs/features/ssrf-pin.md
 Heavy: none — kein HTTP-Endpunkt, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert werden nur die ausgehenden Anfragen von HTTP-Check, Alert-Webhook (Monitoring) und Hook-Helfern `http_get`/`http_post` (Server), und keine schwere Suite fährt diese Wege (`scripts/tests/` kennt weder HTTP-Check noch Webhook noch `http_get`); belegt wird am Verbindungsaufbau (`socket.create_connection`) und mit einem echten TLS-Handshake gegen einen lokalen Server
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
