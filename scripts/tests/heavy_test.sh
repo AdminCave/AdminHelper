@@ -1754,11 +1754,17 @@ r=$(order_at 'reap --role gui'); w=$(order_at 'w2 warm')
 { history_of | grep -q ',all,web vitest,unbestaetigt,' && history_of | grep -q ',all,desktop_e2e_misc,unbestaetigt,'; } \
   && ok "both candidates got their second-VM verdict" || bad "rows: $(history_of)"
 
-# No w2 box, nothing to make room for.
+# No w2 box, nothing to make room for. Part gui is green, so its box goes at
+# the end of the run (section 13) — and only then.
 candidate_case
 out=$(bash "$HEAVY" all --no-second-vm 2>&1); rc=$?
-[ "$rc" = 1 ] && [ ! -e "$SHIM_STATE/reap.args" ] \
-  && ok "--no-second-vm: the GUI box stays" || bad "--no-second-vm (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null)"
+rep="$(report_of)"
+[ "$rc" = 1 ] && [ "$(grep -c '^reap ' "$SHIM_STATE/order.log")" = 1 ] \
+  && [ "$(tail -1 "$SHIM_STATE/order.log")" = "reap --role gui" ] \
+  && ! grep -qF 'released before the second-VM check' <<<"$rep" \
+  && grep -qxF -- '- gui box ? released after a green part gui (reap.sh --role gui)' <<<"$rep" \
+  && ok "--no-second-vm: no release for a second VM, only the one after the green part gui" \
+  || bad "--no-second-vm (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
 # A GUI box this run never leased is not this run's to free.
 candidate_case
 export SHIM_WARM_RC_GUI=1
@@ -1774,12 +1780,16 @@ report_of | grep -qF 'gui box ? not released before the second-VM check: reap.sh
   && [ "$(order_at 'w2 warm')" -gt 0 ] && history_of | grep -q ',all,web vitest,unbestaetigt,' \
   && ok "a failed release is a note, and the second-VM check still runs" \
   || bad "failed release (rc=$rc): $(report_of | grep -F 'gui box')"
-# A green `all` without a candidate frees nothing here.
+# A green `all` without a candidate frees nothing for a third box; its green
+# part gui frees the box at the end of the run (section 13).
 mk_case
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 0 ] && [ ! -e "$SHIM_STATE/reap.args" ] \
-  && ok "a green all without a candidate: no reap.sh" || bad "green all (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null)"
+rep="$(report_of)"
+[ "$rc" = 0 ] && [ "$(cat "$SHIM_STATE/reap.args" 2>/dev/null)" = "--role gui (AH_LANE=main)" ] \
+  && ! grep -qF 'released before' <<<"$rep" && grep -qF 'released after a green part gui' <<<"$rep" \
+  && ok "a green all without a candidate: no release before a third box, one after the run" \
+  || bad "green all (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
 
 # weekly: the GUI box goes before the capstone; the capstone keeps the desktop box.
 mk_case
@@ -1801,6 +1811,119 @@ r=$(order_at 'reap --role gui'); w=$(order_at 'w2 warm'); m=$(order_at multibox)
   && [ "$r" -gt 0 ] && [ "$r" -lt "$w" ] && [ "$w" -lt "$m" ] \
   && ok "weekly with a candidate: one release, before the w2 box, none again before the capstone" \
   || bad "weekly candidate (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null)"
+
+# ── 13: the GUI box after the run ────────────────────────────────────────────
+# Kevin 2026-10-21: a green part gui frees its box at the end of the run; a red
+# one (infra included) keeps it for inspection and the notes say how to get in —
+# unless the second VM or the capstone took it before. Never a box the run did
+# not lease.
+gui_red_case() {  # part gui red three times, each retry failing differently: fail, no candidate
+  mk_case
+  artifact "ruff check:pass:3"
+  printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+  artifact_for gui "desktop-e2e smoke:pass:7" "desktop_e2e_misc:fail:300"
+  export SHIM_ITER_SEQ_GUI="1 1 1 1"
+  export SHIM_ITER_OUT1_GUI="  FAIL  desktop_e2e_misc
+  run.sh[all]: 1 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+  export SHIM_ITER_OUT2_GUI="  FAIL  first way" SHIM_ITER_OUT3_GUI="  FAIL  second way" SHIM_ITER_OUT4_GUI="  FAIL  third way"
+}
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$SHIM_STATE/reap.args" 2>/dev/null)" = "--role gui (AH_LANE=main)" ] \
+  && [ "$(tail -1 "$SHIM_STATE/order.log")" = "reap --role gui" ] \
+  && ok "part gui green: reap.sh --role gui once, after both parts" \
+  || bad "gui green (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null)"
+report_of | grep -qxF -- '- gui box 3002 released after a green part gui (reap.sh --role gui)' \
+  && ok "the report names the release after the run" || bad "notes: $(report_of | sed -n '/^## Notizen/,/^## audit/p')"
+# A flaky GUI step is quarantined, not red: the part is green, the box goes.
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+artifact_for gui "desktop-e2e smoke:pass:7" "desktop_e2e_misc:fail:300"
+export SHIM_ITER_SEQ_GUI="1 0"
+export SHIM_ITER_OUT1_GUI="  FAIL  desktop_e2e_misc
+  run.sh[all]: 1 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+g=$(order_at 'iter --slot gui all --strict --step desktop_e2e_misc'); r=$(order_at 'reap --role gui')
+[ "$rc" = 0 ] && [ "$g" -gt 0 ] && [ "$g" -lt "$r" ] && history_of | grep -q ',all,desktop_e2e_misc,flaky,' \
+  && report_of | grep -qxF -- '- gui box 3002 released after a green part gui (reap.sh --role gui)' \
+  && ok "a flaky GUI step: the part is green, the box goes after the retry" \
+  || bad "gui flaky (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null)"
+# Red: the box stays, and the notes say which and how to get in.
+gui_red_case
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 1 ] && [ ! -e "$SHIM_STATE/reap.args" ] && history_of | grep -q ',all,desktop_e2e_misc,fail,' \
+  && ok "part gui red: no reap.sh, the box stays" || bad "gui red (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(history_of)"
+report_of | grep -qF -- '- gui box 3002 kept for inspection (part gui: fail): python3 scripts/vm/vm.py ssh 3002 ' \
+  && ok "the notes name the box and vm.py ssh" || bad "notes: $(report_of | sed -n '/^## Notizen/,/^## audit/p')"
+# Infra after the lease is not green either: the box is what to look at.
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+artifact_for gui "desktop-e2e smoke:pass:7" "desktop_e2e_misc:strict-failed:0"
+export SHIM_ITER_RC_GUI=1
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && [ ! -e "$SHIM_STATE/reap.args" ] \
+  && report_of | grep -qF -- '- gui box 3002 kept for inspection (part gui: infra): python3 scripts/vm/vm.py ssh 3002 ' \
+  && ok "part gui infra after its lease: the box stays, the notes name it" \
+  || bad "gui infra (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(report_of | grep -F 'gui box')"
+# A GUI box the run never had: nothing to free, nothing to keep.
+mk_case
+artifact "ruff check:pass:3"
+export SHIM_WARM_RC_GUI=1
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+rep="$(report_of)"
+[ "$rc" = 74 ] && [ ! -e "$SHIM_STATE/reap.args" ] && ! grep -qF -- '- gui box' <<<"$rep" \
+  && ok "the GUI box was never leased: no reap.sh, no note about it" \
+  || bad "unleased gui (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
+# A failed release after the run is a note; the verdict stays.
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+export SHIM_REAP_RC=1
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$(report_of | head -1)" = PASS ] \
+  && report_of | grep -qxF -- '- gui box 3002 not released after a green part gui: reap.sh --role gui exited 1 (see reap-gui.log) — the reaper takes it when its ttl runs out' \
+  && ok "a failed release after the run is a note, the run stays PASS" \
+  || bad "failed release (rc=$rc): $(report_of | grep -F 'gui box')"
+# weekly: the box went before the capstone, red or green — nothing left to do after.
+gui_red_case
+out=$(bash "$HEAVY" weekly 2>&1); rc=$?
+r=$(order_at 'reap --role gui'); m=$(order_at multibox); rep="$(report_of)"
+[ "$rc" = 1 ] && [ "$(grep -c '^reap ' "$SHIM_STATE/order.log")" = 1 ] && [ "$r" -gt 0 ] && [ "$r" -lt "$m" ] \
+  && grep -qxF -- '- gui box 3002 released before the capstone (reap.sh --role gui)' <<<"$rep" \
+  && ! grep -qF 'kept for inspection' <<<"$rep" \
+  && ok "weekly, part gui red: released before the capstone, not kept after" \
+  || bad "weekly gui red (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+out=$(bash "$HEAVY" weekly 2>&1); rc=$?
+rep="$(report_of)"
+[ "$rc" = 0 ] && [ "$(grep -c '^reap ' "$SHIM_STATE/order.log")" = 1 ] \
+  && ! grep -qF 'after a green part gui' <<<"$rep" \
+  && ok "weekly, part gui green: one release, before the capstone, none again after" \
+  || bad "weekly gui green (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
+# weekly without a capstone (part rest infra): the green part gui still frees its box.
+mk_case
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+export SHIM_ITER_RC=74 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: capacity: 8192 MiB free - 4096 reserve - 6144 owed by ours - 6144 for desktop = -8192 MiB"
+out=$(bash "$HEAVY" weekly 2>&1); rc=$?
+[ "$rc" = 74 ] && [ "$(order_at multibox)" = 0 ] && [ "$(grep -c '^reap ' "$SHIM_STATE/order.log")" = 1 ] \
+  && report_of | grep -qxF -- '- gui box 3002 released after a green part gui (reap.sh --role gui)' \
+  && ok "weekly, capstone skipped: the green part gui frees its box after the run" \
+  || bad "weekly no capstone (rc=$rc): $(tr '\n' ';' < "$SHIM_STATE/order.log" 2>/dev/null); $(report_of | grep -F 'gui box')"
+# capstone leases no GUI box, so it frees none — not even one warm.env names.
+mk_case
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+rep="$(report_of)"
+[ "$rc" = 0 ] && [ ! -e "$SHIM_STATE/reap.args" ] && ! grep -qF -- '- gui box' <<<"$rep" \
+  && ok "capstone: no reap.sh, no note about a GUI box" \
+  || bad "capstone (rc=$rc): $(cat "$SHIM_STATE/reap.args" 2>/dev/null); $(grep -F 'gui box' <<<"$rep")"
 
 echo "── what heavy.sh prints carries no box address; report and logs keep it ──"
 A="192.0.2.7"

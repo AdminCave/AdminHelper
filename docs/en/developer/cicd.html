@@ -168,7 +168,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           evidence (neither a summary line nor an artifact, or an artifact of the other part) makes the run
           UNVERIFIED, otherwise a red part makes it FAIL; the reason names the part
           (<code>&hellip; (gui)</code>) and a red other part (<code>FAIL in part rest</code>). If
-          <code>heavy.sh</code> is interrupted, it ends both parts. <code>capstone</code> =
+          <code>heavy.sh</code> is interrupted, it ends both parts. After the run, <code>heavy.sh</code> frees
+          the GUI box (<code>reap.sh --role gui</code>) when part <code>gui</code> is green (a <code>flaky</code>
+          step does not count as red); when it is red or <code>infra</code>, the box stays for inspection until
+          its TTL runs out, and the notes name <code>vm.py ssh &lt;vmid&gt;</code> &ndash; unless it already went
+          before a second VM or the capstone (below). <code>capstone</code> =
           <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially, and the capstone
           gets the box of the <code>desktop</code> slot. The capstone
           is skipped <strong>only</strong> when the <code>all</code> layer ended UNVERIFIED (seven VMs must

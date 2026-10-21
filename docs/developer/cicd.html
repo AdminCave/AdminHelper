@@ -171,7 +171,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch Artefakt, oder ein Artefakt des
           anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein roter Teil FAIL; der Grund nennt den
           Teil (<code>&hellip; (gui)</code>) und einen roten anderen Teil (<code>FAIL in part rest</code>).
-          Wird <code>heavy.sh</code> abgebrochen, beendet es beide Teile. <code>capstone</code> =
+          Wird <code>heavy.sh</code> abgebrochen, beendet es beide Teile. Nach dem Lauf gibt
+          <code>heavy.sh</code> die GUI-Box frei (<code>reap.sh --role gui</code>), wenn Teil <code>gui</code>
+          gr&uuml;n ist (ein <code>flaky</code> Schritt z&auml;hlt nicht als rot); ist er rot oder
+          <code>infra</code>, bleibt sie zur Sichtung stehen, bis ihre Frist abl&auml;uft, und die Notizen nennen
+          <code>vm.py ssh &lt;vmid&gt;</code> &ndash; sofern sie nicht schon vor einer Zweit-VM oder dem Capstone
+          ging (unten). <code>capstone</code> =
           <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = beides seriell, der Capstone
           bekommt die Box des Slots <code>desktop</code>. Der
           Capstone entf&auml;llt <strong>nur</strong>, wenn die <code>all</code>-Ebene UNVERIFIED endete

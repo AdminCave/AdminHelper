@@ -52,7 +52,8 @@ timer, no cron, no "while I'm at it". But once Kevin says
    not affected.
 4. When it ends: quote the report's FIRST line verbatim (the verdict), the summary lines
    (`[rest] run.sh[all]`, `[gui] run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
-   (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
+   (must be empty — a leak is a finding, not a footnote; a GUI box kept after a red part `gui`
+   is no leak, see below). `heavy.sh` has already written
    `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
    through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
    duplicate — is in the report's notes). Nothing is left to commit; the session pushes the
@@ -100,6 +101,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   did not run or brought no evidence makes it UNVERIFIED (the reason names the part, and a
   red other part as `FAIL in part …`). One layer row `all|-|…|<wall>|<box-rest>+<box-gui>|rest
   <s> s, gui <s> s`; each part has `all-<part>.log` and its pull directory `<part>/`.
+  After the run the GUI box goes (`reap.sh --role gui`) if part `gui` is green (a flaky step
+  is not red); a red or infra part `gui` leaves it up for inspection until its ttl runs out,
+  and the report's notes name `python3 scripts/vm/vm.py ssh <vmid>` — unless it already went
+  before a second VM or the capstone, which need its room.
   `capstone` = `multibox.sh --capstone --strict`;
   `weekly` = both, serially. The capstone is skipped only when the `all` layer ended
   UNVERIFIED (seven VMs must not burn into a broken environment) — a plain FAIL does not

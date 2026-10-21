@@ -1282,6 +1282,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
   roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
   (`FAIL in part rest`). Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile.
+  Nach dem Lauf gibt `heavy.sh` die GUI-Box frei (`reap.sh --role gui`), wenn Teil `gui` gruen
+  ist (ein `flaky` Schritt zaehlt nicht als rot); ist er rot oder `infra`, bleibt sie zur Sichtung
+  stehen, bis ihre Frist ablaeuft, und die Notizen nennen `python3 scripts/vm/vm.py ssh <vmid>` —
+  sofern sie nicht schon vor einer Zweit-VM oder dem Capstone ging (siehe Klassifikation).
   `capstone` = `multibox.sh --capstone --strict`; `weekly` = beides seriell, der Capstone
   bekommt die Box des Slots `desktop`. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
   UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL

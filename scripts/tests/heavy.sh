@@ -478,6 +478,7 @@ run_all() {
     part_res[$part]="$PART_RESULT"; part_detail[$part]="$PART_DETAIL"
     note "part $part: $PART_RESULT after $s s on ${part_box[$part]}${PART_DETAIL:+ — $PART_DETAIL}"
   done
+  GUI_RESULT="${part_res[gui]}"
   # Both parts have had every retry; only now may the GUI box go for a w2 box.
   judge_candidates
 
@@ -764,17 +765,33 @@ w2_teardown() {
 # GUI box goes first — once per run, and only if this run leased it. A failed
 # release is a note: whether the next clone fits is vm.py's capacity check to say.
 GUI_HELD=0
-release_gui_box() {  # release_gui_box <what needs the room>
+release_gui_box() {  # release_gui_box <when, for the note> [<what a failed release leaves>]
   [ "$GUI_HELD" = 1 ] || return 0
   GUI_HELD=0
   local box rc=0
   box="$(warm_get gui)"
   bash "$WRAPPERS/reap.sh" --role gui >>"$OUT/reap-gui.log" 2>&1 </dev/null || rc=$?
   if [ "$rc" = 0 ]; then
-    note "gui box ${box:-?} released before $1 (reap.sh --role gui)"
+    note "gui box ${box:-?} released $1 (reap.sh --role gui)"
   else
-    note "gui box ${box:-?} not released before $1: reap.sh --role gui exited $rc (see reap-gui.log) — the capacity check of vm.py decides the next clone"
+    note "gui box ${box:-?} not released $1: reap.sh --role gui exited $rc (see reap-gui.log) — ${2:-the capacity check of vm.py decides the next clone}"
   fi
+}
+
+# After the run (Kevin 2026-10-21): a green part gui frees its box; a red one
+# (infra included) stays for inspection — unless the second VM or the capstone
+# took it first. Part rest sets the wall time, so a GUI box kept warm would
+# shorten the next part gui but hardly the next run, and hold its RAM until its
+# ttl runs out. GUI_RESULT is how part gui ended (pass, fail or infra; run_all).
+GUI_RESULT=""
+settle_gui_box() {
+  [ "$GUI_HELD" = 1 ] || return 0
+  if [ "$GUI_RESULT" = pass ]; then
+    release_gui_box "after a green part gui" "the reaper takes it when its ttl runs out"
+    return 0
+  fi
+  local box; box="$(warm_get gui)"
+  note "gui box ${box:-?} kept for inspection (part gui: ${GUI_RESULT:-?}): python3 scripts/vm/vm.py ssh ${box:-<vmid>} — reap.sh --role gui frees it, else the reaper when its ttl runs out"
 }
 
 # The candidates of `all`, "<index of the step's row in FINDINGS>|<step>|<spec>|
@@ -813,7 +830,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  could not create the w2 worktree — candidate stays unconfirmed"
     return 0
   fi
-  release_gui_box "the second-VM check"
+  release_gui_box "before the second-VM check"
   if ! AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); second box could not be leased"
     note "  second box could not be leased — candidate stays unconfirmed"
@@ -1298,10 +1315,13 @@ if preflight; then
       else
         # The capstone fits its roles before the first clone; the GUI box is no
         # longer needed and would only stand in the way.
-        release_gui_box "the capstone"
+        release_gui_box "before the capstone"
         run_capstone
       fi ;;
   esac
+  # Before the report: its note belongs in it, and the VM list there shows the
+  # box gone.
+  settle_gui_box
 fi
 
 check_audit
