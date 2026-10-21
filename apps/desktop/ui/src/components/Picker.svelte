@@ -229,17 +229,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {/if}
 
   <div class="picker-actions">
-    <button class="btn" onclick={() => edit(null)} disabled={busy}
+    <button class="btn" data-action="workspace-new" onclick={() => edit(null)} disabled={busy}
       >{$t('workspace.picker.new')}</button
     >
-    <button class="btn" onclick={() => edit(selected)} disabled={!closed || busy}
-      >{$t('action.edit')}</button
+    <button
+      class="btn"
+      data-action="workspace-edit"
+      onclick={() => edit(selected)}
+      disabled={!closed || busy}>{$t('action.edit')}</button
     >
-    <button class="btn danger" onclick={deleteSelected} disabled={!closed || busy}
-      >{$t('action.delete')}</button
+    <button
+      class="btn danger"
+      data-action="workspace-delete"
+      onclick={deleteSelected}
+      disabled={!closed || busy}>{$t('action.delete')}</button
     >
     <span class="picker-spacer"></span>
-    <button class="btn primary" onclick={openSelected} disabled={!closed || busy}
+    <button
+      class="btn primary"
+      data-action="workspace-open"
+      onclick={openSelected}
+      disabled={!closed || busy}
       >{opening ? $t('workspace.picker.opening') : $t('workspace.picker.open')}</button
     >
   </div>

@@ -13,6 +13,7 @@ ops:
     config <name> <server_addr> <bind_port>        -> prints the new FRP config id
     tunnel <server_id> <config_id> <name> <port>   -> prints the new tunnel id
     count-tunnels <server_id>                       -> prints the tunnel count
+    visitor-port <name>                            -> prints the visitor port of tunnel <name>
     provision-token <server_id>                    -> prints a fresh provision token
     connection <name> <kind> <host> <port> <user>  -> prints the new connection id
     web-connection <name> <url>                    -> prints the new web connection id
@@ -78,6 +79,11 @@ def main(argv):
         (server_id,) = rest
         tunnels = _call(base, token, "GET", "/api/frp/tunnels")
         print(sum(1 for t in tunnels if server_id in (t.get("serverId"), t.get("server_id"))))
+    elif op == "visitor-port":
+        # Empty if no tunnel has that name or it has no visitor port (not STCP).
+        (name,) = rest
+        tunnels = _call(base, token, "GET", "/api/frp/tunnels")
+        print(next((t.get("visitorPort") or "" for t in tunnels if t.get("name") == name), ""))
     elif op == "tunnel-conn":
         # STCP tunnel linked to a connection (so the desktop resolves the
         # connection through it). protocol is ssh/rdp/web.

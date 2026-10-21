@@ -6,24 +6,27 @@
 // device with DEFAULT settings (allowSelfSignedCerts=false — seeded that way by
 // the orchestrator for this spec only) contacts the standard install's own-PKI
 // gateway: the enroll submit must NOT dead-end in a raw TLS error but open the
-// trust dialog. Accepting persists the opt-in (the app writes settings.json —
-// asserted by the orchestrator afterwards) and retries the enrollment; that the
-// retry now PASSES the transport is proven by the next failure being the
-// server-side rejection of the bogus token, not the unknown-issuer error. The
-// decline path and persist-before-retry ordering are covered by the Vitest
-// component tests (Login.trust.test.ts). Run by scripts/tests/desktop_e2e_crud.sh.
+// trust dialog. Accepting persists the opt-in (the app writes
+// workspaces/standard/workspace.json — asserted by the orchestrator afterwards) and
+// retries the enrollment; that the retry now PASSES the transport is proven by the
+// next failure being the server-side rejection of the bogus token, not the
+// unknown-issuer error. The decline path and persist-before-retry ordering are
+// covered by the Vitest component tests (Login.trust.test.ts). Run by
+// scripts/tests/desktop_e2e_crud.sh.
 //
 // Only this spec sees whether the dialog is on top of the login screen: jsdom in
 // the Vitest tests has no stacking.
 
-import { SERVER_URL, jsClick } from '../lib/live.js';
+import { fillServerUrlIfAsked, jsClick } from '../lib/live.js';
 
 describe('AdminHelper desktop — first-contact trust dialog', () => {
   it('opens the trust dialog instead of a dead-end TLS error', async () => {
     await $('.login-card').waitForExist({ timeout: 20000 });
     await $('[data-action="enroll-switch"]').click();
-    await $('.login-card input[type="url"]').waitForExist({ timeout: 10000 });
-    await $('.login-card input[type="url"]').setValue(SERVER_URL);
+    // The enroll form is in place once the password field is gone; its only text field is
+    // then the token, not the username.
+    await $('.login-card input[type="password"]').waitForExist({ reverse: true, timeout: 10000 });
+    await fillServerUrlIfAsked();
     await $('.login-card input[type="text"]').setValue('adminhelper_prov_not-a-real-token');
     await $('.login-card button[type="submit"]').click();
 
