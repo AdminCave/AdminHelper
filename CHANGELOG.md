@@ -463,6 +463,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und einen CSP-Fix fuer den Browser. Nur Dev-Werkzeug, nicht im ausgelieferten Bundle; `npm audit --audit-level=high`
   vorher je 1 high, nachher 0 in beiden Projekten und in `apps/desktop/e2e`.
 
+- **certifi 2026.5.20 → 2026.10.19** in server und monitoring (gehashte Locks neu generiert, R-0657): behebt
+  PYSEC-2026-4320 (GHSA-6q48-6c7w-9gw2). Das gebuendelte CA-Paket enthielt die Wurzel `emSign ECC Root CA - G3`, unter
+  der acht widerrufene eMudhra-Zwischenzertifikate mit kompromittierten privaten Schluesseln haengen; wer einen davon
+  hat und im Netzweg sitzt, kann TLS-Verbindungen abfangen. 2026.10.19 nimmt diese Wurzel heraus, die uebrigen
+  emSign-Wurzeln bleiben. Mit den Mozilla-Staenden dazwischen entfallen ausserdem `Atos TrustedRoot 2011` und
+  `SecureSign Root CA12`, neu sind je zwei Wurzeln von SECOM (2024) und Telia (v3). `certifi` kommt transitiv ueber
+  `httpx`/`httpcore` und ist deren Vertrauensanker, wenn ausgehendes HTTPS das Zertifikat prueft (etwa die HTTP-Checks
+  des Monitorings mit `verify_ssl`). Vom woechentlichen Dependency-Audit (`pip-audit`) erkannt. Nur der Lock-Stand: im
+  Diff aendern sich Version und Hashes von `certifi`, `requirements.in` bleibt; beide Locks installieren mit
+  `--require-hashes` unter Python 3.12, `pip-audit` ohne Befund.
+
 ### Fixed
 
 - **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor

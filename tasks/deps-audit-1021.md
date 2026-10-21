@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-21: R-0657 angenommen, erst der Fix, dann ein einziger Beta-Sammellauf über den Endstand. Der Dependency Audit vom 2026-10-21 (`audit.yml`, Lauf 39580551648, workflow_dispatch über 6f05b316) ist in drei von vier Jobs rot; `govulncheck (agent)` ist grün. Alle drei Funde sind reine Lock-Stände, der Code ändert sich nicht. Trockenläufe im Worktree @e73912f4: `cargo update -p rustls-webpki -p webpki-roots --dry-run` hebt genau diese zwei Pakete (0.103.15 → 0.103.16, 1.0.7 → 1.0.10); `vite` steht in beiden Locks auf 8.0.16 (Bereich `^8.0.16`), die erste nicht betroffene Version ist 8.1.6.
 
-### T1 — certifi 2026.10.19 in den Locks von server und monitoring  [ ]
+### T1 — certifi 2026.10.19 in den Locks von server und monitoring  [x]
 Komponente: server · Dateien: apps/server/requirements.txt, apps/monitoring/requirements.txt, CHANGELOG.md
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @6278ce52 2026-10-21T15:57:00+02:00
+Review: am Ende (Branch-Review)
 Änderung: Beide gehashten Locks mit `pip-compile` neu erzeugen, mit genau dem Befehl aus ihrem Kopf plus `--upgrade-package certifi==2026.10.19` (pip-tools 7.6.1, Python 3.12, wie 9ead47da). Im Diff ändern sich nur Version und Hash-Zeilen von `certifi`; ändert sich mehr, nennen und begründen. `requirements.in` bleibt, `apps/ca-issuer` ist laut Audit sauber und bleibt. Orakel: `pip-audit -r apps/<x>/requirements.txt --disable-pip` wie in `audit.yml` meldet vorher PYSEC-2026-4320 und danach nichts; die neuen Locks installieren mit `--require-hashes` in einem Scratch-Venv. Die verlinkten `.venv` des Worktrees gehören dem Haupt-Checkout und werden nicht verändert.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: CHANGELOG.md (Security: certifi 2026.5.20 → 2026.10.19, PYSEC-2026-4320)
