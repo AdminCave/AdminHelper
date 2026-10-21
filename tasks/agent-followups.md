@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: RPM-Upgrade, Provisionierung und Sync mit gesichertem Datenverzeichnis, Meldung im Ereignisprotokoll — Task-Ledger
-Status: bereit · Branch: feature/agent-followups · Review: pro Task
+Status: erledigt · Branch: feature/agent-followups · Review: pro Task
 Spec: keine eigene Datei (drei Folgezeilen des Agents, Roadmap R-0527, R-0556, R-0557)
 Heavy: linux-full + windows — `apps/agent` (Provisionierung, frpc-Sync, Logger, Windows-Dienst) liegt auf dem Provisionierungs- und Sync-Pfad und läuft im Sammellauf über `main` (der Schritt `agent_monitoring` provisioniert echt, `/feature-build` §5); `windows` über den CI-Job „Go Agent (test, Windows)“ (der Pool hat keine Windows-Vorlage, Belege über Probe-Branches, unten); kein `scenario --rpm`: T1 ändert nur Scriptlets, und die Multibox-RPM-Strecke installiert im Container ohne systemd, sie sähe die Reihenfolge nicht; den Beleg liefert die rpm-Probe in T1
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
