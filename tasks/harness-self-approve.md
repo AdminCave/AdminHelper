@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness: die Session gibt geplante Vorhaben selbst frei — Task-Ledger
-Status: aktiv · Branch: feature/harness-self-approve · Review: pro Task
+Status: bereit · Branch: feature/harness-self-approve · Review: pro Task
 Spec: docs/features/harness-self-approve.md (Roadmap R-0567)
 Heavy: none — Regel- und Skill-Texte, `scripts/dev/roadmap.py` (Python-Stdlib) und Shell-Tests unter `scripts/` mit hermetischen Fixtures; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -42,8 +42,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: keine weitere (die Skill-Texte sind die Anleitung)
 Abhängt von: T2
 
-### T4 — /roadmap-Skill und cicd.html: wer annimmt, wer freigibt  [ ]
+### T4 — /roadmap-Skill und cicd.html: wer annimmt, wer freigibt  [x]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e5b32d16 2026-10-21T10:39:30+02:00
+Review: approve (.ah-out/review/harness-self-approve/T4.verdict.json)
 Änderung: Die Texte der Spec für den roadmap-Skill (`:17-19`, `:80-81`) und die REG-Zeile der Tabelle in `docs/developer/cicd.html:184` und `docs/en/developer/cicd.html:182`, HTML-Entities wie im Bestand. `python3 scripts/dev/doc-smoke.py --paths --env --strict` bleibt Exit 0 (das fährt der CI-Job ops-scripts über die echten Seiten). Kein neuer Test: Regel- und Doku-Text. Prüf-grep danach leer (heute vier Treffer): `grep -n -E 'Freigabe tippt|tippt Kevin selbst|Die Freigabe bleibt Kevins Haken|Releasing it stays' .claude/skills/roadmap/SKILL.md docs/developer/cicd.html docs/en/developer/cicd.html`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (REG-Zeile)
