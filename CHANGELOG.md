@@ -465,6 +465,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor
+  dem HTTP-Check und dem Alert-Webhook des Monitorings sowie vor den Hook-Helfern `http_get`/`http_post` des Servers
+  prueft einen internationalisierten Hostnamen jetzt in der Form, die die Anfrage als Host-Header und TLS-Name traegt
+  (IDNA 2008, etwa `xn--strae-oqa.example`). Bisher loeste er bei scharfem s oder finalem Sigma einen anderen Namen auf
+  (IDNA 2003) und verband zu dessen Adressen, und die Anfrage konnte am Zertifikat oder am vhost scheitern. Ein
+  Hostname, den httpx nicht kodieren kann, wird schon vom Guard abgelehnt wie eine unlesbare URL, ebenso eine URL, die
+  httpx sonst nicht liest (etwa ein Port, der keine Zahl ist): Die Hook-Helfer werfen dafuer wie dokumentiert einen
+  `ValueError` statt `httpx.InvalidURL`, HTTP-Check und Alert-Webhook melden ein privates/reserviertes Ziel.
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
