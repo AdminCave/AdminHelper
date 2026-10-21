@@ -209,11 +209,12 @@ else
   BOX="$(warm_get desktop)"
   [ -n "$BOX" ] || { echo "no warm box (run: warm.sh desktop)"; exit 1; }
   echo "== run.sh $LAYER$FLAGS_SHOWN on warm box $BOX${AH_ONLY:+ (AH_ONLY=$AH_ONLY)} =="
-  # 'all' = integration + GUI-e2e + unit + lint in one go: ~42 min on a warm box
-  # and well past 50 min on a cold one (the Tauri release build alone is ~20).
-  # The flat 3000s bound killed it mid-suite, which reads exactly like a test
-  # failure (no summary line, box kept) — give the long layer its own headroom.
-  case "$LAYER" in all) LAYER_TMO=6000 ;; *) LAYER_TMO=3000 ;; esac
+  # 'all' = integration + GUI-e2e + unit + lint in one go. Green runs on a warm
+  # box took 84-98 min lately, and the weekly run of 2026-10-21 went past 6000s
+  # once desktop_e2e_workspaces joined; a cold box adds the Tauri release build
+  # (~20 min). The bound only catches a hang: a kill mid-suite reads exactly like
+  # a test failure (no summary line, box kept) — give the long layer its own headroom.
+  case "$LAYER" in all) LAYER_TMO=9000 ;; *) LAYER_TMO=3000 ;; esac
   if box_run "$BOX" "$LAYER_TMO" "$ENVS bash scripts/tests/run.sh $LAYER$FLAGS"; then
     echo "  ✓ run.sh $LAYER$FLAGS_SHOWN green"
   else rc=$?; report_fail "$BOX"; exit "$rc"; fi
