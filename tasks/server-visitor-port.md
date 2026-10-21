@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Visitor-Port eines STCP-Tunnels auf 1–65535 begrenzen — Task-Ledger
-Status: bereit · Branch: feature/server-visitor-port · Review: am Ende
+Status: erledigt · Branch: feature/server-visitor-port · Review: am Ende
 Spec: Roadmap R-0533
 Heavy: linux-full — Request-Schema von `POST`/`PUT /api/frp/tunnels` (OpenAPI-Snapshot) und der Visitor-Generator im frp-Modul (`config_generator.py`, `generate_router.py`); läuft im Sammellauf. Kein `scenario`: Für jeden Tunnel mit einem Visitor-Port von 1 bis 65535 erzeugt der Generator dieselbe `visitor.toml` wie heute, weggelassen wird nur ein Visitor, dessen TOML der Desktop schon heute ganz abweist; die frpc-Config der Agents ändert sich nicht. Kein `windows`: kein Agent- und kein Desktop-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
