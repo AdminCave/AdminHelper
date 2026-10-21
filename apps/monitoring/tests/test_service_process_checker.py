@@ -392,6 +392,90 @@ def test_auto_mode_caps_the_agent_lists():
     assert metrics["_details"]["enabled_inactive"] == []
 
 
+@pytest.mark.parametrize("key", ["failed", "enabled_inactive"])
+@pytest.mark.parametrize("entry", [1, 1.5, None, True, ["a"], {"unit": "a"}], ids=repr)
+def test_auto_mode_skips_a_list_entry_that_is_no_unit_name(key, entry):
+    # Only a string is a unit name. Any other entry counts as missing, as in the list mode and
+    # the other push checkers, instead of failing the evaluation (R-0552).
+    def report(*extra) -> dict:
+        lists = {"failed": ["nginx.service", "data.mount"], "enabled_inactive": ["cron.service"]}
+        lists[key] = [*extra, *lists[key]]
+        return {"systemd": {**lists, "counts": {"active": 41, "total": 63}}}
+
+    checker = ServiceProcessChecker()
+    result = checker.evaluate({"mode": "auto"}, report(entry))
+    assert result == checker.evaluate({"mode": "auto"}, report())
+    assert result[0] == "critical"
+    assert_every_reader_reads(result[2]["_details"])
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "nginx.service",
+        {"active_state": "failed"},
+        {"unit": 5, "active_state": "failed"},
+        {"unit": ["a"], "active_state": "failed"},
+        {"unit": None, "active_state": "failed"},
+    ],
+    ids=repr,
+)
+def test_auto_mode_skips_an_inventory_entry_without_a_unit_name(entry):
+    # The inventory adds a failed unit only from an object with a string in unit (R-0552).
+    def report(*extra) -> dict:
+        inventory = [
+            {"unit": "zabbix.service", "active_state": "failed", "enabled_state": "enabled"},
+            {"unit": "sshd.service", "active_state": "active", "enabled_state": "enabled"},
+        ]
+        return {
+            "systemd": {
+                "failed": ["data.mount"],
+                "enabled_inactive": [],
+                "all_services": [*extra, *inventory],
+            }
+        }
+
+    checker = ServiceProcessChecker()
+    result = checker.evaluate({"mode": "auto"}, report(entry))
+    assert result == checker.evaluate({"mode": "auto"}, report())
+    assert result[2]["_details"]["failed"] == ["data.mount", "zabbix.service"]
+    assert_every_reader_reads(result[2]["_details"])
+
+
+@pytest.mark.parametrize("systemd", [["x"], "x", 5], ids=repr)
+def test_auto_mode_a_systemd_that_is_no_object_counts_as_missing(systemd):
+    # Like resources for agent_resources and systemd in the list mode (R-0552).
+    checker = ServiceProcessChecker()
+    missing = checker.evaluate({"mode": "auto"}, {})
+    assert missing == ("unknown", "No service data in report", None)
+    assert checker.evaluate({"mode": "auto"}, {"systemd": systemd}) == missing
+
+
+def test_auto_mode_caps_a_list_before_it_skips_entries():
+    # Every entry counts toward the cap, as in capped_objects: a name after 500 unreadable
+    # entries is never read, so the work on a flooded list stays bounded (R-0552).
+    report = {
+        "systemd": {
+            "failed": [1] * 500 + ["late.service"],
+            "enabled_inactive": [None] * 500 + ["late.service"],
+        }
+    }
+    status, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert status == "ok"
+    assert metrics["_details"]["failed"] == []
+    assert metrics["_details"]["enabled_inactive"] == []
+    assert_every_reader_reads(metrics["_details"])
+
+    late = {"unit": "late.service", "active_state": "failed"}
+    report = {
+        "systemd": {"failed": [], "enabled_inactive": [], "all_services": ["x"] * 500 + [late]}
+    }
+    status, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert status == "ok"
+    assert metrics["_details"]["failed"] == []
+    assert_every_reader_reads(metrics["_details"])
+
+
 def test_list_mode_unaffected_by_throttling():
     # Watched services are always sent; list mode must work without all_services.
     status, message, _ = ServiceProcessChecker().evaluate(
@@ -760,6 +844,43 @@ def test_throttled_push_keeps_stored_state(client_db):
         assert state.status == "critical"
         assert json.loads(state.details)["failed"] == ["nginx.service"]
         assert json.loads(state.details)["enabled_inactive"] == ["cron.service"]
+
+
+def test_push_with_an_unreadable_failed_entry_moves_the_stored_state(client_db):
+    # A checker that raises leaves its check on the last state (the push path catches it per
+    # check). A failed list without a unit name rates like an empty one (R-0552).
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-svc",
+                server_id="srv-1",
+                name="Services",
+                check_type="service_process",
+                config=json.dumps({"mode": "auto"}),
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.commit()
+
+    report = {"systemd": {"failed": ["nginx.service"], "enabled_inactive": []}}
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-svc").one()
+        assert (state.status, state.message) == ("critical", "Failed: nginx.service")
+
+    # Same as a clean push: the recovery hold (column default consecutive_oks 2) starts.
+    report = {"systemd": {"failed": [1], "enabled_inactive": []}}
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-svc").one()
+        assert (state.status, state.ok_count, state.message) == (
+            "critical",
+            1,
+            "All services OK (recovery 1/2)",
+        )
+        assert json.loads(state.details)["failed"] == []
 
 
 def test_list_mode_push_hands_the_stored_state_to_the_checker(client_db):
