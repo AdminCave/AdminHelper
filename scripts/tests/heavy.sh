@@ -34,8 +34,8 @@
 # whole point — "SKIP heisst nicht verifiziert" (CLAUDE.md).
 #
 # Overrides for the hermetic test (heavy_test.sh), never for real runs:
-#   AH_HEAVY_WRAPPERS  one directory holding warm.sh / iter.sh / multibox.sh
-#                      (really scripts/vm and scripts/tests)
+#   AH_HEAVY_WRAPPERS  one directory holding warm.sh / iter.sh / reap.sh /
+#                      multibox.sh (really scripts/vm and scripts/tests)
 #   AH_PRIVATE_DIR     the private repo (default tasks/private)
 #   AH_OUT_DIR         output root (default .ah-out)
 #   AH_HEAVY_ROOT      the checkout to worktree from (default: this repo) — the
@@ -80,9 +80,9 @@ export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-100}"
 
 AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"; export AH_OUT_DIR
 PRIVATE_DIR="${AH_PRIVATE_DIR:-$ROOT/tasks/private}"
-# Two homes, one override: warm.sh and iter.sh live next to vm.py, multibox.sh
-# next to the role scripts it drives. AH_HEAVY_WRAPPERS points both at one
-# directory of shims for heavy_test.sh.
+# Two homes, one override: warm.sh, iter.sh and reap.sh live next to vm.py,
+# multibox.sh next to the role scripts it drives. AH_HEAVY_WRAPPERS points both
+# at one directory of shims for heavy_test.sh.
 WRAPPERS="${AH_HEAVY_WRAPPERS:-$ROOT/scripts/vm}"
 MB_WRAPPERS="${AH_HEAVY_WRAPPERS:-$DIR}"
 STAMP="$(date +%Y-%m-%d-%H%M)"
@@ -460,6 +460,8 @@ run_all() {
     part_box[$part]="$(warm_get "$slot")"; part_box[$part]="${part_box[$part]:-?}"
     case "$stage" in
       run)
+        # Its part leased the GUI box, so this run holds it (release_gui_box).
+        [ "$part" = gui ] && GUI_HELD=1
         evaluate_all "$OUT/all-$part.log" "$rc" "${part_box[$part]}" "$OUT/$part" "$part" "$slot" "$since" ;;
       lease)
         part_box[$part]="-"
@@ -476,6 +478,8 @@ run_all() {
     part_res[$part]="$PART_RESULT"; part_detail[$part]="$PART_DETAIL"
     note "part $part: $PART_RESULT after $s s on ${part_box[$part]}${PART_DETAIL:+ — $PART_DETAIL}"
   done
+  # Both parts have had every retry; only now may the GUI box go for a w2 box.
+  judge_candidates
 
   # One verdict from two parts. Infra in either makes the run UNVERIFIED, and the
   # reason names a red part as well, whichever of the two was judged first:
@@ -599,6 +603,9 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
         case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
       fi
       FINDINGS+=("all|$name|$verdict|$secs|$box|$STEP_DETAIL")
+      if [ "$verdict" = kandidat ]; then
+        CANDIDATES+=("$((${#FINDINGS[@]} - 1))|$name|$CAND_SPEC|$CAND_MARKER")
+      fi
     done 3< "$tsv"
   else
     note "no readable last-all.json from part $label — per-step results unavailable"
@@ -639,7 +646,7 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
 # different experiment. One green run makes it FLAKY (quarantined, not a
 # failure); three reds with the SAME first marker make it a candidate for the
 # second-VM check.
-STEP_DETAIL=""; CLASS_VERDICT=""
+STEP_DETAIL=""; CLASS_VERDICT=""; CAND_SPEC=""; CAND_MARKER=""
 RETRIES=3
 
 # The first line the step printed that reads like a failure. Two identical reds
@@ -699,7 +706,11 @@ classify_red_step() {  # classify_red_step <step> <all-log> <box> <slot>; sets C
   done
   if [ "$same" = 1 ]; then
     note "  3x red with the same marker -> candidate"
-    second_vm_check "$step" "$spec" "${first:-none}"
+    # The second VM waits for judge_candidates, after the retries of both parts:
+    # it frees the GUI box first, and a red GUI step retried after that would
+    # have iter.sh warm a fresh box that never got this tree.
+    CLASS_VERDICT="kandidat"; STEP_DETAIL="3x red (${first:-none})"
+    CAND_SPEC="$spec" CAND_MARKER="${first:-none}"
   else
     # Red every time but in different ways: reproducibly broken, yet not the
     # stable signature a regression claim needs.
@@ -719,7 +730,8 @@ classify_red_step() {  # classify_red_step <step> <all-log> <box> <slot>; sets C
 #   base red too         -> extern       (environment/dependency, not our change)
 #
 # The worktree and its lane belong to this function; Kevin's own warm box
-# (lane `main`) is never touched.
+# (lane `main`) is never touched — only the GUI box this run leased makes room
+# first (release_gui_box).
 W2_DIR=""
 last_pass_commit() {
   [ -f "$HISTORY" ] || return 0
@@ -746,6 +758,41 @@ w2_teardown() {
   W2_DIR=""
 }
 
+# The GUI box of `all` holds as much RAM as the desktop box next to it. With both
+# still held, the w2 box does not fit, nor do the capstone's roles: a candidate
+# ended unbestaetigt instead of reg or extern, the capstone UNVERIFIED. So the
+# GUI box goes first — once per run, and only if this run leased it. A failed
+# release is a note: whether the next clone fits is vm.py's capacity check to say.
+GUI_HELD=0
+release_gui_box() {  # release_gui_box <what needs the room>
+  [ "$GUI_HELD" = 1 ] || return 0
+  GUI_HELD=0
+  local box rc=0
+  box="$(warm_get gui)"
+  bash "$WRAPPERS/reap.sh" --role gui >>"$OUT/reap-gui.log" 2>&1 </dev/null || rc=$?
+  if [ "$rc" = 0 ]; then
+    note "gui box ${box:-?} released before $1 (reap.sh --role gui)"
+  else
+    note "gui box ${box:-?} not released before $1: reap.sh --role gui exited $rc (see reap-gui.log) — the capacity check of vm.py decides the next clone"
+  fi
+}
+
+# The candidates of `all`, "<index of the step's row in FINDINGS>|<step>|<spec>|
+# <marker>". They go to the second VM only once both parts have had all their
+# retries (classify_red_step); each check rewrites its step's row.
+CANDIDATES=()
+judge_candidates() {
+  local c idx step spec marker ebene schritt secs vm
+  for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
+    IFS='|' read -r idx step spec marker <<<"$c"
+    note "second VM for '$step'"
+    second_vm_check "$step" "$spec" "$marker"
+    IFS='|' read -r ebene schritt _ secs vm _ <<<"${FINDINGS[$idx]}"
+    FINDINGS[$idx]="$ebene|$schritt|$CLASS_VERDICT|$secs|$vm|$STEP_DETAIL"
+  done
+  CANDIDATES=()
+}
+
 second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDICT
   local step="$1" spec="$2" marker="$3" rc base safe
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
@@ -766,6 +813,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  could not create the w2 worktree — candidate stays unconfirmed"
     return 0
   fi
+  release_gui_box "the second-VM check"
   if ! AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); second box could not be leased"
     note "  second box could not be leased — candidate stays unconfirmed"
@@ -1248,6 +1296,9 @@ if preflight; then
       if [ "$VERDICT" = "UNVERIFIED" ]; then
         note "capstone skipped: the 'all' layer is UNVERIFIED — fix the infrastructure first"
       else
+        # The capstone fits its roles before the first clone; the GUI box is no
+        # longer needed and would only stand in the way.
+        release_gui_box "the capstone"
         run_capstone
       fi ;;
   esac

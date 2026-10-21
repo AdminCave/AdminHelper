@@ -103,8 +103,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: `DEVELOPMENT.md` Wochenlauf (`:1252ff`, `:1268`, Historie `:1297`), `docs/developer/cicd.html` (`:151-176`) und `docs/en/developer/cicd.html` (`:150-174`): `all` = zwei Boxen parallel, Teil `gui` und `rest`, Urteil nur mit zwei grünen Teilen, die Ebenen-Zeile. `.claude/skills/test/SKILL.md`: `:49` (Dauer; „etwa 1 h, nicht verifiziert bis zum ersten Lauf“), `:52` (die Summary-Zeilen der beiden Teile), `:96`. `CHANGELOG.md` `[Unreleased]` → `### Changed`: „**Sammellauf auf zwei Boxen parallel (R-0603):** …“.
 Abhängt von: T3, T4, T5, T7, T8
 
-### T10 — heavy.sh: die GUI-Box geht vor einer Zweit-VM-Prüfung und vor dem Capstone  [ ]
+### T10 — heavy.sh: die GUI-Box geht vor einer Zweit-VM-Prüfung und vor dem Capstone  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ecd561e2 2026-10-21T17:06:12+02:00
+Review: approve (.ah-out/review/heavy-parallel/T10.verdict.json)
 Änderung: Bevor `second_vm_check` die Box der Lane `w2` least (`:580`) und bevor `run_capstone` im Modus `weekly` startet (`:862-880`), gibt `heavy.sh` die GUI-Box frei, wenn der Lauf sie noch hält: `bash "$WRAPPERS/reap.sh" --role gui` (einmal je Lauf; ein Scheitern ist eine Notiz, über den nächsten Klon entscheidet die Kapazitätsprüfung von `vm.py`). Warum (Kommentar): Mit zwei gehaltenen Boxen passt die dritte bzw. passen die Capstone-Rollen nicht, ein Kandidat endete `unbestaetigt` statt `reg`/`extern`, der Capstone `UNVERIFIED`. Der Report nennt die Freigabe in den Notizen. `AH_HEAVY_WRAPPERS` deckt `reap.sh` mit ab (heute nur `warm.sh`/`iter.sh`/`multibox.sh`, `:80-84`).
 Tests in `heavy_test.sh` (ein `reap.sh`-Shim im Wrapper-Verzeichnis, der seine Argumente protokolliert): Kandidat in Teil `rest` (Muster 4g, `:411`) → `reap.sh --role gui` vor dem `warm.sh` der Lane `w2`; `weekly` → `reap.sh --role gui` vor `multibox.sh`; ein grüner `all` ohne Kandidat → kein `reap.sh`-Aufruf (das entscheidet T11).
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test

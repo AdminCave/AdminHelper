@@ -205,7 +205,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           </table>
           <p>Die zweite VM ist ein Worktree <code>.ah-worktrees/w2</code> mit eigener Lane
           (<code>AH_LANE=w2</code>); <code>heavy.sh</code> zerst&ouml;rt die VMs dieser Lane und
-          entfernt den Worktree selbst. Die Boxen der Lane <code>main</code> bleiben unber&uuml;hrt.
+          entfernt den Worktree selbst. Die Boxen der Lane <code>main</code> bleiben unber&uuml;hrt,
+          bis auf die GUI-Box des Laufs: Vor der ersten Zweit-VM und vor dem Capstone
+          (<code>weekly</code>) gibt <code>heavy.sh</code> sie frei (<code>reap.sh --role gui</code>, einmal
+          je Lauf, die Notizen nennen es), weil neben ihr und der Box des Slots <code>desktop</code> die
+          <code>w2</code>-Box bzw. die Capstone-Rollen nicht passen; die Zweit-VM-Pr&uuml;fungen laufen
+          deshalb erst, wenn beide Teile alle Wiederholungen hinter sich haben.
           <code>--base &lt;sha&gt;</code> setzt den Vergleichs-Commit (Default: die j&uuml;ngste
           <code>history.csv</code>-<strong>Ebenen</strong>-Zeile mit
           <code>ebene=all,schritt=-,ergebnis=pass</code>, nicht die eines einzelnen Schritts),
