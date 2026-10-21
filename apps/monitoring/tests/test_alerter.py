@@ -11,6 +11,7 @@ unknown-policy (transitions into 'unknown' never notify).
 """
 
 import logging
+import socket
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -21,12 +22,14 @@ from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core import ssrf as ssrf_mod
 from app.core.logging_config import configure_logging
-from app.core.ssrf import UrlVerdict
+from app.core.ssrf import Target, UrlVerdict
 from app.models import MonitorAlertRule, MonitorCheck, MonitorMaintenance, MonitorState
 
-from ._helpers import _CapturingDb, make_check, make_msg, make_rule
+from ._helpers import _CapturingDb, make_check, make_msg, make_rule, no_env_proxy
 
 _NOW = datetime(2026, 10, 20, 12, 0)
+# Public on purpose where the real guard checks it: RFC 5737 addresses count as private.
+_PUBLIC = "93.184.216.34"
 
 
 def _sqlite_session():
@@ -189,16 +192,52 @@ class TestBuildsMessageOnce:
         assert calls["n"] == 1
 
 
+def _resolving_to(monkeypatch, address: str) -> list[str]:
+    """The guard's resolver answers with `address`; returns the names it was asked."""
+    asked: list[str] = []
+
+    def _resolve(hostname, _timeout):
+        asked.append(hostname)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 0))]
+
+    monkeypatch.setattr(ssrf_mod, "_resolve", _resolve)
+    return asked
+
+
+def _connections_refused(monkeypatch) -> list[tuple]:
+    """Records the address of every socket.create_connection and refuses it."""
+    connected: list[tuple] = []
+
+    def _refuse(address, *a, **k):
+        connected.append(address)
+        raise ConnectionRefusedError("refused by the test")
+
+    monkeypatch.setattr(socket, "create_connection", _refuse)
+    return connected
+
+
+def _requests_below_the_pin(monkeypatch) -> list[httpx.Request]:
+    """Every request that reaches an httpx.HTTPTransport (the pin's inner one, or the
+    one a proxy goes through), answered with 200 and no connection."""
+    sent: list[httpx.Request] = []
+
+    def _send(_self, request):
+        sent.append(request)
+        return httpx.Response(200, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _send)
+    return sent
+
+
 class TestWebhookSsrf:
     """M2: a webhook URL pointing at a private/reserved target must be rejected
     before any outbound request is made."""
 
     def test_private_target_rejected_without_request(self, monkeypatch):
-        posted = {"n": 0}
-        monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.PRIVATE)
         monkeypatch.setattr(
-            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
+            alerter, "check_target", lambda url: Target(UrlVerdict.PRIVATE, "169.254.169.254")
         )
+        sent = _requests_below_the_pin(monkeypatch)
 
         success, error = alerter._send_webhook(
             {"url": "http://169.254.169.254/latest/meta-data"},
@@ -208,20 +247,16 @@ class TestWebhookSsrf:
         )
 
         assert success is False
-        assert posted["n"] == 0, "Bei privatem Ziel darf kein HTTP-Request rausgehen"
+        assert sent == [], "Bei privatem Ziel darf kein HTTP-Request rausgehen"
 
     def test_public_target_is_dispatched(self, monkeypatch):
-        posted = {"n": 0}
-        monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.ALLOWED)
-
-        class _Resp:
-            status_code = 200
-
+        no_env_proxy(monkeypatch)
         monkeypatch.setattr(
-            alerter.httpx,
-            "post",
-            lambda *a, **k: posted.__setitem__("n", posted["n"] + 1) or _Resp(),
+            alerter,
+            "check_target",
+            lambda url: Target(UrlVerdict.ALLOWED, "hooks.example.com", (_PUBLIC,)),
         )
+        sent = _requests_below_the_pin(monkeypatch)
 
         success, error = alerter._send_webhook(
             {"url": "https://hooks.example.com/x"},
@@ -231,15 +266,16 @@ class TestWebhookSsrf:
         )
 
         assert success is True
-        assert posted["n"] == 1
+        assert len(sent) == 1
+        # Pinned: the checked address in the URL, the name in the Host header and as TLS name.
+        assert (sent[0].method, sent[0].url.host) == ("POST", _PUBLIC)
+        assert sent[0].headers["host"] == "hooks.example.com"
+        assert sent[0].extensions["sni_hostname"] == "hooks.example.com"
 
     def test_unresolvable_target_rejected_without_request(self, monkeypatch):
         # R-0045: a webhook host that does not resolve is reported as such, not as private.
-        posted = {"n": 0}
         monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
-        monkeypatch.setattr(
-            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
-        )
+        sent = _requests_below_the_pin(monkeypatch)
 
         success, error = alerter._send_webhook(
             {"url": "https://dead-nameserver.example/x"},
@@ -251,7 +287,37 @@ class TestWebhookSsrf:
         assert success is False
         assert "could not be resolved" in error
         assert "SSRF" in error
-        assert posted["n"] == 0
+        assert sent == []
+
+    def test_request_connects_to_the_checked_address(self, monkeypatch):
+        # ssrf-pin: the connection goes to the address the guard checked. httpx resolving
+        # the name a second time could get another answer (DNS rebinding).
+        no_env_proxy(monkeypatch)
+        _resolving_to(monkeypatch, _PUBLIC)
+        connected = _connections_refused(monkeypatch)
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com:8443/x"}, make_rule(), make_check(), make_msg()
+        )
+
+        assert connected == [(_PUBLIC, 8443)]
+        assert (success, error) == (False, "Webhook connection failed")
+
+    def test_with_a_proxy_for_the_scheme_the_proxy_connects(self, monkeypatch):
+        # Through a proxy the address cannot be pinned (the proxy resolves the name), so
+        # a proxy from the environment connects as before; the guard still checks first.
+        no_env_proxy(monkeypatch)
+        monkeypatch.setenv("HTTPS_PROXY", "http://192.0.2.10:3128")
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        connected = _connections_refused(monkeypatch)
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com:8443/x"}, make_rule(), make_check(), make_msg()
+        )
+
+        assert asked == ["hooks.example.com"]
+        assert connected == [("192.0.2.10", 3128)]
+        assert (success, error) == (False, "Webhook connection failed")
 
 
 # Many webhook services carry the credential in the path or the query, so user info,
@@ -301,8 +367,12 @@ class TestWebhookLogLines:
     def test_log_line_names_only_the_host(
         self, monkeypatch, caplog, service_logging, verdict, line
     ):
-        monkeypatch.setattr(alerter, "classify_url", lambda url: verdict)
-        # Stubbed below the client, so httpx itself runs and logs as in the service.
+        no_env_proxy(monkeypatch)
+        addresses = (_PUBLIC,) if verdict is UrlVerdict.ALLOWED else ()
+        monkeypatch.setattr(
+            alerter, "check_target", lambda url: Target(verdict, "hooks.example.com", addresses)
+        )
+        # Stubbed below the pin, so httpx itself runs and logs as in the service.
         monkeypatch.setattr(
             httpx.HTTPTransport,
             "handle_request",
@@ -317,12 +387,9 @@ class TestWebhookLogLines:
         assert _alerter_lines(caplog) == [line]
 
     def test_unparsable_url_is_logged_as_placeholder(self, monkeypatch, caplog):
-        # urlparse raises on a malformed IPv6 literal; the real classify_url rejects it
+        # urlparse raises on a malformed IPv6 literal; the real check_target rejects it
         # as private, and the log line must not raise on it either.
-        posted = {"n": 0}
-        monkeypatch.setattr(
-            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
-        )
+        sent = _requests_below_the_pin(monkeypatch)
 
         with caplog.at_level(logging.DEBUG, logger="monitor.alerter"):
             success, _error = alerter._send_webhook(
@@ -330,7 +397,7 @@ class TestWebhookLogLines:
             )
 
         assert success is False
-        assert posted["n"] == 0
+        assert sent == []
         assert _alerter_lines(caplog) == ["Webhook target rejected (private/reserved): c -> ?"]
 
 
