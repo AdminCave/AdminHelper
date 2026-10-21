@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces — Task-Ledger
-Status: aktiv · Branch: feature/desktop-workspaces · Review: pro Task
+Status: bereit · Branch: feature/desktop-workspaces · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — der Desktop startet anders (Launcher, Workspace-Prozess, Migration), alle Live-Specs ziehen mit und die neue Suite `desktop_e2e_workspaces` (zwei Stacks) läuft im e2e-Layer, `docker-compose.test.yml` ändert sich: Sammellauf; `scenario`, weil `box_desktopbox.sh` (Capstone `--desktop`) den Standard-Workspace startet und Tunnel-Laufzeitdateien und Portkarten-Besitzer je Workspace wechseln (FRP-Datenpfad); `windows` = CI-Job `rust-windows` (abgekoppelter Prozessstart, Datei-Locks, Keyring-TargetName, TERMSRV); mstsc selbst ist ohne Windows-Vorlage im Pool nicht verifiziert, dafür die Prüfanleitung aus T33 für Kevin
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -317,8 +317,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T48
 
-### T54 — Feste URL und Werte im Formular nicht in Großbuchstaben  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/SettingsModal.svelte
+### T54 — Feste URL und Werte im Formular nicht in Großbuchstaben  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/SettingsModal.svelte, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @32da7be5 2026-10-21T06:45:36+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T54.verdict.json)
 Änderung: Live-Lauf `desktop_e2e_workspaces` auf der Lane-VM (2026-10-21, über 4c855eb1): `two-installations.workspaces.js` (~:240) erwartet die feste URL im Login, WebKitWebDriver liefert „HTTPS://…“ — `.field` (`app.css` ~:915) setzt `text-transform: uppercase` und `letter-spacing` für Beschriftungen, und die Wertanzeigen `.login-url` (Login, T22) und `.sm-workspace-url` (Einstellungen, T23) erben das: Die URL steht für den Nutzer in Großbuchstaben (Pfade und Query sind groß-/kleinschreibungsabhängig). Beide Wertanzeigen setzen `text-transform: none; letter-spacing: normal;` (wie `.field small`) und die Schrift der Werte (nicht der Beschriftung); weitere reine Wertanzeigen in `.field` (etwa „angemeldet als“) prüfen und gleich behandeln. Test: vitest prüft die Klassen/Struktur nicht sinnvoll — Beweis ist der Live-Spec (getText wendet text-transform an); im Commit-Body festhalten. Optik nur live/Screenshot. Nachtrag (T51-Review, Nit): `docs/developer/desktop.html` ~:125 + EN verlinken `../admin/troubleshooting.html` mit Anker `#unlesbare-einstellungen` bzw. `#unreadable-settings` (Dateien per set-files, Doc-Smoke zusätzlich).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login src/components/SettingsModal
 Doku: keine (intern)

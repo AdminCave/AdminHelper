@@ -476,9 +476,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .login-workspace-name {
     overflow-wrap: anywhere;
   }
+  /* A value inside .field, whose global rule styles labels: no caps, spacing or
+     muted colour — paths and queries are case-sensitive. */
   .login-url {
     margin: 0;
     font-size: var(--text-sm);
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
     overflow-wrap: anywhere;
   }
   .trust-overlay {

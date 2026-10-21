@@ -663,8 +663,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     align-items: center;
     gap: var(--sp-2);
   }
+  /* A value inside .field, whose global rule styles labels: no caps, spacing or
+     muted colour — paths and queries are case-sensitive. */
   .sm-workspace-url {
     font-size: 13px;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
     word-break: break-all;
   }
   .field {
