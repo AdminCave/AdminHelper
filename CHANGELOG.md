@@ -1080,11 +1080,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
-- **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook des Monitorings loest
-  das Ziel einmal auf, prueft alle Adressen und verbindet zu einer davon (der Reihe nach, bis eine annimmt), statt
-  dass httpx den Namen beim Verbinden ein zweites Mal aufloest; Host-Header und TLS-Name (SNI, Zertifikatspruefung)
-  bleiben der Hostname. Ist fuer das Schema der URL ein Proxy aus `HTTP_PROXY`, `HTTPS_PROXY` oder `ALL_PROXY`
-  gesetzt, geht die Anfrage wie bisher ueber den Proxy. Doku: Monitoring-Administration (DE+EN).
+- **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook und der HTTP-Check des
+  Monitorings (dieser fuer die erste URL und jeden Redirect-Hop) loesen das Ziel einmal auf, pruefen alle Adressen
+  und verbinden zu einer davon (der Reihe nach, bis eine annimmt), statt dass httpx den Namen beim Verbinden ein
+  zweites Mal aufloest; Host-Header und TLS-Name (SNI, Zertifikatspruefung) bleiben der Hostname. Ist fuer das
+  Schema der URL ein Proxy aus `HTTP_PROXY`, `HTTPS_PROXY` oder `ALL_PROXY` gesetzt, geht die Anfrage wie bisher
+  ueber den Proxy. Doku: Monitoring-Administration und Monitoring-Entwicklerdoku (DE+EN).
 - **Desktop: Workspaces statt Moduswechsel (R-0431):** Der Modus in den Einstellungen entfaellt: Die Art legt ein
   Workspace beim Anlegen fest, Name, Farbe und URL aendert der Picker, solange der Workspace geschlossen ist; im
   Fenster stehen sie als Anzeige. Die Einstellungen trennen „Dieser Workspace“ (Abmelden, Zertifikate,
