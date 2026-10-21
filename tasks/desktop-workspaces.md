@@ -279,3 +279,23 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T31
 
+### T49 — Migration: unlesbare settings.json sichern und weiterstarten  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/models.rs
+Änderung: Entscheidung Kevin 2026-10-21 (Branch-Review, wichtig): Ist die `settings.json` einer bestehenden Installation unlesbar (Parse- oder Lesefehler), scheitert heute `migrate()` und jeder Prozess endet mit Exit 1 ohne Fenster (`migration.rs` ~:193, `workspace.rs` ~:529, `main.rs` ~:142); vor R-0431 startete die App lokal. Künftig gilt eine unlesbare `settings.json` für die Migration als nicht vorhanden: Sie wird unverändert als `settings.json.unreadable-<UTC-Zeitstempel>` daneben gesichert (umbenannt, nicht gelöscht; ein zweiter Lauf findet keine unlesbare Datei mehr), „Standard“ entsteht lokal wie bei einer Installation ohne Einstellungen, die übrigen Altdaten (Verbindungsdateien, Portkarte, Keyring) werden wie bisher übernommen, soweit lesbar. Die Registry merkt sich den Namen der Sicherung für einen einmaligen Hinweis; `list` (Launcher) liefert ihn einmal aus wie `migratedNotice` (Feld in `WorkspaceList`, z. B. `unreadableSettings: Option<String>` nur mit dem Dateinamen, kein Pfad). Log-Zeile ohne Inhalt der Datei. Tests: abgeschnittene und nicht lesbare `settings.json` → Migration gelingt, Sicherung existiert mit altem Inhalt, „Standard“ lokal, Hinweis genau einmal; lesbare Datei → unverändert; Abbruch nach dem Umbenennen und erneuter Lauf → kein Datenverlust.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- migration
+Doku: keine (Doku mit T51)
+Abhängt von: T47
+
+### T50 — Picker: Hinweis auf die gesicherte settings.json  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Entscheidung Kevin 2026-10-21: Liefert `list_workspaces` den Namen einer gesicherten unlesbaren `settings.json` (T49), zeigt der Picker einmal einen Hinweis (DE+EN): Die Einstellungen von vorher waren nicht lesbar, „Standard“ ist lokal gestartet, die alte Datei liegt als `<Name>` im Datenordner; Server-URL im Editor neu eintragen. Typ in `bridge/types.ts` gleich dem Rust-Modell (Paritätstest). Tests: Hinweis mit Dateinamen sichtbar, ohne Feld kein Hinweis.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts src/lib/i18n/i18n.test.ts src/lib/bridge
+Doku: keine (Doku mit T51)
+Abhängt von: T49
+
+### T51 — Doku: unlesbare Einstellungen und alte TERMSRV-Einträge nach dem Löschen  [ ]
+Komponente: scripts · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Änderung: Fehlersuche DE+EN: Nach dem Update waren die alten Einstellungen nicht lesbar → Hinweis im Picker, Sicherung `settings.json.unreadable-<Zeit>`, wo der Datenordner und `adminhelper.log` liegen, wie man die Server-URL neu einträgt bzw. die Datei repariert. Entwickler-Doku DE+EN: Migration mit unlesbarer `settings.json` (T49); Abschnitt „Löschen“ nennt, dass alte generische `TERMSRV/<Adresse>`-Einträge ohne Marker aus der Zeit vor R-0431 der Purge des letzten migrierten Workspace nicht löscht (nicht von eigenen `cmdkey`-Einträgen zu unterscheiden; Branch-Review Nit). CHANGELOG-Satz (umlautfrei) im Migrationseintrag.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/troubleshooting.html + EN · docs/developer/desktop.html + EN · CHANGELOG.md
+Abhängt von: T50
