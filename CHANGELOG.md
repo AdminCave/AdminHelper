@@ -474,6 +474,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Diff aendern sich Version und Hashes von `certifi`, `requirements.in` bleibt; beide Locks installieren mit
   `--require-hashes` unter Python 3.12, `pip-audit` ohne Befund.
 
+- **Desktop-Backend: `rustls-webpki` 0.103.15 → 0.103.16 und `webpki-roots` 1.0.7 → 1.0.10 (R-0657):** schliesst
+  RUSTSEC-2026-0382 und RUSTSEC-2026-0381 (beide CVE-2026-111943) zu denselben acht widerrufenen
+  eMudhra-Zwischenzertifikaten wie bei certifi oben. `webpki-roots` 1.0.10 entzieht ihnen das Vertrauen, indem es die
+  Wurzel `emSign ECC Root CA - G3` herausnimmt; mit den Mozilla-Staenden dazwischen wechseln dieselben Wurzeln wie bei
+  certifi (`Atos TrustedRoot 2011` und `SecureSign Root CA12` entfallen, je zwei von SECOM (2024) und Telia (v3) kommen
+  dazu). `rustls-webpki` 0.103.16 lehnt jeden Zertifikatspfad ab, der den oeffentlichen Schluessel eines dieser
+  Zwischenzertifikate enthaelt, gleich unter welcher Wurzel. Wirksam ist das auf dem Weg mit oeffentlicher CA, den der
+  Desktop nimmt, wenn er weder mit Geraete-Identitaet (mTLS) noch mit TOFU verbindet, und bei der Probe, ob ein
+  Server-Zertifikat oeffentlich vertraut ist: Dort ist `webpki-roots` ueber das reqwest-Feature `rustls-tls` der
+  Vertrauensanker, und `rustls-webpki` prueft die Kette. Ein enrolltes Geraet prueft gegen die bei der Registrierung
+  gepinnte CA, der TOFU-Weg pinnt das Blattzertifikat ohne Kettenpruefung; beide vertrauen keiner Wurzel aus
+  `webpki-roots`. Gefunden vom woechentlichen Dependency-Audit; nur der Lockfile-Stand, im Diff aendern sich Version und
+  Checksumme der zwei Pakete, `Cargo.toml` bleibt. `cargo audit` meldet jetzt nur noch die erlaubten Warnungen.
+
 ### Fixed
 
 - **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor

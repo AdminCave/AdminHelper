@@ -24,8 +24,10 @@ Dedup-Key: rel:deps-audit
 HEAD: e73912f4
 Semantik: docs/developer/cicd.html:43 — „Wöchentlicher Dependency-Audit (Montag früh, auch manuell per workflow_dispatch): pip-audit (Server- + Monitoring-Locks), cargo audit (Desktop), govulncheck (Agent), npm audit (Web + Desktop-UI)“; Kevin 2026-10-21: das Beta erst mit grünem Audit
 
-### T2 — rustls-webpki 0.103.16 und webpki-roots 1.0.10 im Desktop-Lockfile  [ ]
+### T2 — rustls-webpki 0.103.16 und webpki-roots 1.0.10 im Desktop-Lockfile  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.lock, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5eb8c460 2026-10-21T16:03:47+02:00
+Review: am Ende (Branch-Review)
 Änderung: `cargo update --manifest-path apps/desktop/src-tauri/Cargo.toml -p rustls-webpki -p webpki-roots` hebt `rustls-webpki` 0.103.15 → 0.103.16 und `webpki-roots` 1.0.7 → 1.0.10; im Diff ändern sich genau die `version`- und `checksum`-Zeilen dieser zwei Pakete, `Cargo.toml` bleibt. Orakel: `cargo audit` im Verzeichnis `apps/desktop/src-tauri` meldet vorher RUSTSEC-2026-0381 und -0382 als Fehler und danach keinen Fehler mehr (die Warnungen, die `audit.yml` heute zulässt, bleiben).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: CHANGELOG.md (Security: beide Advisories; webpki-roots entzieht den emSign-Zwischenzertifikaten das Vertrauen)
