@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Hooks: gescheiterte Läufe im Log, Fehlertexte der HTTP-Helfer, Env-Pins, Web-Typ des Laufs — Task-Ledger
-Status: geplant · Branch: feature/hooks-followups · Review: pro Task
+Status: aktiv · Branch: feature/hooks-followups · Review: pro Task
 Spec: docs/features/hooks-followups.md (Roadmap R-0558, R-0587, R-0562; T1 gehört zum Paket, Kevin 2026-10-21)
 Heavy: none — keine Route, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; die Antworten von `/api/hooks/{id}/run` und `/api/hooks/trigger` behalten ihre Felder (nur der `error`-Text einer Ablehnung durch den SSRF-Schutz wird kürzer), dazu Log-Zeilen in Event-Dispatch und Scheduler, Tests und ein Web-Typ; keine schwere Suite fährt Hooks (`scripts/tests/` startet keinen Hook, `scripts/tests/stack_pytest.sh` kennt keine Hook-Tests, die Web-E2E mockt `/api/hooks`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
