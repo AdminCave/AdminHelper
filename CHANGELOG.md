@@ -477,6 +477,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (Windows: `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/adminhelper` mit `0700`, auch ohne Monitor);
   scheitert das, bricht es mit dem Verzeichnis im Fehler ab, und der Token bleibt gueltig. Doku: Entwickler-Doku
   Agent (DE+EN).
+- **Agent: der FRP-Sync aendert Dateien nur in einem gesicherten Verzeichnis (R-0556):** Bisher schrieb und loeschte
+  der Sync (`run`, `frpc sync`) `frpc.toml`, `admin.conf` und die Hash-Dateien im FRP-Verzeichnis, ohne es im selben
+  Lauf zu sichern; der Windows-Dienst laeuft auch weiter, wenn er die Datenwurzel beim Start nicht sichern konnte.
+  Jetzt sichert der Sync vor seiner ersten Aenderung, Schreiben wie Loeschen, das FRP-Verzeichnis (Windows: zuerst
+  `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/frp` mit `0700`); scheitert das, bricht er mit dem Verzeichnis
+  im Fehler ab und schreibt, loescht, startet und stoppt nichts. Ein Lauf ohne Aenderung sichert nichts. Doku:
+  Entwickler-Doku Agent (DE+EN).
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
