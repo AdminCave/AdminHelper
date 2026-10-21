@@ -465,6 +465,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: der Visitor-Port eines FRP-Tunnels ist ein Port von 1 bis 65535 (R-0533):**
+  `POST`/`PUT /api/frp/tunnels` nahmen als `visitor_port` jeden INTEGER-Wert an und speicherten ihn; der Server schrieb
+  ihn als `bindPort` in die Visitor-TOML, und der Desktop wies die ganze Visitor-TOML ab. `0` vergab still einen freien
+  Port. Jetzt lehnt der Server einen `visitor_port` ausserhalb 1–65535, auch `0`, mit `422` ab, und nichts wird
+  gespeichert. Ist das Feld `null` oder fehlt es beim Anlegen, vergibt der Server einem STCP-Tunnel wie bisher einen
+  freien Port. Ein schon gespeicherter Wert ausserhalb 1–65535 und ein STCP-Tunnel ohne Visitor-Port (`NULL` aus einer
+  frueheren Migration) bleiben in der Datenbank; statt den Wert als `bindPort` zu schreiben (bei `NULL`
+  `bindPort = None`, kein gueltiges TOML), laesst der Server diesen Visitor jetzt aus der Visitor-TOML weg
+  (`/api/frp/generate/visitor-toml`, `visitor-bundle`, `bulk-zip`) und schreibt eine Warnung ins Server-Log. Sind alle sichtbaren STCP-Tunnel eines Nutzers so, antworten `visitor-toml` und
+  `visitor-bundle` mit `404`. Die frpc-Konfiguration der Agents behaelt den Tunnel. Doku: FRP-Tunnel und API-Referenz
+  (DE+EN).
 - **Agent: nach `dnf upgrade` laufen Timer und frpc weiter (R-0527):** Beim Upgrade des RPM stoppte das `%preun` des
   alten Pakets `adminhelper-agent.timer` und `frpc.service`, nachdem das `%post` des neuen sie gestartet hatte; beide
   blieben aktiviert, liefen aber bis zum naechsten Neustart nicht. Jetzt stoppt und deaktiviert `%preun` sie nur bei
