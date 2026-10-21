@@ -1096,6 +1096,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Plaene gibt die Session selbst frei (Entwickler-Werkzeuge, Kevin 2026-10-21):** Nach dem Plan-Commit von
+  `/feature-plan` setzt die Session `roadmap.py approve` selbst und baut. Kevin behaelt seine Entscheidungen aus
+  `CLAUDE.md` §2 (Roadmap, sichtbares Verhalten, API-Vertraege, Datenmigrationen, Restrisiko, Release); eine offene
+  Frage aus seinem Bereich haelt nur die Task, die an ihr haengt (`[?]`). `roadmap.py approve` behaelt die Notiz der
+  Zeile. Regeln: `CLAUDE.md` §2, §4, §8, §11 und `tasks/README.md`.
+
 - **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook und der HTTP-Check des
   Monitorings (dieser fuer die erste URL und jeden Redirect-Hop) sowie die Hook-Helfer `http_get`/`http_post` des
   Servers loesen das Ziel einmal auf, pruefen alle Adressen und verbinden zu einer davon (der Reihe nach, bis eine
