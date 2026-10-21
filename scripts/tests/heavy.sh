@@ -201,30 +201,25 @@ preflight() {
 # The wrappers print their result; heavy.sh copies the line VERBATIM instead of
 # re-deriving it. A re-derived number is a second source of truth, and the point
 # of the report is that it can be checked against the run.
-# iter.sh pulls the box's .ah-out back into $AH_OUT_DIR, where the NEXT run
-# overwrites it. The report points at $OUT, so what it points at has to be there
-# — copied, not moved, so a following `iter.sh` on the same box still finds what
-# it expects.
-collect_artifacts() {
+# iter.sh pulls the box's .ah-out back into the pull directory (its $AH_OUT_DIR),
+# where the NEXT run overwrites it. The report points at $OUT, so what it points
+# at has to be there — copied, not moved, so a following `iter.sh` on the same box
+# still finds what it expects.
+collect_artifacts() {  # collect_artifacts <pull-dir>
   local d
   for d in screenshots logs junit; do
-    [ -d "$AH_OUT_DIR/$d" ] || continue
-    cp -r "$AH_OUT_DIR/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
+    [ -d "$1/$d" ] || continue
+    cp -r "$1/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
   done
 }
 
-# iter.sh tees the box's stdout into this file as well as showing it, so the
-# summary line survives a wrapper that died before printing one itself. The first
-# real run reported PASS from an exit code alone for want of it — the summary and
-# last-all.json were on disk the whole time, just not where this script looked.
-BOX_OUT="$AH_OUT_DIR/last.out.log"
-
-capture_summary() {  # capture_summary <logfile> <grep-pattern>
+capture_summary() {  # capture_summary <logfile> <grep-pattern> [<label>]
   local line
   line="$(grep -aE "$2" "$1" 2>/dev/null | tail -1)"
   [ -n "$line" ] || return 1
-  # Leading run.sh indentation stripped, the text itself untouched.
-  SUMMARY_LINES+=("$(printf '%s' "$line" | sed 's/^[[:space:]]*//')")
+  # Leading run.sh indentation stripped, the text itself untouched; a label, if
+  # any, goes in front as "[<label>] ".
+  SUMMARY_LINES+=("${3:+[$3] }$(printf '%s' "$line" | sed 's/^[[:space:]]*//')")
 }
 
 # Since 2b the wrappers DO speak 74 — vm.py answers infrastructure with it and
@@ -326,32 +321,47 @@ run_all() {
   fi
   local box; box="$(warm_get desktop)"; box="${box:-?}"
   note "warm box: $box"
+  # The pull directory: iter.sh pulls the box's .ah-out into its $AH_OUT_DIR.
+  local pull="$AH_OUT_DIR"
   # Drop the previous run's artifact FIRST. If the box dies before the pull, the
   # old file stays behind and its steps would be filed under today's date, commit
   # and tree hash — two green rows for steps that never ran. run.sh deletes its
   # own artifact for the same reason: missing evidence is honest, stale is not.
-  rm -f "$AH_OUT_DIR/last-all.json"
+  rm -f "$pull/last-all.json"
   # The same for the JUnit XMLs: the pull merges into this directory, so a file
   # from an earlier run or a local verify.sh would be copied and counted as today's.
-  rm -rf "$AH_OUT_DIR/junit"
+  rm -rf "$pull/junit"
   local t0=$SECONDS
   bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
-  local secs_layer=$((SECONDS - t0))
+  evaluate_all "$log" "$rc" "$box" "$pull" "$((SECONDS - t0))" "" desktop "$t_wall0"
+}
+
+# One finished `all` run, judged: its summary line, the artifact it pulled, its
+# red steps re-run on the box of its slot, and the layer row. The label (empty for
+# the single run) prefixes its summary line; <since> is the epoch second its lease
+# started, the stamp that tells this run's box capture from a leftover.
+evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <secs> <label> <slot> <since>
+  local log="$1" rc="$2" box="$3" pull="$4" secs_layer="$5" label="$6" slot="$7" since="$8"
+  # iter.sh tees the box's stdout into this file as well as showing it, so the
+  # summary line survives a wrapper that died before printing one itself. The first
+  # real run reported PASS from an exit code alone for want of it — the summary and
+  # last-all.json were on disk the whole time, just not where this script looked.
+  local box_out="$pull/last.out.log"
   tail -25 "$log" | mask_stream | sed 's/^/  /'
   # $log first — iter.sh passes the box's output through — then where it also
-  # captured it, but only if that file belongs to THIS run. $BOX_OUT is a fixed
+  # captured it, but only if that file belongs to THIS run. $box_out is a fixed
   # path each run overwrites: if the wrapper died before writing it, the previous
   # run's summary is still sitting there, and adopting it is the same lie as a
   # stale artifact. The artifact carries a tree hash to check; a log does not, so
   # its mtime is the only honest stamp.
-  if ! capture_summary "$log" 'run\.sh\[all\]:'; then
-    if [ -f "$BOX_OUT" ] && [ "$(stat -c %Y "$BOX_OUT" 2>/dev/null || echo 0)" -ge "$t_wall0" ]; then
-      capture_summary "$BOX_OUT" 'run\.sh\[all\]:' || note "no run.sh[all] summary line in $log or $BOX_OUT"
+  if ! capture_summary "$log" 'run\.sh\[all\]:' "$label"; then
+    if [ -f "$box_out" ] && [ "$(stat -c %Y "$box_out" 2>/dev/null || echo 0)" -ge "$since" ]; then
+      capture_summary "$box_out" 'run\.sh\[all\]:' "$label" || note "no run.sh[all] summary line in $log or $box_out"
     else
-      note "no summary line: $log has none and $BOX_OUT predates this run"
+      note "no summary line: $log has none and $box_out predates this run"
     fi
   fi
-  collect_artifacts
+  collect_artifacts "$pull"
 
   # INFRA first, and it ends the layer: a step that could not RUN says nothing
   # about the code, and re-running it three times would only spend VM time on an
@@ -370,7 +380,7 @@ run_all() {
   fi
 
   # Whatever the exit code says, the artifact is what the box actually did.
-  local art="$AH_OUT_DIR/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0 theirs
+  local art="$pull/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0 theirs
   # Both identities in the note, so the report carries the cause: a bare
   # "another tree" went unexplained for 16 runs (R-0603).
   if [ -f "$art" ] && ! theirs="$(artifact_is_ours "$art")"; then
@@ -413,7 +423,7 @@ run_all() {
         # Sets CLASS_VERDICT + STEP_DETAIL. NOT called through $(...): the notes
         # it appends and the detail it sets would die with the subshell, and its
         # progress output would end up inside the captured verdict.
-        classify_red_step "$name" "$log" "$box"
+        classify_red_step "$name" "$log" "$box" "$slot"
         verdict="$CLASS_VERDICT"
         case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
       fi
@@ -485,23 +495,28 @@ failing_spec() {  # failing_spec <step> <log>
 # on this: it reads steps-all.tsv from fd 3, since the second box's warm.sh once
 # drained the file through stdin and cut the report after the first red step
 # (R-0092).
-rerun_step() {  # rerun_step <step> <spec-or-empty> <logfile> -> rc
-  if [ -n "$2" ]; then
-    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
+rerun_step() {  # rerun_step <slot> <step> <spec-or-empty> <logfile> -> rc
+  # desktop is iter.sh's default slot and goes without --slot.
+  local slot_flag=()
+  [ "$1" = desktop ] || slot_flag=(--slot "$1")
+  if [ -n "$3" ]; then
+    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" "${slot_flag[@]+"${slot_flag[@]}"}" \
+      --cmd "AH_SPEC=$3 bash scripts/tests/$2.sh" >"$4" 2>&1 </dev/null
   else
-    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" all --strict --step "$1" >"$3" 2>&1 </dev/null
+    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" "${slot_flag[@]+"${slot_flag[@]}"}" \
+      all --strict --step "$2" >"$4" 2>&1 </dev/null
   fi
 }
 
-classify_red_step() {  # classify_red_step <step> <all-log> <box>; sets CLASS_VERDICT
-  local step="$1" log="$2" box="$3" spec i rc rlog marker first="" same=1 safe
+classify_red_step() {  # classify_red_step <step> <all-log> <box> <slot>; sets CLASS_VERDICT
+  local step="$1" log="$2" box="$3" slot="$4" spec i rc rlog marker first="" same=1 safe
   spec="$(failing_spec "$step" "$log")"
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
   CLASS_VERDICT="fail"; STEP_DETAIL=""
   note "red step '$step'${spec:+ (spec $spec)} — up to $RETRIES retries on $box"
   for i in $(seq 1 "$RETRIES"); do
     rlog="$OUT/retry-$safe-$i.log"
-    rc=0; rerun_step "$step" "$spec" "$rlog" || rc=$?
+    rc=0; rerun_step "$slot" "$step" "$spec" "$rlog" || rc=$?
     if [ "$rc" = 0 ]; then
       quarantine "$step"
       STEP_DETAIL="green on retry $i — quarantined"

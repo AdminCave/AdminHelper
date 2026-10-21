@@ -84,8 +84,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- iter_flags_test vm_wrappe
 Doku: `.claude/skills/vm/SKILL.md:18-19` (`iter.sh [--slot desktop|gui] <layer> … [--part …]`), `DEVELOPMENT.md` Absatz Schneller Loop.
 Abhängt von: T5
 
-### T8 — heavy.sh: die Auswertung einer all-Ebene als Funktion (Refactor)  [ ]
+### T8 — heavy.sh: die Auswertung einer all-Ebene als Funktion (Refactor)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d905076a 2026-10-21T15:43:52+02:00
+Review: approve (.ah-out/review/heavy-parallel/T8.verdict.json)
 Änderung: `run_all` (`:290-450`) wird zu Lease (`warm.sh`, `:298-324`), Lauf (`iter.sh`) und einer Funktion, die einen Lauf auswertet: Log, Exit-Code, Box, Zieh-Verzeichnis, Sekunden und ein Etikett (heute leer) rein; Summary-Zeile, Artefakte, Infra-Marker, Artefakt-Prüfung, `steps-all.tsv`, `strict-failed`, Klassifikation und Ebenen-Zeile wie heute (`:336-449`). `BOX_OUT` (`:220`) und der Pfad von `last-all.json` kommen aus dem Zieh-Verzeichnis. `rerun_step` (`:482-488`) bekommt den Slot (heute `desktop`, ohne `--slot` aufgerufen). Keine Verhaltensänderung: Report, Historie und Ausgabe bleiben Byte für Byte gleich. `heavy_test.sh` bleibt unverändert und ist vor und nach dem Diff grün; beide Summary-Zeilen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Refactor)
