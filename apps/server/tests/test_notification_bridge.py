@@ -66,12 +66,19 @@ class TestBridgeDelivers:
 
 class TestWiring:
     def test_run_event_invokes_bridge(self, db_session, monkeypatch):
+        from sqlalchemy.orm import sessionmaker
+
+        import app.core.database as database
         import app.core.events as events
 
         seen = {}
         monkeypatch.setattr(
             "app.modules.notifications.event_bridge.handle_event",
             lambda et, ed: seen.update(et=et, ed=ed),
+        )
+        # _run_event opens its own SessionLocal; bind it to the test connection.
+        monkeypatch.setattr(
+            database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
         )
         events._run_event("server.deleted", {"id": "s1", "name": "web01"})
         assert seen.get("et") == "server.deleted"
