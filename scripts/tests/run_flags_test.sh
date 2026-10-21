@@ -22,7 +22,7 @@ set -uo pipefail
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
 unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
-      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS AH_PART
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -772,6 +772,114 @@ done
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 AH_REQUIRED="" "$BARE/bash" "$RUN" integration --strict 2>&1); rc=$?
 grep -q "strict-failed: integration suite (SKIP)" <<<"$OUT" \
   && ok "an empty AH_REQUIRED is treated as unset" || bad "empty AH_REQUIRED: $(grep -m1 'required (strict)' <<<"$OUT")"
+
+# ══ --part: the two parts heavy.sh runs on two boxes at once (R-0603) ═════════
+echo "── --part ──"
+run_bare lint --part
+[ $rc -eq 2 ] && grep -q "needs gui or rest" <<<"$OUT" && ok "--part without a value -> exit 2" || bad "--part bare: rc=$rc $OUT"
+run_bare lint --part nope
+[ $rc -eq 2 ] && grep -q "unknown part: 'nope'" <<<"$OUT" && ! grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" \
+  && ok "--part nope -> exit 2 before any step" || bad "--part nope: rc=$rc $(grep -m1 -E 'part|run.sh\[' <<<"$OUT")"
+# The env form is checked the same way: want_step reads it just like the flag.
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_PART=nope "$BARE/bash" "$RUN" lint 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "unknown part: 'nope'" <<<"$OUT" && ok "AH_PART=nope -> exit 2" || bad "AH_PART=nope: rc=$rc"
+run_bare lint --bogus
+grep -qF -- "--part <gui|rest>" <<<"$OUT" && ok "the unknown-flag message names --part" \
+  || bad "unknown-flag message: $(grep -m1 'unknown flag' <<<"$OUT")"
+
+# The e2e layer on the bare PATH: no node, no docker, no display, so every step
+# SKIPs, and the artifact still lists exactly the steps of the run's part.
+artifact_steps() { sed -n 's/^    {"name": "\(.*\)", "result": .*/\1/p' "$1" | LC_ALL=C sort; }
+part_run() {  # part_run <out dir> <run.sh args…>
+  local d="$1"; shift
+  OUT=$(PATH="$BARE" AH_OUT_DIR="$d" AH_ALLOW_REAL=1 "$BARE/bash" "$RUN" e2e "$@" 2>&1); rc=$?
+}
+part_run "$WORK/part-none"
+NONE_STEPS=$(artifact_steps "$WORK/part-none/last-e2e.json")
+part_run "$WORK/part-gui" --part gui; GUI_OUT="$OUT"; GUI_RC=$rc
+GUI_STEPS=$(artifact_steps "$WORK/part-gui/last-e2e.json")
+part_run "$WORK/part-rest" --part rest; REST_OUT="$OUT"; REST_RC=$rc
+REST_STEPS=$(artifact_steps "$WORK/part-rest/last-e2e.json")
+[ "$GUI_STEPS" = "$(printf '%s\n' 'desktop GUI E2E' 'desktop-e2e smoke' | LC_ALL=C sort)" ] \
+  && ok "e2e --part gui: exactly the smoke test and the GUI guard row" \
+  || bad "part gui steps: $(tr '\n' '|' <<<"$GUI_STEPS")"
+[ "$REST_STEPS" = "web Playwright E2E" ] \
+  && ok "e2e --part rest: exactly web Playwright E2E" || bad "part rest steps: $(tr '\n' '|' <<<"$REST_STEPS")"
+[ -n "$NONE_STEPS" ] && [ "$(printf '%s\n%s\n' "$GUI_STEPS" "$REST_STEPS" | LC_ALL=C sort)" = "$NONE_STEPS" ] \
+  && ok "the two parts together are the layer without --part" \
+  || bad "union: gui+rest [$(printf '%s|%s' "$GUI_STEPS" "$REST_STEPS" | tr '\n' '|')] vs [$(tr '\n' '|' <<<"$NONE_STEPS")]"
+BOTH=$(LC_ALL=C comm -12 <(printf '%s\n' "$GUI_STEPS") <(printf '%s\n' "$REST_STEPS"))
+# Both parts non-empty and both runs through, or the two checks below would also
+# hold for a run.sh that rejects --part and runs nothing.
+[ -n "$GUI_STEPS" ] && [ -n "$REST_STEPS" ] && [ -z "$BOTH" ] \
+  && ok "no step lies in both parts" || bad "in both parts: $(tr '\n' '|' <<<"$BOTH")"
+[ "$GUI_RC" -eq 0 ] && [ "$REST_RC" -eq 0 ] \
+  && ! grep -q "web Playwright" <<<"$GUI_OUT" && ! grep -qE "desktop-e2e smoke|desktop GUI E2E" <<<"$REST_OUT" \
+  && ok "a step outside the part is not run, not even as a SKIP" \
+  || bad "rc gui/rest=$GUI_RC/$REST_RC; gui run: $(grep -m1 'web Playwright' <<<"$GUI_OUT"); rest run: $(grep -m1 -E 'desktop-e2e smoke|desktop GUI E2E' <<<"$REST_OUT")"
+grep -q '"part": "gui"' "$WORK/part-gui/last-e2e.json" && grep -q '"part": "rest"' "$WORK/part-rest/last-e2e.json" \
+  && grep -q '"part": ""' "$WORK/part-none/last-e2e.json" \
+  && ok "artifact: the part field (empty without --part)" \
+  || bad "part field: $(grep -h '"part"' "$WORK"/part-*/last-e2e.json | tr -d '\n')"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/part-env" AH_ALLOW_REAL=1 AH_PART=gui "$BARE/bash" "$RUN" e2e 2>&1)
+[ "$(artifact_steps "$WORK/part-env/last-e2e.json")" = "$GUI_STEPS" ] && grep -q '"part": "gui"' "$WORK/part-env/last-e2e.json" \
+  && ok "AH_PART is the env form of --part" || bad "AH_PART=gui: $(grep '"part"' "$WORK/part-env/last-e2e.json")"
+
+# A part with no step in the layer verifies nothing; under --strict that stays red.
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" "$BARE/bash" "$RUN" lint --part gui --strict 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "strict-failed: no step ran (.*part=gui)" <<<"$OUT" \
+  && ok "lint --part gui --strict: no step ran is a failure" \
+  || bad "lint --part gui --strict: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+
+# With docker and a display stubbed, layer_e2e reaches its suite loop, so the
+# GUI suites exist as --step targets. Every case below ends in the dry pass of
+# --step (unknown, ambiguous, or a step that SKIPs here: no node on this PATH);
+# the stubs log every call, so a suite that started anyway would leave a call
+# other than `docker info` behind.
+GUISTUB="$WORK/bin-guistub"; mkdir -p "$GUISTUB"
+cp -a "$BARE/." "$GUISTUB/"
+GUI_STUB_LOG="$WORK/guistub.log"; : > "$GUI_STUB_LOG"
+for t in docker xvfb-run WebKitWebDriver tauri-driver; do
+  rm -f "$GUISTUB/$t"
+  printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 0\n' "$t" "$GUI_STUB_LOG" > "$GUISTUB/$t"; chmod +x "$GUISTUB/$t"
+done
+gui_stub_run() {
+  OUT=$(PATH="$GUISTUB" AH_OUT_DIR="$WORK/out-guistub" AH_ALLOW_REAL=1 "$GUISTUB/bash" "$RUN" e2e "$@" 2>&1); rc=$?
+}
+SUITES=""; NSUITES=0
+for f in "$REPO_ROOT"/scripts/tests/desktop_e2e_*.sh; do
+  s=$(basename "$f" .sh); [ "$s" = desktop_e2e_skip_test ] && continue
+  SUITES="$SUITES $s"; NSUITES=$((NSUITES + 1))
+done
+# The counter-check first: in part gui every suite is a candidate. Without it the
+# "unknown step" below would also hold for stubs that never reach the loop.
+gui_stub_run --part gui --step desktop_e2e_
+missing=""
+for s in $SUITES; do grep -qx "  $s" <<<"$OUT" || missing="$missing $s"; done
+[ "$NSUITES" -gt 0 ] && [ $rc -eq 2 ] && grep -q "ambiguous step: 'desktop_e2e_' matches $NSUITES steps" <<<"$OUT" \
+  && [ -z "$missing" ] \
+  && ok "with the stubs all $NSUITES GUI suites are --step candidates of part gui" \
+  || bad "part gui candidates: rc=$rc missing:$missing $(grep -m1 -E 'ambiguous|unknown' <<<"$OUT")"
+missing=""
+for s in $SUITES; do
+  gui_stub_run --part rest --step "$s"
+  { [ $rc -eq 2 ] && grep -q "unknown step: '$s'" <<<"$OUT"; } || missing="$missing $s"
+done
+[ -n "$SUITES" ] && [ -z "$missing" ] \
+  && ok "--part rest --step <suite> is an unknown step for every GUI suite" || bad "part rest reaches:$missing"
+gui_stub_run --part gui --step "web Playwright"
+[ $rc -eq 2 ] && grep -q "unknown step: 'web Playwright' (no step of layer 'e2e', part 'gui'," <<<"$OUT" \
+  && ok "--part gui --step 'web Playwright' is an unknown step, and the message names the part" \
+  || bad "part gui, web Playwright: rc=$rc $(grep -m1 -E 'step' <<<"$OUT")"
+gui_stub_run --part rest --step "web Playwright"
+[ $rc -eq 0 ] && grep -q "SKIP  web Playwright E2E" <<<"$OUT" \
+  && ok "...while part rest reaches it" || bad "part rest, web Playwright: rc=$rc $(grep -m1 -E 'step|SKIP' <<<"$OUT")"
+# Into a variable first: under pipefail a `grep -v | grep -q` can take the
+# writer's SIGPIPE as its answer.
+others=$(grep -vx 'docker info' "$GUI_STUB_LOG")
+grep -qx 'docker info' "$GUI_STUB_LOG" && [ -z "$others" ] \
+  && ok "no suite started (the stubs saw nothing but docker info)" \
+  || bad "stub calls: $(tr '\n' '|' < "$GUI_STUB_LOG")"
 
 # ── run.sh: the shared lock for the heavy python steps (T2, T6) ─────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a

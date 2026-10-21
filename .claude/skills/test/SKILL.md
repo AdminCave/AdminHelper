@@ -172,7 +172,7 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
 `vm.py run <vmid> --sync -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/vm/bootstrap_linux.sh'` →
 `vm.py run <vmid> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `vm.py destroy <vmid>`.
 The full verb list, the exit codes and the rules are in the `/vm` skill.
-`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>]`
+`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>] [--part gui|rest]`
 (the `all` layer includes `upgrade_path_test.sh` — last published release → this checkout —
 and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Box rule:**
 with `AH_REQUIRED` unset, `run.sh` makes every step of a heavy layer required — a self-SKIP

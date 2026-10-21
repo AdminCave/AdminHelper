@@ -1199,9 +1199,11 @@ Suites auf einer ephemeren Proxmox-VM (das Token in `~/.config/adminhelper/pve.e
 Konfiguration im gitignoreten `.claude/settings.local.json`; siehe „VMs mit vm.py“).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
-[--only <keys…>] [--step <name>]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
+[--only <keys…>] [--step <name>] [--part gui|rest]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
 `--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
-Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
+Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Test,
+`--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil).
+`scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:

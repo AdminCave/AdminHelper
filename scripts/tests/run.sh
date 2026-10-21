@@ -25,6 +25,9 @@
 #     --strict         a SKIP of a required step is a FAILURE, not a pass
 #     --only <keys…>   restrict lint/unit to the named components (= AH_ONLY)
 #     --step <name>    run exactly one step (substring of its name, unambiguous)
+#     --part <gui|rest> run one part of the layer (= AH_PART): gui = the desktop
+#                      GUI suites and their smoke test, rest = every other step;
+#                      heavy.sh runs the two parts of `all` on two boxes at once
 #
 # The heavy layers (integration|e2e|all) refuse to run unless AH_ALLOW_REAL=1,
 # so they never fire by accident on a dev box. The /test skill sets it.
@@ -63,7 +66,10 @@ while [ $# -gt 0 ]; do
       shift; [ $# -gt 0 ] || { echo "--step needs a step name"; exit 2; }
       case "$1" in --*) echo "--step needs a step name, got the flag '$1'"; exit 2 ;; esac
       AH_STEP="$1"; shift ;;
-    --*) echo "unknown flag: $1 (use --strict, --only <keys…>, --step <name>)"; exit 2 ;;
+    --part)
+      shift; [ $# -gt 0 ] || { echo "--part needs gui or rest"; exit 2; }
+      AH_PART="$1"; shift ;;
+    --*) echo "unknown flag: $1 (use --strict, --only <keys…>, --step <name>, --part <gui|rest>)"; exit 2 ;;
     *)
       [ -z "$LAYER" ] || { echo "unexpected argument: $1 (layer is already '$LAYER')"; exit 2; }
       LAYER="$1"; shift ;;
@@ -73,6 +79,13 @@ LAYER="${LAYER:-quick}"
 AH_STRICT="${AH_STRICT:-0}"
 AH_ONLY="${AH_ONLY:-}"
 AH_STEP="${AH_STEP:-}"
+AH_PART="${AH_PART:-}"
+# The flag and the env form alike, before a step has run: an unknown part would
+# filter every step away and leave a run that verified nothing.
+case "$AH_PART" in
+  ""|gui|rest) ;;
+  *) echo "unknown part: '$AH_PART' (use gui or rest)"; exit 2 ;;
+esac
 export AH_ONLY AH_STRICT
 
 # Steps that MUST really run under --strict. Ids (not display names) so a host can
@@ -208,10 +221,26 @@ _skip() {
 }
 record_step() { STEP_RESULTS+=("$1|$2|$3"); }
 
-# want_step <name> -> 0 if this step should run at all. With --step it also
-# records the name, so the dry pass can reject an unknown or ambiguous one
-# BEFORE a single suite has run.
+# gui_part_step <name> -> 0 if the step belongs to part gui (--part): the desktop
+# GUI suites under the names layer_e2e runs them by, their guard row and the
+# smoke test, which needs the same Tauri build and display and narrows a red
+# down before them. Part rest is the negation, not a second list: every step, a
+# future one too, lies in exactly one part — with two lists a new step could sit
+# in neither and silently drop out of both runs heavy.sh drives in parallel.
+gui_part_step() {
+  case "$1" in "desktop-e2e smoke"|"desktop GUI E2E"|desktop_e2e_*) return 0 ;; esac
+  return 1
+}
+
+# want_step <name> -> 0 if this step should run at all. A step outside --part is
+# not this run's: it neither runs nor shows up as a SKIP or in the artifact, and
+# --step only searches the part. With --step it also records the name, so the
+# dry pass can reject an unknown or ambiguous one BEFORE a single suite has run.
 want_step() {
+  case "$AH_PART" in
+    gui)  gui_part_step "$1" || return 1 ;;
+    rest) gui_part_step "$1" && return 1 ;;
+  esac
   [ -n "$AH_STEP" ] || return 0
   case "$1" in *"$AH_STEP"*) STEP_NAMES+=("$1"); return 0 ;; esac
   return 1
@@ -500,6 +529,7 @@ write_artifact() {
     printf '  "strict": %s,\n'     "$([ "$AH_STRICT" = 1 ] && echo true || echo false)"
     printf '  "only": %s,\n'       "$(json_str "$AH_ONLY")"
     printf '  "step": %s,\n'       "$(json_str "$AH_STEP")"
+    printf '  "part": %s,\n'       "$(json_str "$AH_PART")"
     printf '  "required": %s,\n'   "$(json_str "$AH_REQUIRED")"
     printf '  "head": %s,\n'       "$(json_str "$(evidence_head)")"
     printf '  "tree_hash": %s,\n'  "$(json_str "$(evidence_tree_hash)")"
@@ -961,7 +991,7 @@ run_layer() {
 if [ -n "$AH_STEP" ]; then
   STEP_PROBE=1; run_layer; STEP_PROBE=0
   case "${#STEP_NAMES[@]}" in
-    0) echo "unknown step: '$AH_STEP' (no step of layer '$LAYER' matches — note that"
+    0) echo "unknown step: '$AH_STEP' (no step of layer '$LAYER'${AH_PART:+, part '$AH_PART',} matches — note that"
        echo "  steps behind an unmet precondition, e.g. a missing docker, are not reached)"
        exit 2 ;;
     1) ;;
@@ -989,9 +1019,9 @@ echo "────────────────────────�
 # The same lie one level up: no step failed, so a run in which NOTHING executed
 # would report green. Under --strict that is a failure — an empty run verifies
 # nothing, whatever narrowed it (a typo in --only, an over-trimmed AH_REQUIRED,
-# a box without the toolchain).
+# a box without the toolchain, a --part with no step in this layer).
 if [ "$AH_STRICT" = "1" ] && [ "$PASS" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
-  echo "  strict-failed: no step ran (layer=$LAYER, only=${AH_ONLY:-none}, step=${AH_STEP:-none})"
+  echo "  strict-failed: no step ran (layer=$LAYER, only=${AH_ONLY:-none}, step=${AH_STEP:-none}, part=${AH_PART:-none})"
   STRICT_FAILED+=("no step ran"); FAIL=$((FAIL+1)); FAILED_STEPS+=("no step ran")
 fi
 
