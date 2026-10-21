@@ -78,7 +78,8 @@
             <li><code>adminhelper.provisioning</code> – server provisioning</li>
             <li><code>adminhelper.servers</code> / <code>adminhelper.ansible</code> – server and Ansible actions</li>
             <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI actions and the FRP container</li>
-            <li><code>app.modules.hooks.scheduler</code> – hook executions incl. subprocess exit codes, in the log of the <code>scheduler</code> service</li>
+            <li><code>app.core.events</code> – failed event hooks with name, event and error text, in the log of the <code>server</code> service</li>
+            <li><code>app.modules.hooks.scheduler</code> – failed schedule hooks with name and error text, in the log of the <code>scheduler</code> service</li>
           </ul>
           <p>The monitoring container logs under the <code>monitor.*</code> prefix (e.g. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Both containers write plain-text lines to stderr, not JSON.</p>
 

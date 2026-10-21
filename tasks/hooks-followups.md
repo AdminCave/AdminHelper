@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Hooks: gescheiterte Läufe im Log, Fehlertexte der HTTP-Helfer, Env-Pins, Web-Typ des Laufs — Task-Ledger
-Status: aktiv · Branch: feature/hooks-followups · Review: pro Task
+Status: bereit · Branch: feature/hooks-followups · Review: pro Task
 Spec: docs/features/hooks-followups.md (Roadmap R-0558, R-0587, R-0562; T1 gehört zum Paket, Kevin 2026-10-21)
 Heavy: none — keine Route, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; die Antworten von `/api/hooks/{id}/run` und `/api/hooks/trigger` behalten ihre Felder (nur der `error`-Text einer Ablehnung durch den SSRF-Schutz wird kürzer), dazu Log-Zeilen in Event-Dispatch und Scheduler, Tests und ein Web-Typ; keine schwere Suite fährt Hooks (`scripts/tests/` startet keinen Hook, `scripts/tests/stack_pytest.sh` kennt keine Hook-Tests, die Web-E2E mockt `/api/hooks`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -79,8 +79,10 @@ Dedup-Key: ref:web:types.ts:hook-run-result
 HEAD: 6f05b316
 Semantik: `docs/developer/hooks.html:112` — „Sobald der Lauf endet, zeigt ein Dialog das Ergebnis als JSON: <code>success</code>, <code>result</code>, <code>logs</code> und bei einem Fehler <code>error</code>. Eigene Felder für stdout, stderr oder <code>exit_code</code> gibt es nicht“
 
-### T5 — Doku: Log gescheiterter Hooks so beschreiben, wie T2 loggt (R-0558)  [ ]
+### T5 — Doku: Log gescheiterter Hooks so beschreiben, wie T2 loggt (R-0558)  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @907c03fd 2026-10-21T13:36:05+02:00
+Review: approve (.ah-out/review/hooks-followups/T5.verdict.json)
 Änderung: DE und EN, gleiche Stellen; Code-Stellen nach T2 greppen. (1) `docs/developer/hooks.html:99`, erster Satz: Scheitert ein Event- oder Schedule-Hook (`success: false`, etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schreibt der Server eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text (höchstens 1000 Zeichen, bei längerem Text dessen Ende): Event-Hooks unter `app.core.events` im Log des `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein Webhook-Trigger und ein Lauf über `/run` melden den Fehler in der Antwort (`success: false`, `error`). Der Rest des Absatzes und `:100` bleiben. (2) `docs/admin/betrieb.html:122` / `docs/en/admin/operations.html:81`: „`app.modules.hooks.scheduler` – gescheiterte Schedule-Hooks mit Namen und Fehlertext, im Log des `scheduler`-Dienstes“; davor ein neuer Punkt „`app.core.events` – gescheiterte Event-Hooks mit Namen, Event und Fehlertext, im Log des `server`-Dienstes“. Der builder fährt zusätzlich `python3 scripts/dev/doc-smoke.py --paths --env --strict` (Exit 0, Ergebnis in den Commit-Body).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG (den Eintrag trägt T2)
