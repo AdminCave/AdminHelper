@@ -65,25 +65,31 @@ for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer sr
     fi
 done
 systemctl daemon-reload
-# Timer aktivieren: laeuft ohne Config harmlos (Sync/Push skippen still).
-# $1 == 1: frische Installation, $1 == 2: Upgrade — beide sollen enablen.
-systemctl enable --now adminhelper-agent.timer >/dev/null 2>&1 || true
-# frpc.service nur reaktivieren, wenn bereits provisioniert.
-if [ -f /etc/frp/frpc.toml ]; then
-    systemctl enable --now frpc.service >/dev/null 2>&1 || true
-fi
-echo "adminhelper-agent installiert. Timer ist aktiv (laeuft alle 5 Minuten)."
-echo "Einrichtung (Server + Monitor + FRP): sudo adminhelper-agent provision --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
-echo "Nur Monitoring (alternativ):          sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"
 
 %preun
-# $1 == 0: Uninstall (stop + disable), $1 == 1: Upgrade (nur stop)
-systemctl stop adminhelper-agent.timer 2>/dev/null || true
-systemctl stop frpc.service 2>/dev/null || true
+# $1 == 0: Uninstall (stop + disable). $1 == 1: Upgrade, nichts tun: dieses Skript
+# laeuft dann nach dem post des neuen Pakets, dessen posttrans neu startet.
 if [ "$1" -eq 0 ]; then
+    systemctl stop adminhelper-agent.timer 2>/dev/null || true
+    systemctl stop frpc.service 2>/dev/null || true
     systemctl disable adminhelper-agent.timer 2>/dev/null || true
     systemctl disable frpc.service 2>/dev/null || true
 fi
 
 %postun
 systemctl daemon-reload
+
+%posttrans
+# Laeuft bei Installation und Upgrade zuletzt, beim Upgrade nach preun und postun
+# des alten Pakets; aeltere Pakete stoppen dort Timer und frpc auch beim Upgrade.
+# Timer aktivieren: laeuft ohne Config harmlos (Sync/Push skippen still).
+systemctl enable --now adminhelper-agent.timer >/dev/null 2>&1 || true
+# frpc.service nur reaktivieren, wenn bereits provisioniert; restart, damit frpc
+# auf dem neuen Binary laeuft.
+if [ -f /etc/frp/frpc.toml ]; then
+    systemctl enable frpc.service >/dev/null 2>&1 || true
+    systemctl restart frpc.service >/dev/null 2>&1 || true
+fi
+echo "adminhelper-agent installiert. Timer ist aktiv (laeuft alle 5 Minuten)."
+echo "Einrichtung (Server + Monitor + FRP): sudo adminhelper-agent provision --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
+echo "Nur Monitoring (alternativ):          sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"

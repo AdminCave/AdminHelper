@@ -181,7 +181,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td><code>flaky</code></td><td>innerhalb von drei Wiederholungen auf derselben Box gr&uuml;n (<code>AH_NO_SYNC=1</code>, Desktop-Suiten spec-genau)</td><td>Quarant&auml;ne-Zeile in <code>tasks/private/seen.md</code>; der Lauf f&auml;llt deswegen nicht durch.</td></tr>
               <tr><td><code>unbestaetigt</code></td><td>3&times; rot, aber gr&uuml;n auf einer frischen zweiten VM &ndash; oder die Gegenprobe war nicht m&ouml;glich: kein PASS-Commit in <code>history.csv</code>, <code>--no-second-vm</code>, Worktree nicht anlegbar, zweite Box nicht leasbar, Basis-Commit nicht auscheckbar</td><td>Kevin sichtet; nie eine REG-Zeile.</td></tr>
               <tr><td><code>extern</code></td><td>rot auf der zweiten VM <em>und</em> auf dem letzten PASS-Commit</td><td>Umgebung, Abh&auml;ngigkeit, Netz &ndash; nicht der Code seit dem letzten PASS.</td></tr>
-              <tr><td><code>reg</code></td><td>rot auf der zweiten VM, gr&uuml;n auf dem letzten PASS-Commit</td><td>Roadmap-Zeile (Klasse REG, Status <code>neu</code>) plus Kurz-Ledger <code>tasks/reg-&lt;datum&gt;-&lt;schritt&gt;.md</code>. Die Freigabe bleibt Kevins Haken.</td></tr>
+              <tr><td><code>reg</code></td><td>rot auf der zweiten VM, gr&uuml;n auf dem letzten PASS-Commit</td><td>Roadmap-Zeile (Klasse REG, Status <code>neu</code>) plus Kurz-Ledger <code>tasks/reg-&lt;datum&gt;-&lt;schritt&gt;.md</code>. Annehmen bleibt Kevins Haken (<code>/roadmap triage</code>); den Plan gibt danach die Session frei.</td></tr>
               <tr><td><code>fail</code></td><td>alle drei Wiederholungen rot, aber jedes Mal <em>anders</em>; jede rote Capstone-Assertion einer Rolle, deren Setup <em>nicht</em> abgebrochen wurde; die Ebenen-Zeile, wenn Schritte nach den Wiederholungen rot bleiben</td><td>Reproduzierbar kaputt, aber ohne die stabile Signatur, die eine Regressions-Behauptung braucht &ndash; keine Zweit-VM.</td></tr>
             </tbody>
           </table>
@@ -342,7 +342,9 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <code>scripts/vm/bootstrap_linux.sh</code>; <code>scripts/dev/toolchain-lockstep.sh</code> h&auml;lt
           Version und SHA-256 an beiden Stellen gleich. Heute stehen dort die dreizehn &Auml;nderungen der
           engeren Grenzen f&uuml;r Ports an <code>POST /api/frp/server-config</code> und
-          <code>PUT /api/frp/server-config/{config_id}</code> (R-0411, Kevin 2026-10-17).</p>
+          <code>PUT /api/frp/server-config/{config_id}</code> (R-0411, Kevin 2026-10-17) und die vier der
+          engeren Grenzen von <code>visitor_port</code> an <code>POST /api/frp/tunnels</code> und
+          <code>PUT /api/frp/tunnels/{tunnel_id}</code> (R-0533, Kevin 2026-10-21).</p>
           <p><code>oasdiff</code> kommt als <strong>Release-Tarball
           v1.32.0 mit gepinnter SHA-256</strong>, nicht per <code>go install</code>: jede Version ab v1.24.0
           verlangt <code>go 1.26</code>, und die Workflows laufen mit <code>GOTOOLCHAIN=local</code> &ndash; ein

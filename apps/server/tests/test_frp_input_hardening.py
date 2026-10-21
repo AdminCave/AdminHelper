@@ -18,13 +18,14 @@ from app.modules.frp.config_generator import (
     generate_frps_toml,
     generate_visitor_toml,
 )
-from app.modules.frp.models import FrpServerConfig
+from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import (
     FrpServerConfigCreate,
     FrpServerConfigUpdate,
     FrpTunnelCreate,
     FrpTunnelUpdate,
 )
+from app.modules.servers.models import Server
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
 
@@ -250,14 +251,12 @@ def _build(model, **over):
 
 
 # The integer fields of the server config are narrower than their column since
-# T23; the port-range and max-ports tests below hold them.
+# T23, visitor_port since R-0533; the port-range and max-ports tests below hold them.
 @pytest.mark.parametrize(
     "model,field",
     [
         (FrpTunnelCreate, "local_port"),
-        (FrpTunnelCreate, "visitor_port"),
         (FrpTunnelUpdate, "local_port"),
-        (FrpTunnelUpdate, "visitor_port"),
     ],
 )
 def test_integer_body_fields_hold_at_both_edges(model, field):
@@ -441,6 +440,106 @@ def test_server_config_routes_answer_422_for_negative_max_ports(
     )
     assert r.status_code == 422, r.text
     assert _stored(db_session, cid).max_ports_per_client == 8
+
+
+# R-0533: visitor_port is the bindPort of the tunnel's visitor in the visitor TOML,
+# and the desktop's allow-list refuses the whole TOML for a bindPort outside
+# 1-65535 (apps/desktop/src-tauri/src/frpc.rs). A value outside fit the INTEGER
+# column, so it was stored; 0 was taken as "none" and a free port assigned.
+# null and a missing field still mean "the server assigns a free port".
+VISITOR_PORTS_OUT_OF_RANGE = (0, -1, 65536, 70000)
+
+
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_visitor_port_holds_the_port_range(model):
+    for ok in (1, 65535, None):
+        assert _build(model, visitor_port=ok).visitor_port == ok
+
+    for bad in VISITOR_PORTS_OUT_OF_RANGE:
+        with pytest.raises(ValidationError, match="visitor_port"):
+            _build(model, visitor_port=bad)
+
+
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_visitor_port_publishes_the_port_range(model):
+    prop = model.model_json_schema()["properties"]["visitor_port"]
+    integers = [b for b in prop["anyOf"] if b.get("type") == "integer"]
+    assert [(b["minimum"], b["maximum"]) for b in integers] == [(1, 65535)], prop
+    assert any(b.get("type") == "null" for b in prop["anyOf"]), prop
+
+
+def _seed_stcp_tunnel(db):
+    db.add(
+        FrpServerConfig(
+            id="cfg-1",
+            name="Default",
+            server_addr="frps.example.net",
+            bind_port=7000,
+            auth_token="secret-frps-auth",
+        )
+    )
+    db.add(Server(id="srv-a", name="serverA", hostname="a.example.test"))
+    db.add(
+        FrpTunnel(
+            id="t-a",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="a-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+            visitor_port=6000,
+            enabled=True,
+        )
+    )
+    db.commit()
+
+
+def _stored_tunnels(db):
+    db.expire_all()
+    return {t.id: t.visitor_port for t in db.query(FrpTunnel).all()}
+
+
+def test_tunnel_create_answers_422_outside_the_visitor_port_range(
+    test_client, db_session, admin_user
+):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    body = {
+        "server_id": "srv-a",
+        "frp_config_id": "cfg-1",
+        "name": "neu",
+        "tunnel_type": "stcp",
+        "protocol": "ssh",
+        "local_port": 22,
+    }
+    for bad in VISITOR_PORTS_OUT_OF_RANGE:
+        r = test_client.post("/api/frp/tunnels", json={**body, "visitor_port": bad}, headers=h)
+        assert r.status_code == 422, (bad, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", "visitor_port"], r.text
+    assert _stored_tunnels(db_session) == {"t-a": 6000}
+
+    # null still lets the server assign a free port.
+    r = test_client.post("/api/frp/tunnels", json={**body, "visitor_port": None}, headers=h)
+    assert r.status_code == 201, r.text
+    assigned = _stored_tunnels(db_session)[r.json()["id"]]
+    assert assigned is not None and 1 <= assigned <= 65535 and assigned != 6000
+
+
+def test_tunnel_update_holds_the_visitor_port_range(test_client, db_session, admin_user):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    for bad in VISITOR_PORTS_OUT_OF_RANGE:
+        r = test_client.put("/api/frp/tunnels/t-a", json={"visitor_port": bad}, headers=h)
+        assert r.status_code == 422, (bad, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", "visitor_port"], r.text
+        assert _stored_tunnels(db_session) == {"t-a": 6000}
+
+    for edge in (1, 65535):
+        r = test_client.put("/api/frp/tunnels/t-a", json={"visitor_port": edge}, headers=h)
+        assert r.status_code == 200, (edge, r.text)
+        assert _stored_tunnels(db_session) == {"t-a": edge}
 
 
 # Rows written before T23 never met these bounds; there is no data migration, so

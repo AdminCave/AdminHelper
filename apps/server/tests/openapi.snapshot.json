@@ -1404,8 +1404,8 @@
           "visitor_port": {
             "anyOf": [
               {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -1726,8 +1726,8 @@
           "visitor_port": {
             "anyOf": [
               {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {

@@ -390,3 +390,98 @@ class TestTunnelsWithoutSecret:
         toml = gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)["toml"]
         assert toml.count("[[visitors]]") == 1
         assert "b-ssh" in toml and "a-ssh" not in toml
+
+
+class TestTunnelsWithoutVisitorPort:
+    """R-0533: a stcp tunnel whose stored visitor_port is no port from 1 to 65535 (rows from
+    before the schema bounded it, NULL from migration f1a2b3c4d5e6) is left out of every visitor
+    config, and a user whose visible stcp tunnels all have one is answered like one without
+    tunnels. The agent's frpc config keeps the tunnel's proxy."""
+
+    _assign = staticmethod(TestTunnelsWithoutSecret._assign)
+    _zip_names = staticmethod(TestTunnelsWithoutSecret._zip_names)
+
+    @staticmethod
+    def _set_port(db, tid: str, port: int | None) -> None:
+        db.get(FrpTunnel, tid).visitor_port = port
+        db.commit()
+
+    @pytest.mark.parametrize("port", [None, 0, 70000])
+    def test_visitor_bundle_refuses(self, db_session, normal_user, two_servers_with_tunnels, port):
+        self._set_port(db_session, "t-a", port)
+        self._assign(db_session, normal_user, "srv-a")
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+
+    @pytest.mark.parametrize("port", [None, 0, 70000])
+    def test_visitor_toml_refuses(self, db_session, normal_user, two_servers_with_tunnels, port):
+        self._set_port(db_session, "t-a", port)
+        self._assign(db_session, normal_user, "srv-a")
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_toml(config_id=None, user_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+
+    def test_one_usable_tunnel_is_enough(self, db_session, admin_user, two_servers_with_tunnels):
+        self._set_port(db_session, "t-a", 70000)
+        response = gen_visitor_toml(
+            config_id=None, user_id=None, db=db_session, current_user=admin_user
+        )
+        body = response.body.decode("utf-8")
+        assert body.count("[[visitors]]") == 1
+        assert "b-ssh" in body and "a-ssh" not in body
+
+    def test_bulk_zip_writes_no_visitor_without_one(
+        self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels
+    ):
+        import io
+        import zipfile
+
+        self._set_port(db_session, "t-a", 70000)
+        self._assign(db_session, normal_user, "srv-a")
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        assert f"visitors/{normal_user.username}.toml" not in zf.namelist(), zf.namelist()
+        # The agent side is unchanged: serverA keeps the tunnel's proxy.
+        frpc = zf.read("clients/serverA/frpc.toml").decode()
+        assert '"a-ssh"' in frpc, frpc
+
+    def test_bulk_zip_shared_visitor_keeps_the_usable_tunnel(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        import io
+        import zipfile
+
+        # No user has servers assigned, so the shared visitor.toml path runs.
+        self._set_port(db_session, "t-a", None)
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        visitor = zipfile.ZipFile(io.BytesIO(r.content)).read("visitor.toml").decode()
+        assert visitor.count("[[visitors]]") == 1, visitor
+        assert "b-ssh" in visitor and "a-ssh" not in visitor, visitor
+
+    def test_bulk_zip_without_any_usable_visitor_writes_none(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        self._set_port(db_session, "t-a", 0)
+        self._set_port(db_session, "t-b", 70000)
+        names = self._zip_names(test_client)
+        assert "visitor.toml" not in names, names
+        assert "clients/serverA/frpc.toml" in names and "clients/serverB/frpc.toml" in names, names
+
+    def test_bulk_zip_warns_once_per_tunnel(
+        self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels, caplog
+    ):
+        # Filtered once for all users: one warning per tunnel, not one per user.
+        self._set_port(db_session, "t-a", 70000)
+        self._assign(db_session, normal_user, "srv-a", "srv-b")
+        self._assign(db_session, admin_user, "srv-a", "srv-b")
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            self._zip_names(test_client)
+        hits = [
+            r
+            for r in caplog.records
+            if "a-ssh" in r.getMessage() and "visitor_port" in r.getMessage()
+        ]
+        assert len(hits) == 1, [r.getMessage() for r in hits]

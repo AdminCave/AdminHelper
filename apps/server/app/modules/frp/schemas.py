@@ -134,10 +134,12 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
 
 # --- FRP Server Config ---
 
-# bindPort, vhostHTTPSPort and webServer.port of the generated frps.toml: a port,
-# so narrower than the IntColumn of the column it lands in (R-0411). The bounds
-# sit inside Annotated so Optional[Port] keeps them on its integer branch. The
-# generator guards rows from before this bound with the same range.
+# bindPort, vhostHTTPSPort and webServer.port of the generated frps.toml (R-0411)
+# and the bindPort of a visitor in the visitor TOML (visitor_port, R-0533; the
+# desktop's allow-list refuses the whole visitor TOML for any other): a port, so
+# narrower than the IntColumn of the column it lands in. The bounds sit inside
+# Annotated so Optional[Port] keeps them on its integer branch. The generator
+# guards server-config rows from before R-0411 with the same range.
 PORT_MIN, PORT_MAX = 1, 65535
 Port = Annotated[int, Field(ge=PORT_MIN, le=PORT_MAX)]
 # maxPortsPerClient: frps enforces it only while it is > 0, so a negative value
@@ -243,7 +245,7 @@ class FrpTunnelCreate(RequestModel):
     local_port: IntColumn
     secret_key: Optional[str] = None  # auto-generated for STCP if empty
     custom_domains: Optional[str] = None  # HTTPS only
-    visitor_port: Optional[IntColumn] = None  # STCP only
+    visitor_port: Optional[Port] = None  # STCP only
     connection_id: Optional[str] = None
     enabled: bool = True
     extra_config: Optional[dict] = None
@@ -267,7 +269,7 @@ class FrpTunnelUpdate(RequestModel):
     local_port: Optional[IntColumn] = None
     secret_key: Optional[str] = None
     custom_domains: Optional[str] = None
-    visitor_port: Optional[IntColumn] = None
+    visitor_port: Optional[Port] = None
     connection_id: Optional[str] = None
     enabled: Optional[bool] = None
     extra_config: Optional[dict] = None

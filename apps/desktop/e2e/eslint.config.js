@@ -27,6 +27,19 @@ export default [
         expect: 'readonly',
       },
     },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.name='done'] > ObjectExpression > Property[key.name='error']",
+          message:
+            'Hand a rejection to done() as { rejected }, not { error }: webdriver takes a script ' +
+            'result with an `error` key for a failed command (isSuccessfulResponse), retries it ' +
+            "and throws a WebDriverError, so the text never reaches the spec's own check.",
+        },
+      ],
+    },
   },
   {
     // The multiremote sessions of wdio.workspaces.conf.js, globals only in its specs.

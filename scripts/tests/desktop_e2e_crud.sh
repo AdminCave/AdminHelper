@@ -23,7 +23,7 @@ FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon
+e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 
@@ -60,8 +60,7 @@ echo '{"mode": "server", "allowSelfSignedCerts": false}' > "$SETTINGS_JSON"
 
 echo "[e2e-crud] running the trust-dialog spec under xvfb..."
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/enroll-trust-dialog.live.js
 ' && ok "trust-dialog spec passed" || bad "trust-dialog spec failed"
@@ -82,8 +81,7 @@ echo "[e2e-crud] running the CRUD specs under xvfb..."
 # so it leads; connection + tunnel run while only the seeded server exists; the
 # server spec (which adds/removes its own server) runs last.
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/enroll-form.live.js \
         --spec test/specs/connection-crud.live.js \
@@ -97,8 +95,7 @@ dbus-run-session -- bash -c '
 # "standard" and listed nothing, so the note on the migration is still due.
 echo "[e2e-crud] running the picker spec in the launcher under xvfb..."
 AH_E2E_WORKSPACE='' dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/workspace-picker.live.js
 ' && ok "picker spec passed" || bad "picker spec failed"

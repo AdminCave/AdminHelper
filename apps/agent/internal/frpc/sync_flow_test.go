@@ -9,12 +9,14 @@ import (
 	"errors"
 	"log"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -776,6 +778,148 @@ func TestSyncStuckFrpcFailsWhenRenewingTheAdminAPIFails(t *testing.T) {
 	}
 	if got := readFile(t, config.FrpHashFile()); got != oldHash {
 		t.Errorf("hash file = %q, want the old %q", got, oldHash)
+	}
+}
+
+// stubEnsureDataDir has securing a directory fail with err for the rest of the test, and returns
+// the directories the sync asked to secure.
+func stubEnsureDataDir(t *testing.T, err error) *[]string {
+	t.Helper()
+	var dirs []string
+	orig := ensureDataDir
+	ensureDataDir = func(dir string) error { dirs = append(dirs, dir); return err }
+	t.Cleanup(func() { ensureDataDir = orig })
+	return &dirs
+}
+
+// frpFiles returns the name and the content of every entry of the FRP directory.
+func frpFiles(t *testing.T) map[string]string {
+	t.Helper()
+	entries, err := os.ReadDir(config.FrpDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := make(map[string]string, len(entries))
+	for _, e := range entries {
+		files[e.Name()] = readFile(t, filepath.Join(config.FrpDir(), e.Name()))
+	}
+	return files
+}
+
+// A sync changes frpc's files only in a directory it secured in the same run. When the FRP
+// directory cannot be secured, the sync fails with the directory in the error and writes,
+// removes, starts and stops nothing: for a new config with a tunnel, for a null hash and a
+// server text without a tunnel while frpc.toml is in place, and for a hung frpc on a changed
+// hash, where the sync would renew the admin API (admin.conf) first.
+func TestSyncChangesNothingWhenTheFrpDirCannotBeSecured(t *testing.T) {
+	empty := []byte("serverAddr = \"1.2.3.4\"\n")
+	firstRun := func(*testing.T, *seamCalls) {}
+	ranWithATunnel := func(t *testing.T, calls *seamCalls) {
+		writeFrpcState(t)
+		calls.active = true
+	}
+	hung := func(t *testing.T, calls *seamCalls) {
+		serveToml(t, tunnelToml)
+		if err := Sync(); err != nil {
+			t.Fatalf("Sync with the first tunnel: %v", err)
+		}
+		calls.active = false
+	}
+	cases := map[string]struct {
+		before   func(t *testing.T, calls *seamCalls)
+		hashJSON string
+		toml     []byte
+	}{
+		"new config with a tunnel":                  {firstRun, `{"hash":"` + hashConfig(tunnelToml) + `"}`, tunnelToml},
+		"null hash, frpc.toml in place":             {ranWithATunnel, `{"hash": null}`, nil},
+		"text without a tunnel, frpc.toml in place": {ranWithATunnel, `{"hash":"` + hashConfig(empty) + `"}`, empty},
+		"hung frpc, changed hash":                   {hung, `{"hash":"` + hashConfig(twoTunnelsToml) + `"}`, twoTunnelsToml},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://unused.example")
+			tc.before(t, calls)
+			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
+			pointSyncAt(t, srv.URL)
+			files, actions := frpFiles(t), *calls
+			notSecured := errors.New("an entry in the data root cannot be removed")
+			secured := stubEnsureDataDir(t, notSecured)
+
+			err := Sync()
+			if !errors.Is(err, notSecured) || !strings.Contains(err.Error(), config.FrpDir()) {
+				t.Fatalf("Sync = %v, want the failure to secure %s, naming it", err, config.FrpDir())
+			}
+			if !slices.Equal(*secured, []string{config.FrpDir()}) {
+				t.Errorf("secured %q, want the FRP directory %s once", *secured, config.FrpDir())
+			}
+			if got := frpFiles(t); !maps.Equal(got, files) {
+				t.Errorf("the FRP directory holds %q, want it unchanged %q", got, files)
+			}
+			if *calls != actions {
+				t.Errorf("frpc service state %+v, want it unchanged %+v (no start, stop or reload)", *calls, actions)
+			}
+		})
+	}
+}
+
+// A run without a change secures nothing, so that the common run does not walk the data root
+// (on Windows with its tree): the hash is the same and frpc runs on a frpc.toml with a tunnel,
+// or the server has no FRP config and neither frpc.toml nor the hash is left.
+func TestSyncSecuresNothingWithoutAChange(t *testing.T) {
+	t.Run("same hash, frpc runs on a tunnel", func(t *testing.T) {
+		setupSyncTest(t, "https://unused.example")
+		serveToml(t, tunnelToml)
+		if err := Sync(); err != nil {
+			t.Fatalf("Sync with the first tunnel: %v", err)
+		}
+		secured := stubEnsureDataDir(t, errors.New("not secured"))
+
+		if err := Sync(); err != nil {
+			t.Fatalf("Sync with the same hash: %v", err)
+		}
+		if len(*secured) != 0 {
+			t.Errorf("secured %q, want nothing", *secured)
+		}
+	})
+	t.Run("null hash, nothing left", func(t *testing.T) {
+		srv, _ := hashServer(t, `{"hash": null}`, nil)
+		setupSyncTest(t, srv.URL)
+		secured := stubEnsureDataDir(t, errors.New("not secured"))
+
+		if err := Sync(); err != nil {
+			t.Fatalf("Sync with a null hash: %v", err)
+		}
+		if len(*secured) != 0 {
+			t.Errorf("secured %q, want nothing", *secured)
+		}
+	})
+}
+
+// A sync that changes frpc's files secures the FRP directory with EnsureDataDir: on Linux it
+// ends 0700, as at the provisioning, also when it was wider before.
+func TestSyncLeavesTheFrpDirOwnerOnly(t *testing.T) {
+	setupSyncTest(t, "https://unused.example")
+	serveToml(t, tunnelToml)
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(config.FrpDir(), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with the first tunnel: %v", err)
+	}
+	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+		t.Errorf("frpc.toml = %q, want %q", got, want)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(config.FrpDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o700 {
+			t.Errorf("%s has mode %v, want 0700", config.FrpDir(), got)
+		}
 	}
 }
 

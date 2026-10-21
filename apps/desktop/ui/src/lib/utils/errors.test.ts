@@ -17,7 +17,7 @@ const CODES = [
   'ERR_CERT_REVOKED',
 ];
 
-const CHAIN = 'error sending request for url (https://srv.example/api/x): client error (Connect): ';
+const CHAIN = 'error sending request: client error (Connect): ';
 
 describe('errMsg', () => {
   it.each(CODES)('drops %s deep in a reqwest chain and keeps the prose', (code) => {

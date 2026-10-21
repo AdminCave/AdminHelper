@@ -75,9 +75,28 @@ for spec in "${SPECS[@]}"; do
   idx=$((idx + 1))
   # xvfb + a fresh D-Bus session + an empty gnome-keyring so the OS-keyring path
   # works headless; wdio.conf.js onPrepare builds the debug Tauri binary.
+  # The keyring starts as e2e_keyring_start in lib_e2e_stack.sh starts it, which this
+  # script does not source; the why is there (R-0566): a control directory of its own,
+  # removed with the session shell, and no spec without an owner of the secret service.
   if dbus-run-session -- bash -c '
-        eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
+        dir=$(mktemp -d "${TMPDIR:-/tmp}/ah-keyring.XXXXXX") || exit 1
+        trap "rm -rf -- $(printf %q "$dir")" EXIT
+        eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets \
+            --control-directory="$dir" 2>"$dir/stderr")"
         export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+        end=$((SECONDS + 5))
+        while :; do
+          reply=$(dbus-send --session --print-reply --reply-timeout=1000 \
+              --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+              org.freedesktop.DBus.NameHasOwner string:org.freedesktop.secrets 2>/dev/null)
+          [[ $reply == *"boolean true"* ]] && break
+          [ "$SECONDS" -lt "$end" ] || {
+            echo "keyring: no unlocked secret service on this session bus" >&2
+            cat "$dir/stderr" >&2
+            exit 1
+          }
+          sleep 0.1
+        done
         cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec "test/specs/'"$spec"'"
      '; then
     echo "DESKTOP_SPEC_OK $spec"

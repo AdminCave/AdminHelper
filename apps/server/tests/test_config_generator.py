@@ -5,6 +5,7 @@
 """Tests for the FRP config generator: frps.toml, frpc.toml, visitor.toml."""
 
 import json
+import tomllib
 from types import SimpleNamespace
 
 from app.modules.frp.config_generator import (
@@ -277,3 +278,53 @@ class TestStcpWithoutSecret:
         assert toml == generate_visitor_toml(_make_config(), [tunnels[2]])
         warned = " ".join(r.getMessage() for r in caplog.records)
         assert "no-secret" in warned and "empty-secret" in warned
+
+
+class TestStcpWithoutVisitorPort:
+    # R-0533: a stored visitor_port outside 1-65535 (rows from before the schema bounded it) or
+    # none at all (migration f1a2b3c4d5e6) is left out of the visitor TOML and logged, instead of
+    # a bindPort the desktop refuses the whole TOML for, or `bindPort = None`, which is no TOML.
+    # The agent's frpc config keeps the tunnel's proxy.
+    BAD_PORTS = (None, 0, -1, 65536, 70000)
+
+    def _tunnels(self):
+        bad = [_make_tunnel(name=f"bad-{i}", visitor_port=p) for i, p in enumerate(self.BAD_PORTS)]
+        return [*bad, _make_tunnel(name="ok", visitor_port=6001)]
+
+    def test_visitor_skips_port_outside_range(self, caplog):
+        import logging
+
+        tunnels = self._tunnels()
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            toml = generate_visitor_toml(_make_config(), tunnels)
+        assert toml.count("[[visitors]]") == 1
+        assert toml == generate_visitor_toml(_make_config(), [tunnels[-1]])
+        visitors = tomllib.loads(toml)["visitors"]
+        assert [(v["name"], v["bindPort"]) for v in visitors] == [("ok-visitor", 6001)]
+        warned = [r.getMessage() for r in caplog.records]
+        assert len(warned) == len(self.BAD_PORTS), warned
+        for tunnel in tunnels[:-1]:
+            assert any(
+                tunnel.name in m and f"visitor_port {tunnel.visitor_port!r}" in m for m in warned
+            ), (tunnel.name, warned)
+
+    def test_visitor_keeps_the_edge_ports(self):
+        tunnels = [
+            _make_tunnel(name="high", visitor_port=65535),
+            _make_tunnel(name="low", visitor_port=1),
+        ]
+        visitors = tomllib.loads(generate_visitor_toml(_make_config(), tunnels))["visitors"]
+        assert [(v["name"], v["bindPort"]) for v in visitors] == [
+            ("low-visitor", 1),
+            ("high-visitor", 65535),
+        ]
+
+    def test_frpc_keeps_every_proxy(self, caplog):
+        import logging
+
+        tunnels = self._tunnels()
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+        proxies = tomllib.loads(toml)["proxies"]
+        assert sorted(p["name"] for p in proxies) == sorted(t.name for t in tunnels)
+        assert not caplog.records, [r.getMessage() for r in caplog.records]

@@ -30,6 +30,9 @@ var (
 	ownsAdminPort  = frpcOwnsAdminPort
 )
 
+// ensureDataDir secures a directory of the agent's data; a seam, so that a test can have it fail.
+var ensureDataDir = config.EnsureDataDir
+
 // localPreamble goes in front of the server's frpc.toml, followed by the admin API's head
 // (adminAPI.head). frp defaults loginFailExit to true: frpc then exits when frps is unreachable
 // at its first login, and systemd restarts it every 5 s. The head stands before every table, so
@@ -74,6 +77,12 @@ func Sync() error {
 	}
 	remoteHash, err := parseConfigHash(hashBody)
 	if errors.Is(err, errNoFrpConfig) {
+		if frpcGone() {
+			return nil
+		}
+		if err := secureFrpDir(); err != nil {
+			return err
+		}
 		return syncWithoutFrpConfig()
 	}
 	if err != nil {
@@ -111,6 +120,9 @@ func Sync() error {
 	if got := hashConfig(newConfig); got != remoteHash {
 		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
 	}
+	if err := secureFrpDir(); err != nil {
+		return err
+	}
 	// Without a tunnel applyConfig stops frpc, which needs no admin API.
 	if stuck && hasProxies(newConfig) {
 		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
@@ -120,6 +132,18 @@ func Sync() error {
 		}
 	}
 	return applyConfig(newConfig, true)
+}
+
+// secureFrpDir secures the FRP directory, on Windows the data root first, before Sync changes
+// a file in it. Sync writes and removes there by path, so it does that only in a directory it
+// secured in the same run: the Windows service keeps running when its start could not secure
+// the data root. Sync does not call it on a run without a change, which so walks no tree.
+func secureFrpDir() error {
+	dir := config.FrpDir()
+	if err := ensureDataDir(dir); err != nil {
+		return fmt.Errorf("secure the FRP directory %s: %w; frpc and its files stay as they are", dir, err)
+	}
+	return nil
 }
 
 // frpcStuck reports whether frpc should run but does not. It should run while frpc.toml is in
@@ -294,12 +318,10 @@ func checkServerHead(serverToml []byte) error {
 }
 
 // syncWithoutFrpConfig stops frpc and removes frpc.toml and the hash, on a null hash and for a
-// provisioning without an FRP bundle. Neither file left means a former run already stopped it;
-// returning early keeps systemctl out of every timer run.
+// provisioning without an FRP bundle. Neither file left (frpcGone) means a former run already
+// stopped it; returning early keeps systemctl out of every timer run.
 func syncWithoutFrpConfig() error {
-	_, confErr := os.Stat(config.FrpConfigFile())
-	_, hashErr := os.Stat(config.FrpHashFile())
-	if os.IsNotExist(confErr) && os.IsNotExist(hashErr) {
+	if frpcGone() {
 		return nil
 	}
 	if err := stopFrpc(); err != nil {
@@ -310,6 +332,14 @@ func syncWithoutFrpConfig() error {
 	}
 	logger.Infof("No FRP config or tunnel for this host on the server, frpc stopped and disabled.")
 	return nil
+}
+
+// frpcGone reports whether neither frpc.toml nor the hash is left: without an FRP config on the
+// server, a run then has nothing to change.
+func frpcGone() bool {
+	_, confErr := os.Stat(config.FrpConfigFile())
+	_, hashErr := os.Stat(config.FrpHashFile())
+	return os.IsNotExist(confErr) && os.IsNotExist(hashErr)
 }
 
 // stopFrpc stops and disables frpc, then removes frpc.toml: it holds the frps token. The
