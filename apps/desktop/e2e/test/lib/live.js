@@ -294,6 +294,15 @@ export async function clickInModal(selector) {
   await jsClick(await $(`${MODAL} ${selector}`));
 }
 
+// The text of `el` as the DOM holds it, for a name the UI cuts off with `overflow: hidden;
+// text-overflow: ellipsis; white-space: nowrap` (the names in the picker). On the lane VM,
+// WebKitWebDriver's getText() gave "" for such a `.picker-name` while the DOM and the
+// screenshot showed "Standard" (R-0431). Whether that is a WebKit bug or the "rendered text"
+// of the WebDriver spec is not verified.
+export async function textContentOf(el) {
+  return browser.execute((node) => node.textContent.trim(), el);
+}
+
 // Text of every element matching `selector`.
 export async function texts(selector) {
   const out = [];
@@ -338,7 +347,8 @@ export async function openRowByName(rowSel, nameSel, name) {
   );
 }
 
-// Click the item (e.g. a server card) whose name matches.
+// Click the item (e.g. a server card) whose name matches. The name is read through
+// textContentOf: the picker cuts its names off with an ellipsis.
 export async function clickItemByName(itemSel, nameSel, name) {
   // Same staleness guard as openRowByName: re-query per pass so a re-render between
   // the list load and the click doesn't throw on a stale handle (4.97).
@@ -346,7 +356,7 @@ export async function clickItemByName(itemSel, nameSel, name) {
     async () => {
       try {
         for (const item of await $$(itemSel)) {
-          if ((await item.$(nameSel).getText()) === name) {
+          if ((await textContentOf(await item.$(nameSel))) === name) {
             await item.click();
             return true;
           }

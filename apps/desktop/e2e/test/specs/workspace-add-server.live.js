@@ -11,7 +11,7 @@
 // it this session: the spec only makes it.
 
 import fs from 'node:fs';
-import { MODAL, jsClick } from '../lib/live.js';
+import { MODAL, jsClick, textContentOf } from '../lib/live.js';
 
 const SERVER_URL_B = process.env.AH_E2E_SERVER_URL_B;
 const WS_B_FILE = process.env.AH_E2E_WS_B_FILE;
@@ -93,7 +93,7 @@ describe('Launcher: a server workspace for the second installation', () => {
       async () => {
         for (const item of await $$('.picker-item')) {
           try {
-            if ((await item.$('.picker-name').getText()) === NAME) {
+            if ((await textContentOf(await item.$('.picker-name'))) === NAME) {
               id = await item.getAttribute('data-id');
               return true;
             }

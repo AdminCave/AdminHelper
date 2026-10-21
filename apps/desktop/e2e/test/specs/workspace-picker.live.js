@@ -14,7 +14,7 @@
 // tests in Rust prove that; desktop_e2e_workspaces.sh starts its workspaces with --workspace.
 
 import fs from 'node:fs';
-import { MODAL, clickItemByName, jsClick, texts } from '../lib/live.js';
+import { MODAL, clickItemByName, jsClick, textContentOf } from '../lib/live.js';
 
 const NAME = 'E2E Lokal';
 const RENAMED = 'E2E Lokal umbenannt';
@@ -97,7 +97,7 @@ async function idOf(name) {
     async () => {
       for (const item of await $$('.picker-item')) {
         try {
-          if ((await item.$('.picker-name').getText()) === name) {
+          if ((await textContentOf(await item.$('.picker-name'))) === name) {
             id = await item.getAttribute('data-id');
             return true;
           }
@@ -141,7 +141,7 @@ describe('Launcher: the picker replaces the switch of the app mode', () => {
     await $('.picker-list').waitForExist({ timeout: 10000 });
     const standard = await $('.picker-item[data-id="standard"]');
     await standard.waitForExist({ timeout: 15000 });
-    expect(await standard.$('.picker-name').getText()).toBe('Standard');
+    expect(await textContentOf(await standard.$('.picker-name'))).toBe('Standard');
     expect(translations('settings.mode.server')).toContain(await kindShown('standard'));
     expect((await $$('[data-msg="migrated"]')).length).toBe(1);
 
@@ -203,7 +203,9 @@ describe('Launcher: the picker replaces the switch of the app mode', () => {
     await save(RENAMED);
 
     expect(await idOf(RENAMED)).toBe(made);
-    expect(await texts('.picker-name')).not.toContain(NAME);
+    const names = [];
+    for (const el of await $$('.picker-name')) names.push(await textContentOf(el));
+    expect(names).not.toContain(NAME);
     expect(await listed(made)).toMatchObject({ name: RENAMED, kind: 'local', color: COLOR });
   });
 
