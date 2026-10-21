@@ -272,8 +272,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.
 Doku: keine (Admin-Doku mit T34)
 Abhängt von: T34
 
-### T48 — Abweisung fremder Ports in den Commands live belegen  [ ]
+### T48 — Abweisung fremder Ports in den Commands live belegen  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/two-installations.workspaces.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @74332a8e 2026-10-21T05:15:55+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T48.verdict.json)
 Änderung: Aus der Branch-Prüfung (tester, wichtig): Die Abweisung eines Loopback-Ziels mit dem Port eines anderen Workspace sitzt in `open_connection`, `open_connection_stored` (vor dem Laden des Passworts) und `resolve_connection` (`commands.rs`); kein Test deckt diese Aufrufe, nur `tunnel::reject_foreign_port` und den Helfer. Der Multiremote-Spec ruft, sobald `bindingA` und `bindingB` bekannt sind, in wsA `resolve_connection` und `open_connection` für `{kind:'ssh', host:'127.0.0.1', port: bindingB.localPort}` (Ausweichport von wsB, für den wsA keinen Visitor hat) und erwartet je die Meldung `port <n> on this machine belongs to the tunnel of another workspace` (wörtlich aus `tunnel.rs`); `open_connection_stored` ebenso, falls ohne gespeichertes Passwort aufrufbar. Nicht `bindingA.localPort` in wsB (das ist der Server-Port des wsB-Visitors und wird korrekt aufgelöst). Kein Aufruf darf eine Verbindung zum SSH-Ziel aufbauen (Zählung am Ziel in `desktop_e2e_workspaces.sh`). Beweis: erneuter Lauf von `desktop_e2e_workspaces` auf der Lane-VM.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)

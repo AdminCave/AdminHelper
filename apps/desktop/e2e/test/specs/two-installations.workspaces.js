@@ -11,9 +11,10 @@
 // A workspace runs in one process: a second start of Standard ends on its lock. wsB holds no
 // device identity while wsA registers. Then each window registers this device at its stack,
 // signs in and starts its tunnel: both frpc run side by side, the visitor at the same server
-// port on different local ports, and each window opens its SSH connection through its own
-// tunnel. That each target saw only the connection of its own window, the orchestrator checks
-// at the targets.
+// port on different local ports. wsA refuses a target at the local port of wsB's visitor in
+// each command that resolves or opens one, before any connection, and each window opens its
+// SSH connection through its own tunnel. That each target saw only the connection of its own
+// window, the orchestrator checks at the targets.
 
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -75,11 +76,11 @@ function windowOf(label, session, key) {
   };
 }
 
-// A Tauri command in the window `w`; a rejection fails the spec with its message. It comes
-// back as { rejected }: webdriver takes a script result with an `error` key for a failed
-// command (logout.live.js).
-async function invoke(w, cmd, args = {}) {
-  const out = await w.session.executeAsync(
+// A Tauri command in the window `w`, as { value } or { rejected } with the message of its
+// rejection: webdriver takes a script result with an `error` key for a failed command
+// (logout.live.js).
+function call(w, cmd, args) {
+  return w.session.executeAsync(
     (c, a, done) => {
       window.__TAURI__.core
         .invoke(c, a)
@@ -89,8 +90,32 @@ async function invoke(w, cmd, args = {}) {
     cmd,
     args,
   );
+}
+
+// A Tauri command in the window `w`; a rejection fails the spec with its message.
+async function invoke(w, cmd, args = {}) {
+  const out = await call(w, cmd, args);
   if (out.rejected !== undefined) throw new Error(`${w.label}: ${cmd} failed: ${out.rejected}`);
   return out.value;
+}
+
+// The message a Tauri command in the window `w` is rejected with; one that succeeds fails the
+// spec.
+async function refusal(w, cmd, args) {
+  const out = await call(w, cmd, args);
+  if (out.rejected === undefined) {
+    throw new Error(`${w.label}: ${cmd} was not refused: ${JSON.stringify(out.value)}`);
+  }
+  return out.rejected;
+}
+
+// The refusal of a target at `port` of another workspace's tunnel (reject_foreign_port in
+// tunnel.rs).
+function foreignPort(port) {
+  return (
+    `port ${port} on this machine belongs to the tunnel of another workspace; ` +
+    'start the tunnel of this workspace to connect'
+  );
 }
 
 // Registers the device of the window at its stack: device setup, not the flow under test, so
@@ -286,6 +311,28 @@ describe('Two installations side by side: Standard at stack A, Kunde B at stack 
         timeoutMsg: `${w.label}: nothing listens on the local port ${binding.localPort}`,
       });
     }
+  });
+
+  it("wsA refuses a target at the local port of wsB's visitor, before it connects", async () => {
+    const bindingB = await bindingOf(B);
+    // wsB's frpc listens there: a connection from wsA would reach the SSH target of stack B as
+    // a second client, which the orchestrator counts. Each command refuses before it connects.
+    expect(held(bindingB.localPort)).toBe(true);
+    // None of the listed connections, so no mapping resolves it; the port is no server port of
+    // a visitor of wsA either, so the target stays at 127.0.0.1:<port>.
+    const connection = {
+      id: 'e2e-foreign-port',
+      name: 'foreign-port',
+      kind: 'ssh',
+      host: '127.0.0.1',
+      port: bindingB.localPort,
+    };
+    const tunnels = await invoke(A, 'fetch_tunnels');
+    const refused = foreignPort(bindingB.localPort);
+    expect(await refusal(A, 'resolve_connection', { connection, tunnels })).toBe(refused);
+    expect(await refusal(A, 'open_connection', { connection })).toBe(refused);
+    // No password is stored for it: the refusal comes before one loads.
+    expect(await refusal(A, 'open_connection_stored', { connection })).toBe(refused);
   });
 
   it('each window opens its SSH connection through its own tunnel', async () => {
