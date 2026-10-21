@@ -28,8 +28,10 @@ Semantik: docs/admin/ansible.html:67 — „schreibt ihn in eine temporäre Date
 Dedup-Key: bug:desktop:ansible.rs:temp-cleanup
 HEAD: 82e4a7b8
 
-### T2 — Verwaiste Temp-Dateien von write_json_atomic abräumen (R-0553)  [ ]
+### T2 — Verwaiste Temp-Dateien von write_json_atomic abräumen (R-0553)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c13e2c4e 2026-10-21T10:10:07+02:00
+Review: approve (.ah-out/review/desktop-fixes-2/T2.verdict.json)
 Änderung: `write_json_atomic` (`storage.rs:112`) löscht vor dem Schreiben im Verzeichnis der Zieldatei die Temp-Dateien früherer Schreibvorgänge derselben Datei (`<Dateiname>.<Ziffern>.tmp`, die Form von `:118-120`), deren Änderungszeit mindestens eine feste Frist zurückliegt (Konstante, Vorschlag 10 Minuten; ein Schreiben dauert Millisekunden bis Sekunden). Eine jüngere (ein anderer Prozess schreibt gerade), eine mit unlesbarer oder künftiger Änderungszeit und jede andere Datei bleiben; ein Fehler beim Löschen (unter Windows etwa eine geöffnete Datei) wird ignoriert. Muster wie `sweep_stale_rdp_files` (`connection/rdp.rs:672`), aber im Zweifel behalten statt löschen. Die festen Namen `prefs.json.tmp` und `workspaces.json.tmp` räumt weiter die Migration (`migration.rs:162-167`). Test (Name enthält `write_json_atomic`, zuerst rot): Zieldatei `prefs.json` in einem Scratch-Verzeichnis, daneben `prefs.json.4242.tmp` mit einer Änderungszeit eine Stunde zurück (`File::set_modified`), `prefs.json.4243.tmp` frisch, `other.json.4242.tmp` alt und `prefs.json.tmp` alt → nach `write_json_atomic` ist nur `prefs.json.4242.tmp` weg, die Zieldatei hat den neuen Inhalt. `write_json_atomic_replaces_the_file_whole_and_leaves_no_temp` (`:1491`) bleibt grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- write_json_atomic
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:114`, nach „Temp-Datei mit pid, `sync_all`, Umbenennen“: die Temp-Datei eines abgebrochenen Schreibens räumt das nächste Schreiben derselben Datei ab, sobald sie älter als die Frist ist) · CHANGELOG.md (Fixed)

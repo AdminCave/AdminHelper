@@ -465,6 +465,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: ein abgebrochenes Schreiben laesst keine Temp-Datei dauerhaft im Datenordner liegen (R-0553):** Endete
+  der Desktop, waehrend er eine Datei auf einmal ersetzte (`prefs.json`, `workspaces.json`, eine `workspace.json`,
+  `secrets.json`), blieb deren Temp-Datei `<Dateiname>.<pid>.tmp` im Datenordner der App liegen. Jetzt loescht das
+  naechste Schreiben derselben Datei sie, sobald sie mindestens zehn Minuten alt ist; eine juengere kann einem anderen
+  Prozess gehoeren, der gerade schreibt, und bleibt. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: ein Ansible-Lauf laesst Playbook und Inventory nicht mehr im Temp-Verzeichnis liegen (R-0549):** Jeder
   Lauf hinterliess beide Dateien im Temp-Verzeichnis des Systems. Unter Linux loescht das Terminal sie jetzt, sobald
   `ansible-playbook` endet, gleich mit welchem Ergebnis und auch dann, wenn das Terminal waehrend des Laufs geschlossen
