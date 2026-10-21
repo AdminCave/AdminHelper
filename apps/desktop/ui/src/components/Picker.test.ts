@@ -209,7 +209,7 @@ describe('Picker: the list', () => {
     expect(again.msg('migrated')).toBeNull();
   });
 
-  it('names the settings.json set aside as unreadable, beside the note on the migration, and keeps it', async () => {
+  it('names the settings.json set aside as unreadable, below the short note on the migration, and keeps both', async () => {
     const setAside = 'settings.json.unreadable-20261021T080000Z';
     const standard = info({ kind: 'local', url: null, host: null });
     const p = await mount({
@@ -233,18 +233,32 @@ describe('Picker: the list', () => {
     expect(said).not.toMatch(/rename|server URL/i);
     // The note of its own leaves the one on the migration as the live specs count it.
     expect(p.container.querySelectorAll('[data-msg="migrated"]')).toHaveLength(1);
+    // That one says only what holds: the migration built "Standard" alone, local, from the
+    // defaults (migration.rs plan), and took no settings and no other mode.
+    const migrated = p.msg('migrated');
+    expect(migrated?.textContent?.trim()).toBe(tNow('workspace.picker.migratedShort'));
+    expect(migrated?.textContent).toContain('Each workspace opens in a window of its own');
+    expect(migrated?.textContent).not.toMatch(/settings|connections|another mode/i);
+    expect(
+      [...p.container.querySelectorAll<HTMLElement>('.picker-note')].map((el) => el.dataset.msg),
+    ).toEqual(['migrated', 'unreadable-settings']);
 
     // Rust gives the name in the first listing only (launcher.rs list).
     h.listWorkspaces.mockResolvedValue(listing([{ ...standard, name: 'Standard 2' }], 'standard'));
     await fireEvent.focus(window);
     await p.findByRole('option', { name: /Standard 2/ });
     expect(p.msg('unreadable-settings')?.textContent).toContain(setAside);
+    expect(p.msg('migrated')?.textContent?.trim()).toBe(tNow('workspace.picker.migratedShort'));
     cleanup();
 
     for (const unreadableSettings of [undefined, null]) {
+      // The store outlives the picker: empty it, so the mount waits for this listing.
+      h.listWorkspaces.mockResolvedValue(listing([]));
+      await refresh();
       const again = await mount({ ...listing([standard], 'standard', true), unreadableSettings });
-      // The store still holds the listing before: wait for this one.
-      await waitFor(() => expect(again.msg('migrated')).not.toBeNull());
+      await waitFor(() =>
+        expect(again.msg('migrated')?.textContent?.trim()).toBe(tNow('workspace.picker.migrated')),
+      );
       expect(again.msg('unreadable-settings')).toBeNull();
       cleanup();
     }

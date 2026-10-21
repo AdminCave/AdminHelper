@@ -158,8 +158,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="picker">
   <h1 class="picker-title">{$t('workspace.picker.title')}</h1>
 
+  <!-- Settings set aside: the migration built from the defaults, "Standard" alone and local
+       (migration.rs plan), so the full note would be wrong about the settings and the other modes. -->
   {#if migrated}
-    <p class="picker-note" role="status" data-msg="migrated">{$t('workspace.picker.migrated')}</p>
+    <p class="picker-note" role="status" data-msg="migrated">
+      {$t(unreadableSettings ? 'workspace.picker.migratedShort' : 'workspace.picker.migrated')}
+    </p>
   {/if}
   {#if unreadableSettings}
     <p class="picker-note" role="status" data-msg="unreadable-settings">
