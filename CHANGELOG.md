@@ -476,6 +476,41 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (`/api/frp/generate/visitor-toml`, `visitor-bundle`, `bulk-zip`) und schreibt eine Warnung ins Server-Log. Sind alle sichtbaren STCP-Tunnel eines Nutzers so, antworten `visitor-toml` und
   `visitor-bundle` mit `404`. Die frpc-Konfiguration der Agents behaelt den Tunnel. Doku: FRP-Tunnel und API-Referenz
   (DE+EN).
+- **Agent: nach `dnf upgrade` laufen Timer und frpc weiter (R-0527):** Beim Upgrade des RPM stoppte das `%preun` des
+  alten Pakets `adminhelper-agent.timer` und `frpc.service`, nachdem das `%post` des neuen sie gestartet hatte; beide
+  blieben aktiviert, liefen aber bis zum naechsten Neustart nicht. Jetzt stoppt und deaktiviert `%preun` sie nur bei
+  der Deinstallation, und das neue Paket aktiviert sie erst am Ende der Transaktion (`%posttrans`): den Timer immer,
+  `frpc.service` nur mit `/etc/frp/frpc.toml`, und frpc startet dabei neu, damit es auf dem neuen Binary laeuft. Das
+  gilt auch fuer ein Upgrade von einem bisherigen Paket. Das deb war nicht betroffen.
+- **Agent: `provision` loest den Einmal-Token erst nach dem Sichern des Datenverzeichnisses ein (R-0557):** Bisher
+  loeste `provision` den Token ein, bevor es das Datenverzeichnis zum ersten Mal sicherte; liess sich das Verzeichnis
+  danach nicht sichern, brach es ab, und der Token war verbraucht. Jetzt sichert `provision` zuerst die Datenwurzel
+  (Windows: `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/adminhelper` mit `0700`, auch ohne Monitor);
+  scheitert das, bricht es mit dem Verzeichnis im Fehler ab, und der Token bleibt gueltig. Doku: Entwickler-Doku
+  Agent (DE+EN).
+- **Agent: der FRP-Sync aendert Dateien nur in einem gesicherten Verzeichnis (R-0556):** Bisher schrieb und loeschte
+  der Sync (`run`, `frpc sync`) `frpc.toml`, `admin.conf` und die Hash-Dateien im FRP-Verzeichnis, ohne es im selben
+  Lauf zu sichern; der Windows-Dienst laeuft auch weiter, wenn er die Datenwurzel beim Start nicht sichern konnte.
+  Jetzt sichert der Sync vor seiner ersten Aenderung, Schreiben wie Loeschen, das FRP-Verzeichnis (Windows: zuerst
+  `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/frp` mit `0700`); scheitert das, bricht er mit dem Verzeichnis
+  im Fehler ab und schreibt, loescht, startet und stoppt nichts. Ein Lauf ohne Aenderung sichert nichts. Doku:
+  Entwickler-Doku Agent (DE+EN).
+- **Desktop: „Passwort merken“ im Server-Workspace nur fuer Verbindungen, die der Server fuehrt (R-0551):** Wer im
+  Editor eine neue RDP-Verbindung vor dem Speichern verband und das Passwort merken liess, legte es im
+  Schluesselbund unter einer `id` des Clients ab, die der Server beim Speichern durch eine eigene ersetzt; der Eintrag
+  gehoerte danach zu keiner Verbindung. Im Server-Workspace bietet der Passwort-Dialog das Merken jetzt nur fuer eine
+  Verbindung an, die schon in der Liste steht; fuer eine noch nicht gespeicherte gilt das getippte Passwort nur fuer
+  diesen Start. Lokal und Sync bleiben unveraendert. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein abgebrochenes Schreiben laesst keine Temp-Datei dauerhaft im Datenordner liegen (R-0553):** Endete
+  der Desktop, waehrend er eine Datei auf einmal ersetzte (`prefs.json`, `workspaces.json`, eine `workspace.json`,
+  `secrets.json`), blieb deren Temp-Datei `<Dateiname>.<pid>.tmp` im Datenordner der App liegen. Jetzt loescht das
+  naechste Schreiben derselben Datei sie, sobald sie mindestens zehn Minuten alt ist; eine juengere kann einem anderen
+  Prozess gehoeren, der gerade schreibt, und bleibt. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein Ansible-Lauf laesst Playbook und Inventory nicht mehr im Temp-Verzeichnis liegen (R-0549):** Jeder
+  Lauf hinterliess beide Dateien im Temp-Verzeichnis des Systems. Unter Linux loescht das Terminal sie jetzt, sobald
+  `ansible-playbook` endet, gleich mit welchem Ergebnis und auch dann, wenn das Terminal waehrend des Laufs geschlossen
+  wird; scheitert der Start (kein `ansible-playbook`, kein Terminal), loescht der Desktop sie sofort. Unter Windows
+  bleiben sie nach einem gestarteten Lauf liegen. Doku: Admin-Doku Ansible, Desktop fuer Entwickler (DE+EN).
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
@@ -1090,6 +1125,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
 
 ### Changed
+
+- **Agent: der Windows-Dienst meldet ein nicht gesichertes Log-Verzeichnis im Ereignisprotokoll (R-0556):** Laesst
+  sich das Log-Verzeichnis nicht sichern, schreibt der Agent wie bisher nur auf stdout und keine `agent.log`; unter
+  dem Dienststeuerungs-Manager sah das niemand. Laeuft er als Windows-Dienst, schreibt er dann beim Start genau eine
+  Warnung ins Windows-Ereignisprotokoll (Windows-Protokolle → Anwendung, Quelle `AdminHelper-Agent`, Ereignis-ID 1)
+  mit dem Verzeichnis, dem Grund und den Folgen: bis zum Neustart des Dienstes nur stdout, und der FRP-Sync aendert
+  nichts, solange sich das Datenverzeichnis nicht sichern laesst. Ein Aufruf von Hand bleibt ohne Hinweis, Linux ist
+  unveraendert. `service install` registriert die Quelle, damit der Eintrag eine Beschreibung hat, und
+  `service uninstall` entfernt sie wieder; scheitert das, gibt der Befehl eine Warnung aus. Bei einem Dienst, den eine
+  fruehere Version eingerichtet hat, fehlt die Beschreibung, der Text steht dann in den Ereignisdaten. Doku:
+  Agent-Deployment und Entwickler-Doku Agent (DE+EN).
+- **Plaene gibt die Session selbst frei (Entwickler-Werkzeuge, Kevin 2026-10-21):** Nach dem Plan-Commit von
+  `/feature-plan` setzt die Session `roadmap.py approve` selbst und baut. Kevin behaelt seine Entscheidungen aus
+  `CLAUDE.md` §2 (Roadmap, sichtbares Verhalten, API-Vertraege, Datenmigrationen, Restrisiko, Release); eine offene
+  Frage aus seinem Bereich haelt nur die Task, die an ihr haengt (`[?]`). `roadmap.py approve` behaelt die Notiz der
+  Zeile. Regeln: `CLAUDE.md` §2, §4, §8, §11 und `tasks/README.md`.
 
 - **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook und der HTTP-Check des
   Monitorings (dieser fuer die erste URL und jeden Redirect-Hop) sowie die Hook-Helfer `http_get`/`http_post` des

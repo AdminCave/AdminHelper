@@ -21,14 +21,15 @@ import { adminDevices, login, jsClick, SERVER_URL } from '../lib/live.js';
 const TOKEN = process.env.AH_SETTINGS_ENROLL_TOKEN;
 const REENROLL_TOKEN = process.env.AH_SETTINGS_REENROLL_TOKEN;
 
-// A Tauri command through the bridge; resolves to { value } or { error }.
+// A Tauri command through the bridge; resolves to { value } or { rejected }. Not { error }:
+// webdriver takes a script result with an `error` key for a failed command (logout.live.js).
 function invoke(cmd, args = {}) {
   return browser.executeAsync(
     (c, a, done) => {
       window.__TAURI__.core
         .invoke(c, a)
         .then((value) => done({ value }))
-        .catch((e) => done({ error: String((e && e.message) || e) }));
+        .catch((e) => done({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,

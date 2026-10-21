@@ -20,7 +20,7 @@
 #
 # Boot/seed/teardown shared via lib_e2e_stack.sh. Needs docker(+compose), openssl,
 # curl, python3, node, xvfb-run, WebKitWebDriver, tauri-driver, tauri-cli,
-# dbus-run-session, gnome-keyring-daemon. SKIPs when any is missing.
+# dbus-run-session, dbus-send, gnome-keyring-daemon. SKIPs when any is missing.
 # Run: bash scripts/tests/desktop_e2e_tunnel.sh
 
 # shellcheck disable=SC2015
@@ -36,7 +36,7 @@ FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon
+e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
@@ -71,8 +71,7 @@ echo "[e2e-tunnel] running the tunnel-start spec under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" \
        AH_ENROLL_TOKEN="$ENROLL_TOKEN" E2E_DIR
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/tunnel-start.live.js
 ' && ok "GUI: enrolled, logged in, tunnel indicator connected" || bad "GUI tunnel-start spec failed"
 
@@ -85,8 +84,7 @@ if [ -n "$SETTINGS_TOKEN" ] && [ -n "$REENROLL_TOKEN" ]; then
     echo "[e2e-tunnel] running the settings-enroll spec under xvfb..."
     export AH_SETTINGS_ENROLL_TOKEN="$SETTINGS_TOKEN" AH_SETTINGS_REENROLL_TOKEN="$REENROLL_TOKEN"
     dbus-run-session -- bash -c '
-        eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true  # review: ok best-effort unlock as in the run above, an unusable keyring fails the spec itself
-        export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+        e2e_keyring_start || exit 1
         cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/settings-enroll.live.js
     ' && ok "GUI: registered from the settings and again, a new frpc connected" || bad "GUI settings-enroll spec failed"
 else

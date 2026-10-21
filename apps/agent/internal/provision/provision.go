@@ -6,6 +6,8 @@
 //
 // As of v0.23.0, provisioning is no longer coupled to FRP. A single
 // `adminhelper-agent provision` call:
+//   - secures the data root (config.EnsureDataDir(config.MonitorDir())) first, so a
+//     root that cannot be secured leaves the token unspent,
 //   - redeems the provision token via POST /api/servers/{id}/provision/activate,
 //   - writes the server API key to the FRP sync config (always: frpc.WriteSyncConfig,
 //     so a tunnel created later reaches the host with the next sync),
@@ -97,6 +99,14 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			return err
 		}
 		fingerprint = &fp
+	}
+
+	// The token can be redeemed only once: secure the data root (on Windows with the
+	// tree below it) before sending it, so a root that cannot be secured stops the
+	// provisioning while the token is still unspent.
+	dataRoot := config.MonitorDir()
+	if err := config.EnsureDataDir(dataRoot); err != nil {
+		return fmt.Errorf("secure the data directory %s: %w; the provision token was not redeemed", dataRoot, err)
 	}
 
 	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, fingerprint, activatePort)

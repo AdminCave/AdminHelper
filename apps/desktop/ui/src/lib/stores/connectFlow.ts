@@ -100,6 +100,18 @@ function passwordStoreEnabled(): boolean {
 }
 
 /**
+ * Whether the prompt may offer "remember password" for `connection`. The keyring key holds the
+ * connection's id; in server mode one the list does not hold yet (the editor's "Connect" before
+ * "Save") has a client id the server replaces on save, so a password stored under it would
+ * belong to no connection.
+ */
+function rememberAllowed(connection: Connection): boolean {
+  const { settings } = get(sessionStore);
+  if (settings?.mode !== 'server') return true;
+  return get(connectionsStore).some((c) => c.id === connection.id);
+}
+
+/**
  * Updates lastUsed in a mode-specific way:
  *  - local:  upsert into local SQLite (persistent).
  *  - server: POST /api/connections/{id}/touch -> memory patch with server response.
@@ -164,11 +176,12 @@ async function handleRdpAuth(
         await performConnect(connection, resolved, keepEditorOpen, { useStoredPassword: true });
         return true;
       }
-      const outcome = await requestPassword(connection, keepEditorOpen, true);
+      const allowRemember = rememberAllowed(connection);
+      const outcome = await requestPassword(connection, keepEditorOpen, allowRemember);
       if (outcome.cancelled) return true;
       const updated = outcome.updated ?? connection;
       let saved = false;
-      if (outcome.remember && outcome.password) {
+      if (allowRemember && outcome.remember && outcome.password) {
         try {
           await bridge.savePassword(updated, outcome.password);
           saved = true;

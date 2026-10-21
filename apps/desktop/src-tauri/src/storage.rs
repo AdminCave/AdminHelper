@@ -6,6 +6,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, SystemTime};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -114,6 +115,7 @@ pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<(), AppError> {
     ensure_parent(path)?;
+    remove_stale_temps(path);
     let serialized = serde_json::to_vec_pretty(value)?;
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(format!(".{}.tmp", std::process::id()));
@@ -126,6 +128,48 @@ pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(
         let _ = fs::remove_file(&tmp);
     }
     replaced.map_err(AppError::from)
+}
+
+/// How old the temp of an earlier [`write_json_atomic`] must be before the next write of the
+/// same file removes it. A write takes milliseconds to seconds; a temp this old was left by a
+/// process that ended between creating it and the rename.
+const STALE_TEMP_AGE: Duration = Duration::from_secs(10 * 60);
+
+/// Removes the temps earlier writes of `path` left (`<name>.<pid>.tmp` beside it) once they are
+/// [`STALE_TEMP_AGE`] old. In doubt it keeps: a younger temp may be another process's write in
+/// flight, and an unreadable or future modification time says nothing about its age. A failed
+/// removal (on Windows a file another process holds open) is left for a later write.
+fn remove_stale_temps(path: &Path) {
+    let (Some(dir), Some(name)) = (
+        path.parent(),
+        path.file_name().and_then(|name| name.to_str()),
+    ) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let is_temp = file_name
+            .to_str()
+            .and_then(|file_name| file_name.strip_prefix(name)?.strip_prefix('.'))
+            .and_then(|rest| rest.strip_suffix(".tmp"))
+            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit()));
+        if !is_temp {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= STALE_TEMP_AGE);
+        if stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Writes `bytes` to a new or emptied file at `path`, created 0600 on Unix, and waits until they
@@ -786,10 +830,10 @@ mod migration_tests {
 #[cfg(test)]
 mod settings_tests {
     use std::fs::{self, File};
-    use std::io::Read;
+    use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
 
     use serde_json::{json, Value};
 
@@ -1510,5 +1554,44 @@ mod settings_tests {
             let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    #[test]
+    fn write_json_atomic_removes_only_the_stale_temps_of_the_same_file() {
+        let scratch = Scratch::new("write-atomic-stale");
+        let path = scratch.0.join(PREFS_FILE);
+        let hour = Duration::from_secs(60 * 60);
+        let now = SystemTime::now();
+        let leave = |name: &str, modified: SystemTime| {
+            let mut file = File::create(scratch.0.join(name)).unwrap();
+            file.write_all(b"{torn").unwrap();
+            file.set_modified(modified).unwrap();
+        };
+        // What a process that ended between creating its temp and the rename left an hour ago.
+        leave("prefs.json.4242.tmp", now - hour);
+        // Another process writing prefs.json right now.
+        leave("prefs.json.4243.tmp", now);
+        // A clock that went back: in doubt, kept.
+        leave("prefs.json.4244.tmp", now + hour);
+        // Not a temp of a write of prefs.json.
+        leave("other.json.4242.tmp", now - hour);
+        leave("prefs.json.x4242.tmp", now - hour);
+        // The fixed name the migration clears.
+        leave("prefs.json.tmp", now - hour);
+
+        write_json_atomic(&path, &json!({"a": 1})).unwrap();
+
+        assert_eq!(json_of(&path), json!({"a": 1}));
+        assert_eq!(
+            names_in(&scratch.0),
+            [
+                "other.json.4242.tmp",
+                PREFS_FILE,
+                "prefs.json.4243.tmp",
+                "prefs.json.4244.tmp",
+                "prefs.json.tmp",
+                "prefs.json.x4242.tmp",
+            ]
+        );
     }
 }

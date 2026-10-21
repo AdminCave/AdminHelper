@@ -4,14 +4,16 @@
 
 // Package logging gives the agent one place to configure operational logging.
 //
-// Output goes to BOTH stdout (so the systemd journal / Windows service log keep
-// capturing it) AND a size-rotated file under config.LogDir(), so an operator
-// has a durable, self-contained log to inspect or attach to a bug report —
-// independent of the service manager. If the log directory cannot be secured
-// (config.EnsureLogDir, Windows only, e.g. a run without administrator rights),
-// the agent logs to stdout only. On Linux, as before, stdout is written first in
-// the MultiWriter so a non-writable log directory (e.g. an interactive non-root
-// run) never suppresses console output; the file write just fails silently then.
+// Output goes to BOTH stdout (so the systemd journal keeps capturing it; under the
+// Windows service manager no one reads it) AND a size-rotated file under
+// config.LogDir(), so an operator has a durable, self-contained log to inspect or
+// attach to a bug report — independent of the service manager. If the log
+// directory cannot be secured (config.EnsureLogDir, Windows only, e.g. a run
+// without administrator rights), the agent logs to stdout only; as a Windows
+// service, it also says so once in the Windows event log. On Linux, as before,
+// stdout is written first in the MultiWriter so a non-writable log directory (e.g.
+// an interactive non-root run) never suppresses console output; the file write
+// just fails silently then.
 //
 // Format is slog's human-readable text (key=value with an RFC3339 timestamp),
 // not JSON: the agent logs sparsely and operators read this directly.
@@ -29,21 +31,41 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
+// reportFunc hands one message to the log of the service manager the agent runs
+// under, where the operator of the service sees it.
+type reportFunc func(msg string) error
+
+// Seams, so that a test can have securing the log directory fail and run Init as a
+// service. serviceReporter returns nil when there is no log besides stdout to report
+// to: in an interactive run, and on Linux, where the journal keeps stdout.
+var (
+	ensureLogDir    = config.EnsureLogDir
+	serviceReporter = platformReporter
+)
+
 // Init installs the default slog logger. Call once at startup, before any
 // command runs. level is one of debug/info/warn/error (default info).
 //
 // The log directory is secured first (config.EnsureLogDir, Windows only), since
 // the file logger would create it with inherited rights. If that fails, the agent
-// logs to stdout only, silently, as with a non-writable log directory.
+// logs to stdout only, as with a non-writable log directory. As a Windows service,
+// whose stdout no one sees, it reports the directory and the reason once to the
+// Windows event log; an interactive run stays silent.
 func Init(level string) {
 	var writer io.Writer = os.Stdout
-	if config.EnsureLogDir() == nil {
+	if err := ensureLogDir(); err == nil {
 		writer = io.MultiWriter(os.Stdout, &lumberjack.Logger{
 			Filename:   config.LogFile(),
 			MaxSize:    10, // megabytes per file
 			MaxBackups: 5,  // keep 5 rotated files
 			Compress:   true,
 		})
+	} else if report := serviceReporter(); report != nil {
+		// If the report fails too, stdout is all that is left, as in an interactive run.
+		_ = report(fmt.Sprintf("The AdminHelper agent cannot secure its log directory %s: %v. "+
+			"Until the service restarts, the agent logs to stdout only and writes no agent.log. "+
+			"The FRP sync changes nothing as long as the data directory cannot be secured.",
+			config.LogDir(), err))
 	}
 	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{Level: parseLevel(level)})
 	slog.SetDefault(slog.New(handler))
