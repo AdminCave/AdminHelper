@@ -28,8 +28,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   };
 
   // Rust gives the note on the migration in the first listing only (launcher.rs list): a
-  // listing after a save or a delete must not take it away.
+  // listing after a save or a delete must not take it away. The same holds for the name of an
+  // unreadable settings.json the migration set aside.
   let migrated = $state(false);
+  let unreadableSettings = $state<string | null>(null);
   let chosenId = $state<string | null>(null);
   let opening = $state(false);
   // The name of the workspace being deleted; a server workspace revokes its device first.
@@ -54,6 +56,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   $effect(() => {
     if ($list?.migratedNotice) migrated = true;
+    if ($list?.unreadableSettings) unreadableSettings = $list.unreadableSettings;
   });
 
   // The list takes the focus as soon as it is there, so Enter opens the one selected.
@@ -157,6 +160,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   {#if migrated}
     <p class="picker-note" role="status" data-msg="migrated">{$t('workspace.picker.migrated')}</p>
+  {/if}
+  {#if unreadableSettings}
+    <p class="picker-note" role="status" data-msg="unreadable-settings">
+      {$t('workspace.picker.unreadableSettings', { name: unreadableSettings })}
+    </p>
   {/if}
   {#if $listError}
     <div class="picker-note picker-failed" role="alert" data-msg="list-failed">

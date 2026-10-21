@@ -209,6 +209,47 @@ describe('Picker: the list', () => {
     expect(again.msg('migrated')).toBeNull();
   });
 
+  it('names the settings.json set aside as unreadable, beside the note on the migration, and keeps it', async () => {
+    const setAside = 'settings.json.unreadable-20261021T080000Z';
+    const standard = info({ kind: 'local', url: null, host: null });
+    const p = await mount({
+      ...listing([standard], 'standard', true),
+      unreadableSettings: setAside,
+    });
+
+    const note = p.msg('unreadable-settings');
+    expect(note?.textContent?.trim()).toBe(
+      tNow('workspace.picker.unreadableSettings', { name: setAside }),
+    );
+    expect(note?.getAttribute('role')).toBe('status');
+    // What Kevin decided it says (2026-10-21): the kind of a workspace is locked in the
+    // editor, and a new server workspace keeps its keys apart from the old device identity.
+    const said = note?.textContent ?? '';
+    expect(said).toContain(setAside);
+    expect(said).toContain('"Standard" has started as a local workspace');
+    expect(said).toContain('connections from the previous cache as local connections');
+    expect(said).toContain('make a new server workspace');
+    expect(said).toContain('register the device there again with a one-time token');
+    expect(said).not.toMatch(/rename|server URL/i);
+    // The note of its own leaves the one on the migration as the live specs count it.
+    expect(p.container.querySelectorAll('[data-msg="migrated"]')).toHaveLength(1);
+
+    // Rust gives the name in the first listing only (launcher.rs list).
+    h.listWorkspaces.mockResolvedValue(listing([{ ...standard, name: 'Standard 2' }], 'standard'));
+    await fireEvent.focus(window);
+    await p.findByRole('option', { name: /Standard 2/ });
+    expect(p.msg('unreadable-settings')?.textContent).toContain(setAside);
+    cleanup();
+
+    for (const unreadableSettings of [undefined, null]) {
+      const again = await mount({ ...listing([standard], 'standard', true), unreadableSettings });
+      // The store still holds the listing before: wait for this one.
+      await waitFor(() => expect(again.msg('migrated')).not.toBeNull());
+      expect(again.msg('unreadable-settings')).toBeNull();
+      cleanup();
+    }
+  });
+
   it('a list that does not load says why, and Retry lists anew', async () => {
     h.listWorkspaces.mockRejectedValue(new Error('registry unreadable'));
     const view = render(Picker);

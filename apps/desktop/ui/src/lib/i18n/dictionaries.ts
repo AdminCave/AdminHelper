@@ -318,6 +318,8 @@ export const translations: Translations = {
       '„{name}“ ist schon in einem eigenen Fenster geöffnet. Öffnen, Bearbeiten und Löschen gehen erst, wenn dieses Fenster geschlossen ist.',
     'workspace.picker.migrated':
       'Neu: Workspaces. Deine bisherigen Einstellungen und Verbindungen liegen jetzt im Workspace „Standard“; was zu einem anderen Modus gehörte, liegt in einem eigenen Workspace. Jeder Workspace öffnet in einem eigenen Fenster.',
+    'workspace.picker.unreadableSettings':
+      'Die Einstellungen von vorher waren nicht lesbar. „Standard“ ist deshalb lokal gestartet: mit den lokalen Verbindungen dieses Geräts oder, gab es keine, mit den Verbindungen aus dem bisherigen Cache als lokale Verbindungen. Die alte Datei liegt als „{name}“ im Datenordner. Hat dieses Gerät mit einem Server gearbeitet, lege für ihn einen neuen Server-Workspace an und registriere das Gerät dort neu, mit einem Einmal-Token vom Admin.',
     'workspace.picker.empty': 'Noch kein Workspace. Lege mit „Neuer Workspace“ einen an.',
     'workspace.picker.listFailed': 'Die Workspaces ließen sich nicht laden: {error}',
     'workspace.picker.delete.confirm.server':
@@ -1104,6 +1106,8 @@ export const translations: Translations = {
       '"{name}" is already open in a window of its own. It can be opened, edited and deleted once that window is closed.',
     'workspace.picker.migrated':
       'New: workspaces. Your settings and connections so far are now in the workspace "Standard"; what belonged to another mode is in a workspace of its own. Each workspace opens in a window of its own.',
+    'workspace.picker.unreadableSettings':
+      'The previous settings could not be read, so "Standard" has started as a local workspace: with the local connections of this device or, if there were none, with the connections from the previous cache as local connections. The old file is in the data folder as "{name}". If this device worked with a server, make a new server workspace for it and register the device there again with a one-time token from your administrator.',
     'workspace.picker.empty': 'No workspace yet. Make one with "New workspace".',
     'workspace.picker.listFailed': 'The workspaces did not load: {error}',
     'workspace.picker.delete.confirm.server':

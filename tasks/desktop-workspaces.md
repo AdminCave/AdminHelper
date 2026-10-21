@@ -290,8 +290,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- migration
 Doku: keine (Doku mit T51)
 Abhängt von: T47
 
-### T50 — Picker: Hinweis auf die gesicherte settings.json  [ ]
+### T50 — Picker: Hinweis auf die gesicherte settings.json  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @4c855eb1 2026-10-21T06:13:28+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T50.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-21: Liefert `list_workspaces` den Namen einer gesicherten unlesbaren `settings.json` (T49), zeigt der Picker einmal einen Hinweis (DE+EN): Die Einstellungen von vorher waren nicht lesbar, „Standard“ ist lokal gestartet, die alte Datei liegt als `<Name>` im Datenordner; Server-URL im Editor neu eintragen. Typ in `bridge/types.ts` gleich dem Rust-Modell (Paritätstest). Tests: Hinweis mit Dateinamen sichtbar, ohne Feld kein Hinweis. Nachtrag (Bau T49): Die Art eines bestehenden Workspace ist im Editor gesperrt — der Hinweis sagt deshalb nicht „Server-URL im Editor neu eintragen“, sondern: für den Server einen neuen Server-Workspace anlegen (oder die gesicherte Datei reparieren und zurückbenennen, siehe Fehlersuche); die Verbindungen aus dem bisherigen Cache liegen jetzt als lokale Verbindungen in „Standard“. Nachtrag (T49-Review): Ein neu angelegter Server-Workspace hat präfixierte Keyring-Schlüssel und sieht die alte Geräte-Identität und die alten RDP-Passwörter nicht; der Hinweis sagt, dass das Gerät für den neuen Server-Workspace neu registriert werden muss (Token vom Admin). Kein „zurückbenennen“ empfehlen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts src/lib/i18n/i18n.test.ts src/lib/bridge
 Doku: keine (Doku mit T51)
