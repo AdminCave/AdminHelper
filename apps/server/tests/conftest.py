@@ -9,6 +9,7 @@ import os
 import sys
 from concurrent.futures import Future
 from datetime import timedelta
+from pathlib import Path
 
 # Set test defaults BEFORE app modules are imported.
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
@@ -117,6 +118,101 @@ def _no_event_threads(request):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(events, "_executor", _DiscardingExecutor())
         yield
+
+
+class AppEngineBlocked(Exception):
+    """Raised in place of a connection of the app engine while a test runs (see
+    _no_app_engine)."""
+
+
+_SERVER_ROOT = Path(__file__).parents[1]
+_OWN_CODE = tuple(f"{_SERVER_ROOT / part}{os.sep}" for part in ("app", "tests"))
+
+
+class _AppEngineGate:
+    """The do_connect and checkout listener on the app engine. Armed, it refuses a new
+    and a pooled connection alike before the app gets it, and keeps where the attempt
+    came from: file, line and function of the innermost frames under app/ and tests/
+    and in the test's own file, no values."""
+
+    def __init__(self) -> None:
+        self.armed = False
+        self.test_file = ""
+        self.attempts: list[str] = []
+
+    def __call__(self, *_args) -> None:
+        # Hidden from pytest, which prints the arguments of a traceback's last frame:
+        # these are the connect parameters, password included. The exception comes from
+        # _refuse, whose only argument is self, so the last frame is not SQLAlchemy's
+        # dispatch of checkout either, whose arguments show the connection.
+        __tracebackhide__ = True
+        # Returning None lets do_connect make the connection as usual.
+        if self.armed:
+            self._refuse()
+
+    def _refuse(self) -> None:
+        frames = []
+        frame = sys._getframe(2)  # the caller of __call__
+        while frame is not None and len(frames) < 3:
+            filename = frame.f_code.co_filename
+            if filename.startswith(_OWN_CODE):
+                where = os.path.relpath(filename, _SERVER_ROOT)
+            elif filename == self.test_file:  # outside tests/: test_conftest_app_engine's probe
+                where = os.path.basename(filename)
+            else:
+                where = ""
+            if where:
+                frames.append(f"{where}:{frame.f_lineno} in {frame.f_code.co_name}")
+            frame = frame.f_back
+        self.attempts.append(" > ".join(reversed(frames)) or "<no frame under app/ or tests/>")
+        raise AppEngineBlocked("connection through the app engine refused (tests/conftest.py)")
+
+
+_APP_ENGINE_GATE = _AppEngineGate()
+
+
+@pytest.fixture(scope="session")
+def _app_engine_listeners():
+    # Once per session and never removed: event.remove is a configuration operation
+    # and must not run while the event fires, which a thread of the app may do any time.
+    from app.core import database
+
+    event.listen(database.engine, "do_connect", _APP_ENGINE_GATE)
+    event.listen(database.engine, "checkout", _APP_ENGINE_GATE)
+
+
+@pytest.fixture(autouse=True)
+def _no_app_engine(request, _app_engine_listeners):
+    # A session on the app engine lies outside the rollback of db_session: it sees none
+    # of the test's data, commits what it writes itself, and with DATABASE_URL unset
+    # (testcontainers) the engine points at the dev default of app/core/config.py
+    # (R-0526). So while the test runs every attempt raises AppEngineBlocked, and the
+    # teardown fails the test: code that catches the exception (_run_event,
+    # _run_in_session) would keep it green. Code that opens SessionLocal() itself is
+    # bound to the connection of db_session in the test; a test that needs the engine
+    # on purpose is marked app_engine.
+    if request.node.get_closest_marker("app_engine") is not None:
+        yield
+        return
+    gate = _APP_ENGINE_GATE
+    gate.test_file = str(request.node.path)
+    gate.attempts = []
+    gate.armed = True
+    try:
+        yield
+    finally:
+        gate.armed = False
+    if gate.attempts:
+        attempts = "\n".join(f"  {where}" for where in dict.fromkeys(gate.attempts))
+        pytest.fail(
+            "the test tried to connect through the app engine (app.core.database.engine), "
+            "outside the rollback of db_session; each attempt raised AppEngineBlocked:\n"
+            f"{attempts}\n"
+            "Bind the session that code opens to the connection of db_session "
+            "(sessionmaker(bind=db_session.connection()), as tests/test_hooks.py does), "
+            "or mark the test app_engine if it needs the engine on purpose.",
+            pytrace=False,
+        )
 
 
 def _seed_register_state(engine) -> None:
@@ -269,6 +365,9 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "event_threads: fire_event keeps its real thread pool (see _no_event_threads)"
+    )
+    config.addinivalue_line(
+        "markers", "app_engine: the test may connect through the app engine (see _no_app_engine)"
     )
 
 
