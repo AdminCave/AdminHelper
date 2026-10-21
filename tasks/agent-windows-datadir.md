@@ -83,8 +83,8 @@ Abhängt von: T3
 Beweis: Merge von origin/main (2026-10-21): `reportstate.go:79` `return os.WriteFile(path, data, 0600)`; Hinweis der Session adminhelper-a9 (Abstimmung: wer zweiter merged, zieht nach)
 
 ### T5 — Doku und CHANGELOG  [ ]
-Komponente: agent · Dateien: CHANGELOG.md, docs/developer/agent.html, docs/en/developer/agent.html
-Änderung: CHANGELOG unter `## [Unreleased]`, `### Changed`: Der Agent legt unter Windows sein Datenverzeichnis vor der ersten Nutzung mit festen Rechten an (nur SYSTEM und Administratoren) und übernimmt kein vorhandenes Verzeichnis mit anderem Eigentümer. `docs/developer/agent.html:78` und `docs/en/developer/agent.html:78`: den Absatz zur Härtung des Datenverzeichnisses entsprechend ergänzen (DE und EN im selben Commit).
+Komponente: agent · Dateien: CHANGELOG.md, docs/developer/agent.html, docs/en/developer/agent.html, apps/agent/internal/logging/logging.go
+Änderung: CHANGELOG unter `## [Unreleased]`, `### Changed`: Der Agent legt unter Windows sein Datenverzeichnis vor der ersten Nutzung mit festen Rechten an (nur SYSTEM und Administratoren) und übernimmt kein vorhandenes Verzeichnis mit anderem Eigentümer. `docs/developer/agent.html:78` und `docs/en/developer/agent.html:78`: den Absatz zur Härtung des Datenverzeichnisses entsprechend ergänzen (DE und EN im selben Commit). Der Paketkommentar in `apps/agent/internal/logging/logging.go` (Datei-Log scheitert still) wird auf das Verhalten seit T3 gebracht (ohne gesichertes Log-Verzeichnis nur stdout).
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: CHANGELOG.md (Changed) · docs/developer/agent.html + docs/en/developer/agent.html (DE+EN)
 Abhängt von: T2
