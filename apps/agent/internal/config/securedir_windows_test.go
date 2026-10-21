@@ -914,6 +914,50 @@ func TestEnsureSecureDirFailsToRemoveADirWithAPendingDelete(t *testing.T) {
 	requireGone(t, foreignDir)
 }
 
+// aclClosed vouches for a DACL only if it lets no account but SYSTEM and the
+// Administrators add or write and carries the inheritable entries for both. A DACL it
+// cannot read as plain allow and deny entries counts as open.
+func TestACLClosed(t *testing.T) {
+	const closed = "(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	// What a directory created in %ProgramData% inherits, without the Users' right to
+	// add (A;CIID;0x116;;;BU) and the CREATOR OWNER entries.
+	const fromProgramData = "D:AI(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;0x1200a9;;;BU)"
+	cases := []struct {
+		name string
+		sddl string
+		want bool
+	}{
+		{"protected form", protectedSDDL, true},
+		{"inherited form", inheritedDirSDDL, true},
+		// icacls /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F
+		{"former SecureDir form", "D:PAI" + closed, true},
+		{"Users may read", fromProgramData, true},
+		{"Users are denied", "D:P(D;OICI;FA;;;BU)" + closed, true},
+		{"removal lock", removalSDDL, false},
+		{"null DACL", "D:NO_ACCESS_CONTROL", false},
+		{"Users may add", fromProgramData + "(A;CIID;0x116;;;BU)", false},
+		{"creator owner", "D:P" + closed + "(A;OICIIO;GA;;;CO)", false},
+		{"inherit-only for SYSTEM and the Administrators", "D:P(A;OICIIO;FA;;;SY)(A;OICIIO;FA;;;BA)", false},
+		{"object ACE", "D:P" + closed + "(OA;;FR;6f2e1d3c-0b4a-4c5d-8e9f-0a1b2c3d4e5f;;BU)", false},
+		{"callback ACE", "D:P" + closed + "(XA;;FR;;;BU;(Member_of {SID(BA)}))", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sd, err := windows.SecurityDescriptorFromString(c.sddl)
+			if err != nil {
+				t.Fatalf("parse %s: %v", c.sddl, err)
+			}
+			dacl, _, err := sd.DACL()
+			if err != nil {
+				t.Fatalf("the DACL of %s: %v", c.sddl, err)
+			}
+			if got := aclClosed(dacl); got != c.want {
+				t.Fatalf("aclClosed(%s) = %v, want %v", c.sddl, got, c.want)
+			}
+		})
+	}
+}
+
 // OwnByAdministrators hands a file the agent wrote, here one the test account owns,
 // to the Administrators.
 func TestOwnByAdministratorsSetsTheOwner(t *testing.T) {
