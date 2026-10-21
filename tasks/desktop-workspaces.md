@@ -301,3 +301,10 @@ Komponente: scripts · Dateien: docs/admin/troubleshooting.html, docs/en/admin/t
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/troubleshooting.html + EN · docs/developer/desktop.html + EN · CHANGELOG.md
 Abhängt von: T50
+
+### T53 — Live-Specs lesen Workspace-Namen über textContent  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/workspace-picker.live.js, apps/desktop/e2e/test/specs/workspace-add-server.live.js
+Änderung: Vorab-Lauf des e2e-Layers auf der Lane-VM (2026-10-21, über 45493ffa): `desktop_e2e_crud` (Picker-Spec, `workspace-picker.live.js:144`) und `desktop_e2e_workspaces` (Launcher-Spec, `workspace-add-server.live.js` ~:96, „the picker never listed "Kunde B"“) scheitern, weil WebKitWebDriver `getText()` auf `.picker-name` leer liefert, obwohl das DOM den Namen trägt und der Screenshot ihn zeigt (`.picker-name` hat `overflow: hidden; text-overflow: ellipsis; white-space: nowrap` in einer Flex-Zeile). Ein Helfer in `test/lib/live.js` liest den Text eines Elements über `browser.execute((e) => e.textContent.trim(), el)`; alle Vergleiche von `.picker-name` in beiden Specs nutzen ihn. Prüfen, ob weitere `getText()` auf Elementen mit derselben Abschneide-CSS stehen (Picker, Editor), und diese ebenfalls umstellen. Ursache im Commit-Body festhalten (WebDriver-„rendered text“ bei abgeschnittenem Text; ob es ein WebKit-Bug oder die Spezifikation ist, als nicht verifiziert markieren). Beweis: erneuter Lauf der beiden Schritte auf der Lane-VM.
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Test)
+Abhängt von: T48
