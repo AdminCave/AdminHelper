@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Image: Stopp ohne Restprozesse, Prozesse nicht dumpable, Arbeitskopie beim Start — Task-Ledger
-Status: geplant · Branch: feature/frps-hardening-2 · Review: pro Task
+Status: aktiv · Branch: feature/frps-hardening-2 · Review: pro Task
 Spec: Roadmap R-0539 (T1); T2–T3 keine eigene Datei (Härtungs-Paket frps-Image, Kevin 2026-10-21)
 Heavy: linux-full — alle drei Tasks ändern das frps-Image (`apps/frps/frps-supervisor.sh`, `apps/frps/Dockerfile`), einen FRP-Pfad nach CLAUDE.md §5; das gebaute Image mit den Capabilities und Optionen aus Compose fährt der Job `integration-stack` (`frps_takeover`, `scripts/tests/integration_stack_test.sh:457`) im Sammellauf über `main`; auf PRs läuft er nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/frps-hardening-2`. Kein `scenario`: Tunnel-Datenpfad (frpc ↔ frps, Ports, PKI), `docker-compose.yml` und Install/Update bleiben unverändert; kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
