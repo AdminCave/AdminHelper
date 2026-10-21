@@ -822,12 +822,22 @@ def test_a_swap_cut_short_between_its_two_renames_is_rolled_back_at_the_next_sta
     assert box.calls()[-1] == f"-c {box.current}/frps.toml"
 
 
+# Stands in for chgrp: records its arguments, then becomes the real chgrp.
+CHGRP = """#!/bin/sh
+printf '%s\\n' "$*" >> "$STUB_DIR/chgrp"
+exec {real} "$@"
+"""
+
+
 @pytest.mark.parametrize(
     ("left", "missing"),
     [("current", None), ("prev", None), ("current", "applied.sha256")],
     ids=["current/", "prev/", "current/ without applied.sha256"],
 )
-def test_a_copy_from_an_earlier_run_gets_the_modes_of_a_new_one_at_the_start(box, left, missing):
+def test_a_copy_from_an_earlier_run_gets_the_modes_and_group_of_a_new_one_at_the_start(
+    box, left, missing
+):
+    _as_user(box)
     box.write_input()
     box.run(frps=True)
     box.stop()
@@ -841,16 +851,28 @@ def test_a_copy_from_an_earlier_run_gets_the_modes_of_a_new_one_at_the_start(box
     if left == "prev":
         box.current.rename(box.active / "prev")
     box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+    # Without root the test cannot leave the copy in another group: the group the start gives
+    # it shows in the calls of chgrp.
+    real = shutil.which("chgrp")
+    assert real, "chgrp"
+    stub = box.root / "bin" / "chgrp"
+    stub.write_text(CHGRP.format(real=real))
+    stub.chmod(0o755)
 
     box.run(frps=True)
 
-    # frps runs from that copy, which is the same but for its modes.
+    # frps runs from that copy, which is the same but for its modes and group.
     assert (box.read().state, box.read().reason) == ("degraded", "cert_expired")
     assert box.calls()[-1] == f"-c {box.current}/frps.toml"
     assert [p.name for p in box.active.iterdir()] == ["current"]
     assert {p.name: p.read_bytes() for p in box.current.iterdir()} == copy
     assert _mode(box.current) == 0o750
     assert {name: _mode(box.current / name) for name in copy} == dict.fromkeys(copy, 0o640)
+    gid = pwd.getpwuid(os.getuid()).pw_gid
+    paths = [box.current, *(box.current / name for name in copy)]
+    chgrp = box.stub / "chgrp"
+    calls = chgrp.read_text().splitlines() if chgrp.exists() else []
+    assert sorted(calls) == sorted(f"{gid} {path}" for path in paths)
 
 
 # Stands in for chmod: fails for current/ and what is in it, and leaves the rest to the real

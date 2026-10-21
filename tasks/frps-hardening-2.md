@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Image: Stopp ohne Restprozesse, Prozesse nicht dumpable, Arbeitskopie beim Start — Task-Ledger
-Status: aktiv · Branch: feature/frps-hardening-2 · Review: pro Task
+Status: bereit · Branch: feature/frps-hardening-2 · Review: pro Task
 Spec: Roadmap R-0539 (T1); T2–T3 keine eigene Datei (Härtungs-Paket frps-Image, Kevin 2026-10-21)
 Heavy: linux-full — alle drei Tasks ändern das frps-Image (`apps/frps/frps-supervisor.sh`, `apps/frps/Dockerfile`), einen FRP-Pfad nach CLAUDE.md §5; das gebaute Image mit den Capabilities und Optionen aus Compose fährt der Job `integration-stack` (`frps_takeover`, `scripts/tests/integration_stack_test.sh:457`) im Sammellauf über `main`; auf PRs läuft er nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/frps-hardening-2`. Kein `scenario`: Tunnel-Datenpfad (frpc ↔ frps, Ports, PKI), `docker-compose.yml` und Install/Update bleiben unverändert; kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -47,8 +47,10 @@ Review: approve (.ah-out/review/frps-hardening-2/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: keine (die Rechte beschreibt `docs/admin/betrieb.html:184` schon: „außer root und frps liest sie niemand“; Supervisor unveröffentlicht)
 
-### T4 — Test: der Start gibt einer Kopie aus einem früheren Lauf auch die Gruppe von FRPS_USER  [ ]
+### T4 — Test: der Start gibt einer Kopie aus einem früheren Lauf auch die Gruppe von FRPS_USER  [x]
 Komponente: server · Dateien: apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @94d5d6ad 2026-10-21T12:54:34+02:00
+Review: approve (.ah-out/review/frps-hardening-2/T4.verdict.json)
 Änderung: Aus der Branch-Prüfung (tester), nur Tests, kein Produktcode. Der Start-Block aus T3 (`apps/frps/frps-supervisor.sh:914-923`) setzt über `open_to_frps` Modus und Gruppe von `FRPS_USER`; die hermetischen Start-Tests aus T3 (`test_a_copy_from_an_earlier_run_gets_the_modes_of_a_new_one_at_the_start`, `test_frps_supervisor.py:830`) laufen mit leerem `FRPS_USER`, also leerem `FRPS_GID`, und prüfen nur die Modi; die einzige Prüfung der Gruppe (Image-Test, `:2547`) sieht nur eine Kopie, die `activate` gerade angelegt hat. Ersetzt man im Start-Block `open_to_frps` durch ein bloßes `chmod`, bleiben alle Tests grün. Neu: ein Test (oder Fälle des bestehenden) mit `FRPS_USER` = Testnutzer (`_as_user`, wie die `id`-Tests aus T3) und einem `chgrp`-Stub auf PATH (im Stil von `CHMOD`, `ID`, `SU_EXEC`: notiert seine Argumente, ruft dann das echte `chgrp`), der nach einem Start mit ungültiger Eingabe (`degraded`, frps aus der alten Kopie) `chgrp <FRPS_GID>` für `current/` und für jede vorhandene Datei der Kopie erwartet, auch für eine Kopie aus `prev/`. Rot-Beweis per Mutation (Start-Block mit bloßem `chmod` statt `open_to_frps`) nur in einer Kopie im Scratch, nicht im Worktree; Ergebnis in den Commit-Text.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: keine (nur Tests)
