@@ -465,6 +465,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: nach `dnf upgrade` laufen Timer und frpc weiter (R-0527):** Beim Upgrade des RPM stoppte das `%preun` des
+  alten Pakets `adminhelper-agent.timer` und `frpc.service`, nachdem das `%post` des neuen sie gestartet hatte; beide
+  blieben aktiviert, liefen aber bis zum naechsten Neustart nicht. Jetzt stoppt und deaktiviert `%preun` sie nur bei
+  der Deinstallation, und das neue Paket aktiviert sie erst am Ende der Transaktion (`%posttrans`): den Timer immer,
+  `frpc.service` nur mit `/etc/frp/frpc.toml`, und frpc startet dabei neu, damit es auf dem neuen Binary laeuft. Das
+  gilt auch fuer ein Upgrade von einem bisherigen Paket. Das deb war nicht betroffen.
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
