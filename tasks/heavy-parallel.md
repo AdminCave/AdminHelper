@@ -47,8 +47,10 @@ Tests in `run_flags_test.sh`: ohne Docker und Display, `AH_ALLOW_REAL=1`: `run.s
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: `docs/developer/cicd.html` und `docs/en/developer/cicd.html`, Flag-Tabelle von `run.sh` (nach `--step`, `:76`/`:77`): eine Zeile `--part gui|rest` (DE/EN sinngleich: welche Schritte zu `gui` gehören, dass jeder Schritt in genau einem Teil liegt, wofür `heavy.sh` es nutzt). `DEVELOPMENT.md:1201`, `.claude/rules/testing.md:14`, `.claude/skills/test/SKILL.md:175`: die Usage-Zeile nennt `[--part gui|rest]`.
 
-### T4 — lib.sh: warm.env wird nur unter einer Sperre geschrieben  [ ]
+### T4 — lib.sh: warm.env wird nur unter einer Sperre geschrieben  [x]
 Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/tests/lib_vm_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b88df314 2026-10-21T14:44:25+02:00
+Review: approve (.ah-out/review/heavy-parallel/T4.verdict.json)
 Änderung: `warm_set` und `warm_clear` (`:128-135`) lesen, ändern und ersetzen `warm.env` in einer Subshell unter `flock -w 30` auf `warm.env.lock` neben der Datei (`( flock -w 30 9 || exit 1; … ) 9>"$f.lock"`), mit einer Temp-Datei je Prozess (`$f.tmp.$$`) statt der geteilten `$f.tmp`. Warum (Kommentar): Mit zwei Teilen eines Sammellaufs schreiben zwei Wrapper desselben Checkouts gleichzeitig, und ein Lesen-Ändern-Ersetzen ohne Sperre verliert einen Schlüssel oder verschränkt die Temp-Datei. Eine Sperre, die in 30 s nicht frei wird, ist Rückgabe 1 mit einer Zeile auf stderr, ohne Schreiben. Ohne `flock` schreibt die Funktion wie bisher und sagt es einmal (wie `py_lock`, `run.sh:273-276`). `vm.py` liest als VMID nur Schlüssel ohne Unterstrich aus `warm.env`; die Sperrdatei ist eine eigene Datei und berührt das nicht.
 Tests in `lib_vm_test.sh`: Hält der Test die Sperre 2 s lang (`flock` im Hintergrund auf `warm.env.lock`), wartet `warm_set` und schreibt danach; die gemessene Dauer ist ≥ 1 s, der Wert steht in der Datei (auf HEAD rot: kein Warten). 20 parallele `warm_set` verschiedener Schlüssel → alle 20 stehen in `warm.env`, keine `warm.env.tmp*` bleibt liegen. `warm_clear` neben einem parallelen `warm_set` eines anderen Schlüssels lässt diesen stehen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_vm_test
