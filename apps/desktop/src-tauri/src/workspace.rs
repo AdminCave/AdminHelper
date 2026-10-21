@@ -310,7 +310,7 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, AppError> {
 }
 
 /// `workspaces.json` in the app data dir: which workspaces exist, which one the picker selects
-/// first, and whether the picker still owes the note on the migration. Written by the migration
+/// first, and whether the picker still owes the notes on the migration. Written by the migration
 /// and the launcher; its arrival ends the migration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -318,6 +318,9 @@ pub(crate) struct Registry {
     pub workspaces: Vec<RegistryEntry>,
     pub last_used: Option<WorkspaceId>,
     pub migrated_notice: bool,
+    /// The name (no path) the migration set an unreadable `settings.json` aside under, while the
+    /// picker still owes the note on it.
+    pub unreadable_settings: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1206,6 +1209,7 @@ mod tests {
             ],
             last_used: Some(id("standard")),
             migrated_notice: true,
+            unreadable_settings: Some("settings.json.unreadable-20261021T080000Z".to_string()),
         }
     }
 
@@ -1238,6 +1242,7 @@ mod tests {
                 "workspaces": [{"id": "standard"}, {"id": "w-0a1b2c3d"}],
                 "lastUsed": "standard",
                 "migratedNotice": true,
+                "unreadableSettings": "settings.json.unreadable-20261021T080000Z",
             })
         );
         assert_eq!(names_in(&scratch.0), [REGISTRY_FILE]);
@@ -1812,6 +1817,7 @@ mod tests {
                 .into(),
             last_used: None,
             migrated_notice: false,
+            unreadable_settings: None,
         }
         .store(base)
         .unwrap();
@@ -2063,20 +2069,50 @@ mod tests {
     fn startup_after_a_failed_migration_starts_no_process() {
         let scratch = Scratch::new("startup-migration");
         let base = &scratch.0;
-        fs::write(base.join("settings.json"), r#"{"mode": "geheim"}"#).unwrap();
+        // A file where the workspaces go stops the migration, before it sets aside the settings
+        // that do not parse.
+        let broken = r#"{"mode": "geheim"}"#;
+        fs::write(base.join("workspaces"), "").unwrap();
+        fs::write(base.join("settings.json"), broken).unwrap();
 
         for mode in [Mode::Launcher, Mode::Workspace(id("standard"))] {
             let case = format!("{mode:?}");
             let (code, line) = exit_of(startup(mode, base, no_lock));
             assert_eq!(code, EXIT_FAILED, "{case}");
-            // The file and where it breaks, nothing from inside it.
             assert!(
-                line.contains("settings.json") && line.contains("line 1"),
+                line.contains("workspaces is a symlink, a junction or a file"),
                 "{line}"
             );
-            assert!(!line.contains("geheim"), "{line}");
             assert_eq!(Registry::load(base).unwrap(), None, "{case}");
+            assert_eq!(
+                fs::read_to_string(base.join("settings.json")).unwrap(),
+                broken,
+                "{case}"
+            );
         }
+    }
+
+    #[test]
+    fn startup_after_a_migration_that_set_the_settings_aside_opens_standard() {
+        // Settings that do not parse end no start: the app started with them before R-0431.
+        let scratch = Scratch::new("startup-set-aside");
+        let base = &scratch.0;
+        fs::write(base.join("settings.json"), r#"{"mode": "geheim"}"#).unwrap();
+
+        let plan = startup(Mode::Launcher, base, no_lock);
+
+        assert!(matches!(plan, Plan::Launcher), "{plan:?}");
+        let registry = Registry::load(base).unwrap().expect("the migration ran");
+        assert!(registry.unreadable_settings.is_some(), "{registry:?}");
+        let plan = startup(Mode::Workspace(id("standard")), base, acquire);
+        let Plan::Workspace(held) = &plan else {
+            panic!("expected the workspace, got {plan:?}");
+        };
+        assert_eq!(held.workspace, standard());
+        assert_eq!(
+            Meta::load(&standard().data_dir(base)).unwrap().kind,
+            SyncMode::Local
+        );
     }
 
     #[test]

@@ -75,11 +75,11 @@ fn registry_guard() -> MutexGuard<'static, ()> {
 static DELETE_GUARD: Mutex<()> = Mutex::new(());
 
 /// The workspaces in the app data dir `base` with whether each is open, which one was used last,
-/// and whether the note on the migration is due; that note comes once, and the listing clears
-/// it. A registry entry whose directory is gone (a delete that did not reach the registry), or
-/// whose `workspace.json` does not load, is left out with a log line: one broken workspace must
-/// not leave the picker empty. The latter stays a workspace all the same (its id stays taken,
-/// its ports stay).
+/// and the notes on the migration that are due (that it happened, and the name of an unreadable
+/// `settings.json` it set aside); each comes once, and the listing clears it. A registry entry
+/// whose directory is gone (a delete that did not reach the registry), or whose `workspace.json`
+/// does not load, is left out with a log line: one broken workspace must not leave the picker
+/// empty. The latter stays a workspace all the same (its id stays taken, its ports stay).
 pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
     let _guard = registry_guard();
     let mut registry = load_registry(base)?;
@@ -109,7 +109,8 @@ pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
         workspaces.push(meta.info(entry.id.clone(), open));
     }
     let migrated_notice = registry.migrated_notice;
-    if migrated_notice {
+    let unreadable_settings = registry.unreadable_settings.take();
+    if migrated_notice || unreadable_settings.is_some() {
         registry.migrated_notice = false;
         registry.store(base)?;
     }
@@ -120,6 +121,7 @@ pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
         workspaces,
         last_used,
         migrated_notice,
+        unreadable_settings,
     })
 }
 
@@ -892,6 +894,7 @@ mod tests {
                 .collect(),
             last_used: workspaces.first().map(|(ws, _)| id(ws)),
             migrated_notice,
+            unreadable_settings: None,
         }
         .store(base)
         .unwrap();
@@ -1072,6 +1075,41 @@ mod tests {
     }
 
     #[test]
+    fn list_names_the_settings_the_migration_set_aside_exactly_once() {
+        let scratch = Scratch::new("set-aside");
+        let base = &scratch.0;
+        fs::write(base.join("settings.json"), "{torn").unwrap();
+        crate::migration::migrate(base).unwrap();
+        let before = registry_of(base);
+        let name = before.unreadable_settings.clone().expect("a name");
+        // The name alone, in the app data dir, with the UTC time of the run.
+        let stamp = name
+            .strip_prefix("settings.json.unreadable-")
+            .expect("the name of the settings");
+        assert!(
+            chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%dT%H%M%SZ").is_ok(),
+            "{name}"
+        );
+        assert_eq!(fs::read_to_string(base.join(&name)).unwrap(), "{torn");
+
+        let listing = list(base).unwrap();
+
+        assert_eq!(listing.unreadable_settings.as_deref(), Some(name.as_str()));
+        assert!(listing.migrated_notice);
+        let wire = serde_json::to_value(&listing).unwrap();
+        assert_eq!(wire["unreadableSettings"], serde_json::json!(name));
+        assert_eq!(list(base).unwrap().unreadable_settings, None);
+        assert_eq!(
+            registry_of(base),
+            Registry {
+                migrated_notice: false,
+                unreadable_settings: None,
+                ..before
+            }
+        );
+    }
+
+    #[test]
     fn list_leaves_out_a_registry_entry_without_a_directory() {
         let scratch = Scratch::new("no-dir");
         let base = &scratch.0;
@@ -1087,6 +1125,7 @@ mod tests {
             ],
             last_used: Some(id("gone")),
             migrated_notice: false,
+            unreadable_settings: None,
         }
         .store(base)
         .unwrap();

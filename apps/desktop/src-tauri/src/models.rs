@@ -257,6 +257,10 @@ pub struct WorkspaceList {
     pub last_used: Option<WorkspaceId>,
     /// The note on the migration is due: `launcher::list` says so once.
     pub migrated_notice: bool,
+    /// The name (no path) in the app data dir the migration set an unreadable `settings.json`
+    /// aside under, "Standard" being built from the defaults instead; `launcher::list` gives it
+    /// once.
+    pub unreadable_settings: Option<String>,
 }
 
 /// What the picker sends to make a workspace (`id` none) or to edit the one `id` names.

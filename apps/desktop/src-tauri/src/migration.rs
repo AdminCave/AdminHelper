@@ -9,9 +9,11 @@
 //! keyring keys without a prefix, so stored passwords and an enrolled identity stay in use.
 //!
 //! The old files stay as they are: each run reads them, and an older version reads them again
-//! after a downgrade. A run builds each workspace in `<id>.partial/` and renames it, writes
-//! `prefs.json`, hands over the port map and writes `workspaces.json` last, at once. Until that
-//! file is there, the next run builds everything anew from the old files.
+//! after a downgrade. Only a `settings.json` that does not load is set aside under a name of its
+//! own, and "Standard" is built as if there were none. A run builds each workspace in
+//! `<id>.partial/` and renames it, writes `prefs.json`, hands over the port map and writes
+//! `workspaces.json` last, at once. Until that file is there, the next run builds everything
+//! anew from the old files.
 
 use std::fs::{self, File};
 use std::io;
@@ -34,6 +36,10 @@ const LOCK_FILE: &str = "migrate.lock";
 /// In the app data dir: the settings of the one workspace before R-0431, as older versions named
 /// them.
 const LEGACY_SETTINGS: &str = "settings.json";
+
+/// In the app data dir: how the name of [`LEGACY_SETTINGS`] set aside begins; the UTC time of
+/// the run follows.
+const SET_ASIDE_PREFIX: &str = "settings.json.unreadable-";
 
 /// A workspace the migration can make. The ids are fixed, so a run after an abort finds what the
 /// run before it left.
@@ -121,13 +127,15 @@ impl Planned {
 /// says that happened. Processes that call it at once take turns under `migrate.lock`; all but
 /// the first find it done.
 pub fn migrate(base: &Path) -> Result<(), AppError> {
-    migrate_with(base, &mut |_| Ok(()))
+    let now = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+    migrate_with(base, &now, &mut |_| Ok(()))
 }
 
-/// [`migrate`], calling `step` with the name of each step once it is done; an error from `step`
-/// ends the run there, as a crash would.
+/// [`migrate`] at the UTC time `now`, calling `step` with the name of each step once it is done;
+/// an error from `step` ends the run there, as a crash would.
 fn migrate_with(
     base: &Path,
+    now: &str,
     step: &mut dyn FnMut(&str) -> Result<(), AppError>,
 ) -> Result<(), AppError> {
     fs::create_dir_all(base)?;
@@ -137,11 +145,15 @@ fn migrate_with(
     if base.join(REGISTRY_FILE).try_exists()? {
         return Ok(());
     }
-    let settings = legacy_settings(base)?;
+    // Before the settings are set aside: a run that stops here changes nothing.
+    refuse_link(&workspaces_dir(base))?;
+    let (settings, set_aside) = legacy_settings(base, now)?;
+    if set_aside.is_some() {
+        step("set aside")?;
+    }
     let planned = plan(base, &settings)?;
 
     // What an aborted run left. No process opens a workspace the registry does not name.
-    refuse_link(&workspaces_dir(base))?;
     for template in TEMPLATES {
         let dir = data_dir(base, &WorkspaceId::parse(template.id)?);
         remove_dir(&partial(&dir))?;
@@ -179,6 +191,7 @@ fn migrate_with(
             .collect(),
         last_used: Some(WorkspaceId::parse(STANDARD.id)?),
         migrated_notice: true,
+        unreadable_settings: set_aside,
     }
     .store(base)?;
     let ids: Vec<String> = planned.iter().map(|ws| ws.id.to_string()).collect();
@@ -186,27 +199,70 @@ fn migrate_with(
     Ok(())
 }
 
-/// The settings an older version left in `base`, or their defaults (local mode) if it left none.
-/// A file that does not parse stops the migration: built from the defaults, the workspaces would
-/// have lost its server for good. The error names the file and where it breaks, never a value
-/// from it: serde quotes the values it rejects.
-fn legacy_settings(base: &Path) -> Result<Settings, AppError> {
-    let bytes = match fs::read(base.join(LEGACY_SETTINGS)) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Settings::default()),
-        Err(e) => return Err(e.into()),
-    };
-    serde_json::from_slice(&bytes).map_err(|e| {
-        AppError::Io(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "{LEGACY_SETTINGS}: does not parse ({:?} error at line {}, column {})",
+/// The settings an older version left in `base`, or their defaults (local mode) if it left none,
+/// and the name of the file they were set aside in if they did not load. A file that does not
+/// read or parse is renamed, as it is, to `settings.json.unreadable-<now>`, and the workspaces
+/// are built from the defaults, as without one: else no workspace would start. A run after one
+/// that set the file aside and stopped short finds the name again. Should the rename fail (on
+/// Windows, while another process holds the file open), the migration stops. The errors and the
+/// log line name the file and where it breaks, never a value from it: serde quotes the values it
+/// rejects.
+fn legacy_settings(base: &Path, now: &str) -> Result<(Settings, Option<String>), AppError> {
+    let path = base.join(LEGACY_SETTINGS);
+    let why = match fs::read(&path) {
+        Ok(bytes) => match serde_json::from_slice(&bytes) {
+            Ok(settings) => return Ok((settings, None)),
+            Err(e) => format!(
+                "does not parse ({:?} error at line {}, column {})",
                 e.classify(),
                 e.line(),
                 e.column()
             ),
-        ))
-    })
+        },
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Ok((Settings::default(), set_aside_before(base)?))
+        }
+        Err(e) => format!("does not read ({:?})", e.kind()),
+    };
+    let name = free_name(base, now)?;
+    if let Err(e) = fs::rename(&path, base.join(&name)) {
+        return Err(AppError::Io(io::Error::new(
+            e.kind(),
+            format!("{LEGACY_SETTINGS}: {why}, and it was not set aside as {name} ({e})"),
+        )));
+    }
+    log::warn!(
+        "{LEGACY_SETTINGS} {why}; set aside as {name}, the workspace Standard is built from the defaults"
+    );
+    Ok((Settings::default(), Some(name)))
+}
+
+/// The name a run before this one set [`LEGACY_SETTINGS`] aside under, the latest if there are
+/// more; none if there is none. Only the migration makes these names, and only until the registry
+/// is there: a run that finds no settings and such a file follows one that stopped short.
+fn set_aside_before(base: &Path) -> Result<Option<String>, AppError> {
+    let mut latest = None;
+    for entry in fs::read_dir(base)? {
+        let name = entry?.file_name().to_string_lossy().into_owned();
+        if name.starts_with(SET_ASIDE_PREFIX) {
+            latest = latest.max(Some(name));
+        }
+    }
+    Ok(latest)
+}
+
+/// `settings.json.unreadable-<now>`, with `-2`, `-3`… after it while that name is taken: a rename
+/// replaces what has the name it gives.
+fn free_name(base: &Path, now: &str) -> Result<String, AppError> {
+    let mut name = format!("{SET_ASIDE_PREFIX}{now}");
+    for n in 2.. {
+        match fs::symlink_metadata(base.join(&name)) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => break,
+            Err(e) => return Err(e.into()),
+            Ok(_) => name = format!("{SET_ASIDE_PREFIX}{now}-{n}"),
+        }
+    }
+    Ok(name)
 }
 
 /// The workspaces the data in `base` makes: "Standard" in the mode of `settings`, and one beside
@@ -517,6 +573,29 @@ mod tests {
         );
     }
 
+    /// The UTC time of a run in the tests, and the name it sets `settings.json` aside under.
+    const NOW: &str = "20261021T080000Z";
+    const SET_ASIDE: &str = "settings.json.unreadable-20261021T080000Z";
+
+    /// A run at [`NOW`] without an abort.
+    fn migrate_now(base: &Path) -> Result<(), AppError> {
+        migrate_with(base, NOW, &mut |_| Ok(()))
+    }
+
+    /// [`server_install`] with `settings` in its `settings.json`.
+    fn install_with_settings(base: &Path, settings: &str) {
+        server_install(base);
+        fs::write(base.join(SETTINGS), settings).unwrap();
+    }
+
+    /// The registry of a run that set the settings aside under `name`: "Standard" alone.
+    fn registry_set_aside(name: &str) -> Registry {
+        Registry {
+            unreadable_settings: Some(name.to_string()),
+            ..registry(&["standard"])
+        }
+    }
+
     /// Every directory (with a trailing `/`) and file under `dir`, files with their bytes. Lock
     /// files hold nothing and stay out: on Windows the lock of a closed handle can linger, and
     /// a read then fails.
@@ -568,6 +647,7 @@ mod tests {
                 .collect(),
             last_used: Some(WorkspaceId::parse("standard").unwrap()),
             migrated_notice: true,
+            unreadable_settings: None,
         }
     }
 
@@ -599,7 +679,7 @@ mod tests {
     /// would; it runs through if it has no such step.
     fn run_aborting_at(base: &Path, abort_at: usize) -> Result<(), AppError> {
         let mut steps = 0;
-        migrate_with(base, &mut |_| {
+        migrate_with(base, NOW, &mut |_| {
             steps += 1;
             if steps > abort_at {
                 Err(AppError::Validation("aborted".to_string()))
@@ -850,26 +930,235 @@ mod tests {
     }
 
     #[test]
-    fn settings_that_do_not_parse_stop_the_migration_and_leave_all_be() {
+    fn settings_that_do_not_parse_are_set_aside_and_standard_is_built_as_without_them() {
+        // What a run makes of the same install without settings.
+        let reference = Scratch::new("settings-none");
+        server_install(&reference.0);
+        fs::remove_file(reference.0.join(SETTINGS)).unwrap();
+        migrate_now(&reference.0).unwrap();
+        let mut expected = snapshot(&reference.0);
+        expected.remove(REGISTRY_FILE);
+
         // Torn, and well-formed with a value no version wrote.
-        for broken in ["{oops", r#"{"mode": "geheim"}"#] {
+        let torn = &SERVER_SETTINGS[..SERVER_SETTINGS.len() / 2];
+        for broken in [torn, r#"{"mode": "geheim"}"#] {
             let scratch = Scratch::new("settings-broken");
             let base = &scratch.0;
-            legacy(base, &[(SETTINGS, broken), (LOCAL_FILE, LOCAL)]);
-            let before = legacy_bytes(base);
+            install_with_settings(base, broken);
 
-            for _ in 0..2 {
-                let error = migrate(base).unwrap_err().to_string();
-                // The log line of the start names the file, and quotes nothing of it.
-                assert!(error.starts_with("settings.json: "), "{error}");
-                assert!(error.contains("line 1"), "{error}");
-                assert!(!error.contains("geheim"), "{error}");
-                assert_eq!(Registry::load(base).unwrap(), None, "{broken}");
-                assert!(!base.join("workspaces").exists(), "{broken}");
-                assert!(!base.join("prefs.json").exists(), "{broken}");
-                assert_eq!(legacy_bytes(base), before, "{broken}");
+            migrate_now(base).unwrap();
+
+            // As it was, under a name of its own, which the registry keeps for the picker.
+            let mut migrated = snapshot(base);
+            assert_eq!(
+                migrated.remove(SET_ASIDE),
+                Some(Some(broken.as_bytes().to_vec())),
+                "{broken}"
+            );
+            assert_eq!(
+                Registry::load(base).unwrap(),
+                Some(registry_set_aside(SET_ASIDE)),
+                "{broken}"
+            );
+            // The rest as without settings: "Standard" local with the local store, the prefs
+            // from the defaults, the ports of the old owner gone, the other old files kept.
+            migrated.remove(REGISTRY_FILE);
+            assert_eq!(migrated, expected, "{broken}");
+            let standard = dir_of(base, "standard");
+            assert_eq!(Meta::load(&standard).unwrap().kind, SyncMode::Local);
+            assert_eq!(read(standard.join(LOCAL_FILE)), LOCAL);
+
+            // The next run finds the registry, and no settings to set aside.
+            let done = snapshot(base);
+            migrate(base).unwrap();
+            assert_eq!(snapshot(base), done, "{broken}");
+        }
+    }
+
+    #[test]
+    fn settings_that_do_not_read_are_set_aside_as_they_are() {
+        // A directory in its place: no platform reads it, and root does not either.
+        let scratch = Scratch::new("settings-unread");
+        let base = &scratch.0;
+        server_install(base);
+        fs::remove_file(base.join(SETTINGS)).unwrap();
+        fs::create_dir(base.join(SETTINGS)).unwrap();
+        fs::write(base.join(SETTINGS).join("keep"), "mine").unwrap();
+
+        migrate_now(base).unwrap();
+
+        assert!(!base.join(SETTINGS).exists());
+        assert_eq!(names_in(&base.join(SET_ASIDE)), ["keep"]);
+        assert_eq!(read(base.join(SET_ASIDE).join("keep")), "mine");
+        assert_eq!(
+            Registry::load(base).unwrap(),
+            Some(registry_set_aside(SET_ASIDE))
+        );
+        assert_eq!(
+            Meta::load(&dir_of(base, "standard")).unwrap().kind,
+            SyncMode::Local
+        );
+    }
+
+    #[test]
+    fn an_abort_after_setting_the_settings_aside_ends_where_a_run_without_one_does() {
+        let broken = r#"{"mode": "geheim"}"#;
+        let reference = Scratch::new("aside-reference");
+        install_with_settings(&reference.0, broken);
+        let mut steps = Vec::new();
+        migrate_with(&reference.0, NOW, &mut |step| {
+            steps.push(step.to_string());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            steps,
+            [
+                "set aside",
+                "cleared",
+                "built standard",
+                "placed standard",
+                "prefs",
+                "ports",
+            ]
+        );
+        let expected = snapshot(&reference.0);
+
+        // An abort, then a second run that aborts too (or runs through), then a last run at
+        // another time: the runs after the first find the name it set the settings aside under.
+        for first in 0..steps.len() {
+            for second in 0..=steps.len() {
+                let after = format!(
+                    "abort after {:?}, then after {:?}",
+                    steps[first],
+                    steps.get(second)
+                );
+                let scratch = Scratch::new(&format!("aside-abort-{first}-{second}"));
+                install_with_settings(&scratch.0, broken);
+
+                assert!(run_aborting_at(&scratch.0, first).is_err(), "{after}");
+                assert_eq!(read(scratch.0.join(SET_ASIDE)), broken, "{after}");
+                assert_eq!(Registry::load(&scratch.0).unwrap(), None, "{after}");
+                assert_eq!(
+                    run_aborting_at(&scratch.0, second).is_ok(),
+                    second == steps.len(),
+                    "{after}"
+                );
+                migrate(&scratch.0).unwrap();
+
+                assert_eq!(snapshot(&scratch.0), expected, "{after}");
             }
         }
+    }
+
+    #[test]
+    fn settings_written_after_an_aborted_run_win_and_replace_nothing_it_set_aside() {
+        let broken = r#"{"mode": "geheim"}"#;
+
+        // An older version, started after the abort, wrote them anew: they are read.
+        let scratch = Scratch::new("aside-rewritten");
+        let base = &scratch.0;
+        install_with_settings(base, broken);
+        assert!(run_aborting_at(base, 0).is_err());
+        fs::write(base.join(SETTINGS), SERVER_SETTINGS).unwrap();
+
+        migrate_now(base).unwrap();
+
+        assert_eq!(
+            Registry::load(base).unwrap(),
+            Some(registry(&["standard", "lokal", "sync"]))
+        );
+        assert_eq!(read(base.join(SETTINGS)), SERVER_SETTINGS);
+        assert_eq!(read(base.join(SET_ASIDE)), broken);
+
+        // Torn again, and set aside in the same second: under a name of its own as well.
+        let scratch = Scratch::new("aside-twice");
+        let base = &scratch.0;
+        install_with_settings(base, broken);
+        assert!(run_aborting_at(base, 0).is_err());
+        fs::write(base.join(SETTINGS), "{torn").unwrap();
+
+        migrate_now(base).unwrap();
+
+        let second = format!("{SET_ASIDE}-2");
+        assert_eq!(read(base.join(SET_ASIDE)), broken);
+        assert_eq!(read(base.join(&second)), "{torn");
+        assert!(!base.join(SETTINGS).exists());
+        assert_eq!(
+            Registry::load(base).unwrap(),
+            Some(registry_set_aside(&second))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn settings_that_cannot_be_set_aside_stop_the_migration_and_leave_all_be() {
+        use std::os::unix::fs::PermissionsExt;
+
+        /// Gives the dir its rights back, so the scratch can go.
+        struct Writable<'a>(&'a Path);
+
+        impl Drop for Writable<'_> {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o700));
+            }
+        }
+
+        let scratch = Scratch::new("aside-refused");
+        let base = &scratch.0;
+        install_with_settings(base, r#"{"mode": "geheim"}"#);
+        // From an earlier start: a dir that takes no new names takes no new lock file either.
+        File::create(base.join(LOCK_FILE)).unwrap();
+        let before = snapshot(base);
+        let writable = Writable(base);
+        fs::set_permissions(base, fs::Permissions::from_mode(0o500)).unwrap();
+        assert!(
+            fs::write(base.join("probe"), "").is_err(),
+            "the dir takes new names all the same (root?)"
+        );
+
+        let error = migrate_now(base).unwrap_err().to_string();
+
+        // The log line of the start names the file and where it breaks, and quotes nothing.
+        assert!(
+            error.starts_with("settings.json: does not parse (Data error at line 1"),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!("it was not set aside as {SET_ASIDE}")),
+            "{error}"
+        );
+        assert!(!error.contains("geheim"), "{error}");
+        drop(writable);
+        assert_eq!(snapshot(base), before);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn settings_another_process_holds_open_stop_the_migration_and_leave_all_be() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let scratch = Scratch::new("aside-held");
+        let base = &scratch.0;
+        install_with_settings(base, r#"{"mode": "geheim"}"#);
+        let before = snapshot(base);
+        // Shared for reading alone (FILE_SHARE_READ): no other handle may rename it.
+        let held = File::options()
+            .read(true)
+            .share_mode(0x1)
+            .open(base.join(SETTINGS))
+            .unwrap();
+
+        let error = migrate_now(base).unwrap_err().to_string();
+
+        assert!(error.starts_with("settings.json: "), "{error}");
+        assert!(
+            error.contains(&format!("it was not set aside as {SET_ASIDE}")),
+            "{error}"
+        );
+        assert!(!error.contains("geheim"), "{error}");
+        drop(held);
+        assert_eq!(snapshot(base), before);
     }
 
     #[test]
@@ -901,7 +1190,7 @@ mod tests {
         let reference = Scratch::new("abort-reference");
         server_install(&reference.0);
         let mut steps = Vec::new();
-        migrate_with(&reference.0, &mut |step| {
+        migrate_with(&reference.0, NOW, &mut |step| {
             steps.push(step.to_string());
             Ok(())
         })

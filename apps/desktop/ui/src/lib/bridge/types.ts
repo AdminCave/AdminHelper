@@ -160,11 +160,14 @@ export interface WorkspaceInfo {
   open: boolean;
 }
 
-// What the picker shows: `lastUsed` is selected first; `migratedNotice` comes true once.
+// What the picker shows: `lastUsed` is selected first; `migratedNotice` comes true once, and
+// so does `unreadableSettings`, the name (no path) the migration set an unreadable
+// settings.json aside under in the app data dir.
 export interface WorkspaceList {
   workspaces: WorkspaceInfo[];
   lastUsed?: string | null;
   migratedNotice: boolean;
+  unreadableSettings?: string | null;
 }
 
 // Makes a workspace (no id) or edits the closed one `id` names. The kind of a workspace

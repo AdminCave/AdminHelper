@@ -281,8 +281,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T31
 
-### T49 — Migration: unlesbare settings.json sichern und weiterstarten  [ ]
+### T49 — Migration: unlesbare settings.json sichern und weiterstarten  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @d18e5075 2026-10-21T05:44:07+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T49.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-21 (Branch-Review, wichtig): Ist die `settings.json` einer bestehenden Installation unlesbar (Parse- oder Lesefehler), scheitert heute `migrate()` und jeder Prozess endet mit Exit 1 ohne Fenster (`migration.rs` ~:193, `workspace.rs` ~:529, `main.rs` ~:142); vor R-0431 startete die App lokal. Künftig gilt eine unlesbare `settings.json` für die Migration als nicht vorhanden: Sie wird unverändert als `settings.json.unreadable-<UTC-Zeitstempel>` daneben gesichert (umbenannt, nicht gelöscht; ein zweiter Lauf findet keine unlesbare Datei mehr), „Standard“ entsteht lokal wie bei einer Installation ohne Einstellungen, die übrigen Altdaten (Verbindungsdateien, Portkarte, Keyring) werden wie bisher übernommen, soweit lesbar. Die Registry merkt sich den Namen der Sicherung für einen einmaligen Hinweis; `list` (Launcher) liefert ihn einmal aus wie `migratedNotice` (Feld in `WorkspaceList`, z. B. `unreadableSettings: Option<String>` nur mit dem Dateinamen, kein Pfad). Log-Zeile ohne Inhalt der Datei. Tests: abgeschnittene und nicht lesbare `settings.json` → Migration gelingt, Sicherung existiert mit altem Inhalt, „Standard“ lokal, Hinweis genau einmal; lesbare Datei → unverändert; Abbruch nach dem Umbenennen und erneuter Lauf → kein Datenverlust.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- migration
 Doku: keine (Doku mit T51)

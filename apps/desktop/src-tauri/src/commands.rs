@@ -822,6 +822,7 @@ mod tests {
             }],
             last_used: None,
             migrated_notice: false,
+            unreadable_settings: None,
         }
         .store(base)
         .unwrap();
@@ -997,6 +998,7 @@ mod tests {
                 .collect(),
             last_used: None,
             migrated_notice: false,
+            unreadable_settings: None,
         }
         .store(base)
         .unwrap();
