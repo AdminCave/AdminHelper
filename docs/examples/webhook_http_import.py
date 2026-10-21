@@ -21,8 +21,8 @@
 #
 # Example response from the external API:
 # [
-#   {"hostname": "web-01", "ip": "10.0.0.1", "tags": ["prod", "web"]},
-#   {"hostname": "db-01",  "ip": "10.0.0.2", "tags": ["prod", "db"]}
+#   {"hostname": "web-01", "ip": "192.0.2.1", "tags": ["prod", "web"]},
+#   {"hostname": "db-01",  "ip": "192.0.2.2", "tags": ["prod", "db"]}
 # ]
 #
 # Available HTTP helpers: http_get(url, headers=None, timeout=10)

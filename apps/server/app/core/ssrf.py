@@ -18,9 +18,14 @@ import enum
 import ipaddress
 import logging
 import socket
+import ssl
 import threading
 import time
+from dataclasses import dataclass
 from urllib.parse import urlparse
+from urllib.request import getproxies
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -127,30 +132,48 @@ class UrlVerdict(enum.Enum):
     UNRESOLVED = "unresolved"
 
 
-def classify_url(url: str) -> UrlVerdict:
-    """Classifies a URL: ALLOWED, PRIVATE or UNRESOLVED (R-0045).
+@dataclass(frozen=True)
+class Target:
+    """What the guard found for one URL, for a caller that goes on to fetch it.
+
+    `host` is the name the guard resolved. `addresses` holds, for ALLOWED only, every
+    address it checked: no duplicates, in resolver order, an IPv4-mapped one as its
+    IPv4 address. pinned_client connects to these and to nothing else.
+    """
+
+    verdict: UrlVerdict
+    host: str = ""
+    addresses: tuple[str, ...] = ()
+
+
+def check_target(url: str) -> Target:
+    """Resolves the URL's host once and checks every address (R-0045).
 
     Both rejections fail closed; the reason only lets a caller tell an operator
     whether the target resolves to a blocked address (PRIVATE, an unreadable
     address included) or does not resolve at all (UNRESOLVED: no host, a DNS error,
     the deadline or the in-flight cap missed) — a dead nameserver is not a wrong URL.
+    One blocked address among public ones rejects the host, and a rejection carries
+    no address at all.
     """
     try:
         hostname = urlparse(url).hostname
     except ValueError:
         # urlparse raises on a malformed IPv6 literal ("http://[::1"); an unreadable
         # URL fails closed like an unreadable address below (R-0181).
-        return UrlVerdict.PRIVATE
+        return Target(UrlVerdict.PRIVATE)
     if not hostname:
-        return UrlVerdict.UNRESOLVED
+        return Target(UrlVerdict.UNRESOLVED)
     addr_info = _resolve(hostname, _DNS_TIMEOUT_S)
     if not addr_info:
-        return UrlVerdict.UNRESOLVED  # timed out, capped or empty -> fail closed, never allow
+        # timed out, capped or empty -> fail closed, never allow
+        return Target(UrlVerdict.UNRESOLVED, hostname)
+    addresses: list[str] = []
     for _family, _, _, _, sockaddr in addr_info:
         try:
             ip = ipaddress.ip_address(sockaddr[0])
         except ValueError:
-            return UrlVerdict.PRIVATE
+            return Target(UrlVerdict.PRIVATE, hostname)
         # Normalize IPv4-mapped IPv6 (::ffff:127.0.0.1) to the embedded IPv4 so the
         # IPv4 category checks below catch it.
         if ip.version == 6 and ip.ipv4_mapped is not None:
@@ -164,8 +187,15 @@ def classify_url(url: str) -> UrlVerdict:
             or ip.is_unspecified
             or any(ip in net for net in _BLOCKED_NETWORKS)
         ):
-            return UrlVerdict.PRIVATE
-    return UrlVerdict.ALLOWED
+            return Target(UrlVerdict.PRIVATE, hostname)
+        if str(ip) not in addresses:
+            addresses.append(str(ip))
+    return Target(UrlVerdict.ALLOWED, hostname, tuple(addresses))
+
+
+def classify_url(url: str) -> UrlVerdict:
+    """Classifies a URL: ALLOWED, PRIVATE or UNRESOLVED (R-0045); see check_target."""
+    return check_target(url).verdict
 
 
 def is_private_url(url: str) -> bool:
@@ -173,8 +203,89 @@ def is_private_url(url: str) -> bool:
 
     Fail-closed: an unresolvable host, a parse error, or an unspecified/mapped
     address counts as private, so the guard never lets an internal target through
-    by accident; classify_url says which of the two it is. Note: this is a
-    resolve-then-check; it does not pin the resolved IP into the subsequent
-    request, so it is not by itself DNS-rebinding-proof.
+    by accident; classify_url says which of the two it is. A verdict only: an HTTP
+    client fetching the URL afterwards resolves the name again and may get another
+    answer (DNS rebinding). A caller that fetches takes check_target and
+    pinned_client, which connect to the addresses checked here.
     """
     return classify_url(url) is not UrlVerdict.ALLOWED
+
+
+class _PinnedTransport(httpx.BaseTransport):
+    """Sends each request to the target's checked addresses, one after the other.
+
+    URL, Host header and TLS name stay the hostname; only the connection goes to the
+    address. The next address is tried only when connecting failed (refused,
+    unreachable, TLS handshake, connect timeout): past that point the request may have
+    reached the server, and a second try would send it twice.
+    """
+
+    def __init__(
+        self, raw_host: bytes, addresses: tuple[str, ...], *, verify: bool | ssl.SSLContext
+    ) -> None:
+        self._raw_host = raw_host
+        self._addresses = addresses
+        self._inner = httpx.HTTPTransport(verify=verify)
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.raw_host.lower() != self._raw_host:
+            # Only the checked host has checked addresses: anything else (a redirect
+            # followed by the client) is refused before a socket is opened.
+            raise httpx.ConnectError(
+                "request host is not the host the SSRF guard checked", request=request
+            )
+        *fallbacks, last = self._addresses
+        for address in fallbacks:
+            try:
+                return self._inner.handle_request(_to_address(request, address))
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                continue
+        return self._inner.handle_request(_to_address(request, last))
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+def _to_address(request: httpx.Request, address: str) -> httpx.Request:
+    return httpx.Request(
+        request.method,
+        request.url.copy_with(host=address),
+        # The client set Host from the original URL, port included, and a request
+        # built from a stream gets no header added.
+        headers=request.headers,
+        stream=request.stream,
+        # raw_host is the IDNA form httpx put into the Host header; a str with the
+        # Unicode name would be encoded again by ssl, by the older IDNA 2003 rules.
+        extensions={**request.extensions, "sni_hostname": request.url.raw_host.decode("ascii")},
+    )
+
+
+def pinned_client(
+    url: str, target: Target, *, verify: bool | ssl.SSLContext = True
+) -> httpx.Client:
+    """An httpx client for `url` that connects to one of `target`'s checked addresses.
+
+    `target` is check_target(url); one without addresses (a rejection) raises
+    ValueError. Host header and TLS name (SNI and certificate check) stay the
+    hostname. A request for any other host is refused without connecting, so each
+    redirect hop needs a check_target and a client of its own. Without a proxy `url`
+    is parsed here as the request would parse it, so an httpx.InvalidURL can come
+    from this call already.
+    """
+    if not target.addresses:
+        raise ValueError(f"no checked address to connect to ({target.verdict.value})")
+    proxies = getproxies()
+    if proxies.get(urlparse(url).scheme) or proxies.get("all"):
+        # With a proxy from the environment for this scheme httpx picks the proxy as
+        # before, NO_PROXY included (a target under NO_PROXY goes out directly and
+        # unpinned, as before): a client with a transport of its own ignores environment
+        # proxies, and through a CONNECT tunnel httpcore takes the TLS name from the
+        # target host, not from sni_hostname, so a pinned address would be checked
+        # against the certificate instead of the name.
+        return httpx.Client(verify=verify)
+    # Compared in httpx's own form. Neither urlparse's hostname (target.host) nor
+    # httpx's URL.host fits every spelling: URL.host decodes IDNA only when the whole
+    # host starts with xn-- (www.bücher.example stays encoded) and keeps the case of
+    # an IPv6 literal. raw_host is IDNA-encoded throughout; lower() does the rest.
+    raw_host = httpx.URL(url).raw_host.lower()
+    return httpx.Client(transport=_PinnedTransport(raw_host, target.addresses, verify=verify))
