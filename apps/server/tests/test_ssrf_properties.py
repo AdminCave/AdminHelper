@@ -132,11 +132,11 @@ def test_the_guard_checks_the_host_that_httpx_will_actually_fetch(url):
     """Differential against the parser the REQUEST uses, not the one next door.
 
     is_private_url parses with urlparse; the fetch that follows it runs through
-    httpx (script_worker.py::_safe_http_get -> httpx.stream). If those two read a
-    different host out of the same string, the guard clears one address and the
-    client connects to another — the parser-confusion shape of an SSRF bypass, and
-    the reason comparing urlparse against urlsplit proves nothing (urlparse calls
-    urlsplit internally, so they cannot disagree by construction).
+    httpx (script_worker.py::_safe_http_get -> pinned_client(...).stream). If those
+    two read a different host out of the same string, the guard clears one address
+    and the client connects to another — the parser-confusion shape of an SSRF
+    bypass, and the reason comparing urlparse against urlsplit proves nothing
+    (urlparse calls urlsplit internally, so they cannot disagree by construction).
     """
     try:
         fetched_host = httpx.URL(url).host

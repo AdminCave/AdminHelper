@@ -36,6 +36,9 @@ _V4_B = "93.184.216.35"
 _V6 = "2606:2800:220:1:248:1893:25c8:1946"
 _PROXY = "http://192.0.2.10:3128"
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+# A call's timeout travels as a request extension, which the pin rebuilds per address;
+# not httpx's default of 5 s, so the client's default cannot pass for the call's own.
+_TIMEOUT = 7
 
 
 @pytest.fixture(autouse=True)
@@ -193,11 +196,12 @@ def test_a_failed_connect_tries_the_next_address_with_the_same_request(monkeypat
     target = Target(UrlVerdict.ALLOWED, "pinned.example", (_V4, _V4_B))
 
     with pinned_client(url, target) as client:
-        resp = client.post(url, json={"a": 1}, timeout=5)
+        resp = client.post(url, json={"a": 1}, timeout=_TIMEOUT)
 
     assert resp.status_code == 204
     assert [r.url.host for r in seen] == [_V4, _V4_B]
     assert b"".join(seen[1].stream) == b'{"a":1}'
+    assert [r.extensions["timeout"] for r in seen] == [httpx.Timeout(_TIMEOUT).as_dict()] * 2
 
 
 @pytest.mark.parametrize("error", [httpx.ReadTimeout, httpx.RemoteProtocolError])
@@ -234,13 +238,14 @@ def test_host_header_and_tls_name_stay_the_hostname(monkeypatch, host, idna):
     url = f"https://{host}:8443/x?q=1"
 
     with pinned_client(url, check_target(url)) as client:
-        resp = client.get(url, timeout=5)
+        resp = client.get(url, timeout=_TIMEOUT)
 
     (sent,) = seen
     assert sent.url == httpx.URL(f"https://{_V4}:8443/x?q=1")
     assert sent.headers["host"] == f"{idna}:8443"
     # The IDNA form httpx sends as Host, not the Unicode name ssl would encode by IDNA 2003.
     assert sent.extensions["sni_hostname"] == idna
+    assert sent.extensions["timeout"] == httpx.Timeout(_TIMEOUT).as_dict()
     assert resp.url == httpx.URL(url)
 
 
@@ -298,6 +303,32 @@ def test_a_rejected_target_gets_no_client(monkeypatch, answer, with_proxy):
 
     with pytest.raises(ValueError):
         pinned_client(url, target)
+
+
+@pytest.mark.parametrize("closed_by", ["close", "with"])
+def test_closing_the_client_closes_the_inner_transport(monkeypatch, closed_by):
+    # The inner HTTPTransport owns the connection pool; left open, its kept-alive
+    # connections outlive the client.
+    real_close = httpx.HTTPTransport.close
+    closed: list[httpx.HTTPTransport] = []
+
+    def _close(self):
+        closed.append(self)
+        real_close(self)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "close", _close)
+    url = "https://pinned.example/x"
+    target = Target(UrlVerdict.ALLOWED, "pinned.example", (_V4,))
+
+    if closed_by == "with":
+        with pinned_client(url, target):
+            assert closed == []
+    else:
+        client = pinned_client(url, target)
+        assert closed == []
+        client.close()
+
+    assert len(closed) == 1
 
 
 # --- pinned_client: a proxy from the environment ---------------------------------
