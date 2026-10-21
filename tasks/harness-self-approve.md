@@ -14,8 +14,10 @@ Harness-Vorhaben auf Kevins Wort vom 2026-10-21 (CLAUDE.md §4). Jede Task berü
 kommt `security` (`review.sh risk`). Die neuen Texte stehen wörtlich in der Spec, Abschnitt „Neue Texte“; die Tasks
 übernehmen sie und brechen um wie der Bestand. Zeilenangaben origin/main@82e4a7b8, beim Bau neu greppen.
 
-### T1 — roadmap.py: `approve` behält die Notiz der Zeile  [ ]
+### T1 — roadmap.py: `approve` behält die Notiz der Zeile  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8a69747e 2026-10-21T10:08:28+02:00
+Review: approve (.ah-out/review/harness-self-approve/T1.verdict.json)
 Änderung: Zuerst der Test `test_approve_and_revoke_keep_the_note` in `test_roadmap.py`: eine Zeile mit der Status-Spalte `geplant (Semantik-Frage: x)` steht nach `approve` als `freigegeben (Semantik-Frage: x)` im Abschnitt „Geplant“, nach `approve --revoke` wieder als `geplant (Semantik-Frage: x)`, `lint` ohne Fund; auf HEAD dreimal identisch rot (die Spalte ist danach `freigegeben`). Dann `cmd_approve` (`scripts/dev/roadmap.py:730-742`): das Statuswort wird ersetzt, der Text dahinter in der Status-Spalte bleibt wörtlich, in beide Richtungen. Hilfetexte `:16` und `:1152`, dazu `DEVELOPMENT.md:600`, nach der Spec. `test_approve_and_revoke` und `test_approve_only_from_geplant_and_revoke_only_from_freigegeben` bleiben unverändert grün. Der neue Test läuft im Schritt `scripts/dev pytest` desselben Laufs; `-- session_status_test` engt nur den Shell-Block ein (der Test ruft `roadmap.py show --wip`).
 Beweis: origin/main@82e4a7b8 · `roadmap.main(["--file", <Fixture mit R-0003 „geplant (Semantik-Frage: x)“>, "--today", "2026-09-25", "approve", "R-0003"])` → Status-Spalte `freigegeben`, die Notiz ist weg; Ursache `scripts/dev/roadmap.py:737` `roadmap.set_status(args.id, new, None, args.today)`
 HEAD: 82e4a7b8
