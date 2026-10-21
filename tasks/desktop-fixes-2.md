@@ -52,8 +52,10 @@ Semantik: docs/developer/desktop.html:198 — „`<id>` ist die `id` der Verbind
 Dedup-Key: bug:desktop:ConnectionEditor.svelte:remember-unsaved-server-id
 HEAD: 82e4a7b8
 
-### T4 — Desktop-E2E: Ablehnungen aus executeAsync als { rejected } (R-0544)  [ ]
+### T4 — Desktop-E2E: Ablehnungen aus executeAsync als { rejected } (R-0544)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-connect.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js, apps/desktop/e2e/test/specs/settings-enroll.live.js, apps/desktop/e2e/eslint.config.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @ce4e699a 2026-10-21T10:26:48+02:00
+Review: approve (.ah-out/review/desktop-fixes-2/T4.verdict.json)
 Änderung: Die drei Helfer melden eine Ablehnung als `{ rejected: <Text> }` statt `{ error: … }`, wie `logout.live.js:17-25` und `workspace-picker.live.js:27-40`: `invoke` in `tunnel-connect.live.js:33-47` (die Prüfung `:45` liest `out.rejected`); `tunnelStatus` in `tunnel-start.live.js:27-35` (eine Ablehnung lässt den Spec mit ihrem Text scheitern, statt ein Objekt zu liefern, das `toMatchObject` vergleicht); `invoke` in `settings-enroll.live.js:24-36` (samt Kommentar `:24`). `eslint.config.js` bekommt `no-restricted-syntax` mit dem Selektor `CallExpression[callee.name='done'] > ObjectExpression > Property[key.name='error']` und einer Meldung, die den Grund nennt (webdriver wertet ein Skriptergebnis mit `error`-Schlüssel als gescheiterten Befehl); damit ist der Lint auf HEAD rot (drei Treffer) und danach grün. Das Verify ist Lint und Unit-Tests der E2E (`npm run lint`); ob die Specs auf dem echten Stack laufen, zeigt der Sammellauf.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
