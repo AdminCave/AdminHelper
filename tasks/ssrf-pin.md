@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Schutz: zur geprüften Adresse verbinden — Task-Ledger
-Status: bereit · Branch: feature/ssrf-pin · Review: pro Task
+Status: aktiv · Branch: feature/ssrf-pin · Review: pro Task
 Spec: docs/features/ssrf-pin.md
 Heavy: none — kein HTTP-Endpunkt, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert werden nur die ausgehenden Anfragen von HTTP-Check, Alert-Webhook (Monitoring) und Hook-Helfern `http_get`/`http_post` (Server), und keine schwere Suite fährt diese Wege (`scripts/tests/` kennt weder HTTP-Check noch Webhook noch `http_get`); belegt wird am Verbindungsaufbau (`socket.create_connection`) und mit einem echten TLS-Handshake gegen einen lokalen Server
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -71,3 +71,10 @@ Abhängt von: T1, T2 (CHANGELOG-Eintrag)
 Beweis: origin/main@82e4a7b8 · Probe: `_resolve` → `93.184.216.34`, `socket.create_connection` aufgezeichnet; `_safe_http_get("http://<hostname>:8080/x")` verbindet zu `("<hostname>", 8080)` und wirft `httpx.ConnectError`; dreimal identisch
 Orakel: contract — die Adresse am Verbindungsaufbau ist eine aus `check_target(url).addresses`
 HEAD: 82e4a7b8
+
+### T5 — Pin-Tests: Timeout und Schließen unter dem Pin  [ ]
+Komponente: server · Dateien: apps/server/tests/test_ssrf_pin.py, apps/server/tests/test_ssrf_properties.py
+Änderung: Aus der Branch-Prüfung, nur Tests, kein Produktcode. `_to_address` (`apps/server/app/core/ssrf.py:249`) baut die Anfrage je Adresse neu; dass das Timeout des Clients (Request-Extension `timeout`) dabei am inneren Transport ankommt, prüft heute kein Test (Mutationsprobe: `extensions={"sni_hostname": …}` ohne `**request.extensions` bleibt in den Suiten von Server und Monitoring grün). In `test_ssrf_pin.py`: `test_host_header_and_tls_name_stay_the_hostname` (`:231`) prüft zusätzlich `sent.extensions["timeout"]` gegen das Timeout des Aufrufs (`httpx.Timeout(<wert>).as_dict()`), `test_a_failed_connect_tries_the_next_address_with_the_same_request` (`:185`) dasselbe für den Versuch an der zweiten Adresse; ein neuer Test belegt, dass das Schließen des Clients (`close()` bzw. Verlassen des `with`) den inneren `httpx.HTTPTransport` schließt (`_PinnedTransport.close`, `ssrf.py:245`). Jede neue Assertion muss mit der passenden Mutation rot werden (Probe nur im Scratch, nicht im Worktree). `test_ssrf_properties.py:135`: der Docstring nennt den Abrufweg der Hook-Helfer noch `httpx.stream`; richtig ist `pinned_client(...).stream`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf_pin.py tests/test_ssrf_properties.py tests/test_ssrf_parity.py
+Doku: keine (nur Tests)
+Abhängt von: T1, T4
