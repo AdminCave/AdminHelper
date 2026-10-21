@@ -1,6 +1,6 @@
 ---
 name: feature-build
-description: Arbeite ein freigegebenes Task-Ledger (tasks/<slug>.md auf feature/<slug>) in einem eigenen Worktree ab — je Task baut der Sub-Agent builder, prüft der Sub-Agent reviewer, committet scripts/dev/task-close.sh; am Ende tester, Branch-Review, PR, Merge nach grüner CI und Teardown (CLAUDE.md §4–§8). Nutzen, nachdem Kevin die Roadmap-Zeile freigegeben hat.
+description: Arbeite ein freigegebenes Task-Ledger (tasks/<slug>.md auf feature/<slug>) in einem eigenen Worktree ab — je Task baut der Sub-Agent builder, prüft der Sub-Agent reviewer, committet scripts/dev/task-close.sh; am Ende tester, Branch-Review, PR, Merge nach grüner CI und Teardown (CLAUDE.md §4–§8). Nutzen, sobald die Roadmap-Zeile freigegeben ist; die Session gibt sie nach dem Plan-Commit selbst frei (CLAUDE.md §4).
 ---
 
 # Ein Vorhaben bauen
@@ -28,8 +28,14 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
   (`bash WT/scripts/dev/ledger.sh status WT/tasks/<slug>.md aktiv`, `git -C WT commit` als `chore(ledger)`) und
   `python3 scripts/dev/roadmap.py status R-nnnn aktiv`.
 - Kopf `aktiv` → weiter mit der ersten offenen Task.
-- Roadmap nicht `freigegeben` → melden, nicht bauen. Die Freigabe ist Kevins `roadmap.py approve`.
+- Roadmap `geplant` (von Kevin angenommen oder diktiert, CLAUDE.md §4), Kopf `geplant`, das Ledger auf
+  `feature/<slug>` committet und nicht jede Task `[?]` → die Session gibt frei (`python3 scripts/dev/roadmap.py
+  approve R-nnnn`, CLAUDE.md §4), dann wie im ersten Punkt.
+- Sonst nicht `freigegeben` → melden, nicht bauen.
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
+
+Jeder `roadmap.py status`-Aufruf dieses Skills gibt eine Notiz der Zeile wörtlich mit `--note` wieder mit (`status`
+ohne `--note` löscht sie).
 
 Ist eine zweite Zeile freigegeben und erfüllt sie beim Start die Kriterien aus `/feature-plan` §4 (neu geprüft, auch
 `df -h /`), startet die Session sie gleich mit: zweiter Worktree, eigener `builder`, derselbe Ablauf. Weitere
@@ -63,12 +69,16 @@ startet, gilt nur, solange spätere Tasks nichts ändern, was er prüft.
    2 → stagen bzw. Eingabe reparieren, erneut; 3 → `builder` mit dem Grund, einmal, dann erneut schließen; 4 →
    STOPP, Kevin; 74 → STOPP, berichten. Wiederholbar.
 
+Eine `[?]`-Task aus dem Gate (CLAUDE.md §4) wartet auf Kevins Antwort und baut dann wie 1–5, die Antwort im Auftrag
+an den `builder`.
+
 Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledger (CLAUDE.md §4).
 
 ## 4. Abschluss
 
 1. Kopf steht auf `bereit` (setzt `task-close.sh` mit der letzten Task); sonst `ledger.sh status … bereit` als
-   `chore(ledger)`. `roadmap.py status R-nnnn bereit`.
+   `chore(ledger)`. `roadmap.py status R-nnnn bereit`. Steht noch eine `[?]`-Task, wartet der Abschluss auf Kevins
+   Antwort (bauen oder `[~]`).
 2. Keine volle Komponenten-Suite lokal: die fährt die PR-CI (CLAUDE.md §5).
 3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts; `linux-full` → kein Lauf
    hier, das Vorhaben geht in den Sammellauf (§5), der PR-Text sagt „Heavy: Sammellauf“ (Ausnahme: der Fix eines
