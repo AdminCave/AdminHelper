@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness: Sammellauf mit Sekunden je Schritt und auf zwei Boxen parallel — Task-Ledger
-Status: aktiv · Branch: feature/heavy-parallel · Review: pro Task
+Status: bereit · Branch: feature/heavy-parallel · Review: pro Task
 Spec: docs/features/heavy-parallel.md (Roadmap R-0603)
 Heavy: linux-full — ein realer Beweislauf vor dem Merge (Kevin 2026-10-21): `bash scripts/tests/heavy.sh all` aus dem Worktree, in tmux nach CLAUDE.md §2, mit zwei Boxen der Lane des Vorhabens (beide kalt). Erwartet: beide Teile laufen gleichzeitig, der Report nennt je Schritt Ergebnis und Sekunden, das Gesamturteil steht in Zeile 1, `vm.py list` danach ohne Leck. Voraussetzung: keine laufende Box einer fremden Lane (sonst bricht der Pre-flight mit 74 ab), also kein gleichzeitiger Sammellauf aus dem Haupt-Checkout. Die Historie des Beweislaufs bleibt im Worktree (`tasks/private` gibt es dort nicht im Repo), nicht in der echten `history.csv`. T1 zeigt sich real erst im ersten Sammellauf aus dem Haupt-Checkout nach dem Merge (aus einem Worktree hat die Box kein Repo); bis dahin belegt ihn `run_flags_test.sh`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -142,8 +142,10 @@ Tests in `run_flags_test.sh` (Stubs für npm und die Display-Werkzeuge, keine Su
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (intern)
 
-### T14 — heavy_test.sh: ein Teil ohne Ergebnisdatei ist nie grün  [ ]
+### T14 — heavy_test.sh: ein Teil ohne Ergebnisdatei ist nie grün  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4a4a39eb 2026-10-21T19:52:54+02:00
+Review: approve (.ah-out/review/heavy-parallel/T14.verdict.json)
 Änderung: Fund aus der Branch-Prüfung (tester). Den Zweig in `heavy.sh`, der einen Teil ohne `<teil>.rc` als `infra` wertet („the part ended without a result (no <teil>.rc)“), deckt kein Test: Auf `*) ;;` verkürzt bleibt `heavy_test.sh` grün, und ein Lauf, dessen Teil-Job vor dem Schreiben von `gui.rc` stirbt, endet `PASS` mit dem Ergebnis des anderen Teils. Neuer Fall: Der `iter.sh`-Shim beendet bei `--slot gui` seinen Teil-Job vor dem Schreiben der Ergebnisdatei (Schalter wie `SHIM_KILL_PARENT_GUI`) → Exit 74, `UNVERIFIED`, der Grund nennt „no gui.rc“ und den Teil, keine Ebenen-Zeile `pass`. Dazu eine kaputte `<teil>.rc` (Exit-Code oder Sekunden nicht numerisch) → `infra`, nie `PASS`. Beide mit der Mutation des Zweigs rot (Probe im Scratch, Zahlen in den Commit-Body).
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Test)

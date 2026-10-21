@@ -78,6 +78,10 @@ SHIM
 # SHIM_ITER_SLEEP_GUI, if set, does so for the gui names alone. SHIM_GUI_CAPTURE
 # is a line the first call of the desktop slot (part rest) leaves in part gui's
 # capture file (gui/last.out.log), before its sleep.
+# SHIM_KILL_PARENT_GUI makes the call of part gui on the gui slot do its work and
+# then KILL its caller — heavy.sh's background job of that part — before the job
+# writes gui.rc; the pid lands in killed-gui. SHIM_RC_FILE_GUI, if set, is the
+# line that call leaves in gui.rc first: a result file that is there but broken.
 # Every call also lands in order.log, one file with the reap.sh, multibox.sh and
 # second-box warm.sh shims: which of them ran first is what the GUI-box cases read.
 cat > "$WRAP/iter.sh" <<'SHIM'
@@ -120,6 +124,12 @@ printf 'AH_NO_SYNC=%s AH_SPEC=%s AH_REQUIRED=%s AH_OUT_DIR=%s ARGS=%s\n' "${AH_N
 printf 'iter %s\n' "$args" >> "$SHIM_STATE/order.log"
 eval "out=\${SHIM_ITER_OUT$n$var:-\${SHIM_ITER_OUT$var:-}}"
 [ -n "$out" ] && printf '%s\n' "$out"
+if [ -n "${SHIM_KILL_PARENT_GUI:-}" ] && [ "$args" = "--slot gui all --strict --part gui" ]; then
+  [ -z "${SHIM_RC_FILE_GUI:-}" ] || printf '%s\n' "$SHIM_RC_FILE_GUI" > "$AH_OUT_DIR/../gui.rc"
+  echo "$PPID" > "$SHIM_STATE/killed-gui"
+  kill -KILL "$PPID"
+  exit 0
+fi
 eval "seq=\${SHIM_ITER_SEQ$var:-}"
 if [ -n "$seq" ]; then
   # shellcheck disable=SC2086
@@ -233,6 +243,7 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
   unset SHIM_ITER_SEQ SHIM_ITER_OUT1 SHIM_ITER_OUT2 SHIM_ITER_OUT3 SHIM_ITER_OUT4 SHIM_NO_PULL
   unset SHIM_ITER_SEQ_GUI SHIM_ITER_OUT1_GUI SHIM_ITER_OUT2_GUI SHIM_ITER_OUT3_GUI SHIM_ITER_OUT4_GUI
   unset SHIM_NO_PULL_GUI SHIM_ITER_SLEEP SHIM_ITER_SLEEP_GUI SHIM_GUI_CAPTURE
+  unset SHIM_KILL_PARENT_GUI SHIM_RC_FILE_GUI
   unset SHIM_DOCTOR_OUT SHIM_WARM_OUT
   # Defaults: healthy provider, one own box, everything green.
   export SHIM_DOCTOR_RC=0
@@ -1800,6 +1811,49 @@ done
 [ -f "$SHIM_STATE/span-desktop.end" ] || [ -f "$SHIM_STATE/span-gui.end" ] \
   && bad "a part ran on to its end after the TERM" || ok "neither part ran on to its end"
 unset SHIM_ITER_SLEEP
+
+# ── 11g: a part without a result is never green ──────────────────────────────
+# The job of a part writes <part>.rc once its run has ended. A job that died
+# first (killed, out of memory) leaves none, and a file that does not read as
+# "<exit code> <seconds> <stage>" says no more: either way the part is infra and
+# the run UNVERIFIED, though the box pulled a green artifact and printed a green
+# summary line before the job died. With that branch cut short, part gui kept
+# the result of part rest, judged just before it, and the run passed.
+mk_case
+artifact "ruff check:pass:3"
+printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+export SHIM_KILL_PARENT_GUI=1
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+rows="$(history_of)"
+[ -s "$SHIM_STATE/killed-gui" ] && [ "$(cat "$SHIM_STATE/iter-gui.n" 2>/dev/null)" = 1 ] \
+  && ls "$AH_OUT_DIR"/weekly/*/gui/last-all.json >/dev/null 2>&1 \
+  && ! ls "$AH_OUT_DIR"/weekly/*/gui.rc >/dev/null 2>&1 \
+  && ok "the job of part gui died after its run had pulled, before it wrote gui.rc" \
+  || bad "probe: killed '$(cat "$SHIM_STATE/killed-gui" 2>/dev/null)', $(ls "$AH_OUT_DIR"/weekly/*/ "$AH_OUT_DIR"/weekly/*/gui 2>&1)"
+[ "$rc" = 74 ] && report_of | head -1 | grep -qxF 'UNVERIFIED (the part ended without a result (no gui.rc) (gui))' \
+  && ok "no gui.rc -> UNVERIFIED, the reason names gui.rc and the part" || bad "no gui.rc -> rc=$rc head '$(report_of | head -1)'"
+grep -qE ',all,-,infra,[0-9]+,3001\+3002$' <<<"$rows" && ! grep -q ',all,-,pass,' <<<"$rows" \
+  && ok "history.csv: the layer row is infra, there is no layer row pass" || bad "layer rows: $(grep ',all,-,' <<<"$rows")"
+# A result file that is there but broken: the exit code or the seconds not a
+# number. Stage run, so the serial path does not take it for a failed lease.
+for broken in "x 5 run" "0 x run"; do
+  mk_case
+  artifact "ruff check:pass:3"
+  printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+  export SHIM_KILL_PARENT_GUI=1 SHIM_RC_FILE_GUI="$broken"
+  out=$(bash "$HEAVY" all 2>&1); rc=$?
+  rows="$(history_of)"
+  [ -s "$SHIM_STATE/killed-gui" ] && [ "$(cat "$SHIM_STATE/iter-gui.n" 2>/dev/null)" = 1 ] \
+    && [ "$(cat "$AH_OUT_DIR"/weekly/*/gui.rc 2>/dev/null)" = "$broken" ] \
+    && ok "gui.rc reads '$broken' when heavy.sh judges part gui" \
+    || bad "probe: killed '$(cat "$SHIM_STATE/killed-gui" 2>/dev/null)', gui.rc '$(cat "$AH_OUT_DIR"/weekly/*/gui.rc 2>&1)'"
+  [ "$rc" = 74 ] && report_of | head -1 | grep -qE '^UNVERIFIED \(.* \(gui\)\)$' \
+    && grep -qE ',all,-,infra,[0-9]+,3001\+3002$' <<<"$rows" && ! grep -q ',all,-,pass,' <<<"$rows" \
+    && ok "gui.rc '$broken' -> part gui infra, the run UNVERIFIED, no layer row pass" \
+    || bad "gui.rc '$broken' -> rc=$rc head '$(report_of | head -1)', layer rows: $(grep ',all,-,' <<<"$rows")"
+  report_of | grep -qE '^\| all \| - \| infra \| [0-9]+ \| 3001\+3002 \| rest [0-9]+ s, gui [0-9]+ s \|$' \
+    && ok "gui.rc '$broken': nothing unread reaches the layer row" || bad "layer row: $(report_of | grep -F '| all | - ')"
+done
 
 # ── 12: the GUI box makes room for a third box ───────────────────────────────
 # With the desktop and the GUI box held, the w2 box of a second-VM check does
