@@ -1080,6 +1080,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
+  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
+  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
+  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
 - **SSRF-Schutz verbindet zur geprueften Adresse (Server und Monitoring):** Der Alert-Webhook und der HTTP-Check des
   Monitorings (dieser fuer die erste URL und jeden Redirect-Hop) sowie die Hook-Helfer `http_get`/`http_post` des
   Servers loesen das Ziel einmal auf, pruefen alle Adressen und verbinden zu einer davon (der Reihe nach, bis eine
