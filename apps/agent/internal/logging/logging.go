@@ -7,9 +7,11 @@
 // Output goes to BOTH stdout (so the systemd journal / Windows service log keep
 // capturing it) AND a size-rotated file under config.LogDir(), so an operator
 // has a durable, self-contained log to inspect or attach to a bug report —
-// independent of the service manager. stdout is written first in the MultiWriter
-// so a non-writable log directory (e.g. an interactive non-root run) never
-// suppresses console output; the file write just fails silently in that case.
+// independent of the service manager. If the log directory cannot be secured
+// (config.EnsureLogDir, Windows only, e.g. a run without administrator rights),
+// the agent logs to stdout only. On Linux, as before, stdout is written first in
+// the MultiWriter so a non-writable log directory (e.g. an interactive non-root
+// run) never suppresses console output; the file write just fails silently then.
 //
 // Format is slog's human-readable text (key=value with an RFC3339 timestamp),
 // not JSON: the agent logs sparsely and operators read this directly.

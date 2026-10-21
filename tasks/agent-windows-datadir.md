@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent Windows: Datenverzeichnis mit festen Rechten anlegen — Task-Ledger
-Status: aktiv · Branch: feature/agent-windows-datadir · Review: pro Task
+Status: bereit · Branch: feature/agent-windows-datadir · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-16)
 Heavy: linux-full + windows — `apps/agent/internal/config` und die Aufrufer in `monitor`, `frpc` und `enroll` liegen auf dem Provisionierungs- und Enrollment-Pfad des Agents und laufen im Sammellauf über `main` (`/feature-build` §5); `windows` über den CI-Job `agent-windows` (go test nativ unter Windows; der Pool hat keine Windows-Vorlage)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -82,8 +82,10 @@ Doku: keine (intern)
 Abhängt von: T3
 Beweis: Merge von origin/main (2026-10-21): `reportstate.go:79` `return os.WriteFile(path, data, 0600)`; Hinweis der Session adminhelper-a9 (Abstimmung: wer zweiter merged, zieht nach)
 
-### T5 — Doku und CHANGELOG  [ ]
+### T5 — Doku und CHANGELOG  [x]
 Komponente: agent · Dateien: CHANGELOG.md, docs/developer/agent.html, docs/en/developer/agent.html, apps/agent/internal/logging/logging.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d9849a0e 2026-10-21T07:05:55+02:00
+Review: approve (.ah-out/review/agent-windows-datadir/T5.verdict.json)
 Änderung: CHANGELOG unter `## [Unreleased]`, `### Changed`: Der Agent legt unter Windows sein Datenverzeichnis vor der ersten Nutzung mit festen Rechten an (nur SYSTEM und Administratoren) und übernimmt kein vorhandenes Verzeichnis mit anderem Eigentümer. `docs/developer/agent.html:78` und `docs/en/developer/agent.html:78`: den Absatz zur Härtung des Datenverzeichnisses entsprechend ergänzen (DE und EN im selben Commit). Der Paketkommentar in `apps/agent/internal/logging/logging.go` (Datei-Log scheitert still) wird auf das Verhalten seit T3 gebracht (ohne gesichertes Log-Verzeichnis nur stdout).
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: CHANGELOG.md (Changed) · docs/developer/agent.html + docs/en/developer/agent.html (DE+EN)
