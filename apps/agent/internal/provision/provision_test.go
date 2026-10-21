@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -668,5 +669,48 @@ func TestRunWritesTheSyncConfigWithoutAnFRPBundle(t *testing.T) {
 	}
 	if block, _ := pem.Decode(pinned); block == nil || !bytes.Equal(block.Bytes, srv.Certificate().Raw) {
 		t.Fatal("ca.crt is not the certificate the server presented")
+	}
+}
+
+// R-0557: the one-time token is redeemed only once the data root is secured, so a root
+// that cannot be secured leaves the token unspent instead of failing after redeeming it.
+func TestRunRedeemsNothingWhenTheDataRootCannotBeSecured(t *testing.T) {
+	// A directory below a regular file cannot be created on either platform.
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(file, "adminhelper")
+	t.Setenv("ADMINHELPER_MONITOR_DIR", root)
+	// Where a provisioning that went on would write, instead of the real paths.
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path != "/api/servers/srv-1/provision/activate" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k", "frp": nil})
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	orig := activatePort
+	activatePort = port
+	t.Cleanup(func() { activatePort = orig })
+	origApply := applyWithoutBundle
+	applyWithoutBundle = func() error { return nil }
+	t.Cleanup(func() { applyWithoutBundle = origApply })
+
+	err := Run(srv.URL, "tok", "srv-1", "", true, "")
+	if n := requests.Load(); n != 0 {
+		t.Errorf("the server got %d request(s) before the data root was secured, want none: the token is spent", n)
+	}
+	if err == nil {
+		t.Fatal("Run succeeded although the data root cannot be secured")
+	}
+	if !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), "not redeemed") {
+		t.Fatalf("error = %q, want the directory %q and that the token was not redeemed", err, root)
 	}
 }

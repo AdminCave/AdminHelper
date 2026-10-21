@@ -47,8 +47,10 @@ Semantik: docs/admin/agent-deployment.html:207 „Bei jeder Installation und jed
 Dedup-Key: bug:agent:adminhelper-agent.spec:preun-stops-after-upgrade
 HEAD: 82e4a7b8
 
-### T2 — provision: Datenverzeichnis vor dem Einlösen des Tokens sichern  [ ]
+### T2 — provision: Datenverzeichnis vor dem Einlösen des Tokens sichern  [x]
 Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, CHANGELOG.md, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @732a441f 2026-10-21T10:00:48+02:00
+Review: approve (.ah-out/review/agent-followups/T2.verdict.json)
 Änderung: `Run` löst den Einmal-Token in `callActivate` ein (`provision.go:102`), bevor eine Schreibstelle das Datenverzeichnis zum ersten Mal sichert (`enroll.LockIdentity` in `runEnrollment`, `provision.go:299`; `monitor.Init`, `monitor.go:59`; `frpc.WriteSyncConfig`, `apply.go:58`); scheitert die Sicherung dort, ist der Token verbraucht und `provision` bricht trotzdem ab. Neu sichert `Run` nach der Prüfung der Argumente und vor `callActivate` die Datenwurzel mit `config.EnsureDataDir(config.MonitorDir())` (Linux: `0700`, auch bei einer Provisionierung ohne Monitor; Windows: die Wurzel samt Baum); scheitert das, gibt `Run` einen Fehler zurück, der das Verzeichnis nennt und sagt, dass der Token nicht eingelöst wurde (englisch). Test in `provision_test.go` (plattformneutral, läuft auch im Windows-Job): `ADMINHELPER_MONITOR_DIR` zeigt unter eine reguläre Datei, ein httptest-Server zählt die Aufrufe von `/api/servers/<id>/provision/activate`; erwartet: Fehler mit dem Verzeichnis, null Aufrufe. Zuerst rot (heute ein Aufruf). Beleg Windows über den Probe-Branch (oben).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestRunRedeemsNothing
 Doku: CHANGELOG.md (Fixed) · docs/developer/agent.html:79 + docs/en/developer/agent.html:79 (`provision` sichert die Datenwurzel vor dem Einlösen des Tokens)

@@ -471,6 +471,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der Deinstallation, und das neue Paket aktiviert sie erst am Ende der Transaktion (`%posttrans`): den Timer immer,
   `frpc.service` nur mit `/etc/frp/frpc.toml`, und frpc startet dabei neu, damit es auf dem neuen Binary laeuft. Das
   gilt auch fuer ein Upgrade von einem bisherigen Paket. Das deb war nicht betroffen.
+- **Agent: `provision` loest den Einmal-Token erst nach dem Sichern des Datenverzeichnisses ein (R-0557):** Bisher
+  loeste `provision` den Token ein, bevor es das Datenverzeichnis zum ersten Mal sicherte; liess sich das Verzeichnis
+  danach nicht sichern, brach es ab, und der Token war verbraucht. Jetzt sichert `provision` zuerst die Datenwurzel
+  (Windows: `%ProgramData%\AdminHelper` samt Baum; Linux: `/etc/adminhelper` mit `0700`, auch ohne Monitor);
+  scheitert das, bricht es mit dem Verzeichnis im Fehler ab, und der Token bleibt gueltig. Doku: Entwickler-Doku
+  Agent (DE+EN).
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
   Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
