@@ -31,8 +31,8 @@ The script runs under sh with a stub frps on PATH, without root and so with su-e
 off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
 HTTP server stands in for the dashboard. Some tests run the frps image built from apps/frps,
 with the capabilities and security options compose gives it, the real frps under its own user
-and the requests to its dashboard under another; they skip when Docker or the pinned base image
-is not at hand."""
+and the requests to its dashboard under another, each from a program its user can only execute
+and so not dumpable; they skip when Docker or the pinned base image is not at hand."""
 
 import base64
 import contextlib
@@ -1994,6 +1994,13 @@ class Container:
                 found.append((name, state, int(pid)))
         return sorted(found)
 
+    def owner(self, pid: int) -> str:
+        """uid:gid of the entries in /proc/<pid>, as of its status file: /proc/<pid> itself
+        always goes to the process's user."""
+        result = self.exec("stat", "-c", "%u:%g", f"/proc/{pid}/status")
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
     def stop(self) -> str:
         """docker stop within the grace period compose gives frps; returns the exit code."""
         grace = _compose_frps()["stop_grace_period"].removesuffix("s")
@@ -2144,6 +2151,44 @@ def test_in_the_frps_image_frps_runs_as_its_user_and_changes_nothing_it_runs_fro
         # No program in the image leads back to root.
         found = box.exec("find", "/", "-xdev", "-type", "f", "-perm", "/6000")
         assert (found.returncode, found.stdout) == (0, "")
+
+
+def _owner_of_a_readable_program(box: Container, uid: int) -> str:
+    """Owner of the entries in /proc/<pid> of a sleep 600, a program anyone reads, started under
+    uid:uid in the container through docker exec."""
+    run = [box.docker, "exec", "-d", "-u", f"{uid}:{uid}", box.name, "sleep", "600"]
+    subprocess.run(run, check=True, capture_output=True)
+    sleeps = []
+
+    def started() -> bool:
+        sleeps[:] = [pid for name, _, pid in box.processes(uid) if name == "sleep"]
+        return len(sleeps) == 1
+
+    box.wait_until(started, f"a sleep of {uid}")
+    return box.owner(sleeps[0])
+
+
+def test_in_the_frps_image_frps_runs_from_a_program_its_user_can_only_execute(
+    tmp_path, pems, frps_image
+):
+    _, uid = _frps_user()
+    with _container(frps_image, tmp_path, pems, generate_frps_toml(_cfg())) as box:
+        box.wait_until(
+            lambda: STARTED_SUCCESSFULLY in box.logs() and box.read().state == "running",
+            "frps up",
+        )
+
+        # frps, under its user, is not dumpable: the entries in /proc/<pid> are root's; a
+        # program its user reads leaves them to that user.
+        (frps,) = box.processes(uid)
+        assert frps[0] == "frps"
+        assert box.owner(frps[2]) == "0:0"
+        assert _owner_of_a_readable_program(box, uid) == f"{uid}:{uid}"
+        # Because frps and curl, where the supervisor finds them, are root's and for anyone else
+        # to execute only.
+        programs = box.exec("which", "frps", "curl").stdout.split()
+        modes = box.exec("stat", "-c", "%a %U %G", *programs)
+        assert (len(programs), modes.stdout.splitlines()) == (2, ["711 root root"] * 2), modes
 
 
 def test_in_the_frps_image_a_new_token_restarts_frps_and_term_ends_the_supervisor(
@@ -2362,6 +2407,11 @@ def test_in_the_frps_image_the_supervisor_asks_the_dashboard_as_its_user(
         )
 
         assert [process for process in box.processes(0) if process[0] == "curl"] == []
+        # curl, a program their user can only execute: the entries in /proc/<pid> are root's; a
+        # program that user reads leaves them to the user.
+        owners = [box.owner(pid) for _, _, pid in box.processes(uid)]
+        assert owners == ["0:0"] * len(PROXY_TYPES)
+        assert _owner_of_a_readable_program(box, uid) == f"{uid}:{uid}"
         # TERM ends them as before, and with them the supervisor within the grace period.
         assert box.stop() == "0", box.logs()
 
