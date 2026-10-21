@@ -162,7 +162,7 @@ setup_stack() {
     printf -v "SSH_C_$key" '%s' "$ssh_c"
 }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker go
+e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker go
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
@@ -201,8 +201,7 @@ export E2E_DIR
 echo "[ws] making the workspace of stack b in the launcher under xvfb..."
 AH_E2E_WORKSPACE='' AH_E2E_SERVER_URL_B="$URL_b" AH_E2E_WS_B_FILE="$WS_B_FILE" \
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/workspace-add-server.live.js
 ' && ok "launcher: made the server workspace of stack b" || { bad "launcher spec failed"; exit 1; }
@@ -218,8 +217,7 @@ AH_E2E_SERVER_URL_A="$URL_a" AH_E2E_SERVER_URL_B="$URL_b" \
 AH_ENROLL_TOKEN_A="$ENROLL_a" AH_ENROLL_TOKEN_B="$ENROLL_b" \
 AH_ADMIN_USER=admin AH_ADMIN_PASS_A="$ADMIN_PW_a" AH_ADMIN_PASS_B="$ADMIN_PW_b" \
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.workspaces.conf.js \
         --spec test/specs/two-installations.workspaces.js
 ' && ok "GUI: both windows registered, signed in, tunnels side by side, ssh opened in each" \
@@ -268,8 +266,7 @@ DEVICE_B=$(e2e_api "$TOKEN_b" devices admin | awk '$2 == "-" { print $1 }')
 echo "[ws] deleting the workspace of stack b in the launcher under xvfb..."
 AH_E2E_WORKSPACE='' AH_E2E_WORKSPACE_B="$WS_B" AH_E2E_SERVER_URL_B="$URL_b" \
 dbus-run-session -- bash -c '
-    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
-    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/workspace-delete-server.live.js
 ' && ok "launcher: deleted the workspace of stack b" || bad "launcher delete spec failed"
