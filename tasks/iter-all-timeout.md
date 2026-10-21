@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Zeitlimit der all-Ebene in iter.sh — Task-Ledger
-Status: geplant · Branch: feature/iter-all-timeout · Review: am Ende
+Status: aktiv · Branch: feature/iter-all-timeout · Review: am Ende
 Spec: Roadmap R-0565
 Heavy: none — eine Konstante des VM-Wrappers, kein Produktcode; den Beweis liefert der nächste Sammellauf über `main` (`heavy.sh all`), der vor dem Beta ohnehin fällig ist
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
