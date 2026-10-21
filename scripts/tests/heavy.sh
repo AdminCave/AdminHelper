@@ -259,17 +259,21 @@ infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or not
 # is not a documented prerequisite anywhere in this repo.
 # run.sh stamps every artifact with the head and tree_hash the client passed in.
 # An artifact from another tree is a leftover, not evidence of this run.
-artifact_is_ours() {  # artifact_is_ours <artifact>
+# When it is not ours, stdout names what the artifact claims, for the note.
+artifact_is_ours() {  # artifact_is_ours <artifact> -> exit 0 = ours; else stdout "head <h>, tree_hash <t>"
   python3 - "$1" "$COMMIT" "$TREE" <<'PY' 2>/dev/null
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
+    print("unreadable")
     sys.exit(1)
 head, tree = d.get("head", ""), d.get("tree_hash", "")
 # An artifact that carries no evidence fields cannot be attributed either way;
 # only a MISMATCH disqualifies it (a box without .git legitimately writes none).
-sys.exit(1 if (head and head != sys.argv[2]) or (tree and tree != sys.argv[3]) else 0)
+if (head and head != sys.argv[2]) or (tree and tree != sys.argv[3]):
+    print("head %s, tree_hash %s" % (head or "-", tree or "-"))
+    sys.exit(1)
 PY
 }
 
@@ -366,9 +370,11 @@ run_all() {
   fi
 
   # Whatever the exit code says, the artifact is what the box actually did.
-  local art="$AH_OUT_DIR/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0
-  if [ -f "$art" ] && ! artifact_is_ours "$art"; then
-    note "last-all.json describes another tree — ignored (evidence must match this run)"
+  local art="$AH_OUT_DIR/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0 theirs
+  # Both identities in the note, so the report carries the cause: a bare
+  # "another tree" went unexplained for 16 runs (R-0603).
+  if [ -f "$art" ] && ! theirs="$(artifact_is_ours "$art")"; then
+    note "last-all.json describes another tree — ignored (evidence must match this run): artifact ${theirs:-?}; this run head $COMMIT, tree_hash $TREE"
     rm -f "$art"
   fi
   if read_steps "$art" > "$OUT/steps-all.tsv"; then

@@ -30,8 +30,10 @@ Beweis: origin/main@8dec2275 · `.ah-out/weekly/*/report.md`: alle 16 Läufe aus
 Orakel: contract — Kevins Entscheidung 2026-09-25: Kopf und Tree-Hash eines Box-Laufs kommen vom Client
 HEAD: 8dec2275
 
-### T2 — heavy.sh: ein verworfenes Artefakt nennt beide Identitäten  [ ]
+### T2 — heavy.sh: ein verworfenes Artefakt nennt beide Identitäten  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f7b417cd 2026-10-21T13:54:53+02:00
+Review: approve (.ah-out/review/heavy-parallel/T2.verdict.json)
 Änderung: Die Notiz bei einem Artefakt aus einem anderen Baum (`heavy.sh:369-373`) nennt `head` und `tree_hash` des Artefakts und `COMMIT`/`TREE` dieses Laufs (Hex-Werte, keine Adresse), damit die Ursache im Report steht. `heavy_test.sh` Fall 4l (`:780-789`): Die Ausgabe nennt `000…`/`111…` und den Commit des Fixture-Repos; die bestehenden Assertions bleiben. Auf HEAD rot (die Notiz nennt heute nichts).
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (intern; die Zeile steht im Report)

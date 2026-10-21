@@ -787,6 +787,14 @@ PY
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',ruff check,'   && bad "an artifact describing another tree was counted: $(history_of)"   || ok "an artifact from another tree is ignored"
 grep -q 'another tree' <<<"$out" && ok "and the run says so" || bad "silently ignored"
+# The note names both identities, the artifact's and this run's (R-0603). Checked
+# on the note line alone: the report header carries the run's commit anyway.
+note_out=$(grep 'another tree' <<<"$out"); note_rep=$(report_of | grep 'another tree')
+fix_head=$(git -C "$FIX" rev-parse HEAD)
+for id in "$(printf '0%.0s' {1..40})" "$(printf '1%.0s' {1..40})" "$fix_head"; do
+  grep -qF "$id" <<<"$note_out" && grep -qF "$id" <<<"$note_rep" \
+    && ok "the note names $id (output and report)" || bad "note lacks $id: $note_out"
+done
 
 # ── 4m: the hypervisor not answering is infra, never 'no foreign boxes' ──────
 mk_case
