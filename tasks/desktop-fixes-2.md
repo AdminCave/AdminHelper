@@ -40,8 +40,10 @@ Semantik: docs/developer/desktop.html:114 — „ersetzt der Desktop auf allen P
 Dedup-Key: bug:desktop:storage.rs:write_json_atomic-pid-temp
 HEAD: 82e4a7b8
 
-### T3 — Server-Modus: „Passwort merken“ nur für Verbindungen, die der Server führt (R-0551)  [ ]
+### T3 — Server-Modus: „Passwort merken“ nur für Verbindungen, die der Server führt (R-0551)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d77ffa0f 2026-10-21T10:20:25+02:00
+Review: approve (.ah-out/review/desktop-fixes-2/T3.verdict.json)
 Änderung: `handleRdpAuth` (`connectFlow.ts:152`) erlaubt das Merken (`requestPassword(…, allowRemember)`, `:167`) im Server-Modus nur, wenn die Verbindung in der Liste steht (`connections`-Store, gleiche `id`), also schon vom Server kommt. Eine noch nicht gespeicherte (Editor, „Verbinden“ vor „Speichern“, `ConnectionEditor.svelte:84-92`) bekommt den Dialog ohne Häkchen; das getippte Passwort gilt nur für diesen Start, und `save_password` wird auch dann nicht gerufen, wenn das Ergebnis des Dialogs `remember` trägt (`:171`). Lokal und Sync bleiben unverändert. Gebaut wird die Empfehlung aus den Entscheidungen am Gate; entscheidet Kevin anders, passt die Task Änderung und Tests an. Tests in `connectFlow.test.ts` (zuerst rot), im Aufbau von „RDP start after the prompt remembers the password“ (`:319`, frischer Modulgraph mit `__TAURI_INTERNALS__`): Server-Modus mit `storePasswords`, Verbindung nicht in der Liste, der Dialog meldet `remember: true` → `requestPassword` mit `allowRemember` `false`, kein `save_password`, Start mit dem getippten Passwort über `open_connection`; dieselbe Verbindung in der Liste → `allowRemember` `true` wie bisher; lokaler Modus, Verbindung nicht in der Liste → `true` wie bisher.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:268`, Connect-Flow Schritt 2, „wahlweise mit Speichern über `save_password`“: im Server-Modus nur für eine Verbindung, die der Server schon führt) · CHANGELOG.md (Fixed)

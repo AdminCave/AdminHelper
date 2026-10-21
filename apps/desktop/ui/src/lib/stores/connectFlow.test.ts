@@ -7,8 +7,8 @@
 // clears every running attempt. These tests cover that race guard plus markConnectionUsed's
 // mode-specific branches (6.5), the tunnel resolution without mappings, the keyring key of a
 // stored RDP password behind a tunnel, the user and domain from the password prompt, which
-// password a start takes after the prompt's "remember password", and that a refused resolution
-// ends the start.
+// password a start takes after the prompt's "remember password", when the prompt offers it, and
+// that a refused resolution ends the start.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -335,7 +335,17 @@ describe('RDP start after the prompt remembers the password', () => {
   };
   const typed: Connection = { ...listed, username: 'alice', domain: 'CORP' };
 
-  async function connectAfterPrompt(remember: boolean, saveFails = false) {
+  interface PromptRun {
+    saveFails?: boolean;
+    mode?: 'local' | 'server' | 'sync';
+    // What the connections store holds: in server mode, what the server already keeps.
+    inList?: Connection[];
+  }
+
+  async function connectAfterPrompt(
+    remember: boolean,
+    { saveFails = false, mode = 'local', inList = [] }: PromptRun = {},
+  ) {
     const invoke = vi.fn(async (cmd: string, args?: { connection?: Connection }) => {
       if (cmd === 'password_state') return { canStore: true, stored: false };
       if (cmd === 'save_password' && saveFails) throw new Error('keyring locked');
@@ -358,11 +368,19 @@ describe('RDP start after the prompt remembers the password', () => {
     });
     const status = await import('./statusBar');
     const flow = await import('./connectFlow');
-    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    state.setSession({
+      settings: { mode, storePasswords: true },
+      session: mode === 'server' ? {} : null,
+    });
+    state.setConnections(inList);
     vi.useFakeTimers();
 
     await flow.initiateConnect(listed);
-    return { invoke, reportError: vi.mocked(status.reportError) };
+    return {
+      invoke,
+      requestPassword: vi.mocked(prompt.requestPassword),
+      reportError: vi.mocked(status.reportError),
+    };
   }
 
   it('starts with the stored password once the remembered one is saved', async () => {
@@ -380,7 +398,7 @@ describe('RDP start after the prompt remembers the password', () => {
   });
 
   it('starts with the typed password and reports the error when saving fails', async () => {
-    const { invoke, reportError } = await connectAfterPrompt(true, true);
+    const { invoke, reportError } = await connectAfterPrompt(true, { saveFails: true });
 
     expect(reportError).toHaveBeenCalledWith('error.passwordStore');
     expect(invoke).toHaveBeenCalledWith('open_connection', {
@@ -404,6 +422,43 @@ describe('RDP start after the prompt remembers the password', () => {
     });
     expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
   });
+
+  // The keyring key holds the connection's id. In server mode one the server does not keep yet
+  // (the editor's "Connect" before "Save") has a client id the server replaces when it is saved,
+  // so a password stored under it would belong to no connection.
+  it('offers no remembering in server mode for a connection the server does not keep', async () => {
+    const { invoke, requestPassword } = await connectAfterPrompt(true, { mode: 'server' });
+
+    expect(requestPassword).toHaveBeenCalledWith(listed, false, false);
+    expect(invoke).not.toHaveBeenCalledWith('save_password', expect.anything());
+    expect(invoke).toHaveBeenCalledWith('open_connection', {
+      connection: { ...typed, port: 23004 },
+      password: 'pw',
+      client: undefined,
+      correlationId: expect.any(String),
+    });
+    expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
+  });
+
+  it('offers remembering in server mode for a connection the server keeps', async () => {
+    const { invoke, requestPassword } = await connectAfterPrompt(true, {
+      mode: 'server',
+      inList: [listed],
+    });
+
+    expect(requestPassword).toHaveBeenCalledWith(listed, false, true);
+    expect(invoke).toHaveBeenCalledWith('save_password', { connection: typed, password: 'pw' });
+  });
+
+  it.each(['local', 'sync'] as const)(
+    'offers remembering in %s mode for a connection not in the list',
+    async (mode) => {
+      const { invoke, requestPassword } = await connectAfterPrompt(true, { mode });
+
+      expect(requestPassword).toHaveBeenCalledWith(listed, false, true);
+      expect(invoke).toHaveBeenCalledWith('save_password', { connection: typed, password: 'pw' });
+    },
+  );
 });
 
 // Same fresh module graph: a refusal of resolve_connection ends an RDP start before the keyring
