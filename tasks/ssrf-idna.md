@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard: den Hostnamen in der Form auflösen, die httpx sendet — Task-Ledger
-Status: geplant · Branch: feature/ssrf-idna · Review: am Ende
+Status: aktiv · Branch: feature/ssrf-idna · Review: am Ende
 Spec: Roadmap R-0590
 Heavy: none — kein HTTP-Endpunkt, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert wird nur, welchen Namen `check_target` in beiden Guard-Kopien auflöst, die Aufrufer (HTTP-Check, Alert-Webhook, Hook-Helfer `http_get`/`http_post`) bleiben unverändert, und keine schwere Suite fährt diese Wege (wie bei ssrf-pin); belegt wird am Resolver (`socket.getaddrinfo`) und unter dem Pin (`httpx.HTTPTransport.handle_request`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
