@@ -7,8 +7,30 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Event `user.promoted` bei einer Hochstufung zum Admin:** Setzt `PUT /api/users/{id}` das Admin-Recht eines
+  Benutzers von `false` auf `true`, feuert der Server das Event `user.promoted` mit `id` und `username`; Event-Hooks
+  koennen es abonnieren (Auswahl im Web mit Beschriftung DE+EN). Die Glocke meldet die Hochstufung unter
+  „Sicherheit“ wie einen neu angelegten Admin („User promoted to admin: <Name>“, Schweregrad `warning`). Eine
+  Herabstufung feuert kein Event. Doku: Monitoring (DE+EN), Hooks, Server und API-Referenz fuer Entwickler (DE+EN).
+
 ### Changed
 
+- **Audit-Log: Hooks, Provisionierungs-Token und Monitoring-Proxy:** Das Audit-Log erfasst jetzt die Aktionen der
+  Admins an Hooks (`hook.created`, `hook.updated` mit den geaenderten Feldern in `detail`, auch fuer das Ein- und
+  Ausschalten, `hook.deleted`, `hook.token_rotated`, `hook.run` mit `success` oder `failure`), das Erzeugen eines
+  Provisionierungs-Tokens (`provision.token.minted` mit dem Server als Objekt) und Schreibzugriffe ueber den
+  Monitoring-Proxy (`monitoring.post`, `monitoring.put`, `monitoring.delete` mit dem weitergeleiteten Pfad und
+  `status=<HTTP-Status>` in `detail`; bricht die Weiterleitung nach dem Senden ab, Status `error` mit dem Typ des
+  Fehlers). Kein Token, kein Skript, kein Fehlertext eines Laufs und kein Inhalt einer Anfrage steht im Eintrag; der
+  Webhook-Trigger und lesende Zugriffe schreiben nichts. `user.updated` nennt in `detail` die geaenderten Felder
+  (`password`, `is_admin=true|false`, `server_ids`). Routen und Antworten bleiben gleich. Doku: Betrieb (DE+EN),
+  API-Referenz fuer Entwickler (DE+EN).
+- **`python -m app.cli create-admin` feuert `user.created` wie die API:** Dieselbe Payload wie `POST /api/users`
+  (`id`, `username`, `is_admin: true`), damit erreichen Event-Hooks und die Glocke („Sicherheit“) auch diesen Weg; auf
+  einer frischen Installation meldet die Glocke dem ersten Admin so seine eigene Anlage. Doku: Monitoring (DE+EN),
+  Hooks fuer Entwickler (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).

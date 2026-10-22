@@ -119,8 +119,10 @@ Orakel: contract — derselbe Event wie der API-Weg
 HEAD: b1432223
 Semantik: wie T6 (`docs/admin/monitoring.html:373`)
 
-### T8 — Betriebs- und Monitoring-Doku, CHANGELOG  [ ]
+### T8 — Betriebs- und Monitoring-Doku, CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @00a2c5e5 2026-10-22T12:31:02+02:00
+Review: approve (.ah-out/review/audit-coverage/T8.verdict.json)
 Änderung: DE und EN, gleiche Stellen; Code-Stellen nach T1–T7 greppen. (1) Audit-Absatz `docs/admin/betrieb.html:130` / `docs/en/admin/operations.html:89` (nach PR #254 `:131` / `:90`): „Erfasst werden u. a. …“ nennt zusätzlich Hooks (Anlegen, Ändern mit den geänderten Feldern, Löschen, Ein- und Ausschalten, Token-Rotation, manueller Lauf mit Erfolg oder Fehlschlag), das Erzeugen von Provisionierungs-Token und Schreibzugriffe über den Monitoring-Proxy (`POST`/`PUT`/`DELETE` mit Pfad und Antwortstatus, bei einem Abbruch nach dem Senden Status `error`, ohne Inhalt); ein Satz: bei einer Benutzer-Änderung nennt `detail` (in der Antwort von `GET /api/audit`) die geänderten Felder — Passwort, Admin-Recht mit neuem Wert, Server-Zuordnung. Der Webhook-Trigger und lesende Zugriffe bleiben ohne Eintrag (ein Halbsatz). (2) `docs/admin/monitoring.html:373` / EN `:373`: „Sicherheit: ein neuer Admin-Benutzer wurde angelegt (auch per `python -m app.cli create-admin`) oder ein Benutzer zum Admin hochgestuft.“ (3) `CHANGELOG.md` unter `## [Unreleased]`, umlautfrei: `### Added` — Event `user.promoted` (`id`, `username`) bei einer Hochstufung zum Admin, abonnierbar fuer Event-Hooks; die Glocke meldet sie unter „Sicherheit“. `### Changed` — das Audit-Log erfasst Hook-Aktionen, das Erzeugen von Provisionierungs-Token und Schreibzugriffe ueber den Monitoring-Proxy; `user.updated` nennt in `detail` die geaenderten Felder; `python -m app.cli create-admin` feuert `user.created` wie die API. Der builder fährt zusätzlich `python3 scripts/dev/doc-smoke.py --paths --env --strict` (Exit 0, Ergebnis in den Commit-Body).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku samt CHANGELOG
