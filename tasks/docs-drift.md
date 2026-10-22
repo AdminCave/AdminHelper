@@ -43,8 +43,10 @@ Dedup-Key: bug:docs:developer:dev-path-drift
 HEAD: e2304a8b
 Semantik: `DEVELOPMENT.md:761` — „DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080“; `docs/developer/server.html:202` — „uvicorn lauscht plain-HTTP auf <code>8080</code>“
 
-### T2 — Entwickler-Übersicht: Startbefehle wie DEVELOPMENT.md, `apps/frps/` im Baum (R-0669)  [ ]
+### T2 — Entwickler-Übersicht: Startbefehle wie DEVELOPMENT.md, `apps/frps/` im Baum (R-0669)  [x]
 Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eed26622 2026-10-22T13:46:55+02:00
+Review: approve (.ah-out/review/docs-drift/T2.verdict.json)
 Änderung: Abschnitt „Lokale Entwicklung“ (`docs/developer/index.html:88-99`, EN „Local Development“ `:61-77`), DE und EN mit denselben Befehlen, jeder Block ab Repo-Wurzel: Server `cd apps/server && python3 -m venv .venv && . .venv/bin/activate`, `pip install -r requirements-dev.txt`, `DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080` (wie `DEVELOPMENT.md:37-44`, `:756-762`; ein Kommentar: braucht Postgres, `DATABASE_URL` und Erstanmeldung siehe `DEVELOPMENT.md`); Web `cd apps/web && npm ci && npm run dev` (EN bisher `npm install`); Desktop `cd apps/desktop/ui && npm ci`, dann `cd ../src-tauri && cargo tauri dev` (`DEVELOPMENT.md:847-852`); Agent `cd apps/agent && go run ./cmd/adminhelper-agent version` (EN bisher `run`, der Dauerbetrieb). Kein `uv` mehr. Repo-Bäume (`docs/developer/index.html:62-83`, EN `:46-57`): eine Zeile `apps/frps/` nach `gateway/` (DE „frps-Image (FRP-Server unter einem Supervisor)“, EN „frps image (FRP server under a supervisor)“, wie `docs/admin/betrieb.html:186`). Sonst bleiben beide Abschnitte; nicht `:106` (Gateway-Absatz, den ändert ein anderes Vorhaben).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku (DE+EN); kein CHANGELOG
