@@ -260,14 +260,24 @@ pub fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), Ap
     storage::save_settings(&app, &settings)
 }
 
+/// Loads the connections of the sync workspace of this process from the source it keeps
+/// ([`sync_source`]), never with the device identity, and keeps them as its own.
 #[tauri::command]
 pub async fn sync_connections(
     app: tauri::AppHandle,
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
+    let source = sync_source(&storage::app_data_dir(&app)?, &url)?;
     let allow_self_signed = self_signed_setting(&app, None);
-    let server_url = storage::load_settings(&app).ok().and_then(|s| s.server_url);
-    sync::sync_connections(app, url, allow_self_signed, server_url).await
+    sync::sync_connections(app, source, allow_self_signed).await
+}
+
+/// The source a sync of the workspace of this process loads, in the app data dir `base`,
+/// `sent` being the one the webview names ([`workspace::sync_url`]). The launcher syncs
+/// nothing.
+fn sync_source(base: &Path, sent: &str) -> Result<String, AppError> {
+    let (_, meta) = own_meta(base)?;
+    workspace::sync_url(&meta, sent)
 }
 
 #[tauri::command]
@@ -662,7 +672,7 @@ mod tests {
         ansible_generate_inventory, ansible_launch, ansible_write_playbook, check_server_cert_in,
         delete_workspace_in, enroll_with_token_in, list_workspaces_in, open_launcher_with,
         open_workspace_in, reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in,
-        run_with_deadline, save_workspace_in, sign_in_target,
+        run_with_deadline, save_workspace_in, sign_in_target, sync_source,
     };
     use crate::ansible::AnsibleTarget;
     use crate::enrollment::{self, ResetOutcome};
@@ -1446,6 +1456,110 @@ mod tests {
             let _c = entered("w-0000000c");
             reset_server_cert_pin_in(base, "https://other.example.com").unwrap();
             assert_eq!(pinned(), [false, false, false]);
+        }
+    }
+
+    // ── Where the sync of the workspace of this process loads from ──
+
+    /// The source of the sync workspace below; its query carries a key.
+    const SYNC_SOURCE: &str = "https://sync.example/c.json?api_key=k1";
+
+    /// Lays out `base` with a workspace of each kind: `w-0000000a` at the server
+    /// `https://ah.example`, `w-0000000b` syncing from [`SYNC_SOURCE`], `w-0000000c` syncing
+    /// without a source yet, `w-0000000e` local.
+    fn sync_workspaces(base: &Path) {
+        for (id, kind, url) in [
+            ("w-0000000a", SyncMode::Server, Some("https://ah.example")),
+            ("w-0000000b", SyncMode::Sync, Some(SYNC_SOURCE)),
+            ("w-0000000c", SyncMode::Sync, None),
+            ("w-0000000e", SyncMode::Local, None),
+        ] {
+            Meta {
+                kind,
+                name: id.to_string(),
+                color: PALETTE[0].to_string(),
+                url: url.map(String::from),
+                interval_minutes: 1,
+                allow_self_signed_certs: false,
+                last_username: None,
+                legacy_keys: false,
+            }
+            .store(&base.join("workspaces").join(id))
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn sync_binding_loads_the_source_the_sync_workspace_keeps() {
+        let scratch = Scratch::new("sync-source");
+        let base = &scratch.0;
+        sync_workspaces(base);
+        let _b = entered("w-0000000b");
+        for sent in [SYNC_SOURCE, "  https://sync.example/c.json?api_key=k1 \n"] {
+            assert_eq!(sync_source(base, sent).unwrap(), SYNC_SOURCE, "{sent:?}");
+        }
+    }
+
+    #[test]
+    fn sync_binding_refuses_another_source_of_the_same_server_and_names_none() {
+        let scratch = Scratch::new("sync-other-source");
+        let base = &scratch.0;
+        sync_workspaces(base);
+        let _b = entered("w-0000000b");
+        for other in [
+            "https://sync.example/d.json?api_key=k1",
+            "https://sync.example/c.json?api_key=k2",
+            "https://sync.example/c.json",
+            "https://sync.example/c.json?api_key=k1&page=2",
+        ] {
+            let refused = sync_source(base, other).unwrap_err();
+            assert!(
+                matches!(&refused, AppError::Validation(_)),
+                "{other}: {refused:?}"
+            );
+            let says = refused.to_string();
+            assert!(
+                says.contains("syncs only from the sync URL it keeps"),
+                "{other}: {says}"
+            );
+            for secret in ["api_key", "k1", "c.json"] {
+                assert!(!says.contains(secret), "{other}: {says}");
+            }
+        }
+    }
+
+    #[test]
+    fn sync_binding_syncs_only_in_a_sync_workspace_with_a_source() {
+        let scratch = Scratch::new("sync-where");
+        let base = &scratch.0;
+        sync_workspaces(base);
+
+        // The launcher syncs nothing.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = sync_source(base, SYNC_SOURCE).unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        {
+            // A server workspace, not even from the URL of its own server.
+            let _a = entered("w-0000000a");
+            for sent in ["https://ah.example", SYNC_SOURCE] {
+                assert_refused(sync_source(base, sent), "only a sync workspace syncs", sent);
+            }
+        }
+        {
+            let _e = entered("w-0000000e");
+            assert_refused(
+                sync_source(base, SYNC_SOURCE),
+                "only a sync workspace syncs",
+                "local",
+            );
+        }
+        {
+            let _c = entered("w-0000000c");
+            assert_refused(
+                sync_source(base, SYNC_SOURCE),
+                "this sync workspace has no sync URL yet",
+                "no source",
+            );
         }
     }
 }

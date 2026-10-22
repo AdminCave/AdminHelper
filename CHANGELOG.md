@@ -13,6 +13,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   werden auf ihr Format geprueft (Token aus Buchstaben, Ziffern, `_` und `-`, Server-ID als UUID); passt eins nicht,
   erscheint statt der Befehle eine Meldung, und die Token-Liste wird trotzdem neu geladen. Werte mit Sonderzeichen
   stehen im erzeugten Befehl in einfachen Anfuehrungszeichen; die vom Server erzeugten Werte sehen aus wie bisher.
+- **Desktop: Sync nur aus der Quelle des eigenen Sync-Workspace:** Der Sync laedt nur im Sync-Workspace und nur
+  dessen gespeicherte Sync-URL, nie mit dem Geraete-Zertifikat. Eine andere URL, auch desselben Servers, lehnt er ab;
+  die Meldung nennt keine URL. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
