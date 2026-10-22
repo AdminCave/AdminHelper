@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Compose-Härtung: Client-Adresse hinter dem Gateway, Grenzen der Container, CA-Passphrase als Secret, Netz frpedge — Task-Ledger
-Status: geplant · Branch: feature/compose-hardening · Review: pro Task
+Status: aktiv · Branch: feature/compose-hardening · Review: pro Task
 Spec: docs/features/compose-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --tunnel --enforce — `docker-compose.yml` (alle Dienste: `no-new-privileges`, Prozess- und Speichergrenzen, Capabilities des Gateways, Secret des ca-issuer, Netz `frpedge`, `TRUSTED_PROXIES`), `apps/gateway/nginx.conf`, `apps/ca-issuer` und `scripts/init-secrets.sh` laufen im Sammellauf über `main` (`integration-stack` mit den Schritten aus T8 und T13, `backup-restore`, `upgrade-path` vom letzten Release); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/compose-hardening`. `scenario` vor dem Merge (ask-first): nur er erreicht die veröffentlichten Ports von frps von einem zweiten Host (Tunnel-Datenpfad durch `frpedge` ohne Masquerading, T4, und die Prüfung aus T9) und fährt das Gateway unter `MTLS_ENFORCE=true` mit Clients eines anderen Hosts (T2, T3, T12). Kein `windows`: kein Agent- und kein Desktop-Code.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
