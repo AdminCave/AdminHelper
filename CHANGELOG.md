@@ -24,6 +24,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   das gespeicherte Passwort der Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition
   speichert dann keins, ebenso `POST /templates` mit `***` oder leerem Wert. Wer das Passwort bisher aus der
   Template-Antwort gelesen hat, sieht `***`.
+- **Notification-Hub: E-Mails nutzen STARTTLS auf jedem Port ausser 465 und pruefen Zertifikat und Hostnamen des
+  Relays, wie der E-Mail-Kanal des Monitorings:** Bisher lief STARTTLS nur auf Port 587, auf anderen Ports ging die
+  Anmeldung im Klartext, und weder STARTTLS noch implizites TLS auf Port 465 prueften das Zertifikat. Ein Relay ohne
+  STARTTLS (etwa ein lokaler Mailserver auf Port 25) oder mit einem Zertifikat, dem der Container nicht vertraut oder
+  das nicht zu `SMTP_HOST` passt, nimmt danach keine Hub-Mails mehr an: Die Outbox wiederholt bis
+  `NOTIFICATION_MAX_ATTEMPTS` und markiert die Mail dann als fehlgeschlagen, der Grund steht im Log des
+  `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Doku: Betrieb & Konfiguration (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

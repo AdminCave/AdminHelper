@@ -138,7 +138,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <thead><tr><th>Variable</th><th>Bedeutung</th></tr></thead>
             <tbody>
               <tr><td><code>SMTP_HOST</code></td><td>Hostname des Relays. <strong>Leer = E-Mail-Kanal aus</strong> (Glocke + Desktop-Hinweise bleiben aktiv).</td></tr>
-              <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS).</td></tr>
+              <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS); jeder andere Port nutzt ebenfalls STARTTLS. Der Versand prüft Zertifikat und Hostnamen des Relays: Über einen Relay ohne STARTTLS oder mit einem Zertifikat, dem der Container nicht vertraut oder das nicht zu <code>SMTP_HOST</code> passt, geht keine Mail hinaus; nach dem letzten Zustellversuch steht der Grund im Log des <code>scheduler</code>-Dienstes.</td></tr>
               <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt). Ein <code>$</code> im Passwort als <code>$$</code> schreiben oder den Wert in einfache Anführungszeichen setzen (siehe <a href="./installation.html#env">Umgebungsvariablen</a>).</td></tr>
               <tr><td><code>SMTP_FROM</code></td><td>Absenderadresse (Default <code>adminhelper@localhost</code>).</td></tr>
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Zustellversuche pro E-Mail mit linearem Backoff, danach „fehlgeschlagen" (Default 5).</td></tr>
