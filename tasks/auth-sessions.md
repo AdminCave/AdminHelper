@@ -19,7 +19,7 @@ der builder greppt sie vor dem Schreiben neu.
 
 Für alle Tasks:
 - Reihenfolge: Server zuerst. T1 vor T3 (dieselbe Funktion in `auth_router.py`); T2 unabhängig; T4 → T5 → T9;
-  T8 → T9 → T10; T6 und T7 unabhängig. T10 wartet auf Kevin.
+  T8 → T9 → T10; T6 und T7 unabhängig. T10: Kevin hat geantwortet (2026-10-22, siehe T10).
 - Risikopfade (`scripts/dev/review-risk.txt`): T1, T3, T5 (`apps/server/app/modules/users/*`), T2 (dazu
   `apps/server/app/core/auth.py`), T4 (`docker-compose*.yml`) bekommen zusätzlich `security`.
 - Neue Code-Strings (Log-Zeilen, Kommentare) englisch; bestehende deutsche Texte (401-`detail` „Ungültiger oder
@@ -102,9 +102,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/App.idle.test.ts src/lib/
 Doku: docs/admin/benutzer.html:62-67 + docs/en/admin/users.html:55-61 (Login-Flow, neuer Punkt: das Web-Panel meldet nach 30 Minuten ohne Bedienung in allen offenen Tabs ab, einstellbar über `WEB_IDLE_TIMEOUT_MINUTES`, `0` = aus; ein Hinweis bleibt stehen) · CHANGELOG.md (Added, umlautfrei: Web-Panel meldet nach 30 Minuten ohne Bedienung ab (alle Tabs zusammen), Env `WEB_IDLE_TIMEOUT_MINUTES` (0 = aus), Feld `idle_timeout_minutes` in `GET /api/auth/me`)
 Abhängt von: T5, T8
 
-### T10 — Web: Inaktivität gilt auch über Neuladen und Wiederöffnen  [?] (Soll eine beim Laden wiederhergestellte Sitzung sofort enden, wenn die letzte Bedienung in diesem Browser länger als das Limit her ist? Empfehlung ja, Spec Offene Frage 1)
+### T10 — Web: Inaktivität gilt auch über Neuladen und Wiederöffnen  [ ]
 Komponente: web · Dateien: apps/web/src/lib/idle.ts, apps/web/src/lib/idle.test.ts, apps/web/src/App.svelte, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md
 Änderung: `watchIdle` bekommt eine Option `{ restored?: boolean }`. `App.svelte` setzt sie für die Sitzung, die `auth.hydrate()` beim Start wiederhergestellt hat (`apps/web/src/App.svelte:20-23`), nicht für eine Sitzung nach einem Login. Mit `restored` liest der Start zuerst den Wert aus `localStorage`: liegt er `minutes` Minuten oder länger zurück → `onIdle()` sofort (derselbe Hinweis); fehlt er oder ist der Speicher gesperrt → wie T8 (jetzt schreiben, weiter wachen). Tests in `idle.test.ts`: (a) `restored`, Wert vor 31 min, `minutes` 30 → `onIdle` sofort; (b) `restored`, Wert vor 5 min → nicht, Abmeldung erst nach weiteren 30 min ohne Bedienung; (c) ohne `restored`, Wert vor 2 h → nicht sofort (Login eben erfolgt); (d) `restored` ohne Wert → wie T8. Zuerst rot: (a).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/idle.test.ts
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html (der Punkt aus T9: gilt auch nach Neuladen oder Wiederöffnen im selben Browser) · CHANGELOG.md (der Eintrag aus T9 um diesen Satz ergänzt)
 Abhängt von: T9
+Entscheidung: Kevin 2026-10-22 — ja: eine beim Laden wiederhergestellte Sitzung endet, wenn die letzte Bedienung in diesem Browser länger als das Limit her ist
