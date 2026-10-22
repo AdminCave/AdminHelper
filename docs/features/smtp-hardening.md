@@ -71,14 +71,20 @@ Ziel:
   `SMTP_SSL(..., context=ctx)`, jeder andere Port über `SMTP` und `starttls(context=ctx)` vor `login()`. Scheitert
   STARTTLS, folgt weder `login()` noch der Versand.
 - T4: Compose reicht die fünf `SMTP_*` wortgleich wie an `server` auch an `monitoring`. T4 kommt nach T1.
-- T5–T7 (offen, Frage 1): optionale CA-Datei `SMTP_CA_FILE` für Relays mit privater CA, in Hub und Monitoring.
+- T5–T7 (Frage 1, Kevin 2026-10-22: Option (b)): optionale CA-Datei `SMTP_CA_FILE` für Relays mit privater CA, in
+  Hub und Monitoring.
+- T8 (Kevin 2026-10-22): `PUT /alerts/{id}` und `PUT /templates/{id}` behalten ein gespeichertes `smtp_password`
+  bei `***`, leerem oder fehlendem Wert nur, solange `smtp_host` und `smtp_port` gleich bleiben. Ändert derselbe PUT
+  den Relay, antwortet `***` mit 422 (Passwort neu eingeben); ohne Passwort entfällt das gespeicherte.
+- T9: CHANGELOG-Einträge und zwei Stellen in Betrieb & Konfiguration präzisiert (Funde der Task-Reviews). T10/T11:
+  Tests halten fest, dass `SMTP_CA_FILE` die System-CAs ergänzt (Fund der Branch-Prüfung).
 
 Nicht-Ziele (YAGNI):
 - Kein typisiertes Schema für `channel_config` (Frage 2): T1 löst die Zugangsdaten-Frage ohne Änderung am
   Request-Vertrag von `/alerts` und `/templates`.
 - Kein Mailkanal des Monitorings über den Hub (Frage 3); kein Versand ohne TLS, kein Schalter, der die Prüfung
   abschaltet.
-- Keine Änderung an `POST /alerts` und `PUT /alerts/{id}` (`routers/alerts.py`), am Desktop oder am Web.
+- Keine Änderung an `POST /alerts` (`routers/alerts.py`), am Desktop oder am Web; `PUT /alerts/{id}` ändert nur T8.
 - Keine Änderung an `scripts/install.sh` oder `scripts/update.sh`: `update.sh` tauscht `docker-compose.yml` aus dem
   Laufzeit-Bundle des Releases (`scripts/update.sh:5-11`, `:513-536`), T4 erreicht Installationen also mit dem
   nächsten Release.
@@ -91,9 +97,13 @@ Nicht-Ziele (YAGNI):
 | T2 | monitoring | `apps/monitoring/app/models.py`, `apps/monitoring/app/routers/templates.py`, `apps/monitoring/tests/test_alert_secrets.py`, `CHANGELOG.md` |
 | T3 | server | `apps/server/app/modules/notifications/sender.py`, `apps/server/tests/test_email_sender.py`, `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `CHANGELOG.md` |
 | T4 | server | `docker-compose.yml`, `apps/server/tests/test_compose_smtp.py` (neu), `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `CHANGELOG.md` |
-| T5 `[?]` | server | `apps/server/app/core/config.py`, `apps/server/app/modules/notifications/sender.py`, `apps/server/tests/test_email_sender.py` |
-| T6 `[?]` | monitoring | `apps/monitoring/app/core/config.py`, `apps/monitoring/app/alerter.py`, `apps/monitoring/tests/test_alerter_dispatch.py` |
-| T7 `[?]` | scripts | `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `docs/admin/monitoring.html`, `docs/en/admin/monitoring.html`, `CHANGELOG.md` |
+| T5 | server | `apps/server/app/core/config.py`, `apps/server/app/modules/notifications/sender.py`, `apps/server/tests/test_email_sender.py` |
+| T6 | monitoring | `apps/monitoring/app/core/config.py`, `apps/monitoring/app/alerter.py`, `apps/monitoring/tests/test_alerter_dispatch.py` |
+| T7 | scripts | `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `docs/admin/monitoring.html`, `docs/en/admin/monitoring.html`, `CHANGELOG.md` |
+| T8 | monitoring | `apps/monitoring/app/models.py`, `apps/monitoring/app/routers/alerts.py`, `apps/monitoring/app/routers/templates.py`, `apps/monitoring/tests/test_alert_secrets.py`, `docs/admin/monitoring.html`, `docs/en/admin/monitoring.html`, `CHANGELOG.md` |
+| T9 | scripts | `CHANGELOG.md`, `docs/admin/betrieb.html`, `docs/en/admin/operations.html` |
+| T10 | server | `apps/server/tests/test_email_sender.py` |
+| T11 | monitoring | `apps/monitoring/tests/test_alerter_dispatch.py` |
 
 Auf `scripts/dev/review-risk.txt` stehen `apps/monitoring/app/alerter.py` (T1, T6),
 `apps/server/app/modules/notifications/*` (T3, T5) und `docker-compose*.yml` (T4): diese Tasks bekommen zusätzlich
@@ -165,9 +175,8 @@ dokumentiert).
 - **T4 schaltet Monitoring-Mail für jede Installation mit `SMTP_HOST` ein.** E-Mail-Regeln ohne eigenen Relay, die
   bisher mit `SMTP not configured` scheiterten, verschicken danach über den globalen Relay, mit derselben TLS-Prüfung
   wie unter T3. T4 hängt an T1.
-- **T1:** Regeln mit eigenem `smtp_host`, die sich bisher stillschweigend mit `SMTP_USER`/`SMTP_PASSWORD`
-  angemeldet haben, melden sich nicht mehr an; verlangt ihr Relay einen Login, steht im Alert-Log
-  `SMTP authentication failed (…)` bzw. `SMTP server refused the message`. Abhilfe: eigene Zugangsdaten in der Regel.
+- **T1:** Regeln mit eigenem `smtp_host` ohne eigene Zugangsdaten melden sich nicht an; verlangt ihr Relay einen
+  Login, steht im Alert-Log `SMTP server refused the message`. Abhilfe: eigene Zugangsdaten in der Regel.
 - **T2:** API-Nutzer, die das Passwort aus `GET /templates` gelesen haben, sehen `***`.
 - Rollback: jede Task ist ein eigener Commit ohne Datenänderung; Revert genügt. T4 wirkt auf Installationen erst mit
   dem nächsten Release über `update.sh`.
@@ -178,7 +187,8 @@ T1: `docs/admin/monitoring.html:340` (DE+EN): die Zugangsdaten aus der Umgebung 
 (Changed). T2: CHANGELOG (Changed). T3: `docs/admin/betrieb.html:141` / `docs/en/admin/operations.html:100`:
 STARTTLS auf jedem Port außer 465, Prüfung von Zertifikat und Hostname; CHANGELOG (Changed). T4: Satz im
 SMTP-Abschnitt von `betrieb.html` / `operations.html`, dass derselbe Relay die E-Mail-Regeln des Monitorings bedient;
-CHANGELOG (Fixed). T7 (offen): `SMTP_CA_FILE` mit Override-Beispiel; CHANGELOG (Added).
+CHANGELOG (Fixed). T7: `SMTP_CA_FILE` mit Override-Beispiel; CHANGELOG (Added). T8: Zeile `email` in
+`docs/admin/monitoring.html` (DE+EN): `***` gilt nur bei unverändertem Relay; CHANGELOG (Changed).
 
 ## Offene Fragen
 
@@ -190,7 +200,8 @@ CHANGELOG (Fixed). T7 (offen): `SMTP_CA_FILE` mit Override-Beispiel; CHANGELOG (
    **Empfehlung (b):** interne Relays mit Firmen-CA sind im Umfeld der Zielgruppe üblich; ohne Option fehlt ihnen
    nach dem Update jeder unterstützte Weg, (b) lässt die Prüfung an und betrifft nur SMTP. Trade-off: ein Schalter
    mehr und eine Override-Datei beim Betreiber. (c) nicht empfohlen. Relays ohne STARTTLS bleiben bei jeder Option
-   außen vor (Empfehlung: hinnehmen, die Doku nennt 587/465). Hängt: T5, T6, T7.
+   außen vor (Empfehlung: hinnehmen, die Doku nennt 587/465). Hängt: T5, T6, T7. **Antwort Kevin 2026-10-22: (b)**,
+   Prüfung bleibt an, Einbindung per `docker-compose.override.yml`, Doku mit Beispiel.
 2. **Typisiertes `channel_config`?** Empfehlung: nicht in diesem Paket — T1 regelt die Zugangsdaten ohne Änderung am
    Request-Vertrag; ein Schema änderte die OpenAPI von `/alerts` und `/templates` und bräuchte einen Weg für
    gespeicherte Regeln mit weiteren Schlüsseln. Bei Ja eine eigene Roadmap-Zeile. Hängt: keine Task.
