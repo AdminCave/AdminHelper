@@ -7,6 +7,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Web: Stores halten nach dem Anlegen nur die Felder der Liste:** Webhook-Token und Skript eines neuen oder
+  bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
+  zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
+  Entwickler (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Stores: nach dem Anlegen nur die Felder der Liste halten — Task-Ledger
-Status: aktiv · Branch: feature/web-store-cleanup · Review: am Ende
+Status: bereit · Branch: feature/web-store-cleanup · Review: am Ende
 Spec: docs/features/web-store-cleanup.md (Härtung, Kevin 2026-10-22)
 Heavy: none — nur zwei Web-Stores, ihre Unit-Tests und ein Satz Entwickler-Doku; keine Route, kein Schema, keine Migration, kein Server-, Gateway-, PKI-, FRP-Datenpfad-, Compose- oder Install-Pfad (die FRP-Server-Konfiguration selbst ändert sich nicht, nur was die Seite nach dem Speichern behält); die Web-E2E mockt `/api/hooks` und `/api/frp/server-config` (`apps/web/tests/e2e/mocks.ts`) und läuft in der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -34,8 +34,10 @@ Beweis: Code-Lesung apps/web/src/lib/stores/hooks.ts:27, :34
 Orakel: contract — ein Listeneintrag hat nur Schlüssel von `Hook`, und eine Feldliste ohne einen Schlüssel von `Hook` macht `npm run check` rot
 HEAD: b1432223
 
-### T2 — FRP-Store: Konfiguration ohne `authToken` und `dashboardPassword` halten  [ ]
+### T2 — FRP-Store: Konfiguration ohne `authToken` und `dashboardPassword` halten  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/frp.ts, apps/web/src/lib/stores/frp.test.ts, docs/developer/webui.html, docs/en/developer/webui.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @08f7265f 2026-10-22T10:26:24+02:00
+Review: am Ende (Branch-Review)
 Änderung: `save` (`apps/web/src/lib/stores/frp.ts:19-25`) setzt in der Antwort `authToken` und `dashboardPassword` auf `null`, legt dieses Objekt in den Store (`:23`) und gibt es zurück — so, wie `GET` und `PUT` die Konfiguration liefern (`apps/server/app/modules/frp/config_router.py:38`, `:189`; `apps/server/app/modules/frp/models.py:42-46`, `:53`, `:58`). Das gilt für beide Zweige, Anlegen und Ändern, damit der Store sich nicht auf die Maske des `PUT` verlässt. Ein Kommentar nennt das Warum: die Antwort auf das Anlegen trägt beide Werte im Klartext (`config_router.py:96`), und die Oberfläche liest sie nie (`apps/web/src/modals/FrpConfigModal.svelte:49-57`, `:85-96`, `:136`). `refresh` bleibt. Tests in `frp.test.ts`: (a) `save(INPUT, null)` mit der Antwort `{ ...cfg('new'), authToken: 'frp-s3cr3t-token', dashboardPassword: 'dash-s3cr3t' }` → `get(frpConfig)` hat `authToken` und `dashboardPassword` gleich `null` und sonst die Felder der Antwort, `JSON.stringify(get(frpConfig))` enthält keinen der beiden Werte, die Rückgabe von `save` ebenso; (b) dasselbe für `save(INPUT, cfg('1'))` über `updateConfig`. Zuerst rot: (a) und (b) auf HEAD. Die bestehenden Tests (`:37-51`, `:54-61`) bleiben unverändert grün.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/frp.test.ts
 Doku: `docs/developer/webui.html:64` + `docs/en/developer/webui.html:64` (Abschnitt „Stores“, ein Satz nach dem ersten: die Daten-Stores halten nur, was die Listen- bzw. Leseantwort trägt; ein einmalig angezeigter Wert aus einer Create-Antwort, API-Key oder Webhook-Token, geht nur an den Aufrufer; `authToken` und `dashboardPassword` der FRP-Server-Konfiguration hält der Store als `null`, wie `GET` sie liefert) · CHANGELOG.md (`[Unreleased]`, neuer Abschnitt `### Changed`, umlautfrei: „**Web: Stores halten nach dem Anlegen nur die Felder der Liste:** Webhook-Token und Skript eines neuen oder bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer Entwickler (DE+EN).“)
