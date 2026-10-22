@@ -19,6 +19,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   benennt sie danach atomar um, wie die `frps.toml`. Bisher entstanden die Dateien mit den Rechten der umask und
   bekamen erst danach Modus 0600. Ein Fehler beim Entfernen der Bootstrap-Dateien steht mit Dateiname und Fehlertyp im
   Log; bisher wurde er verworfen.
+- **Server: die Log-Zeilen zum Redis-Backend des Rate-Limits nennen nur Schema, Host und Port:** Von `REDIS_URL`
+  nennen sie nur Schema, Host und Port (bei `unix://` den Socket-Pfad), von einem Verbindungsfehler nur den Typ, wie
+  die Log-Zeilen des Alert-Webhooks. Bisher standen die ganze URL und der Fehlertext im Log.
 
 ## [0.46.0] - 2026-10-22
 
