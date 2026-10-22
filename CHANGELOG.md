@@ -7,6 +7,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
+  Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
+  Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
+  FRP-Server-Konfiguration. Bisher stand der Fehler samt Traceback im Log.
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

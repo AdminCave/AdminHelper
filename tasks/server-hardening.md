@@ -31,8 +31,10 @@ Für alle Tasks:
   `monkeypatch.setattr(config, "DATA_DIR", tmp_path)` und `tmp_path`, nie das echte Datenverzeichnis.
 - Proben gegen eine Datenbank drucken nur Exception-Typen.
 
-### T1 — Startabgleich der frps.toml: Fehler nur mit Typ loggen  [ ]
+### T1 — Startabgleich der frps.toml: Fehler nur mit Typ loggen  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_frp_docker_manager.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0f0d1b23 2026-10-22T10:47:52+02:00
+Review: approve (.ah-out/review/server-hardening/T1.verdict.json)
 Änderung: In `_ensure_frps_config` (`apps/server/app/main.py:314-339`) wird `except Exception: logger.exception("frps.toml schreiben fehlgeschlagen")` (`:338-339`) zu `except Exception as exc: logger.warning("frps.toml not written at startup (%s)", type(exc).__name__)` — kein `exc_info`, kein Text der Ausnahme, wie `_check_frps_server_configs` (`:285-287`, `:304-311`). Der Rest (Aufräumen vorab, Entfernen ohne DB-Config, best effort) bleibt. Neue Tests in `test_frp_docker_manager.py` neben `test_startup_with_a_db_config_writes_frps_toml` (`:189-201`), `caplog` auf `logging.getLogger("app.main")`: (a) `app.modules.frp._helpers.get_frp_config` ersetzt durch einen Stand-in, der `sqlalchemy.exc.OperationalError("SELECT 1", {}, Exception("connection failed: password=s3cr3t-pw host=db.example"))` wirft → `_ensure_frps_config` kehrt zurück, genau ein WARNING-Record von `app.main`, dessen `getMessage()` `OperationalError` nennt; `s3cr3t-pw` steht nirgends in `caplog.text`; kein Record hat `exc_info`. (b) `write_frps_config` (im Modul `app.modules.frp.docker_manager`) wirft `PermissionError(errno.EACCES, "Permission denied", "/frp/.frps.toml.x.tmp")` → ein WARNING mit `PermissionError`, ohne `Permission denied` und ohne Traceback (Stil wie `:271-273`). Zuerst rot: (a) und (b) auf HEAD (Traceback samt Text im Log, `exc_info` gesetzt).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_docker_manager.py
 Doku: CHANGELOG.md (Changed, umlautfrei: scheitert beim Start der Abgleich der `frps.toml`, nennt das Log wie die uebrigen Startpruefungen nur den Fehlertyp)

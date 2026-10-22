@@ -335,8 +335,8 @@ def _ensure_frps_config(db):
             return
         write_frps_config(config)
         logger.info("frps.toml neu geschrieben")
-    except Exception:
-        logger.exception("frps.toml schreiben fehlgeschlagen")
+    except Exception as exc:
+        logger.warning("frps.toml not written at startup (%s)", type(exc).__name__)
 
 
 def _run_startup_tasks():
