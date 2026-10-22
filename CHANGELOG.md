@@ -7,6 +7,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
+  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
+  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
+  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+
+### Fixed
+
+- **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
+  `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
+  Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
+  gescheitertem Lauf eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text
+  (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
+  `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
+  Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
+
+## [0.46.0] - 2026-10-22
+
 ### Added
 
 - **Desktop: Workspaces — mehrere Server, Sync-Quellen und lokale Verbindungen nebeneinander (R-0431):** Ein Workspace
@@ -463,15 +482,70 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und einen CSP-Fix fuer den Browser. Nur Dev-Werkzeug, nicht im ausgelieferten Bundle; `npm audit --audit-level=high`
   vorher je 1 high, nachher 0 in beiden Projekten und in `apps/desktop/e2e`.
 
+- **certifi 2026.5.20 → 2026.10.19** in server und monitoring (gehashte Locks neu generiert, R-0657): behebt
+  PYSEC-2026-4320 (GHSA-6q48-6c7w-9gw2). Das gebuendelte CA-Paket enthielt die Wurzel `emSign ECC Root CA - G3`, unter
+  der acht widerrufene eMudhra-Zwischenzertifikate mit kompromittierten privaten Schluesseln haengen; wer einen davon
+  hat und im Netzweg sitzt, kann TLS-Verbindungen abfangen. 2026.10.19 nimmt diese Wurzel heraus, die uebrigen
+  emSign-Wurzeln bleiben. Mit den Mozilla-Staenden dazwischen entfallen ausserdem `Atos TrustedRoot 2011` und
+  `SecureSign Root CA12`, neu sind je zwei Wurzeln von SECOM (2024) und Telia (v3). `certifi` kommt transitiv ueber
+  `httpx`/`httpcore` und ist deren Vertrauensanker, wenn ausgehendes HTTPS das Zertifikat prueft (etwa die HTTP-Checks
+  des Monitorings mit `verify_ssl`). Vom woechentlichen Dependency-Audit (`pip-audit`) erkannt. Nur der Lock-Stand: im
+  Diff aendern sich Version und Hashes von `certifi`, `requirements.in` bleibt; beide Locks installieren mit
+  `--require-hashes` unter Python 3.12, `pip-audit` ohne Befund.
+
+- **Desktop-Backend: `rustls-webpki` 0.103.15 → 0.103.16 und `webpki-roots` 1.0.7 → 1.0.10 (R-0657):** schliesst
+  RUSTSEC-2026-0382 und RUSTSEC-2026-0381 (beide CVE-2026-111943) zu denselben acht widerrufenen
+  eMudhra-Zwischenzertifikaten wie bei certifi oben. `webpki-roots` 1.0.10 entzieht ihnen das Vertrauen, indem es die
+  Wurzel `emSign ECC Root CA - G3` herausnimmt; mit den Mozilla-Staenden dazwischen wechseln dieselben Wurzeln wie bei
+  certifi (`Atos TrustedRoot 2011` und `SecureSign Root CA12` entfallen, je zwei von SECOM (2024) und Telia (v3) kommen
+  dazu). `rustls-webpki` 0.103.16 lehnt jeden Zertifikatspfad ab, der den oeffentlichen Schluessel eines dieser
+  Zwischenzertifikate enthaelt, gleich unter welcher Wurzel. Wirksam ist das auf dem Weg mit oeffentlicher CA, den der
+  Desktop nimmt, wenn er weder mit Geraete-Identitaet (mTLS) noch mit TOFU verbindet, und bei der Probe, ob ein
+  Server-Zertifikat oeffentlich vertraut ist: Dort ist `webpki-roots` ueber das reqwest-Feature `rustls-tls` der
+  Vertrauensanker, und `rustls-webpki` prueft die Kette. Ein enrolltes Geraet prueft gegen die bei der Registrierung
+  gepinnte CA, der TOFU-Weg pinnt das Blattzertifikat ohne Kettenpruefung; beide vertrauen keiner Wurzel aus
+  `webpki-roots`. Gefunden vom woechentlichen Dependency-Audit; nur der Lockfile-Stand, im Diff aendern sich Version und
+  Checksumme der zwei Pakete, `Cargo.toml` bleibt. `cargo audit` meldet jetzt nur noch die erlaubten Warnungen.
+
+- **Web und Desktop-UI: `vite` 8.0.16 → 8.1.6 (R-0657):** schliesst GHSA-587h-7wmj-h5pm (high), GHSA-698v-4r3x-3vcv
+  und GHSA-r825-w8mm-5pxw im eingebauten `launch-editor` (jetzt 2.14.2), mit dem der Vite-Dev-Server ueber
+  `/__open-in-editor` eine Quelldatei im Editor oeffnet. Unter Windows konnte ein praeparierter Dateipfad dabei Befehle
+  ausfuehren, unter WSL mit Vim oder Emacs ein Pfad, der mit `-` oder `+` beginnt. Betroffen ist nur der Dev-Server
+  (`npm run dev`, `tauri dev`); die ausgelieferten Bundles von Web-Panel und Desktop enthalten weder Vite noch
+  `launch-editor`. Die Untergrenze in beiden `package.json` steht jetzt auf `^8.1.6`. Mit Vite 8.1 baut `rolldown`
+  1.1.5 statt 1.0.3 die Bundles; im Lockfile ziehen ausserdem `picomatch` 4.0.7, `@oxc-project/types` 0.139.0 und die
+  nur unter WebAssembly geladenen `@emnapi/*`, `@napi-rs/wasm-runtime` und `@tybys/wasm-util` nach, alles
+  Abhaengigkeiten von Vite selbst. `npm run build` laeuft in beiden Projekten, die erzeugte `index.html` ist bis auf den
+  Hash des Skripts gleich. Gefunden vom woechentlichen Dependency-Audit; `npm audit --audit-level=high` meldete vorher
+  in beiden Projekten 1 high (vite) und meldet jetzt nichts mehr.
+
 ### Fixed
 
-- **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
-  `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
-  Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
-  gescheitertem Lauf eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text
-  (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
-  `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
-  Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
+- **SSRF-Schutz prueft internationalisierte Hostnamen in der Form der Anfrage (Server und Monitoring):** Der Guard vor
+  dem HTTP-Check und dem Alert-Webhook des Monitorings sowie vor den Hook-Helfern `http_get`/`http_post` des Servers
+  prueft einen internationalisierten Hostnamen jetzt in der Form, die die Anfrage als Host-Header und TLS-Name traegt
+  (IDNA 2008, etwa `xn--strae-oqa.example`). Bisher loeste er bei scharfem s oder finalem Sigma einen anderen Namen auf
+  (IDNA 2003) und verband zu dessen Adressen, und die Anfrage konnte am Zertifikat oder am vhost scheitern. Ein
+  Hostname, den httpx nicht kodieren kann, wird schon vom Guard abgelehnt wie eine unlesbare URL, ebenso eine URL, die
+  httpx sonst nicht liest (etwa ein Port, der keine Zahl ist): Die Hook-Helfer werfen dafuer wie dokumentiert einen
+  `ValueError` statt `httpx.InvalidURL`, HTTP-Check und Alert-Webhook melden ein privates/reserviertes Ziel.
+- **Ops-Skripte: eine `.env` mit einem NUL-Byte oder mit Bytes ausserhalb von UTF-8 verliert keine Zeilen mehr
+  (R-0530):** `grep` haelt eine Datei mit einem NUL-Byte oder mit einem Byte, das die Locale des Aufrufers nicht
+  dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und laesst Zeilen aus: die Zeilen
+  mit einem solchen Byte, bei einem NUL-Byte alle. Setzten `install.sh`, `update.sh` oder `init-secrets.sh` einen
+  Schluessel, fehlten diese Zeilen danach in der `.env`. `init-secrets.sh`, das `install.sh` und `update.sh` aufrufen,
+  hielt ein gesetztes Secret in einer solchen Zeile fuer leer und erzeugte es neu, bei einem NUL-Byte alle vier, auch
+  `POSTGRES_PASSWORD` und `CA_ROOT_PASSPHRASE`, die dann nicht mehr zu den Volumes passten. Bei einem NUL-Byte nannte
+  `update.sh` die Installation ausserdem `:latest`, und der Rollback nach einem gescheiterten Neustart oder
+  Healthcheck hinterliess eine `.env` ohne Image-Pins. Jetzt lesen die Skripte die `.env` in jeder Locale Byte fuer
+  Byte (`LC_ALL=C grep -a`).
+- **Ops-Skripte: eine schreibgeschuetzte `.env` haelt `install.sh`, `update.sh` und `init-secrets.sh` an einem
+  Terminal nicht mehr an (R-0538):** `mv` fragt vor dem Ersetzen einer Datei ohne Schreibrecht nach, wenn die Eingabe
+  ein Terminal ist, und wartet auf die Antwort. War die `.env` schreibgeschuetzt, blieben so `install.sh` und
+  `init-secrets.sh` beim Setzen eines Schluessels stehen und `update.sh` beim Pinnen der Images und in beiden
+  Rollbacks; ein Update endete dann weder fertig noch zurueckgerollt, und unter einem Wrapper, der die Ausgabe
+  einsammelt, war die Frage nicht zu sehen. Jetzt ersetzen die Skripte jede Datei der Installation ohne Rueckfrage
+  (`mv -f`), wie schon bisher ohne Terminal.
 - **Server: der Visitor-Port eines FRP-Tunnels ist ein Port von 1 bis 65535 (R-0533):**
   `POST`/`PUT /api/frp/tunnels` nahmen als `visitor_port` jeden INTEGER-Wert an und speicherten ihn; der Server schrieb
   ihn als `bindPort` in die Visitor-TOML, und der Desktop wies die ganze Visitor-TOML ab. `0` vergab still einen freien
@@ -1133,10 +1207,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
-- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
-  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
-  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
-  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Deinstallation: der Schritt „Secrets“ entfernt auch die Kopien der `.env`:** `install.sh`, `update.sh` und
+  `init-secrets.sh` schreiben die `.env` ueber eine Kopie daneben (`.env.ah-XXXXXX`, `.env.ah-new`), die nach einem
+  Abbruch liegen bleiben kann und dieselben Secrets traegt. Beantwortet man in `uninstall.sh` die Frage nach der
+  Secrets-Datei mit Ja (auch mit `--yes`), entfernt das Skript neben `.env` und `.env.restored` jetzt auch jede Datei
+  und jedes Verzeichnis `.env.ah-*` im Install-Verzeichnis; `.env.example` bleibt. Ohne Ja bleiben alle liegen.
+  Doku: Installation (DE+EN); sie nennt bei den Host-Daten jetzt auch `./repo`, das das Skript schon bisher entfernt.
 - **Agent: der Windows-Dienst meldet ein nicht gesichertes Log-Verzeichnis im Ereignisprotokoll (R-0556):** Laesst
   sich das Log-Verzeichnis nicht sichern, schreibt der Agent wie bisher nur auf stdout und keine `agent.log`; unter
   dem Dienststeuerungs-Manager sah das niemand. Laeuft er als Windows-Dienst, schreibt er dann beim Start genau eine

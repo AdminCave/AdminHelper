@@ -34,7 +34,7 @@ is_set_safely() {
     local var="$1"
     local placeholder="${2:-}"
     local value
-    value=$(grep -E "^${var}=" "$ENV_FILE" 2>/dev/null | head -1 | sed -E "s/^${var}=//; s/^\"//; s/\"\$//")
+    value=$(LC_ALL=C grep -a -E "^${var}=" "$ENV_FILE" 2>/dev/null | head -1 | sed -E "s/^${var}=//; s/^\"//; s/\"\$//")
     if [ -z "$value" ]; then
         return 1
     fi
@@ -58,11 +58,16 @@ upsert() {
     # disk must not leave a cut-down .env in its place, whose lost secrets the checks
     # below would take for empty and regenerate — a POSTGRES_PASSWORD or
     # CA_ROOT_PASSPHRASE that no longer matches the volumes. Matches update.sh.
+    # LC_ALL=C grep -a, as in is_set_safely: grep takes a file with a NUL byte or a
+    # byte the caller's locale cannot decode for binary and leaves lines out, which
+    # would drop them here and read a set secret as empty there. mv -f: without it,
+    # mv asks before it replaces a file it may not write when stdin is a terminal,
+    # and waits for an answer that a wrapper collecting the output never shows.
     local tmp failed="Fehler: ${key} konnte nicht in $ENV_FILE geschrieben werden — Abbruch. $ENV_FILE bleibt beim letzten vollstaendigen Stand."
     tmp=$(mktemp "${ENV_FILE}.ah-XXXXXX") || { echo "$failed" >&2; exit 1; }
-    { { grep -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
+    { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
-        && mv "$tmp" "$ENV_FILE"; } \
+        && mv -f "$tmp" "$ENV_FILE"; } \
         || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }
 }
 

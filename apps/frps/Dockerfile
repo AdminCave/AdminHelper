@@ -10,9 +10,14 @@ FROM snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016
 # and asks the dashboard of frps as the user frps-fetch, two UIDs no other service of the stack
 # uses. root is in the group frps: without CAP_CHOWN, the supervisor gives the copy frps runs
 # from to that group, so that root and frps alone read it. No program keeps a setuid or setgid
-# bit, so none leads frps back to root.
+# bit, so none leads frps back to root. frps and curl, the programs that run as frps and
+# frps-fetch, are root's and for anyone else to execute only (0711), so that their processes are
+# not dumpable and the entries in /proc/<pid> of each are root's; a program the supervisor comes
+# to start as frps or frps-fetch gets the same mode.
 RUN rm -f /etc/frp/frps.toml \
     && find / -xdev -type f -perm /6000 -exec chmod u-s,g-s {} + \
+    && chown root:root /usr/bin/frps /usr/bin/curl \
+    && chmod 0711 /usr/bin/frps /usr/bin/curl \
     && addgroup -S -g 10002 frps \
     && adduser -S -D -H -h /nonexistent -s /sbin/nologin -u 10002 -G frps frps \
     && addgroup root frps \

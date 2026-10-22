@@ -212,12 +212,14 @@ def test_with_a_proxy_a_private_target_is_still_refused(monkeypatch, helper):
 
 
 @pytest.mark.parametrize("helper", [_safe_http_get, _safe_http_post])
-def test_a_url_httpx_refuses_still_raises_invalid_url(monkeypatch, helper):
-    # pinned_client parses the URL already; the hook sees the same error as before.
-    _resolving_to(monkeypatch, _PUBLIC)
+def test_a_url_httpx_refuses_is_rejected_by_the_guard(monkeypatch, helper):
+    # The guard takes the host from httpx, so a URL httpx cannot read is rejected
+    # before any lookup, as an unreadable URL with the documented ValueError.
+    asked = _resolving_to(monkeypatch, _PUBLIC)
     connected = _connections_refused(monkeypatch)
 
-    with pytest.raises(httpx.InvalidURL):
+    with pytest.raises(ValueError, match="SSRF"):
         helper("http://hook-target.example:abc/x")
 
+    assert asked == []
     assert connected == []

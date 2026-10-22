@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.45.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.46.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -184,7 +184,7 @@ docker compose up -d</code></pre>
 # "Really wipe everything" — images and backups too (--rmi/--purge-backups also
 # pre-set the matching question to YES):
 ./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
-          <p>Asked/removed individually: every container of the compose project and the network, <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres-data</code> and <code>victoria-data</code>), the host bind mounts <code>./data</code> and <code>./certs</code>, the secrets file <code>.env</code>, and optionally <code>./backups/</code> and the Docker images. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
+          <p>Asked/removed individually: every container of the compose project and the network, <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres-data</code> and <code>victoria-data</code>), the host bind mounts <code>./data</code>, <code>./certs</code> and <code>./repo</code>, the secrets file <code>.env</code> along with <code>.env.restored</code> and the working copies <code>.env.ah-*</code>, and optionally <code>./backups/</code> and the Docker images. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
