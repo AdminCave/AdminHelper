@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: I/O ohne gehaltene DB-Verbindung, begrenzter HTTP-Check, VictoriaMetrics-Fehler, Agent-Report, Cooldown, Glocken-Titel — Task-Ledger
-Status: bereit · Branch: feature/monitoring-io · Review: pro Task
+Status: erledigt · Branch: feature/monitoring-io · Review: pro Task
 Spec: docs/features/monitoring-io.md (Roadmap R-0615, R-0616, R-0631, R-0632, R-0633, R-0635, R-0636, R-0637)
 Heavy: linux-full — der Push-Pfad bekommt je Check einen SAVEPOINT (T7), das Schreiben nach VictoriaMetrics läuft über einen eigenen Thread mit Leeren im Lifespan (T2), und Checks geben ihre Verbindung vor dem Lauf ab (T1); die Unit-Suite fährt das nur gegen SQLite und Fakes, gegen Postgres und ein echtes VictoriaMetrics nur der Stack (`scripts/tests/agent_monitoring_test.sh`, `scripts/tests/desktop_e2e_monitoring.sh` mit echtem Agent). Kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, keine Vertragsänderung: kein `scenario`, kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
