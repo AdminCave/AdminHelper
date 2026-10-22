@@ -90,7 +90,7 @@ Beweis: Code-Audit 2026-10-21 · Code-Lesung origin/main@b1432223 — `SettingsM
 Dedup-Key: bug:desktop:i18n/index.ts:three-language-fallbacks
 HEAD: b1432223
 
-### T7 — Sprache vor dem Laden der Einstellungen nach derselben Regel (R-0660)  [?] (Systemsprache außer Deutsch/Englisch vor dem Laden der Einstellungen und wenn es scheitert: Englisch wie nach dem Laden, Empfehlung, oder Deutsch wie heute?)
+### T7 — Sprache vor dem Laden der Einstellungen nach derselben Regel (R-0660)  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/index.ts, apps/desktop/ui/src/lib/i18n/i18n.test.ts, CHANGELOG.md
 Änderung: Bei Antwort „Englisch“: der Anfangswert `writable(detectBrowserLanguage())` (`index.ts:22`) wird `writable(systemLanguage())`, `detectBrowserLanguage` (`:16-20`) entfällt (einziger Nutzer). Sichtbar nur bei einer anderen Systemsprache als Deutsch oder Englisch: „Lade…“ vor dem Laden (`App.svelte:22-25`) und die ganze UI, wenn das Laden der Einstellungen scheitert (`stores/session.ts:92-94`), werden englisch statt deutsch. Test in `i18n.test.ts`: `vi.resetModules()`, `navigator.language` `fr-FR`, frischer Import von `./index` → `get(language)` ist `en` (zuerst rot: `de`); `de-AT` → `de`. Bei Antwort „Deutsch wie heute“: `[~]` (zwei Regeln bleiben, die sich nur bei anderen Systemsprachen unterscheiden).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts
