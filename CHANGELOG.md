@@ -9,6 +9,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
+  Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
+  Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
 - **Web: Stores halten nach dem Anlegen nur die Felder der Liste:** Webhook-Token und Skript eines neuen oder
   bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
   zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
@@ -33,6 +36,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
+  Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
+  Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen
+  Text ab, der den Schluesselbund nennt („… could not be read from or stored in the system keyring …“), statt den Pin
+  nur bis zum Prozessende zu halten bzw. einen Zertifikatswechsel zu melden. Abhilfe: den Schluesselbund entsperren
+  und neu verbinden. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+- **Desktop unter Windows: ein Lesefehler des Credential Managers gilt als Fehler:** Scheitert das Lesen aus dem
+  Windows Credential Manager mit einem anderen Fehler als „nicht gefunden“, behandelt der Desktop das beim
+  Zertifikat-Pin, bei gespeicherten RDP-Passwoertern und bei der Pruefung, ob ein Workspace eine Geraete-Identitaet
+  haelt, jetzt als Fehler statt als fehlenden Eintrag, wie schon unter Linux und macOS.
 - **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
   `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
   Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
