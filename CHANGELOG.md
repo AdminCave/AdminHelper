@@ -104,6 +104,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
   `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
   vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
+- **Web-Panel: der Vite-Dev-Server proxied nur `/api`, auf `http://127.0.0.1:8080` (R-0669):** Der Dev-Server
+  leitete `/auth`, `/api` und `/health` an `http://localhost:8000` weiter. Der Server hat nur Routen unter `/api`, und
+  DEVELOPMENT.md und die Entwickler-Doku starten ihn auf `127.0.0.1:8080`. Jetzt geht nur `/api` dorthin; ein Test
+  prueft die Praefixe gegen den OpenAPI-Snapshot des Servers. Doku: Web-UI fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
