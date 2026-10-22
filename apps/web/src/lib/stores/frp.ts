@@ -28,9 +28,14 @@ export const frpConfig = {
   },
 
   async save(data: FrpConfigInput, existing: FrpConfig | null): Promise<FrpConfig> {
-    const saved = existing
+    const response = existing
       ? await api.updateConfig(existing.id, data)
       : await api.createConfig(data);
+    // The create response carries authToken and dashboardPassword in clear text
+    // (create_server_config in apps/server/app/modules/frp/config_router.py), and this store lives
+    // until the page reloads; the page never reads either value back. Hold the config the way GET
+    // returns it, on both paths, so the store does not rely on the PUT response being masked.
+    const saved: FrpConfig = { ...response, authToken: null, dashboardPassword: null };
     _config.set(saved);
     return saved;
   },
