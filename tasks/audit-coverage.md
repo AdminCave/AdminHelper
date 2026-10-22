@@ -44,8 +44,10 @@ Orakel: contract — je schreibender Hook-Route genau eine Audit-Zeile mit Actor
 HEAD: b1432223
 Semantik: `docs/admin/betrieb.html:130` — „Sicherheits- und änderungsrelevante Aktionen werden in einem <strong>append-only Audit-Trail</strong> protokolliert — mit Actor …, Quell-IP und Zeitstempel.“ (EN `docs/en/admin/operations.html:89`; nach PR #254 `:131` bzw. `:90`)
 
-### T2 — Provisionierungs-Token: Audit-Eintrag beim Erzeugen  [ ]
+### T2 — Provisionierungs-Token: Audit-Eintrag beim Erzeugen  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/router.py, apps/server/tests/test_provision_token_audit.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f122fc48 2026-10-22T10:32:21+02:00
+Review: approve (.ah-out/review/audit-coverage/T2.verdict.json)
 Änderung: `create_provision_token` (`apps/server/app/modules/provisioning/router.py:58-88`) bekommt `request: Request` (Import `:39`; `actor_from_request` und `audit` sind schon importiert, `:46`, `:49`) und schreibt nach `db.commit()`/`db.refresh(token)` (`:80-81`) genau einen Eintrag `provision.token.minted` mit `object_type="server"`, `object_id=server_id`, `object_label=server.name`, `detail="ttl=24h"`. Die Antwort bleibt gleich; `list_provision_tokens` (GET) schreibt nichts. Neue Testdatei `tests/test_provision_token_audit.py` (SPDX-Header; Server anlegen wie `_make_server` in `tests/test_provisioning.py`): (a) `POST /api/servers/<id>/provision/token` als Admin → genau eine Zeile `provision.token.minted` mit Actor `user`/`admin`, Objekt `server`/`<id>`/`<name>`, `detail` `ttl=24h`, `status` `success`; weder das Token aus der Antwort noch `hash_api_key(token)` steht in einer Spalte; (b) unbekannter Server (404) → keine Zeile; (c) `GET …/provision/tokens` → keine Zeile. Zuerst rot: (a) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provision_token_audit.py tests/test_provisioning.py tests/test_openapi_snapshot.py
 Doku: keine eigene (T8 und T9)
