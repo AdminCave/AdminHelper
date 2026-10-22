@@ -13,6 +13,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
   Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
   FRP-Server-Konfiguration. Bisher stand der Fehler samt Traceback im Log.
+- **Server: `.secret_key` entsteht von Anfang an mit Modus 0600:** Erzeugt der Server den Schluessel selbst (kein
+  `SECRET_KEY` gesetzt), schreibt er ihn in eine temporaere Datei im selben Verzeichnis, die von Anfang an nur fuer
+  ihren Besitzer lesbar ist, und benennt sie danach atomar um, wie die `frps.toml`. Bisher entstand die Datei mit den
+  Rechten der umask und bekam erst danach Modus 0600.
 
 ## [0.46.0] - 2026-10-22
 
