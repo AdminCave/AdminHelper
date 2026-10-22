@@ -35,7 +35,7 @@ func TestServerConfigAcceptsTheGeneratorForm(t *testing.T) {
 		"twoTunnelsToml": twoTunnelsToml,
 		"bundleToml":     bundleToml,
 		"withToken":      withToken("rotated-token"),
-		"without a tunnel": []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n" +
+		"without a tunnel": []byte("serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n" +
 			"auth.method = \"token\"\nauth.token = \"frps-token\"\n"),
 		"floats": []byte("serverAddr = \"203.0.113.10\"\n\n[[proxies]]\nname = \"ssh\"\n" +
 			"a = 1.5\nb = 1e+20\nc = inf\nd = -inf\ne = nan\nf = 1e-05\ng = -0.5\nh = 1.5e+20\n" +
@@ -74,7 +74,7 @@ func TestServerConfigRefusesOtherForms(t *testing.T) {
 		"loginFailExit":           {common + "loginFailExit = true\n" + proxy, "line 3: loginFailExit is no key"},
 		"LOGINFAILEXIT":           {common + "LOGINFAILEXIT = true\n" + proxy, "line 3: LOGINFAILEXIT is no key"},
 		"start":                   {common + "start = [\"ssh\"]\n" + proxy, "line 3: start is no key"},
-		"virtualNet.address":      {common + "virtualNet.address = \"100.64.0.1/24\"\n" + proxy, "line 3: virtualNet.address is no key"},
+		"virtualNet.address":      {common + "virtualNet.address = \"198.51.100.1/24\"\n" + proxy, "line 3: virtualNet.address is no key"},
 		"transport.tls.serverName": {common + "\n[transport.tls]\nenable = true\nserverName = \"frps\"\n" + proxy,
 			"line 6: transport.tls.serverName is no key"},
 		"auth.method oidc":                {common + "auth.method = \"oidc\"\n" + proxy, `line 3: auth.method must be "token"`},
@@ -107,6 +107,36 @@ func TestServerConfigRefusesOtherForms(t *testing.T) {
 				t.Errorf("checkServerConfig = %q, want it to contain %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// A proxy carries no key of the plugin family in any case, as frp maps keys without regard to
+// case; other extra_config keys, such as transport.useCompression, still pass.
+func TestServerConfigRefusesProxyPlugins(t *testing.T) {
+	const head = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\n"
+	for line, want := range map[string]string{
+		"plugin.type = \"static_file\"": "line 6: plugin.type is a plugin key",
+		"PLUGIN.type = \"x\"":           "line 6: PLUGIN.type is a plugin key",
+		"Plugin.localPath = \"/x\"":     "line 6: Plugin.localPath is a plugin key",
+		"plugin = \"x\"":                "line 6: plugin is a plugin key",
+	} {
+		t.Run(line, func(t *testing.T) {
+			err := checkServerConfig([]byte(head + line + "\n"))
+			if err == nil {
+				t.Fatal("checkServerConfig = nil, want the plugin key refused")
+			}
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("checkServerConfig = %q, want it to contain %q", err, want)
+			}
+		})
+	}
+	for name, toml := range map[string][]byte{
+		"fixture":                  serverFixture(t),
+		"transport.useCompression": []byte(head + "transport.useCompression = true\n"),
+	} {
+		if err := checkServerConfig(toml); err != nil {
+			t.Errorf("%s: checkServerConfig = %v, want nil", name, err)
+		}
 	}
 }
 

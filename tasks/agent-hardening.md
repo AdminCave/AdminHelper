@@ -110,8 +110,10 @@ Doku: docs/developer/agent.html:97 + docs/en/developer/agent.html:97 (der letzte
 Beweis: Code-Lesung apps/agent/internal/frpc/sync.go:189, :300-318
 HEAD: b1432223
 
-### T8 — Proxy: kein Schlüssel der `plugin`-Familie  [ ]
+### T8 — Proxy: kein Schlüssel der `plugin`-Familie  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/servertoml.go, apps/agent/internal/frpc/servertoml_test.go, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8ae2e27b 2026-10-22T11:57:33+02:00
+Review: approve (.ah-out/review/agent-hardening/T8.verdict.json)
 Änderung: In einer `[[proxies]]`-Tabelle lehnt `checkServerConfig` jeden Schlüssel ab, dessen erstes Segment ohne Rücksicht auf ASCII-Groß-/Kleinschreibung `plugin` ist: frp ordnet Namen über `encoding/json` ohne Groß-/Kleinschreibung zu (Spec „Externe Integrationen“). Meldung mit Zeile und Schlüssel, ohne Wert. Tests mit `TestServerConfig`: abgelehnt `plugin.type = "static_file"`, `PLUGIN.type = "x"`, `Plugin.localPath = "/x"` und `plugin = "x"`; angenommen bleiben die Fixture und `transport.useCompression = true`. Zuerst rot: die abgelehnten Fälle auf dem Stand nach T7.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServerConfig
 Doku: docs/developer/agent.html:97 + docs/en/developer/agent.html:97 (Satz aus T7 ergänzt: in einem Proxy kein Schlüssel `plugin…`) · docs/developer/api-reference.html:141 + docs/en/developer/api-reference.html:141 (ein `extra_config`-Schlüssel, der mit `plugin` beginnt, wird gespeichert, der Agent wendet die Config des Hosts dann aber nicht an) · CHANGELOG.md (Eintrag aus T7 ergänzt, umlautfrei)

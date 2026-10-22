@@ -50,8 +50,9 @@ var serverHead = regexp.MustCompile(`^\[\[?[A-Za-z0-9_.-]+\]\]?$`)
 // the root (with [transport.tls]) only the generator's keys; no key twice in a table; no "{{".
 // frp decides on the raw text whether it is legacy INI and renders it as a Go template before
 // it reads the TOML; only in this form all of these read it the same. A proxy may carry any key
-// (a tunnel's extra_config). The error names line and key, never the value: a line may hold
-// auth.token or a secretKey.
+// (a tunnel's extra_config) but one whose first segment is plugin in any case: the server sets
+// up no proxy plugin, and frp maps keys to its fields without regard to case. The error names
+// line and key, never the value: a line may hold auth.token or a secretKey.
 func checkServerConfig(serverToml []byte) error {
 	root := keyTable{}
 	table, prefix := root, ""
@@ -110,6 +111,8 @@ func checkServerConfig(serverToml []byte) error {
 			if prefix == "" && strings.HasPrefix(path, "transport.tls.") {
 				rootTLS = true
 			}
+		} else if first, _, _ := strings.Cut(path, "."); strings.EqualFold(first, "plugin") {
+			return refuse(n, fmt.Sprintf("%s is a plugin key; a proxy from the server carries no plugin", path))
 		}
 		if !table.add(path) {
 			return refuse(n, fmt.Sprintf("%s is set twice, or as a value and a table at once", path))
