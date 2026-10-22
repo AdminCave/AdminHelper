@@ -24,6 +24,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
   `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
   ab, ohne ein Archiv zu hinterlassen.
+- **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und liest die `.env` wie compose:**
+  `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
+  `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
+  Provisionierungs-Token `adminhelper_prov_...`; die Regel fuer `ah_...` entfaellt, kein Token des Projekts traegt
+  dieses Praefix. Die Secrets der `.env` liest es so, wie compose sie liest: Schluessel auch als `export KEY=...`,
+  `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
+  Anfuehrungszeichen, mit `$$` oder einem Kommentar hinter ` #`. Es liest die `.env` Byte fuer Byte und maskiert einen
+  Wert auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
 
 ## [0.46.0] - 2026-10-22
 
