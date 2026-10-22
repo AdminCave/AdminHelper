@@ -59,6 +59,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: Steuerzeichen U+0080 bis U+009F in FRP-Feldern und im Servernamen ergeben `422` (R-0786):** Ein
+  Steuerzeichen U+0080 bis U+009F in einem Textfeld eines FRP-Tunnels (auch einem `extra_config`-Wert) oder der
+  FRP-Server-Konfiguration oder im Servernamen ergibt bei `POST` und `PUT` jetzt `422`, wie die uebrigen
+  Steuerzeichen; bisher speicherte der Server es. TOML erlaubt diese Zeichen in einem String, der Agent verweigert
+  aber eine frpc.toml mit einem solchen Zeichen, und der Host bekaeme keine Konfiguration. Gespeicherte Werte bleiben,
+  wie sie sind. Doku: API-Referenz (DE+EN).
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen

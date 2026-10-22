@@ -85,6 +85,46 @@ def test_toml_strings_take_the_neighbours_of_the_surrogates():
         assert ServerCreate(name=value, hostname="h").name == value
 
 
+# R-0786: TOML allows U+0080 to U+009F in a basic string, but the agent refuses every line
+# of a frpc.toml with a unicode.IsControl character, so the host would get no config at all.
+@pytest.mark.parametrize("char", ["\x80", "\x85", "\x9f"], ids=repr)
+def test_toml_strings_reject_a_c1_control_character(char):
+    value = f"ok{char}name"
+    for field in ("name", "local_ip", "custom_domains"):
+        with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+            _tunnel(**{field: value})
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        _tunnel(secret_key=value + "x" * 16)
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        _tunnel(extra_config={"k": value})
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        FrpTunnelUpdate(name=value)
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        FrpServerConfigCreate(name="n", server_addr=value)
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        FrpServerConfigCreate(name="n", server_addr="a.example", auth_token=value + "x" * 16)
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        ServerCreate(name=value, hostname="h")
+    with pytest.raises(ValidationError, match="unzul\u00e4ssige Zeichen"):
+        ServerUpdate(name=value)
+
+
+@pytest.mark.parametrize("char", ["\x7e", "\xa0"], ids=repr)
+def test_toml_strings_take_the_neighbours_of_the_c1_control_characters(char):
+    value = f"ok{char}name"
+    for field in ("name", "local_ip", "custom_domains"):
+        assert getattr(_tunnel(**{field: value}), field) == value
+    assert _tunnel(secret_key=value + "x" * 16).secret_key == value + "x" * 16
+    assert _tunnel(extra_config={"k": value}).extra_config == {"k": value}
+    assert FrpTunnelUpdate(name=value).name == value
+    assert FrpServerConfigCreate(name="n", server_addr=value).server_addr == value
+    token = value + "x" * 16
+    config = FrpServerConfigCreate(name="n", server_addr="a.example", auth_token=token)
+    assert config.auth_token == token
+    assert ServerCreate(name=value, hostname="h").name == value
+    assert ServerUpdate(name=value).name == value
+
+
 # frp renders a config file as a Go template before it reads the TOML, so `{{` in a
 # value the generator writes verbatim would open a template action.
 @pytest.mark.parametrize("value", ["{{", "a{{b", "{{ x }}", "{{{"], ids=repr)
@@ -540,6 +580,43 @@ def test_tunnel_update_holds_the_visitor_port_range(test_client, db_session, adm
         r = test_client.put("/api/frp/tunnels/t-a", json={"visitor_port": edge}, headers=h)
         assert r.status_code == 200, (edge, r.text)
         assert _stored_tunnels(db_session) == {"t-a": edge}
+
+
+def test_tunnel_routes_answer_422_for_a_c1_control_character_in_the_name(
+    test_client, db_session, admin_user
+):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    body = {
+        "server_id": "srv-a",
+        "frp_config_id": "cfg-1",
+        "name": "neu\x85name",
+        "tunnel_type": "stcp",
+        "protocol": "ssh",
+        "local_port": 22,
+    }
+    r = test_client.post("/api/frp/tunnels", json=body, headers=h)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "name"], r.text
+    assert _stored_tunnels(db_session) == {"t-a": 6000}
+
+    r = test_client.put("/api/frp/tunnels/t-a", json={"name": "neu\x85name"}, headers=h)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "name"], r.text
+    db_session.expire_all()
+    assert db_session.get(FrpTunnel, "t-a").name == "a-ssh"
+
+
+def test_server_route_answers_422_for_a_c1_control_character_in_the_name(
+    test_client, db_session, admin_user
+):
+    h = _login(test_client)
+    r = test_client.post(
+        "/api/servers", json={"name": "srv\x85name", "hostname": "a.example.test"}, headers=h
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "name"], r.text
+    assert db_session.query(Server).count() == 0
 
 
 # Rows written before T23 never met these bounds; there is no data migration, so
