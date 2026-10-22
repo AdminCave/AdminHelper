@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: FRP-Konfigurationsvorschau beim Schließen leeren — Task-Ledger
-Status: bereit · Branch: feature/web-frp-preview · Review: am Ende
+Status: erledigt · Branch: feature/web-frp-preview · Review: am Ende
 Spec: docs/features/web-frp-preview.md (Härtung, Kevin 2026-10-22)
 Heavy: none — nur der Zustand einer Web-Seite, ein Komponenten-Test und ein CHANGELOG-Eintrag; keine Route, kein Schema, keine Migration, kein Server-, Gateway-, PKI-, FRP-Datenpfad-, Compose- oder Install-Pfad (die erzeugten `frps.toml`/`visitor.toml` ändern sich nicht, nur wie lange die Seite den Vorschau-Text hält); keine Web-E2E öffnet die Vorschau (`apps/web/tests/e2e` kennt `frps.toml`/`visitor.toml` nicht)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
