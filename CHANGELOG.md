@@ -7,6 +7,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Compose: alle Dienste mit no-new-privileges und Prozessgrenze:** Jeder Dienst in `docker-compose.yml` laeuft mit
+  `no-new-privileges` (bisher nur frps) und hat eine Prozessgrenze (`pids_limit`, Prozesse und Threads): server 4096;
+  scheduler, monitoring und victoria 1024; postgres, gateway, ca-issuer und frps 512; redis 256. Der Dienst monitoring
+  setzt `net.ipv4.ping_group_range` selbst, damit der Ping-Check ohne Sonderrechte laeuft. Eine Grenze hebt man per
+  `docker-compose.override.yml` an, die `update.sh` stehen laesst; wer `WEB_CONCURRENCY` stark erhoeht, prueft die
+  Grenze des server. Doku: Betrieb (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

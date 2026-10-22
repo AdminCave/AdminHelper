@@ -29,6 +29,11 @@ services:
       retries: 10
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes: one per connection (max_connections defaults to 100) next to the background workers.
+    pids_limit: 512
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
     # In pki (so the ca-issuer reaches it without sharing the default net with frps)
     # + default (server/scheduler/monitoring). No host port either way (1.1).
@@ -115,6 +120,13 @@ services:
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: per uvicorn worker (WEB_CONCURRENCY, rule of thumb 2×cores+1, see
+    # .env.example) a thread pool of up to 40 and up to eight hook processes. Raise it together
+    # with a large WEB_CONCURRENCY.
+    pids_limit: 4096
     # TCP-readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
     # 8080, so a successful connect means migrations are done — lets dependants wait on service_healthy
     # instead of racing Alembic (the gateway otherwise serves 502s to fresh clients) (1.22).
@@ -169,6 +181,11 @@ services:
       - frps-state:/app/frps-state:ro
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: the job thread pools and up to eight hook processes.
+    pids_limit: 1024
     depends_on:
       postgres:
         condition: service_healthy
@@ -200,6 +217,11 @@ services:
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes: the nginx master and one worker per core (worker_processes auto).
+    pids_limit: 512
     depends_on:
       # nginx resolves the upstream names at startup, so both must already exist.
       ca-issuer:
@@ -254,6 +276,11 @@ services:
       retries: 5
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: one uvicorn process and its thread pool.
+    pids_limit: 512
     depends_on:
       postgres:
         condition: service_healthy
@@ -275,6 +302,12 @@ services:
       - "6379"
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: redis-server and its few background threads; with persistence off
+    # it forks no snapshot child.
+    pids_limit: 256
     healthcheck:
       # A wedged-but-running process shows unhealthy (not just Up); dependants that
       # wait on service_healthy then hold until redis actually answers (4.49).
@@ -343,6 +376,9 @@ services:
       start_period: 10s
     logging: *default-logging
     restart: unless-stopped
+    # Processes and threads: the supervisor, frps with the threads of the Go runtime, and the
+    # dashboard requests under way.
+    pids_limit: 512
     depends_on:
       server:
         condition: service_started
@@ -389,6 +425,18 @@ services:
       - PGPASSWORD=${POSTGRES_PASSWORD}
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: the check scheduler's pool of 30, one ping process per running ping
+    # check, and uvicorn's thread pool.
+    pids_limit: 1024
+    # The ping checks run `ping` as the image's user app. Under no-new-privileges a setuid or
+    # file-capability ping gains nothing and opens an ICMP datagram socket, which the kernel
+    # grants only to the groups in this range. Docker's default, set here so that it does not
+    # depend on the engine (like frps's sysctl).
+    sysctls:
+      net.ipv4.ping_group_range: "0 2147483647"
     healthcheck:
       # /health exists (app.main); a wedged-but-running monitoring shows unhealthy, not
       # just Up (4.49). Same TCP-connect probe as the server (python is in the image).
@@ -419,6 +467,11 @@ services:
       - "8428"
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Threads: one Go process whose threads grow with the cores and the queries under way.
+    pids_limit: 1024
 
   # Optionaler Postgres-Backup-Container.
   # Aktivieren mit: docker compose up -d pg-backup

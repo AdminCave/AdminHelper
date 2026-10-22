@@ -122,6 +122,31 @@
             <div><div class="callout-title">Update flow</div><p>Use <code>./scripts/update.sh</code> — release-bound, backup-first, verified bundle, auto-rollback (see <a href="./installation.html#update">Installation → Updates</a>). The server runs <code>alembic upgrade head</code> on startup; downtime is typically below 10 seconds.</p></div>
           </div>
 
+          <h2>Container limits</h2>
+          <p>Every service of the compose stack runs with <code>no-new-privileges</code>: no process in the container gains privileges when it starts a program, setuid bits and file capabilities have no effect. Each service also has a process limit (<code>pids_limit</code>, counting processes and threads). Once it is reached, starting further processes and threads fails in that container; the host and the other services are not affected.</p>
+          <table>
+            <thead><tr><th>Service</th><th>Process limit</th></tr></thead>
+            <tbody>
+              <tr><td><code>postgres</code></td><td>512</td></tr>
+              <tr><td><code>server</code></td><td>4096</td></tr>
+              <tr><td><code>scheduler</code></td><td>1024</td></tr>
+              <tr><td><code>gateway</code></td><td>512</td></tr>
+              <tr><td><code>ca-issuer</code></td><td>512</td></tr>
+              <tr><td><code>redis</code></td><td>256</td></tr>
+              <tr><td><code>frps</code></td><td>512</td></tr>
+              <tr><td><code>monitoring</code></td><td>1024</td></tr>
+              <tr><td><code>victoria</code></td><td>1024</td></tr>
+            </tbody>
+          </table>
+          <p>The monitoring ping check needs no special privileges for this: <code>ping</code> uses ICMP datagram sockets, which compose allows in the <code>monitoring</code> container through <code>net.ipv4.ping_group_range</code>.</p>
+          <p>To raise a limit, use a <code>docker-compose.override.yml</code> next to <code>docker-compose.yml</code>. Compose loads it by itself on every call in the install directory, and <code>update.sh</code> leaves it in place:</p>
+          <div class="code-header"><span>yaml</span></div>
+<pre><code># docker-compose.override.yml
+services:
+  server:
+    pids_limit: 8192</code></pre>
+          <p>Then run <code>docker compose up -d server</code>. If you raise <code>WEB_CONCURRENCY</code> a lot, check the server's limit: every Uvicorn worker brings its own thread pool and up to eight hook processes.</p>
+
           <h2>Timezone</h2>
           <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. The API returns timestamps in UTC with <code>Z</code> regardless (web and desktop show them in the browser's or machine's local time), and scheduled hooks run on UTC.</p>
 

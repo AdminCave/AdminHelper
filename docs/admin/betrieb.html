@@ -164,6 +164,31 @@ docker compose up -d server</code></pre>
             <div><div class="callout-title">Der Scheduler läuft als eigener Dienst</div><p>Die periodischen Jobs (E-Mail-Outbox-Versand, Aufbewahrungs-Cleanups, Scheduled Hooks) laufen im separaten <code>scheduler</code>-Service (genau <strong>eine</strong> Instanz, <code>RUN_MODE=scheduler</code>) — <strong>nicht</strong> in den Web-Workern. Würde jeder Web-Worker den Scheduler starten, liefe jeder Job pro Worker (z.&nbsp;B. E-Mails mehrfach versendet). Der <code>scheduler</code>-Dienst ist im Standard-Compose enthalten; ihn <strong>nicht</strong> auf mehrere Replicas skalieren.</p></div>
           </div>
 
+          <h2>Grenzen der Container</h2>
+          <p>Alle Dienste des Compose-Stacks laufen mit <code>no-new-privileges</code>: Kein Prozess im Container erhält beim Start eines Programms zusätzliche Rechte, setuid-Bits und Datei-Capabilities bleiben wirkungslos. Dazu hat jeder Dienst eine Prozessgrenze (<code>pids_limit</code>, gezählt werden Prozesse und Threads). Ist sie erreicht, scheitert im betroffenen Container der Start weiterer Prozesse und Threads; der Host und die übrigen Dienste bleiben unberührt.</p>
+          <table>
+            <thead><tr><th>Dienst</th><th>Prozessgrenze</th></tr></thead>
+            <tbody>
+              <tr><td><code>postgres</code></td><td>512</td></tr>
+              <tr><td><code>server</code></td><td>4096</td></tr>
+              <tr><td><code>scheduler</code></td><td>1024</td></tr>
+              <tr><td><code>gateway</code></td><td>512</td></tr>
+              <tr><td><code>ca-issuer</code></td><td>512</td></tr>
+              <tr><td><code>redis</code></td><td>256</td></tr>
+              <tr><td><code>frps</code></td><td>512</td></tr>
+              <tr><td><code>monitoring</code></td><td>1024</td></tr>
+              <tr><td><code>victoria</code></td><td>1024</td></tr>
+            </tbody>
+          </table>
+          <p>Der Ping-Check des Monitorings braucht dafür keine Sonderrechte: <code>ping</code> nutzt ICMP-Datagram-Sockets, die Compose im Container <code>monitoring</code> über <code>net.ipv4.ping_group_range</code> erlaubt.</p>
+          <p>Eine Grenze hebt man in einer <code>docker-compose.override.yml</code> neben der <code>docker-compose.yml</code> an. Compose lädt die Datei bei jedem Aufruf im Installationsverzeichnis selbst, und <code>update.sh</code> lässt sie stehen:</p>
+          <div class="code-header"><span>yaml</span></div>
+<pre><code># docker-compose.override.yml
+services:
+  server:
+    pids_limit: 8192</code></pre>
+          <p>Danach <code>docker compose up -d server</code>. Wer <code>WEB_CONCURRENCY</code> stark erhöht, prüft die Grenze des <code>server</code>: Jeder Uvicorn-Worker bringt einen eigenen Thread-Pool und bis zu acht Hook-Prozesse mit.</p>
+
           <h2>Zeitzone</h2>
           <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Die API gibt Zeitstempel davon unabhängig in UTC mit <code>Z</code> aus (Web und Desktop zeigen sie in der Ortszeit des Browsers bzw. Rechners), und geplante Hooks rechnen in UTC.</p>
 
