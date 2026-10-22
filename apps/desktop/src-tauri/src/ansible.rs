@@ -5,12 +5,98 @@
 use std::io::Write;
 
 use crate::error::AppError;
+use crate::session::SessionState;
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct AnsibleTarget {
     pub hostname: String,
     pub groups: Vec<String>,
+}
+
+/// A playbook as a run takes it from the server: its file name and its content.
+pub struct Playbook {
+    pub filename: String,
+    pub content: String,
+}
+
+/// Of the answer to `GET /api/ansible/playbooks/{id}`, what a run needs.
+#[derive(serde::Deserialize)]
+struct PlaybookMeta {
+    filename: String,
+}
+
+/// The answer to `GET /api/ansible/playbooks/{id}/content`.
+#[derive(serde::Deserialize)]
+struct PlaybookText {
+    content: String,
+}
+
+/// Fails unless `id` has the form the server gives a playbook, a UUID (8-4-4-4-12 hex digits,
+/// either case). The id goes into the path of a request to the server.
+pub fn check_playbook_id(id: &str) -> Result<(), AppError> {
+    let groups: Vec<&str> = id.split('-').collect();
+    let hex = groups
+        .iter()
+        .all(|group| group.bytes().all(|b| b.is_ascii_hexdigit()));
+    if hex && groups.iter().map(|group| group.len()).eq([8, 4, 4, 4, 12]) {
+        return Ok(());
+    }
+    Err(AppError::Validation("invalid playbook id".to_string()))
+}
+
+/// The playbook `id` (checked by [`check_playbook_id`]) from the signed-in server: its file name
+/// (`GET /api/ansible/playbooks/{id}`) and its content (`…/{id}/content`), both through the
+/// session ([`crate::auth::authenticated_get`]).
+pub async fn fetch_playbook(session: &SessionState, id: &str) -> Result<Playbook, AppError> {
+    let path = format!("/api/ansible/playbooks/{id}");
+    let meta: PlaybookMeta = fetch_json(session, &path).await?;
+    let text: PlaybookText = fetch_json(session, &format!("{path}/content")).await?;
+    Ok(Playbook {
+        filename: meta.filename,
+        content: text.content,
+    })
+}
+
+/// The answer to an authenticated GET of `path` as `T`. A status other than 2xx is an error
+/// that names the status, not the answer.
+async fn fetch_json<T: serde::de::DeserializeOwned>(
+    session: &SessionState,
+    path: &str,
+) -> Result<T, AppError> {
+    let (response, _) = crate::auth::authenticated_get(session, path).await?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(AppError::Validation(format!(
+            "the playbook could not be loaded ({status})"
+        )));
+    }
+    Ok(response.json().await?)
+}
+
+/// A run of `playbook` on `targets`: writes the inventory and the playbook, then hands both
+/// paths to `launch` ([`launch_ansible`] in the app). If a step fails, the files written so far
+/// go, also when `launch` rejected their paths: they are this run's own. After a launch that
+/// succeeded, they are left to the run.
+pub fn run(
+    targets: &[AnsibleTarget],
+    playbook: &Playbook,
+    launch: impl FnOnce(&str, &str) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    let inventory = generate_inventory(targets)?;
+    let playbook_path = match write_playbook_temp(&playbook.filename, &playbook.content) {
+        Ok(path) => path,
+        Err(e) => {
+            let _ = std::fs::remove_file(&inventory);
+            return Err(e);
+        }
+    };
+    let launched = launch(&inventory, &playbook_path);
+    if launched.is_err() {
+        let _ = std::fs::remove_file(&inventory);
+        let _ = std::fs::remove_file(&playbook_path);
+    }
+    launched
 }
 
 /// Creates a fresh temp file for our ansible scratch data. On Unix it is created
@@ -120,8 +206,8 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
 /// `..`, the path must sit directly inside the system temp dir and carry our
 /// `adminhelper_ansible` prefix. So `ansible-playbook` only gets such files, and a
 /// failed start (`launch_ansible_with`) only deletes such files. It does not check
-/// what a playbook says: `write_playbook_temp` writes the content as the frontend
-/// passes it.
+/// what a playbook says: `write_playbook_temp` writes the content as
+/// [`fetch_playbook`] loaded it from the signed-in server.
 fn is_confined_ansible_path(path: &str) -> bool {
     let canon = match std::fs::canonicalize(path) {
         Ok(p) => p,
@@ -213,18 +299,170 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_temp_file, generate_inventory, is_confined_ansible_path, launch_ansible_with,
-        write_playbook_temp, AnsibleTarget,
+        create_temp_file, fetch_playbook, generate_inventory, is_confined_ansible_path,
+        launch_ansible_with, write_playbook_temp, AnsibleTarget,
     };
     use crate::error::AppError;
+    use crate::session::SessionState;
     use std::fs;
     use std::path::Path;
+    use std::sync::{Arc, Mutex};
 
     fn one_target() -> Vec<AnsibleTarget> {
         vec![AnsibleTarget {
             hostname: "web01".to_string(),
             groups: vec!["web".to_string()],
         }]
+    }
+
+    const PLAYBOOK_ID: &str = "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f";
+
+    /// Serve HTTP on a fresh loopback port, one request per connection: the n-th request gets
+    /// the n-th of `replies` (status line and body), a request after them its connection closed
+    /// unanswered. The request line of every request lands in the log.
+    async fn serve(replies: Vec<(&'static str, String)>) -> (String, Arc<Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&log);
+        tokio::spawn(async move {
+            let mut replies = replies.into_iter();
+            loop {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                let head = String::from_utf8_lossy(&head);
+                seen.lock()
+                    .unwrap()
+                    .push(head.lines().next().unwrap_or_default().to_string());
+                if let Some((status, body)) = replies.next() {
+                    let reply = format!(
+                        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    tcp.write_all(reply.as_bytes()).await.unwrap();
+                }
+                let _ = tcp.shutdown().await;
+            }
+        });
+        (url, log)
+    }
+
+    /// A session of `ops-admin` on `server`.
+    async fn signed_in(server: String) -> SessionState {
+        let session = SessionState::default();
+        session
+            .set(
+                server,
+                "access".to_string(),
+                "refresh".to_string(),
+                "ops-admin".to_string(),
+                false,
+            )
+            .await;
+        session
+    }
+
+    /// The metadata of the playbook [`PLAYBOOK_ID`] as the server lists it.
+    fn listed_playbook() -> String {
+        serde_json::json!({
+            "id": PLAYBOOK_ID,
+            "name": "Deploy",
+            "filename": "deploy.yml",
+            "description": "",
+            "tags": [],
+            "createdAt": "2026-10-22T10:00:00Z",
+            "updatedAt": "2026-10-22T10:00:00Z",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn check_playbook_id_takes_only_a_uuid() {
+        for id in [PLAYBOOK_ID, "0B6F2C1E-8A4D-4C3B-9E7F-1A2B3C4D5E6F"] {
+            assert!(super::check_playbook_id(id).is_ok(), "{id}");
+        }
+        for id in [
+            "",
+            "pb1",
+            "0b6f2c1e8a4d4c3b9e7f1a2b3c4d5e6f",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6g",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f-",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f/content",
+            "../0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f",
+            " 0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f?x=1",
+            "+b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f",
+        ] {
+            assert!(
+                matches!(super::check_playbook_id(id), Err(AppError::Validation(_))),
+                "{id:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_playbook_loads_name_and_content_from_the_signed_in_server() {
+        let (server, log) = serve(vec![
+            ("200 OK", listed_playbook()),
+            (
+                "200 OK",
+                serde_json::json!({ "content": "- hosts: all\n  tasks: []\n" }).to_string(),
+            ),
+        ])
+        .await;
+        let session = signed_in(server).await;
+
+        let playbook = fetch_playbook(&session, PLAYBOOK_ID).await.unwrap();
+
+        assert_eq!(playbook.filename, "deploy.yml");
+        assert_eq!(playbook.content, "- hosts: all\n  tasks: []\n");
+        assert_eq!(
+            *log.lock().unwrap(),
+            [
+                format!("GET /api/ansible/playbooks/{PLAYBOOK_ID} HTTP/1.1"),
+                format!("GET /api/ansible/playbooks/{PLAYBOOK_ID}/content HTTP/1.1"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_playbook_fails_on_a_refused_answer_and_names_only_the_status() {
+        let body = r#"{"detail":"Playbook nicht gefunden"}"#.to_string();
+        for (case, replies, requests) in [
+            ("metadata", vec![("404 Not Found", body.clone())], 1),
+            (
+                "content",
+                vec![
+                    ("200 OK", listed_playbook()),
+                    ("404 Not Found", body.clone()),
+                ],
+                2,
+            ),
+        ] {
+            let (server, log) = serve(replies).await;
+            let session = signed_in(server).await;
+
+            let message = fetch_playbook(&session, PLAYBOOK_ID)
+                .await
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default();
+
+            assert!(message.contains("404 Not Found"), "{case}: {message}");
+            assert!(!message.contains("nicht gefunden"), "{case}: {message}");
+            assert_eq!(log.lock().unwrap().len(), requests, "{case}");
+        }
     }
 
     /// A directory holding a stub `ansible-playbook`: it runs `before`, records its arguments in

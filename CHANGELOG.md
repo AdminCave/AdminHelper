@@ -16,6 +16,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: Sync nur aus der Quelle des eigenen Sync-Workspace:** Der Sync laedt nur im Sync-Workspace und nur
   dessen gespeicherte Sync-URL, nie mit dem Geraete-Zertifikat. Eine andere URL, auch desselben Servers, lehnt er ab;
   die Meldung nennt keine URL. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: Ansible-Lauf in einem Command:** Ein Ansible-Lauf laedt Dateiname und Inhalt des Playbooks im Backend
+  selbst vom angemeldeten Server; die Oberflaeche uebergibt nur die Playbook-Id und die Ziele. Die Tauri-Commands
+  `ansible_generate_inventory`, `ansible_write_playbook` und `ansible_launch` sind durch `ansible_run` ersetzt;
+  scheitert ein Schritt vor dem Start, loescht der Lauf die schon geschriebenen Temp-Dateien. Doku: Desktop fuer
+  Entwickler, Ansible (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).

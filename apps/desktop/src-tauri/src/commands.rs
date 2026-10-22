@@ -643,38 +643,55 @@ pub fn open_launcher() -> Result<(), AppError> {
     open_launcher_with(&launcher::AppSpawner::new()?)
 }
 
-/// Workspace only: writes the inventory of a run ([`ansible::generate_inventory`]).
+/// Workspace only: runs the playbook `playbook_id` of the signed-in server on `targets` in a
+/// terminal. File name and content come from the server, not from the webview
+/// ([`ansible::fetch_playbook`], [`ansible_run_with`]).
 #[tauri::command]
-pub fn ansible_generate_inventory(
-    servers: Vec<ansible::AnsibleTarget>,
-) -> Result<String, AppError> {
-    only(Side::Workspace)?;
-    ansible::generate_inventory(&servers)
+pub async fn ansible_run(
+    session: State<'_, SessionState>,
+    playbook_id: String,
+    targets: Vec<ansible::AnsibleTarget>,
+) -> Result<(), AppError> {
+    let session = session.inner();
+    ansible_run_with(
+        &playbook_id,
+        targets,
+        |id| async move { ansible::fetch_playbook(session, &id).await },
+        ansible::launch_ansible,
+    )
+    .await
 }
 
-/// Workspace only: writes the playbook of a run ([`ansible::write_playbook_temp`]).
-#[tauri::command]
-pub fn ansible_write_playbook(filename: String, content: String) -> Result<String, AppError> {
+/// [`ansible_run`] with the fetch of the playbook and the launch passed in. The id is checked
+/// before anything goes to the server ([`ansible::check_playbook_id`]); the files are written
+/// and launched on a blocking thread, and a step that fails takes the files written so far
+/// with it ([`ansible::run`]).
+async fn ansible_run_with<F, Fut, L>(
+    playbook_id: &str,
+    targets: Vec<ansible::AnsibleTarget>,
+    fetch: F,
+    launch: L,
+) -> Result<(), AppError>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<ansible::Playbook, AppError>>,
+    L: FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+{
     only(Side::Workspace)?;
-    ansible::write_playbook_temp(&filename, &content)
-}
-
-/// Workspace only: starts a run in a terminal ([`ansible::launch_ansible`]).
-#[tauri::command]
-pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
-    only(Side::Workspace)?;
-    ansible::launch_ansible(&inventory_path, &playbook_path)
+    ansible::check_playbook_id(playbook_id)?;
+    let playbook = fetch(playbook_id.to_string()).await?;
+    blocking(move || ansible::run(&targets, &playbook, launch)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ansible_generate_inventory, ansible_launch, ansible_write_playbook, check_server_cert_in,
-        delete_workspace_in, enroll_with_token_in, list_workspaces_in, open_launcher_with,
-        open_workspace_in, reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in,
-        run_with_deadline, save_workspace_in, sign_in_target, sync_source,
+        ansible_run_with, check_server_cert_in, delete_workspace_in, enroll_with_token_in,
+        list_workspaces_in, open_launcher_with, open_workspace_in, reject_foreign_port,
+        reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
+        sign_in_target, sync_source,
     };
-    use crate::ansible::AnsibleTarget;
+    use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
     use crate::keyring_store;
@@ -683,9 +700,10 @@ mod tests {
     use crate::port_registry::PortRegistry;
     use crate::storage;
     use crate::workspace::{self, Meta, Registry, RegistryEntry, PALETTE};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::path::{Path, PathBuf};
     use std::process::ExitStatus;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use std::{fs, io};
 
@@ -949,46 +967,236 @@ mod tests {
         found
     }
 
-    #[test]
-    fn ansible_commands_run_only_in_a_workspace() {
-        let marker = format!("only-in-a-workspace-{}", std::process::id());
-        let host = format!("{marker}.example");
-        let targets = || {
-            vec![AnsibleTarget {
-                hostname: host.clone(),
-                groups: vec!["web".to_string()],
-            }]
-        };
-        let missing = |name: &str| {
-            std::env::temp_dir()
-                .join(format!("adminhelper_ansible_{marker}_{name}"))
-                .to_string_lossy()
-                .into_owned()
-        };
+    const PLAYBOOK_ID: &str = "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f";
 
-        // The launcher has no workspace.
-        let inventory = ansible_generate_inventory(targets());
-        let playbook = ansible_write_playbook(
-            format!("{marker}.yml"),
-            format!("# {marker}\n- hosts: all\n"),
+    /// The target `<marker>.example` in the group `web`: the inventory of a run holds `marker`.
+    fn marked_targets(marker: &str) -> Vec<AnsibleTarget> {
+        vec![AnsibleTarget {
+            hostname: format!("{marker}.example"),
+            groups: vec!["web".to_string()],
+        }]
+    }
+
+    /// A playbook `site.yml` whose content holds `marker`.
+    fn marked_playbook(marker: &str) -> Playbook {
+        Playbook {
+            filename: "site.yml".to_string(),
+            content: format!("# {marker}\n- hosts: all\n"),
+        }
+    }
+
+    /// What every launch got: inventory path and content, playbook path and content.
+    type Launches = Arc<Mutex<Vec<[String; 4]>>>;
+
+    /// A launch that notes what it gets (see [`Launches`]), then answers `answer`.
+    fn noting_launch(
+        answer: Result<(), AppError>,
+    ) -> (
+        Launches,
+        impl FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+    ) {
+        let launches = Launches::default();
+        let noted = Arc::clone(&launches);
+        let launch = move |inventory: &str, playbook: &str| {
+            let read = |path: &str| fs::read_to_string(path).unwrap_or_default();
+            noted.lock().unwrap().push([
+                inventory.to_string(),
+                read(inventory),
+                playbook.to_string(),
+                read(playbook),
+            ]);
+            answer
+        };
+        (launches, launch)
+    }
+
+    #[tokio::test]
+    async fn ansible_run_launches_the_fetched_playbook_on_the_targets() {
+        let marker = format!("run-fetched-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+        let asked = RefCell::new(Vec::new());
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |id| {
+                asked.borrow_mut().push(id);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let mut written = remove_ansible_files_with(&marker);
+        written.sort();
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(*asked.borrow(), [PLAYBOOK_ID]);
+        let launches = launches.lock().unwrap().clone();
+        assert_eq!(launches.len(), 1, "{launches:?}");
+        let [inventory, inventory_text, playbook, playbook_text] = &launches[0];
+        assert_eq!(playbook_text, &marked_playbook(&marker).content);
+        assert!(playbook.ends_with("_site.yml"), "{playbook}");
+        assert!(
+            inventory_text.contains(&format!("[all]\n{marker}.example\n"))
+                && inventory_text.contains(&format!("[web]\n{marker}.example\n")),
+            "{inventory_text}"
         );
-        let launch = ansible_launch(missing("inventory.ini"), missing("site.yml"));
+        // A launch that succeeded leaves both files to the run.
+        let mut handed = vec![PathBuf::from(inventory), PathBuf::from(playbook)];
+        handed.sort();
+        assert_eq!(written, handed);
+    }
+
+    #[tokio::test]
+    async fn ansible_run_writes_no_file_when_the_fetch_fails() {
+        let marker = format!("run-fetch-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async {
+                Err::<Playbook, _>(AppError::Validation(
+                    "the playbook could not be loaded (404 Not Found)".to_string(),
+                ))
+            },
+            launch,
+        )
+        .await;
         let written = remove_ansible_files_with(&marker);
-        let only = "only the process of a workspace";
-        assert_refused(inventory, only, "inventory");
-        assert_refused(playbook, only, "playbook");
-        assert_refused(launch, only, "launch");
+
+        assert_refused(result, "could not be loaded", "fetch");
         assert_eq!(
             written,
             Vec::<PathBuf>::new(),
-            "a refused command wrote a file"
+            "a failed fetch wrote a file"
         );
+        assert_eq!(
+            launches.lock().unwrap().len(),
+            0,
+            "launched without a playbook"
+        );
+    }
 
+    #[tokio::test]
+    async fn ansible_run_removes_both_files_when_the_launch_fails() {
+        let marker = format!("run-launch-fails-{}", std::process::id());
         let _in_a_workspace = entered("standard");
-        let inventory = ansible_generate_inventory(targets()).unwrap();
-        let text = fs::read_to_string(&inventory);
-        fs::remove_file(&inventory).unwrap();
-        assert!(text.unwrap().contains(&format!("[web]\n{host}\n")));
+        let (launches, launch) =
+            noting_launch(Err(AppError::Connection("no terminal found".to_string())));
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async { Ok(marked_playbook(&marker)) },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(matches!(result, Err(AppError::Connection(_))), "{result:?}");
+        let launches = launches.lock().unwrap().clone();
+        assert_eq!(launches.len(), 1, "{launches:?}");
+        let [inventory, _, playbook, playbook_text] = &launches[0];
+        assert_eq!(playbook_text, &marked_playbook(&marker).content);
+        assert_eq!(
+            written,
+            Vec::<PathBuf>::new(),
+            "files left after a failed launch"
+        );
+        assert!(!Path::new(inventory).exists() && !Path::new(playbook).exists());
+    }
+
+    #[tokio::test]
+    async fn ansible_run_removes_the_inventory_when_the_playbook_cannot_be_written() {
+        let marker = format!("run-write-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+
+        // No file system takes a name with a NUL byte.
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async {
+                Ok(Playbook {
+                    filename: "site\0.yml".to_string(),
+                    ..marked_playbook(&marker)
+                })
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(written, Vec::<PathBuf>::new(), "the inventory was left");
+        assert_eq!(
+            launches.lock().unwrap().len(),
+            0,
+            "launched without a playbook"
+        );
+    }
+
+    #[tokio::test]
+    async fn ansible_run_never_fetches_for_an_id_that_is_no_uuid() {
+        let marker = format!("run-bad-id-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let fetches = Cell::new(0);
+        let path_behind = format!("{PLAYBOOK_ID}/content");
+        let traversal = format!("../{PLAYBOOK_ID}");
+
+        for id in [
+            "",
+            "pb1",
+            &PLAYBOOK_ID[..35],
+            &path_behind,
+            &traversal,
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6g",
+        ] {
+            let (launches, launch) = noting_launch(Ok(()));
+            let result = ansible_run_with(
+                id,
+                marked_targets(&marker),
+                |_| {
+                    fetches.set(fetches.get() + 1);
+                    async { Ok(marked_playbook(&marker)) }
+                },
+                launch,
+            )
+            .await;
+            assert_refused(result, "invalid playbook id", id);
+            assert_eq!(launches.lock().unwrap().len(), 0, "{id}");
+        }
+
+        assert_eq!(fetches.get(), 0, "fetched for an id that is no UUID");
+        assert_eq!(remove_ansible_files_with(&marker), Vec::<PathBuf>::new());
+    }
+
+    #[tokio::test]
+    async fn ansible_run_runs_only_in_a_workspace() {
+        let marker = format!("run-only-in-a-workspace-{}", std::process::id());
+        let fetches = Cell::new(0);
+        let (launches, launch) = noting_launch(Ok(()));
+
+        // The launcher has no workspace.
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| {
+                fetches.set(fetches.get() + 1);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert_refused(result, "only the process of a workspace", "ansible_run");
+        assert_eq!(fetches.get(), 0, "the launcher fetched a playbook");
+        assert_eq!(launches.lock().unwrap().len(), 0, "the launcher launched");
+        assert_eq!(written, Vec::<PathBuf>::new(), "the launcher wrote a file");
     }
 
     #[test]
