@@ -43,6 +43,20 @@ mkdir -p "$REPODIR/apt" "$REPODIR/rpm"
 gpg --export > "$REPODIR/apt/adminhelper-archive-keyring.gpg"
 gpg --export --armor > "$REPODIR/rpm/RPM-GPG-KEY-adminhelper"
 
+# A second, foreign throwaway key in a GNUPGHOME of its own; FP stays the pinned one.
+OTHER_HOME="$WORK/gnupg-other"
+install -d -m 700 "$OTHER_HOME"
+GNUPGHOME="$OTHER_HOME" gpg --batch --passphrase '' --quick-generate-key "AH Other <other@example.invalid>" ed25519 sign never >/dev/null 2>&1 \
+    || { echo "SKIP: gpg cannot generate a second test key"; exit 75; }
+OFP=$(GNUPGHOME="$OTHER_HOME" gpg --list-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')
+[ -n "$OFP" ] || { echo "SKIP: no second test key fingerprint"; exit 75; }
+KEYS="$WORK/keys"
+mkdir -p "$KEYS"
+gpg --export "$FP" > "$KEYS/pinned.gpg"
+gpg --export --armor "$FP" > "$KEYS/pinned.asc"
+GNUPGHOME="$OTHER_HOME" gpg --export > "$KEYS/other.gpg"
+GNUPGHOME="$OTHER_HOME" gpg --export --armor > "$KEYS/other.asc"
+
 # ── command stubs (PATH-shimmed); the real gpg/curl stay in use ──────────────
 BIN="$WORK/bin"
 mkdir -p "$BIN"
@@ -178,6 +192,84 @@ fresh_env; export AH_PKG_MGR=apt
 out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
 [ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc"
 [ ! -e "$WORK/provision.args" ] && ok "provision not called" || bad "provision ran without --server-id"
+
+# case_keyring apt|rpm FILE... — this case's repo tree serves the FILEs,
+# concatenated in this order, as its apt keyring or rpm key.
+case_keyring() {
+    local kind="$1"; shift
+    mkdir -p "$ROOT/repo/apt" "$ROOT/repo/rpm"
+    case "$kind" in
+        apt) cat "$@" > "$ROOT/repo/apt/adminhelper-archive-keyring.gpg" ;;
+        rpm) cat "$@" > "$ROOT/repo/rpm/RPM-GPG-KEY-adminhelper" ;;
+    esac
+    export AH_REPO_BASE="file://$ROOT/repo"
+}
+
+# assert_only_pinned FILE — FILE holds exactly one key: the pinned one (FP).
+assert_only_pinned() {
+    local keys pubs prim
+    keys=$(gpg --show-keys --with-colons "$1" 2>/dev/null)
+    pubs=$(grep -c '^pub:' <<<"$keys")
+    prim=$(awk -F: 'p && $1 == "fpr" {print $10} {p = ($1 == "pub")}' <<<"$keys")
+    [ "$pubs" -eq 1 ] && [ "$prim" = "$FP" ] \
+        && ok "installed key file holds exactly one key, the pinned one" \
+        || bad "installed key file: $pubs pub record(s), primaries: $(tr '\n' ' ' <<<"$prim")"
+    [ -n "$keys" ] && ! grep -q "$OFP" <<<"$keys" \
+        && ok "the foreign key is not installed" || bad "foreign key installed (or no key file at all)"
+}
+
+echo "── apt, keyring 'pinned, then foreign': only the pinned key is installed ──"
+fresh_env; export AH_PKG_MGR=apt
+case_keyring apt "$KEYS/pinned.gpg" "$KEYS/other.gpg"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc: $(echo "$out" | tail -3)"
+assert_only_pinned "$AH_KEYRING_DIR/adminhelper-archive-keyring.gpg"
+
+echo "── apt, keyring 'foreign, then pinned': the pinned key need not come first ──"
+fresh_env; export AH_PKG_MGR=apt
+case_keyring apt "$KEYS/other.gpg" "$KEYS/pinned.gpg"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc: $(echo "$out" | tail -3)"
+assert_only_pinned "$AH_KEYRING_DIR/adminhelper-archive-keyring.gpg"
+
+echo "── dnf, both keys armored in one file: only the pinned key, armored ──"
+fresh_env; export AH_PKG_MGR=dnf
+case_keyring rpm "$KEYS/pinned.asc" "$KEYS/other.asc"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc: $(echo "$out" | tail -3)"
+[ "$(head -n1 "$AH_RPM_KEY_DIR/RPM-GPG-KEY-adminhelper" 2>/dev/null)" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] \
+    && ok "RPM-GPG-KEY-adminhelper is armored" || bad "RPM-GPG-KEY-adminhelper missing or not armored"
+assert_only_pinned "$AH_RPM_KEY_DIR/RPM-GPG-KEY-adminhelper"
+
+echo "── apt, keyring with only a foreign key: abort before anything is written ──"
+fresh_env; export AH_PKG_MGR=apt
+case_keyring apt "$KEYS/other.gpg"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -ne 0 ] && ok "exits non-zero" || bad "foreign-only keyring accepted"
+grep -q "mismatch" <<<"$out" && grep -q "$FP" <<<"$out" && grep -q "$OFP" <<<"$out" \
+    && ok "names the mismatch, the expected and the found fingerprint" || bad "message: $(echo "$out" | tail -2)"
+[ ! -e "$AH_KEYRING_DIR/adminhelper-archive-keyring.gpg" ] && ok "no keyring installed" || bad "keyring installed despite mismatch"
+[ ! -e "$AH_APT_SOURCES_DIR/adminhelper.sources" ] && ok "no source file written" || bad "source written despite mismatch"
+
+echo "── apt, --gpg-fp is the fingerprint of a subkey: refused ──"
+# Last on purpose: the subkey goes onto the pinned key in the shared GNUPGHOME.
+# gpg --export with a subkey fingerprint hands out the whole primary key, so
+# only the check of the primary fingerprint keeps this out.
+fresh_env; export AH_PKG_MGR=apt
+gpg --batch --passphrase '' --quick-add-key "$FP" ed25519 sign never >/dev/null 2>&1
+SUBFP=$(gpg --list-keys --with-colons "$FP" 2>/dev/null | awk -F: '$1 == "sub" {s = 1; next} s && $1 == "fpr" {print $10; exit}')
+if [ -z "$SUBFP" ]; then
+    bad "gpg could not add a test subkey"
+else
+    gpg --export "$FP" > "$KEYS/pinned-sub.gpg"
+    case_keyring apt "$KEYS/pinned-sub.gpg"
+    out=$(run_script --server https://srm.example.com --gpg-fp "$SUBFP"); rc=$?
+    [ $rc -ne 0 ] && ok "exits non-zero" || bad "subkey fingerprint accepted as the pin"
+    grep -q "mismatch" <<<"$out" && grep -q "got $FP, expected $SUBFP" <<<"$out" \
+        && ok "names the primary key the file carries" || bad "message: $(echo "$out" | tail -2)"
+    [ ! -e "$AH_KEYRING_DIR/adminhelper-archive-keyring.gpg" ] && ok "no keyring installed" || bad "keyring installed for a subkey pin"
+    [ ! -e "$AH_APT_SOURCES_DIR/adminhelper.sources" ] && ok "no source file written" || bad "source written for a subkey pin"
+fi
 
 echo ""
 echo "agent_install_test: $PASS passed, $FAIL failed"

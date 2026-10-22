@@ -16,6 +16,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   mit `--token` bleiben gueltig. Bleibt auf stdin kein Token, bricht `provision` mit „no provision token on stdin“ ab,
   bevor es den Server anspricht.
 
+### Changed
+
+- **`agent-install.sh` installiert nur den gepinnten Repo-Schluessel:** Bisher verglich das Skript nur den ersten
+  Fingerprint der vom Server geladenen Keyring-Datei mit dem Pin und installierte danach die ganze Datei als
+  `Signed-By` (apt) bzw. `gpgkey` (dnf); weitere Schluessel darin galten damit ebenfalls als vertrauenswuerdig, und
+  stand der gepinnte nicht an erster Stelle, brach die Installation ab. Jetzt importiert das Skript die Datei in ein
+  eigenes, temporaeres GnuPG-Verzeichnis, exportiert daraus nur den Schluessel, dessen Primaer-Fingerprint der Pin ist,
+  und installiert diesen Export, egal an welcher Stelle der Schluessel in der Datei steht. Fehlt er, bricht es ab, bevor
+  eine Paketquelle geschrieben wird, und nennt den erwarteten und die gefundenen Fingerprints; der Fingerprint eines
+  Unterschluessels gilt nicht als Pin. `--gpg-fp` muss aus 40 Hex-Zeichen bestehen. Bestehende Agent-Hosts behalten
+  ihren Keyring, bis `agent-install.sh` dort wieder laeuft.
+
 ## [0.46.0] - 2026-10-22
 
 ### Added
