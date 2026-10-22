@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Theme-Skript unter der CSP, Frist des Hook-Laufs, Abmelden, Selbst-Bearbeitung, Seitenspeicher, confirmDialog — Task-Ledger
-Status: bereit · Branch: feature/web-fixes · Review: pro Task
+Status: erledigt · Branch: feature/web-fixes · Review: pro Task
 Spec: docs/features/web-fixes.md (Roadmap R-0654, R-0647, R-0648, R-0653, R-0652, R-0476)
 Heavy: none — nur `apps/web` und Doku; kein Server-, Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, keine Route, kein Schema, kein CSP-Header (`apps/server/app/main.py:443-453` bleibt); die Web-E2E samt neuem Projekt `chromium-build` (T3) fährt die PR-CI im Job `frontend-e2e`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
