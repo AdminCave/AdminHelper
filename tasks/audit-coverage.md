@@ -68,8 +68,10 @@ Orakel: contract — je weitergeleitetem POST/PUT/DELETE genau eine Audit-Zeile 
 HEAD: b1432223
 Semantik: wie T1 (`docs/admin/betrieb.html:130`)
 
-### T4 — Benutzer ändern: geänderte Felder in `detail` von `user.updated`  [ ]
+### T4 — Benutzer ändern: geänderte Felder in `detail` von `user.updated`  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/router.py, apps/server/tests/test_users_update_audit.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8e00c659 2026-10-22T10:56:31+02:00
+Review: approve (.ah-out/review/audit-coverage/T4.verdict.json)
 Änderung: `update_user` (`apps/server/app/modules/users/router.py:97-152`) merkt vor den Änderungen `is_admin` und die Menge der Server-Ids und gibt dem Eintrag `user.updated` (`:144-151`) `detail` = in fester Reihenfolge, durch `", "` getrennt: `password`, wenn `data.password is not None`; `is_admin=true|false` (neuer Wert), wenn er sich ändert; `server_ids`, wenn sich die Menge ändert; sonst `detail=None`. Sonst bleibt `update_user` gleich (Reihenfolge, Sperre der Herabstufung `:128-137`, Antwort). Neue Testdatei `tests/test_users_update_audit.py` (SPDX-Header): (a) nur Passwort → `detail` `password`, das Passwort steht in keiner Spalte; (b) Hochstufen eines Nicht-Admins → `is_admin=true`; (c) Herabstufen bei zwei Admins → `is_admin=false`; (d) neue Server-Zuordnung → `server_ids`; (e) alles zusammen → `password, is_admin=true, server_ids`; (f) `is_admin` wie gespeichert und dieselbe Server-Menge in anderer Reihenfolge → `detail` `None`; (g) Herabstufen des letzten Admins (400) → kein `user.updated`. Zuerst rot: (a)–(e) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_users_update_audit.py tests/test_users.py tests/test_users_last_admin.py
 Doku: keine eigene (T8 und T9)
