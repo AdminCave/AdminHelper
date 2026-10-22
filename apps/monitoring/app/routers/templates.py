@@ -25,6 +25,7 @@ from app.models import (
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
+    keep_smtp_password,
     loads_readable,
     masked_alert_definitions,
 )
@@ -60,26 +61,25 @@ def _tag_sync_best_effort(db: Session) -> None:
         logger.exception("Tag-sync after binding change failed")
 
 
-def _stored_smtp_passwords(template: MonitorTemplate) -> dict[str, str]:
-    """The smtp_password of each stored alert definition, by def_id."""
-    passwords = {}
+def _stored_channel_configs(template: MonitorTemplate) -> dict[str, dict]:
+    """The channel_config of each stored alert definition, by def_id."""
+    configs = {}
     for d in json.loads(template.alert_definitions or "[]"):
         cfg = d.get("channel_config") if isinstance(d, dict) else None
-        if isinstance(cfg, dict) and d.get("def_id") and cfg.get("smtp_password"):
-            passwords[d["def_id"]] = cfg["smtp_password"]
-    return passwords
+        if isinstance(cfg, dict) and d.get("def_id"):
+            configs[d["def_id"]] = cfg
+    return configs
 
 
-def _keep_smtp_password(channel_config: dict, stored: str | None) -> None:
-    """A masked ("***"), empty or missing smtp_password means "unchanged", as on
-    PUT /alerts/{id}: the responses show the mask and the desktop sends a definition
-    back as it read it, so the mask must never become the password of the template
-    and of every rule made from it."""
-    if channel_config.get("smtp_password") in ("***", "", None):
-        if stored:
-            channel_config["smtp_password"] = stored
-        else:
-            channel_config.pop("smtp_password", None)
+def _keep_smtp_password(channel_config: dict, stored: dict | None) -> None:
+    """keep_smtp_password as on PUT /alerts/{id}, a changed relay with the mask answered
+    with 422: the responses show the mask and the desktop sends a definition back as it
+    read it, so the mask must never become the password of the template and of every
+    rule made from it."""
+    try:
+        keep_smtp_password(channel_config, stored)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -228,13 +228,13 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
             check_defs.append(d)
         template.check_definitions = json.dumps(check_defs)
     if "alert_definitions" in sent:
-        stored_passwords = _stored_smtp_passwords(template)
+        stored_configs = _stored_channel_configs(template)
         alert_defs = []
         for ad in data.alert_definitions:
             d = ad.model_dump()
             if not d.get("def_id"):
                 d["def_id"] = str(uuid.uuid4())
-            _keep_smtp_password(d["channel_config"], stored_passwords.get(d["def_id"]))
+            _keep_smtp_password(d["channel_config"], stored_configs.get(d["def_id"]))
             alert_defs.append(d)
         template.alert_definitions = json.dumps(alert_defs)
 

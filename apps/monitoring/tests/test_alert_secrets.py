@@ -6,7 +6,9 @@
 masked/empty password on update keeps the stored secret instead of overwriting it —
 so it is never reflected to callers nor wiped by editing an unrelated field.
 Templates carry the same channel_config in their alert definitions and follow the
-same rule, matched by def_id: the desktop sends a definition back as it read it."""
+same rule, matched by def_id: the desktop sends a definition back as it read it.
+The stored secret is kept only for the relay it was stored for (smtp_host and
+smtp_port): a PUT that changes the relay has to send the password again."""
 
 import json
 
@@ -272,3 +274,158 @@ def test_template_put_with_the_mask_keeps_the_password_of_its_rules(client_db):
     with factory() as db:
         rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.template_id == tid).one()
         assert json.loads(rule.channel_config)["smtp_password"] == "tpl-secret"
+
+
+# --- The mask keeps the password only for the relay it was stored for -------------
+
+_RELAY_CHANGED = "smtp_password must be entered again when smtp_host or smtp_port changes"
+_ASSIGN = {"server_id": "srv-1", "hostname": "h", "server_name": "n"}
+
+
+def _relay_a_config(smtp_password="real-secret") -> dict:
+    return {
+        "recipients": ["ops@relay-a.example"],
+        "smtp_host": "relay-a.example",
+        "smtp_port": 587,
+        "smtp_password": smtp_password,
+    }
+
+
+def _seed_relay_a_rule(factory):
+    with factory() as db:
+        db.add(
+            MonitorAlertRule(
+                id="r1",
+                name="r",
+                channel="email",
+                channel_config=json.dumps(_relay_a_config()),
+            )
+        )
+        db.commit()
+
+
+def _stored_rule(factory, rule_id="r1") -> tuple[str, dict]:
+    with factory() as db:
+        rule = db.get(MonitorAlertRule, rule_id)
+        return rule.name, json.loads(rule.channel_config)
+
+
+@pytest.mark.parametrize(
+    "relay",
+    [
+        pytest.param({"smtp_host": "relay-b.example"}, id="host"),
+        pytest.param({"smtp_port": 2525}, id="port"),
+        pytest.param({"smtp_host": None}, id="host-removed"),
+    ],
+)
+def test_alert_put_with_the_mask_for_another_relay_is_refused(client_db, relay):
+    client, factory = client_db
+    _seed_relay_a_rule(factory)
+
+    r = client.put(
+        "/alerts/r1",
+        json={"name": "renamed", "channel_config": {**_relay_a_config("***"), **relay}},
+    )
+
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == _RELAY_CHANGED
+    # Nothing of the refused PUT is stored, the other fields included.
+    assert _stored_rule(factory) == ("r", _relay_a_config())
+
+
+def test_alert_put_with_the_mask_for_the_same_relay_keeps_the_password(client_db):
+    # Host compared after strip() and in lower case, the port as text.
+    client, factory = client_db
+    _seed_relay_a_rule(factory)
+    sent = {**_relay_a_config("***"), "smtp_host": " RELAY-A.example ", "smtp_port": "587"}
+
+    r = client.put("/alerts/r1", json={"channel_config": sent})
+
+    assert r.status_code == 200, r.text
+    assert _stored_rule(factory)[1]["smtp_password"] == "real-secret"
+
+
+def test_alert_put_with_a_new_password_for_another_relay_stores_it(client_db):
+    client, factory = client_db
+    _seed_relay_a_rule(factory)
+    sent = {**_relay_a_config("new-secret"), "smtp_host": "relay-b.example"}
+
+    r = client.put("/alerts/r1", json={"channel_config": sent})
+
+    assert r.status_code == 200, r.text
+    stored = _stored_rule(factory)[1]
+    assert (stored["smtp_host"], stored["smtp_password"]) == ("relay-b.example", "new-secret")
+
+
+def test_alert_put_without_relay_and_password_drops_the_stored_password(client_db):
+    # The desktop sends only the recipients when it edits an e-mail rule: the save
+    # goes through, and the password stays off the relay from SMTP_HOST.
+    client, factory = client_db
+    _seed_relay_a_rule(factory)
+    sent = {"recipients": ["oncall@relay-a.example"]}
+
+    r = client.put("/alerts/r1", json={"channel_config": sent})
+
+    assert r.status_code == 200, r.text
+    assert _stored_rule(factory)[1] == sent
+
+
+def _relay_a_template(client) -> str:
+    """A template with one e-mail definition for relay-a.example, assigned to srv-1."""
+    definition = _email_def()
+    definition["channel_config"]["smtp_host"] = "relay-a.example"
+    r = client.post("/templates", json={"name": "T", "alert_definitions": [definition]})
+    assert r.status_code == 201, r.text
+    tid = r.json()["id"]
+    r = client.post(f"/templates/{tid}/assign", json=_ASSIGN)
+    assert r.status_code == 200, r.text
+    return tid
+
+
+def _relay_b_def(**channel_config) -> dict:
+    definition = _email_def()
+    definition["channel_config"].pop("smtp_password")
+    definition["channel_config"].update(smtp_host="relay-b.example", **channel_config)
+    return definition
+
+
+def _template_rule_config(factory, tid) -> dict:
+    with factory() as db:
+        rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.template_id == tid).one()
+        return json.loads(rule.channel_config)
+
+
+def test_template_put_with_the_mask_for_another_relay_is_refused(client_db):
+    client, factory = client_db
+    tid = _relay_a_template(client)
+
+    r = client.put(
+        f"/templates/{tid}",
+        json={"name": "renamed", "alert_definitions": [_relay_b_def(smtp_password="***")]},
+    )
+
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == _RELAY_CHANGED
+    with factory() as db:
+        assert db.get(MonitorTemplate, tid).name == "T"
+    stored = _stored_alert_defs(factory, tid)[0]["channel_config"]
+    assert (stored["smtp_host"], stored["smtp_password"]) == ("relay-a.example", "tpl-secret")
+    rule = _template_rule_config(factory, tid)
+    assert (rule["smtp_host"], rule["smtp_password"]) == ("relay-a.example", "tpl-secret")
+
+
+def test_template_put_for_another_relay_without_password_drops_it(client_db):
+    client, factory = client_db
+    tid = _relay_a_template(client)
+
+    r = client.put(f"/templates/{tid}", json={"alert_definitions": [_relay_b_def()]})
+
+    assert r.status_code == 200, r.text
+    assert "tpl-secret" not in r.text
+    stored = _stored_alert_defs(factory, tid)[0]["channel_config"]
+    assert stored["smtp_host"] == "relay-b.example"
+    assert "smtp_password" not in stored
+    # The sync hands the definition on to the rule made from it.
+    rule = _template_rule_config(factory, tid)
+    assert rule["smtp_host"] == "relay-b.example"
+    assert "smtp_password" not in rule

@@ -54,14 +54,43 @@ def loads_readable(text: str):
 def masked_channel_config(cfg):
     """A copy of an alert channel_config with a set smtp_password shown as "***", for an
     API response: the secret is never reflected to callers (3.27). The update handlers of
-    alert rules and templates treat the mask as "unchanged". Anything but a dict comes
-    back as it is."""
+    alert rules and templates read the mask back with keep_smtp_password. Anything but a
+    dict comes back as it is."""
     if not isinstance(cfg, dict):
         return cfg
     cfg = dict(cfg)
     if cfg.get("smtp_password"):
         cfg["smtp_password"] = "***"
     return cfg
+
+
+def _smtp_relay(cfg: dict) -> tuple[str, str]:
+    """The relay a channel_config names, as compared on update: smtp_host stripped and in
+    lower case, smtp_port as stripped text (587 is "587"), a missing key as empty."""
+    host, port = cfg.get("smtp_host"), cfg.get("smtp_port")
+    return (
+        "" if host is None else str(host).strip().lower(),
+        "" if port is None else str(port).strip(),
+    )
+
+
+def keep_smtp_password(cfg: dict, stored) -> None:
+    """Resolves the smtp_password of a channel_config sent on update against stored, the
+    channel_config it replaces (None if there is none). A masked ("***"), empty or missing
+    password means "unchanged" and keeps the stored secret, but only for the relay it was
+    stored for: with smtp_host or smtp_port changed, the mask raises ValueError (the
+    handler answers 422) and an empty or missing one drops the secret, so it never goes
+    to another relay. A new password is taken as sent."""
+    password = cfg.get("smtp_password")
+    if password not in ("***", "", None):
+        return
+    stored_password = stored.get("smtp_password") if isinstance(stored, dict) else None
+    if stored_password and _smtp_relay(cfg) == _smtp_relay(stored):
+        cfg["smtp_password"] = stored_password
+    elif stored_password and password == "***":
+        raise ValueError("smtp_password must be entered again when smtp_host or smtp_port changes")
+    else:
+        cfg.pop("smtp_password", None)
 
 
 def masked_alert_definitions(definitions):

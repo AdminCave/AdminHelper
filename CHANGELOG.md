@@ -35,6 +35,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   das gespeicherte Passwort der Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition
   speichert dann keins, ebenso `POST /templates` mit `***` oder leerem Wert. Wer das Passwort bisher aus der
   Template-Antwort gelesen hat, sieht `***`.
+- **Monitoring: Beim Bearbeiten von E-Mail-Alert-Regeln und Alert-Definitionen von Templates gilt `***` nur bei
+  unveraendertem `smtp_host`/`smtp_port` als „Passwort unveraendert“:** Ein `PUT /alerts/{id}` oder
+  `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort nur, solange
+  `smtp_host` (ohne Gross-/Kleinschreibung) und `smtp_port` gleich bleiben. Aendert derselbe Aufruf den Relay, lehnt
+  er `***` mit 422 ab und speichert nichts; ohne Passwort entfaellt das gespeicherte. Nach einem Relay-Wechsel ist das
+  Passwort neu einzugeben. Doku: Monitoring (DE+EN).
 - **Notification-Hub: E-Mails nutzen STARTTLS auf jedem Port ausser 465 und pruefen Zertifikat und Hostnamen des
   Relays, wie der E-Mail-Kanal des Monitorings:** Bisher lief STARTTLS nur auf Port 587, auf anderen Ports ging die
   Anmeldung im Klartext, und weder STARTTLS noch implizites TLS auf Port 465 prueften das Zertifikat. Ein Relay ohne
