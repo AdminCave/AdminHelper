@@ -9,6 +9,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
+  ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
+  und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
+  ELF-Datei mit x-Bit) root und sind fuer alle anderen nur noch ausfuehrbar (`chmod go-r`: aus `0755` wird `0711`,
+  Eigentuemer und setuid-Bits bleiben), wie im frps-Image `frps` und `curl`. Prozesse des Nutzers `app` (UID 10001),
+  die der Entrypoint ueber `gosu` startet, sind damit nicht dumpable: Ihre Eintraege unter `/proc/<pid>` gehoeren
+  root. Skripte und Symlinks bleiben, wie sie sind; es zaehlt das Programm, das ein Skript ausfuehrt (`python3.12`,
+  `dash`, `perl`). Als `app` kann `pg_isready` sein eigenes Programm nicht mehr lesen, schreibt
+  `invalid binary "…": Permission denied` auf stderr und laeuft weiter; die Entrypoints leiten das nach `/dev/null`.
+  `psql` bricht in dieser Lage ab, daher prueft monitoring beim Start seine Datenbank und legt sie an ueber Python
+  (`psycopg`) statt ueber `psql`. Als root, etwa per `docker compose exec`, laufen beide wie bisher. Der Schritt ist
+  der letzte `RUN` jedes der drei Images und erfasst so alles, was die Schritte darueber installieren. Die UID 10001
+  sollte auf dem Host keinem anderen Konto oder Dienst gehoeren. Doku: Betrieb (DE+EN).
+- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
+  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
+  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
+  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
 - **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
   gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
   `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
@@ -28,9 +45,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
   Entwickler (DE+EN), `/test`-Skill.
 
-
 ### Fixed
 
+- **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
+  `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
+  Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
+  gescheitertem Lauf eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text
+  (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
+  `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
+  Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
 - **Sammellauf: Schritt-Tabelle und Sekunden je Schritt wieder im Report (R-0603):** Bei einem Sammellauf aus dem
   Haupt-Checkout verwarf `heavy.sh` seit dem 2026-09-18 jedes Artefakt der Box („last-all.json describes another
   tree — ignored“): `run.sh` nahm Kopf und Tree-Hash zuerst vom `git` der Box, und deren Hash, am Ende des Laufs ueber
