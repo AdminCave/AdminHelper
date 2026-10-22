@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// Passwords flow through here to child processes. Memory that held one is overwritten here only
+// by safe means (`zeroize`), so that no code here claims more about it than Rust upholds.
+#![forbid(unsafe_code)]
+
 pub mod rdp;
 pub mod rdp_logic;
 pub mod ssh;

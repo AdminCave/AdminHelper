@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung 2: Provisionierungsbefehl, Passwortübergabe, Sync-Quelle, Ansible-Commands — Task-Ledger
-Status: aktiv · Branch: feature/desktop-hardening-2 · Review: pro Task
+Status: bereit · Branch: feature/desktop-hardening-2 · Review: pro Task
 Spec: docs/features/desktop-hardening-2.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full — T1 ändert den Befehl, den `provisioning.live.js` zeigt, T2 die Passwortübergabe, die `rdp-connect.live.js` nutzt, und T6 (nur nach Kevins Ja) die Fensterlabels und Freigaben, die jede Desktop-Journey braucht (GUI-E2E im Sammellauf über `main`); kein `scenario` (kein FRP-Datenpfad, keine PKI, keine Registrierung, kein Install); kein `windows`: der Windows-Teil von T2 (eine Schleife in `windows_write_credential` entfällt) kompiliert und testet der Job `rust-windows` der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -42,8 +42,10 @@ Doku: CHANGELOG.md (Changed, umlautfrei: Desktop, Provisionierungs-Tab: Token un
 Beweis: Code-Lesung apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte:70-87 (Werte per Template-Literal, ohne Quoting und Formatprüfung); Formate am Server apps/server/app/modules/provisioning/router.py:70 und apps/server/app/modules/servers/router.py:110. Test (d) ist auf HEAD rot
 HEAD: b1432223
 
-### T2 — RDP-Passwort: eigene Kopie per zeroize, `connection/` ohne `unsafe`  [ ]
+### T2 — RDP-Passwort: eigene Kopie per zeroize, `connection/` ohne `unsafe`  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp.rs, apps/desktop/src-tauri/src/connection/mod.rs, apps/desktop/src-tauri/src/password.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @fa7d2c4f 2026-10-22T13:14:20+02:00
+Review: approve (.ah-out/review/desktop-hardening-2/T2.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-22: die Überschreibung nicht entfernen (so die Spec), sondern die eigene Kopie mit der Crate `zeroize` sicher nullen. `connection/mod.rs` bekommt nach dem SPDX-Kopf `#![forbid(unsafe_code)]` mit einem Kommentar zum Warum (unter `connection/` fließen Passwörter zu Kindprozessen; Speicher wird hier nur mit sicheren Mitteln überschrieben). Neue direkte Abhängigkeit `zeroize` in der Version aus `Cargo.lock` (dort schon transitiv): `Cargo.toml`, `Cargo.lock`, `THIRD_PARTY_LICENSES.md`. `feed_password_stdin` (`rdp.rs`) schreibt `format!("{password}\n")` wie bisher und nullt diese eigene Kopie mit `zeroize` statt mit dem `unsafe`-Block; der Doc-Kommentar sagt ehrlich, dass nur diese eigene Kopie genullt wird, nicht der String aus der IPC, das Argument, die Strings des Keyrings und die Tokens der Sitzung. `windows_write_credential` (`password.rs`): `zeroize` statt der Hand-Schleife, `secret_bytes` bleibt `mut` (`as_mut_ptr`). Der Test `feed_password_stdin_writes_and_returns_ok` (`rdp.rs`) bleibt, sein Kommentar passt zum neuen Weg. Zuerst rot: der Wächter allein lässt `cargo test` nicht bauen (`usage of an unsafe block`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Connect-Flow, RDP-Passwort: es geht als Text über die IPC an den Rust-Prozess und von dort unter Linux und macOS per stdin an xfreerdp, unter Windows in den Credential Manager; die eigene Kopie, die der Rust-Prozess dafür baut, nullt er mit `zeroize`; den String aus der IPC, die Strings des Keyrings und die Tokens der Sitzung überschreibt der Desktop im Arbeitsspeicher nicht) · kein CHANGELOG (keine Verhaltensänderung)
