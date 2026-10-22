@@ -23,6 +23,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nennen sie nur Schema, Host und Port (bei `unix://` den Socket-Pfad), von einem Verbindungsfehler nur den Typ, wie
   die Log-Zeilen des Alert-Webhooks. Bisher standen die ganze URL und der Fehlertext im Log.
 
+### Fixed
+
+- **Server: ein einzelnes Surrogat in einem Request-Body ergibt `422` wie ein NUL-Byte:** Ein einzelnes Surrogat
+  (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben) in irgendeinem String eines Request-Bodies, als Wert oder
+  Schluessel und beliebig tief, ergibt `422` an seiner Stelle; nichts wird gespeichert. Bisher endeten solche Eingaben
+  ausserhalb der frp-Felder und der Felder mit Laengengrenze mit `500`, in Tags wurden sie gespeichert, und jede Antwort
+  mit der Zeile endete danach mit `500`. In `extra_config` der FRP-Server-Konfiguration nennt der Fehler jetzt den
+  Schluessel, unter dem der Wert steht.
+
 ## [0.46.0] - 2026-10-22
 
 ### Added
