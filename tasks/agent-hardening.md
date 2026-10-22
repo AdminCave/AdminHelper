@@ -96,7 +96,7 @@ Doku: docs/developer/agent.html:97 + docs/en/developer/agent.html:97 (der letzte
 Beweis: Code-Lesung apps/agent/internal/frpc/sync.go:189, :300-318
 HEAD: b1432223
 
-### T8 — Proxy: kein Schlüssel der `plugin`-Familie  [?] (Soll der Agent Proxy-Plugins aus `extra_config` ablehnen, auch solche, die ein Admin über die API gesetzt hat? Empfehlung ja: die ganze `plugin`-Familie in jeder Schreibweise; Spec „Offene Fragen“ 1)
+### T8 — Proxy: kein Schlüssel der `plugin`-Familie  [ ]
 Komponente: agent · Dateien: apps/agent/internal/frpc/servertoml.go, apps/agent/internal/frpc/servertoml_test.go, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
 Änderung: In einer `[[proxies]]`-Tabelle lehnt `checkServerConfig` jeden Schlüssel ab, dessen erstes Segment ohne Rücksicht auf ASCII-Groß-/Kleinschreibung `plugin` ist: frp ordnet Namen über `encoding/json` ohne Groß-/Kleinschreibung zu (Spec „Externe Integrationen“). Meldung mit Zeile und Schlüssel, ohne Wert. Tests mit `TestServerConfig`: abgelehnt `plugin.type = "static_file"`, `PLUGIN.type = "x"`, `Plugin.localPath = "/x"` und `plugin = "x"`; angenommen bleiben die Fixture und `transport.useCompression = true`. Zuerst rot: die abgelehnten Fälle auf dem Stand nach T7.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServerConfig
