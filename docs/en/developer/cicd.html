@@ -75,6 +75,7 @@
               <tr><td><code>--strict</code></td><td>A SKIP of a required step is a <strong>failure</strong>, not a pass. So is a strict run in which no step executed at all.</td></tr>
               <tr><td><code>--only &lt;keys&hellip;&gt;</code></td><td>Restricts lint/unit to components (<code>server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts</code>). Under <code>--strict</code> a step asked for this way counts as required. Env form: <code>AH_ONLY</code>.</td></tr>
               <tr><td><code>--step &lt;name&gt;</code></td><td>Exactly one step (a substring of its name). An unknown or ambiguous name is rejected in a dry pass, before any suite starts.</td></tr>
+              <tr><td><code>--part gui|rest</code></td><td>Only one part of the layer. <code>gui</code> is the desktop GUI suites (<code>desktop_e2e_*</code>), their guard row <code>desktop GUI E2E</code> and the smoke test <code>desktop-e2e smoke</code>; <code>rest</code> is every other step. The split is one predicate and its negation, so every step, a future one too, lies in exactly one part. A step outside the part does not run and appears neither as a SKIP nor in the artifact (which names the part in its <code>part</code> field); <code>--step</code> only searches the part. Any other value is exit 2. What it is for: <code>heavy.sh</code> runs the two parts of <code>all</code> on two boxes at once. Env form: <code>AH_PART</code>.</td></tr>
               <tr><td><code>AH_REQUIRED</code></td><td>This machine&rsquo;s required set (step ids, space-separated); overrides <code>AH_REQUIRED_DEFAULT</code> and belongs in the gitignored <code>.devenv.sh</code>. Under <code>--strict</code> the effective set is printed with the summary. When the variable is unset and the layer is <code>integration</code>, <code>e2e</code> or <code>all</code>, every step of that layer is required (the box rule; <code>heavy.sh</code> clears the dev box&rsquo;s set before a box run).</td></tr>
               <tr><td><code>AH_ARGS</code></td><td>Extra arguments for the suite itself &ndash; how <code>verify.sh &lt;component&gt; -- &lt;args&gt;</code> forwards them. A run targeted this way skips the <code>schemathesis</code> step, without failing under <code>--strict</code>; the PR CI runs it in full.</td></tr>
             </tbody>
@@ -159,18 +160,47 @@
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
-          <p><code>all</code> = warm box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
-          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially. The capstone
+          <p><code>all</code> = <code>run.sh all --strict</code> on <strong>two boxes at once</strong>: part
+          <code>rest</code> (<code>--part rest</code>) on the warm box of the <code>desktop</code> slot, part
+          <code>gui</code> (<code>--part gui</code>, the desktop GUI E2E and their smoke test) on a second box
+          of the same lane (slot <code>gui</code>), leased while <code>rest</code> is already running. The
+          verdict is <code>PASS</code> only with two green parts: a part that did not run or brought no
+          evidence (neither a summary line nor an artifact, or an artifact of the other part) makes the run
+          UNVERIFIED, otherwise a red part makes it FAIL; the reason names the part
+          (<code>&hellip; (gui)</code>) and a red other part (<code>FAIL in part rest</code>). If
+          <code>heavy.sh</code> is interrupted, it ends both parts. If the second box cannot be had on the retry
+          either, part <code>gui</code> runs after part <code>rest</code>, serially, on the box of the
+          <code>desktop</code> slot (<code>iter.sh all --strict --part gui</code>, retries of red steps there
+          too): a longer run instead of a lost one. The notes say so with the last line of
+          <code>warm-gui.log</code>, the layer row names the same box twice, and the verdict stays
+          <code>PASS</code> only with two green parts. If <code>warm.sh gui</code> refuses (exit 2), nothing
+          runs serially and the run is UNVERIFIED. After the run, <code>heavy.sh</code> frees
+          the GUI box (<code>reap.sh --role gui</code>) when part <code>gui</code> is green (a <code>flaky</code>
+          step does not count as red); when it is red or <code>infra</code>, the box stays for inspection until
+          its TTL runs out, and the notes name <code>vm.py ssh &lt;vmid&gt;</code> &ndash; unless it already went
+          before a second VM or the capstone (below). <code>capstone</code> =
+          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially, and the capstone
+          gets the box of the <code>desktop</code> slot. The capstone
           is skipped <strong>only</strong> when the <code>all</code> layer ended UNVERIFIED (seven VMs must
           not burn into a broken environment) &ndash; a plain FAIL does not stop it.
-          Beforehand it checks <code>vm.py doctor</code> and <code>vm.py list</code>: a foreign box means
+          Beforehand it checks <code>vm.py doctor</code> (for <code>all</code> only for the <code>desktop</code>
+          slot, when its box is not already running; whether the GUI box fits is for <code>vm.py clone</code> to
+          say) and <code>vm.py list</code>: a foreign box means
           the capacity is not there, and the run stops before spending a single VM.</p>
           <p>The report lands in <code>.ah-out/weekly/&lt;yyyy-mm-dd-hhmm&gt;/report.md</code>. Its
           <strong>first line</strong> is the verdict and is quoted verbatim, never paraphrased; then come the
-          wrappers' summary lines <strong>verbatim</strong>, the step table, the &ldquo;Kevin sichtet&rdquo;
-          section, the notes, the <code>audit.yml</code> verdict and the VM list. Facts, never a judgement. The history is
+          wrappers' summary lines <strong>verbatim</strong> (for <code>all</code> one per part, labelled:
+          <code>[rest] run.sh[all]: &hellip;</code>), the step table (every step of both parts with its seconds
+          and box, plus <strong>one</strong> layer row with the wall time,
+          <code>&lt;box-rest&gt;+&lt;box-gui&gt;</code> and <code>rest &lt;s&gt; s, gui &lt;s&gt; s</code>), the
+          &ldquo;Kevin sichtet&rdquo;
+          section, the notes, the <code>audit.yml</code> verdict and the VM list. Each part has its log
+          (<code>all-rest.log</code>, <code>all-gui.log</code>) and its directory (<code>rest/</code>,
+          <code>gui/</code>) with the box's artifact, screenshots and logs; the JUnit XML of both parts lie
+          together in <code>junit/</code>. Facts, never a judgement. The history is
           <code>tasks/private/history.csv</code>
-          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>), committed in the private
+          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>; the layer row of
+          <code>all</code> names both boxes in <code>vm</code>), committed in the private
           repo and never pushed.</p>
           <table>
             <thead><tr><th>Result</th><th>How it is reached</th><th>What it means</th></tr></thead>
@@ -185,7 +215,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           </table>
           <p>The second VM is a worktree <code>.ah-worktrees/w2</code> with its own lane
           (<code>AH_LANE=w2</code>); <code>heavy.sh</code> destroys that lane's VMs and
-          removes the worktree itself. The boxes of lane <code>main</code> are never touched.
+          removes the worktree itself. The boxes of lane <code>main</code> are never touched, except
+          the run's GUI box: before the first second VM and before the capstone (<code>weekly</code>),
+          <code>heavy.sh</code> frees it (<code>reap.sh --role gui</code>, once per run, named in the
+          notes), because next to it and the box of the <code>desktop</code> slot the <code>w2</code> box
+          or the capstone's roles do not fit; the second-VM checks therefore run only once both parts
+          are through all their retries.
           <code>--base &lt;sha&gt;</code> sets the comparison commit (default: the newest
           <code>history.csv</code> <strong>layer</strong> row with
           <code>ebene=all,schritt=-,ergebnis=pass</code>, not a single step's),
