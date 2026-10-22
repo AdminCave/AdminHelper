@@ -33,6 +33,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
   Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
   URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
+  gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
+  `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
+  waehrend `rest` schon laeuft. Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach
+  Teil `rest` seriell auf der Box `desktop`, und die Notizen sagen es mit der letzten Zeile aus `warm-gui.log`; nur
+  wenn `warm.sh gui` verweigert (Exit 2), bleibt der Lauf `UNVERIFIED`. Der Pre-flight fragt `vm.py doctor` deshalb
+  nur nach dem Slot `desktop`, wenn seine Box nicht schon laeuft; ob die GUI-Box passt, entscheidet `vm.py clone`.
+  Das Urteil heisst `PASS` nur mit zwei gruenen Teilen; ein Teil, der nicht lief oder keinen eigenen Beleg brachte
+  (weder Summary-Zeile noch Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf `UNVERIFIED`, und der
+  Grund nennt den Teil und einen roten anderen Teil („FAIL in part rest“). Rote Schritte werden auf der Box ihres
+  Teils wiederholt. Der Report setzt das Etikett des Teils vor seine Summary-Zeile (`[rest] run.sh[all]: …`), fuehrt
+  die Schritte beider Teile mit Sekunden und Box und **eine** Ebenen-Zeile mit Wandzeit, beiden Boxen
+  (`<box-rest>+<box-gui>`) und den Sekunden je Teil; `steps-all.tsv` nennt den Teil in einer vierten Spalte, jeder
+  Teil hat sein Log (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis, die JUnit-XML beider Teile liegen in
+  `junit/`. `history.csv` behaelt ihr Format. Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile. Nach
+  dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
+  Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
+  Entwickler (DE+EN), `/test`-Skill.
 
 ### Fixed
 
@@ -77,6 +95,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   die neuen Rechte sofort. Aenderte er sein eigenes Passwort, beendete der Server alle Sitzungen des Kontos, das Panel
   merkte es aber erst bei der naechsten Aktion („Session expired“); jetzt meldet es sofort ab, mit dem Hinweis, sich
   mit dem neuen Passwort anzumelden.
+- **Sammellauf: Schritt-Tabelle und Sekunden je Schritt wieder im Report (R-0603):** Bei einem Sammellauf aus dem
+  Haupt-Checkout verwarf `heavy.sh` seit dem 2026-09-18 jedes Artefakt der Box („last-all.json describes another
+  tree — ignored“): `run.sh` nahm Kopf und Tree-Hash zuerst vom `git` der Box, und deren Hash, am Ende des Laufs ueber
+  einen vom Sync geformten Baum gerechnet, traf den des Clients nie. Der Report hatte deshalb nur die Ebenen-Zeile,
+  `steps-all.tsv` blieb leer, und die Historie bekam keine Schritt-Zeilen. Jetzt gehen die Werte, die `iter.sh` vom
+  Client mitgibt, vor dem `git` der Box; als Wert zaehlen nur genau 40 Hex-Zeichen. Ein Lauf ohne Sync und ein
+  lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
+  `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
+  vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
 
 ## [0.46.0] - 2026-10-22
 
