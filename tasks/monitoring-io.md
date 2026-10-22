@@ -112,8 +112,10 @@ Orakel: contract — der Handler bewertet Zahlen und Listen wie der Checker; ein
 Dedup-Key: bug:monitoring:routers/agent.py:own-num-capped-helpers
 HEAD: b1432223
 
-### T7 — Agent-Report: Savepoint je Check (R-0635)  [ ]
+### T7 — Agent-Report: Savepoint je Check (R-0635)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3fadb30e 2026-10-22T12:08:31+02:00
+Review: approve (.ah-out/review/monitoring-io/T7.verdict.json)
 Änderung: Der Rumpf je Check in `agent_report` (`apps/monitoring/app/routers/agent.py:216-292`) läuft in `with db.begin_nested():`. Die Metrik-Zeilen des Checks, sein Eintrag in `pending_alerts` und `checks_updated` übernimmt die Schleife erst, wenn der Block ohne Ausnahme endet; sonst kämen Zeilen und Alert eines zurückgerollten Checks durch. `except Exception` mit `logger.exception` und `continue` (`:293-295`) bleibt außerhalb des Blocks; ein Kommentar nennt das Warum (ein DB-Fehler — Deadlock, Abbruch am `FOR UPDATE`, gescheiterter Flush — vergiftete sonst die gemeinsame Transaktion für jeden folgenden Check und den Commit). Reihenfolge nach `id` (`:199-201`) und Commit (`:297-306`) bleiben. Test in `tests/test_agent_report.py`: zwei Push-Checks auf `srv-1`; `app.routers.agent.apply_result` ersetzt durch einen Wrapper, der beim ersten Check (kleinere `id`) eine Zeile mit verletzter NOT-NULL-Spalte hinzufügt und `db.flush()` ruft (`IntegrityError`), beim zweiten das echte `apply_result`. Erwartet: 200, `checksUpdated == 1`, der State des zweiten Checks ist committet, der erste hat keinen, keine Zeile und kein Alert für den ersten. Gegenprobe: ohne Fehler bewerten die bestehenden Tests beide Checks wie bisher. Zuerst rot: HEAD antwortet 500 „Failed to save the check evaluation“.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_service_process_checker.py tests/test_system_state_checker.py
 Doku: CHANGELOG.md (Fixed, umlautfrei: ein Datenbankfehler bei einem Check eines Agent-Reports kostet nur diesen Check statt der Ergebnisse des ganzen Reports)

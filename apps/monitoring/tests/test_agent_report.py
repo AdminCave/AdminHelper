@@ -836,6 +836,60 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     ] == []
 
 
+@pytest.mark.parametrize(
+    "flush_in_check",
+    [
+        pytest.param(True, id="error-inside-the-check"),
+        pytest.param(False, id="error-at-the-savepoint-release"),
+    ],
+)
+def test_a_database_error_costs_only_its_check(client_db, monkeypatch, caplog, flush_in_check):
+    # R-0635: the checks of one report share a transaction. A database error in one of them
+    # (a deadlock, a lock abort at FOR UPDATE, a failed flush) left the session needing a
+    # rollback: every following check and the commit failed, and the report answered 500
+    # without any result. A SAVEPOINT per check rolls back only the broken one. The broken
+    # row fails either in a flush inside the check or only in the flush of the savepoint's
+    # release; either way neither the check's status line nor its alert may come through.
+    from app.core import victoria as vm
+    from app.models import MonitorAgentLiveness
+    from app.routers import agent as agent_router
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-a", "agent_resources")
+    _add_push_check(factory, "chk-b", "agent_resources")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+    dispatched: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(agent_router, "_dispatch_alert_bg", lambda *alert: dispatched.append(alert))
+    real_apply_result = agent_router.apply_result
+
+    def apply_result_breaking_the_first_check(db, check, *args, **kwargs):
+        result = real_apply_result(db, check, *args, **kwargs)
+        if check.id == "chk-a":
+            # last_report_at is NOT NULL: the insert fails, after the state of chk-a.
+            db.add(MonitorAgentLiveness(server_id="broken", last_report_at=None))
+            if flush_in_check:
+                db.flush()
+        return result
+
+    monkeypatch.setattr(agent_router, "apply_result", apply_result_breaking_the_first_check)
+
+    with caplog.at_level(logging.ERROR, logger="app.routers.agent"):
+        r = client.post("/agent/srv-1/report", json=_report(cpu=99))
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-a").first() is None
+        assert db.query(MonitorState).filter_by(check_id="chk-b").one().status == "critical"
+        assert db.query(MonitorAgentLiveness).filter_by(server_id="broken").first() is None
+    assert _lines_of(writes, "chk-a") == []
+    tags = "check_id=chk-b,check_type=agent_resources,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-b") == [f"monitor_check_status,{tags} value=2i"]
+    assert dispatched == [("chk-b", "pending", "critical")]
+    failures = [r for r in caplog.records if r.getMessage().startswith("Auswertung von Check")]
+    assert len(failures) == 1, [r.getMessage() for r in caplog.records]
+
+
 def _add_docker_check(factory, consecutive_fails: int) -> str:
     with factory() as db:
         db.add(

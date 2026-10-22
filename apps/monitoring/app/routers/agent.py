@@ -169,53 +169,61 @@ def agent_report(
         # Isolate each check: a single broken check.config (or a checker raising)
         # must not abort the evaluation of all other checks for this server
         # (same isolation as the scheduler path in check_engine.execute_check).
+        # The SAVEPOINT carries that over to a database error (a deadlock, an abort at
+        # FOR UPDATE, a failed flush): it would otherwise leave the shared transaction
+        # needing a rollback, so every following check and the commit below failed and
+        # the whole report was lost (R-0635). The release flushes too, so the lines, the
+        # alert and the count of a check are only taken over once its block has ended.
         try:
-            config = json.loads(check.config) if check.config else {}
+            with db.begin_nested():
+                config = json.loads(check.config) if check.config else {}
 
-            # Reuse the checker registry instead of a hand-written if/elif that
-            # duplicated the push-checker list across imports, the in_-filter and
-            # the dispatch. The filter above guarantees check_type is a push type,
-            # so get_checker always resolves; each push checker implements evaluate().
-            checker = get_checker(check.check_type)
+                # Reuse the checker registry instead of a hand-written if/elif that
+                # duplicated the push-checker list across imports, the in_-filter and
+                # the dispatch. The filter above guarantees check_type is a push type,
+                # so get_checker always resolves; each push checker implements evaluate().
+                checker = get_checker(check.check_type)
 
-            # Lock the state row BEFORE evaluating: agent_resources needs the
-            # previous _details for per-metric hysteresis (T6), service_process
-            # for the list mode on a push without the inventory, docker_health for
-            # the restart counter per container, and the lock has to cover the
-            # read-modify-write anyway — two near-simultaneous pushes must not
-            # clobber fail_count or double-alert (4.46).
-            # Evaluate is pure CPU, so holding the lock across it is harmless.
-            # with_for_update is a no-op on sqlite (tests).
-            state = (
-                db.query(MonitorState)
-                .filter(MonitorState.check_id == check.id)
-                .with_for_update()
-                .first()
-            )
+                # Lock the state row BEFORE evaluating: agent_resources needs the
+                # previous _details for per-metric hysteresis (T6), service_process
+                # for the list mode on a push without the inventory, docker_health for
+                # the restart counter per container, and the lock has to cover the
+                # read-modify-write anyway — two near-simultaneous pushes must not
+                # clobber fail_count or double-alert (4.46).
+                # Evaluate is pure CPU, so holding the lock across it is harmless.
+                # with_for_update is a no-op on sqlite (tests).
+                state = (
+                    db.query(MonitorState)
+                    .filter(MonitorState.check_id == check.id)
+                    .with_for_update()
+                    .first()
+                )
 
-            if check.check_type in _PREV_DETAILS_TYPES:
-                try:
-                    prev_details = json.loads(state.details) if state and state.details else None
-                except (json.JSONDecodeError, TypeError):
-                    prev_details = None
-                # Valid-but-non-dict JSON ("[]") must degrade the same way —
-                # evaluate expects a mapping and the loop-except would otherwise
-                # freeze this check on every push.
-                if not isinstance(prev_details, dict):
-                    prev_details = None
-                result_status, message, metrics = checker.evaluate(config, report, prev_details)
-            else:
-                result_status, message, metrics = checker.evaluate(config, report)
+                if check.check_type in _PREV_DETAILS_TYPES:
+                    try:
+                        prev_details = (
+                            json.loads(state.details) if state and state.details else None
+                        )
+                    except (json.JSONDecodeError, TypeError):
+                        prev_details = None
+                    # Valid-but-non-dict JSON ("[]") must degrade the same way —
+                    # evaluate expects a mapping and the loop-except would otherwise
+                    # freeze this check on every push.
+                    if not isinstance(prev_details, dict):
+                        prev_details = None
+                    result_status, message, metrics = checker.evaluate(config, report, prev_details)
+                else:
+                    result_status, message, metrics = checker.evaluate(config, report)
 
-            # Extract structured details
-            details = metrics.pop("_details", None) if metrics else None
+                # Extract structured details
+                details = metrics.pop("_details", None) if metrics else None
 
-            # The status point for every evaluated check, also one without measured values
-            # (system_state; Docker, ZFS or Proxmox without readable data): the status
-            # timeline reads only monitor_check_status. The duration (always 0 here) only
-            # comes with measured values, so such a check gets no flat 0 ms series.
-            check_lines.extend(
-                victoria.build_check_result_lines(
+                # The status point for every evaluated check, also one without measured
+                # values (system_state; Docker, ZFS or Proxmox without readable data): the
+                # status timeline reads only monitor_check_status. The duration (always 0
+                # here) only comes with measured values, so such a check gets no flat 0 ms
+                # series.
+                result_lines = victoria.build_check_result_lines(
                     check_id=check.id,
                     check_type=check.check_type,
                     server_id=server_id,
@@ -224,31 +232,31 @@ def agent_report(
                     duration_ms=0 if metrics else None,
                     extra_metrics=metrics,
                 )
-            )
 
-            # Same transition pipeline as the scheduler path — one implementation
-            # in check_engine, not a copy (B3). A report without a 'resources'
-            # block carries no details; keeping the stored ones preserves the
-            # per-metric hysteresis memory ('problems') across one degenerate
-            # push (T38). notify is collected here and dispatched only after the
-            # batch commit: a blocking webhook/SMTP must not stall this request.
-            old_status, eff_status, decision = apply_result(
-                db,
-                check,
-                state,
-                result_status,
-                message,
-                details,
-                now,
-                keep_previous_details_when_absent=True,
-            )
-            if decision == "notify":
-                pending_alerts.append((check.id, old_status, eff_status))
-
-            checks_updated += 1
+                # Same transition pipeline as the scheduler path — one implementation
+                # in check_engine, not a copy (B3). A report without a 'resources'
+                # block carries no details; keeping the stored ones preserves the
+                # per-metric hysteresis memory ('problems') across one degenerate
+                # push (T38). notify is collected here and dispatched only after the
+                # batch commit: a blocking webhook/SMTP must not stall this request.
+                old_status, eff_status, decision = apply_result(
+                    db,
+                    check,
+                    state,
+                    result_status,
+                    message,
+                    details,
+                    now,
+                    keep_previous_details_when_absent=True,
+                )
         except Exception:
             logger.exception("Auswertung von Check '%s' fehlgeschlagen", check.name)
             continue
+
+        check_lines.extend(result_lines)
+        if decision == "notify":
+            pending_alerts.append((check.id, old_status, eff_status))
+        checks_updated += 1
 
     if checks_updated:
         try:

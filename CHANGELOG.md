@@ -47,6 +47,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
   String (sonst wie ohne das Feld) und Messwerte nur als JSON-Zahl: einen Zahl-String wie `"97"` schreibt der
   Agent-Push nicht mehr als Messwert. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein Datenbankfehler bei einem Check eines Agent-Reports kostet nur diesen Check (R-0635):** Jeder
+  Push-Check eines Agent-Reports wird in einem eigenen Savepoint ausgewertet. Scheitert ein Check an der Datenbank
+  (Deadlock, Abbruch beim Sperren seines Zustands, gescheitertes Schreiben), verwirft das Monitoring nur dessen
+  Ergebnis samt Status-Punkt und Alert; bisher scheiterten alle folgenden Checks und das Speichern, der Report endete
+  mit HTTP 500, und die Ergebnisse des ganzen Reports gingen verloren.
 
 ## [0.46.0] - 2026-10-22
 
