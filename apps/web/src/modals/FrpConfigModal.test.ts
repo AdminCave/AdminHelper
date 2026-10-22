@@ -22,6 +22,12 @@ vi.mock('$lib/api/frp', async (importOriginal) => ({
   updateConfig: vi.fn(),
   supervisorStatus: vi.fn(),
 }));
+// The form sits behind the login, and the confirm dialog asks only inside a session.
+vi.mock('$lib/api/auth', () => ({
+  login: vi.fn(async () => ({ id: 1, username: 'admin', is_admin: true })),
+  logout: vi.fn(async () => {}),
+  me: vi.fn(),
+}));
 
 import FrpConfigModal from './FrpConfigModal.svelte';
 import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
@@ -35,6 +41,7 @@ import { ApiError, type FrpConfig } from '$lib/api/types';
 import { language } from '$lib/i18n';
 import { translations } from '$lib/i18n/dictionaries';
 import { toasts, dismissToast } from '$lib/stores/notifications';
+import { auth } from '$lib/stores/auth';
 
 const de = translations.de;
 const RESTART = de['modal.frpConfig.confirm.restart'];
@@ -113,7 +120,7 @@ function renderModal(editing: FrpConfig | null) {
 /** Lets the status request and the save settle. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.mocked(updateConfig)
     .mockReset()
     .mockImplementation(async (id) => ({ ...FILLED, id }));
@@ -122,6 +129,7 @@ beforeEach(() => {
     .mockImplementation(async () => ({ ...EMPTY }));
   vi.mocked(supervisorStatus).mockReset().mockResolvedValue(STATUS);
   language.set('de');
+  await auth.login('admin', 'pw');
 });
 
 afterEach(async () => {
