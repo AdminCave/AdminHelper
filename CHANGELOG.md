@@ -23,7 +23,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht verifiziert.
 - **Desktop: ohne gespeicherte Sprache gilt die Systemsprache (R-0660):** Ist noch keine Sprache gespeichert, etwa
   nach einer frischen Installation, laeuft die Desktop-UI in der Systemsprache: Deutsch auf einem deutschen System,
-  sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch.
+  sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch. Der Einstellungsdialog zeigt diese
+  Sprache; bisher zeigte er „Deutsch“, und Speichern einer beliebigen Einstellung schaltete ungewollt auf Deutsch.
 
 ## [0.46.0] - 2026-10-22
 

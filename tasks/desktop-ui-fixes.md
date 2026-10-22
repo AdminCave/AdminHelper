@@ -90,8 +90,10 @@ Semantik: keine Stelle in docs/ zur Rückfallsprache (gesucht: `docs/developer/d
 Dedup-Key: bug:desktop:i18n/index.ts:three-language-fallbacks
 HEAD: b1432223
 
-### T6 — Einstellungen: das Sprach-Dropdown zeigt die Sprache, in der die UI läuft (R-0660)  [ ]
+### T6 — Einstellungen: das Sprach-Dropdown zeigt die Sprache, in der die UI läuft (R-0660)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.save.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a953bd35 2026-10-22T11:33:13+02:00
+Review: approve (.ah-out/review/desktop-ui-fixes/T6.verdict.json)
 Änderung: `SettingsModal.svelte:92` setzt `language = resolveLanguage(s.language)` statt `s.language === 'en' ? 'en' : 'de'`; der Typ von `language` (`:58`) wird `Language`. Gespeichert wird damit ohne Änderung des Dropdowns die aufgelöste Sprache (`onSave`, `:274-290`). Tests in `SettingsModal.save.test.ts` (gespeicherte Sprache `null` im Mock-Stand, `navigator.language` gestubbt): (a) `en-US` → das Dropdown (`languageSelect`, `:105-111`) steht auf `en`, und Speichern ohne Änderung schreibt `language: 'en'` (zuerst rot: `de`); (b) `de-DE` → `de`; der bestehende Test `keeps the remembered username when the language changes` bleibt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.save.test.ts
 Doku: CHANGELOG.md (den Eintrag aus T5 ergaenzen: der Einstellungsdialog zeigt diese Sprache, Speichern schaltet nicht mehr ungewollt auf Deutsch)
