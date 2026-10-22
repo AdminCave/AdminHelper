@@ -14,6 +14,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der VictoriaMetrics-Abfrage keine Datenbankverbindung mehr; ein haengendes Ziel kann den Verbindungs-Pool des
   Monitorings nicht mehr erschoepfen, Agent-Reports und API-Anfragen bekommen weiter eine Verbindung. Wird ein Check
   waehrend seines Laufs geloescht, verwirft das Monitoring dessen Ergebnis ohne Fehlerprotokoll.
+- **Monitoring: Schreiben nach VictoriaMetrics blockiert weder Checks noch Agent-Reports (R-0615, R-0636):** Die
+  Metriken gehen in einen Puffer (bis 100 000 Zeilen), den ein eigener Thread in Stapeln bis 10 000 Zeilen nach
+  VictoriaMetrics schreibt; ein haengendes VictoriaMetrics haelt keinen Check und keinen Agent-Report mehr bis zu
+  rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht mehr dreimal gesendet,
+  sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx werden weiter bis zu
+  dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl hoechstens einmal je
+  Minute; beim Herunterfahren leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

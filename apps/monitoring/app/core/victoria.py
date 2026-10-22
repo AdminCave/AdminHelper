@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
 import time
 
 import httpx
@@ -14,6 +15,16 @@ import httpx
 from app.core.config import VICTORIA_METRICS_URL
 
 logger = logging.getLogger("monitor.victoria")
+
+# Write buffer of VictoriaClient: about an hour of agent reports from 250 servers while
+# VictoriaMetrics is down. A batch stays far below VictoriaMetrics' 64 MB request limit.
+_MAX_PENDING_LINES = 100_000
+_MAX_BATCH_LINES = 10_000
+_DROP_WARNING_INTERVAL = 60.0
+
+# Module seams so the tests set the clock and skip the retry pauses.
+_now = time.monotonic
+_sleep = time.sleep
 
 
 _CONTROL_TO_SPACE = str.maketrans({"\n": " ", "\r": " ", "\t": " "})
@@ -105,34 +116,109 @@ class VictoriaClient:
     def __init__(self, base_url: str = VICTORIA_METRICS_URL):
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=10)
+        self._cond = threading.Condition(threading.Lock())
+        self._pending: list[str] = []
+        self._thread: threading.Thread | None = None
+        self._stopping = False
+        self._dropped = 0
+        self._last_drop_warning: float | None = None
 
     def write(self, metrics: list[str]) -> None:
-        """Writes metrics in InfluxDB line protocol format."""
+        """Queues metrics in InfluxDB line protocol format for the writer thread and returns
+        without network I/O: no check and no agent report waits on VictoriaMetrics."""
         if not metrics:
             return
-        body = "\n".join(metrics)
         logger.debug(
             "VictoriaMetrics write: %d Zeilen, erste: %s",
             len(metrics),
             metrics[0][:200] if metrics else "-",
         )
-        # Retry with a short backoff: a transient failure (VM restart, brief network blip, timeout)
-        # would otherwise permanently lose the data point — a gap in exactly the time series you
-        # look at during an incident. The LP body is idempotent, so re-sending is safe (4.113).
+        with self._cond:
+            if len(self._pending) + len(metrics) <= _MAX_PENDING_LINES:
+                self._pending.extend(metrics)
+                if self._thread is None:
+                    thread = threading.Thread(target=self._run, name="victoria-writer", daemon=True)
+                    thread.start()
+                    self._thread = thread
+                self._cond.notify()
+                return
+            self._dropped += len(metrics)
+            now = _now()
+            if (
+                self._last_drop_warning is not None
+                and now - self._last_drop_warning < _DROP_WARNING_INTERVAL
+            ):
+                return
+            dropped, self._dropped, self._last_drop_warning = self._dropped, 0, now
+        logger.warning(
+            "VictoriaMetrics write buffer full (%d lines): dropped %d lines since the last report",
+            _MAX_PENDING_LINES,
+            dropped,
+        )
+
+    def close(self, timeout: float = 5.0) -> None:
+        """Sends what is buffered for up to ``timeout`` seconds; the writer thread ends once the
+        buffer is empty. Safe to call more than once; a later write starts a new thread."""
+        with self._cond:
+            thread = self._thread
+            if thread is None:
+                return
+            self._stopping = True
+            self._cond.notify()
+        thread.join(timeout)
+
+    def _run(self) -> None:
+        while True:
+            with self._cond:
+                while not self._pending and not self._stopping:
+                    self._cond.wait()
+                if not self._pending:
+                    # Cleared under the lock: a write after this point starts a new thread
+                    # instead of queueing lines for one that is gone.
+                    self._thread = None
+                    self._stopping = False
+                    return
+                batch = self._pending[:_MAX_BATCH_LINES]
+                del self._pending[: len(batch)]
+            try:
+                self._send(batch)
+            except Exception:
+                # A dead writer would leave every later write to fill the buffer and be dropped.
+                logger.exception("VictoriaMetrics writer: sending %d lines failed", len(batch))
+
+    def _send(self, lines: list[str]) -> None:
+        """POSTs one batch to /write, synchronously; runs in the writer thread."""
+        body = "\n".join(lines)
+        # Retry with a short backoff: a transient failure (VM restart, brief network blip, timeout,
+        # a 5xx) would otherwise permanently lose the data point — a gap in exactly the time series
+        # you look at during an incident. The LP body is idempotent, so re-sending is safe (4.113).
+        # Below 500, VictoriaMetrics rejected the body itself (a malformed line): the same body
+        # cannot pass on a second try.
         for attempt in range(3):
             try:
                 resp = self._client.post(f"{self.base_url}/write", content=body)
-                resp.raise_for_status()
-                return
             except httpx.HTTPError as exc:
-                if attempt == 2:
+                error: object = exc
+            else:
+                if resp.is_success:
+                    return
+                if resp.status_code < 500:
                     logger.warning(
-                        "VictoriaMetrics write fehlgeschlagen (3 Versuche): %s (URL: %s)",
-                        exc,
-                        self.base_url,
+                        "VictoriaMetrics rejected a write of %d lines with HTTP %d, not retried: %s",
+                        len(lines),
+                        resp.status_code,
+                        resp.text[:200],
                     )
-                else:
-                    time.sleep(0.5 * (attempt + 1))
+                    return
+                error = f"HTTP {resp.status_code}"
+            if attempt == 2:
+                logger.warning(
+                    "VictoriaMetrics write fehlgeschlagen (3 Versuche): %s (URL: %s)",
+                    error,
+                    self.base_url,
+                )
+            else:
+                _sleep(0.5 * (attempt + 1))
 
     def build_check_result_lines(
         self,
