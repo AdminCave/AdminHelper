@@ -17,20 +17,6 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
-- **Audit-Log: Hooks, Provisionierungs-Token und Monitoring-Proxy:** Das Audit-Log erfasst jetzt die Aktionen der
-  Admins an Hooks (`hook.created`, `hook.updated` mit den geaenderten Feldern in `detail`, auch fuer das Ein- und
-  Ausschalten, `hook.deleted`, `hook.token_rotated`, `hook.run` mit `success` oder `failure`), das Erzeugen eines
-  Provisionierungs-Tokens (`provision.token.minted` mit dem Server als Objekt) und Schreibzugriffe ueber den
-  Monitoring-Proxy (`monitoring.post`, `monitoring.put`, `monitoring.delete` mit dem weitergeleiteten Pfad und
-  `status=<HTTP-Status>` in `detail`; bricht die Weiterleitung nach dem Senden ab, Status `error` mit dem Typ des
-  Fehlers). Kein Token, kein Skript, kein Fehlertext eines Laufs und kein Inhalt einer Anfrage steht im Eintrag; der
-  Webhook-Trigger und lesende Zugriffe schreiben nichts. `user.updated` nennt in `detail` die geaenderten Felder
-  (`password`, `is_admin=true|false`, `server_ids`). Routen und Antworten bleiben gleich. Doku: Betrieb (DE+EN),
-  API-Referenz fuer Entwickler (DE+EN).
-- **`python -m app.cli create-admin` feuert `user.created` wie die API:** Dieselbe Payload wie `POST /api/users`
-  (`id`, `username`, `is_admin: true`), damit erreichen Event-Hooks und die Glocke („Sicherheit“) auch diesen Weg; auf
-  einer frischen Installation meldet die Glocke dem ersten Admin so seine eigene Anlage. Doku: Monitoring (DE+EN),
-  Hooks fuer Entwickler (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
@@ -55,6 +41,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
   Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
   URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Roadmap ohne `neu`-Deckel (Entwickler-Werkzeuge, Kevin 2026-10-22):** `roadmap.py add` nimmt jede neue Zeile an,
+  auch wenn schon 20 oder mehr Zeilen `neu` sind; Exit 3 gibt es nicht mehr. `neu N/20` im WIP-Kopf bleibt Anzeige
+  wie `aktiv N/2`. Der Wochenlauf (`heavy.sh`) laesst einen bestaetigten Fund damit nicht mehr ohne Roadmap-Zeile,
+  die Notiz `ROADMAP FULL` im Report entfaellt. Anleitung: `DEVELOPMENT.md`, „Die Roadmap als Skript: `roadmap.py`",
+  und der Skill `/roadmap`.
 - **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
   gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
   `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
@@ -73,6 +64,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
   Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
   Entwickler (DE+EN), `/test`-Skill.
+- **Audit-Log: Hooks, Provisionierungs-Token und Monitoring-Proxy:** Das Audit-Log erfasst jetzt die Aktionen der
+  Admins an Hooks (`hook.created`, `hook.updated` mit den geaenderten Feldern in `detail`, auch fuer das Ein- und
+  Ausschalten, `hook.deleted`, `hook.token_rotated`, `hook.run` mit `success` oder `failure`), das Erzeugen eines
+  Provisionierungs-Tokens (`provision.token.minted` mit dem Server als Objekt) und Schreibzugriffe ueber den
+  Monitoring-Proxy (`monitoring.post`, `monitoring.put`, `monitoring.delete` mit dem weitergeleiteten Pfad und
+  `status=<HTTP-Status>` in `detail`; bricht die Weiterleitung nach dem Senden ab, Status `error` mit dem Typ des
+  Fehlers). Kein Token, kein Skript, kein Fehlertext eines Laufs und kein Inhalt einer Anfrage steht im Eintrag; der
+  Webhook-Trigger und lesende Zugriffe schreiben nichts. `user.updated` nennt in `detail` die geaenderten Felder
+  (`password`, `is_admin=true|false`, `server_ids`). Routen und Antworten bleiben gleich. Doku: Betrieb (DE+EN),
+  API-Referenz fuer Entwickler (DE+EN).
+- **`python -m app.cli create-admin` feuert `user.created` wie die API:** Dieselbe Payload wie `POST /api/users`
+  (`id`, `username`, `is_admin: true`), damit erreichen Event-Hooks und die Glocke („Sicherheit“) auch diesen Weg; auf
+  einer frischen Installation meldet die Glocke dem ersten Admin so seine eigene Anlage. Doku: Monitoring (DE+EN),
+  Hooks fuer Entwickler (DE+EN).
 
 ### Fixed
 
