@@ -90,6 +90,8 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'Benutzer gespeichert',
+    'toast.user.ownPasswordChanged':
+      'Eigenes Passwort geändert – bitte mit dem neuen Passwort anmelden.',
     'toast.user.created': 'Benutzer erstellt',
     'toast.user.deleted': 'Benutzer gelöscht',
     'confirm.user.delete': 'Benutzer wirklich löschen?',
@@ -379,6 +381,7 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'User saved',
+    'toast.user.ownPasswordChanged': 'Your password was changed – sign in with the new password.',
     'toast.user.created': 'User created',
     'toast.user.deleted': 'User deleted',
     'confirm.user.delete': 'Really delete this user?',

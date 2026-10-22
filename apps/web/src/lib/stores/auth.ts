@@ -80,6 +80,17 @@ export const auth = {
   logout(): Promise<void> {
     return endSession();
   },
+
+  // The answer to an admin's PUT on a user. On the signed-in user it is the session's truth too:
+  // a self-demotion hides the admin pages at once instead of ending every action in a 403.
+  applySelfUpdate(updated: User): void {
+    const { user } = get(_auth);
+    if (!user || user.id !== updated.id) return;
+    _auth.update((state) => ({
+      ...state,
+      user: { ...user, id: updated.id, username: updated.username, is_admin: updated.is_admin },
+    }));
+  },
 };
 
 export const currentUser = derived(_auth, ($a) => $a.user);
