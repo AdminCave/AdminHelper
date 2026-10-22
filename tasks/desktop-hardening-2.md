@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung 2: Provisionierungsbefehl, Passwortübergabe, Sync-Quelle, Ansible-Commands — Task-Ledger
-Status: bereit · Branch: feature/desktop-hardening-2 · Review: pro Task
+Status: erledigt · Branch: feature/desktop-hardening-2 · Review: pro Task
 Spec: docs/features/desktop-hardening-2.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full — T1 ändert den Befehl, den `provisioning.live.js` zeigt, T2 die Passwortübergabe, die `rdp-connect.live.js` nutzt, und T6 (nur nach Kevins Ja) die Fensterlabels und Freigaben, die jede Desktop-Journey braucht (GUI-E2E im Sammellauf über `main`); kein `scenario` (kein FRP-Datenpfad, keine PKI, keine Registrierung, kein Install); kein `windows`: der Windows-Teil von T2 (eine Schleife in `windows_write_credential` entfällt) kompiliert und testet der Job `rust-windows` der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
