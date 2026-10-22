@@ -58,6 +58,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Cooldowns den Versand ab: Die folgenden Regeln sendeten nicht, die Glocke bekam kein Ereignis, die Meldung war
   verloren. Jetzt zaehlt ein leerer Cooldown als der Default 30 Minuten, und ein Cooldown, der vor den
   Kalenderanfang reicht, zaehlt jeden frueheren erfolgreichen Versand der Regel fuer den Check.
+- **Monitoring: ein Check mit sehr langem Namen erreicht die Glocke wieder (R-0637):** Der Titel des
+  Glocken-Ereignisses ist der Betreff der Meldung (`[AdminHelper Monitor] <STUFE>: <Check-Name>`); ab rund 480 Zeichen
+  Check-Name war er laenger als die 512 Zeichen, die der Server annimmt, der Server lehnte das Ereignis mit HTTP 422
+  ab, und Glocke, Hub-Mail und Event-Hook blieben aus. Jetzt wird der Titel auf 512 Zeichen gekuerzt (die ersten 511
+  und `…`); der Betreff von Mail und Webhook der Alert-Regeln bleibt ungekuerzt.
 
 ## [0.46.0] - 2026-10-22
 
