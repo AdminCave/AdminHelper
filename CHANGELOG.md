@@ -17,6 +17,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   speichern kann, und schreibt nie `INSECURE=1` in `monitor.conf`. `--insecure` gilt so nur fuer den einen Aufruf.
   Doku: Agent-Deployment (DE+EN).
 
+### Removed
+
+- **Agent: kein PKI-Bundle aus der Aktivierungsantwort:** `provision` entpackt kein PKI-Bundle mehr; ein mitgeschicktes
+  Feld `pkiBundle` ignoriert der Agent. Der Server schickt es seit 0.28.0 leer, und dieser Agent aktiviert nur ueber
+  Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. Doku: Agent-Entwicklerseite (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

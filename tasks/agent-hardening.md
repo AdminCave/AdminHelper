@@ -67,8 +67,10 @@ Test-Löschung: apps/agent/internal/frpc/apply_test.go::TestWriteSyncConfigStore
 Beweis: Code-Lesung apps/agent/internal/frpc/apply.go:74-94
 HEAD: b1432223
 
-### T4 — Aktivierung: kein PKI-Bundle mehr entpacken  [ ]
+### T4 — Aktivierung: kein PKI-Bundle mehr entpacken  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/provision/provision.go, docs/developer/agent.html, docs/en/developer/agent.html, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2e7d2821 2026-10-22T11:11:14+02:00
+Review: approve (.ah-out/review/agent-hardening/T4.verdict.json)
 Änderung: Es entfallen `ApplyParams.PkiBundleB64` (`apply.go:38`), der Entpack-Block in `Apply` (`:123-133`), `maxBundleBytes` und `extractPkiBundle` (`:161-253`) samt den Importen, die danach niemand braucht; in `provision.go` das Feld `PkiBundle` von `frpBundle` (`:44-47`) und `PkiBundleB64` im Aufruf von `frpc.Apply` (`:184`). Der Kommentar von `Apply` (`apply.go:102-107`) nennt kein Bundle mehr. Ein `pkiBundle` in der Antwort ignoriert `encoding/json` dann (der Server schickt `""`, `apps/server/app/modules/provisioning/helpers.py:107`). In `apply_test.go` gehen `makeBundle` (`:24-52`) und die fünf `TestExtractPkiBundle*` (`:54-140`) samt ungenutzten Importen. Nach dem Diff ist `grep -rn "PkiBundle\|pkiBundle\|extractPkiBundle\|maxBundleBytes" apps/agent` leer (Ergebnis in den Commit-Body). Kein neuer Test: die Funktion fällt weg, und ein Test über `provision.Run` mit FRP-Bundle käme an `systemctl` nicht vorbei (die frpc-Nähte liegen im Paket `frpc`).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestReprovision|TestRun
 Doku: docs/developer/agent.html:46 + docs/en/developer/agent.html:46 (Paketzeile `frpc/`: „ZIP-Slip-sicher“ bzw. „zip-slip safe“ entfällt) · CHANGELOG.md (Removed, umlautfrei: der Agent entpackt kein PKI-Bundle aus der Aktivierungsantwort mehr; der Server schickt es seit 0.28.0 leer, und dieser Agent aktiviert nur ueber Port 8444, den es seit 0.39.0 gibt)

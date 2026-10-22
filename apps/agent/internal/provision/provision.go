@@ -42,8 +42,7 @@ import (
 )
 
 type frpBundle struct {
-	Config    string `json:"config"`
-	PkiBundle string `json:"pkiBundle"`
+	Config string `json:"config"`
 }
 
 // enrollmentInfo is the one-time grant the server returns so the agent can fetch
@@ -186,7 +185,6 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			ServerID:       serverID,
 			APIKey:         resp.APIKey,
 			FrpConfigB64:   resp.FRP.Config,
-			PkiBundleB64:   resp.FRP.PkiBundle,
 			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
 		}); err != nil {
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
