@@ -296,6 +296,7 @@ export const translations: Translations = {
     'editor.validation.failed': 'Validierung fehlgeschlagen',
     'editor.status.saved': 'Gespeichert',
     'editor.status.deleted': 'Geloescht',
+    'editor.deleteConfirm': 'Verbindung „{name}“ wirklich löschen?',
 
     // ── Desktop: WorkspaceEditor ──────────────────────────────────────
     'workspace.editor.title.new': 'Neuer Workspace',
@@ -1088,6 +1089,7 @@ export const translations: Translations = {
     'editor.validation.failed': 'Validation failed',
     'editor.status.saved': 'Saved',
     'editor.status.deleted': 'Deleted',
+    'editor.deleteConfirm': 'Really delete the connection "{name}"?',
 
     // ── Desktop: WorkspaceEditor ──────────────────────────────────────
     'workspace.editor.title.new': 'New workspace',

@@ -114,8 +114,10 @@ Beweis: Code-Lesung origin/main@b1432223 — `index.ts:17-19` gibt für `fr-FR` 
 Dedup-Key: bug:desktop:i18n/index.ts:three-language-fallbacks
 HEAD: b1432223
 
-### T8 — Verbindungs-Editor: Löschen erst nach Rückfrage (R-0661)  [ ]
+### T8 — Verbindungs-Editor: Löschen erst nach Rückfrage (R-0661)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.delete.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0c711ddd 2026-10-22T11:58:54+02:00
+Review: approve (.ah-out/review/desktop-ui-fixes/T8.verdict.json)
 Änderung: `onDelete` (`ConnectionEditor.svelte:65-82`) fragt vor `remove` mit `confirmDialog($t('editor.deleteConfirm', { name }), { confirmLabel: $t('action.delete') })` wie `monitoring/AlertRuleModal.svelte:94-104` (`name`: Name, sonst Host der Verbindung); bei `false` geschieht nichts, der Editor bleibt offen. Die Verbindung wird vor der Frage festgehalten (wie `:67`). Das Overlay schließt auf Escape (`:111`), und der Fokus bleibt während der Frage auf „Löschen“ im Overlay: ein Zähler `asking` wie `SettingsModal.svelte:72-78`, `:182-186`, `:342` hält den Editor offen, solange die Frage steht. Neuer Schlüssel `editor.deleteConfirm` — „Verbindung „{name}“ wirklich löschen?“ / „Really delete the connection "{name}"?“. Neue Testdatei `ConnectionEditor.delete.test.ts` (Aufbau wie `ConnectionEditor.lastused.test.ts:20-26`, dazu `vi.mock('./ui/ConfirmDialog.svelte', …)` wie `SettingsModal.save.test.ts:90` und `$lib/bridge` mit `deletePassword`): (a) Antwort `false` → kein `remove`, kein `deletePassword`, der Editor ist offen (zuerst rot); (b) Antwort `true` bei einer RDP-Verbindung → `remove` mit ihrer `id`, `deletePassword`, der Editor zu; (c) die Frage nennt den Namen, `confirmLabel` ist `action.delete`; (d) Escape auf dem Overlay, solange die Frage offen ist (Promise noch nicht aufgelöst) → der Editor bleibt offen; danach `false` → nichts gelöscht.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.delete.test.ts src/lib/i18n/i18n.test.ts
 Doku: CHANGELOG.md (Fixed: „Loeschen“ im Verbindungs-Editor fragt nach, bevor es die Verbindung, im Server-Modus auf dem Server, und ein gespeichertes RDP-Passwort entfernt)

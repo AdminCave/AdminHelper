@@ -27,6 +27,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Sprache; bisher zeigte er „Deutsch“, und Speichern einer beliebigen Einstellung schaltete ungewollt auf Deutsch.
   Dieselbe Regel gilt schon vor dem Laden der Einstellungen („Lade…“) und fuer die ganze UI, wenn das Laden
   scheitert; auf einem System in einer anderen Sprache als Deutsch oder Englisch lief die UI dort bisher deutsch.
+- **Desktop: „Loeschen“ im Verbindungs-Editor fragt nach (R-0661):** Bevor der Editor eine Verbindung entfernt, im
+  Server-Modus auf dem Server, und bei RDP ein gespeichertes Passwort, fragt er mit dem Namen der Verbindung nach;
+  „Abbrechen“ oder Escape laesst sie stehen und den Editor offen. Bisher loeschte der Knopf sofort.
 
 ## [0.46.0] - 2026-10-22
 
