@@ -23,6 +23,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   das Panel „Request timed out“, das Ergebnis ging verloren, und der Knopf wurde wieder frei, waehrend der Hook noch
   lief. Jetzt wartet das Panel auf den Hook-Lauf 75 s, der Knopf bleibt bis zum Ende gesperrt, und die Meldung bei
   einer Zeitueberschreitung ist uebersetzt.
+- **Web-Panel: schnelle Neuanmeldung nach dem Abmelden haelt (R-0653):** Das Panel meldete sofort ab, wartete aber
+  nicht auf die Antwort des Servers — und erst diese loescht den Access-Token und das Refresh-Cookie. Meldete sich
+  jemand schneller wieder an, als die Abmeldung beantwortet war, beendete die spaete Antwort die neue Sitzung bei der
+  naechsten Aktion. Jetzt wartet eine neue Anmeldung, bis die Abmeldung beantwortet ist (hoechstens 15 s), auch nach
+  einer abgelaufenen Sitzung. Abmelden leert ausserdem die Benutzer-, Hook-, API-Key- und FRP-Daten im Browser.
 
 ## [0.46.0] - 2026-10-22
 
