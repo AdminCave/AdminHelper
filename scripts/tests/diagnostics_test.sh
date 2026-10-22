@@ -10,7 +10,8 @@
 #   (b) .env values in single quotes, in double quotes, with $$ and with an inline
 #       comment are masked in the form compose reads them, $$ in its file form too;
 #       keys written as compose also reads them (export KEY=, KEY = value,
-#       KEY: value) are found, in the logs and in sanitize_env;
+#       KEY: value) are found, in the logs and in sanitize_env; a key set twice
+#       has both values masked (compose takes the last);
 #   (c) a .env with a byte outside UTF-8 and a NUL byte, under the locale C.UTF-8:
 #       sanitize_env masks the whole value and keeps every other byte, and the
 #       value is masked in a log line, as is a query token with such a byte;
@@ -24,7 +25,11 @@
 #       keys as <masked>; a time and a version number stay;
 #   (g) without the switch the same lines keep their names and addresses, the token
 #       forms of (a) are masked;
-#   (h) --help names --mask-hosts, an unknown option still ends with 2.
+#   (h) --help names --mask-hosts, an unknown option still ends with 2;
+#   (i) --mask-hosts, which values become <host> rules and how they match: the
+#       longest first, at word edges, without regard to case; of a display name
+#       ("Name <address>") only the address, and no list part without a letter or
+#       a digit.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it case (c) cannot run, and the test ends
@@ -132,13 +137,16 @@ fi
 # --- (b) .env values in the form compose reads them -------------------------------
 # Single quotes: literal; double quotes and unquoted: $$ is $; unquoted: the comment
 # from " #" on is not part of the value. The log carries the compose form; a copy of
-# the .env the file form (pg$$9word).
+# the .env the file form (pg$$9word). SECRET_KEY stands three times: compose takes
+# the last line, an older value may still stand in a log, so every one is masked.
 env_b="$tmp/.env-compose"
 cat > "$env_b" <<'EOF'
+SECRET_KEY=first9val
 SMTP_PASSWORD='sq9pass'
 POSTGRES_PASSWORD=pg$$9word
 MONITOR_API_KEY="mon9key"
 SECRET_KEY=sk9val #note
+SECRET_KEY=last9val
 EOF
 sed_b="$tmp/redact-b.sed"
 build_redaction_sedfile "$env_b" "$sed_b"
@@ -148,6 +156,7 @@ db: connect user=adminhelper password=pg$9word
 monitor: key mon9key rejected
 app: signing with sk9val note
 env: POSTGRES_PASSWORD=pg$$9word
+app: old key first9val, new key last9val
 EOF
 )"
 exp_b="$(cat <<'EOF'
@@ -156,6 +165,7 @@ db: connect user=adminhelper password=<redacted>
 monitor: key <redacted> rejected
 app: signing with <redacted> note
 env: POSTGRES_PASSWORD=<redacted>
+app: old key <redacted>, new key <redacted>
 EOF
 )"
 out_b="$(printf '%s\n' "$log_b" | redact "$sed_b")"
@@ -235,11 +245,11 @@ else
 fi
 
 # --- (f) --mask-hosts: names and addresses become <host> and <ip> -----------------
-# The host values of the .env (a list split at ',', an address in angle brackets
-# without them) and the machine's name become <host>, every IPv4 and IPv6 address
-# <ip>; a time, a version and a MAC address are no address. The token forms of (a)
-# stay masked. uname is a function here, so the machine's name is known and cannot
-# clash with the text.
+# The host values of the .env (a list split at ',', of a display name only the
+# address in angle brackets) and the machine's name become <host>, every IPv4 and
+# IPv6 address <ip>; a time, a version and a MAC address are no address. The token
+# forms of (a) stay masked. uname is a function here, so the machine's name is known
+# and cannot clash with the text.
 # shellcheck disable=SC2317  # called by host_rules of the sourced script
 uname() { if [ "${1:-}" = -n ]; then echo node9host; else command uname "$@"; fi; }
 env_f="$tmp/.env-hosts"
@@ -306,6 +316,53 @@ out_g="$(printf '%s\n%s\n' "$log_a" "$log_h" | redact "$sed_g")"
 same "(g) the logs without --mask-hosts" "$(printf '%s\n%s\n' "$exp_a" "$log_h")" "$out_g" || fail=1
 exp_gs="$(sed 's/^SECRET_KEY=.*/SECRET_KEY=<redacted>/' "$env_f")"
 same "(g) sanitize_env without --mask-hosts" "$exp_gs" "$(sanitize_env "$env_f" 0)" || fail=1
+
+# --- (i) --mask-hosts: which values become <host> rules, and how they match ---------
+# The longest rule first: ah.example.com goes whole, not as ah.<host> through the
+# shorter example.com inside it. A rule ends at a word edge: the machine's name
+# node9host leaves node9hostname alone.
+env_i="$tmp/.env-order"
+printf 'DOMAIN=ah.example.com\nEXTRA_SANS=example.com\n' > "$env_i"
+sed_i="$tmp/redact-i.sed"
+build_redaction_sedfile "$env_i" "$sed_i" 1
+out_i="$(printf '%s\n' 'GET https://ah.example.com/ via example.com' 'node9hostname up' | redact "$sed_i")"
+exp_i="$(printf '%s\n' 'GET https://<host>/ via <host>' 'node9hostname up')"
+same "(i) the longest rule first, at word edges" "$exp_i" "$out_i" || fail=1
+# Of a display name ("Name <address>", as in SMTP_FROM) only the address is a host
+# value, its words are none; a list part without a letter or a digit (the lone "-")
+# is none either. Either would turn words or every "-" of the bundle into <host>.
+# Host names ignore case, the rules too: AH.Example.com masks ah.example.com.
+env_j="$tmp/.env-display"
+cat > "$env_j" <<'EOF'
+SMTP_FROM="AdminHelper - Alerts <alerts@mail.example.com>"
+EXTRA_SANS=alt.example.com , - ,198.51.100.7
+DOMAIN=AH.Example.com
+COMPOSE_PROJECT_NAME=ah-prod
+EOF
+log_j="$(cat <<'EOF'
+2026-10-22T10:00:00Z adminhelper-server-1 COMPOSE_PROJECT_NAME=ah-prod a|b&c*d
+mail to alerts@mail.example.com
+GET https://ah.example.com/
+EOF
+)"
+exp_j="$(cat <<'EOF'
+2026-10-22T10:00:00Z adminhelper-server-1 COMPOSE_PROJECT_NAME=ah-prod a|b&c*d
+mail to <host>
+GET https://<host>/
+EOF
+)"
+sed_j="$tmp/redact-j.sed"
+build_redaction_sedfile "$env_j" "$sed_j" 1
+same "(i) display name, list parts, case in the logs" "$exp_j" "$(printf '%s\n' "$log_j" | redact "$sed_j")" \
+    || fail=1
+exp_js="$(cat <<'EOF'
+SMTP_FROM=<masked>
+EXTRA_SANS=<masked>
+DOMAIN=<masked>
+COMPOSE_PROJECT_NAME=ah-prod
+EOF
+)"
+same "(i) display name, list parts, case in sanitize_env" "$exp_js" "$(sanitize_env "$env_j" 1)" || fail=1
 unset -f uname
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------

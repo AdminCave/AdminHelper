@@ -9,13 +9,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
-- **Diagnose-Bundle: Hostnamen und IP-Adressen auf Wunsch maskieren:** `scripts/diagnostics.sh --mask-hosts` ersetzt
-  IPv4- und IPv6-Adressen durch `<ip>` und die Namen und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`,
-  `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`, `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` sowie den Rechnernamen
-  durch `<host>`, in `report.txt`, den Logs und `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Ohne
-  den Schalter bleiben Hostnamen und Adressen stehen wie bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen
-  sind; Skript-Kopf, `--help`, die Abschlussmeldung und die Doku sagen das jetzt, statt das Bundle pauschal als
-  unbedenklich fuer ein Issue zu bezeichnen. Doku: Troubleshooting (DE+EN), README.
+- **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
+  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
+  `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
+  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
+  bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
+  und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
+  Troubleshooting (DE+EN), README.
 
 ### Changed
 
@@ -33,17 +36,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
   leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
   `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
-  ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es in jeder Form, die compose liest, wie das
-  Diagnose-Bundle: auch als `export CA_ROOT_PASSPHRASE=...`, `CA_ROOT_PASSPHRASE = ...` oder
-  `CA_ROOT_PASSPHRASE: ...`; ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt stehen.
-- **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und liest die `.env` wie compose:**
+  ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es wie das Diagnose-Bundle auch mit vorangestelltem
+  `export`, mit Leerraum um den Trenner und mit `:` statt `=` als Trenner (`export CA_ROOT_PASSPHRASE=...`,
+  `CA_ROOT_PASSPHRASE = ...`, `CA_ROOT_PASSPHRASE: ...`); ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt
+  stehen.
+- **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und weitere Schreibweisen der `.env`:**
   `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
   `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
   Provisionierungs-Token `adminhelper_prov_...`; die Regel fuer `ah_...` entfaellt, kein Token des Projekts traegt
-  dieses Praefix. Die Secrets der `.env` liest es so, wie compose sie liest: Schluessel auch als `export KEY=...`,
+  dieses Praefix. Die Secrets der `.env` erkennt es in diesen Schreibweisen: Schluessel auch als `export KEY=...`,
   `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
-  Anfuehrungszeichen, mit `$$` oder einem Kommentar hinter ` #`. Es liest die `.env` Byte fuer Byte und maskiert einen
-  Wert auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+  Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
+  ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
+  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
 
 ## [0.46.0] - 2026-10-22
 

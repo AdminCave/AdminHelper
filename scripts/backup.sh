@@ -103,9 +103,9 @@ dump_db adminhelper_monitor
 if [ -f .env ]; then
     # LC_ALL=C grep -a: grep takes a file with a NUL byte or a byte the caller's
     # locale cannot decode for binary and leaves lines out, which would drop them
-    # from env.sanitized. The key in every form compose reads (as diagnostics.sh
-    # does): an "export" may lead, '=' or ':' separates, whitespace may stand
-    # around it; CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay.
+    # from env.sanitized. The key forms recognised, as in diagnostics.sh: an
+    # "export" may lead, '=' or ':' separates, whitespace may stand around it;
+    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay.
     # grep -v exits 1 when it filters every line, which is fine; 2 is an error
     # (a write error too) and aborts the backup.
     { LC_ALL=C grep -a -v -E '^[[:space:]]*(export[[:space:]]+)?CA_ROOT_PASSPHRASE[[:space:]]*[=:]' .env || [ $? -eq 1 ]; } \
