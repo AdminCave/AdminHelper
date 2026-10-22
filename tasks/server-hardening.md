@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Härtung: Startabgleich-Log, Schlüsseldateien, Redis-URL im Log, Surrogate in Request-Bodies, Quelltypen des internen Eingangs — Task-Ledger
-Status: geplant · Branch: feature/server-hardening · Review: pro Task
+Status: aktiv · Branch: feature/server-hardening · Review: pro Task
 Spec: docs/features/server-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full — Server-API: `RequestModel` (Basisklasse aller Request-Schemas) lehnt ein einzelnes Surrogat in jedem Body ab (T5), `POST /api/internal/events` lehnt zwei Quelltypen ab (T6), und der Start schreibt `.secret_key` und die Bootstrap-Dateien neu (T2, T3); der Stack-Lauf fährt einen frischen Server-Start, Monitoring→Server-Ingest und die Web-E2E über echte Bodies. Kein FRP-Datenpfad, keine PKI, kein Install-/Compose-Pfad: kein `scenario`, kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
