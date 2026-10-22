@@ -126,8 +126,10 @@ Semantik: keine Stelle in docs/; Muster der Desktop-UI: `confirmDialog` vor dem 
 Dedup-Key: bug:desktop:ConnectionEditor.svelte:delete-without-confirm
 HEAD: b1432223
 
-### T9 — AppShell: Benachrichtigungen starten nur bei Wechsel von Server oder Benutzer neu (R-0663)  [ ]
+### T9 — AppShell: Benachrichtigungen starten nur bei Wechsel von Server oder Benutzer neu (R-0663)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.notifications.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5cca8d6a 2026-10-22T12:10:16+02:00
+Review: approve (.ah-out/review/desktop-ui-fixes/T9.verdict.json)
 Änderung: Der Effekt `AppShell.svelte:116-121` liest nicht mehr `$session`, sondern einen `$derived`-Schlüssel aus `serverUrl` und `username` der Sitzung (ein String, etwa per `JSON.stringify`, `null` ohne Sitzung): mit Schlüssel `activateNotifications()`, Cleanup `deactivateNotifications()`. `$derived` vergleicht mit `===`; ein neu gemeldetes Sitzungsobjekt mit gleichem Server und Benutzer (nach `refreshSettings`, `stores/session.ts:156-159`, meldet `derived` `:52` es neu) lässt den Effekt stehen. Ein Kommentar nennt das Warum. Neue Testdatei `AppShell.notifications.test.ts` (Aufbau wie `AppShell.workspace.test.ts:18-71`: `session`/`settings` als `writable`, Notifications-Store gemockt; Sitzungswechsel über den Store, nicht über `rerender`): (a) Sitzung A gesetzt → `activateNotifications` 1×; dann ein neues Objekt mit gleichem `serverUrl` und `username` gesetzt → weiter 1×, `deactivateNotifications` 0× (zuerst rot: 1× deactivate, 2× activate); (b) danach anderer `username` → deactivate 1×, activate 2×; (c) danach `null` → deactivate 2×, kein weiteres activate.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.notifications.test.ts src/components/AppShell.workspace.test.ts
 Doku: CHANGELOG.md (Fixed: Speichern der Einstellungen startet die Benachrichtigungen nicht mehr neu; der Feed flackert nicht, und Meldungen aus dieser Luecke verlieren ihre OS-Benachrichtigung nicht)
