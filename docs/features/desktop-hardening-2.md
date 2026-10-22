@@ -60,17 +60,18 @@ Ziel:
 - Der Provisionierungsbefehl enthält jeden Wert als ein Shell-Wort mit wörtlichem Wert; ein Wert aus den Zeichen
   `[A-Za-z0-9@%+=:,./_-]` bleibt, wie er ist (die Anzeige ändert sich für die erzeugten Werte nicht). Ein Token außerhalb
   von `[A-Za-z0-9_-]` oder eine Server-ID, die keine UUID ist, ergibt keinen Befehl, sondern eine Meldung.
-- Kein Code des Desktops überschreibt eine Kopie eines Passworts, als ob das etwas zusicherte; `connection/` erlaubt
-  kein `unsafe`. Die Entwickler-Doku sagt, wie das Passwort zu xfreerdp bzw. in den Credential Manager kommt und dass
-  der Desktop Passwörter und Tokens im Arbeitsspeicher nicht überschreibt.
+- Die eigene Kopie eines Passworts (stdin-Payload für xfreerdp, UTF-16-Kopie für den Credential Manager) nullt der
+  Desktop mit `zeroize` statt mit `unsafe`; `connection/` erlaubt kein `unsafe`. Die Entwickler-Doku sagt, wie das
+  Passwort zu xfreerdp bzw. in den Credential Manager kommt und welche Kopien ungenullt bleiben (Entscheidung am
+  Gate, siehe „Offene Fragen“).
 - `sync_connections` lädt nur im Sync-Workspace, nur von dessen gespeicherter Sync-URL (die Oberfläche muss genau sie
   nennen), immer ohne Geräte-Identität. Name, Argument und Antwort des Commands bleiben.
 - Die Ansible-Commands lehnen im Launcher ab; Kommentar und Doku beschreiben die Pfadprüfung, wie sie wirkt.
 - Nur nach Kevins Ja: `ansible_run` (T5), Capabilities je Prozess (T6).
 
 Nicht-Ziele (YAGNI):
-- Kein `zeroize`/`secrecy` für Passwörter und Tokens (Kevin 2026-10-22: entfernen statt durchgängig nullen); keine
-  neue Abhängigkeit.
+- Kein durchgängiges Nullen aller Kopien von Passwörtern und Tokens (IPC, Webview, Schlüsselbund, Sitzung), kein
+  `secrecy`; `zeroize` nur für die zwei eigenen Kopien aus T2.
 - Keine Änderung an `api_proxy`, an den Zielen eines Ansible-Laufs (Hostnamen aus der Oberfläche, geprüft wie heute,
   `ansible.rs:34-48`) und am Windows-Terminal.
 - Kein Umbau des Provisionierungs-Tabs über die Befehlszeilen hinaus (Auto-Hide, Token-Liste bleiben).
@@ -174,3 +175,8 @@ CHANGELOG (Changed). T4: `desktop.html:182` und `:247` (DE+EN). T5: `desktop.htm
    Launcher kein Command frei, der dort nicht hingehört, und im Workspace-Fenster schränkt eine ACL nichts ein, was die
    Oberfläche nicht braucht; Gewinn wäre nur „verweigert, bis freigegeben“ für künftige Commands, bei Labels,
    `build.rs`, zwei ACL-Dateien und einem GUI-E2E-Lauf als Beweis. Bei „ja“ baut T6 Variante (a).
+
+Entschieden (Kevin 2026-10-22): Frage 1 ja, T5 gebaut. Frage 2 zurückgestellt, T6 `[~]`. T2 abweichend von
+Trade-off 3 (a): die eigene Kopie wird mit `zeroize` genullt statt die Schleife ersatzlos zu entfernen; neue direkte
+Abhängigkeit `zeroize` (Cargo.toml, Cargo.lock, `THIRD_PARTY_LICENSES.md`), der Wächter
+`#![forbid(unsafe_code)]` in `connection/mod.rs` bleibt.

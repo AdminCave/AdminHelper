@@ -29,8 +29,8 @@ Für alle Tasks:
 - Neue Code-Strings (Fehlertexte in Rust) englisch; neue UI-Texte über `dictionaries.ts` (DE+EN).
 - Platzhalter: Hosts unter `.example`, Adressen aus RFC 5737.
 
-Entscheidungen am Gate (Kevin): T5 (IPC-Vertrag) und T6 (Capabilities) sind offen (Spec „Offene Fragen“ 1, 2); ohne
-Antwort bleiben sie `[?]`, die übrigen werden gebaut.
+Entscheidungen am Gate (Kevin 2026-10-22): T5 (IPC-Vertrag) ja, gebaut; T6 (Capabilities) zurückgestellt, `[~]`;
+T2 nullt die eigene Kopie mit `zeroize` statt sie zu entfernen (Spec „Offene Fragen“, Absatz „Entschieden“).
 
 ### T1 — Provisionierungsbefehl: Token und Server-ID im Format des Servers, jeder Wert ein Shell-Wort  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/lib/utils/shell.ts, apps/desktop/ui/src/lib/utils/shell.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, CHANGELOG.md
