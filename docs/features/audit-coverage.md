@@ -52,7 +52,9 @@ Ziel:
 - Jedes `POST`, `PUT` und `DELETE` über `/api/monitoring/{path}`, auf das der Monitoring-Dienst antwortet, schreibt
   `monitoring.post`, `monitoring.put` oder `monitoring.delete` mit `object_type` `monitoring`, dem weitergeleiteten
   Pfad (kodiert, ohne Query) als `object_label`, `detail` `status=<HTTP-Status>` und `status` `success` (< 400) oder
-  `failure`. `GET` schreibt nichts; der Inhalt der Anfrage steht nie im Eintrag.
+  `failure`. Bricht die Weiterleitung nach dem Senden ab (etwa ein Lese-Timeout), entsteht derselbe Eintrag mit
+  `status` `error` und `detail` `error=<Typname des Fehlers>`; ein Verbindungsfehler (nichts gesendet) schreibt
+  nichts (Trade-off 4). `GET` schreibt nichts; der Inhalt der Anfrage steht nie im Eintrag.
 - `user.updated` nennt in `detail` die geänderten Felder, feste Reihenfolge, durch `, ` getrennt: `password` (wenn
   gesendet), `is_admin=true|false` (wenn sich der Wert ändert), `server_ids` (wenn sich die Menge ändert); ändert
   sich nichts, bleibt `detail` leer.
@@ -144,8 +146,12 @@ jedes Mal. Für Python 3.12 im Container nicht geprobt; der Mechanismus ist ders
 3. **Wann `hook.run` schreibt (T1).** Nach dem Lauf, mit `status` aus `result["success"]` — wie `audit.record` es
    verlangt („Call it AFTER the audited operation“, `audit/service.py:9-10`). Ein Eintrag vorher bräuchte einen
    zweiten für das Ergebnis.
-4. **Proxy-Eintrag nur mit Antwort (T3).** Wirft der Client (Monitoring nicht erreichbar), entsteht kein Eintrag:
-   nichts wurde geändert. Das hält, egal ob R-0655 (Fehlerbehandlung des Proxys) vorher oder nachher landet.
+4. **Proxy-Eintrag bei einem Fehler des Clients (T3).** Ein Verbindungsfehler (`ConnectError`, `ConnectTimeout`,
+   `PoolTimeout`, `UnsupportedProtocol`) heißt, nichts wurde gesendet: kein Eintrag. Ein Fehler nach dem Senden
+   (Lese-Timeout, Lese- oder Protokollfehler) kann eine schon übernommene Änderung verbergen: ein Eintrag mit
+   `status` `error` und nur dem Typnamen des Fehlers in `detail` (die Meldung trägt die Ziel-URL); danach wirft der
+   Handler weiter, die Antwort an den Browser bleibt gleich. Das hält, egal ob R-0655 (Fehlerbehandlung des Proxys)
+   vorher oder nachher landet.
 5. **Event `user.promoted` statt `user.updated` (T5).** (a) Eigenes Event nur für die Hochstufung —
    **Empfehlung**, ein Event je sicherheitsrelevantem Übergang, Payload wie `user.deleted`. (b) Allgemeines
    `user.updated` mit geänderten Feldern — mehr Vertrag (Feldliste), die Brücke müsste filtern. (c) Die Brücke ohne
