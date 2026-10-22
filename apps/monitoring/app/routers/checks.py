@@ -426,6 +426,17 @@ def get_status_summary(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
+def _series_or_502(response: dict) -> list:
+    """The series of a query_range response, or 502 if the query failed.
+
+    query_range answers every failure with status "error" and an empty result; read as
+    series, a dead VictoriaMetrics would look like "no data" (R-0636). The first failed
+    query ends the request: no partial chart, no further 10 s wait."""
+    if response.get("status") == "error":
+        raise HTTPException(502, "Metrics store unavailable")
+    return response.get("data", {}).get("result", [])
+
+
 @router.get("/checks/{check_id}/metrics", dependencies=[Depends(require_internal)])
 def get_check_metrics(
     check_id: str,
@@ -475,14 +486,14 @@ def get_check_metrics(
         names = "|".join(metric_names)
         query = f'{{__name__=~"{names}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
-        all_results.extend(result.get("data", {}).get("result", []))
+        all_results.extend(_series_or_502(result))
 
     # Dynamic metrics (zfs pools, disk mounts)
     pattern = _DYNAMIC_METRIC_PATTERNS.get(check_type)
     if pattern:
         query = f'{{__name__=~"{pattern}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
-        all_results.extend(result.get("data", {}).get("result", []))
+        all_results.extend(_series_or_502(result))
 
     # Status timeline (always, with _value suffix)
     status_query = f'monitor_check_status_value{{check_id="{_escape_label(check_id)}"}}'
@@ -495,5 +506,5 @@ def get_check_metrics(
         "checkType": check_type,
         "period": period,
         "data": all_results,
-        "statusHistory": status_result.get("data", {}).get("result", []),
+        "statusHistory": _series_or_502(status_result),
     }

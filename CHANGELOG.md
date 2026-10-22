@@ -21,6 +21,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx werden weiter bis zu
   dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl hoechstens einmal je
   Minute; beim Herunterfahren leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein nicht erreichbares VictoriaMetrics erscheint als Fehler (R-0636):** Scheitert eine Abfrage an
+  VictoriaMetrics, antwortet der Metrik-Abruf (`GET /checks/{id}/metrics`) mit HTTP 502 „Metrics store unavailable“
+  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der
+  Check `disk_forecast` steht dann auf `unknown` mit „Metrics store unavailable“ statt „No disk history yet“. Doku:
+  Monitoring fuer Administratoren (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
