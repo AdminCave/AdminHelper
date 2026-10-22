@@ -38,8 +38,10 @@ Doku: docs/admin/betrieb.html:91 + docs/en/admin/operations.html:58 (nach „Ent
 Beweis: Code-Lesung scripts/backup.sh:50, :117-119; Vergleich scripts/pg-backup.sh:21-30
 HEAD: b1432223
 
-### T2 — backup.sh: `env.sanitized` byte-treu, ein Fehler beim Filtern bricht ab (R-0559)  [ ]
+### T2 — backup.sh: `env.sanitized` byte-treu, ein Fehler beim Filtern bricht ab (R-0559)  [x]
 Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @529910c1 2026-10-22T10:51:28+02:00
+Review: approve (.ah-out/review/ops-scripts-hardening/T2.verdict.json)
 Änderung: `backup.sh:99-102`: `{ LC_ALL=C grep -a -v '^[[:space:]]*CA_ROOT_PASSPHRASE=' .env || [ $? -eq 1 ]; } > "$STAGE/env.sanitized"`, bei einem Fehler (grep Exit ≥ 2, Schreibfehler) Abbruch mit einer Meldung, die keinen Wert nennt; Exit 1 („keine Zeile übrig“) ist kein Fehler. Muster wie `scripts/install.sh:193-203`, Kommentar nennt das Warum (eine Zeile mit einem Byte, das die Locale nicht dekodiert, oder ein NUL-Byte lässt grep sonst Zeilen auslassen). Tests in `restore_guard_test.sh` mit dem Stub aus T1: (a) unter `LC_ALL=C.UTF-8` eine `.env` aus `SECRET_KEY=abc`, `X=caf\xe9-latin1`, `CA_ROOT_PASSPHRASE=pp`, `  CA_ROOT_PASSPHRASE=pp2`, `Y=a\x00b` und `Z=last` ohne abschließenden Zeilenumbruch → `env.sanitized` aus dem Archiv ist byte-gleich (`cmp`) mit einer per `printf` gebauten Erwartung ohne die beiden Passphrase-Zeilen; (b) ein grep-Wrapper (echter Pfad vor dem PATH-Tausch gemerkt, wie `scripts/tests/install_test.sh:60-69`) lässt mit `AH_TEST_GREP_FAIL=1` den Filter auf `CA_ROOT_PASSPHRASE=` mit Exit 2 scheitern → Exit ≠ 0, kein Archiv und keine Zwischendatei im Zielordner; (c) eine `.env` nur mit `CA_ROOT_PASSPHRASE=pp` → Exit 0, `env.sanitized` leer. Zuerst rot: (a) (Zeilen fehlen bzw. Datei leer) und (b) (Exit 0 mit leerem `env.sanitized`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: CHANGELOG.md (Fixed, umlautfrei: `env.sanitized` im Backup verliert keine Zeilen mehr bei Bytes ausserhalb UTF-8 oder einem NUL-Byte; ein Fehler beim Filtern bricht das Backup ab)

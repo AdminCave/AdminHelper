@@ -17,8 +17,13 @@
 # the archive right after writing it, under umask 022: the archive is 0600 from the
 # first byte and gets its name only once complete, a new output dir is 0700; a
 # failed archive write leaves the output dir empty.
+# 12-14: backup.sh's env.sanitized, against the same stubs and a grep wrapper: under
+# C.UTF-8 it is .env byte for byte without the CA_ROOT_PASSPHRASE lines, a Latin-1
+# and a NUL byte included; a failing filter aborts the backup and leaves the output
+# dir empty; a .env with nothing but the passphrase gives an empty env.sanitized.
 #
-# Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils)
+# Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
+#      locale C.UTF-8: without it test 12 cannot run, and the test ends with 75)
 
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -228,7 +233,67 @@ entries=$(ls -A "$WORK/bk/b/out" 2>/dev/null)
   && ok "a failed archive write leaves the output dir empty" \
   || bad "failed write: rc=$rc entries=[$entries] logged=[$(cat "$WORK/bk/b/tar.log" 2>/dev/null)] out=[$out]"
 
+# --- 12.-14. backup.sh: env.sanitized is .env without the passphrase lines ───
+# grep takes a file for binary once it holds a NUL byte or a byte the caller's
+# locale cannot decode, and leaves lines out (exit 0, "binary file matches" on
+# stderr): env.sanitized lost the Latin-1 line, with a NUL byte every line, and
+# `|| true` passed any grep error off as an empty file. The grep wrapper runs the
+# real grep, except that AH_TEST_GREP_FAIL=1 makes the filter on
+# CA_ROOT_PASSPHRASE= fail with exit 2 and logs that it did. The expectation is
+# written down apart, never read back from .env. grep ends the last line with a
+# newline, so the expectation has one after Z=last although .env has none.
+AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
+cat > "$WORK/bk/bin/grep" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *CA_ROOT_PASSPHRASE=*)
+    if [ "${AH_TEST_GREP_FAIL:-}" = 1 ]; then echo "$*" >> "$STUB_DIR/grep.log"; exit 2; fi ;;
+esac
+exec "$AH_TEST_REAL_GREP" "$@"
+STUB
+chmod +x "$WORK/bk/bin/grep"
+mkdir -p "$WORK/bk/c" "$WORK/bk/d" "$WORK/bk/e"
+# bk_env <stub dir> — extracts env.sanitized from the archive in <stub dir>/out to
+# <stub dir>/x and prints its path (a missing archive or member leaves no file).
+bk_env() {
+  mkdir -p "$1/x"
+  tar xzf "$1/out/"adminhelper-backup-*.tar.gz -C "$1/x" ./env.sanitized >/dev/null 2>&1
+  echo "$1/x/env.sanitized"
+}
+
+LOCALE_SKIP=""
+if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
+  LOCALE_SKIP="test 12 (bytes outside UTF-8 in .env) needs the locale C.UTF-8, this system has none"
+  echo "  SKIP $LOCALE_SKIP"
+else
+  printf 'SECRET_KEY=abc\nX=caf\xe9-latin1\nCA_ROOT_PASSPHRASE=pp\n  CA_ROOT_PASSPHRASE=pp2\nY=a\0b\nZ=last' > "$WORK/bk/run/.env"
+  printf 'SECRET_KEY=abc\nX=caf\xe9-latin1\nY=a\0b\nZ=last\n' > "$WORK/bk/c/expected"
+  out=$(bk_run "$WORK/bk/c" "$WORK/bk/c/out" LC_ALL=C.UTF-8); rc=$?
+  sanitized=$(bk_env "$WORK/bk/c")
+  { [ $rc -eq 0 ] && cmp -s "$WORK/bk/c/expected" "$sanitized"; } \
+    && ok "env.sanitized is .env without the passphrase lines, byte for byte (Latin-1 and NUL line too)" \
+    || bad "Latin-1/NUL .env: rc=$rc env.sanitized=[$(cat -v "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+fi
+
+printf 'SECRET_KEY=sk9secret\nCA_ROOT_PASSPHRASE=pp9secret\n' > "$WORK/bk/run/.env"
+out=$(bk_run "$WORK/bk/d" "$WORK/bk/d/out" AH_TEST_GREP_FAIL=1); rc=$?
+entries=$(ls -A "$WORK/bk/d/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ -s "$WORK/bk/d/grep.log" ] && [ ! -e "$WORK/bk/d/tar.log" ] \
+    && [ -d "$WORK/bk/d/out" ] && [ -z "$entries" ]; } \
+  && ok "a failing .env filter aborts the backup and leaves the output dir empty" \
+  || bad "failing filter: rc=$rc entries=[$entries] grep=[$(cat "$WORK/bk/d/grep.log" 2>/dev/null)] tar=[$(cat "$WORK/bk/d/tar.log" 2>/dev/null)] out=[$out]"
+{ grep -q 'ERROR.*\.env' <<<"$out" && ! grep -qE 'sk9secret|pp9secret' <<<"$out"; } \
+  && ok "the abort says why and names no value" || bad "abort message: [$out]"
+
+printf 'CA_ROOT_PASSPHRASE=pp\n' > "$WORK/bk/run/.env"
+out=$(bk_run "$WORK/bk/e" "$WORK/bk/e/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/e")
+{ [ $rc -eq 0 ] && [ -f "$sanitized" ] && [ ! -s "$sanitized" ]; } \
+  && ok "a .env with nothing but the passphrase gives an empty env.sanitized" \
+  || bad "passphrase-only .env: rc=$rc size=$(stat -c '%s' "$sanitized" 2>/dev/null) out=[$out]"
+
 echo
 echo "──────────────────────────────────────────"
 echo "  restore_guard_test: ${PASS} passed, ${FAIL} failed"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+[ -z "$LOCALE_SKIP" ] || { echo "SKIP: $LOCALE_SKIP"; exit 75; }

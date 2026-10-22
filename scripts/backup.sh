@@ -101,7 +101,12 @@ dump_db adminhelper_monitor
 
 # --- Secrets (passphrase stripped) -----------------------------------------
 if [ -f .env ]; then
-    grep -v '^[[:space:]]*CA_ROOT_PASSPHRASE=' .env > "$STAGE/env.sanitized" || true
+    # LC_ALL=C grep -a: grep takes a file with a NUL byte or a byte the caller's
+    # locale cannot decode for binary and leaves lines out, which would drop them
+    # from env.sanitized. grep -v exits 1 when it filters every line, which is
+    # fine; 2 is an error (a write error too) and aborts the backup.
+    { LC_ALL=C grep -a -v '^[[:space:]]*CA_ROOT_PASSPHRASE=' .env || [ $? -eq 1 ]; } > "$STAGE/env.sanitized" \
+        || { echo "[backup] ERROR: could not copy .env without CA_ROOT_PASSPHRASE — backup aborted." >&2; exit 1; }
     echo "[backup] .env gesichert (CA_ROOT_PASSPHRASE entfernt — getrennt aufbewahren!)"
 fi
 

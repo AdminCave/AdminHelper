@@ -15,6 +15,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
   bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
 
+### Fixed
+
+- **Backup: `env.sanitized` verliert keine Zeilen mehr bei Bytes ausserhalb UTF-8 oder einem NUL-Byte (R-0559):**
+  `scripts/backup.sh` filterte die `.env` unter der Locale des Aufrufers. `grep` haelt eine Zeile mit einem Byte, das
+  diese Locale nicht dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und liess sie aus,
+  bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
+  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
+  `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
+  ab, ohne ein Archiv zu hinterlassen.
+
 ## [0.46.0] - 2026-10-22
 
 ### Added
