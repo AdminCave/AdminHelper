@@ -242,6 +242,51 @@ FAKE_RUN_OUT="MB_SID=s MB_PTOK=p MB_ADMIN_PW=w MB_MONITOR_KEY=k" bash "$WARM" po
   && [ "$(grep '^clone' "$FAKE_LOG" | head -1 | grep -c linux-server)" = "1" ] \
   && ok "pond warms the server first, then the desktop" || bad "pond: $(grep '^clone' "$FAKE_LOG")"
 
+echo "── warm.sh: the gui slot, a second full box of the lane ──"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\ndesktop_ttl=8h\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3002 FAKE_NAME=ah-gui-main-bbbb bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^clone --profile linux-full --role gui --ttl 8h$' "$FAKE_LOG" \
+  && grep -q "^run 3002 --sync --timeout 2700 -- AH_BOOTSTRAP_PROFILE=full bash scripts/vm/bootstrap_linux.sh$" "$FAKE_LOG" \
+  && ok "warm.sh gui clones the full profile with the gui role and bootstraps it full" \
+  || bad "gui clone: rc=$rc out=$OUT log=$(cat "$FAKE_LOG")"
+[ "$(slot gui)" = 3002 ] && [ "$(slot gui_name)" = ah-gui-main-bbbb ] && [ "$(slot gui_ttl)" = 8h ] \
+  && ok "... and records gui, gui_name and gui_ttl" || bad "gui slot: $(cat "$AH_VM_STATE_DIR/warm.env")"
+[ "$(slot desktop)" = 3001 ] && [ "$(slot desktop_name)" = ah-desktop-main-aaaa ] && [ "$(slot desktop_ttl)" = 8h ] \
+  && ! grep -q '^run 3001' "$FAKE_LOG" && ! grep -q -- '--role desktop' "$FAKE_LOG" \
+  && ok "... and leaves the desktop slot standing" || bad "desktop slot after gui: $(cat "$AH_VM_STATE_DIR/warm.env")"
+reset_state
+printf 'desktop=3001\ngui=3002\ngui_name=ah-gui-main-bbbb\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$(running_json 3002 main gui ah-gui-main-bbbb)" bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "reuse gui box 3002 (already warm)" <<<"$OUT" && ! grep -q '^clone' "$FAKE_LOG" && ! grep -q '^run' "$FAKE_LOG" \
+  && ok "a running gui slot is reused" || bad "gui reuse: rc=$rc out=$OUT log=$(cat "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ngui=3002\ngui_name=ah-gui-main-bbbb\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_NAME=ah-gui-main-cccc FAKE_LIST_JSON="$(running_json 3002 main desktop ah-gui-main-bbbb)" bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "recorded gui VM 3002 carries role desktop, not gui — re-warming" <<<"$OUT" \
+  && ! grep -q "reuse gui box" <<<"$OUT" && ! grep -q '^run 3002' "$FAKE_LOG" \
+  && [ "$(slot gui)" = 3005 ] && [ "$(slot gui_name)" = ah-gui-main-cccc ] && [ "$(slot desktop)" = 3001 ] \
+  && ok "a desktop box on the gui slot's VMID is not taken over; a new gui box takes the slot" \
+  || bad "gui other role: rc=$rc out=$OUT log=$(cat "$FAKE_LOG") warm=$(cat "$AH_VM_STATE_DIR/warm.env")"
+
+echo "── warm.sh: a warm.env it cannot write is no ready box ──"
+# lib.sh's warm_set returns 1 when warm.env.lock is not free within 30 s. A flock
+# that gives up at once stands in for that lock, as in lib_vm_test.sh.
+BUSY="$WORK/flock-busy"; mkdir -p "$BUSY"
+printf '#!/bin/sh\nexit 1\n' > "$BUSY/flock"; chmod +x "$BUSY/flock"
+reset_state
+OUT=$(PATH="$BUSY:$PATH" FAKE_NEWID=3002 FAKE_NAME=ah-gui-main-bbbb bash "$WARM" gui 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "warm.env not written on 3002 — box kept for inspection" <<<"$OUT" && grep -q "vm.py destroy 3002" <<<"$OUT" \
+  && ! grep -q "warm boxes ready" <<<"$OUT" && [ -z "$(slot gui)" ] \
+  && ok "warm_role: a lock that never comes free fails warm.sh, names the box, claims no slot" \
+  || bad "gui unwritten: rc=$rc out=$OUT warm=$(cat "$AH_VM_STATE_DIR/warm.env" 2>/dev/null)"
+reset_state
+OUT=$(PATH="$BUSY:$PATH" FAKE_NEWID=3002 FAKE_RUN_OUT="MB_SID=s MB_PTOK=p MB_ADMIN_PW=w MB_MONITOR_KEY=k" bash "$WARM" server 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "warm.env not written on 3002 — box kept for inspection" <<<"$OUT" \
+  && ! grep -q "warm boxes ready" <<<"$OUT" && ! grep -q "server stack up" <<<"$OUT" && [ -z "$(slot server)" ] \
+  && ok "warm_server: the same, no stack reported up" \
+  || bad "server unwritten: rc=$rc out=$OUT warm=$(cat "$AH_VM_STATE_DIR/warm.env" 2>/dev/null)"
+
 echo "── warm.sh: an unknown role ──"
 reset_state
 OUT=$(bash "$WARM" bogus 2>&1); rc=$?
@@ -340,6 +385,51 @@ reset_state
 OUT=$(bash "$REAP" --bogus 2>&1); rc=$?
 [ $rc -eq 2 ] && ok "an unknown flag is rejected" || bad "unknown flag: rc=$rc out=$OUT"
 
+echo "── reap.sh: the gui slot, and --role frees exactly one slot ──"
+three_slots() {  # a fresh state with a desktop, a server (credentials and all) and a gui slot
+  reset_state
+  printf '%s\n' desktop=3001 desktop_name=ah-desktop-main-aaaa desktop_ttl=8h \
+    server=3002 server_ip=192.0.2.42 server_admin_pw=pw server_ptok=p \
+    gui=3003 gui_name=ah-gui-main-cccc gui_ttl=8h > "$AH_VM_STATE_DIR/warm.env"
+}
+three_slots
+OUT=$(bash "$REAP" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qx 'destroy --lane main --role desktop --no-scenario --expect-name ah-desktop-main-aaaa 3001' "$FAKE_LOG" \
+  && grep -qx 'destroy --lane main --role server --no-scenario 3002' "$FAKE_LOG" \
+  && grep -qx 'destroy --lane main --role gui --no-scenario --expect-name ah-gui-main-cccc 3003' "$FAKE_LOG" \
+  && [ "$(grep -c '^destroy' "$FAKE_LOG")" = 3 ] && ! grep -q . "$AH_VM_STATE_DIR/warm.env" \
+  && ok "without --role, the desktop, server and gui slots go in a destroy each, and warm.env is emptied" \
+  || bad "three slots: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") warm=$(cat "$AH_VM_STATE_DIR/warm.env")"
+three_slots
+OUT=$(bash "$REAP" --role gui 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(grep '^destroy' "$FAKE_LOG")" = 'destroy --lane main --role gui --no-scenario --expect-name ah-gui-main-cccc 3003' ] \
+  && ok "--role gui sends exactly the gui slot to vm.py destroy, with lane, role, --no-scenario and its name" \
+  || bad "--role gui destroy: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
+[ -z "$(slot gui)" ] && [ -z "$(slot gui_name)" ] && [ -z "$(slot gui_ttl)" ] \
+  && [ "$(slot desktop)" = 3001 ] && [ "$(slot desktop_name)" = ah-desktop-main-aaaa ] && [ "$(slot desktop_ttl)" = 8h ] \
+  && [ "$(slot server)" = 3002 ] && [ "$(slot server_ip)" = 192.0.2.42 ] && [ "$(slot server_ptok)" = p ] \
+  && ok "... clears gui, gui_name and gui_ttl and leaves the desktop and server slots standing" \
+  || bad "--role gui warm.env: $(cat "$AH_VM_STATE_DIR/warm.env")"
+grep -q '^reap$' "$FAKE_LOG" && [ "$(tail -1 "$FAKE_LOG")" = list ] \
+  && ok "... and the expiry sweep and the closing list run as without it" || bad "--role gui sweep: $(cat "$FAKE_LOG")"
+three_slots
+OUT=$(bash "$REAP" --role server 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(grep '^destroy' "$FAKE_LOG")" = 'destroy --lane main --role server --no-scenario 3002' ] \
+  && [ -z "$(slot server)" ] && [ -z "$(slot server_ip)" ] && [ -z "$(slot server_admin_pw)" ] && [ -z "$(slot server_ptok)" ] \
+  && [ "$(slot desktop)" = 3001 ] && [ "$(slot gui)" = 3003 ] && [ "$(slot gui_name)" = ah-gui-main-cccc ] \
+  && ok "--role server takes the server's credentials with its slot, the other slots stay" \
+  || bad "--role server: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") warm=$(cat "$AH_VM_STATE_DIR/warm.env")"
+role_refused() {  # role_refused <reap.sh args…> — exit 2, vm.py never called, warm.env as it was
+  three_slots
+  OUT=$(bash "$REAP" "$@" 2>&1); rc=$?
+  [ $rc -eq 2 ] && [ ! -s "$FAKE_LOG" ] && [ "$(slot gui)" = 3003 ] && [ "$(slot desktop)" = 3001 ] \
+    && ok "reap.sh $*: exit 2 before vm.py is called, warm.env untouched" \
+    || bad "reap.sh $*: rc=$rc log=$(cat "$FAKE_LOG") out=$OUT"
+}
+role_refused --role nope
+role_refused --role
+role_refused --role --all
+
 # ══ iter.sh renews with the box's own frist (R-0049) ══════════════════════════
 # A box warmed for 20 minutes must not become an 8-hour box because a lint ran
 # on it. warm.sh records the frist as desktop_ttl; iter.sh renews with that,
@@ -400,6 +490,39 @@ OUT=$(FAKE_LIST_JSON="$RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="a suite line that en
 [ $rc -eq 2 ] && ! grep -q "nothing was synced" <<<"$OUT" && grep -q "auto-debug captured" <<<"$OUT" \
   && ok "a line of the box's own output is no refusal by vm.py: the run stays a red run" \
   || bad "box output: rc=$rc out=$OUT"
+
+echo "── iter.sh --slot gui: box, name and frist come from the gui slot ──"
+# heavy.sh runs the GUI part of `all` on the lane's second full box; a run
+# without --slot stays on desktop. Distinct frists show whose one is renewed.
+TWO_RUNNING='{"vms": [{"vmid": 3001, "status": "running", "lane": "main", "role": "desktop", "name": "ah-desktop-main-aaaa", "scenario": ""}, {"vmid": 3002, "status": "running", "lane": "main", "role": "gui", "name": "ah-gui-main-bbbb", "scenario": ""}]}'
+two_slots() {  # a fresh state with a warm desktop and a warm gui slot, names and frists recorded
+  reset_state
+  printf '%s\n' desktop=3001 desktop_name=ah-desktop-main-aaaa desktop_ttl=8h \
+    gui=3002 gui_name=ah-gui-main-bbbb gui_ttl=3h > "$AH_VM_STATE_DIR/warm.env"
+}
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" --slot gui lint 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "^run 3002 --sync --timeout 3000 --out $WORK/out --extend 3h --expect-name ah-gui-main-bbbb -- .*bash scripts/tests/run.sh lint$" "$FAKE_LOG" \
+  && [ "$(grep -c '^run' "$FAKE_LOG")" = 1 ] && ! grep -q '^clone' "$FAKE_LOG" \
+  && ok "iter.sh --slot gui runs on the gui box, renews with gui_ttl and names gui_name" \
+  || bad "--slot gui: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" lint 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "^run 3001 --sync --timeout 3000 --out $WORK/out --extend 8h --expect-name ah-desktop-main-aaaa -- .*bash scripts/tests/run.sh lint$" "$FAKE_LOG" \
+  && ! grep -q '^run 3002' "$FAKE_LOG" \
+  && ok "without --slot the run stays on the desktop box, with its frist and name" \
+  || bad "no --slot: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" --slot gui --cmd true 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "^run 3002 --sync --timeout 3000 --out $WORK/out --extend 3h --expect-name ah-gui-main-bbbb -- .*true$" "$FAKE_LOG" \
+  && ! grep -q '^run 3001' "$FAKE_LOG" \
+  && ok "iter.sh --slot gui --cmd runs the command on the gui box" \
+  || bad "--slot gui --cmd: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+two_slots
+OUT=$(FAKE_LIST_JSON="$TWO_RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="vm.py: 3002 is named ah-gui-main-cccc, not ah-gui-main-bbbb — refusing" \
+  AH_OUT_DIR="$WORK/out" bash "$ITER" --slot gui lint 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "nothing was synced; next: bash scripts/vm/warm.sh gui$" <<<"$OUT" \
+  && ok "a gui box vm.py refuses by name points at warm.sh gui" || bad "gui refused: rc=$rc out=$OUT"
 
 echo "── warm.sh: the server slot and the clone's name ──"
 reset_state

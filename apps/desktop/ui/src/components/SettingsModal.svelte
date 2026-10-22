@@ -160,6 +160,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       pinResetMsgKey = 'settings.resetCertPin.missingUrl';
       return;
     }
+    // The same step as the pin reset on the login screen, so the same warning first.
+    asking += 1;
+    const ok = await confirmDialog($t('login.resetPin.confirmMitm'), {
+      confirmLabel: $t('settings.resetCertPin'),
+    });
+    asking -= 1;
+    if (!ok) return;
     try {
       await resetServerCertPin(target);
       pinResetMsgKey = 'settings.resetCertPin.done';
@@ -418,11 +425,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span>{$t('settings.allowSelfSigned')}</span>
           </label>
           <div class="sm-reset-pin">
-            <button class="btn ghost small" onclick={onResetPin}
+            <button class="btn ghost small" data-action="pin-reset" onclick={onResetPin}
               >{$t('settings.resetCertPin')}</button
             >
             <span class="field-label">{$t('settings.resetCertPin.hint')}</span>
-            {#if pinResetMsgKey}<span class="sm-reset-msg">{$t(pinResetMsgKey)}</span>{/if}
+            {#if pinResetMsgKey}<span class="sm-reset-msg" data-msg="pin-reset"
+                >{$t(pinResetMsgKey)}</span
+              >{/if}
           </div>
         {/if}
 

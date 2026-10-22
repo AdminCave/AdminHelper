@@ -1222,21 +1222,28 @@ Suites auf einer ephemeren Proxmox-VM (das Token in `~/.config/adminhelper/pve.e
 Konfiguration im gitignoreten `.claude/settings.local.json`; siehe „VMs mit vm.py“).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
-[--only <keys…>] [--step <name>]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
+[--only <keys…>] [--step <name>] [--part gui|rest]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
 `--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
-Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
+Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Test,
+`--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil).
+`scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
-  `bash scripts/vm/warm.sh <desktop|server|pond>` hydriert **einmal** und merkt die
-  VMID und den Namen aus `clone` (`.vm/warm.env`). Wieder genommen wird der Slot nur, solange
-  `vm.py list` auf der VMID eine laufende Box der eigenen Lane mit seiner Rolle, ohne Szenario
-  und unter diesem Namen zeigt; einen Slot ohne Namen uebernimmt `warm.sh` einmal. Danach ist
-  jede Iteration inkrementell (`target/` +
+  `bash scripts/vm/warm.sh <desktop|gui|server|pond>` hydriert **einmal** und merkt die
+  VMID und den Namen aus `clone` (`.vm/warm.env`); `gui` ist eine zweite volle Box derselben
+  Lane mit eigenem Slot fuer den GUI-Teil des Sammellaufs. Wieder genommen wird der Slot
+  nur, solange `vm.py list` auf der VMID eine laufende Box der eigenen Lane mit seiner
+  Rolle, ohne Szenario und unter diesem Namen zeigt; einen Slot ohne Namen uebernimmt
+  `warm.sh` einmal. Danach ist jede Iteration inkrementell (`target/` +
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
   `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
-  auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf. Bei Fehler
+  auf der warmen Box. Ein vorangestelltes `--slot gui` (Layer-Form und `--cmd`) faehrt auf
+  der Box des Slots `gui` statt `desktop`, mit deren Namen und Frist; mit `--desktop` gibt
+  es kein `--slot`. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf, mit
+  `--role <desktop|server|gui>` nur diesen einen Slot samt seinen Eintraegen in `warm.env`
+  (beim Server auch die Zugangsdaten); die anderen Slots bleiben stehen. Bei Fehler
   bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
   landen automatisch lokal unter `.ah-out/`.
 - **Parallele Lanes.** Jedes Vorhaben baut in einem eigenen Git-Worktree
@@ -1256,8 +1263,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   dem naechsten Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
-  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der
-  Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `worktree-teardown.sh <pfad> <slug>`
+  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit, und diese Werte gehen
+  vor dem `git` der Box, auch wenn der Sync aus dem Haupt-Checkout ein Repo mitbringt.
+  Ein Test, der auf der Box `git` voraussetzt, gehoert deshalb nicht auf die Box.
+  `worktree-teardown.sh <pfad> <slug>`
   zerstoert die VMs der Lane und raeumt Worktree, Test-DB, Venv und den gemergten Branch ab —
   auch dann, wenn der Worktree schon von Hand entfernt wurde.
   Ablauf eines Vorhabens im eigenen Worktree: `CLAUDE.md` §8.
@@ -1269,8 +1278,8 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   Unter der Summary nennt der Lauf die Go-Version, mit der die Server-Box das Agent-Binary
   der Pakete gebaut hat (`go version (agent .deb, server box): …`, aus dem Binary gelesen).
   Die Frist der Warm-Box kommt aus `AH_WARM_TTL` (Default 8h); `iter.sh` verlaengert bei
-  jedem Lauf um genau diese Frist (warm.sh merkt sie als `desktop_ttl` in `.vm/warm.env`),
-  eine bewusst kurze Box bleibt also kurz.
+  jedem Lauf um genau diese Frist (warm.sh merkt sie je Slot als `desktop_ttl` bzw.
+  `gui_ttl` in `.vm/warm.env`), eine bewusst kurze Box bleibt also kurz.
 
 ### Wochenlauf (heavy.sh)
 
@@ -1288,17 +1297,43 @@ tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warme Box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone
-  --strict`; `weekly` = beides seriell. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
+- `all` = `run.sh all --strict` auf **zwei Boxen gleichzeitig**: Teil `rest`
+  (`--part rest`) auf der warmen Box des Slots `desktop`, Teil `gui` (`--part gui`, die
+  Desktop-GUI-E2E samt Smoke-Test) auf einer zweiten Box derselben Lane (`warm.sh gui`,
+  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. `PASS` nur mit zwei
+  gruenen Teilen: ein Teil, der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch
+  Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
+  roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
+  (`FAIL in part rest`). Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile.
+  Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach Teil
+  `rest` seriell auf der Box des Slots `desktop` (`iter.sh all --strict --part gui`): ein
+  laengerer Lauf statt eines verlorenen. Die Notizen sagen es mit der letzten Zeile aus
+  `warm-gui.log`, die Ebenen-Zeile nennt zweimal dieselbe Box, eine GUI-Box gibt es nicht
+  freizugeben, und das Urteil bleibt `PASS` nur mit zwei gruenen Teilen. Verweigert `warm.sh gui`
+  (Exit 2), laeuft nichts seriell, der Lauf ist UNVERIFIED.
+  Nach dem Lauf gibt `heavy.sh` die GUI-Box frei (`reap.sh --role gui`), wenn Teil `gui` gruen
+  ist (ein `flaky` Schritt zaehlt nicht als rot); ist er rot oder `infra`, bleibt sie zur Sichtung
+  stehen, bis ihre Frist ablaeuft, und die Notizen nennen `python3 scripts/vm/vm.py ssh <vmid>` —
+  sofern sie nicht schon vor einer Zweit-VM oder dem Capstone ging (siehe Klassifikation).
+  `capstone` = `multibox.sh --capstone --strict`; `weekly` = beides seriell, der Capstone
+  bekommt die Box des Slots `desktop`. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
   UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL
   stoppt ihn nicht.
-- **Vorab:** `vm.py doctor --roles <was der Modus klont>`, und `vm.py list --json` darf keine
+- **Vorab:** `vm.py doctor --roles <was der Modus klont>` — bei `all` nur der Slot `desktop`,
+  wenn seine Box nicht schon laeuft (sonst ein leeres `--roles`); ob die GUI-Box passt,
+  entscheidet die Kapazitaetspruefung von `vm.py clone` —, und
+  `vm.py list --json` darf keine
   Box einer fremden Lane und nichts Geleaktes auf der eigenen zeigen — sonst ist die
   Kapazitaet nicht da und der Lauf bricht ab, bevor er eine VM verbraucht.
 - **Report:** `.ah-out/weekly/<jjjj-mm-tt-hhmm>/report.md`. Erste Zeile ist das Urteil
   (`PASS` | `FAIL` | `UNVERIFIED (<grund>)`), dann die Summary-Zeilen der Wrapper
-  **woertlich**, die Schritt-Tabelle, „Kevin sichtet", die Notizen, die `audit.yml`-Zeile und
-  die VM-Liste danach. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
+  **woertlich** (bei `all` je Teil mit Etikett: `[rest] run.sh[all]: …`, `[gui] …`), die
+  Schritt-Tabelle (alle Schritte beider Teile mit Sekunden und Box, dazu **eine** Ebenen-Zeile
+  mit Wandzeit, `<box-rest>+<box-gui>` und `rest <s> s, gui <s> s`), „Kevin sichtet", die
+  Notizen, die `audit.yml`-Zeile und die VM-Liste danach. Jeder Teil hat sein Log
+  (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis (`rest/`, `gui/`: Artefakt,
+  Screenshots, Logs der Box); `steps-all.tsv` fuehrt die Schritte beider Teile, den Teil in der
+  vierten Spalte. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
   Session-Start in Zeile 4 des `AH-STATUS`-Blocks. Die `audit.yml`-Zeile erzeugt bei rot genau
   **eine** REL-Zeile je roter Phase: der Eintrag bleibt in `seen.md` offen (`deps-audit · open`),
   bis ein Lauf mit `success` ihn schliesst (`resolved`) — abgebrochene oder uebersprungene Laeufe
@@ -1313,23 +1348,26 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   `web-playwright.xml` bzw. `web-live.xml` (nur mit gesetztem `AH_OUT_DIR`, sonst schriebe der
   Reporter auf stdout) und die Desktop-E2E je `wdio run` eine `desktop-e2e-<ms>-<cid>.xml`
   (`@wdio/junit-reporter`). Jeder `run.sh`-Lauf verwirft vorher die XMLs des
-  letzten, und `heavy.sh` leert das lokale `junit/` vor dem Lauf: der Pull von der Box loescht
-  nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert das gezogene `junit/`
-  nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die Report-Zeile `JUnit:` nennt, wie viele
-  XMLs dort liegen.
+  letzten, und `heavy.sh` leert das `junit/` im Zieh-Verzeichnis jedes Teils vor dem Lauf: der
+  Pull von der Box loescht nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert
+  das gezogene `junit/` beider Teile nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die
+  Report-Zeile `JUnit:` nennt, wie viele XMLs dort liegen.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
-  steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
+  steht also auch `skip` in der Spalte — eine Zeile je Schritt (Spalte `vm` = Box seines
+  Teils) plus eine Ebenen-Zeile (bei `all` mit `vm` = `<box-rest>+<box-gui>`),
   committet im privaten Repo, **nie** gepusht; Felder mit Komma oder Anfuehrungszeichen
   sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
   Layer Pflicht (Box-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
   `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
-- **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
+- **Klassifikation.** `infra` gilt fuer die **ganze Ebene** (bei `all` fuer den ganzen Teil),
+  nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `vm.py: capacity` oder
   `privilege` (und auf der Ein-Box-Ebene zusaetzlich `vm.py: no ip|no ssh|timeout|sync failed|
-  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report hat dann bewusst keine
+  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene bzw. den
+  Teil sofort — er hat dann bewusst keine Zeilen in der
   Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine Regression. Meldet das
   Box-Artefakt einen Pflicht-Schritt als `strict-failed` (SKIP unter `--strict`), ist die Ebene
   ebenfalls `infra`, die Schritt-Tabelle bleibt aber stehen: gelaufene Schritte `pass`, die
@@ -1343,7 +1381,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Folgefehler, endet die Ebene UNVERIFIED mit dem Grund „capstone infra: …" und der
   Multibox-Summary-Zeile; jeder FAIL, der nicht auf einen Abbruch seiner Rolle folgt,
   macht die Ebene FAIL. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert:
-  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
+  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`; im Teil
+  `gui` mit `iter.sh --slot gui`, nach einem seriellen Lauf auf der Box `desktop`) — ein
+  gruener Lauf ⇒ `flaky`
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
   (Worktree `.ah-worktrees/w2`, Lane `w2`): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile
@@ -1353,6 +1393,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die
   stabile Signatur, die eine Regressions-Behauptung braucht — keine Zweit-VM).
   `--no-second-vm` ueberspringt die Zweit-VM, `--base <sha>` setzt den Vergleichs-Commit.
+  Vor der ersten Zweit-VM und vor dem Capstone (`weekly`) gibt `heavy.sh` die GUI-Box seines
+  Laufs frei (`reap.sh --role gui`, einmal je Lauf, die Notizen nennen es), weil neben ihr und
+  der Box des Slots `desktop` die `w2`-Box bzw. die Capstone-Rollen nicht passen; die
+  Zweit-VM-Pruefungen laufen deshalb erst, wenn beide Teile alle Wiederholungen hinter sich haben.
 - **Exit-Codes:** `0` = PASS, `1` = FAIL, `74` = UNVERIFIED (Infrastruktur — der Lauf konnte
   nicht stattfinden, ueber den Code ist damit nichts bekannt), `2` = Usage. Als Infrastruktur
   zaehlen auch die Faelle, in denen die Wrapper nur `1` liefern: keine warme Box, Warm-Pond
