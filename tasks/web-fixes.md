@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Theme-Skript unter der CSP, Frist des Hook-Laufs, Abmelden, Selbst-Bearbeitung, Seitenspeicher, confirmDialog — Task-Ledger
-Status: aktiv · Branch: feature/web-fixes · Review: pro Task
+Status: bereit · Branch: feature/web-fixes · Review: pro Task
 Spec: docs/features/web-fixes.md (Roadmap R-0654, R-0647, R-0648, R-0653, R-0652, R-0476)
 Heavy: none — nur `apps/web` und Doku; kein Server-, Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, keine Route, kein Schema, kein CSP-Header (`apps/server/app/main.py:443-453` bleibt); die Web-E2E samt neuem Projekt `chromium-build` (T3) fährt die PR-CI im Job `frontend-e2e`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -146,8 +146,10 @@ Beweis: feature/web-fixes@3dfa4ddf · `bash scripts/dev/verify.sh web --strict` 
 Orakel: contract — `hooks.run` postet mit der Frist von 75 s
 HEAD: 3dfa4ddf
 
-### T10 — UserModal: Fehlerpfad beim eigenen Passwortwechsel und Reihenfolge PUT vor Abmeldung (R-0652)  [ ]
+### T10 — UserModal: Fehlerpfad beim eigenen Passwortwechsel und Reihenfolge PUT vor Abmeldung (R-0652)  [x]
 Komponente: web · Dateien: apps/web/src/modals/UserModal.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @d71ca116 2026-10-22T12:24:00+02:00
+Review: approve (.ah-out/review/web-fixes/T10.verdict.json)
 Änderung: Fund des testers (wichtig), nur Tests. In `UserModal.test.ts` Test (a) zusätzlich: `users.update` läuft vor `authApi.logout` (`mock.invocationCallOrder`). Neuer Test (d): eigener Nutzer mit Passwort, `update` verwirft mit `new ApiError(422, …)` (wie der Server bei einem Passwort unter 8 Zeichen, `apps/server/app/modules/users/schemas.py:68`) → `authApi.logout` nicht aufgerufen, `get(auth).user` weiter gesetzt, `onClose` nicht aufgerufen, kein Info-Toast mit dem Text von `toast.user.ownPasswordChanged`, ein Fehler-Toast. Zeigt der Code (`UserModal.svelte:78-86`, `:105-106`) dabei ein anderes Verhalten, `[?]` statt den Test anzupassen. Mutationsprobe nur in einer Kopie unter dem eigenen Scratch-Verzeichnis, nicht im Bau-Worktree: `auth.logout()` vor `users.update` → (a) rot; eine Abmeldung auch im `catch` → (d) rot; beide Ergebnisse in den Commit-Body.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/UserModal.test.ts
 Doku: keine (nur Tests)

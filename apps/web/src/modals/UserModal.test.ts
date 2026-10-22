@@ -27,7 +27,7 @@ import UserModal from './UserModal.svelte';
 import { update } from '$lib/api/users';
 import * as authApi from '$lib/api/auth';
 import { auth, isAdmin } from '$lib/stores/auth';
-import type { User } from '$lib/api/types';
+import { ApiError, type User } from '$lib/api/types';
 import { language } from '$lib/i18n';
 import { translations } from '$lib/i18n/dictionaries';
 import { toasts, dismissToast } from '$lib/stores/notifications';
@@ -77,6 +77,10 @@ describe('UserModal editing the signed-in admin', () => {
 
     await waitFor(() => expect(authApi.logout).toHaveBeenCalledTimes(1));
     expect(update).toHaveBeenCalledWith(1, expect.objectContaining({ password: 'a-new-password' }));
+    // The PUT goes out first: logging out before it drops the token, and the password stays old.
+    expect(vi.mocked(update).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(authApi.logout).mock.invocationCallOrder[0],
+    );
     expect(get(auth).user).toBeNull();
     expect(m.onClose).toHaveBeenCalledTimes(1);
     await waitFor(() =>
@@ -85,6 +89,27 @@ describe('UserModal editing the signed-in admin', () => {
       ),
     );
     expect(get(toasts).map((t) => t.message)).not.toContain(de['toast.user.saved']);
+  });
+
+  it('keeps the session and shows the error when the server refuses the own password', async () => {
+    // As the server answers a password under 8 characters (UserUpdate.password, min_length=8).
+    const refused = 'String should have at least 8 characters';
+    vi.mocked(update).mockRejectedValueOnce(new ApiError(422, refused));
+    const m = renderModal(SELF);
+    await m.typePassword('short');
+
+    await m.submit();
+
+    await waitFor(() =>
+      expect(get(toasts)).toContainEqual(
+        expect.objectContaining({ kind: 'error', message: refused }),
+      ),
+    );
+    expect(update).toHaveBeenCalledWith(1, expect.objectContaining({ password: 'short' }));
+    expect(authApi.logout).not.toHaveBeenCalled();
+    expect(get(auth).user).toEqual({ id: 1, username: 'admin', is_admin: true });
+    expect(m.onClose).not.toHaveBeenCalled();
+    expect(get(toasts).map((t) => t.message)).not.toContain(de['toast.user.ownPasswordChanged']);
   });
 
   it('drops the admin right from the session when demoting oneself without a password', async () => {
