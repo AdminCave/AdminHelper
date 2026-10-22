@@ -7,6 +7,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Monitoring: SMART-Serien kommen nur noch vom Check `smart_health` (R-0633):** Der Agent-Push schreibt keine
+  eigenen SMART-Serien (`monitor_smart_temp_<Geraet>`, `monitor_smart_reallocated_...`, `monitor_smart_pending_...`)
+  mehr nach VictoriaMetrics; diese Werte schreibt allein der Check `smart_health` mit seinen Check-Labels. Die
+  bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
+  Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
+  Entwickler (DE+EN).
+
 ### Fixed
 
 - **Monitoring: keine Datenbankverbindung waehrend Messung und Metrik-Abfrage (R-0615):** Ein Check, ein manueller

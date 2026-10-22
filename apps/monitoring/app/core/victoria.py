@@ -30,8 +30,8 @@ _sleep = time.sleep
 _CONTROL_TO_SPACE = str.maketrans({"\n": " ", "\r": " ", "\t": " "})
 
 # Non-allowlisted chars collapse to "_" for the dynamic (device) part of a metric
-# name, so the SMART push path (agent router) and the checker path produce the SAME
-# series name for a given disk (2.33).
+# name. Its one user is the smart_health checker (checkers/smart.py), which puts the
+# device into its per-disk series names (2.33).
 _SAFE_METRIC_PART = re.compile(r"[^A-Za-z0-9_]")
 
 

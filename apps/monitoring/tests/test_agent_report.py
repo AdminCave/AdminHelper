@@ -478,9 +478,11 @@ def test_num_coerces_and_drops_non_metric_values(raw, want):
 
 def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch):
     # 6.58: victoria.write was stubbed to a no-op, so the endpoint's line generation was untested:
-    # the EXCLUDED_FSTYPES skip (a tmpfs mount would flood VictoriaMetrics), safe_metric_part's
-    # sanitisation of the SMART measurement name (line-protocol injection), and the metricsWritten
-    # counter. Capture the lines and assert on them instead of discarding them.
+    # the EXCLUDED_FSTYPES skip (a tmpfs mount would flood VictoriaMetrics) and the metricsWritten
+    # counter. Capture the lines and assert on them instead of discarding them. R-0633: the SMART
+    # series come only from the smart_health checker; the handler's own copy carried no check_id
+    # and nothing read it. The sanitised device part is pinned by test_victoria::TestSafeMetricPart
+    # and test_smart_checker.
     from app.core import victoria as vm
 
     client, _factory = client_db
@@ -508,14 +510,43 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
     assert len(disk_lines) == 1, f"only the ext4 disk should be written: {disk_lines}"
     assert "mount=/t" not in joined, "tmpfs mount must be filtered out"
 
-    # The SMART measurement name (before the first tag) is sanitized — no ';' injection.
-    smart_lines = [ln for ln in captured if ln.startswith("monitor_smart_temp_")]
-    assert len(smart_lines) == 1, f"expected one SMART temp line: {captured}"
-    measurement = smart_lines[0].split(",", 1)[0]
-    assert ";" not in measurement, f"measurement name not sanitized: {measurement}"
+    # No SMART line from the handler (no smart_health check in this setup either).
+    smart_lines = [ln for ln in captured if ln.startswith("monitor_smart_")]
+    assert smart_lines == [], f"the handler must not write SMART lines: {smart_lines}"
 
     # metricsWritten reflects the actual lines written (no checks in this payload).
     assert r.json()["metricsWritten"] == len(captured)
+
+
+def test_smart_series_still_come_from_the_smart_health_check(client_db, monkeypatch):
+    # R-0633: without the handler's SMART lines, the smart_health checker stays the one source of
+    # monitor_smart_* — with its check labels, which GET /checks/{id}/metrics filters on.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-s", "smart_health")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "smart": [
+            {"device": "/dev/sda", "temp_c": 38, "reallocated_sectors": 0, "pending_sectors": 0}
+        ]
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    tags = "check_id=chk-s,check_type=smart_health,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-s") == [
+        f"monitor_check_status,{tags} value=0i",
+        f"monitor_check_duration_ms,{tags} value=0i",
+        f"monitor_smart_disks_ok,{tags} value=1i",
+        f"monitor_smart_disks_warning,{tags} value=0i",
+        f"monitor_smart_disks_critical,{tags} value=0i",
+        f"monitor_smart_temp_dev_sda,{tags} value=38i",
+        f"monitor_smart_reallocated_dev_sda,{tags} value=0i",
+        f"monitor_smart_pending_dev_sda,{tags} value=0i",
+    ]
 
 
 def test_report_drops_only_the_value_beyond_the_float_range(client_db, monkeypatch):

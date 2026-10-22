@@ -23,7 +23,7 @@ from app.core.auth import require_agent
 from app.core.bounds import _find_nul
 from app.core.database import get_db
 from app.core.time import utcnow_naive
-from app.core.victoria import _finite, format_line, safe_metric_part, victoria
+from app.core.victoria import _finite, format_line, victoria
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 from app.template_suggestions import store_host_facts
 
@@ -56,7 +56,7 @@ def _num(v):
 
 
 # Cap per-report array lengths so a compromised/misconfigured agent can't flood the
-# service (a CPU/memory/VictoriaMetrics DoS) with a huge disks/temperatures/smart list.
+# service (a CPU/memory/VictoriaMetrics DoS) with a huge disks/temperatures list.
 # The body-size cap itself belongs at the gateway (client_max_body_size) (3.76).
 _MAX_REPORT_ITEMS = 500
 
@@ -151,25 +151,9 @@ def agent_report(
         if uptime is not None:
             lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
-        # SMART disk metrics
-        for disk in _capped(report.get("smart")):
-            device = str(disk.get("device", "unknown"))
-            # Allowlist the device id used in the (otherwise-unescaped) measurement name.
-            safe_dev = safe_metric_part(device)
-            smart_tags = {**base_tags, "device": device}
-            dtemp = _num(disk.get("temp_c"))
-            if dtemp is not None and dtemp > 0:
-                lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, dtemp, ts))
-            realloc = _num(disk.get("reallocated_sectors", 0))
-            if realloc is not None:
-                lines.append(
-                    format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, realloc, ts)
-                )
-            pending = _num(disk.get("pending_sectors", 0))
-            if pending is not None:
-                lines.append(
-                    format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, pending, ts)
-                )
+        # No SMART lines here: the smart_health checker writes monitor_smart_* with its check
+        # labels, and GET /checks/{id}/metrics reads them by check_id. A copy with only
+        # server_id/device was a second series nobody read (R-0633).
 
     except Exception:
         # A malformed report part (resources not a dict, a non-string tag value, a disks
