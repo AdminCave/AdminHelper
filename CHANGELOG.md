@@ -21,7 +21,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Agent: kein PKI-Bundle aus der Aktivierungsantwort:** `provision` entpackt kein PKI-Bundle mehr; ein mitgeschicktes
   Feld `pkiBundle` ignoriert der Agent. Der Server schickt es seit 0.28.0 leer, und dieser Agent aktiviert nur ueber
-  Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. Doku: Agent-Entwicklerseite (DE+EN).
+  Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. `provision` legt auch kein Verzeichnis `frp/pki` mehr
+  an; ein vorhandenes bleibt unberuehrt, und die Pakete legen `/etc/frp/pki` weiter leer an. Doku: Agent-Entwicklerseite
+  (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

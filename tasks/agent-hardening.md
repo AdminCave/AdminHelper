@@ -79,8 +79,10 @@ Test-Löschung: apps/agent/internal/frpc/apply_test.go::TestExtractPkiBundleWrit
 Beweis: Code-Lesung apps/server/app/modules/provisioning/helpers.py:107, apps/server/tests/test_provisioning.py:350, apps/agent/internal/provision/provision.go:68-70, apps/agent/internal/frpc/apply.go:123-133
 HEAD: b1432223
 
-### T5 — Kein `frp/pki` mehr: `config.FrpPkiDir` entfällt  [ ]
+### T5 — Kein `frp/pki` mehr: `config.FrpPkiDir` entfällt  [x]
 Komponente: agent · Dateien: apps/agent/internal/config/paths.go, apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/config/securedir_windows.go, docs/developer/agent.html, docs/en/developer/agent.html, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a04b56ac 2026-10-22T11:22:16+02:00
+Review: approve (.ah-out/review/agent-hardening/T5.verdict.json)
 Änderung: `FrpPkiDir` (`paths.go:21`) entfällt; `WriteSyncConfig` sichert nur noch `FrpDir` (`apply.go:52-61`), der Kommentar `:54-56` nennt keine Client-Keys mehr. Der Kommentar von `EnsureDataDir` (`securedir_windows.go:124-128`) zählt `frp, logs and identity` auf. Ein vorhandenes `pki/` (frühere Provisionierung, Pakete) bleibt unberührt. Neuer Test `TestWriteSyncConfigCreatesNoPkiDir` in `apply_test.go`: nach `WriteSyncConfig` gibt es `<FrpDir>/pki` nicht. Zuerst rot: der Test auf HEAD.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestWriteSyncConfig
 Doku: docs/developer/agent.html:78, :79 + docs/en/developer/agent.html:78, :79 (`frp\pki` aus der Liste der gesicherten Verzeichnisse und aus „Lässt sich `frp` oder `frp\pki` nicht sichern …“) · CHANGELOG.md (Eintrag aus T4 ergänzt: der Agent legt kein `frp/pki` mehr an)

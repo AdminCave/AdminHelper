@@ -100,6 +100,27 @@ func TestWriteSyncConfigNeverStoresInsecure(t *testing.T) {
 	}
 }
 
+// Nothing is ever written to frp/pki anymore, so the sync config does not create it.
+func TestWriteSyncConfigCreatesNoPkiDir(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", filepath.Join(t.TempDir(), "frp"))
+
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: "https://srv.example",
+		ServerID:       "srv-1",
+		APIKey:         "key-1",
+	}); err != nil {
+		t.Fatalf("WriteSyncConfig: %v", err)
+	}
+
+	if _, err := os.Stat(config.FrpAdminHelperConf()); err != nil {
+		t.Fatalf("sync config: %v", err)
+	}
+	pki := filepath.Join(config.FrpDir(), "pki")
+	if _, err := os.Lstat(pki); !os.IsNotExist(err) {
+		t.Fatalf("%s exists after WriteSyncConfig (%v), want no pki dir", pki, err)
+	}
+}
+
 // bundleToml is a server-built frpc.toml as a provisioning bundle carries it. Its identity path
 // is rewritten to the agent's identity dir (setupSyncTest moves it to a temp dir), so the file on
 // disk differs from the server's text by more than the preamble.

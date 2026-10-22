@@ -42,15 +42,11 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	apiKey := p.APIKey
 	cacert := p.TLS.CACert
 
-	frpDir := config.FrpDir()
-	pkiDir := config.FrpPkiDir()
-	// Secret-bearing dirs (CA cert, client keys, the auth token in the conf) ->
-	// 0700, also for raw-binary provisioning where no postinst tightens them; a
-	// protected ACL on Windows, after the data root above them.
-	for _, dir := range []string{frpDir, pkiDir} {
-		if err := config.EnsureDataDir(dir); err != nil {
-			return fmt.Errorf("Verzeichnis anlegen: %w", err)
-		}
+	// Secret-bearing dir (CA cert, the auth token in the conf) -> 0700, also for
+	// raw-binary provisioning where no postinst tightens it; a protected ACL on
+	// Windows, after the data root above it.
+	if err := config.EnsureDataDir(config.FrpDir()); err != nil {
+		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
 
 	// Copy the CA cert if provided
@@ -89,11 +85,11 @@ func WriteSyncConfig(p SyncConfigParams) error {
 }
 
 // Apply writes the sync config (WriteSyncConfig), then applies the frpc.toml of a provisioning
-// response the way Sync does (applyConfig): a running frpc
-// restarts onto it (never a reload, see startFrpc), a stopped one is enabled, and a text without
-// proxies (no active tunnel for the host) stops and disables it. NO HTTP call happens here
-// anymore — the token-activate call has been centralized since v0.23.0 in the `provision`
-// subcommand, which invokes `Apply` with the already-decoded values.
+// response the way Sync does (applyConfig): a running frpc restarts onto it (never a reload, see
+// startFrpc), a stopped one is enabled, and a text without proxies (no active tunnel for the
+// host) stops and disables it. NO HTTP call happens here anymore — the token-activate call has
+// been centralized since v0.23.0 in the `provision` subcommand, which invokes `Apply` with the
+// already-decoded values.
 func Apply(p ApplyParams) error {
 	if err := WriteSyncConfig(SyncConfigParams{
 		AdminHelperURL: p.AdminHelperURL,
