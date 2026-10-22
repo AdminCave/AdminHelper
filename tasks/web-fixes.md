@@ -135,8 +135,10 @@ Orakel: contract — ohne angemeldeten Nutzer öffnet keine Frage
 Dedup-Key: ref:web:confirm:null-user
 HEAD: b1432223
 
-### T9 — Merge-Folge: `hooks.test.ts` erwartet die 75-s-Frist des Hook-Laufs (R-0648)  [ ]
+### T9 — Merge-Folge: `hooks.test.ts` erwartet die 75-s-Frist des Hook-Laufs (R-0648)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/hooks.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @63dc1c2e 2026-10-22T12:14:46+02:00
+Review: approve (.ah-out/review/web-fixes/T9.verdict.json)
 Änderung: Fund des Branch-Reviews (blocker). Der Test `apps/web/src/lib/api/hooks.test.ts:21` kam mit #254 über den Merge 3dfa4ddf auf den Branch und erwartet `http.post` mit zwei Argumenten; seit T4 übergibt `run()` dazu `{ timeoutMs: 75_000 }`. Die Assertion wird `expect(http.post).toHaveBeenCalledWith('/api/hooks/a%2Fb/run', {}, { timeoutMs: 75_000 })` — gewollte Verhaltensänderung aus T4, keine Assertion entfällt, sonst nichts an der Datei.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/hooks.test.ts src/lib/api/client.test.ts
 Doku: keine (Test-Anpassung; Doku und CHANGELOG trägt T4)
