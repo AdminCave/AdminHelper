@@ -7,6 +7,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent: `provision` nimmt je Aufruf genau eine Vertrauensquelle:** `provision` lehnt `--cacert` zusammen mit
+  `--insecure` ab, wie schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server bereits. Der Aufruf
+  scheitert, bevor er etwas schreibt oder den Einmal-Token sendet, und die Meldung nennt beide Flags. Legt der Server
+  bei `--insecure` kein Zertifikat zum Pinnen vor, bricht `provision` ab, statt ohne Pruefung weiterzumachen;
+  `--insecure` gilt so nur fuer den einen Aufruf. Doku: Agent-Deployment (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added
