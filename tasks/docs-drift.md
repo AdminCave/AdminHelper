@@ -67,8 +67,10 @@ Dedup-Key: ref:docs:server.html:generate_visitor_toml-wording (dazu bug:docs:dev
 HEAD: e2304a8b
 Semantik: Soll ist der Code: Docstring `apps/server/app/modules/frp/config_generator.py:319-323` — „Aggregates all STCP tunnels with a secret and a usable visitor port and emits one [[visitors]] block each“; für die Tests `DEVELOPMENT.md:37-44` (venv + pip)
 
-### T4 — Monitoring-Entwicklerseite: Weiterleitung ohne `/monitor`, vollständiger Baum (R-0669)  [ ]
+### T4 — Monitoring-Entwicklerseite: Weiterleitung ohne `/monitor`, vollständiger Baum (R-0669)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f3eebbf1 2026-10-22T14:15:51+02:00
+Review: approve (.ah-out/review/docs-drift/T4.verdict.json)
 Änderung: (1) „Daten-Fluss“ (`docs/developer/monitoring.html:49`, EN `:49`): `-> /monitor/* (X-Internal-Key) ->` wird die Weiterleitung ohne Präfix, `{MONITOR_SERVICE_URL}/{path}` mit `X-Internal-Key` (Default `http://monitoring:8080`); Quelle `apps/server/app/modules/monitoring_proxy/router.py:37`, `:140`, `apps/server/app/core/config.py:111`, Router ohne `prefix` `apps/monitoring/app/main.py:153-154`. Das ASCII-Bild bleibt sonst, wie es ist. (2) „Monitoring-Service-Struktur“ (`:62-79`, EN gleich): `core/` nennt alle zehn Module (`auth.py`, `bounds.py`, `config.py`, `database.py`, `logging_config.py`, `middleware.py`, `pagination.py`, `ssrf.py`, `time.py`, `victoria.py`; bei Bedarf über zwei Zeilen wie `models.py`), dazu neue Zeilen `alert_bundle.py` (Sammelmeldung für Agents, die zusammen ausbleiben oder zurückkehren) und `check_types.py` (Check-Typ-Taxonomie, einzige Quelle, u. a. `push_only`), Beschreibungen nach den Docstrings der Module. Nicht `:142-148` und `:258-264` (feature/monitoring-io ändert sie).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku (DE+EN); kein CHANGELOG
