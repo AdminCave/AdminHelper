@@ -115,6 +115,62 @@ def test_unresolvable_target_is_named_as_such(monkeypatch, helper):
     assert sent == []
 
 
+_URL_WITH_CREDENTIALS = (
+    "http://hookuser:s3cr3t-pw@hook-target.example:8080/v1/items?token=t0k3n#frag"
+)
+
+
+@pytest.mark.parametrize("helper", [_safe_http_get, _safe_http_post])
+@pytest.mark.parametrize(
+    ("address", "start"),
+    [
+        ("169.254.169.254", "Zieladresse nicht erlaubt (SSRF-Schutz)"),
+        (None, "Target host could not be resolved"),
+    ],
+)
+def test_a_rejection_names_only_the_host_of_the_target(monkeypatch, helper, address, start):
+    # The text reaches the run's error and logs; user info, port, path, query and fragment
+    # of the URL stay out of it.
+    if address is None:
+        monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
+    else:
+        _resolving_to(monkeypatch, address)
+    sent = _requests_below_the_pin(monkeypatch)
+
+    with pytest.raises(ValueError) as excinfo:
+        helper(_URL_WITH_CREDENTIALS)
+
+    message = str(excinfo.value)
+    assert message.startswith(start)
+    assert message.endswith(": hook-target.example")
+    for part in ("hookuser", "s3cr3t-pw", "8080", "/v1/items", "t0k3n", "frag"):
+        assert part not in message
+    assert sent == []
+
+
+@pytest.mark.parametrize("helper", [_safe_http_get, _safe_http_post])
+@pytest.mark.parametrize(
+    ("url", "start"),
+    [
+        # unreadable (unmatched bracket): rejected as private
+        ("http://hookuser:s3cr3t-pw@[::1/x", "Zieladresse nicht erlaubt (SSRF-Schutz)"),
+        # no host: rejected as not resolvable
+        ("http://hookuser:s3cr3t-pw@/x", "Target host could not be resolved"),
+    ],
+)
+def test_a_rejection_without_a_readable_host_names_a_question_mark(monkeypatch, helper, url, start):
+    sent = _requests_below_the_pin(monkeypatch)
+
+    with pytest.raises(ValueError) as excinfo:
+        helper(url)
+
+    message = str(excinfo.value)
+    assert message.startswith(start)
+    assert message.endswith(": ?")
+    assert "s3cr3t-pw" not in message
+    assert sent == []
+
+
 @pytest.mark.parametrize("helper", [_safe_http_get, _safe_http_post])
 def test_request_connects_to_the_checked_address(monkeypatch, helper):
     # ssrf-pin: the connection goes to the address the guard checked. httpx resolving the

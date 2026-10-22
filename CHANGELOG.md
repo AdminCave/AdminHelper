@@ -9,6 +9,53 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
+  Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
+  Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+- **Web: Stores halten nach dem Anlegen nur die Felder der Liste:** Webhook-Token und Skript eines neuen oder
+  bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
+  zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
+  Entwickler (DE+EN).
+- **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
+  ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
+  und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
+  ELF-Datei mit x-Bit) root und sind fuer alle anderen nur noch ausfuehrbar (`chmod go-r`: aus `0755` wird `0711`,
+  Eigentuemer und setuid-Bits bleiben), wie im frps-Image `frps` und `curl`. Prozesse des Nutzers `app` (UID 10001),
+  die der Entrypoint ueber `gosu` startet, sind damit nicht dumpable: Ihre Eintraege unter `/proc/<pid>` gehoeren
+  root. Skripte und Symlinks bleiben, wie sie sind; es zaehlt das Programm, das ein Skript ausfuehrt (`python3.12`,
+  `dash`, `perl`). Als `app` kann `pg_isready` sein eigenes Programm nicht mehr lesen, schreibt
+  `invalid binary "…": Permission denied` auf stderr und laeuft weiter; die Entrypoints leiten das nach `/dev/null`.
+  `psql` bricht in dieser Lage ab, daher prueft monitoring beim Start seine Datenbank und legt sie an ueber Python
+  (`psycopg`) statt ueber `psql`. Als root, etwa per `docker compose exec`, laufen beide wie bisher. Der Schritt ist
+  der letzte `RUN` jedes der drei Images und erfasst so alles, was die Schritte darueber installieren. Die UID 10001
+  sollte auf dem Host keinem anderen Konto oder Dienst gehoeren. Doku: Betrieb (DE+EN).
+- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
+  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
+  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
+  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Roadmap ohne `neu`-Deckel (Entwickler-Werkzeuge, Kevin 2026-10-22):** `roadmap.py add` nimmt jede neue Zeile an,
+  auch wenn schon 20 oder mehr Zeilen `neu` sind; Exit 3 gibt es nicht mehr. `neu N/20` im WIP-Kopf bleibt Anzeige
+  wie `aktiv N/2`. Der Wochenlauf (`heavy.sh`) laesst einen bestaetigten Fund damit nicht mehr ohne Roadmap-Zeile,
+  die Notiz `ROADMAP FULL` im Report entfaellt. Anleitung: `DEVELOPMENT.md`, „Die Roadmap als Skript: `roadmap.py`",
+  und der Skill `/roadmap`.
+- **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
+  gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
+  `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
+  waehrend `rest` schon laeuft. Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach
+  Teil `rest` seriell auf der Box `desktop`, und die Notizen sagen es mit der letzten Zeile aus `warm-gui.log`; nur
+  wenn `warm.sh gui` verweigert (Exit 2), bleibt der Lauf `UNVERIFIED`. Der Pre-flight fragt `vm.py doctor` deshalb
+  nur nach dem Slot `desktop`, wenn seine Box nicht schon laeuft; ob die GUI-Box passt, entscheidet `vm.py clone`.
+  Das Urteil heisst `PASS` nur mit zwei gruenen Teilen; ein Teil, der nicht lief oder keinen eigenen Beleg brachte
+  (weder Summary-Zeile noch Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf `UNVERIFIED`, und der
+  Grund nennt den Teil und einen roten anderen Teil („FAIL in part rest“). Rote Schritte werden auf der Box ihres
+  Teils wiederholt. Der Report setzt das Etikett des Teils vor seine Summary-Zeile (`[rest] run.sh[all]: …`), fuehrt
+  die Schritte beider Teile mit Sekunden und Box und **eine** Ebenen-Zeile mit Wandzeit, beiden Boxen
+  (`<box-rest>+<box-gui>`) und den Sekunden je Teil; `steps-all.tsv` nennt den Teil in einer vierten Spalte, jeder
+  Teil hat sein Log (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis, die JUnit-XML beider Teile liegen in
+  `junit/`. `history.csv` behaelt ihr Format. Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile. Nach
+  dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
+  Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
+  Entwickler (DE+EN), `/test`-Skill.
 - **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
   Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
   Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
@@ -28,6 +75,56 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
+  Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
+  Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen
+  Text ab, der den Schluesselbund nennt („… could not be read from or stored in the system keyring …“), statt den Pin
+  nur bis zum Prozessende zu halten bzw. einen Zertifikatswechsel zu melden. Abhilfe: den Schluesselbund entsperren
+  und neu verbinden. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+- **Desktop unter Windows: ein Lesefehler des Credential Managers gilt als Fehler:** Scheitert das Lesen aus dem
+  Windows Credential Manager mit einem anderen Fehler als „nicht gefunden“, behandelt der Desktop das beim
+  Zertifikat-Pin, bei gespeicherten RDP-Passwoertern und bei der Pruefung, ob ein Workspace eine Geraete-Identitaet
+  haelt, jetzt als Fehler statt als fehlenden Eintrag, wie schon unter Linux und macOS.
+- **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
+  `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
+  Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
+  gescheitertem Lauf eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text
+  (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
+  `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
+  Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
+- **Web-Panel startet auch bei gesperrtem Seitenspeicher (R-0654):** Sperrt der Browser die Website-Daten (Cookies
+  und Website-Daten blockiert), wirft schon der Zugriff auf `localStorage` einen `SecurityError`. Das Web-Panel las
+  und loeschte dort beim Laden ungeschuetzt und blieb eine leere Seite, ohne Login-Maske. Jetzt geht jeder Zugriff auf
+  den Seitenspeicher durch einen Helfer, der nie wirft: das Panel zeigt die Login-Maske, die Sprache kommt aus dem
+  Browser, und eine Sprachwahl gilt bis zum Neuladen.
+- **Web-Panel: helles Design uebersteht einen Reload (R-0647):** Das Skript, das das gespeicherte Design vor dem
+  ersten Zeichnen setzt, stand inline in `index.html`; die CSP des Servers (`script-src 'self'`) blockierte es, mit
+  CSP-Fehler in der Konsole. Nach einem Neuladen startete das Panel deshalb dunkel und ueberschrieb die gespeicherte
+  Wahl. Das Skript liegt jetzt als eigene Datei `theme-init.js` beim Panel und laeuft unter der CSP.
+- **Web-Panel: manueller Hook-Lauf endet nicht mehr nach 15 s (R-0648):** Jede Anfrage des Panels gab nach 15 s auf,
+  auch „Ausfuehren“ eines Hooks, den der Server bis zu 30 s lang synchron ausfuehrt. Lief ein Hook 15 bis 30 s, zeigte
+  das Panel „Request timed out“, das Ergebnis ging verloren, und der Knopf wurde wieder frei, waehrend der Hook noch
+  lief. Jetzt wartet das Panel auf den Hook-Lauf 75 s, der Knopf bleibt bis zum Ende gesperrt, und die Meldung bei
+  einer Zeitueberschreitung ist uebersetzt.
+- **Web-Panel: schnelle Neuanmeldung nach dem Abmelden haelt (R-0653):** Das Panel meldete sofort ab, wartete aber
+  nicht auf die Antwort des Servers — und erst diese loescht den Access-Token und das Refresh-Cookie. Meldete sich
+  jemand schneller wieder an, als die Abmeldung beantwortet war, beendete die spaete Antwort die neue Sitzung bei der
+  naechsten Aktion. Jetzt wartet eine neue Anmeldung, bis die Abmeldung beantwortet ist (hoechstens 15 s), auch nach
+  einer abgelaufenen Sitzung. Abmelden leert ausserdem die Benutzer-, Hook-, API-Key- und FRP-Daten im Browser.
+- **Web-Panel: Bearbeiten des eigenen Kontos wirkt sofort (R-0652):** Nahm sich ein Admin im Web-Panel selbst das
+  Admin-Recht, zeigte das Panel weiter die Admin-Seiten, und jede Aktion endete mit einem Fehler; jetzt uebernimmt es
+  die neuen Rechte sofort. Aenderte er sein eigenes Passwort, beendete der Server alle Sitzungen des Kontos, das Panel
+  merkte es aber erst bei der naechsten Aktion („Session expired“); jetzt meldet es sofort ab, mit dem Hinweis, sich
+  mit dem neuen Passwort anzumelden.
+- **Sammellauf: Schritt-Tabelle und Sekunden je Schritt wieder im Report (R-0603):** Bei einem Sammellauf aus dem
+  Haupt-Checkout verwarf `heavy.sh` seit dem 2026-09-18 jedes Artefakt der Box („last-all.json describes another
+  tree — ignored“): `run.sh` nahm Kopf und Tree-Hash zuerst vom `git` der Box, und deren Hash, am Ende des Laufs ueber
+  einen vom Sync geformten Baum gerechnet, traf den des Clients nie. Der Report hatte deshalb nur die Ebenen-Zeile,
+  `steps-all.tsv` blieb leer, und die Historie bekam keine Schritt-Zeilen. Jetzt gehen die Werte, die `iter.sh` vom
+  Client mitgibt, vor dem `git` der Box; als Wert zaehlen nur genau 40 Hex-Zeichen. Ein Lauf ohne Sync und ein
+  lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
+  `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
+  vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
 - **Server: ein einzelnes Surrogat in einem Request-Body ergibt `422` wie ein NUL-Byte:** Ein einzelnes Surrogat
   (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben) in irgendeinem String eines Request-Bodies, als Wert oder
   Schluessel und beliebig tief, ergibt `422` an seiner Stelle; nichts wird gespeichert. Bisher endeten solche Eingaben
