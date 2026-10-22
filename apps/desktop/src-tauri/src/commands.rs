@@ -633,30 +633,38 @@ pub fn open_launcher() -> Result<(), AppError> {
     open_launcher_with(&launcher::AppSpawner::new()?)
 }
 
+/// Workspace only: writes the inventory of a run ([`ansible::generate_inventory`]).
 #[tauri::command]
 pub fn ansible_generate_inventory(
     servers: Vec<ansible::AnsibleTarget>,
 ) -> Result<String, AppError> {
+    only(Side::Workspace)?;
     ansible::generate_inventory(&servers)
 }
 
+/// Workspace only: writes the playbook of a run ([`ansible::write_playbook_temp`]).
 #[tauri::command]
 pub fn ansible_write_playbook(filename: String, content: String) -> Result<String, AppError> {
+    only(Side::Workspace)?;
     ansible::write_playbook_temp(&filename, &content)
 }
 
+/// Workspace only: starts a run in a terminal ([`ansible::launch_ansible`]).
 #[tauri::command]
 pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
+    only(Side::Workspace)?;
     ansible::launch_ansible(&inventory_path, &playbook_path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        check_server_cert_in, delete_workspace_in, enroll_with_token_in, list_workspaces_in,
-        open_launcher_with, open_workspace_in, reject_foreign_port, reset_device_identity_in,
-        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target,
+        ansible_generate_inventory, ansible_launch, ansible_write_playbook, check_server_cert_in,
+        delete_workspace_in, enroll_with_token_in, list_workspaces_in, open_launcher_with,
+        open_workspace_in, reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in,
+        run_with_deadline, save_workspace_in, sign_in_target,
     };
+    use crate::ansible::AnsibleTarget;
     use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
     use crate::keyring_store;
@@ -909,6 +917,68 @@ mod tests {
         let _in_a_workspace = entered("standard");
         open_launcher_with(&starts).unwrap();
         assert_eq!(*starts.0.borrow(), [Vec::<String>::new()]);
+    }
+
+    /// The ansible temp files (`adminhelper_ansible…` in the temp dir) whose name or content holds
+    /// `marker`, each removed by its full path. Other tests write such files at the same time; the
+    /// marker tells this test's apart.
+    fn remove_ansible_files_with(marker: &str) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        for entry in fs::read_dir(std::env::temp_dir()).unwrap().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.starts_with("adminhelper_ansible") {
+                continue;
+            }
+            let path = entry.path();
+            let holds = fs::read_to_string(&path).is_ok_and(|text| text.contains(marker));
+            if name.contains(marker) || holds {
+                let _ = fs::remove_file(&path);
+                found.push(path);
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn ansible_commands_run_only_in_a_workspace() {
+        let marker = format!("only-in-a-workspace-{}", std::process::id());
+        let host = format!("{marker}.example");
+        let targets = || {
+            vec![AnsibleTarget {
+                hostname: host.clone(),
+                groups: vec!["web".to_string()],
+            }]
+        };
+        let missing = |name: &str| {
+            std::env::temp_dir()
+                .join(format!("adminhelper_ansible_{marker}_{name}"))
+                .to_string_lossy()
+                .into_owned()
+        };
+
+        // The launcher has no workspace.
+        let inventory = ansible_generate_inventory(targets());
+        let playbook = ansible_write_playbook(
+            format!("{marker}.yml"),
+            format!("# {marker}\n- hosts: all\n"),
+        );
+        let launch = ansible_launch(missing("inventory.ini"), missing("site.yml"));
+        let written = remove_ansible_files_with(&marker);
+        let only = "only the process of a workspace";
+        assert_refused(inventory, only, "inventory");
+        assert_refused(playbook, only, "playbook");
+        assert_refused(launch, only, "launch");
+        assert_eq!(
+            written,
+            Vec::<PathBuf>::new(),
+            "a refused command wrote a file"
+        );
+
+        let _in_a_workspace = entered("standard");
+        let inventory = ansible_generate_inventory(targets()).unwrap();
+        let text = fs::read_to_string(&inventory);
+        fs::remove_file(&inventory).unwrap();
+        assert!(text.unwrap().contains(&format!("[web]\n{host}\n")));
     }
 
     #[test]

@@ -118,9 +118,10 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
 
 /// True only for one of our own ansible temp files: after resolving symlinks and
 /// `..`, the path must sit directly inside the system temp dir and carry our
-/// `adminhelper_ansible` prefix. Guards `launch_ansible` against a (compromised)
-/// frontend pointing `ansible-playbook` at an arbitrary attacker-controlled YAML
-/// — an ansible playbook runs arbitrary commands, so an unconfined path is RCE.
+/// `adminhelper_ansible` prefix. So `ansible-playbook` only gets such files, and a
+/// failed start (`launch_ansible_with`) only deletes such files. It does not check
+/// what a playbook says: `write_playbook_temp` writes the content as the frontend
+/// passes it.
 fn is_confined_ansible_path(path: &str) -> bool {
     let canon = match std::fs::canonicalize(path) {
         Ok(p) => p,
