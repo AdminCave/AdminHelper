@@ -127,11 +127,32 @@ warm_get() {  # warm_get <key> -> prints the value (empty if none)
 }
 warm_set() {  # warm_set <key> <value>
   local f; f="$(vm_warm_file)"; mkdir -p "$(dirname "$f")"; touch "$f"
-  { grep -vE "^$1=" "$f" 2>/dev/null || true; echo "$1=$2"; } > "$f.tmp"; mv "$f.tmp" "$f"
+  warm_rewrite "$1" "$2"
 }
 warm_clear() {  # warm_clear <key>
-  local f; f="$(vm_warm_file)"; [ -f "$f" ] || return 0
-  { grep -vE "^$1=" "$f" 2>/dev/null || true; } > "$f.tmp"; mv "$f.tmp" "$f"
+  [ -f "$(vm_warm_file)" ] || return 0
+  warm_rewrite "$1"
+}
+# warm_rewrite <key> [<value>] — drop every <key>= line, then append <key>=<value>
+# when a value is given (an empty one too). With the two parts of a heavy run, two
+# wrappers of one checkout write at once (warm.sh gui next to the rest part's
+# warm.sh desktop), and a read-modify-replace without a lock loses a key or
+# interleaves the temp file. Hence flock on warm.env.lock — a file of its own, vm.py
+# reads only warm.env — and a temp file per process ($BASHPID: in a subshell $$ is
+# still the caller's). A lock not free within 30 s: 1, a line on stderr, nothing
+# written. Without flock it writes unlocked as before and says so once, like py_lock
+# in run.sh.
+warm_rewrite() {
+  local f lock=1; f="$(vm_warm_file)"
+  if ! command -v flock >/dev/null 2>&1; then
+    lock=0
+    [ -n "${VM_WARM_NOLOCK_SAID:-}" ] \
+      || { echo "vm_lib: flock not installed — warm.env is written WITHOUT its lock" >&2; VM_WARM_NOLOCK_SAID=1; }
+  fi
+  ( [ "$lock" = 0 ] || flock -w 30 9 || { echo "vm_lib: $f.lock still held after 30s — $1 not written" >&2; exit 1; }
+    tmp="$f.tmp.$BASHPID"
+    { grep -vE "^$1=" "$f" 2>/dev/null || true; [ "$#" -lt 2 ] || echo "$1=$2"; } > "$tmp" && mv "$tmp" "$f"
+  ) 9>"$f.lock"
 }
 
 # --- markers -----------------------------------------------------------------

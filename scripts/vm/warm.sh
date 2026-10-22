@@ -8,8 +8,10 @@
 # rebuilding on every run. Idempotent: if the recorded VM is still running,
 # reuse it; if it was reaped, transparently re-warm.
 #
-#   bash scripts/vm/warm.sh <desktop|server|pond>
+#   bash scripts/vm/warm.sh <desktop|gui|server|pond>
 #     desktop  full bootstrap profile (Tauri + xvfb) — GUI fast loop (no server)
+#     gui      a second full box of the same lane, its own slot — the GUI part
+#              of a heavy run (heavy.sh all) next to the desktop box
 #     server   server profile — brings the docker stack UP and leaves it up,
 #              stashing the server IP + admin/monitor creds for iter
 #     pond     server (stack up) + desktop — the distributed desktop fast loop
@@ -128,8 +130,11 @@ warm_role() {
     "AH_BOOTSTRAP_PROFILE=$boot bash scripts/vm/bootstrap_linux.sh" >&2 \
     || { kept "$vmid" "bootstrap failed"; return 1; }
   # The frist the box was warmed with, so iter.sh can renew with THAT instead of
-  # its own default (R-0049).
-  warm_set "$role" "$vmid"; warm_set "${role}_name" "$name"; warm_set "${role}_ttl" "$TTL"; echo "$vmid"
+  # its own default (R-0049). The VMID goes last: it is the key that claims the
+  # slot, so a warm.env lock that never came free leaves no slot without its name.
+  warm_set "${role}_name" "$name" && warm_set "${role}_ttl" "$TTL" && warm_set "$role" "$vmid" \
+    || { kept "$vmid" "warm.env not written"; return 1; }
+  echo "$vmid"
 }
 
 # warm_server: warm a server box AND bring the stack up (leaving it up), stashing
@@ -158,16 +163,19 @@ warm_server() {
   [ -n "$sid" ] && [ -n "$ptok" ] || {
     echo "  server stack bring-up failed:" >&2; printf '%s\n' "$out" | tail -20 >&2
     kept "$vmid" "stack bring-up failed"; return 1; }
-  warm_set server "$vmid"; warm_set server_name "$name"; warm_set server_ip "$ip"; warm_set server_admin_pw "$pw"
-  warm_set server_monitor_key "$key"; warm_set server_sid "$sid"; warm_set server_ptok "$ptok"
+  # The VMID last, as in warm_role.
+  warm_set server_name "$name" && warm_set server_ip "$ip" && warm_set server_admin_pw "$pw" \
+    && warm_set server_monitor_key "$key" && warm_set server_sid "$sid" && warm_set server_ptok "$ptok" \
+    && warm_set server "$vmid" || { kept "$vmid" "warm.env not written"; return 1; }
   echo "  server stack up @ $ip (sid=$sid)" >&2
 }
 
 case "$ROLE" in
   desktop) warm_role desktop linux-full full >/dev/null || exit 1 ;;
+  gui)     warm_role gui linux-full full >/dev/null || exit 1 ;;
   server)  warm_server || exit 1 ;;
   pond)    warm_server || exit 1; warm_role desktop linux-full full >/dev/null || exit 1 ;;
-  *) echo "usage: warm.sh <desktop|server|pond>"; exit 2 ;;
+  *) echo "usage: warm.sh <desktop|gui|server|pond>"; exit 2 ;;
 esac
 
 echo ""
