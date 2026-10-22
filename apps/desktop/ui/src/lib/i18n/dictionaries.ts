@@ -800,6 +800,8 @@ export const translations: Translations = {
     'error.rdpAuth': 'RDP-Authentifizierung fehlgeschlagen',
     'connections.empty': 'Noch keine Verbindungen angelegt',
     'connections.noResults': 'Keine Treffer für deine Filter',
+    'connections.loadFailed': 'Die Verbindungen ließen sich nicht laden: {error}',
+    'connections.loadFailed.kept': 'Angezeigt wird die zuletzt geladene Liste.',
   },
 
   en: {
@@ -1589,5 +1591,7 @@ export const translations: Translations = {
     'error.rdpAuth': 'RDP authentication failed',
     'connections.empty': 'No connections saved yet',
     'connections.noResults': 'No matches for your filters',
+    'connections.loadFailed': 'The connections did not load: {error}',
+    'connections.loadFailed.kept': 'The list shown is the one loaded last.',
   },
 };
