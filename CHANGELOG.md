@@ -16,6 +16,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   statt ohne Pruefung weiterzumachen; `monitor init` bricht ebenso ab, wenn es das Zertifikat nicht holen oder
   speichern kann, und schreibt nie `INSECURE=1` in `monitor.conf`. `--insecure` gilt so nur fuer den einen Aufruf.
   Doku: Agent-Deployment (DE+EN).
+- **Agent: `diagnostics` legt jeden Bericht als neue Datei an:** Der Bericht heisst
+  `adminhelper-agent-diagnostics-<Zeitstempel>-<Zufall>.txt`, liegt wie bisher im Temp-Verzeichnis und hat die Rechte
+  0600; eine vorhandene Datei ueberschreibt `diagnostics` nie. Den Pfad gibt der Befehl wie bisher aus.
 
 ### Removed
 

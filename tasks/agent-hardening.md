@@ -90,8 +90,10 @@ Abhängt von: T4
 Beweis: Code-Lesung apps/agent/internal/config/paths.go:21, apps/agent/internal/frpc/apply.go:53-61
 HEAD: b1432223
 
-### T6 — diagnostics: jeder Bericht als neue Datei mit zufälligem Namensteil  [ ]
+### T6 — diagnostics: jeder Bericht als neue Datei mit zufälligem Namensteil  [x]
 Komponente: agent · Dateien: apps/agent/internal/diagnostics/diagnostics.go, apps/agent/internal/diagnostics/diagnostics_test.go, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ba8edc69 2026-10-22T11:28:39+02:00
+Review: approve (.ah-out/review/agent-hardening/T6.verdict.json)
 Änderung: `Run` (`diagnostics.go:69-73`) legt den Bericht mit `os.CreateTemp("", "adminhelper-agent-diagnostics-"+ts+"-*.txt")` an (0600, nie eine vorhandene Datei), schreibt ihn, prüft `Close` und entfernt die Datei bei einem Fehler; der Pfad wird wie bisher ausgegeben (`:75`). Neuer Test `TestDiagnosticsReportIsANewFile` in `diagnostics_test.go`: `TMPDIR` (unter Windows `TMP`) auf `t.TempDir()`, `ADMINHELPER_MONITOR_DIR`, `ADMINHELPER_FRP_DIR` und `ADMINHELPER_LOG_DIR` auf leere Temp-Verzeichnisse; vor `Run` an jedem Namen `adminhelper-agent-diagnostics-<ts>.txt` für die UTC-Sekunden von jetzt − 1 s bis jetzt + 10 s ein Eintrag — unter Linux ein Symlink auf eine Datei außerhalb des Temp-Verzeichnisses, unter Windows eine Datei mit festem Inhalt. Danach: die Symlink-Ziele bzw. Dateien unverändert; genau eine neue Datei mit dem Präfix, die die Kopfzeile `AdminHelper agent diagnostics` enthält, unter Linux mit Modus 0600. Zuerst rot: der Test auf HEAD.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestDiagnosticsReport
 Doku: keine Seite (`docs/admin/agent-deployment.html:205`, EN `:204` nennen nur `/tmp/`) · CHANGELOG.md (Changed, umlautfrei: `diagnostics` legt jeden Bericht als neue Datei mit zufaelligem Namensteil an (0600) und ueberschreibt keine vorhandene Datei)
