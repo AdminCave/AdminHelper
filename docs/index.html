@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.45.0</span>
+          <span>v0.46.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -262,7 +262,26 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.45.0?</h2>
+          <h2>Was ist neu in 0.46.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.46.0 &ndash; Desktop-Workspaces, Geraete-Identitaeten &amp; Tunnel, die sich selbst nachziehen (Beta, 2026-10-22)</div>
+              <p>
+                <strong>Added:</strong> Der Desktop-Client kennt <strong>Workspaces</strong>: mehrere Server, Sync-Quellen
+                und lokale Verbindungen nebeneinander, jeder in eigenem Fenster mit eigener Anmeldung, eigenem Tunnel und
+                eigener Geraete-Identitaet. Client-Zertifikate werden <strong>pro Geraet</strong> erfasst und lassen sich
+                einzeln widerrufen. Das Monitoring bringt den Check-Typ <code>system_state</code>, das Standard-Template
+                &bdquo;Host Ping&ldquo;, eine Sammelmeldung, wenn mehrere Agents zugleich stumm werden, und
+                Standard-Templates, die neuen Versionen folgen, ohne eigene Anpassungen zu verlieren.
+                <strong>Changed:</strong> frps, Desktop und Agent uebernehmen neue oder geaenderte FRP-Tunnel selbst &ndash;
+                ohne Neustart der App und ohne Neu-Provisionieren. <code>update.sh</code> rollt bei jedem gescheiterten
+                Schritt vollstaendig zurueck. <strong>Security:</strong> Der SSRF-Schutz verbindet zur geprueften Adresse,
+                und die Abhaengigkeiten sind ohne Audit-Befund. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
