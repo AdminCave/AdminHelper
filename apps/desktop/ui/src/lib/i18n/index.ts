@@ -24,13 +24,7 @@ export function resolveLanguage(stored: string | null | undefined): Language {
   return stored && isLanguage(stored) ? stored : systemLanguage();
 }
 
-export function detectBrowserLanguage(): Language {
-  if (typeof navigator === 'undefined') return 'de';
-  const prefix = navigator.language.toLowerCase().split('-')[0];
-  return isLanguage(prefix) ? prefix : 'de';
-}
-
-export const language = writable<Language>(detectBrowserLanguage());
+export const language = writable<Language>(systemLanguage());
 
 function translate(lang: Language, key: string, vars: Record<string, unknown> = {}): string {
   const dict = translations[lang] ?? translations.en;

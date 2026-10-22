@@ -113,6 +113,20 @@ describe('language without a stored value (R-0660)', () => {
     expect(setLanguage(null)).toBe('en');
     expect(get(language)).toBe('en');
   });
+
+  it('starts in English on any other system before the settings load', async () => {
+    stubSystemLanguage('fr-FR');
+    vi.resetModules();
+    const fresh = await import('./index');
+    expect(get(fresh.language)).toBe('en');
+  });
+
+  it('starts in German on a German system before the settings load', async () => {
+    stubSystemLanguage('de-AT');
+    vi.resetModules();
+    const fresh = await import('./index');
+    expect(get(fresh.language)).toBe('de');
+  });
 });
 
 describe('dictionary parity', () => {
