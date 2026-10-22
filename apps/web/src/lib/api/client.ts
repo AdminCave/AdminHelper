@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { storageRemove } from '$lib/utils/storage';
 import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 
 // The long-lived refresh token lives in an HttpOnly cookie (set by the server),
@@ -10,8 +11,8 @@ import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 // exfiltrate it from persistent storage. On a fresh page load the access token
 // is gone; the app rehydrates it via tryRefresh() (the refresh cookie survives).
 // Purge any access/refresh-token copies left in storage by an older build.
-localStorage.removeItem('adminhelper_token');
-localStorage.removeItem('adminhelper_refresh_token');
+storageRemove('adminhelper_token');
+storageRemove('adminhelper_refresh_token');
 
 let accessToken: string | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
