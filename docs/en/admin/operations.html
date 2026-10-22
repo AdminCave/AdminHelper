@@ -139,6 +139,7 @@
             </tbody>
           </table>
           <p>The monitoring ping check needs no special privileges for this: <code>ping</code> uses ICMP datagram sockets, which compose allows in the <code>monitoring</code> container through <code>net.ipv4.ping_group_range</code>.</p>
+          <p>Of the Linux capabilities, the gateway keeps only the four its nginx master needs to start (<code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>SETGID</code>, <code>SETUID</code>); compose drops all others, and the nginx workers run as the user <code>nginx</code> without any.</p>
           <p>To raise a limit, use a <code>docker-compose.override.yml</code> next to <code>docker-compose.yml</code>. Compose loads it by itself on every call in the install directory, and <code>update.sh</code> leaves it in place:</p>
           <div class="code-header"><span>yaml</span></div>
 <pre><code># docker-compose.override.yml

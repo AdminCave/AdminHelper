@@ -217,6 +217,19 @@ services:
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
     logging: *default-logging
     restart: unless-stopped
+    # The nginx master runs as root and starts its workers as the image's user nginx, which
+    # keeps no capability. The master's: CHOWN to hand its temp directories under
+    # /var/cache/nginx to that user; SETUID and SETGID to switch the workers to it;
+    # DAC_OVERRIDE to read gateway.key, which the ca-issuer writes 0600 under its own UID. No
+    # KILL: on QUIT, the image's stop signal, the master tells its workers to stop through a
+    # channel of its own, not by signal.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    # Ports 443, 8444 and 8445 inside without NET_BIND_SERVICE: every port of the container's
+    # own network namespace is open to unprivileged processes. Docker's default since 20.10,
+    # set here so that it does not depend on the engine (as for frps).
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     # No process gains privileges on exec (setuid bits, file capabilities).
     security_opt:
       - no-new-privileges:true

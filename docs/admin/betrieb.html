@@ -181,6 +181,7 @@ docker compose up -d server</code></pre>
             </tbody>
           </table>
           <p>Der Ping-Check des Monitorings braucht dafür keine Sonderrechte: <code>ping</code> nutzt ICMP-Datagram-Sockets, die Compose im Container <code>monitoring</code> über <code>net.ipv4.ping_group_range</code> erlaubt.</p>
+          <p>Das Gateway behält von den Linux-Capabilities nur die vier, die sein nginx-Master zum Start braucht (<code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>SETGID</code>, <code>SETUID</code>); alle übrigen nimmt Compose ihm, und die nginx-Worker laufen als Nutzer <code>nginx</code> ganz ohne.</p>
           <p>Eine Grenze hebt man in einer <code>docker-compose.override.yml</code> neben der <code>docker-compose.yml</code> an. Compose lädt die Datei bei jedem Aufruf im Installationsverzeichnis selbst, und <code>update.sh</code> lässt sie stehen:</p>
           <div class="code-header"><span>yaml</span></div>
 <pre><code># docker-compose.override.yml
