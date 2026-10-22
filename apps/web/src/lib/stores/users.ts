@@ -22,6 +22,12 @@ export const users = {
     if (gen === refreshGen) _users.set(list);
   },
 
+  // Logout empties the store; the bump makes a refresh() still in flight drop its result.
+  reset(): void {
+    refreshGen++;
+    _users.set([]);
+  },
+
   async create(data: UserCreate): Promise<User> {
     const created = await api.create(data);
     refreshGen++;

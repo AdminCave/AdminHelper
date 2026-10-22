@@ -145,7 +145,7 @@ fn os_set(_key: &str, _value: &str) -> Result<(), AppError> {
 
 /// Read a stored secret, or `None` if absent or the store is unavailable. Errors
 /// degrade to `None` on purpose — callers treat "no value" and "cannot read"
-/// alike (first-use capture for TOFU, "not enrolled" for the identity).
+/// alike ("not enrolled" for the identity).
 #[cfg(unix)]
 fn os_get(key: &str) -> Option<String> {
     use keyring::Entry;
@@ -181,12 +181,9 @@ fn os_try_get(key: &str) -> Result<Option<String>, AppError> {
 
 #[cfg(target_os = "windows")]
 fn os_try_get(key: &str) -> Result<Option<String>, AppError> {
-    // The Windows Credential Manager has no "locked/transient" failure mode like the
-    // Linux keyring/D-Bus, and CredReadW cannot cleanly separate "not found" from a
-    // read error, so keep get()'s behaviour: a missing/unreadable entry is first-use.
-    Ok(crate::password::windows_read_credential(key)
-        .ok()
-        .filter(|v| !v.is_empty()))
+    // CredReadW reports a missing entry as ERROR_NOT_FOUND, which is "no entry"; any
+    // other failure is an `Err`. An empty value counts as no entry, as in `os_get`.
+    Ok(crate::password::windows_try_read_credential(key)?.filter(|v| !v.is_empty()))
 }
 
 #[cfg(not(any(unix, target_os = "windows")))]
@@ -270,5 +267,70 @@ mod tests {
         assert_eq!(get("d"), None);
         assert!(matches!(try_get("d"), Ok(None)));
         assert!(delete("d").is_ok());
+    }
+
+    /// A credential name no one has, of this run and this call only.
+    #[cfg(target_os = "windows")]
+    fn probe_key() -> String {
+        static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        format!(
+            "adminhelper-keyring-probe-{}-{nanos}-{call}",
+            std::process::id()
+        )
+    }
+
+    /// Deletes the probe entry, also after a failed assertion.
+    #[cfg(target_os = "windows")]
+    struct ProbeEntry(String);
+
+    #[cfg(target_os = "windows")]
+    impl Drop for ProbeEntry {
+        fn drop(&mut self) {
+            let _ = crate::password::windows_delete_credential(&self.0);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn on_windows_try_get_finds_no_entry_where_there_is_none() {
+        assert!(matches!(os_try_get(&probe_key()), Ok(None)));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn on_windows_try_get_reads_a_stored_value() {
+        let key = probe_key();
+        let _entry = ProbeEntry(key.clone());
+        crate::password::windows_store_credential(&key, "adminhelper", "pin ✓").unwrap();
+        assert_eq!(os_try_get(&key).unwrap().as_deref(), Some("pin ✓"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn on_windows_only_not_found_is_no_entry_any_other_read_failure_is_an_error() {
+        use windows::Win32::Foundation::{ERROR_NOT_FOUND, ERROR_NO_SUCH_LOGON_SESSION};
+
+        let key = probe_key();
+        let _entry = ProbeEntry(key.clone());
+        crate::password::windows_store_credential(&key, "adminhelper", "pin").unwrap();
+        {
+            let _failing = crate::password::fail_cred_read(ERROR_NO_SUCH_LOGON_SESSION);
+            let code = ERROR_NO_SUCH_LOGON_SESSION.0.to_string();
+            assert!(matches!(
+                os_try_get(&key),
+                Err(AppError::Keyring(m)) if m.ends_with(&code)
+            ));
+        }
+        {
+            let _failing = crate::password::fail_cred_read(ERROR_NOT_FOUND);
+            assert!(matches!(os_try_get(&key), Ok(None)));
+        }
+        // Without a guard the read reaches the Credential Manager again.
+        assert_eq!(os_try_get(&key).unwrap().as_deref(), Some("pin"));
     }
 }

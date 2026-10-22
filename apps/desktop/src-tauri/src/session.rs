@@ -1181,6 +1181,10 @@ mod tests {
         );
         // A pin an earlier test left for this port would decide instead of this server.
         crate::tofu::forget_pin(&url);
+        // The handshake runs on a tokio worker without a test keyring, where storing a
+        // first-use pin fails and the connection is refused; so this server's certificate
+        // is pinned up front. The tests check the session's choice of client, not pinning.
+        crate::tofu::seed_cached_pin(&url, &crate::tofu::fingerprint(cert.der()));
         let log = Arc::new(StdMutex::new(Vec::new()));
         let seen = Arc::clone(&log);
         tokio::spawn(async move {
@@ -1276,7 +1280,7 @@ mod tests {
         .expect("the renewal should have answered in time")
         .unwrap();
 
-        // As before: the sign-in allowed it, so the renewal pins the certificate on first use.
+        // As before: the sign-in allowed it, so the renewal trusts the pinned certificate.
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             log_of(&log),

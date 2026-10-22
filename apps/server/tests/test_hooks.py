@@ -8,6 +8,7 @@ right hooks. Hooks run user-supplied scripts, so "does server.created fire the
 matching hook (and only that one)?" is worth pinning down."""
 
 import json
+import logging
 
 import pytest
 
@@ -94,9 +95,12 @@ class TestHookTimestamps:
         )
         db_session.flush()
         seen: list[dict] = []
-        monkeypatch.setattr(
-            script_runner, "run_hook_script", lambda **kw: seen.append(kw["context"])
-        )
+
+        def run(**kw):
+            seen.append(kw["context"])
+            return {"success": True, "result": {}, "logs": []}
+
+        monkeypatch.setattr(script_runner, "run_hook_script", run)
         # _execute_scheduled_hook opens its own SessionLocal; bind it to the test connection.
         monkeypatch.setattr(
             database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
@@ -294,7 +298,12 @@ class TestEventDispatch:
         db_session.flush()
 
         ran: list[str] = []
-        monkeypatch.setattr(script_runner, "run_hook_script", lambda **kw: ran.append(kw["script"]))
+
+        def run(**kw):
+            ran.append(kw["script"])
+            return {"success": True, "result": {}, "logs": []}
+
+        monkeypatch.setattr(script_runner, "run_hook_script", run)
         # _run_event opens its own SessionLocal; bind a fresh one to the test
         # connection so it sees the (uncommitted) hooks created above.
         monkeypatch.setattr(
@@ -304,6 +313,130 @@ class TestEventDispatch:
         _run_event("server.created", {"id": "s1"})
 
         assert ran == ["-- match-enabled"]
+
+
+_OK_RUN = {"success": True, "result": {}, "logs": []}
+_TIMEOUT_RUN = {"success": False, "result": {}, "logs": [], "error": "Timeout nach 30s"}
+
+
+class TestFailedRunsAreLogged:
+    """R-0558: run_hook_script reports a failed run in its result instead of raising, so the
+    event dispatch and the scheduler log it themselves: one WARNING with the hook's name, for
+    an event hook the event, and the error text."""
+
+    @staticmethod
+    def _stand_in(db_session, monkeypatch, outcome):
+        from sqlalchemy.orm import sessionmaker
+
+        import app.core.database as database
+        import app.modules.hooks.script_runner as script_runner
+
+        monkeypatch.setattr(script_runner, "run_hook_script", lambda **kw: outcome)
+        # Both open their own SessionLocal; bind it to the test connection.
+        monkeypatch.setattr(
+            database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
+        )
+
+    def _event_warnings(self, db_session, monkeypatch, caplog, outcome):
+        from app.core.events import _run_event
+        from app.modules.hooks.models import Hook
+
+        db_session.add(
+            Hook(
+                id="ev-probe",
+                name="ev-probe",
+                hook_type="event",
+                script="pass",
+                enabled=True,
+                event_triggers=json.dumps(["server.created"]),
+            )
+        )
+        db_session.flush()
+        self._stand_in(db_session, monkeypatch, outcome)
+        with caplog.at_level(logging.WARNING, logger="app.core.events"):
+            _run_event("server.created", {"id": "s1"})
+        return [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def _schedule_warnings(self, db_session, monkeypatch, caplog, outcome):
+        from app.modules.hooks.models import Hook
+        from app.modules.hooks.scheduler import _execute_scheduled_hook
+
+        db_session.add(
+            Hook(
+                id="sched-probe",
+                name="sched-probe",
+                hook_type="schedule",
+                script="pass",
+                enabled=True,
+                schedule_interval="1h",
+            )
+        )
+        db_session.flush()
+        self._stand_in(db_session, monkeypatch, outcome)
+        with caplog.at_level(logging.WARNING, logger="app.modules.hooks.scheduler"):
+            _execute_scheduled_hook("sched-probe")
+        return [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def test_failed_event_hook_logs_one_warning(self, db_session, monkeypatch, caplog):
+        records = self._event_warnings(db_session, monkeypatch, caplog, _TIMEOUT_RUN)
+        assert len(records) == 1, records
+        assert (records[0].name, records[0].levelno) == ("app.core.events", logging.WARNING)
+        message = records[0].getMessage()
+        assert "ev-probe" in message, message
+        assert "server.created" in message, message
+        assert "Timeout nach 30s" in message, message
+
+    def test_failed_scheduled_hook_logs_one_warning(self, db_session, monkeypatch, caplog):
+        records = self._schedule_warnings(db_session, monkeypatch, caplog, _TIMEOUT_RUN)
+        assert len(records) == 1, records
+        assert (records[0].name, records[0].levelno) == (
+            "app.modules.hooks.scheduler",
+            logging.WARNING,
+        )
+        message = records[0].getMessage()
+        assert "sched-probe" in message, message
+        assert "Timeout nach 30s" in message, message
+
+    def test_successful_event_hook_logs_nothing(self, db_session, monkeypatch, caplog):
+        assert self._event_warnings(db_session, monkeypatch, caplog, _OK_RUN) == []
+
+    def test_successful_scheduled_hook_logs_nothing(self, db_session, monkeypatch, caplog):
+        assert self._schedule_warnings(db_session, monkeypatch, caplog, _OK_RUN) == []
+
+    @pytest.mark.parametrize(
+        ("result", "expected"),
+        [
+            (_OK_RUN, None),
+            (_TIMEOUT_RUN, "Timeout nach 30s"),
+            ({"success": False, "result": {}, "logs": [], "error": ""}, "unknown error"),
+            ({"success": False, "result": {}, "logs": []}, "unknown error"),
+            ({"success": False, "result": {}, "logs": [], "error": "e" * 1000}, "e" * 1000),
+        ],
+        ids=["success", "error", "empty-error", "no-error", "error-at-the-limit"],
+    )
+    def test_failed_run_error(self, result, expected):
+        from app.modules.hooks.script_runner import failed_run_error
+
+        assert failed_run_error(result) == expected
+
+    def test_long_error_keeps_its_end_on_one_line(self, db_session, monkeypatch, caplog):
+        from app.modules.hooks.script_runner import failed_run_error
+
+        tail = "\nTraceback (most recent call last):\nValueError: boom"
+        error = "x" * (5000 - len(tail)) + tail
+        assert len(error) == 5000
+        failed = {"success": False, "result": {}, "logs": [], "error": error}
+
+        logged = failed_run_error(failed)
+        assert len(logged) == 1001
+        assert logged == "…" + error[-1000:]
+
+        records = self._event_warnings(db_session, monkeypatch, caplog, failed)
+        assert len(records) == 1, records
+        message = records[0].getMessage()
+        assert "\n" not in message, message
+        assert "ValueError: boom" in message, message
+        assert "x" * 1000 not in message, message
 
 
 def test_valid_intervals_matches_scheduler_map():

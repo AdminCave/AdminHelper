@@ -30,14 +30,29 @@ done
 # already talks to Postgres) keeps docker-compose.yml free of repo-file
 # bind mounts, so it can be distributed as a single self-contained file.
 # Idempotent; connects to the always-present default DB to issue CREATE.
+# Through psycopg, not psql: the image leaves psql execute-only (Dockerfile), and
+# psql stops when it cannot read its own program. libpq takes host, port, user and
+# password from the PG* variables, so none of them is an argument of a process.
 MONITOR_DB="${MONITOR_DB:-adminhelper_monitor}"
 ADMIN_DB="${ADMIN_DB:-adminhelper}"
-if ! PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" \
-        -tAc "SELECT 1 FROM pg_database WHERE datname='$MONITOR_DB'" 2>/dev/null | grep -q 1; then
-    echo "[entrypoint] Lege Datenbank $MONITOR_DB an..."
-    PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" \
-        -c "CREATE DATABASE \"$MONITOR_DB\""
-fi
+PGHOST="$PGHOST" PGPORT="$PGPORT" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+    ADMIN_DB="$ADMIN_DB" MONITOR_DB="$MONITOR_DB" python - <<'PY'
+import os
+import sys
+
+import psycopg
+from psycopg import sql
+
+name = os.environ["MONITOR_DB"]
+try:
+    with psycopg.connect(dbname=os.environ["ADMIN_DB"], autocommit=True) as conn:
+        found = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone()
+        if found is None:
+            print(f"[entrypoint] Lege Datenbank {name} an...", flush=True)
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+except psycopg.Error as exc:
+    sys.exit(f"[entrypoint] FEHLER: Datenbank {name}: {exc}")
+PY
 
 echo "[entrypoint] Postgres ready, fuehre Alembic-Migration aus..."
 alembic upgrade head
