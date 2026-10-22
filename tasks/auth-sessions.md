@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Sitzungen: Refresh-Rotation, Tabs, Benutzerbindung, Refresh-Token im Browser, Abmeldung nach Inaktivität — Task-Ledger
-Status: geplant · Branch: feature/auth-sessions · Review: pro Task
+Status: aktiv · Branch: feature/auth-sessions · Review: pro Task
 Spec: docs/features/auth-sessions.md (Roadmap R-0649 (T6); R-0451 ohne Task, siehe Spec „Nicht-Ziele“; T1–T5 und T7–T10 gehören zum Paket, Kevin 2026-10-22)
 Heavy: linux-full — Server-API (Antworten von `/api/auth/login`, `/api/auth/refresh`, `/api/auth/bootstrap` für Browser-Anfragen, neues Feld in `/api/auth/me`), Rotation im Refresh und `docker-compose.yml` (neue Env am Dienst `server`); `web-live` fährt Login und Refresh im echten Browser gegen den Stack. Kein `scenario` (kein FRP-, PKI-, Install- oder Cross-Host-Pfad), kein `windows` (kein Desktop-Code)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
