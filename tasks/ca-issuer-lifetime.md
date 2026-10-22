@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: kein Zertifikat überlebt seinen Aussteller, Prüfung der Hierarchie beim Start, Ablaufwarnung — Task-Ledger
-Status: geplant · Branch: feature/ca-issuer-lifetime · Review: pro Task
+Status: aktiv · Branch: feature/ca-issuer-lifetime · Review: pro Task
 Spec: docs/features/ca-issuer-lifetime.md (Roadmap R-0666)
 Heavy: linux-full — `apps/ca-issuer` (PKI): `ensure_hierarchy` prüft beim Start jede geladene Hierarchie, also auch die des Stacks im Sammellauf (`integration-stack` mit Enroll und Renew durch das Gateway, `backup-restore`, `upgrade-path` vom letzten Release mit einer echten Alt-Hierarchie); kein `scenario`: an Leaves aus einer frischen Hierarchie ändert sich nichts (die Begrenzung greift erst in den letzten 365 Tagen eines Intermediates), kein Wire-Format, kein Gateway-, FRP- oder Install-Pfad; kein `windows`: kein Agent- und kein Desktop-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
