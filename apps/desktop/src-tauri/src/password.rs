@@ -1037,11 +1037,15 @@ fn windows_generic_read<T>(
 ) -> Result<Option<T>, AppError> {
     use std::ptr::null_mut;
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
+    use windows::Win32::Foundation::GetLastError;
     use windows::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
     };
 
+    #[cfg(test)]
+    if let Some(err) = FAILING_CRED_READ.get() {
+        return windows_generic_read_failed(err);
+    }
     let target_w = to_utf16_null(target);
     let mut credential_ptr: *mut CREDENTIALW = null_mut();
     let ok = unsafe {
@@ -1054,18 +1058,61 @@ fn windows_generic_read<T>(
     }
     .is_ok();
     if !ok {
-        let err = unsafe { GetLastError() };
-        if err == ERROR_NOT_FOUND {
-            return Ok(None);
-        }
-        return Err(AppError::Keyring(format!(
-            "Credential Manager error: {}",
-            err.0
-        )));
+        return windows_generic_read_failed(unsafe { GetLastError() });
     }
     let found = read(unsafe { &*credential_ptr });
     unsafe { CredFree(credential_ptr as *const _) };
     Ok(Some(found))
+}
+
+/// What [`windows_generic_read`] answers for a `CredReadW` that failed with `err`: no entry for
+/// `ERROR_NOT_FOUND`, an error for any other code.
+#[cfg(target_os = "windows")]
+fn windows_generic_read_failed<T>(
+    err: windows::Win32::Foundation::WIN32_ERROR,
+) -> Result<Option<T>, AppError> {
+    if err == windows::Win32::Foundation::ERROR_NOT_FOUND {
+        return Ok(None);
+    }
+    Err(AppError::Keyring(format!(
+        "Credential Manager error: {}",
+        err.0
+    )))
+}
+
+/// While the guard lives, [`windows_generic_read`] on this thread answers as if `CredReadW` had
+/// failed with `code`, without calling it: on a test machine the Credential Manager fails a read
+/// only with `ERROR_NOT_FOUND`, so no other code can be had for real.
+#[cfg(all(test, target_os = "windows"))]
+pub(crate) fn fail_cred_read(code: windows::Win32::Foundation::WIN32_ERROR) -> FailingCredRead {
+    FAILING_CRED_READ.set(Some(code));
+    FailingCredRead(())
+}
+
+/// The guard of [`fail_cred_read`].
+#[cfg(all(test, target_os = "windows"))]
+#[must_use = "CredReadW fails as long as its guard lives"]
+pub(crate) struct FailingCredRead(());
+
+#[cfg(all(test, target_os = "windows"))]
+impl Drop for FailingCredRead {
+    fn drop(&mut self) {
+        FAILING_CRED_READ.set(None);
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+thread_local! {
+    /// The code of [`fail_cred_read`] on this thread, `None` without a guard.
+    static FAILING_CRED_READ: std::cell::Cell<Option<windows::Win32::Foundation::WIN32_ERROR>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The secret stored under `target` by `windows_store_credential`, `None` if there is none
+/// (`ERROR_NOT_FOUND`); any other failure of `CredReadW` is an error.
+#[cfg(target_os = "windows")]
+pub(crate) fn windows_try_read_credential(target: &str) -> Result<Option<String>, AppError> {
+    windows_generic_read(target, windows_secret)
 }
 
 /// Reads the secret stored under `target` by `windows_store_credential`. The
