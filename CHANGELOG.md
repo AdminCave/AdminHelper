@@ -14,6 +14,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und loeschte dort beim Laden ungeschuetzt und blieb eine leere Seite, ohne Login-Maske. Jetzt geht jeder Zugriff auf
   den Seitenspeicher durch einen Helfer, der nie wirft: das Panel zeigt die Login-Maske, die Sprache kommt aus dem
   Browser, und eine Sprachwahl gilt bis zum Neuladen.
+- **Web-Panel: helles Design uebersteht einen Reload (R-0647):** Das Skript, das das gespeicherte Design vor dem
+  ersten Zeichnen setzt, stand inline in `index.html`; die CSP des Servers (`script-src 'self'`) blockierte es, mit
+  CSP-Fehler in der Konsole. Nach einem Neuladen startete das Panel deshalb dunkel und ueberschrieb die gespeicherte
+  Wahl. Das Skript liegt jetzt als eigene Datei `theme-init.js` beim Panel und laeuft unter der CSP.
 
 ## [0.46.0] - 2026-10-22
 
