@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SMTP: ein Verhalten für Hub- und Monitoring-Mail, Zugangsdaten je Relay, Monitoring bekommt SMTP_* — Task-Ledger
-Status: bereit · Branch: feature/smtp-hardening · Review: pro Task
+Status: aktiv · Branch: feature/smtp-hardening · Review: pro Task
 Spec: docs/features/smtp-hardening.md (Roadmap R-0634; T1–T3 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `docker-compose.yml` (T4: `monitoring` bekommt `SMTP_*`) und der Versand des Notification-Hubs im `scheduler` (T3); läuft im Sammellauf über `main` (`/feature-build` §5). Kein `scenario`: kein FRP-, PKI-, Install-, Update- oder Cross-Host-Pfad (`scripts/install.sh`/`update.sh` bleiben; `update.sh` tauscht `docker-compose.yml` aus dem Release-Bundle). Der Mail-Kreislauf von `multibox --moncheck` setzt `smtp_host` je Regel ohne Zugangsdaten und ändert sich durch T1 und T4 nicht
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -78,21 +78,21 @@ Dedup-Key: bug:ops:docker-compose.yml:monitoring-without-smtp-env
 HEAD: b1432223
 Semantik: `docs/admin/monitoring.html:340` — „SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar.“ (EN `docs/en/admin/monitoring.html:340` — „SMTP defaults from the environment variables …; overridable per rule.“)
 
-### T5 — Hub-Mail: optionale CA-Datei SMTP_CA_FILE  [?] (Option für Relays mit privater CA nach T3: SMTP_CA_FILE zusätzlich zu den System-CAs, Empfehlung, oder keine Option, oder ein Schalter, der die Prüfung abschaltet?)
+### T5 — Hub-Mail: optionale CA-Datei SMTP_CA_FILE  [ ]
 Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/app/modules/notifications/sender.py, apps/server/tests/test_email_sender.py
 Änderung: `apps/server/app/core/config.py` (SMTP-Block `:163-171`): `SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()`, Kommentar: optionaler Pfad im Container zu einer PEM-Datei mit der CA des Relays, zusätzlich zu den System-CAs, nur für SMTP. `sender.py`: nach `ssl.create_default_context()` bei gesetztem `SMTP_CA_FILE` `ctx.load_verify_locations(cafile=SMTP_CA_FILE)`, vor dem Verbinden (eine fehlende oder kaputte Datei wirft, bevor eine Verbindung entsteht; die Outbox wiederholt). Kein Eintrag in `docker-compose.yml` oder `.env.example`: eingebunden wird per `docker-compose.override.yml` (T7); `apps/server/tests/test_env_parity.py` bleibt grün (Lesen mit Default). Tests in `test_email_sender.py`: eine selbstsignierte CA als PEM in `tmp_path` (mit `cryptography`, wie andere Server-Tests Zertifikate bauen); (a) `SMTP_CA_FILE` gesetzt → der Kontext an `starttls` enthält die CA (`ctx.get_ca_certs()` nennt ihr Subject), `verify_mode`/`check_hostname` wie in T3; (b) ohne `SMTP_CA_FILE` nennt `get_ca_certs()` sie nicht; (c) `SMTP_CA_FILE` auf eine fehlende Datei → `send_email` wirft, `smtplib.SMTP` wird nicht aufgerufen. Zuerst rot: (a), (c).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py tests/test_env_parity.py
 Doku: keine in dieser Task (T7 dokumentiert beide Seiten)
 Abhängt von: T3
 
-### T6 — Monitoring-E-Mail: optionale CA-Datei SMTP_CA_FILE  [?] (wie T5: Option für Relays mit privater CA, Empfehlung SMTP_CA_FILE?)
+### T6 — Monitoring-E-Mail: optionale CA-Datei SMTP_CA_FILE  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/config.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter_dispatch.py
 Änderung: `apps/monitoring/app/core/config.py` (SMTP-Block `:68-80`): `SMTP_CA_FILE` wie in T5. `_send_email` (`apps/monitoring/app/alerter.py:665-683`): nach `ssl.create_default_context()` bei gesetztem `SMTP_CA_FILE` `ctx.load_verify_locations(cafile=SMTP_CA_FILE)`, vor dem Verbinden; gilt für jeden Relay (System-CAs bleiben, Regeln mit öffentlichem Relay brechen nicht). Lässt sich die Datei nicht laden (fehlt, kein PEM), verbindet `_send_email` nicht, loggt die Exception wie heute (`Email failed: …`) und gibt im Alert-Log `SMTP TLS failed` zurück (heute machte `_email_failure` aus einem `FileNotFoundError` „SMTP connection failed“, `:633-634`); die Änderung an `_email_failure` (`:612-635`) bleibt minimal. Tests in `test_alerter_dispatch.py` mit `_FakeSMTP`: (a) `SMTP_CA_FILE` gesetzt (PEM in `tmp_path`) → der Kontext an `starttls` bzw. `SMTP_SSL` enthält die CA; (b) ohne → nicht; (c) fehlende Datei → `(False, "SMTP TLS failed")`, kein `SMTP`-Aufruf. Zuerst rot: (a), (c).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_dispatch.py
 Doku: keine in dieser Task (T7)
 Abhängt von: T1
 
-### T7 — Doku: SMTP_CA_FILE mit Override-Beispiel  [?] (wie T5: nur, wenn Kevin die Option SMTP_CA_FILE will)
+### T7 — Doku: SMTP_CA_FILE mit Override-Beispiel  [ ]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
 Änderung: DE und EN, gleiche Stellen. (1) SMTP-Tabelle (`docs/admin/betrieb.html:137-146`, `docs/en/admin/operations.html:96-105`): neue Zeile `SMTP_CA_FILE` — optionaler Pfad im Container zu einer PEM-Datei mit der CA des Relays (selbstsigniert oder Firmen-CA), zusätzlich zu den System-CAs, gilt für Hub und Monitoring; darunter ein `docker-compose.override.yml`-Beispiel, das für `server`, `scheduler` und `monitoring` je `SMTP_CA_FILE=/run/adminhelper/smtp-ca.pem` setzt und `./smtp-ca.pem:/run/adminhelper/smtp-ca.pem:ro` einhängt; Hinweis, dass ein Relay ohne STARTTLS auch damit nicht geht. (2) `docs/admin/monitoring.html:340` / EN `:340`: ein Halbsatz, dass `SMTP_CA_FILE` auch hier gilt. Der builder fährt zusätzlich `python3 scripts/dev/doc-smoke.py --paths --env --strict` (Exit 0; `SMTP_CA_FILE` steht nach T5/T6 in beiden `config.py`) und legt das Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
