@@ -15,6 +15,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Text ab, der den Schluesselbund nennt („… could not be read from or stored in the system keyring …“), statt den Pin
   nur bis zum Prozessende zu halten bzw. einen Zertifikatswechsel zu melden. Abhilfe: den Schluesselbund entsperren
   und neu verbinden. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+- **Desktop unter Windows: ein Lesefehler des Credential Managers gilt als Fehler:** Scheitert das Lesen aus dem
+  Windows Credential Manager mit einem anderen Fehler als „nicht gefunden“, behandelt der Desktop das beim
+  Zertifikat-Pin, bei gespeicherten RDP-Passwoertern und bei der Pruefung, ob ein Workspace eine Geraete-Identitaet
+  haelt, jetzt als Fehler statt als fehlenden Eintrag, wie schon unter Linux und macOS.
 
 ## [0.46.0] - 2026-10-22
 
