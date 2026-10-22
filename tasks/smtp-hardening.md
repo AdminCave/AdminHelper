@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SMTP: ein Verhalten für Hub- und Monitoring-Mail, Zugangsdaten je Relay, Monitoring bekommt SMTP_* — Task-Ledger
-Status: geplant · Branch: feature/smtp-hardening · Review: pro Task
+Status: aktiv · Branch: feature/smtp-hardening · Review: pro Task
 Spec: docs/features/smtp-hardening.md (Roadmap R-0634; T1–T3 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `docker-compose.yml` (T4: `monitoring` bekommt `SMTP_*`) und der Versand des Notification-Hubs im `scheduler` (T3); läuft im Sammellauf über `main` (`/feature-build` §5). Kein `scenario`: kein FRP-, PKI-, Install-, Update- oder Cross-Host-Pfad (`scripts/install.sh`/`update.sh` bleiben; `update.sh` tauscht `docker-compose.yml` aus dem Release-Bundle). Der Mail-Kreislauf von `multibox --moncheck` setzt `smtp_host` je Regel ohne Zugangsdaten und ändert sich durch T1 und T4 nicht
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
