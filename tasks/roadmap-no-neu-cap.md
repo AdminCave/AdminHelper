@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # roadmap.py: neue Zeilen ohne neu-Deckel — Task-Ledger
-Status: bereit · Branch: feature/roadmap-no-neu-cap · Review: pro Task
+Status: erledigt · Branch: feature/roadmap-no-neu-cap · Review: pro Task
 Spec: Kevin 2026-10-22 in der Session („Grenze ganz weg“ für den neu-Deckel); die Roadmap-Zeile trägt die Session nach dem Merge nach, weil `roadmap.py add` sie heute am Deckel (20/20) verweigert
 Heavy: none — nur Harness-Skripte (roadmap.py, ein Fehlerzweig in heavy.sh) und Entwickler-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
