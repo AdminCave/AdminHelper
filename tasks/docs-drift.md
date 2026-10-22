@@ -55,8 +55,10 @@ Dedup-Key: bug:docs:developer:dev-path-drift
 HEAD: e2304a8b
 Semantik: Soll ist `DEVELOPMENT.md:37-44` („python3 -m venv .venv … pip install -r requirements-dev.txt“), `:756-762` (Server auf `127.0.0.1:8080`), `:847-852` („cd apps/desktop/src-tauri“, „cargo tauri dev“), `:889` („go run ./cmd/adminhelper-agent version“)
 
-### T3 — Server-Entwicklerseite: `generate_visitor_toml` wie der Code, Tests ohne `uv` (R-0584, R-0669)  [ ]
+### T3 — Server-Entwicklerseite: `generate_visitor_toml` wie der Code, Tests ohne `uv` (R-0584, R-0669)  [x]
 Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9e4e802e 2026-10-22T14:08:00+02:00
+Review: approve (.ah-out/review/docs-drift/T3.verdict.json)
 Änderung: (1) Tabelle „FRP — TOML-Struktur“, Zeile `generate_visitor_toml` (`docs/developer/server.html:111`, EN `:111`), Spalte Inhalt: ein `[[visitors]]`-Block je übergebenem STCP-Tunnel, der eingeschaltet ist, ein Secret und einen `visitor_port` von 1 bis 65535 hat (`without_secretless_stcp`, `without_unbindable_visitor`; einen ausgelassenen Tunnel loggt der Server als Warnung), sortiert nach `visitor_port`, mit `bindAddr = "127.0.0.1"` und `bindPort` = `visitor_port`; die Aufrufer übergeben nur die STCP-Tunnel, die der Nutzer sehen darf (`_visible_stcp_tunnels` in `modules/frp/generate_router.py`). Quelle: `apps/server/app/modules/frp/config_generator.py:95-131`, `:336-356`; `apps/server/app/modules/frp/generate_router.py:40`. (2) Abschnitt „Tests“: `:215` `server/tests/` → `apps/server/tests/` (sonst bleibt der Absatz); Code-Block `:218-220` → `cd apps/server && . .venv/bin/activate` (venv aus „Lokale Entwicklung“ der Übersicht), `pytest -x`, `pytest --cov=app`, Kommentare wie bisher. Andere Zeilen nicht (`:43-46`, `:79-85`, `:161-167`, `:193` ändern andere Vorhaben).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku (DE+EN); kein CHANGELOG
