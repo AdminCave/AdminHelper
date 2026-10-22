@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Audit-Abdeckung und Admin-Meldungen: Hooks, Provisionierungs-Token, Monitoring-Proxy, Hochstufung — Task-Ledger
-Status: aktiv · Branch: feature/audit-coverage · Review: pro Task
+Status: bereit · Branch: feature/audit-coverage · Review: pro Task
 Spec: docs/features/audit-coverage.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full — Route-Handler unter `apps/server` ändern sich (Hooks, Provisionierungs-Token, Monitoring-Proxy mit neuer DB-Abhängigkeit im `async`-Pfad, Benutzer), die Sammelläufe erzeugen Provisionierungs-Token und schreiben über den Proxy; Routen, Schemas und OpenAPI bleiben, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, kein Cross-Host-Datenpfad (kein `scenario`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -129,8 +129,10 @@ Doku: die Task ist die Doku samt CHANGELOG
 Abhängt von: T1, T2, T3, T4, T5, T6, T7
 Semantik: Soll ist der Code nach T1–T7; zu ergänzen sind `docs/admin/betrieb.html:130` (Aufzählung „Erfasst werden u.&nbsp;a. …“) und `docs/admin/monitoring.html:373` („ein neuer Admin-Benutzer wurde angelegt“), EN `operations.html:89`, `monitoring.html:373`
 
-### T9 — Entwickler-Doku: Event-Katalog, Event-Bus, API-Referenz  [ ]
+### T9 — Entwickler-Doku: Event-Katalog, Event-Bus, API-Referenz  [x]
 Komponente: server · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4c40a17d 2026-10-22T13:06:56+02:00
+Review: approve (.ah-out/review/audit-coverage/T9.verdict.json)
 Änderung: DE und EN, gleiche Stellen. (1) Event-Katalog `docs/developer/hooks.html:54` / EN `:54`: neue Zeile `user.promoted` — `id`, `username`; feuert, wenn `PUT /api/users/{id}` einem Benutzer das Admin-Recht gibt; bei `user.created` der Zusatz, dass auch `python -m app.cli create-admin` es feuert. (2) `docs/developer/server.html:167` / EN `:167`: `user.promoted` in der Liste der Event-Typen; `:187` / EN `:187`: die Brücke spiegelt `user.created`/`user.promoted`/`server.deleted`/`frp.tunnel.created`. (3) `docs/developer/api-reference.html` / EN, gleiche Zeilen: `PUT /api/users/{id}` (`:83`) — Audit `user.updated` mit den geänderten Feldern in `detail`, feuert `user.promoted` beim Wechsel von `is_admin` auf `true`; Abschnitt Hooks (`:113-122`) ein Satz zu den Audit-Aktionen `hook.created`, `hook.updated`, `hook.deleted`, `hook.token_rotated`, `hook.run`; `POST …/provision/token` (`:154`) — Audit `provision.token.minted`; Proxy (`:173-175`) — `POST`/`PUT`/`DELETE` schreiben `monitoring.post|put|delete` mit Pfad und Antwortstatus (bei einem Abbruch nach dem Senden `status` `error`, `detail` `error=<Typ>`); im Hinweis `:179` entfällt `audit` aus dem Titel und der Satz „Audit-Trails laufen via Hook-Events … existiert (Stand v0.23.2) nicht“ (EN „Audit trails run via hook events … as of v0.23.2“), denn `:110-111` beschreibt `GET /api/audit`. Die Aufzählung der Pfad-Prefixe (`:172`) bleibt wörtlich (gepinnt von `apps/server/tests/test_monitoring_proxy_allowlist.py:46-51`). Der builder fährt zusätzlich `bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test` (Summary in den Commit-Body).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_proxy_allowlist.py
 Doku: die Task ist die Doku; CHANGELOG trägt T8
