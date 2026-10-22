@@ -1,13 +1,15 @@
 # What `vm.py sync` leaves at home: build output, runtime data and this tool's
 # own local state.
 #
-# Never exclude a TRACKED source path here. The box builds its evidence hash
-# from what it received; an exclude over tracked source would make the artifact
-# describe a tree the box never had. apps/server/data is safe — its only
-# tracked entry is an empty .gitkeep. .git is not excluded, and nothing on the
-# box relies on it: from the main checkout it is the repository, from a
-# worktree a pointer into a directory the box does not have. run.sh then takes
-# head and tree_hash from what iter.sh passes in from the client.
+# Never exclude a TRACKED source path here. The artifact of a synced run carries
+# the CLIENT's head and tree hash; an exclude over tracked source would make it
+# describe a tree the box never had. apps/server/data is the one exception — its
+# only tracked entry is an empty .gitkeep — and it is why the box's own hash
+# never matches the client's: run.sh lets the box's hash decide nothing when
+# iter.sh passes the client's values in, which it does on every run with sync.
+# .git is not excluded, and nothing on the box relies on it: from the main
+# checkout it is the repository, from a worktree a pointer into a directory the
+# box does not have.
 .cache
 .turbo
 dist

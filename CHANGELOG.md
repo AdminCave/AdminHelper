@@ -9,6 +9,48 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
+  Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
+  Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+- **Web: Stores halten nach dem Anlegen nur die Felder der Liste:** Webhook-Token und Skript eines neuen oder
+  bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
+  zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
+  Entwickler (DE+EN).
+- **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
+  ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
+  und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
+  ELF-Datei mit x-Bit) root und sind fuer alle anderen nur noch ausfuehrbar (`chmod go-r`: aus `0755` wird `0711`,
+  Eigentuemer und setuid-Bits bleiben), wie im frps-Image `frps` und `curl`. Prozesse des Nutzers `app` (UID 10001),
+  die der Entrypoint ueber `gosu` startet, sind damit nicht dumpable: Ihre Eintraege unter `/proc/<pid>` gehoeren
+  root. Skripte und Symlinks bleiben, wie sie sind; es zaehlt das Programm, das ein Skript ausfuehrt (`python3.12`,
+  `dash`, `perl`). Als `app` kann `pg_isready` sein eigenes Programm nicht mehr lesen, schreibt
+  `invalid binary "…": Permission denied` auf stderr und laeuft weiter; die Entrypoints leiten das nach `/dev/null`.
+  `psql` bricht in dieser Lage ab, daher prueft monitoring beim Start seine Datenbank und legt sie an ueber Python
+  (`psycopg`) statt ueber `psql`. Als root, etwa per `docker compose exec`, laufen beide wie bisher. Der Schritt ist
+  der letzte `RUN` jedes der drei Images und erfasst so alles, was die Schritte darueber installieren. Die UID 10001
+  sollte auf dem Host keinem anderen Konto oder Dienst gehoeren. Doku: Betrieb (DE+EN).
+- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
+  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
+  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
+  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
+  gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
+  `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
+  waehrend `rest` schon laeuft. Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach
+  Teil `rest` seriell auf der Box `desktop`, und die Notizen sagen es mit der letzten Zeile aus `warm-gui.log`; nur
+  wenn `warm.sh gui` verweigert (Exit 2), bleibt der Lauf `UNVERIFIED`. Der Pre-flight fragt `vm.py doctor` deshalb
+  nur nach dem Slot `desktop`, wenn seine Box nicht schon laeuft; ob die GUI-Box passt, entscheidet `vm.py clone`.
+  Das Urteil heisst `PASS` nur mit zwei gruenen Teilen; ein Teil, der nicht lief oder keinen eigenen Beleg brachte
+  (weder Summary-Zeile noch Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf `UNVERIFIED`, und der
+  Grund nennt den Teil und einen roten anderen Teil („FAIL in part rest“). Rote Schritte werden auf der Box ihres
+  Teils wiederholt. Der Report setzt das Etikett des Teils vor seine Summary-Zeile (`[rest] run.sh[all]: …`), fuehrt
+  die Schritte beider Teile mit Sekunden und Box und **eine** Ebenen-Zeile mit Wandzeit, beiden Boxen
+  (`<box-rest>+<box-gui>`) und den Sekunden je Teil; `steps-all.tsv` nennt den Teil in einer vierten Spalte, jeder
+  Teil hat sein Log (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis, die JUnit-XML beider Teile liegen in
+  `junit/`. `history.csv` behaelt ihr Format. Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile. Nach
+  dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
+  Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
+  Entwickler (DE+EN), `/test`-Skill.
 - **Agent: `provision` und `monitor init` nehmen je Aufruf genau eine Vertrauensquelle:** Beide lehnen `--cacert`
   zusammen mit `--insecure` ab, wie `provision` schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server
   bereits. Der Aufruf scheitert, bevor er etwas schreibt oder (bei `provision`) den Einmal-Token sendet, und die
@@ -35,6 +77,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. `provision` legt auch kein Verzeichnis `frp/pki` mehr
   an; ein vorhandenes bleibt unberuehrt, und die Pakete legen `/etc/frp/pki` weiter leer an. Doku: Agent-Entwicklerseite
   (DE+EN).
+
+### Fixed
+
+- **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
+  Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
+  Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen
+  Text ab, der den Schluesselbund nennt („… could not be read from or stored in the system keyring …“), statt den Pin
+  nur bis zum Prozessende zu halten bzw. einen Zertifikatswechsel zu melden. Abhilfe: den Schluesselbund entsperren
+  und neu verbinden. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+- **Desktop unter Windows: ein Lesefehler des Credential Managers gilt als Fehler:** Scheitert das Lesen aus dem
+  Windows Credential Manager mit einem anderen Fehler als „nicht gefunden“, behandelt der Desktop das beim
+  Zertifikat-Pin, bei gespeicherten RDP-Passwoertern und bei der Pruefung, ob ein Workspace eine Geraete-Identitaet
+  haelt, jetzt als Fehler statt als fehlenden Eintrag, wie schon unter Linux und macOS.
+- **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
+  `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
+  Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
+  gescheitertem Lauf eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text
+  (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
+  `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
+  Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
+- **Sammellauf: Schritt-Tabelle und Sekunden je Schritt wieder im Report (R-0603):** Bei einem Sammellauf aus dem
+  Haupt-Checkout verwarf `heavy.sh` seit dem 2026-09-18 jedes Artefakt der Box („last-all.json describes another
+  tree — ignored“): `run.sh` nahm Kopf und Tree-Hash zuerst vom `git` der Box, und deren Hash, am Ende des Laufs ueber
+  einen vom Sync geformten Baum gerechnet, traf den des Clients nie. Der Report hatte deshalb nur die Ebenen-Zeile,
+  `steps-all.tsv` blieb leer, und die Historie bekam keine Schritt-Zeilen. Jetzt gehen die Werte, die `iter.sh` vom
+  Client mitgibt, vor dem `git` der Box; als Wert zaehlen nur genau 40 Hex-Zeichen. Ein Lauf ohne Sync und ein
+  lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
+  `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
+  vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
 
 ## [0.46.0] - 2026-10-22
 

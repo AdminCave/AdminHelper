@@ -8,11 +8,14 @@
 # for branch-switch / EOD. Destroys the VMs recorded in .vm/warm.env, then lets
 # vm.py reap whatever else on THIS LANE has expired, then clears warm.env.
 #
-#   bash scripts/vm/reap.sh [--lane <lane>] [--all]
+#   bash scripts/vm/reap.sh [--lane <lane>] [--all] [--role <desktop|server|gui>]
 #     --lane <lane>  act as that lane (default: .vm/lane, else main)
 #     --all          extend the expiry sweep to EVERY lane. A live box on
 #                    another lane is not touched even then — its ttl is its
 #                    own; take it by id with `vm.py destroy <vmid>`.
+#     --role <slot>  destroy and clear only that warm slot — its keys <slot> and
+#                    <slot>_*, the server's credentials with it; the other slots
+#                    stay. The expiry sweep and the closing list run as without it.
 #
 # Only this lane's warm slots are destroyed outright: another lane's warm.env is
 # in another worktree, and guessing at its VMs by tag is how one lane kills the
@@ -27,20 +30,25 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$VM_ROOT" || exit 1
 vm_load_env || exit 1
 
-ALL=0
+ALL=0 ONLY=""
 while [ $# -gt 0 ]; do case "$1" in
   --lane) AH_LANE="${2:?--lane needs a value}"; export AH_LANE; shift ;;
   --all) ALL=1 ;;
-  *) echo "unknown arg: $1 (use --lane <lane> | --all)"; exit 2 ;;
+  --role) case "${2:-}" in
+            desktop|server|gui) ONLY="$2"; shift ;;
+            *) echo "--role needs desktop, server or gui${2:+, not $2}"; exit 2 ;;
+          esac ;;
+  *) echo "unknown arg: $1 (use --lane <lane> | --all | --role <desktop|server|gui>)"; exit 2 ;;
 esac; shift; done
 LANE="$(vm_lane)" || exit 2
 # vm.py derives the lane the same way (AH_LANE, then .vm/lane) — export the
 # resolved name so both sides agree even when neither was set.
 export AH_LANE="$LANE"
 
-echo "== reap warm boxes (lane $LANE) =="
+echo "== reap warm boxes (lane $LANE${ONLY:+, slot $ONLY}) =="
+SLOTS=(desktop server gui); [ -z "$ONLY" ] || SLOTS=("$ONLY")
 ROLES=() IDS=() NAMES=()
-for role in desktop server; do
+for role in "${SLOTS[@]}"; do
   v="$(warm_get "$role")"
   [ -n "$v" ] || continue
   # A VMID and nothing else: a value starting with - would reach vm.py's argparse
@@ -77,10 +85,14 @@ if [ "$ALL" = 1 ]; then vm_py reap --all | sed 's/^/  /'
 else vm_py reap | sed 's/^/  /'; fi
 
 # Clear every key, not just the role slots: the server credentials belong to the
-# box that just went away, and a stale one would let iter drive at nothing.
+# box that just went away, and a stale one would let iter drive at nothing. With
+# --role the slot's own keys only, <slot> and <slot>_*, for the same reason.
 # Read the key list ONCE up front: warm_clear rewrites the very file a loop over
 # it would be reading.
-for key in $(cut -d= -f1 "$(vm_warm_file)" 2>/dev/null); do warm_clear "$key"; done
+for key in $(cut -d= -f1 "$(vm_warm_file)" 2>/dev/null); do
+  if [ -n "$ONLY" ]; then case "$key" in "$ONLY"|"$ONLY"_*) ;; *) continue ;; esac; fi
+  warm_clear "$key"
+done
 
 # `list` exits 74 when it finds a VM of this lane that nothing claims any more,
 # and that exit code is this script's: a sweep that left something behind has not

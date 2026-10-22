@@ -130,12 +130,10 @@ export interface HookUpdate {
 }
 
 export interface HookRunResult {
-  success?: boolean;
-  output?: string;
+  success: boolean;
+  result: unknown;
+  logs: string[];
   error?: string;
-  exit_code?: number;
-  duration_ms?: number;
-  [key: string]: unknown;
 }
 
 export interface HookTokenResult {

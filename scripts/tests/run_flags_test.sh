@@ -22,7 +22,7 @@ set -uo pipefail
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
 unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
-      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS AH_PART
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -537,17 +537,34 @@ grep -q '"head": "1111111111111111111111111111111111111111"' "$WORK/out4/last-li
 grep -q '"tree_hash": "2222222222222222222222222222222222222222"' "$WORK/out4/last-lint.json" \
   && ok "no .git: tree_hash comes from the client" || bad "tree_hash: $(grep tree_hash "$WORK/out4/last-lint.json")"
 
-# ...and where git DOES answer, its answer wins over whatever the client claims.
-# Checked with a stub rather than the surrounding checkout: "a real repo that
-# answers" is not a precondition this test can assume — that is exactly what made
-# the first heavy run red.
+# A client value that is not exactly 40 hex characters is no identity: with no
+# git to ask, the field stays empty instead of carrying it.
+OUT=$(PATH="$NOGIT" AH_OUT_DIR="$WORK/out4b" \
+      AH_HEAD=111111111111111111111111111111111111111 \
+      AH_TREE_HASH=not-a-tree-hash \
+      "$NOGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": ""' "$WORK/out4b/last-lint.json" && grep -q '"tree_hash": ""' "$WORK/out4b/last-lint.json" \
+  && ok "no .git and a malformed client value: the fields stay empty" \
+  || bad "malformed client value: $(grep -E '"(head|tree_hash)"' "$WORK/out4b/last-lint.json" | tr -d '\n')"
+
+# ...and where git DOES answer, the client's values still win (Kevin, 2026-09-25:
+# the box needs no repository, head and tree hash come from the client). Synced
+# from the main checkout the box's git does answer — but over a tree the sync
+# shaped and the run changed, so its tree hash never matched the client's and
+# heavy.sh threw away every artifact. Checked with a stub rather than the
+# surrounding checkout: "a real repo that answers" is not a precondition this test
+# can assume — that is exactly what made the first heavy run red.
 FAKEGIT="$WORK/bin-fakegit"; mkdir -p "$FAKEGIT"
 cp -a "$BARE/." "$FAKEGIT/"
 rm -f "$FAKEGIT/git"
-cat > "$FAKEGIT/git" <<'EOF'
+# Answers run.sh's own question and every call scripts/dev/tree-hash.sh makes:
+# the checkout as toplevel, add/rm into its throwaway index, write-tree.
+cat > "$FAKEGIT/git" <<EOF
 #!/bin/sh
-case "$*" in
-  "rev-parse HEAD") echo 3333333333333333333333333333333333333333; exit 0 ;;
+case "\$*" in
+  "rev-parse HEAD"|write-tree) echo 3333333333333333333333333333333333333333; exit 0 ;;
+  "rev-parse --show-toplevel") echo "$REPO_ROOT"; exit 0 ;;
+  "add "*|"rm "*) exit 0 ;;
 esac
 exit 128
 EOF
@@ -555,9 +572,53 @@ chmod +x "$FAKEGIT/git"
 OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out5" \
       AH_HEAD=1111111111111111111111111111111111111111 \
       "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
-grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out5/last-lint.json" \
-  && ok "a git that answers wins over the client value" \
+grep -q '"head": "1111111111111111111111111111111111111111"' "$WORK/out5/last-lint.json" \
+  && ok "the client's head wins over a git that answers" \
   || bad "precedence: $(grep '"head"' "$WORK/out5/last-lint.json")"
+OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out6" \
+      AH_TREE_HASH=2222222222222222222222222222222222222222 \
+      "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"tree_hash": "2222222222222222222222222222222222222222"' "$WORK/out6/last-lint.json" \
+  && ok "the client's tree_hash wins over a git that answers tree-hash.sh" \
+  || bad "tree_hash precedence: $(grep '"tree_hash"' "$WORK/out6/last-lint.json")"
+
+# Without client values the box keeps asking its own git (a run without sync, or
+# a local one). This is also the proof that the stub answers tree-hash.sh: if it
+# did not, the case above would pass on the fallback alone.
+OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out7" \
+      "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out7/last-lint.json" \
+  && grep -q '"tree_hash": "3333333333333333333333333333333333333333"' "$WORK/out7/last-lint.json" \
+  && ok "without client values the box's git answers both fields" \
+  || bad "no client values: $(grep -E '"(head|tree_hash)"' "$WORK/out7/last-lint.json" | tr -d '\n')"
+
+# A client value counts only as exactly 40 lowercase hex characters; anything
+# else is not an identity, and the box's git answers instead.
+n=0
+for v in 111111111111111111111111111111111111111 \
+         11111111111111111111111111111111111111111 \
+         111111111111111111111111111111111111111g \
+         AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA; do
+  n=$((n + 1))
+  OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out8-$n" AH_HEAD="$v" AH_TREE_HASH="$v" \
+        "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+  grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out8-$n/last-lint.json" \
+    && grep -q '"tree_hash": "3333333333333333333333333333333333333333"' "$WORK/out8-$n/last-lint.json" \
+    && ok "client value '$v' (${#v} chars) does not count — the box's git answers" \
+    || bad "client value '$v': $(grep -E '"(head|tree_hash)"' "$WORK/out8-$n/last-lint.json" | tr -d '\n')"
+done
+
+# The box's own answer counts only as hex too: a git that exits 0 with text
+# that is no commit leaves the field empty instead of filling it.
+TEXTGIT="$WORK/bin-textgit"; mkdir -p "$TEXTGIT"
+cp -a "$BARE/." "$TEXTGIT/"
+rm -f "$TEXTGIT/git"
+printf '#!/bin/sh\necho "not a commit"\nexit 0\n' > "$TEXTGIT/git"; chmod +x "$TEXTGIT/git"
+OUT=$(PATH="$TEXTGIT" AH_OUT_DIR="$WORK/out9" \
+      "$TEXTGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": ""' "$WORK/out9/last-lint.json" \
+  && ok "a git answering with text that is no hex leaves head empty" \
+  || bad "non-hex git answer: $(grep '"head"' "$WORK/out9/last-lint.json")"
 
 # A strict-failed SKIP carries its own verdict rather than being folded into
 # "fail" or "skip" — the summary counts it twice, the artifact must not.
@@ -711,6 +772,170 @@ done
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 AH_REQUIRED="" "$BARE/bash" "$RUN" integration --strict 2>&1); rc=$?
 grep -q "strict-failed: integration suite (SKIP)" <<<"$OUT" \
   && ok "an empty AH_REQUIRED is treated as unset" || bad "empty AH_REQUIRED: $(grep -m1 'required (strict)' <<<"$OUT")"
+
+# ══ --part: the two parts heavy.sh runs on two boxes at once (R-0603) ═════════
+echo "── --part ──"
+run_bare lint --part
+[ $rc -eq 2 ] && grep -q "needs gui or rest" <<<"$OUT" && ok "--part without a value -> exit 2" || bad "--part bare: rc=$rc $OUT"
+run_bare lint --part nope
+[ $rc -eq 2 ] && grep -q "unknown part: 'nope'" <<<"$OUT" && ! grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" \
+  && ok "--part nope -> exit 2 before any step" || bad "--part nope: rc=$rc $(grep -m1 -E 'part|run.sh\[' <<<"$OUT")"
+# The env form is checked the same way: want_step reads it just like the flag.
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_PART=nope "$BARE/bash" "$RUN" lint 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "unknown part: 'nope'" <<<"$OUT" && ok "AH_PART=nope -> exit 2" || bad "AH_PART=nope: rc=$rc"
+run_bare lint --bogus
+grep -qF -- "--part <gui|rest>" <<<"$OUT" && ok "the unknown-flag message names --part" \
+  || bad "unknown-flag message: $(grep -m1 'unknown flag' <<<"$OUT")"
+
+# The e2e layer on the bare PATH: no node, no docker, no display, so every step
+# SKIPs, and the artifact still lists exactly the steps of the run's part.
+artifact_steps() { sed -n 's/^    {"name": "\(.*\)", "result": .*/\1/p' "$1" | LC_ALL=C sort; }
+part_run() {  # part_run <out dir> <run.sh args…>
+  local d="$1"; shift
+  OUT=$(PATH="$BARE" AH_OUT_DIR="$d" AH_ALLOW_REAL=1 "$BARE/bash" "$RUN" e2e "$@" 2>&1); rc=$?
+}
+part_run "$WORK/part-none"
+NONE_STEPS=$(artifact_steps "$WORK/part-none/last-e2e.json")
+part_run "$WORK/part-gui" --part gui; GUI_OUT="$OUT"; GUI_RC=$rc
+GUI_STEPS=$(artifact_steps "$WORK/part-gui/last-e2e.json")
+part_run "$WORK/part-rest" --part rest; REST_OUT="$OUT"; REST_RC=$rc
+REST_STEPS=$(artifact_steps "$WORK/part-rest/last-e2e.json")
+[ "$GUI_STEPS" = "$(printf '%s\n' 'desktop GUI E2E' 'desktop-e2e smoke' | LC_ALL=C sort)" ] \
+  && ok "e2e --part gui: exactly the smoke test and the GUI guard row" \
+  || bad "part gui steps: $(tr '\n' '|' <<<"$GUI_STEPS")"
+[ "$REST_STEPS" = "web Playwright E2E" ] \
+  && ok "e2e --part rest: exactly web Playwright E2E" || bad "part rest steps: $(tr '\n' '|' <<<"$REST_STEPS")"
+[ -n "$NONE_STEPS" ] && [ "$(printf '%s\n%s\n' "$GUI_STEPS" "$REST_STEPS" | LC_ALL=C sort)" = "$NONE_STEPS" ] \
+  && ok "the two parts together are the layer without --part" \
+  || bad "union: gui+rest [$(printf '%s|%s' "$GUI_STEPS" "$REST_STEPS" | tr '\n' '|')] vs [$(tr '\n' '|' <<<"$NONE_STEPS")]"
+BOTH=$(LC_ALL=C comm -12 <(printf '%s\n' "$GUI_STEPS") <(printf '%s\n' "$REST_STEPS"))
+# Both parts non-empty and both runs through, or the two checks below would also
+# hold for a run.sh that rejects --part and runs nothing.
+[ -n "$GUI_STEPS" ] && [ -n "$REST_STEPS" ] && [ -z "$BOTH" ] \
+  && ok "no step lies in both parts" || bad "in both parts: $(tr '\n' '|' <<<"$BOTH")"
+[ "$GUI_RC" -eq 0 ] && [ "$REST_RC" -eq 0 ] \
+  && ! grep -q "web Playwright" <<<"$GUI_OUT" && ! grep -qE "desktop-e2e smoke|desktop GUI E2E" <<<"$REST_OUT" \
+  && ok "a step outside the part is not run, not even as a SKIP" \
+  || bad "rc gui/rest=$GUI_RC/$REST_RC; gui run: $(grep -m1 'web Playwright' <<<"$GUI_OUT"); rest run: $(grep -m1 -E 'desktop-e2e smoke|desktop GUI E2E' <<<"$REST_OUT")"
+grep -q '"part": "gui"' "$WORK/part-gui/last-e2e.json" && grep -q '"part": "rest"' "$WORK/part-rest/last-e2e.json" \
+  && grep -q '"part": ""' "$WORK/part-none/last-e2e.json" \
+  && ok "artifact: the part field (empty without --part)" \
+  || bad "part field: $(grep -h '"part"' "$WORK"/part-*/last-e2e.json | tr -d '\n')"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/part-env" AH_ALLOW_REAL=1 AH_PART=gui "$BARE/bash" "$RUN" e2e 2>&1)
+[ "$(artifact_steps "$WORK/part-env/last-e2e.json")" = "$GUI_STEPS" ] && grep -q '"part": "gui"' "$WORK/part-env/last-e2e.json" \
+  && ok "AH_PART is the env form of --part" || bad "AH_PART=gui: $(grep '"part"' "$WORK/part-env/last-e2e.json")"
+
+# A part with no step in the layer verifies nothing; under --strict that stays red.
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" "$BARE/bash" "$RUN" lint --part gui --strict 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "strict-failed: no step ran (.*part=gui)" <<<"$OUT" \
+  && ok "lint --part gui --strict: no step ran is a failure" \
+  || bad "lint --part gui --strict: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+
+# With docker and a display stubbed, layer_e2e reaches its suite loop, so the
+# GUI suites exist as --step targets. Every case below ends in the dry pass of
+# --step (unknown, ambiguous, or a step that SKIPs here: no node on this PATH);
+# the stubs log every call, so a suite that started anyway would leave a call
+# other than `docker info` behind.
+GUISTUB="$WORK/bin-guistub"; mkdir -p "$GUISTUB"
+cp -a "$BARE/." "$GUISTUB/"
+GUI_STUB_LOG="$WORK/guistub.log"; : > "$GUI_STUB_LOG"
+for t in docker xvfb-run WebKitWebDriver tauri-driver; do
+  rm -f "$GUISTUB/$t"
+  printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 0\n' "$t" "$GUI_STUB_LOG" > "$GUISTUB/$t"; chmod +x "$GUISTUB/$t"
+done
+gui_stub_run() {
+  OUT=$(PATH="$GUISTUB" AH_OUT_DIR="$WORK/out-guistub" AH_ALLOW_REAL=1 "$GUISTUB/bash" "$RUN" e2e "$@" 2>&1); rc=$?
+}
+SUITES=""; NSUITES=0
+for f in "$REPO_ROOT"/scripts/tests/desktop_e2e_*.sh; do
+  s=$(basename "$f" .sh); [ "$s" = desktop_e2e_skip_test ] && continue
+  SUITES="$SUITES $s"; NSUITES=$((NSUITES + 1))
+done
+# The counter-check first: in part gui every suite is a candidate. Without it the
+# "unknown step" below would also hold for stubs that never reach the loop.
+gui_stub_run --part gui --step desktop_e2e_
+missing=""
+for s in $SUITES; do grep -qx "  $s" <<<"$OUT" || missing="$missing $s"; done
+[ "$NSUITES" -gt 0 ] && [ $rc -eq 2 ] && grep -q "ambiguous step: 'desktop_e2e_' matches $NSUITES steps" <<<"$OUT" \
+  && [ -z "$missing" ] \
+  && ok "with the stubs all $NSUITES GUI suites are --step candidates of part gui" \
+  || bad "part gui candidates: rc=$rc missing:$missing $(grep -m1 -E 'ambiguous|unknown' <<<"$OUT")"
+missing=""
+for s in $SUITES; do
+  gui_stub_run --part rest --step "$s"
+  { [ $rc -eq 2 ] && grep -q "unknown step: '$s'" <<<"$OUT"; } || missing="$missing $s"
+done
+[ -n "$SUITES" ] && [ -z "$missing" ] \
+  && ok "--part rest --step <suite> is an unknown step for every GUI suite" || bad "part rest reaches:$missing"
+gui_stub_run --part gui --step "web Playwright"
+[ $rc -eq 2 ] && grep -q "unknown step: 'web Playwright' (no step of layer 'e2e', part 'gui'," <<<"$OUT" \
+  && ok "--part gui --step 'web Playwright' is an unknown step, and the message names the part" \
+  || bad "part gui, web Playwright: rc=$rc $(grep -m1 -E 'step' <<<"$OUT")"
+gui_stub_run --part rest --step "web Playwright"
+[ $rc -eq 0 ] && grep -q "SKIP  web Playwright E2E" <<<"$OUT" \
+  && ok "...while part rest reaches it" || bad "part rest, web Playwright: rc=$rc $(grep -m1 -E 'step|SKIP' <<<"$OUT")"
+# Into a variable first: under pipefail a `grep -v | grep -q` can take the
+# writer's SIGPIPE as its answer.
+others=$(grep -vx 'docker info' "$GUI_STUB_LOG")
+grep -qx 'docker info' "$GUI_STUB_LOG" && [ -z "$others" ] \
+  && ok "no suite started (the stubs saw nothing but docker info)" \
+  || bad "stub calls: $(tr '\n' '|' < "$GUI_STUB_LOG")"
+
+# The smoke step's `npm test` builds the app, and that build runs `npm --prefix ui
+# run build`; in part gui no other step installs ui/, so the smoke step must, by
+# npm_ci_if_stale's rule. A root of its own, because the rule reads mtimes and this
+# test must not touch the checkout's node_modules. npm is a stub that logs where it
+# was called: nothing is installed, no app is built. No docker on this PATH, so the
+# GUI suites stay behind their guard row.
+echo "── smoke: ui dependencies ──"
+SMOKE_ROOT="$WORK/smoke-root"
+mkdir -p "$SMOKE_ROOT/scripts/tests" "$SMOKE_ROOT/apps/desktop/ui/node_modules" "$SMOKE_ROOT/apps/desktop/e2e/node_modules"
+cp "$RUN" "$SMOKE_ROOT/scripts/tests/run.sh"
+touch "$SMOKE_ROOT/apps/desktop/ui/package-lock.json" "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
+SMOKESTUB="$WORK/bin-smokestub"; mkdir -p "$SMOKESTUB"
+cp -a "$BARE/." "$SMOKESTUB/"
+NPM_LOG="$WORK/npm.log"
+for t in node xvfb-run WebKitWebDriver tauri-driver; do
+  rm -f "$SMOKESTUB/$t"
+  printf '#!/bin/sh\nexit 0\n' > "$SMOKESTUB/$t"; chmod +x "$SMOKESTUB/$t"
+done
+rm -f "$SMOKESTUB/npm"
+cat > "$SMOKESTUB/npm" <<EOF
+#!/bin/sh
+echo "\$(pwd) npm \$*" >> "$NPM_LOG"
+[ "\$1" = ci ] && [ -n "\${SMOKE_NPM_CI_FAIL:-}" ] && exit 1
+exit 0
+EOF
+chmod +x "$SMOKESTUB/npm"
+smoke_run() {  # smoke_run <mtime of ui/node_modules> <mtime of ui/package-lock.json>
+  touch -d "$1" "$SMOKE_ROOT/apps/desktop/ui/node_modules"
+  touch -d "$2" "$SMOKE_ROOT/apps/desktop/ui/package-lock.json"
+  # e2e/ is fresh every time, so an `npm ci` in the log can only be ui's.
+  touch -d 2026-01-01 "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
+  touch -d 2026-01-02 "$SMOKE_ROOT/apps/desktop/e2e/node_modules"
+  : > "$NPM_LOG"
+  OUT=$(PATH="$SMOKESTUB" AH_OUT_DIR="$WORK/out-smoke" AH_ALLOW_REAL=1 \
+        "$SMOKESTUB/bash" "$SMOKE_ROOT/scripts/tests/run.sh" e2e --part gui 2>&1); rc=$?
+}
+smoke_line() { sed -n "\\#$1\$#{=;q}" "$NPM_LOG"; }  # number of the first log line ending in $1
+smoke_run 2026-01-01 2026-01-02
+UI_CI=$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')
+E2E_TEST=$(smoke_line '/apps/desktop/e2e npm test')
+[ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$UI_CI" ] && [ -n "$E2E_TEST" ] && [ "$UI_CI" -lt "$E2E_TEST" ] \
+  && ok "smoke: ui/node_modules older than its lockfile -> npm ci in ui before npm test in e2e" \
+  || bad "smoke, stale ui: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+smoke_run 2026-01-02 2026-01-01
+[ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$(smoke_line '/apps/desktop/e2e npm test')" ] && ! grep -q ' npm ci ' "$NPM_LOG" \
+  && ok "smoke: fresh ui/node_modules -> no npm ci, npm test still runs" \
+  || bad "smoke, fresh ui: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+# A failed install in ui/ must not let the build go on with the old node_modules.
+SMOKE_NPM_CI_FAIL=1 smoke_run 2026-01-01 2026-01-02
+[ $rc -eq 1 ] && grep -q "FAIL  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')" ] && ! grep -q ' npm test' "$NPM_LOG" \
+  && ok "smoke: a failed npm ci in ui fails the step before npm test" \
+  || bad "smoke, failed ui install: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
 
 # ── run.sh: the shared lock for the heavy python steps (T2, T6) ─────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a

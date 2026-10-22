@@ -70,10 +70,14 @@ fn pin_identity(server_url: &str) -> String {
 enum PinDecision {
     /// Pin matches the presented certificate — accept.
     Trust,
-    /// No pin yet — accept and persist this fingerprint (first use).
+    /// No pin yet — persist this fingerprint and accept (first use). The store
+    /// answers it only once the pin is stored.
     Capture,
     /// A pin exists but differs — reject (possible MITM / cert rotation).
     Reject,
+    /// The pin store could not be read, or the first-use pin could not be stored —
+    /// reject without pinning.
+    Unavailable,
 }
 
 fn decide(pinned: Option<&str>, presented: &str) -> PinDecision {
@@ -90,9 +94,12 @@ fn decide(pinned: Option<&str>, presented: &str) -> PinDecision {
 /// without a real OS keyring.
 trait PinStore: Send + Sync {
     /// `Ok(None)` = no pin (first use), `Ok(Some)` = the pin, `Err(())` = the store
-    /// could not be read. The last one must fail closed at the decision (3.60).
+    /// could not be read. The last one must fail closed at the decision
+    /// (`PinDecision::Unavailable`, 3.60).
     fn load(&self, identity: &str) -> Result<Option<String>, ()>;
-    fn store(&self, identity: &str, fingerprint: &str);
+    /// `Err(())` = the pin was not stored. A first use counts only after `Ok`: a pin
+    /// that does not outlive the process is no pin at the next start.
+    fn store(&self, identity: &str, fingerprint: &str) -> Result<(), ()>;
 
     /// Atomically decide the TOFU outcome for `presented` and, on first use,
     /// capture it — the whole read→decide→store sequence under ONE lock. The
@@ -103,12 +110,12 @@ trait PinStore: Send + Sync {
     fn load_or_store(&self, identity: &str, presented: &str) -> PinDecision {
         // Fail closed: an unreadable store must not be taken as "no pin" (3.60).
         let pinned = match self.load(identity) {
-            Err(()) => return PinDecision::Reject,
+            Err(()) => return PinDecision::Unavailable,
             Ok(opt) => opt,
         };
         let decision = decide(pinned.as_deref(), presented);
-        if decision == PinDecision::Capture {
-            self.store(identity, presented);
+        if decision == PinDecision::Capture && self.store(identity, presented).is_err() {
+            return PinDecision::Unavailable;
         }
         decision
     }
@@ -116,7 +123,8 @@ trait PinStore: Send + Sync {
 
 /// Production store: OS keyring backed by a process-wide in-memory cache, so the
 /// enforcement path does not hit the keyring on every single request — only the
-/// first read and the first-use write.
+/// first read and the first-use write. The cache only holds pins the keyring
+/// returned or stored, never one whose write failed.
 struct KeyringPinStore;
 
 // A poisoned lock only means another thread panicked mid-access; the map
@@ -147,12 +155,13 @@ impl PinStore for KeyringPinStore {
         Ok(stored)
     }
 
-    fn store(&self, identity: &str, fingerprint: &str) {
-        keyring_write(identity, fingerprint);
+    fn store(&self, identity: &str, fingerprint: &str) -> Result<(), ()> {
+        keyring_write(identity, fingerprint)?;
         cache()
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(identity.to_string(), fingerprint.to_string());
+        Ok(())
     }
 
     fn load_or_store(&self, identity: &str, presented: &str) -> PinDecision {
@@ -168,7 +177,7 @@ impl PinStore for KeyringPinStore {
                 // Fail closed: a keyring we cannot read must not be taken as "no pin"
                 // and capture the presented cert — an MITM presenting its own cert
                 // during a keyring outage would otherwise be pinned and trusted (3.60).
-                Err(()) => return PinDecision::Reject,
+                Err(()) => return PinDecision::Unavailable,
                 Ok(stored) => {
                     if let Some(ref fingerprint) = stored {
                         guard.insert(identity.to_string(), fingerprint.clone());
@@ -179,7 +188,12 @@ impl PinStore for KeyringPinStore {
         };
         let decision = decide(pinned.as_deref(), presented);
         if decision == PinDecision::Capture {
-            keyring_write(identity, presented);
+            // Trust a first use only once the pin is in the keyring: a pin held in
+            // the cache alone ends with the process, and the next start would pin
+            // whatever certificate is presented then.
+            if keyring_write(identity, presented).is_err() {
+                return PinDecision::Unavailable;
+            }
             guard.insert(identity.to_string(), presented.to_string());
         }
         decision
@@ -192,13 +206,15 @@ fn keyring_key(identity: &str) -> String {
 
 /// `Ok(None)` = no pin yet (genuine first use), `Ok(Some)` = the pinned fingerprint,
 /// `Err(())` = the keyring couldn't be read (locked/transient). The caller must treat
-/// `Err` as fail-closed, not as "no pin" (3.60).
+/// `Err` as fail-closed (`PinDecision::Unavailable`), not as "no pin" (3.60).
 fn keyring_read(identity: &str) -> Result<Option<String>, ()> {
     crate::keyring_store::try_get(&keyring_key(identity)).map_err(|_| ())
 }
 
-fn keyring_write(identity: &str, fingerprint: &str) {
-    let _ = crate::keyring_store::set(&keyring_key(identity), fingerprint);
+/// `Err(())` = the keyring did not store the pin; the caller must then not trust
+/// the presented certificate.
+fn keyring_write(identity: &str, fingerprint: &str) -> Result<(), ()> {
+    crate::keyring_store::set(&keyring_key(identity), fingerprint).map_err(|_| ())
 }
 
 fn keyring_delete(identity: &str) {
@@ -256,6 +272,14 @@ impl ServerCertVerifier for TofuVerifier {
                 "ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für {} hat sich \
                  seit dem ersten Verbinden geändert (mögliche MITM-Attacke). War der Wechsel \
                  erwartet, den gepinnten Eintrag in den Einstellungen zurücksetzen.",
+                self.identity
+            ))),
+            // No ERR_TOFU_PIN_MISMATCH: the certificate did not change, and the pin
+            // reset the login offers on that code cannot fix an unusable keyring.
+            PinDecision::Unavailable => Err(TlsError::General(format!(
+                "AdminHelper TOFU: The certificate pin for {} could not be read from or stored \
+                 in the system keyring, so the connection was refused. Unlock the system \
+                 keyring and connect again.",
                 self.identity
             ))),
         }
@@ -338,6 +362,16 @@ pub fn forget_pin(server_url: &str) {
     crate::http_client::invalidate_client_cache();
 }
 
+/// Pin `fingerprint` for `server_url` in the process cache only, as if the keyring
+/// had stored it: for tests whose handshake runs on a thread without a test keyring.
+#[cfg(test)]
+pub(crate) fn seed_cached_pin(server_url: &str, fingerprint: &str) {
+    cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(pin_identity(server_url), fingerprint.to_string());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,11 +391,12 @@ mod tests {
         fn load(&self, identity: &str) -> Result<Option<String>, ()> {
             Ok(self.map.lock().unwrap().get(identity).cloned())
         }
-        fn store(&self, identity: &str, fingerprint: &str) {
+        fn store(&self, identity: &str, fingerprint: &str) -> Result<(), ()> {
             self.map
                 .lock()
                 .unwrap()
                 .insert(identity.to_string(), fingerprint.to_string());
+            Ok(())
         }
     }
 
@@ -372,8 +407,43 @@ mod tests {
         fn load(&self, _identity: &str) -> Result<Option<String>, ()> {
             Err(())
         }
-        fn store(&self, _identity: &str, _fingerprint: &str) {
+        fn store(&self, _identity: &str, _fingerprint: &str) -> Result<(), ()> {
             panic!("store must not be called when the pin store is unreadable");
+        }
+    }
+
+    /// A store that reads "no pin" but cannot store one — a keyring that answers
+    /// reads but refuses writes.
+    struct UnwritablePinStore;
+    impl PinStore for UnwritablePinStore {
+        fn load(&self, _identity: &str) -> Result<Option<String>, ()> {
+            Ok(None)
+        }
+        fn store(&self, _identity: &str, _fingerprint: &str) -> Result<(), ()> {
+            Err(())
+        }
+    }
+
+    fn cached(identity: &str) -> bool {
+        cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(identity)
+    }
+
+    /// Run the verifier for `identity` over `store` with cert A and return the
+    /// message of the expected `TlsError::General`.
+    fn rejection_message(identity: &str, store: Arc<dyn PinStore>) -> String {
+        let verifier = TofuVerifier {
+            identity: identity.to_string(),
+            store,
+            provider: ring_provider(),
+        };
+        let cert_a = CertificateDer::from(CERT_A.to_vec());
+        let name = ServerName::try_from("localhost").unwrap();
+        match verifier.verify_server_cert(&cert_a, &[], &name, &[], UnixTime::now()) {
+            Err(TlsError::General(msg)) => msg,
+            other => panic!("expected a General rejection, got: {other:?}"),
         }
     }
 
@@ -409,7 +479,73 @@ mod tests {
         // 3.60: an unreadable keyring must reject, not treat the outage as "no pin"
         // and capture+trust whatever cert is presented (an MITM's during a keyring hang).
         let store = FailingPinStore;
-        assert_eq!(store.load_or_store("h:8443", FP_A), PinDecision::Reject);
+        assert_eq!(
+            store.load_or_store("h:8443", FP_A),
+            PinDecision::Unavailable
+        );
+
+        // Rejected as before, but not as a certificate change: resetting the pin,
+        // which the login offers on ERR_TOFU_PIN_MISMATCH, does not help here.
+        let msg = rejection_message("unreadable.example:443", Arc::new(FailingPinStore));
+        assert!(msg.contains("unreadable.example:443"), "{msg}");
+        assert!(msg.contains("keyring"), "{msg}");
+        assert!(!msg.contains("ERR_TOFU_PIN_MISMATCH"), "{msg}");
+    }
+
+    #[test]
+    fn load_or_store_refuses_a_first_use_whose_pin_cannot_be_stored() {
+        assert_eq!(
+            UnwritablePinStore.load_or_store("unwritable.example:443", FP_A),
+            PinDecision::Unavailable
+        );
+
+        let msg = rejection_message("unwritable.example:443", Arc::new(UnwritablePinStore));
+        assert!(msg.contains("unwritable.example:443"), "{msg}");
+        assert!(msg.contains("keyring"), "{msg}");
+        assert!(!msg.contains("ERR_TOFU_PIN_MISMATCH"), "{msg}");
+    }
+
+    #[test]
+    fn keyring_store_refuses_a_first_use_it_cannot_store_and_caches_nothing() {
+        // No keyring_store::memory() guard: in a test build `set` fails and
+        // `try_get` finds nothing, like a keyring that cannot be written.
+        let identity = "keyring-unstored.example:443";
+        assert_eq!(
+            KeyringPinStore.load_or_store(identity, FP_A),
+            PinDecision::Unavailable
+        );
+        assert!(!cached(identity), "an unstored pin must not be cached");
+        // Still no pin: the next connection is refused again, not trusted from the cache.
+        assert_eq!(
+            KeyringPinStore.load_or_store(identity, FP_A),
+            PinDecision::Unavailable
+        );
+        assert!(!cached(identity), "an unstored pin must not be cached");
+
+        assert_eq!(KeyringPinStore.store(identity, FP_A), Err(()));
+        assert!(!cached(identity), "an unstored pin must not be cached");
+    }
+
+    #[test]
+    fn keyring_store_captures_into_the_keyring_then_trusts_and_rejects() {
+        let _keyring = crate::keyring_store::memory();
+        let identity = "keyring-stored.example:443";
+        assert_eq!(
+            KeyringPinStore.load_or_store(identity, FP_A),
+            PinDecision::Capture
+        );
+        assert_eq!(
+            crate::keyring_store::get(&format!("tofu|cert|{identity}")).as_deref(),
+            Some(FP_A)
+        );
+        assert_eq!(
+            KeyringPinStore.load_or_store(identity, FP_A),
+            PinDecision::Trust
+        );
+        assert_eq!(
+            KeyringPinStore.load_or_store(identity, FP_B),
+            PinDecision::Reject
+        );
     }
 
     #[test]
@@ -542,7 +678,7 @@ mod tests {
         async fn changed_cert_is_rejected() {
             // Store already pins cert A for this identity.
             let store = Arc::new(InMemoryPinStore::default());
-            store.store("pin-test", FP_A);
+            store.store("pin-test", FP_A).unwrap();
             let store: Arc<dyn PinStore> = store;
 
             // Server now presents cert B under the same identity: must be rejected.
@@ -550,6 +686,15 @@ mod tests {
             let port = listener.local_addr().unwrap().port();
             tokio::spawn(serve_once(listener, server_config(CERT_B, KEY_B)));
             let client = pinning_client_for("pin-test", store);
+            assert_eq!(get(&client, port).await, Err(()));
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn first_use_is_refused_when_the_pin_cannot_be_stored() {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(serve_once(listener, server_config(CERT_A, KEY_A)));
+            let client = pinning_client_for("unwritable.example:443", Arc::new(UnwritablePinStore));
             assert_eq!(get(&client, port).await, Err(()));
         }
     }
