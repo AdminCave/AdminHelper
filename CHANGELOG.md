@@ -9,11 +9,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
-- **Agent: `provision` nimmt je Aufruf genau eine Vertrauensquelle:** `provision` lehnt `--cacert` zusammen mit
-  `--insecure` ab, wie schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server bereits. Der Aufruf
-  scheitert, bevor er etwas schreibt oder den Einmal-Token sendet, und die Meldung nennt beide Flags. Legt der Server
-  bei `--insecure` kein Zertifikat zum Pinnen vor, bricht `provision` ab, statt ohne Pruefung weiterzumachen;
-  `--insecure` gilt so nur fuer den einen Aufruf. Doku: Agent-Deployment (DE+EN).
+- **Agent: `provision` und `monitor init` nehmen je Aufruf genau eine Vertrauensquelle:** Beide lehnen `--cacert`
+  zusammen mit `--insecure` ab, wie `provision` schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server
+  bereits. Der Aufruf scheitert, bevor er etwas schreibt oder (bei `provision`) den Einmal-Token sendet, und die
+  Meldung nennt beide Flags. Legt der Server bei `--insecure` kein Zertifikat zum Pinnen vor, bricht `provision` ab,
+  statt ohne Pruefung weiterzumachen; `monitor init` bricht ebenso ab, wenn es das Zertifikat nicht holen oder
+  speichern kann, und schreibt nie `INSECURE=1` in `monitor.conf`. `--insecure` gilt so nur fuer den einen Aufruf.
+  Doku: Agent-Deployment (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
