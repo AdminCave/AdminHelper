@@ -450,7 +450,15 @@ def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
 
 def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) -> bool:
     """Checks whether cooldown is still active for this rule+check combination."""
-    cutoff = utcnow_naive() - timedelta(minutes=rule.cooldown_minutes)
+    # NULL is the default 30 of the schema, the template sync and the column: the
+    # column is nullable, and PUT /alerts/{id} stores an explicit null.
+    minutes = 30 if rule.cooldown_minutes is None else rule.cooldown_minutes
+    try:
+        cutoff = utcnow_naive() - timedelta(minutes=minutes)
+    except OverflowError:
+        # The schema allows up to int32 minutes, about 4000 years: a window that
+        # reaches back before year 1 counts every earlier successful send.
+        cutoff = datetime.min
     recent = (
         db.query(MonitorAlertLog)
         .filter(

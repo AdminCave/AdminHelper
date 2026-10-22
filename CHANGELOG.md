@@ -52,6 +52,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (Deadlock, Abbruch beim Sperren seines Zustands, gescheitertes Schreiben), verwirft das Monitoring nur dessen
   Ergebnis samt Status-Punkt und Alert; bisher scheiterten alle folgenden Checks und das Speichern, der Report endete
   mit HTTP 500, und die Ergebnisse des ganzen Reports gingen verloren.
+- **Monitoring: eine Alert-Regel mit sehr grossem oder leerem Cooldown bricht den Versand nicht mehr ab (R-0631):**
+  Eine Regel mit `cooldown_minutes` ueber rund 1 065 000 000 (etwa 2000 Jahre, das Schema erlaubt bis 2 147 483 647)
+  oder ohne Wert (`null`, etwa nach `PUT /alerts/{id}` mit `"cooldown_minutes": null`) brach beim Pruefen ihres
+  Cooldowns den Versand ab: Die folgenden Regeln sendeten nicht, die Glocke bekam kein Ereignis, die Meldung war
+  verloren. Jetzt zaehlt ein leerer Cooldown als der Default 30 Minuten, und ein Cooldown, der vor den
+  Kalenderanfang reicht, zaehlt jeden frueheren erfolgreichen Versand der Regel fuer den Check.
 
 ## [0.46.0] - 2026-10-22
 
