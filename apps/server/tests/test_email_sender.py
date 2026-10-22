@@ -159,23 +159,35 @@ def _ca_common_names(ctx) -> list[str]:
     ]
 
 
-def _starttls_context(monkeypatch):
+def _sent_context(monkeypatch, port):
+    """The TLS context send_email hands to SMTP_SSL (465) or to starttls() (any other port)."""
     plain_mock = MagicMock()
+    ssl_mock = MagicMock()
     monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", MagicMock())
+    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", ssl_mock)
     sender.send_email("to@example.com", "subj", "body")
+    if port == 465:
+        plain_mock.assert_not_called()
+        ssl_mock.return_value.__enter__.return_value.send_message.assert_called_once()
+        return ssl_mock.call_args.kwargs.get("context")
+    ssl_mock.assert_not_called()
     server = plain_mock.return_value.__enter__.return_value
     server.send_message.assert_called_once()
     return server.starttls.call_args.kwargs.get("context")
 
 
-def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tmp_path):
-    _configure(monkeypatch, 587)
+@pytest.mark.parametrize("port", [587, 465])
+def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tmp_path, port):
+    _configure(monkeypatch, port)
     monkeypatch.setattr(sender, "SMTP_CA_FILE", _write_ca_pem(tmp_path / "smtp-ca.pem"))
 
-    ctx = _starttls_context(monkeypatch)
+    ctx = _sent_context(monkeypatch, port)
 
     assert _CA_CN in _ca_common_names(ctx)
+    # On top of the system CAs, not instead of them: a context built from the file alone
+    # would reject every public relay. Holds on a box without a CA bundle too (0 + 1).
+    system_cas = ssl.create_default_context().cert_store_stats()["x509_ca"]
+    assert ctx.cert_store_stats()["x509_ca"] == system_cas + 1
     _assert_verifying(ctx)  # an extra CA, not a weaker check
 
 
@@ -184,7 +196,7 @@ def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, tmp_path)
     _write_ca_pem(tmp_path / "smtp-ca.pem")
     _configure(monkeypatch, 587)
 
-    ctx = _starttls_context(monkeypatch)
+    ctx = _sent_context(monkeypatch, 587)
 
     assert _CA_CN not in _ca_common_names(ctx)
     _assert_verifying(ctx)

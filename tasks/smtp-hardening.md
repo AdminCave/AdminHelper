@@ -127,8 +127,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku
 Abhängt von: T8
 
-### T10 — Hub-Mail-Test: SMTP_CA_FILE ergänzt die System-CAs, auf 587 und 465  [ ]
+### T10 — Hub-Mail-Test: SMTP_CA_FILE ergänzt die System-CAs, auf 587 und 465  [x]
 Komponente: server · Dateien: apps/server/tests/test_email_sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @bcc21c8f 2026-10-22T13:03:20+02:00
+Review: approve (.ah-out/review/smtp-hardening/T10.verdict.json)
 Änderung: Fund des tester (Branch-Prüfung, `wichtig`): kein Test hält die Zusage „zusätzlich zu den System-CAs“ fest (`docs/admin/betrieb.html:144`, `docs/en/admin/operations.html:103`); `ssl.create_default_context(cafile=SMTP_CA_FILE)` lädt nur die Datei und ließe die CA-Tests grün. Nur der Test ändert sich, `sender.py` bleibt. `test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context` (`apps/server/tests/test_email_sender.py`, heute `:172-190`): zusätzlich `ctx.cert_store_stats()["x509_ca"] == ssl.create_default_context().cert_store_stats()["x509_ca"] + 1` (gilt auch auf einer Box ohne CA-Bundle: 0 + 1); parametrisiert über 587 (Kontext an `starttls`) und 465 (Kontext an `SMTP_SSL`), wie die Monitoring-Tests. Beweis, dass die neue Assertion fallen kann: eine Kopie von `sender.py` mit `ssl.create_default_context(cafile=SMTP_CA_FILE)` statt `load_verify_locations` nur im Scratch, dort rot (Ergebnis in den Commit-Body); der Bau-Worktree bleibt unberührt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
 Doku: keine (Test)
