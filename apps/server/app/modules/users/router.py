@@ -143,6 +143,8 @@ def update_user(
         user.servers = servers
     db.commit()
     db.refresh(user)
+    if user.is_admin and not was_admin:
+        fire_event("user.promoted", {"id": user.id, "username": user.username})
     # detail names the changed fields and carries no value but the new admin flag.
     changed = []
     if data.password is not None:
