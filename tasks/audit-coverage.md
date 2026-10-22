@@ -92,8 +92,10 @@ Beweis: Code-Lesung apps/server/app/modules/users/router.py:113-138, :142-151 (H
 Orakel: contract — genau ein `user.promoted` je Übergang `false → true`, sonst keins
 HEAD: b1432223
 
-### T6 — Glocke „Sicherheit“ auch für `user.promoted`  [ ]
+### T6 — Glocke „Sicherheit“ auch für `user.promoted`  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/event_bridge.py, apps/server/tests/test_notification_bridge.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @af0917d3 2026-10-22T11:20:11+02:00
+Review: approve (.ah-out/review/audit-coverage/T6.verdict.json)
 Änderung: Neuer Builder `_on_user_promoted(data)` in `apps/server/app/modules/notifications/event_bridge.py` neben `_on_user_created` (`:23-37`): `IncomingEvent(event_type="security.admin.promoted", severity="warning", category="security", title=f"User promoted to admin: {username}", body="An existing user was granted admin rights.", source_type="user", source_id=None)` mit `username = data.get("username", "?")`; Eintrag `"user.promoted": _on_user_promoted` in `_EVENT_BUILDERS` (`:71-75`). Der Modul-Docstring (`:8-12`) nennt die Hochstufung neben dem neuen Admin. Tests in `tests/test_notification_bridge.py`: in `TestBuildEvent` (a) `build_event("user.promoted", {"id": 9, "username": "promo"})` → Kategorie `security`, Schweregrad `warning`, `source_id` `None`, `event_type` `security.admin.promoted`, `promo` im Titel; in `TestBridgeDelivers` (b) wie `test_admin_created_reaches_admins` (`:51-56`): ein Admin mit Abo der Kategorie `security` bekommt genau eine Meldung. `test_unmapped_event_is_ignored` (`:45-47`) bleibt. Zuerst rot: (a), (b) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_bridge.py
 Doku: keine eigene (T8 und T9)
