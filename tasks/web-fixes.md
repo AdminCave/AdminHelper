@@ -83,8 +83,10 @@ Dedup-Key: bug:web:client.ts:global-timeout-shorter-than-hook-run
 HEAD: b1432223
 Semantik: `docs/developer/hooks.html:112` — „Sobald der Lauf endet, zeigt ein Dialog das Ergebnis als JSON“; `docs/developer/hooks.html:87` — „<strong>Timeout</strong>: Default 30&nbsp;s.“
 
-### T5 — Daten-Stores: `reset()` mit Schutz gegen späte Antworten (R-0653)  [ ]
+### T5 — Daten-Stores: `reset()` mit Schutz gegen späte Antworten (R-0653)  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/users.ts, apps/web/src/lib/stores/hooks.ts, apps/web/src/lib/stores/apikeys.ts, apps/web/src/lib/stores/frp.ts, apps/web/src/lib/stores/reset.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @f543618c 2026-10-22T11:10:40+02:00
+Review: approve (.ah-out/review/web-fixes/T5.verdict.json)
 Änderung: `users`, `hooks`, `apikeys` bekommen `reset(): void` — `refreshGen++` (damit ein laufendes `refresh()` sein Ergebnis verwirft, wie nach einer Mutation, `users.ts:11-14`) und die Liste leer. `frpConfig` (`frp.ts:11-26`) bekommt einen eigenen `refreshGen`, den `refresh()` wie `users.ts:19-23` prüft, und `reset()` mit `refreshGen++` und `null`. Neue Testdatei `apps/web/src/lib/stores/reset.test.ts` (die vier API-Module per `vi.mock` wie `users.test.ts:12-17`): je Store (a) befüllt über `refresh()`, nach `reset()` leer bzw. `null`; (b) ein `refresh()`, dessen `list` erst nach `reset()` erfüllt wird (Deferred), lässt den Store leer bzw. `null`. Zuerst rot: (a), (b) auf HEAD (`reset` fehlt).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/
 Doku: keine (intern; die Doku und den CHANGELOG trägt T6)

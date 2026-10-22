@@ -21,6 +21,12 @@ export const hooks = {
     if (gen === refreshGen) _hooks.set(list);
   },
 
+  // Logout empties the store (see users.ts).
+  reset(): void {
+    refreshGen++;
+    _hooks.set([]);
+  },
+
   async create(data: HookCreate): Promise<HookCreateResult> {
     const created = await api.create(data);
     refreshGen++;
