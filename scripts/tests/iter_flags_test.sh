@@ -98,6 +98,37 @@ eval "set -- $rest"
 { [ "$#" -eq 3 ] && [ "$1" = "unit" ] && [ "$2" = "--step" ] && [ "$3" = "cargo test (desktop)" ]; } \
   && ok "a step name with spaces re-parses as one argument" || bad "step quoting: $# args from: $rest"
 
+# ── the part of a heavy run, and the warm slot it runs on ────────────────────
+# heavy.sh runs `all` as two parts on two boxes: --part has to reach run.sh, and
+# --slot picks the box without ever reaching the remote command.
+dry all --strict --part gui
+[ $rc -eq 0 ] && grep -q 'run.sh all --strict --part gui$' <<<"$OUT" \
+  && ok "--part reaches the box" || bad "--part lost: rc=$rc out=$OUT"
+dry --slot gui all --strict --part gui
+[ $rc -eq 0 ] && grep -q 'run.sh all --strict --part gui$' <<<"$OUT" && ! grep -q -- '--slot' <<<"$OUT" \
+  && ok "--slot is the wrapper's own: the remote command stays the same" || bad "--slot gui dry run: rc=$rc out=$OUT"
+# run.sh reads an empty --part as no part and runs the whole layer — on a box
+# that was meant to carry one part only.
+dry all --strict --part ''
+[ $rc -eq 2 ] && grep -q -- "--part needs gui or rest" <<<"$OUT" \
+  && ok "an empty --part is rejected, not forwarded as the whole layer" || bad "empty --part: rc=$rc out=$OUT"
+dry all --strict --part
+[ $rc -eq 2 ] && grep -q -- "--part needs gui or rest" <<<"$OUT" \
+  && ok "--part without a value is rejected before a box is warmed" || bad "bare --part: rc=$rc out=$OUT"
+# The vm.py stub answers any call with exit 99 and a line of its own, so these
+# would show a lease that a wrong slot must never start.
+dry --slot nope lint
+[ $rc -eq 2 ] && grep -q "invalid slot 'nope'" <<<"$OUT" && ! grep -q "must not be called" <<<"$OUT" \
+  && ok "an unknown slot is exit 2, and vm.py is not called" || bad "--slot nope: rc=$rc out=$OUT"
+dry --slot
+[ $rc -eq 2 ] && grep -q "invalid slot ''" <<<"$OUT" && ! grep -q "must not be called" <<<"$OUT" \
+  && ok "--slot without a value is exit 2, and vm.py is not called" || bad "bare --slot: rc=$rc out=$OUT"
+for s in gui desktop; do
+  dry --slot "$s" --desktop
+  [ $rc -eq 2 ] && grep -q -- "--slot does not apply to --desktop" <<<"$OUT" && ! grep -q "must not be called" <<<"$OUT" \
+    && ok "--slot $s with --desktop is exit 2, and vm.py is not called" || bad "--slot $s --desktop: rc=$rc out=$OUT"
+done
+
 # ── the evidence fields the box cannot compute itself ────────────────────────
 # A box need not have a usable .git (from a worktree the sync carries only a
 # pointer), so head and tree_hash must ride along in the remote command; without
