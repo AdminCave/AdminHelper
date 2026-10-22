@@ -7,6 +7,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Desktop: ein gescheiterter Abruf der Verbindungen leert die Liste nicht mehr (R-0658):** Scheitert in einem
+  Server- oder Sync-Workspace der Abruf der Verbindungen, etwa beim Seitenwechsel oder im Sync-Takt waehrend eines
+  Netzausfalls, bleibt die zuletzt geladene Liste stehen, wenn sie aus derselben Quelle stammt (derselbe Server und
+  Benutzer, dieselbe Sync-URL), statt zu verschwinden. Die Liste einer anderen Quelle bleibt nie stehen.
+
 ## [0.46.0] - 2026-10-22
 
 ### Added
