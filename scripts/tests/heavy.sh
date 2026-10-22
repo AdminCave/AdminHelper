@@ -622,10 +622,11 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
 # reconstruction. The FREEING of it stays his (D4): the row is `neu`, never
 # `freigegeben`.
 # The row goes in through roadmap.py (stage 5): the lock, the .bak, the row-count
-# check, the Dedup-Key and the commit in the private repo are its job. A refused
-# row is said loudly in the report — a full `neu` cap must not lose a finding
-# quietly. The new ID comes back in ROADMAP_ID, not on stdout: called as $(...),
-# every note here would die with the subshell, and none reached the report.
+# check, the Dedup-Key and the commit in the private repo are its job; it takes
+# every new row, however many are `neu`. A refused or failed add is said loudly in
+# the report — no finding may be lost quietly. The new ID comes back in
+# ROADMAP_ID, not on stdout: called as $(...), every note here would die with
+# the subshell, and none reached the report.
 roadmap_append() {  # roadmap_append <klasse> <titel> <quelle> <ledger|""> <dedup-key> -> ROADMAP_ID
   local rm="$PRIVATE_DIR/ROADMAP.md" err="$OUT/roadmap-add.err" id rc why
   ROADMAP_ID=""
@@ -635,11 +636,10 @@ roadmap_append() {  # roadmap_append <klasse> <titel> <quelle> <ledger|""> <dedu
   mkdir -p "$OUT" 2>/dev/null
   id="$(python3 "$VM_ROOT/scripts/dev/roadmap.py" --file "$rm" add --class "$1" --title "$2" \
         --source "$3" --dedup-key "$5" "${ledger[@]+"${ledger[@]}"}" 2>"$err")"; rc=$?
-  why="$(grep -m1 -e 'Dedup-Key' -e 'cap is reached' "$err" 2>/dev/null | sed 's/^roadmap.py: //')"
+  why="$(grep -m1 'Dedup-Key' "$err" 2>/dev/null | sed 's/^roadmap.py: //')"
   case "$rc" in
     0) ROADMAP_ID="$id"; return 0 ;;
     4) note "roadmap: $why — no second row" ;;
-    3) note "ROADMAP FULL: $why — the $1 finding '$2' got NO row" ;;
     *) note "roadmap.py add failed (exit $rc): $(tail -1 "$err" 2>/dev/null | sed 's/^roadmap.py: //') — no row appended" ;;
   esac
   return 1
