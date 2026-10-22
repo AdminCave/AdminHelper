@@ -63,6 +63,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Check-Name war er laenger als die 512 Zeichen, die der Server annimmt, der Server lehnte das Ereignis mit HTTP 422
   ab, und Glocke, Hub-Mail und Event-Hook blieben aus. Jetzt wird der Titel auf 512 Zeichen gekuerzt (die ersten 511
   und `…`); der Betreff von Mail und Webhook der Alert-Regeln bleibt ungekuerzt.
+- **Monitoring: der HTTP-Check liest hoechstens 1 MiB, und `timeout` gilt fuer den ganzen Check (R-0616):** Der
+  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; ohne `search_string` liest
+  er ihn gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den
+  ganzen Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt
+  den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
+  found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
+  keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
