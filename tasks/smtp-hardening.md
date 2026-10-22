@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SMTP: ein Verhalten für Hub- und Monitoring-Mail, Zugangsdaten je Relay, Monitoring bekommt SMTP_* — Task-Ledger
-Status: aktiv · Branch: feature/smtp-hardening · Review: pro Task
+Status: bereit · Branch: feature/smtp-hardening · Review: pro Task
 Spec: docs/features/smtp-hardening.md (Roadmap R-0634; T1–T3 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `docker-compose.yml` (T4: `monitoring` bekommt `SMTP_*`) und der Versand des Notification-Hubs im `scheduler` (T3); läuft im Sammellauf über `main` (`/feature-build` §5). Kein `scenario`: kein FRP-, PKI-, Install-, Update- oder Cross-Host-Pfad (`scripts/install.sh`/`update.sh` bleiben; `update.sh` tauscht `docker-compose.yml` aus dem Release-Bundle). Der Mail-Kreislauf von `multibox --moncheck` setzt `smtp_host` je Regel ohne Zugangsdaten und ändert sich durch T1 und T4 nicht
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -64,8 +64,10 @@ Orakel: contract — vor `login()` und Versand steht immer ein TLS-Kanal mit `CE
 HEAD: b1432223
 Semantik: `docs/admin/betrieb.html:141` — „<code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS).“; Vorbild `docs/admin/monitoring.html:340` — „Bei Port 465 wird implizites TLS (SMTPS) genutzt, bei jedem anderen Port STARTTLS; beide prüfen das Server-Zertifikat“.
 
-### T4 — Compose: SMTP_* auch an monitoring (R-0634)  [ ]
+### T4 — Compose: SMTP_* auch an monitoring (R-0634)  [x]
 Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_smtp.py, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0177619d 2026-10-22T11:10:00+02:00
+Review: approve (.ah-out/review/smtp-hardening/T4.verdict.json)
 Änderung: Im `environment`-Block von `monitoring` (`docker-compose.yml:367-389`) zwischen `:375` (`- ALERT_LOG_RETENTION_DAYS=${ALERT_LOG_RETENTION_DAYS:-90}`) und `:376` (`# Notification hub: …`) eine englische Kommentarzeile (der E-Mail-Kanal der Alert-Regeln nutzt denselben Relay wie der Hub, eine Regel kann einen eigenen setzen) und die fünf Einträge wortgleich wie bei `server` (`:111-115`): `- SMTP_HOST=${SMTP_HOST:-}`, `- SMTP_PORT=${SMTP_PORT:-587}`, `- SMTP_USER=${SMTP_USER:-}`, `- SMTP_PASSWORD=${SMTP_PASSWORD:-}`, `- SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}`. Sonst nichts in `docker-compose.yml`. Neue Testdatei `apps/server/tests/test_compose_smtp.py` (SPDX-Header wie `test_env_parity.py`, Modul-Docstring mit dem Warum: die Doku verspricht den Relay aus der Umgebung für den E-Mail-Kanal des Monitorings): (a) `_compose_environment()` aus `.test_env_parity` (Import wie `test_compose_frps.py:47`) — `server`, `scheduler` und `monitoring` tragen je `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`; (b) die fünf Einträge von `monitoring` sind als Text dieselben wie bei `server` (gleiche Defaults; eigener kleiner Parse der Zeilen `- SMTP_…=…` im jeweiligen `environment`-Block, mit einer Nicht-leer-Prüfung, dass je Dienst fünf gefunden wurden). Zuerst rot: (a) und (b) auf HEAD für `monitoring`. `tests/test_env_parity.py` bleibt grün (monitoring liest alle fünf, `apps/monitoring/app/core/config.py:72-80`; `.env.example:126-135` dokumentiert sie).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_smtp.py tests/test_env_parity.py
 Doku: docs/admin/betrieb.html + docs/en/admin/operations.html (SMTP-Abschnitt `:135-147` bzw. `:94-106`, ein Satz nach der Tabelle: dieselben Variablen nutzt der E-Mail-Kanal der Alert-Regeln im Monitoring, Link auf `monitoring.html`, Abschnitt Benachrichtigungen & Alerting; eine Regel kann einen eigenen Relay mit eigenen Zugangsdaten setzen) · CHANGELOG.md (Fixed, umlautfrei: E-Mail-Alert-Regeln ohne eigenen `smtp_host` nutzen den Relay aus `SMTP_HOST` usw.; Compose reicht `SMTP_*` jetzt auch an `monitoring`, vorher scheiterten sie mit „SMTP not configured“ (R-0634))

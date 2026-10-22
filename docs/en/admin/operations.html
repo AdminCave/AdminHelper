@@ -104,6 +104,7 @@
             </tbody>
           </table>
           <p>Who receives which e-mails is controlled by each user via their notification rules (see <a href="./monitoring.html">Monitoring → Personal notifications</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
+          <p>The e-mail channel of the alert rules in monitoring uses the same variables (see <a href="./monitoring.html">Monitoring → Notifications &amp; alerting</a>); a rule can set its own relay with its own credentials there.</p>
 
           <h2>Multi-Worker Notes</h2>
           <p>The default compose stack runs a single Uvicorn worker (<code>WEB_CONCURRENCY=1</code>). To scale across CPU cores:</p>

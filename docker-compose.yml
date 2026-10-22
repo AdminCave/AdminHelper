@@ -373,6 +373,12 @@ services:
       # Alert-log retention (days). Independent of the VictoriaMetrics metric
       # retention below (VM_RETENTION) — changing one does NOT change the other.
       - ALERT_LOG_RETENTION_DAYS=${ALERT_LOG_RETENTION_DAYS:-90}
+      # SMTP: e-mail alert rules send through the hub's relay unless a rule sets its own.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
       # Notification hub: push check-status transitions to the server, which
       # resolves which users to notify (best-effort; auth via MONITOR_API_KEY as
       # X-Internal-Key). No depends_on — the push tolerates the server being down

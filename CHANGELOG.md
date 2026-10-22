@@ -32,6 +32,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `NOTIFICATION_MAX_ATTEMPTS` und markiert die Mail dann als fehlgeschlagen, der Grund steht im Log des
   `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Doku: Betrieb & Konfiguration (DE+EN).
 
+### Fixed
+
+- **Monitoring: E-Mail-Alert-Regeln ohne eigenen `smtp_host` nutzen den Relay aus `SMTP_HOST` (R-0634):** Compose
+  reicht `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` und `SMTP_FROM` jetzt auch an den Dienst
+  `monitoring`, wie an `server` und `scheduler`. Bisher fehlten sie dort, und jede E-Mail-Regel ohne eigenen
+  `smtp_host` scheiterte mit `SMTP not configured (SMTP_HOST missing)`, obwohl die Doku den Relay aus der Umgebung
+  nennt. Ist `SMTP_HOST` gesetzt, verschicken diese Regeln danach ueber den globalen Relay, mit derselben Pruefung von
+  Zertifikat und Hostnamen wie der Notification-Hub. Doku: Betrieb & Konfiguration (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

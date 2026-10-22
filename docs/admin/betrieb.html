@@ -145,6 +145,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             </tbody>
           </table>
           <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln (siehe <a href="./monitoring.html">Monitoring → Persönliche Benachrichtigungen</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
+          <p>Dieselben Variablen nutzt der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
 
           <h2>Konfiguration ändern</h2>
           <p>Alle Config-Werte kommen aus Environment-Variablen. Änderungen erfordern ein <code>docker compose up -d</code>, damit die Container neu erzeugt werden:</p>
