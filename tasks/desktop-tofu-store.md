@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Zertifikat-Pin erst gespeichert, dann vertraut; Windows-Lesefehler; Rückfrage beim Pin-Reset — Task-Ledger
-Status: geplant · Branch: feature/desktop-tofu-store · Review: pro Task
+Status: aktiv · Branch: feature/desktop-tofu-store · Review: pro Task
 Spec: docs/features/desktop-tofu-store.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + windows — T1 ändert, wann der TOFU-Verifier (`apps/desktop/src-tauri/src/tofu.rs`) einen ersten Kontakt annimmt; jede Anfrage mit „Selbstsignierte Zertifikate erlauben“ (Login, Registrierung, Sync, Benachrichtigungen) geht durch ihn, und die Desktop-Journeys `enroll-trust-dialog.live.js` und `enroll-form.live.js` pinnen beim ersten Kontakt in der GUI-E2E des Sammellaufs (mit entsperrtem gnome-keyring, `scripts/tests/lib_e2e_stack.sh:67-89`); windows = der PR-CI-Job `Desktop-Backend (cargo test, Windows)` (`.github/workflows/ci.yml:561-583`), der die `#[cfg(target_os = "windows")]`-Tests aus T2 als einziger kompiliert und fährt (der Pool hat keine Windows-Vorlage); kein `scenario` (kein FRP-Datenpfad, keine PKI, kein Install)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
