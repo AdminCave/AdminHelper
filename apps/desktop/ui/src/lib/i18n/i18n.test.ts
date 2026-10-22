@@ -4,12 +4,12 @@
 
 /// <reference types="node" />
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { get } from 'svelte/store';
-import { t, language, setLanguage, tNow } from './index';
+import { t, language, setLanguage, resolveLanguage, tNow } from './index';
 import { translations } from './dictionaries';
 
 // src/lib/i18n -> src
@@ -79,6 +79,39 @@ describe('i18n engine', () => {
     expect(tNow('nav.dashboard')).toBe('Dashboard');
     setLanguage('en');
     expect(tNow('nav.dashboard')).toBe('Dashboard');
+  });
+});
+
+describe('language without a stored value (R-0660)', () => {
+  let systemLanguageSpy: MockInstance<() => string> | null = null;
+
+  function stubSystemLanguage(value: string): void {
+    systemLanguageSpy = vi.spyOn(navigator, 'language', 'get').mockReturnValue(value);
+  }
+
+  afterEach(() => {
+    systemLanguageSpy?.mockRestore();
+    systemLanguageSpy = null;
+  });
+
+  it('follows a German system', () => {
+    stubSystemLanguage('de-DE');
+    expect(setLanguage(null)).toBe('de');
+    expect(get(language)).toBe('de');
+    expect(resolveLanguage(null)).toBe('de');
+    expect(resolveLanguage('en')).toBe('en');
+  });
+
+  it('follows an English system', () => {
+    stubSystemLanguage('en-US');
+    expect(setLanguage(null)).toBe('en');
+    expect(get(language)).toBe('en');
+  });
+
+  it('falls back to English on any other system', () => {
+    stubSystemLanguage('fr-FR');
+    expect(setLanguage(null)).toBe('en');
+    expect(get(language)).toBe('en');
   });
 });
 

@@ -13,6 +13,17 @@ function isLanguage(candidate: string): candidate is Language {
   return candidate in translations;
 }
 
+/** The language of the system: German on a German system, else English. */
+export function systemLanguage(): Language {
+  const language = typeof navigator !== 'undefined' ? (navigator.language ?? '') : '';
+  return language.toLowerCase().startsWith('de') ? 'de' : 'en';
+}
+
+/** A valid stored language, else the system language (a fresh install stores none). */
+export function resolveLanguage(stored: string | null | undefined): Language {
+  return stored && isLanguage(stored) ? stored : systemLanguage();
+}
+
 export function detectBrowserLanguage(): Language {
   if (typeof navigator === 'undefined') return 'de';
   const prefix = navigator.language.toLowerCase().split('-')[0];
@@ -36,7 +47,7 @@ export const t: Readable<TranslateFn> = derived(language, ($lang) => {
 });
 
 export function setLanguage(next: string | null | undefined): Language {
-  const normalized: Language = next && isLanguage(next) ? next : 'en';
+  const normalized = resolveLanguage(next);
   language.set(normalized);
   if (typeof document !== 'undefined') {
     document.documentElement.lang = normalized;

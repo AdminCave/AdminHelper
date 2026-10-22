@@ -78,8 +78,10 @@ Semantik: keine Stelle in docs/ (gesucht: HiDPI, Eingepasst, `/size`, `/scale`);
 Dedup-Key: bug:desktop:connectFlow.ts:rdp-client-info-missing
 HEAD: b1432223
 
-### T5 — Sprache: ohne gespeicherten Wert gilt die Systemsprache (R-0660)  [ ]
+### T5 — Sprache: ohne gespeicherten Wert gilt die Systemsprache (R-0660)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/index.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/lib/i18n/i18n.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @913eadb4 2026-10-22T11:23:18+02:00
+Review: approve (.ah-out/review/desktop-ui-fixes/T5.verdict.json)
 Änderung: Neu in `src/lib/i18n/index.ts`: `systemLanguage(): Language` (`navigator.language` beginnt mit `de` → `de`, sonst `en`, ohne `navigator` `en`; die Regel von `detectSystemLanguage`, `models/settings.ts:15-18`, die dorthin umzieht) und `resolveLanguage(stored: string | null | undefined): Language` (eine gültige gespeicherte Sprache, sonst `systemLanguage()`). `setLanguage` (`index.ts:38-45`) normalisiert mit `resolveLanguage` statt auf `en` (`:39`); damit gilt die Regel im Hydrate (`stores/session.ts:86`). `getSettingsDefaults` (`models/settings.ts:25`) nimmt `systemLanguage()`, `detectSystemLanguage` entfällt (einziger Nutzer). Der Anfangswert vor dem Laden (`index.ts:22`, `detectBrowserLanguage`) bleibt: T7. Tests in `i18n.test.ts` (`navigator.language` per `vi.spyOn(navigator, 'language', 'get')` gestubbt, Rücknahme im `afterEach`): `de-DE` → `setLanguage(null)` ergibt `de` (zuerst rot: `en`), `resolveLanguage(null)` `de`, `resolveLanguage('en')` `en`; `en-US` → `setLanguage(null)` `en`; `fr-FR` → `setLanguage(null)` `en`. `normalizes unknown language to en` (`:72-75`) bleibt grün (jsdom `en-US`).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts src/lib/models/settings.test.ts
 Doku: CHANGELOG.md (Fixed: ohne gespeicherte Sprache laeuft die Desktop-UI in der Systemsprache, Deutsch auf einem deutschen System, sonst Englisch)
