@@ -15,11 +15,19 @@ one file: nginx serves it on the repo plane, its master holds exactly the capabi
 list, its workers run as a user other than root, and it stops within the grace period with exit
 code 0. Without any one capability of the list, one of these fails. They skip when Docker or the
 pinned base image is not at hand.
+
+The certless planes :8444 and :8445 cap concurrent requests per client address and per plane and
+close idle connections after short timeouts; the mTLS plane :443 keeps nginx's defaults. Read
+from nginx.conf, and in the container on the repo plane: one address gets 429 beyond its cap
+while its other downloads go on, and a connection that sends no request after the handshake is
+closed.
 """
 
 import contextlib
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import time
 import uuid
@@ -44,6 +52,26 @@ CAPABILITIES = ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"]
 _CAPABILITY_BITS = {"CHOWN": 0, "DAC_OVERRIDE": 1, "SETGID": 6, "SETUID": 7}
 WAIT = 15.0
 PROBE = "/apt/probe"
+# Far more than the socket buffers between nginx and a client hold, so a download at 1 KiB/s
+# stays in progress for the whole test.
+LARGE = "/apt/large"
+LARGE_SIZE = 32 * 1024 * 1024
+
+CERTLESS_ZONES = [
+    ["$binary_remote_addr", "zone=certless_addr:10m"],
+    ["$server_port", "zone=certless_plane:1m"],
+]
+# Per plane: limit_conn per address, then per plane.
+CERTLESS_LIMITS = {
+    "8444": [["certless_addr", "16"], ["certless_plane", "128"]],
+    "8445": [["certless_addr", "64"], ["certless_plane", "256"]],
+}
+CERTLESS_TIMEOUTS = {
+    "client_header_timeout": ["10s"],
+    "client_body_timeout": ["10s"],
+    "keepalive_timeout": ["15s"],
+}
+IDLE_LIMIT = 15.0
 
 
 def _compose_gateway() -> dict:
@@ -57,6 +85,82 @@ def test_compose_gives_the_gateway_only_the_capabilities_nginx_needs():
     assert sorted(gateway.get("cap_add", [])) == CAPABILITIES
     assert "no-new-privileges:true" in gateway.get("security_opt", [])
     assert gateway.get("sysctls", {}).get("net.ipv4.ip_unprivileged_port_start") == 0
+
+
+@dataclass
+class Directive:
+    name: str
+    args: list[str]
+    block: list["Directive"] | None
+
+
+def _parse(tokens: list[str], start: int = 0) -> tuple[list[Directive], int]:
+    """Directives from tokens[start:] up to the closing brace of their block (or the end)."""
+    directives: list[Directive] = []
+    words: list[str] = []
+    index = start
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if token == ";":
+            directives.append(Directive(words[0], words[1:], None))
+            words = []
+        elif token == "{":
+            block, index = _parse(tokens, index)
+            directives.append(Directive(words[0], words[1:], block))
+            words = []
+        elif token == "}":
+            return directives, index
+        else:
+            words.append(token)
+    return directives, index
+
+
+def _nginx_http() -> list[Directive]:
+    """The directives of the http block of apps/gateway/nginx.conf."""
+    text = re.sub(r"#[^\n]*", "", (_GATEWAY_DIR / "nginx.conf").read_text(encoding="utf-8"))
+    directives, _ = _parse(re.findall(r'"[^"]*"|[{};]|[^\s{};"]+', text))
+    (http,) = [directive.block for directive in directives if directive.name == "http"]
+    return http
+
+
+def _args(block: list[Directive], name: str) -> list[list[str]]:
+    return [directive.args for directive in block if directive.name == name]
+
+
+def _names_within(block: list[Directive]) -> set[str]:
+    """Names of all directives in block, nested blocks included."""
+    names = set()
+    for directive in block:
+        names.add(directive.name)
+        names |= _names_within(directive.block or [])
+    return names
+
+
+def _servers() -> dict[str, list[Directive]]:
+    """The server blocks of the http block by the port they listen on."""
+    servers = {}
+    for directive in _nginx_http():
+        if directive.name == "server":
+            (listen,) = _args(directive.block, "listen")
+            servers[listen[0]] = directive.block
+    return servers
+
+
+def test_the_certless_planes_cap_concurrent_requests_and_close_idle_connections_early():
+    http = _nginx_http()
+    assert _args(http, "limit_conn_zone") == CERTLESS_ZONES
+    assert _args(http, "limit_conn_status") == [["429"]]
+
+    servers = _servers()
+    assert sorted(servers) == ["443", "8444", "8445"]
+    for port, limits in CERTLESS_LIMITS.items():
+        assert _args(servers[port], "limit_conn") == limits, port
+        timeouts = {name: _args(servers[port], name) for name in CERTLESS_TIMEOUTS}
+        assert timeouts == {name: [value] for name, value in CERTLESS_TIMEOUTS.items()}, port
+
+    data_plane = {"limit_conn", *CERTLESS_TIMEOUTS} & _names_within(servers["443"])
+    assert data_plane == set()
 
 
 def _run_args(gateway: dict) -> list[str]:
@@ -125,8 +229,8 @@ class Setup:
 @pytest.fixture(scope="module")
 def gateway_setup(tmp_path_factory):
     """Builds the image from apps/gateway, and for the module a network, a client container in
-    it, the volume of TLS material and the package repo; removes them again. Skips when Docker
-    or the pinned base image is not at hand."""
+    it, the volume of TLS material and the package repo (the probe and a large file); removes
+    them again. Skips when Docker or the pinned base image is not at hand."""
     dockerfile = (_GATEWAY_DIR / "Dockerfile").read_text()
     base = re.search(r"^FROM (\S+)$", dockerfile, re.M)
     assert base, dockerfile
@@ -152,9 +256,13 @@ def gateway_setup(tmp_path_factory):
     _tls_material(pems)
     (setup.repo / "apt").mkdir(parents=True)
     (setup.repo / "apt" / "probe").write_text("probe\n")
+    large = setup.repo / LARGE.lstrip("/")
+    with large.open("wb") as sparse:
+        sparse.truncate(LARGE_SIZE)
     for path in (setup.repo, setup.repo / "apt"):
         path.chmod(0o755)
     (setup.repo / "apt" / "probe").chmod(0o644)
+    large.chmod(0o644)
 
     uid = _issuer_uid()
     # As the ca-issuer leaves it: the directory and the files its user's, the key 0600.
@@ -211,6 +319,14 @@ class Gateway:
     def running(self) -> bool:
         inspect = [self.docker, "inspect", "--format", "{{.State.Running}}", self.name]
         return subprocess.run(inspect, capture_output=True, text=True).stdout.strip() == "true"
+
+    def address(self) -> str:
+        """The container's address in the module's network."""
+        template = f'{{{{(index .NetworkSettings.Networks "{self.setup.network}").IPAddress}}}}'
+        inspect = [self.docker, "inspect", "--format", template, self.name]
+        result = subprocess.run(inspect, capture_output=True, text=True)
+        assert result.returncode == 0 and result.stdout.strip(), result.stderr
+        return result.stdout.strip()
 
     def fetch(self) -> str:
         """HTTP status of the probe on the repo plane as the client container gets it; 000 for
@@ -303,3 +419,51 @@ def test_without_any_one_of_them_the_gateway_does_not_start_serve_or_stop_cleanl
     with _gateway(gateway_setup, gateway) as box:
         outcome = (box.answer(), box.stop())
         assert outcome != ("200", "0"), box.logs()
+
+
+def test_on_the_repo_plane_one_address_gets_429_beyond_its_cap_while_its_downloads_go_on(
+    gateway_setup,
+):
+    downloads = int(CERTLESS_LIMITS["8445"][0][1]) + 1
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        # At 1 KiB/s a download of LARGE is still in progress when curl gives up after 8 s
+        # (exit code 28): every one that got 200 ran beside the one that got 429.
+        curl = (
+            "curl -sk --limit-rate 1k --max-time 8 -o /dev/null"
+            f" -w '%{{http_code}} %{{exitcode}}\\n' https://{box.name}:8445{LARGE}"
+        )
+        script = f"for i in $(seq {downloads}); do {curl} & done; wait"
+        result = subprocess.run(
+            [box.docker, "exec", gateway_setup.client, "sh", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        outcomes = result.stdout.splitlines()
+        assert len(outcomes) == downloads, result
+        assert "429 0" in outcomes, outcomes
+        assert set(outcomes) == {"200 28", "429 0"}, outcomes
+
+        assert box.fetch() == "200", box.logs()
+
+
+def test_on_the_repo_plane_a_connection_without_a_request_is_closed_within_15_seconds(
+    gateway_setup,
+):
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((box.address(), 8445), timeout=WAIT) as raw:
+            with context.wrap_socket(raw) as tls:
+                opened = time.monotonic()
+                tls.settimeout(IDLE_LIMIT + 5)
+                try:
+                    closed = tls.recv(1) == b""
+                except TimeoutError:
+                    closed = False
+                except (ssl.SSLEOFError, ConnectionResetError):
+                    closed = True
+                elapsed = time.monotonic() - opened
+        assert closed and elapsed <= IDLE_LIMIT, elapsed

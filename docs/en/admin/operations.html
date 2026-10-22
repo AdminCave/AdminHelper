@@ -147,6 +147,7 @@ services:
   server:
     pids_limit: 8192</code></pre>
           <p>Then run <code>docker compose up -d server</code>. If you raise <code>WEB_CONCURRENCY</code> a lot, check the server's limit: every Uvicorn worker brings its own thread pool and up to eight hook processes.</p>
+          <p>On the certless planes, the gateway caps concurrent requests: beyond 16 concurrent requests per client address on the enrollment plane (<code>:8444</code>) and beyond 64 on the package repo (<code>:8445</code>) it answers <code>429</code>, likewise beyond 128 or 256 per plane in total. The 64 on <code>:8445</code> leave room for many agent hosts behind one NAT address. If a request's header does not arrive completely within 10&nbsp;s there, or its body stalls for more than 10&nbsp;s, the gateway closes the connection; it closes an idle keep-alive connection after 15&nbsp;s. The data plane <code>:443</code> is not affected.</p>
 
           <h2>Timezone</h2>
           <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. The API returns timestamps in UTC with <code>Z</code> regardless (web and desktop show them in the browser's or machine's local time), and scheduled hooks run on UTC.</p>

@@ -19,6 +19,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker
   laufen als Nutzer `nginx` ohne Capabilities. Wie bei frps setzt Compose `net.ipv4.ip_unprivileged_port_start` auf 0,
   damit nginx die Ports 443, 8444 und 8445 ohne `NET_BIND_SERVICE` oeffnet. Doku: Betrieb (DE+EN).
+- **Gateway: Verbindungsgrenzen und kurze Timeouts auf den certless Ebenen:** Auf :8444 (Enrollment) und :8445
+  (Paket-Repo) beantwortet das Gateway mehr als 16 bzw. 64 gleichzeitige Anfragen je Client-Adresse und mehr als 128
+  bzw. 256 je Ebene mit 429. Dort schliesst es eine Verbindung, deren Anfrage-Kopf nicht binnen 10 s ankommt oder deren
+  Body laenger als 10 s stockt, und untaetige Keep-Alive-Verbindungen nach 15 s (bisher 60 s bzw. 75 s). Die
+  Daten-Plane :443 bleibt unveraendert. Doku: Betrieb (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
