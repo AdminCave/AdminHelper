@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Härtung: Startabgleich-Log, Schlüsseldateien, Redis-URL im Log, Surrogate in Request-Bodies, Quelltypen des internen Eingangs — Task-Ledger
-Status: aktiv · Branch: feature/server-hardening · Review: pro Task
+Status: bereit · Branch: feature/server-hardening · Review: pro Task
 Spec: docs/features/server-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full — Server-API: `RequestModel` (Basisklasse aller Request-Schemas) lehnt ein einzelnes Surrogat in jedem Body ab (T5), `POST /api/internal/events` lehnt zwei Quelltypen ab (T6), und der Start schreibt `.secret_key` und die Bootstrap-Dateien neu (T2, T3); der Stack-Lauf fährt einen frischen Server-Start, Monitoring→Server-Ingest und die Web-E2E über echte Bodies. Kein FRP-Datenpfad, keine PKI, kein Install-/Compose-Pfad: kein `scenario`, kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -87,8 +87,10 @@ Beweis: Code-Lesung apps/server/app/core/bounds.py:50-110 (nur NUL), apps/server
 Orakel: contract — ein String mit einem einzelnen Surrogat irgendwo im Body ergibt 422 an seiner Stelle, nichts wird gespeichert
 HEAD: b1432223
 
-### T6 — Interner Event-Eingang: Quelltypen des Servers ablehnen  [ ]
+### T6 — Interner Event-Eingang: Quelltypen des Servers ablehnen  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/tests/test_notifications.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @908a84b6 2026-10-22T13:05:11+02:00
+Review: approve (.ah-out/review/server-hardening/T6.verdict.json)
 Änderung: In `ingest` (`apps/server/app/modules/notifications/router.py:182-217`) vor `ingest_event`: ist `event.source_type` einer der Quelltypen, unter denen der Server eigene Meldungen führt und an denen er „schon gemeldet“ erkennt — `frp_config` (`apps/server/app/main.py:194`, `:258-265`) und `frps` (`apps/server/app/modules/frp/supervisor_watch.py:42`, `:145-151`) —, antwortet der Eingang 422 als `RequestValidationError` mit `loc` `("body", "source_type")` (Form wie `apps/server/app/modules/connections/router.py:80-91`), Meldung englisch (`reserved for notices of the server itself`), und schreibt nichts. Die Menge steht als Konstante neben `ingest` mit einem Kommentar, der beide Stellen nennt. `IncomingEvent` bleibt unverändert (der Server baut es selbst mit diesen Quelltypen). Neue Tests in `test_notifications.py`, Klasse `TestIngress` (`:737-…`): (a) je `frp_config` und `frps`, mit und ohne `source_id`: 422, `loc` `["body","source_type"]`, keine neue `notification`-Zeile; (b) die Menge deckt die echten Schreiber: der `source_type` der Zeile, die `main._report_rejected_fields` für eine Config mit zu kurzem Token schreibt, und `supervisor_watch.SOURCE_TYPE` werden beide abgelehnt (ein umbenannter Quelltyp macht den Test rot); (c) `source_type` `server` → weiter 202 (Gegenprobe). Zuerst rot: (a), (b) auf HEAD (202).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html:208 + docs/en/developer/api-reference.html:208 (ein Satz: `source_type` `frp_config` und `frps` sind Meldungen des Servers selbst vorbehalten → `422`) · CHANGELOG.md (Changed, umlautfrei: `POST /api/internal/events` lehnt `source_type` `frp_config` und `frps` mit `422` ab; unter diesen Quelltypen fuehrt der Server seine eigenen Meldungen)
