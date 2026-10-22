@@ -105,8 +105,10 @@ Orakel: contract — `user.promoted` erreicht dieselben Empfänger wie ein neu a
 HEAD: b1432223
 Semantik: `docs/admin/monitoring.html:373` — „<strong>Sicherheit</strong>: ein neuer Admin-Benutzer wurde angelegt.“ (EN `:373`); T8 ergänzt die Hochstufung
 
-### T7 — CLI `create-admin` feuert `user.created`  [ ]
+### T7 — CLI `create-admin` feuert `user.created`  [x]
 Komponente: server · Dateien: apps/server/app/cli.py, apps/server/tests/test_cli.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @6130b248 2026-10-22T11:28:49+02:00
+Review: approve (.ah-out/review/audit-coverage/T7.verdict.json)
 Änderung: `create_admin` (`apps/server/app/cli.py:45-69`) feuert nach `db.commit()` (`:59`) und vor dem Audit-Eintrag (`:60-67`) `fire_event("user.created", {"id": user.id, "username": user.username, "is_admin": True})`, dieselbe Payload wie `POST /api/users` (`apps/server/app/modules/users/router.py:83-85`); Import `from app.core.events import fire_event`. Ein `#`-Kommentar nennt das Warum: der Interpreter joint den Pool von `fire_event` vor dem Ende des Prozesses (Spec, Externe Integrationen), das Event geht also nicht verloren. `reset_admin` und `mint_enroll_token` bleiben. Tests in `tests/test_cli.py` (Rekorder für `events._executor`): (a) erfolgreiches `create_admin` → genau ein Event `("user.created", {"id": <id>, "username": "kevin", "is_admin": True})`; (b) zu kurzes Passwort und vorhandener Name → kein Event (neben (a)). Die bestehenden Audit-Tests (`:165-225`) bleiben. Zuerst rot: (a) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cli.py
 Doku: keine eigene (T8 und T9)
