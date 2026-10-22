@@ -54,8 +54,10 @@ Beweis: Code-Audit 2026-10-21 · Code-Lesung origin/main@b1432223 — `Connectio
 Dedup-Key: bug:desktop:connections.ts:fetch-error-clears-list
 HEAD: b1432223
 
-### T3 — Dashboard zeigt den Ladefehler und das Laden (R-0658)  [ ]
+### T3 — Dashboard zeigt den Ladefehler und das Laden (R-0658)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Dashboard.svelte, apps/desktop/ui/src/pages/Dashboard.load.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @feeb8952 2026-10-22T10:49:41+02:00
+Review: approve (.ah-out/review/desktop-ui-fixes/T3.verdict.json)
 Änderung: `Dashboard.svelte` zeigt `ConnectionsLoadError` (aus T2) über `.dash-stats` (`:34`); das Feld „Zuletzt verwendet“ (`:56-77`) zeigt bei `$loading` und leerer Liste `loading.generic` statt `dashboard.empty`. Neue Testdatei `src/pages/Dashboard.load.test.ts`, Aufbau wie in T2: (a) `fetchConnectionsJwt` lehnt ab → `role="alert"` mit `connections.loadFailed` (zuerst rot); (b) solange der Abruf hängt → `loading.generic`, kein `dashboard.empty` (zuerst rot); (c) Erfolg mit `[]` → `dashboard.empty` wie bisher.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard.load.test.ts
 Doku: CHANGELOG.md (den Eintrag aus T1/T2 ergänzen: auch das Dashboard zeigt den Fehler)
