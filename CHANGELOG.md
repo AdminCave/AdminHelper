@@ -7,6 +7,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Monitoring: E-Mail-Alert-Regeln mit eigenem `smtp_host` melden sich nur mit eigenen Zugangsdaten an:**
+  `SMTP_USER` und `SMTP_PASSWORD` gelten nur noch fuer den Relay aus `SMTP_HOST` (Vergleich ohne
+  Gross-/Kleinschreibung). Eine Regel, die einen anderen `smtp_host` setzt, meldet sich nur mit ihren eigenen
+  `smtp_user` und `smtp_password` an; fehlt eins davon, verschickt sie ohne Anmeldung. Bisher ergaenzte der Versand
+  jedes fehlende Feld aus der Umgebung und schickte so das globale Passwort an jeden Host, den eine Regel nannte.
+  Verlangt ein solcher Relay eine Anmeldung, steht im Alert-Log `SMTP authentication failed (…)` bzw.
+  `SMTP server refused the message`; Abhilfe sind eigene Zugangsdaten in der Regel. Regeln ohne `smtp_host` oder mit
+  dem Host aus `SMTP_HOST` verhalten sich wie bisher. Doku: Monitoring (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

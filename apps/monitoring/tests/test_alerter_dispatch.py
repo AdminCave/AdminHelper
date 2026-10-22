@@ -352,3 +352,51 @@ def test_login_skipped_without_credentials(monkeypatch):
     ok, err = _send_email(_mail_cfg(25), _rule(), CHECK, MSG)
     assert ok, err
     assert _FakeSMTP.instances[-1].login_args is None
+
+
+_RULE_HOST = {"smtp_host": "rule-host.example"}
+_ENV_LOGIN = ("env-user", "env-pw")
+
+
+@pytest.mark.parametrize(
+    ("env_host", "cfg", "host", "login"),
+    [
+        ("relay.example", _RULE_HOST, "rule-host.example", None),
+        ("relay.example", {**_RULE_HOST, "smtp_user": "rule-user"}, "rule-host.example", None),
+        (
+            "relay.example",
+            {**_RULE_HOST, "smtp_user": "rule-user", "smtp_password": "rule-pw"},
+            "rule-host.example",
+            ("rule-user", "rule-pw"),
+        ),
+        ("relay.example", {}, "relay.example", _ENV_LOGIN),
+        ("relay.example", {"smtp_host": " RELAY.example "}, "RELAY.example", _ENV_LOGIN),
+        ("", _RULE_HOST, "rule-host.example", None),
+    ],
+    ids=[
+        "other-host-without-credentials",
+        "other-host-with-user-only",
+        "other-host-with-own-credentials",
+        "env-relay",
+        "env-relay-named-by-the-rule",
+        "no-env-relay",
+    ],
+)
+def test_env_credentials_only_reach_the_env_relay(monkeypatch, env_host, cfg, host, login):
+    # SMTP_USER/SMTP_PASSWORD belong to the relay in SMTP_HOST: a rule that names another
+    # host must never hand them to it, not even field by field next to its own user.
+    _FakeSMTP.instances = []
+    monkeypatch.setattr(alerter.smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", _forbidden)
+    monkeypatch.setattr(alerter, "SMTP_HOST", env_host)
+    monkeypatch.setattr(alerter, "SMTP_PORT", 587)
+    monkeypatch.setattr(alerter, "SMTP_USER", "env-user")
+    monkeypatch.setattr(alerter, "SMTP_PASSWORD", "env-pw")
+
+    ok, err = _send_email({"recipients": ["a@x"], **cfg}, _rule(), CHECK, MSG)
+
+    assert ok, err
+    srv = _FakeSMTP.instances[-1]
+    assert srv.host == host
+    assert srv.login_args == login
+    assert srv.sent

@@ -648,10 +648,14 @@ def _send_email(
     if not recipients:
         return False, "No recipients configured"
 
-    smtp_host = config.get("smtp_host") or SMTP_HOST
+    rule_host = str(config.get("smtp_host") or "").strip()
+    # SMTP_USER/SMTP_PASSWORD belong to the relay in SMTP_HOST; a rule naming another host
+    # logs in with its own credentials only, so the global password never reaches that host.
+    env_relay = not rule_host or rule_host.lower() == SMTP_HOST.strip().lower()
+    smtp_host = rule_host or SMTP_HOST
     smtp_port = int(config.get("smtp_port") or SMTP_PORT)
-    smtp_user = config.get("smtp_user") or SMTP_USER
-    smtp_pass = config.get("smtp_password") or SMTP_PASSWORD
+    smtp_user = config.get("smtp_user") or (SMTP_USER if env_relay else "")
+    smtp_pass = config.get("smtp_password") or (SMTP_PASSWORD if env_relay else "")
 
     if not smtp_host:
         return False, "SMTP not configured (SMTP_HOST missing)"
