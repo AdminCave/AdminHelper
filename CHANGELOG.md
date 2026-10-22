@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Web: Stores halten nach dem Anlegen nur die Felder der Liste:** Webhook-Token und Skript eines neuen oder
+  bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
+  zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
+  Entwickler (DE+EN).
 - **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
   ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
   und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
