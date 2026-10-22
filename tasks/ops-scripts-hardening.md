@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Betriebsskripte: Backup-Archiv privat und vollständig, `.env` byte-treu, Diagnose-Bundle maskiert echte Token-Formen — Task-Ledger
-Status: geplant · Branch: feature/ops-scripts-hardening · Review: pro Task
+Status: aktiv · Branch: feature/ops-scripts-hardening · Review: pro Task
 Spec: docs/features/ops-scripts-hardening.md (Roadmap R-0559; T1, T3 und T4 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `scripts/backup.sh` läuft real nur in `scripts/tests/backup_restore_test.sh` (`run.sh integration`, `scripts/tests/run.sh:848`: Backup gegen den laufenden Stack, Totalverlust, Restore, gleiche CA-Kette), und `scripts/update.sh` ruft es vor jedem Update (`:363`, `:438`); der Sammellauf über `main` zeigt, dass das Archiv nach T1/T2 restorebar bleibt. Kein `scenario`: kein `multibox.sh`-Flag ruft `backup.sh` oder `diagnostics.sh` auf; kein `windows`. `diagnostics.sh` fährt kein schwerer Lauf, seine Funktionen prüft `diagnostics_test.sh` direkt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
