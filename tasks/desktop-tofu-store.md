@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Zertifikat-Pin erst gespeichert, dann vertraut; Windows-Lesefehler; Rückfrage beim Pin-Reset — Task-Ledger
-Status: aktiv · Branch: feature/desktop-tofu-store · Review: pro Task
+Status: bereit · Branch: feature/desktop-tofu-store · Review: pro Task
 Spec: docs/features/desktop-tofu-store.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + windows — T1 ändert, wann der TOFU-Verifier (`apps/desktop/src-tauri/src/tofu.rs`) einen ersten Kontakt annimmt; jede Anfrage mit „Selbstsignierte Zertifikate erlauben“ (Login, Registrierung, Sync, Benachrichtigungen) geht durch ihn, und die Desktop-Journeys `enroll-trust-dialog.live.js` und `enroll-form.live.js` pinnen beim ersten Kontakt in der GUI-E2E des Sammellaufs (mit entsperrtem gnome-keyring, `scripts/tests/lib_e2e_stack.sh:67-89`); windows = der PR-CI-Job `Desktop-Backend (cargo test, Windows)` (`.github/workflows/ci.yml:561-583`), der die `#[cfg(target_os = "windows")]`-Tests aus T2 als einziger kompiliert und fährt (der Pool hat keine Windows-Vorlage); kein `scenario` (kein FRP-Datenpfad, keine PKI, kein Install)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -48,8 +48,10 @@ Doku: CHANGELOG.md (Fixed, umlautfrei: Desktop unter Windows — ein Lesefehler 
 Beweis: Code-Lesung apps/desktop/src-tauri/src/keyring_store.rs:182-190 gegen apps/desktop/src-tauri/src/password.rs:1056-1063; CredReadW-Fehlercodes laut learn.microsoft.com (Spec, Externe Integrationen)
 HEAD: b1432223
 
-### T3 — Einstellungen: Pin-Reset erst nach Rückfrage  [ ]
+### T3 — Einstellungen: Pin-Reset erst nach Rückfrage  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.dialog.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c39fd923 2026-10-22T10:59:49+02:00
+Review: approve (.ah-out/review/desktop-tofu-store/T3.verdict.json)
 Änderung: `onResetPin` (`SettingsModal.svelte:157-171`) fragt nach der URL-Prüfung (`:159-162`) und vor `resetServerCertPin` (`:164`) mit `confirmDialog($t('login.resetPin.confirmMitm'), { confirmLabel: $t('settings.resetCertPin') })` und zählt dabei `asking` hoch und wieder herunter wie `onResetDeviceIdentity` (`:182-186`), damit Escape nur die Frage schließt (`:342`). Abbrechen → kein Aufruf, keine Meldung. Der Knopf (`:421`) bekommt `data-action="pin-reset"`, die Meldung (`:425`) `data-msg="pin-reset"` (wie `device-reset`, `:488`). `Login.svelte` bleibt (der Kommentar `:92-94` stimmt danach). Tests in `SettingsModal.dialog.test.ts` (echter Dialog neben den Einstellungen, `:85-91`): der Bridge-Mock (`:27-31`) kennt `resetServerCertPin`; ein neues `describe` für den Pin: (a) Klick → Frage mit dem Text von `login.resetPin.confirmMitm`, `resetServerCertPin` nicht gerufen; Bestätigen (Knopf mit dem Text von `settings.resetCertPin`) → genau ein Aufruf mit `https://srv.example`, `[data-msg="pin-reset"]` zeigt `settings.resetCertPin.done`, die Frage ist zu; (b) Abbrechen → Frage zu, kein Aufruf, Einstellungen offen; (c) Escape am Knopf → nur die Frage zu, kein Aufruf, Einstellungen offen. Zuerst rot: (a), (b), (c) auf HEAD. `SettingsModal.workspace.test.ts` („resets the pin at the URL of the workspace“, `:380-386`, `confirmDialog` gemockt auf `true`) bleibt grün.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.dialog.test.ts src/components/SettingsModal.workspace.test.ts
 Doku: docs/developer/desktop.html:244 + docs/en/developer/desktop.html:244 (der Knopf in den Einstellungen fragt vorher mit derselben Warnung wie der Anmeldebildschirm) · docs/admin/troubleshooting.html:73 + docs/en/admin/troubleshooting.html:73 („… klicken, die Rückfrage bestätigen und neu verbinden“) · CHANGELOG.md (Changed, umlautfrei: „Gepinntes Zertifikat zuruecksetzen“ in den Desktop-Einstellungen fragt vorher nach, mit derselben Warnung wie der Anmeldebildschirm)

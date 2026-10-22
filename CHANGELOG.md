@@ -7,6 +7,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
+  Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
+  Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
+
 ### Fixed
 
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
