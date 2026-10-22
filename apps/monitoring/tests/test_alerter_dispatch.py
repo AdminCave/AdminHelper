@@ -466,6 +466,10 @@ def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tm
     ctx = _sent_context(monkeypatch, port)
 
     assert _CA_CN in _ca_common_names(ctx)
+    # On top of the system CAs, not instead of them: a context built from the file alone
+    # would reject every public relay. Holds on a box without a CA bundle too (0 + 1).
+    system_cas = ssl.create_default_context().cert_store_stats()["x509_ca"]
+    assert ctx.cert_store_stats()["x509_ca"] == system_cas + 1
     _assert_verifying(ctx)  # an extra CA, not a weaker check
 
 
