@@ -12,6 +12,7 @@ export type Translations = Record<Language, Record<string, string>>;
 export const translations: Translations = {
   de: {
     'error.generic': 'Fehler',
+    'error.timeout': 'Zeitüberschreitung: Der Server hat nicht rechtzeitig geantwortet.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
@@ -300,6 +301,7 @@ export const translations: Translations = {
 
   en: {
     'error.generic': 'Error',
+    'error.timeout': 'Request timed out: the server did not answer in time.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Username',
     'login.password': 'Password',

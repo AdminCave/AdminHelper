@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { tNow } from '$lib/i18n';
 import { storageRemove } from '$lib/utils/storage';
 import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 
@@ -20,15 +21,23 @@ let onAuthFailure: (() => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+export interface RequestOptions {
+  timeoutMs?: number;
+}
+
 // Abort a hung request (dead nginx upstream / no TCP response) after a bounded time instead of
 // waiting minutes for the browser's internal timeout — otherwise 'submitting' stays true, save
 // buttons stay disabled, login hangs, and hydrate() blocks the boot spinner forever (4.74).
-async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  input: string,
+  init?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
   try {
-    return await fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    return await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new ApiError(0, 'Request timed out');
+      throw new ApiError(0, tNow('error.timeout'));
     }
     throw err;
   }
@@ -86,18 +95,23 @@ async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
-async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+  opts?: RequestOptions,
+): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const jsonBody = body !== undefined ? JSON.stringify(body) : undefined;
 
-  let res = await fetchWithTimeout(path, { method, headers, body: jsonBody });
+  let res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
 
   if (res.status === 401 && !path.includes('/auth/')) {
     const refreshed = await tryRefresh();
     if (refreshed && accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
-      res = await fetchWithTimeout(path, { method, headers, body: jsonBody });
+      res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
     } else {
       onAuthFailure?.();
       throw new ApiError(401, 'Session expired');
@@ -168,7 +182,8 @@ export async function requestRaw(path: string): Promise<Response> {
 
 export const http = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  post: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
+    request<T>('POST', path, body, opts),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),

@@ -18,6 +18,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ersten Zeichnen setzt, stand inline in `index.html`; die CSP des Servers (`script-src 'self'`) blockierte es, mit
   CSP-Fehler in der Konsole. Nach einem Neuladen startete das Panel deshalb dunkel und ueberschrieb die gespeicherte
   Wahl. Das Skript liegt jetzt als eigene Datei `theme-init.js` beim Panel und laeuft unter der CSP.
+- **Web-Panel: manueller Hook-Lauf endet nicht mehr nach 15 s (R-0648):** Jede Anfrage des Panels gab nach 15 s auf,
+  auch „Ausfuehren“ eines Hooks, den der Server bis zu 30 s lang synchron ausfuehrt. Lief ein Hook 15 bis 30 s, zeigte
+  das Panel „Request timed out“, das Ergebnis ging verloren, und der Knopf wurde wieder frei, waehrend der Hook noch
+  lief. Jetzt wartet das Panel auf den Hook-Lauf 75 s, der Knopf bleibt bis zum Ende gesperrt, und die Meldung bei
+  einer Zeitueberschreitung ist uebersetzt.
 
 ## [0.46.0] - 2026-10-22
 
