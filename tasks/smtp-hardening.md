@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SMTP: ein Verhalten für Hub- und Monitoring-Mail, Zugangsdaten je Relay, Monitoring bekommt SMTP_* — Task-Ledger
-Status: bereit · Branch: feature/smtp-hardening · Review: pro Task
+Status: aktiv · Branch: feature/smtp-hardening · Review: pro Task
 Spec: docs/features/smtp-hardening.md (Roadmap R-0634; T1–T3 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `docker-compose.yml` (T4: `monitoring` bekommt `SMTP_*`) und der Versand des Notification-Hubs im `scheduler` (T3); läuft im Sammellauf über `main` (`/feature-build` §5). Kein `scenario`: kein FRP-, PKI-, Install-, Update- oder Cross-Host-Pfad (`scripts/install.sh`/`update.sh` bleiben; `update.sh` tauscht `docker-compose.yml` aus dem Release-Bundle). Der Mail-Kreislauf von `multibox --moncheck` setzt `smtp_host` je Regel ohne Zugangsdaten und ändert sich durch T1 und T4 nicht
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -126,3 +126,19 @@ Review: approve (.ah-out/review/smtp-hardening/T9.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku
 Abhängt von: T8
+
+### T10 — Hub-Mail-Test: SMTP_CA_FILE ergänzt die System-CAs, auf 587 und 465  [ ]
+Komponente: server · Dateien: apps/server/tests/test_email_sender.py
+Änderung: Fund des tester (Branch-Prüfung, `wichtig`): kein Test hält die Zusage „zusätzlich zu den System-CAs“ fest (`docs/admin/betrieb.html:144`, `docs/en/admin/operations.html:103`); `ssl.create_default_context(cafile=SMTP_CA_FILE)` lädt nur die Datei und ließe die CA-Tests grün. Nur der Test ändert sich, `sender.py` bleibt. `test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context` (`apps/server/tests/test_email_sender.py`, heute `:172-190`): zusätzlich `ctx.cert_store_stats()["x509_ca"] == ssl.create_default_context().cert_store_stats()["x509_ca"] + 1` (gilt auch auf einer Box ohne CA-Bundle: 0 + 1); parametrisiert über 587 (Kontext an `starttls`) und 465 (Kontext an `SMTP_SSL`), wie die Monitoring-Tests. Beweis, dass die neue Assertion fallen kann: eine Kopie von `sender.py` mit `ssl.create_default_context(cafile=SMTP_CA_FILE)` statt `load_verify_locations` nur im Scratch, dort rot (Ergebnis in den Commit-Body); der Bau-Worktree bleibt unberührt.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
+Doku: keine (Test)
+Orakel: mutation-sample — die Variante, die nur die CA-Datei lädt, muss den Test rot machen
+Abhängt von: T5
+
+### T11 — Monitoring-Mail-Test: SMTP_CA_FILE ergänzt die System-CAs  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_alerter_dispatch.py
+Änderung: wie T10 für das Monitoring (Fund des tester, `wichtig`; Zusage auch in T6: „System-CAs bleiben, Regeln mit öffentlichem Relay brechen nicht“). Nur der Test ändert sich, `alerter.py` bleibt. `test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context` (`apps/monitoring/tests/test_alerter_dispatch.py`, heute um `:461-475`, schon über 587 und 465 parametrisiert): zusätzlich `ctx.cert_store_stats()["x509_ca"] == ssl.create_default_context().cert_store_stats()["x509_ca"] + 1`. Beweis wie T10: eine Kopie von `alerter.py` mit `ssl.create_default_context(cafile=SMTP_CA_FILE)` nur im Scratch, dort rot (Ergebnis in den Commit-Body).
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_dispatch.py
+Doku: keine (Test)
+Orakel: mutation-sample — die Variante, die nur die CA-Datei lädt, muss den Test rot machen
+Abhängt von: T6
