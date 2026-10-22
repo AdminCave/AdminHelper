@@ -47,7 +47,6 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	serverID := p.ServerID
 	apiKey := p.APIKey
 	cacert := p.TLS.CACert
-	insecure := p.TLS.Insecure
 
 	frpDir := config.FrpDir()
 	pkiDir := config.FrpPkiDir()
@@ -71,13 +70,12 @@ func WriteSyncConfig(p SyncConfigParams) error {
 		}
 	}
 
-	// Determine the SSL config for sync mode
+	// The sync config names a CA or no trust at all, never INSECURE: --insecure holds for
+	// the provisioning call only, and without a CA the later sync verifies the server
+	// against the system CAs.
 	confCACert := ""
-	confInsecure := false
 	if cacert != "" {
 		confCACert = config.FrpCACert()
-	} else if insecure {
-		confInsecure = true
 	}
 
 	// Write the AdminHelper config
@@ -88,9 +86,6 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	}
 	if confCACert != "" {
 		entries = append(entries, config.KeyValue{Key: "CACERT", Value: confCACert})
-	}
-	if confInsecure {
-		entries = append(entries, config.KeyValue{Key: "INSECURE", Value: "1"})
 	}
 	if err := config.WriteKeyValue(config.FrpAdminHelperConf(), entries); err != nil {
 		return fmt.Errorf("Config schreiben: %w", err)

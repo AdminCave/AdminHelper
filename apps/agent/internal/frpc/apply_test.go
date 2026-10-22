@@ -188,7 +188,9 @@ func TestWriteSyncConfigStoresKeyAndPinnedCA(t *testing.T) {
 	}
 }
 
-func TestWriteSyncConfigStoresInsecureWithoutCA(t *testing.T) {
+// --insecure holds for the provisioning call only: the sync config never stores INSECURE, and
+// without a CA a later sync verifies the server against the system CAs.
+func TestWriteSyncConfigNeverStoresInsecure(t *testing.T) {
 	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
 
 	if err := WriteSyncConfig(SyncConfigParams{
@@ -208,7 +210,6 @@ func TestWriteSyncConfigStoresInsecureWithoutCA(t *testing.T) {
 		"ADMINHELPER_URL": "https://srv.example",
 		"API_KEY":         "key-1",
 		"SERVER_ID":       "srv-1",
-		"INSECURE":        "1",
 	}
 	if !reflect.DeepEqual(kv, want) {
 		t.Fatalf("sync config = %v, want %v", kv, want)

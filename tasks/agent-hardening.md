@@ -55,8 +55,10 @@ Abhängt von: T1
 Beweis: Code-Lesung apps/agent/internal/monitor/monitor.go:86-98, :114-119; apps/agent/internal/httpclient/httpclient.go:52-54
 HEAD: b1432223
 
-### T3 — `WriteSyncConfig` schreibt kein `INSECURE`  [ ]
+### T3 — `WriteSyncConfig` schreibt kein `INSECURE`  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c78e3930 2026-10-22T11:00:15+02:00
+Review: approve (.ah-out/review/agent-hardening/T3.verdict.json)
 Änderung: In `WriteSyncConfig` (`apply.go:45-100`) entfallen `confInsecure` und seine Zweige (`:74-81`, `:92-94`): `TLS.Insecure` ohne `CACert` schreibt keine Vertrauensangabe, der spätere Sync prüft dann gegen die System-CAs. Nach T1 übergibt `provision` ohnehin nie `Insecure`. `TestWriteSyncConfigStoresInsecureWithoutCA` (`apply_test.go:191-221`) wird durch `TestWriteSyncConfigNeverStoresInsecure` ersetzt: dieselbe Eingabe, erwartet `adminhelper.conf` mit genau `ADMINHELPER_URL`, `API_KEY`, `SERVER_ID` (ohne `INSECURE`, ohne `CACERT`) und kein `ca.crt`. Die Tests über `applyBundle` (`:229-237`) behalten `TLS: config.TLSOpts{Insecure: true}`; sie prüfen die frpc-Steuerung. Zuerst rot: der neue Test auf HEAD.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestWriteSyncConfig
 Doku: docs/developer/agent.html:81 + docs/en/developer/agent.html:81 (`INSECURE` liest der Agent nur noch aus Konfigurationen früherer Versionen; `provision` und `monitor init` schreiben es nicht) · CHANGELOG: keiner (Eintrag aus T1/T2)
