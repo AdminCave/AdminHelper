@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # FRP-Eingaben: C1-Steuerzeichen und Proxy-Plugin-Schlüssel an der Server-Grenze — Task-Ledger
 Status: geplant · Branch: feature/frp-config-validation · Review: pro Task
 Spec: docs/features/frp-config-validation.md (Roadmap R-0786; T2 und T3 gehören zum Paket, Kevin 2026-10-22)
-Heavy: linux-full — Boundary-Validierung von `POST`/`PUT` auf `/api/frp/tunnels`, `/api/frp/server-config` und `/api/servers` (`frp/schemas.py`), deren Werte in die frpc-Config der Agents gehen, dazu ein Filter im frpc-Generator; keine Antwortform, keine Migration, kein Route-Docstring; läuft im Sammellauf wie frp-bare-key. Kein `scenario`: der Datenpfad eines nutzbaren Tunnels ändert sich nicht (T3 betrifft nur Tunnel mit einem plugin-Schlüssel, die keine UI anlegt und die API nach T2 ablehnt), pytest deckt Schemas, Routen und Generator ab. Kein `windows`: kein Agent- und kein Desktop-Code
+Heavy: linux-full, scenario, windows — CLAUDE.md §5 (FRP-Pfad, Session fe 2026-10-22): Boundary-Validierung von `POST`/`PUT` auf `/api/frp/tunnels`, `/api/frp/server-config` und `/api/servers` (`frp/schemas.py`), deren Werte in die frpc-Config der Agents gehen, dazu ein Filter im frpc-Generator; `scenario` = `--agents 1 --tunnel --enforce` vor dem Merge (fährt die Session), `windows` = die Windows-Jobs der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
