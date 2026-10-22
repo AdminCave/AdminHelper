@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Install-, Update- und Agent-Skripte: Geheimnisse über Datei und stdin, nur der gepinnte Repo-Schlüssel, Prüfung der `.env` vollständig — Task-Ledger
-Status: geplant · Branch: feature/ops-install-hardening · Review: pro Task
+Status: aktiv · Branch: feature/ops-install-hardening · Review: pro Task
 Spec: docs/features/ops-install-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 + windows — `linux-full`, weil die Agent-CLI (T1) und `install.sh`/`update.sh` im Diff sind (CLAUDE.md §5; `upgrade_path_test.sh` Schritt 4 startet die `update.sh` dieses Stands bis zur Übergabe, `agent_monitoring_test.sh` provisioniert mit `--token`). `scenario --agents 1` vor dem Merge, weil nur `scripts/tests/box_agentbox.sh:150-155` `agent-install.sh` mit echtem apt, echtem `Signed-By` auf den von T2 geschriebenen Keyring und echtem `provision` gegen den Agent aus diesem Checkout fährt (`box_serverbox.sh:328-396` baut Paket und Repo aus dem Checkout), also T1–T3 zusammen; `--rpm` fährt `agent-install.sh` nicht (`box_agentbox_rpm.sh:36` ruft `provision` direkt), den dnf-Zweig prüft `agent_install_test.sh`. `windows` über den CI-Job `agent-windows` (`go test` nativ; `main.go` hat kein Build-Tag, `verify.sh agent` baut zusätzlich mit `GOOS=windows`); der Pool hat keine Windows-Vorlage. Multibox bleibt ask-first
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
