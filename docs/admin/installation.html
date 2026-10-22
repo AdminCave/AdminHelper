@@ -94,7 +94,8 @@
 <pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installiert das neueste Release; gezielt pinnen mit --ref vX.Y.Z.
-# fragt das Admin-Passwort ab. Non-interaktiv: --admin-password … --yes.
+# fragt das Admin-Passwort ab. Non-interaktiv: --admin-password-file &lt;datei&gt; --yes
+# (Passwort in der ersten Zeile; die Datei nur fuer dich lesbar, z.B. chmod 600).
 # --permissive laesst den Stack permissiv (kein erzwungenes mTLS).
 # --reset raeumt Volumes eines fehlgeschlagenen Versuchs weg (docker compose down -v).</code></pre>
           <p>Am Ende gibt das Script die Zugangsdaten aus: URL, Admin-Login und einen <strong>Enrollment-Token</strong>. Den Token im Desktop-Client einlösen: im Picker einen Server-Workspace mit der Server-URL anlegen und öffnen, dann <em>„Gerät mit Token registrieren"</em> — der Client erzeugt sein mTLS-Zertifikat <strong>on-device</strong> — danach normaler Login. Die Browser-<code>.p12</code> exportiert man anschliessend im Desktop über den Export-Knopf. Updates: <code>./scripts/update.sh</code> im erzeugten <code>adminhelper/</code>-Verzeichnis.</p>

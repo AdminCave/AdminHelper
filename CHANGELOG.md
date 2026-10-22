@@ -15,6 +15,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   entfaellt) als Token. `--token` und `--token-stdin` schliessen einander aus, einer von beiden ist Pflicht; Aufrufe
   mit `--token` bleiben gueltig. Bleibt auf stdin kein Token, bricht `provision` mit „no provision token on stdin“ ab,
   bevor es den Server anspricht.
+- **`install.sh --admin-password-file` liest das Admin-Passwort aus einer Datei:** Fuer eine nicht-interaktive
+  Installation nahm `install.sh` das Passwort des Erst-Admins bisher nur als `--admin-password`, also als
+  Programmargument, das fuer den ganzen Lauf in der Prozessliste und in der Shell-History steht. `--admin-password-file
+  DATEI` nimmt die erste Zeile der Datei als Passwort (ein `\r` am Zeilenende entfaellt); ein relativer Pfad gilt ab
+  dem Verzeichnis, in dem `install.sh` gestartet wurde, auch wenn es die Laufzeit-Dateien nach `--dir` laedt. Ist die
+  Datei nicht lesbar oder ihre erste Zeile leer, bricht `install.sh` ab, bevor es etwas anlegt, und nennt nur den Pfad.
+  `--admin-password` funktioniert weiter und weist auf stderr auf `--admin-password-file` hin; beide zusammen sind ein
+  Fehler. README und Installations-Doku (DE+EN) nennen fuer den nicht-interaktiven Lauf nur noch
+  `--admin-password-file`.
 
 ### Changed
 
