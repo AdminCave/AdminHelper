@@ -13,10 +13,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
   Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
   FRP-Server-Konfiguration. Bisher stand der Fehler samt Traceback im Log.
-- **Server: `.secret_key` entsteht von Anfang an mit Modus 0600:** Erzeugt der Server den Schluessel selbst (kein
-  `SECRET_KEY` gesetzt), schreibt er ihn in eine temporaere Datei im selben Verzeichnis, die von Anfang an nur fuer
-  ihren Besitzer lesbar ist, und benennt sie danach atomar um, wie die `frps.toml`. Bisher entstand die Datei mit den
-  Rechten der umask und bekam erst danach Modus 0600.
+- **Server: `.secret_key`, `.bootstrap_token` und `.bootstrap_setup` entstehen von Anfang an mit Modus 0600:** Den
+  selbst erzeugten Schluessel (kein `SECRET_KEY` gesetzt), den Hash des Setup-Tokens und den Setup-Token schreibt der
+  Server je in eine temporaere Datei im selben Verzeichnis, die von Anfang an nur fuer ihren Besitzer lesbar ist, und
+  benennt sie danach atomar um, wie die `frps.toml`. Bisher entstanden die Dateien mit den Rechten der umask und
+  bekamen erst danach Modus 0600. Ein Fehler beim Entfernen der Bootstrap-Dateien steht mit Dateiname und Fehlertyp im
+  Log; bisher wurde er verworfen.
 
 ## [0.46.0] - 2026-10-22
 

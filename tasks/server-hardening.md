@@ -53,8 +53,10 @@ Beweis: Code-Lesung apps/server/app/core/config.py:33-34 (`write_text`, danach `
 Orakel: contract — Modus 0600 ohne `chmod`, unter umask 0
 HEAD: b1432223
 
-### T3 — Bootstrap-Dateien ab der Erzeugung 0600; Löschfehler im Log  [ ]
+### T3 — Bootstrap-Dateien ab der Erzeugung 0600; Löschfehler im Log  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_bootstrap.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4e58afde 2026-10-22T11:11:19+02:00
+Review: approve (.ah-out/review/server-hardening/T3.verdict.json)
 Änderung: `_emit_bootstrap_token` (`apps/server/app/main.py:132-166`) schreibt `BOOTSTRAP_TOKEN_FILE` (Hash) und `BOOTSTRAP_SETUP_FILE` (roher Token) mit `write_private_file` aus T2 statt `write_text` + `chmod` in `try/except OSError: pass` (`:136-148`); Reihenfolge (erst Hash, dann Setup-Datei), Inhalt und die Log-Zeilen bleiben, der rohe Token kommt nie ins Log. `_purge_bootstrap_files` (`:123-129`) ruft je Datei `unlink(missing_ok=True)` und loggt einen `OSError` als `logger.warning("bootstrap file %s not removed (%s)", f, type(exc).__name__)` statt ihn zu verwerfen; die übrige Datei wird trotzdem entfernt. Neue Tests in `test_bootstrap.py` neben `test_bootstrap_token_written_to_file_not_log` (`:116-133`), Aufräumen wie dort: (a) unter `os.umask(0)` und mit `pathlib.Path.chmod` sowie `os.chmod` als Stand-ins, die `PermissionError` werfen: `_emit_bootstrap_token()` wirft nicht, beide Dateien haben Modus `0o600`, die Setup-Datei hält den rohen Token, die Hash-Datei nicht; der rohe Token steht nicht in `caplog.text`. (b) `pathlib.Path.unlink` wirft für `BOOTSTRAP_SETUP_FILE` `PermissionError`: `_purge_bootstrap_files()` wirft nicht, `BOOTSTRAP_TOKEN_FILE` ist weg, genau ein WARNING von `app.main` nennt `.bootstrap_setup` und `PermissionError`. Zuerst rot: (a) und (b) auf HEAD (Modus `0o666`; kein WARNING).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py
 Doku: CHANGELOG.md (der Eintrag aus T2 nennt nun `.secret_key`, `.bootstrap_token` und `.bootstrap_setup`; dazu: ein Fehler beim Entfernen der Bootstrap-Dateien steht mit Dateiname und Fehlertyp im Log); `docs/admin/installation.html:165` nennt `.bootstrap_setup` schon mit 0600
