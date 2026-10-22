@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Stores: nach dem Anlegen nur die Felder der Liste halten — Task-Ledger
-Status: geplant · Branch: feature/web-store-cleanup · Review: am Ende
+Status: aktiv · Branch: feature/web-store-cleanup · Review: am Ende
 Spec: docs/features/web-store-cleanup.md (Härtung, Kevin 2026-10-22)
 Heavy: none — nur zwei Web-Stores, ihre Unit-Tests und ein Satz Entwickler-Doku; keine Route, kein Schema, keine Migration, kein Server-, Gateway-, PKI-, FRP-Datenpfad-, Compose- oder Install-Pfad (die FRP-Server-Konfiguration selbst ändert sich nicht, nur was die Seite nach dem Speichern behält); die Web-E2E mockt `/api/hooks` und `/api/frp/server-config` (`apps/web/tests/e2e/mocks.ts`) und läuft in der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
