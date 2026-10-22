@@ -110,14 +110,14 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 Abhängt von: T4
 
-### T10 — Compose: Speichergrenzen je Dienst  [?] (Speichergrenzen: feste großzügige Werte für alle Dienste mit Override per docker-compose.override.yml (Empfehlung), nur für Dienste mit fester Last, oder .env-Knöpfe je Dienst?)
+### T10 — Compose: Speichergrenzen je Dienst  [ ]
 Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_hardening.py, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
 Änderung (Empfehlung, Spec offene Frage 3): jeder Dienst bekommt `mem_limit` direkt nach seinem `pids_limit` (T1), mit einer Kommentarzeile zum Warum des Werts. Die Werte stehen vor dem Bau fest: Messung `docker stats --no-stream` aller Dienste während eines Stack-Laufs (nach T8), Wert ein großzügiges Vielfaches der Spitze, mindestens server 2g, scheduler 1g, monitoring 1g, postgres 1g, victoria 2g, ca-issuer 256m, gateway 256m, frps 256m, redis 256m; die Session trägt sie nach Kevins Antwort hier ein. Test in `test_compose_hardening.py`: jeder Dienst hat ein `mem_limit` in einer Form, die Compose annimmt (Zahl mit `k`/`m`/`g`), und keines unter 128m. Zuerst rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py
 Doku: Abschnitt aus T1 (DE+EN): Speichergrenzen je Dienst in der Tabelle, Override-Beispiel mit `mem_limit` · CHANGELOG (Changed, umlautfrei)
 Abhängt von: T1
 
-### T11 — Server: TRUSTED_PROXIES versteht Hostnamen  [?] (Wie vertraut der Server dem Gateway: Hostname gateway in TRUSTED_PROXIES (Empfehlung) oder eigenes Netz mit festem Subnetz und fester Adresse?)
+### T11 — Server: TRUSTED_PROXIES versteht Hostnamen  [ ]
 Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/tests/test_ip_filter.py, docs/developer/server.html, docs/en/developer/server.html
 Änderung: `_parse_networks` (`apps/server/app/core/middleware.py:17-28`) behält einen Eintrag, der keine Adresse und kein Netz, aber ein gültiger Hostname ist (Labels aus Buchstaben, Ziffern und `-`, je 1–63 Zeichen, gesamt höchstens 253), als Namen; andere Einträge warnen wie heute. Ein kleiner Resolver löst die Namen mit `socket.getaddrinfo` auf und hält die Adressen 30 s, nach einem Fehlschlag 5 s; `resolve_client_ip` (`:64-90`) vertraut den Headern, wenn die direkte Gegenstelle in den Netzen oder unter den aufgelösten Adressen liegt. Der Anfragepfad blockiert nicht auf DNS: aufgelöst wird in einem Daemon-Thread, der Anfragepfad liest den letzten Stand; bis zur ersten Auflösung gilt ein Name als leer (direkte Adresse wie heute). Ein Fehlschlag loggt einmal je Name und Wechsel auf WARNING, nicht je Anfrage. `TRUST_PROXY_HEADERS` bleibt, wie es ist. Tests in `apps/server/tests/test_ip_filter.py` (Resolver ersetzt, keine echte DNS-Abfrage; Muster `:89-99`): (a) `TRUSTED_PROXIES=gateway`, `gateway` → `192.0.2.10`: Anfrage von `192.0.2.10` mit `X-Forwarded-For: 198.51.100.7` → `198.51.100.7`; (b) dieselbe Anfrage von `192.0.2.11` → `192.0.2.11`; (c) der Name löst danach auf `192.0.2.12` auf: nach der Auffrischung gilt `192.0.2.12`, `192.0.2.10` nicht mehr; (d) die Auflösung scheitert → direkte Adresse und genau eine WARNING über mehrere Anfragen; (e) `gateway,203.0.113.0/24` → beide gelten; (f) ein ungültiger Eintrag (`not a host!`) → Warnung wie heute, ignoriert. Zuerst rot: (a), (c), (e).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ip_filter.py
@@ -125,7 +125,7 @@ Doku: `docs/developer/server.html:45` + `docs/en/developer/server.html:45`: `TRU
 Beweis: Code-Lesung apps/server/app/core/middleware.py:17-28, :64-90; docker-compose.yml:102
 HEAD: b1432223
 
-### T12 — Compose: der Server vertraut dem Gateway; Doku zu TRUSTED_PROXIES und ALLOWED_IPS  [?] (Wie vertraut der Server dem Gateway (siehe T11)? Bestand mit ALLOWED_IPS: nur CHANGELOG- und Doku-Hinweis (Empfehlung) oder zusätzlich eine Warnung in update.sh?)
+### T12 — Compose: der Server vertraut dem Gateway; Doku zu TRUSTED_PROXIES und ALLOWED_IPS  [ ]
 Komponente: server · Dateien: docker-compose.yml, .env.example, apps/server/tests/test_compose_hardening.py, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md
 Änderung (Empfehlung, Spec offene Fragen 1 und 2): `docker-compose.yml:102` wird `- TRUSTED_PROXIES=gateway${TRUSTED_PROXIES:+,${TRUSTED_PROXIES}}` (Probe Compose v5.5.1: ungesetzt oder leer → `gateway`, gesetzt → `gateway,<wert>`). Der Kommentar `:97-101`: das Gateway ist immer vertraut; `TRUSTED_PROXIES` in `.env` ergänzt weitere direkte Gegenstellen des server; `TRUST_PROXY_HEADERS` wirkt in Compose nicht (gesetztes `TRUSTED_PROXIES` hat Vorrang, `middleware.py:76-90`). `.env.example:120-124` sagt dasselbe, Beispiel mit RFC-5737-Adressen. Tests in `test_compose_hardening.py`: (a) der server hat genau diese Zeile; (b) der scheduler hat kein `TRUSTED_PROXIES` (er nimmt keine HTTP-Anfragen an). Zuerst rot: (a).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py
@@ -134,7 +134,7 @@ Abhängt von: T11
 Beweis: Code-Lesung docker-compose.yml:96-102, apps/server/docker-entrypoint.sh:54-58, apps/server/app/core/middleware.py:74-90
 HEAD: b1432223
 
-### T13 — Stack-Prüfung: Client-Adresse hinter dem Gateway  [?] (Wie vertraut der Server dem Gateway? siehe T11)
+### T13 — Stack-Prüfung: Client-Adresse hinter dem Gateway  [ ]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
 Änderung: Neuer Schritt nach dem aus T8. (a) Eine Anmeldung über das Gateway mit falschem Passwort (Zertifikat aus Schritt 5) schreibt `auth.login_failed` mit der Adresse des Clients (`apps/server/app/modules/users/auth_router.py:124`, `:155`); die neueste solche Zeile in `audit_log.source_ip` (`apps/server/app/modules/audit/models.py:35`, gelesen über `e2e_dc exec -T postgres psql`) ist nicht leer und nicht die Adresse des gateway im Default-Netz (`docker inspect`). (b) Gegenprobe: dieselbe Anmeldung direkt an `server:8080` aus dem scheduler-Container mit `X-Forwarded-For: 203.0.113.9` → die neue Zeile trägt die Adresse des scheduler-Containers, nicht `203.0.113.9` (der Server vertraut nur dem Gateway). Den echten Lauf fährt die Session wie bei T8.
 Verify: bash scripts/dev/verify.sh scripts --strict
