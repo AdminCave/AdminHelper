@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Theme-Skript unter der CSP, Frist des Hook-Laufs, Abmelden, Selbst-Bearbeitung, Seitenspeicher, confirmDialog — Task-Ledger
-Status: bereit · Branch: feature/web-fixes · Review: pro Task
+Status: aktiv · Branch: feature/web-fixes · Review: pro Task
 Spec: docs/features/web-fixes.md (Roadmap R-0654, R-0647, R-0648, R-0653, R-0652, R-0476)
 Heavy: none — nur `apps/web` und Doku; kein Server-, Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, keine Route, kein Schema, kein CSP-Header (`apps/server/app/main.py:443-453` bleibt); die Web-E2E samt neuem Projekt `chromium-build` (T3) fährt die PR-CI im Job `frontend-e2e`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -134,3 +134,21 @@ Beweis: origin/main@b1432223 · Code-Lesung `apps/web/src/lib/components/ui/Conf
 Orakel: contract — ohne angemeldeten Nutzer öffnet keine Frage
 Dedup-Key: ref:web:confirm:null-user
 HEAD: b1432223
+
+### T9 — Merge-Folge: `hooks.test.ts` erwartet die 75-s-Frist des Hook-Laufs (R-0648)  [ ]
+Komponente: web · Dateien: apps/web/src/lib/api/hooks.test.ts
+Änderung: Fund des Branch-Reviews (blocker). Der Test `apps/web/src/lib/api/hooks.test.ts:21` kam mit #254 über den Merge 3dfa4ddf auf den Branch und erwartet `http.post` mit zwei Argumenten; seit T4 übergibt `run()` dazu `{ timeoutMs: 75_000 }`. Die Assertion wird `expect(http.post).toHaveBeenCalledWith('/api/hooks/a%2Fb/run', {}, { timeoutMs: 75_000 })` — gewollte Verhaltensänderung aus T4, keine Assertion entfällt, sonst nichts an der Datei.
+Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/hooks.test.ts src/lib/api/client.test.ts
+Doku: keine (Test-Anpassung; Doku und CHANGELOG trägt T4)
+Beweis: feature/web-fixes@3dfa4ddf · `bash scripts/dev/verify.sh web --strict` → `Tests 1 failed | 275 passed (276)`, FAIL `src/lib/api/hooks.test.ts > hooks api > posts a manual run to the encoded hook id and returns the response unchanged` (Received mit drittem Argument `{ "timeoutMs": 75000 }`)
+Orakel: contract — `hooks.run` postet mit der Frist von 75 s
+HEAD: 3dfa4ddf
+
+### T10 — UserModal: Fehlerpfad beim eigenen Passwortwechsel und Reihenfolge PUT vor Abmeldung (R-0652)  [ ]
+Komponente: web · Dateien: apps/web/src/modals/UserModal.test.ts
+Änderung: Fund des testers (wichtig), nur Tests. In `UserModal.test.ts` Test (a) zusätzlich: `users.update` läuft vor `authApi.logout` (`mock.invocationCallOrder`). Neuer Test (d): eigener Nutzer mit Passwort, `update` verwirft mit `new ApiError(422, …)` (wie der Server bei einem Passwort unter 8 Zeichen, `apps/server/app/modules/users/schemas.py:68`) → `authApi.logout` nicht aufgerufen, `get(auth).user` weiter gesetzt, `onClose` nicht aufgerufen, kein Info-Toast mit dem Text von `toast.user.ownPasswordChanged`, ein Fehler-Toast. Zeigt der Code (`UserModal.svelte:78-86`, `:105-106`) dabei ein anderes Verhalten, `[?]` statt den Test anzupassen. Mutationsprobe nur in einer Kopie unter dem eigenen Scratch-Verzeichnis, nicht im Bau-Worktree: `auth.logout()` vor `users.update` → (a) rot; eine Abmeldung auch im `catch` → (d) rot; beide Ergebnisse in den Commit-Body.
+Verify: bash scripts/dev/verify.sh web --strict -- src/modals/UserModal.test.ts
+Doku: keine (nur Tests)
+Beweis: feature/web-fixes@3dfa4ddf · tester-Urteil `.ah-out/review/web-fixes/tester.verdict.json`, Fund 1 · Code-Lesung `apps/web/src/modals/UserModal.svelte:78-86` (Fehlerpfad ohne Test, Reihenfolge nicht festgelegt)
+Orakel: contract — scheitert der PUT des eigenen Passworts, bleibt die Sitzung bestehen und es erscheint kein Hinweis „Passwort geändert“
+HEAD: 3dfa4ddf
