@@ -27,6 +27,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   eine Paketquelle geschrieben wird, und nennt den erwarteten und die gefundenen Fingerprints; der Fingerprint eines
   Unterschluessels gilt nicht als Pin. `--gpg-fp` muss aus 40 Hex-Zeichen bestehen. Bestehende Agent-Hosts behalten
   ihren Keyring, bis `agent-install.sh` dort wieder laeuft.
+- **`agent-install.sh` gibt den Provisionierungs-Token ueber stdin an den Agent:** Bisher las das Skript den Token
+  zwar auf Wunsch von `/dev/tty`, reichte ihn dann aber als `--token` an `adminhelper-agent provision` weiter, wo er
+  fuer die Dauer des Aufrufs in der Prozessliste stand. Kennt der installierte Agent `--token-stdin`, schreibt das
+  Skript den Token jetzt in dessen stdin. Ein aelterer Agent (aus dem Repo eines noch nicht aktualisierten Servers)
+  bekommt ihn wie bisher als `--token`, und das Skript warnt, dass der Token dabei als Programmargument uebergeben wird.
 
 ## [0.46.0] - 2026-10-22
 

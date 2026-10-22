@@ -339,14 +339,26 @@ if [ -z "$TOKEN" ]; then
     [ -n "$TOKEN" ] || die "--token missing and no interactive terminal to ask on"
 fi
 
-PROV_ARGS=(--url "$SERVER_URL" --token "$TOKEN" --server-id "$SERVER_ID")
+# Version skew: the server repo ships the server's agent version, which may
+# predate a flag this script knows — ask its help once. Into a variable, not
+# `| grep -q`: under pipefail an early-exiting grep can fail the probe via SIGPIPE.
+PROV_HELP=$(adminhelper-agent provision --help 2>&1 || true)
+
+if grep -q -- '--token-stdin' <<<"$PROV_HELP"; then
+    TOKEN_STDIN=1
+    PROV_ARGS=(--url "$SERVER_URL" --token-stdin --server-id "$SERVER_ID")
+else
+    TOKEN_STDIN=0
+    warn "installed agent predates --token-stdin — the provision token is passed as a program argument (visible in the process list while it runs)."
+    PROV_ARGS=(--url "$SERVER_URL" --token "$TOKEN" --server-id "$SERVER_ID")
+fi
 if [ -n "$CA_FP" ]; then
-    if adminhelper-agent provision --help 2>&1 | grep -q -- '--ca-fp'; then
+    if grep -q -- '--ca-fp' <<<"$PROV_HELP"; then
         PROV_ARGS+=(--ca-fp "$CA_FP")
         log "first contact will be VERIFIED against the CA fingerprint."
     else
-        # Version skew: the server repo ships the server's agent version, which
-        # may predate --ca-fp. Fall back to TOFU rather than failing the rollout.
+        # An agent that predates --ca-fp: fall back to TOFU rather than failing
+        # the rollout.
         warn "installed agent predates --ca-fp — falling back to trust-on-first-use."
         warn "compare the fingerprint the agent prints against the desktop's provisioning tab!"
         PROV_ARGS+=(--insecure)
@@ -355,7 +367,12 @@ else
     warn "no --ca-fp given — first contact is trust-on-first-use; compare the printed fingerprint out-of-band."
     PROV_ARGS+=(--insecure)
 fi
-adminhelper-agent provision "${PROV_ARGS[@]}" || die "provisioning failed"
+if [ "$TOKEN_STDIN" = 1 ]; then
+    # printf is a builtin: no child process carries the token in its argv.
+    printf '%s\n' "$TOKEN" | adminhelper-agent provision "${PROV_ARGS[@]}" || die "provisioning failed"
+else
+    adminhelper-agent provision "${PROV_ARGS[@]}" || die "provisioning failed"
+fi
 
 # ── 3) post-enroll hardening: pin the internal CA for future repo pulls ──────
 if [ -f "$IDENTITY_CA" ]; then

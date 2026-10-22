@@ -88,14 +88,17 @@ case "\$1" in
   provision)
     shift
     if [ "\$1" = "--help" ] || grep -qx -- '--help' <<<"\$(printf '%s\n' "\$@")"; then
-      if [ "\${AH_STUB_NO_CAFP:-0}" = 1 ]; then
-        echo "Flags: --url --token --server-id --cacert --insecure"
-      else
-        echo "Flags: --url --token --server-id --cacert --insecure --ca-fp"
-      fi
+      flags="Flags: --url --token --server-id --cacert --insecure"
+      [ "\${AH_STUB_NO_CAFP:-0}" = 1 ] || flags="\$flags --ca-fp"
+      [ "\${AH_STUB_NO_TOKEN_STDIN:-0}" = 1 ] || flags="\$flags --token-stdin"
+      echo "\$flags"
       exit 0
     fi
     printf '%s\n' "\$@" > "$WORK/provision.args"
+    # Reads stdin only when told to, like the real agent.
+    if grep -qx -- '--token-stdin' "$WORK/provision.args"; then
+      cat > "$WORK/provision.stdin"
+    fi
     if [ "\${AH_STUB_ENROLL:-1}" = 1 ]; then
       mkdir -p "\$(dirname "\$AH_IDENTITY_CA")" && echo test-ca > "\$AH_IDENTITY_CA"
     fi
@@ -120,8 +123,8 @@ fresh_env() {
     export AH_YUM_REPO_DIR="$ROOT/yum.repos.d"
     export AH_RPM_KEY_DIR="$ROOT/rpm-gpg"
     export AH_IDENTITY_CA="$ROOT/identity/ca.crt"
-    rm -f "$WORK/provision.args" "$WORK/apt-get.calls" "$WORK/dnf.calls"
-    unset AH_STUB_NO_CAFP AH_STUB_ENROLL 2>/dev/null || true
+    rm -f "$WORK/provision.args" "$WORK/provision.stdin" "$WORK/apt-get.calls" "$WORK/dnf.calls"
+    unset AH_STUB_NO_CAFP AH_STUB_NO_TOKEN_STDIN AH_STUB_ENROLL 2>/dev/null || true
 }
 
 run_script() { bash "$SCRIPT" "$@" 2>&1; }
@@ -166,6 +169,32 @@ out=$(run_script --server https://srm.example.com --token t --server-id s \
 grep -q -- "--insecure" "$WORK/provision.args" && ! grep -q -- "--ca-fp" "$WORK/provision.args" \
     && ok "fell back to --insecure" || bad "fallback args wrong: $(cat "$WORK/provision.args" 2>/dev/null)"
 grep -qi "predates --ca-fp" <<<"$out" && ok "warns about the version skew" || bad "no skew warning"
+
+echo "── token over stdin: the agent reads it from stdin, never as an argument ──"
+fresh_env; export AH_PKG_MGR=apt
+out=$(run_script --server https://srm.example.com --token zz9tok-1 --server-id sid-1 \
+    --ca-fp aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc: $(echo "$out" | tail -3)"
+grep -qx -- "--token-stdin" "$WORK/provision.args" 2>/dev/null && grep -qx -- "--ca-fp" "$WORK/provision.args" \
+    && ok "provision got --token-stdin (and --ca-fp from the same help)" \
+    || bad "provision args: $(tr '\n' ' ' < "$WORK/provision.args" 2>/dev/null)"
+[ -s "$WORK/provision.args" ] && ! grep -q "zz9" "$WORK/provision.args" && ! grep -qx -- "--token" "$WORK/provision.args" \
+    && ok "neither the token nor --token is a program argument" || bad "token passed as an argument"
+[ "$(cat "$WORK/provision.stdin" 2>/dev/null)" = "zz9tok-1" ] \
+    && ok "the agent read the token from stdin" || bad "agent stdin: '$(cat "$WORK/provision.stdin" 2>/dev/null)'"
+! grep -q "zz9" <<<"$out" && ok "the output does not name the token" || bad "token in the output"
+
+echo "── old agent without --token-stdin: token as an argument + warning ──"
+fresh_env; export AH_PKG_MGR=apt AH_STUB_NO_TOKEN_STDIN=1
+out=$(run_script --server https://srm.example.com --token zz9tok-1 --server-id sid-1 \
+    --ca-fp aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc: $(echo "$out" | tail -3)"
+grep -qx -- "--token" "$WORK/provision.args" 2>/dev/null && grep -qx "zz9tok-1" "$WORK/provision.args" \
+    && ! grep -qx -- "--token-stdin" "$WORK/provision.args" && grep -qx -- "--ca-fp" "$WORK/provision.args" \
+    && ok "fell back to --token (and kept --ca-fp)" \
+    || bad "fallback args: $(tr '\n' ' ' < "$WORK/provision.args" 2>/dev/null)"
+grep -qi "predates --token-stdin" <<<"$out" && ok "warns that the token goes on the command line" || bad "no warning"
+! grep -q "zz9" <<<"$out" && ok "the warning does not name the token" || bad "token in the output"
 
 echo "── dnf path: verified local gpgkey, sslverify flip after enroll ──"
 fresh_env; export AH_PKG_MGR=dnf
