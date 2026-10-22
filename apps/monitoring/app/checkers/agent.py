@@ -355,10 +355,12 @@ class AgentResourcesChecker:
             if level:
                 problem_levels[key] = level
 
-        # CPU
+        # CPU and memory: no metric here, as with disks and temperatures below. The agent
+        # router already writes monitor_agent_cpu_percent/monitor_agent_memory_percent per
+        # server; a copy with this check's labels was a second series of the same name
+        # (R-0633). Still graded below.
         cpu = agent_number(resources.get("cpu_percent"))
         if cpu is not None:
-            metrics["agent_cpu_percent"] = cpu
             cpu_crit = config.get("cpu_crit", 95)
             cpu_warn = config.get("cpu_warn", 80)
             grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
@@ -366,7 +368,6 @@ class AgentResourcesChecker:
         # Memory
         mem = agent_number(resources.get("memory_percent"))
         if mem is not None:
-            metrics["agent_memory_percent"] = mem
             mem_crit = config.get("memory_crit", 95)
             mem_warn = config.get("memory_warn", 80)
             grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")

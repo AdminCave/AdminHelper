@@ -26,6 +26,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der
   Check `disk_forecast` steht dann auf `unknown` mit „Metrics store unavailable“ statt „No disk history yet“. Doku:
   Monitoring fuer Administratoren (DE+EN).
+- **Monitoring: CPU- und RAM-Verlauf eines Servers kommt einmal statt doppelt (R-0633):** Der Check
+  `agent_resources` schreibt CPU und RAM nicht mehr zusaetzlich mit seinen Check-Labels nach VictoriaMetrics, sondern
+  nur noch seinen Status; die Werte schreibt allein der Agent-Push je Server. Der Metrik-Abruf eines
+  `agent_resources`-Checks (`GET /checks/{id}/metrics`) liest fuer CPU, RAM, Platten und Temperaturen nur diese
+  Serien ohne `check_id` und liefert je Wert eine Serie statt zwei gleich beschrifteter; die Liste der aktuellen
+  Werte im Desktop brach daran ab. Die bisherigen Serien mit Check-Labels bleiben bis zum Ende der Retention in
+  VictoriaMetrics, werden aber nicht mehr gelesen. Doku: Monitoring fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

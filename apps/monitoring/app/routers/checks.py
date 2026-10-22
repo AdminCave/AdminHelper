@@ -473,6 +473,13 @@ def get_check_metrics(
         if use_server_id
         else f'check_id="{_escape_label(check_id)}"'
     )
+    if use_server_id and check_type == "agent_resources":
+        # Only the push handler's series, which carry no check_id: CPU/RAM copies the
+        # checker wrote with its check labels stay in VictoriaMetrics until the retention
+        # ends and would come back as a second series of the same name (R-0633).
+        # label="" selects the series without that label (Prometheus semantics, probed
+        # against the pinned VictoriaMetrics image).
+        filter_label += ',check_id=""'
 
     # Query all type-specific metrics in one __name__ regex range query instead of one serial
     # query_range per metric (up to 4 for e.g. service_process/http): the calls are independent, so

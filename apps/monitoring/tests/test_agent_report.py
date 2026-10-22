@@ -339,31 +339,90 @@ def test_push_check_without_measured_values_writes_its_status(
 
 def test_push_check_with_measured_values_writes_one_status_as_before(client_db, monkeypatch):
     # Next to a check without measured values: no second status line for either, and the
-    # check with values keeps its duration and value lines.
+    # check with values keeps its duration and value lines. docker_health, since
+    # agent_resources writes no measured values of its own (R-0633).
     from app.core import victoria as vm
 
     client, factory = client_db
-    _add_resources_check(factory, consecutive_fails=1)
+    _add_push_check(factory, "chk-d", "docker_health")
     _add_push_check(factory, "chk-x", "system_state")
     writes: list[list[str]] = []
     monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
 
     report = {
-        "resources": {"cpu_percent": 50, "memory_percent": 40},
+        "docker": {
+            "available": True,
+            "containers": [{"id": "abc123def456", "name": "web", "state": "running"}],
+        },
         "system_state": {"oom_kills": 0},
     }
     r = client.post("/agent/srv-1/report", json=report)
     assert r.status_code == 200, r.text
     assert r.json()["checksUpdated"] == 2
-    tags = "check_id=chk-1,check_type=agent_resources,name=Resources,server_id=srv-1"
-    assert _lines_of(writes, "chk-1") == [
+    tags = "check_id=chk-d,check_type=docker_health,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-d") == [
         f"monitor_check_status,{tags} value=0i",
         f"monitor_check_duration_ms,{tags} value=0i",
-        f"monitor_agent_cpu_percent,{tags} value=50i",
-        f"monitor_agent_memory_percent,{tags} value=40i",
+        f"monitor_docker_ok,{tags} value=1i",
+        f"monitor_docker_critical,{tags} value=0i",
+        f"monitor_docker_warning,{tags} value=0i",
     ]
     tags = "check_id=chk-x,check_type=system_state,name=Check,server_id=srv-1"
     assert _lines_of(writes, "chk-x") == [f"monitor_check_status,{tags} value=0i"]
+
+
+def test_cpu_and_memory_are_written_once_per_server(client_db, monkeypatch):
+    # R-0633: the push handler writes CPU and RAM per server, and agent_resources wrote the
+    # same names again with its check labels. Filtered by server_id, the metrics endpoint
+    # returned two series of one label, and the desktop's list of current values broke on it.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post(
+        "/agent/srv-1/report", json={"resources": {"cpu_percent": 50, "memory_percent": 40}}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    lines = [line.rsplit(" ", 1)[0] for batch in writes for line in batch]
+    names = ("monitor_agent_cpu_percent,", "monitor_agent_memory_percent,")
+    assert [line for line in lines if line.startswith(names)] == [
+        "monitor_agent_cpu_percent,server_id=srv-1 value=50i",
+        "monitor_agent_memory_percent,server_id=srv-1 value=40i",
+    ]
+    tags = "check_id=chk-1,check_type=agent_resources,name=Resources,server_id=srv-1"
+    assert _lines_of(writes, "chk-1") == [f"monitor_check_status,{tags} value=0i"]
+
+
+def test_resources_metrics_read_only_the_series_of_the_push_handler(client_db, monkeypatch):
+    # R-0633: the series of the push handler carry no check_id; check_id="" leaves out the
+    # check-labelled CPU/RAM copies the checker wrote before, which stay in VictoriaMetrics
+    # until the retention ends. The status timeline still reads by check_id.
+    from app.core import victoria as vm
+    from app.main import app
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    app.dependency_overrides[require_internal] = lambda: None
+    queries: list[str] = []
+
+    def fake_query_range(query, start, end, step):
+        queries.append(query)
+        return {"data": {"result": []}}
+
+    monkeypatch.setattr(vm.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/chk-1/metrics")
+    assert r.status_code == 200, r.text
+    assert queries == [
+        '{__name__=~"monitor_agent_cpu_percent_value|monitor_agent_memory_percent_value",'
+        'server_id="srv-1",check_id=""}',
+        '{__name__=~"monitor_agent_(disk_percent|temp).*_value",server_id="srv-1",check_id=""}',
+        'monitor_check_status_value{check_id="chk-1"}',
+    ]
 
 
 def test_system_state_metrics_read_only_the_status_timeline(client_db, monkeypatch):
