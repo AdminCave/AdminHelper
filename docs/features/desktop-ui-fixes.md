@@ -204,7 +204,7 @@ HiDPI, Eingepasst, `connections.json`).
    Englisch wie nach dem Laden, eine Regel — **Empfehlung**: entspricht dem Zustand nach dem Laden heute und nach T5;
    die Zeile verlangt eine Regel. (B) Deutsch wie heute — T7 entfällt (`[~]`), es bleiben zwei Regeln, die sich nur
    bei anderen Systemsprachen unterscheiden. (C) Deutsch für jede andere Systemsprache überall — änderte auch T5 und das
-   Verhalten nach dem Laden (heute Englisch).
+   Verhalten nach dem Laden (heute Englisch). **Antwort Kevin 2026-10-22: (A)**, gebaut in T7.
 2. **Restrisiko T4 (zur Kenntnis, kein Gate):** HiDPI und gebrochene Skalierung unter Wayland sind mangels Bildschirm
    auf den Pool-VMs nicht prüfbar; Beleg sind die Unit-Tests auf die Argumente, Rusts Tests der Abbildung und der
    RDP-Start im Sammellauf.
