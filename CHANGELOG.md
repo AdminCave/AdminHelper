@@ -35,6 +35,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   startete beides neu; der Feed flackerte, und Meldungen aus dieser Luecke kamen ohne OS-Benachrichtigung. Neu
   gestartet wird nur, wenn Server oder Benutzer wechseln.
 
+### Changed
+
+- **Desktop: der Tunnel-Dialog prueft den Visitor-Port vor dem Speichern (R-0585):** Bei einem STCP-Tunnel lehnt der
+  Dialog einen Visitor-Port ab, der keine ganze Zahl von 1 bis 65535 ist, und nennt den Bereich; bisher kam erst die
+  Ablehnung des Servers (`422`). Ein leeres Feld bleibt erlaubt, dann vergibt der Server einen freien Port. Doku:
+  FRP-Tunnel (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

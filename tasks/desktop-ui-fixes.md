@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-UI: Ladefehler der Verbindungsliste, RDP-Bildschirmdaten, Sprachwahl, Löschen mit Rückfrage, Benachrichtigungs-Neustart, Visitor-Port-Prüfung — Task-Ledger
-Status: aktiv · Branch: feature/desktop-ui-fixes · Review: pro Task
+Status: bereit · Branch: feature/desktop-ui-fixes · Review: pro Task
 Spec: docs/features/desktop-ui-fixes.md (Roadmap R-0658, R-0659, R-0660, R-0661, R-0663, R-0585)
 Heavy: linux-full — T4 ändert die Argumente des RDP-Starts (`client` für `open_connection`/`open_connection_stored`, daraus `/size` und `/scale` von xfreerdp3), die nur der RDP-Start der GUI-E2E im Sammellauf mit echter Anzeige fährt (`scripts/tests/desktop_e2e_connect.sh`, `rdp-connect.live.js`); T10 ändert die Prüfung des Tunnel-Dialogs (`tunnel-create.live.js`); T1–T3 ändern, was die Seiten „Verbindungen“ und Dashboard jeder Desktop-Journey zeigen. Kein `scenario` (kein FRP-Datenpfad, keine PKI, kein Install, keine Rust-Datei), kein `windows` (`fit_window_size`/`hdpi_scale` wirken nur unter Unix, `rdp_logic.rs:127`, `:143`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -137,8 +137,10 @@ Beweis: Code-Audit 2026-10-21 · Probe origin/main@b1432223 (Node v22.23.1, `sve
 Dedup-Key: bug:desktop:AppShell.svelte:settings-save-restarts-stream
 HEAD: b1432223
 
-### T10 — Tunnel-Dialog prüft den Visitor-Port selbst (R-0585)  [ ]
+### T10 — Tunnel-Dialog prüft den Visitor-Port selbst (R-0585)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/frpTunnel.ts, apps/desktop/ui/src/lib/models/frpTunnel.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7658ed40 2026-10-22T12:18:37+02:00
+Review: approve (.ah-out/review/desktop-ui-fixes/T10.verdict.json)
 Änderung: `validateTunnelForm` (`frpTunnel.ts:96-103`) lehnt bei `tunnelType === 'stcp'` einen `visitorPort`, der nicht `null` und keine ganze Zahl von 1 bis 65535 ist (`Number.isInteger`, wie `models/connection.ts:41-44`), mit `infra.tun.validation.visitorPortRange` ab. `null` (leeres Feld: der Server vergibt einen) bleibt erlaubt; bei HTTPS keine Prüfung (`formToInput` nullt den Port, `:89`). Neuer Schlüssel — „Visitor-Port muss zwischen 1 und 65535 liegen“ / „The visitor port must be between 1 and 65535“. Tests in `frpTunnel.test.ts` (zuerst rot): STCP mit 0, 65536, -1 und 1.5 → nicht ok mit dieser Meldung; 1, 65535 und `null` → ok; HTTPS mit 0 → ok. Der builder fährt zusätzlich `python3 scripts/dev/doc-smoke.py --paths --env --strict` (Exit 0, Ergebnis in den Commit-Body).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/frpTunnel.test.ts src/lib/i18n/i18n.test.ts
 Doku: docs/admin/frp-tunnel.html:105 + docs/en/admin/frp-tunnel.html:105 (nach dem Satz zum 422: der Tunnel-Dialog des Desktop-Clients lehnt einen solchen Wert schon vor dem Speichern ab) · CHANGELOG.md (Changed: der Tunnel-Dialog des Desktops prueft den Visitor-Port 1-65535 vor dem Speichern)
