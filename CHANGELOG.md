@@ -7,6 +7,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **`SMTP_CA_FILE` fuer Relays mit eigener CA, im Notification-Hub und im Monitoring:** Die optionale Variable nennt
+  eine PEM-Datei im Container mit der CA des Relays (selbstsigniertes Zertifikat oder Firmen-CA). Hub und E-Mail-Kanal
+  der Alert-Regeln laden sie zusaetzlich zu den System-CAs, im Monitoring fuer jeden Relay, auch den einer Regel;
+  Zertifikat und Hostname werden weiter geprueft. Eingebunden wird sie per `docker-compose.override.yml` (Variable und
+  Datei fuer `server`, `scheduler` und `monitoring`), nicht ueber `docker-compose.yml` oder `.env.example`. Laesst
+  sich die Datei nicht laden, geht keine Mail hinaus: Der Hub nennt den Grund im Log des `scheduler`-Dienstes, das
+  Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
+  Betrieb & Konfiguration, Monitoring (DE+EN).
+
 ### Changed
 
 - **Monitoring: E-Mail-Alert-Regeln mit eigenem `smtp_host` melden sich nur mit eigenen Zugangsdaten an:**

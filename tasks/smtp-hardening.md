@@ -96,8 +96,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_dis
 Doku: keine in dieser Task (T7)
 Abhängt von: T1
 
-### T7 — Doku: SMTP_CA_FILE mit Override-Beispiel  [ ]
+### T7 — Doku: SMTP_CA_FILE mit Override-Beispiel  [x]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9b488cfa 2026-10-22T11:46:19+02:00
+Review: approve (.ah-out/review/smtp-hardening/T7.verdict.json)
 Änderung: DE und EN, gleiche Stellen. (1) SMTP-Tabelle (`docs/admin/betrieb.html:137-146`, `docs/en/admin/operations.html:96-105`): neue Zeile `SMTP_CA_FILE` — optionaler Pfad im Container zu einer PEM-Datei mit der CA des Relays (selbstsigniert oder Firmen-CA), zusätzlich zu den System-CAs, gilt für Hub und Monitoring; darunter ein `docker-compose.override.yml`-Beispiel, das für `server`, `scheduler` und `monitoring` je `SMTP_CA_FILE=/run/adminhelper/smtp-ca.pem` setzt und `./smtp-ca.pem:/run/adminhelper/smtp-ca.pem:ro` einhängt; Hinweis, dass ein Relay ohne STARTTLS auch damit nicht geht. (2) `docs/admin/monitoring.html:340` / EN `:340`: ein Halbsatz, dass `SMTP_CA_FILE` auch hier gilt. Der builder fährt zusätzlich `python3 scripts/dev/doc-smoke.py --paths --env --strict` (Exit 0; `SMTP_CA_FILE` steht nach T5/T6 in beiden `config.py`) und legt das Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku · CHANGELOG.md (Added, umlautfrei: `SMTP_CA_FILE` fuer Relays mit eigener CA, Hub und Monitoring)
