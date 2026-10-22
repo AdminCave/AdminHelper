@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Betriebsskripte: Backup-Archiv privat und vollständig, `.env` byte-treu, Diagnose-Bundle maskiert echte Token-Formen — Task-Ledger
-Status: aktiv · Branch: feature/ops-scripts-hardening · Review: pro Task
+Status: bereit · Branch: feature/ops-scripts-hardening · Review: pro Task
 Spec: docs/features/ops-scripts-hardening.md (Roadmap R-0559; T1, T3 und T4 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `scripts/backup.sh` läuft real nur in `scripts/tests/backup_restore_test.sh` (`run.sh integration`, `scripts/tests/run.sh:848`: Backup gegen den laufenden Stack, Totalverlust, Restore, gleiche CA-Kette), und `scripts/update.sh` ruft es vor jedem Update (`:363`, `:438`); der Sammellauf über `main` zeigt, dass das Archiv nach T1/T2 restorebar bleibt. Kein `scenario`: kein `multibox.sh`-Flag ruft `backup.sh` oder `diagnostics.sh` auf; kein `windows`. `diagnostics.sh` fährt kein schwerer Lauf, seine Funktionen prüft `diagnostics_test.sh` direkt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -62,8 +62,10 @@ Doku: CHANGELOG.md (Fixed, umlautfrei: das Diagnose-Bundle maskiert API-Keys als
 Beweis: Code-Lesung scripts/diagnostics.sh:49-51, :62-66, :77-81, :100-120
 HEAD: b1432223
 
-### T4 — diagnostics.sh: Schalter `--mask-hosts`, Kopfkommentar und Doku sagen, was stehen bleibt  [ ]
+### T4 — diagnostics.sh: Schalter `--mask-hosts`, Kopfkommentar und Doku sagen, was stehen bleibt  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, README.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @387cc2d0 2026-10-22T11:58:43+02:00
+Review: approve (.ah-out/review/ops-scripts-hardening/T4.verdict.json)
 Änderung: Neuer Schalter `--mask-hosts` (Optionen `diagnostics.sh:25-33`, Usage `:18`). Mit ihm: (1) die Werte von `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`, `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (Listen an `,` und Leerraum getrennt, jedes Element einzeln, gelesen wie in T3) und der Hostname des Rechners (`uname -n`) werden in Logs und `report.txt` zu `<host>`, in `env.sanitized` steht für diese Schlüssel `<masked>`; (2) IPv4-Adressen (vier Zahlen 0–255 mit Punkten, optional `/Präfix`) und IPv6-Adressen mit `::` oder mit acht Gruppen werden zu `<ip>`; eine Uhrzeit `HH:MM:SS` bleibt. Ohne Schalter bleibt alles wie nach T3. Die Funktionen bekommen den Schalter als Argument, damit der Test sie ohne `main` fährt. Kopfkommentar `:12-15`: statt „The bundle is safe to attach to a GitHub issue“: Secrets und Token werden maskiert, Hostnamen und Adressen nur mit `--mask-hosts`, vor dem Senden durchsehen; die Abschlussmeldung (`:149-152`) nennt `--mask-hosts`, wenn er fehlte. Tests in `diagnostics_test.sh`: (a) mit Schalter, `.env` mit `DOMAIN=ah.example.com`, `EXTRA_SANS=alt.example.com,198.51.100.7`, `ALLOWED_IPS=203.0.113.0/24`; Log-Zeilen aus T3 (a) plus `upstream [2001:db8::1]:8080`, `fe80::1`, eine Zeile mit `ah.example.com` und `alt.example.com`, eine mit `10:00:00` und `1.27.3` → keine der Adressen und keiner der Namen steht im Ergebnis, `10:00:00` und `1.27.3` stehen, `env.sanitized` hat `DOMAIN=<masked>`; (b) ohne Schalter dieselben Zeilen: Adressen und Namen stehen, die Token-Formen aus T3 sind maskiert; (c) `diagnostics.sh --help` nennt `--mask-hosts`, `diagnostics.sh --bogus` endet weiter mit 2. Zuerst rot: (a) und (c).
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test doc_smoke_test
 Doku: docs/admin/troubleshooting.html:143-149 + docs/en/admin/troubleshooting.html:131-137 (Codeblock um `./scripts/diagnostics.sh --mask-hosts` ergänzt; Absatz und Callout: maskiert werden die Secrets der `.env`, API-Keys und Token (auch in Access-Logs), JWT- und Bearer-Token; Hostnamen und IP-Adressen nur mit `--mask-hosts`) · README.md:303-308 ebenso · CHANGELOG.md (Added, umlautfrei)

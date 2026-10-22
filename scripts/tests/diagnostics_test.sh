@@ -16,7 +16,15 @@
 #       value is masked in a log line, as is a query token with such a byte;
 #   (d) no rule for ah_ keys any more: no token of the project carries that prefix,
 #       (a) checks the forms they do take;
-#   (e) main with a docker stub: report.txt and the logs in the bundle are redacted.
+#   (e) main with a docker stub: report.txt and the logs in the bundle are redacted;
+#       host names and addresses stay, and the closing message names --mask-hosts;
+#       with --mask-hosts they are masked in report.txt and env.sanitized;
+#   (f) --mask-hosts in the functions: IPv4 and IPv6 addresses become <ip>, the host
+#       values of the .env and the machine's name <host>, env.sanitized shows those
+#       keys as <masked>; a time and a version number stay;
+#   (g) without the switch the same lines keep their names and addresses, the token
+#       forms of (a) are masked;
+#   (h) --help names --mask-hosts, an unknown option still ends with 2.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it case (c) cannot run, and the test ends
@@ -226,23 +234,108 @@ else
         || { echo "(c) log lines under C.UTF-8: $(cat -v "$tmp/c.log.out" | tr '\n' ' ')" >&2; fail=1; }
 fi
 
+# --- (f) --mask-hosts: names and addresses become <host> and <ip> -----------------
+# The host values of the .env (a list split at ',', an address in angle brackets
+# without them) and the machine's name become <host>, every IPv4 and IPv6 address
+# <ip>; a time, a version and a MAC address are no address. The token forms of (a)
+# stay masked. uname is a function here, so the machine's name is known and cannot
+# clash with the text.
+# shellcheck disable=SC2317  # called by host_rules of the sourced script
+uname() { if [ "${1:-}" = -n ]; then echo node9host; else command uname "$@"; fi; }
+env_f="$tmp/.env-hosts"
+cat > "$env_f" <<'EOF'
+SECRET_KEY=hs9secret
+DOMAIN=ah.example.com
+EXTRA_SANS=alt.example.com,198.51.100.7
+ALLOWED_IPS=203.0.113.0/24
+SMTP_FROM="Ops9 <ops9@mail.example.com>"
+# FRP_SERVER_ADDR=192.0.2.44
+EOF
+log_h="$(cat <<'EOF'
+upstream [2001:db8::1]:8080
+neighbour fe80::1 reachable
+client 2001:db8:0:0:0:0:0:7 accepted, mac aa:bb:cc:dd:ee:ff
+tls: certificate for ah.example.com and alt.example.com, peer 198.51.100.7
+allow 203.0.113.0/24
+10:00:00 nginx/1.27.3 ready
+smtp: sending as ops9@mail.example.com on node9host
+EOF
+)"
+exp_f="$(cat <<'EOF'
+<ip> - - [22/Oct/2026:10:00:00 +0000] "GET /api/connections?api_key=<redacted>&limit=50 HTTP/1.1" 200 512 "-" "curl/8.5.0"
+INFO:     <ip>:51234 - "GET /api/connections?api_key=<redacted> HTTP/1.1" 200 OK
+<ip> - - [22/Oct/2026:10:00:01 +0000] "POST /api/hooks/trigger/<redacted> HTTP/1.1" 202 18 "-" "curl/8.5.0"
+INFO:     <ip>:51236 - "POST /api/hooks/trigger HTTP/1.1" 401 Unauthorized
+<ip> - - [22/Oct/2026:10:00:02 +0000] "GET /api/sync?page_token=p2&ACCESS_TOKEN=<redacted> HTTP/1.1" 200 64 "https://<host>/x?token=<redacted>" "Mozilla/5.0"
+provisioning: agent enrolled with adminhelper_prov_<redacted> from <ip>
+upstream [<ip>]:8080
+neighbour <ip> reachable
+client <ip> accepted, mac aa:bb:cc:dd:ee:ff
+tls: certificate for <host> and <host>, peer <ip>
+allow <ip>
+10:00:00 nginx/1.27.3 ready
+smtp: sending as <host> on <host>
+EOF
+)"
+sed_f="$tmp/redact-f.sed"
+build_redaction_sedfile "$env_f" "$sed_f" 1
+out_f="$(printf '%s\n%s\n' "$log_a" "$log_h" | redact "$sed_f")"
+same "(f) --mask-hosts in the logs" "$exp_f" "$out_f" || fail=1
+for leak in 203.0.113 192.0.2 198.51.100 2001:db8 fe80 example.com ops9 node9host 0123456789; do
+    if has "$leak" "$out_f"; then
+        echo "LEAK: (f) '$leak' survived --mask-hosts" >&2
+        fail=1
+    fi
+done
+# env.sanitized: the host keys by key, an address in a comment by its shape.
+exp_fs="$(cat <<'EOF'
+SECRET_KEY=<redacted>
+DOMAIN=<masked>
+EXTRA_SANS=<masked>
+ALLOWED_IPS=<masked>
+SMTP_FROM=<masked>
+# FRP_SERVER_ADDR=<ip>
+EOF
+)"
+same "(f) --mask-hosts in sanitize_env" "$exp_fs" "$(sanitize_env "$env_f" 1)" || fail=1
+
+# --- (g) without the switch: names and addresses stay -------------------------------
+sed_g="$tmp/redact-g.sed"
+build_redaction_sedfile "$env_f" "$sed_g" 0
+out_g="$(printf '%s\n%s\n' "$log_a" "$log_h" | redact "$sed_g")"
+same "(g) the logs without --mask-hosts" "$(printf '%s\n%s\n' "$exp_a" "$log_h")" "$out_g" || fail=1
+exp_gs="$(sed 's/^SECRET_KEY=.*/SECRET_KEY=<redacted>/' "$env_f")"
+same "(g) sanitize_env without --mask-hosts" "$exp_gs" "$(sanitize_env "$env_f" 0)" || fail=1
+unset -f uname
+
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
 # A docker stub on PATH answers what main asks; `compose ps` lands in report.txt,
 # `compose logs` in logs/server.log, each with a secret of the .env and a token form.
+# `compose ps` also names an address and DOMAIN, and a uname stub gives the
+# machine's name to report.txt: without --mask-hosts they stay, with it they go.
 work="$tmp/main"
-mkdir -p "$work/bin" "$work/out" "$work/x"
+mkdir -p "$work/bin" "$work/out" "$work/x" "$work/out-mask" "$work/x-mask"
 printf 'services: {}\n' > "$work/docker-compose.yml"
-printf 'SECRET_KEY=rep9secret\n' > "$work/.env"
+printf 'SECRET_KEY=rep9secret\nDOMAIN=ah.example.com\n' > "$work/.env"
 cat > "$work/bin/docker" <<EOF
 #!/usr/bin/env bash
 case "\$*" in
     "compose ps --services") echo server ;;
-    "compose ps") echo "server  up  rep9secret POST /api/hooks/trigger/$tok_hk" ;;
+    "compose ps") echo "server  up  rep9secret POST /api/hooks/trigger/$tok_hk"
+                  echo "gateway  up  198.51.100.20 ah.example.com" ;;
     "compose logs --no-color --tail 300 server") echo "GET /api/x?api_key=$tok_ng uses rep9secret" ;;
 esac
 exit 0
 EOF
-chmod +x "$work/bin/docker"
+cat > "$work/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+    -n) echo node9host ;;
+    -a) echo "Linux node9host 6.1.0-test #1 SMP x86_64 GNU/Linux" ;;
+    *) exit 1 ;;
+esac
+EOF
+chmod +x "$work/bin/docker" "$work/bin/uname"
 rc=0
 ( cd "$work" && PATH="$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" --output "$work/out" ) \
     > "$work/run.log" 2>&1 || rc=$?
@@ -260,7 +353,54 @@ else
         echo "LEAK: (e) a secret or a token survived in the bundle" >&2
         fail=1
     fi
+    grep -qxF 'gateway  up  198.51.100.20 ah.example.com' "$work/x/report.txt" \
+        || { echo "(e) report.txt lost a name or an address without --mask-hosts" >&2; fail=1; }
+    grep -qxF 'Linux node9host 6.1.0-test #1 SMP x86_64 GNU/Linux' "$work/x/report.txt" \
+        || { echo "(e) report.txt lost the machine's name without --mask-hosts" >&2; fail=1; }
+    grep -qxF 'DOMAIN=ah.example.com' "$work/x/env.sanitized" \
+        || { echo "(e) env.sanitized masked DOMAIN without --mask-hosts" >&2; fail=1; }
+    grep -qF -e '--mask-hosts' "$work/run.log" \
+        || { echo "(e) the closing message does not name --mask-hosts" >&2; fail=1; }
 fi
+
+# The same main with --mask-hosts: the address, DOMAIN and the machine's name go
+# from report.txt and env.sanitized, and the closing message no longer names the
+# switch.
+rc=0
+( cd "$work" && PATH="$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" --mask-hosts \
+    --output "$work/out-mask" ) > "$work/run-mask.log" 2>&1 || rc=$?
+bundles=("$work"/out-mask/adminhelper-diagnostics-*.tar.gz)
+if [ "$rc" != 0 ] || [ "${#bundles[@]}" != 1 ] || [ ! -f "${bundles[0]}" ]; then
+    echo "(e) main --mask-hosts: exit $rc, bundles: ${bundles[*]}" >&2; sed 's/^/    | /' "$work/run-mask.log" >&2
+    fail=1
+elif ! tar -xzf "${bundles[0]}" -C "$work/x-mask"; then
+    echo "(e) main --mask-hosts: bundle does not extract" >&2; fail=1
+else
+    grep -qxF 'gateway  up  <ip> <host>' "$work/x-mask/report.txt" \
+        || { echo "(e) --mask-hosts: report.txt: $(cat "$work/x-mask/report.txt")" >&2; fail=1; }
+    grep -qxF 'Linux <host> 6.1.0-test #1 SMP x86_64 GNU/Linux' "$work/x-mask/report.txt" \
+        || { echo "(e) --mask-hosts: the machine's name in report.txt" >&2; fail=1; }
+    grep -qxF 'DOMAIN=<masked>' "$work/x-mask/env.sanitized" \
+        || { echo "(e) --mask-hosts: env.sanitized: $(cat "$work/x-mask/env.sanitized")" >&2; fail=1; }
+    if grep -rq -e rep9secret -e 0123456789 -e 198.51.100.20 -e ah.example.com -e node9host "$work/x-mask"; then
+        echo "LEAK: (e) a secret, a token, a name or an address survived --mask-hosts" >&2
+        fail=1
+    fi
+    if grep -qF -e '--mask-hosts' "$work/run-mask.log"; then
+        echo "(e) the closing message names --mask-hosts although it was given" >&2
+        fail=1
+    fi
+fi
+
+# --- (h) the switch in the usage ----------------------------------------------------
+# The usage line is the last line --help prints: a range that ends too early loses it.
+rc=0
+help_out="$(bash "$ROOT/scripts/diagnostics.sh" --help 2>&1)" || rc=$?
+[ "$rc" = 0 ] || { echo "(h) --help: exit $rc" >&2; fail=1; }
+has '\[--mask-hosts\]' "$help_out" || { echo "(h) --help does not name --mask-hosts: $help_out" >&2; fail=1; }
+rc=0
+bash "$ROOT/scripts/diagnostics.sh" --bogus > /dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || { echo "(h) --bogus: exit $rc, expected 2" >&2; fail=1; }
 
 if [ "$fail" != 0 ]; then
     echo "diagnostics_test: FAILED" >&2

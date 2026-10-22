@@ -7,6 +7,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Diagnose-Bundle: Hostnamen und IP-Adressen auf Wunsch maskieren:** `scripts/diagnostics.sh --mask-hosts` ersetzt
+  IPv4- und IPv6-Adressen durch `<ip>` und die Namen und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`,
+  `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`, `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` sowie den Rechnernamen
+  durch `<host>`, in `report.txt`, den Logs und `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Ohne
+  den Schalter bleiben Hostnamen und Adressen stehen wie bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen
+  sind; Skript-Kopf, `--help`, die Abschlussmeldung und die Doku sagen das jetzt, statt das Bundle pauschal als
+  unbedenklich fuer ein Issue zu bezeichnen. Doku: Troubleshooting (DE+EN), README.
+
 ### Changed
 
 - **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
