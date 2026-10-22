@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: eine Vertrauensquelle je Aufruf, PKI-Bundle-Pfad entfernt, Diagnose-Bericht als neue Datei, Server-Text der frpc.toml in Generator-Form — Task-Ledger
-Status: geplant · Branch: feature/agent-hardening · Review: pro Task
+Status: aktiv · Branch: feature/agent-hardening · Review: pro Task
 Spec: docs/features/agent-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --tunnel + windows — Agent-Paket im Stack (`run.sh integration`/`e2e`: `agent_monitoring`, `upgrade_path`, `desktop_e2e_connect_tunnel` mit echter Server-Ausgabe durch die neue Prüfung der frpc.toml); vor dem Merge der Multibox-Lauf `--agents 1 --tunnel` (ask-first, Kevin entscheidet), weil nur er die frpc.toml des Servers über `.deb`-Installation, Provisionierung über den Hop und den STCP-Datenpfad mit Visitor zeigt; `windows` ist der CI-Job `agent-windows` (`go test` unter Windows), weil sich `paths.go`, `WriteSyncConfig`, die Diagnose und `securedir_windows.go` auch unter Windows ändern
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
