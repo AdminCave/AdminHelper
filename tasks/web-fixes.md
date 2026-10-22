@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Theme-Skript unter der CSP, Frist des Hook-Laufs, Abmelden, Selbst-Bearbeitung, Seitenspeicher, confirmDialog — Task-Ledger
-Status: aktiv · Branch: feature/web-fixes · Review: pro Task
+Status: bereit · Branch: feature/web-fixes · Review: pro Task
 Spec: docs/features/web-fixes.md (Roadmap R-0654, R-0647, R-0648, R-0653, R-0652, R-0476)
 Heavy: none — nur `apps/web` und Doku; kein Server-, Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, keine Route, kein Schema, kein CSP-Header (`apps/server/app/main.py:443-453` bleibt); die Web-E2E samt neuem Projekt `chromium-build` (T3) fährt die PR-CI im Job `frontend-e2e`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -123,10 +123,12 @@ Dedup-Key: bug:web:UserModal.svelte:self-edit-stale-auth
 HEAD: b1432223
 Semantik: `apps/server/app/modules/users/router.py:110-111` — „Revoke all existing JWTs for this user (password reset invalidates sessions)“; `docs/admin/benutzer.html:58` — „Admins können jederzeit fremde Passwörter zurücksetzen.“ (zum eigenen Passwort im Web-Panel keine Stelle in docs/).
 
-### T8 — confirmDialog: ohne angemeldeten Nutzer sofort `false` (R-0476)  [ ]
-Komponente: web · Dateien: apps/web/src/lib/components/ui/ConfirmDialog.svelte, apps/web/src/lib/components/ui/ConfirmDialog.test.ts
+### T8 — confirmDialog: ohne angemeldeten Nutzer sofort `false` (R-0476)  [x]
+Komponente: web · Dateien: apps/web/src/lib/components/ui/ConfirmDialog.svelte, apps/web/src/lib/components/ui/ConfirmDialog.test.ts, apps/web/src/modals/FrpConfigModal.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @34a53d07 2026-10-22T11:58:59+02:00
+Review: approve (.ah-out/review/web-fixes/T8.verdict.json)
 Änderung: `confirmDialog()` (`ConfirmDialog.svelte:19-35`) liefert `Promise.resolve(false)` und öffnet nichts, wenn `get(currentUser)` `null` ist; der Import von `currentUser` zieht dafür vom Instanz-Teil (`:43`) in den Modul-Teil (`:7-8`), der Effekt `:73-78` bleibt. Kommentar: dieselbe Regel wie `:68-72` für eine Frage, die erst nach dem Ende der Sitzung gestellt wird. `ConfirmDialog.test.ts`: im `describe` (`:35`) ein `beforeEach(async () => { await auth.hydrate(); })`, damit die Tests `:36-111` mit Sitzung fragen (keine Assertion entfällt); neuer Test: Sitzung beenden (Auth-Failure-Handler wie `:115`), dann `confirmDialog('x')` → erfüllt mit `false`, kein `.btn.danger` im gerenderten Dialog. Zuerst rot: der neue Test auf HEAD (die Frage öffnet, das Promise bleibt offen).
-Verify: bash scripts/dev/verify.sh web --strict -- src/lib/components/ui/ConfirmDialog.test.ts
+Verify: bash scripts/dev/verify.sh web --strict -- src/lib/components/ui/ConfirmDialog.test.ts src/modals/FrpConfigModal.test.ts
 Doku: keine (intern; heute ruft niemand `confirmDialog` ohne Sitzung)
 Beweis: origin/main@b1432223 · Code-Lesung `apps/web/src/lib/components/ui/ConfirmDialog.svelte:19-35` (keine Prüfung der Sitzung) und `:73-78` (bricht nur offene Fragen ab); Aufrufer `apps/web/src/pages/Users.svelte:53`, `ApiKeys.svelte:52`, `Hooks.svelte:74`, `:102`, `apps/web/src/modals/FrpConfigModal.svelte:101` (alle hinter dem Login). Der neue Test ist auf HEAD rot
 Orakel: contract — ohne angemeldeten Nutzer öffnet keine Frage
