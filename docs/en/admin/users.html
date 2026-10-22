@@ -49,7 +49,7 @@
             <li>Assign username and password; the password is hashed with bcrypt</li>
             <li>Choose the role – admins see and edit everything</li>
           </ol>
-          <p>Admins can reset other users' passwords at any time. Regular users can change their own password in the settings.</p>
+          <p>Admins can reset other users' passwords at any time. When an admin changes their own password in the web panel, the server ends every session of the account, and the panel signs them out at once with a notice; when they remove their own admin role, the admin pages disappear at once. Regular users can change their own password in the settings.</p>
           <p>The <strong>assignment of servers to a user</strong> stays in the web panel: it is maintained directly in the user dialog (it controls which servers the user sees). The server entries themselves are created and edited in the desktop client (server workspace, <em>Infrastructure</em>).</p>
 
           <h2>Login flow</h2>

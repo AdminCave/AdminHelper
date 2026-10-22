@@ -21,6 +21,12 @@ export const apikeys = {
     if (gen === refreshGen) _apikeys.set(list);
   },
 
+  // Logout empties the store (see users.ts).
+  reset(): void {
+    refreshGen++;
+    _apikeys.set([]);
+  },
+
   async create(data: ApiKeyCreate): Promise<ApiKeyCreateResult> {
     const created = await api.create(data);
     refreshGen++;
