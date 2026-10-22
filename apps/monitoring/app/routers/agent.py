@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -18,12 +17,18 @@ from sqlalchemy.orm import Session
 from app.check_engine import _dispatch_alert_bg, apply_result
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
-from app.checkers.agent import EXCLUDED_FSTYPES, record_agent_report
+from app.checkers.agent import (
+    EXCLUDED_FSTYPES,
+    agent_number,
+    capped_objects,
+    entry_text,
+    record_agent_report,
+)
 from app.core.auth import require_agent
 from app.core.bounds import _find_nul
 from app.core.database import get_db
 from app.core.time import utcnow_naive
-from app.core.victoria import _finite, format_line, victoria
+from app.core.victoria import format_line, victoria
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 from app.template_suggestions import store_host_facts
 
@@ -31,43 +36,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-def _num(v):
-    """Coerce an agent-supplied metric value to int/float, else None.
-
-    Agent values flow into the InfluxDB line protocol; a non-numeric value must
-    never reach format_line (it would be a line-protocol injection vector — see
-    app/core/victoria.py — and would otherwise raise/500). Numeric strings are
-    accepted for leniency; anything else (incl. bool) is dropped. inf/nan are
-    dropped too: written verbatim they poison the whole VictoriaMetrics batch.
-    So is an int beyond the float range, which format_line rejects as well.
-    """
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return v if _finite(v) else None
-    if isinstance(v, str):
-        try:
-            num = float(v)
-        except ValueError:
-            return None
-        return num if math.isfinite(num) else None
-    return None
-
-
-# Cap per-report array lengths so a compromised/misconfigured agent can't flood the
-# service (a CPU/memory/VictoriaMetrics DoS) with a huge disks/temperatures list.
-# The body-size cap itself belongs at the gateway (client_max_body_size) (3.76).
-_MAX_REPORT_ITEMS = 500
-
 # Push checkers whose evaluate() takes the check's previous _details as a third argument.
 _PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process", "docker_health"})
-
-
-def _capped(value: object) -> list:
-    """The first _MAX_REPORT_ITEMS entries of a list value, or [] for anything else
-    (a non-list would otherwise iterate as chars / raise downstream)."""
-    return value[:_MAX_REPORT_ITEMS] if isinstance(value, list) else []
 
 
 @router.post("/agent/{server_id}/report")
@@ -124,30 +94,32 @@ def agent_report(
     base_tags = {"server_id": server_id}
     lines = []
 
+    # Values and entries are read as the checkers read them (agent_number, capped_objects,
+    # entry_text): a value no check rates is no series either, and a broken list entry
+    # costs only itself instead of every metric of the report (R-0632).
     try:
         resources = report.get("resources", {})
         if isinstance(resources, dict):
             for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
-                val = _num(resources.get(key))
+                val = agent_number(resources.get(key))
                 if val is not None:
                     lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
-            for disk in _capped(resources.get("disks")):
-                if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
+            for disk in capped_objects(resources.get("disks")):
+                if entry_text(disk, "fstype", "_real_") in EXCLUDED_FSTYPES:
                     continue
-                mount = str(disk.get("mount", "/"))
-                disk_tags = {**base_tags, "mount": mount}
-                pct = _num(disk.get("percent"))
+                disk_tags = {**base_tags, "mount": entry_text(disk, "mount", "/")}
+                pct = agent_number(disk.get("percent"))
                 if pct is not None:
                     lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
 
-            for sensor in _capped(resources.get("temperatures")):
-                temp_c = _num(sensor.get("temp_c"))
+            for sensor in capped_objects(resources.get("temperatures")):
+                temp_c = agent_number(sensor.get("temp_c"))
                 if temp_c is not None and temp_c > 0:
-                    sensor_tags = {**base_tags, "sensor": str(sensor.get("sensor", "unknown"))}
+                    sensor_tags = {**base_tags, "sensor": entry_text(sensor, "sensor", "unknown")}
                     lines.append(format_line("monitor_agent_temp", sensor_tags, temp_c, ts))
 
-        uptime = _num(report.get("uptime_seconds"))
+        uptime = agent_number(report.get("uptime_seconds"))
         if uptime is not None:
             lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
@@ -156,9 +128,9 @@ def agent_report(
         # server_id/device was a second series nobody read (R-0633).
 
     except Exception:
-        # A malformed report part (resources not a dict, a non-string tag value, a disks
-        # dict instead of a list) must only cost the metrics, not the whole request — the
-        # check evaluation below is already per-check isolated (4.47).
+        # Last safety net: the helpers above skip what is malformed, anything they miss
+        # must only cost the metrics, not the whole request — the check evaluation below is
+        # already per-check isolated (4.47).
         logger.exception("Metrik-Extraktion aus Agent-Report fehlgeschlagen (%s)", server_id)
         lines = []
     if lines:

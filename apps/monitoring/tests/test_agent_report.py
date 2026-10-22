@@ -199,17 +199,37 @@ def test_status_change_dispatches_alert_in_background(client_db, monkeypatch):
     assert dispatched == [("chk-1", "ok", "critical")]
 
 
-def test_capped_limits_length_and_rejects_non_list():
-    from app.routers.agent import _MAX_REPORT_ITEMS, _capped
-
+def test_capped_limits_length_and_rejects_non_list(client_db, monkeypatch):
     # 3.76: cap array length so a huge report can't flood the service, and treat a
     # non-list (a malicious agent sending disks="x" or null) as empty rather than
-    # iterating it as chars.
-    assert _capped(list(range(1000))) == list(range(_MAX_REPORT_ITEMS))
-    assert _capped([1, 2, 3]) == [1, 2, 3]
-    assert _capped(None) == []
-    assert _capped("string") == []
-    assert _capped({"a": 1}) == []
+    # iterating it as chars. R-0632: the handler caps with capped_objects of the
+    # checkers, one limit for both paths.
+    from app.checkers.agent import _MAX_REPORT_ENTRIES
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    disks = [{"mount": f"/m{i}", "fstype": "ext4", "percent": 1} for i in range(1000)]
+    r = client.post("/agent/srv-1/report", json={"resources": {"disks": disks}})
+    assert r.status_code == 200, r.text
+    mounts = [
+        line.split(",mount=", 1)[1].split(" ", 1)[0]
+        for batch in writes
+        for line in batch
+        if line.startswith("monitor_agent_disk_percent,")
+    ]
+    assert mounts == [f"/m{i}" for i in range(_MAX_REPORT_ENTRIES)]
+
+    for value in (None, "string", {"a": 1}):
+        writes.clear()
+        report = {"resources": {"cpu_percent": 10, "disks": value, "temperatures": value}}
+        r = client.post("/agent/srv-1/report", json=report)
+        assert r.status_code == 200, r.text
+        assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+            "monitor_agent_cpu_percent,server_id=srv-1 value=10i"
+        ], value
 
 
 def test_malformed_report_metrics_do_not_500(client_db):
@@ -447,33 +467,115 @@ def test_system_state_metrics_read_only_the_status_timeline(client_db, monkeypat
     assert queries == ['monitor_check_status_value{check_id="chk-x"}']
 
 
+_CPU_LINE = "monitor_agent_cpu_percent,server_id=srv-1"
+
+
 @pytest.mark.parametrize(
-    "raw,want",
+    ("raw", "want"),
     [
-        (42, 42),  # int passes through
-        (1.5, 1.5),  # float passes through
-        ("3.14", 3.14),  # numeric string is coerced (leniency)
-        (True, None),  # bool is NOT a metric value — would inject into the line protocol
-        (False, None),
-        ("abc", None),  # non-numeric string dropped
-        (None, None),
-        ([1], None),  # non-scalar dropped
-        (float("inf"), None),  # inf/nan poison the whole VictoriaMetrics batch — dropped
-        (float("nan"), None),
-        ("inf", None),  # inf/nan as strings dropped too
-        ("nan", None),
-        # An int beyond the float range: format_line rejects it like inf (id: 401 digits otherwise).
-        pytest.param(10**400, None, id="int-beyond-float-range"),
-        (2**63, 2**63),  # beyond int64 but a float: format_line writes it as a float
+        pytest.param(42, [f"{_CPU_LINE} value=42i"], id="int"),
+        pytest.param(1.5, [f"{_CPU_LINE} value=1.5"], id="float"),
+        # Beyond int64 but a finite float: format_line writes it as a float, without "i".
+        pytest.param(2**63, [f"{_CPU_LINE} value=9.223372036854776e+18"], id="beyond-int64"),
+        pytest.param("97", [], id="numeric-string"),
+        pytest.param("3.14", [], id="float-string"),
+        pytest.param("abc", [], id="string"),
+        # A bool is no measured value: written as one it would inject into the line protocol.
+        pytest.param(True, [], id="true"),
+        pytest.param(False, [], id="false"),
+        pytest.param(None, [], id="null"),
+        pytest.param([1], [], id="list"),
+        # inf/nan poison the whole VictoriaMetrics batch, as a number or as a string.
+        pytest.param(float("inf"), [], id="inf"),
+        pytest.param(float("nan"), [], id="nan"),
+        pytest.param("inf", [], id="inf-string"),
+        pytest.param("nan", [], id="nan-string"),
+        # format_line rejects an int beyond the float range like inf (id: 401 digits otherwise).
+        pytest.param(10**400, [], id="int-beyond-float-range"),
     ],
 )
-def test_num_coerces_and_drops_non_metric_values(raw, want):
-    # _num is the boundary filter for all agent-supplied metric values before format_line (6.56).
-    # A regression (bool check removed, isfinite forgotten) would only surface as a 500 in the report
-    # endpoint or a poisoned VictoriaMetrics batch, not in the suite.
-    from app.routers.agent import _num
+def test_report_writes_a_measured_value_only_as_a_json_number(client_db, monkeypatch, raw, want):
+    # R-0632: the handler takes a measured value as the checkers do (agent_number): a JSON
+    # number, no bool, finite as a float. Its own _num also took numeric strings, which
+    # agent_resources does not rate, so the graph showed a value the check never saw.
+    from app.core import victoria as vm
 
-    assert _num(raw) == want
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    # The body as json.dumps writes it: httpx refuses NaN and Infinity, an agent's JSON may
+    # still carry them.
+    body = json.dumps({"resources": {"cpu_percent": raw, "memory_percent": 40}})
+    r = client.post(
+        "/agent/srv-1/report", content=body, headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 200, r.text
+    lines = [line.rsplit(" ", 1)[0] for batch in writes for line in batch]
+    assert [line for line in lines if line.startswith(f"{_CPU_LINE} ")] == want
+    # Only the value itself is missing, the rest of the report is written.
+    assert "monitor_agent_memory_percent,server_id=srv-1 value=40i" in lines
+
+
+def test_a_list_entry_that_is_no_object_costs_only_itself(client_db, monkeypatch, caplog):
+    # R-0632: a string in disks raised AttributeError in the handler, and the extraction's
+    # except dropped every metric of the report. capped_objects skips the entry instead.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {
+            "cpu_percent": 10,
+            "disks": ["x", {"mount": "/", "fstype": "ext4", "percent": 50}],
+            "temperatures": ["y", {"sensor": "cpu", "temp_c": 40}],
+        }
+    }
+    with caplog.at_level(logging.ERROR, logger="app.routers.agent"):
+        r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+        f"{_CPU_LINE} value=10i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/ value=50i",
+        "monitor_agent_temp,server_id=srv-1,sensor=cpu value=40i",
+    ]
+    assert not [
+        rec
+        for rec in caplog.records
+        if "Metrik-Extraktion aus Agent-Report fehlgeschlagen" in rec.getMessage()
+    ]
+
+
+def test_a_text_field_that_is_no_string_counts_as_missing(client_db, monkeypatch):
+    # R-0632: fstype, mount and sensor count only as a string, as in the checkers (entry_text).
+    # A list as fstype raised TypeError in the EXCLUDED_FSTYPES lookup and cost every metric of
+    # the report; a number as mount or sensor became its text.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {
+            "cpu_percent": 10,
+            "disks": [
+                {"mount": "/data", "fstype": [], "percent": 40},
+                {"mount": 5, "fstype": "ext4", "percent": 50},
+            ],
+            "temperatures": [{"sensor": 7, "temp_c": 30}],
+        }
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+        f"{_CPU_LINE} value=10i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/data value=40i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/ value=50i",
+        "monitor_agent_temp,server_id=srv-1,sensor=unknown value=30i",
+    ]
 
 
 def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch):

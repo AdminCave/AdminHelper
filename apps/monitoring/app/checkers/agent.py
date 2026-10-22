@@ -121,8 +121,9 @@ def agent_number(value: object) -> int | float | None:
     return value if finite else None
 
 
-# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
-# that router imports app.checkers (R-0459).
+# The one cap on a report list for the checkers and the push handler (routers/agent.py),
+# both through capped_objects: a compromised or misconfigured agent must not flood the
+# service with a huge list (3.76, R-0632).
 _MAX_REPORT_ENTRIES = 500
 
 

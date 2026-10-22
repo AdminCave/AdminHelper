@@ -42,6 +42,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Serien ohne `check_id` und liefert je Wert eine Serie statt zwei gleich beschrifteter; die Liste der aktuellen
   Werte im Desktop brach daran ab. Die bisherigen Serien mit Check-Labels bleiben bis zum Ende der Retention in
   VictoriaMetrics, werden aber nicht mehr gelesen. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
+  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
+  jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
+  String (sonst wie ohne das Feld) und Messwerte nur als JSON-Zahl: einen Zahl-String wie `"97"` schreibt der
+  Agent-Push nicht mehr als Messwert. Doku: Monitoring fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
