@@ -119,7 +119,9 @@ Keine Migration, keine Spalte, keine neue Route, keine Änderung eines Request- 
 (die Template-Routen haben kein `response_model`; Docstrings der Routen bleiben, `test_openapi_snapshot.py` steht im
 `Verify:` von T2). Geändert wird nur ein Wert: `alertDefinitions[].channel_config.smtp_password` kommt als `***`
 statt als gespeicherter Text, und ein `PUT /templates/{id}` mit `***` überschreibt das gespeicherte Passwort nicht
-mehr. Der einzige Leser, der Desktop, zeigt kein SMTP-Feld (er bearbeitet nur `recipients` bzw. `url`,
+mehr. Seit T8 gilt für `PUT /alerts/{id}` und `PUT /templates/{id}`: ändert derselbe PUT `smtp_host` oder
+`smtp_port`, antwortet ein `***` mit 422 (nichts gespeichert), ein leeres oder fehlendes `smtp_password` verwirft
+das gespeicherte. Der einzige Leser, der Desktop, zeigt kein SMTP-Feld (er bearbeitet nur `recipients` bzw. `url`,
 `apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.svelte:140-158`) und schickt `***` beim Speichern
 unverändert zurück. Kein Vertrags-Drift zu Web oder Agent. Compose: `monitoring` bekommt fünf Umgebungsvariablen,
 die sein Code schon liest (`test_env_parity.py` bleibt grün: gelesen, gesetzt, in `.env.example:126-135`
