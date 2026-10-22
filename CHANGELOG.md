@@ -33,7 +33,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
   leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
   `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
-  ab, ohne ein Archiv zu hinterlassen.
+  ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es in jeder Form, die compose liest, wie das
+  Diagnose-Bundle: auch als `export CA_ROOT_PASSPHRASE=...`, `CA_ROOT_PASSPHRASE = ...` oder
+  `CA_ROOT_PASSPHRASE: ...`; ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt stehen.
 - **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und liest die `.env` wie compose:**
   `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
   `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und

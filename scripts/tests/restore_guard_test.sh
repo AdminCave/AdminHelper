@@ -21,6 +21,9 @@
 # C.UTF-8 it is .env byte for byte without the CA_ROOT_PASSPHRASE lines, a Latin-1
 # and a NUL byte included; a failing filter aborts the backup and leaves the output
 # dir empty; a .env with nothing but the passphrase gives an empty env.sanitized.
+# 15: env.sanitized drops CA_ROOT_PASSPHRASE in every key form compose reads
+# (export, whitespace around the separator, ':' as the separator) and keeps a key
+# that only starts with it.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it test 12 cannot run, and the test ends with 75)
@@ -239,14 +242,14 @@ entries=$(ls -A "$WORK/bk/b/out" 2>/dev/null)
 # stderr): env.sanitized lost the Latin-1 line, with a NUL byte every line, and
 # `|| true` passed any grep error off as an empty file. The grep wrapper runs the
 # real grep, except that AH_TEST_GREP_FAIL=1 makes the filter on
-# CA_ROOT_PASSPHRASE= fail with exit 2 and logs that it did. The expectation is
+# CA_ROOT_PASSPHRASE fail with exit 2 and logs that it did. The expectation is
 # written down apart, never read back from .env. grep ends the last line with a
 # newline, so the expectation has one after Z=last although .env has none.
 AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
 cat > "$WORK/bk/bin/grep" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
-  *CA_ROOT_PASSPHRASE=*)
+  *CA_ROOT_PASSPHRASE*)
     if [ "${AH_TEST_GREP_FAIL:-}" = 1 ]; then echo "$*" >> "$STUB_DIR/grep.log"; exit 2; fi ;;
 esac
 exec "$AH_TEST_REAL_GREP" "$@"
@@ -291,6 +294,19 @@ sanitized=$(bk_env "$WORK/bk/e")
 { [ $rc -eq 0 ] && [ -f "$sanitized" ] && [ ! -s "$sanitized" ]; } \
   && ok "a .env with nothing but the passphrase gives an empty env.sanitized" \
   || bad "passphrase-only .env: rc=$rc size=$(stat -c '%s' "$sanitized" 2>/dev/null) out=[$out]"
+
+# --- 15. backup.sh: the passphrase in every key form compose reads ───────────
+# Compose also takes `export KEY=…`, whitespace around the separator and ':' as
+# the separator (diagnostics.sh reads the .env alike); CA_ROOT_PASSPHRASE_OLD is
+# another key and stays.
+mkdir -p "$WORK/bk/f"
+printf 'A=1\nexport CA_ROOT_PASSPHRASE=pp1\nCA_ROOT_PASSPHRASE = pp2\nCA_ROOT_PASSPHRASE: pp3\n\texport\tCA_ROOT_PASSPHRASE\t:\tpp4\nCA_ROOT_PASSPHRASE_OLD=keep\nB=2\n' > "$WORK/bk/run/.env"
+printf 'A=1\nCA_ROOT_PASSPHRASE_OLD=keep\nB=2\n' > "$WORK/bk/f/expected"
+out=$(bk_run "$WORK/bk/f" "$WORK/bk/f/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f/expected" "$sanitized"; } \
+  && ok "env.sanitized drops the passphrase in every key form compose reads" \
+  || bad "passphrase key forms: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"
