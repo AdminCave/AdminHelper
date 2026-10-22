@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# restore_guard_test.sh — hermetic tests for restore.sh and pg-restore.sh.
+# restore_guard_test.sh — hermetic tests for restore.sh, pg-restore.sh and backup.sh.
 #
 # 1-4: the tar-escape guard. It (reject absolute / ../ paths and sym/hardlink
 # members) runs BEFORE any docker call or the confirm prompt, so it's testable
@@ -13,6 +13,10 @@
 # 6-9: after a restore of the server DB, restore.sh and pg-restore.sh move the
 # install time of the certificate register to now (R-0224), against stubs; without
 # the server DB nothing is moved.
+# 10-11: backup.sh, against a docker stub and a tar wrapper that logs the mode of
+# the archive right after writing it, under umask 022: the archive is 0600 from the
+# first byte and gets its name only once complete, a new output dir is 0700; a
+# failed archive write leaves the output dir empty.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils)
 
@@ -162,6 +166,67 @@ out=$(pg_restore_run "$WORK/pg/b" adminhelper_monitor); rc=$?
     && ! grep -q '^psql' "$WORK/pg/b/calls.log"; } \
   && ok "pg-restore.sh leaves the register alone for the monitoring DB" \
   || bad "pg-restore adminhelper_monitor: rc=$rc calls=[$(cat "$WORK/pg/b/calls.log" 2>/dev/null)]"
+
+# --- 10./11. backup.sh: archive 0600 from the first byte, named once complete ──
+# The docker stub plays a running stack: postgres is up, every service tars its
+# data dir (non-empty output), pg_dump writes bytes; any other call fails. The tar
+# wrapper runs the real tar for the archive write (czf <file> -C <dir> .), then
+# logs the mode and the name the file had while tar wrote it; AH_TEST_TAR_FAIL=1
+# makes that write fail (exit 2) after the bytes are on disk.
+BACKUP="$REPO_ROOT/scripts/backup.sh"
+mkdir -p "$WORK/bk/bin" "$WORK/bk/run" "$WORK/bk/a" "$WORK/bk/b"
+printf 'services: {}\n' > "$WORK/bk/run/docker-compose.yml"
+cat > "$WORK/bk/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  "compose ps --status running --quiet postgres") echo 0123456789ab ;;
+  "compose exec -T postgres sh -c "*)             printf 'PGDMP-stub\n' ;;
+  "compose exec -T "*" tar czf - -C "*" .")       printf 'tar-stub\n' ;;
+  *) echo "unexpected docker call: $*" >&2; exit 1 ;;
+esac
+STUB
+AH_TEST_REAL_TAR=$(command -v tar); export AH_TEST_REAL_TAR
+cat > "$WORK/bk/bin/tar" <<'STUB'
+#!/usr/bin/env bash
+if [ "$#" -eq 5 ] && [ "$1" = czf ] && [ "$2" != - ] && [ "$3" = -C ] && [ "$5" = . ]; then
+  "$AH_TEST_REAL_TAR" "$@" || exit
+  stat -c '%a %n' "$2" >> "$STUB_DIR/tar.log"
+  [ "${AH_TEST_TAR_FAIL:-}" != 1 ] || exit 2
+  exit 0
+fi
+exec "$AH_TEST_REAL_TAR" "$@"
+STUB
+chmod +x "$WORK/bk/bin/docker" "$WORK/bk/bin/tar"
+# bk_run <stub dir> <output dir> [VAR=value…] — backup.sh from a compose dir, umask 022.
+bk_run() {
+  local stub="$1" out="$2"; shift 2
+  ( cd "$WORK/bk/run" && umask 022 \
+      && env "$@" STUB_DIR="$stub" PATH="$WORK/bk/bin:$PATH" bash "$BACKUP" --output "$out" </dev/null 2>&1 )
+}
+
+out=$(bk_run "$WORK/bk/a" "$WORK/bk/a/out"); rc=$?
+logged=$(cat "$WORK/bk/a/tar.log" 2>/dev/null)
+entries=$(ls -A "$WORK/bk/a/out" 2>/dev/null)
+archive="$WORK/bk/a/out/$entries"
+written_mode=${logged%% *}; written_name=$(basename "${logged#* }" 2>/dev/null)
+case "$written_name" in adminhelper-backup-*.tar.gz) written_final=1 ;; *) written_final=0 ;; esac
+case "$entries" in adminhelper-backup-*.tar.gz) one_archive=1 ;; *) one_archive=0 ;; esac
+members=$(tar tzf "$archive" 2>/dev/null)
+{ [ $rc -eq 0 ] && [ "$(wc -l <<<"$logged")" -eq 1 ] && [ "$written_mode" = 600 ] && [ "$written_final" = 0 ]; } \
+  && ok "backup.sh writes the archive 0600 under a temp name" \
+  || bad "archive while written: rc=$rc logged=[$logged] out=[$out]"
+{ [ "$one_archive" = 1 ] && [ "$(stat -c '%a' "$archive")" = 600 ] \
+    && [ "$(stat -c '%a' "$WORK/bk/a/out")" = 700 ] \
+    && grep -qx './MANIFEST.txt' <<<"$members" && grep -qx './ca-pki.tar.gz' <<<"$members" \
+    && grep -qx './adminhelper.dump' <<<"$members"; } \
+  && ok "backup.sh leaves one complete 0600 archive in a new 0700 dir" \
+  || bad "after the run: entries=[$entries] dir=$(stat -c '%a' "$WORK/bk/a/out" 2>/dev/null) archive=$(stat -c '%a' "$archive" 2>/dev/null) members=[$members]"
+
+out=$(bk_run "$WORK/bk/b" "$WORK/bk/b/out" AH_TEST_TAR_FAIL=1); rc=$?
+entries=$(ls -A "$WORK/bk/b/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ -s "$WORK/bk/b/tar.log" ] && [ -d "$WORK/bk/b/out" ] && [ -z "$entries" ]; } \
+  && ok "a failed archive write leaves the output dir empty" \
+  || bad "failed write: rc=$rc entries=[$entries] logged=[$(cat "$WORK/bk/b/tar.log" 2>/dev/null)] out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"

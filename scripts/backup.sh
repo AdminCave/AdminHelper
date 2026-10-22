@@ -23,6 +23,9 @@
 #   ./scripts/backup.sh [--with-victoria] [--output DIR]
 
 set -euo pipefail
+# Everything this script creates (a new output dir, the staging files, the archive)
+# holds the PKI, both DB dumps or the .env: owner-only from the start.
+umask 077
 
 OUT_DIR="./backups"
 WITH_VICTORIA=0
@@ -45,7 +48,8 @@ fi
 
 TS=$(date +%Y-%m-%d_%H-%M-%S)
 STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
+PARTIAL=""
+trap 'rm -rf "$STAGE"; [ -z "$PARTIAL" ] || rm -f -- "$PARTIAL"' EXIT
 
 mkdir -p "$OUT_DIR"
 
@@ -115,8 +119,15 @@ rotate intermediates.
 EOF
 
 ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
-tar czf "$ARCHIVE" -C "$STAGE" .
-chmod 600 "$ARCHIVE"
+# Write to a hidden temp file in the output dir, then rename: mktemp creates it 0600
+# whatever the umask, so the archive is never readable by others, not even while tar
+# writes it; and a failed or aborted write (disk full, Ctrl-C) leaves no truncated
+# archive under a name that restore.sh and the docs treat as valid. A rename within
+# the dir is atomic and keeps the mode (as in pg-backup.sh).
+PARTIAL=$(mktemp "$OUT_DIR/.adminhelper-backup-$TS.XXXXXX")
+tar czf "$PARTIAL" -C "$STAGE" .
+mv -f "$PARTIAL" "$ARCHIVE"
+PARTIAL=""
 
 echo "[backup] OK -> $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
 echo "[backup] Erinnerung: CA_ROOT_PASSPHRASE separat sichern (nicht im Tarball)."
