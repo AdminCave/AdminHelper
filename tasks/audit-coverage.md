@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Audit-Abdeckung und Admin-Meldungen: Hooks, Provisionierungs-Token, Monitoring-Proxy, Hochstufung — Task-Ledger
-Status: geplant · Branch: feature/audit-coverage · Review: pro Task
+Status: aktiv · Branch: feature/audit-coverage · Review: pro Task
 Spec: docs/features/audit-coverage.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full — Route-Handler unter `apps/server` ändern sich (Hooks, Provisionierungs-Token, Monitoring-Proxy mit neuer DB-Abhängigkeit im `async`-Pfad, Benutzer), die Sammelläufe erzeugen Provisionierungs-Token und schreiben über den Proxy; Routen, Schemas und OpenAPI bleiben, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad, kein Cross-Host-Datenpfad (kein `scenario`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
