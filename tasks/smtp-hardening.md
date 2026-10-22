@@ -78,8 +78,10 @@ Dedup-Key: bug:ops:docker-compose.yml:monitoring-without-smtp-env
 HEAD: b1432223
 Semantik: `docs/admin/monitoring.html:340` — „SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar.“ (EN `docs/en/admin/monitoring.html:340` — „SMTP defaults from the environment variables …; overridable per rule.“)
 
-### T5 — Hub-Mail: optionale CA-Datei SMTP_CA_FILE  [ ]
+### T5 — Hub-Mail: optionale CA-Datei SMTP_CA_FILE  [x]
 Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/app/modules/notifications/sender.py, apps/server/tests/test_email_sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9e4eea2e 2026-10-22T11:22:43+02:00
+Review: approve (.ah-out/review/smtp-hardening/T5.verdict.json)
 Änderung: `apps/server/app/core/config.py` (SMTP-Block `:163-171`): `SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()`, Kommentar: optionaler Pfad im Container zu einer PEM-Datei mit der CA des Relays, zusätzlich zu den System-CAs, nur für SMTP. `sender.py`: nach `ssl.create_default_context()` bei gesetztem `SMTP_CA_FILE` `ctx.load_verify_locations(cafile=SMTP_CA_FILE)`, vor dem Verbinden (eine fehlende oder kaputte Datei wirft, bevor eine Verbindung entsteht; die Outbox wiederholt). Kein Eintrag in `docker-compose.yml` oder `.env.example`: eingebunden wird per `docker-compose.override.yml` (T7); `apps/server/tests/test_env_parity.py` bleibt grün (Lesen mit Default). Tests in `test_email_sender.py`: eine selbstsignierte CA als PEM in `tmp_path` (mit `cryptography`, wie andere Server-Tests Zertifikate bauen); (a) `SMTP_CA_FILE` gesetzt → der Kontext an `starttls` enthält die CA (`ctx.get_ca_certs()` nennt ihr Subject), `verify_mode`/`check_hostname` wie in T3; (b) ohne `SMTP_CA_FILE` nennt `get_ca_certs()` sie nicht; (c) `SMTP_CA_FILE` auf eine fehlende Datei → `send_email` wirft, `smtplib.SMTP` wird nicht aufgerufen. Zuerst rot: (a), (c).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py tests/test_env_parity.py
 Doku: keine in dieser Task (T7 dokumentiert beide Seiten)

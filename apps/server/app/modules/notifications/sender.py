@@ -14,7 +14,7 @@ import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from app.core.config import SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_USER
+from app.core.config import SMTP_CA_FILE, SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_USER
 
 
 def send_email(to: str, subject: str, body: str) -> None:
@@ -34,6 +34,10 @@ def send_email(to: str, subject: str, body: str) -> None:
     # so a relay without STARTTLS or with an untrusted certificate fails closed and
     # never sees the credentials.
     ctx = ssl.create_default_context()
+    if SMTP_CA_FILE:
+        # A relay with a private CA: added to the system CAs, checks stay on. A missing
+        # or broken file raises here, before any connection; the outbox retries.
+        ctx.load_verify_locations(cafile=SMTP_CA_FILE)
     if SMTP_PORT == 465:
         smtp_ctx = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10, context=ctx)
     else:
