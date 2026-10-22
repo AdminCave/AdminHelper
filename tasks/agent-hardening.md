@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: eine Vertrauensquelle je Aufruf, PKI-Bundle-Pfad entfernt, Diagnose-Bericht als neue Datei, Server-Text der frpc.toml in Generator-Form — Task-Ledger
-Status: aktiv · Branch: feature/agent-hardening · Review: pro Task
+Status: bereit · Branch: feature/agent-hardening · Review: pro Task
 Spec: docs/features/agent-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --tunnel + windows — Agent-Paket im Stack (`run.sh integration`/`e2e`: `agent_monitoring`, `upgrade_path`, `desktop_e2e_connect_tunnel` mit echter Server-Ausgabe durch die neue Prüfung der frpc.toml); vor dem Merge der Multibox-Lauf `--agents 1 --tunnel` (ask-first, Kevin entscheidet), weil nur er die frpc.toml des Servers über `.deb`-Installation, Provisionierung über den Hop und den STCP-Datenpfad mit Visitor zeigt; `windows` ist der CI-Job `agent-windows` (`go test` unter Windows), weil sich `paths.go`, `WriteSyncConfig`, die Diagnose und `securedir_windows.go` auch unter Windows ändern
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -121,8 +121,10 @@ Abhängt von: T7
 Beweis: Code-Lesung apps/server/app/modules/frp/schemas.py:51-76, apps/server/app/modules/frp/config_generator.py:297-309; Probe 2026-10-22 mit frpc 0.69.1 (`frpc verify -c`, dreimal identisch): `plugin.type = "no_such_plugin"` und `PLUGIN.type = "no_such_plugin"` in einem `[[proxies]]` → „unknown plugin type: no_such_plugin“
 HEAD: b1432223
 
-### T9 — Parität: die Fixture des Agents ist die Ausgabe von `generate_frpc_toml`  [ ]
+### T9 — Parität: die Fixture des Agents ist die Ausgabe von `generate_frpc_toml`  [x]
 Komponente: server · Dateien: apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d8b24a3e 2026-10-22T12:09:17+02:00
+Review: approve (.ah-out/review/agent-hardening/T9.verdict.json)
 Änderung: Neuer Test `test_agent_fixture_is_the_generator_output` in `test_config_generator.py`: baut mit `_make_config` (`:18-33`) und `_make_tunnel` (`:36-52`) die Konfiguration und die zwei Tunnel der Fixture aus T7 (gleiche Werte, `allow_users` mit zwei Namen) und vergleicht `generate_frpc_toml(...)` Zeichen für Zeichen mit der Datei `Path(__file__).resolve().parents[2] / "agent" / "internal" / "frpc" / "testdata" / "server_frpc.toml"` (Muster für eine Datei einer anderen Komponente: `tests/test_certificate_check.py:219`). Der Docstring sagt das Warum: ändert sich die Ausgabe des Generators, ziehen Fixture und Prüfung im Agent (`checkServerConfig`) nach. Weicht die Fixture aus T7 von der echten Ausgabe ab, gleicht T9 sie an; dann zusätzlich `bash scripts/dev/verify.sh agent --strict -- -run TestServerConfig` fahren und die Summary in den Commit-Body. Gegenprobe statt Rot-Lauf (der Test prüft eine Parität): ein geänderter Wert in einer Scratch-Kopie der Fixture macht den Test rot; Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py
 Doku: keine (Test)
