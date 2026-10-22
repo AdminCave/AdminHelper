@@ -22,6 +22,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (`psycopg`) statt ueber `psql`. Als root, etwa per `docker compose exec`, laufen beide wie bisher. Der Schritt ist
   der letzte `RUN` jedes der drei Images und erfasst so alles, was die Schritte darueber installieren. Die UID 10001
   sollte auf dem Host keinem anderen Konto oder Dienst gehoeren. Doku: Betrieb (DE+EN).
+- **Hooks: Ablehnungen von `http_get`/`http_post` nennen nur den Hostnamen des Ziels:** Lehnt der SSRF-Schutz ein
+  Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
+  Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
+  URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+
+### Fixed
+
+- **Server: gescheiterte Event- und Schedule-Hooks stehen im Log (R-0558):** Endete ein Event- oder Schedule-Hook mit
+  `success: false` (etwa Exit-Code ungleich 0, Timeout, Ausgabe-Limit oder Hook-Limit), schrieb der Server nichts ins
+  Log, obwohl die Doku es beschreibt; dort landete nur ein Fehler, den der Runner selbst warf. Jetzt schreibt er je
+  gescheitertem Lauf eine Zeile auf WARNING mit dem Namen des Hooks, bei Event-Hooks dem Event, und dem `error`-Text
+  (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
+  `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
+  Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
 
 ## [0.46.0] - 2026-10-22
 
