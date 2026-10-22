@@ -59,13 +59,15 @@ def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> 
     # The URL can come straight from an attacker-controlled webhook payload, so guard
     # against SSRF and never follow a redirect into an internal target (3.37).
     target = check_target(url)
+    # A rejection names the target by its host only: the text goes into the run's error and
+    # logs, and a URL can carry a credential in its user info, path or query.
     if target.verdict is UrlVerdict.UNRESOLVED:
         raise ValueError(
             "Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard: "
-            f"{url}"
+            f"{target.host or '?'}"
         )
     if target.verdict is not UrlVerdict.ALLOWED:
-        raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
+        raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {target.host or '?'}")
     # pinned_client connects to an address check_target checked, not to whatever a second
     # lookup answers (DNS rebinding).
     with (
@@ -85,10 +87,10 @@ def _safe_http_post(
     if target.verdict is UrlVerdict.UNRESOLVED:
         raise ValueError(
             "Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard: "
-            f"{url}"
+            f"{target.host or '?'}"
         )
     if target.verdict is not UrlVerdict.ALLOWED:
-        raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
+        raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {target.host or '?'}")
     with (
         pinned_client(url, target) as client,
         client.stream(
