@@ -146,10 +146,10 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             </tbody>
           </table>
           <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln (siehe <a href="./monitoring.html">Monitoring → Persönliche Benachrichtigungen</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
-          <p>Dieselben Variablen nutzt der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
+          <p>Die <code>SMTP_*</code>-Variablen nutzt auch der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
 
           <h3 id="smtp-ca">Relay mit eigener CA</h3>
-          <p>Weist sich der Relay mit einem Zertifikat aus, dem die Container nicht vertrauen (selbstsigniert oder von einer Firmen-CA), die CA als PEM-Datei <code>smtp-ca.pem</code> neben die <code>docker-compose.yml</code> ins Install-Verzeichnis legen und mit einer <code>docker-compose.override.yml</code> daneben in die Dienste <code>server</code>, <code>scheduler</code> und <code>monitoring</code> einhängen, denen Compose auch die übrigen <code>SMTP_*</code>-Variablen gibt:</p>
+          <p>Weist sich der Relay mit einem Zertifikat aus, dem die Container nicht vertrauen (selbstsigniert oder von einer Firmen-CA), die CA als PEM-Datei <code>smtp-ca.pem</code> neben die <code>docker-compose.yml</code> ins Install-Verzeichnis legen und mit einer <code>docker-compose.override.yml</code> daneben in die Dienste <code>server</code>, <code>scheduler</code> und <code>monitoring</code> einhängen, denen Compose auch die übrigen <code>SMTP_*</code>-Variablen gibt; eine bestehende <code>docker-compose.override.yml</code> (etwa mit <code>FRPS_DASHBOARD_URL</code>, siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>) um diese Einträge ergänzen, nicht ersetzen:</p>
           <div class="code-header"><span>docker-compose.override.yml</span></div>
 <pre><code>services:
   server:

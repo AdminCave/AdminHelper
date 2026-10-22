@@ -21,20 +21,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Changed
 
 - **Monitoring: E-Mail-Alert-Regeln mit eigenem `smtp_host` melden sich nur mit eigenen Zugangsdaten an:**
-  `SMTP_USER` und `SMTP_PASSWORD` gelten nur noch fuer den Relay aus `SMTP_HOST` (Vergleich ohne
-  Gross-/Kleinschreibung). Eine Regel, die einen anderen `smtp_host` setzt, meldet sich nur mit ihren eigenen
-  `smtp_user` und `smtp_password` an; fehlt eins davon, verschickt sie ohne Anmeldung. Bisher ergaenzte der Versand
-  jedes fehlende Feld aus der Umgebung und schickte so das globale Passwort an jeden Host, den eine Regel nannte.
-  Verlangt ein solcher Relay eine Anmeldung, steht im Alert-Log `SMTP authentication failed (…)` bzw.
-  `SMTP server refused the message`; Abhilfe sind eigene Zugangsdaten in der Regel. Regeln ohne `smtp_host` oder mit
-  dem Host aus `SMTP_HOST` verhalten sich wie bisher. Doku: Monitoring (DE+EN).
+  `SMTP_USER` und `SMTP_PASSWORD` gelten nur fuer den Relay aus `SMTP_HOST` (Vergleich ohne Gross-/Kleinschreibung).
+  Eine Regel, die einen anderen `smtp_host` setzt, meldet sich nur mit ihren eigenen `smtp_user` und `smtp_password`
+  an; fehlt eins davon, verschickt sie ohne Anmeldung. Verlangt ihr Relay eine Anmeldung, steht im Alert-Log dann
+  `SMTP server refused the message`; Abhilfe sind eigene `smtp_user` und `smtp_password` in der Regel. Regeln ohne
+  `smtp_host` oder mit dem Host aus `SMTP_HOST` verhalten sich wie bisher. Doku: Monitoring (DE+EN).
 - **Monitoring: Template-Antworten zeigen ein `smtp_password` in Alert-Definitionen als `***`, wie die
-  Alert-Regeln:** `GET /templates`, `GET /templates/{id}`, die Antworten von `POST`/`PUT /templates` und von
-  `POST /templates/{id}/builtin-update` sowie `current` in `GET /templates/{id}/builtin-update` gaben das gespeicherte
-  Passwort bisher im Klartext aus. Ein `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt
-  das gespeicherte Passwort der Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition
-  speichert dann keins, ebenso `POST /templates` mit `***` oder leerem Wert. Wer das Passwort bisher aus der
-  Template-Antwort gelesen hat, sieht `***`.
+  Alert-Regeln:** Das gilt fuer `GET /templates`, `GET /templates/{id}`, die Antworten von `POST`/`PUT /templates` und
+  von `POST /templates/{id}/builtin-update` sowie fuer `current` in `GET /templates/{id}/builtin-update`. Ein
+  `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort der
+  Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition speichert dann keins, ebenso
+  `POST /templates` mit `***` oder leerem Wert. Wer ein Template aus einer API-Antwort neu anlegt, gibt das Passwort im
+  `POST` neu ein.
 - **Monitoring: Beim Bearbeiten von E-Mail-Alert-Regeln und Alert-Definitionen von Templates gilt `***` nur bei
   unveraendertem `smtp_host`/`smtp_port` als „Passwort unveraendert“:** Ein `PUT /alerts/{id}` oder
   `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort nur, solange
@@ -42,12 +40,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   er `***` mit 422 ab und speichert nichts; ohne Passwort entfaellt das gespeicherte. Nach einem Relay-Wechsel ist das
   Passwort neu einzugeben. Doku: Monitoring (DE+EN).
 - **Notification-Hub: E-Mails nutzen STARTTLS auf jedem Port ausser 465 und pruefen Zertifikat und Hostnamen des
-  Relays, wie der E-Mail-Kanal des Monitorings:** Bisher lief STARTTLS nur auf Port 587, auf anderen Ports ging die
-  Anmeldung im Klartext, und weder STARTTLS noch implizites TLS auf Port 465 prueften das Zertifikat. Ein Relay ohne
-  STARTTLS (etwa ein lokaler Mailserver auf Port 25) oder mit einem Zertifikat, dem der Container nicht vertraut oder
-  das nicht zu `SMTP_HOST` passt, nimmt danach keine Hub-Mails mehr an: Die Outbox wiederholt bis
-  `NOTIFICATION_MAX_ATTEMPTS` und markiert die Mail dann als fehlgeschlagen, der Grund steht im Log des
-  `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Doku: Betrieb & Konfiguration (DE+EN).
+  Relays, wie der E-Mail-Kanal des Monitorings:** Ein Relay ohne STARTTLS (etwa ein lokaler Mailserver auf Port 25)
+  oder mit einem Zertifikat, dem der Container nicht vertraut oder das nicht zu `SMTP_HOST` passt, nimmt danach keine
+  Hub-Mails mehr an: Die Outbox wiederholt bis `NOTIFICATION_MAX_ATTEMPTS` und markiert die Mail dann als
+  fehlgeschlagen, der Grund steht im Log des `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Abhilfe:
+  `SMTP_HOST` auf den Namen im Zertifikat des Relays setzen, fuer eine eigene CA `SMTP_CA_FILE` (siehe Added); der
+  Relay muss STARTTLS oder implizites TLS auf Port 465 anbieten. Doku: Betrieb & Konfiguration (DE+EN).
 
 ### Fixed
 

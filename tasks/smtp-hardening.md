@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SMTP: ein Verhalten für Hub- und Monitoring-Mail, Zugangsdaten je Relay, Monitoring bekommt SMTP_* — Task-Ledger
-Status: aktiv · Branch: feature/smtp-hardening · Review: pro Task
+Status: bereit · Branch: feature/smtp-hardening · Review: pro Task
 Spec: docs/features/smtp-hardening.md (Roadmap R-0634; T1–T3 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `docker-compose.yml` (T4: `monitoring` bekommt `SMTP_*`) und der Versand des Notification-Hubs im `scheduler` (T3); läuft im Sammellauf über `main` (`/feature-build` §5). Kein `scenario`: kein FRP-, PKI-, Install-, Update- oder Cross-Host-Pfad (`scripts/install.sh`/`update.sh` bleiben; `update.sh` tauscht `docker-compose.yml` aus dem Release-Bundle). Der Mail-Kreislauf von `multibox --moncheck` setzt `smtp_host` je Regel ohne Zugangsdaten und ändert sich durch T1 und T4 nicht
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -118,8 +118,10 @@ Orakel: contract — ein gespeichertes `smtp_password` erreicht nach einem PUT n
 HEAD: 53dc4aa1
 Semantik: Härtung (Kevin 2026-10-22): `***` heißt „unverändert“ nur für denselben Relay; ändert der PUT den Host, antwortet die Route 422 und verlangt das Passwort neu.
 
-### T9 — Doku: CHANGELOG-Einträge des Vorhabens neutral und genau, zwei Präzisierungen in Betrieb & Konfiguration  [ ]
+### T9 — Doku: CHANGELOG-Einträge des Vorhabens neutral und genau, zwei Präzisierungen in Betrieb & Konfiguration  [x]
 Komponente: scripts · Dateien: CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @aba9a71a 2026-10-22T12:09:46+02:00
+Review: approve (.ah-out/review/smtp-hardening/T9.verdict.json)
 Änderung: Funde der Task-Reviews (T1, T4, T7) und die Vorgabe des Vorhabens, öffentliche Texte als Härtung neutral zu halten. (1) `CHANGELOG.md`, `[Unreleased]`, nur die Einträge dieses Vorhabens (T1–T4, T7, T8): Sätze, die beschreiben, was der alte Stand falsch machte („Bisher ergaenzte … schickte so …“, „… gaben … bisher im Klartext aus“, „Bisher lief STARTTLS nur auf Port 587, auf anderen Ports …“), streichen oder durch die neue Wirkung ersetzen; jeder Eintrag sagt, was jetzt gilt und was Betreiber danach beachten (was nicht mehr geht, Abhilfe), nicht, was vorher möglich war. Der T4-Eintrag (Fixed, R-0634) behält seinen Fehlerhinweis (`SMTP not configured …`), das ist ein Betriebsfehler. (2) Im T1-Eintrag stimmt `SMTP authentication failed (…)` für diesen Fall nicht: ohne eigene Zugangsdaten ruft `_send_email` kein `login()` auf, ein Relay, der Anmeldung verlangt, lehnt MAIL FROM/RCPT ab, im Alert-Log steht `SMTP server refused the message` (`apps/monitoring/app/alerter.py`, `_email_failure`); nur diesen Text nennen. (3) `docs/admin/betrieb.html:149` / `docs/en/admin/operations.html:108`: „Dieselben Variablen“ / „the same variables“ → die `SMTP_*`-Variablen (die Tabelle enthält auch `NOTIFICATION_MAX_ATTEMPTS`, das das Monitoring nicht liest). (4) `docs/admin/betrieb.html:152` / `docs/en/admin/operations.html:111` (Override-Beispiel `SMTP_CA_FILE`): ein Halbsatz, dass eine bestehende `docker-compose.override.yml` (etwa mit `FRPS_DASHBOARD_URL`, `docs/admin/frp-tunnel.html`) um diese Einträge ergänzt und nicht ersetzt wird. Keine anderen Einträge, keine anderen Abschnitte; umlautfrei im CHANGELOG, DE und EN gleich.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku

@@ -105,10 +105,10 @@
             </tbody>
           </table>
           <p>Who receives which e-mails is controlled by each user via their notification rules (see <a href="./monitoring.html">Monitoring → Personal notifications</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
-          <p>The e-mail channel of the alert rules in monitoring uses the same variables (see <a href="./monitoring.html">Monitoring → Notifications &amp; alerting</a>); a rule can set its own relay with its own credentials there.</p>
+          <p>The e-mail channel of the alert rules in monitoring uses the <code>SMTP_*</code> variables as well (see <a href="./monitoring.html">Monitoring → Notifications &amp; alerting</a>); a rule can set its own relay with its own credentials there.</p>
 
           <h3 id="smtp-ca">Relay with its own CA</h3>
-          <p>If the relay presents a certificate the containers do not trust (self-signed or issued by a company CA), put the CA as the PEM file <code>smtp-ca.pem</code> next to <code>docker-compose.yml</code> in the install directory and mount it, with a <code>docker-compose.override.yml</code> next to it, into the services <code>server</code>, <code>scheduler</code> and <code>monitoring</code>, which Compose also gives the other <code>SMTP_*</code> variables:</p>
+          <p>If the relay presents a certificate the containers do not trust (self-signed or issued by a company CA), put the CA as the PEM file <code>smtp-ca.pem</code> next to <code>docker-compose.yml</code> in the install directory and mount it, with a <code>docker-compose.override.yml</code> next to it, into the services <code>server</code>, <code>scheduler</code> and <code>monitoring</code>, which Compose also gives the other <code>SMTP_*</code> variables; add these entries to an existing <code>docker-compose.override.yml</code> (for instance one with <code>FRPS_DASHBOARD_URL</code>, see <a href="./frp-tunnel.html">FRP Tunnel</a>) instead of replacing it:</p>
           <div class="code-header"><span>docker-compose.override.yml</span></div>
 <pre><code>services:
   server:
