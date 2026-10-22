@@ -4,7 +4,9 @@
 
 """SMTP secret handling (3.27): the password is masked in API responses, and a
 masked/empty password on update keeps the stored secret instead of overwriting it —
-so it is never reflected to callers nor wiped by editing an unrelated field."""
+so it is never reflected to callers nor wiped by editing an unrelated field.
+Templates carry the same channel_config in their alert definitions and follow the
+same rule, matched by def_id: the desktop sends a definition back as it read it."""
 
 import json
 
@@ -14,9 +16,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorAlertRule
+from app.models import Base, MonitorAlertRule, MonitorTemplate
 
 
 def test_to_dict_masks_a_set_smtp_password():
@@ -109,3 +112,163 @@ def test_update_with_real_password_overwrites(client_db):
     with factory() as db:
         stored = json.loads(db.get(MonitorAlertRule, "r1").channel_config)
     assert stored["smtp_password"] == "new-secret"
+
+
+# --- Templates: the alert definitions carry the same channel_config -----------------
+
+
+def _email_def(def_id="def-mail", smtp_password="tpl-secret") -> dict:
+    d = {
+        "name": "Mail",
+        "channel": "email",
+        "channel_config": {
+            "to": "ops@relay.example",
+            "smtp_host": "relay.example",
+            "smtp_password": smtp_password,
+        },
+    }
+    if def_id is not None:
+        d["def_id"] = def_id
+    return d
+
+
+def _create_template(client, smtp_password="tpl-secret"):
+    r = client.post(
+        "/templates",
+        json={"name": "T", "alert_definitions": [_email_def(smtp_password=smtp_password)]},
+    )
+    assert r.status_code == 201, r.text
+    return r
+
+
+def _stored_alert_defs(factory, tid) -> list[dict]:
+    with factory() as db:
+        return json.loads(db.get(MonitorTemplate, tid).alert_definitions)
+
+
+def test_template_to_dict_masks_only_a_set_password():
+    defs = [
+        _email_def(),
+        _email_def(def_id="def-empty", smtp_password=""),
+        {"def_id": "def-bare", "name": "Bare", "channel": "webhook"},
+        "not-a-definition",
+    ]
+    tpl = MonitorTemplate(id="t1", name="T", alert_definitions=json.dumps(defs))
+    shown = tpl.to_dict()["alertDefinitions"]
+    assert shown[0]["channel_config"]["smtp_password"] == "***"
+    assert shown[0]["channel_config"]["to"] == "ops@relay.example"
+    assert shown[1:] == defs[1:]
+
+
+def test_template_responses_mask_the_alert_password(client_db):
+    client, factory = client_db
+    created = _create_template(client)
+    tid = created.json()["id"]
+    listed = client.get("/templates")
+    single = client.get(f"/templates/{tid}")
+    assert (listed.status_code, single.status_code) == (200, 200)
+
+    for r in (created, listed, single):
+        assert "tpl-secret" not in r.text
+    shown = [created.json(), next(t for t in listed.json() if t["id"] == tid), single.json()]
+    for t in shown:
+        assert t["alertDefinitions"][0]["channel_config"]["smtp_password"] == "***"
+    # Only the answer is masked; the template keeps the password.
+    assert _stored_alert_defs(factory, tid)[0]["channel_config"]["smtp_password"] == "tpl-secret"
+
+
+def test_template_put_with_the_mask_keeps_the_stored_password(client_db):
+    client, factory = client_db
+    tid = _create_template(client).json()["id"]
+    defs = client.get(f"/templates/{tid}").json()["alertDefinitions"]
+    defs[0]["channel_config"]["to"] = "oncall@relay.example"
+
+    r = client.put(f"/templates/{tid}", json={"alert_definitions": defs})
+
+    assert r.status_code == 200, r.text
+    assert "tpl-secret" not in r.text
+    stored = _stored_alert_defs(factory, tid)[0]["channel_config"]
+    assert stored["smtp_password"] == "tpl-secret"
+    assert stored["to"] == "oncall@relay.example"
+
+
+def test_template_put_with_a_new_password_overwrites(client_db):
+    client, factory = client_db
+    tid = _create_template(client).json()["id"]
+
+    r = client.put(
+        f"/templates/{tid}",
+        json={"alert_definitions": [_email_def(smtp_password="new-secret")]},
+    )
+
+    assert r.status_code == 200, r.text
+    assert _stored_alert_defs(factory, tid)[0]["channel_config"]["smtp_password"] == "new-secret"
+
+
+@pytest.mark.parametrize("def_id", ["def-new", None])
+def test_template_put_with_the_mask_on_a_new_definition_stores_no_password(client_db, def_id):
+    # No stored definition with that def_id (or none sent): nothing to keep.
+    client, factory = client_db
+    tid = _create_template(client).json()["id"]
+
+    r = client.put(
+        f"/templates/{tid}",
+        json={"alert_definitions": [_email_def(def_id=def_id, smtp_password="***")]},
+    )
+
+    assert r.status_code == 200, r.text
+    stored = _stored_alert_defs(factory, tid)
+    assert len(stored) == 1
+    assert stored[0]["def_id"] not in ("def-mail", None)
+    assert "smtp_password" not in stored[0]["channel_config"]
+
+
+@pytest.mark.parametrize("password", ["***", ""])
+def test_template_post_does_not_store_the_mask_as_password(client_db, password):
+    client, factory = client_db
+    tid = _create_template(client, smtp_password=password).json()["id"]
+    assert "smtp_password" not in _stored_alert_defs(factory, tid)[0]["channel_config"]
+
+
+def test_builtin_update_masks_the_current_alert_password(client_db):
+    client, factory = client_db
+    shipped = builtin_templates.BUILTIN_TEMPLATES[0]
+    with factory() as db:
+        db.add(
+            MonitorTemplate(
+                id="tpl-builtin",
+                name="Built-in",
+                builtin_slug=shipped["slug"],
+                builtin_version=shipped["version"],
+                check_definitions="[]",
+                alert_definitions=json.dumps([_email_def()]),
+            )
+        )
+        db.commit()
+
+    r = client.get("/templates/tpl-builtin/builtin-update")
+
+    assert r.status_code == 200, r.text
+    assert "tpl-secret" not in r.text
+    current = r.json()["current"]["alertDefinitions"]
+    assert current[0]["channel_config"]["smtp_password"] == "***"
+
+
+def test_template_put_with_the_mask_keeps_the_password_of_its_rules(client_db):
+    # The sync writes the template's channel_config into every rule made from it.
+    client, factory = client_db
+    tid = _create_template(client).json()["id"]
+    r = client.post(
+        f"/templates/{tid}/assign",
+        json={"server_id": "srv-1", "hostname": "h", "server_name": "n"},
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.put(
+        f"/templates/{tid}", json={"alert_definitions": [_email_def(smtp_password="***")]}
+    )
+
+    assert r.status_code == 200, r.text
+    with factory() as db:
+        rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.template_id == tid).one()
+        assert json.loads(rule.channel_config)["smtp_password"] == "tpl-secret"

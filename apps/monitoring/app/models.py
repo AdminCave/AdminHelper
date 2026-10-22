@@ -51,6 +51,32 @@ def loads_readable(text: str):
     )
 
 
+def masked_channel_config(cfg):
+    """A copy of an alert channel_config with a set smtp_password shown as "***", for an
+    API response: the secret is never reflected to callers (3.27). The update handlers of
+    alert rules and templates treat the mask as "unchanged". Anything but a dict comes
+    back as it is."""
+    if not isinstance(cfg, dict):
+        return cfg
+    cfg = dict(cfg)
+    if cfg.get("smtp_password"):
+        cfg["smtp_password"] = "***"
+    return cfg
+
+
+def masked_alert_definitions(definitions):
+    """Template alert definitions with masked_channel_config applied to each; a definition
+    that is not a dict or has no channel_config stays as it is."""
+    if not isinstance(definitions, list):
+        return definitions
+    return [
+        {**d, "channel_config": masked_channel_config(d["channel_config"])}
+        if isinstance(d, dict) and "channel_config" in d
+        else d
+        for d in definitions
+    ]
+
+
 class MonitorCheck(Base):
     __tablename__ = "monitor_checks"
 
@@ -152,12 +178,9 @@ class MonitorAlertRule(Base):
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self) -> dict:
-        cfg = loads_readable(self.channel_config) if self.channel_config else {}
-        # Never reflect the SMTP password in an API response — mask a set secret so
-        # it does not leak into GET /alerts and the admin frontend (3.27). The
-        # update handler treats the mask as "unchanged".
-        if cfg.get("smtp_password"):
-            cfg["smtp_password"] = "***"
+        cfg = masked_channel_config(
+            loads_readable(self.channel_config) if self.channel_config else {}
+        )
         return {
             "id": self.id,
             "name": self.name,
@@ -244,7 +267,7 @@ class MonitorTemplate(Base):
             "checkDefinitions": loads_readable(self.check_definitions)
             if self.check_definitions
             else [],
-            "alertDefinitions": loads_readable(self.alert_definitions)
+            "alertDefinitions": masked_alert_definitions(loads_readable(self.alert_definitions))
             if self.alert_definitions
             else [],
             "createdAt": iso_utc(self.created_at),

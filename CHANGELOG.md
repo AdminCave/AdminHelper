@@ -17,6 +17,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Verlangt ein solcher Relay eine Anmeldung, steht im Alert-Log `SMTP authentication failed (…)` bzw.
   `SMTP server refused the message`; Abhilfe sind eigene Zugangsdaten in der Regel. Regeln ohne `smtp_host` oder mit
   dem Host aus `SMTP_HOST` verhalten sich wie bisher. Doku: Monitoring (DE+EN).
+- **Monitoring: Template-Antworten zeigen ein `smtp_password` in Alert-Definitionen als `***`, wie die
+  Alert-Regeln:** `GET /templates`, `GET /templates/{id}`, die Antworten von `POST`/`PUT /templates` und von
+  `POST /templates/{id}/builtin-update` sowie `current` in `GET /templates/{id}/builtin-update` gaben das gespeicherte
+  Passwort bisher im Klartext aus. Ein `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt
+  das gespeicherte Passwort der Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition
+  speichert dann keins, ebenso `POST /templates` mit `***` oder leerem Wert. Wer das Passwort bisher aus der
+  Template-Antwort gelesen hat, sieht `***`.
 
 ## [0.46.0] - 2026-10-22
 
