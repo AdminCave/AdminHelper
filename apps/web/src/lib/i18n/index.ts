@@ -3,16 +3,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { writable, derived, get } from 'svelte/store';
+import { storageGet, storageSet } from '$lib/utils/storage';
 import { translations, type Language } from './dictionaries';
 
 export type { Language } from './dictionaries';
 export type TVars = Record<string, string | number | null | undefined>;
 
 function detect(): Language {
-  if (typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem('adminhelper_language');
-    if (stored === 'de' || stored === 'en') return stored;
-  }
+  const stored = storageGet('adminhelper_language');
+  if (stored === 'de' || stored === 'en') return stored;
   const nav = typeof navigator !== 'undefined' ? (navigator.language || '').substring(0, 2) : '';
   return nav === 'en' ? 'en' : 'de';
 }
@@ -20,9 +19,7 @@ function detect(): Language {
 const _language = writable<Language>(detect());
 
 _language.subscribe((lang) => {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('adminhelper_language', lang);
-  }
+  storageSet('adminhelper_language', lang);
   if (typeof document !== 'undefined') {
     document.documentElement.lang = lang;
   }
