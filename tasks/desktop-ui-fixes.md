@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-UI: Ladefehler der Verbindungsliste, RDP-Bildschirmdaten, Sprachwahl, Löschen mit Rückfrage, Benachrichtigungs-Neustart, Visitor-Port-Prüfung — Task-Ledger
-Status: bereit · Branch: feature/desktop-ui-fixes · Review: pro Task
+Status: erledigt · Branch: feature/desktop-ui-fixes · Review: pro Task
 Spec: docs/features/desktop-ui-fixes.md (Roadmap R-0658, R-0659, R-0660, R-0661, R-0663, R-0585)
 Heavy: linux-full — T4 ändert die Argumente des RDP-Starts (`client` für `open_connection`/`open_connection_stored`, daraus `/size` und `/scale` von xfreerdp3), die nur der RDP-Start der GUI-E2E im Sammellauf mit echter Anzeige fährt (`scripts/tests/desktop_e2e_connect.sh`, `rdp-connect.live.js`); T10 ändert die Prüfung des Tunnel-Dialogs (`tunnel-create.live.js`); T1–T3 ändern, was die Seiten „Verbindungen“ und Dashboard jeder Desktop-Journey zeigen. Kein `scenario` (kein FRP-Datenpfad, keine PKI, kein Install, keine Rust-Datei), kein `windows` (`fit_window_size`/`hdpi_scale` wirken nur unter Unix, `rdp_logic.rs:127`, `:143`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
