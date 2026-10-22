@@ -7,6 +7,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Agent: `provision --token-stdin` liest den Provisionierungs-Token von stdin:** Bisher nahm `adminhelper-agent
+  provision` den Token nur als `--token`, also als Programmargument, das fuer die Dauer des Aufrufs in der
+  Prozessliste steht. Mit `--token-stdin` liest es die erste Zeile von stdin (hoechstens 4 KiB, Leerraum an den Enden
+  entfaellt) als Token. `--token` und `--token-stdin` schliessen einander aus, einer von beiden ist Pflicht; Aufrufe
+  mit `--token` bleiben gueltig. Bleibt auf stdin kein Token, bricht `provision` mit „no provision token on stdin“ ab,
+  bevor es den Server anspricht.
+
 ## [0.46.0] - 2026-10-22
 
 ### Added
