@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Betriebsskripte: Backup-Archiv privat und vollständig, `.env` byte-treu, Diagnose-Bundle maskiert echte Token-Formen — Task-Ledger
-Status: bereit · Branch: feature/ops-scripts-hardening · Review: pro Task
+Status: aktiv · Branch: feature/ops-scripts-hardening · Review: pro Task
 Spec: docs/features/ops-scripts-hardening.md (Roadmap R-0559; T1, T3 und T4 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `scripts/backup.sh` läuft real nur in `scripts/tests/backup_restore_test.sh` (`run.sh integration`, `scripts/tests/run.sh:848`: Backup gegen den laufenden Stack, Totalverlust, Restore, gleiche CA-Kette), und `scripts/update.sh` ruft es vor jedem Update (`:363`, `:438`); der Sammellauf über `main` zeigt, dass das Archiv nach T1/T2 restorebar bleibt. Kein `scenario`: kein `multibox.sh`-Flag ruft `backup.sh` oder `diagnostics.sh` auf; kein `windows`. `diagnostics.sh` fährt kein schwerer Lauf, seine Funktionen prüft `diagnostics_test.sh` direkt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -72,3 +72,12 @@ Doku: docs/admin/troubleshooting.html:143-149 + docs/en/admin/troubleshooting.ht
 Abhängt von: T3
 Beweis: Code-Lesung scripts/diagnostics.sh:12-15, :38, :100-120
 HEAD: b1432223
+
+### T5 — backup.sh: `env.sanitized` filtert `CA_ROOT_PASSPHRASE` in jeder Schlüssel-Form, die compose liest  [ ]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Änderung: Fund des T3-Reviewers (Runde 2, wichtig): der Filter `backup.sh:108` (`'^[[:space:]]*CA_ROOT_PASSPHRASE='`) lässt die Formen stehen, die compose ebenso liest und die `diagnostics.sh` seit T3 kennt (`:55`, `:118`): `export CA_ROOT_PASSPHRASE=…`, `CA_ROOT_PASSPHRASE = …` (Leerraum vor dem Trenner) und `CA_ROOT_PASSPHRASE: …` (Doppelpunkt als Trenner). Der Filter wird zu `LC_ALL=C grep -a -v -E '^[[:space:]]*(export[[:space:]]+)?CA_ROOT_PASSPHRASE[[:space:]]*[=:]'` (dasselbe Schlüssel-Muster wie `diagnostics.sh`); Exit-Behandlung, Meldung und Kommentar aus T2 bleiben, der Kommentar nennt die Formen. `CA_ROOT_PASSPHRASE_OLD=…` oder ein anderer Schlüssel mit diesem Präfix bleibt stehen. Tests in `restore_guard_test.sh` mit dem Stub aus T1: eine `.env` aus `A=1`, `export CA_ROOT_PASSPHRASE=pp1`, `CA_ROOT_PASSPHRASE = pp2`, `CA_ROOT_PASSPHRASE: pp3`, `	export	CA_ROOT_PASSPHRASE	:	pp4` (Tabs), `CA_ROOT_PASSPHRASE_OLD=keep` und `B=2` → `env.sanitized` aus dem Archiv ist byte-gleich (`cmp`) mit `A=1\nCA_ROOT_PASSPHRASE_OLD=keep\nB=2\n`. Zuerst rot gegen den Stand vor T5 (die vier Passphrase-Zeilen stehen im Archiv). Die Fälle 1–14 bleiben grün.
+Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
+Doku: CHANGELOG.md (der T2-Eintrag unter Fixed um die Schluessel-Formen ergaenzen, umlautfrei, neutral)
+Abhängt von: T2, T3
+Beweis: Reviewer T3 Runde 2, Probe am Worktree-Stand 387cc2d0: die drei Formen bleiben in `env.sanitized` stehen
+HEAD: 387cc2d0
