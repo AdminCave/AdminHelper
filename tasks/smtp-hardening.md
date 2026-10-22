@@ -87,8 +87,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
 Doku: keine in dieser Task (T7 dokumentiert beide Seiten)
 Abhängt von: T3
 
-### T6 — Monitoring-E-Mail: optionale CA-Datei SMTP_CA_FILE  [ ]
+### T6 — Monitoring-E-Mail: optionale CA-Datei SMTP_CA_FILE  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/config.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter_dispatch.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0599246d 2026-10-22T11:34:10+02:00
+Review: approve (.ah-out/review/smtp-hardening/T6.verdict.json)
 Änderung: `apps/monitoring/app/core/config.py` (SMTP-Block `:68-80`): `SMTP_CA_FILE` wie in T5. `_send_email` (`apps/monitoring/app/alerter.py:665-683`): nach `ssl.create_default_context()` bei gesetztem `SMTP_CA_FILE` `ctx.load_verify_locations(cafile=SMTP_CA_FILE)`, vor dem Verbinden; gilt für jeden Relay (System-CAs bleiben, Regeln mit öffentlichem Relay brechen nicht). Lässt sich die Datei nicht laden (fehlt, kein PEM), verbindet `_send_email` nicht, loggt die Exception wie heute (`Email failed: …`) und gibt im Alert-Log `SMTP TLS failed` zurück (heute machte `_email_failure` aus einem `FileNotFoundError` „SMTP connection failed“, `:633-634`); die Änderung an `_email_failure` (`:612-635`) bleibt minimal. Tests in `test_alerter_dispatch.py` mit `_FakeSMTP`: (a) `SMTP_CA_FILE` gesetzt (PEM in `tmp_path`) → der Kontext an `starttls` bzw. `SMTP_SSL` enthält die CA; (b) ohne → nicht; (c) fehlende Datei → `(False, "SMTP TLS failed")`, kein `SMTP`-Aufruf. Zuerst rot: (a), (c).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_dispatch.py
 Doku: keine in dieser Task (T7)

@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.config import (
     INTERNAL_API_KEY,
     SERVER_HUB_URL,
+    SMTP_CA_FILE,
     SMTP_FROM,
     SMTP_HOST,
     SMTP_PASSWORD,
@@ -609,7 +610,7 @@ def _send_webhook(
         return False, _webhook_failure(exc)
 
 
-def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
+def _email_failure(exc: Exception, *, in_starttls: bool, loading_ca: bool) -> str:
     """The alert-log reason for a failed send: a fixed text per kind of error. The
     exception text (mail server replies, host names) goes to the service log only."""
     # Every smtplib error and ssl.SSLError is an OSError as well, so the order matters.
@@ -621,9 +622,12 @@ def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
     ):
         return "SMTP server refused the message"
     # SMTPNotSupportedError means "no STARTTLS" only from starttls(); login() and the
-    # send raise it for a missing AUTH or SMTPUTF8 extension.
-    if isinstance(exc, ssl.SSLError) or (
-        in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError)
+    # send raise it for a missing AUTH or SMTPUTF8 extension. An OSError while loading
+    # SMTP_CA_FILE (missing, unreadable) is a TLS setup failure, not a connection one.
+    if (
+        isinstance(exc, ssl.SSLError)
+        or (in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError))
+        or (loading_ca and isinstance(exc, OSError))
     ):
         return "SMTP TLS failed"
     if isinstance(exc, TimeoutError):
@@ -666,13 +670,19 @@ def _send_email(
     message["To"] = ", ".join(recipients)
     message.attach(MIMEText(msg["text"], "plain"))
 
-    in_starttls = False
+    in_starttls = loading_ca = False
     try:
         # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
         # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
         # verifying context (create_default_context checks cert + hostname), so a
         # MITM cannot strip TLS and harvest the login credentials (3.24).
         ctx = ssl.create_default_context()
+        if SMTP_CA_FILE:
+            # A relay with a private CA (any relay, a rule's own included): added to the system
+            # CAs, checks stay on. A file that cannot be loaded stops the send before connecting.
+            loading_ca = True
+            ctx.load_verify_locations(cafile=SMTP_CA_FILE)
+            loading_ca = False
         if smtp_port == 465:
             smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ctx)
         else:
@@ -692,4 +702,4 @@ def _send_email(
         return True, None
     except Exception as exc:
         logger.error("Email failed: %s: %s", check.name, exc)
-        return False, _email_failure(exc, in_starttls=in_starttls)
+        return False, _email_failure(exc, in_starttls=in_starttls, loading_ca=loading_ca)

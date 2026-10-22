@@ -279,14 +279,17 @@ class TestEmailChannel:
 
 
 class _FakeSMTP:
-    """Records the class used, whether starttls() ran, and the login/send calls (6.49)."""
+    """Records the class used, whether starttls() ran, the TLS contexts handed to the
+    constructor (SMTP_SSL) and to starttls(), and the login/send calls (6.49)."""
 
     instances: list = []
 
     def __init__(self, host, port, timeout, context=None):
         self.host = host
         self.port = port
+        self.context = context
         self.starttls_called = False
+        self.starttls_context = None
         self.login_args = None
         self.sent = False
         _FakeSMTP.instances.append(self)
@@ -299,6 +302,7 @@ class _FakeSMTP:
 
     def starttls(self, context=None):
         self.starttls_called = True
+        self.starttls_context = context
 
     def login(self, user, pw):
         self.login_args = (user, pw)
@@ -400,3 +404,99 @@ def test_env_credentials_only_reach_the_env_relay(monkeypatch, env_host, cfg, ho
     assert srv.host == host
     assert srv.login_args == login
     assert srv.sent
+
+
+# SMTP_CA_FILE (smtp-hardening T6): a relay's private CA joins the verifying context on top
+# of the system CAs. A self-signed CA stands in for it: the public certificate only, made
+# once with openssl, because the monitoring test deps carry no X.509 builder; loading a CA
+# does not check its validity dates.
+_CA_CN = "smtp-hardening test relay CA"
+_CA_PEM = """\
+-----BEGIN CERTIFICATE-----
+MIIBtjCCAVugAwIBAgIUOztpyIreEgsQEB7T29R5AfTK/e0wCgYIKoZIzj0EAwIw
+JzElMCMGA1UEAwwcc210cC1oYXJkZW5pbmcgdGVzdCByZWxheSBDQTAgFw0yNjEw
+MjIwOTI1MzJaGA8yMTI2MDkyODA5MjUzMlowJzElMCMGA1UEAwwcc210cC1oYXJk
+ZW5pbmcgdGVzdCByZWxheSBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABP7x
+aX7U7uMP0LDZaaaXMUiMHzGhcIvYsBU8H7w6gz56O2XyRF6eeZ6kEZV1yqL7qK1M
+18g+clH8jkStUkrGEnejYzBhMB0GA1UdDgQWBBTSUiVoRJzi2coL9XA6MHCaUe10
+VzAfBgNVHSMEGDAWgBTSUiVoRJzi2coL9XA6MHCaUe10VzAPBgNVHRMBAf8EBTAD
+AQH/MA4GA1UdDwEB/wQEAwIBBjAKBggqhkjOPQQDAgNJADBGAiEAoBw1Jofu1PWJ
+vmfsjaVFeueVvKDKtj8bKNcKJ2rMcjoCIQCLRWtnwaY9vUJ8OGmEyBwFNZdEj9Jl
+Zyr6vIlsH5rhkg==
+-----END CERTIFICATE-----
+"""
+
+
+def _ca_common_names(ctx) -> list[str]:
+    return [
+        value
+        for cert in ctx.get_ca_certs()
+        for rdn in cert["subject"]
+        for key, value in rdn
+        if key == "commonName"
+    ]
+
+
+def _sent_context(monkeypatch, port):
+    """The TLS context _send_email hands to SMTP_SSL (465) or to starttls() (any other
+    port), for a rule naming its own relay: the CA file holds for every relay."""
+    _FakeSMTP.instances = []
+    used, unused = ("SMTP_SSL", "SMTP") if port == 465 else ("SMTP", "SMTP_SSL")
+    monkeypatch.setattr(alerter.smtplib, used, _FakeSMTP)
+    monkeypatch.setattr(alerter.smtplib, unused, _forbidden)
+    ok, err = _send_email(_mail_cfg(port), _rule(), CHECK, MSG)
+    assert ok, err
+    srv = _FakeSMTP.instances[-1]
+    assert srv.sent
+    return srv.context if port == 465 else srv.starttls_context
+
+
+def _assert_verifying(ctx):
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+
+
+@pytest.mark.parametrize("port", [587, 465])
+def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tmp_path, port):
+    ca_file = tmp_path / "smtp-ca.pem"
+    ca_file.write_text(_CA_PEM)
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", str(ca_file))
+
+    ctx = _sent_context(monkeypatch, port)
+
+    assert _CA_CN in _ca_common_names(ctx)
+    _assert_verifying(ctx)  # an extra CA, not a weaker check
+
+
+@pytest.mark.parametrize("port", [587, 465])
+def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, port):
+    # Pairs with the test above: the CA in the file is what put its name there.
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", "")
+
+    ctx = _sent_context(monkeypatch, port)
+
+    assert _CA_CN not in _ca_common_names(ctx)
+    _assert_verifying(ctx)
+
+
+@pytest.mark.parametrize("content", [None, "not a certificate\n"], ids=["missing", "not-pem"])
+@pytest.mark.parametrize("port", [587, 465])
+def test_unloadable_smtp_ca_file_stores_tls_failed_without_connecting(
+    monkeypatch, caplog, tmp_path, port, content
+):
+    ca_file = tmp_path / "smtp-ca.pem"
+    if content is not None:
+        ca_file.write_text(content)
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", str(ca_file))
+    connects = []
+    monkeypatch.setattr(alerter.smtplib, "SMTP", lambda *a, **k: connects.append(a))
+    monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", lambda *a, **k: connects.append(a))
+    rule = _rule("email", config=_mail_cfg(port, smtp_user="u", smtp_password="p"))
+
+    with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+        assert _dispatch(rule, CHECK, MSG) == (False, "SMTP TLS failed")
+
+    assert connects == []  # no connection, so the relay sees nothing, credentials included
+    lines = _alerter_lines(caplog)
+    assert len(lines) == 1 and lines[0].startswith("Email failed: c: ")
