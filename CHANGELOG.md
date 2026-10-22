@@ -7,6 +7,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-10-22
+
 ### Added
 
 - **Desktop: Workspaces — mehrere Server, Sync-Quellen und lokale Verbindungen nebeneinander (R-0431):** Ein Workspace

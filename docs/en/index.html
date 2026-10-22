@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.45.0</span>
+          <span>v0.46.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -260,7 +260,28 @@
             </div>
           </div>
 
-          <h2>What's new in 0.45.0?</h2>
+          <h2>What's new in 0.46.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.46.0 &ndash; Desktop workspaces, device identities &amp; self-updating tunnels (2026-10-22)</div>
+              <p>
+                <strong>Added:</strong> The desktop client has <strong>workspaces</strong>: several servers, sync sources
+                and local connections side by side, each in its own window with its own login, tunnel and device
+                identity. Client certificates are tracked <strong>per device</strong> and can be revoked one by one.
+                Monitoring adds the <code>system_state</code> check type, the &ldquo;Host Ping&rdquo; built-in template,
+                a single summary alert when several agents go silent at once, and built-in templates that follow new
+                versions without losing your own changes.
+                <strong>Changed:</strong> frps picks up configuration and certificate changes on its own, and the desktop
+                and the agent follow new or changed FRP tunnels &ndash; no app restart, no re-provisioning. When a step of
+                <code>update.sh</code> fails, the rollback restores the runtime files, <code>.env</code> and the image pins
+                (not the database; use <code>restore.sh</code> for that).
+                <strong>Security:</strong> The SSRF guard connects to the address it checked, and the dependencies
+                have no audit findings. Details in the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
