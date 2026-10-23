@@ -84,6 +84,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop, Provisionierungs-Tab: Backslash im erzeugten Befehl auch fuer fish woertlich:** Ein Backslash in der
+  Server-URL steht im angezeigten Installationsbefehl jetzt ausserhalb der einfachen Anfuehrungszeichen als `\\`, so
+  dass POSIX-Shells (sh, bash, zsh) und fish denselben Wert lesen; fish las `\\` und `\'` innerhalb einfacher
+  Anfuehrungszeichen als Escape. Werte ohne Backslash sehen aus wie bisher.
 - **Desktop: Gepinntes Zertifikat zuruecksetzen meldet einen Fehler des Schluesselbunds (R-0748):** Kann der
   Schluesselbund des Systems den Pin nicht loeschen, melden „Gepinntes Zertifikat zuruecksetzen“ (Anmeldebildschirm
   und Einstellungen) und „Geraete-Identitaet zuruecksetzen“ jetzt einen Fehler („the pinned certificate could not be

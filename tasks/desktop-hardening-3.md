@@ -115,8 +115,10 @@ Doku: keine (der Server erzeugt solche Token nie)
 Beweis: Code-Lesung apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte:20 (`/^[A-Za-z0-9_-]+$/` lässt ein führendes `-` zu)
 HEAD: cea7fb9b
 
-### T8 — `shellQuote`: Backslash so, dass POSIX-Shells und fish denselben Wert lesen  [ ]
+### T8 — `shellQuote`: Backslash so, dass POSIX-Shells und fish denselben Wert lesen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/shell.ts, apps/desktop/ui/src/lib/utils/shell.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0566a9a2 2026-10-23T09:21:27+02:00
+Review: approve (.ah-out/review/desktop-hardening-3/T8.verdict.json)
 Änderung: `shellQuote` ersetzt im gequoteten Fall zusätzlich jedes `\` durch `'\\'` (Quote schließen, `\\` außerhalb der Quotes, wieder öffnen): POSIX liest `\\` außerhalb von Quotes als `\` (2.2.1), fish ebenso, und innerhalb der fish-Quotes bleibt kein `\`; Werte ohne `\` sehen aus wie bisher. Doc-Kommentar nennt fish und die Quelle. Tests in `shell.test.ts`, zuerst rot: (a) `a\b` → `'a'\\'b'`, `a\'b` und `x\\` gequotet erwartet; (b) ein kleines Modell der fish-Regeln im Test (in einfachen Quotes nur `\\` → `\` und `\'` → `'`, außerhalb `\x` → `x`) liest jedes Wort aus BARE und QUOTED als genau den Wert zurück (auf HEAD rot für Werte mit `\`); (c) die Rundreise über `/bin/sh` (`:45-46`) nimmt die neuen Werte auf.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/utils/shell.test.ts
 Doku: CHANGELOG.md (Fixed, umlautfrei: Desktop, Provisionierungs-Tab: ein Backslash in der Server-URL steht im erzeugten Befehl so, dass auch fish ihn woertlich liest) · fish nur am Modell geprüft (Spec, Externe Integrationen)
