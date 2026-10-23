@@ -69,8 +69,10 @@ Dedup-Key: ref:ssrf:post-r0590-nits
 HEAD: 53a7dbc5
 Semantik: `docs/developer/hooks.html:77` — „Abgelehnt wird auch eine URL, die sich nicht lesen lässt oder keinen Host hat“; `apps/server/app/core/ssrf.py:154-156` — „A URL httpx cannot read (a host it cannot encode, a port that is no number) is rejected like an unreadable URL“
 
-### T4 — Monitoring: unlesbare URL und Surrogat am HTTP-Check und am Webhook; Kommentare zum try (R-0606)  [ ]
+### T4 — Monitoring: unlesbare URL und Surrogat am HTTP-Check und am Webhook; Kommentare zum try (R-0606)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_http_checker.py, apps/monitoring/tests/test_alerter.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0de4f72d 2026-10-23T19:26:46+02:00
+Review: approve (.ah-out/review/ssrf-followups/T4.verdict.json)
 Änderung: Kommentare, kein Code: in `http.py` der Kommentar über `pinned_client(…)` (heute `:50-51`, nach #265 in der Redirect-Schleife) und in `alerter.py` über `pinned_client(url, target)` in `_send_webhook` (`:599-600`): statt „it parses the URL already, so it sits in the try“ steht, dass `check_target` die URL schon mit httpx gelesen hat und `pinned_client` im `try` steht, weil der Bau des Clients an einer unbrauchbaren Proxy-Angabe aus der Umgebung scheitern kann (Spec, Problem 4). Tests mit dem echten Guard (Resolver ersetzt und aufgezeichnet, Anfragen unter dem Pin aufgezeichnet): (a) `HttpChecker().run` mit `https://☃.example/`, `http://checks.example:abc/` und `"http://checks.example/\ud800"` → `("unknown", "URL points to a private/reserved address, rejected by the SSRF guard", None)`, Resolver nicht gefragt, keine Anfrage. (b) `alerter._send_webhook` mit denselben drei Formen unter `hooks.example.com` → `(False, "Webhook target is private/reserved (not allowed)")`, Resolver nicht gefragt, keine Anfrage. Rot auf 53a7dbc5: die Surrogat-Fälle in (a) und (b) (`UnicodeEncodeError` aus `run` bzw. `_send_webhook`); grün nach T3 (Revert-Probe von T3 in einem eigenen Worktree, Ergebnis in den Commit-Body).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py tests/test_alerter.py
 Doku: keine (CHANGELOG trägt T3)

@@ -64,7 +64,9 @@ class HttpChecker:
                 if remaining <= 0:
                     return "critical", f"Timeout after {timeout}s", None
                 # pinned_client connects to an address check_target checked, not to whatever
-                # a second lookup answers; it parses the URL already, so it sits in the try.
+                # a second lookup answers. check_target has read the URL with httpx already;
+                # the client sits in the try because building it can fail on an unusable
+                # proxy setting from the environment (HTTPS_PROXY=ftp://..., NO_PROXY=host:abc).
                 # A client of its own per hop: it connects only to the hop's checked host.
                 # stream() reads no body by itself: a redirect's body is never read.
                 with (

@@ -220,6 +220,34 @@ def test_http_checker_unresolvable_initial_url_says_so(monkeypatch):
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://☃.example/",  # no IDNA 2008 label
+        "http://checks.example:abc/",  # a port that is no number
+        "http://checks.example/\ud800",  # a lone surrogate
+    ],
+)
+def test_http_checker_rejects_a_url_httpx_cannot_read_without_a_request(monkeypatch, url):
+    # R-0606: the real guard reads the URL with httpx before the try. A URL httpx cannot
+    # read is the usual rejection, not an exception out of run().
+    asked = _resolving(monkeypatch, {"checks.example": _FIRST})
+    sent = []
+    monkeypatch.setattr(
+        httpx.HTTPTransport, "handle_request", lambda _transport, request: sent.append(request)
+    )
+
+    result = http_mod.HttpChecker().run({"url": url})
+
+    assert result == (
+        "unknown",
+        "URL points to a private/reserved address, rejected by the SSRF guard",
+        None,
+    )
+    assert asked == []
+    assert sent == []
+
+
 def test_http_checker_unresolvable_redirect_target_says_so(monkeypatch):
     # Only the hop's host fails to resolve; the public IP literal resolves for real.
     real_resolve = ssrf_mod._resolve
