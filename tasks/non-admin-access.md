@@ -67,7 +67,8 @@ Doku: keine (intern)
 Orakel: mutation-sample — M1 bis M3 an `tunnel_router.py`, je eine allein
 HEAD: b25c65a6
 
-### T2 — `GET /api/frp/tunnels`: Nicht-Admins lesen die freigegebenen Tunnel ihrer Server, nur die Felder des Desktops (R-0484)  [?] (R-0484 Weg: Filter im bestehenden Endpunkt (A) oder eigener Endpunkt (B); Umfang nur freigegebene Tunnel der zugewiesenen Server (D2); Felder genau die zehn von TunnelMapping (F2)? Empfehlung A + D2 + F2, Spec Offene Frage 1)
+### T2 — `GET /api/frp/tunnels`: Nicht-Admins lesen die freigegebenen Tunnel ihrer Server, nur die Felder des Desktops (R-0484)  [ ]
+Entscheidung: Kevin 2026-10-22: Variante A + D2 + F2 (Filter im bestehenden Endpunkt, nur freigegebene Tunnel der zugewiesenen Server, genau die zehn Felder von TunnelMapping).
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_tunnel_access.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
 Änderung (Variante A + D2 + F2): `list_tunnels` (`tunnel_router.py:25-38`) hängt an
 `current_user=Depends(get_current_user)` statt an `_admin=Depends(get_current_admin)` (`:30`).
@@ -118,7 +119,8 @@ Dedup-Key: bug:server:frp/tunnel_router.py:list_tunnels-admin-only
 HEAD: b25c65a6
 Semantik: Die Doku beschreibt heute die Lücke, nicht ein gewolltes Recht: `docs/admin/frp-tunnel.html:106` — „Die Verbindungen löst der Desktop-Client auf den tatsächlichen Port auf: die mit dem Tunnel automatisch angelegte (<code>127.0.0.1:&lt;Visitor-Port&gt;</code>) für alle Benutzer, eine von Hand mit dem Tunnel verknüpfte nur für Admins, denn nur sie lesen die Tunnel-Zuordnungen.“; R-0430 führt sie als offene Lücke (`docs/features/desktop-session-ports.md:59`). Kevin hat R-0484 als BUG angenommen und den Weg an den Plan gegeben (Notiz der Zeile, 2026-10-18).
 
-### T3 — Desktop (Rust): Kommentare und Entwickler-Doku zu den Zuordnungen für Nicht-Admins  [?] (hängt an R-0484 Weg, Offene Frage 1 / T2; unter B kommt hier der Abruf des neuen Endpunkts mit Rückfall bei 404 hinzu)
+### T3 — Desktop (Rust): Kommentare und Entwickler-Doku zu den Zuordnungen für Nicht-Admins  [ ]
+Entscheidung: Kevin 2026-10-22: Variante A (T2), also nur Kommentare und Entwickler-Doku, kein neuer Abruf.
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/connection/mod.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
 Änderung (Variante A): Nur Kommentare, kein Verhalten. Die Stellen, die sagen, nur Admins lesen Zuordnungen, sagen
 künftig, dass ein Nicht-Admin die Zuordnungen seiner zugewiesenen Server liest:
@@ -138,7 +140,8 @@ Doku: `docs/developer/desktop.html:261` und `:267`, EN `docs/en/developer/deskto
 - Der Satz zu Regel 2, „So … auch für Nicht-Admins aufgelöst“, bleibt.
 Abhängt von: T2
 
-### T4 — Desktop-UI: Kommentare und Admin-Doku zu den Zuordnungen für Nicht-Admins  [?] (hängt an R-0484 Weg, Offene Frage 1 / T2)
+### T4 — Desktop-UI: Kommentare und Admin-Doku zu den Zuordnungen für Nicht-Admins  [ ]
+Entscheidung: Kevin 2026-10-22: Variante A (T2).
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
 Änderung (Variante A): Nur Kommentare, kein Verhalten:
 - `connectFlow.ts:149` „(admins only)“ wird „(an admin's, or one on a server assigned to the user)“;
@@ -185,7 +188,8 @@ Doku:
 Dedup-Key: ref:web:Placeholder.svelte:non-admin-dead-end
 HEAD: b25c65a6
 
-### T6 — Web-Panel: übersetzte Seite für einen Admin auf einer unbekannten Route  [?] (Was sieht ein Admin auf einer unbekannten Web-Route: (a) übersetzt "Seite nicht gefunden" mit Link auf die Benutzerseite, (b) Weiterleitung nach #/users, (c) dieselbe Hinweisseite? Empfehlung (a), Spec Offene Frage 2)
+### T6 — Web-Panel: übersetzte Seite für einen Admin auf einer unbekannten Route  [ ]
+Entscheidung: Kevin 2026-10-22: (a) übersetzte Seite "Seite nicht gefunden" mit Link auf die Benutzerseite (#/users).
 Komponente: web · Dateien: apps/web/src/pages/Placeholder.svelte, apps/web/src/pages/Placeholder.test.ts, apps/web/src/lib/i18n/dictionaries.ts, CHANGELOG.md
 Änderung (Empfehlung a):
 - Der Admin-Zweig in `Placeholder.svelte` zeigt `t('page.notFound.title')` und einen Link auf `#/users`
