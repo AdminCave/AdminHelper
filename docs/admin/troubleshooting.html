@@ -106,6 +106,7 @@ docker compose down -v
           <ol>
             <li><code>systemctl status adminhelper-agent.timer</code> – läuft der Timer?</li>
             <li><code>journalctl -u adminhelper-agent.service --since "1 hour ago"</code></li>
+            <li><code>sudo adminhelper-agent run --once --log-level debug</code> – ein Durchlauf von Hand mit Debug-Ausgabe</li>
             <li>API-Key widerrufen? Im Desktop-Client (Server-Workspace) → <em>Infrastruktur → Server → Tab Provisionierung</em> einen neuen Token erzeugen und am Host einlösen.</li>
             <li>Zertifikat abgelaufen? <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code></li>
           </ol>
@@ -116,13 +117,13 @@ docker compose down -v
           <ul>
             <li>VictoriaMetrics erreichbar? <code>docker compose exec monitoring curl -s http://victoria:8428/health</code></li>
             <li>Server → Monitoring: <code>MONITOR_API_KEY</code> identisch in beiden Containern?</li>
-            <li>Agent-Debug: <code>adminhelper-agent monitor run --dry-run</code> auf dem Ziel-Host</li>
+            <li>Agent-Debug: <code>sudo adminhelper-agent run --once --log-level debug</code> auf dem Ziel-Host</li>
           </ul>
 
           <h2>FRP-Tunnel bricht ab</h2>
           <ul>
             <li><code>docker compose logs -f frps</code> → Client-Auth-Fehler?</li>
-            <li>Cert-Rotation hängt? Bei Clients mit &lt; 30 Tagen Restlaufzeit triggert der Agent die Rotation – Serverseitig blockieren CRL-Einträge eine neue Ausstellung, CRL-Content prüfen.</li>
+            <li>Client-Zertifikat des Agents abgelaufen? Auf dem Agent-Host prüfen: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. Der Agent erneuert es bei jedem Lauf selbst, sobald die Hälfte seiner Laufzeit um ist; scheitert das, steht <code>Cert-Renew Fehler</code> im Journal von <code>adminhelper-agent.service</code>.</li>
             <li>Proxy / Firewall blockiert Port 7000 oder 7443? Reiner TCP-Check: <code>nc -vz srm.example.com 7000</code>.</li>
           </ul>
 

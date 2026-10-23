@@ -39,6 +39,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(unix)]
 use tauri::Emitter;
+#[cfg(unix)]
+use zeroize::Zeroize;
 
 #[cfg(unix)]
 use crate::terminal::which;
@@ -443,22 +445,23 @@ fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
     });
 }
 
-/// Feed a password to a spawned child's stdin, then scrub the local copy. The
-/// security-critical secret-handling shared by the RDP launch and the auth probe,
-/// so a later hardening (e.g. zeroize, or a forgotten kill on BrokenPipe) can't
-/// land in only one of the two copies.
+/// Feed a password to a spawned child's stdin, then zero the copy this function made
+/// for it. Shared by the RDP launch and the auth probe, so both handle the secret and
+/// a failed write the same way. Only that one copy is zeroed: the string from the IPC,
+/// the `password` argument, the strings from the keyring and the session's tokens stay
+/// in memory as they are.
 #[cfg(unix)]
 fn feed_password_stdin(child: &mut std::process::Child, password: &str) -> Result<(), AppError> {
     if let Some(mut stdin) = child.stdin.take() {
-        let mut payload = format!("{password}\n");
+        // Sized up front: a `format!` that grows its buffer frees the old one with the
+        // password still in it, out of reach of the zeroize below.
+        let mut payload = String::with_capacity(password.len() + 1);
+        payload.push_str(password);
+        payload.push('\n');
         let write_result = stdin.write_all(payload.as_bytes());
-        // Scrub the password copy regardless of the write outcome (parity with the
-        // Windows credential path in password.rs).
-        unsafe {
-            for byte in payload.as_bytes_mut() {
-                *byte = 0;
-            }
-        }
+        // Zero the copy regardless of the write outcome, as the Windows credential path
+        // in password.rs does with its own.
+        payload.zeroize();
         if let Err(e) = write_result {
             // A BrokenPipe (child already exited / refused stdin) would otherwise
             // leave the spawned process around — reap it before propagating.
@@ -772,15 +775,18 @@ mod tests {
 
     #[test]
     fn feed_password_stdin_writes_and_returns_ok() {
-        // `cat` accepts the piped stdin; the helper must write, scrub, and succeed.
+        // `cat` echoes the piped stdin; the helper must write the password and a newline,
+        // zero its own copy, and succeed. Longer than 8 bytes, the size at which a grown
+        // buffer would have held a copy of its own.
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .spawn()
             .expect("cat available");
-        assert!(feed_password_stdin(&mut child, "s3cret").is_ok());
+        assert!(feed_password_stdin(&mut child, "s3cret-passphrase").is_ok());
         // stdin was consumed by the helper, so cat sees EOF and exits.
-        let _ = child.wait();
+        let output = child.wait_with_output().expect("cat exits");
+        assert_eq!(output.stdout, b"s3cret-passphrase\n");
     }
 }
 
