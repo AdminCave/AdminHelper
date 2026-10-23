@@ -71,6 +71,32 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `ansible_generate_inventory`, `ansible_write_playbook` und `ansible_launch` sind durch `ansible_run` ersetzt;
   scheitert ein Schritt vor dem Start, loescht der Lauf die schon geschriebenen Temp-Dateien. Doku: Desktop fuer
   Entwickler, Ansible (DE+EN).
+- **Agent: `provision` und `monitor init` nehmen je Aufruf genau eine Vertrauensquelle:** Beide lehnen `--cacert`
+  zusammen mit `--insecure` ab, wie `provision` schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server
+  bereits. Der Aufruf scheitert, bevor er etwas schreibt oder (bei `provision`) den Einmal-Token sendet, und die
+  Meldung nennt beide Flags. Legt der Server bei `--insecure` kein Zertifikat zum Pinnen vor, bricht `provision` ab,
+  statt ohne Pruefung weiterzumachen; `monitor init` bricht ebenso ab, wenn es das Zertifikat nicht holen oder
+  speichern kann, und schreibt nie `INSECURE=1` in `monitor.conf`. `--insecure` gilt so nur fuer den einen Aufruf.
+  Doku: Agent-Deployment (DE+EN).
+- **Agent: `diagnostics` legt jeden Bericht als neue Datei an:** Der Bericht heisst
+  `adminhelper-agent-diagnostics-<Zeitstempel>-<Zufall>.txt`, liegt wie bisher im Temp-Verzeichnis und hat die Rechte
+  0600; eine vorhandene Datei ueberschreibt `diagnostics` nie. Den Pfad gibt der Befehl wie bisher aus.
+- **Agent: die frpc.toml des Servers nur in der Form, die der Server erzeugt:** Der Agent wendet eine frpc.toml des
+  Servers nur an, wenn jede Zeile die Form des Generators hat: leer, `[transport.tls]`, `[[proxies]]` oder
+  `schluessel = wert` mit einem einzeiligen Wert. In der Wurzel nimmt er nur die Schluessel, die der Server schreibt,
+  in einem Proxy keinen Schluessel, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben
+  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels speichert der
+  Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
+  wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
+  der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+
+### Removed
+
+- **Agent: kein PKI-Bundle aus der Aktivierungsantwort:** `provision` entpackt kein PKI-Bundle mehr; ein mitgeschicktes
+  Feld `pkiBundle` ignoriert der Agent. Der Server schickt es seit 0.28.0 leer, und dieser Agent aktiviert nur ueber
+  Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. `provision` legt auch kein Verzeichnis `frp/pki` mehr
+  an; ein vorhandenes bleibt unberuehrt, und die Pakete legen `/etc/frp/pki` weiter leer an. Doku: Agent-Entwicklerseite
+  (DE+EN).
 
 ### Fixed
 

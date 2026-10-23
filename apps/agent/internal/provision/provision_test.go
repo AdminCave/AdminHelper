@@ -173,6 +173,84 @@ func TestRunRejectsCAFPCombinedWithOtherTrust(t *testing.T) {
 	}
 }
 
+// One trust source per call, also for --cacert: it already verifies the server, and
+// --insecure on top would switch that check off for the call and the config it writes.
+// The pair is refused before the data root is secured or the token leaves the host.
+func TestProvisionTrustRefusesCACertWithInsecure(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path != "/api/servers/srv-1/provision/activate" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k", "frp": nil})
+	}))
+	defer srv.Close()
+	cacert := filepath.Join(t.TempDir(), "ca.pem")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(cacert, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	orig := activatePort
+	activatePort = port
+	t.Cleanup(func() { activatePort = orig })
+	origApply := applyWithoutBundle
+	applyWithoutBundle = func() error { return nil }
+	t.Cleanup(func() { applyWithoutBundle = origApply })
+
+	err := Run(srv.URL, "tok", "srv-1", cacert, true, "")
+	if n := requests.Load(); n != 0 {
+		t.Errorf("the server got %d request(s), want none: the token is spent", n)
+	}
+	if err == nil || !strings.Contains(err.Error(), "--cacert") || !strings.Contains(err.Error(), "--insecure") {
+		t.Fatalf("error = %v, want one naming --cacert and --insecure", err)
+	}
+	for _, f := range []string{config.FrpAdminHelperConf(), config.MonitorConfFile()} {
+		if _, err := os.Stat(f); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s exists after the refused call (stat: %v)", f, err)
+		}
+	}
+}
+
+// A blind --insecure without a certificate to pin fails instead of handing on
+// insecure: the follow-up calls and the stored config would otherwise not verify.
+func TestProvisionTrustBlindInsecureWithoutACertificateFails(t *testing.T) {
+	path, insecure, cleanup, err := pinIfBlindInsecure("", true, nil)
+	defer cleanup()
+	if err == nil {
+		t.Fatalf("pinIfBlindInsecure without a certificate = (%q, insecure %v), want an error", path, insecure)
+	}
+	if insecure {
+		t.Error("insecure = true alongside the error, want false")
+	}
+}
+
+// The counterpart: with the chain the activate call saw, a blind --insecure becomes
+// the pinned file and verification stays on.
+func TestProvisionTrustBlindInsecurePinsThePresentedCertificate(t *testing.T) {
+	chain := []byte("-----BEGIN CERTIFICATE-----\nY2E=\n-----END CERTIFICATE-----\n")
+	path, insecure, cleanup, err := pinIfBlindInsecure("", true, chain)
+	if err != nil {
+		t.Fatalf("pinIfBlindInsecure: %v", err)
+	}
+	t.Cleanup(cleanup)
+	if insecure {
+		t.Error("insecure = true, want false: the pinned file is the trust")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("pinned file %q: %v", path, err)
+	}
+	if !bytes.Equal(got, chain) {
+		t.Fatalf("pinned file = %q, want the presented chain", got)
+	}
+}
+
 func TestPinVerifiedAnchorWritesOnlyTheAnchor(t *testing.T) {
 	// The pinned file must contain EXACTLY the fingerprint-matched cert — pinning
 	// the whole presented chain would anchor the rotating leaf too, defeating the
