@@ -145,6 +145,23 @@ def test_a_new_gateway_address_counts_at_once(dns):
     # The old address went with it: it may belong to another container by now.
     assert get_client_identity(_req(GATEWAY, _gateway_headers())).verified is False
 
+    identity._GATEWAY._urgent_at -= 1  # a second later
+    dns.answer = ["192.0.2.21"]  # recreated once more
+    assert get_client_identity(_req("192.0.2.21", _gateway_headers())).verified is True
+    assert dns.calls == 3  # the next lookup out of turn, not only the first one
+
+
+def test_a_warning_clears_the_entries_older_than_a_minute(dns, caplog):
+    identity._GATEWAY.refresh()
+    with caplog.at_level(logging.WARNING, logger="adminhelper.identity"):
+        assert get_client_identity(_req(OTHER, _gateway_headers())).verified is False
+        assert get_client_identity(_req("192.0.2.12", _gateway_headers())).verified is False
+        identity._ignored_logged[OTHER] -= 60  # a minute later
+        assert get_client_identity(_req("192.0.2.13", _gateway_headers())).verified is False
+        assert len(_ignored(caplog)) == 3
+    # Peers that come and go leave no entry behind once their minute is over.
+    assert set(identity._ignored_logged) == {"192.0.2.12", "192.0.2.13"}
+
 
 def test_misses_in_the_same_second_share_one_lookup(dns):
     identity._GATEWAY.refresh()

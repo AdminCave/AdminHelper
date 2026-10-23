@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # mTLS: `MTLS_ENFORCE` in Server und Gateway gleich, Identitäts-Header nur vom Gateway — Task-Ledger
-Status: aktiv · Branch: feature/mtls-consistency · Review: pro Task
+Status: bereit · Branch: feature/mtls-consistency · Review: pro Task
 Spec: docs/features/mtls-consistency.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --enforce — der Diff ändert, wann der Server eine Zertifikats-Identität annimmt (`apps/server/app/core/identity.py`, T2) und wie er `MTLS_ENFORCE` liest (`apps/server/app/core/config.py`, T1); jede Anfrage mit Client-Zertifikat hängt daran. `linux-full` im Sammellauf über `main`: `integration-stack` (Stack mit `MTLS_ENFORCE=true`, Zertifikats-Wege über das Gateway in den Schritten 4–8b, der neue Schritt aus T3 mit dem Neuanlegen des Gateways), `sse-push` (SSE mit Zertifikat), `upgrade-path`; auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/mtls-consistency`. `scenario` vor dem Merge (ask-first): nur er fährt einen echten Agent von einem zweiten Host mit Zertifikat über das Gateway unter `MTLS_ENFORCE=true` (Provisionierung, Metriken, Konfiguration) gegen die Prüfung der Gegenstelle. Kein `windows`: kein Agent- und kein Desktop-Code; deren CI-Jobs laufen im PR ohnehin. Kein Compose-, Gateway- oder PKI-Diff.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -78,8 +78,10 @@ Beweis: feature/mtls-consistency@4291f912 · bash scripts/dev/verify.sh server -
 Orakel: contract — Env-Paritätstest (Lesen ohne Default gegen die Compose-Umgebung)
 HEAD: 4291f912
 
-### T5 — Tests: zweite Auffrischung außer der Reihe und Ausräumen der Warn-Einträge  [ ]
+### T5 — Tests: zweite Auffrischung außer der Reihe und Ausräumen der Warn-Einträge  [x]
 Komponente: server · Dateien: apps/server/tests/test_identity_source.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2461ea69 2026-10-23T18:47:43+02:00
+Review: approve (.ah-out/review/mtls-consistency/T5.verdict.json)
 Änderung: Nur Tests, kein Produktcode. (1) `test_a_new_gateway_address_counts_at_once` (`tests/test_identity_source.py:140`) bekommt ein zweites Neuanlegen des Gateways nach Ablauf von `_NAME_URGENT_GAP`: `identity._GATEWAY._urgent_at -= 1` (eine Sekunde später, Muster `_ignored_logged[OTHER] -= 60` in `:127`), `dns.answer = ["192.0.2.21"]`; eine Anfrage mit gültigen Headern von `192.0.2.21` ist verifiziert, und `dns.calls == 3` (genau eine weitere Auflösung außer der Reihe). Heute belegt kein Test, dass nach der ersten Auflösung außer der Reihe je eine zweite startet; die Mutante `if urgent is None:` in `apps/server/app/core/middleware.py` (`has_address`, `:121-123`) bliebe grün. Neue Adresse nur aus RFC 5737. (2) Neuer Test in derselben Datei: ein Eintrag in `identity._ignored_logged`, der älter als `_IGNORED_LOG_INTERVAL` ist, ist nach der nächsten Warnung für eine andere Gegenstelle ausgeräumt (`apps/server/app/core/identity.py:125-127`); heute bliebe eine Mutante ohne die Schleife grün. Zuerst rot: (1) gegen die Mutante `if urgent is None:`, (2) gegen die Mutante ohne die Schleife (beide nur als Probe, nicht committen).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_ip_filter.py
 Doku: keine (Test)
