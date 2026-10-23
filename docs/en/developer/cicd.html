@@ -414,7 +414,8 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           a valid value); an <code>environment:</code> key has to be read by that service's code (otherwise it is a
           leftover, or a rename that landed on one side only); and every <code>${VAR}</code> substitution has to
           appear in <code>.env.example</code> and the other way round &ndash; a documented knob compose never passes
-          on does nothing when set. No exception list: where a rule would have needed one, the rule was wrong.</p>
+          on does nothing when set. The source of a compose secret (<code>secrets.*.environment</code>) counts as
+          passed on, too. No exception list: where a rule would have needed one, the rule was wrong.</p>
 
           <p><strong>Shared API types</strong> (<code>sync-from-web.sh --check</code>): the two
           <code>api/types.ts</code> files stopped being one shared file long ago &ndash; the web one describes the

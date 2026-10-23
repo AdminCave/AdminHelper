@@ -120,7 +120,8 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 # Ignored if TRUSTED_PROXIES is set.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
 
-# Comma-separated list of IPs/CIDRs of the trusted reverse proxies.
+# Comma-separated list of IPs/CIDRs or host names of the trusted reverse proxies
+# (a name counts with the addresses it resolved to, looked up every 30 s).
 # X-Forwarded-For / X-Real-IP are evaluated ONLY if the direct connection
 # comes from one of these IPs. Recommended over TRUST_PROXY_HEADERS.
 # Example: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8

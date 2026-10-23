@@ -151,6 +151,56 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Konfiguration auf stderr schreibt, erscheinen zweimal. Ein Passwort mit Zeilenumbruch (das `--password-stdin`
   nie annehmen konnte) oder eines, das samt Zeilenumbruch nicht in den Puffer einer Pipe passt (unter Linux meist
   64 KiB), lehnt `--password` mit Exit 2 ab. Empfohlen bleibt `--password-stdin`. Doku: README.
+- **Compose: alle Dienste mit no-new-privileges und Prozessgrenze:** Jeder Dienst in `docker-compose.yml` laeuft mit
+  `no-new-privileges` (bisher nur frps) und hat eine Prozessgrenze (`pids_limit`, Prozesse und Threads): server 4096;
+  scheduler, monitoring und victoria 1024; postgres, gateway, ca-issuer und frps 512; redis 256. Der Dienst monitoring
+  setzt `net.ipv4.ping_group_range` selbst, damit der Ping-Check ohne Sonderrechte laeuft. Eine Grenze hebt man per
+  `docker-compose.override.yml` an, die `update.sh` stehen laesst; wer `WEB_CONCURRENCY` stark erhoeht, prueft die
+  Grenze des server. Doku: Betrieb (DE+EN).
+- **Compose: Speichergrenze je Dienst:** Jeder Dienst in `docker-compose.yml` hat eine Speichergrenze (`mem_limit`):
+  postgres und victoria 8 GiB, server 6 GiB, monitoring 4 GiB, scheduler und frps 2 GiB, gateway 1 GiB, ca-issuer und
+  redis 512 MiB. Die Grenzen liegen weit ueber dem Bedarf im Leerlauf und reservieren keinen Speicher; ist eine
+  erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in
+  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics richtet seine Caches nach
+  seiner Grenze aus (60 Prozent davon) statt nach dem Arbeitsspeicher des Hosts. Eine Grenze hebt man per
+  `docker-compose.override.yml` an. Doku: Betrieb (DE+EN).
+- **Compose: Gateway nur mit den Capabilities, die nginx braucht:** Der Dienst gateway laeuft mit `cap_drop: [ALL]`
+  und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker
+  laufen als Nutzer `nginx` ohne Capabilities. Wie bei frps setzt Compose `net.ipv4.ip_unprivileged_port_start` auf 0,
+  damit nginx die Ports 443, 8444 und 8445 ohne `NET_BIND_SERVICE` oeffnet. Doku: Betrieb (DE+EN).
+- **Gateway: Verbindungsgrenzen und kurze Timeouts auf den certless Ebenen:** Auf :8444 (Enrollment) und :8445
+  (Paket-Repo) beantwortet das Gateway mehr als 16 bzw. 64 gleichzeitige Anfragen je Client-Adresse und mehr als 128
+  bzw. 256 je Ebene mit 429. Dort schliesst es eine Verbindung, deren Anfrage-Kopf nicht binnen 10 s ankommt oder deren
+  Body laenger als 10 s stockt, und untaetige Keep-Alive-Verbindungen nach 15 s (bisher 60 s bzw. 75 s). Die
+  Daten-Plane :443 bleibt unveraendert. Doku: Betrieb (DE+EN).
+- **Compose: Netz frpedge ohne IP-Masquerading:** Das Netz `frpedge`, in dem frps allein haengt, legt Compose ohne
+  IP-Masquerading an: frps baut keine Verbindungen ueber den Host hinaus auf, seine veroeffentlichten Ports bleiben
+  erreichbar. Die Betriebs-Doku nennt, was bleibt (Pakete ohne Antwort, Dienste des Hosts selbst), und zeigt eine
+  optionale Regel in der Kette `DOCKER-USER`. Die Doku der Netze nennt Postgres neben Gateway und ca-issuer im Netz
+  `pki`. Doku: Betrieb, Entwicklung (DE+EN).
+- **Compose: CA-Root-Passphrase als Secret statt Umgebungsvariable:** Der ca-issuer bekommt `CA_ROOT_PASSPHRASE`
+  als Compose-Secret, eine Datei unter `/run/secrets`, und nicht mehr als Umgebungsvariable; damit steht sie nicht
+  mehr in der Umgebung des Containers (`docker inspect`, `/proc/<pid>/environ`). Compose liest den Wert weiter aus
+  `CA_ROOT_PASSPHRASE` in der `.env` und setzt `CA_ROOT_PASSPHRASE_FILE` selbst. Nach dem ersten Start darf der Wert
+  leer sein; danach erzeugt `docker compose up -d` den ca-issuer neu, und die Datei verschwindet (ein Label des
+  Dienstes traegt, ob ein Wert gesetzt ist, nie den Wert). Die Zeile `CA_ROOT_PASSPHRASE=` muss bleiben: fehlt sie,
+  bricht `docker compose up` ab. Voraussetzung ist Docker Compose v2.6 oder neuer. Doku: Installation (DE+EN).
+- **init-secrets.sh: CA-Root-Passphrase nur bei frischer Installation:** `scripts/init-secrets.sh` erzeugt
+  `CA_ROOT_PASSPHRASE` nur noch in dem Lauf, der auch `POSTGRES_PASSWORD` erzeugt, also bei einer frischen
+  Installation. Bisher fuellte das naechste Update (`update.sh` ruft das Skript auf) einen geleerten Wert mit einer
+  neuen Passphrase, die nicht zum vorhandenen Root-Key passte. Ist `POSTGRES_PASSWORD` gesetzt, bleibt ein leerer Wert
+  leer, und das Skript sagt es in einer Zeile. Wer `POSTGRES_PASSWORD` vor der Installation von Hand setzt, setzt auch
+  `CA_ROOT_PASSPHRASE` von Hand, sonst bricht der erste Start des ca-issuer ab. `restore.sh` sagt, dass `.env.restored`
+  die Zeile `CA_ROOT_PASSPHRASE=` braucht, bevor sie die `.env` ersetzt. Doku: Betrieb (DE+EN).
+- **Server und Compose: Client-Adresse hinter dem Gateway:** Compose setzt `TRUSTED_PROXIES` beim server auf den
+  Dienst `gateway`, gefolgt von einem Wert aus der `.env`; `TRUSTED_PROXIES` nimmt dafuer neben Adressen und Netzen
+  auch Hostnamen, die der Server alle 30 s neu aufloest. Hinter dem Gateway beziehen sich damit die Ratenlimits je
+  Adresse (Login, Webhook-Trigger, Agent-Reports), `ALLOWED_IPS` und die Adresse im Audit-Log auf den Client statt auf
+  das Gateway. Forwarded-Header anderer Gegenstellen wertet der Server weiterhin nicht aus, und `TRUST_PROXY_HEADERS`
+  wirkt unter Compose nicht mehr. Wer `ALLOWED_IPS` gesetzt hat, prueft vor dem Update, dass die Netze der Clients
+  enthalten sind: Bisher pruefte der Server die Adresse des Gateways, danach weist er Clients ausserhalb der Liste mit
+  403 ab. Steht ein weiterer Proxy vor dem Gateway, sieht der Server dessen Adresse; ein Eintrag in `TRUSTED_PROXIES`
+  aendert daran nichts. Doku: Installation, Benutzer (DE+EN).
 
 ### Removed
 
