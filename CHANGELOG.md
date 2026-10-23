@@ -32,6 +32,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
   und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
   Troubleshooting (DE+EN), README.
+- **Web-Panel: Abmeldung nach Inaktivitaet:** Das Web-Panel meldet in allen offenen Tabs ab, wenn in keinem davon
+  30 Minuten lang bedient wurde (Maus, Tastatur, Touch); ein Hinweis bleibt stehen, bis man ihn schliesst. Die Dauer
+  stellt die neue Env `WEB_IDLE_TIMEOUT_MINUTES` am Dienst `server` ein (`0` = aus, ein ungueltiger Wert gilt als 30),
+  der Server liefert sie im neuen Feld `idle_timeout_minutes` von `GET /api/auth/me`. Das gilt auch nach Neuladen
+  oder Wiederoeffnen im selben Browser: Liegt die letzte Bedienung dort laenger zurueck, endet die wiederhergestellte
+  Sitzung beim Laden sofort mit demselben Hinweis. Doku: Benutzer & Zugriff, Installation, API-Referenz, Web-UI fuer
+  Entwickler (DE+EN).
 
 ### Changed
 
@@ -270,6 +277,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
   verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
   gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
+- **Server: gleichzeitige Refreshes mit demselben Refresh-Token:** Das neue Token-Paar bekommt nur der Aufruf, der
+  den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
+  wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
+  Entwickler (DE+EN).
+- **Server: neu angelegte Benutzer:** Ein neu angelegter Benutzer nimmt nur Tokens an, die ab seinem Anlegen
+  ausgestellt wurden (`users.tokens_valid_after` steht auf der Anlegezeit, ganze Sekunde), gleich ob er ueber die
+  API, den Bootstrap, `ADMIN_PASSWORD` oder die CLI entsteht. Bestehende Benutzer bleiben unveraendert. Doku: Server
+  fuer Entwickler (DE+EN).
+- **Server: Refresh-Token im Browser nur als Cookie:** Browser-Anfragen (Header `Sec-Fetch-Site`) an Login, Refresh
+  und Bootstrap bekommen den Refresh-Token nur noch als HttpOnly-Cookie; `refresh_token` im JSON ist dann leer (`""`),
+  das Schema bleibt gleich. Desktop, CLI und Skripte bekommen ihn unveraendert im JSON. Doku: API-Referenz und Server
+  fuer Entwickler (DE+EN).
 
 ### Removed
 
@@ -523,6 +542,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **SSRF-Schutz: eine URL mit einem einzelnen Surrogat wird abgelehnt (Server und Monitoring, R-0606):** Eine URL
   mit einem einzelnen Surrogat, etwa aus einem JSON-Payload, wird als unlesbar abgelehnt, statt eine Exception zu
   werfen; HTTP-Check, Alert-Webhook und `http_get`/`http_post` der Hooks melden ihre gewoehnliche Ablehnung.
+- **Web-Panel: mehrere Tabs erneuern die Sitzung nacheinander (R-0649):** Alle Tabs teilen das Refresh-Cookie, das
+  Panel buendelte Erneuerungen aber nur innerhalb eines Tabs. Erneuerten zwei Tabs die Sitzung gleichzeitig, etwa
+  beim Wiederherstellen des Browsers, schickten beide denselben Refresh-Token; der Server wertete den zweiten als
+  Wiederverwendung und beendete alle Sitzungen des Benutzers, auch die des Desktops. Jetzt laufen die Erneuerungen
+  aller Tabs nacheinander (Web Locks), und ein spaeterer Tab schickt schon das neue Cookie. Auch die Abmeldung laeuft
+  unter dieser Web Lock: Sie macht das gemeinsame Cookie ungueltig, und eine Erneuerung, die ein anderer Tab zugleich
+  mit ihm schickte, galt ebenso als Wiederverwendung, etwa wenn der Browser nach Ablauf der Inaktivitaetszeit mehrere
+  Tabs wiederherstellt und jeder sich abmeldet. Ohne Web Locks, etwa ausserhalb von HTTPS, buendelt das Panel weiter
+  nur im Tab, und die Abmeldung geht sofort hinaus. Doku: Web-UI fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

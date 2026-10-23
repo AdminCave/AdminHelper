@@ -34,16 +34,17 @@ const ADMIN_USER = {
   server_ids: [],
 };
 
-// GET /api/auth/me answers UserMe — three fields, not the full user row. The
+// GET /api/auth/me answers UserMe — four fields, not the full user row. The
 // mock used to hand back ADMIN_USER here, so the suite could not have caught a
 // UI that reads created_at/server_ids from a place that never sends them.
-/** A UserMe body — three fields, the shape GET /api/auth/me declares. Exported so
+/** A UserMe body — four fields, the shape GET /api/auth/me declares. Exported so
  * a spec that overrides the route describes it once, here, and not a second time
  * beyond the reach of mocks.contract.test.ts. */
 export const userMe = (id: number, username: string, isAdmin: boolean) => ({
   id,
   username,
   is_admin: isAdmin,
+  idle_timeout_minutes: 30,
 });
 
 const ADMIN_ME = userMe(ADMIN_USER.id, ADMIN_USER.username, ADMIN_USER.is_admin);

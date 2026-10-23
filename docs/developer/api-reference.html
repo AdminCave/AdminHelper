@@ -36,7 +36,7 @@
           <h2>Authentifizierung</h2>
           <p>Drei Mechanismen, je nach Aufrufer:</p>
           <ul>
-            <li><strong>JWT-Bearer</strong> (Web-Panel, Desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access- und Refresh-Token kommen im JSON-Body; f&uuml;r Browser setzt der Server den Refresh-Token zus&auml;tzlich als HttpOnly-Cookie (<code>Secure; SameSite=Strict</code>, Pfad <code>/api/auth</code>) &ndash; Desktop/CLI senden ihn weiterhin im Body.</li>
+            <li><strong>JWT-Bearer</strong> (Web-Panel, Desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access- und Refresh-Token kommen im JSON-Body; f&uuml;r Browser setzt der Server den Refresh-Token zus&auml;tzlich als HttpOnly-Cookie (<code>Secure; SameSite=Strict</code>, Pfad <code>/api/auth</code>) &ndash; Desktop/CLI senden ihn weiterhin im Body. Browser-Anfragen, erkennbar am Header <code>Sec-Fetch-Site</code>, bekommen den Refresh-Token nur als HttpOnly-Cookie; <code>refresh_token</code> im Body ist dann <code>""</code>. F&uuml;r Desktop, CLI und Skripte (ohne diesen Header) bleibt alles unver&auml;ndert.</li>
             <li><strong>API-Key</strong> (Agents, Drittanbieter): Header <code>X-API-Key</code>. Permission ist <code>read</code> oder <code>read_write</code>.</li>
             <li><strong>Internal-Key</strong> (nur Dienst zu Dienst, Monitoring &rarr; Server): Header <code>X-Internal-Key</code> mit dem gemeinsamen Secret <code>MONITOR_API_KEY</code>.</li>
           </ul>
@@ -58,11 +58,11 @@
           <h2>Auth</h2>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/login</code>
-            <p>Body: <code>{ "username", "password" }</code>. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code>. Login-Rate-Limit: 5 Fehlversuche / 60&nbsp;s / IP.</p>
+            <p>Body: <code>{ "username", "password" }</code>. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code>; bei Browser-Anfragen (Header <code>Sec-Fetch-Site</code>) ist <code>refresh_token</code> <code>""</code>, der Token steht nur im HttpOnly-Cookie. Login-Rate-Limit: 5 Fehlversuche / 60&nbsp;s / IP.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/refresh</code>
-            <p>Body: <code>{ "refresh_token" }</code> <em>oder</em> HttpOnly-Cookie (Browser, Body darf dann leer sein). Rotiert beide Tokens, blacklisted den alten <code>jti</code>. Reuse eines bereits widerrufenen Refresh-Tokens invalidiert alle Sessions der betroffenen User-Kette.</p>
+            <p>Body: <code>{ "refresh_token" }</code> <em>oder</em> HttpOnly-Cookie (Browser, Body darf dann leer sein). Rotiert beide Tokens, blacklisted den alten <code>jti</code>. Antwort wie Login; bei Browser-Anfragen ist <code>refresh_token</code> <code>""</code> und der neue Token steht nur im Cookie. Reuse eines bereits widerrufenen Refresh-Tokens invalidiert alle Sessions der betroffenen User-Kette.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
@@ -70,11 +70,11 @@
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/auth/me</code>
-            <p>Aktueller User; ben&ouml;tigt g&uuml;ltigen Access-Token.</p>
+            <p>Aktueller User; ben&ouml;tigt g&uuml;ltigen Access-Token. Antwort: <code>{ "id", "username", "is_admin", "idle_timeout_minutes" }</code>; <code>idle_timeout_minutes</code> sind die Minuten ohne Bedienung, nach denen das Web-Panel abmeldet (<code>WEB_IDLE_TIMEOUT_MINUTES</code>, <code>0</code> = aus).</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/bootstrap</code>
-            <p>Legt beim ersten Start den ersten Admin-User per Setup-Token an (Status <code>201</code>). Body: <code>{ "token", "username", "password" }</code> &ndash; <code>username</code> 3&ndash;64 Zeichen, <code>password</code> 8&ndash;128 Zeichen. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code> (wie Login). Der Setup-Token wird beim ersten Start ins WARNING-Log geschrieben (Hash unter <code>DATA_DIR/.bootstrap_token</code>) und nach erfolgreichem Bootstrap verbraucht. Es gilt dasselbe Login-Rate-Limit (5 Fehlversuche / 60&nbsp;s / IP). Sobald ein User existiert, antwortet der Endpoint dauerhaft mit <code>409 Conflict</code> (&bdquo;Server ist bereits initialisiert"); fehlt der aktive Token, kommt <code>401</code>.</p>
+            <p>Legt beim ersten Start den ersten Admin-User per Setup-Token an (Status <code>201</code>). Body: <code>{ "token", "username", "password" }</code> &ndash; <code>username</code> 3&ndash;64 Zeichen, <code>password</code> 8&ndash;128 Zeichen. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code> (wie Login, bei Browser-Anfragen also <code>refresh_token</code> <code>""</code>). Der Setup-Token wird beim ersten Start ins WARNING-Log geschrieben (Hash unter <code>DATA_DIR/.bootstrap_token</code>) und nach erfolgreichem Bootstrap verbraucht. Es gilt dasselbe Login-Rate-Limit (5 Fehlversuche / 60&nbsp;s / IP). Sobald ein User existiert, antwortet der Endpoint dauerhaft mit <code>409 Conflict</code> (&bdquo;Server ist bereits initialisiert"); fehlt der aktive Token, kommt <code>401</code>.</p>
           </div>
 
           <h2>Users</h2>
