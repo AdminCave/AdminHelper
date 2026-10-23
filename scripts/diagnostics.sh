@@ -9,16 +9,17 @@
 #   - env.sanitized    .env with all secret VALUES masked (<redacted>)
 #   - logs/<svc>.log   recent per-service container logs, run through redaction
 #
-# Secrets and tokens are masked two ways: the exact secret values read from .env
-# (as compose reads them) are replaced everywhere, plus generic token forms: JWT,
-# Bearer, the query parameters api_key, token and access_token, the token in a
+# Secrets and tokens are masked two ways: the exact values of the .env secrets
+# and credentials (keys, passwords and SMTP_USER, read as compose reads them) are
+# replaced everywhere, plus generic token forms: JWT, Bearer, the query
+# parameters api_key, token and access_token, the token in a
 # /hooks/trigger/<token> path and adminhelper_prov_ provisioning tokens.
 # Host names and IP addresses stay in the bundle unless --mask-hosts is given.
 # With it, IPv4 and IPv6 addresses become <ip> by their form, and the names and
 # addresses set in DOMAIN, EXTRA_SANS, CA_FRPS_EXTRA_SANS, ALLOWED_IPS,
-# FRP_SERVER_ADDR, TRUSTED_PROXIES, SMTP_HOST, SMTP_USER and SMTP_FROM (of
-# SMTP_FROM with a display name, "Name <address>", only the address in
-# angle brackets, not the name), and the name of this machine, become <host> —
+# FRP_SERVER_ADDR, TRUSTED_PROXIES, SMTP_HOST and SMTP_FROM (of SMTP_FROM with a
+# display name, "Name <address>", only the address in angle brackets, not the
+# name), and the name of this machine, become <host> —
 # in report.txt, the logs and env.sanitized, which shows those keys as <masked>.
 # Other names, such as those of managed servers or webhook targets, stay.
 # compose.yml stays a copy as it is.
@@ -48,12 +49,16 @@ done
 # The secret-bearing .env keys whose VALUES must never leave the host. SMTP_PASSWORD is a
 # regular .env key since the notification hub — without it the SMTP relay password would
 # end up in cleartext in env.sanitized / the logs of a bundle advertised as issue-safe (3.7).
-SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD)
+# SMTP_USER too: with some mail providers the user is itself an access token or a key ID.
+# Its rule stops at word edges (a short user like admin must not eat into adminhelper),
+# and it comes last: the rules of the other secrets run first, so a user that is a word
+# of one of them cannot cut that secret in two before its own rule masks it whole.
+SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER)
 
 # The .env keys whose values name this installation: host names, addresses, networks
 # and mail addresses. Masked only with --mask-hosts — a wrong domain or SAN is a
 # frequent cause the bundle is meant to show.
-HOST_KEYS=(DOMAIN EXTRA_SANS CA_FRPS_EXTRA_SANS ALLOWED_IPS FRP_SERVER_ADDR TRUSTED_PROXIES SMTP_HOST SMTP_USER SMTP_FROM)
+HOST_KEYS=(DOMAIN EXTRA_SANS CA_FRPS_EXTRA_SANS ALLOWED_IPS FRP_SERVER_ADDR TRUSTED_PROXIES SMTP_HOST SMTP_FROM)
 
 # build_redaction_sedfile <envfile> <sedfile> [mask_hosts]
 # Writes a sed script that masks the .env secret values plus generic token forms,
@@ -68,6 +73,9 @@ build_redaction_sedfile() {
                 # Skip empty or the well-known placeholder (not a real secret).
                 if [ -n "$val" ] && [ "$val" != "change-me-in-production" ]; then
                     esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
+                    if [ "$key" = SMTP_USER ]; then
+                        esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')"
+                    fi
                     printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
                 fi
             done < <(env_values "$envfile" "$key")

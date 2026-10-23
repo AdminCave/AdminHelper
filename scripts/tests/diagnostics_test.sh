@@ -31,7 +31,9 @@
 #   (i) --mask-hosts, which values become <host> rules and how they match: the
 #       longest first, at word edges, without regard to case; of a display name
 #       ("Name <address>") only the address, and no list part without a letter or
-#       a digit.
+#       a digit;
+#   (j) SMTP_USER is masked like the passwords, with and without --mask-hosts, in
+#       the logs and in sanitize_env, and only as a whole word.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it case (c) cannot run, and the test ends
@@ -365,6 +367,27 @@ COMPOSE_PROJECT_NAME=ah-prod
 EOF
 )"
 same "(i) display name, list parts, case in sanitize_env" "$exp_js" "$(sanitize_env "$env_j" 1)" || fail=1
+
+# --- (j) SMTP_USER: always masked like the passwords, as a whole word ---------------
+# With some mail providers the SMTP user is itself an access token or a key ID, so no
+# switch keeps it; with --mask-hosts it stays <redacted>, not <masked>. Its rule ends
+# at word edges: a short user like admin must not eat into adminhelper.
+env_u="$tmp/.env-smtpuser"
+printf 'SMTP_USER=relay9user@mail.example.com\nA=keep9\n' > "$env_u"
+exp_us="$(printf 'SMTP_USER=<redacted>\nA=keep9')"
+for mask in 0 1; do
+    sed_u="$tmp/redact-u$mask.sed"
+    build_redaction_sedfile "$env_u" "$sed_u" "$mask"
+    same "(j) SMTP_USER in the logs, mask_hosts=$mask" 'auth as <redacted> ok' \
+        "$(printf '%s\n' 'auth as relay9user@mail.example.com ok' | redact "$sed_u")" || fail=1
+    same "(j) SMTP_USER in sanitize_env, mask_hosts=$mask" "$exp_us" "$(sanitize_env "$env_u" "$mask")" || fail=1
+done
+printf 'SMTP_USER=admin\n' > "$env_u"
+sed_u="$tmp/redact-u-short.sed"
+build_redaction_sedfile "$env_u" "$sed_u"
+log_u="$(printf '%s\n' 'adminhelper-server-1 started' 'login admin failed')"
+same "(j) a short SMTP_USER as a whole word" "$(printf '%s\n' 'adminhelper-server-1 started' 'login <redacted> failed')" \
+    "$(printf '%s\n' "$log_u" | redact "$sed_u")" || fail=1
 unset -f uname
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
