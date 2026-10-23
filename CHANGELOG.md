@@ -65,6 +65,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   unveraendert weitergeben kann (leer, mit `"`, mit `%` — Windows Terminal setzt `%NAME%` ein —, mit Steuerzeichen
   oder mit Leerzeichen und abschliessendem `\`), oeffnet nicht, und der Desktop meldet das („Windows Terminal cannot
   pass … unchanged“).
+- **Desktop: ein frpc, der nach einem abgebrochenen Programmlauf weiterlief, endet beim naechsten Start:** Lief frpc
+  nach einem abgebrochenen Programmlauf (Task beenden, Absturz) weiter, endet er beim ersten Tunnel-Abgleich des
+  naechsten Starts desselben Workspace; seine Tunnel und Ports werden frei. Der Desktop beendet ihn ueber
+  `POST /api/stop` seiner Admin-API mit den Zugangsdaten aus der `visitor.toml`, die der abgebrochene Lauf
+  zurueckliess, und nur, wenn deren `webServer` genau der des Desktops ist; antwortet dort kein frpc, geht der Abgleich
+  weiter wie bisher. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen

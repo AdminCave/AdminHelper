@@ -506,6 +506,10 @@ const ADMIN_API_USER: &str = "adminhelper";
 /// How long frpc may take to answer a reload before the reconciliation restarts it instead.
 const RELOAD_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long a frpc an aborted run left behind may take to answer its stop, and then to close its
+/// admin port.
+const STOP_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// The config frpc runs: the allow-listed server TOML with the desktop's local head in its root,
 /// as the text frpc reads. `loginFailExit = false` keeps frpc retrying while frps is unreachable
 /// (frp's default ends it after the first failed login); `webServer.*` opens frpc's admin API on
@@ -951,15 +955,20 @@ fn same_sign_in(a: &SignedIn, b: &SignedIn) -> bool {
     a.server_url == b.server_url && a.username == b.username
 }
 
-/// Ask the running frpc to reload its config file through its admin API on loopback.
-async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
-    // An own client: no proxy may see the password, and a reload that hangs counts as failed.
+/// A client for frpc's admin API on loopback. An own one: no proxy may see the password, it
+/// follows no redirect, and a call that hangs past `timeout` counts as failed.
+fn admin_api_client(timeout: Duration) -> Result<reqwest::Client, AppError> {
     let client = crate::http_client::with_timeouts(reqwest::Client::builder())
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(RELOAD_TIMEOUT)
+        .timeout(timeout)
         .build()?;
-    let response = client
+    Ok(client)
+}
+
+/// Ask the running frpc to reload its config file through its admin API on loopback.
+async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
+    let response = admin_api_client(RELOAD_TIMEOUT)?
         .get(format!("http://127.0.0.1:{}/api/reload", head.port))
         .basic_auth(ADMIN_API_USER, Some(&head.password))
         .send()
@@ -971,6 +980,106 @@ async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
         )));
     }
     Ok(())
+}
+
+/// Ask the frpc behind `head` to stop through its admin API on loopback.
+async fn request_stop(head: &LocalHead) -> Result<(), AppError> {
+    let response = admin_api_client(STOP_TIMEOUT)?
+        .post(format!("http://127.0.0.1:{}/api/stop", head.port))
+        .basic_auth(ADMIN_API_USER, Some(&head.password))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(AppError::Connection(format!(
+            "frpc stop answered {}",
+            response.status()
+        )));
+    }
+    Ok(())
+}
+
+/// The local head in `config`, the text of a frpc config: `webServer` exactly as
+/// [`with_local_head`] writes it, on 127.0.0.1 for [`ADMIN_API_USER`] with a port from 1 to 65535
+/// and a hex password, and nothing else in it. The error never holds the password.
+fn local_head_in(config: &str) -> Result<LocalHead, AppError> {
+    let parsed: toml::Value =
+        toml::from_str(config).map_err(|e| parse_error("frpc config", config, &e))?;
+    let web_server = parsed.get("webServer").and_then(toml::Value::as_table);
+    let port = web_server
+        .and_then(|table| table.get("port"))
+        .and_then(toml::Value::as_integer)
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|&port| port != 0);
+    let password = web_server
+        .and_then(|table| table.get("password"))
+        .and_then(toml::Value::as_str)
+        .filter(|password| !password.is_empty() && password.bytes().all(|b| b.is_ascii_hexdigit()));
+    match (web_server, port, password) {
+        (Some(web_server), Some(port), Some(password))
+            if *web_server == admin_api(port, password) =>
+        {
+            Ok(LocalHead {
+                port,
+                password: password.to_string(),
+            })
+        }
+        _ => Err(AppError::Validation(
+            "frpc config: webServer is not the desktop's local head".to_string(),
+        )),
+    }
+}
+
+/// The local head in the `visitor.toml` an earlier process of this workspace left in `run_dir`;
+/// `None`, logged without the password, if there is none or it is not the desktop's.
+fn head_left_behind(run_dir: &Path) -> Option<LocalHead> {
+    let path = run_dir.join(VISITOR_CONFIG);
+    let head = match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::info!("[frpc] no frpc config left behind in {}", run_dir.display());
+            return None;
+        }
+        read => read
+            .map_err(AppError::from)
+            .and_then(|config| local_head_in(&config)),
+    };
+    head.inspect_err(|e| {
+        log::warn!(
+            "[frpc] {} names no frpc left behind to stop: {e}",
+            path.display()
+        )
+    })
+    .ok()
+}
+
+/// Stop the frpc an aborted earlier process of this workspace left running behind `head`, and
+/// wait up to [`STOP_TIMEOUT`] for its admin port to close: then it has ended and let go of the
+/// visitors' ports too. A failure is logged only; there is no frpc any more, or the one there is
+/// not ours.
+async fn stop_left_behind(head: &LocalHead) {
+    if let Err(e) = request_stop(head).await {
+        log::warn!(
+            "[frpc] the frpc left behind on admin port {} was not stopped: {e}",
+            head.port
+        );
+        return;
+    }
+    let closed = async {
+        let admin_port = (std::net::Ipv4Addr::LOCALHOST, head.port);
+        while tokio::net::TcpStream::connect(admin_port).await.is_ok() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    };
+    match tokio::time::timeout(STOP_TIMEOUT, closed).await {
+        Ok(()) => log::info!(
+            "[frpc] stopped the frpc left behind on admin port {}",
+            head.port
+        ),
+        Err(_) => log::warn!(
+            "[frpc] the admin port {} of the stopped frpc left behind did not close within {}s",
+            head.port,
+            STOP_TIMEOUT.as_secs()
+        ),
+    }
 }
 
 /// Give every visitor of `config` its local port from `ports` and rewrite it to listen there (see
@@ -1016,6 +1125,21 @@ async fn reconcile(
     who: SignedIn,
     since: u64,
 ) -> Result<RefreshOutcome, AppError> {
+    // Before the first reconciliation of this process clears the run dir, the frpc of the one that
+    // wrote it goes, should it still run: frpc does not end with the process that started it, and
+    // it keeps the tunnels of its sign-in open and the visitors' ports taken. The head in its
+    // visitor.toml reaches exactly that frpc, the password is its own. No guard across the await.
+    let left_behind = {
+        let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+        if guard.run_dir.is_none() {
+            head_left_behind(sidecar.run_dir())
+        } else {
+            None
+        }
+    };
+    if let Some(head) = left_behind {
+        stop_left_behind(&head).await;
+    }
     {
         let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
         if guard.run_dir.is_none() {
@@ -1221,6 +1345,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
+    use std::time::Duration;
 
     use super::{
         bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
@@ -3182,6 +3307,181 @@ method = "token"
 
         assert_eq!(outcome, RefreshOutcome::Unchanged);
         assert_eq!(names_in(run), ["identity", "kept", VISITOR_CONFIG]);
+    }
+
+    /// Writes into the run dir of `sidecar` what a process killed while its frpc ran leaves
+    /// there: that frpc's config, behind the head at `port` with the password c0ffee, as `edit`
+    /// changes it.
+    fn left_behind(sidecar: &DiskSidecar, port: u16, edit: fn(&mut toml::Table)) {
+        let mut config = parse(&with_local_head(SERVER_TOML, port, "c0ffee").unwrap());
+        edit(config.as_table_mut().unwrap());
+        std::fs::create_dir_all(sidecar.run_dir()).unwrap();
+        let text = toml::to_string(&config).unwrap();
+        std::fs::write(sidecar.run_dir().join(VISITOR_CONFIG), text).unwrap();
+    }
+
+    /// The `webServer` table of a frpc config.
+    fn web_server(config: &mut toml::Table) -> &mut toml::Table {
+        config
+            .get_mut("webServer")
+            .and_then(toml::Value::as_table_mut)
+            .unwrap()
+    }
+
+    /// The value of the Authorization header in the request head `request`.
+    fn authorization(request: &str) -> Option<&str> {
+        request.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("authorization")
+                .then_some(value.trim())
+        })
+    }
+
+    /// How long a test waits for a stop that must not come. The reconciliation awaits the reply
+    /// to a stop, so one it sent has reached its fake by the time it returns.
+    const NO_STOP_WITHIN: Duration = Duration::from_secs(1);
+
+    #[tokio::test]
+    async fn the_first_reconciliation_stops_the_frpc_an_aborted_run_left_behind() {
+        let ports = TempPorts::new();
+        let _keyring = enrolled();
+        let state = idle();
+        let sidecar = DiskSidecar::new(&ports.dir);
+        let (port, request) = serve_one(reply("200 OK", "")).await;
+        left_behind(&sidecar, port, |_| {});
+
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        let request = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .expect("no stop reached the frpc left behind")
+            .unwrap();
+        assert!(
+            request.starts_with("POST /api/stop HTTP/1.1\r\n"),
+            "{request}"
+        );
+        // base64("adminhelper:c0ffee")
+        assert_eq!(
+            authorization(&request),
+            Some("Basic YWRtaW5oZWxwZXI6YzBmZmVl")
+        );
+        assert_eq!(outcome, RefreshOutcome::Started);
+        // The old config went before the first write; what lies there is the new one.
+        let run = sidecar.run_dir();
+        assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()]);
+        assert_eq!(names_in(run), ["identity", VISITOR_CONFIG]);
+        let written = parse(&std::fs::read_to_string(run.join(VISITOR_CONFIG)).unwrap());
+        let new_head = sidecar.inner.writes.borrow()[0].1.clone();
+        assert_eq!(
+            written["webServer"]["password"].as_str(),
+            Some(new_head.password.as_str())
+        );
+
+        // Only the first reconciliation of a process stops: from then on the frpc behind the
+        // head in the run dir is its own.
+        let (port, request) = serve_one(reply("200 OK", "")).await;
+        left_behind(&sidecar, port, |_| {});
+        let since = lock(&state).generation;
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Unchanged);
+        assert!(
+            tokio::time::timeout(NO_STOP_WITHIN, request).await.is_err(),
+            "a later reconciliation stopped a frpc"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_first_reconciliation_stops_nothing_behind_a_head_that_is_not_the_desktops() {
+        let cases: [(&str, fn(&mut toml::Table)); 3] = [
+            ("webServer.addr 0.0.0.0", |config| {
+                web_server(config).insert("addr".to_string(), "0.0.0.0".into());
+            }),
+            ("a password that is not hex", |config| {
+                web_server(config).insert("password".to_string(), "not hex".into());
+            }),
+            ("no webServer", |config| {
+                config.remove("webServer");
+            }),
+        ];
+        for (case, edit) in cases {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let sidecar = DiskSidecar::new(&ports.dir);
+            let (port, request) = serve_one(reply("200 OK", "")).await;
+            left_behind(&sidecar, port, edit);
+
+            let outcome = reconcile(
+                &idle(),
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(outcome, RefreshOutcome::Started, "{case}");
+            assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()], "{case}");
+            assert!(
+                tokio::time::timeout(NO_STOP_WITHIN, request).await.is_err(),
+                "{case}: a stop went out"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_first_reconciliation_starts_when_the_frpc_left_behind_is_gone_or_refuses() {
+        for case in ["no listener", "401"] {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let sidecar = DiskSidecar::new(&ports.dir);
+            let (_reserved, port) = if case == "no listener" {
+                let (reserved, port) = crate::test_tls::refused_port();
+                (Some(reserved), port)
+            } else {
+                (None, serve_one(reply("401 Unauthorized", "")).await.0)
+            };
+            left_behind(&sidecar, port, |_| {});
+
+            let outcome = reconcile(
+                &idle(),
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(outcome, RefreshOutcome::Started, "{case}");
+            assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()], "{case}");
+            assert_eq!(
+                names_in(sidecar.run_dir()),
+                ["identity", VISITOR_CONFIG],
+                "{case}"
+            );
+        }
     }
 
     #[tokio::test]
