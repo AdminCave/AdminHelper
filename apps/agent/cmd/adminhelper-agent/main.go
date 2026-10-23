@@ -160,7 +160,7 @@ func monitorInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
 	cmd.Flags().StringVar(&services, "services", "", "Kommagetrennte Service-Namen")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "SSL-Verifikation deaktivieren")
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.MarkFlagRequired("url")
 	cmd.MarkFlagRequired("api-key")
 	cmd.MarkFlagRequired("server-id")

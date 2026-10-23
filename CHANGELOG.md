@@ -7,6 +7,32 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Event `user.promoted` bei einer Hochstufung zum Admin:** Setzt `PUT /api/users/{id}` das Admin-Recht eines
+  Benutzers von `false` auf `true`, feuert der Server das Event `user.promoted` mit `id` und `username`; Event-Hooks
+  koennen es abonnieren (Auswahl im Web mit Beschriftung DE+EN). Die Glocke meldet die Hochstufung unter
+  „Sicherheit“ wie einen neu angelegten Admin („User promoted to admin: <Name>“, Schweregrad `warning`). Eine
+  Herabstufung feuert kein Event. Doku: Monitoring (DE+EN), Hooks, Server und API-Referenz fuer Entwickler (DE+EN).
+- **`SMTP_CA_FILE` fuer Relays mit eigener CA, im Notification-Hub und im Monitoring:** Die optionale Variable nennt
+  eine PEM-Datei im Container mit der CA des Relays (selbstsigniertes Zertifikat oder Firmen-CA). Hub und E-Mail-Kanal
+  der Alert-Regeln laden sie zusaetzlich zu den System-CAs, im Monitoring fuer jeden Relay, auch den einer Regel;
+  Zertifikat und Hostname werden weiter geprueft. Eingebunden wird sie per `docker-compose.override.yml` (Variable und
+  Datei fuer `server`, `scheduler` und `monitoring`), nicht ueber `docker-compose.yml` oder `.env.example`. Laesst
+  sich die Datei nicht laden, geht keine Mail hinaus: Der Hub nennt den Grund im Log des `scheduler`-Dienstes, das
+  Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
+  Betrieb & Konfiguration, Monitoring (DE+EN).
+- **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
+  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
+  `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
+  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
+  bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
+  und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
+  Troubleshooting (DE+EN), README.
+
 ### Changed
 
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
@@ -16,6 +42,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
   zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
   Entwickler (DE+EN).
+- **Web: FRP-Konfigurationsvorschau wird beim Schliessen geleert:** Der Text von `frps.toml` bzw. `visitor.toml`
+  (mit Auth-Token, Dashboard-Passwort bzw. STCP-Schluesseln) bleibt nach dem Schliessen der Vorschau nicht mehr bis
+  zum Verlassen der FRP-Seite im Speicher der Seite.
 - **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
   ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
   und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
@@ -33,6 +62,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
   Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
   URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Roadmap ohne `neu`-Deckel (Entwickler-Werkzeuge, Kevin 2026-10-22):** `roadmap.py add` nimmt jede neue Zeile an,
+  auch wenn schon 20 oder mehr Zeilen `neu` sind; Exit 3 gibt es nicht mehr. `neu N/20` im WIP-Kopf bleibt Anzeige
+  wie `aktiv N/2`. Der Wochenlauf (`heavy.sh`) laesst einen bestaetigten Fund damit nicht mehr ohne Roadmap-Zeile,
+  die Notiz `ROADMAP FULL` im Report entfaellt. Anleitung: `DEVELOPMENT.md`, „Die Roadmap als Skript: `roadmap.py`",
+  und der Skill `/roadmap`.
 - **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
   gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
   `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
@@ -51,6 +85,190 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
   Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
   Entwickler (DE+EN), `/test`-Skill.
+- **Desktop, Provisionierungs-Tab: Format und Quoting im erzeugten Befehl:** Token und Server-ID aus der Serverantwort
+  werden auf ihr Format geprueft (Token aus Buchstaben, Ziffern, `_` und `-`, Server-ID als UUID); passt eins nicht,
+  erscheint statt der Befehle eine Meldung, und die Token-Liste wird trotzdem neu geladen. Werte mit Sonderzeichen
+  stehen im erzeugten Befehl in einfachen Anfuehrungszeichen; die vom Server erzeugten Werte sehen aus wie bisher.
+- **Desktop: Sync nur aus der Quelle des eigenen Sync-Workspace:** Der Sync laedt nur im Sync-Workspace und nur
+  dessen gespeicherte Sync-URL, nie mit dem Geraete-Zertifikat. Eine andere URL, auch desselben Servers, lehnt er ab;
+  die Meldung nennt keine URL. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: Ansible-Lauf in einem Command:** Ein Ansible-Lauf laedt Dateiname und Inhalt des Playbooks im Backend
+  selbst vom angemeldeten Server; die Oberflaeche uebergibt nur die Playbook-Id und die Ziele. Die Tauri-Commands
+  `ansible_generate_inventory`, `ansible_write_playbook` und `ansible_launch` sind durch `ansible_run` ersetzt;
+  scheitert ein Schritt vor dem Start, loescht der Lauf die schon geschriebenen Temp-Dateien. Doku: Desktop fuer
+  Entwickler, Ansible (DE+EN).
+- **Agent: `provision` und `monitor init` nehmen je Aufruf genau eine Vertrauensquelle:** Beide lehnen `--cacert`
+  zusammen mit `--insecure` ab, wie `provision` schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server
+  bereits. Der Aufruf scheitert, bevor er etwas schreibt oder (bei `provision`) den Einmal-Token sendet, und die
+  Meldung nennt beide Flags. Legt der Server bei `--insecure` kein Zertifikat zum Pinnen vor, bricht `provision` ab,
+  statt ohne Pruefung weiterzumachen; `monitor init` bricht ebenso ab, wenn es das Zertifikat nicht holen oder
+  speichern kann, und schreibt nie `INSECURE=1` in `monitor.conf`. `--insecure` gilt so nur fuer den einen Aufruf.
+  Doku: Agent-Deployment (DE+EN).
+- **Agent: `diagnostics` legt jeden Bericht als neue Datei an:** Der Bericht heisst
+  `adminhelper-agent-diagnostics-<Zeitstempel>-<Zufall>.txt`, liegt wie bisher im Temp-Verzeichnis und hat die Rechte
+  0600; eine vorhandene Datei ueberschreibt `diagnostics` nie. Den Pfad gibt der Befehl wie bisher aus.
+- **Agent: die frpc.toml des Servers nur in der Form, die der Server erzeugt:** Der Agent wendet eine frpc.toml des
+  Servers nur an, wenn jede Zeile die Form des Generators hat: leer, `[transport.tls]`, `[[proxies]]` oder
+  `schluessel = wert` mit einem einzeiligen Wert. In der Wurzel nimmt er nur die Schluessel, die der Server schreibt,
+  in einem Proxy keinen Schluessel, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben
+  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels speichert der
+  Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
+  wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
+  der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+- **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
+  Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
+  Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
+  FRP-Server-Konfiguration. Bisher stand der Fehler samt Traceback im Log.
+- **Server: `.secret_key`, `.bootstrap_token` und `.bootstrap_setup` entstehen von Anfang an mit Modus 0600:** Den
+  selbst erzeugten Schluessel (kein `SECRET_KEY` gesetzt), den Hash des Setup-Tokens und den Setup-Token schreibt der
+  Server je in eine temporaere Datei im selben Verzeichnis, die von Anfang an nur fuer ihren Besitzer lesbar ist, und
+  benennt sie danach atomar um, wie die `frps.toml`. Bisher entstanden die Dateien mit den Rechten der umask und
+  bekamen erst danach Modus 0600. Ein Fehler beim Entfernen der Bootstrap-Dateien steht mit Dateiname und Fehlertyp im
+  Log; bisher wurde er verworfen.
+- **Server: die Log-Zeilen zum Redis-Backend des Rate-Limits nennen nur Schema, Host und Port:** Von `REDIS_URL`
+  nennen sie nur Schema, Host und Port (bei `unix://` den Socket-Pfad), von einem Verbindungsfehler nur den Typ, wie
+  die Log-Zeilen des Alert-Webhooks. Bisher standen die ganze URL und der Fehlertext im Log.
+- **Server: `POST /api/internal/events` lehnt die Quelltypen `frp_config` und `frps` ab:** Ein Event mit
+  `source_type` `frp_config` oder `frps` ergibt `422` an `source_type`; nichts wird geschrieben. Unter diesen
+  Quelltypen fuehrt der Server seine eigenen Meldungen. Der Monitoring-Dienst sendet `server` und ist nicht betroffen.
+- **Audit-Log: Hooks, Provisionierungs-Token und Monitoring-Proxy:** Das Audit-Log erfasst jetzt die Aktionen der
+  Admins an Hooks (`hook.created`, `hook.updated` mit den geaenderten Feldern in `detail`, auch fuer das Ein- und
+  Ausschalten, `hook.deleted`, `hook.token_rotated`, `hook.run` mit `success` oder `failure`), das Erzeugen eines
+  Provisionierungs-Tokens (`provision.token.minted` mit dem Server als Objekt) und Schreibzugriffe ueber den
+  Monitoring-Proxy (`monitoring.post`, `monitoring.put`, `monitoring.delete` mit dem weitergeleiteten Pfad und
+  `status=<HTTP-Status>` in `detail`; bricht die Weiterleitung nach dem Senden ab, Status `error` mit dem Typ des
+  Fehlers). Kein Token, kein Skript, kein Fehlertext eines Laufs und kein Inhalt einer Anfrage steht im Eintrag; der
+  Webhook-Trigger und lesende Zugriffe schreiben nichts. `user.updated` nennt in `detail` die geaenderten Felder
+  (`password`, `is_admin=true|false`, `server_ids`). Routen und Antworten bleiben gleich. Doku: Betrieb (DE+EN),
+  API-Referenz fuer Entwickler (DE+EN).
+- **`python -m app.cli create-admin` feuert `user.created` wie die API:** Dieselbe Payload wie `POST /api/users`
+  (`id`, `username`, `is_admin: true`), damit erreichen Event-Hooks und die Glocke („Sicherheit“) auch diesen Weg; auf
+  einer frischen Installation meldet die Glocke dem ersten Admin so seine eigene Anlage. Doku: Monitoring (DE+EN),
+  Hooks fuer Entwickler (DE+EN).
+- **Monitoring: SMART-Serien kommen nur noch vom Check `smart_health` (R-0633):** Der Agent-Push schreibt keine
+  eigenen SMART-Serien (`monitor_smart_temp_<Geraet>`, `monitor_smart_reallocated_...`, `monitor_smart_pending_...`)
+  mehr nach VictoriaMetrics; diese Werte schreibt allein der Check `smart_health` mit seinen Check-Labels. Die
+  bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
+  Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
+  Entwickler (DE+EN).
+- **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
+  und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
+  `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
+  Pakete fuer Hooks gehoeren ins Image. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Hooks: Webhook-Trigger prueft seinen JSON-Body wie jeder andere Request-Body:** Ein NUL-Byte oder ein einzelnes
+  Surrogat (U+D800 bis U+DFFF; JSON schreibt beide nur als Escape) in einem String oder Schluessel des Bodys von
+  `POST /api/hooks/trigger` und `/api/hooks/trigger/{token}` ergibt `422` mit dem Ort im `loc`, statt das Skript damit
+  zu starten; bisher endete die Antwort mit 500, sobald das Skript den Wert zurueckgab, und ein Skript, das ihn
+  speicherte, scheiterte an der Datenbank. Rate-Limit, Token und Aktiv-Status werden weiter vorher geprueft; ein Body,
+  der kein JSON ist, kommt wie bisher als leeres `payload` an. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **`create-admin --password` gibt das Passwort vor dem Anlegen ueber stdin an einen frischen Prozess weiter:**
+  `python -m app.cli create-admin --password …` ersetzt sich vor dem Anlegen des Benutzers per `exec` durch
+  `create-admin --password-stdin` und legt das Passwort dafuer auf stdin; Hooks auf `user.created` laufen so in einem
+  Prozess, dessen Kommandozeile das Passwort nicht traegt. Bis zum Neustart steht es dort weiter, Interpreter-Optionen
+  des ersten Aufrufs (`python -X …`) gelten danach nicht mehr, und Meldungen, die der Server beim Laden seiner
+  Konfiguration auf stderr schreibt, erscheinen zweimal. Ein Passwort mit Zeilenumbruch (das `--password-stdin`
+  nie annehmen konnte) oder eines, das samt Zeilenumbruch nicht in den Puffer einer Pipe passt (unter Linux meist
+  64 KiB), lehnt `--password` mit Exit 2 ab. Empfohlen bleibt `--password-stdin`. Doku: README.
+- **Compose: alle Dienste mit no-new-privileges und Prozessgrenze:** Jeder Dienst in `docker-compose.yml` laeuft mit
+  `no-new-privileges` (bisher nur frps) und hat eine Prozessgrenze (`pids_limit`, Prozesse und Threads): server 4096;
+  scheduler, monitoring und victoria 1024; postgres, gateway, ca-issuer und frps 512; redis 256. Der Dienst monitoring
+  setzt `net.ipv4.ping_group_range` selbst, damit der Ping-Check ohne Sonderrechte laeuft. Eine Grenze hebt man per
+  `docker-compose.override.yml` an, die `update.sh` stehen laesst; wer `WEB_CONCURRENCY` stark erhoeht, prueft die
+  Grenze des server. Doku: Betrieb (DE+EN).
+- **Compose: Speichergrenze je Dienst:** Jeder Dienst in `docker-compose.yml` hat eine Speichergrenze (`mem_limit`):
+  postgres und victoria 8 GiB, server 6 GiB, monitoring 4 GiB, scheduler und frps 2 GiB, gateway 1 GiB, ca-issuer und
+  redis 512 MiB. Die Grenzen liegen weit ueber dem Bedarf im Leerlauf und reservieren keinen Speicher; ist eine
+  erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in
+  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics richtet seine Caches nach
+  seiner Grenze aus (60 Prozent davon) statt nach dem Arbeitsspeicher des Hosts. Eine Grenze hebt man per
+  `docker-compose.override.yml` an. Doku: Betrieb (DE+EN).
+- **Compose: Gateway nur mit den Capabilities, die nginx braucht:** Der Dienst gateway laeuft mit `cap_drop: [ALL]`
+  und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker
+  laufen als Nutzer `nginx` ohne Capabilities. Wie bei frps setzt Compose `net.ipv4.ip_unprivileged_port_start` auf 0,
+  damit nginx die Ports 443, 8444 und 8445 ohne `NET_BIND_SERVICE` oeffnet. Doku: Betrieb (DE+EN).
+- **Gateway: Verbindungsgrenzen und kurze Timeouts auf den certless Ebenen:** Auf :8444 (Enrollment) und :8445
+  (Paket-Repo) beantwortet das Gateway mehr als 16 bzw. 64 gleichzeitige Anfragen je Client-Adresse und mehr als 128
+  bzw. 256 je Ebene mit 429. Dort schliesst es eine Verbindung, deren Anfrage-Kopf nicht binnen 10 s ankommt oder deren
+  Body laenger als 10 s stockt, und untaetige Keep-Alive-Verbindungen nach 15 s (bisher 60 s bzw. 75 s). Die
+  Daten-Plane :443 bleibt unveraendert. Doku: Betrieb (DE+EN).
+- **Compose: Netz frpedge ohne IP-Masquerading:** Das Netz `frpedge`, in dem frps allein haengt, legt Compose ohne
+  IP-Masquerading an: frps baut keine Verbindungen ueber den Host hinaus auf, seine veroeffentlichten Ports bleiben
+  erreichbar. Die Betriebs-Doku nennt, was bleibt (Pakete ohne Antwort, Dienste des Hosts selbst), und zeigt eine
+  optionale Regel in der Kette `DOCKER-USER`. Die Doku der Netze nennt Postgres neben Gateway und ca-issuer im Netz
+  `pki`. Doku: Betrieb, Entwicklung (DE+EN).
+- **Compose: CA-Root-Passphrase als Secret statt Umgebungsvariable:** Der ca-issuer bekommt `CA_ROOT_PASSPHRASE`
+  als Compose-Secret, eine Datei unter `/run/secrets`, und nicht mehr als Umgebungsvariable; damit steht sie nicht
+  mehr in der Umgebung des Containers (`docker inspect`, `/proc/<pid>/environ`). Compose liest den Wert weiter aus
+  `CA_ROOT_PASSPHRASE` in der `.env` und setzt `CA_ROOT_PASSPHRASE_FILE` selbst. Nach dem ersten Start darf der Wert
+  leer sein; danach erzeugt `docker compose up -d` den ca-issuer neu, und die Datei verschwindet (ein Label des
+  Dienstes traegt, ob ein Wert gesetzt ist, nie den Wert). Die Zeile `CA_ROOT_PASSPHRASE=` muss bleiben: fehlt sie,
+  bricht `docker compose up` ab. Voraussetzung ist Docker Compose v2.6 oder neuer. Doku: Installation (DE+EN).
+- **init-secrets.sh: CA-Root-Passphrase nur bei frischer Installation:** `scripts/init-secrets.sh` erzeugt
+  `CA_ROOT_PASSPHRASE` nur noch in dem Lauf, der auch `POSTGRES_PASSWORD` erzeugt, also bei einer frischen
+  Installation. Bisher fuellte das naechste Update (`update.sh` ruft das Skript auf) einen geleerten Wert mit einer
+  neuen Passphrase, die nicht zum vorhandenen Root-Key passte. Ist `POSTGRES_PASSWORD` gesetzt, bleibt ein leerer Wert
+  leer, und das Skript sagt es in einer Zeile. Wer `POSTGRES_PASSWORD` vor der Installation von Hand setzt, setzt auch
+  `CA_ROOT_PASSPHRASE` von Hand, sonst bricht der erste Start des ca-issuer ab. `restore.sh` sagt, dass `.env.restored`
+  die Zeile `CA_ROOT_PASSPHRASE=` braucht, bevor sie die `.env` ersetzt. Doku: Betrieb (DE+EN).
+- **Server und Compose: Client-Adresse hinter dem Gateway:** Compose setzt `TRUSTED_PROXIES` beim server auf den
+  Dienst `gateway`, gefolgt von einem Wert aus der `.env`; `TRUSTED_PROXIES` nimmt dafuer neben Adressen und Netzen
+  auch Hostnamen, die der Server alle 30 s neu aufloest. Hinter dem Gateway beziehen sich damit die Ratenlimits je
+  Adresse (Login, Webhook-Trigger, Agent-Reports), `ALLOWED_IPS` und die Adresse im Audit-Log auf den Client statt auf
+  das Gateway. Forwarded-Header anderer Gegenstellen wertet der Server weiterhin nicht aus, und `TRUST_PROXY_HEADERS`
+  wirkt unter Compose nicht mehr. Wer `ALLOWED_IPS` gesetzt hat, prueft vor dem Update, dass die Netze der Clients
+  enthalten sind: Bisher pruefte der Server die Adresse des Gateways, danach weist er Clients ausserhalb der Liste mit
+  403 ab. Steht ein weiterer Proxy vor dem Gateway, sieht der Server dessen Adresse; ein Eintrag in `TRUSTED_PROXIES`
+  aendert daran nichts. Doku: Installation, Benutzer (DE+EN).
+- **Web: Hinweisseite fuer Benutzer ohne Admin-Rechte (R-0721):** Benutzer ohne Admin-Rechte sehen im Web-Panel
+  einen uebersetzten Hinweis, dass das Panel Admins vorbehalten ist und der Desktop-Client der Weg ist (DE „Web-Panel
+  nur fuer Admins“, EN „Web panel for admins only“), statt der alten Platzhalterseite „Nicht verfuegbar“. Doku:
+  Admin-Handbuch, Benutzer (DE+EN).
+- **Web: Seite „nicht gefunden“ fuer Admins (R-0721):** Eine unbekannte Adresse im Web-Panel zeigt Admins eine
+  uebersetzte Seite „nicht gefunden“ (DE „Seite nicht gefunden“, EN „Page not found“) mit Link zur
+  Benutzerverwaltung, statt der alten Platzhalterseite „Nicht verfuegbar“.
+- **Monitoring: E-Mail-Alert-Regeln mit eigenem `smtp_host` melden sich nur mit eigenen Zugangsdaten an:**
+  `SMTP_USER` und `SMTP_PASSWORD` gelten nur fuer den Relay aus `SMTP_HOST` (Vergleich ohne Gross-/Kleinschreibung).
+  Eine Regel, die einen anderen `smtp_host` setzt, meldet sich nur mit ihren eigenen `smtp_user` und `smtp_password`
+  an; fehlt eins davon, verschickt sie ohne Anmeldung. Verlangt ihr Relay eine Anmeldung, steht im Alert-Log dann
+  `SMTP server refused the message`; Abhilfe sind eigene `smtp_user` und `smtp_password` in der Regel. Regeln ohne
+  `smtp_host` oder mit dem Host aus `SMTP_HOST` verhalten sich wie bisher. Doku: Monitoring (DE+EN).
+- **Monitoring: Template-Antworten zeigen ein `smtp_password` in Alert-Definitionen als `***`, wie die
+  Alert-Regeln:** Das gilt fuer `GET /templates`, `GET /templates/{id}`, die Antworten von `POST`/`PUT /templates` und
+  von `POST /templates/{id}/builtin-update` sowie fuer `current` in `GET /templates/{id}/builtin-update`. Ein
+  `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort der
+  Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition speichert dann keins, ebenso
+  `POST /templates` mit `***` oder leerem Wert. Wer ein Template aus einer API-Antwort neu anlegt, gibt das Passwort im
+  `POST` neu ein.
+- **Monitoring: Beim Bearbeiten von E-Mail-Alert-Regeln und Alert-Definitionen von Templates gilt `***` nur bei
+  unveraendertem `smtp_host`/`smtp_port` als „Passwort unveraendert“:** Ein `PUT /alerts/{id}` oder
+  `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort nur, solange
+  `smtp_host` (ohne Gross-/Kleinschreibung) und `smtp_port` gleich bleiben. Aendert derselbe Aufruf den Relay, lehnt
+  er `***` mit 422 ab und speichert nichts; ohne Passwort entfaellt das gespeicherte. Nach einem Relay-Wechsel ist das
+  Passwort neu einzugeben. Doku: Monitoring (DE+EN).
+- **Notification-Hub: E-Mails nutzen STARTTLS auf jedem Port ausser 465 und pruefen Zertifikat und Hostnamen des
+  Relays, wie der E-Mail-Kanal des Monitorings:** Ein Relay ohne STARTTLS (etwa ein lokaler Mailserver auf Port 25)
+  oder mit einem Zertifikat, dem der Container nicht vertraut oder das nicht zu `SMTP_HOST` passt, nimmt danach keine
+  Hub-Mails mehr an: Die Outbox wiederholt bis `NOTIFICATION_MAX_ATTEMPTS` und markiert die Mail dann als
+  fehlgeschlagen, der Grund steht im Log des `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Abhilfe:
+  `SMTP_HOST` auf den Namen im Zertifikat des Relays setzen, fuer eine eigene CA `SMTP_CA_FILE` (siehe Added); der
+  Relay muss STARTTLS oder implizites TLS auf Port 465 anbieten. Doku: Betrieb & Konfiguration (DE+EN).
+- **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
+  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, und benennt sie erst
+  nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
+  ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
+  bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+- **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
+  der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
+  jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
+  weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
+
+### Removed
+
+- **Agent: kein PKI-Bundle aus der Aktivierungsantwort:** `provision` entpackt kein PKI-Bundle mehr; ein mitgeschicktes
+  Feld `pkiBundle` ignoriert der Agent. Der Server schickt es seit 0.28.0 leer, und dieser Agent aktiviert nur ueber
+  Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. `provision` legt auch kein Verzeichnis `frp/pki` mehr
+  an; ein vorhandenes bleibt unberuehrt, und die Pakete legen `/etc/frp/pki` weiter leer an. Doku: Agent-Entwicklerseite
+  (DE+EN).
 
 ### Fixed
 
@@ -104,6 +322,170 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
   `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
   vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
+- **Test des Monitoring-Entrypoints: Leck-Probe mit eigenem Zufallspasswort (R-0824):** Der Server-Test
+  `test_the_entrypoint_of_monitoring_creates_its_database_once` prueft, dass ein gescheiterter Lauf des Entrypoints
+  kein Passwort ausgibt. Er suchte dazu das Passwort der Test-Datenbank in der Ausgabe; ohne `DATABASE_URL`
+  (testcontainers, Passwort `test`) steht es im Datenbanknamen der Fehlermeldung, und die Probe schlug an, ohne dass
+  ein Passwort ausgegeben wurde (Sammellauf rot). Jetzt bekommt der gescheiterte Lauf ein eigenes Zufallspasswort,
+  und die Probe sucht dieses.
+- **Web-Panel: der Vite-Dev-Server proxied nur `/api`, auf `http://127.0.0.1:8080` (R-0669):** Der Dev-Server
+  leitete `/auth`, `/api` und `/health` an `http://localhost:8000` weiter. Der Server hat nur Routen unter `/api`, und
+  DEVELOPMENT.md und die Entwickler-Doku starten ihn auf `127.0.0.1:8080`. Jetzt geht nur `/api` dorthin; ein Test
+  prueft die Praefixe gegen den OpenAPI-Snapshot des Servers. Doku: Web-UI fuer Entwickler (DE+EN).
+- **Troubleshooting nennt nur Agent-Befehle, die es gibt (R-0731):** Fuer einen Durchlauf von Hand mit
+  Debug-Ausgabe steht dort jetzt `sudo adminhelper-agent run --once --log-level debug` statt `run --verbose` und
+  `monitor run --dry-run`. Zum Client-Zertifikat des Agents steht dort, wie der Agent es erneuert (bei jedem Lauf,
+  sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
+  prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
+  Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
+- **Server: ein einzelnes Surrogat in einem Request-Body ergibt `422` wie ein NUL-Byte:** Ein einzelnes Surrogat
+  (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben) in irgendeinem String eines Request-Bodies, als Wert oder
+  Schluessel und beliebig tief, ergibt `422` an seiner Stelle; nichts wird gespeichert. Bisher endeten solche Eingaben
+  ausserhalb der frp-Felder und der Felder mit Laengengrenze mit `500`, in Tags wurden sie gespeichert, und jede Antwort
+  mit der Zeile endete danach mit `500`. In `extra_config` der FRP-Server-Konfiguration nennt der Fehler jetzt den
+  Schluessel, unter dem der Wert steht.
+- **Desktop unter Windows: Windows Terminal bekommt jedes Argument unveraendert:** Oeffnet der Desktop SSH oder einen
+  Ansible-Lauf in Windows Terminal, kommen Benutzer, Schluesselpfad und Ansible-Pfade als je ein Argument an, auch
+  mit `;` (Windows Terminal las ein `;` als Trenner seiner eigenen Befehle). Ein Wert, den Windows Terminal nicht
+  unveraendert weitergeben kann (leer, mit `"`, mit `%` — Windows Terminal setzt `%NAME%` ein —, mit Steuerzeichen
+  oder mit Leerzeichen und abschliessendem `\`), oeffnet nicht, und der Desktop meldet das („Windows Terminal cannot
+  pass … unchanged“).
+- **Desktop unter Windows ohne Windows Terminal: die Konsole bekommt jedes Argument unveraendert:** Ist Windows
+  Terminal nicht installiert, oeffnet der Desktop SSH oder einen Ansible-Lauf in einer neuen Konsole mit genau einer
+  cmd-Ebene statt ueber `cmd /C start`. Argumente mit `&`, `|`, `<`, `>`, `^`, `!`, `;`, Klammern oder Leerzeichen
+  kommen unveraendert an (vorher konnte etwa `a&b` als `a^&b` ankommen). Ein Wert mit `"`, `%` oder Steuerzeichen
+  oeffnet nicht, und der Desktop meldet das („The Windows console (cmd) cannot pass … unchanged“). Der Fenstertitel
+  der Konsole kann sich dadurch aendern.
+- **Desktop: ein frpc, der nach einem abgebrochenen Programmlauf weiterlief, endet beim naechsten Start:** Lief frpc
+  nach einem abgebrochenen Programmlauf (Task beenden, Absturz) weiter, endet er beim ersten Tunnel-Abgleich des
+  naechsten Starts desselben Workspace; seine Tunnel und Ports werden frei. Der Desktop beendet ihn ueber
+  `POST /api/stop` seiner Admin-API mit den Zugangsdaten aus der `visitor.toml`, die der abgebrochene Lauf
+  zurueckliess, und nur, wenn deren `webServer` genau der des Desktops ist; antwortet dort kein frpc, geht der Abgleich
+  weiter wie bisher. Unter Windows endet frpc schon mit dem Programm, auch nach Task beenden oder einem Absturz: Der
+  Desktop legt ihn gleich nach dem Start in ein Job Object mit `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; gelingt das nicht,
+  steht eine Warnung im Log, und der naechste Start beendet ihn wie oben. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: RDP mit Anmeldung von Hand haelt nur noch das Ende der xfreerdp-Ausgabe (R-0646):** Startet der Desktop
+  xfreerdp ohne Passwort (die Anmeldung geschieht in xfreerdp), haelt er von dessen Ausgabe nur noch die letzten
+  8 KiB je Strom (stdout, stderr) statt der ganzen Sitzung, wie schon der Start mit Passwort. Die Meldungen beim Ende
+  bleiben: Eine Fehlerzeile im gehaltenen Ende ergibt dieselbe Meldung wie bisher, und „RDP Verbindung
+  fehlgeschlagen“ kommt nur, wenn xfreerdp nie eine Verbindung meldete. Eine Fehlerzeile, die frueh in einer langen,
+  danach laufenden Sitzung stand, ergibt am Ende keine Meldung mehr.
+- **Monitoring: keine Datenbankverbindung waehrend Messung und Metrik-Abfrage (R-0615):** Ein Check, ein manueller
+  Lauf (`POST /checks/{id}/run`) und ein Metrik-Abruf (`GET /checks/{id}/metrics`) halten waehrend der Messung bzw.
+  der VictoriaMetrics-Abfrage keine Datenbankverbindung mehr; ein haengendes Ziel kann den Verbindungs-Pool des
+  Monitorings nicht mehr erschoepfen, Agent-Reports und API-Anfragen bekommen weiter eine Verbindung. Wird ein Check
+  waehrend seines Laufs geloescht, verwirft das Monitoring dessen Ergebnis ohne Fehlerprotokoll.
+- **Monitoring: Schreiben nach VictoriaMetrics blockiert weder Checks noch Agent-Reports (R-0615, R-0636):** Die
+  Metriken gehen in einen Puffer (bis 100 000 Zeilen), den ein eigener Thread in Stapeln bis 10 000 Zeilen nach
+  VictoriaMetrics schreibt; ein haengendes VictoriaMetrics haelt keinen Check und keinen Agent-Report mehr bis zu
+  rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht mehr dreimal gesendet,
+  sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx werden weiter bis zu
+  dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl hoechstens einmal je
+  Minute; beim Herunterfahren leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein nicht erreichbares VictoriaMetrics erscheint als Fehler (R-0636):** Scheitert eine Abfrage an
+  VictoriaMetrics, antwortet der Metrik-Abruf (`GET /checks/{id}/metrics`) mit HTTP 502 „Metrics store unavailable“
+  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der
+  Check `disk_forecast` steht dann auf `unknown` mit „Metrics store unavailable“ statt „No disk history yet“. Doku:
+  Monitoring fuer Administratoren (DE+EN).
+- **Monitoring: CPU- und RAM-Verlauf eines Servers kommt einmal statt doppelt (R-0633):** Der Check
+  `agent_resources` schreibt CPU und RAM nicht mehr zusaetzlich mit seinen Check-Labels nach VictoriaMetrics, sondern
+  nur noch seinen Status; die Werte schreibt allein der Agent-Push je Server. Der Metrik-Abruf eines
+  `agent_resources`-Checks (`GET /checks/{id}/metrics`) liest fuer CPU, RAM, Platten und Temperaturen nur diese
+  Serien ohne `check_id` und liefert je Wert eine Serie statt zwei gleich beschrifteter; die Liste der aktuellen
+  Werte im Desktop brach daran ab. Die bisherigen Serien mit Check-Labels bleiben bis zum Ende der Retention in
+  VictoriaMetrics, werden aber nicht mehr gelesen. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
+  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
+  jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
+  String (sonst wie ohne das Feld) und Messwerte nur als JSON-Zahl: einen Zahl-String wie `"97"` schreibt der
+  Agent-Push nicht mehr als Messwert. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein Datenbankfehler bei einem Check eines Agent-Reports kostet nur diesen Check (R-0635):** Jeder
+  Push-Check eines Agent-Reports wird in einem eigenen Savepoint ausgewertet. Scheitert ein Check an der Datenbank
+  (Deadlock, Abbruch beim Sperren seines Zustands, gescheitertes Schreiben), verwirft das Monitoring nur dessen
+  Ergebnis samt Status-Punkt und Alert; bisher scheiterten alle folgenden Checks und das Speichern, der Report endete
+  mit HTTP 500, und die Ergebnisse des ganzen Reports gingen verloren.
+- **Monitoring: eine Alert-Regel mit sehr grossem oder leerem Cooldown bricht den Versand nicht mehr ab (R-0631):**
+  Eine Regel mit `cooldown_minutes` ueber rund 1 065 000 000 (etwa 2000 Jahre, das Schema erlaubt bis 2 147 483 647)
+  oder ohne Wert (`null`, etwa nach `PUT /alerts/{id}` mit `"cooldown_minutes": null`) brach beim Pruefen ihres
+  Cooldowns den Versand ab: Die folgenden Regeln sendeten nicht, die Glocke bekam kein Ereignis, die Meldung war
+  verloren. Jetzt zaehlt ein leerer Cooldown als der Default 30 Minuten, und ein Cooldown, der vor den
+  Kalenderanfang reicht, zaehlt jeden frueheren erfolgreichen Versand der Regel fuer den Check.
+- **Monitoring: ein Check mit sehr langem Namen erreicht die Glocke wieder (R-0637):** Der Titel des
+  Glocken-Ereignisses ist der Betreff der Meldung (`[AdminHelper Monitor] <STUFE>: <Check-Name>`); ab rund 480 Zeichen
+  Check-Name war er laenger als die 512 Zeichen, die der Server annimmt, der Server lehnte das Ereignis mit HTTP 422
+  ab, und Glocke, Hub-Mail und Event-Hook blieben aus. Jetzt wird der Titel auf 512 Zeichen gekuerzt (die ersten 511
+  und `…`); der Betreff von Mail und Webhook der Alert-Regeln bleibt ungekuerzt.
+- **Monitoring: der HTTP-Check liest hoechstens 1 MiB, und `timeout` gilt fuer den ganzen Check (R-0616):** Der
+  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; ohne `search_string` liest
+  er ihn gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den
+  ganzen Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt
+  den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
+  found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
+  keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+- **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
+  galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
+  (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
+  zeigte bei `TZ` ungleich UTC die Ortszeit als UTC, auch bei Intervall-Hooks; jetzt steht dort der naechste Lauf in
+  UTC. Doku: Server-Entwicklerdoku (DE+EN).
+- **Hooks: Hintergrundprozess eines Skripts verzoegert die Antwort nicht mehr ueber 60 s (R-0778):** Startete ein
+  Hook einen Hintergrundprozess, der stdout oder stderr des Workers erbte, kam die Antwort von `/api/hooks/trigger`
+  (auch `/api/hooks/trigger/{token}`) und `/api/hooks/{id}/run` erst nach mehr als 60 s, am Gateway also als 504.
+  Nach dem Ende des Workers wartet der Runner jetzt hoechstens 2 s auf den Rest der Ausgabe, killt dann die
+  Prozessgruppe und wartet noch einmal hoechstens 2 s; ein Lauf dauert so hoechstens 34 s. Doku:
+  Hook-Entwicklerdoku (DE+EN).
+- **Desktop: Tunnel fuer Benutzer ohne Admin-Rechte (R-0484):** Der Desktop loest fuer Benutzer ohne
+  Admin-Rechte auch Verbindungen auf, die ein Admin von Hand mit einem Tunnel verknuepft hat, und zeigt an ihren
+  Verbindungen den Tunnel. Dafuer liefert `GET /api/frp/tunnels` einem Nicht-Admin statt `403` die freigegebenen
+  Tunnel seiner zugewiesenen Server, je nur mit den Feldern, die der Desktop liest (ohne Secret, ohne
+  `localIp`, `frpConfigId`, `extraConfig`, `tags`, `createdAt`); ohne zugewiesenen Server eine leere Liste.
+  Admins bekommen die Liste wie bisher; die uebrigen Tunnel-Routen bleiben Admins vorbehalten. Doku:
+  API-Referenz (DE+EN).
+- **Monitoring: E-Mail-Alert-Regeln ohne eigenen `smtp_host` nutzen den Relay aus `SMTP_HOST` (R-0634):** Compose
+  reicht `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` und `SMTP_FROM` jetzt auch an den Dienst
+  `monitoring`, wie an `server` und `scheduler`. Bisher fehlten sie dort, und jede E-Mail-Regel ohne eigenen
+  `smtp_host` scheiterte mit `SMTP not configured (SMTP_HOST missing)`, obwohl die Doku den Relay aus der Umgebung
+  nennt. Ist `SMTP_HOST` gesetzt, verschicken diese Regeln danach ueber den globalen Relay, mit derselben Pruefung von
+  Zertifikat und Hostnamen wie der Notification-Hub. Doku: Betrieb & Konfiguration (DE+EN).
+- **Backup: `env.sanitized` verliert keine Zeilen mehr bei Bytes ausserhalb UTF-8 oder einem NUL-Byte (R-0559):**
+  `scripts/backup.sh` filterte die `.env` unter der Locale des Aufrufers. `grep` haelt eine Zeile mit einem Byte, das
+  diese Locale nicht dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und liess sie aus,
+  bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
+  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
+  `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
+  ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es wie das Diagnose-Bundle auch mit vorangestelltem
+  `export`, mit Leerraum um den Trenner und mit `:` statt `=` als Trenner (`export CA_ROOT_PASSPHRASE=...`,
+  `CA_ROOT_PASSPHRASE = ...`, `CA_ROOT_PASSPHRASE: ...`); ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt
+  stehen.
+- **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und weitere Schreibweisen der `.env`:**
+  `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
+  `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
+  Provisionierungs-Token `adminhelper_prov_...`; die Regel fuer `ah_...` entfaellt, kein Token des Projekts traegt
+  dieses Praefix. Die Secrets der `.env` erkennt es in diesen Schreibweisen: Schluessel auch als `export KEY=...`,
+  `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
+  Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
+  ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
+  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+- **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
+  mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
+  abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes
+  Zertifikat spaetestens mit seinem Aussteller (Client- und Server-Zertifikate mit dem Zwischenzertifikat,
+  Zwischenzertifikate mit der Root); kurz vor dem Ablauf eines Zwischenzertifikats werden neue Zertifikate also
+  kuerzer. Ist das Zwischenzertifikat eines Scopes abgelaufen oder noch nicht gueltig, antworten `/enroll` und
+  `/renew` mit HTTP 503 („the issuing intermediate certificate of scope '…' is expired or not yet valid; see the
+  ca-issuer log“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt unverbraucht. Eine Erneuerung
+  bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn das alte Zertifikat gekuerzt
+  war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer` beim Signieren einmal je Tag und
+  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“). Doku: Betrieb (DE+EN).
+- **ca-issuer: prueft die PKI beim Start (R-0666):** Der `ca-issuer` lud Root und Zwischenzertifikate beim Start ohne
+  jede Pruefung, auch ein abgelaufenes, ein von einer fremden Root signiertes oder eines neben fremdem Schluessel oder
+  fremder Kette. Jetzt prueft er bei jedem Start, auch direkt nach dem ersten: `root.crt` selbstsigniert und gueltig,
+  je Scope `<scope>.crt` von `root.crt` signiert und gueltig, `<scope>.key` der passende Schluessel und
+  `<scope>-chain.pem` genau Zwischenzertifikat und Root (geparst verglichen, Zeilenenden zaehlen nicht). Bei einem
+  Verstoss startet er nicht und nennt Datei, Scope und Grund („PKI hierarchy invalid — …“); das gilt auch fuer eine
+  Host-Uhr vor dem `notBefore` der Root oder eines Zwischenzertifikats. Root und Zwischenzertifikate mit weniger als
+  180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
+  expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
+  Clients bedeutet). Doku: Betrieb (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

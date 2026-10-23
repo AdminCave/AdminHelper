@@ -29,9 +29,10 @@ echo "[gateway] Zertifikate vorhanden."
 # (reject certless connections at the TLS handshake); false stays "optional"
 # (permissive — certless connections reach the app, which still enforces per route
 # via the verified-cert header). Default ENFORCED (fail-closed), matching
-# docker-compose.yml's MTLS_ENFORCE=${MTLS_ENFORCE:-true}; install.sh flips it to
-# false only for the bootstrap window (minting the first cert), then back. An
-# unrecognized value fails closed too, so a typo can't silently drop to permissive.
+# docker-compose.yml's MTLS_ENFORCE=${MTLS_ENFORCE:-true}; scripts/install.sh
+# keeps the default, only its --permissive option writes MTLS_ENFORCE=false into
+# .env. An unrecognized value fails closed too, so a typo can't silently drop to
+# permissive.
 SNIPPET_DIR=/etc/nginx/snippets
 mkdir -p "$SNIPPET_DIR"
 case "$(printf '%s' "${MTLS_ENFORCE:-true}" | tr '[:upper:]' '[:lower:]')" in

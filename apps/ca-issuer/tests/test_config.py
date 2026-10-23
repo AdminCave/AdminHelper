@@ -55,6 +55,28 @@ def test_root_passphrase_empty_file_is_none(monkeypatch, tmp_path):
     assert config.root_passphrase() is None
 
 
+def test_root_passphrase_missing_file_is_none(monkeypatch, tmp_path):
+    # Compose creates no secret file from an empty value, and after the first boot an
+    # empty value is intended: a missing file means no passphrase, not a crash.
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(tmp_path / "absent"))
+    monkeypatch.delenv("CA_ROOT_PASSPHRASE", raising=False)
+    assert config.root_passphrase() is None
+
+
+def test_root_passphrase_missing_file_falls_back_to_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(tmp_path / "absent"))
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE", "env-secret")
+    assert config.root_passphrase() == b"env-secret"
+
+
+def test_root_passphrase_unreadable_path_still_raises(monkeypatch, tmp_path):
+    # Only a missing file is tolerated; any other read error stays loud.
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(tmp_path))
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE", "env-secret")
+    with pytest.raises(IsADirectoryError):
+        config.root_passphrase()
+
+
 def test_make_engine_bounds_connect_and_statement(monkeypatch):
     # 4.14: the engine must cap the pool wait, the connect, and any single statement so a
     # wedged Postgres fails fast instead of blocking the sync threadpool into a restart loop.

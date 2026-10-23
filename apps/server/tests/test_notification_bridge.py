@@ -23,6 +23,15 @@ class TestBuildEvent:
     def test_user_created_nonadmin_is_ignored(self):
         assert build_event("user.created", {"id": 8, "username": "joe", "is_admin": False}) is None
 
+    def test_user_promoted_is_security_event(self):
+        ev = build_event("user.promoted", {"id": 9, "username": "promo"})
+        assert ev is not None
+        assert ev.event_type == "security.admin.promoted"
+        assert ev.category == "security"
+        assert ev.severity == "warning"
+        assert ev.source_id is None  # global → admin-only fan-out
+        assert "promo" in ev.title
+
     def test_server_deleted_is_lifecycle_global(self):
         ev = build_event("server.deleted", {"id": "srv-1", "name": "web01"})
         assert ev is not None
@@ -52,6 +61,13 @@ class TestBridgeDelivers:
         admin = _user(db_session, "boss", is_admin=True)
         _sub(db_session, admin, scope_type="all", categories=["security"])
         ev = build_event("user.created", {"id": 5, "username": "newadmin", "is_admin": True})
+        ingest_event(db_session, ev)
+        assert _count(db_session, admin) == 1
+
+    def test_admin_promoted_reaches_admins(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all", categories=["security"])
+        ev = build_event("user.promoted", {"id": 6, "username": "promo"})
         ingest_event(db_session, ev)
         assert _count(db_session, admin) == 1
 
