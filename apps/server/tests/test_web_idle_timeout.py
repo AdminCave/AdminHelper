@@ -8,6 +8,7 @@ import logging
 
 import pytest
 
+from app.core import config
 from app.core.config import parse_web_idle_timeout
 
 _LOGGER = "adminhelper.config"
@@ -35,3 +36,25 @@ def test_invalid_value_falls_back_to_30_with_one_warning(raw, caplog):
     assert len(records) == 1, records
     assert records[0].levelno == logging.WARNING
     assert "WEB_IDLE_TIMEOUT_MINUTES" in records[0].getMessage()
+
+
+def _me(client):
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r.status_code == 200, r.text
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"})
+    assert me.status_code == 200, me.text
+    return me.json()
+
+
+def test_me_reports_the_default_idle_timeout(test_client, admin_user):
+    assert _me(test_client)["idle_timeout_minutes"] == 30
+
+
+def test_me_reads_the_idle_timeout_at_request_time(test_client, admin_user, monkeypatch):
+    monkeypatch.setattr(config, "WEB_IDLE_TIMEOUT_MINUTES", 0)
+    assert _me(test_client)["idle_timeout_minutes"] == 0
+
+
+def test_me_keeps_id_username_and_is_admin(test_client, admin_user):
+    body = _me(test_client)
+    assert (body["id"], body["username"], body["is_admin"]) == (admin_user.id, "admin", True)

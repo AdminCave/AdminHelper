@@ -70,7 +70,7 @@
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/auth/me</code>
-            <p>Current user; requires a valid access token.</p>
+            <p>Current user; requires a valid access token. Response: <code>{ "id", "username", "is_admin", "idle_timeout_minutes" }</code>; <code>idle_timeout_minutes</code> is the number of minutes without input after which the web panel signs out (<code>WEB_IDLE_TIMEOUT_MINUTES</code>, <code>0</code> = off).</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/bootstrap</code>

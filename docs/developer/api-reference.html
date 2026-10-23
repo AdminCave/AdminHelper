@@ -70,7 +70,7 @@
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/auth/me</code>
-            <p>Aktueller User; ben&ouml;tigt g&uuml;ltigen Access-Token.</p>
+            <p>Aktueller User; ben&ouml;tigt g&uuml;ltigen Access-Token. Antwort: <code>{ "id", "username", "is_admin", "idle_timeout_minutes" }</code>; <code>idle_timeout_minutes</code> sind die Minuten ohne Bedienung, nach denen das Web-Panel abmeldet (<code>WEB_IDLE_TIMEOUT_MINUTES</code>, <code>0</code> = aus).</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/bootstrap</code>

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core import config
 from app.core.auth import (
     blacklist_token,
     create_access_token,
@@ -306,7 +307,12 @@ def logout(
 
 @router.get("/me", response_model=UserMe)
 def me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return UserMe(
+        id=current_user.id,
+        username=current_user.username,
+        is_admin=current_user.is_admin,
+        idle_timeout_minutes=config.WEB_IDLE_TIMEOUT_MINUTES,
+    )
 
 
 @router.post("/bootstrap", response_model=TokenResponse, status_code=201)
