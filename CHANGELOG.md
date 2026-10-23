@@ -118,6 +118,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (testcontainers, Passwort `test`) steht es im Datenbanknamen der Fehlermeldung, und die Probe schlug an, ohne dass
   ein Passwort ausgegeben wurde (Sammellauf rot). Jetzt bekommt der gescheiterte Lauf ein eigenes Zufallspasswort,
   und die Probe sucht dieses.
+- **Web-Panel: der Vite-Dev-Server proxied nur `/api`, auf `http://127.0.0.1:8080` (R-0669):** Der Dev-Server
+  leitete `/auth`, `/api` und `/health` an `http://localhost:8000` weiter. Der Server hat nur Routen unter `/api`, und
+  DEVELOPMENT.md und die Entwickler-Doku starten ihn auf `127.0.0.1:8080`. Jetzt geht nur `/api` dorthin; ein Test
+  prueft die Praefixe gegen den OpenAPI-Snapshot des Servers. Doku: Web-UI fuer Entwickler (DE+EN).
+- **Troubleshooting nennt nur Agent-Befehle, die es gibt (R-0731):** Fuer einen Durchlauf von Hand mit
+  Debug-Ausgabe steht dort jetzt `sudo adminhelper-agent run --once --log-level debug` statt `run --verbose` und
+  `monitor run --dry-run`. Zum Client-Zertifikat des Agents steht dort, wie der Agent es erneuert (bei jedem Lauf,
+  sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
+  prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
+  Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

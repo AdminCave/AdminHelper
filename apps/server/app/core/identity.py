@@ -15,9 +15,11 @@ Scopes map to the PKI intermediates (ADR 0001 §3.1): ``access`` = humans
 intermediate). The scope is carried in the cert's OU, set by the ca-issuer from
 the enrollment grant — a client cannot widen it via its CSR.
 
-Rollout (ADR 0002): ``require_scope`` is **permissive** by default — a missing or
-mismatched scope is logged but the request proceeds, so the data plane stays
-usable before clients have certs (A3–A7). A8 sets ``MTLS_ENFORCE=true`` to reject.
+Enforcement (ADR 0002, A8): ``require_scope`` is **enforced** by default
+(``MTLS_ENFORCE`` unset or ``true``, ``app.core.config``) — a missing or
+mismatched scope gets a 403. ``MTLS_ENFORCE=false`` is the permissive mode of the
+rollout (A3–A7), kept only for a manual first bootstrap: the mismatch is logged
+and the request proceeds.
 """
 
 from __future__ import annotations
@@ -230,11 +232,11 @@ def require_scope(*allowed: str):
     scopes and not be revoked. Dual-use routes pass several (e.g. agent + admin
     read the same config).
 
-    Permissive (default): a missing/mismatched cert is logged but the request
-    proceeds — only a *wrong-scope* cert warns; the expected "no cert yet" case stays
-    at debug so the rollout doesn't spam logs. Enforced (``MTLS_ENFORCE``, A8): either
-    returns 403. A presented certificate the register refuses gets the 403 in both
-    modes, like the binding to the user (R-0224)."""
+    Enforced (default, ``MTLS_ENFORCE``, A8): a missing/mismatched cert returns 403.
+    Permissive (``MTLS_ENFORCE=false``): either is logged but the request proceeds —
+    only a *wrong-scope* cert warns; the expected "no cert yet" case stays at debug so
+    the rollout doesn't spam logs. A presented certificate the register refuses gets
+    the 403 in both modes, like the binding to the user (R-0224)."""
     allowed_set = frozenset(allowed)
 
     def dependency(
