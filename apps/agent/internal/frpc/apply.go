@@ -5,6 +5,7 @@
 package frpc
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -105,7 +106,7 @@ func Apply(p ApplyParams) error {
 		return fmt.Errorf("Config base64 decodieren: %w", err)
 	}
 
-	return warnOnServiceFailure(applyConfig(serverToml, false))
+	return warnOnServiceFailure(applyConfig(context.Background(), serverToml, false))
 }
 
 // ApplyWithoutBundle is Apply for a provisioning without an FRP bundle: the server has no FRP
@@ -113,7 +114,7 @@ func Apply(p ApplyParams) error {
 // text without proxies, on which Apply stops frpc). A frpc of an earlier provisioning stops,
 // like on a null hash in Sync, and the next sync sets up a tunnel created later (R-0398).
 func ApplyWithoutBundle() error {
-	return warnOnServiceFailure(syncWithoutFrpConfig())
+	return warnOnServiceFailure(syncWithoutFrpConfig(context.Background()))
 }
 
 // warnOnServiceFailure turns a failed start or stop of frpc at provisioning into a warning, as

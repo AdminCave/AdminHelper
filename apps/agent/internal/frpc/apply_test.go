@@ -203,6 +203,32 @@ func TestReprovisionStoresTheHashOfTheBundleText(t *testing.T) {
 	}
 }
 
+// R-0638: a systemctl that does not answer whether frpc runs fails like a start: the provisioning
+// warns and removes the hash, so the next run applies the config again. It starts nothing, since
+// frpc may run.
+func TestReprovisionWarnsWhenSystemctlDoesNotAnswer(t *testing.T) {
+	calls := setupSyncTest(t, "https://srv.example")
+	isActive = func(context.Context) (bool, error) {
+		return false, errors.New("systemctl is-active frpc.service: context deadline exceeded")
+	}
+	out := captureLog(t)
+
+	if err := applyBundle(bundleToml); err != nil {
+		t.Fatalf("Apply without an answer from systemctl: %v, want only a warning", err)
+	}
+	for _, want := range []string{"level=WARN", "context deadline exceeded", "next agent run tries again"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("log %q is missing %q", out.String(), want)
+		}
+	}
+	if calls.enables != 0 || calls.restarts != 0 || calls.reloads != 0 {
+		t.Errorf("enables = %d, restarts = %d, reloads = %d, want 0, 0 and 0", calls.enables, calls.restarts, calls.reloads)
+	}
+	if _, err := os.Stat(config.FrpHashFile()); !os.IsNotExist(err) {
+		t.Errorf("hash file is there (stat: %v), want none", err)
+	}
+}
+
 // Kevin, 2026-10-16: a frpc that does not start at provisioning only warns, as before; the
 // provision token is spent by then. The warning names the way on, and the hash goes, so the next
 // sync applies the config again, also when the stored hash already was the bundle's (provisioned
@@ -227,7 +253,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			calls.active = tc.running
 			tc.prepare(t)
 			restart, enable := restartService, enableService
-			restartService = func() error { return errors.New("systemctl failed") }
+			restartService = func(context.Context) error { return errors.New("systemctl failed") }
 			enableService = restartService
 			out := captureLog(t)
 
@@ -326,7 +352,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			writeFrpcState(t)
 			calls.active = true
 			disable := disableService
-			disableService = func() error { return errors.New("systemctl failed") }
+			disableService = func(context.Context) error { return errors.New("systemctl failed") }
 			out := captureLog(t)
 
 			if err := tc.provision(); err != nil {

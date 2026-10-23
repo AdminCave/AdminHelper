@@ -43,12 +43,12 @@ func setupSyncTest(t *testing.T, srvURL string) *seamCalls {
 	calls := &seamCalls{}
 	origRestart, origDisable, origEnable, origActive := restartService, disableService, enableService, isActive
 	origReload, origDown, origOwns := reloadService, isDown, ownsAdminPort
-	restartService = func() error { calls.restarts++; calls.active = true; return nil }
-	disableService = func() error { calls.disables++; calls.active = false; return nil }
-	enableService = func() error { calls.enables++; calls.active = true; return nil }
-	isActive = func() bool { return calls.active }
-	reloadService = func() error { calls.reloads++; return nil }
-	isDown = func() bool { return !calls.active }
+	restartService = func(context.Context) error { calls.restarts++; calls.active = true; return nil }
+	disableService = func(context.Context) error { calls.disables++; calls.active = false; return nil }
+	enableService = func(context.Context) error { calls.enables++; calls.active = true; return nil }
+	isActive = func(context.Context) (bool, error) { return calls.active, nil }
+	reloadService = func(context.Context) error { calls.reloads++; return nil }
+	isDown = func(context.Context) (bool, error) { return !calls.active, nil }
 	ownsAdminPort = func(int) bool { return true }
 	t.Cleanup(func() {
 		restartService, disableService, enableService, isActive = origRestart, origDisable, origEnable, origActive
@@ -213,8 +213,8 @@ func TestSyncKeepsOldHashWhenStartingFrpcFails(t *testing.T) {
 			calls := setupSyncTest(t, srv.URL)
 			writeFrpcState(t)
 			calls.active = active
-			enableService = func() error { return errors.New("systemctl failed") }
-			restartService = func() error { return errors.New("systemctl failed") }
+			enableService = func(context.Context) error { return errors.New("systemctl failed") }
+			restartService = func(context.Context) error { return errors.New("systemctl failed") }
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 
 			if err := Sync(context.Background()); err == nil {
@@ -320,6 +320,35 @@ func TestSyncEndsWithTheContextWhileTheServerHangs(t *testing.T) {
 	}
 	if *calls != actions {
 		t.Errorf("frpc service state %+v, want it unchanged %+v (no start, stop or reload)", *calls, actions)
+	}
+}
+
+// R-0638: a systemctl that does not answer whether frpc runs (timeout, end of the run) does not
+// make frpc stuck: the sync would renew its admin API and restart a frpc that may run. On a
+// changed hash with frpc.toml in place the sync returns the error before it fetches the config,
+// and changes nothing: admin.conf, frpc.toml and the hash stay, nothing starts.
+func TestSyncFrpcSystemctlWithoutAnswerChangesNothing(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	serveToml(t, tunnelToml)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync with the first tunnel: %v", err)
+	}
+	noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
+	isDown = func(context.Context) (bool, error) { return false, noAnswer }
+	fetches := serveToml(t, twoTunnelsToml)
+	files, actions := frpFiles(t), *calls
+
+	if err := Sync(context.Background()); !errors.Is(err, noAnswer) {
+		t.Fatalf("Sync = %v, want the failed status query %q", err, noAnswer)
+	}
+	if got := frpFiles(t); !maps.Equal(got, files) {
+		t.Errorf("the FRP directory holds %q, want it unchanged %q", got, files)
+	}
+	if *calls != actions {
+		t.Errorf("frpc service state %+v, want it unchanged %+v (no start, stop or reload)", *calls, actions)
+	}
+	if *fetches != 0 {
+		t.Errorf("config fetches = %d, want 0", *fetches)
 	}
 }
 
@@ -476,7 +505,7 @@ func TestSyncKeepsFilesWhenStoppingFrpcFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			setupSyncTest(t, srv.URL)
-			disableService = func() error { return errors.New("systemctl failed") }
+			disableService = func(context.Context) error { return errors.New("systemctl failed") }
 			writeFrpcState(t)
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 
@@ -512,7 +541,11 @@ func TestReloadWhenOnlyProxiesChange(t *testing.T) {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	var atReload string
-	reloadService = func() error { calls.reloads++; atReload = readFile(t, config.FrpConfigFile()); return nil }
+	reloadService = func(context.Context) error {
+		calls.reloads++
+		atReload = readFile(t, config.FrpConfigFile())
+		return nil
+	}
 
 	serveToml(t, twoTunnelsToml)
 	if err := Sync(context.Background()); err != nil {
@@ -558,7 +591,7 @@ func TestReloadFailureRestartsFrpc(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
-	reloadService = func() error { calls.reloads++; return errors.New("api status code [401]") }
+	reloadService = func(context.Context) error { calls.reloads++; return errors.New("api status code [401]") }
 	out := captureLog(t)
 
 	serveToml(t, twoTunnelsToml)
@@ -588,7 +621,7 @@ func TestReloadNotAfterAFailedRestart(t *testing.T) {
 		t.Fatalf("Sync with the tunnel: %v", err)
 	}
 	restart := restartService
-	restartService = func() error { return errors.New("systemctl failed") }
+	restartService = func(context.Context) error { return errors.New("systemctl failed") }
 	if err := applyBundle(bundleToml); err != nil {
 		t.Fatalf("Apply with a failing restart: %v, want only a warning", err)
 	}
