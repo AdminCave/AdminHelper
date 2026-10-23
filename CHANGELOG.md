@@ -7,6 +7,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Server: gleichzeitige Refreshes mit demselben Refresh-Token:** Das neue Token-Paar bekommt nur der Aufruf, der
+  den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
+  wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
+  Entwickler (DE+EN).
+
 ## [0.46.0] - 2026-10-22
 
 ### Added

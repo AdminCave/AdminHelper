@@ -80,7 +80,7 @@
           <ol>
             <li>Login signs both tokens and returns them in <code>TokenResponse</code>.</li>
             <li>On <code>POST /api/auth/refresh</code> the server checks signature, expiry and blacklist.</li>
-            <li>The old <code>jti</code> is added to <code>token_blacklist</code> immediately, then new tokens are issued (<strong>rotation</strong>).</li>
+            <li>The old <code>jti</code> is added to <code>token_blacklist</code> (<strong>rotation</strong>); only the call that adds it gets the new pair. A second, concurrent refresh with the same token counts as reuse, just like a later one; clients coalesce their refreshes.</li>
             <li>If an already-revoked refresh is presented again &rarr; <strong>reuse detection</strong>: all sessions of the affected user chain are invalidated (<code>WARNING</code> log with IP).</li>
             <li><strong>Password reset revokes sessions</strong>: changing a password sets <code>users.tokens_valid_after</code>; any token whose <code>iat</code> predates it (or that has no <code>iat</code>) is rejected &mdash; without needing to know individual <code>jti</code>s.</li>
           </ol>
