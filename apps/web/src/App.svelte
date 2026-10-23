@@ -6,6 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import type { User } from '$lib/api/types';
   import { auth, currentUser, isAuthenticated } from '$lib/stores/auth';
   import { showToast } from '$lib/stores/notifications';
   import { tNow } from '$lib/i18n';
@@ -19,9 +21,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { routes } from './routes';
 
   let hydrated = $state(false);
+  // The user auth.hydrate() brought back from the refresh cookie. A login sets a new object, so
+  // only the session of the page load compares equal, also after a sign-out and login in this tab.
+  let restoredUser: User | null = null;
 
   onMount(async () => {
     await auth.hydrate();
+    restoredUser = get(currentUser);
     hydrated = true;
   });
 
@@ -33,12 +39,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // One watch per session: signing out, or in as another user, stops it.
   $effect(() => {
-    const minutes = $currentUser?.idle_timeout_minutes;
-    return watchIdle(minutes, () => {
-      void auth.logout();
-      // 0 keeps the notice until it is closed: nobody is at the screen when it appears.
-      showToast(tNow('toast.session.idle', { minutes }), 'info', 0);
-    });
+    // Not before restoredUser is known: a watch started for the restored session as a fresh one
+    // would overwrite the stored time of the last activity before it was read.
+    if (!hydrated) return;
+    const user = $currentUser;
+    const minutes = user?.idle_timeout_minutes;
+    return watchIdle(
+      minutes,
+      () => {
+        void auth.logout();
+        // 0 keeps the notice until it is closed: nobody is at the screen when it appears.
+        showToast(tNow('toast.session.idle', { minutes }), 'info', 0);
+      },
+      { restored: user !== null && user === restoredUser },
+    );
   });
 </script>
 

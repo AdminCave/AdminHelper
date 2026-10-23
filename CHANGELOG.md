@@ -12,8 +12,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Web-Panel: Abmeldung nach Inaktivitaet:** Das Web-Panel meldet in allen offenen Tabs ab, wenn in keinem davon
   30 Minuten lang bedient wurde (Maus, Tastatur, Touch); ein Hinweis bleibt stehen, bis man ihn schliesst. Die Dauer
   stellt die neue Env `WEB_IDLE_TIMEOUT_MINUTES` am Dienst `server` ein (`0` = aus, ein ungueltiger Wert gilt als 30),
-  der Server liefert sie im neuen Feld `idle_timeout_minutes` von `GET /api/auth/me`. Doku: Benutzer & Zugriff,
-  Installation, API-Referenz (DE+EN).
+  der Server liefert sie im neuen Feld `idle_timeout_minutes` von `GET /api/auth/me`. Das gilt auch nach Neuladen
+  oder Wiederoeffnen im selben Browser: Liegt die letzte Bedienung dort laenger zurueck, endet die wiederhergestellte
+  Sitzung beim Laden sofort mit demselben Hinweis. Doku: Benutzer & Zugriff, Installation, API-Referenz, Web-UI fuer
+  Entwickler (DE+EN).
 
 ### Changed
 

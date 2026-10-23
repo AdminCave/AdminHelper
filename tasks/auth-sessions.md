@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Sitzungen: Refresh-Rotation, Tabs, Benutzerbindung, Refresh-Token im Browser, Abmeldung nach Inaktivität — Task-Ledger
-Status: aktiv · Branch: feature/auth-sessions · Review: pro Task
+Status: bereit · Branch: feature/auth-sessions · Review: pro Task
 Spec: docs/features/auth-sessions.md (Roadmap R-0649 (T6); R-0451 ohne Task, siehe Spec „Nicht-Ziele“; T1–T5 und T7–T10 gehören zum Paket, Kevin 2026-10-22)
 Heavy: linux-full — Server-API (Antworten von `/api/auth/login`, `/api/auth/refresh`, `/api/auth/bootstrap` für Browser-Anfragen, neues Feld in `/api/auth/me`), Rotation im Refresh und `docker-compose.yml` (neue Env am Dienst `server`); `web-live` fährt Login und Refresh im echten Browser gegen den Stack. Kein `scenario` (kein FRP-, PKI-, Install- oder Cross-Host-Pfad), kein `windows` (kein Desktop-Code)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -120,10 +120,12 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/App.idle.test.ts src/lib/
 Doku: docs/admin/benutzer.html:62-67 + docs/en/admin/users.html:55-61 (Login-Flow, neuer Punkt: das Web-Panel meldet nach 30 Minuten ohne Bedienung in allen offenen Tabs ab, einstellbar über `WEB_IDLE_TIMEOUT_MINUTES`, `0` = aus; ein Hinweis bleibt stehen) · CHANGELOG.md (Added, umlautfrei: Web-Panel meldet nach 30 Minuten ohne Bedienung ab (alle Tabs zusammen), Env `WEB_IDLE_TIMEOUT_MINUTES` (0 = aus), Feld `idle_timeout_minutes` in `GET /api/auth/me`)
 Abhängt von: T5, T8
 
-### T10 — Web: Inaktivität gilt auch über Neuladen und Wiederöffnen  [ ]
-Komponente: web · Dateien: apps/web/src/lib/idle.ts, apps/web/src/lib/idle.test.ts, apps/web/src/App.svelte, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md
+### T10 — Web: Inaktivität gilt auch über Neuladen und Wiederöffnen  [x]
+Komponente: web · Dateien: apps/web/src/lib/idle.ts, apps/web/src/lib/idle.test.ts, apps/web/src/App.svelte, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md, apps/web/src/App.idle.test.ts, docs/developer/webui.html, docs/en/developer/webui.html
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @96eb749d 2026-10-23T10:42:46+02:00
+Review: approve (.ah-out/review/auth-sessions/T10.verdict.json)
 Änderung: `watchIdle` bekommt eine Option `{ restored?: boolean }`. `App.svelte` setzt sie für die Sitzung, die `auth.hydrate()` beim Start wiederhergestellt hat (`apps/web/src/App.svelte:20-23`), nicht für eine Sitzung nach einem Login. Mit `restored` liest der Start zuerst den Wert aus `localStorage`: liegt er `minutes` Minuten oder länger zurück → `onIdle()` sofort (derselbe Hinweis); fehlt er oder ist der Speicher gesperrt → wie T8 (jetzt schreiben, weiter wachen). Tests in `idle.test.ts`: (a) `restored`, Wert vor 31 min, `minutes` 30 → `onIdle` sofort; (b) `restored`, Wert vor 5 min → nicht, Abmeldung erst nach weiteren 30 min ohne Bedienung; (c) ohne `restored`, Wert vor 2 h → nicht sofort (Login eben erfolgt); (d) `restored` ohne Wert → wie T8. Zuerst rot: (a).
-Verify: bash scripts/dev/verify.sh web --strict -- src/lib/idle.test.ts
+Verify: bash scripts/dev/verify.sh web --strict -- src/lib/idle.test.ts src/App.idle.test.ts
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html (der Punkt aus T9: gilt auch nach Neuladen oder Wiederöffnen im selben Browser) · CHANGELOG.md (der Eintrag aus T9 um diesen Satz ergänzt)
 Abhängt von: T9
 Entscheidung: Kevin 2026-10-22 — ja: eine beim Laden wiederhergestellte Sitzung endet, wenn die letzte Bedienung in diesem Browser länger als das Limit her ist

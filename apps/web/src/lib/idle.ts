@@ -17,11 +17,27 @@ const CHECK_EVERY_MS = 15_000;
 /**
  * Calls `onIdle` once when no tab of this origin has seen a pointer, keyboard, wheel or touch
  * event for `minutes` minutes. Anything but a positive finite number turns the watch off.
+ * `restored` marks a session brought back on page load, not one from a login: if the last
+ * activity stored in this browser lies `minutes` or more back, `onIdle` runs at once.
  * Returns the function that stops it.
  */
-export function watchIdle(minutes: number | null | undefined, onIdle: () => void): () => void {
+export function watchIdle(
+  minutes: number | null | undefined,
+  onIdle: () => void,
+  { restored = false }: { restored?: boolean } = {},
+): () => void {
   if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) return () => {};
   const limitMs = minutes * 60_000;
+
+  // Otherwise closing the tab would get around the limit: the refresh cookie outlives it.
+  // A missing time or blocked storage reads as null, which must not count as 0 (1970).
+  if (restored) {
+    const stored = storageGet(LAST_ACTIVITY_KEY);
+    if (stored !== null && Date.now() - Number(stored) >= limitMs) {
+      onIdle();
+      return () => {};
+    }
+  }
 
   let stopped = false;
   let lastActivity = Date.now();

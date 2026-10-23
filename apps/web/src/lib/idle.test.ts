@@ -15,9 +15,9 @@ const START = new Date('2026-10-23T08:00:00Z').getTime();
 
 let stops: Array<() => void>;
 
-function watch(minutes: number | null | undefined) {
+function watch(minutes: number | null | undefined, options?: { restored?: boolean }) {
   const onIdle = vi.fn();
-  const stop = watchIdle(minutes, onIdle);
+  const stop = watchIdle(minutes, onIdle, options);
   stops.push(stop);
   return { onIdle, stop };
 }
@@ -99,7 +99,7 @@ describe('watchIdle', () => {
     expect(onIdle).toHaveBeenCalledTimes(1);
   });
 
-  it('(d) after stopping: no sign-out, and a later keydown writes nothing', () => {
+  it('(d) after stopping: no sign-out, not even on becoming visible, and a later keydown writes nothing', () => {
     const { onIdle, stop } = watch(30);
     stop();
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
@@ -107,6 +107,12 @@ describe('watchIdle', () => {
     vi.advanceTimersByTime(10_000);
     act('keydown');
     vi.advanceTimersByTime(60 * MINUTE);
+    // Past the limit, a visibilitychange listener left behind would check and sign out at once.
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
 
     expect(onIdle).not.toHaveBeenCalled();
     expect(setItem).not.toHaveBeenCalled();
@@ -197,5 +203,87 @@ describe('watchIdle', () => {
     visibility = 'visible';
     document.dispatchEvent(new Event('visibilitychange'));
     expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  // A session brought back from the refresh cookie on page load: the time of the last activity in
+  // this browser counts across reloads and a closed tab. After a login it does not.
+  describe('restored', () => {
+    it.each([31, 30])(
+      '(a) last activity %s minutes back with a limit of 30: onIdle at once, and nothing keeps running',
+      (ago) => {
+        localStorage.setItem(KEY, String(START - ago * MINUTE));
+        // jsdom queues the storage event of that write as a timer of its own.
+        const timers = vi.getTimerCount();
+        const onWindow = vi.spyOn(window, 'addEventListener');
+        const { onIdle } = watch(30, { restored: true });
+
+        expect(onIdle).toHaveBeenCalledTimes(1);
+        expect(onWindow).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(timers);
+        vi.advanceTimersByTime(60 * MINUTE);
+        expect(onIdle).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([
+      ['5 minutes', 5 * MINUTE],
+      ['1 ms less than 30 minutes', 30 * MINUTE - 1],
+    ])(
+      '(b) last activity %s back: no sign-out yet, then after another 30 minutes without input',
+      (_label, ago) => {
+        localStorage.setItem(KEY, String(START - ago));
+        const { onIdle } = watch(30, { restored: true });
+
+        expect(onIdle).not.toHaveBeenCalled();
+        // Loading the page is input too: the shared time starts over.
+        expect(localStorage.getItem(KEY)).toBe(String(START));
+        vi.advanceTimersByTime(30 * MINUTE - 1);
+        expect(onIdle).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(CHECK);
+        expect(onIdle).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([undefined, { restored: false }])(
+      '(c) not restored (%o, a login just now): last activity 2 hours back does not sign out',
+      (options) => {
+        localStorage.setItem(KEY, String(START - 120 * MINUTE));
+        const { onIdle } = watch(30, options);
+
+        expect(onIdle).not.toHaveBeenCalled();
+        expect(localStorage.getItem(KEY)).toBe(String(START));
+        vi.advanceTimersByTime(30 * MINUTE - 1);
+        expect(onIdle).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(CHECK);
+        expect(onIdle).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('(d) without a stored time: as after a login', () => {
+      const { onIdle } = watch(30, { restored: true });
+
+      expect(onIdle).not.toHaveBeenCalled();
+      expect(localStorage.getItem(KEY)).toBe(String(START));
+      vi.advanceTimersByTime(30 * MINUTE - 1);
+      expect(onIdle).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(CHECK);
+      expect(onIdle).toHaveBeenCalledTimes(1);
+    });
+
+    it('(d) with storage blocked: as after a login, and no error', () => {
+      // A stale time the blocked storage cannot hand out.
+      localStorage.setItem(KEY, String(START - 120 * MINUTE));
+      const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(blocked);
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(blocked);
+
+      const { onIdle } = watch(30, { restored: true });
+      // The start did ask the storage, so the run below goes through the blocked path.
+      expect(getItem).toHaveBeenCalled();
+      expect(onIdle).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(30 * MINUTE - 1);
+      expect(onIdle).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(CHECK);
+      expect(onIdle).toHaveBeenCalledTimes(1);
+    });
   });
 });
