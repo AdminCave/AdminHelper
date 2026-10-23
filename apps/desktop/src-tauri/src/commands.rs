@@ -1126,13 +1126,13 @@ mod tests {
         let _in_a_workspace = entered("standard");
         let (launches, launch) = noting_launch(Ok(()));
 
-        // No file system takes a name with a NUL byte.
+        // No file system takes a name of 300 bytes (ENAMETOOLONG).
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
             |_| async {
                 Ok(Playbook {
-                    filename: "site\0.yml".to_string(),
+                    filename: "a".repeat(300),
                     ..marked_playbook(&marker)
                 })
             },

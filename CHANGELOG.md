@@ -14,6 +14,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   macOS nur fuer den eigenen Nutzer lesbar (Modus 0700); neben ihnen liegt nur, was der Lauf schreibt. Scheitert ein
   Schritt vor dem Start, entfernt der Desktop das ganze Verzeichnis, auch eine halb geschriebene Datei; unter Linux
   entfernt das Terminal es nach dem Lauf. Doku: Desktop fuer Entwickler, Ansible (DE+EN).
+- **Desktop, Ansible: Playbook-Dateiname nur aus sicheren Zeichen, Server-Antwort hoechstens 16 MiB:** Der Dateiname
+  des Playbooks behaelt nur ASCII-Buchstaben, Ziffern, Punkt, Unterstrich und Bindestrich, andere Zeichen werden zu
+  Unterstrichen (unter Windows geht der Pfad an Windows Terminal und `cmd`). Die Antwort des Servers auf den
+  Playbook-Abruf liest der Desktop hoechstens 16 MiB weit; eine groessere oder eine, die kein Playbook ist, bricht den
+  Lauf mit einem Fehler ab, der die Antwort nicht zitiert.
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).

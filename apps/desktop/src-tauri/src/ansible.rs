@@ -61,20 +61,46 @@ pub async fn fetch_playbook(session: &SessionState, id: &str) -> Result<Playbook
     })
 }
 
-/// The answer to an authenticated GET of `path` as `T`. A status other than 2xx is an error
-/// that names the status, not the answer.
+/// The most of an answer [`fetch_json`] reads. The gateway takes uploads up to 10 MiB, so a
+/// playbook as a JSON string stays below it.
+const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+
+/// The answer to an authenticated GET of `path` as `T`. A status other than 2xx, an answer over
+/// [`MAX_RESPONSE_BYTES`] (refused by its declared length before any of the body is read, else
+/// as soon as more has arrived) and one that is no `T` are errors that never quote the answer.
 async fn fetch_json<T: serde::de::DeserializeOwned>(
     session: &SessionState,
     path: &str,
 ) -> Result<T, AppError> {
-    let (response, _) = crate::auth::authenticated_get(session, path).await?;
+    let (mut response, _) = crate::auth::authenticated_get(session, path).await?;
     let status = response.status();
     if !status.is_success() {
         return Err(AppError::Validation(format!(
             "the playbook could not be loaded ({status})"
         )));
     }
-    Ok(response.json().await?)
+    let too_large = || {
+        AppError::Validation(format!(
+            "the playbook could not be loaded (answer larger than {} MiB)",
+            MAX_RESPONSE_BYTES / (1024 * 1024)
+        ))
+    };
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).map_err(|_| {
+        AppError::Validation("the playbook could not be loaded (unexpected answer)".to_string())
+    })
 }
 
 /// A run of `playbook` on `targets`: creates a directory of its own in the temp dir
@@ -210,13 +236,21 @@ pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<Strin
 }
 
 /// Writes the playbook content to `dir/playbook_<name>` and returns the path. The prefix keeps
-/// any name apart from `inventory.ini`.
+/// any name apart from `inventory.ini`. Of `filename` only ASCII letters, digits, `.`, `_` and
+/// `-` stay, every other character becomes `_`: on Windows the path goes as an argument to
+/// Windows Terminal, which reads `;` as the end of a subcommand, and to `cmd`.
 pub fn write_playbook_temp(dir: &Path, filename: &str, content: &str) -> Result<String, AppError> {
     let safe_name = filename
-        .replace(['/', '\\'], "_")
-        .replace("..", "_")
-        .trim()
-        .to_string();
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .replace("..", "_");
     let path = dir.join(format!("playbook_{safe_name}"));
     let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
@@ -354,10 +388,33 @@ mod tests {
 
     const PLAYBOOK_ID: &str = "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f";
 
-    /// Serve HTTP on a fresh loopback port, one request per connection: the n-th request gets
-    /// the n-th of `replies` (status line and body), a request after them its connection closed
-    /// unanswered. The request line of every request lands in the log.
+    /// How [`serve_framed`] frames the body of a reply.
+    #[derive(Clone, Copy)]
+    enum Framing {
+        /// `content-length` with the length of the body.
+        Sized,
+        /// No `content-length`: the body ends where the connection does.
+        Unsized,
+        /// `content-length: <n>` and no body: the connection stays open until the client closes
+        /// it, so a client that reads the body waits.
+        Claims(usize),
+    }
+
+    /// [`serve_framed`] with every body [`Framing::Sized`].
     async fn serve(replies: Vec<(&'static str, String)>) -> (String, Arc<Mutex<Vec<String>>>) {
+        let replies = replies
+            .into_iter()
+            .map(|(status, body)| (status, body, Framing::Sized))
+            .collect();
+        serve_framed(replies).await
+    }
+
+    /// Serve HTTP on a fresh loopback port, one request per connection: the n-th request gets
+    /// the n-th of `replies` (status line, body and its framing), a request after them its
+    /// connection closed unanswered. The request line of every request lands in the log.
+    async fn serve_framed(
+        replies: Vec<(&'static str, String, Framing)>,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -381,12 +438,19 @@ mod tests {
                 seen.lock()
                     .unwrap()
                     .push(head.lines().next().unwrap_or_default().to_string());
-                if let Some((status, body)) = replies.next() {
-                    let reply = format!(
-                        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                        body.len()
-                    );
+                if let Some((status, body, framing)) = replies.next() {
+                    let length = match framing {
+                        Framing::Sized => format!("content-length: {}\r\n", body.len()),
+                        Framing::Unsized => String::new(),
+                        Framing::Claims(claimed) => format!("content-length: {claimed}\r\n"),
+                    };
+                    let reply =
+                        format!("HTTP/1.1 {status}\r\n{length}connection: close\r\n\r\n{body}");
                     tcp.write_all(reply.as_bytes()).await.unwrap();
+                    if let Framing::Claims(_) = framing {
+                        // Returns once the client closes the connection (0 bytes) or sends.
+                        let _ = tcp.read(&mut buf).await;
+                    }
                 }
                 let _ = tcp.shutdown().await;
             }
@@ -612,6 +676,93 @@ mod tests {
             assert!(!message.contains("nicht gefunden"), "{case}: {message}");
             assert_eq!(log.lock().unwrap().len(), requests, "{case}");
         }
+    }
+
+    #[tokio::test]
+    async fn fetch_playbook_fails_on_an_answer_that_is_no_playbook_and_never_quotes_it() {
+        // A JSON string where an object belongs: serde names such a value in its message.
+        let quoted = r#""ah-answer-text""#;
+        for (case, body) in [("{}", "{}"), ("html", "<html>"), ("string", quoted)] {
+            for (part, replies, requests) in [
+                ("metadata", vec![("200 OK", body.to_string())], 1),
+                (
+                    "content",
+                    vec![("200 OK", listed_playbook()), ("200 OK", body.to_string())],
+                    2,
+                ),
+            ] {
+                let (server, log) = serve(replies).await;
+                let session = signed_in(server).await;
+
+                let message = fetch_playbook(&session, PLAYBOOK_ID)
+                    .await
+                    .err()
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| panic!("{part} {case}: no error"));
+
+                assert!(
+                    message.contains("the playbook could not be loaded"),
+                    "{part} {case}: {message}"
+                );
+                assert!(
+                    !message.contains("ah-answer-text"),
+                    "{part} {case}: {message}"
+                );
+                assert_eq!(log.lock().unwrap().len(), requests, "{part} {case}");
+            }
+        }
+    }
+
+    /// The answer to the content request, exactly `bytes` long.
+    fn content_of_size(bytes: usize) -> String {
+        let frame = r#"{"content":""}"#.len();
+        format!(r#"{{"content":"{}"}}"#, "a".repeat(bytes - frame))
+    }
+
+    #[tokio::test]
+    async fn fetch_playbook_reads_at_most_16_mib_of_an_answer() {
+        const LIMIT: usize = 16 * 1024 * 1024;
+
+        // Exactly the limit, without a length: read to its end.
+        let (server, _) = serve_framed(vec![
+            ("200 OK", listed_playbook(), Framing::Sized),
+            ("200 OK", content_of_size(LIMIT), Framing::Unsized),
+        ])
+        .await;
+        let session = signed_in(server).await;
+        let playbook = fetch_playbook(&session, PLAYBOOK_ID).await.unwrap();
+        assert_eq!(playbook.content.len(), LIMIT - r#"{"content":""}"#.len());
+
+        // One byte more, without a length: refused.
+        let (server, _) = serve_framed(vec![
+            ("200 OK", listed_playbook(), Framing::Sized),
+            ("200 OK", content_of_size(LIMIT + 1), Framing::Unsized),
+        ])
+        .await;
+        let session = signed_in(server).await;
+        let message = fetch_playbook(&session, PLAYBOOK_ID)
+            .await
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(message.contains("larger than 16 MiB"), "{message}");
+
+        // A length over the limit: refused before the body. The server sends none and keeps the
+        // connection open, so a client that read it would wait.
+        let (server, _) = serve_framed(vec![
+            ("200 OK", listed_playbook(), Framing::Sized),
+            ("200 OK", String::new(), Framing::Claims(LIMIT + 1)),
+        ])
+        .await;
+        let session = signed_in(server).await;
+        let fetched = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            fetch_playbook(&session, PLAYBOOK_ID),
+        )
+        .await
+        .expect("the client waited for a body over the limit");
+        let message = fetched.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(message.contains("larger than 16 MiB"), "{message}");
     }
 
     /// A directory holding a stub `ansible-playbook`: it runs `before`, records its arguments in
@@ -945,6 +1096,22 @@ mod tests {
             "traversal filename escaped temp: {path}"
         );
         assert!(!path.contains(".."), "'..' not sanitized: {path}");
+    }
+
+    #[test]
+    fn write_playbook_temp_keeps_only_letters_digits_dot_underscore_and_dash() {
+        // On Windows the path goes as an argument to Windows Terminal, which reads `;` as the end
+        // of a subcommand, and to `cmd`.
+        let dir = run_dir();
+        for (name, written) in [
+            ("a;b&c%d^e|f.yml", "playbook_a_b_c_d_e_f.yml"),
+            ("x y.yml", "playbook_x_y.yml"),
+            ("ü.yml", "playbook__.yml"),
+            ("Deploy-web_v1.2.yml", "playbook_Deploy-web_v1.2.yml"),
+        ] {
+            let path = write_playbook_temp(&dir.0, name, "- hosts: all\n").unwrap();
+            assert_eq!(Path::new(&path), dir.0.join(written), "{name:?}");
+        }
     }
 
     #[test]
