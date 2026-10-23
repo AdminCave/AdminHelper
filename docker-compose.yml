@@ -247,8 +247,9 @@ services:
   ca-issuer:
     image: ${CA_ISSUER_IMAGE:-ghcr.io/admincave/adminhelper/ca-issuer:latest}
     # Internal-only PKI plane: the single signing capability (D6). Reachable only
-    # via the gateway's enroll listener — now ENFORCED by the `pki` network below,
-    # not merely asserted (1.1); never from the host (no port mapping).
+    # from its peers on the `pki` network below, the gateway (its enroll listener)
+    # and postgres — ENFORCED by that network, not merely asserted (1.1); never from
+    # frps, the other services of the default net, or the host (no port mapping).
     expose:
       - "8090"
     volumes:
@@ -508,10 +509,10 @@ services:
   #     postgres:
   #       condition: service_healthy
 
-# Two planes. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
+# Three networks. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
 # plane is NOT on the shared default net — a compromised internet-facing frps could
 # otherwise reach ca-issuer:8090 and forge the gateway's mTLS headers to /renew, minting
-# client certs (1.1). Everything else stays on `default`.
+# client certs (1.1). frps sits alone on `frpedge`; everything else is on `default`.
 networks:
   default: {}
   pki:
@@ -519,7 +520,18 @@ networks:
   # The internet-facing frps tunnel edge, fenced off the internal default net so a
   # compromised frps can't reach the auth-less redis/victoria (3.28). Not `internal`:
   # frps IS the public edge and needs its published ports.
-  frpedge: {}
+  # No IP masquerading: frps only accepts connections, and its published ports keep
+  # working. It needs no outbound traffic, and the supervisor admits no entries that
+  # would make it connect out (server plugins; TOP_KEYS and the single table
+  # [transport.tls] in frps-supervisor.sh). Packets frps sends itself leave the host
+  # with the container's address, and Docker 28 and later drop packets addressed to a
+  # container from outside its network, answers included (unless the daemon runs with
+  # allow-direct-routing or the network in gateway mode nat-unprotected or routed): no
+  # connection beyond the host comes about. Services of the host itself stay reachable
+  # from this network.
+  frpedge:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
 
 volumes:
   frp-config:

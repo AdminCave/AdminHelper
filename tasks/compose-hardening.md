@@ -67,8 +67,10 @@ Abhängt von: T2
 Beweis: Code-Lesung apps/gateway/nginx.conf:12-14, :60-70, :132-199 (kein `limit_conn`, Timeouts auf dem Default von 60 s)
 HEAD: b1432223
 
-### T4 — Netze: frpedge ohne Masquerading, Doku der Netze  [ ]
-Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_hardening.py, docs/developer/index.html, docs/en/developer/index.html, CHANGELOG.md
+### T4 — Netze: frpedge ohne Masquerading, Doku der Netze  [x]
+Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_hardening.py, docs/developer/index.html, docs/en/developer/index.html, CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1aba8848 2026-10-23T06:59:54+02:00
+Review: approve (.ah-out/review/compose-hardening/T4.verdict.json)
 Änderung: `networks.frpedge` (`docker-compose.yml:453-456`) bekommt `driver_opts: com.docker.network.bridge.enable_ip_masquerade: "false"`. Der Kommentar darüber sagt: frps nimmt nur Verbindungen an, seine veröffentlichten Ports wirken weiter; ausgehenden Verkehr braucht es nicht, Plugin-Einträge lässt der Supervisor nicht zu (`apps/frps/frps-supervisor.sh:119-122`, `:212-221`); Dienste des Hosts selbst bleiben aus dem Netz erreichbar. Kommentare `:214-216` und `:445-448` korrigieren: im Netz `pki` hängen Gateway, ca-issuer und Postgres (wie `:266-268`). Tests in `test_compose_hardening.py`: (a) `frpedge` hat die Option mit dem String `"false"`, ist nicht `internal`, und nur frps hängt darin; (b) Gegenprobe: `default` und `pki` haben die Option nicht. Zuerst rot: (a).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py
 Doku: `docs/developer/index.html:106` + `docs/en/developer/index.html:84`: (1) im Netz `pki` hängen Gateway, ca-issuer und Postgres; den ca-issuer erreichen Gateway und Postgres, nicht frps und nicht die übrigen Dienste des Default-Netzes; (2) `frpedge` ohne Masquerading: frps hat keinen ausgehenden Verkehr über den Host hinaus, seine veröffentlichten Ports bleiben erreichbar · CHANGELOG (Changed, umlautfrei)

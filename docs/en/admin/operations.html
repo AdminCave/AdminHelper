@@ -148,6 +148,22 @@ services:
     pids_limit: 8192</code></pre>
           <p>Then run <code>docker compose up -d server</code>. If you raise <code>WEB_CONCURRENCY</code> a lot, check the server's limit: every Uvicorn worker brings its own thread pool and up to eight hook processes.</p>
           <p>On the certless planes, the gateway caps concurrent requests: beyond 16 concurrent requests per client address on the enrollment plane (<code>:8444</code>) and beyond 64 on the package repo (<code>:8445</code>) it answers <code>429</code>, likewise beyond 128 or 256 per plane in total. The 64 on <code>:8445</code> leave room for many agent hosts behind one NAT address. If a request's header does not arrive completely within 10&nbsp;s there, or its body stalls for more than 10&nbsp;s, the gateway closes the connection; it closes an idle keep-alive connection after 15&nbsp;s. The data plane <code>:443</code> is not affected.</p>
+          <p id="frpedge">frps sits alone on the network <code>frpedge</code>, which compose creates without IP masquerading: the published ports of frps stay reachable, but packets that frps sends itself leave the host with the container's address as the source, not the host's. Docker drops the answers from version&nbsp;28 on, because it does not pass packets addressed to a container directly, unless the daemon runs with <code>allow-direct-routing</code> or the network in gateway mode <code>nat-unprotected</code> or <code>routed</code>; so no connection beyond the host comes about. With older versions, a machine with a route back into this network could answer (not verified). What remains: packets without an answer still leave the host, and services listening on the Docker host itself stay reachable from the network; the host's firewall protects them, not Docker.</p>
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Optional: drop packets from <code>frpedge</code> on the host</div><p>To keep these packets inside the host as well, add a rule to the chain <code>DOCKER-USER</code>, which Docker provides for your own rules ahead of its own (<a href="https://docs.docker.com/engine/network/firewall-iptables/">Docker docs: Docker with iptables</a>). The rule below drops everything that leaves the bridge of <code>frpedge</code> for another network and does not belong to a connection opened from outside; the published ports of frps keep working, services of the host itself are not covered. It lasts until the host restarts; the host's firewall management makes it permanent. When compose creates the network anew (after <code>docker compose down</code>, say), the bridge has a new name: set the rule again with the new name. Checked with Docker&nbsp;29 and the iptables backend. With the nftables backend (experimental in Docker&nbsp;29) there is no <code>DOCKER-USER</code>, the rule goes into a table of its own there (<a href="https://docs.docker.com/engine/network/firewall-nftables/">Docker docs: Docker with nftables</a>); for that and for hosts with firewalld or ufw: not verified.</p></div>
+          </div>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># In the install directory, while frps runs: frps sits only on this project's network
+# frpedge; its bridge is named br- and the first 12 characters of the network ID.
+ID=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{println .NetworkID}}{{end}}' "$(docker compose ps -q frps)" | grep .)
+BR=br-$(printf '%s' "$ID" | cut -c1-12)
+if [ -n "$ID" ] &amp;&amp; [ "$(printf '%s\n' "$ID" | wc -l)" -eq 1 ] &amp;&amp; ip link show "$BR" &gt;/dev/null 2&gt;&amp;1; then
+  sudo iptables -I DOCKER-USER -i "$BR" ! -o "$BR" -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP
+else
+  echo "bridge of frpedge not found unambiguously, no rule set" &gt;&amp;2
+fi
+# To remove it: the same iptables line with -D instead of -I (BR as above)</code></pre>
 
           <h2>Timezone</h2>
           <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. The API returns timestamps in UTC with <code>Z</code> regardless (web and desktop show them in the browser's or machine's local time), and scheduled hooks run on UTC.</p>

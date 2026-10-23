@@ -18,6 +18,10 @@ file-capability `ping` gains nothing and falls back to ICMP datagram sockets, wh
 grants only to the groups in net.ipv4.ping_group_range; compose sets the range itself, whatever
 the engine defaults to.
 
+The tunnel edge network frpedge, on which frps sits alone, runs without IP masquerading: frps
+only accepts connections, so its published ports keep working, and the packets it sends itself
+leave the host with the container's address. The other networks keep Docker's default.
+
 Only the base file is read: docker-compose.test.yml carries `!override`, which `yaml.safe_load`
 refuses, and the shipped topology is the base file anyway.
 """
@@ -28,10 +32,15 @@ import yaml
 
 _COMPOSE = Path(__file__).resolve().parents[3] / "docker-compose.yml"
 _NO_NEW_PRIVILEGES = "no-new-privileges:true"
+_MASQUERADE = "com.docker.network.bridge.enable_ip_masquerade"
+
+
+def _compose() -> dict:
+    return yaml.safe_load(_COMPOSE.read_text(encoding="utf-8"))
 
 
 def _services() -> dict:
-    return yaml.safe_load(_COMPOSE.read_text(encoding="utf-8"))["services"]
+    return _compose()["services"]
 
 
 def test_no_process_in_any_service_gains_privileges_on_exec():
@@ -56,3 +65,25 @@ def test_every_service_has_a_process_limit_and_the_server_room_for_its_workers()
 def test_the_monitoring_app_user_may_open_icmp_datagram_sockets():
     sysctls = _services()["monitoring"].get("sysctls", {})
     assert sysctls.get("net.ipv4.ping_group_range") == "0 2147483647"
+
+
+def test_frpedge_runs_without_ip_masquerading_and_holds_frps_alone():
+    compose = _compose()
+    frpedge = compose["networks"]["frpedge"] or {}
+    on_frpedge = {
+        name
+        for name, service in compose["services"].items()
+        if "frpedge" in service.get("networks", [])
+    }
+
+    # The string: compose refuses a YAML bool as a driver option.
+    assert (frpedge.get("driver_opts") or {}).get(_MASQUERADE) == "false"
+    # Not internal: frps is the public edge and needs its published ports.
+    assert frpedge.get("internal", False) is False
+    assert on_frpedge == {"frps"}
+
+
+def test_the_other_networks_keep_ip_masquerading():
+    networks = _compose()["networks"]
+    options = {name: (networks[name] or {}).get("driver_opts") or {} for name in ("default", "pki")}
+    assert {name: opts[_MASQUERADE] for name, opts in options.items() if _MASQUERADE in opts} == {}
