@@ -141,6 +141,81 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
   Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
   Entwickler (DE+EN).
+- **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
+  und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
+  `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
+  Pakete fuer Hooks gehoeren ins Image. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Hooks: Webhook-Trigger prueft seinen JSON-Body wie jeder andere Request-Body:** Ein NUL-Byte oder ein einzelnes
+  Surrogat (U+D800 bis U+DFFF; JSON schreibt beide nur als Escape) in einem String oder Schluessel des Bodys von
+  `POST /api/hooks/trigger` und `/api/hooks/trigger/{token}` ergibt `422` mit dem Ort im `loc`, statt das Skript damit
+  zu starten; bisher endete die Antwort mit 500, sobald das Skript den Wert zurueckgab, und ein Skript, das ihn
+  speicherte, scheiterte an der Datenbank. Rate-Limit, Token und Aktiv-Status werden weiter vorher geprueft; ein Body,
+  der kein JSON ist, kommt wie bisher als leeres `payload` an. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **`create-admin --password` gibt das Passwort vor dem Anlegen ueber stdin an einen frischen Prozess weiter:**
+  `python -m app.cli create-admin --password …` ersetzt sich vor dem Anlegen des Benutzers per `exec` durch
+  `create-admin --password-stdin` und legt das Passwort dafuer auf stdin; Hooks auf `user.created` laufen so in einem
+  Prozess, dessen Kommandozeile das Passwort nicht traegt. Bis zum Neustart steht es dort weiter, Interpreter-Optionen
+  des ersten Aufrufs (`python -X …`) gelten danach nicht mehr, und Meldungen, die der Server beim Laden seiner
+  Konfiguration auf stderr schreibt, erscheinen zweimal. Ein Passwort mit Zeilenumbruch (das `--password-stdin`
+  nie annehmen konnte) oder eines, das samt Zeilenumbruch nicht in den Puffer einer Pipe passt (unter Linux meist
+  64 KiB), lehnt `--password` mit Exit 2 ab. Empfohlen bleibt `--password-stdin`. Doku: README.
+- **Compose: alle Dienste mit no-new-privileges und Prozessgrenze:** Jeder Dienst in `docker-compose.yml` laeuft mit
+  `no-new-privileges` (bisher nur frps) und hat eine Prozessgrenze (`pids_limit`, Prozesse und Threads): server 4096;
+  scheduler, monitoring und victoria 1024; postgres, gateway, ca-issuer und frps 512; redis 256. Der Dienst monitoring
+  setzt `net.ipv4.ping_group_range` selbst, damit der Ping-Check ohne Sonderrechte laeuft. Eine Grenze hebt man per
+  `docker-compose.override.yml` an, die `update.sh` stehen laesst; wer `WEB_CONCURRENCY` stark erhoeht, prueft die
+  Grenze des server. Doku: Betrieb (DE+EN).
+- **Compose: Speichergrenze je Dienst:** Jeder Dienst in `docker-compose.yml` hat eine Speichergrenze (`mem_limit`):
+  postgres und victoria 8 GiB, server 6 GiB, monitoring 4 GiB, scheduler und frps 2 GiB, gateway 1 GiB, ca-issuer und
+  redis 512 MiB. Die Grenzen liegen weit ueber dem Bedarf im Leerlauf und reservieren keinen Speicher; ist eine
+  erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in
+  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics richtet seine Caches nach
+  seiner Grenze aus (60 Prozent davon) statt nach dem Arbeitsspeicher des Hosts. Eine Grenze hebt man per
+  `docker-compose.override.yml` an. Doku: Betrieb (DE+EN).
+- **Compose: Gateway nur mit den Capabilities, die nginx braucht:** Der Dienst gateway laeuft mit `cap_drop: [ALL]`
+  und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker
+  laufen als Nutzer `nginx` ohne Capabilities. Wie bei frps setzt Compose `net.ipv4.ip_unprivileged_port_start` auf 0,
+  damit nginx die Ports 443, 8444 und 8445 ohne `NET_BIND_SERVICE` oeffnet. Doku: Betrieb (DE+EN).
+- **Gateway: Verbindungsgrenzen und kurze Timeouts auf den certless Ebenen:** Auf :8444 (Enrollment) und :8445
+  (Paket-Repo) beantwortet das Gateway mehr als 16 bzw. 64 gleichzeitige Anfragen je Client-Adresse und mehr als 128
+  bzw. 256 je Ebene mit 429. Dort schliesst es eine Verbindung, deren Anfrage-Kopf nicht binnen 10 s ankommt oder deren
+  Body laenger als 10 s stockt, und untaetige Keep-Alive-Verbindungen nach 15 s (bisher 60 s bzw. 75 s). Die
+  Daten-Plane :443 bleibt unveraendert. Doku: Betrieb (DE+EN).
+- **Compose: Netz frpedge ohne IP-Masquerading:** Das Netz `frpedge`, in dem frps allein haengt, legt Compose ohne
+  IP-Masquerading an: frps baut keine Verbindungen ueber den Host hinaus auf, seine veroeffentlichten Ports bleiben
+  erreichbar. Die Betriebs-Doku nennt, was bleibt (Pakete ohne Antwort, Dienste des Hosts selbst), und zeigt eine
+  optionale Regel in der Kette `DOCKER-USER`. Die Doku der Netze nennt Postgres neben Gateway und ca-issuer im Netz
+  `pki`. Doku: Betrieb, Entwicklung (DE+EN).
+- **Compose: CA-Root-Passphrase als Secret statt Umgebungsvariable:** Der ca-issuer bekommt `CA_ROOT_PASSPHRASE`
+  als Compose-Secret, eine Datei unter `/run/secrets`, und nicht mehr als Umgebungsvariable; damit steht sie nicht
+  mehr in der Umgebung des Containers (`docker inspect`, `/proc/<pid>/environ`). Compose liest den Wert weiter aus
+  `CA_ROOT_PASSPHRASE` in der `.env` und setzt `CA_ROOT_PASSPHRASE_FILE` selbst. Nach dem ersten Start darf der Wert
+  leer sein; danach erzeugt `docker compose up -d` den ca-issuer neu, und die Datei verschwindet (ein Label des
+  Dienstes traegt, ob ein Wert gesetzt ist, nie den Wert). Die Zeile `CA_ROOT_PASSPHRASE=` muss bleiben: fehlt sie,
+  bricht `docker compose up` ab. Voraussetzung ist Docker Compose v2.6 oder neuer. Doku: Installation (DE+EN).
+- **init-secrets.sh: CA-Root-Passphrase nur bei frischer Installation:** `scripts/init-secrets.sh` erzeugt
+  `CA_ROOT_PASSPHRASE` nur noch in dem Lauf, der auch `POSTGRES_PASSWORD` erzeugt, also bei einer frischen
+  Installation. Bisher fuellte das naechste Update (`update.sh` ruft das Skript auf) einen geleerten Wert mit einer
+  neuen Passphrase, die nicht zum vorhandenen Root-Key passte. Ist `POSTGRES_PASSWORD` gesetzt, bleibt ein leerer Wert
+  leer, und das Skript sagt es in einer Zeile. Wer `POSTGRES_PASSWORD` vor der Installation von Hand setzt, setzt auch
+  `CA_ROOT_PASSPHRASE` von Hand, sonst bricht der erste Start des ca-issuer ab. `restore.sh` sagt, dass `.env.restored`
+  die Zeile `CA_ROOT_PASSPHRASE=` braucht, bevor sie die `.env` ersetzt. Doku: Betrieb (DE+EN).
+- **Server und Compose: Client-Adresse hinter dem Gateway:** Compose setzt `TRUSTED_PROXIES` beim server auf den
+  Dienst `gateway`, gefolgt von einem Wert aus der `.env`; `TRUSTED_PROXIES` nimmt dafuer neben Adressen und Netzen
+  auch Hostnamen, die der Server alle 30 s neu aufloest. Hinter dem Gateway beziehen sich damit die Ratenlimits je
+  Adresse (Login, Webhook-Trigger, Agent-Reports), `ALLOWED_IPS` und die Adresse im Audit-Log auf den Client statt auf
+  das Gateway. Forwarded-Header anderer Gegenstellen wertet der Server weiterhin nicht aus, und `TRUST_PROXY_HEADERS`
+  wirkt unter Compose nicht mehr. Wer `ALLOWED_IPS` gesetzt hat, prueft vor dem Update, dass die Netze der Clients
+  enthalten sind: Bisher pruefte der Server die Adresse des Gateways, danach weist er Clients ausserhalb der Liste mit
+  403 ab. Steht ein weiterer Proxy vor dem Gateway, sieht der Server dessen Adresse; ein Eintrag in `TRUSTED_PROXIES`
+  aendert daran nichts. Doku: Installation, Benutzer (DE+EN).
+- **Web: Hinweisseite fuer Benutzer ohne Admin-Rechte (R-0721):** Benutzer ohne Admin-Rechte sehen im Web-Panel
+  einen uebersetzten Hinweis, dass das Panel Admins vorbehalten ist und der Desktop-Client der Weg ist (DE „Web-Panel
+  nur fuer Admins“, EN „Web panel for admins only“), statt der alten Platzhalterseite „Nicht verfuegbar“. Doku:
+  Admin-Handbuch, Benutzer (DE+EN).
+- **Web: Seite „nicht gefunden“ fuer Admins (R-0721):** Eine unbekannte Adresse im Web-Panel zeigt Admins eine
+  uebersetzte Seite „nicht gefunden“ (DE „Seite nicht gefunden“, EN „Page not found“) mit Link zur
+  Benutzerverwaltung, statt der alten Platzhalterseite „Nicht verfuegbar“.
 - **Monitoring: E-Mail-Alert-Regeln mit eigenem `smtp_host` melden sich nur mit eigenen Zugangsdaten an:**
   `SMTP_USER` und `SMTP_PASSWORD` gelten nur fuer den Relay aus `SMTP_HOST` (Vergleich ohne Gross-/Kleinschreibung).
   Eine Regel, die einen anderen `smtp_host` setzt, meldet sich nur mit ihren eigenen `smtp_user` und `smtp_password`
@@ -328,6 +403,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
   found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
   keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+- **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
+  galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
+  (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
+  zeigte bei `TZ` ungleich UTC die Ortszeit als UTC, auch bei Intervall-Hooks; jetzt steht dort der naechste Lauf in
+  UTC. Doku: Server-Entwicklerdoku (DE+EN).
+- **Hooks: Hintergrundprozess eines Skripts verzoegert die Antwort nicht mehr ueber 60 s (R-0778):** Startete ein
+  Hook einen Hintergrundprozess, der stdout oder stderr des Workers erbte, kam die Antwort von `/api/hooks/trigger`
+  (auch `/api/hooks/trigger/{token}`) und `/api/hooks/{id}/run` erst nach mehr als 60 s, am Gateway also als 504.
+  Nach dem Ende des Workers wartet der Runner jetzt hoechstens 2 s auf den Rest der Ausgabe, killt dann die
+  Prozessgruppe und wartet noch einmal hoechstens 2 s; ein Lauf dauert so hoechstens 34 s. Doku:
+  Hook-Entwicklerdoku (DE+EN).
+- **Desktop: Tunnel fuer Benutzer ohne Admin-Rechte (R-0484):** Der Desktop loest fuer Benutzer ohne
+  Admin-Rechte auch Verbindungen auf, die ein Admin von Hand mit einem Tunnel verknuepft hat, und zeigt an ihren
+  Verbindungen den Tunnel. Dafuer liefert `GET /api/frp/tunnels` einem Nicht-Admin statt `403` die freigegebenen
+  Tunnel seiner zugewiesenen Server, je nur mit den Feldern, die der Desktop liest (ohne Secret, ohne
+  `localIp`, `frpConfigId`, `extraConfig`, `tags`, `createdAt`); ohne zugewiesenen Server eine leere Liste.
+  Admins bekommen die Liste wie bisher; die uebrigen Tunnel-Routen bleiben Admins vorbehalten. Doku:
+  API-Referenz (DE+EN).
 - **Monitoring: E-Mail-Alert-Regeln ohne eigenen `smtp_host` nutzen den Relay aus `SMTP_HOST` (R-0634):** Compose
   reicht `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` und `SMTP_FROM` jetzt auch an den Dienst
   `monitoring`, wie an `server` und `scheduler`. Bisher fehlten sie dort, und jede E-Mail-Regel ohne eigenen
