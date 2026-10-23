@@ -72,19 +72,32 @@ export function registerAuthFailureHandler(handler: () => void): void {
 async function tryRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
+  const refresh = async (): Promise<boolean> => {
+    // The refresh token rides along as the HttpOnly cookie (same-origin
+    // request → sent automatically); the body is intentionally empty.
+    const res = await fetchWithTimeout('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as RefreshResponse;
+    setAccessToken(data.access_token);
+    return true;
+  };
+
   refreshInFlight = (async () => {
     try {
-      // The refresh token rides along as the HttpOnly cookie (same-origin
-      // request → sent automatically); the body is intentionally empty.
-      const res = await fetchWithTimeout('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      if (!res.ok) return false;
-      const data = (await res.json()) as RefreshResponse;
-      setAccessToken(data.access_token);
-      return true;
+      // refreshInFlight bundles only within this tab, but all tabs share the refresh cookie.
+      // The server rotates the refresh token and treats a second refresh with the same token
+      // as reuse: every session of the user ends (R-0649). A Web Lock holds per origin across
+      // all tabs, so their refreshes run one after another, and a tab that gets the lock after
+      // another one already sends the new cookie. Web Locks exist only in secure contexts
+      // (HTTPS, localhost); without them the refresh is bundled within the tab only.
+      if ('locks' in navigator) {
+        return await navigator.locks.request('adminhelper-auth-refresh', refresh);
+      }
+      return await refresh();
     } catch {
       return false;
     } finally {
