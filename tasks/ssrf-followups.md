@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard: direkter Weg neben einem Proxy, unlesbare URLs, Kommentar- und Test-Nachzug — Task-Ledger
-Status: aktiv · Branch: feature/ssrf-followups · Review: pro Task
+Status: bereit · Branch: feature/ssrf-followups · Review: pro Task
 Spec: docs/features/ssrf-followups.md (Roadmap R-0606, R-0599; T1 und T2 gehören zum Paket, Kevin 2026-10-22)
 Heavy: none — keine Route, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert werden die Proxy-Weiche von `pinned_client` und der Fang in `check_target` in beiden Guard-Kopien, zwei Kommentare und Tests; die Aufrufer (HTTP-Check, Alert-Webhook, Hook-Helfer) bleiben, und keine schwere Suite setzt einen Proxy oder fährt diese Wege (`scripts/tests/`, Compose und Workflows nennen keine Proxy-Variable; wie bei ssrf-pin und ssrf-idna)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -95,8 +95,10 @@ Orakel: mutation-sample — M1 wie in `Änderung:`; eine Stichprobe, kein Beweis
 Dedup-Key: ref:monitoring:ssrf-tests-nits
 HEAD: 53a7dbc5
 
-### T6 — Guard-Tests: verify an den Proxy-Mounts; Docstring des Property-Tests sagt, was der Pin vergleicht (Branch-Prüfung)  [ ]
+### T6 — Guard-Tests: verify an den Proxy-Mounts; Docstring des Property-Tests sagt, was der Pin vergleicht (Branch-Prüfung)  [x]
 Komponente: server · Dateien: apps/server/tests/test_ssrf_pin.py, apps/server/tests/test_ssrf_properties.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b333b63f 2026-10-23T20:09:55+02:00
+Review: approve (.ah-out/review/ssrf-followups/T6.verdict.json)
 Änderung: (a) Seit T1 baut `pinned_client` die Proxy-Transports selbst (`httpx.HTTPTransport(verify=verify, proxy=proxy)`, `apps/server/app/core/ssrf.py`, gleich in der Monitoring-Kopie); vorher reichte `httpx.Client(verify=verify)` den Wert an seine Proxy-Transports weiter. Kein Test kommt auf dem Proxy-Weg bis zu `verify` (Fund des tester). Neuer Test in `test_ssrf_pin.py`, Abschnitt Proxy: `HTTPS_PROXY=http://192.0.2.10:3128` (`_PROXY`), `https://pinned.example/x`, parametrisiert über `verify` = `False`, `True` und ein `ssl.SSLContext`; `httpx.HTTPTransport.__init__` zeichnet seine Argumente auf (Original danach aufrufen); geprüft: der Transport mit `proxy=` bekam genau diesen `verify` (bei `SSLContext` dasselbe Objekt), der innere Transport des Pins ebenso, und es entsteht genau ein Proxy-Transport für das Muster `https://`. Proxy-Variablen vorher löschen wie die Nachbartests. Mutations-Stichprobe in einer Kopie (beide Guard-Kopien gleich, je allein): M1 `HTTPTransport(proxy=proxy)` → die Fälle `False` und `SSLContext` rot; M2 `HTTPTransport(verify=False, proxy=proxy)` → die Fälle `True` und `SSLContext` rot. Ergebnis in den Commit-Body. (b) Docstring von `test_the_guard_checks_the_host_that_httpx_will_actually_fetch` (`test_ssrf_properties.py`, der in T3 geänderte Satz): der Pin vergleicht den Host der Anfrage mit dem Host, den httpx aus derselben URL in `pinned_client` liest (`_PinnedTransport(parsed.raw_host…)`), nicht mit dem Host, den der Guard geprüft hat; der Satz sagt, was nach `check_target` und `pinned_client` wirklich gilt, wenn Guard und httpx verschiedene Hosts läsen (vorher am Code prüfen und mit einer Probe belegen; Fund des Branch-Reviewers: `pinned_client("http://pinned.example/x", Target(ALLOWED, "other.example", (_V4,)))` verbindet). Der Rest des Docstrings und der Test bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf_pin.py tests/test_ssrf_properties.py tests/test_ssrf_parity.py
 Doku: keine (nur Tests)

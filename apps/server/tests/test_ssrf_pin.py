@@ -15,6 +15,7 @@ monitoring copy is the same code (test_ssrf_parity.py), so it is covered here to
 
 import datetime
 import http.server
+import inspect
 import itertools
 import socket
 import ssl
@@ -457,6 +458,47 @@ def test_with_a_proxy_the_request_leaves_with_the_hostname(monkeypatch):
     (sent,) = seen
     assert sent.url == httpx.URL(url)
     assert "sni_hostname" not in sent.extensions
+
+
+@pytest.mark.parametrize("verify", [False, True, "context"])
+def test_the_proxy_transport_gets_the_callers_verify(monkeypatch, verify):
+    # pinned_client builds the proxy transports itself; an httpx.Client(verify=...)
+    # used to hand the value on to its own. Bound against the real signature, so a
+    # transport built without verify records httpx's default, not a missing value.
+    if verify == "context":
+        verify = ssl.create_default_context()
+    monkeypatch.setenv("HTTPS_PROXY", _PROXY)
+    _resolving_to(monkeypatch, _V4)
+    real_init = httpx.HTTPTransport.__init__
+    signature = inspect.signature(real_init)
+    built: list[tuple[httpx.HTTPTransport, dict]] = []
+
+    def _init(self, *args, **kwargs):
+        bound = signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        built.append((self, bound.arguments))
+        real_init(self, *args, **kwargs)
+
+    handled: list[httpx.HTTPTransport] = []
+
+    def _handle(self, _request):
+        handled.append(self)
+        return httpx.Response(200)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "__init__", _init)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _handle)
+    url = "https://pinned.example/x"
+
+    with pinned_client(url, check_target(url), verify=verify) as client:
+        client.get(url, timeout=5)
+
+    ((proxy_transport, proxy_args),) = [(t, a) for t, a in built if a["proxy"] is not None]
+    ((_, inner_args),) = [(t, a) for t, a in built if a["proxy"] is None]
+    assert proxy_args["proxy"] == _PROXY
+    assert proxy_args["verify"] is verify
+    assert inner_args["verify"] is verify
+    # The one proxy transport is the one mounted for https://: it handled the request.
+    assert handled == [proxy_transport]
 
 
 def _setenv(monkeypatch, env: dict[str, str]) -> None:
