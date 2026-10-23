@@ -170,8 +170,10 @@ Diagnose-Bundle (T5–T7), der Modus des Bundles (T8) und was `--mask-hosts` mas
 4. **T7: jede Zeile eines mehrzeiligen Werts wird eine eigene Regel** (eine Logzeile trägt höchstens eine Zeile des
    Werts), außer einer aus reinem Leerraum: sie trägt kein Geheimnis. Eine kurze Zeile maskiert dann auch Fremdes
    (sichere Richtung). Alternative „nur Zeilen ab n Zeichen“ ließe kurze Teile stehen; verworfen.
-5. **T8: `mktemp` im Zielordner + `mv -fT`** (wie backup.sh) statt nur `umask 077`: die umask wirkt nicht auf eine Datei,
-   die unter dem Namen schon liegt. Unter `sudo` gehört das Bundle dann root mit 0600 (Doku-Satz).
+5. **T8: Zwischendatei im Zielordner + `mv -fT`** statt nur `umask 077`: die umask wirkt nicht auf eine Datei, die
+   unter dem Namen schon liegt. Die Zwischendatei legt erst das Schreiben an, exklusiv und mit 0600 (Name von
+   `mktemp -u`, `tar` schreibt in eine Pipe, `dd conv=excl` legt die Datei an); liegt unter ihrem Namen schon etwas,
+   auch ein Link, endet der Lauf mit Fehler. Unter `sudo` gehört das Bundle dann root mit 0600 (Doku-Satz).
 6. **T11: einteilige Namen case-sensitiv und mit strengerem Rand.** Ein Rechnername ohne Punkt ist oft ein gewöhnliches
    Wort oder ein Dienstname. Er wird nur noch getroffen, wenn er nicht Teil eines mit `-`, `.`, `_` verbundenen Worts
    oder eines Pfadsegments (`…/server:`) ist, und nur in der Schreibweise von `uname -n`. Namen mit Punkt bleiben

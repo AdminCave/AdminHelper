@@ -280,6 +280,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `SMTP_PASSWORD`: mit und ohne `--mask-hosts` steht in `env.sanitized` `SMTP_USER=<redacted>`, und sein Wert wird in
   `report.txt` und den Logs `<redacted>`; kein Schalter stellt das ab. Der Wert wird nur als ganzes Wort ersetzt, ein
   kurzer Benutzer wie `admin` laesst `adminhelper` stehen. Doku: Troubleshooting (DE+EN), README.
+- **Diagnose-Bundle: von Anfang an nur fuer den ausfuehrenden Nutzer lesbar und erst vollstaendig unter seinem
+  Namen:** `scripts/diagnostics.sh` schreibt das Bundle in eine versteckte Zwischendatei im Zielordner, die von Anfang
+  an den Modus 0600 hat, und benennt sie erst danach in `adminhelper-diagnostics-<ts>.tar.gz` um; auch die Dateien
+  darin sind nur fuer diesen Nutzer lesbar. Ein Lauf, der vorher scheitert, hinterlaesst weder ein Bundle noch eine
+  Zwischendatei. Eine Datei, die schon unter dem Namen liegt, wird ersetzt, statt mit ihren Rechten ueberschrieben zu
+  werden. Mit `sudo` gestartet gehoert das Bundle root. Die Namen und Adressen fuer `--mask-hosts` stehen waehrend des
+  Laufs nicht mehr in der Prozessliste. Doku: Troubleshooting (DE+EN).
 
 ### Removed
 

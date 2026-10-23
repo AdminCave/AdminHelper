@@ -45,7 +45,11 @@
 #       of the key on a line a value runs on to as well; sanitize_env leaves out
 #       the lines a value runs on to, to the end of the file without a closing
 #       quote; under the locale C.UTF-8, an NBSP in front of a value and at the end
-#       of an unquoted one is no part of it, one inside quotes is.
+#       of an unquoted one is no part of it, one inside quotes is;
+#   (m) main under umask 022: the bundle has mode 600, replaces a file under its
+#       name instead of writing into it, and leaves no temp file, also when tar
+#       fails or a link already holds the temp name (nothing is written through
+#       it); no value of the .env stands in the arguments of sed.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -671,6 +675,108 @@ else
         fail=1
     fi
 fi
+
+# --- (m) main: the bundle is 0600 and under its name only when whole --------------
+# The stubs of (e) in a dir of its own, under umask 022. A date stub fixes the name,
+# and a bundle of an earlier run lies there with mode 644: it is replaced by one with
+# mode 600, and no temp file stays. A sed wrapper logs its arguments: no value of the
+# .env stands in them, an argument stands in the process list of the host. Then the
+# temp name is taken by a link before the bundle is written (a mktemp stub sets it),
+# to a file and to a FIFO outside the output dir: the run fails at once (timeout
+# guards a hang), nothing reaches the link's target, the earlier bundle stays as it
+# was, and the link goes. Last a tar that fails: the earlier bundle stays as it was,
+# and its temp file goes.
+m="$tmp/m"
+mkdir -p "$m/bin" "$m/out" "$m/x"
+cp "$work/docker-compose.yml" "$m/"
+cp "$work/bin/docker" "$work/bin/uname" "$m/bin/"
+printf 'SECRET_KEY=rep9secret\nDOMAIN=ah.example.com\nEXTRA_SANS=argv9.example.com\nADMIN_PASSWORD=argv9secret\n' \
+    > "$m/.env"
+cat > "$m/bin/date" <<EOF
+#!/usr/bin/env bash
+[ "\$*" = '-u +%Y%m%dT%H%M%SZ' ] && { echo 20261022T100000Z; exit 0; }
+exec "$(type -P date)" "\$@"
+EOF
+cat > "$m/bin/sed" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$m/sed-args.log"
+exec "$(type -P sed)" "\$@"
+EOF
+chmod +x "$m/bin/date" "$m/bin/sed"
+m_bundle="$m/out/adminhelper-diagnostics-20261022T100000Z.tar.gz"
+printf 'old\n' > "$m_bundle"
+chmod 644 "$m_bundle"
+rc=0
+( umask 022 && cd "$m" && PATH="$m/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" --mask-hosts \
+    --output "$m/out" ) > "$m/run.log" 2>&1 || rc=$?
+if [ "$rc" != 0 ]; then
+    echo "(m) main: exit $rc" >&2; sed 's/^/    | /' "$m/run.log" >&2; fail=1
+else
+    m_mode="$(stat -c %a "$m_bundle")"
+    [ "$m_mode" = 600 ] || { echo "(m) the bundle has mode $m_mode, expected 600" >&2; fail=1; }
+    { tar -xzf "$m_bundle" -C "$m/x" && [ -f "$m/x/report.txt" ]; } 2>/dev/null \
+        || { echo "(m) the bundle is no archive with report.txt" >&2; fail=1; }
+    # The files in it were the running user's alone too (umask 077 in main).
+    m_open="$(tar -tvzf "$m_bundle" 2>&1 | awk '$1 != "-rw-------" && $1 != "drwx------"')" || true
+    [ -z "$m_open" ] || { echo "(m) entries of the bundle open to others: $m_open" >&2; fail=1; }
+    m_left="$(ls -A "$m/out")"
+    [ "$m_left" = "${m_bundle##*/}" ] || { echo "(m) the output dir holds: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+fi
+# The wrapper ran (else the search below proves nothing), and saw no value. The search
+# is for argv9, the start of both values: a rule carries a name escaped
+# (argv9\.example\.com), which a search for the name itself misses.
+[ -s "$m/sed-args.log" ] || { echo "(m) the sed wrapper logged no call" >&2; fail=1; }
+if grep -qF argv9 "$m/sed-args.log"; then
+    echo "LEAK: (m) a value of the .env stood in the arguments of sed: $(grep -F argv9 "$m/sed-args.log")" >&2
+    fail=1
+fi
+
+# cksum only on a regular file: a link to the FIFO under the bundle's name would block.
+m_same() { [ ! -L "$m_bundle" ] && [ -f "$m_bundle" ] && [ "$(cksum < "$m_bundle")" = "$m_sum" ]; }
+m_sum="$(cksum < "$m_bundle")"
+mkdir -p "$m/bin-link" "$m/bin-tar"
+cat > "$m/bin-link/mktemp" <<EOF
+#!/usr/bin/env bash
+case "\${!#}" in
+    */.adminhelper-diagnostics-*)
+        name="\$("$(type -P mktemp)" -u -- "\${!#}")" || exit 1
+        ln -s -- "\$LINK_TO" "\$name" || exit 1
+        printf '%s\n' "\$name" ;;
+    *) exec "$(type -P mktemp)" "\$@" ;;
+esac
+EOF
+chmod +x "$m/bin-link/mktemp"
+: > "$m/outside"
+mkfifo "$m/fifo"
+for m_to in outside fifo; do
+    rc=0
+    ( umask 022 && cd "$m" && LINK_TO="$m/$m_to" PATH="$m/bin-link:$m/bin:$PATH" TMPDIR="$tmp" \
+        timeout 30 bash "$ROOT/scripts/diagnostics.sh" --output "$m/out" ) > "$m/run-$m_to.log" 2>&1 || rc=$?
+    case "$rc" in
+        0) echo "(m) a link to the $m_to under the temp name: exit 0" >&2; fail=1 ;;
+        124) echo "(m) a link to the $m_to under the temp name: the run hung" >&2; fail=1 ;;
+    esac
+    m_same || { echo "(m) a link to the $m_to under the temp name changed the earlier bundle" >&2; fail=1; }
+    m_left="$(ls -A "$m/out")"
+    [ "$m_left" = "${m_bundle##*/}" ] \
+        || { echo "(m) a link to the $m_to left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+done
+[ ! -s "$m/outside" ] || { echo "(m) the bundle went into the target of a link under the temp name" >&2; fail=1; }
+
+cat > "$m/bin-tar/tar" <<'EOF'
+#!/usr/bin/env bash
+printf 'part\n'
+exit 1
+EOF
+chmod +x "$m/bin-tar/tar"
+rc=0
+( umask 022 && cd "$m" && PATH="$m/bin-tar:$m/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" \
+    --output "$m/out" ) > "$m/run-tar.log" 2>&1 || rc=$?
+[ "$rc" != 0 ] || { echo "(m) main with a failing tar: exit 0" >&2; fail=1; }
+m_same || { echo "(m) a failing tar changed the earlier bundle" >&2; fail=1; }
+m_left="$(ls -A "$m/out")"
+[ "$m_left" = "${m_bundle##*/}" ] \
+    || { echo "(m) a failing tar left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
 
 # --- (h) the switch in the usage ----------------------------------------------------
 # The usage line is the last line --help prints: a range that ends too early loses it,

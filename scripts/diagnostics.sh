@@ -307,22 +307,29 @@ sanitize_env() {
     fi
     rules="$(host_rules "$envfile")"
     hosts="$(IFS='|'; printf '%s' "${HOST_KEYS[*]}")"
+    # The rules reach sed through a pipe, not as an argument: the arguments of a process
+    # stand in the process list for every user of the host, and the rules carry the
+    # names and addresses --mask-hosts is to hide.
     LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" -v secrets="$secrets" -v hosts="$hosts" "$prog" "$envfile" \
-        | LC_ALL=C sed -e "$rules"
+        | LC_ALL=C sed -f <(printf '%s\n' "$rules")
 }
 
 main() {
+    # Stage, rule file and bundle belong to the running user alone. Here, not at the
+    # top: the test sources the script for its functions.
+    umask 077
     if [ ! -f docker-compose.yml ]; then
         echo "Fehler: docker-compose.yml nicht gefunden. Bitte im Repo-Root ausfuehren." >&2
         exit 1
     fi
 
-    # `stage` is intentionally global, not local: the EXIT trap runs in the
-    # global scope after main returns, where a local would be unbound under set -u.
+    # `stage` and `partial` are intentionally global, not local: the EXIT trap runs in
+    # the global scope after main returns, where a local would be unbound under set -u.
     local ts sedfile
     ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    partial=""
     stage="$(mktemp -d)"
-    trap 'rm -rf "$stage"' EXIT
+    trap 'rm -rf "$stage"; [ -z "$partial" ] || rm -f -- "$partial"' EXIT
     mkdir -p "$stage/logs"
     sedfile="$stage/.redact.sed"
     build_redaction_sedfile ".env" "$sedfile" "$MASK_HOSTS"
@@ -375,7 +382,19 @@ main() {
     rm -f "$sedfile"  # the redaction script itself must not ship in the bundle
     local archive
     archive="${OUT_DIR%/}/adminhelper-diagnostics-${ts}.tar.gz"
-    tar -czf "$archive" -C "$stage" .
+    # Write to a hidden temp file in the output dir, then rename: a file already under
+    # the name is replaced instead of written into with its mode and owner, and a
+    # failed run leaves no half-written bundle under the name. The one open of the temp
+    # file creates it: exclusively (dd conv=excl, O_CREAT|O_EXCL), so anything already
+    # under its name, a link included, fails the run and is neither written nor
+    # followed, and 0600 (umask 077, here as well, so the mode does not rest on main).
+    # tar writes to the pipe and opens no path; dd without count keeps every short
+    # read, and pipefail fails the run on a failing tar. -T: a directory under the
+    # name fails the rename instead of taking the bundle in.
+    partial="$(mktemp -u -- "${OUT_DIR%/}/.adminhelper-diagnostics-${ts}.XXXXXX")"
+    ( umask 077; tar -czf - -C "$stage" . | dd of="$partial" conv=excl bs=64K status=none )
+    mv -fT -- "$partial" "$archive"
+    partial=""
 
     echo "[diagnostics] Bundle erstellt: $archive"
     echo "[diagnostics] Inhalt: report.txt, compose.yml, env.sanitized, logs/"
