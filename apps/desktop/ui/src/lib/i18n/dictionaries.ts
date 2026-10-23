@@ -74,6 +74,8 @@ export const translations: Translations = {
     'infra.prov.used': 'Verwendet ({time})',
     'infra.prov.active': 'Aktiv',
     'infra.prov.expired': 'Abgelaufen',
+    'infra.prov.badResponse':
+      'Token oder Server-ID haben nicht das erwartete Format — es wurde kein Befehl erzeugt.',
     'infra.conn.add': 'Verbindung',
     'infra.conn.empty': 'Keine Verbindungen für diesen Server',
     'infra.conn.new': 'Neue Verbindung',
@@ -870,6 +872,8 @@ export const translations: Translations = {
     'infra.prov.used': 'Used ({time})',
     'infra.prov.active': 'Active',
     'infra.prov.expired': 'Expired',
+    'infra.prov.badResponse':
+      'The token or server ID is not in the expected format — no command was generated.',
     'infra.conn.add': 'Connection',
     'infra.conn.empty': 'No connections for this server',
     'infra.conn.new': 'New connection',

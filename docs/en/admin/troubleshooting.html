@@ -60,7 +60,7 @@ docker compose logs server | grep 'untrusted proxy'</code></pre>
 
           <h2>Agent doesn't check in</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>adminhelper-agent run --verbose   # one-shot debug run
+<pre><code>sudo adminhelper-agent run --once --log-level debug   # one run by hand, with debug output
 systemctl status adminhelper-agent.timer
 journalctl -u adminhelper-agent.service -n 100 --no-pager
 openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate   # client cert expired?</code></pre>
@@ -115,12 +115,15 @@ docker compose logs monitoring | grep 'invalid api key'
 docker compose exec monitoring curl -s http://victoria:8428/health
 
 # Disk full?
-docker compose exec monitoring df -h /data/victoria</code></pre>
+docker compose exec monitoring df -h /data/victoria
+
+# Agent side, on the target host: one run by hand, with debug output
+sudo adminhelper-agent run --once --log-level debug</code></pre>
 
           <h2>FRP visitor connect hangs</h2>
           <ul>
             <li>Visitor-port pool exhausted? Scale <code>VISITOR_PORT_END</code>.</li>
-            <li>Client cert expired? Check <code>adminhelper-agent frpc rotate</code>.</li>
+            <li>Client cert of the agent expired? Check it on the agent host: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. The agent renews it itself on every run once half of its lifetime is over; if that fails, <code>Cert-Renew Fehler</code> shows in the journal of <code>adminhelper-agent.service</code>.</li>
             <li>Wrong <code>sk</code> on STCP tunnels – both sides must match.</li>
           </ul>
 
