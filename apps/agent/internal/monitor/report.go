@@ -27,7 +27,7 @@ func BuildReport(serviceNames []string) map[string]any {
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
 // saved. It also returns the state to save once this report has been pushed. ctx ends the tool calls
-// of the docker, proxmox, zfs and smart collectors.
+// of the service (systemctl, sc), docker, proxmox, zfs and smart collectors.
 func buildReportWithState(ctx context.Context, serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
 	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
 	resources := map[string]any{
@@ -72,12 +72,12 @@ func buildReportWithState(ctx context.Context, serviceNames []string, prev repor
 	}
 
 	// Service health (platform-specific)
-	svcHealth := serviceHealthCollector()
+	svcHealth := serviceHealthCollector(ctx)
 	if len(serviceNames) > 0 {
 		// Collect once and reuse for both the "watched" sub-key and the legacy
 		// top-level "services" key: avoids double systemctl/sc subprocess spawns
 		// per cycle and two snapshots that could disagree if a service flips.
-		watched := collectWatchedServices(serviceNames)
+		watched := collectWatchedServices(ctx, serviceNames)
 		svcHealth["watched"] = watched
 		report["services"] = watched
 	}

@@ -29,7 +29,7 @@ func stubReportHost(t *testing.T) {
 	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
-	serviceHealthCollector = func() map[string]any { return map[string]any{} }
+	serviceHealthCollector = func(context.Context) map[string]any { return map[string]any{} }
 	oldSystemState := systemStateCollector
 	systemStateCollector = func(st reportState) (map[string]any, reportState) { return nil, st }
 	oldHostFacts := hostFactsCalls

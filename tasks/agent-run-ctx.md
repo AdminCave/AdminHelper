@@ -154,8 +154,10 @@ Orakel: property — nach dem Ende des Kontexts startet kein weiterer smartctl-A
 Dedup-Key: bug:agent:run.go:no-per-run-deadline
 HEAD: b1432223
 
-### T11 — Collector: Kontext in systemctl und sc (R-0638)  [ ]
+### T11 — Collector: Kontext in systemctl und sc (R-0638)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/services_linux_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2ccaf41d 2026-10-23T10:37:02+02:00
+Review: approve (.ah-out/review/agent-run-ctx/T11.verdict.json)
 Änderung: `runSystemctl` (`internal/monitor/services_linux.go:165-169`) wird `func(ctx context.Context, args ...string)` über `runWithTimeout(ctx, "systemctl", …)`; `collectServiceHealth(ctx)` (`:17`), `resolveAliases(ctx, …)` (`:85`), `filterEnabledInactive(ctx, …)` (`:175`), `parseSystemctlColumns(ctx, …)` (`:266`) und `collectWatchedServices(ctx, names)` (`:287`) reichen ihn durch. Windows: `collectServiceHealth(ctx)` und `collectWatchedServices(ctx, names)` (`services_windows.go:24`, `:32`) mit `runWithTimeout(ctx, "sc", …)` (`:27`, `:42`, `:47`). `serviceHealthCollector` (`report.go`) wird `func(context.Context) map[string]any`; `buildReportWithState` gibt den Kontext an beide (`report.go:74`, `:79`). Der Einzel-Rückfall (bis 50 Aufrufe, `services_linux.go:184-186`) endet mit dem Kontext: ein Aufruf, den er beendet, gilt nicht als beantwortet (`answered`, `:208-211`). Tests: `stubShow` (`services_linux_test.go:216`), `stubCollector` (`:492`) und `report_test.go:32` mit Kontext. Neu `services_linux_test.go` `TestServiceHealthEndsAtTheEndOfTheContext`: falsches `systemctl`, das schläft (Für alle Tasks), `pluginTimeout` unverändert 15 s, Kontext mit 300 ms Deadline → `collectServiceHealth` kehrt binnen 3 s zurück, `error` nennt die Zeitüberschreitung (`systemctl list-units failed: timed out after 15s`, `services_linux.go:59-60`). Zuerst rot: auf dem Stand vor der Task wartet jeder der Aufrufe 15 s (Test läuft in seine Zeitschranke). Der builder fährt zusätzlich `GOOS=windows go vet ./...`.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)
