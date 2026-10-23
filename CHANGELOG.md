@@ -59,6 +59,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop unter Windows: Windows Terminal bekommt jedes Argument unveraendert:** Oeffnet der Desktop SSH oder einen
+  Ansible-Lauf in Windows Terminal, kommen Benutzer, Schluesselpfad und Ansible-Pfade als je ein Argument an, auch
+  mit `;` (Windows Terminal las ein `;` als Trenner seiner eigenen Befehle). Ein Wert, den Windows Terminal nicht
+  unveraendert weitergeben kann (leer, mit `"`, mit `%` — Windows Terminal setzt `%NAME%` ein —, mit Steuerzeichen
+  oder mit Leerzeichen und abschliessendem `\`), oeffnet nicht, und der Desktop meldet das („Windows Terminal cannot
+  pass … unchanged“).
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen

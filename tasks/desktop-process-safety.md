@@ -26,8 +26,10 @@ Für alle Tasks:
 - Platzhalter-Adressen aus RFC 5737 (`192.0.2.x`), Hosts unter `.example`.
 - Kein `std::sync::MutexGuard` über ein `await` (T3).
 
-### T1 — Windows Terminal: jedes Argument kommt unverändert an  [ ]
+### T1 — Windows Terminal: jedes Argument kommt unverändert an  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/terminal.rs, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @520de89d 2026-10-23T06:46:47+02:00
+Review: approve (.ah-out/review/desktop-process-safety/T1.verdict.json)
 Änderung: Neue reine Funktion `wt_new_tab_args(command: &str, args: &[String]) -> Result<Vec<String>, AppError>` in `terminal.rs`, ohne `cfg(windows)`, damit ihre Tests auf beiden CI-Plattformen laufen: `["-w", "0", "new-tab", "--", command, args…]`, dabei in `command` und jedem Argument jedes `;` als `\;` (wt liest `\;` als wörtliches `;` und teilt nur an einem `;` ohne `\` davor; ein schon vorhandenes `\;` wird so `\\;` und kommt wieder als `\;` an). `Err(AppError::Validation(…))` mit englischem Text, der das Zeichen nennt, für ein Argument, das wt nicht unverändert weitergeben kann: leer, mit `"`, mit einem Steuerzeichen, oder mit Leerraum und abschließendem `\` (wt setzt ein Argument mit Leerzeichen beim Zusammensetzen in `"…"`, ohne `"` und abschließende `\` zu behandeln). Der wt-Zweig von `open_windows_terminal` (`terminal.rs:108-118`) nutzt sie; bei `Err` startet nichts. Ein Kommentar nennt das Warum (wt-Doku zu `;`). Tests im `tests`-Modul (`:164`): (a) `semi;colon` → `semi\;colon`, `;lead` → `\;lead`, `a\;b` → `a\\;b`, `a;;b` → `a\;\;b`, auch im `command`; (b) ohne `;` bleibt alles gleich, Präfix und Reihenfolge `-w 0 new-tab -- ssh -p 2222 -- u@h`; (c) je ein `Err` für `a"b`, `a\tb`, ``, `C:\dir with space\`; (d) `C:\dir\` (ohne Leerraum) und `C:\Program Files\key` gehen durch. Zuerst rot: (a) und (c) mit der Naht, die nur die Liste baut wie HEAD.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- terminal::
 Doku: CHANGELOG.md (Fixed, umlautfrei: Windows Terminal: Benutzer, Schluesselpfad und Ansible-Pfade kommen als je ein Argument an, auch mit `;`; ein Wert, den Windows Terminal nicht unveraendert weitergeben kann (`"`, Steuerzeichen), oeffnet nicht und meldet das)

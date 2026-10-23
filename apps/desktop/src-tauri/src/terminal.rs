@@ -106,14 +106,7 @@ pub fn open_linux_terminal(command: &str, args: &[String]) -> Result<(), AppErro
 
 pub fn open_windows_terminal(command: &str, args: &[String]) -> Result<(), AppError> {
     if which("wt").is_some() {
-        let mut wt_args = vec![
-            "-w".to_string(),
-            "0".to_string(),
-            "new-tab".to_string(),
-            "--".to_string(),
-        ];
-        wt_args.push(command.to_string());
-        wt_args.extend(args.iter().cloned());
+        let wt_args = wt_new_tab_args(command, args)?;
         reap_async(Command::new("wt").args(wt_args).spawn()?);
         return Ok(());
     }
@@ -125,6 +118,58 @@ pub fn open_windows_terminal(command: &str, args: &[String]) -> Result<(), AppEr
             .spawn()?,
     );
     Ok(())
+}
+
+/// Arguments for `wt -w 0 new-tab -- <command> <args…>` that reach `command` unchanged.
+///
+/// wt splits its own command line at every `;` without a `\` before it, behind `--` too, and
+/// reads `\;` as a literal `;` (learn.microsoft.com/en-us/windows/terminal/command-line-arguments;
+/// microsoft/terminal `AppCommandlineArgs::_addCommandsForArg`, `Commandline::AddArg`), so every
+/// `;` goes out as `\;`. wt then joins the arguments into one command line and wraps only an
+/// argument with a space in `"…"`, escaping nothing (`_getNewTerminalArgs`): an empty argument,
+/// a `"`, a control character (a tab splits) or a space with a trailing `\` (the program reads the
+/// closing `\"` as a literal quote) would reach the program as other arguments. Before it starts
+/// the program, wt expands `%NAME%` in that command line (microsoft/terminal
+/// `ConptyConnection.cpp`, `ExpandEnvironmentStringsW`), so a `%` could change the value too.
+/// All of those are refused before anything starts.
+pub fn wt_new_tab_args(command: &str, args: &[String]) -> Result<Vec<String>, AppError> {
+    let mut wt_args = vec![
+        "-w".to_string(),
+        "0".to_string(),
+        "new-tab".to_string(),
+        "--".to_string(),
+    ];
+    for value in std::iter::once(command).chain(args.iter().map(String::as_str)) {
+        if let Some(problem) = wt_unpassable(value) {
+            return Err(AppError::Validation(format!(
+                "Windows Terminal cannot pass {problem} unchanged; nothing was opened"
+            )));
+        }
+        wt_args.push(value.replace(';', "\\;"));
+    }
+    Ok(wt_args)
+}
+
+fn wt_unpassable(value: &str) -> Option<String> {
+    if value.is_empty() {
+        return Some("an empty argument".to_string());
+    }
+    if value.contains('"') {
+        return Some("an argument with '\"'".to_string());
+    }
+    if value.contains('%') {
+        return Some("an argument with '%'".to_string());
+    }
+    if let Some(ch) = value.chars().find(|c| c.is_control()) {
+        let code = u32::from(ch);
+        return Some(format!(
+            "an argument with the control character U+{code:04X}"
+        ));
+    }
+    if value.contains(' ') && value.ends_with('\\') {
+        return Some("an argument with a space and a trailing '\\'".to_string());
+    }
+    None
 }
 
 pub fn build_windows_cmdline(command: &str, args: &[String]) -> String {
@@ -195,6 +240,69 @@ mod tests {
         // the quoting early (the injection this guards against).
         assert_eq!(shell_escape("O'Brien"), "'O'\\''Brien'");
         assert_eq!(shell_escape("'; id; '"), "''\\''; id; '\\'''");
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    fn wt_tail(command: &str, args: &[&str]) -> Vec<String> {
+        let wt_args = wt_new_tab_args(command, &strings(args)).expect("wt args");
+        assert_eq!(wt_args[..4], strings(&["-w", "0", "new-tab", "--"]));
+        wt_args[4..].to_vec()
+    }
+
+    #[test]
+    fn wt_new_tab_args_escape_every_semicolon() {
+        assert_eq!(
+            wt_tail("ssh", &["semi;colon", ";lead", "a\\;b", "a;;b"]),
+            strings(&["ssh", "semi\\;colon", "\\;lead", "a\\\\;b", "a\\;\\;b"])
+        );
+        assert_eq!(wt_tail("my;tool", &["x"]), strings(&["my\\;tool", "x"]));
+    }
+
+    #[test]
+    fn wt_new_tab_args_keep_values_without_semicolon() {
+        assert_eq!(
+            wt_new_tab_args("ssh", &strings(&["-p", "2222", "--", "u@h"])).expect("wt args"),
+            strings(&["-w", "0", "new-tab", "--", "ssh", "-p", "2222", "--", "u@h"])
+        );
+    }
+
+    #[test]
+    fn wt_new_tab_args_reject_values_wt_cannot_pass_unchanged() {
+        for (bad, named) in [
+            ("a\"b", "'\"'"),
+            ("a\tb", "U+0009"),
+            ("", "empty"),
+            ("C:\\dir with space\\", "trailing '\\'"),
+            ("%USERNAME%", "'%'"),
+            ("50%", "'%'"),
+        ] {
+            match wt_new_tab_args("ssh", &strings(&["-i", bad, "--", "u@h"])) {
+                Err(AppError::Validation(msg)) => {
+                    assert!(msg.contains(named), "{bad:?}: {msg}")
+                }
+                other => panic!("{bad:?} must be rejected, got {other:?}"),
+            }
+        }
+        for bad_command in ["ss\"h", "%SystemRoot%\\ssh"] {
+            assert!(
+                matches!(
+                    wt_new_tab_args(bad_command, &[]),
+                    Err(AppError::Validation(_))
+                ),
+                "{bad_command:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn wt_new_tab_args_pass_trailing_backslash_or_space_alone() {
+        assert_eq!(
+            wt_tail("ssh", &["C:\\dir\\", "C:\\Program Files\\key"]),
+            strings(&["ssh", "C:\\dir\\", "C:\\Program Files\\key"])
+        );
     }
 
     #[test]
