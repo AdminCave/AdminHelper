@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Drift: Entwicklerweg, Troubleshooting-Befehle des Agents, Visitor-Generator, Kommentare zum mTLS-Default — Task-Ledger
-Status: bereit · Branch: feature/docs-drift · Review: pro Task
+Status: erledigt · Branch: feature/docs-drift · Review: pro Task
 Spec: docs/features/docs-drift.md (Roadmap R-0669, R-0731, R-0584, R-0387)
 Heavy: linux-full — der Diff berührt `apps/gateway` (nur Kommentare in `nginx.conf` und `docker-entrypoint.sh`, T6) und `apps/agent` (nur eine neue Testdatei, T5); CLAUDE.md §5 nennt Gateway und Agent, der Sammellauf über `main` zeigt, dass das Gateway mit der kommentierten `nginx.conf` startet (`integration-stack`). Kein `scenario`: keine Zeile Konfiguration, kein FRP-Datenpfad, keine Provisionierung, keine PKI ändert sich; kein `windows`: der neue Go-Test läuft im PR im CI-Job `agent-windows` mit
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
