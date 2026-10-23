@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard: direkter Weg neben einem Proxy, unlesbare URLs, Kommentar- und Test-Nachzug — Task-Ledger
-Status: aktiv · Branch: feature/ssrf-followups · Review: pro Task
+Status: bereit · Branch: feature/ssrf-followups · Review: pro Task
 Spec: docs/features/ssrf-followups.md (Roadmap R-0606, R-0599; T1 und T2 gehören zum Paket, Kevin 2026-10-22)
 Heavy: none — keine Route, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert werden die Proxy-Weiche von `pinned_client` und der Fang in `check_target` in beiden Guard-Kopien, zwei Kommentare und Tests; die Aufrufer (HTTP-Check, Alert-Webhook, Hook-Helfer) bleiben, und keine schwere Suite setzt einen Proxy oder fährt diese Wege (`scripts/tests/`, Compose und Workflows nennen keine Proxy-Variable; wie bei ssrf-pin und ssrf-idna)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -82,8 +82,10 @@ Orakel: contract — eine unlesbare URL ergibt am Aufrufer die gewöhnliche Able
 Dedup-Key: ref:ssrf:post-r0590-nits
 HEAD: 53a7dbc5
 
-### T5 — Monitoring-Tests: verify am Redirect-Hop, Fehlertext aus httpx (R-0599)  [ ]
+### T5 — Monitoring-Tests: verify am Redirect-Hop, Fehlertext aus httpx (R-0599)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_http_checker.py, apps/monitoring/tests/test_alerter_dispatch.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d0de71af 2026-10-23T19:33:00+02:00
+Review: approve (.ah-out/review/ssrf-followups/T5.verdict.json)
 Änderung: (a) Neuer Test neben `test_http_checker_verify_ssl_off_only_for_real_false` (`test_http_checker.py:114-135`), gleiche Naht (`HTTPTransport.__init__` zeichnet `verify` auf, `handle_request` antwortet): erste Antwort `302` mit `location: http://moved.example/`, zweite `200`; Resolver für beide Hosts öffentlich (`_resolving`). Mit `verify_ssl: False` → `seen == [False, False]`, Status `ok`, Meldung mit `[TLS verification disabled]`; mit `verify_ssl: True` → `[True, True]`. (b) `test_a_url_httpx_cannot_read_stores_a_fixed_reason` (`test_alerter_dispatch.py:124-136`): die erwartete Zeile nimmt den Text von httpx (`with pytest.raises(httpx.InvalidURL) as info: httpx.URL("https://hooks.example.com:abc/x")`, dann `[f"Webhook failed: c -> hooks.example.com: {info.value}"]`); der Rest des Tests bleibt. Mutations-Stichprobe im Probe-Worktree: M1 der Hop verbindet mit `verify=True` (heute `http.py:80`; nach #265 der eine Aufruf in der Schleife, nur für Hops) → (a) rot. Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py tests/test_alerter_dispatch.py
 Doku: keine (nur Tests)

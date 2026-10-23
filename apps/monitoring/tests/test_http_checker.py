@@ -137,6 +137,38 @@ def test_http_checker_verify_ssl_off_only_for_real_false(monkeypatch, stored, ve
     assert seen == [verify]
 
 
+@pytest.mark.parametrize("verify", [False, True])
+def test_http_checker_verify_ssl_holds_on_the_redirect_hop(monkeypatch, verify):
+    # R-0599: a redirect hop gets a client of its own; verify_ssl has to reach its
+    # transport as well, not only the first request's.
+    _resolving(monkeypatch, {"checks.example": _FIRST, "moved.example": _SECOND})
+    seen = []
+    sent = []
+    real_init = httpx.HTTPTransport.__init__
+
+    def recording_init(transport, *args, **kwargs):
+        seen.append(kwargs["verify"])
+        real_init(transport, *args, **kwargs)
+
+    def fake_send(_transport, request):
+        sent.append(request)
+        if len(sent) == 1:
+            return httpx.Response(
+                302, headers={"location": "http://moved.example/"}, request=request
+            )
+        return httpx.Response(200, text="ok", request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "__init__", recording_init)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "verify_ssl": verify}
+    )
+
+    assert status == "ok"
+    assert seen == [verify, verify]
+    assert ("[TLS verification disabled]" in msg) is not verify
+
+
 def test_http_checker_blocks_private_initial_url(monkeypatch):
     # The is_private_url guard runs BEFORE the request; the existing tests only cover the redirect-hop
     # guard. A private initial URL must be refused with no request at all (6.52).
