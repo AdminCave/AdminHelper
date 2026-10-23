@@ -847,6 +847,11 @@ fn start_frpc(
         .spawn()
         .map_err(|e| AppError::Connection(format!("frpc konnte nicht gestartet werden: {e}")))?;
 
+    // `child` holds the process handle of frpc, so its pid names this frpc even if it already
+    // ended.
+    #[cfg(windows)]
+    end_with_this_process(child.pid());
+
     // Tag this spawn with a generation. A stop→start restart kills the old process and spawns a
     // new one, but the killed process's Terminated event arrives asynchronously — often AFTER
     // the new spawn. Without this check its log task would wipe the NEW tunnel's child (the
@@ -907,6 +912,77 @@ fn start_frpc(
     guard.connected_since = Some(chrono::Utc::now().to_rfc3339());
     guard.applied = Some(applied);
 
+    Ok(())
+}
+
+/// Puts frpc (`pid`) into the job object of this process, so Windows ends frpc when this process
+/// ends, on any path ("End task" and crashes too): frpc does not end with the process that started
+/// it, and Windows has no SIGPIPE to end it at its next log line. If that fails, frpc runs on as
+/// before and the first reconciliation of the next start stops it.
+#[cfg(windows)]
+fn end_with_this_process(pid: u32) {
+    // A static is never dropped: the handle stays open while this process lives, only this
+    // process holds it, and Windows closes it when the process ends.
+    static JOB: std::sync::OnceLock<std::io::Result<std::os::windows::io::OwnedHandle>> =
+        std::sync::OnceLock::new();
+    let assigned = match JOB.get_or_init(kill_on_close_job) {
+        Ok(job) => assign_to_job(job, pid).map_err(|e| format!("not assigned to the job: {e}")),
+        Err(e) => Err(format!("no job object: {e}")),
+    };
+    if let Err(e) = assigned {
+        log::warn!("[frpc] frpc (pid {pid}) does not end with this process, {e}");
+    }
+}
+
+/// A new job object whose processes Windows ends when its last handle closes. The handle is not
+/// inheritable: a child of this process holding it would keep the job, and frpc, alive.
+#[cfg(windows)]
+fn kill_on_close_job() -> std::io::Result<std::os::windows::io::OwnedHandle> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::{
+        CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    // SAFETY: no security attributes (the handle is not inheritable) and no name; the call reads
+    // nothing else.
+    let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) }?;
+    // SAFETY: CreateJobObjectW succeeded, so the handle is open, and nothing else owns it.
+    let job = unsafe { OwnedHandle::from_raw_handle(job.0) };
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    // SAFETY: `job` is open, `limits` is the struct the class names, lives across the call, and
+    // the length is its size.
+    unsafe {
+        SetInformationJobObject(
+            HANDLE(job.as_raw_handle()),
+            JobObjectExtendedLimitInformation,
+            std::ptr::from_ref(&limits).cast(),
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    }?;
+    Ok(job)
+}
+
+/// Puts the process `pid` into `job`.
+#[cfg(windows)]
+fn assign_to_job(job: &std::os::windows::io::OwnedHandle, pid: u32) -> std::io::Result<()> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::AssignProcessToJobObject;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+
+    // SAFETY: the call takes plain values and returns a new handle or an error.
+    let process = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, pid) }?;
+    // SAFETY: OpenProcess succeeded, so the handle is open, and nothing else owns it; dropping it
+    // closes it.
+    let process = unsafe { OwnedHandle::from_raw_handle(process.0) };
+    // SAFETY: both handles are open across the call.
+    unsafe {
+        AssignProcessToJobObject(HANDLE(job.as_raw_handle()), HANDLE(process.as_raw_handle()))
+    }?;
     Ok(())
 }
 
@@ -4001,5 +4077,48 @@ method = "token"
                 _ => assert!(fetched.is_err(), "{next:?}"),
             }
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn closing_the_job_ends_the_process_in_it_and_no_other() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        let ping = || {
+            Command::new("ping")
+                .args(["-n", "30", "127.0.0.1"])
+                .stdout(Stdio::null())
+                .spawn()
+                .expect("ping starts")
+        };
+        let job = super::kill_on_close_job().expect("job object");
+        // Both start after the job exists: one that inherited its handle would keep it open.
+        let mut assigned = ping();
+        let mut other = ping();
+        super::assign_to_job(&job, assigned.id()).expect("assigned to the job");
+        drop(job);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let ended = loop {
+            if assigned.try_wait().expect("try_wait").is_some() {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        // Counter-check: closing the job ends nothing outside it.
+        let other_runs = other.try_wait().expect("try_wait").is_none();
+        for child in [&mut assigned, &mut other] {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        assert!(
+            ended,
+            "the process in the job still ran 5 s after the job closed"
+        );
+        assert!(other_runs, "a process outside the job ended with it");
     }
 }

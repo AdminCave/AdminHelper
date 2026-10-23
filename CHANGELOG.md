@@ -157,7 +157,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   naechsten Starts desselben Workspace; seine Tunnel und Ports werden frei. Der Desktop beendet ihn ueber
   `POST /api/stop` seiner Admin-API mit den Zugangsdaten aus der `visitor.toml`, die der abgebrochene Lauf
   zurueckliess, und nur, wenn deren `webServer` genau der des Desktops ist; antwortet dort kein frpc, geht der Abgleich
-  weiter wie bisher. Doku: Desktop fuer Entwickler (DE+EN).
+  weiter wie bisher. Unter Windows endet frpc schon mit dem Programm, auch nach Task beenden oder einem Absturz: Der
+  Desktop legt ihn gleich nach dem Start in ein Job Object mit `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; gelingt das nicht,
+  steht eine Warnung im Log, und der naechste Start beendet ihn wie oben. Doku: Desktop fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
