@@ -32,8 +32,10 @@ Für alle Tasks:
   Positionsargumenten (`apps/ca-issuer/tests/test_gateway_cert.py:23`, `test_frps_cert.py:66-67`) bleibt gültig
   (`retired` hat einen Default).
 
-### T1 — storage: retired Intermediates mit der Hierarchie laden  [ ]
+### T1 — storage: retired Intermediates mit der Hierarchie laden  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_storage.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @8ef85f36 2026-10-23T19:58:04+02:00
+Review: approve (.ah-out/review/ca-rotation/T1.verdict.json)
 Änderung: `Intermediate` (`apps/ca-issuer/app/storage.py:59-64`) bekommt `retired: tuple[x509.Certificate, ...] = ()`. `ensure_hierarchy` (`:85-138`) liest je Scope die optionale Datei `<scope>-retired.pem` (`x509.load_pem_x509_certificates`): jedes Zertifikat muss von `root.crt` signiert sein (sonst `RuntimeError` wie die Prüfungen aus R-0666, Text nennt Datei und Scope); abgelaufene werden übersprungen (eine INFO-Zeile je Zertifikat mit CN und `notAfter`), eins, das DER-gleich dem aktuellen ist, ebenso; die übrigen gehen in `retired`, neuestes zuerst. Der Docstring des Moduls (`:7-14`) nennt die Datei im Layout und sagt, dass sie nur Zertifikate enthält. Tests in `test_storage.py`: (a) Hierarchie ohne retired-Datei → `retired == ()` für jeden Scope (heutiges Verhalten); (b) `access-retired.pem` mit einem gültigen und einem abgelaufenen, von der Root signierten Intermediate → `retired` enthält genau das gültige; (c) ein Zertifikat einer fremden Root in `tunnel-retired.pem` → `RuntimeError`, Text nennt `tunnel-retired.pem`; (d) das aktuelle Intermediate zusätzlich in der retired-Datei → nicht in `retired`. Zuerst rot: (b), (c), (d).
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: keine (intern; die Betreiber-Doku kommt mit T10)

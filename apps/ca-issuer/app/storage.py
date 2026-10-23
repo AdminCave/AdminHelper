@@ -9,6 +9,8 @@ Layout under PKI_DIR:
     root.key.enc          root key, passphrase-encrypted (cold, D7)
     <scope>.crt / .key    intermediate cert + unencrypted key (0600, online)
     <scope>-chain.pem     <scope> intermediate + root (trust bundle)
+    <scope>-retired.pem   optional: earlier <scope> intermediates, certificates
+                          only (no keys), still trusted until they expire
 
 Normal leaf signing only ever loads an intermediate (cert + key) — the root is
 decrypted solely to create/rotate intermediates.
@@ -63,6 +65,9 @@ class Intermediate:
     cert: x509.Certificate
     key: ec.EllipticCurvePrivateKey
     chain: bytes  # intermediate + root (PEM), for trust distribution / fullchain
+    # Earlier intermediates of this scope from <scope>-retired.pem, newest first: valid,
+    # signed by the root, never the current one. Verify only — they have no key here.
+    retired: tuple[x509.Certificate, ...] = ()
 
 
 def _write_private(path: Path, pem: bytes) -> None:
@@ -93,7 +98,11 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     Every boot then checks what it loaded and raises RuntimeError (file, scope,
     reason) unless root.crt is self-signed and valid now and each intermediate is
     signed by it, valid now, matches its key and has the chain [intermediate, root].
-    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING."""
+    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING.
+
+    The optional <scope>-retired.pem adds the scope's earlier intermediates as
+    Intermediate.retired: each must be signed by root.crt (else RuntimeError); one
+    that is outside its validity (INFO line) or equal to the current one is left out."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     try:
         pki_dir.chmod(0o700)
@@ -168,7 +177,13 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             )
         # The check above compares only the certificates in the file; what goes out
         # (enroll responses, trust bundles) is rebuilt from the two checked ones.
-        out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root))
+        out[scope] = Intermediate(
+            scope=scope,
+            cert=cert,
+            key=key,
+            chain=pki.chain_pem(cert, root),
+            retired=_load_retired(pki_dir / f"{scope}-retired.pem", scope, cert, root, now),
+        )
 
     _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
     for scope, inter in out.items():
@@ -178,6 +193,48 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
 
 def _invalid_hierarchy(detail: str) -> RuntimeError:
     return RuntimeError(f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it.")
+
+
+def _load_retired(
+    path: Path,
+    scope: str,
+    current: x509.Certificate,
+    root: x509.Certificate,
+    now: datetime.datetime,
+) -> tuple[x509.Certificate, ...]:
+    """The scope's retired intermediates from `path` (see ensure_hierarchy), newest first.
+    A missing file or one without any text means none."""
+    if not path.exists():
+        return ()
+    data = path.read_bytes()
+    if not data.strip():
+        return ()
+    try:
+        certs = x509.load_pem_x509_certificates(data)
+    except ValueError as exc:
+        raise _invalid_hierarchy(
+            f"scope {scope!r}, {path}: not a PEM certificate bundle ({exc})"
+        ) from exc
+    der = serialization.Encoding.DER
+    seen = {current.public_bytes(der)}
+    retired: list[x509.Certificate] = []
+    for cert in certs:
+        name = pki.read_identity(cert)[0]
+        if problem := _signature_problem(cert, root):
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {path}: {name!r} is not signed by root.crt ({problem})"
+            )
+        if problem := _validity_problem(cert, now):
+            logger.info(
+                "scope %r, %s: skipping retired %r, it is %s", scope, path.name, name, problem
+            )
+            continue
+        if cert.public_bytes(der) in seen:
+            continue
+        seen.add(cert.public_bytes(der))
+        retired.append(cert)
+    retired.sort(key=lambda c: c.not_valid_before_utc, reverse=True)
+    return tuple(retired)
 
 
 def _signature_problem(cert: x509.Certificate, issuer: x509.Certificate) -> str | None:

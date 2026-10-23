@@ -223,3 +223,110 @@ def test_a_fresh_hierarchy_does_not_warn(tmp_path, caplog):
     storage.ensure_hierarchy(tmp_path, None)
 
     assert _storage_warnings(caplog) == []
+
+
+# R-0667: <scope>-retired.pem adds the scope's earlier intermediates (certificates only)
+# as Intermediate.retired, so leaves they signed stay verifiable after a rotation.
+
+
+def _minted(monkeypatch, pki_dir, scope: str, shift_days: float):
+    """An intermediate certificate of `scope` from the hierarchy's root, minted
+    `shift_days` from now on the PKI clock — what a retired file holds (no key)."""
+    root_cert, root_key = _root(pki_dir)
+    then = pki._now() + datetime.timedelta(days=shift_days)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: then)
+        cert, _ = pki.build_intermediate_ca(scope, root_cert, root_key)
+    return cert
+
+
+def _current(pki_dir, scope: str):
+    return pki.cert_from_pem((pki_dir / f"{scope}.crt").read_bytes())
+
+
+def test_without_a_retired_file_no_scope_has_retired_intermediates(tmp_path):
+    first = storage.ensure_hierarchy(tmp_path, b"pw")
+    again = storage.ensure_hierarchy(tmp_path, None)
+
+    for inter in (first, again):
+        assert {scope: inter[scope].retired for scope in pki.SCOPES} == {
+            scope: () for scope in pki.SCOPES
+        }
+
+
+def test_a_retired_file_adds_its_valid_intermediates_and_skips_expired_ones(
+    monkeypatch, tmp_path, caplog
+):
+    # The first generation has expired; a second one, minted 10 days ago, is still valid.
+    _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_INTERMEDIATE + 30)
+    expired = _current(tmp_path, "access")
+    valid = _minted(monkeypatch, tmp_path, "access", shift_days=-10)
+    for scope in pki.SCOPES:
+        _reissue(monkeypatch, tmp_path, scope)
+    (tmp_path / "access-retired.pem").write_bytes(pki.chain_pem(expired, valid))
+    caplog.clear()
+    caplog.set_level(logging.INFO, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == (valid,)
+    assert inter["tunnel"].retired == () and inter["internal"].retired == ()
+    skipped = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "ca-issuer.storage"
+        and r.levelno == logging.INFO
+        and "retired" in r.getMessage()
+    ]
+    assert len(skipped) == 1, skipped
+    assert pki.read_identity(expired)[0] in skipped[0]
+    assert expired.not_valid_after_utc.isoformat() in skipped[0]
+
+
+def test_a_retired_intermediate_from_a_foreign_root_aborts_the_boot(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    # Same subject as our root, so only the signature tells them apart.
+    foreign_root, foreign_key = pki.build_root_ca()
+    cert, _ = pki.build_intermediate_ca("tunnel", foreign_root, foreign_key)
+    (tmp_path / "tunnel-retired.pem").write_bytes(pki.cert_to_pem(cert))
+
+    with pytest.raises(
+        RuntimeError, match=r"'tunnel'.*tunnel-retired\.pem.*not signed by root\.crt"
+    ):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
+def test_the_current_intermediate_in_the_retired_file_is_not_retired(monkeypatch, tmp_path):
+    _booted(monkeypatch, tmp_path, days_ago=30)
+    earlier = _current(tmp_path, "internal")
+    _reissue(monkeypatch, tmp_path, "internal")
+    (tmp_path / "internal-retired.pem").write_bytes(
+        (tmp_path / "internal.crt").read_bytes() + pki.cert_to_pem(earlier)
+    )
+
+    assert storage.ensure_hierarchy(tmp_path, None)["internal"].retired == (earlier,)
+
+
+def test_retired_intermediates_come_newest_first_and_once(monkeypatch, tmp_path):
+    _booted(monkeypatch, tmp_path, days_ago=60)
+    oldest = _current(tmp_path, "access")
+    newer = _minted(monkeypatch, tmp_path, "access", shift_days=-30)
+    _reissue(monkeypatch, tmp_path, "access")
+    (tmp_path / "access-retired.pem").write_bytes(pki.chain_pem(oldest, newer, oldest))
+
+    assert storage.ensure_hierarchy(tmp_path, None)["access"].retired == (newer, oldest)
+
+
+def test_an_empty_retired_file_means_none(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    (tmp_path / "access-retired.pem").write_bytes(b"\n")
+
+    assert storage.ensure_hierarchy(tmp_path, None)["access"].retired == ()
+
+
+def test_a_retired_file_without_a_certificate_aborts_the_boot(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    (tmp_path / "access-retired.pem").write_bytes(b"not a certificate\n")
+
+    with pytest.raises(RuntimeError, match=r"'access'.*access-retired\.pem"):
+        storage.ensure_hierarchy(tmp_path, None)
