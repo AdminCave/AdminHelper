@@ -71,6 +71,48 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `ansible_generate_inventory`, `ansible_write_playbook` und `ansible_launch` sind durch `ansible_run` ersetzt;
   scheitert ein Schritt vor dem Start, loescht der Lauf die schon geschriebenen Temp-Dateien. Doku: Desktop fuer
   Entwickler, Ansible (DE+EN).
+- **Agent: `provision` und `monitor init` nehmen je Aufruf genau eine Vertrauensquelle:** Beide lehnen `--cacert`
+  zusammen mit `--insecure` ab, wie `provision` schon `--ca-fp` mit einem der beiden; `--cacert` prueft den Server
+  bereits. Der Aufruf scheitert, bevor er etwas schreibt oder (bei `provision`) den Einmal-Token sendet, und die
+  Meldung nennt beide Flags. Legt der Server bei `--insecure` kein Zertifikat zum Pinnen vor, bricht `provision` ab,
+  statt ohne Pruefung weiterzumachen; `monitor init` bricht ebenso ab, wenn es das Zertifikat nicht holen oder
+  speichern kann, und schreibt nie `INSECURE=1` in `monitor.conf`. `--insecure` gilt so nur fuer den einen Aufruf.
+  Doku: Agent-Deployment (DE+EN).
+- **Agent: `diagnostics` legt jeden Bericht als neue Datei an:** Der Bericht heisst
+  `adminhelper-agent-diagnostics-<Zeitstempel>-<Zufall>.txt`, liegt wie bisher im Temp-Verzeichnis und hat die Rechte
+  0600; eine vorhandene Datei ueberschreibt `diagnostics` nie. Den Pfad gibt der Befehl wie bisher aus.
+- **Agent: die frpc.toml des Servers nur in der Form, die der Server erzeugt:** Der Agent wendet eine frpc.toml des
+  Servers nur an, wenn jede Zeile die Form des Generators hat: leer, `[transport.tls]`, `[[proxies]]` oder
+  `schluessel = wert` mit einem einzeiligen Wert. In der Wurzel nimmt er nur die Schluessel, die der Server schreibt,
+  in einem Proxy keinen Schluessel, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben
+  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels speichert der
+  Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
+  wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
+  der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+- **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
+  Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
+  Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
+  FRP-Server-Konfiguration. Bisher stand der Fehler samt Traceback im Log.
+- **Server: `.secret_key`, `.bootstrap_token` und `.bootstrap_setup` entstehen von Anfang an mit Modus 0600:** Den
+  selbst erzeugten Schluessel (kein `SECRET_KEY` gesetzt), den Hash des Setup-Tokens und den Setup-Token schreibt der
+  Server je in eine temporaere Datei im selben Verzeichnis, die von Anfang an nur fuer ihren Besitzer lesbar ist, und
+  benennt sie danach atomar um, wie die `frps.toml`. Bisher entstanden die Dateien mit den Rechten der umask und
+  bekamen erst danach Modus 0600. Ein Fehler beim Entfernen der Bootstrap-Dateien steht mit Dateiname und Fehlertyp im
+  Log; bisher wurde er verworfen.
+- **Server: die Log-Zeilen zum Redis-Backend des Rate-Limits nennen nur Schema, Host und Port:** Von `REDIS_URL`
+  nennen sie nur Schema, Host und Port (bei `unix://` den Socket-Pfad), von einem Verbindungsfehler nur den Typ, wie
+  die Log-Zeilen des Alert-Webhooks. Bisher standen die ganze URL und der Fehlertext im Log.
+- **Server: `POST /api/internal/events` lehnt die Quelltypen `frp_config` und `frps` ab:** Ein Event mit
+  `source_type` `frp_config` oder `frps` ergibt `422` an `source_type`; nichts wird geschrieben. Unter diesen
+  Quelltypen fuehrt der Server seine eigenen Meldungen. Der Monitoring-Dienst sendet `server` und ist nicht betroffen.
+
+### Removed
+
+- **Agent: kein PKI-Bundle aus der Aktivierungsantwort:** `provision` entpackt kein PKI-Bundle mehr; ein mitgeschicktes
+  Feld `pkiBundle` ignoriert der Agent. Der Server schickt es seit 0.28.0 leer, und dieser Agent aktiviert nur ueber
+  Port 8444, wo der Server die Aktivierung seit 0.39.0 annimmt. `provision` legt auch kein Verzeichnis `frp/pki` mehr
+  an; ein vorhandenes bleibt unberuehrt, und die Pakete legen `/etc/frp/pki` weiter leer an. Doku: Agent-Entwicklerseite
+  (DE+EN).
 
 ### Fixed
 
@@ -140,6 +182,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
   prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
   Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
+- **Server: ein einzelnes Surrogat in einem Request-Body ergibt `422` wie ein NUL-Byte:** Ein einzelnes Surrogat
+  (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben) in irgendeinem String eines Request-Bodies, als Wert oder
+  Schluessel und beliebig tief, ergibt `422` an seiner Stelle; nichts wird gespeichert. Bisher endeten solche Eingaben
+  ausserhalb der frp-Felder und der Felder mit Laengengrenze mit `500`, in Tags wurden sie gespeichert, und jede Antwort
+  mit der Zeile endete danach mit `500`. In `extra_config` der FRP-Server-Konfiguration nennt der Fehler jetzt den
+  Schluessel, unter dem der Wert steht.
 - **Desktop unter Windows: Windows Terminal bekommt jedes Argument unveraendert:** Oeffnet der Desktop SSH oder einen
   Ansible-Lauf in Windows Terminal, kommen Benutzer, Schluesselpfad und Ansible-Pfade als je ein Argument an, auch
   mit `;` (Windows Terminal las ein `;` als Trenner seiner eigenen Befehle). Ein Wert, den Windows Terminal nicht

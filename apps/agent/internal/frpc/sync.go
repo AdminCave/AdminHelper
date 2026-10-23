@@ -36,7 +36,7 @@ var ensureDataDir = config.EnsureDataDir
 // localPreamble goes in front of the server's frpc.toml, followed by the admin API's head
 // (adminAPI.head). frp defaults loginFailExit to true: frpc then exits when frps is unreachable
 // at its first login, and systemd restarts it every 5 s. The head stands before every table, so
-// its keys land in the root; the server sets none of them (checkServerHead).
+// its keys land in the root; the server sets none of them (checkServerConfig).
 const localPreamble = "loginFailExit = false\n"
 
 // Sync checks for config changes and updates frpc (port of do_sync).
@@ -186,7 +186,7 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 		return nil
 	}
 
-	if err := checkServerHead(serverToml); err != nil {
+	if err := checkServerConfig(serverToml); err != nil {
 		return err
 	}
 	api, err := loadAdminAPI()
@@ -295,26 +295,6 @@ func commonPart(toml []byte) []byte {
 		rest = next
 	}
 	return toml
-}
-
-// localHeadKeys are the keys of the local head, lowercase: the agent alone sets them.
-var localHeadKeys = []string{"webserver", "loginfailexit"}
-
-// checkServerHead refuses a server text that sets a key or table of the local head: the server
-// sets none of them, the agent puts them in front. frp reads keys without regard to case, and a
-// table header after the proxies is a root table again, so every line counts. A line counts when
-// it starts with such a key after blanks, quotes and brackets: that covers the forms the server's
-// generator writes, in upper or lower case.
-func checkServerHead(serverToml []byte) error {
-	for _, line := range strings.Split(string(serverToml), "\n") {
-		key := strings.ToLower(strings.TrimLeft(line, "[\"' \t"))
-		for _, head := range localHeadKeys {
-			if strings.HasPrefix(key, head) {
-				return fmt.Errorf("the server's frpc.toml sets %q, which only the agent sets; not applied", strings.TrimSpace(line))
-			}
-		}
-	}
-	return nil
 }
 
 // syncWithoutFrpConfig stops frpc and removes frpc.toml and the hash, on a null hash and for a

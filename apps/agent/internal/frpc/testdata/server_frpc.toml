@@ -1,0 +1,30 @@
+serverAddr = "203.0.113.10"
+serverPort = 7000
+user = "host-01"
+
+auth.method = "token"
+auth.token = "frps-token-placeholder"
+
+[transport.tls]
+enable = true
+trustedCaFile = "/etc/adminhelper/identity/ca.crt"
+certFile = "/etc/adminhelper/identity/agent.crt"
+keyFile = "/etc/adminhelper/identity/agent.key"
+
+[[proxies]]
+name = "host-01-ssh"
+type = "stcp"
+localIP = "127.0.0.1"
+localPort = 22
+secretKey = "stcp-secret-placeholder"
+allowUsers = ["ops-admin", "ops-backup"]
+transport.bandwidthLimit = "1MB"
+transport.useEncryption = true
+healthCheck.intervalSeconds = 10
+
+[[proxies]]
+name = "host-01-web"
+type = "https"
+localIP = "127.0.0.1"
+localPort = 443
+customDomains = ["web.example", "www.web.example"]
