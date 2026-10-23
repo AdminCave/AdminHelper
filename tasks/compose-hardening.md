@@ -119,8 +119,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 Abhängt von: T1, T2, T4, T6
 
-### T9 — Multibox: frps erreicht aus frpedge keinen zweiten Host  [ ]
-Komponente: scripts · Dateien: scripts/tests/multibox.sh, scripts/tests/box_serverbox.sh
+### T9 — Multibox: frps erreicht aus frpedge keinen zweiten Host  [x]
+Komponente: scripts · Dateien: scripts/tests/multibox.sh, scripts/tests/box_serverbox.sh, scripts/tests/multibox_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5ba55902 2026-10-23T10:38:47+02:00
+Review: approve (.ah-out/review/compose-hardening/T9.verdict.json)
 Änderung: Neuer Unterbefehl `frps-egress <ip> <port>` in `scripts/tests/box_serverbox.sh` (neben `frps-mark`/`frps-restart`, `:182-183`), mit dem Compose-Aufruf, den die frps-Schritte dort nutzen: eine TCP-Verbindung aus dem frps-Container (`nc -z -w3 <ip> <port>`) muss scheitern, aus dem server-Container (`python -c` mit `socket.create_connection((ip, port), 3)`) muss sie gelingen (Gegenprobe: das Ziel ist erreichbar); Ausgabe eine Zeile mit beiden Ergebnissen, Exit 0 nur, wenn beide stimmen. `scripts/tests/multibox.sh` ruft ihn in der Tunnel-Stufe (`:424-`) nach dem Lease der Tunnel-Box mit deren Adresse und Port 22 über `ask "$SRV_VM"` auf (wie `frps_restart`, `:380-400`) und zählt `ok`/`bad`; ohne `--tunnel` läuft er nicht. Die hermetischen Tests (`scripts/tests/multibox_test.sh`, `scripts/tests/box_scripts_guard_test.sh`) bleiben grün; braucht einer eine Anpassung, `ledger.sh set-files`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
