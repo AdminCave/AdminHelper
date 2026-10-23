@@ -20,6 +20,8 @@ export interface User {
   is_admin: boolean;
   created_at?: string;
   server_ids?: string[];
+  // Only GET /api/auth/me sends it: the minutes without input before the panel signs out, 0 = off.
+  idle_timeout_minutes?: number;
 }
 
 export interface UserCreate {

@@ -18,6 +18,7 @@ export const translations: Translations = {
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
     'login.failed': 'Anmeldung fehlgeschlagen',
+    'toast.session.idle': 'Nach {minutes} Minuten ohne Bedienung abgemeldet.',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Benutzer',
@@ -309,6 +310,7 @@ export const translations: Translations = {
     'login.password': 'Password',
     'login.submit': 'Sign in',
     'login.failed': 'Login failed',
+    'toast.session.idle': 'Signed out after {minutes} minutes without activity.',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Users',

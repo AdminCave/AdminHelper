@@ -6,7 +6,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { auth, isAuthenticated } from '$lib/stores/auth';
+  import { auth, currentUser, isAuthenticated } from '$lib/stores/auth';
+  import { showToast } from '$lib/stores/notifications';
+  import { tNow } from '$lib/i18n';
+  import { watchIdle } from '$lib/idle';
   import { replace } from '$lib/router';
   import Router from '$lib/components/layout/Router.svelte';
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
@@ -26,6 +29,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (hydrated && $isAuthenticated && (location.hash === '' || location.hash === '#/')) {
       replace('/users');
     }
+  });
+
+  // One watch per session: signing out, or in as another user, stops it.
+  $effect(() => {
+    const minutes = $currentUser?.idle_timeout_minutes;
+    return watchIdle(minutes, () => {
+      void auth.logout();
+      // 0 keeps the notice until it is closed: nobody is at the screen when it appears.
+      showToast(tNow('toast.session.idle', { minutes }), 'info', 0);
+    });
   });
 </script>
 

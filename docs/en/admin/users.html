@@ -58,6 +58,7 @@
             <li><strong>Access token</strong>: valid for 8 h, sent on every request in the <code>Authorization</code> header.</li>
             <li><strong>Refresh token</strong>: valid for 7 days, rotated on every use (the old one is blacklisted immediately).</li>
             <li><strong>Reuse detection</strong>: if a blacklisted refresh token is submitted again, the request is rejected and the event is logged as a possible token theft.</li>
+            <li><strong>Sign-out after inactivity</strong>: the web panel signs out in all open tabs once none of them has seen any input (mouse, keyboard, touch) for 30 minutes; a notice stays until you close it. <code>WEB_IDLE_TIMEOUT_MINUTES</code> sets the duration, <code>0</code> turns it off (<a href="./installation.html#env">environment variables</a>).</li>
           </ul>
 
           <div class="callout callout-note" data-reveal>
