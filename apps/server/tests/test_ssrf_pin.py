@@ -194,6 +194,27 @@ def test_a_host_httpx_cannot_send_is_rejected_without_resolving(monkeypatch, url
     assert asked == []
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://pinned.example/\ud800",
+        "http://pinned.example/?q=\udcff",
+        "http://pinned.example/#\ud800",
+        "http://us\ud800er@pinned.example/",
+    ],
+)
+def test_a_lone_surrogate_makes_the_url_unreadable_without_resolving(monkeypatch, url):
+    # A hook gets such a str from a JSON payload (json.loads('"\\ud800"')); httpx
+    # raises UnicodeEncodeError on it, not InvalidURL, and the guard must not raise.
+    asked = _resolving_to(monkeypatch, _V4)
+
+    target = check_target(url)
+
+    assert target == Target(UrlVerdict.PRIVATE)
+    assert ssrf_mod.is_private_url(url) is True
+    assert asked == []
+
+
 def test_a_url_without_a_host_for_httpx_is_unresolved_without_resolving(monkeypatch):
     # urlparse skips the leading space and finds a host; httpx reads a relative URL.
     asked = _resolving_to(monkeypatch, _V4)

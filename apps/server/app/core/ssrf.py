@@ -156,8 +156,9 @@ def check_target(url: str) -> Target:
     The host resolved is the name the request carries as Host header and TLS name:
     httpx's raw_host, IDNA 2008-encoded. Not urlparse's Unicode name, which
     getaddrinfo encodes by IDNA 2003 into another name for ß or ς. A URL httpx
-    cannot read (a host it cannot encode, a port that is no number) is rejected like
-    an unreadable URL: the request would fail on it at the same place.
+    cannot read (a host it cannot encode, a port that is no number, a lone surrogate
+    anywhere in it) is rejected like an unreadable URL: the request would fail on it
+    at the same place.
 
     Both rejections fail closed; the reason only lets a caller tell an operator
     whether the target resolves to a blocked address (PRIVATE, an unreadable
@@ -170,14 +171,14 @@ def check_target(url: str) -> Target:
         hostname = urlparse(url).hostname
     except ValueError:
         # The name resolved is httpx's; urlparse only goes first because it raises on a
-        # malformed IPv6 literal ("http://[::1"), which httpx reads as the host "%5B".
+        # malformed IPv6 literal ("http://["), which httpx reads as the host "%5B".
         # An unreadable URL fails closed like an unreadable address below (R-0181).
         return Target(UrlVerdict.PRIVATE)
     if not hostname:
         return Target(UrlVerdict.UNRESOLVED)
     try:
         hostname = httpx.URL(url).raw_host.decode("ascii")
-    except httpx.InvalidURL:
+    except (httpx.InvalidURL, UnicodeError):
         return Target(UrlVerdict.PRIVATE)
     if not hostname:
         # urlparse skips leading whitespace, httpx reads such a URL as relative.
