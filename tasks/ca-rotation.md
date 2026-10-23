@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: Intermediates rotieren — Task-Ledger
-Status: geplant · Branch: feature/ca-rotation · Review: pro Task
+Status: aktiv · Branch: feature/ca-rotation · Review: pro Task
 Spec: docs/features/ca-rotation.md (Roadmap R-0667; hängt ab von R-0666, feature/ca-issuer-lifetime)
 Heavy: linux-full + scenario --agents 1 --tunnel — `apps/ca-issuer` (PKI: neue Intermediates, Trust-Bundles alt+neu, Re-Mint der Server-Leaves, `/renew` über retired Intermediates), `apps/gateway/nginx.conf` und der Entrypoint des ca-issuer laufen im Sammellauf über `main` (`integration-stack` mit dem Rotationsschritt aus T9, `backup-restore`, `upgrade-path` vom letzten Release); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/ca-rotation`. `scenario` vor dem Merge (ask-first): mit T7 präsentiert das Gateway auf `:443`, `:8444` und `:8445` eine Kette mit Root, die ein Agent auf einem zweiten Host über `--ca-fp`, mTLS, das Repo und den frpc-Tunnel prüft. Kein `windows`: der Agent bleibt unverändert, die Desktop-Änderung (T8) ist plattformunabhängige PEM-Auswahl ohne Keyring- oder Pfad-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
