@@ -6,10 +6,10 @@
 // writes settings.json whole, so a field missing from the object is gone: every
 // save dropped lastUsername, and the login screen no longer pre-filled the name.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { get } from 'svelte/store';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import { setLanguage, tNow } from '$lib/i18n';
+import { language, setLanguage, tNow } from '$lib/i18n';
 import { settingsModalOpen } from '$lib/stores/settings';
 import type { Settings } from '$lib/bridge/types';
 
@@ -41,6 +41,8 @@ const h = vi.hoisted(() => ({
     if (method === 'GET' && path === '/api/servers') return [];
     return null;
   }),
+  // Set by the session mock below.
+  setStored: (_settings: Settings): void => {},
 }));
 
 // Everything but the calls under test fails loudly, as in SettingsModal.enroll.test.ts.
@@ -70,11 +72,13 @@ vi.mock('$lib/bridge', () => {
 });
 
 vi.mock('$lib/stores/session', async () => {
-  const { readable } = await import('svelte/store');
+  const { readable, writable, derived } = await import('svelte/store');
   const session = { username: 'kevin', serverUrl: 'https://srv.example' };
+  const settings = writable<Settings>(h.stored);
+  h.setStored = (next) => settings.set(next);
   return {
-    sessionStore: readable({ settings: h.stored, session, ready: true }),
-    settings: readable(h.stored),
+    sessionStore: derived(settings, (s) => ({ settings: s, session, ready: true })),
+    settings: { subscribe: settings.subscribe },
     session: readable(session),
     currentSession: () => session,
     refreshSettings: vi.fn(async () => undefined),
@@ -130,6 +134,54 @@ describe('SettingsModal — saving keeps the fields it does not edit (R-0429)', 
     await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
     expect(h.saveSettings).toHaveBeenCalledTimes(1);
     expect(h.saveSettings).toHaveBeenCalledWith({ ...h.stored, language: 'en' });
+  });
+});
+
+// A fresh install stores no language (R-0660). The UI then runs in the system language, but the
+// dialog showed "Deutsch" for it, and saving any setting wrote that along: an English system
+// switched to German.
+describe('SettingsModal — no stored language shows the language the UI runs in (R-0660)', () => {
+  let systemLanguageSpy: MockInstance<() => string> | null = null;
+
+  function startWithSystemLanguage(value: string): void {
+    systemLanguageSpy = vi.spyOn(navigator, 'language', 'get').mockReturnValue(value);
+    h.setStored({ ...h.stored, language: null });
+    // What the load of the settings does with them (session.ts hydrate).
+    setLanguage(null);
+  }
+
+  afterEach(() => {
+    systemLanguageSpy?.mockRestore();
+    systemLanguageSpy = null;
+    h.setStored(h.stored);
+  });
+
+  it('shows English on an English system and saves it unchanged', async () => {
+    startWithSystemLanguage('en-US');
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+
+    expect(get(language)).toBe('en');
+    expect(languageSelect(container).value).toBe('en');
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({ ...h.stored, language: 'en' });
+    expect(get(language)).toBe('en');
+  });
+
+  it('shows German on a German system and saves it unchanged', async () => {
+    startWithSystemLanguage('de-DE');
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+
+    expect(get(language)).toBe('de');
+    expect(languageSelect(container).value).toBe('de');
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({ ...h.stored, language: 'de' });
+    expect(get(language)).toBe('de');
   });
 });
 
