@@ -95,8 +95,8 @@ npm run lint            # eslint + svelte-eslint
 npx playwright test     # E2E</code></pre>
 
           <h2>Build &amp; Deployment</h2>
-          <p>The Vite build outputs to <code>apps/web/dist/</code> (sourcemaps on, target ES2022). The repo-root <code>Dockerfile</code> uses a multi-stage build to copy the output into <code>/app/frontend/</code>, and the FastAPI app mounts it as a static route. SPA fallback checks file existence before returning <code>index.html</code> &ndash; this prevents MIME errors on <code>/assets/*.js</code>.</p>
-          <p>In dev mode Vite runs on port 5173 and proxies <code>/auth</code>, <code>/api</code>, <code>/health</code> to <code>localhost:8000</code>.</p>
+          <p>The Vite build outputs to <code>apps/web/dist/</code> (no sourcemaps, target ES2022). The repo-root <code>Dockerfile</code> uses a multi-stage build to copy the output into <code>/app/frontend/</code>, and the FastAPI app mounts it as a static route. SPA fallback checks file existence before returning <code>index.html</code> &ndash; this prevents MIME errors on <code>/assets/*.js</code>.</p>
+          <p>In dev mode Vite runs on port 5173 and proxies <code>/api</code> to <code>http://127.0.0.1:8080</code>, the locally started server (<a href="./index.html">Local Development</a>).</p>
 
           <div class="page-nav">
             <a class="prev" href="./server.html"><span class="label">← Previous chapter</span><span class="title">Server</span></a>

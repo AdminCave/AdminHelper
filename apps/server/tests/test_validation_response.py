@@ -7,8 +7,9 @@ is null and a lone surrogate there is escaped.
 
 Starlette reads a request body with json.loads, which takes the tokens Infinity, -Infinity and
 NaN (RFC 8259, section 6, does not allow them). FastAPI's 422 echoes the body as input, and
-JSONResponse refused to write such a number back, so the client got a 500 instead. The lone
-surrogate on its own is pinned in test_frp_extra_config.py."""
+JSONResponse refused to write such a number back, so the client got a 500 instead. A lone
+surrogate anywhere in a body is refused by RequestModel (test_nul_body.py), whose 422 echoes
+it as input; both in one echoed input are pinned on the handler itself."""
 
 import asyncio
 import json
@@ -62,11 +63,29 @@ def test_a_non_finite_number_in_the_input_is_null(test_client, token):
     }
 
 
-def test_a_nested_non_finite_number_is_null_beside_a_lone_surrogate(test_client):
-    r = _login(test_client, '{"username": ["\\ud800", NaN, {"a": [Infinity, -Infinity, 1.5]}]}')
-    assert (r.status_code, r.headers["content-type"]) == (422, "application/json")
+def test_a_nested_non_finite_number_is_null_beside_a_lone_surrogate():
+    # Over HTTP this body now ends at RequestModel before any field is checked
+    # (test_a_lone_surrogate_in_the_body_is_answered_escaped), so the handler gets the errors
+    # FastAPI built for it before: the input as Starlette parses it, echoed in both.
+    sent = json.loads('["\\ud800", NaN, {"a": [Infinity, -Infinity, 1.5]}]')
+    errors = [
+        {
+            "type": "string_type",
+            "loc": ("body", "username"),
+            "msg": "Input should be a valid string",
+            "input": sent,
+        },
+        {
+            "type": "missing",
+            "loc": ("body", "password"),
+            "msg": "Field required",
+            "input": {"username": sent},
+        },
+    ]
+    status, content = _answer(_validation_error, errors)
+    assert status == 422
     echoed = ["\ud800", None, {"a": [None, None, 1.5]}]
-    assert _strict_loads(r.content) == {
+    assert _strict_loads(content) == {
         "detail": [
             {
                 "type": "string_type",
@@ -82,6 +101,20 @@ def test_a_nested_non_finite_number_is_null_beside_a_lone_surrogate(test_client)
             },
         ]
     }
+
+
+def test_a_lone_surrogate_in_the_body_is_answered_escaped(test_client):
+    r = _login(test_client, '{"username": "\\ud800", "password": "x"}')
+    assert (r.status_code, r.headers["content-type"]) == (422, "application/json")
+    assert b"\\ud800" in r.content
+    detail = _strict_loads(r.content)["detail"]
+    assert [(d["loc"], d["input"], d["msg"]) for d in detail] == [
+        (
+            ["body", "username"],
+            "\ud800",
+            "Value error, must not contain a lone surrogate (U+D800 to U+DFFF)",
+        )
+    ]
 
 
 def test_a_422_without_one_is_answered_as_before(test_client):
