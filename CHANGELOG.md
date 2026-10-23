@@ -133,6 +133,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
   Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
   Entwickler (DE+EN).
+- **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
+  und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
+  `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
+  Pakete fuer Hooks gehoeren ins Image. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Hooks: Webhook-Trigger prueft seinen JSON-Body wie jeder andere Request-Body:** Ein NUL-Byte oder ein einzelnes
+  Surrogat (U+D800 bis U+DFFF; JSON schreibt beide nur als Escape) in einem String oder Schluessel des Bodys von
+  `POST /api/hooks/trigger` und `/api/hooks/trigger/{token}` ergibt `422` mit dem Ort im `loc`, statt das Skript damit
+  zu starten; bisher endete die Antwort mit 500, sobald das Skript den Wert zurueckgab, und ein Skript, das ihn
+  speicherte, scheiterte an der Datenbank. Rate-Limit, Token und Aktiv-Status werden weiter vorher geprueft; ein Body,
+  der kein JSON ist, kommt wie bisher als leeres `payload` an. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **`create-admin --password` gibt das Passwort vor dem Anlegen ueber stdin an einen frischen Prozess weiter:**
+  `python -m app.cli create-admin --password …` ersetzt sich vor dem Anlegen des Benutzers per `exec` durch
+  `create-admin --password-stdin` und legt das Passwort dafuer auf stdin; Hooks auf `user.created` laufen so in einem
+  Prozess, dessen Kommandozeile das Passwort nicht traegt. Bis zum Neustart steht es dort weiter, Interpreter-Optionen
+  des ersten Aufrufs (`python -X …`) gelten danach nicht mehr, und Meldungen, die der Server beim Laden seiner
+  Konfiguration auf stderr schreibt, erscheinen zweimal. Ein Passwort mit Zeilenumbruch (das `--password-stdin`
+  nie annehmen konnte) oder eines, das samt Zeilenumbruch nicht in den Puffer einer Pipe passt (unter Linux meist
+  64 KiB), lehnt `--password` mit Exit 2 ab. Empfohlen bleibt `--password-stdin`. Doku: README.
 
 ### Removed
 
@@ -294,6 +312,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
   found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
   keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+- **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
+  galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
+  (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
+  zeigte bei `TZ` ungleich UTC die Ortszeit als UTC, auch bei Intervall-Hooks; jetzt steht dort der naechste Lauf in
+  UTC. Doku: Server-Entwicklerdoku (DE+EN).
+- **Hooks: Hintergrundprozess eines Skripts verzoegert die Antwort nicht mehr ueber 60 s (R-0778):** Startete ein
+  Hook einen Hintergrundprozess, der stdout oder stderr des Workers erbte, kam die Antwort von `/api/hooks/trigger`
+  (auch `/api/hooks/trigger/{token}`) und `/api/hooks/{id}/run` erst nach mehr als 60 s, am Gateway also als 504.
+  Nach dem Ende des Workers wartet der Runner jetzt hoechstens 2 s auf den Rest der Ausgabe, killt dann die
+  Prozessgruppe und wartet noch einmal hoechstens 2 s; ein Lauf dauert so hoechstens 34 s. Doku:
+  Hook-Entwicklerdoku (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
