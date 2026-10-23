@@ -7,9 +7,10 @@ notification hub.
 
 Only a curated subset of events is notification-worthy: most fire_event types
 are CRUD actions the actor triggered themselves (notifying them would be noise).
-We surface the ones that matter to *other* users — a new admin (security) and a
-couple of lifecycle changes. build_event holds the pure mapping (testable
-without a DB); handle_event is the thin wrapper the bus calls.
+We surface the ones that matter to *other* users — a new admin or a user
+promoted to admin (security) and a couple of lifecycle changes. build_event
+holds the pure mapping (testable without a DB); handle_event is the thin
+wrapper the bus calls.
 """
 
 import logging
@@ -32,6 +33,19 @@ def _on_user_created(data: dict) -> IncomingEvent | None:
         category="security",
         title=f"Neuer Admin-Benutzer angelegt: {username}",
         body="Ein Benutzer mit Admin-Rechten wurde angelegt.",
+        source_type="user",
+        source_id=None,
+    )
+
+
+def _on_user_promoted(data: dict) -> IncomingEvent | None:
+    username = data.get("username", "?")
+    return IncomingEvent(
+        event_type="security.admin.promoted",
+        severity="warning",
+        category="security",
+        title=f"User promoted to admin: {username}",
+        body="An existing user was granted admin rights.",
         source_type="user",
         source_id=None,
     )
@@ -70,6 +84,7 @@ def _on_tunnel_created(data: dict) -> IncomingEvent | None:
 # ignored here (they still run their hook scripts via the bus).
 _EVENT_BUILDERS = {
     "user.created": _on_user_created,
+    "user.promoted": _on_user_promoted,
     "server.deleted": _on_server_deleted,
     "frp.tunnel.created": _on_tunnel_created,
 }
