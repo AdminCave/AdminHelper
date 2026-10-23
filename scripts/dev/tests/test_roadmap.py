@@ -483,17 +483,20 @@ def test_a_neu_section_without_a_table_gets_one(tmp_path: pathlib.Path) -> None:
     assert findings(text) == []
 
 
-def test_the_neu_cap_refuses_the_21st(
+def test_add_takes_a_21st_neu_row(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     s = clean_sections()
     s["Neu (untriagiert)"] = [row(f"R-01{n:02d}", "neu", "BUG") for n in range(20)]
-    text = doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")
-    p = aged(write(tmp_path, text))
-    assert add(p, *ADD) == 3
-    assert "neu cap is reached (20/20)" in capsys.readouterr().err
-    assert p.read_text(encoding="utf-8") == text
-    assert not (tmp_path / "ROADMAP.md.bak").exists()
+    p = aged(write(tmp_path, doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")))
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.strip() == "R-0120"
+    text = p.read_text(encoding="utf-8")
+    neu = [r.id for _, r in roadmap.Roadmap(text).rows() if r.state == "neu"]
+    assert len(neu) == 21 and neu[-1] == "R-0120"
+    # The 20 stays in the header as a mark to read, like aktiv's 2.
+    assert "Stand: 2026-09-25 · WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 21/20 · ALT: 0" in text
+    assert findings(text) == []
 
 
 def test_an_open_dedup_key_is_refused_and_named(
