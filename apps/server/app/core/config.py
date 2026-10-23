@@ -5,12 +5,32 @@
 import logging
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger("adminhelper.config")
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def write_private_file(path: Path, text: str) -> None:
+    """Writes text (UTF-8) to path, readable and writable by its owner only, atomically."""
+    # mkstemp creates the temp file 0600, never wider whatever the umask: no window with wider
+    # rights and no chmod afterwards whose error could get lost. os.replace swaps it in
+    # atomically and replaces a symlink at the target name instead of writing through it. Same
+    # form as write_frps_config (app/modules/frp/docker_manager.py), which config.py cannot
+    # import.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(text.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def _resolve_secret_key() -> str:
@@ -30,8 +50,7 @@ def _resolve_secret_key() -> str:
             "SECRET_KEY ist der unsichere Default! Generiere automatisch einen sicheren Key."
         )
     generated = secrets.token_urlsafe(64)
-    key_file.write_text(generated)
-    key_file.chmod(0o600)
+    write_private_file(key_file, generated)
     logger.info("SECRET_KEY auto-generiert und in %s gespeichert", key_file)
     return generated
 
@@ -101,7 +120,8 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 # Ignored if TRUSTED_PROXIES is set.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
 
-# Comma-separated list of IPs/CIDRs of the trusted reverse proxies.
+# Comma-separated list of IPs/CIDRs or host names of the trusted reverse proxies
+# (a name counts with the addresses it resolved to, looked up every 30 s).
 # X-Forwarded-For / X-Real-IP are evaluated ONLY if the direct connection
 # comes from one of these IPs. Recommended over TRUST_PROXY_HEADERS.
 # Example: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
@@ -169,6 +189,10 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Optional path inside the container to a PEM file with the relay's CA (self-signed
+# or company CA). Loaded in addition to the system CAs and used only for SMTP, so
+# certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
+SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
 # Bell-feed retention in days. A daily system job prunes notification rows older

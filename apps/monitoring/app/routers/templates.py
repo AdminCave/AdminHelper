@@ -25,7 +25,9 @@ from app.models import (
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
+    keep_smtp_password,
     loads_readable,
+    masked_alert_definitions,
 )
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
@@ -57,6 +59,27 @@ def _tag_sync_best_effort(db: Session) -> None:
     except Exception:
         db.rollback()
         logger.exception("Tag-sync after binding change failed")
+
+
+def _stored_channel_configs(template: MonitorTemplate) -> dict[str, dict]:
+    """The channel_config of each stored alert definition, by def_id."""
+    configs = {}
+    for d in json.loads(template.alert_definitions or "[]"):
+        cfg = d.get("channel_config") if isinstance(d, dict) else None
+        if isinstance(cfg, dict) and d.get("def_id"):
+            configs[d["def_id"]] = cfg
+    return configs
+
+
+def _keep_smtp_password(channel_config: dict, stored: dict | None) -> None:
+    """keep_smtp_password as on PUT /alerts/{id}, a changed relay with the mask answered
+    with 422: the responses show the mask and the desktop sends a definition back as it
+    read it, so the mask must never become the password of the template and of every
+    rule made from it."""
+    try:
+        keep_smtp_password(channel_config, stored)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +170,7 @@ def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
         d = ad.model_dump()
         if not d.get("def_id"):
             d["def_id"] = str(uuid.uuid4())
+        _keep_smtp_password(d["channel_config"], None)
         alert_defs.append(d)
 
     template = MonitorTemplate(
@@ -204,11 +228,13 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
             check_defs.append(d)
         template.check_definitions = json.dumps(check_defs)
     if "alert_definitions" in sent:
+        stored_configs = _stored_channel_configs(template)
         alert_defs = []
         for ad in data.alert_definitions:
             d = ad.model_dump()
             if not d.get("def_id"):
                 d["def_id"] = str(uuid.uuid4())
+            _keep_smtp_password(d["channel_config"], stored_configs.get(d["def_id"]))
             alert_defs.append(d)
         template.alert_definitions = json.dumps(alert_defs)
 
@@ -301,7 +327,10 @@ def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
     return {
         "currentVersion": template.builtin_version,
         "shippedVersion": shipped["version"],
-        "current": {"checkDefinitions": current_checks, "alertDefinitions": current_alerts},
+        "current": {
+            "checkDefinitions": current_checks,
+            "alertDefinitions": masked_alert_definitions(current_alerts),
+        },
         "shipped": {"checkDefinitions": shipped_checks, "alertDefinitions": shipped_alerts},
     }
 

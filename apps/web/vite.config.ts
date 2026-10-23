@@ -58,9 +58,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/api': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/api': 'http://127.0.0.1:8080',
     },
   },
   // `vite preview` (Playwright project chromium-build) serves the build with the CSP as a
