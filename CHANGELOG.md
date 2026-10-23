@@ -171,6 +171,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bekam; ein Windows-Dienst hat kein schreibbares stdout, und `agent.log` unter `%ProgramData%\AdminHelper\logs`
   blieb so leer. Jetzt bekommt jedes Ziel jede Zeile, auch wenn das andere scheitert; ein nicht schreibbares
   Log-Verzeichnis haelt die Ausgabe nach stdout weiter nicht auf.
+- **Agent: Ctrl-C, SIGTERM und Dienst-Stopp brechen einen laufenden Durchlauf ab (R-0640):** Im Dauerbetrieb
+  (`run` ohne `--once`) wirkte SIGINT/SIGTERM erst, wenn der laufende Durchlauf (Erneuerung, FRP-Sync, Monitor-Push)
+  von selbst fertig war. Der Windows-Dienst endete beim Stopp dagegen sofort, auch mitten in einem Durchlauf. Jetzt
+  erreichen das Signal und Stop/Shutdown des Dienstes den laufenden Durchlauf und brechen ihn ab; der Agent endet,
+  sobald der Durchlauf zurueck ist, hoechstens nach 10 s, und der Dienst meldet bis dahin `StopPending`. Ein zweites
+  Ctrl-C beendet den Dauerbetrieb sofort.
 
 ## [0.46.0] - 2026-10-22
 

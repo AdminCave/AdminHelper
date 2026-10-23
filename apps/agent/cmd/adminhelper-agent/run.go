@@ -24,6 +24,15 @@ import (
 
 const defaultInterval = 5 * time.Minute
 
+// stopWait bounds how long a stop waits for the cycle in flight once its ctx has
+// ended: every blocking call of a cycle ends with the ctx, and a cycle that still
+// does not come back must not hold the stop any longer.
+var stopWait = 10 * time.Second
+
+// cycle is the work of one tick of runLoop and the Windows service; a seam for
+// the tests.
+var cycle = func(ctx context.Context) { _ = runOnce(ctx) }
+
 var logger = logging.For("agent")
 
 func runCmd() *cobra.Command {
@@ -53,26 +62,59 @@ func runCmd() *cobra.Command {
 func runLoop() error {
 	logger.Infof("Starte Dauerbetrieb (Intervall: %s)", defaultInterval)
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	// SIGINT/SIGTERM end ctx at once, and with it the cycle in flight.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	// stop() at once restores the default handling, so a second Ctrl-C ends the
+	// process instead of waiting for the cycle. wait is read here: the callback
+	// runs on a goroutine nobody joins.
+	wait := stopWait
+	context.AfterFunc(ctx, func() {
+		stop()
+		logger.Infof("%v, stopping (waiting at most %s for a running cycle)", context.Cause(ctx), wait)
+	})
 
-	// Cancel the ctx on shutdown so an in-flight push retry backoff aborts
-	// instead of blocking the exit.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	serve(ctx, defaultInterval, cycle)
+	return nil
+}
 
-	ticker := time.NewTicker(defaultInterval)
+// serve runs cycle at once and then on every tick of interval, each run on its
+// own goroutine so serve sees the end of ctx while a cycle runs. A tick that
+// comes while a cycle still runs is dropped: cycles never overlap. Once ctx has
+// ended, serve waits for the running cycle at most stopWait and returns.
+func serve(ctx context.Context, interval time.Duration, cycle func(context.Context)) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	runOnce(ctx)
+	busy := false
+	// Buffered: a cycle that outlives stopWait can still finish after serve is gone.
+	done := make(chan struct{}, 1)
+	start := func() {
+		if busy || ctx.Err() != nil {
+			return
+		}
+		busy = true
+		go func() {
+			cycle(ctx)
+			done <- struct{}{}
+		}()
+	}
 
+	start()
 	for {
 		select {
+		case <-done:
+			busy = false
 		case <-ticker.C:
-			runOnce(ctx)
-		case s := <-sig:
-			logger.Infof("Signal %v empfangen, beende...", s)
-			return nil
+			start()
+		case <-ctx.Done():
+			if busy {
+				select {
+				case <-done:
+				case <-time.After(stopWait):
+				}
+			}
+			return
 		}
 	}
 }
