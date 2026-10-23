@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_admin
+from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.request_context import actor_from_request
@@ -21,21 +21,46 @@ from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
+# The keys of a tunnel a non-admin reads: what the desktop deserialises it into (TunnelMapping in
+# apps/desktop/src-tauri/src/tunnel.rs, pinned by tests/test_frp_tunnel_access.py).
+_MAPPING_FIELDS = (
+    "id",
+    "serverId",
+    "tunnelType",
+    "protocol",
+    "localPort",
+    "visitorPort",
+    "customDomains",
+    "connectionId",
+    "enabled",
+    "name",
+)
+
 
 @router.get("/tunnels")
 def list_tunnels(
     server_id: str | None = Query(None),
     frp_config_id: str | None = Query(None),
     db: Session = Depends(get_db),
-    _admin=Depends(get_current_admin),
+    current_user=Depends(get_current_user),
 ):
     query = db.query(FrpTunnel)
+    if not current_user.is_admin:
+        # The desktop resolves a non-admin's connections through these mappings, so he reads the
+        # enabled tunnels of his assigned servers, nothing beyond TunnelMapping: the same split as
+        # _visible_stcp_tunnels. The query parameters below only narrow this further.
+        server_ids = [s.id for s in current_user.servers]
+        if not server_ids:
+            return []
+        query = query.filter(FrpTunnel.server_id.in_(server_ids), FrpTunnel.enabled.is_(True))
     if server_id:
         query = query.filter(FrpTunnel.server_id == server_id)
     if frp_config_id:
         query = query.filter(FrpTunnel.frp_config_id == frp_config_id)
-    tunnels = query.order_by(FrpTunnel.name).all()
-    return [t.to_dict(mask_secrets=True) for t in tunnels]
+    listed = [t.to_dict(mask_secrets=True) for t in query.order_by(FrpTunnel.name).all()]
+    if current_user.is_admin:
+        return listed
+    return [{key: t[key] for key in _MAPPING_FIELDS} for t in listed]
 
 
 def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:

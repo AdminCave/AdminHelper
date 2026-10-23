@@ -55,6 +55,12 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Typ',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web-Panel nur für Admins',
+    'page.adminOnly.text': 'Bitte den Desktop-Client nutzen.',
+    'page.notFound.title': 'Seite nicht gefunden',
+    'page.notFound.back': 'Zur Benutzerverwaltung',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Benutzer',
     'page.users.subtitle': 'Zugriffsverwaltung',
@@ -151,6 +157,7 @@ export const translations: Translations = {
     'hook.event.connections.imported': 'Verbindungen importiert',
     'hook.event.user.created': 'Benutzer erstellt',
     'hook.event.user.deleted': 'Benutzer gelöscht',
+    'hook.event.user.promoted': 'Benutzer zum Admin hochgestuft',
     'hook.event.server.created': 'Server erstellt',
     'hook.event.server.updated': 'Server geändert',
     'hook.event.server.deleted': 'Server gelöscht',
@@ -346,6 +353,12 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Type',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web panel for admins only',
+    'page.adminOnly.text': 'Please use the desktop client.',
+    'page.notFound.title': 'Page not found',
+    'page.notFound.back': 'Go to user management',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Users',
     'page.users.subtitle': 'Access management',
@@ -440,6 +453,7 @@ export const translations: Translations = {
     'hook.event.connections.imported': 'Connections imported',
     'hook.event.user.created': 'User created',
     'hook.event.user.deleted': 'User deleted',
+    'hook.event.user.promoted': 'User promoted to admin',
     'hook.event.server.created': 'Server created',
     'hook.event.server.updated': 'Server updated',
     'hook.event.server.deleted': 'Server deleted',

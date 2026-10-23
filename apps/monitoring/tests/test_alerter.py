@@ -363,6 +363,26 @@ class TestWebhookSsrf:
         assert "SSRF" in error
         assert sent == []
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://☃.hooks.example.com/x",  # no IDNA 2008 label
+            "https://hooks.example.com:abc/x",  # a port that is no number
+            "https://hooks.example.com/x\ud800",  # a lone surrogate
+        ],
+    )
+    def test_a_url_httpx_cannot_read_is_rejected_without_request(self, monkeypatch, url):
+        # R-0606: the real guard reads the URL with httpx before the try. A URL httpx
+        # cannot read is the usual rejection, not an exception out of _send_webhook.
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        sent = _requests_below_the_pin(monkeypatch)
+
+        result = alerter._send_webhook({"url": url}, make_rule(), make_check(), make_msg())
+
+        assert result == (False, "Webhook target is private/reserved (not allowed)")
+        assert asked == []
+        assert sent == []
+
     def test_request_connects_to_the_checked_address(self, monkeypatch):
         # ssrf-pin: the connection goes to the address the guard checked. httpx resolving
         # the name a second time could get another answer (DNS rebinding).
@@ -391,6 +411,23 @@ class TestWebhookSsrf:
 
         assert asked == ["hooks.example.com"]
         assert connected == [("192.0.2.10", 3128)]
+        assert (success, error) == (False, "Webhook connection failed")
+
+    def test_beside_a_proxy_no_proxy_connects_to_the_checked_address(self, monkeypatch):
+        # A target that NO_PROXY takes past the proxy (here every target) connects as
+        # without a proxy: to the checked address, not by name.
+        no_env_proxy(monkeypatch)
+        monkeypatch.setenv("HTTPS_PROXY", "http://192.0.2.10:3128")
+        monkeypatch.setenv("NO_PROXY", "*")
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        connected = _connections_refused(monkeypatch)
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com:8443/x"}, make_rule(), make_check(), make_msg()
+        )
+
+        assert asked == ["hooks.example.com"]
+        assert connected == [(_PUBLIC, 8443)]
         assert (success, error) == (False, "Webhook connection failed")
 
 
