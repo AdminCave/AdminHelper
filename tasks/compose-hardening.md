@@ -99,8 +99,10 @@ Abhängt von: T5, T1
 Beweis: Code-Lesung docker-compose.yml:233; Probe 2026-10-22 (Docker 29.8.1, Compose v5.5.1): Secret mit `environment:` aus der `.env` des Projekts → `/run/secrets/<name>` 0444 root, `Config.Env` nur mit `CA_ROOT_PASSPHRASE_FILE`; leere Variable → keine Datei; fehlende Variable → `up` bricht ab
 HEAD: b1432223
 
-### T7 — init-secrets.sh: CA-Passphrase nur bei frischer Installation  [ ]
-Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
+### T7 — init-secrets.sh: CA-Passphrase nur bei frischer Installation  [x]
+Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md, scripts/restore.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4bc6cc7b 2026-10-23T09:07:43+02:00
+Review: approve (.ah-out/review/compose-hardening/T7.verdict.json)
 Änderung: `scripts/init-secrets.sh:103-111`: `CA_ROOT_PASSPHRASE` wird nur erzeugt, wenn derselbe Lauf auch `POSTGRES_PASSWORD` erzeugt hat (frische Installation: Postgres- und PKI-Volume entstehen gemeinsam; Spec Trade-off 4). Ist `POSTGRES_PASSWORD` schon gesetzt und `CA_ROOT_PASSPHRASE` leer, bleibt die Zeile, wie sie ist, und das Skript schreibt eine Zeile (englisch) auf stdout: der Wert bleibt leer, nur der erste Start des ca-issuer braucht ihn; bei einer Neuinstallation mit vorab gesetztem `POSTGRES_PASSWORD` von Hand setzen. Der Kopfkommentar `:7-11` nennt die Regel. Tests in `scripts/tests/init-secrets_test.sh` (neuer Fall nach `:105-110`): (a) `.env` mit `POSTGRES_PASSWORD=already-set` und `CA_ROOT_PASSPHRASE=` → danach genau eine Zeile `CA_ROOT_PASSPHRASE=` (leer), Exit 0, der Hinweis auf stdout; (b) neben (a): `.env` mit leerem `POSTGRES_PASSWORD` und leerem `CA_ROOT_PASSPHRASE` → beide 64 Hex. Zuerst rot: (a) auf HEAD (heute 64 Hex). Die Fälle 1–7 bleiben grün (in 1 und 6 erzeugt derselbe Lauf `POSTGRES_PASSWORD`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test
 Doku: `docs/admin/betrieb.html:95` + `docs/en/admin/operations.html:62` (Callout): nach dem ersten Start den Wert in `.env` leeren und die Zeile `CA_ROOT_PASSPHRASE=` behalten; Updates erzeugen keine neue; `:103` + EN `:70` (Restore): `.env.restored` trägt die Zeile nicht — beim Übernehmen `CA_ROOT_PASSPHRASE=` ergänzen (leer oder mit der aufbewahrten Passphrase), sonst startet Compose nicht · CHANGELOG (Changed, umlautfrei)
