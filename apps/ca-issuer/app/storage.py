@@ -322,6 +322,15 @@ def _pair_matches(cert_path: Path, key_path: Path) -> bool:
     return _holds_key(leaf, key)
 
 
+def _leaf_signed_by(fullchain_path: Path, issuer: x509.Certificate) -> bool:
+    """Whether `issuer` signed the leaf (the first cert) in fullchain_path."""
+    try:
+        leaf = x509.load_pem_x509_certificate(fullchain_path.read_bytes())
+    except (OSError, ValueError):
+        return False
+    return _signature_problem(leaf, issuer) is None
+
+
 def _holds_key(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> bool:
     """Whether `key` is the private half of `cert`'s public key."""
     spki = serialization.PublicFormat.SubjectPublicKeyInfo
@@ -345,12 +354,19 @@ def _provision_server_material(
     they differ only in file names, the signing intermediate, and any extra trust.
     Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
     the leaf is kept across restarts but re-minted once past half its life (F4) so
-    it never expires under a long-running stack."""
+    it never expires under a long-running stack, or once the current intermediate
+    did not sign it (the first boot after a rotation)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Trust bundle = the signing intermediate's chain (root already in it) plus any
-    # extra trust intermediates (e.g. frps also trusting the access chain for the
-    # STCP visitor). Always (re)written so it follows the current hierarchy.
-    bundle = inter.chain + b"".join(pki.cert_to_pem(i.cert) for i in extra_trust)
+    # Trust bundle = the signing intermediate's chain (root already in it) and its
+    # retired intermediates, plus any extra trust intermediates (e.g. frps also
+    # trusting the access chain for the STCP visitor) with theirs: a client cert from
+    # before a rotation, sent without its chain (a browser .p12), still finds its
+    # issuer until the retired one expires. Always (re)written so it follows the
+    # current hierarchy.
+    trusted = list(inter.retired)
+    for extra in extra_trust:
+        trusted += [extra.cert, *extra.retired]
+    bundle = inter.chain + pki.chain_pem(*trusted)
     (out_dir / bundle_name).write_bytes(bundle)
 
     cert_path = out_dir / cert_name
@@ -359,11 +375,15 @@ def _provision_server_material(
     # the key leaves a NEW leaf beside the OLD key, which _leaf_needs_remint (0% aged) would pass
     # — nginx then fails with 'key values mismatch' and crash-loops for up to half the leaf life
     # with no self-repair. On a mismatch, fall through and re-mint the pair (4.19).
+    # And require the current intermediate to have signed the leaf: after a rotation the server
+    # would otherwise go on presenting a leaf of the retired intermediate (whose end also bounds
+    # the leaf) until half its life; re-minting moves it onto the current one on the first boot.
     if (
         cert_path.exists()
         and key_path.exists()
         and not _leaf_needs_remint(cert_path)
         and _pair_matches(cert_path, key_path)
+        and _leaf_signed_by(cert_path, inter.cert)
     ):
         return
 
@@ -381,15 +401,19 @@ def ensure_gateway_cert(
     """Provision the gateway's TLS material into a shared volume (ADR 0001 §3.2).
 
     Writes three files the gateway mounts read-only:
-        client-ca.pem            access intermediate + root (verify client certs)
+        client-ca.pem            access intermediate + root + retired access
+                                 intermediates (verify client certs)
         gateway-fullchain.pem    server leaf + access intermediate (TLS terminate)
         gateway.key              the leaf's private key (0600)
 
     The leaf chains to the pinned Root so native clients (which pin the Root and
     validate every leaf against it, D2) accept the gateway on :443. Idempotent:
-    the trust bundle is always refreshed (cheap, tracks rotations); the leaf is
-    kept across restarts but re-minted once past half its life (F4) so it never
-    expires under a long-running stack and takes the gateway down."""
+    the trust bundle is always refreshed (cheap, tracks rotations); the retired
+    intermediates in it keep client certs from before a rotation accepted until
+    they expire. The leaf is kept across restarts but re-minted once past half
+    its life (F4) so it never expires under a long-running stack and takes the
+    gateway down, and on the first boot after a rotation, so it comes from the
+    current access intermediate."""
     _provision_server_material(
         out_dir,
         access,
@@ -411,7 +435,8 @@ def ensure_frps_cert(
 ) -> None:
     """Provision the frps server TLS material under the tunnel intermediate
     (ADR 0001 §3.1 / A7). frps mounts these read-only:
-        ca.crt    tunnel intermediate + root (+ extra_trust intermediates)
+        ca.crt    tunnel intermediate + root + retired tunnel intermediates
+                  (+ extra_trust intermediates, each with its retired ones)
         frps.crt  server leaf + tunnel intermediate (server_auth, SAN=server_addr)
         frps.key  the leaf's private key (0600)
 
@@ -423,7 +448,10 @@ def ensure_frps_cert(
 
     The CA private key never reaches the internet-facing frps — only the public
     chain (the GHSA-rv39 master/published split, now under the unified PKI).
-    Idempotent like the gateway cert; re-minted once past half its life (F4)."""
+    Idempotent like the gateway cert: the retired intermediates keep agent and
+    visitor certs from before a rotation accepted until they expire; the leaf is
+    re-minted once past half its life (F4) and on the first boot after a
+    rotation, so it comes from the current tunnel intermediate."""
     _provision_server_material(
         out_dir,
         tunnel,
