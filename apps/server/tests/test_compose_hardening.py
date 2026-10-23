@@ -22,17 +22,31 @@ The tunnel edge network frpedge, on which frps sits alone, runs without IP masqu
 only accepts connections, so its published ports keep working, and the packets it sends itself
 leave the host with the container's address. The other networks keep Docker's default.
 
+The CA root passphrase reaches the ca-issuer as a compose secret, a file under /run/secrets, and
+not as an environment variable: no service's environment carries it, so it stays out of
+`docker inspect` and /proc/<pid>/environ. Compose takes the secret from CA_ROOT_PASSPHRASE in
+the project's .env; without that line `docker compose up` aborts, so .env.example keeps it
+active (update.sh adds missing active lines to an existing .env). Compose leaves a secret's
+content out of the configuration hash it compares on `up`, so the ca-issuer carries a label that
+only says whether a value is set: emptying the value changes the label, `up -d` recreates the
+container, and the old passphrase file goes with it.
+
 Only the base file is read: docker-compose.test.yml carries `!override`, which `yaml.safe_load`
 refuses, and the shipped topology is the base file anyway.
 """
 
+import re
 from pathlib import Path
 
 import yaml
 
-_COMPOSE = Path(__file__).resolve().parents[3] / "docker-compose.yml"
+_ROOT = Path(__file__).resolve().parents[3]
+_COMPOSE = _ROOT / "docker-compose.yml"
+_ENV_EXAMPLE = _ROOT / ".env.example"
 _NO_NEW_PRIVILEGES = "no-new-privileges:true"
 _MASQUERADE = "com.docker.network.bridge.enable_ip_masquerade"
+_PASSPHRASE_SECRET = "ca_root_passphrase"
+_PASSPHRASE_LABEL = "com.admincave.adminhelper.ca-root-passphrase-present"
 
 
 def _compose() -> dict:
@@ -41,6 +55,14 @@ def _compose() -> dict:
 
 def _services() -> dict:
     return _compose()["services"]
+
+
+def _entries(service: dict, key: str) -> dict[str, str]:
+    """A service's `environment:` or `labels:`, list form (`- KEY=value`) or mapping form."""
+    entries = service.get(key) or {}
+    if isinstance(entries, dict):
+        return {name: "" if value is None else str(value) for name, value in entries.items()}
+    return dict(entry.split("=", 1) if "=" in entry else (entry, "") for entry in entries)
 
 
 def test_no_process_in_any_service_gains_privileges_on_exec():
@@ -87,3 +109,44 @@ def test_the_other_networks_keep_ip_masquerading():
     networks = _compose()["networks"]
     options = {name: (networks[name] or {}).get("driver_opts") or {} for name in ("default", "pki")}
     assert {name: opts[_MASQUERADE] for name, opts in options.items() if _MASQUERADE in opts} == {}
+
+
+def test_no_service_carries_the_ca_root_passphrase_in_its_environment():
+    carriers = {
+        name
+        for name, service in _services().items()
+        if "CA_ROOT_PASSPHRASE" in _entries(service, "environment")
+    }
+    assert carriers == set()
+
+
+def test_the_ca_issuer_reads_the_passphrase_from_a_secret_taken_from_the_env_file():
+    compose = _compose()
+    ca_issuer = compose["services"]["ca-issuer"]
+
+    assert (
+        _entries(ca_issuer, "environment").get("CA_ROOT_PASSPHRASE_FILE")
+        == f"/run/secrets/{_PASSPHRASE_SECRET}"
+    )
+    # The short form: compose mounts it as /run/secrets/<name>, the path above.
+    assert _PASSPHRASE_SECRET in ca_issuer.get("secrets", [])
+    assert (compose.get("secrets") or {}).get(_PASSPHRASE_SECRET) == {
+        "environment": "CA_ROOT_PASSPHRASE"
+    }
+
+
+def test_emptying_the_passphrase_changes_a_label_of_the_ca_issuer():
+    label = _entries(_services()["ca-issuer"], "labels").get(_PASSPHRASE_LABEL, "")
+
+    # ${VAR:+word}: `word` when the value is set and not empty, else the empty string. The
+    # word must not be the value itself, or the passphrase would land in the labels.
+    assert re.fullmatch(r"\$\{CA_ROOT_PASSPHRASE:\+[^${}]+\}", label), (
+        f"{_PASSPHRASE_LABEL}: {label!r}"
+    )
+
+
+def test_env_example_keeps_the_passphrase_line_active_and_empty():
+    lines = _ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+    assert [line for line in lines if line.startswith("CA_ROOT_PASSPHRASE=")] == [
+        "CA_ROOT_PASSPHRASE="
+    ]

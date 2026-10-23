@@ -29,6 +29,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erreichbar. Die Betriebs-Doku nennt, was bleibt (Pakete ohne Antwort, Dienste des Hosts selbst), und zeigt eine
   optionale Regel in der Kette `DOCKER-USER`. Die Doku der Netze nennt Postgres neben Gateway und ca-issuer im Netz
   `pki`. Doku: Betrieb, Entwicklung (DE+EN).
+- **Compose: CA-Root-Passphrase als Secret statt Umgebungsvariable:** Der ca-issuer bekommt `CA_ROOT_PASSPHRASE`
+  als Compose-Secret, eine Datei unter `/run/secrets`, und nicht mehr als Umgebungsvariable; damit steht sie nicht
+  mehr in der Umgebung des Containers (`docker inspect`, `/proc/<pid>/environ`). Compose liest den Wert weiter aus
+  `CA_ROOT_PASSPHRASE` in der `.env` und setzt `CA_ROOT_PASSPHRASE_FILE` selbst. Nach dem ersten Start darf der Wert
+  leer sein; danach erzeugt `docker compose up -d` den ca-issuer neu, und die Datei verschwindet (ein Label des
+  Dienstes traegt, ob ein Wert gesetzt ist, nie den Wert). Die Zeile `CA_ROOT_PASSPHRASE=` muss bleiben: fehlt sie,
+  bricht `docker compose up` ab. Voraussetzung ist Docker Compose v2.6 oder neuer. Doku: Installation (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

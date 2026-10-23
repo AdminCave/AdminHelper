@@ -264,9 +264,16 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
       - EXTRA_SANS=${EXTRA_SANS:-}
-      # Encrypts the cold Root key at rest (D7). Required on first boot to create
-      # the hierarchy. Set via ./scripts/init-secrets.sh; keep it OUT of backups.
-      - CA_ROOT_PASSPHRASE=${CA_ROOT_PASSPHRASE:-}
+      # Encrypts the cold Root key at rest (D7). Only the first boot needs it, to create
+      # the hierarchy. Set via ./scripts/init-secrets.sh; keep it OUT of backups. It
+      # arrives as a file (the secret ca_root_passphrase, top-level `secrets:` below),
+      # not as an environment variable, so it stays out of the container's environment
+      # (docker inspect, /proc/<pid>/environ). After the first boot the value in .env may
+      # be empty: `docker compose up -d` then recreates the ca-issuer (label below) and
+      # the file is gone. The line CA_ROOT_PASSPHRASE= has to stay: without it
+      # `docker compose up` aborts (a secret with the source `environment` needs
+      # Compose v2.6.0 or later).
+      - CA_ROOT_PASSPHRASE_FILE=/run/secrets/ca_root_passphrase
       - CA_GATEWAY_CERT_DIR=/app/gateway-certs
       # frps server cert under the tunnel intermediate (A7). SERVER_ADDR must match
       # the public frps address frpc connects to (the DB's server_addr); defaults
@@ -295,6 +302,14 @@ services:
       - no-new-privileges:true
     # Processes and threads: one uvicorn process and its thread pool.
     pids_limit: 512
+    # Mounted as /run/secrets/ca_root_passphrase (CA_ROOT_PASSPHRASE_FILE above).
+    secrets: [ca_root_passphrase]
+    # Compose leaves a secret's content out of the hash it compares on `up`, so emptying
+    # the value alone would keep the container and the old file in it. This label holds
+    # only whether a value is set (never the value): emptying it changes the label, and
+    # `up -d` recreates the container without the file.
+    labels:
+      com.admincave.adminhelper.ca-root-passphrase-present: "${CA_ROOT_PASSPHRASE:+yes}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -550,3 +565,11 @@ volumes:
   monitoring-data:
   victoria-data:
   postgres-data:
+
+# The CA root passphrase for the ca-issuer. Compose takes the value from CA_ROOT_PASSPHRASE
+# in the environment or the project's .env and writes it into the container as
+# /run/secrets/ca_root_passphrase; an empty value creates no file (see the label of the
+# ca-issuer for what happens to a container that already has one).
+secrets:
+  ca_root_passphrase:
+    environment: CA_ROOT_PASSPHRASE

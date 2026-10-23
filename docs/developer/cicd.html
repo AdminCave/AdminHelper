@@ -379,7 +379,8 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           wie ein g&uuml;ltiger Wert); ein <code>environment:</code>-Key muss vom Code dieses Dienstes gelesen
           werden (sonst ist er ein &Uuml;berbleibsel oder eine halb gelandete Umbenennung); und jede
           <code>${VAR}</code>-Substitution muss in <code>.env.example</code> stehen und umgekehrt &ndash; ein
-          dokumentierter Stellhebel, den Compose nicht durchreicht, bewirkt beim Setzen nichts. Keine
+          dokumentierter Stellhebel, den Compose nicht durchreicht, bewirkt beim Setzen nichts. Als durchgereicht
+          z&auml;hlt auch die Quelle eines Compose-Secrets (<code>secrets.*.environment</code>). Keine
           Ausnahmeliste: wo eine Regel eine Ausnahme gebraucht h&auml;tte, war die Regel falsch.</p>
 
           <p><strong>Geteilte API-Typen</strong> (<code>sync-from-web.sh --check</code>): die beiden
