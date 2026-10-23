@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
-from app.core.bounds import Offset
+from app.core.bounds import Offset, _find_unstorable
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
@@ -214,6 +214,21 @@ async def _do_trigger(token: str, request: Request, db: Session):
         payload = await request.json()
     except Exception:
         payload = {}
+    # The payload has no schema, so RequestModel's rule is applied here by hand: a NUL
+    # byte or a lone surrogate (JSON spells them \u0000 and \ud800) would reach the
+    # script, and the response or the database fails once the script returns or stores it.
+    if found := _find_unstorable(payload):
+        loc, value, reason = found
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", *loc),
+                    "msg": f"Value error, {reason}",
+                    "input": value,
+                }
+            ]
+        )
 
     try:
         # Offload the blocking subprocess off the event loop — otherwise a single
