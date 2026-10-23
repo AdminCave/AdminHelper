@@ -78,8 +78,10 @@ Abhängt von: T1
 Beweis: Code-Lesung docker-compose.yml:35, :214-216, :453-456; Probe 2026-10-22 (Docker 29.8.1, Compose v5.5.1, Alpine-Container in einem Bridge-Netz mit und ohne Option): ohne Masquerading scheitern Verbindungen ins Internet und zum LAN-Router, ein veröffentlichter Port und ein Dienst des Hosts bleiben vom Host aus erreichbar; Compose legt das Netz beim nächsten `up` mit der Option neu an
 HEAD: b1432223
 
-### T5 — ca-issuer: fehlende Passphrase-Datei heißt keine Passphrase  [ ]
+### T5 — ca-issuer: fehlende Passphrase-Datei heißt keine Passphrase  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/config.py, apps/ca-issuer/tests/test_config.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @6859681d 2026-10-23T07:19:40+02:00
+Review: approve (.ah-out/review/compose-hardening/T5.verdict.json)
 Änderung: `root_passphrase()` (`apps/ca-issuer/app/config.py:43-54`): zeigt `CA_ROOT_PASSPHRASE_FILE` auf einen Pfad ohne Datei, liest die Funktion weiter `CA_ROOT_PASSPHRASE` (leer → `None`) statt mit `FileNotFoundError` abzubrechen (`:51-53`); andere `OSError` (keine Leserechte, ein Verzeichnis) wirft sie weiter. Docstring: Compose übergibt die Passphrase als Secret-Datei; ein leerer Wert erzeugt keine Datei (Probe Compose v5.5.1), und nach dem ersten Start ist ein leerer Wert gewollt. Der Kommentar `:93-101` sagt richtig, wer den Listener erreicht: über das Netz `pki` das Gateway und Postgres, nicht frps und nicht die Dienste des Default-Netzes. Tests in `test_config.py` neben `:33-55`: (a) `CA_ROOT_PASSPHRASE_FILE` auf einen Pfad in `tmp_path` ohne Datei, `CA_ROOT_PASSPHRASE` ungesetzt → `None`; (b) dasselbe mit `CA_ROOT_PASSPHRASE=env-secret` → `b"env-secret"`; (c) `CA_ROOT_PASSPHRASE_FILE` auf ein Verzeichnis → `IsADirectoryError` (wird nicht verschluckt). Zuerst rot: (a), (b). Die bestehenden Tests `:27-55` bleiben unverändert grün.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_config.py
 Doku: keine (intern; die Betreiber-Doku kommt mit T6 und T7)
