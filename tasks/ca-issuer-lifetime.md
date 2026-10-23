@@ -63,3 +63,11 @@ Beweis: origin/main@237b450a · Probe wie T1 (Python 3.13.5, cryptography 50.0.1
 Orakel: contract — `ensure_hierarchy` gibt nur eine Hierarchie zurück, deren Intermediates von der Root stammen, zeitlich gültig sind und zu Schlüssel und Kette passen
 Dedup-Key: bug:ca-issuer:storage.py:ensure-hierarchy-loads-unchecked
 HEAD: 237b450a
+
+### T4 — ensure_hierarchy: die ausgelieferte Kette aus den geprüften Zertifikaten bauen  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_storage.py, CHANGELOG.md
+Änderung: `ensure_hierarchy` gibt `Intermediate(..., chain=pki.chain_pem(cert, root_cert))` zurück statt der gelesenen Dateibytes (`storage.py:169`). Die Prüfung `_chain_is` gegen `[intermediate, root]` bleibt, und eine falsche Kette bricht den Start weiter ab. Test: Eine Kettendatei, deren Bytes nicht genau der kanonischen Kette entsprechen (zusätzlicher Inhalt neben den zwei Zertifikaten), ergibt `Intermediate.chain == pki.chain_pem(intermediate, root)`. Der Test ist zuerst rot.
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py
+Doku: CHANGELOG.md (Changed, neutral: der ca-issuer liefert die Zertifikatskette aus den beim Start geprüften Zertifikaten aus)
+Beweis: feature/ca-issuer-lifetime@7e06dfa0 · storage.py:169 übergibt die gelesenen Bytes der Kettendatei · Prüfer-Probe T3 (privat)
+HEAD: 7e06dfa0
