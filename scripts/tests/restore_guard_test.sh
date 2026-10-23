@@ -28,6 +28,10 @@
 # name: a directory under that name fails the backup and takes no archive, and no
 # temp file stays; a symlink under it is replaced by the archive, its target
 # stays untouched.
+# 17: backup.sh, against the same stubs and a sync wrapper: the archive is synced
+# before the rename and the output dir after it; a failing sync fails the backup
+# and leaves the output dir empty.
+# 18: backup.sh --help prints the comment header and stops at the usage line.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it test 12 cannot run, and the test ends with 75)
@@ -346,6 +350,55 @@ members=$(tar tzf "$archive" 2>/dev/null)
     && [ "$entries" = "$FIXED_NAME" ] && grep -qx './MANIFEST.txt' <<<"$members" && [ -z "$elsewhere" ]; } \
   && ok "a symlink under the archive name is replaced by the archive, its target stays empty" \
   || bad "symlink in the way: rc=$rc type=$(stat -c '%F %a' "$archive" 2>/dev/null) entries=[$entries] elsewhere=[$elsewhere] members=[$members] out=[$out]"
+
+# --- 17. backup.sh: the archive's data is on disk before its name ────────────
+# The rename can reach the disk before the data: after a power loss the name would
+# point at an empty or truncated file. The sync wrapper logs each call as
+# "<args>|<type> <size> of the last arg>[|<entries of that dir>]" and runs the
+# real sync; AH_TEST_SYNC_FAIL=1 makes it fail instead. The date stub of 16
+# still fixes the archive name.
+AH_TEST_REAL_SYNC=$(command -v sync); export AH_TEST_REAL_SYNC
+cat > "$WORK/bk/bin/sync" <<'STUB'
+#!/usr/bin/env bash
+last="${!#}"
+line="$*|$(stat -c '%F %s' -- "$last" 2>&1)"
+[ ! -d "$last" ] || line="$line|$(ls -A -- "$last" | paste -sd ' ' -)"
+printf '%s\n' "$line" >> "$STUB_DIR/sync.log"
+[ "${AH_TEST_SYNC_FAIL:-}" != 1 ] || exit 1
+exec "$AH_TEST_REAL_SYNC" "$@"
+STUB
+chmod +x "$WORK/bk/bin/sync"
+
+mkdir -p "$WORK/bk/i"
+out=$(bk_run "$WORK/bk/i" "$WORK/bk/i/out"); rc=$?
+calls=$(cat "$WORK/bk/i/sync.log" 2>/dev/null)
+IFS='|' read -r args1 type1 _ <<<"$(sed -n 1p <<<"$calls")"
+IFS='|' read -r args2 type2 seen2 <<<"$(sed -n 2p <<<"$calls")"
+entries=$(ls -A "$WORK/bk/i/out" 2>/dev/null)
+case "$args1" in "-- $WORK/bk/i/out/.adminhelper-backup-"*) temp_synced=1 ;; *) temp_synced=0 ;; esac
+{ [ $rc -eq 0 ] && [ -n "$calls" ] && [ "$(wc -l <<<"$calls")" -eq 2 ] \
+    && [ "$temp_synced" = 1 ] && [ "${type1% *}" = 'regular file' ] && [ "${type1##* }" -gt 0 ] \
+    && [ "$args2" = "-- $WORK/bk/i/out" ] && [ "${type2% *}" = directory ] && [ "$seen2" = "$FIXED_NAME" ] \
+    && [ "$entries" = "$FIXED_NAME" ]; } \
+  && ok "backup.sh syncs the full temp file before the rename, then the output dir with the archive" \
+  || bad "sync calls: rc=$rc calls=[$calls] entries=[$entries] out=[$out]"
+
+mkdir -p "$WORK/bk/j"
+out=$(bk_run "$WORK/bk/j" "$WORK/bk/j/out" AH_TEST_SYNC_FAIL=1); rc=$?
+entries=$(ls -A "$WORK/bk/j/out" 2>/dev/null)
+calls=$(cat "$WORK/bk/j/sync.log" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ -n "$calls" ] && [ "$(wc -l <<<"$calls")" -eq 1 ] \
+    && [ -d "$WORK/bk/j/out" ] && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a failing sync fails the backup and leaves the output dir empty" \
+  || bad "failing sync: rc=$rc calls=[$calls] entries=[$entries] out=[$out]"
+
+# --- 18. backup.sh --help: the comment header, no code ──────────────────────
+out=$(bash "$BACKUP" --help 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -qF '# backup.sh — full AdminHelper backup' <<<"$out" \
+    && [ "$(tail -n1 <<<"$out")" = '#   ./scripts/backup.sh [--with-victoria] [--output DIR]' ] \
+    && ! grep -qv '^#' <<<"$out"; } \
+  && ok "backup.sh --help prints the comment header up to the usage line" \
+  || bad "--help: rc=$rc out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"

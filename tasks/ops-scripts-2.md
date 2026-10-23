@@ -47,8 +47,10 @@ Doku: CHANGELOG.md (den Changed-Eintrag „Backup: Archiv von Anfang an privat �
 Beweis: Code-Lesung scripts/backup.sh:138
 HEAD: 73bf0d31
 
-### T2 — backup.sh: Archiv vor dem Umbenennen auf der Platte, `--help` nur der Kommentarkopf (R-0801)  [ ]
+### T2 — backup.sh: Archiv vor dem Umbenennen auf der Platte, `--help` nur der Kommentarkopf (R-0801)  [x]
 Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0a7658db 2026-10-23T19:49:58+02:00
+Review: approve (.ah-out/review/ops-scripts-2/T2.verdict.json)
 Änderung: (1) Zwischen `tar` (`:137`) und `mv` (`:138`) `sync -- "$PARTIAL"` (nur diese Datei, kein globales `sync`), nach dem `mv` `sync -- "$OUT_DIR"` (der neue Verzeichniseintrag). Scheitert ein `sync`, endet das Skript mit Exit ≠ 0 und einer englischen Meldung; scheitert der erste, bleibt kein Archiv und keine Zwischendatei zurück. Der Kommentar `:131-135` nennt das Warum. (2) `--help` (`:37`, heute `sed -n '2,30p'`: hinter der Usage-Zeile `:23` stehen auch `set -euo pipefail`, `umask 077` und `OUT_DIR="./backups"`) druckt den Kommentarkopf ab Zeile 2 bis vor die erste Zeile, die nicht mit `#` beginnt, ohne feste Zeilennummer (etwa `awk 'NR > 1 { if (!/^#/) exit; print }' "$0"`). Tests in `restore_guard_test.sh`: Fall 17 mit einem `sync`-Wrapper in `$WORK/bk/bin`, der je Aufruf seine Argumente und `stat -c '%F %s'` des letzten Arguments ins Protokoll schreibt und dann das echte `sync` aufruft, mit `AH_TEST_SYNC_FAIL=1` stattdessen Exit 1: (a) Erfolg → genau zwei Aufrufe, zuerst eine nicht leere reguläre Datei `.adminhelper-backup-*` im Zielordner, danach der Zielordner, der dann genau das Archiv enthält; (b) `AH_TEST_SYNC_FAIL=1` → Exit ≠ 0, der Zielordner ist leer. Fall 18: `backup.sh --help` → Exit 0, die letzte Zeile ist `#   ./scripts/backup.sh [--with-victoria] [--output DIR]`, jede Zeile beginnt mit `#`. Zuerst rot: 17 (a) (kein Aufruf), 17 (b) (Exit 0, Archiv da) und 18 (letzte Zeile `OUT_DIR="./backups"`). Die Fälle 1–16 bleiben grün.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: CHANGELOG.md (den Changed-Eintrag `:67` ergänzen, umlautfrei: die Daten des Archivs sind vor dem Umbenennen auf der Platte; `--help` zeigt nur die Hilfe)

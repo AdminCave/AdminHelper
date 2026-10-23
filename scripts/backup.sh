@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --with-victoria) WITH_VICTORIA=1 ;;
         --output) OUT_DIR="${2:?--output needs a directory}"; shift ;;
-        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        -h|--help) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -134,12 +134,19 @@ ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
 # archive under a name that restore.sh and the docs treat as valid. A rename within
 # the dir is atomic and keeps the mode (as in pg-backup.sh). -T: a directory under the
 # archive name fails the rename instead of taking the archive in, and a symlink there
-# (to a directory too) is replaced, its target left alone (as in update.sh).
+# (to a directory too) is replaced, its target left alone (as in update.sh). The
+# rename can reach the disk before the data does, and a power loss would then leave
+# the name on an empty or truncated file: sync the file before the rename and the
+# dir (its new entry) after it; only these two, a bare sync flushes every filesystem.
 PARTIAL=$(mktemp "$OUT_DIR/.adminhelper-backup-$TS.XXXXXX")
 tar czf "$PARTIAL" -C "$STAGE" .
+sync -- "$PARTIAL" \
+    || { echo "[backup] ERROR: could not flush the archive to disk — backup aborted." >&2; exit 1; }
 mv -fT -- "$PARTIAL" "$ARCHIVE" \
     || { echo "[backup] ERROR: could not move the archive to $ARCHIVE (is a directory in the way?) — backup aborted." >&2; exit 1; }
 PARTIAL=""
+sync -- "$OUT_DIR" \
+    || { echo "[backup] ERROR: could not flush $OUT_DIR to disk — $ARCHIVE is written, but its name may not survive a power loss." >&2; exit 1; }
 
 echo "[backup] OK -> $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
 echo "[backup] Erinnerung: CA_ROOT_PASSPHRASE separat sichern (nicht im Tarball)."
