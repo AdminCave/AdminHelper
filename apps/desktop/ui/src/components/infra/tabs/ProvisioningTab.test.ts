@@ -117,10 +117,14 @@ describe('ProvisioningTab — the values in the commands', () => {
     await waitFor(() => expect(h.listTokens).toHaveBeenCalledTimes(2));
   }
 
-  it.each(['tok;id', '$(id)'])('shows no command for the token %s', async (token) => {
-    h.createToken.mockResolvedValueOnce({ token, id: 't1' });
-    await expectNoCommand(await createWith(server));
-  });
+  // A token with a leading `-` would be read as an option by the script it is handed to.
+  it.each(['tok;id', '$(id)', '-x', '--server'])(
+    'shows no command for the token %s',
+    async (token) => {
+      h.createToken.mockResolvedValueOnce({ token, id: 't1' });
+      await expectNoCommand(await createWith(server));
+    },
+  );
 
   it('shows no command for a server ID that is not a UUID', async () => {
     await expectNoCommand(await createWith({ id: 'sid-9;id', name: 'srv' }));

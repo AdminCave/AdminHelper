@@ -105,8 +105,10 @@ Metrik: grep -c 'map_err(|_| ())' apps/desktop/src-tauri/src/tofu.rs (GNU grep):
 Dedup-Key: ref:desktop:tofu.rs:keyring-errors-unlogged
 HEAD: cea7fb9b
 
-### T7 — Provisionierung: Token beginnt nicht mit `-`  [ ]
+### T7 — Provisionierung: Token beginnt nicht mit `-`  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e87dffee 2026-10-23T09:12:41+02:00
+Review: approve (.ah-out/review/desktop-hardening-3/T7.verdict.json)
 Änderung: `TOKEN_FORM` (`ProvisioningTab.svelte:20`) wird `/^[A-Za-z0-9_][A-Za-z0-9_-]*$/` (der Server erzeugt `adminhelper_prov_…`, `apps/server/app/modules/provisioning/router.py:70`); Kommentar: kein Wert, den eine Shell oder das Skript als Option liest. Test, zuerst rot: `it.each` der Token ohne Befehl (`ProvisioningTab.test.ts:120`) bekommt `-x` und `--server` dazu.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/ProvisioningTab.test.ts
 Doku: keine (der Server erzeugt solche Token nie)

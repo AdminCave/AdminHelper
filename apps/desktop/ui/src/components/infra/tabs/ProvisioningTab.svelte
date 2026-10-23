@@ -17,7 +17,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // The forms the server issues: `adminhelper_prov_` + token_urlsafe, and a uuid4. Only the
   // character class for the token, so another prefix on the server would not break the tab.
-  const TOKEN_FORM = /^[A-Za-z0-9_-]+$/;
+  // No leading `-`: the token must never be a value a shell or the script reads as an option.
+  const TOKEN_FORM = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
   const UUID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   interface Props {
