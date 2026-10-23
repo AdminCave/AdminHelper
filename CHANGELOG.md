@@ -188,6 +188,32 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ausserhalb der frp-Felder und der Felder mit Laengengrenze mit `500`, in Tags wurden sie gespeichert, und jede Antwort
   mit der Zeile endete danach mit `500`. In `extra_config` der FRP-Server-Konfiguration nennt der Fehler jetzt den
   Schluessel, unter dem der Wert steht.
+- **Desktop unter Windows: Windows Terminal bekommt jedes Argument unveraendert:** Oeffnet der Desktop SSH oder einen
+  Ansible-Lauf in Windows Terminal, kommen Benutzer, Schluesselpfad und Ansible-Pfade als je ein Argument an, auch
+  mit `;` (Windows Terminal las ein `;` als Trenner seiner eigenen Befehle). Ein Wert, den Windows Terminal nicht
+  unveraendert weitergeben kann (leer, mit `"`, mit `%` — Windows Terminal setzt `%NAME%` ein —, mit Steuerzeichen
+  oder mit Leerzeichen und abschliessendem `\`), oeffnet nicht, und der Desktop meldet das („Windows Terminal cannot
+  pass … unchanged“).
+- **Desktop unter Windows ohne Windows Terminal: die Konsole bekommt jedes Argument unveraendert:** Ist Windows
+  Terminal nicht installiert, oeffnet der Desktop SSH oder einen Ansible-Lauf in einer neuen Konsole mit genau einer
+  cmd-Ebene statt ueber `cmd /C start`. Argumente mit `&`, `|`, `<`, `>`, `^`, `!`, `;`, Klammern oder Leerzeichen
+  kommen unveraendert an (vorher konnte etwa `a&b` als `a^&b` ankommen). Ein Wert mit `"`, `%` oder Steuerzeichen
+  oeffnet nicht, und der Desktop meldet das („The Windows console (cmd) cannot pass … unchanged“). Der Fenstertitel
+  der Konsole kann sich dadurch aendern.
+- **Desktop: ein frpc, der nach einem abgebrochenen Programmlauf weiterlief, endet beim naechsten Start:** Lief frpc
+  nach einem abgebrochenen Programmlauf (Task beenden, Absturz) weiter, endet er beim ersten Tunnel-Abgleich des
+  naechsten Starts desselben Workspace; seine Tunnel und Ports werden frei. Der Desktop beendet ihn ueber
+  `POST /api/stop` seiner Admin-API mit den Zugangsdaten aus der `visitor.toml`, die der abgebrochene Lauf
+  zurueckliess, und nur, wenn deren `webServer` genau der des Desktops ist; antwortet dort kein frpc, geht der Abgleich
+  weiter wie bisher. Unter Windows endet frpc schon mit dem Programm, auch nach Task beenden oder einem Absturz: Der
+  Desktop legt ihn gleich nach dem Start in ein Job Object mit `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; gelingt das nicht,
+  steht eine Warnung im Log, und der naechste Start beendet ihn wie oben. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: RDP mit Anmeldung von Hand haelt nur noch das Ende der xfreerdp-Ausgabe (R-0646):** Startet der Desktop
+  xfreerdp ohne Passwort (die Anmeldung geschieht in xfreerdp), haelt er von dessen Ausgabe nur noch die letzten
+  8 KiB je Strom (stdout, stderr) statt der ganzen Sitzung, wie schon der Start mit Passwort. Die Meldungen beim Ende
+  bleiben: Eine Fehlerzeile im gehaltenen Ende ergibt dieselbe Meldung wie bisher, und „RDP Verbindung
+  fehlgeschlagen“ kommt nur, wenn xfreerdp nie eine Verbindung meldete. Eine Fehlerzeile, die frueh in einer langen,
+  danach laufenden Sitzung stand, ergibt am Ende keine Meldung mehr.
 
 ## [0.46.0] - 2026-10-22
 
