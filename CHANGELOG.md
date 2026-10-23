@@ -95,6 +95,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ein, mit einem Deckel von 30 s; `provision` immer, am Ende, auch ohne Monitor und ohne Tunnel (bisher nur mit
   Monitor oder wenn es frpc einschaltete). Scheitert das, melden `provision` und `monitor init` es und gelingen
   trotzdem. Doku: Agent fuer Entwickler (DE+EN).
+- **Agent: `provision --ca-fp` prueft auch den Hostnamen (R-0639):** Nennt das Zertifikat des Gateways den Host aus
+  `--url` nicht, bricht `provision --ca-fp` jetzt ab, bevor der Einmal-Token den Host verlaesst; die Meldung nennt den
+  Host und die Namen des Zertifikats. Bisher nahm der Erstkontakt das Zertifikat an, loeste den Token ein und meldete
+  „OK: Provisioning abgeschlossen.“, danach scheiterte jeder Lauf an der Hostnamen-Pruefung. Das betrifft auch Befehle
+  aus dem Provisionierungs-Tab eines Desktops, der ueber eine IP-Adresse verbunden ist, die das Zertifikat nicht nennt
+  (eine IP-Adresse nennt es nur, wenn sie beim Ausstellen in `EXTRA_SANS` des Servers stand). Doku: Agent-Deployment
+  (DE+EN).
 
 ### Removed
 

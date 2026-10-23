@@ -82,7 +82,8 @@ var enableTimer = service.EnableTimer
 // caFP (SHA-256 of the internal CA, handed over out-of-band via the desktop's
 // provisioning tab) upgrades the first contact from trust-on-first-use to a
 // VERIFIED handshake: the token never leaves the host unless the presented
-// chain proves the pinned CA (httpclient.NewCAFingerprint).
+// chain proves the pinned CA and its leaf names the host of adminHelperURL
+// (httpclient.NewCAFingerprint).
 func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP string) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 	if adminHelperURL == "" || token == "" || serverID == "" {
@@ -402,9 +403,14 @@ func activateEndpoint(adminHelperURL string, port int, serverID string) (string,
 func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool, fingerprint *[sha256.Size]byte, enrollPort int) (*activateResponse, []byte, error) {
 	var client *http.Client
 	if fingerprint != nil {
-		// Anchor verify inside the handshake: the provision token below is only
-		// ever sent over a connection that proved the pinned CA (3.45 hardened).
-		client = httpclient.NewCAFingerprint(*fingerprint, 30*time.Second)
+		u, err := url.Parse(adminHelperURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse --url: %w", err)
+		}
+		// Anchor and hostname verify inside the handshake: the provision token below is
+		// only ever sent over a connection that proved the pinned CA (3.45 hardened) and
+		// names the host of --url, which every later call verifies (R-0639).
+		client = httpclient.NewCAFingerprint(*fingerprint, u.Hostname(), 30*time.Second)
 	} else {
 		var err error
 		client, err = httpclient.New(cacert, insecure, 30*time.Second)
