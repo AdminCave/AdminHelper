@@ -133,7 +133,10 @@ def test_a_url_httpx_cannot_read_stores_a_fixed_reason(monkeypatch, caplog):
     with caplog.at_level(logging.INFO, logger="monitor.alerter"):
         assert _dispatch(rule, CHECK, MSG) == (False, "Webhook request failed (InvalidURL)")
 
-    assert _alerter_lines(caplog) == ["Webhook failed: c -> hooks.example.com: Invalid port: 'abc'"]
+    # The wording is httpx's (R-0599): a new one in an httpx release changes nothing here.
+    with pytest.raises(httpx.InvalidURL) as info:
+        httpx.URL("https://hooks.example.com:abc/x")
+    assert _alerter_lines(caplog) == [f"Webhook failed: c -> hooks.example.com: {info.value}"]
 
 
 class _FailingSMTP:
