@@ -19,10 +19,10 @@ Zeilenangaben: `feature/ops-scripts-hardening@73bf0d31` (PR #266, bei der Planun
 sie vor dem Schreiben neu.
 
 Für alle Tasks:
-- Reihenfolge T1 → T11, nacheinander (ein Bauer je Ledger): T1–T3 ändern `scripts/backup.sh` und
-  `scripts/tests/restore_guard_test.sh`, T4–T11 `scripts/diagnostics.sh` und `scripts/tests/diagnostics_test.sh`;
+- Reihenfolge T1 → T8, T12, T9 → T11, nacheinander (ein Bauer je Ledger): T1–T3 ändern `scripts/backup.sh` und
+  `scripts/tests/restore_guard_test.sh` (T12 ebenso), T4–T11 `scripts/diagnostics.sh` und `scripts/tests/diagnostics_test.sh`;
   beide Ketten teilen `CHANGELOG.md`, T4, T5 und T8 dazu die Troubleshooting-Seiten.
-- T1, T3 und T5–T8 bekommen zusätzlich `security` (Dateien mit Secrets: Backup-Archiv, Diagnose-Bundle).
+- T1, T3, T5–T8 und T12 bekommen zusätzlich `security` (Dateien mit Secrets: Backup-Archiv, Diagnose-Bundle).
 - Kein Task ändert `scripts/install.sh`, `scripts/update.sh` oder `scripts/agent-install.sh`.
 - Neue Meldungen und Hilfetexte englisch; die bestehenden deutschen Texte bleiben.
 - Platzhalter: Adressen aus RFC 5737 (`192.0.2.x`, `198.51.100.x`, `203.0.113.x`), IPv6 aus `2001:db8::/32`, Namen
@@ -128,6 +128,16 @@ Doku: docs/admin/troubleshooting.html:147 + docs/en/admin/troubleshooting.html:1
 Abhängt von: T7
 Beweis: Code-Lesung scripts/diagnostics.sh:191, :195, :262
 HEAD: 73bf0d31
+
+### T12 — backup.sh: Archiv nur in die selbst angelegte Zwischendatei schreiben, Modus 0600 auch unter einer Default-ACL  [ ]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Änderung: Nachtrag der Session vom 2026-10-23 aus dem Review von T8. `scripts/backup.sh` (Abschnitt nach `ARCHIVE=`, heute `PARTIAL=$(mktemp …)` und `tar czf "$PARTIAL"`): `mktemp` legt die Zwischendatei weiter an (0600, exklusiv); vor dem Öffnen muss der Name eine reguläre Datei und kein Link sein, dann `exec 3>>"$PARTIAL"` (ohne Kürzen). Vor dem ersten Byte prüft das Skript den offenen Deskriptor: Eigentümer von `/dev/fd/3` ist der ausführende Nutzer (`stat -L -c %u` gegen `id -u`), Modus 600, Linkzahl 1, `[ /dev/fd/3 -ef "$PARTIAL" ]` und `[ ! -L "$PARTIAL" ]`; scheitert eine Prüfung, endet das Skript mit Exit ≠ 0 und einer englischen Meldung, schreibt nichts, und der EXIT-Trap räumt auf. Danach `tar czf - -C "$STAGE" . >&3`, fd 3 wird vor `sync`/`mv` geschlossen; `sync`-Kette (T2), `mv -fT` (T1), Trap und Meldungen bleiben. Bewusst anders als `diagnostics.sh` (T8, `dd conv=excl`): der Modus der Datei kommt von `mktemp` und bleibt 0600 auch in einem Zielordner mit Default-ACL; ein kurzer Kommentar nennt dieses Warum neutral. Tests in `restore_guard_test.sh`: der tar-Wrapper der Fälle 10–11, der den Modus des Archivs direkt nach dem Schreiben protokolliert, prüft dieselbe Zusage weiter (0600 vom ersten Byte, Name erst vollständig), nicht schwächer; neuer Fall 20 mit einem `mktemp`-Stub, der unter dem Namen, den er für die Archiv-Vorlage ausgibt, einen Link anlegt: (a) auf eine fremde Datei außerhalb des Zielordners, (b) auf eine eigene Datei außerhalb (Inhalt vorher bekannt), (c) auf ein FIFO außerhalb; jeder Lauf unter `timeout 30` → Exit ≠ 0 und ≠ 124, das Link-Ziel unverändert (leer bzw. bitgleich), im Zielordner kein Archiv und keine Zwischendatei. Fall 21: Zielordner mit Default-ACL (`setfacl -d -m g::rwx`) → das Archiv ist 0600 (Gruppenrechte leer); fehlt `setfacl` oder kann das Dateisystem keine ACL, meldet der Fall das laut (kein stiller Skip) und prüft den Modus ohne ACL, und der Commit-Body nennt, wo der ACL-Fall gelaufen ist. Zuerst rot gegen den Stand von HEAD: 20 (a)/(b) (Exit 0, Archiv im Link-Ziel), 20 (c) (hängt). Die Fälle 1–19 bleiben grün.
+Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
+Doku: CHANGELOG.md (den Changed-Eintrag des Backup-Archivs ergänzen, umlautfrei, neutral: das Archiv wird nur in die Zwischendatei geschrieben, die das Skript selbst angelegt hat, und bleibt auch in einem Ordner mit Default-ACL 0600; liegt unter ihrem Namen etwas anderes, bricht das Backup ab) · `docs/admin/betrieb.html:92` und `docs/en/admin/operations.html:59` bleiben richtig
+Abhängt von: T8
+Beweis: Code-Lesung scripts/backup.sh:170-171
+Security: ja (Backup-Archiv mit Secrets)
+HEAD: b6377a77
 
 ### T9 — diagnostics.sh `--mask-hosts`: jede Adresse eines Host-Werts und der kurze Rechnername  [ ]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, CHANGELOG.md
