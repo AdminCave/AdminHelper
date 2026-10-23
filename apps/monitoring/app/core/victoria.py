@@ -113,6 +113,16 @@ def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
     return f"{prefix} {field} {ts}"
 
 
+def _warn_dropped(dropped: int) -> None:
+    logger.warning(
+        "VictoriaMetrics write buffer full (%d lines or %d bytes): "
+        "dropped %d lines since the last report",
+        _MAX_PENDING_LINES,
+        _MAX_PENDING_BYTES,
+        dropped,
+    )
+
+
 class VictoriaClient:
     """Client for the VictoriaMetrics HTTP API."""
 
@@ -161,13 +171,7 @@ class VictoriaClient:
             ):
                 return
             dropped, self._dropped, self._last_drop_warning = self._dropped, 0, now
-        logger.warning(
-            "VictoriaMetrics write buffer full (%d lines or %d bytes): "
-            "dropped %d lines since the last report",
-            _MAX_PENDING_LINES,
-            _MAX_PENDING_BYTES,
-            dropped,
-        )
+        _warn_dropped(dropped)
 
     def close(self, timeout: float = 5.0) -> None:
         """Sends what is buffered for up to ``timeout`` seconds; the writer thread ends once the
@@ -194,6 +198,13 @@ class VictoriaClient:
                 batch = self._pending[:_MAX_BATCH_LINES]
                 del self._pending[: len(batch)]
                 self._pending_bytes -= sum(sys.getsizeof(line) for line in batch)
+                # write() only counts what it drops within a minute of a warning: without a later
+                # drop that number would never reach the log, so the emptied buffer reports it.
+                dropped = 0
+                if not self._pending and self._dropped:
+                    dropped, self._dropped, self._last_drop_warning = self._dropped, 0, _now()
+            if dropped:
+                _warn_dropped(dropped)
             try:
                 self._send(batch)
             except Exception:

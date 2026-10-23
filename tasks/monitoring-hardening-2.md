@@ -84,8 +84,10 @@ Doku: docs/developer/monitoring.html:263 + EN `:263` („Der Puffer fasst 100 00
 Beweis: Code-Lesung apps/monitoring/app/core/victoria.py:137
 HEAD: 13f340e4
 
-### T5 — Schreibpuffer: Zahl verworfener Zeilen auch ohne weiteren Verwurf melden (R-0799)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/core/victoria.py, apps/monitoring/tests/test_victoria.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+### T5 — Schreibpuffer: Zahl verworfener Zeilen auch ohne weiteren Verwurf melden (R-0799)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/victoria.py, apps/monitoring/tests/test_victoria.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9e320242 2026-10-23T21:47:31+02:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T5.verdict.json)
 Änderung: Zeilen, die innerhalb von 60 s nach einer WARNING verworfen werden, zählt `write` still (`app/core/victoria.py:145-151`); bisher nennt erst der nächste Verwurf ihre Zahl. Neu: Ist der Puffer nach der Entnahme eines Stapels in `_run` (`:181-182`) leer und `_dropped` größer 0, nimmt `_run` die Zahl unter dem Lock (wie `:152`) und loggt dieselbe WARNING außerhalb des Locks; so meldet spätestens das Leeren (auch über `close()`) den Rest. Der Docstring `tests/test_victoria.py:44-45` nennt statt des „SMART push path (agent router)“ die heutigen Nutzer von `safe_metric_part` (Checker-Pfad; vorher greppen). Test in `TestVictoriaWriter`: Writer blockiert, Puffer voll, Verwurf 1 → WARNING mit seiner Zahl; Verwurf 2 nach 10 s (Uhr über `_now`) → keine WARNING; Writer frei, Puffer leer → genau eine weitere WARNING mit der Zahl von Verwurf 2. Zuerst rot auf HEAD (die zweite WARNING fehlt).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_victoria.py
 Doku: docs/developer/monitoring.html:263 + EN `:263` (die WARNING kommt höchstens einmal je Minute und spätestens, wenn der Writer den Puffer geleert hat)

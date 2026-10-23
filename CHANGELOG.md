@@ -390,8 +390,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Agent-Report mehr bis zu rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht
   mehr dreimal gesendet, sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx
   werden weiter bis zu dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl
-  hoechstens einmal je Minute; beim Herunterfahren leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler
-  (DE+EN).
+  beim Verwerfen hoechstens einmal je Minute, spaetestens aber, sobald der Puffer wieder leer ist; beim Herunterfahren
+  leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein nicht erreichbares VictoriaMetrics erscheint als Fehler (R-0636):** Scheitert eine Abfrage an
   VictoriaMetrics, antwortet der Metrik-Abruf (`GET /checks/{id}/metrics`) mit HTTP 502 „Metrics store unavailable“
   statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der

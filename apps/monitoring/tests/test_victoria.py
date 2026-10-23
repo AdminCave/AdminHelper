@@ -42,12 +42,12 @@ class TestEscTag:
 
 
 class TestSafeMetricPart:
-    """2.33: one allowlist sanitiser shared by the SMART push path (agent router)
-    and the checker path, so a disk yields ONE series name, not two divergent ones."""
+    """2.33: the allowlist sanitiser for the device part of a per-disk series name. Its one
+    user is the smart_health checker (app/checkers/smart.py); the agent push writes no
+    SMART lines."""
 
     def test_non_allowlisted_chars_collapse_to_underscore(self):
-        # A dash is not allowlisted — the old checker's replace("/","_") left it in,
-        # diverging from the agent push path. Both now yield "sda_1".
+        # A dash is not allowlisted — the old checker's replace("/","_") left it in.
         assert safe_metric_part("sda-1") == "sda_1"
 
     def test_leading_trailing_separators_stripped(self):
@@ -270,6 +270,44 @@ class TestVictoriaWriter:
         assert len(warnings) == 2, warnings
         assert "dropped 3 lines" in warnings[0]
         assert "dropped 4 lines" in warnings[1]
+
+    def test_lines_dropped_after_a_warning_are_reported_once_the_buffer_is_empty(
+        self, monkeypatch, caplog
+    ):
+        monkeypatch.setattr(victoria_mod, "_MAX_PENDING_LINES", 2)
+        clock = [1000.0]
+        monkeypatch.setattr(victoria_mod, "_now", lambda: clock[0])
+        caplog.set_level(logging.WARNING, logger="monitor.victoria")
+        entered, release = threading.Event(), threading.Event()
+        bodies = []
+
+        def handler(request):
+            entered.set()
+            release.wait(10)
+            bodies.append(request.content.decode())
+            return httpx.Response(204)
+
+        client = _client_with(handler)
+        try:
+            client.write(["a"])
+            assert entered.wait(5)  # "a" hangs in the POST, the buffer is empty
+            client.write(["b1", "b2"])  # the buffer is full
+            client.write(["c1"])  # dropped and reported
+            clock[0] += 10
+            client.write(["d1", "d2", "d3"])  # dropped within the minute: counted only
+            assert _warnings(caplog) == [
+                "VictoriaMetrics write buffer full (2 lines or 67108864 bytes): "
+                "dropped 1 lines since the last report"
+            ]
+        finally:
+            release.set()
+        client.close()  # the writer takes b1, b2 off the buffer, which is then empty
+        assert bodies == ["a", "b1\nb2"]
+        assert _warnings(caplog)[1:] == [
+            "VictoriaMetrics write buffer full (2 lines or 67108864 bytes): "
+            "dropped 3 lines since the last report"
+        ]
+        assert client._dropped == 0
 
     def test_a_write_beyond_the_byte_cap_is_dropped_and_counted(self, monkeypatch, caplog):
         assert victoria_mod._MAX_PENDING_BYTES == 64 * 1024 * 1024
