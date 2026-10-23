@@ -140,13 +140,36 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <thead><tr><th>Variable</th><th>Bedeutung</th></tr></thead>
             <tbody>
               <tr><td><code>SMTP_HOST</code></td><td>Hostname des Relays. <strong>Leer = E-Mail-Kanal aus</strong> (Glocke + Desktop-Hinweise bleiben aktiv).</td></tr>
-              <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS).</td></tr>
+              <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS); jeder andere Port nutzt ebenfalls STARTTLS. Der Versand prüft Zertifikat und Hostnamen des Relays: Über einen Relay ohne STARTTLS oder mit einem Zertifikat, dem der Container nicht vertraut oder das nicht zu <code>SMTP_HOST</code> passt, geht keine Mail hinaus; nach dem letzten Zustellversuch steht der Grund im Log des <code>scheduler</code>-Dienstes.</td></tr>
               <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt). Ein <code>$</code> im Passwort als <code>$$</code> schreiben oder den Wert in einfache Anführungszeichen setzen (siehe <a href="./installation.html#env">Umgebungsvariablen</a>).</td></tr>
               <tr><td><code>SMTP_FROM</code></td><td>Absenderadresse (Default <code>adminhelper@localhost</code>).</td></tr>
+              <tr><td><code>SMTP_CA_FILE</code></td><td>Optional: Pfad <strong>im Container</strong> zu einer PEM-Datei mit der CA des Relays (selbstsigniertes Zertifikat oder Firmen-CA). Sie gilt zusätzlich zu den System-CAs und nur für SMTP, im Notification-Hub wie im E-Mail-Kanal des Monitorings; Zertifikat und Hostname werden weiter geprüft. Leer = nur die System-CAs. Einbinden: siehe <a href="#smtp-ca">Relay mit eigener CA</a>.</td></tr>
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Zustellversuche pro E-Mail mit linearem Backoff, danach „fehlgeschlagen" (Default 5).</td></tr>
             </tbody>
           </table>
           <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln (siehe <a href="./monitoring.html">Monitoring → Persönliche Benachrichtigungen</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
+          <p>Die <code>SMTP_*</code>-Variablen nutzt auch der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
+
+          <h3 id="smtp-ca">Relay mit eigener CA</h3>
+          <p>Weist sich der Relay mit einem Zertifikat aus, dem die Container nicht vertrauen (selbstsigniert oder von einer Firmen-CA), die CA als PEM-Datei <code>smtp-ca.pem</code> neben die <code>docker-compose.yml</code> ins Install-Verzeichnis legen und mit einer <code>docker-compose.override.yml</code> daneben in die Dienste <code>server</code>, <code>scheduler</code> und <code>monitoring</code> einhängen, denen Compose auch die übrigen <code>SMTP_*</code>-Variablen gibt; eine bestehende <code>docker-compose.override.yml</code> (etwa mit <code>FRPS_DASHBOARD_URL</code>, siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>) um diese Einträge ergänzen, nicht ersetzen:</p>
+          <div class="code-header"><span>docker-compose.override.yml</span></div>
+<pre><code>services:
+  server:
+    environment:
+      - SMTP_CA_FILE=/run/adminhelper/smtp-ca.pem
+    volumes:
+      - ./smtp-ca.pem:/run/adminhelper/smtp-ca.pem:ro
+  scheduler:
+    environment:
+      - SMTP_CA_FILE=/run/adminhelper/smtp-ca.pem
+    volumes:
+      - ./smtp-ca.pem:/run/adminhelper/smtp-ca.pem:ro
+  monitoring:
+    environment:
+      - SMTP_CA_FILE=/run/adminhelper/smtp-ca.pem
+    volumes:
+      - ./smtp-ca.pem:/run/adminhelper/smtp-ca.pem:ro</code></pre>
+          <p>Danach <code>docker compose up -d</code>. Compose liest die <code>docker-compose.override.yml</code> bei jedem Aufruf mit, und <code>scripts/update.sh</code> lässt sie stehen. Die PEM-Datei muss für den Container-Nutzer lesbar sein (<code>chmod 644</code>; eine CA ist kein Geheimnis). Lässt sie sich nicht laden (fehlt, nicht lesbar, kein PEM), geht keine E-Mail hinaus: Für den Hub steht der Grund nach dem letzten Zustellversuch im Log des <code>scheduler</code>-Dienstes, das Monitoring vermerkt im Alert-Log <code>SMTP TLS failed</code>. Ein Relay ohne STARTTLS bleibt auch mit <code>SMTP_CA_FILE</code> außen vor.</p>
 
           <h2>Konfiguration ändern</h2>
           <p>Alle Config-Werte kommen aus Environment-Variablen. Änderungen erfordern ein <code>docker compose up -d</code>, damit die Container neu erzeugt werden:</p>
