@@ -26,7 +26,7 @@ from app.checkers.agent import (
     record_agent_report,
 )
 from app.core.auth import require_agent
-from app.core.bounds import _find_nul
+from app.core.bounds import _find_unstorable
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, victoria
@@ -66,19 +66,21 @@ def agent_report(
         db.rollback()
         logger.exception("Persistieren der Agent-Liveness fehlgeschlagen (%s)", server_id)
 
-    # A NUL anywhere in the report would die in a text column further down. Refused
-    # here, AFTER the liveness above and not on the parameter: liveness is not report
-    # content, and a refused report must not turn into a "server down" alarm.
-    found = _find_nul(report)
+    # A NUL anywhere in the report would die in a text column further down, a lone
+    # surrogate in a tag value would fail to encode in VictoriaClient._send and take
+    # the whole batch with it, lines of other servers included. Refused here, AFTER
+    # the liveness above and not on the parameter: liveness is not report content,
+    # and a refused report must not turn into a "server down" alarm.
+    found = _find_unstorable(report)
     if found is not None:
-        loc, value = found
-        logger.warning("Agent report from %s refused: NUL byte at %s", server_id, list(loc))
+        loc, value, reason = found
+        logger.warning("Agent report from %s refused: %s at %s", server_id, reason, list(loc))
         raise RequestValidationError(
             [
                 {
                     "type": "value_error",
                     "loc": ("body", *loc),
-                    "msg": "Value error, must not contain a NUL byte",
+                    "msg": f"Value error, {reason}",
                     "input": value,
                 }
             ]

@@ -414,6 +414,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `agent_resources` sie schon nennt. Bisher landete sie mit `mount=/` in der Reihe der Root-Platte und verfaelschte
   deren Prognose in `disk_forecast`. Bisherige Werte solcher Platten bleiben bis zum Ende der Retention in der Reihe
   von `/`. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein einzelnes Surrogat in einem Request-Body oder Agent-Report ergibt `422` wie ein NUL-Byte
+  (R-0774):** Ein einzelnes Surrogat (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben, etwa `\ud800`) in
+  irgendeinem String eines Request-Bodys, als Wert oder Schluessel und beliebig tief, ergibt `422` an seiner Stelle;
+  nichts wird gespeichert. Ein Agent-Report damit ergibt ebenso `422`, die Liveness des Servers zaehlt trotzdem.
+  Bisher endete das Speichern mit `500`, oder der Wert landete in der `config` eines Checks, und jede Antwort mit
+  diesem Check endete danach mit `500`; im Agent-Report ging der ganze Schreibstapel nach VictoriaMetrics verloren,
+  samt den Zeilen anderer Server im selben Stapel. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
   `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
   jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
