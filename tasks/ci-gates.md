@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI-Gates: Image-Tests im Server-Job, Skip-Gate, Keyring in ops-scripts, Playwright-Install — Task-Ledger
-Status: bereit · Branch: feature/ci-gates · Review: pro Task
+Status: erledigt · Branch: feature/ci-gates · Review: pro Task
 Spec: docs/features/ci-gates.md (Roadmap R-0808, R-0475, R-0500, R-0588)
 Heavy: none — nur der CI-Workflow, Struktur-Tests, ein hermetisches Test-Skript und Doku; kein Stack-, Gateway-, PKI-, FRP-, Compose- oder Install-Pfad. Der Beweis der Workflow-Änderungen ist die PR-CI (3.13-Leg des server-Jobs, ops-scripts, Web-Frontend E2E), nicht eine VM
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
