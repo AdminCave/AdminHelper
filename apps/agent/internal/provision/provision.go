@@ -341,7 +341,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 		CSR:      string(csr),
 		Replaces: enroll.LeafFingerprint(dir),
 	}
-	issued, err := enroll.Submit(client, endpoint, req)
+	issued, err := enroll.Submit(context.Background(), client, endpoint, req)
 	if err != nil {
 		return err
 	}

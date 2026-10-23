@@ -69,8 +69,10 @@ Orakel: property — ein abgebrochener Kontext beendet das Warten, die eigene Gr
 Dedup-Key: bug:agent:enroll:lock-wait-ignores-ctx
 HEAD: b1432223
 
-### T4 — Erneuerung: die Anfrage an den Issuer endet mit dem Kontext (R-0638)  [ ]
+### T4 — Erneuerung: die Anfrage an den Issuer endet mit dem Kontext (R-0638)  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/enroll/renew_test.go, apps/agent/internal/provision/provision.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e9b6f164 2026-10-23T08:46:00+02:00
+Review: approve (.ah-out/review/agent-run-ctx/T4.verdict.json)
 Änderung: `Submit(ctx, client, endpoint, body)` baut die Anfrage mit `http.NewRequestWithContext` (`internal/enroll/enroll.go:99`, `:104`); `Renew(ctx, dir, baseURL, timeout)` (`renew.go:67`, `:82`) gibt den Kontext an `Submit`; `renewFunc` (`:131`) bekommt ihn, `MaybeRenew` reicht seinen weiter (`:111`). Der Client-Timeout bleibt (30 s aus `run.go:119`). `runEnrollment` (`internal/provision/provision.go:335`) ruft `enroll.Submit(context.Background(), …)`. Tests mechanisch: `enroll_test.go:73`, `:87`, `:98`; die `renewFunc`-Stubs und `renew_test.go:150`. Neu `renew_test.go` `TestRenewEndsWithTheContext`: mit dem Aufbau des bestehenden Renew-Tests (`renew_test.go:150`) hält der Issuer-Stand-in die Anfrage fest, bis der Test endet; der Kontext wird nach 100 ms abgebrochen → `Renew` kehrt binnen 2 s mit einem Fehler zurück, der `context.Canceled` wrappt, und die gespeicherte Identität ist byte-gleich wie vorher. Zuerst rot: kompiliert vorher nicht; heute wartet `Renew` bis zum Client-Timeout.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern; CHANGELOG in T13)

@@ -64,8 +64,9 @@ func leafExpired(certPEM []byte) (bool, time.Time, error) {
 // Renew submits a fresh CSR to <baseURL>/ca/renew using the CURRENT identity for
 // mTLS (the issuer derives CN + scope from that presented cert, not the CSR) and
 // atomically swaps the stored identity to the new key + cert on success. The
-// caller holds LockIdentity, as for Store.
-func Renew(dir, baseURL string, timeout time.Duration) error {
+// caller holds LockIdentity, as for Store. ctx ends the request to the issuer;
+// the stored identity then stays as it was.
+func Renew(ctx context.Context, dir, baseURL string, timeout time.Duration) error {
 	client, err := httpclient.NewMTLS(CertPath(dir), KeyPath(dir), CAPath(dir), timeout)
 	if err != nil {
 		return err
@@ -80,7 +81,7 @@ func Renew(dir, baseURL string, timeout time.Duration) error {
 		return err
 	}
 	endpoint := strings.TrimRight(baseURL, "/") + "/ca/renew"
-	resp, err := Submit(client, endpoint, RenewRequest{CSR: string(csr)})
+	resp, err := Submit(ctx, client, endpoint, RenewRequest{CSR: string(csr)})
 	if err != nil {
 		return err
 	}
@@ -109,7 +110,7 @@ func MaybeRenew(ctx context.Context, dir, baseURL string, timeout time.Duration)
 	if due, err := renewalDue(dir); err != nil || !due {
 		return false, err
 	}
-	if err := renewFunc(dir, baseURL, timeout); err != nil {
+	if err := renewFunc(ctx, dir, baseURL, timeout); err != nil {
 		return false, err
 	}
 	return true, nil

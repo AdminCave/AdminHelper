@@ -149,7 +149,7 @@ func TestRenewSwapsIdentity(t *testing.T) {
 	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
 	mustWrite(t, CAPath(dir), srvCertPEM)
 
-	if err := Renew(dir, srv.URL, 5*time.Second); err != nil {
+	if err := Renew(context.Background(), dir, srv.URL, 5*time.Second); err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
 
@@ -158,6 +158,76 @@ func TestRenewSwapsIdentity(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(KeyPath(dir)); string(got) == string(keyPEM) {
 		t.Fatal("Key wurde nicht rotiert")
+	}
+}
+
+// The ctx of a run ends a renewal whose request the issuer holds, long before the
+// client's timeout, and the stored identity stays as it was.
+func TestRenewEndsWithTheContext(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		t.Fatal("agent cert not loadable as a client CA")
+	}
+	arrived := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case arrived <- struct{}{}:
+		default:
+		}
+		// Released when the test ends; the empty answer is no identity to store.
+		<-release
+	}))
+	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	srv.StartTLS()
+	defer srv.Close()
+	defer close(release) // runs first: Close waits for the held handler
+	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	mustWrite(t, CAPath(dir), srvCertPEM)
+
+	files := []string{KeyPath(dir), CertPath(dir), CAPath(dir)}
+	before := make([][]byte, len(files))
+	for i, p := range files {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[i] = data
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	res := make(chan error, 1)
+	go func() { res <- Renew(ctx, dir, srv.URL, 30*time.Second) }()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the renewal request did not reach the issuer")
+	}
+	cancel()
+	select {
+	case err := <-res:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want an error that wraps context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Renew did not end with its ctx (client timeout 30s)")
+	}
+
+	for i, p := range files {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(before[i]) {
+			t.Errorf("%s changed by a renewal that ended with its ctx", filepath.Base(p))
+		}
 	}
 }
 
@@ -220,7 +290,7 @@ func mustWrite(t *testing.T, path string, data []byte) {
 func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
 	orig := renewFunc
 	called := false
-	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	dir := filepath.Join(t.TempDir(), "identity")
@@ -240,7 +310,7 @@ func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
 func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 	orig := renewFunc
 	called := false
-	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	dir := t.TempDir()
@@ -262,7 +332,7 @@ func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 	orig := renewFunc
 	called := false
-	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	dir := t.TempDir()
@@ -296,7 +366,7 @@ func maybeRenewBehindLock(t *testing.T, dir string) (<-chan renewResult, <-chan 
 	t.Helper()
 	orig := renewFunc
 	renewed := make(chan struct{}, 1)
-	renewFunc = func(string, string, time.Duration) error { renewed <- struct{}{}; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { renewed <- struct{}{}; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	now := time.Now()
@@ -397,7 +467,7 @@ func recordRenewals(t *testing.T) *int {
 	t.Helper()
 	orig := renewFunc
 	calls := new(int)
-	renewFunc = func(string, string, time.Duration) error { *calls++; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { *calls++; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 	return calls
 }
