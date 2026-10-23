@@ -123,7 +123,9 @@ Dedup-Key: bug:server:frp/tunnel_router.py:list_tunnels-admin-only
 HEAD: b25c65a6
 Semantik: Die Doku beschreibt heute die Lücke, nicht ein gewolltes Recht: `docs/admin/frp-tunnel.html:106` — „Die Verbindungen löst der Desktop-Client auf den tatsächlichen Port auf: die mit dem Tunnel automatisch angelegte (<code>127.0.0.1:&lt;Visitor-Port&gt;</code>) für alle Benutzer, eine von Hand mit dem Tunnel verknüpfte nur für Admins, denn nur sie lesen die Tunnel-Zuordnungen.“; R-0430 führt sie als offene Lücke (`docs/features/desktop-session-ports.md:59`). Kevin hat R-0484 als BUG angenommen und den Weg an den Plan gegeben (Notiz der Zeile, 2026-10-18).
 
-### T3 — Desktop (Rust): Kommentare und Entwickler-Doku zu den Zuordnungen für Nicht-Admins  [ ]
+### T3 — Desktop (Rust): Kommentare und Entwickler-Doku zu den Zuordnungen für Nicht-Admins  [x]
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f0fc9eb1 2026-10-23T07:28:07+02:00
+Review: approve (.ah-out/review/non-admin-access/T3.verdict.json)
 Entscheidung: Kevin 2026-10-22: Variante A (T2), also nur Kommentare und Entwickler-Doku, kein neuer Abruf.
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/connection/mod.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
 Änderung (Variante A): Nur Kommentare, kein Verhalten. Die Stellen, die sagen, nur Admins lesen Zuordnungen, sagen

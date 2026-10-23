@@ -468,8 +468,8 @@ mod tests {
 
     #[test]
     fn stored_password_key_accepts_the_literal_resolution() {
-        // Without a mapping (a non-admin reads none) the listed target names the server port
-        // of a visitor on loopback.
+        // Without a mapping (a non-admin reads only those of the servers assigned to them) the
+        // listed target names the server port of a visitor on loopback.
         let held = Held {
             tunnels: Vec::new(),
             ..Held::admin()
