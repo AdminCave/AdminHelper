@@ -81,6 +81,27 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
     return v
 
 
+# frp maps the fields of a proxy without regard to case and reads its plugin from the
+# member `plugin`, so `plugin`, `plugin.type` and `PLUGIN.type` all set up a proxy plugin.
+# The server sets up none, and the agent refuses a frpc.toml with such a key in a proxy
+# (apps/agent/internal/frpc/servertoml.go), so the whole host would get no config.
+def is_plugin_key(key: str) -> bool:
+    """Whether an extra_config key belongs to the plugin family: its first segment is
+    `plugin` in any case. A key that passed _TOML_BARE_KEY is ASCII, so lower() is enough."""
+    return key.split(".", 1)[0].lower() == "plugin"
+
+
+def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
+    v = _check_extra_config(v)
+    for key in v or {}:
+        if is_plugin_key(key):
+            raise ValueError(
+                f"extra_config key '{key}' belongs to the plugin family; "
+                "a tunnel sets up no proxy plugin"
+            )
+    return v
+
+
 def _check_frps_extra_config(v: Optional[dict]) -> Optional[dict]:
     """The server config's extra_config goes into frps.toml, and the frps supervisor starts
     frps only with the keys and values of frp/extra_config.py (R-0411)."""
@@ -263,7 +284,7 @@ class FrpTunnelCreate(RequestModel):
         _reject_toml_breakers
     )
     _v_secret = field_validator("secret_key")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 class FrpTunnelUpdate(RequestModel):
@@ -287,7 +308,7 @@ class FrpTunnelUpdate(RequestModel):
         _reject_toml_breakers
     )
     _v_secret = field_validator("secret_key")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 # --- Responses ---

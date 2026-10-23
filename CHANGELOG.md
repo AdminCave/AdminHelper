@@ -85,10 +85,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Servers nur an, wenn jede Zeile die Form des Generators hat: leer, `[transport.tls]`, `[[proxies]]` oder
   `schluessel = wert` mit einem einzeiligen Wert. In der Wurzel nimmt er nur die Schluessel, die der Server schreibt,
   in einem Proxy keinen Schluessel, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben
-  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels speichert der
-  Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
+  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels lehnt der Server
+  mit `422` ab), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
   wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
   der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+- **Server: das `extra_config` eines FRP-Tunnels nimmt keinen Schluessel der plugin-Familie an:** Ein Schluessel im
+  `extra_config` eines FRP-Tunnels, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben (etwa
+  `plugin.type` oder `PLUGIN.type`), ergibt bei `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` jetzt `422`;
+  bisher speicherte der Server ihn. Proxy-Plugins richtet der Server nicht ein, und der Agent wendet eine frpc.toml
+  mit einem solchen Schluessel nicht an. Gespeicherte Eintraege bleiben, wie sie sind. Doku: API-Referenz (DE+EN).
 
 ### Removed
 

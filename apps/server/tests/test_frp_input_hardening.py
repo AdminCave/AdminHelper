@@ -24,6 +24,7 @@ from app.modules.frp.schemas import (
     FrpServerConfigUpdate,
     FrpTunnelCreate,
     FrpTunnelUpdate,
+    is_plugin_key,
 )
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
@@ -225,6 +226,36 @@ def test_extra_config_rejects_key_with_trailing_newline(model):
     with pytest.raises(ValidationError) as exc:
         build(extra_config={"abc\n": 1})
     assert "'abc\n'" in exc.value.errors()[0]["msg"]
+
+
+# frp maps the fields of a proxy without regard to case and reads its plugin from `plugin`;
+# the server sets up no proxy plugin, and the agent refuses a frpc.toml with such a key.
+PLUGIN_KEYS = ["plugin", "plugin.type", "PLUGIN.type", "Plugin.localPath", "pLuGiN.unixPath"]
+NOT_PLUGIN_KEYS = ["plugins.x", "myplugin.type", "x.plugin", "transport.useCompression"]
+
+
+@pytest.mark.parametrize("key", PLUGIN_KEYS)
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_tunnel_extra_config_rejects_a_plugin_key(model, key):
+    build = _tunnel if model is FrpTunnelCreate else model
+    with pytest.raises(ValidationError) as exc:
+        build(extra_config={"transport.useCompression": True, key: "static_file"})
+    msg = exc.value.errors()[0]["msg"]
+    assert f"'{key}'" in msg and "plugin family" in msg, msg
+
+
+@pytest.mark.parametrize("key", NOT_PLUGIN_KEYS)
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_tunnel_extra_config_takes_the_neighbours_of_the_plugin_family(model, key):
+    build = _tunnel if model is FrpTunnelCreate else model
+    assert build(extra_config={key: True}).extra_config == {key: True}
+
+
+def test_is_plugin_key_reads_only_the_first_segment():
+    assert is_plugin_key("plugin")
+    assert is_plugin_key("PLUGIN.x")
+    for key in ("plugins", "x.plugin", "plugin_x"):
+        assert not is_plugin_key(key), key
 
 
 def test_extra_config_accepts_clean_scalars():
@@ -605,6 +636,35 @@ def test_tunnel_routes_answer_422_for_a_c1_control_character_in_the_name(
     assert r.json()["detail"][0]["loc"] == ["body", "name"], r.text
     db_session.expire_all()
     assert db_session.get(FrpTunnel, "t-a").name == "a-ssh"
+
+
+def test_tunnel_routes_answer_422_for_a_plugin_key_in_extra_config(
+    test_client, db_session, admin_user
+):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    body = {
+        "server_id": "srv-a",
+        "frp_config_id": "cfg-1",
+        "name": "neu",
+        "tunnel_type": "stcp",
+        "protocol": "ssh",
+        "local_port": 22,
+        "extra_config": {"plugin.type": "static_file"},
+    }
+    r = test_client.post("/api/frp/tunnels", json=body, headers=h)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "extra_config"], r.text
+    assert "'plugin.type'" in r.json()["detail"][0]["msg"], r.text
+    assert _stored_tunnels(db_session) == {"t-a": 6000}
+
+    r = test_client.put(
+        "/api/frp/tunnels/t-a", json={"extra_config": {"PLUGIN.type": "static_file"}}, headers=h
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "extra_config"], r.text
+    db_session.expire_all()
+    assert db_session.get(FrpTunnel, "t-a").extra_config is None
 
 
 def test_server_route_answers_422_for_a_c1_control_character_in_the_name(
