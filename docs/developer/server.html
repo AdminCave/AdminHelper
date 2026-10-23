@@ -82,7 +82,7 @@
             <li>Bei <code>POST /api/auth/refresh</code> pr&uuml;ft der Server Signatur, Ablauf und Blacklist.</li>
             <li>Der alte <code>jti</code> wird in <code>token_blacklist</code> eingetragen (<strong>Rotation</strong>); das neue Paar bekommt nur der Aufruf, der ihn eintr&auml;gt. Ein zweiter, gleichzeitiger Refresh mit demselben Token z&auml;hlt als Wiederverwendung wie ein sp&auml;terer; Clients b&uuml;ndeln ihre Refreshes.</li>
             <li>Wird ein bereits widerrufener Refresh erneut eingereicht &rarr; <strong>Reuse-Detection</strong>: alle Sessions der betroffenen User-Kette werden invalidiert (<code>WARNING</code>-Log mit IP).</li>
-            <li><strong>Passwort-Reset widerruft Sessions</strong>: ein Passwort-Wechsel setzt <code>users.tokens_valid_after</code>; jeder Token mit <code>iat</code> davor (oder ohne <code>iat</code>) wird abgelehnt &mdash; ohne dass einzelne <code>jti</code> bekannt sein m&uuml;ssen.</li>
+            <li><strong>Passwort-Reset widerruft Sessions</strong>: ein Passwort-Wechsel setzt <code>users.tokens_valid_after</code>; jeder Token mit <code>iat</code> davor (oder ohne <code>iat</code>) wird abgelehnt &mdash; ohne dass einzelne <code>jti</code> bekannt sein m&uuml;ssen. Beim Anlegen eines Benutzers steht <code>users.tokens_valid_after</code> auf der Anlegezeit (ganze Sekunde): &auml;ltere Tokens auf denselben Namen gelten f&uuml;r ihn nicht.</li>
           </ol>
           <p>Passwort-Hashing nutzt <strong>SHA-256-Prehash &rarr; Bcrypt</strong>, weil Bcrypt nur 72 Bytes verarbeitet.</p>
           <p>API-Keys werden &uuml;ber den Header <code>X-API-Key</code> akzeptiert; die Dependency <code>ApiKeyOrUser</code> erlaubt JWT <em>oder</em> API-Key am selben Endpoint.</p>

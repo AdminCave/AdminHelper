@@ -13,6 +13,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
   wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
   Entwickler (DE+EN).
+- **Server: neu angelegte Benutzer:** Ein neu angelegter Benutzer nimmt nur Tokens an, die ab seinem Anlegen
+  ausgestellt wurden (`users.tokens_valid_after` steht auf der Anlegezeit, ganze Sekunde), gleich ob er ueber die
+  API, den Bootstrap, `ADMIN_PASSWORD` oder die CLI entsteht. Bestehende Benutzer bleiben unveraendert. Doku: Server
+  fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

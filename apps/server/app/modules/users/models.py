@@ -6,7 +6,16 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, T
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-from app.core.time import utc_now_sql
+from app.core.time import utc_now_sql, utcnow_naive
+
+
+def _tokens_valid_from_creation():
+    # Floored to the whole second: a JWT `iat` has whole seconds and counts as
+    # issued before the watermark when `iat < watermark` (core/auth.py), so the
+    # tokens of the bootstrap answer and a login in the second of creation would
+    # be refused.
+    return utcnow_naive().replace(microsecond=0)
+
 
 user_server_assoc = Table(
     "user_servers",
@@ -34,8 +43,10 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=utc_now_sql())
     # Credential-invalidation watermark: JWTs whose `iat` predates this are
-    # rejected (set on password reset). NULL = no revocation, all tokens valid.
-    tokens_valid_after = Column(DateTime, nullable=True)
+    # rejected (set on creation, so tokens issued for the same name before the
+    # user existed do not hold, and on password reset). Python-side default, no
+    # DDL: rows from before it keep NULL = no revocation, all tokens valid.
+    tokens_valid_after = Column(DateTime, nullable=True, default=_tokens_valid_from_creation)
     # Notification contact data. email feeds the e-mail channel; telegram_chat_id
     # is reserved for the later Telegram channel (linked via a /start handshake).
     # Both NULL until the user sets them — the resolver skips a channel with no
