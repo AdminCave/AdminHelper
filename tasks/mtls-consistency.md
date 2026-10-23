@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # mTLS: `MTLS_ENFORCE` in Server und Gateway gleich, Identitäts-Header nur vom Gateway — Task-Ledger
-Status: erledigt · Branch: feature/mtls-consistency · Review: pro Task
+Status: aktiv · Branch: feature/mtls-consistency · Review: pro Task
 Spec: docs/features/mtls-consistency.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --enforce — der Diff ändert, wann der Server eine Zertifikats-Identität annimmt (`apps/server/app/core/identity.py`, T2) und wie er `MTLS_ENFORCE` liest (`apps/server/app/core/config.py`, T1); jede Anfrage mit Client-Zertifikat hängt daran. `linux-full` im Sammellauf über `main`: `integration-stack` (Stack mit `MTLS_ENFORCE=true`, Zertifikats-Wege über das Gateway in den Schritten 4–8b, der neue Schritt aus T3 mit dem Neuanlegen des Gateways), `sse-push` (SSE mit Zertifikat), `upgrade-path`; auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/mtls-consistency`. `scenario` vor dem Merge (ask-first): nur er fährt einen echten Agent von einem zweiten Host mit Zertifikat über das Gateway unter `MTLS_ENFORCE=true` (Provisionierung, Metriken, Konfiguration) gegen die Prüfung der Gegenstelle. Kein `windows`: kein Agent- und kein Desktop-Code; deren CI-Jobs laufen im PR ohnehin. Kein Compose-, Gateway- oder PKI-Diff.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -89,3 +89,13 @@ Abhängt von: T2
 Beweis: tester-Urteil über feature/mtls-consistency (`.ah-out/review/mtls-consistency/tester.verdict.json`): wichtig `apps/server/app/core/middleware.py:121`, nit `apps/server/app/core/identity.py:125`
 Orakel: mutation-sample — die Tests fallen gegen die genannten Mutanten
 HEAD: c19307fc
+
+### T6 — Stack-Prüfung: Adresswechsel des Gateways erzwingen  [ ]
+Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Änderung: Schritt 7b(d) in `identity_from_gateway` (`scripts/tests/integration_stack_test.sh:221-243`) beweist die Auffrischung heute nicht: Im Stack-Dispatch auf 28e97ee3 behielt das neu angelegte Gateway seine Adresse (Log: `before/after the recreate: '<a>' -> '<a>' (unchanged, so the server needed no fresh lookup)`), weil Docker die frei gewordene Adresse sofort wieder vergibt. (1) Den Adresswechsel erzwingen: die alte Adresse des Gateways im Default-Netz des Projekts belegen, solange das Gateway neu startet. Ein Beispiel: Gateway stoppen und entfernen, einen Platzhalter-Container ins Default-Netz setzen, der die alte Adresse hält, Gateway starten, danach den Platzhalter mit vollem Namen entfernen. Das genaue Verfahren wählt der builder, nachdem er die Docker-Doku zur IPAM-Vergabe gelesen hat (`docker run --ip`/`network connect --ip` und Default-Netz ohne eigenes Subnetz; ob die Vergabe die niedrigste freie Adresse nimmt; nicht verifiziert). Hält der Platzhalter nicht genau die alte Adresse, ist das `bad`, kein stilles Weiter. (2) Der Platzhalter wird auch bei Abbruch entfernt. Der EXIT-Trap gehört `e2e_teardown` (`scripts/tests/lib_e2e_stack.sh:258`): nicht ersetzen. Ein Container im Default-Netz, der nicht von Compose stammt, kann `e2e_dc down -v` am Entfernen des Netzes hindern. Das Image des Platzhalters muss ohne Pull lokal da sein, etwa ein Image des Stacks. (3) `old == new` wird `bad` statt `info`, damit (d) fallen kann; die Info-Zeile mit alter und neuer Adresse bleibt. (a)–(c) bleiben unverändert. Test-Adressen in neuen Zeilen nur aus RFC 5737, falls welche nötig sind.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Test)
+Abhängt von: T3
+Beweis: Stack-Dispatch auf feature/mtls-consistency@28e97ee3 (Session): integration-stack grün, Schritt 7b(d) mit unveränderter Gateway-Adresse
+Orakel: contract — (d) muss fallen, wenn das Gateway seine Adresse behält oder der Server die neue nicht annimmt
+HEAD: 28e97ee3
