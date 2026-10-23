@@ -4,7 +4,8 @@
 
 """Internal management CLI — run inside the server container:
 
-    docker compose exec server python -m app.cli create-admin --username U --password P
+    printf '%s\\n' "$PW" | docker compose exec -T server \\
+        python -m app.cli create-admin --username U --password-stdin
     docker compose exec server python -m app.cli reset-admin --username U --password P
     docker compose exec server python -m app.cli mint-enroll-token --username U [--ttl-minutes N]
 
@@ -22,7 +23,10 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import fcntl
+import os
 import sys
+from typing import NoReturn
 
 # Every ORM model before the first query, see app/model_registry.py.
 from app import model_registry  # noqa: F401
@@ -121,6 +125,49 @@ def mint_enroll_token(db, username: str, ttl_minutes: int) -> str | None:
     return token
 
 
+def _restart_with_password_on_stdin(
+    parser: argparse.ArgumentParser, username: str, password: str
+) -> NoReturn:
+    """Replace this process by ``create-admin --password-stdin`` with the password
+    of --password on stdin.
+
+    create_admin fires ``user.created``, and the event hooks run in the CLI process
+    and its child processes. With --password the password is in this process's
+    command line (/proc/<pid>/cmdline) for as long as it runs; the new process reads
+    it the way --password-stdin does, so it is out of the command line before the
+    user is created."""
+    if "\n" in password:
+        parser.error("--password must not contain a newline")
+    data = os.fsencode(password) + b"\n"
+    read_end, write_end = os.pipe()
+    # Written before the exec, with no reader yet: it has to fit into the pipe.
+    if len(data) > fcntl.fcntl(write_end, fcntl.F_GETPIPE_SZ):
+        os.close(read_end)
+        os.close(write_end)
+        parser.error("--password is too long, use --password-stdin")
+    with os.fdopen(write_end, "wb") as pipe:
+        pipe.write(data)
+    # The pipe's fds are close-on-exec, fd 0 has to survive the exec. With fd 0
+    # closed at the start (`<&-`), os.pipe() hands out 0 itself and dup2(0, 0)
+    # would leave the flag set.
+    if read_end == 0:
+        os.set_inheritable(0, True)
+    else:
+        os.dup2(read_end, 0)
+    # The = form: a username that starts with "-" stays a value for argparse.
+    os.execv(
+        sys.executable,
+        [
+            sys.executable,
+            "-m",
+            "app.cli",
+            "create-admin",
+            f"--username={username}",
+            "--password-stdin",
+        ],
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli", description="AdminHelper management CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -129,8 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     p_admin.add_argument("--username", required=True)
     p_admin.add_argument(
         "--password",
-        help="Admin password. INSECURE: visible in the process argv "
-        "(/proc/<pid>/cmdline) for the duration of the call — prefer --password-stdin.",
+        help="Admin password. Visible in the process argv (/proc/<pid>/cmdline) until the "
+        "CLI hands it over stdin to a fresh process, before the user is created — prefer "
+        "--password-stdin.",
     )
     p_admin.add_argument(
         "--password-stdin",
@@ -158,6 +206,15 @@ def main(argv: list[str] | None = None) -> int:
     p_token.add_argument("--ttl-minutes", type=int, default=60)
 
     args = parser.parse_args(argv)
+    # Only the real call: main([...]) inside a process (tests) has no password in
+    # the command line, and an exec would replace its caller.
+    if (
+        argv is None
+        and args.command == "create-admin"
+        and args.password
+        and not args.password_stdin
+    ):
+        _restart_with_password_on_stdin(parser, args.username, args.password)
 
     db = SessionLocal()
     try:
