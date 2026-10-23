@@ -370,7 +370,7 @@
           <h3>What triggers a notification</h3>
           <ul>
             <li><strong>Monitoring</strong>: every divergence from the last <em>reported</em> status of a check – usually a status transition (e.g. <code>ok → critical</code> and the recovery back), after maintenance windows or host outages also as a catch-up without a current transition; at most one problem report per check in 30 minutes (see Cooldown above); the <code>alert.triggered</code> event hook follows the bell and with it this cooldown. The severity is the worse of the reported and new state, but at most the check's <code>severity</code>; the all-clear carries the level the bell showed the problem with, so it reaches every subscriber who saw the alert, also when the check's <code>severity</code> has changed since. Checks with <code>severity</code> <code>info</code> do not reach the bell. The unknown policy, maintenance windows and host-down suppression apply here too (see <a href="#alert-behavior">Alert behavior</a>). When three or more agents fall silent or come back together, one entry comes with a line per affected server that you may see and one of your rules covers (see <a href="#agent-bundle">Bundled alert for silent agents</a>).</li>
-            <li><strong>Security</strong>: a new admin user was created.</li>
+            <li><strong>Security</strong>: a new admin user was created (also via <code>python -m app.cli create-admin</code>) or a user was promoted to admin.</li>
             <li><strong>Lifecycle</strong>: a server was removed from the inventory, an FRP tunnel was created.</li>
           </ul>
           <div class="callout callout-note" data-reveal>

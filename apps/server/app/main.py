@@ -26,6 +26,7 @@ from app.core.config import (
     BOOTSTRAP_SETUP_FILE,
     BOOTSTRAP_TOKEN_FILE,
     FRP_BIND_PORT,
+    write_private_file,
 )
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
@@ -122,30 +123,21 @@ def _ensure_admin(db):
 
 def _purge_bootstrap_files():
     for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
-        if f.exists():
-            try:
-                f.unlink()
-            except OSError:
-                pass
+        try:
+            f.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("bootstrap file %s not removed (%s)", f, type(exc).__name__)
 
 
 def _emit_bootstrap_token():
     """Generates a one-time bootstrap token: hash to disk for verification, raw token to
     a 0600 file for the operator to read — never logged in cleartext (3.91)."""
     token = secrets.token_urlsafe(32)
-    BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(token))
-    try:
-        BOOTSTRAP_TOKEN_FILE.chmod(0o600)
-    except OSError:
-        pass
+    write_private_file(BOOTSTRAP_TOKEN_FILE, hash_api_key(token))
     # Raw token to a 0600 file, NOT the log: docker keeps logs (json-file, 5x10MB) and
     # central shipping would carry the token off-box, where it survives even after the
     # token is used. The operator reads it from the file instead (3.91).
-    BOOTSTRAP_SETUP_FILE.write_text(token)
-    try:
-        BOOTSTRAP_SETUP_FILE.chmod(0o600)
-    except OSError:
-        pass
+    write_private_file(BOOTSTRAP_SETUP_FILE, token)
 
     bar = "=" * 78
     logger.warning(bar)
@@ -335,8 +327,8 @@ def _ensure_frps_config(db):
             return
         write_frps_config(config)
         logger.info("frps.toml neu geschrieben")
-    except Exception:
-        logger.exception("frps.toml schreiben fehlgeschlagen")
+    except Exception as exc:
+        logger.warning("frps.toml not written at startup (%s)", type(exc).__name__)
 
 
 def _run_startup_tasks():
