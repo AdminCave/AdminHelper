@@ -16,6 +16,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
   zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
   Entwickler (DE+EN).
+- **Web: FRP-Konfigurationsvorschau wird beim Schliessen geleert:** Der Text von `frps.toml` bzw. `visitor.toml`
+  (mit Auth-Token, Dashboard-Passwort bzw. STCP-Schluesseln) bleibt nach dem Schliessen der Vorschau nicht mehr bis
+  zum Verlassen der FRP-Seite im Speicher der Seite.
 - **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
   ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
   und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
@@ -121,6 +124,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lokaler Lauf ohne diese Variablen fragen weiter das eigene `git`. `task-close.sh` startet sein Verify ohne
   `AH_HEAD`/`AH_TREE_HASH`, damit seine Pruefung, ob sich der Baum waehrend der Suite geaendert hat, weiter den Hash
   vergleicht, den `run.sh` ueber diesen Checkout rechnet. Doku: DEVELOPMENT.
+- **Test des Monitoring-Entrypoints: Leck-Probe mit eigenem Zufallspasswort (R-0824):** Der Server-Test
+  `test_the_entrypoint_of_monitoring_creates_its_database_once` prueft, dass ein gescheiterter Lauf des Entrypoints
+  kein Passwort ausgibt. Er suchte dazu das Passwort der Test-Datenbank in der Ausgabe; ohne `DATABASE_URL`
+  (testcontainers, Passwort `test`) steht es im Datenbanknamen der Fehlermeldung, und die Probe schlug an, ohne dass
+  ein Passwort ausgegeben wurde (Sammellauf rot). Jetzt bekommt der gescheiterte Lauf ein eigenes Zufallspasswort,
+  und die Probe sucht dieses.
+- **Web-Panel: der Vite-Dev-Server proxied nur `/api`, auf `http://127.0.0.1:8080` (R-0669):** Der Dev-Server
+  leitete `/auth`, `/api` und `/health` an `http://localhost:8000` weiter. Der Server hat nur Routen unter `/api`, und
+  DEVELOPMENT.md und die Entwickler-Doku starten ihn auf `127.0.0.1:8080`. Jetzt geht nur `/api` dorthin; ein Test
+  prueft die Praefixe gegen den OpenAPI-Snapshot des Servers. Doku: Web-UI fuer Entwickler (DE+EN).
+- **Troubleshooting nennt nur Agent-Befehle, die es gibt (R-0731):** Fuer einen Durchlauf von Hand mit
+  Debug-Ausgabe steht dort jetzt `sudo adminhelper-agent run --once --log-level debug` statt `run --verbose` und
+  `monitor run --dry-run`. Zum Client-Zertifikat des Agents steht dort, wie der Agent es erneuert (bei jedem Lauf,
+  sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
+  prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
+  Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
