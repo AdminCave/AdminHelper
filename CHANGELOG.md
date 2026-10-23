@@ -280,6 +280,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
   jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
   weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
+- **Gateway: sendet die Root der internen CA in seiner Zertifikatskette mit (R-0667):** Auf `:443`, `:8444` und
+  `:8445` schickt das Gateway nach seinem Server-Zertifikat und dem `access`-Zwischenzertifikat jetzt auch die Root
+  (`gateway-fullchain.pem`); frps schickt weiter nur Server- und Zwischenzertifikat. So kann der Agent mit `--ca-fp`
+  den Fingerprint der Root pinnen, der eine Rotation der Zwischenzertifikate uebersteht; ein Wert mit dem Fingerprint
+  des Zwischenzertifikats passt weiter, bis es rotiert wird. Ein vorhandenes Gateway-Zertifikat ohne Root stellt der
+  `ca-issuer` bei seinem naechsten Start mit neuem Schluessel neu aus. Das Gateway liest seine Zertifikate nur beim
+  eigenen Start und hat sie beim Update schon gelesen, bevor der `ca-issuer` sie neu ausstellt: Nach dem Update auf
+  diese Version einmal `docker compose restart gateway`, sobald `docker compose ps` den `ca-issuer` als `healthy`
+  zeigt; bis dahin sendet das Gateway die Root nicht. Ein Desktop, der vor seiner Registrierung dem selbstsignierten
+  Zertifikat des Gateways vertraut hat, bestaetigt das neue einmal. Ein voller TLS-Handshake wird rund 430 Byte
+  groesser.
 
 ### Removed
 

@@ -35,6 +35,7 @@ def test_provisions_serverauth_leaf_under_tunnel(tmp_path):
 
     # frps.crt = leaf + tunnel intermediate; leaf chains tunnel -> root.
     certs = x509.load_pem_x509_certificates(cert_path.read_bytes())
+    assert len(certs) == 2  # no root: only the gateway sends it along (R-0667)
     leaf, presented_inter = certs[0], certs[1]
     assert presented_inter.subject == tunnel.cert.subject
     leaf.verify_directly_issued_by(tunnel.cert)

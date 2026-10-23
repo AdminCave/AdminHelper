@@ -353,6 +353,15 @@ def _leaf_signed_by(fullchain_path: Path, issuer: x509.Certificate) -> bool:
     return _signature_problem(leaf, issuer) is None
 
 
+def _presents_after_leaf(fullchain_path: Path, chain_pem: bytes) -> bool:
+    """Whether the certificates after the leaf in fullchain_path are exactly those of chain_pem."""
+    try:
+        certs = x509.load_pem_x509_certificates(fullchain_path.read_bytes())
+    except (OSError, ValueError):
+        return False
+    return _chain_is(chain_pem, certs[1:])
+
+
 def _holds_key(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> bool:
     """Whether `key` is the private half of `cert`'s public key."""
     spki = serialization.PublicFormat.SubjectPublicKeyInfo
@@ -371,13 +380,16 @@ def _provision_server_material(
     key_name: str,
     label: str,
     extra_trust: tuple[Intermediate, ...] = (),
+    send_root: bool = False,
 ) -> None:
     """Shared core for the gateway + frps server-cert provisioning (audit 2.9):
-    they differ only in file names, the signing intermediate, and any extra trust.
+    they differ only in file names, the signing intermediate, any extra trust and
+    whether the server presents the root after the intermediate (send_root).
     Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
     the leaf is kept across restarts but re-minted once past half its life (F4) so
-    it never expires under a long-running stack, or once the current intermediate
-    did not sign it (the first boot after a rotation)."""
+    it never expires under a long-running stack, once the current intermediate
+    did not sign it (the first boot after a rotation), or once the file does not
+    present what follows the leaf now (a fullchain from before send_root)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Trust bundle = the signing intermediate's chain (root already in it) and its
     # retired intermediates, plus any extra trust intermediates (e.g. frps also
@@ -393,6 +405,9 @@ def _provision_server_material(
 
     cert_path = out_dir / cert_name
     key_path = out_dir / key_name
+    # What the server presents after its leaf: the signing intermediate, with send_root the
+    # root too (inter.chain is exactly the two).
+    presented = inter.chain if send_root else pki.cert_to_pem(inter.cert)
     # Also require the leaf and key to be a matching pair: a crash between writing the leaf and
     # the key leaves a NEW leaf beside the OLD key, which _leaf_needs_remint (0% aged) would pass
     # — nginx then fails with 'key values mismatch' and crash-loops for up to half the leaf life
@@ -400,19 +415,23 @@ def _provision_server_material(
     # And require the current intermediate to have signed the leaf: after a rotation the server
     # would otherwise go on presenting a leaf of the retired intermediate (whose end also bounds
     # the leaf) until half its life; re-minting moves it onto the current one on the first boot.
+    # And require the certificates after the leaf to be `presented`: a gateway fullchain from
+    # before the root went along would otherwise fail a `--ca-fp` pinned on the root until half
+    # the leaf's life.
     if (
         cert_path.exists()
         and key_path.exists()
         and not _leaf_needs_remint(cert_path)
         and _pair_matches(cert_path, key_path)
         and _leaf_signed_by(cert_path, inter.cert)
+        and _presents_after_leaf(cert_path, presented)
     ):
         return
 
     dns_names, ip_addresses = _classify_sans(primary, extra_sans)
     leaf, leaf_key = pki.build_server_leaf(inter.cert, inter.key, primary, dns_names, ip_addresses)
-    # fullchain = leaf + signing intermediate (what the server presents on the wire).
-    cert_path.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(inter.cert))
+    # fullchain = leaf + `presented` (what the server sends on the wire).
+    cert_path.write_bytes(pki.cert_to_pem(leaf) + presented)
     _write_private(key_path, pki.key_to_pem(leaf_key))
     logger.info("%s provisioniert (CN=%s, DNS=%s, IP=%s)", label, primary, dns_names, ip_addresses)
 
@@ -425,17 +444,23 @@ def ensure_gateway_cert(
     Writes three files the gateway mounts read-only:
         client-ca.pem            access intermediate + root + retired access
                                  intermediates (verify client certs)
-        gateway-fullchain.pem    server leaf + access intermediate (TLS terminate)
+        gateway-fullchain.pem    server leaf + access intermediate + root
+                                 (TLS terminate)
         gateway.key              the leaf's private key (0600)
 
     The leaf chains to the pinned Root so native clients (which pin the Root and
-    validate every leaf against it, D2) accept the gateway on :443. Idempotent:
-    the trust bundle is always refreshed (cheap, tracks rotations); the retired
-    intermediates in it keep client certs from before a rotation accepted until
-    they expire. The leaf is kept across restarts but re-minted once past half
+    validate every leaf against it, D2) accept the gateway on :443. The root goes
+    along so an agent's `--ca-fp` can pin it: the agent looks for that fingerprint
+    among the presented certificates (verifyAnchorFingerprint in
+    apps/agent/internal/httpclient/httpclient.go), and unlike the intermediate the
+    root outlives a rotation.
+
+    Idempotent: the trust bundle is always refreshed (cheap, tracks rotations); the
+    retired intermediates in it keep client certs from before a rotation accepted
+    until they expire. The leaf is kept across restarts but re-minted once past half
     its life (F4) so it never expires under a long-running stack and takes the
-    gateway down, and on the first boot after a rotation, so it comes from the
-    current access intermediate."""
+    gateway down, on the first boot after a rotation, so it comes from the current
+    access intermediate, and once a fullchain from before lacks the root."""
     _provision_server_material(
         out_dir,
         access,
@@ -445,6 +470,7 @@ def ensure_gateway_cert(
         cert_name="gateway-fullchain.pem",
         key_name="gateway.key",
         label="Gateway-Cert",
+        send_root=True,
     )
 
 

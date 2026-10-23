@@ -102,8 +102,10 @@ Doku: keine (die Meldungen beschreibt T10)
 Abhängt von: T5
 HEAD: e2304a8b
 
-### T7 — Gateway präsentiert die Root mit; `--ca-fp` kann die Root pinnen  [ ]
+### T7 — Gateway präsentiert die Root mit; `--ca-fp` kann die Root pinnen  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_gateway_cert.py, apps/ca-issuer/tests/test_frps_cert.py, apps/gateway/nginx.conf, CHANGELOG.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @f31d0c12 2026-10-23T21:46:20+02:00
+Review: approve (.ah-out/review/ca-rotation/T7.verdict.json)
 Änderung (Empfehlung, Spec Trade-off 6): `ensure_gateway_cert` (`apps/ca-issuer/app/storage.py:228-252`) schreibt `gateway-fullchain.pem` als Leaf + access-Intermediate + Root (nginx: „the primary certificate comes first, then the intermediate certificates“); frps bleibt Leaf + tunnel-Intermediate. Umsetzung über einen Parameter von `_provision_server_material` (`:182-225`, Fullchain `:222-223`), den nur der Gateway-Aufruf setzt; Docstring `:231-242` nennt die Root und warum (`--ca-fp` kann die Root pinnen, `apps/agent/internal/httpclient/httpclient.go:145-188` sucht den Fingerprint in jeder präsentierten Kette). Eine bestehende Fullchain ohne Root wird beim nächsten Start neu ausgestellt (Bedingung zum Behalten `:212-217`: Fullchain endet mit der Root). Kommentar `apps/gateway/nginx.conf:87` („access leaf + intermediate“) → „access leaf + intermediate + root“, sonst nichts an nginx.conf. Tests in `test_gateway_cert.py`: (a) die Fullchain hat drei Zertifikate, das dritte ist DER-gleich `root.crt`, `test_provisions_three_files_and_chains_to_root` (`:48-68`) bleibt grün; (b) eine vorhandene, frische Fullchain ohne Root → neu geschrieben, jetzt mit Root. In `test_frps_cert.py`: (c) `frps.crt` hat genau zwei Zertifikate (Leaf + tunnel-Intermediate, `test_provisions_serverauth_leaf_under_tunnel`, `:25-47`, um diesen Assert ergänzt). Zuerst rot: (a), (b); (c) ist auf HEAD grün und hält fest, dass nur das Gateway die Root mitschickt.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: CHANGELOG.md (Changed, umlautfrei: das Gateway sendet die Root der internen CA in seiner Zertifikatskette mit) · Agent-Doku mit T8

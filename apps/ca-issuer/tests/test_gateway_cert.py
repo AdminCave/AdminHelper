@@ -56,7 +56,7 @@ def test_provisions_three_files_and_chains_to_root(tmp_path):
     ca_path = tmp_path / "client-ca.pem"
     assert fullchain.exists() and key_path.exists() and ca_path.exists()
 
-    # fullchain = leaf + access intermediate.
+    # fullchain = leaf + access intermediate (+ root, see the R-0667 tests below).
     certs = x509.load_pem_x509_certificates(fullchain.read_bytes())
     leaf, presented_inter = certs[0], certs[1]
     assert presented_inter.subject == access.cert.subject
@@ -236,3 +236,37 @@ def test_keeps_a_fresh_leaf_of_the_current_intermediate_beside_retired_ones(tmp_
     ensure_gateway_cert(tmp_path, access, "localhost")  # second boot
     assert (tmp_path / "gateway.key").read_bytes() == key_before
     assert (tmp_path / "gateway-fullchain.pem").read_bytes() == cert_before
+
+
+# --- R-0667: the gateway sends the root, so --ca-fp can pin it ----------------
+
+
+def test_fullchain_ends_with_the_root_of_the_hierarchy(tmp_path):
+    from app.storage import ensure_hierarchy
+
+    pki_dir, out = tmp_path / "pki", tmp_path / "gateway"
+    access = ensure_hierarchy(pki_dir, root_passphrase=b"pw")["access"]
+    ensure_gateway_cert(out, access, "localhost")
+
+    certs = x509.load_pem_x509_certificates((out / "gateway-fullchain.pem").read_bytes())
+    root_cert = x509.load_pem_x509_certificate((pki_dir / "root.crt").read_bytes())
+    assert len(certs) == 3
+    assert _der(certs[1:]) == _der([access.cert, root_cert])
+    certs[0].verify_directly_issued_by(access.cert)
+
+
+def test_remints_a_fresh_fullchain_without_the_root(tmp_path):
+    access, root_cert = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    fullchain = tmp_path / "gateway-fullchain.pem"
+    key_path = tmp_path / "gateway.key"
+    # A fresh leaf of the current intermediate, written as before the root went along.
+    leaf, inter = x509.load_pem_x509_certificates(fullchain.read_bytes())[:2]
+    fullchain.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(inter))
+    key_before = key_path.read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "localhost")  # next boot
+    certs = x509.load_pem_x509_certificates(fullchain.read_bytes())
+    assert _der(certs[1:]) == _der([access.cert, root_cert])
+    certs[0].verify_directly_issued_by(access.cert)
+    assert key_path.read_bytes() != key_before
