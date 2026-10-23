@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Hooks: Worker-Start, Antwortzeit, Cron-Zeitzone, Webhook-Body, CLI-Passwort — Task-Ledger
-Status: geplant · Branch: feature/hooks-hardening · Review: pro Task
+Status: aktiv · Branch: feature/hooks-hardening · Review: pro Task
 Spec: docs/features/hooks-hardening.md (Roadmap R-0778, R-0756; T1, T4, T5 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — Server-API-Verhalten: `POST /api/hooks/trigger` antwortet auf einen Body mit NUL-Byte oder einzelnem Surrogat mit 422 (T4), Hook-Läufe enden früher (T2), der Scheduler-Dienst rechnet Cron in UTC (T3); läuft im Sammellauf. Routen, Schemas und OpenAPI bleiben, keine Migration; kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad (`scripts/install.sh:297-300` nutzt `--password-stdin`, T5 ändert nur `--password`), kein Cross-Host-Datenpfad: kein `scenario`, kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
