@@ -521,6 +521,82 @@ def test_http_checker_timeout_covers_reading_the_body(monkeypatch):
     assert len(read) <= 4
 
 
+@pytest.mark.parametrize(
+    ("redirects", "expected"),
+    [
+        (5, ("ok", "HTTP 200 (0 ms)")),
+        (6, ("critical", "Too many redirects (>5)")),
+    ],
+)
+def test_http_checker_follows_at_most_five_redirects(monkeypatch, redirects, expected):
+    # A chain of five redirects is followed to the answer at its end; of six, the sixth
+    # is not followed. Six requests either way.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    monkeypatch.setattr(http_mod, "_now", _Clock())
+    sent = []
+
+    def fake_send(_transport, request):
+        sent.append(request)
+        if len(sent) <= redirects:
+            return httpx.Response(
+                302, headers={"location": f"http://checks.example/{len(sent)}"}, request=request
+            )
+        return httpx.Response(200, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example/"})
+
+    assert (status, msg) == expected
+    assert [r.url.path for r in sent] == ["/", "/1", "/2", "/3", "/4", "/5"]
+
+
+def test_http_checker_ends_at_a_redirect_without_location(monkeypatch):
+    # A redirect without Location leads nowhere: critical after the one request. The
+    # message is left out on purpose: "Too many redirects" does not fit this case.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    sent = []
+
+    def fake_send(_transport, request):
+        sent.append(request)
+        return httpx.Response(302, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, _msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example/"})
+
+    assert status == "critical"
+    assert len(sent) == 1
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("text/html; charset=iso-8859-1", ("ok", "HTTP 200 (0 ms)")),
+        # Without a charset the body is read as UTF-8, where these bytes are no text.
+        ("text/html", ("critical", "Text 'Grüße' not found in response")),
+    ],
+)
+def test_http_checker_reads_the_body_in_its_charset(monkeypatch, content_type, expected):
+    # search_string is looked for in the text the charset of Content-Type makes of the
+    # body: "Grüße" in ISO-8859-1.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    monkeypatch.setattr(http_mod, "_now", _Clock())
+
+    def fake_send(_transport, request):
+        return httpx.Response(
+            200,
+            headers={"content-type": content_type},
+            content=iter([b"Gr\xfc\xdfe"]),
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "search_string": "Grüße"}
+    )
+
+    assert (status, msg) == expected
+
+
 def _pieces(body: bytes, size: int):
     """The body as a stream of pieces of `size` bytes."""
     return (body[i : i + size] for i in range(0, len(body), size))

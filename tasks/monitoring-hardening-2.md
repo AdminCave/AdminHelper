@@ -107,8 +107,10 @@ Doku: CHANGELOG.md (Ergänzung des Eintrags `:158-164`: eine komprimierte Antwor
 Beweis: Code-Lesung apps/monitoring/app/checkers/http.py:149
 HEAD: 13f340e4
 
-### T7 — HTTP-Check: Tests für Redirect-Zählung, Redirect ohne `Location`, Zeichensatz (R-0799)  [ ]
+### T7 — HTTP-Check: Tests für Redirect-Zählung, Redirect ohne `Location`, Zeichensatz (R-0799)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_http_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @30a41314 2026-10-23T22:51:33+02:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T7.verdict.json)
 Änderung: Neue Tests über die Naht `httpx.HTTPTransport.handle_request`: (a) fünf Redirects (sechs Anfragen) → `ok`; sechs Redirects → `critical` „Too many redirects (>5)“ nach genau sechs Anfragen (`app/checkers/http.py:89-90`); (b) 302 ohne `Location` → `critical` nach genau einer Anfrage (nur Status und Anfragezahl, den Text nicht: er ist irreführend und eine eigene Roadmap-Zeile, Spec, Nicht-Ziele); (c) `Content-Type: text/html; charset=iso-8859-1` mit `b"Gr\xfc\xdfe"` und `search_string` „Grüße“ → `ok` (`:159`), Gegenprobe: dieselben Bytes ohne `charset` → `critical` „Text 'Grüße' not found in response“. Mutations-Stichprobe in einer Kopie im eigenen Scratch-Verzeichnis, nie im Bau-Worktree: M1 `redirects == _MAX_REDIRECTS` → `redirects > _MAX_REDIRECTS` (`:89`) → (a) rot; M2 `resp.encoding or "utf-8"` → `"utf-8"` (`:159`) → (c) rot; Ergebnis und beide Summary-Zeilen (Datei vor und nach dem Diff) in den Commit-Body.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: keine (nur Tests)
