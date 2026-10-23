@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard: direkter Weg neben einem Proxy, unlesbare URLs, Kommentar- und Test-Nachzug — Task-Ledger
-Status: bereit · Branch: feature/ssrf-followups · Review: pro Task
+Status: erledigt · Branch: feature/ssrf-followups · Review: pro Task
 Spec: docs/features/ssrf-followups.md (Roadmap R-0606, R-0599; T1 und T2 gehören zum Paket, Kevin 2026-10-22)
 Heavy: none — keine Route, kein Schema, keine Migration, kein Gateway-, PKI-, FRP-, Compose- oder Install-Pfad; geändert werden die Proxy-Weiche von `pinned_client` und der Fang in `check_target` in beiden Guard-Kopien, zwei Kommentare und Tests; die Aufrufer (HTTP-Check, Alert-Webhook, Hook-Helfer) bleiben, und keine schwere Suite setzt einen Proxy oder fährt diese Wege (`scripts/tests/`, Compose und Workflows nennen keine Proxy-Variable; wie bei ssrf-pin und ssrf-idna)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
