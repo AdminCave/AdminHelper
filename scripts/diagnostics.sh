@@ -16,10 +16,12 @@
 # Host names and IP addresses stay in the bundle unless --mask-hosts is given.
 # With it, IPv4 and IPv6 addresses become <ip> by their form, and the names and
 # addresses set in DOMAIN, EXTRA_SANS, CA_FRPS_EXTRA_SANS, ALLOWED_IPS,
-# FRP_SERVER_ADDR, TRUSTED_PROXIES, SMTP_HOST, SMTP_USER and SMTP_FROM, and the
-# name of this machine, become <host> — in report.txt, the logs and env.sanitized,
-# which shows those keys as <masked>. Other names, such as those of managed
-# servers or webhook targets, stay. compose.yml stays a copy as it is.
+# FRP_SERVER_ADDR, TRUSTED_PROXIES, SMTP_HOST, SMTP_USER and SMTP_FROM (of
+# SMTP_FROM with a display name, "Name <address>", only the address in
+# angle brackets, not the name), and the name of this machine, become <host> —
+# in report.txt, the logs and env.sanitized, which shows those keys as <masked>.
+# Other names, such as those of managed servers or webhook targets, stay.
+# compose.yml stays a copy as it is.
 # ALWAYS skim the bundle before sending — redaction is best-effort, not a
 # guarantee.
 #
@@ -37,7 +39,7 @@ while [ $# -gt 0 ]; do
         --tail) TAIL_LINES="${2:?--tail needs a number}"; shift ;;
         --output) OUT_DIR="${2:?--output needs a directory}"; shift ;;
         --mask-hosts) MASK_HOSTS=1 ;;
-        -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+        -h|--help) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
     esac
     shift

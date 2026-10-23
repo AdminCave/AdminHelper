@@ -25,7 +25,9 @@
 #       keys as <masked>; a time and a version number stay;
 #   (g) without the switch the same lines keep their names and addresses, the token
 #       forms of (a) are masked;
-#   (h) --help names --mask-hosts, an unknown option still ends with 2;
+#   (h) --help names --mask-hosts and says that of SMTP_FROM only the address in
+#       angle brackets is masked, and ends with the usage line; an unknown
+#       option still ends with 2;
 #   (i) --mask-hosts, which values become <host> rules and how they match: the
 #       longest first, at word edges, without regard to case; of a display name
 #       ("Name <address>") only the address, and no list part without a letter or
@@ -450,11 +452,18 @@ else
 fi
 
 # --- (h) the switch in the usage ----------------------------------------------------
-# The usage line is the last line --help prints: a range that ends too early loses it.
+# The usage line is the last line --help prints: a range that ends too early loses it,
+# one that ends too late prints code. Of SMTP_FROM with a display name only the address
+# in angle brackets is masked, and the header says so (R-0804).
 rc=0
 help_out="$(bash "$ROOT/scripts/diagnostics.sh" --help 2>&1)" || rc=$?
 [ "$rc" = 0 ] || { echo "(h) --help: exit $rc" >&2; fail=1; }
 has '\[--mask-hosts\]' "$help_out" || { echo "(h) --help does not name --mask-hosts: $help_out" >&2; fail=1; }
+has 'angle brackets' "$help_out" \
+    || { echo "(h) --help does not say what of SMTP_FROM is masked: $help_out" >&2; fail=1; }
+help_last="${help_out##*$'\n'}"
+[ "$help_last" = '#   ./scripts/diagnostics.sh [--tail N] [--output DIR] [--mask-hosts]' ] \
+    || { echo "(h) --help ends with: $help_last" >&2; fail=1; }
 rc=0
 bash "$ROOT/scripts/diagnostics.sh" --bogus > /dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || { echo "(h) --bogus: exit $rc, expected 2" >&2; fail=1; }

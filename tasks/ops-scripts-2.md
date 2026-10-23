@@ -66,8 +66,10 @@ Abhängt von: T2
 Beweis: Code-Lesung scripts/backup.sh:111
 HEAD: 73bf0d31
 
-### T4 — Wortlaut zu `SMTP_FROM`: maskiert wird die Adresse, nicht der Anzeigename (R-0804)  [ ]
+### T4 — Wortlaut zu `SMTP_FROM`: maskiert wird die Adresse, nicht der Anzeigename (R-0804)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dafefceb 2026-10-23T19:36:43+02:00
+Review: approve (.ah-out/review/ops-scripts-2/T4.verdict.json)
 Änderung: Der Kopf `diagnostics.sh:17-22`, `docs/admin/troubleshooting.html:147`, `docs/en/admin/troubleshooting.html:135` und `README.md:309` sagen bei `--mask-hosts`, dass von `SMTP_FROM` mit Anzeigenamen (`Name <adresse>`) nur die Adresse maskiert wird und der Name stehen bleibt (DE etwa „bei <code>SMTP_FROM</code> mit Anzeigenamen nur die Adresse in spitzen Klammern, nicht der Name“; der Satz bleibt nach T9 richtig). `--help` (`:40`, `sed -n '2,27p'`, endet heute genau auf der Usage-Zeile `:27` und verrutscht mit jeder neuen Kopfzeile) druckt den Kommentarkopf ab Zeile 2 bis vor die erste Zeile, die nicht mit `#` beginnt, ohne feste Zeilennummer (wie backup.sh nach T2). Das Maskieren selbst ändert sich nicht. Test in `diagnostics_test.sh`, Fall (h) (`:452-460`): `--help` nennt die Einschränkung (`angle brackets`), seine letzte Zeile ist `#   ./scripts/diagnostics.sh [--tail N] [--output DIR] [--mask-hosts]`. Zuerst rot: die Prüfung auf `angle brackets`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test doc_smoke_test
 Doku: die Seiten oben (DE + EN, README); CHANGELOG bleibt (`CHANGELOG.md:15` sagt es schon richtig)
