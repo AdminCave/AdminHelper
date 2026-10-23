@@ -573,8 +573,34 @@ def test_a_text_field_that_is_no_string_counts_as_missing(client_db, monkeypatch
     assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
         f"{_CPU_LINE} value=10i",
         "monitor_agent_disk_percent,server_id=srv-1,mount=/data value=40i",
-        "monitor_agent_disk_percent,server_id=srv-1,mount=/ value=50i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=? value=50i",
         "monitor_agent_temp,server_id=srv-1,sensor=unknown value=30i",
+    ]
+
+
+def test_a_disk_without_mount_gets_its_own_series(client_db, monkeypatch):
+    # R-0753: the push wrote a disk without a mount as mount=/, so its values went into the
+    # root disk's series and disk_forecast (grouped by mount) mixed both fill rates. It is
+    # named ? as in the checker (NO_MOUNT) and in disk_forecast.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {
+            "disks": [
+                {"fstype": "ext4", "percent": 70},
+                {"mount": "/", "fstype": "ext4", "percent": 20},
+            ],
+        }
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+        "monitor_agent_disk_percent,server_id=srv-1,mount=? value=70i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/ value=20i",
     ]
 
 

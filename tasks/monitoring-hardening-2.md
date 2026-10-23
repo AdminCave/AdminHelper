@@ -48,8 +48,10 @@ Orakel: contract — der Selektor eines Checks enthält seine `check_id`, außer
 Dedup-Key: bug:monitoring:routers/checks.py:metrics-filter-by-server-only
 HEAD: 13f340e4
 
-### T2 — Agent-Push: Platte ohne `mount` heißt `?` wie im Checker (R-0753, R-0799)  [ ]
+### T2 — Agent-Push: Platte ohne `mount` heißt `?` wie im Checker (R-0753, R-0799)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_report.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c7a6e593 2026-10-23T21:08:37+02:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T2.verdict.json)
 Änderung: `_NO_MOUNT` (`app/checkers/agent.py:30`, Nutzer `:426`, `:504`, `:511`) heißt `NO_MOUNT`; `app/routers/agent.py:111` nimmt ihn statt `"/"` als Default von `entry_text(disk, "mount", …)`. `sensor` bleibt `unknown` (`:119`, Spec Nicht-Ziele). Nebenbei (R-0799): `ServiceProcessChecker._capped` (`app/checkers/agent.py:626-629`) kürzt mit `_MAX_REPORT_ENTRIES` statt der Zahl 500, und der Kommentar `:124-126` nennt beide Stellen, die Report-Listen kürzen (`capped_objects` für Listen von Objekten, `_capped` für die Unit-Listen). Test: `test_a_text_field_that_is_no_string_counts_as_missing` (`tests/test_agent_report.py:551-578`) erwartet für `{"mount": 5, …}` `mount=? value=50i` statt `mount=/ value=50i` (`:576`); neu daneben: eine Platte ganz ohne `mount` neben einer mit `mount="/"` → zwei Zeilen, `mount=?` und `mount=/`. Zuerst rot: beide auf HEAD.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_agent_resources_checker.py tests/test_checker_forecast.py
 Doku: docs/developer/monitoring.html:145 + EN `:145` (`mount` dann `?` statt `/`) · CHANGELOG.md (Fixed, umlautfrei: eine Platte ohne lesbaren Mountpoint schreibt der Agent-Push als `mount=?` wie der Checker; bisher landete sie in der Reihe von `/` und verfaelschte deren Prognose in `disk_forecast`)

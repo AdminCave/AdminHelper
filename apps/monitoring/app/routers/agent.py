@@ -19,6 +19,7 @@ from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import (
     EXCLUDED_FSTYPES,
+    NO_MOUNT,
     agent_number,
     capped_objects,
     entry_text,
@@ -108,7 +109,7 @@ def agent_report(
             for disk in capped_objects(resources.get("disks")):
                 if entry_text(disk, "fstype", "_real_") in EXCLUDED_FSTYPES:
                     continue
-                disk_tags = {**base_tags, "mount": entry_text(disk, "mount", "/")}
+                disk_tags = {**base_tags, "mount": entry_text(disk, "mount", NO_MOUNT)}
                 pct = agent_number(disk.get("percent"))
                 if pct is not None:
                     lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))

@@ -409,6 +409,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   beide dieselben Reihen, jede doppelt. Jetzt liest er sie ueber die `check_id` des Checks; nur `agent_resources`
   liest CPU, RAM, Platten und Temperaturen weiter je Server. Die Reihen trugen die `check_id` schon bisher, der
   Verlauf bleibt erhalten. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: eine Platte ohne lesbaren Mountpoint bekommt eine eigene Reihe (R-0753):** Der Agent-Push schreibt
+  eine Platte ohne `mount` (oder mit einem `mount`, der kein String ist) als `mount=?`, wie der Check
+  `agent_resources` sie schon nennt. Bisher landete sie mit `mount=/` in der Reihe der Root-Platte und verfaelschte
+  deren Prognose in `disk_forecast`. Bisherige Werte solcher Platten bleiben bis zum Ende der Retention in der Reihe
+  von `/`. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
   `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
   jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
