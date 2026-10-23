@@ -27,7 +27,7 @@ func BuildReport(serviceNames []string) map[string]any {
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
 // saved. It also returns the state to save once this report has been pushed. ctx ends the tool calls
-// of the docker, proxmox and zfs collectors.
+// of the docker, proxmox, zfs and smart collectors.
 func buildReportWithState(ctx context.Context, serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
 	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
 	resources := map[string]any{
@@ -93,7 +93,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, prev repor
 	if zfs := pluginCollectors.zfs(ctx); zfs != nil {
 		report["zfs"] = zfs
 	}
-	if smart, absent := pluginCollectors.smart(); smart != nil {
+	if smart, absent := pluginCollectors.smart(ctx); smart != nil {
 		report["smart"] = smart
 	} else {
 		report["smart_absent"] = map[string]string{"reason": absent}
@@ -111,7 +111,7 @@ var pluginCollectors = struct {
 	docker  func(context.Context) map[string]any
 	proxmox func(context.Context) map[string]any
 	zfs     func(context.Context) map[string]any
-	smart   func() ([]SmartDisk, string)
+	smart   func(context.Context) ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 
 // serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).

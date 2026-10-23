@@ -142,8 +142,10 @@ Orakel: property — ein Werkzeug-Aufruf endet spätestens am Deckel oder am End
 Dedup-Key: bug:agent:run.go:no-per-run-deadline
 HEAD: b1432223
 
-### T10 — Collector: Kontext in smartctl (R-0638)  [ ]
+### T10 — Collector: Kontext in smartctl (R-0638)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @4fe6c026 2026-10-23T10:26:36+02:00
+Review: approve (.ah-out/review/agent-run-ctx/T10.verdict.json)
 Änderung: `smartctlCLI.run` (`internal/monitor/smart.go:49-52`) nimmt den Kontext als ersten Parameter, die Initialisierung ist wieder direkt `runTimed`; `collectSmart(ctx)` (`:59`) und `querySmartDevice(ctx, …)` (`:130`) reichen ihn durch (`:66`, `:140`). Vor jedem Gerät prüft die Schleife `ctx.Err()` und fragt kein weiteres, sobald der Kontext zu Ende ist; die schon gelesenen Geräte bleiben im Ergebnis, ohne ein lesbares Gerät gilt wie heute `scan_failed`. `pluginCollectors.smart` (`report.go:109-114`) wird `func(context.Context) ([]SmartDisk, string)`, `buildReportWithState` gibt seinen Kontext. Tests: der Stub `smart_test.go:222` und seine Helfer, `report_test.go:30`, `:115`, `:128`. Neu `smart_test.go` `TestCollectSmartStopsAtTheEndOfTheContext`: der Scan liefert drei Geräte, der Stub bricht beim ersten Geräte-Aufruf den Kontext ab und liefert dessen Daten → genau zwei Aufrufe (Scan und ein Gerät), das Ergebnis enthält das erste Gerät. Zuerst rot: kompiliert vorher nicht; heute fragt die Schleife jedes Gerät mit 30 s Deckel (`smart.go:140`).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Smart
 Doku: keine (intern)

@@ -27,7 +27,7 @@ func stubReportHost(t *testing.T) {
 	pluginCollectors.docker = func(context.Context) map[string]any { return nil }
 	pluginCollectors.proxmox = func(context.Context) map[string]any { return nil }
 	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
-	pluginCollectors.smart = func() ([]SmartDisk, string) { return nil, "not_installed" }
+	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func() map[string]any { return map[string]any{} }
 	oldSystemState := systemStateCollector
@@ -136,6 +136,21 @@ func TestBuildReportSmartDisks(t *testing.T) {
 	}
 	if absent, ok := got["smart_absent"]; ok {
 		t.Errorf("smart_absent = %v, want none with disks", absent)
+	}
+}
+
+func TestBuildReportPassesItsContextToSmart(t *testing.T) {
+	type ctxKey struct{}
+	stubReportHost(t)
+	var got context.Context
+	pluginCollectors.smart = func(ctx context.Context) ([]SmartDisk, string) {
+		got = ctx
+		return nil, "not_installed"
+	}
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	if got == nil || got.Value(ctxKey{}) != t.Name() {
+		t.Errorf("smart collector got context %v, want the report's", got)
 	}
 }
 
