@@ -144,6 +144,105 @@ code=$(curl -k -s "${CERT[@]}" \
 [ "$code" = "401" ] && ok "smuggled X-Client-* neutralized on the SSE route (401)" \
     || bad "header smuggling not neutralized on SSE route: got '$code'"
 
+# ── 7b. The server takes the identity headers from the gateway alone ─────────
+# The gateway sets X-Client-Verify/X-Client-Cert from the verified cert (step 7); the server
+# reads them only from a request whose direct peer is an address of the compose service
+# gateway (app.core.identity). Every other service of the default network reaches server:8080
+# as well; the server itself stands in for one here, sending the headers the gateway would set
+# for the cert of step 2 (8b revokes it later). Enforced, a request without an identity gets the
+# 403 of the scope guard on /api/servers. Then the gateway is recreated, as an update does: it
+# may come back with a new address, and the server has to take its headers from the first
+# request on.
+
+# default_ip <service> — the address of the service's container in the project's default
+# network; empty when it is not running, has none there or a lookup fails.
+default_ip() {
+    local id net
+    id=$(e2e_dc ps -q "$1" 2>/dev/null)
+    net=$(docker network ls -q --no-trunc --filter "label=com.docker.compose.project=$E2E_PROJECT" \
+        --filter "label=com.docker.compose.network=default" 2>/dev/null)
+    [ -n "$id" ] && [ -n "$net" ] && [ "$(wc -l <<<"$net")" = 1 ] || return 0
+    docker inspect --format \
+        "{{range .NetworkSettings.Networks}}{{if eq .NetworkID \"$net\"}}{{.IPAddress}}{{end}}{{end}}" \
+        "$id" 2>/dev/null
+}
+
+# direct_servers <with|without> — "<status> <body>" of GET /api/servers with the JWT of step 5,
+# sent from the server container straight to server:8080; "with" adds X-Client-Verify: SUCCESS
+# and X-Client-Cert, the PEM on stdin escaped like nginx's $ssl_client_escaped_cert. Empty when
+# the exec fails. server:8080, not localhost: uvicorn takes the peer from X-Forwarded-For when
+# the request comes over loopback.
+direct_servers() {
+    e2e_dc exec -T server python -c '
+import sys, urllib.error, urllib.parse, urllib.request
+jwt, mode = sys.argv[1:3]
+headers = {"Authorization": "Bearer " + jwt}
+if mode == "with":
+    headers["X-Client-Verify"] = "SUCCESS"
+    headers["X-Client-Cert"] = urllib.parse.quote(sys.stdin.read())
+req = urllib.request.Request("http://server:8080/api/servers", headers=headers)
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        status, body = resp.status, resp.read()
+except urllib.error.HTTPError as e:
+    status, body = e.code, e.read()
+print(status, body.decode("ascii", "backslashreplace"))' "$JWT" "$1" 2>/dev/null
+}
+
+# via_gateway — the status of the same GET with the cert of step 2 and the JWT through the
+# gateway, as in step 6.
+via_gateway() {
+    curl -k -s "${CERT[@]}" -H "Authorization: Bearer $JWT" \
+        -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000
+}
+
+identity_from_gateway() {
+    local pem forged bare code old new deadline same=""
+
+    pem=$(openssl x509 -in "$E2E_WORK/client-fullchain.pem" 2>/dev/null) && [ -n "$pem" ] \
+        || { bad "identity headers: no certificate in client-fullchain.pem"; return; }
+
+    # a. The gateway's headers straight to server:8080: no identity, the 403.
+    # b. Counter-check: the same request without them reaches the server and gets the same 403,
+    #    so (a) rests on nothing but the identity the server did not take.
+    forged=$(direct_servers with <<<"$pem")
+    bare=$(direct_servers without)
+    [ "${forged%% *}" = 403 ] && [ "$forged" = "$bare" ] \
+        && ok "identity headers straight to server:8080, not from the gateway: no identity (403 as without them)" \
+        || bad "identity headers straight to server:8080: got '$forged', expected 403 as without them ('$bare')"
+    [ "${bare%% *}" = 403 ] && ok "counter-check: server:8080 without the headers -> 403 (reached, no identity)" \
+        || bad "server:8080 without the headers: expected 403, got '$bare'"
+
+    # c. The same cert through the gateway -> 200.
+    code=$(via_gateway)
+    [ "$code" = 200 ] && ok "the same cert + JWT through the gateway -> 200" \
+        || bad "cert + JWT through the gateway: expected 200, got '$code'"
+
+    # d. The gateway recreated (no build, nothing else touched); once it rejects a certless
+    #    request again as in step 3, the very next request with the cert -> 200.
+    old=$(default_ip gateway)
+    if ! e2e_dc up -d --no-deps --force-recreate gateway >"$E2E_WORK/gateway-recreate.log" 2>&1; then
+        bad "recreating the gateway failed"; tail -20 "$E2E_WORK/gateway-recreate.log"; return
+    fi
+    deadline=$((SECONDS + 60))
+    while :; do
+        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/auth/me" 2>/dev/null || echo 000)
+        [ "$code" != 400 ] || break
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            bad "the recreated gateway did not reject a certless request with 400 within 60 s (last '$code')"
+            e2e_dc logs --tail 20 gateway; return
+        fi
+        sleep 1
+    done
+    code=$(via_gateway)
+    new=$(default_ip gateway)
+    [ "$old" != "$new" ] || same=" (unchanged, so the server needed no fresh lookup)"
+    echo "  info gateway address in the default network before/after the recreate: '$old' -> '$new'$same"
+    [ "$code" = 200 ] && ok "right after the gateway was recreated: cert + JWT through it -> 200" \
+        || bad "right after the gateway was recreated: cert + JWT through it expected 200, got '$code'"
+}
+identity_from_gateway
+
 # ── 8. /ca/renew through the gateway — the real ssl_client_escaped_cert path (6.48)
 # The renew endpoint takes the gateway-verified current cert (not a fresh token), so
 # this exercises the header/cert data path the enroll test doesn't. A fresh CSR reusing
@@ -927,19 +1026,6 @@ compose_limits
 # checks run; a server that never takes the gateway's header fails at that deadline.
 CERT4=(--cert "$E2E_WORK/client4-fullchain.pem" --key "$E2E_WORK/client4.key")
 GATEWAY_IP=""   # the gateway's address in the project's default network
-
-# default_ip <service> — the address of the service's container in the project's default
-# network; empty when it is not running, has none there or a lookup fails.
-default_ip() {
-    local id net
-    id=$(e2e_dc ps -q "$1" 2>/dev/null)
-    net=$(docker network ls -q --no-trunc --filter "label=com.docker.compose.project=$E2E_PROJECT" \
-        --filter "label=com.docker.compose.network=default" 2>/dev/null)
-    [ -n "$id" ] && [ -n "$net" ] && [ "$(wc -l <<<"$net")" = 1 ] || return 0
-    docker inspect --format \
-        "{{range .NetworkSettings.Networks}}{{if eq .NetworkID \"$net\"}}{{.IPAddress}}{{end}}{{end}}" \
-        "$id" 2>/dev/null
-}
 
 # audit_last <action> — "<id> <source_ip>" of the newest audit_log row with that action, the
 # source_ip empty when the row has none; empty without such a row or when psql fails.

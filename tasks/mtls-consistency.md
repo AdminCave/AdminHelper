@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # mTLS: `MTLS_ENFORCE` in Server und Gateway gleich, Identitäts-Header nur vom Gateway — Task-Ledger
-Status: aktiv · Branch: feature/mtls-consistency · Review: pro Task
+Status: bereit · Branch: feature/mtls-consistency · Review: pro Task
 Spec: docs/features/mtls-consistency.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --enforce — der Diff ändert, wann der Server eine Zertifikats-Identität annimmt (`apps/server/app/core/identity.py`, T2) und wie er `MTLS_ENFORCE` liest (`apps/server/app/core/config.py`, T1); jede Anfrage mit Client-Zertifikat hängt daran. `linux-full` im Sammellauf über `main`: `integration-stack` (Stack mit `MTLS_ENFORCE=true`, Zertifikats-Wege über das Gateway in den Schritten 4–8b, der neue Schritt aus T3 mit dem Neuanlegen des Gateways), `sse-push` (SSE mit Zertifikat), `upgrade-path`; auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/mtls-consistency`. `scenario` vor dem Merge (ask-first): nur er fährt einen echten Agent von einem zweiten Host mit Zertifikat über das Gateway unter `MTLS_ENFORCE=true` (Provisionierung, Metriken, Konfiguration) gegen die Prüfung der Gegenstelle. Kein `windows`: kein Agent- und kein Desktop-Code; deren CI-Jobs laufen im PR ohnehin. Kein Compose-, Gateway- oder PKI-Diff.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -55,8 +55,10 @@ Abhängt von: feature/compose-hardening T11 auf `main` (Namens-Resolver in `apps
 Beweis: Code-Lesung apps/server/app/core/identity.py:78-105, docker-compose.yml:37-131 (`server` ohne `networks:`), :449-456
 HEAD: 53a7dbc5
 
-### T3 — Stack-Prüfung: Identitäts-Header nur über das Gateway  [ ]
+### T3 — Stack-Prüfung: Identitäts-Header nur über das Gateway  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @25ce52e5 2026-10-23T17:28:13+02:00
+Review: approve (.ah-out/review/mtls-consistency/T3.verdict.json)
 Änderung: Neuer Schritt `7b` nach Schritt 7 (`scripts/tests/integration_stack_test.sh:129-145`) und vor Schritt 8 (das Zertifikat aus Schritt 2 gilt dort noch; Schritt 8b widerruft das Gerät später). (a) Aus dem server-Container (`e2e_dc exec -T server python -c …`, `urllib.request`) an `http://server:8080/api/servers` mit `Authorization: Bearer $JWT` (Schritt 5), `X-Client-Verify: SUCCESS` und `X-Client-Cert` = das erste Zertifikat aus `$E2E_WORK/client-fullchain.pem` (`openssl x509`), URL-kodiert mit `urllib.parse.quote` wie `$ssl_client_escaped_cert` → 403: der Stack läuft mit `MTLS_ENFORCE=true` (`:38`), die Gegenstelle ist nicht das Gateway. (b) Gegenprobe derselbe Weg ohne die beiden Header → 403 (der Direktweg erreicht den Server, nur die Identität fehlt), damit (a) nicht an etwas anderem hängt. (c) Gegenprobe über das Gateway wie Schritt 6 (`:124-127`) → 200. (d) Adresse des Containers `gateway` im Default-Netz merken (`docker inspect`), `e2e_dc up -d --no-deps --force-recreate gateway` (ohne `--build`), warten, bis `:443` certless wieder 400 liefert (wie Schritt 3, höchstens 60 s), dann sofort die Anfrage aus (c) → 200; alte und neue Adresse als Info-Zeile im Log. Auf HEAD ist (a) 200 — der Schritt kann fallen. Den echten Lauf fährt die Session (Dispatch des `integration-stack`-Jobs auf dem Branch oder `/test` in der Lane); seine Summary-Zeile `integration_stack_test: N passed, 0 failed` kommt in den PR-Text.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
