@@ -189,7 +189,8 @@ Orakel: contract — Eintrag gegen `fit_window_size` und das UI-Label
 Dedup-Key: bug:docs:changelog:r0659-wording
 HEAD: b25c65a6
 
-### T15 — Desktop: 403 auf das Visitor-Bundle stoppt frpc wie 404 (R-0453, optional)  [?] (Kevin: Soll der Desktop frpc stoppen, wenn der Server das Visitor-Bundle mit 403 verweigert? Varianten a/b/c in der Spec, offene Frage 1; Empfehlung: a, 403 wie 404)
+### T15 — Desktop: 403 auf das Visitor-Bundle stoppt frpc wie 404 (R-0453, optional)  [ ]
+Entscheidung: Kevin 2026-10-23: (a) 403 wie 404, frpc stoppt; nur frpc.rs, kein IPC-Vertrag.
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
 Änderung: Variante (a). `carries_bundle` (`apps/desktop/src-tauri/src/frpc.rs:277-287`) gibt für `FORBIDDEN` wie für `NOT_FOUND` `Ok(false)` zurück; damit führt der Abgleich auf `stopped` (kein neues Ergebnis, kein IPC-Vertrag: `apps/desktop/src-tauri/src/models.rs:180-187`, UI `apps/desktop/ui/src/lib/stores/tunnel.ts:216-227`). Doc-Kommentare `frpc.rs:271-276` und `:1186-1189` mitziehen (403: der Server verweigert dem Gerät oder Benutzer den Zugang, etwa nach Widerruf; 401 trotz erneuerter Sitzung bleibt ein Fehler). Tests: neuer `refresh_403_means_no_tunnels` (`carries_bundle(FORBIDDEN)` → `Ok(false)`), in `refresh_500_and_every_other_failure_is_an_error` (`:2045-2049`) fällt 403 aus der Liste. Zuerst rot: der neue Test auf HEAD. Doku: der Satz zu `:259` aus T7 nennt 403 bei `stopped`. CHANGELOG (Changed, umlautfrei): Verweigert der Server dem Desktop das Visitor-Bundle (403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers), stoppt der Desktop seinen Tunnel beim naechsten Abgleich.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc::tests::refresh_
