@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Nicht-Admins: Tunnel-Zuordnungen für den Desktop, Hinweisseite im Web-Panel — Task-Ledger
-Status: aktiv · Branch: feature/non-admin-access · Review: pro Task
+Status: bereit · Branch: feature/non-admin-access · Review: pro Task
 Spec: docs/features/non-admin-access.md (Roadmap R-0484, R-0721)
 Heavy: linux-full — T2 ändert Autorisierung und Antwort einer Server-Route im frp-Modul (`GET /api/frp/tunnels` für Nicht-Admins); der Sammellauf über `main` fährt die Server-API (`run.sh integration`, Schemathesis) und die Desktop-Tunnel-Journeys, die die Route als Admin lesen (`apps/desktop/e2e/test/lib/live.js:254-257`). Die Web-Journey `authz.spec.ts` (T5) läuft schon in der PR-CI (`frontend-e2e`). Kein `scenario`: FRP-Konfiguration, Visitor-TOML, Provisionierung und Datenpfad bleiben unverändert, der Desktop-Code unter Variante A auch (T3, T4 ändern nur Kommentare und Doku). Kein `windows`: kein Plattform-Code. Wählt Kevin Variante B, ändert T3 den Abruf in `tunnel.rs`; dann prüft die Session die Zeile neu
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -217,8 +217,10 @@ Doku: `CHANGELOG.md` (Changed, umlautfrei: eine unbekannte Adresse im Web-Panel 
 „nicht gefunden“ mit Link zur Benutzerverwaltung)
 Abhängt von: T5
 
-### T7 — Funde aus tester und Branch-Review: Admin-Liste mit gesperrten Tunneln, `frp_config_id` grenzt ein, README-Zeile  [ ]
+### T7 — Funde aus tester und Branch-Review: Admin-Liste mit gesperrten Tunneln, `frp_config_id` grenzt ein, README-Zeile  [x]
 Komponente: server · Dateien: apps/server/tests/test_frp_tunnel_access.py, README.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8777fef6 2026-10-23T10:00:40+02:00
+Review: approve (.ah-out/review/non-admin-access/T7.verdict.json)
 Änderung (Funde vom 2026-10-23, kein Produktcode):
 - tester (wichtig): `test_admin_lists_every_tunnel_in_the_full_shape_without_secret` nutzt `more_tunnels` statt
   `tunnels` und erwartet die IDs `{t-a, t-b, t-off, t-web}`, mit `?server_id=srv-a` genau `{t-a, t-off, t-web}`.

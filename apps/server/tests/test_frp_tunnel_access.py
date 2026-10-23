@@ -128,20 +128,21 @@ def _stored_tunnels(db) -> dict[str, dict]:
 
 
 def test_admin_lists_every_tunnel_in_the_full_shape_without_secret(
-    test_client, db_session, admin_user, tunnels
+    test_client, db_session, admin_user, more_tunnels
 ):
+    # Disabled ones included: the desktop's tunnel tab shows them to admins.
     h = _login(test_client, "admin", "adminpass")
     r = test_client.get("/api/frp/tunnels", headers=h)
     assert r.status_code == 200, r.text
     listed = r.json()
-    assert {t["id"] for t in listed} == {"t-a", "t-b"}
+    assert {t["id"] for t in listed} == {"t-a", "t-b", "t-off", "t-web"}
     for t in listed:
         assert set(t) == _FULL_FIELDS, t["id"]
         assert t["secretKey"] is None, t["id"]
 
     only_a = test_client.get("/api/frp/tunnels", params={"server_id": "srv-a"}, headers=h)
     assert only_a.status_code == 200, only_a.text
-    assert [t["id"] for t in only_a.json()] == ["t-a"]
+    assert sorted(t["id"] for t in only_a.json()) == ["t-a", "t-off", "t-web"]
 
 
 _STCP_BODY_FOR_SRV_A = {
@@ -214,6 +215,7 @@ def test_non_admin_without_assigned_server_lists_nothing(
     [
         pytest.param({"server_id": "srv-b"}, set(), id="foreign-server"),
         pytest.param({"frp_config_id": "cfg-unknown"}, set(), id="unknown-config"),
+        pytest.param({"frp_config_id": "cfg-1"}, {"t-a", "t-web"}, id="own-config"),
         pytest.param({"server_id": "srv-a"}, {"t-a", "t-web"}, id="own-server"),
     ],
 )
