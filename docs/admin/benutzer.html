@@ -55,7 +55,7 @@
             <li>Username und Passwort vergeben; Passwort wird mit bcrypt gehasht</li>
             <li>Rolle wählen – Admins sehen und bearbeiten alles</li>
           </ol>
-          <p>Admins können jederzeit fremde Passwörter zurücksetzen. Normale Benutzer können ihr eigenes Passwort in den Einstellungen ändern.</p>
+          <p>Admins können jederzeit fremde Passwörter zurücksetzen. Ändert ein Admin im Web-Panel sein eigenes Passwort, beendet der Server alle Sitzungen des Kontos, und das Panel meldet ihn sofort mit einem Hinweis ab; stuft er sich selbst herab, verschwinden die Admin-Seiten sofort. Normale Benutzer können ihr eigenes Passwort in den Einstellungen ändern.</p>
           <p>Die <strong>Zuweisung von Servern zu einem Benutzer</strong> bleibt im Web-Panel: sie wird direkt im Benutzer-Dialog gepflegt (steuert, welche Server der Nutzer sieht). Die Server-Einträge selbst werden im Desktop-Client (Server-Workspace, <em>Infrastruktur</em>) angelegt und bearbeitet.</p>
 
           <h2>Login-Flow</h2>

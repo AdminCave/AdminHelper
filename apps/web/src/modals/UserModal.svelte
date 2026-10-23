@@ -9,6 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
   import { users } from '$lib/stores/users';
+  import { auth, currentUser } from '$lib/stores/auth';
   import * as serversApi from '$lib/api/servers';
   import { showToast, showError } from '$lib/stores/notifications';
   import type { Server, User, UserUpdate } from '$lib/api/types';
@@ -74,7 +75,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
           server_ids,
         };
         if (password) payload.password = password;
-        await users.update(editing.id, payload);
+        const ownPassword = !!password && editing.id === $currentUser?.id;
+        const updated = await users.update(editing.id, payload);
+        if (ownPassword) {
+          // A new password ends every session of the account on the server (tokens_valid_after);
+          // logging out now says so, instead of a "Session expired" at the next click.
+          onClose();
+          await auth.logout();
+          showToast($t('toast.user.ownPasswordChanged'), 'info', 8000);
+          return;
+        }
+        auth.applySelfUpdate(updated);
         showToast($t('toast.user.saved'));
       } else {
         if (!password) {

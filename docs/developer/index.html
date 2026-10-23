@@ -67,6 +67,7 @@
 │   ├── monitoring/       Monitoring-Service (FastAPI, eigene DB)
 │   ├── ca-issuer/        PKI-Enrollment-Plane (FastAPI, eigenes mTLS)
 │   ├── gateway/          nginx-Reverse-Proxy (TLS/mTLS/Header, Ratelimit)
+│   ├── frps/             frps-Image (FRP-Server unter einem Supervisor)
 │   ├── agent/            Unified Go-Agent (Linux + Windows)
 │   │   ├── cmd/          Cobra-Commands
 │   │   ├── internal/     Collectors, FRP-Client, HTTP
@@ -85,15 +86,17 @@
           <h2>Lokale Entwicklung</h2>
           <p>Jedes Unterprojekt ist eigenständig, kein Monorepo-Toolchain:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Server
-cd apps/server && uv sync && uv run uvicorn app.main:app --reload --port 8080
+<pre><code># Server (braucht Postgres; DATABASE_URL und Erstanmeldung: siehe DEVELOPMENT.md)
+cd apps/server && python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # Web-Panel (mit Proxy zum laufenden Server)
 cd apps/web && npm ci && npm run dev
 
 # Desktop-Client (startet Tauri-Dev mit Auto-Reload)
 cd apps/desktop/ui && npm ci
-cd ../desktop && cargo tauri dev
+cd ../src-tauri && cargo tauri dev
 
 # Go-Agent
 cd apps/agent && go run ./cmd/adminhelper-agent version</code></pre>

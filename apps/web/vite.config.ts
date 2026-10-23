@@ -13,7 +13,9 @@ import path from 'node:path';
 // is deliberately absent: it's ignored in a meta CSP and belongs in the gateway header.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'", // the Vite build emits no inline scripts (verified)
+  // No inline scripts: neither the Vite bundle (verified) nor index.html, whose theme init
+  // before the first paint is the file public/theme-init.js.
+  "script-src 'self'",
   "style-src 'self' 'unsafe-inline'", // components use inline style= attributes
   "img-src 'self' data:",
   "font-src 'self'",
@@ -56,9 +58,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/api': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/api': 'http://127.0.0.1:8080',
     },
+  },
+  // `vite preview` (Playwright project chromium-build) serves the build with the CSP as a
+  // header, like the server (script-src 'self' there too, apps/server/app/main.py). A
+  // header covers the whole document; the meta element above only covers what follows it
+  // before </head> (CSP3 §3.3), so an inline script ahead of it would pass unnoticed.
+  preview: {
+    headers: { 'Content-Security-Policy': CSP },
   },
 });

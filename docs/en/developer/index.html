@@ -49,6 +49,7 @@
 │   ├── monitoring/   Check-execution service (own DB)
 │   ├── ca-issuer/    PKI enrollment plane (FastAPI, own mTLS)
 │   ├── gateway/      nginx reverse proxy (TLS/mTLS/headers, rate limit)
+│   ├── frps/         frps image (FRP server under a supervisor)
 │   ├── agent/        Unified Go agent (Linux + Windows)
 │   ├── web/          Svelte 5 web admin panel
 │   └── desktop/      Tauri client (Rust backend + Svelte UI)
@@ -58,23 +59,20 @@
 
           <h2>Local Development</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Server
-cd apps/server
-uv sync
-uv run uvicorn app.main:app --reload
+<pre><code># Server (needs Postgres; DATABASE_URL and first login: see DEVELOPMENT.md)
+cd apps/server &amp;&amp; python3 -m venv .venv &amp;&amp; . .venv/bin/activate
+pip install -r requirements-dev.txt
+DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
-# Web panel
-cd apps/web
-npm install
-npm run dev
+# Web panel (with a proxy to the running server)
+cd apps/web &amp;&amp; npm ci &amp;&amp; npm run dev
 
-# Desktop
-cd apps/desktop/ui &amp;&amp; npm install
-cd ../desktop  &amp;&amp; cargo tauri dev
+# Desktop client (starts Tauri dev with auto-reload)
+cd apps/desktop/ui &amp;&amp; npm ci
+cd ../src-tauri &amp;&amp; cargo tauri dev
 
 # Go agent
-cd apps/agent
-go run ./cmd/adminhelper-agent run</code></pre>
+cd apps/agent &amp;&amp; go run ./cmd/adminhelper-agent version</code></pre>
 
           <h2>Unified PKI &amp; mTLS</h2>
           <p>AdminHelper runs its <strong>own internal PKI</strong> as the foundation for mTLS across all entrances. The full, canonical model (decisions D1–D11, trust, lifecycle, backup) is in <a href="../../adr/0001-unified-pki-and-secure-deployment.md">ADR 0001</a>; the implementation status in <a href="../../adr/0002-phase-a-task-plan.md">ADR 0002</a>. In brief:</p>
