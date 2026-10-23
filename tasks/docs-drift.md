@@ -92,8 +92,10 @@ Dedup-Key: bug:docs:troubleshooting:nonexistent-agent-flags
 HEAD: e2304a8b
 Semantik: `docs/admin/agent-deployment.html:195` — „sudo adminhelper-agent run --once          # ein Durchlauf von Hand: Sync + Push“; `apps/agent/cmd/adminhelper-agent/main.go:35-36` — `--log-level`, „Log-Level: debug, info, warn, error“
 
-### T6 — Gateway: Kommentare nennen den mTLS-Default richtig (R-0387)  [ ]
+### T6 — Gateway: Kommentare nennen den mTLS-Default richtig (R-0387)  [x]
 Komponente: scripts · Dateien: apps/gateway/nginx.conf, apps/gateway/docker-entrypoint.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @35bdf039 2026-10-23T06:33:47+02:00
+Review: approve (.ah-out/review/docs-drift/T6.verdict.json)
 Änderung: Nur Kommentare. (1) `apps/gateway/nginx.conf:73-76`: der Modus kommt aus `MTLS_ENFORCE` (A8); `on` = CERT_REQUIRED ist der Default (`MTLS_ENFORCE` leer, `true` oder ein unbekannter Wert), `optional` nur mit `MTLS_ENFORCE=false`; die App entscheidet in beiden Fällen je Route über den Header. „permissive rollout (default)“ und „flipping is an operator action once every client holds a cert“ entfallen. (2) `apps/gateway/docker-entrypoint.sh:32-33`: statt „install.sh flips it to false only for the bootstrap window …, then back“: `scripts/install.sh` lässt den Default; nur `--permissive` schreibt `MTLS_ENFORCE=false` in die `.env` (`scripts/install.sh:24`, `:230`). Der Block `case … esac` (`:37-53`) bleibt Byte für Byte, `scripts/tests/gateway_mtls_test.sh` liest ihn per `awk`. Keine Zeile außerhalb der Kommentare; nicht `nginx.conf:60-70` (feature/compose-hardening fügt dort `limit_conn_zone` ein).
 Verify: bash scripts/dev/verify.sh scripts --strict -- gateway_mtls_test
 Doku: keine (Kommentare)
