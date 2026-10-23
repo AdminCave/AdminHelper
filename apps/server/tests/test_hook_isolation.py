@@ -14,7 +14,28 @@ no unauthenticated RCE). Fix = HONEST posture + partial hardening:
   code made).
 """
 
+import os
+
 from app.modules.hooks.script_runner import run_hook_script
+
+_PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")
+
+
+def _unset_server_env(monkeypatch, *names):
+    # The setenv seed lets undo() restore the prior state, set or not: delenv alone raises on an
+    # unset variable, and with raising=False it records nothing to undo.
+    for name in names:
+        monkeypatch.setenv(name, os.environ.get(name, ""))
+        monkeypatch.delenv(name)
+
+
+def _worker_env(*names):
+    script = "import os\n" + "".join(
+        f"log({name!r} + '=' + os.environ.get({name!r}, '__NONE__'))\n" for name in names
+    )
+    res = run_hook_script(script, "webhook", {})
+    assert res["success"] is True, res
+    return dict(line.split("=", 1) for line in res["logs"])
 
 
 def test_admin_password_not_inherited_by_worker():
@@ -130,6 +151,35 @@ def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
     assert "HOME=__NONE__" not in joined, res
     assert "LANG=__NONE__" not in joined, res
     assert "PROXY=http://proxy.example:3128" in joined, res
+
+
+def test_hook_worker_env_falls_back_for_home_and_lang(monkeypatch):
+    # docs/developer/hooks.html: HOME falls back to /tmp and LANG to C.UTF-8 when the server has
+    # neither.
+    _unset_server_env(monkeypatch, "HOME", "LANG")
+    assert _worker_env("HOME", "LANG") == {"HOME": "/tmp", "LANG": "C.UTF-8"}
+
+
+def test_hook_worker_env_forwards_lowercase_proxy_vars_as_set(monkeypatch):
+    _unset_server_env(monkeypatch, *_PROXY_VARS)
+    monkeypatch.setenv("http_proxy", "http://192.0.2.10:3128")
+    monkeypatch.setenv("https_proxy", "http://192.0.2.11:3128")
+    monkeypatch.setenv("no_proxy", "hook-target.example")
+    assert _worker_env(*_PROXY_VARS) == {
+        "HTTP_PROXY": "__NONE__",
+        "HTTPS_PROXY": "__NONE__",
+        "NO_PROXY": "__NONE__",
+        "http_proxy": "http://192.0.2.10:3128",
+        "https_proxy": "http://192.0.2.11:3128",
+        "no_proxy": "hook-target.example",
+    }
+
+
+def test_hook_worker_env_leaves_out_proxy_vars_the_server_lacks(monkeypatch):
+    # docs/developer/hooks.html: a proxy variable reaches the worker only if the server has it,
+    # not as an empty value.
+    _unset_server_env(monkeypatch, *_PROXY_VARS)
+    assert _worker_env(*_PROXY_VARS) == dict.fromkeys(_PROXY_VARS, "__NONE__")
 
 
 def test_hook_semaphore_non_blocking_returns_busy_immediately():

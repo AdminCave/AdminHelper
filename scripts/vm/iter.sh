@@ -8,14 +8,18 @@
 # cargo/npm rebuild incrementally), and pulls the box's .ah-out back on every
 # run. Minutes, not ~40. On failure the box is kept for `vm.py ssh`.
 #
-#   bash scripts/vm/iter.sh <lint|unit|quick|integration|e2e|all> \
-#        [--strict] [--only <keys…>] [--step <name>]
+#   bash scripts/vm/iter.sh [--slot desktop|gui] <lint|unit|quick|integration|e2e|all> \
+#        [--strict] [--only <keys…>] [--step <name>] [--part <gui|rest>]
 #       run run.sh <layer> on the warm full box, forwarding its flags (AH_ONLY=
 #       "server web" is the env form of --only — the per-task fast loop)
-#   bash scripts/vm/iter.sh --cmd '<command>'
+#   bash scripts/vm/iter.sh [--slot desktop|gui] --cmd '<command>'
 #       sync + run an arbitrary command on the warm full box (a task's Verify:)
 #   bash scripts/vm/iter.sh --desktop [spec ...]
 #       drive the Tauri GUI on the warm desktop box against the warm server box
+#
+# --slot (leading, default desktop) picks the warm box: `desktop` is the fast
+# loop's box, `gui` the lane's second full box (warm.sh gui) that heavy.sh runs
+# the GUI part of `all` on. VMID, name and frist all come from that slot.
 #
 # AH_NO_SYNC=1  -> drop --sync (re-run the already-synced tree, e.g. a flaky retry).
 # AH_DRY_RUN=1  -> LAYER FORM ONLY: print the remote command and exit, WITHOUT
@@ -29,6 +33,17 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/vm/lib.sh
 . "$DIR/lib.sh"
 cd "$VM_ROOT" || exit 1
+# Read before vm_load_env, as every refusal here is: a wrong slot must reach
+# neither the hypervisor nor a box. --desktop has no choice to make — the pond
+# warm.sh builds is the server box and the desktop slot.
+SLOT=desktop
+if [ "${1:-}" = "--slot" ]; then
+  case "${2:-}" in
+    desktop|gui) SLOT="$2"; shift 2 ;;
+    *) echo "invalid slot '${2:-}' (desktop|gui)"; exit 2 ;;
+  esac
+  [ "${1:-}" != "--desktop" ] || { echo "--slot does not apply to --desktop (the pond uses the desktop slot)"; exit 2; }
+fi
 # A dry run never reaches the hypervisor, so it must not demand a token either:
 # that is what lets the argument handling be tested off this box — in CI, in a
 # fresh clone, anywhere without the gitignored provider env.
@@ -45,19 +60,19 @@ OUT_DIR="${AH_OUT_DIR:-.ah-out}"
 # watching a 40-minute layer should not have to guess whether it is alive.
 BOX_LOG="$OUT_DIR/last.out.log"
 # --extend renews with the frist the box was WARMED with (warm.sh records it as
-# desktop_ttl), not with this script's own default: a box warmed for 20 minutes
+# <slot>_ttl), not with this script's own default: a box warmed for 20 minutes
 # must not turn into an 8-hour box because someone ran a lint on it (R-0049).
 # An explicit AH_WARM_TTL still wins; a warm.env from before the key existed
 # keeps the old 8h renewal.
-TTL="${AH_WARM_TTL:-$(warm_get desktop_ttl)}"; TTL="${TTL:-8h}"
+TTL="${AH_WARM_TTL:-$(warm_get "${SLOT}_ttl")}"; TTL="${TTL:-8h}"
 
 # The box does not rely on a .git of its own: from the main checkout the sync
 # carries the repository along, from a worktree only a pointer file whose gitdir
 # does not exist on the box — and the box needs no repository (Kevin, 2026-09-25).
-# run.sh asks the box's git first and falls back on these two values
-# (evidence_field); without them a box synced from a worktree returns an artifact
-# with an empty head and tree_hash. Computed here, over the tree that is about to
-# be synced.
+# run.sh takes these two values before anything the box's git answers
+# (evidence_field): the box's own hash, taken over the tree the sync shaped,
+# never matches this one, and from a worktree the box answers nothing at all.
+# Computed here, over the tree that is about to be synced.
 #
 # Nothing is passed under AH_NO_SYNC: the box then keeps an OLDER tree, and
 # labelling it with today's hash would be a run claiming a tree it never saw.
@@ -92,7 +107,7 @@ SYNC=(--sync); [ "${AH_NO_SYNC:-0}" = 1 ] && SYNC=()
 box_run() {
   local vmid="$1" tmo="$2" name rc; shift 2
   local expect=()
-  name="$(warm_get desktop_name)"
+  name="$(warm_get "${SLOT}_name")"
   [ -z "$name" ] || expect=(--expect-name "$name")
   vm_py run "$vmid" "${SYNC[@]}" --timeout "$tmo" --out "$OUT_DIR" --extend "$TTL" "${expect[@]}" \
     -- "$@" 2>&1 | tee "$BOX_LOG"
@@ -100,7 +115,7 @@ box_run() {
   # vm.py's own refusal of this VMID, on the line it writes to stderr — not any line
   # of a suite's output that happens to end the same way.
   if [ "$rc" = 2 ] && [ -n "$name" ] && grep -qE "^vm\.py: $vmid is .* — refusing\$" "$BOX_LOG"; then
-    echo "  ✗ box $vmid is not the warm slot's box $name now — nothing was synced; next: bash scripts/vm/warm.sh desktop"
+    echo "  ✗ box $vmid is not the warm slot's box $name now — nothing was synced; next: bash scripts/vm/warm.sh $SLOT"
     exit "$rc"
   fi
   return "$rc"
@@ -137,9 +152,9 @@ elif [ "${1:-}" = "--cmd" ]; then
   shift
   CMD="${*:-}"
   [ -n "$CMD" ] || { echo "usage: iter.sh --cmd '<command>'"; exit 2; }
-  bash "$DIR/warm.sh" desktop >/dev/null || exit 1
-  BOX="$(warm_get desktop)"
-  [ -n "$BOX" ] || { echo "no warm box (run: warm.sh desktop)"; exit 1; }
+  bash "$DIR/warm.sh" "$SLOT" >/dev/null || exit 1
+  BOX="$(warm_get "$SLOT")"
+  [ -n "$BOX" ] || { echo "no warm box (run: warm.sh $SLOT)"; exit 1; }
   echo "== cmd on warm box $BOX: $CMD =="
   # run.sh's python suites install into the box venv (AH_VENV, default ~/.cache/ah-venv)
   # and only run.sh activates it — bridge it here so a task Verify like
@@ -155,7 +170,7 @@ elif [ "${1:-}" = "--cmd" ]; then
 else
   LAYER="${1:-quick}"
   [ $# -gt 0 ] && shift
-  # Forward run.sh's flags (--strict, --only, --step) instead of dropping them:
+  # Forward run.sh's flags (--strict, --only, --step, --part) instead of dropping them:
   # `iter.sh quick --strict` used to run the box suite WITHOUT the strict mode
   # and still report green — the failure mode stage 1 exists to remove.
   # Each argument is shell-quoted because the result is embedded in the remote
@@ -164,7 +179,10 @@ else
   while [ $# -gt 0 ]; do
     case "$1" in
       --strict|--only|--step) ;;
-      --*) echo "unsupported flag for the box run: $1 (use --strict, --only, --step)"; exit 2 ;;
+      # run.sh reads an empty --part as no part and runs the whole layer: a run
+      # meant for one box's part would run both parts there, without a word.
+      --part) [ -n "${2:-}" ] || { echo "--part needs gui or rest"; exit 2; } ;;
+      --*) echo "unsupported flag for the box run: $1 (use --strict, --only, --step, --part)"; exit 2 ;;
     esac
     FLAGS="$FLAGS $(printf '%q' "$1")"; FLAGS_SHOWN="$FLAGS_SHOWN $1"; shift
   done
@@ -205,9 +223,9 @@ else
   if [ "${AH_DRY_RUN:-0}" = "1" ]; then
     echo "$ENVS bash scripts/tests/run.sh $LAYER$FLAGS"; exit 0
   fi
-  bash "$DIR/warm.sh" desktop >/dev/null || exit 1
-  BOX="$(warm_get desktop)"
-  [ -n "$BOX" ] || { echo "no warm box (run: warm.sh desktop)"; exit 1; }
+  bash "$DIR/warm.sh" "$SLOT" >/dev/null || exit 1
+  BOX="$(warm_get "$SLOT")"
+  [ -n "$BOX" ] || { echo "no warm box (run: warm.sh $SLOT)"; exit 1; }
   echo "== run.sh $LAYER$FLAGS_SHOWN on warm box $BOX${AH_ONLY:+ (AH_ONLY=$AH_ONLY)} =="
   # 'all' = integration + GUI-e2e + unit + lint in one go. Green runs on a warm
   # box took 84-98 min lately, and the weekly run of 2026-10-21 went past 6000s

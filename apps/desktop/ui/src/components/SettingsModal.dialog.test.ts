@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   isDeviceEnrolled: vi.fn(async () => true),
   deviceIdentity: vi.fn(async () => null),
   resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
+  resetServerCertPin: vi.fn(async (_serverUrl: string) => {}),
 }));
 
 // Everything but the calls under test fails loudly, as in SettingsModal.enroll.test.ts.
@@ -28,6 +29,7 @@ vi.mock('$lib/bridge', () => {
     isDeviceEnrolled: h.isDeviceEnrolled,
     deviceIdentity: h.deviceIdentity,
     resetDeviceIdentity: h.resetDeviceIdentity,
+    resetServerCertPin: h.resetServerCertPin,
   };
   const passthrough = new Set(['then', '__esModule', 'default']);
   return new Proxy(
@@ -90,9 +92,9 @@ function open(): { settings: HTMLElement; layer: HTMLElement } {
   return { settings, layer };
 }
 
-async function resetButton(settings: HTMLElement): Promise<HTMLElement> {
+async function resetButton(settings: HTMLElement, action = 'device-reset'): Promise<HTMLElement> {
   return waitFor(() => {
-    const found = settings.querySelector<HTMLElement>('[data-action="device-reset"]');
+    const found = settings.querySelector<HTMLElement>(`[data-action="${action}"]`);
     expect(found).not.toBeNull();
     return found!;
   });
@@ -103,8 +105,12 @@ function question(layer: HTMLElement): HTMLElement | null {
 }
 
 // Clicks the reset and returns the question it raises.
-async function ask(settings: HTMLElement, layer: HTMLElement): Promise<HTMLElement> {
-  await fireEvent.click(await resetButton(settings));
+async function ask(
+  settings: HTMLElement,
+  layer: HTMLElement,
+  action = 'device-reset',
+): Promise<HTMLElement> {
+  await fireEvent.click(await resetButton(settings, action));
   return waitFor(() => {
     const found = question(layer);
     expect(found).not.toBeNull();
@@ -191,5 +197,53 @@ describe('SettingsModal — the reset question in the app dialog (R-0395)', () =
 
     expect(get(settingsModalOpen)).toBe(false);
     await waitFor(() => expect(settings.querySelector('.sm-overlay')).toBeNull());
+  });
+});
+
+// The pin reset asks with the warning the login shows before the same step.
+describe('SettingsModal — the pin reset asks first, as the login does', () => {
+  it('asks first, and its confirm button resets the pin', async () => {
+    const { settings, layer } = open();
+    const dialog = await ask(settings, layer, 'pin-reset');
+    expect(dialog.textContent).toContain(tNow('login.resetPin.confirmMitm'));
+    expect(h.resetServerCertPin).not.toHaveBeenCalled();
+
+    await fireEvent.click(buttonIn(dialog, tNow('settings.resetCertPin')));
+
+    await waitFor(() =>
+      expect(h.resetServerCertPin).toHaveBeenCalledExactlyOnceWith('https://srv.example'),
+    );
+    await waitFor(() =>
+      expect(settings.querySelector('[data-msg="pin-reset"]')?.textContent).toContain(
+        tNow('settings.resetCertPin.done'),
+      ),
+    );
+    expect(question(layer)).toBeNull();
+  });
+
+  it('cancelling closes the question and resets nothing', async () => {
+    const { settings, layer } = open();
+    const dialog = await ask(settings, layer, 'pin-reset');
+
+    await fireEvent.click(buttonIn(dialog, tNow('action.cancel')));
+
+    await waitFor(() => expect(question(layer)).toBeNull());
+    expect(h.resetServerCertPin).not.toHaveBeenCalled();
+    expect(settings.querySelector('[data-msg="pin-reset"]')).toBeNull();
+    expect(get(settingsModalOpen)).toBe(true);
+    expect(settings.querySelector('[data-action="pin-reset"]')).not.toBeNull();
+  });
+
+  it('Escape closes the question only, the settings stay open', async () => {
+    const { settings, layer } = open();
+    await ask(settings, layer, 'pin-reset');
+
+    // Where the focus stays after the click: the reset button inside the overlay.
+    await fireEvent.keyDown(await resetButton(settings, 'pin-reset'), { key: 'Escape' });
+
+    await waitFor(() => expect(question(layer)).toBeNull());
+    expect(h.resetServerCertPin).not.toHaveBeenCalled();
+    expect(get(settingsModalOpen)).toBe(true);
+    expect(settings.querySelector('.sm-overlay')).not.toBeNull();
   });
 });
