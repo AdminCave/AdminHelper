@@ -114,7 +114,8 @@ Doku: docs/admin/monitoring.html:344 + EN `:344` (nach den Betreff-Formaten: Zei
 Beweis: Code-Lesung apps/monitoring/app/alerter.py:677
 HEAD: 13f340e4
 
-### T9 — Check-Namen: Steuerzeichen mit 422 abweisen  [?] (Kevin: gespeicherte Namen mit Steuerzeichen — 422 nur für neue Eingaben ohne Migration (A, Empfehlung), Prüfung nur bei geändertem Namen (A2) oder mit Datenmigration (B)? Spec, Offene Fragen 1)
+### T9 — Check-Namen: Steuerzeichen mit 422 abweisen  [ ]
+Entscheidung: Kevin 2026-10-23: Variante A, 422 für CheckCreate, CheckUpdate (wenn gesendet) und TemplateCheckDef, ohne Migration.
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/tests/test_check_names.py, CHANGELOG.md
 Änderung (Variante A): ein Helfer in `app/schemas.py` und `field_validator("name")` in `CheckCreate` (`:24-26`), `CheckUpdate` (`:45-47`, nur wenn gesendet) und `TemplateCheckDef` (`:87-89`): ein Zeichen unter U+0020 oder U+007F → `ValueError("must not contain control characters")` → 422 mit `loc` `["body", "name"]` bzw. `["body", "check_definitions", <i>, "name"]`. Grenze wie die FRP-Felder des Servers (`apps/server/app/modules/frp/schemas.py:24-36`, C0 und DEL); C1 und U+2028/U+2029 bleiben erlaubt, den Betreff deckt T8. Alert-Regel- und Template-Namen bleiben (nicht im Betreff). Neue Datei `tests/test_check_names.py` (SPDX per `reuse annotate`): (a) `POST /checks` mit `name` `"a\nb"`, `"a\rb"`, `"a\tb"`, `"a\x7fb"` → 422, `loc`, `msg` „Value error, must not contain control characters“; (b) `PUT /checks/{id}` mit einem solchen Namen → 422, ohne `name` → 200; (c) `POST /templates` mit `check_definitions[0].name` `"x\ny"` → 422 mit `loc`; (d) Gegenstück: `"Web 1 – Grüße ✓"` und `"a b"` → 201. Zuerst rot: (a)–(c) auf HEAD.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_names.py tests/test_openapi_snapshot.py
