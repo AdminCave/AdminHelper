@@ -182,7 +182,7 @@ def parse_mtls_enforce(raw: str | None) -> bool:
 # parse_mtls_enforce uses the table of the gateway entrypoint (apps/gateway/
 # docker-entrypoint.sh), so a value like `on` cannot leave the server permissive while
 # the gateway enforces; tests/test_mtls_enforce_parse.py keeps the two equal.
-MTLS_ENFORCE = parse_mtls_enforce(os.environ.get("MTLS_ENFORCE"))
+MTLS_ENFORCE = parse_mtls_enforce(os.environ.get("MTLS_ENFORCE", "true"))
 if MTLS_ENFORCE:
     logger.info("MTLS_ENFORCE=true — Datenebene erzwingt Per-Route-Scope.")
 else:
