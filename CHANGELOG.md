@@ -59,6 +59,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
   Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
   Entwickler (DE+EN), `/test`-Skill.
+- **Desktop, Provisionierungs-Tab: Format und Quoting im erzeugten Befehl:** Token und Server-ID aus der Serverantwort
+  werden auf ihr Format geprueft (Token aus Buchstaben, Ziffern, `_` und `-`, Server-ID als UUID); passt eins nicht,
+  erscheint statt der Befehle eine Meldung, und die Token-Liste wird trotzdem neu geladen. Werte mit Sonderzeichen
+  stehen im erzeugten Befehl in einfachen Anfuehrungszeichen; die vom Server erzeugten Werte sehen aus wie bisher.
+- **Desktop: Sync nur aus der Quelle des eigenen Sync-Workspace:** Der Sync laedt nur im Sync-Workspace und nur
+  dessen gespeicherte Sync-URL, nie mit dem Geraete-Zertifikat. Eine andere URL, auch desselben Servers, lehnt er ab;
+  die Meldung nennt keine URL. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: Ansible-Lauf in einem Command:** Ein Ansible-Lauf laedt Dateiname und Inhalt des Playbooks im Backend
+  selbst vom angemeldeten Server; die Oberflaeche uebergibt nur die Playbook-Id und die Ziele. Die Tauri-Commands
+  `ansible_generate_inventory`, `ansible_write_playbook` und `ansible_launch` sind durch `ansible_run` ersetzt;
+  scheitert ein Schritt vor dem Start, loescht der Lauf die schon geschriebenen Temp-Dateien. Doku: Desktop fuer
+  Entwickler, Ansible (DE+EN).
 
 ### Fixed
 
