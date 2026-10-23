@@ -6,6 +6,8 @@
 
 from datetime import timedelta
 
+import pytest
+
 from app.core.auth import (
     _get_user_from_token,
     blacklist_token,
@@ -346,6 +348,72 @@ class TestRefreshCookie:
         rot = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
         assert rot.status_code == 200
         assert rot.json()["access_token"]
+
+    def test_browser_login_gets_the_refresh_token_only_as_cookie(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers={"Sec-Fetch-Site": "same-origin"},
+        )
+        assert login.status_code == 200
+        assert login.json()["refresh_token"] == ""
+        assert login.json()["access_token"]
+        assert test_client.cookies.get("refresh_token")
+        assert "httponly" in login.headers.get("set-cookie", "").lower()
+
+    def test_browser_refresh_via_cookie_gets_no_body_token(self, test_client, admin_user):
+        browser = {"Sec-Fetch-Site": "same-origin"}
+        test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers=browser,
+        )
+        old = test_client.cookies.get("refresh_token")
+        assert old
+
+        rot = test_client.post("/api/auth/refresh", headers=browser)
+
+        assert rot.status_code == 200
+        assert rot.json()["refresh_token"] == ""
+        assert rot.json()["access_token"]
+        new = test_client.cookies.get("refresh_token")
+        assert new and new != old
+        reuse = test_client.post("/api/auth/refresh", json={"refresh_token": old})
+        assert reuse.status_code == 401
+
+    @pytest.mark.parametrize("site", ["same-origin", "same-site", "cross-site", "none"])
+    def test_any_sec_fetch_site_value_hides_the_body_token(self, test_client, admin_user, site):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers={"Sec-Fetch-Site": site},
+        )
+        assert login.status_code == 200
+        assert login.json()["refresh_token"] == ""
+
+    @pytest.mark.parametrize("headers", [{}, {"Sec-Fetch-Mode": "cors"}], ids=["none", "mode-only"])
+    def test_non_browser_login_and_refresh_keep_the_body_token(
+        self, test_client, admin_user, headers
+    ):
+        # Node fetch sends Sec-Fetch-Mode but not Sec-Fetch-Site; it still gets the body token.
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers=headers,
+        )
+        assert login.status_code == 200
+        body_token = login.json()["refresh_token"]
+        assert body_token
+        assert body_token == test_client.cookies.get("refresh_token")
+
+        rot = test_client.post(
+            "/api/auth/refresh", json={"refresh_token": body_token}, headers=headers
+        )
+
+        assert rot.status_code == 200
+        rotated = rot.json()["refresh_token"]
+        assert rotated and rotated != body_token
+        assert rotated == test_client.cookies.get("refresh_token")
 
 
 class TestTokenBlacklist:
