@@ -17,8 +17,11 @@ FRP_VERSION; the lockstep job frp-consistency compares that base with the other 
 job of ci.yml pulls that base, so the tests that run the frps image run there instead of
 skipping. The ops-scripts job shellchecks the supervisor as the POSIX sh the image runs it with.
 
+The Playwright job of ci.yml installs Chromium alone, the one browser its suite runs, and gives
+the install a deadline of its own below that of the job.
+
 The steps are run, where they can be, as Actions runs a step without a shell of its own
-(`bash -e`), on copies of the files they read or with stubs for docker, cosign and gh.
+(`bash -e`), on copies of the files they read or with stubs for docker, cosign, gh and npx.
 """
 
 import hashlib
@@ -47,6 +50,7 @@ _PINNED = (
     "scripts/vm/bootstrap_linux.sh",
 )
 _PULL_STEP = "Pull the base of the frps image"
+_PLAYWRIGHT_STEP = "Install Playwright browsers"
 _LATEST_STEP = "Point latest at the signed images of the release"
 _REPO = "ghcr.io/admincave/adminhelper"
 _ISSUER = "https://token.actions.githubusercontent.com"
@@ -374,6 +378,29 @@ def test_the_server_job_pulls_the_base_of_the_frps_image_before_its_tests(tmp_pa
     # The reference the image tests look up before they build the image.
     base, _, _ = _image()
     assert pull.stdout.split() == ["pull", base]
+
+
+def test_the_playwright_install_step_gives_up_before_the_job():
+    job = _workflow("ci.yml")["jobs"]["frontend-e2e"]["timeout-minutes"]
+    step = _step("ci.yml", "frontend-e2e", _PLAYWRIGHT_STEP).get("timeout-minutes")
+    # Actions takes a positive whole number; a YAML bool would pass isinstance(int).
+    assert type(step) is int and 0 < step < job, (step, job)
+
+
+def test_the_playwright_job_installs_chromium_alone(tmp_path):
+    # npx as a stub that prints what it was asked to do.
+    stub = tmp_path / "bin" / "npx"
+    stub.parent.mkdir()
+    stub.write_text('#!/bin/sh\necho "$@"\n', encoding="utf-8")
+    stub.chmod(0o755)
+
+    step = _step("ci.yml", "frontend-e2e", _PLAYWRIGHT_STEP)
+    path = f"{stub.parent}:{os.environ['PATH']}"
+    install = _run_step(step, tmp_path, _ROOT / step["working-directory"], path)
+    assert install.returncode == 0, install.stdout + install.stderr
+    # Without a browser it installs the system packages of every browser Playwright knows;
+    # the projects of apps/web/playwright.config.ts all run Desktop Chrome.
+    assert install.stdout.split() == ["playwright", "install", "--with-deps", "chromium"]
 
 
 def test_ci_shellchecks_the_frps_supervisor_as_posix_sh():

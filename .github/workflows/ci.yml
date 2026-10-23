@@ -501,9 +501,15 @@ jobs:
       - name: npm ci
         working-directory: apps/web
         run: npm ci --no-audit --no-fund
+      # Chromium alone: every project in playwright.config.ts runs it. Without a browser
+      # argument --with-deps apt-installs the packages of every browser (the gstreamer/ffmpeg
+      # chain of webkit and firefox), and run 39767066088 hung there on a stalled mirror until
+      # the job timed out. A browser cache would not help: the hang was in apt, which no cache
+      # covers. The step's own limit makes a stalled mirror cost 10 minutes, not the job.
       - name: Install Playwright browsers
         working-directory: apps/web
-        run: npx playwright install --with-deps
+        timeout-minutes: 10
+        run: npx playwright install --with-deps chromium
       - name: Playwright test
         working-directory: apps/web
         run: npx playwright test

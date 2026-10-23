@@ -27,8 +27,10 @@ Für alle Tasks:
   also nacheinander.
 - Neue Strings (Kommentare, Meldungen) englisch.
 
-### T1 — Playwright-Job: nur Chromium, Install-Schritt mit eigener Frist (R-0808)  [ ]
+### T1 — Playwright-Job: nur Chromium, Install-Schritt mit eigener Frist (R-0808)  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @bbc49b87 2026-10-23T06:20:27+02:00
+Review: approve (.ah-out/review/ci-gates/T1.verdict.json)
 Änderung: Im Job `frontend-e2e` (`ci.yml:490-517`) wird der Schritt „Install Playwright browsers“ (`:504-506`) zu `npx playwright install --with-deps chromium` (wie `scripts/tests/run.sh:928` und `scripts/tests/web_live.sh:42`) und bekommt `timeout-minutes: 10` (gemessen 44–125 s, Job-Frist `:493` 30 min). Ein Kommentar über dem Schritt nennt das Warum: ohne Browser-Argument zieht apt die Abhängigkeiten aller Browser (gstreamer/ffmpeg für webkit/firefox), daran hing Lauf 39767066088; ein Browser-Cache hilft nicht, weil der Hänger in apt lag. Kein Cache, kein Retry (Spec, Nicht-Ziele). Test in `test_release_images.py`: (a) der Schritt hat ein ganzzahliges `timeout-minutes`, kleiner als das des Jobs; (b) `_run_step` mit einem `npx`-Stub, der seine Argumente ausgibt: genau `playwright install --with-deps chromium`. Zuerst rot: (a) und (b) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: docs/developer/cicd.html:40 + docs/en/developer/cicd.html:40 (bei „Playwright-E2E“: nur Chromium, der Install-Schritt hat eine Frist von 10 min, damit ein hängender apt-Spiegel nicht den ganzen Job blockiert)
