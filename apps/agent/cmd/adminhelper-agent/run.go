@@ -131,7 +131,7 @@ func runOnce(ctx context.Context) error {
 	// is past ~50 % of its lifetime, renew it before the pushes.
 	maybeRenewIdentity(ctx)
 	var permanent error
-	if err := frpc.Sync(); err != nil {
+	if err := frpc.Sync(ctx); err != nil {
 		logger.Errorf("FRPC-Sync Fehler: %v", err)
 		if errors.Is(err, httpclient.ErrPermanent) {
 			permanent = err

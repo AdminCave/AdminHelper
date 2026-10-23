@@ -6,6 +6,7 @@ package frpc
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -39,8 +40,9 @@ var ensureDataDir = config.EnsureDataDir
 // its keys land in the root; the server sets none of them (checkServerConfig).
 const localPreamble = "loginFailExit = false\n"
 
-// Sync checks for config changes and updates frpc (port of do_sync).
-func Sync() error {
+// Sync checks for config changes and updates frpc (port of do_sync). Its requests to the server
+// end with ctx.
+func Sync(ctx context.Context) error {
 	cfg, err := config.LoadFrpcConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -68,7 +70,7 @@ func Sync() error {
 
 	// Fetch the remote hash
 	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
-	hashBody, err := httpGet(client, hashURL, cfg.APIKey)
+	hashBody, err := httpGet(ctx, client, hashURL, cfg.APIKey)
 	if err != nil {
 		// Propagate like the config fetch below (same error class): a persistently
 		// broken sync (rotated API key, expired mTLS cert, wrong URL) must surface
@@ -107,7 +109,7 @@ func Sync() error {
 
 	// Fetch the new config
 	configURL := fmt.Sprintf("%s/api/frp/provision/%s/config", cfg.AdminHelperURL, cfg.ServerID)
-	newConfig, err := httpGet(client, configURL, cfg.APIKey)
+	newConfig, err := httpGet(ctx, client, configURL, cfg.APIKey)
 	if err != nil {
 		return fmt.Errorf("neue Config laden: %w", err)
 	}

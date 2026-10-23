@@ -81,8 +81,10 @@ Orakel: property — ein abgebrochener Kontext beendet die laufende Anfrage, die
 Dedup-Key: bug:agent:run.go:no-per-run-deadline
 HEAD: b1432223
 
-### T5 — FRP-Sync: Kontext bis in die Anfragen (R-0638)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/http.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/frpc/admin_test.go, apps/agent/internal/frpc/sync_windows_test.go, apps/agent/cmd/adminhelper-agent/run.go, apps/agent/cmd/adminhelper-agent/main.go
+### T5 — FRP-Sync: Kontext bis in die Anfragen (R-0638)  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/http.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/frpc/admin_test.go, apps/agent/internal/frpc/sync_windows_test.go, apps/agent/cmd/adminhelper-agent/run.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/internal/frpc/servertoml_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @171a47cc 2026-10-23T08:54:18+02:00
+Review: approve (.ah-out/review/agent-run-ctx/T5.verdict.json)
 Änderung: `Sync(ctx context.Context) error` (`internal/frpc/sync.go:43`); `httpGet(ctx, client, url, apiKey)` mit `http.NewRequestWithContext` (`internal/frpc/http.go:15`); beide Anfragen (`sync.go:71`, `:110`) mit dem Kontext. `runOnce` gibt seinen Kontext (`run.go:92`), `frpc sync` von Hand `context.Background()` (`main.go:124`). Alle Testaufrufe `Sync()` → `Sync(context.Background())` (mechanisch, `sync_flow_test.go`, `apply_test.go`, `admin_test.go`, `sync_windows_test.go`). Neu `sync_flow_test.go` `TestSyncEndsWithTheContextWhileTheServerHangs`: der Server hält `config-hash` fest, bis der Test endet; Kontext nach 100 ms abgebrochen → `Sync` kehrt binnen 2 s zurück, der Fehler wrappt `context.Canceled`, `frpc.toml` und `.config-hash` unverändert, kein Service-Aufruf (Zähler aus `setupSyncTest`). Zuerst rot: kompiliert vorher nicht; heute wartet der Sync bis zum Client-Timeout von 30 s (`sync.go:61`).
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)

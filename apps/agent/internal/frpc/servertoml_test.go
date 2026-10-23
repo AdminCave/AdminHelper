@@ -5,6 +5,7 @@
 package frpc
 
 import (
+	"context"
 	"maps"
 	"os"
 	"strings"
@@ -191,7 +192,7 @@ func TestServerConfigRefusedBySync(t *testing.T) {
 			serveToml(t, []byte(toml))
 			files, actions := frpFiles(t), *calls
 
-			if err := Sync(); err == nil {
+			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must refuse the server's text")
 			}
 			if got := frpFiles(t); !maps.Equal(got, files) {
@@ -211,7 +212,7 @@ func TestServerConfigFixtureAppliedBySync(t *testing.T) {
 	fixture := serverFixture(t)
 	serveToml(t, fixture)
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the generator's output: %v", err)
 	}
 	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(rewriteIdentityPaths(fixture)); got != want {

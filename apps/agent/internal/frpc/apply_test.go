@@ -6,6 +6,7 @@ package frpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"log"
@@ -163,7 +164,7 @@ func TestReprovisionRestartsRunningFrpcOnTheNewConfig(t *testing.T) {
 func TestReprovisionRestartsRatherThanReload(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, bundleToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the tunnel: %v", err)
 	}
 
@@ -194,7 +195,7 @@ func TestReprovisionStoresTheHashOfTheBundleText(t *testing.T) {
 
 	srv, fetches := hashServer(t, `{"hash":"`+hash+`"}`, bundleToml)
 	pointSyncAt(t, srv.URL)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync after the provisioning: %v", err)
 	}
 	if *fetches != 0 || calls.enables != 1 || calls.restarts != 0 {
@@ -249,7 +250,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			restartService, enableService = restart, enable
 			srv, fetches := hashServer(t, `{"hash":"`+hashConfig(bundleToml)+`"}`, bundleToml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
 			if *fetches != 1 || calls.restarts+calls.enables != 1 {
@@ -346,7 +347,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			disableService = disable
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
 			if _, err := os.Stat(config.FrpConfigFile()); calls.disables != 1 || !os.IsNotExist(err) {

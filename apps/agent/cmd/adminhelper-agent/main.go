@@ -121,7 +121,7 @@ func frpcSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Einmaliger Config-Sync",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return frpc.Sync()
+			return frpc.Sync(context.Background())
 		},
 	}
 }

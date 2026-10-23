@@ -6,6 +6,7 @@ package frpc
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"adminhelper-agent/internal/config"
 )
@@ -116,7 +118,7 @@ func TestSyncWritesConfigOnHashMismatch(t *testing.T) {
 	calls := setupSyncTest(t, srv.URL)
 	calls.active = true
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
@@ -139,7 +141,7 @@ func TestSyncFirstTunnelEnablesFrpc(t *testing.T) {
 	srv, fetches := hashServer(t, `{"hash":"`+hash+`"}`, tunnelToml)
 	calls := setupSyncTest(t, srv.URL)
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	if calls.enables != 1 || calls.restarts != 0 || calls.disables != 0 {
@@ -168,7 +170,7 @@ func TestSyncFirstTunnelEnablesFrpc(t *testing.T) {
 		t.Errorf("hash file = %q, want the hash of the server's text %q", got, hash)
 	}
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("second Sync with the same hash: %v", err)
 	}
 	if calls.enables != 1 || calls.restarts != 0 || *fetches != 1 {
@@ -185,7 +187,7 @@ func TestSyncTunnelAfterStopEnablesFrpc(t *testing.T) {
 	calls := setupSyncTest(t, emptySrv.URL)
 	writeFrpcState(t)
 	calls.active = true
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync without a tunnel: %v", err)
 	}
 	if calls.disables != 1 {
@@ -194,7 +196,7 @@ func TestSyncTunnelAfterStopEnablesFrpc(t *testing.T) {
 
 	tunnelSrv, _ := hashServer(t, `{"hash":"`+hashConfig(tunnelToml)+`"}`, tunnelToml)
 	pointSyncAt(t, tunnelSrv.URL)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the new tunnel: %v", err)
 	}
 	if calls.enables != 1 || calls.restarts != 0 {
@@ -215,7 +217,7 @@ func TestSyncKeepsOldHashWhenStartingFrpcFails(t *testing.T) {
 			restartService = func() error { return errors.New("systemctl failed") }
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 
-			if err := Sync(); err == nil {
+			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must report the failed start")
 			}
 			if got, _ := os.ReadFile(config.FrpHashFile()); string(got) != string(oldHash) {
@@ -242,7 +244,7 @@ func TestSyncNoOpOnIdenticalHash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	if _, err := os.Stat(config.FrpConfigFile()); !os.IsNotExist(err) {
@@ -262,11 +264,62 @@ func TestSyncErrorsOnHashEndpoint500(t *testing.T) {
 	defer srv.Close()
 	calls := setupSyncTest(t, srv.URL)
 
-	if err := Sync(); err == nil {
+	if err := Sync(context.Background()); err == nil {
 		t.Error("Sync must error on a failing hash endpoint, not skip silently")
 	}
 	if calls.restarts != 0 || calls.enables != 0 {
 		t.Errorf("restarts = %d, enables = %d, want 0 and 0", calls.restarts, calls.enables)
+	}
+}
+
+// R-0638: a run's context reaches the sync's requests. A server that holds config-hash costs the
+// sync no more than its context, not the client timeout of 30 s, and the sync changes nothing.
+func TestSyncEndsWithTheContextWhileTheServerHangs(t *testing.T) {
+	arrived := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/config-hash") {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		select {
+		case arrived <- struct{}{}:
+		default:
+		}
+		// Released when the test ends.
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release) // runs first: Close waits for the held handler
+	calls := setupSyncTest(t, srv.URL)
+	writeFrpcState(t)
+	calls.active = true
+	files, actions := frpFiles(t), *calls
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	res := make(chan error, 1)
+	go func() { res <- Sync(ctx) }()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the config-hash request did not reach the server")
+	}
+	cancel()
+	select {
+	case err := <-res:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Sync = %v, want an error that wraps context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Sync did not end with its ctx (client timeout 30s)")
+	}
+	if got := frpFiles(t); !maps.Equal(got, files) {
+		t.Errorf("the FRP directory holds %q, want it unchanged %q", got, files)
+	}
+	if *calls != actions {
+		t.Errorf("frpc service state %+v, want it unchanged %+v (no start, stop or reload)", *calls, actions)
 	}
 }
 
@@ -285,7 +338,7 @@ func TestSyncErrorsOnConfigEndpoint500LeavesOldConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Sync(); err == nil {
+	if err := Sync(context.Background()); err == nil {
 		t.Error("Sync must error when the config endpoint fails")
 	}
 	if got, _ := os.ReadFile(config.FrpConfigFile()); string(got) != "OLD" {
@@ -306,7 +359,7 @@ func TestSyncWithoutSyncConfigNamesReprovisioning(t *testing.T) {
 	// SetDefault also redirects the log package, which restoring the slog default does not undo.
 	t.Cleanup(func() { slog.SetDefault(prev); log.SetOutput(prevOut); log.SetFlags(prevFlags) })
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync without a sync config: %v", err)
 	}
 	out := buf.String()
@@ -357,7 +410,7 @@ func TestSyncNullHashStopsFrpcAndRemovesItsFiles(t *testing.T) {
 	calls := setupSyncTest(t, srv.URL)
 	writeFrpcState(t)
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a null hash: %v", err)
 	}
 	if calls.disables != 1 || calls.restarts != 0 {
@@ -369,7 +422,7 @@ func TestSyncNullHashStopsFrpcAndRemovesItsFiles(t *testing.T) {
 		}
 	}
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("second Sync with a null hash: %v", err)
 	}
 	if calls.disables != 1 {
@@ -387,7 +440,7 @@ func TestSyncConfigWithoutProxiesStopsFrpc(t *testing.T) {
 	calls := setupSyncTest(t, srv.URL)
 	writeFrpcState(t)
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a config without proxies: %v", err)
 	}
 	if calls.disables != 1 || calls.restarts != 0 {
@@ -400,7 +453,7 @@ func TestSyncConfigWithoutProxiesStopsFrpc(t *testing.T) {
 		t.Errorf("hash file = %q, want %q", got, hash)
 	}
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("second Sync with the same hash: %v", err)
 	}
 	if calls.disables != 1 || *fetches != 1 {
@@ -427,7 +480,7 @@ func TestSyncKeepsFilesWhenStoppingFrpcFails(t *testing.T) {
 			writeFrpcState(t)
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 
-			if err := Sync(); err == nil {
+			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must report the failed stop")
 			}
 			if _, err := os.Stat(config.FrpConfigFile()); err != nil {
@@ -455,14 +508,14 @@ func withToken(token string) []byte {
 func TestReloadWhenOnlyProxiesChange(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	var atReload string
 	reloadService = func() error { calls.reloads++; atReload = readFile(t, config.FrpConfigFile()); return nil }
 
 	serveToml(t, twoTunnelsToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a second tunnel: %v", err)
 	}
 	if calls.reloads != 1 || calls.restarts != 0 || calls.enables != 1 {
@@ -481,12 +534,12 @@ func TestReloadWhenOnlyProxiesChange(t *testing.T) {
 func TestReloadNotWhenTheTokenChanges(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, withToken("old-token"))
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 
 	serveToml(t, withToken("rotated-token"))
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a rotated token: %v", err)
 	}
 	if calls.restarts != 1 || calls.reloads != 0 {
@@ -502,14 +555,14 @@ func TestReloadNotWhenTheTokenChanges(t *testing.T) {
 func TestReloadFailureRestartsFrpc(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	reloadService = func() error { calls.reloads++; return errors.New("api status code [401]") }
 	out := captureLog(t)
 
 	serveToml(t, twoTunnelsToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a failing reload: %v, want a restart instead", err)
 	}
 	if calls.reloads != 1 || calls.restarts != 1 {
@@ -531,7 +584,7 @@ func TestReloadFailureRestartsFrpc(t *testing.T) {
 func TestReloadNotAfterAFailedRestart(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, bundleToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the tunnel: %v", err)
 	}
 	restart := restartService
@@ -542,7 +595,7 @@ func TestReloadNotAfterAFailedRestart(t *testing.T) {
 	restartService = restart
 
 	serveToml(t, bundleToml) // Apply pointed the sync config at its own URL
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("next Sync: %v", err)
 	}
 	if calls.restarts != 1 || calls.reloads != 0 {
@@ -556,7 +609,7 @@ func TestReloadNotAfterAFailedRestart(t *testing.T) {
 func TestReloadAdminPortMovesWhenFrpcIsDown(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	fetches := serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	adminConf := filepath.Join(config.FrpDir(), "admin.conf")
@@ -570,7 +623,7 @@ func TestReloadAdminPortMovesWhenFrpcIsDown(t *testing.T) {
 	}
 	calls.active = false
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with frpc down: %v", err)
 	}
 	after, err := config.LoadKeyValue(adminConf)
@@ -588,7 +641,7 @@ func TestReloadAdminPortMovesWhenFrpcIsDown(t *testing.T) {
 		t.Errorf("enables = %d, config fetches = %d, want 2 and 2", calls.enables, *fetches)
 	}
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with frpc running again: %v", err)
 	}
 	if calls.enables != 2 || *fetches != 2 {
@@ -602,7 +655,7 @@ func TestReloadAdminPortMovesWhenFrpcIsDown(t *testing.T) {
 func TestSyncStuckFrpcGetsANewAdminPortWhenTheHashChanges(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	adminConf := filepath.Join(config.FrpDir(), "admin.conf")
@@ -616,7 +669,7 @@ func TestSyncStuckFrpcGetsANewAdminPortWhenTheHashChanges(t *testing.T) {
 	calls.active = false
 
 	serveToml(t, twoTunnelsToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a second tunnel and frpc down: %v", err)
 	}
 	after, err := config.LoadKeyValue(adminConf)
@@ -653,7 +706,7 @@ func TestSyncStuckFrpcWithoutATunnelOnlyStops(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			calls := setupSyncTest(t, "https://unused.example")
 			serveToml(t, tunnelToml)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("Sync with the first tunnel: %v", err)
 			}
 			adminConf := filepath.Join(config.FrpDir(), "admin.conf")
@@ -662,7 +715,7 @@ func TestSyncStuckFrpcWithoutATunnelOnlyStops(t *testing.T) {
 
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("Sync without a tunnel and frpc down: %v", err)
 			}
 			if calls.disables != 1 || calls.enables != 1 || calls.restarts != 0 || calls.reloads != 0 {
@@ -697,7 +750,7 @@ func TestSyncStopsFrpcOnAConfigWithoutATunnel(t *testing.T) {
 			}
 			calls.active = active
 
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("Sync with the same hash and frpc.toml without a tunnel: %v", err)
 			}
 			if calls.disables != 1 || calls.enables != 0 || calls.restarts != 0 || calls.reloads != 0 {
@@ -714,7 +767,7 @@ func TestSyncStopsFrpcOnAConfigWithoutATunnel(t *testing.T) {
 				t.Errorf("hash file = %q, want %q", got, hashConfig(toml))
 			}
 
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("second Sync with the same hash: %v", err)
 			}
 			if calls.disables != 1 || *fetches != 1 {
@@ -729,12 +782,12 @@ func TestSyncStopsFrpcOnAConfigWithoutATunnel(t *testing.T) {
 func TestSyncLeavesRunningFrpcWithATunnelAlone(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	fetches := serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	before := readFile(t, config.FrpConfigFile())
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the same hash: %v", err)
 	}
 	if *fetches != 1 || calls.enables != 1 || calls.restarts != 0 || calls.reloads != 0 || calls.disables != 0 {
@@ -751,7 +804,7 @@ func TestSyncLeavesRunningFrpcWithATunnelAlone(t *testing.T) {
 func TestSyncStuckFrpcFailsWhenRenewingTheAdminAPIFails(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	adminConf := filepath.Join(config.FrpDir(), "admin.conf")
@@ -766,7 +819,7 @@ func TestSyncStuckFrpcFailsWhenRenewingTheAdminAPIFails(t *testing.T) {
 	calls.active = false
 
 	serveToml(t, twoTunnelsToml)
-	err := Sync()
+	err := Sync(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "write "+adminConf) {
 		t.Fatalf("Sync = %v, want the failed write of %s", err, adminConf)
 	}
@@ -820,7 +873,7 @@ func TestSyncChangesNothingWhenTheFrpDirCannotBeSecured(t *testing.T) {
 	}
 	hung := func(t *testing.T, calls *seamCalls) {
 		serveToml(t, tunnelToml)
-		if err := Sync(); err != nil {
+		if err := Sync(context.Background()); err != nil {
 			t.Fatalf("Sync with the first tunnel: %v", err)
 		}
 		calls.active = false
@@ -845,7 +898,7 @@ func TestSyncChangesNothingWhenTheFrpDirCannotBeSecured(t *testing.T) {
 			notSecured := errors.New("an entry in the data root cannot be removed")
 			secured := stubEnsureDataDir(t, notSecured)
 
-			err := Sync()
+			err := Sync(context.Background())
 			if !errors.Is(err, notSecured) || !strings.Contains(err.Error(), config.FrpDir()) {
 				t.Fatalf("Sync = %v, want the failure to secure %s, naming it", err, config.FrpDir())
 			}
@@ -869,12 +922,12 @@ func TestSyncSecuresNothingWithoutAChange(t *testing.T) {
 	t.Run("same hash, frpc runs on a tunnel", func(t *testing.T) {
 		setupSyncTest(t, "https://unused.example")
 		serveToml(t, tunnelToml)
-		if err := Sync(); err != nil {
+		if err := Sync(context.Background()); err != nil {
 			t.Fatalf("Sync with the first tunnel: %v", err)
 		}
 		secured := stubEnsureDataDir(t, errors.New("not secured"))
 
-		if err := Sync(); err != nil {
+		if err := Sync(context.Background()); err != nil {
 			t.Fatalf("Sync with the same hash: %v", err)
 		}
 		if len(*secured) != 0 {
@@ -886,7 +939,7 @@ func TestSyncSecuresNothingWithoutAChange(t *testing.T) {
 		setupSyncTest(t, srv.URL)
 		secured := stubEnsureDataDir(t, errors.New("not secured"))
 
-		if err := Sync(); err != nil {
+		if err := Sync(context.Background()); err != nil {
 			t.Fatalf("Sync with a null hash: %v", err)
 		}
 		if len(*secured) != 0 {
@@ -906,7 +959,7 @@ func TestSyncLeavesTheFrpDirOwnerOnly(t *testing.T) {
 		}
 	}
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
@@ -928,14 +981,14 @@ func TestSyncLeavesTheFrpDirOwnerOnly(t *testing.T) {
 func TestReloadOnlyWhenFrpcHoldsTheAdminPort(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	checked := 0
 	ownsAdminPort = func(port int) bool { checked = port; return false }
 
 	serveToml(t, twoTunnelsToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a second tunnel: %v", err)
 	}
 	if calls.reloads != 0 || calls.restarts != 1 {
@@ -973,7 +1026,7 @@ func TestReloadRefusesALocalHeadFromTheServer(t *testing.T) {
 			oldConfig, oldHash := readFile(t, config.FrpConfigFile()), readFile(t, config.FrpHashFile())
 			serveToml(t, []byte(toml))
 
-			if err := Sync(); err == nil {
+			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must refuse the server's text")
 			}
 			if calls.reloads+calls.restarts+calls.enables+calls.disables != 0 {
