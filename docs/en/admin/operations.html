@@ -56,7 +56,7 @@
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/backup.sh                 # -> ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz
 ./scripts/backup.sh --with-victoria # also the (large) metric history</code></pre>
-          <p>Included: <code>ca-pki</code> (Root + intermediates), <code>pg_dump</code> of both DBs, <code>monitoring-data</code>, optionally <code>victoria-data</code>, and <code>.env</code>. <strong>Not</strong> included — and not needed — are <code>gateway-certs</code>/<code>frps-certs</code>: the <code>ca-issuer</code> re-provisions them from <code>ca-pki</code> on boot. Nor are <code>frps-state</code> and <code>frps-active</code>, which the frps supervisor sets up again itself.</p>
+          <p>Included: <code>ca-pki</code> (Root + intermediates), <code>pg_dump</code> of both DBs, <code>monitoring-data</code>, optionally <code>victoria-data</code>, and <code>.env</code>. <strong>Not</strong> included — and not needed — are <code>gateway-certs</code>/<code>frps-certs</code>: the <code>ca-issuer</code> re-provisions them from <code>ca-pki</code> on boot. Nor are <code>frps-state</code> and <code>frps-active</code>, which the frps supervisor sets up again itself. The archive is readable only by the user who runs the script (<code>0600</code>) and gets its name only once it is completely written; a target directory the script creates gets <code>0700</code>.</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>

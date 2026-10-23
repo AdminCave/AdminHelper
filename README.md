@@ -306,9 +306,10 @@ Hit a bug? On the server host, generate a **redacted** diagnostics bundle and at
 ```bash
 ./scripts/diagnostics.sh            # writes adminhelper-diagnostics-<ts>.tar.gz
 ./scripts/diagnostics.sh --tail 1000   # more log lines per service
+./scripts/diagnostics.sh --mask-hosts  # also mask IP addresses, the .env host names and the machine name
 ```
 
-The bundle contains versions, service status, `compose.yml`, a sanitized `.env` (secret values masked) and recent per-service logs. Secrets (SECRET_KEY, passwords, API keys, JWT/Bearer tokens) are masked automatically — still, skim it before sending. Security- and change-relevant actions are additionally recorded in an append-only **audit log** (Web UI → *Audit log*, or `GET /api/audit`).
+The bundle contains versions, service status, `compose.yml`, a sanitized `.env` (secret values masked) and recent per-service logs. The secrets of the `.env` (SECRET_KEY, passwords), API keys and tokens (in the access logs too), JWT and Bearer tokens are masked automatically; host names and IP addresses (domain, SANs, client addresses, the machine name) stay unless you pass `--mask-hosts`. It turns IP addresses into `<ip>` by their form, and the names and addresses from the host settings of the `.env` (domain, SANs, allowed IPs, trusted proxies, FRP server, SMTP host, user and sender) and the machine name into `<host>`; other names, such as those of managed servers or webhook targets, stay — so skim the bundle before sending. Security- and change-relevant actions are additionally recorded in an append-only **audit log** (Web UI → *Audit log*, or `GET /api/audit`).
 
 ---
 
