@@ -266,6 +266,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
   jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
   weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
+- **Desktop: der Tunnel-Dialog prueft den Visitor-Port vor dem Speichern (R-0585):** Bei einem STCP-Tunnel lehnt der
+  Dialog einen Visitor-Port ab, der keine ganze Zahl von 1 bis 65535 ist, und nennt den Bereich; bisher kam erst die
+  Ablehnung des Servers (`422`). Ein leeres Feld bleibt erlaubt, dann vergibt der Server einen freien Port. Doku:
+  FRP-Tunnel (DE+EN).
 
 ### Removed
 
@@ -491,6 +495,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
   expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
   Clients bedeutet). Doku: Betrieb (DE+EN).
+- **Desktop: ein gescheiterter Abruf der Verbindungen leert die Liste nicht mehr (R-0658):** Scheitert in einem
+  Server- oder Sync-Workspace der Abruf der Verbindungen, etwa beim Seitenwechsel oder im Sync-Takt waehrend eines
+  Netzausfalls, bleibt die zuletzt geladene Liste stehen, wenn sie aus derselben Quelle stammt (derselbe Server und
+  Benutzer, dieselbe Sync-URL), statt zu verschwinden. Die Liste einer anderen Quelle bleibt nie stehen.
+  „Verbindungen“ zeigt den Fehler mit „Erneut versuchen“ und bei stehen gebliebener Liste den Hinweis, dass es die
+  zuletzt geladene ist; waehrend des Ladens zeigt die Seite „Lade…“ statt „Noch keine Verbindungen angelegt“. Auch
+  das Dashboard zeigt den Fehler mit „Erneut versuchen“ und unter „Zuletzt genutzt“ waehrend des Ladens „Lade…“ statt
+  „Noch keine Verbindungen genutzt“.
+- **Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659):** Unter Linux nimmt die
+  Fenstergroesse „Eingepasst“ die Groesse des Bildschirms statt immer 1088x720, die Skalierung „Automatisch“ erkennt
+  einen HiDPI-Bildschirm, und „HiDPI“ waehlt den Faktor nach dem Bildschirm (`/scale:140` oder `/scale:180`) statt
+  immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht verifiziert.
+- **Desktop: ohne gespeicherte Sprache gilt die Systemsprache (R-0660):** Ist noch keine Sprache gespeichert, etwa
+  nach einer frischen Installation, laeuft die Desktop-UI in der Systemsprache: Deutsch auf einem deutschen System,
+  sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch. Der Einstellungsdialog zeigt diese
+  Sprache; bisher zeigte er „Deutsch“, und Speichern einer beliebigen Einstellung schaltete ungewollt auf Deutsch.
+  Dieselbe Regel gilt schon vor dem Laden der Einstellungen („Lade…“) und fuer die ganze UI, wenn das Laden
+  scheitert; auf einem System in einer anderen Sprache als Deutsch oder Englisch lief die UI dort bisher deutsch.
+- **Desktop: „Loeschen“ im Verbindungs-Editor fragt nach (R-0661):** Bevor der Editor eine Verbindung entfernt, im
+  Server-Modus auf dem Server, und bei RDP ein gespeichertes Passwort, fragt er mit dem Namen der Verbindung nach;
+  „Abbrechen“ oder Escape laesst sie stehen und den Editor offen. Bisher loeschte der Knopf sofort.
+- **Desktop: Speichern der Einstellungen startet die Benachrichtigungen nicht mehr neu (R-0663):** Bisher stoppte
+  jedes Speichern der Einstellungen in einem Server-Workspace den Benachrichtigungs-Stream, leerte den Feed und
+  startete beides neu; der Feed flackerte, und Meldungen aus dieser Luecke kamen ohne OS-Benachrichtigung. Neu
+  gestartet wird nur, wenn Server oder Benutzer wechseln.
 
 ## [0.46.0] - 2026-10-22
 
