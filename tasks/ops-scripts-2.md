@@ -158,8 +158,10 @@ Abhängt von: T8
 Beweis: Code-Lesung scripts/diagnostics.sh:114-118, :123
 HEAD: 73bf0d31
 
-### T10 — diagnostics.sh `--mask-hosts`: IPv6 mit IPv4-Ende als eine Adresse, Image-Tags bleiben  [ ]
+### T10 — diagnostics.sh `--mask-hosts`: IPv6 mit IPv4-Ende als eine Adresse, Image-Tags bleiben  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @88540dd5 2026-10-23T23:14:56+02:00
+Review: approve (.ah-out/review/ops-scripts-2/T10.verdict.json)
 Änderung: `host_rules` (`:103-109`) bekommt vor der IPv4-Regel (`:104`) eine Regel für IPv6 mit IPv4-Ende (bis zu sechs Hex-Gruppen mit `:` oder `::`, dann eine IPv4-Adresse, optional `/Präfix`); sie ergibt genau ein `<ip>`. Die IPv4-Regel lässt eine Zahlenfolge direkt hinter `<pfad>/<name>:` (Tag einer Image-Referenz) stehen. Tests in `diagnostics_test.sh`, Fall (f) (`:247-310`) erweitert: `::ffff:192.0.2.1`, `64:ff9b::198.51.100.7`, `2001:db8:1:2:3:4:192.0.2.1` und `0:0:0:0:0:ffff:203.0.113.5` werden je genau `<ip>`; `myreg:5000/adminhelper/server:0.46.0.1` bleibt; `connect to 192.0.2.9:5432` wird `connect to <ip>:5432`; die bestehenden Erwartungen von (f) (`[2001:db8::1]:8080`, `fe80::1`, `10:00:00`, `1.27.3`) bleiben. Zuerst rot: die vier IPv6-Formen (heute `<ip>:<ip>`, `<ip><ip>`, `2001:db8:1:2:3:4:<ip>`) und der Tag (`…/server:<ip>`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: CHANGELOG.md (den Added-Eintrag `:12-20` ergänzen, umlautfrei: IPv6-Adressen mit IPv4-Ende als eine Adresse; Image-Tags aus vier Zahlen bleiben)

@@ -23,8 +23,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
   Betrieb & Konfiguration, Monitoring (DE+EN).
 - **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
-  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und jeden
-  Namen und jede Adresse aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`,
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` (eine
+  IPv6-Adresse mit IPv4-Ende wie `::ffff:192.0.2.1` als eine Adresse; ein Image-Tag aus vier Zahlen wie
+  `.../server:1.2.3.4` bleibt stehen) und jeden Namen und jede Adresse aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`,
   `TRUSTED_PROXIES`, `SMTP_HOST` und `SMTP_FROM` (bei `SMTP_FROM` jede Adresse, bei einem Anzeigenamen nur die
   Adresse in spitzen Klammern, nicht der Name) sowie den Rechnernamen, auch ohne seine Domain, ohne Ruecksicht auf
   Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und

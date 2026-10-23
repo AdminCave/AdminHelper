@@ -124,7 +124,11 @@ SED
 
 # host_rules <envfile> : the sed script of --mask-hosts -> stdout. IPv4 addresses
 # (optionally with /prefix) and IPv6 addresses with "::" or eight groups become
-# <ip>; a time HH:MM:SS or a version a.b.c is no address. Then the values of the
+# <ip>, one with an IPv4 tail (::ffff:192.0.2.1, six groups or fewer with "::")
+# whole; a time HH:MM:SS or a version a.b.c is no address, nor is a number run
+# right behind <path>/<name>: (an image tag, .../server:1.2.3.4). sed cannot look
+# behind: the dots of such a tag become newlines, which a line in sed never holds,
+# during the IPv4 rule and dots again after it. Then the values of the
 # HOST_KEYS (read as for the secrets) and this machine's name become <host>, the
 # longest first, so a name is masked whole before a shorter one inside it
 # (example.com in ah.example.com). A value is split at ',', whitespace, '<' and '>',
@@ -141,7 +145,10 @@ host_rules() {
     local envfile="$1" key form node
     local -a parts
     cat <<'SED'
+s#\(\b\([0-9A-Fa-f]\{1,4\}:\)\{6\}\|\b\([0-9A-Fa-f]\{1,4\}:\)\{1,5\}\(:[0-9A-Fa-f]\{1,4\}\)\{0,4\}:\|\B::\([0-9A-Fa-f]\{1,4\}:\)\{0,5\}\)\(\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\.\)\{3\}\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\(/[0-9]\{1,3\}\)\?\b#<ip>#g
+s#\(/[[:alnum:]_.-]\{1,\}:[0-9]\{1,\}\)\.\([0-9]\{1,\}\)\.\([0-9]\{1,\}\)\.\([0-9]\{1,\}\)#\1\n\2\n\3\n\4#g
 s#\b\(\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\.\)\{3\}\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\(/[0-9]\{1,3\}\)\?\b#<ip>#g
+s#\n#.#g
 s#\b[0-9A-Fa-f]\{1,4\}\(:[0-9A-Fa-f]\{1,4\}\)\{7\}\(/[0-9]\{1,3\}\)\?\b#<ip>#g
 s#\b\([0-9A-Fa-f]\{1,4\}:\)\{1,7\}\(:[0-9A-Fa-f]\{1,4\}\)\{1,7\}\(/[0-9]\{1,3\}\)\?\b#<ip>#g
 s#\b\([0-9A-Fa-f]\{1,4\}:\)\{1,7\}:\(/[0-9]\{1,3\}\b\|\B\)#<ip>#g

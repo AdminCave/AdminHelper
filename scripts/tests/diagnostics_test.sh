@@ -20,9 +20,10 @@
 #   (e) main with a docker stub: report.txt and the logs in the bundle are redacted;
 #       host names and addresses stay, and the closing message names --mask-hosts;
 #       with --mask-hosts they are masked in report.txt and env.sanitized;
-#   (f) --mask-hosts in the functions: IPv4 and IPv6 addresses become <ip>, the host
-#       values of the .env and the machine's name <host>, env.sanitized shows those
-#       keys as <masked>; a time and a version number stay;
+#   (f) --mask-hosts in the functions: IPv4 and IPv6 addresses become <ip>, one with
+#       an IPv4 tail as a whole, the host values of the .env and the machine's name
+#       <host>, env.sanitized shows those keys as <masked>; a time, a version number
+#       and an image tag of four numbers stay;
 #   (g) without the switch the same lines keep their names and addresses, the token
 #       forms of (a) are masked;
 #   (h) --help names --mask-hosts and says that of SMTP_FROM only the address in
@@ -268,8 +269,9 @@ fi
 # --- (f) --mask-hosts: names and addresses become <host> and <ip> -----------------
 # The host values of the .env (a list split at ',', of a display name only the
 # address in angle brackets) and the machine's name become <host>, every IPv4 and
-# IPv6 address <ip>; a time, a version and a MAC address are no address. The token
-# forms of (a) stay masked. uname is a function here, so the machine's name is known
+# IPv6 address <ip>, one with an IPv4 tail as a whole; a time, a version, a MAC
+# address and the tag of an image reference are no address. The token forms of (a)
+# stay masked. uname is a function here, so the machine's name is known
 # and cannot clash with the text.
 # shellcheck disable=SC2317  # called by host_rules of the sourced script
 uname() { if [ "${1:-}" = -n ]; then echo node9host; else command uname "$@"; fi; }
@@ -291,6 +293,12 @@ tls: certificate for ah.example.com and alt.example.com, peer 198.51.100.7
 allow 203.0.113.0/24
 10:00:00 nginx/1.27.3 ready
 smtp: sending as ops9@mail.example.com on node9host
+mapped ::ffff:192.0.2.1 seen
+nat64 64:ff9b::198.51.100.7 seen
+full 2001:db8:1:2:3:4:192.0.2.1 seen
+long 0:0:0:0:0:ffff:203.0.113.5 seen
+image myreg:5000/adminhelper/server:0.46.0.1 pulled
+connect to 192.0.2.9:5432
 EOF
 )"
 exp_f="$(cat <<'EOF'
@@ -307,6 +315,12 @@ tls: certificate for <host> and <host>, peer <ip>
 allow <ip>
 10:00:00 nginx/1.27.3 ready
 smtp: sending as <host> on <host>
+mapped <ip> seen
+nat64 <ip> seen
+full <ip> seen
+long <ip> seen
+image myreg:5000/adminhelper/server:0.46.0.1 pulled
+connect to <ip>:5432
 EOF
 )"
 sed_f="$tmp/redact-f.sed"
