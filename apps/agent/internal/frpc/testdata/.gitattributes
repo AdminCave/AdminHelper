@@ -1,0 +1,3 @@
+# The fixture is an output of generate_frpc_toml byte for byte, and the agent refuses a
+# carriage return in a server text: a checkout keeps its line ends (core.autocrlf on Windows).
+server_frpc.toml text eol=lf

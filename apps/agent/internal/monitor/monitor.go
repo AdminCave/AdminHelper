@@ -39,6 +39,9 @@ func preserveServices(services string) string {
 	return services
 }
 
+// enableTimer is a variable so tests of Init never run systemctl.
+var enableTimer = enableMonitorService
+
 // Init performs the initial setup of the monitor agent.
 func Init(p InitParams) error {
 	url := p.URL
@@ -51,6 +54,11 @@ func Init(p InitParams) error {
 	url = strings.TrimRight(url, "/")
 	if err := config.RequireHTTPS(url); err != nil {
 		return err
+	}
+	// One trust source per call, as in provision.Run: beside --insecure,
+	// httpclient.New skips the check even with a CA file.
+	if cacert != "" && insecure {
+		return fmt.Errorf("--cacert cannot be combined with --insecure: --cacert already verifies the server")
 	}
 
 	monitorDir := config.MonitorDir()
@@ -78,23 +86,26 @@ func Init(p InitParams) error {
 		logger.Infof("CA-Zertifikat kopiert: %s", dest)
 	}
 
-	// A blind --insecure (the deb/rpm postinst's alternative setup path) would
-	// otherwise persist INSECURE=1 and run every 5-minute push with TLS
-	// verification off, leaking the long-lived API key each cycle. Pin the
-	// presented server cert (TOFU) instead, so --insecure applies only to this
-	// init call — the same defense provision.Run uses via pinIfBlindInsecure.
-	if insecure && cacert == "" {
-		if pemBytes, err := fetchServerCertPEM(url); err != nil {
-			logger.Warnf("Server-Zertifikat fuer TOFU-Pinning nicht abrufbar: %v", err)
-		} else if len(pemBytes) > 0 {
-			dest := config.MonitorCACert()
-			if werr := config.WriteFile(dest, pemBytes, 0644); werr != nil {
-				logger.Warnf("Server-Zertifikat pinnen fehlgeschlagen: %v", werr)
-			} else {
-				storedCACert, insecure = dest, false
-				logger.Infof("Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
-			}
+	// A blind --insecure (the deb/rpm postinst's alternative setup path) pins the
+	// presented server cert (TOFU), so --insecure applies only to this init call —
+	// the same defense provision.Run uses via pinIfBlindInsecure. Without a pin it
+	// fails before monitor.conf is written: monitor.conf never stores INSECURE,
+	// which would run every 5-minute push with TLS verification off, leaking the
+	// long-lived API key each cycle.
+	if insecure {
+		pemBytes, err := fetchServerCertPEM(url)
+		if err != nil {
+			return fmt.Errorf("--insecure: cannot fetch the server certificate to pin: %w; run monitor init with --cacert instead", err)
 		}
+		if len(pemBytes) == 0 {
+			return fmt.Errorf("--insecure: the server presented no certificate to pin; run monitor init with --cacert instead")
+		}
+		dest := config.MonitorCACert()
+		if err := config.WriteFile(dest, pemBytes, 0644); err != nil {
+			return fmt.Errorf("--insecure: cannot pin the server certificate: %w; run monitor init with --cacert instead", err)
+		}
+		storedCACert = dest
+		logger.Infof("Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
 	}
 
 	// Preserve an existing SERVICES line on re-provisioning: a token rotation passes empty services
@@ -114,9 +125,6 @@ func Init(p InitParams) error {
 	if storedCACert != "" {
 		entries = append(entries, config.KeyValue{Key: "CACERT", Value: storedCACert})
 	}
-	if insecure {
-		entries = append(entries, config.KeyValue{Key: "INSECURE", Value: "1"})
-	}
 	if err := config.WriteKeyValue(config.MonitorConfFile(), entries); err != nil {
 		return fmt.Errorf("Config schreiben: %w", err)
 	}
@@ -129,7 +137,7 @@ func Init(p InitParams) error {
 		APIKey:   apiKey,
 		ServerID: serverID,
 		Report:   report,
-		TLS:      config.TLSOpts{CACert: storedCACert, Insecure: insecure},
+		TLS:      config.TLSOpts{CACert: storedCACert},
 	}); err != nil {
 		logger.Warnf("Test-Push fehlgeschlagen: %v", err)
 		logger.Warnf("Pruefe URL und API-Key")
@@ -138,7 +146,7 @@ func Init(p InitParams) error {
 	}
 
 	// Activate the service (platform-specific)
-	if err := enableMonitorService(); err != nil {
+	if err := enableTimer(); err != nil {
 		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
 		logger.Warnf("Bitte manuell aktivieren")
 	}
