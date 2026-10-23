@@ -444,12 +444,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ab, und Glocke, Hub-Mail und Event-Hook blieben aus. Jetzt wird der Titel auf 512 Zeichen gekuerzt (die ersten 511
   und `…`); der Betreff von Mail und Webhook der Alert-Regeln bleibt ungekuerzt.
 - **Monitoring: der HTTP-Check liest hoechstens 1 MiB, und `timeout` gilt fuer den ganzen Check (R-0616):** Der
-  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; ohne `search_string` liest
-  er ihn gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den
-  ganzen Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt
-  den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
-  found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
-  keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; eine komprimierte Antwort
+  (gzip, deflate) entpackt er dafuer schrittweise und hoechstens bis 1 MiB. Ohne `search_string` liest er den Body
+  gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den ganzen
+  Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt den
+  Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not found
+  in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string` keinen
+  Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
 - **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
   galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
   (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
