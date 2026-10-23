@@ -255,3 +255,25 @@ def test_an_expired_intermediate_is_replaced_but_not_retired(monkeypatch, tmp_pa
         assert inter[r.scope].cert == r.new
         assert inter[r.scope].retired == ()
         assert _retired_file(tmp_path, r.scope) == []
+
+
+def test_a_current_intermediate_not_valid_yet_changes_nothing(monkeypatch, tmp_path):
+    # access was issued ten days after the others; this clock is five days behind that.
+    # Replaced under it, access would not be kept as retired.
+    _booted(monkeypatch, tmp_path, days_ago=10)
+    root = pki.cert_from_pem((tmp_path / "root.crt").read_bytes())
+    root_key = pki.key_from_pem((tmp_path / "root.key.enc").read_bytes(), PW)
+    cert, key = pki.build_intermediate_ca("access", root, root_key)
+    (tmp_path / "access.crt").write_bytes(pki.cert_to_pem(cert))
+    (tmp_path / "access.key").write_bytes(pki.key_to_pem(key))
+    (tmp_path / "access-chain.pem").write_bytes(pki.chain_pem(cert, root))
+    before = _snapshot(tmp_path)
+
+    with pytest.raises(rotation.RotationError, match=r"access\.crt") as exc:
+        _rotated(monkeypatch, tmp_path, days_ago=5)
+
+    message = str(exc.value)
+    assert "AdminHelper Access Intermediate" in message
+    assert cert.not_valid_before_utc.isoformat() in message
+    assert "host clock" in message and "NTP" in message
+    assert _snapshot(tmp_path) == before  # also: no temporary file left

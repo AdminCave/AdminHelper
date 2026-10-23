@@ -46,9 +46,10 @@ class RotatedScope:
 
 def rotate_intermediates(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
     """Issue a new intermediate for every scope under root.crt; the replaced ones that
-    are still valid go to <scope>-retired.pem, expired entries leave that file. Holds
-    an exclusive lock on <pki_dir>/.rotate.lock (RotationError if another run holds
-    it). Returns one RotatedScope per scope, in pki.SCOPES order."""
+    are still valid go to <scope>-retired.pem, expired entries leave that file. A
+    current intermediate that is not valid yet by this clock stops it (RotationError).
+    Holds an exclusive lock on <pki_dir>/.rotate.lock (RotationError if another run
+    holds it). Returns one RotatedScope per scope, in pki.SCOPES order."""
     lock_path = pki_dir / LOCK_NAME
     try:
         lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
@@ -70,7 +71,19 @@ def _rotate(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
     label = now.strftime("%Y-%m-%d")
     planned: list[tuple[RotatedScope, ec.EllipticCurvePrivateKey, list[x509.Certificate]]] = []
     for scope in pki.SCOPES:
-        old = _read_cert(pki_dir / f"{scope}.crt")
+        crt = pki_dir / f"{scope}.crt"
+        old = _read_cert(crt)
+        # An intermediate is valid from its issuing, so one not valid yet means this clock
+        # is behind the one that issued it. Replaced under it, the intermediate would not
+        # be kept as retired (it is not valid now), and once the clock is right nothing
+        # would trust the leaves it signed: the cure is the clock (storage.CLOCK_HINT).
+        if now < old.not_valid_before_utc:
+            raise RotationError(
+                f"{crt}: {pki.read_identity(old)[0]!r} is not valid before "
+                f"{old.not_valid_before_utc.isoformat()}, the host clock says "
+                f"{now.isoformat()}; check the host clock (NTP), it is behind the issuing "
+                "of this intermediate; under this clock the rotation changes nothing"
+            )
         retired = _retired_after(pki_dir / f"{scope}-retired.pem", scope, old, root_cert, now)
         new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key, label=label)
         planned.append((RotatedScope(scope, old, new_cert), new_key, retired))

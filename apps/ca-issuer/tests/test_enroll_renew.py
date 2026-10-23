@@ -885,8 +885,8 @@ def test_renew_under_an_expired_intermediate_is_a_503(register_client, monkeypat
 def test_enroll_under_a_not_yet_valid_intermediate_names_the_clock_not_the_rotation(
     register_client, monkeypatch, caplog
 ):
-    # Valid from its issuing, ten days ahead: this clock is behind, and a rotation
-    # under it would not keep the intermediate as retired.
+    # Valid from its issuing, ten days ahead: this clock is behind, and the cure is the
+    # clock; a rotation refuses to run under it.
     _issuer_with(
         register_client, monkeypatch, "access", days_left=pki.VALIDITY_DAYS_INTERMEDIATE + 10
     )

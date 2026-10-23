@@ -50,9 +50,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ausgestellt. Enrollte Agenten und Desktops erneuern wie bisher und uebernehmen dabei die neue Kette. Das Image des
   `ca-issuer` fuehrt dazu uebergebene Argumente als Nutzer `app` aus statt des Dienstes. Die Meldungen zum Ende eines
   Zwischenzertifikats (WARNING beim Start und beim Signieren, Abbruch beim Start, ERROR und HTTP 503 beim Signieren)
-  nennen den Befehl; ist ein Zwischenzertifikat noch nicht gueltig, nennen sie stattdessen die Host-Uhr (NTP) und raten
-  vom Rotieren ab, denn unter einer nachgehenden Uhr wuerde eine Rotation dem aktuellen Zwischenzertifikat nicht mehr
-  vertrauen. Doku: Betrieb (DE+EN).
+  nennen den Befehl; ist ein Zwischenzertifikat noch nicht gueltig, nennen sie stattdessen die Host-Uhr (NTP). Geht die
+  Uhr des Hosts hinter dem Ausstellen eines aktuellen Zwischenzertifikats nach, bricht die Rotation ab und aendert
+  nichts, denn unter dieser Uhr wuerde sie dem aktuellen Zwischenzertifikat nicht mehr vertrauen; die Meldung nennt
+  Datei, Name und Beginn der Gueltigkeit. Doku: Betrieb (DE+EN).
 
 ### Changed
 

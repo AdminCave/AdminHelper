@@ -41,12 +41,12 @@ ROTATE_HINT = (
     "rotate-intermediates"
 )
 # Said instead where an intermediate is not valid yet. It is valid from its issuing
-# (pki.build_intermediate_ca), so this clock is behind the one that issued it; a rotation
-# under it would not keep that intermediate as retired (rotation._retired_after), and once
-# the clock is right nothing would trust the leaves it signed.
+# (pki.build_intermediate_ca), so this clock is behind the one that issued it. The cure is
+# the clock, not a rotation: under this clock the rotation stops before it writes
+# (rotation._rotate), as it would replace that intermediate without keeping it as retired.
 CLOCK_HINT = (
     "check the host clock (NTP), it is behind the issuing of this intermediate; "
-    "do not rotate: under this clock a rotation drops the current intermediate"
+    "a rotation refuses to run under this clock"
 )
 
 # Re-mint a provisioned server leaf (gateway/frps) once it is past this much of

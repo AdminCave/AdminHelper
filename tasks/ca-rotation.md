@@ -160,8 +160,10 @@ Doku: CHANGELOG.md (Added-Eintrag aus T5) · Betreiber-Doku in T10
 Abhängt von: T5
 HEAD: 0dec7a74
 
-### T13 — Rotation lehnt ab, wenn ein aktuelles Intermediate laut Uhr noch nicht gilt  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_rotation.py, apps/ca-issuer/tests/test_enroll_renew.py, CHANGELOG.md
+### T13 — Rotation lehnt ab, wenn ein aktuelles Intermediate laut Uhr noch nicht gilt  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_rotation.py, apps/ca-issuer/tests/test_enroll_renew.py, CHANGELOG.md, apps/ca-issuer/tests/test_storage.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @d1a42c00 2026-10-23T22:54:20+02:00
+Review: approve (.ah-out/review/ca-rotation/T13.verdict.json)
 Änderung (Session 2026-10-23, aus dem Review zu T6): `_retired_after` (`apps/ca-issuer/app/rotation.py:154`) lässt ein aktuelles `<scope>.crt`, dessen `notBefore` nach der Uhr des Hosts liegt, heute still fallen, und `_rotate` (`:65-99`) ersetzt es. Neu: das ist ein `RotationError` vor dem ersten Schreiben, der Datei, CN und `notBefore` nennt und sagt, dass die Uhr des Hosts nachgeht (NTP prüfen) und die Rotation unter dieser Uhr nichts ändert. Ein abgelaufenes aktuelles Intermediate bleibt der Fall, für den die Rotation da ist (T4 (i), unverändert). Weil die Rotation dann nichts mehr verwirft, wird `CLOCK_HINT` (`apps/ca-issuer/app/storage.py:42-50`, Kommentar und Text „a rotation drops the current intermediate“) und der Kommentar `apps/ca-issuer/tests/test_enroll_renew.py:888-889` richtiggestellt; die Asserts dort (`NTP`, `not yet valid`) bleiben. Test in `test_rotation.py`: die Uhr (`pki._now`) vor das `notBefore` des aktuellen `access`-Intermediates gestellt, die Root dabei gültig (etwa: Hierarchie bei T0, Rotation bei T0 + 10 Tagen, zweite Rotation bei T0 + 5 Tagen) → `RotationError`, Text nennt `access.crt` und die Uhr; alle Dateien byte-gleich vorher/nachher, keine Temp-Dateien (wie T4 (c)). Zuerst rot: der neue Test.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py tests/test_enroll_renew.py
 Doku: CHANGELOG.md (Added-Eintrag aus T5, umlautfrei: geht die Uhr des Hosts hinter dem Ausstellen eines aktuellen Zwischenzertifikats nach, bricht die Rotation ab und aendert nichts)

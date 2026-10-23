@@ -115,7 +115,7 @@ def test_a_not_yet_valid_intermediate_aborts_the_boot(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError, match=r"'tunnel'.*tunnel\.crt.*not yet valid") as exc:
         storage.ensure_hierarchy(tmp_path, None)
-    # Valid from its issuing: the clock is behind, and a rotation under it would drop it.
+    # Valid from its issuing: the clock is behind; a rotation refuses to run under it.
     assert "NTP" in str(exc.value)
     assert "app.cli rotate-intermediates" not in str(exc.value)
 
