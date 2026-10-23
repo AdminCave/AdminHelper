@@ -51,8 +51,9 @@ done
 # end up in cleartext in env.sanitized / the logs of a bundle advertised as issue-safe (3.7).
 # SMTP_USER too: with some mail providers the user is itself an access token or a key ID.
 # Its rule stops at word edges (a short user like admin must not eat into adminhelper),
-# and it comes last: the rules of the other secrets run first, so a user that is a word
-# of one of them cannot cut that secret in two before its own rule masks it whole.
+# and it runs by its length like every value (build_redaction_sedfile): a user that is a
+# word of another secret cannot cut that secret in two, and a secret inside the user
+# cannot cut the user.
 SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER)
 
 # The .env keys whose values name this installation: host names, addresses, networks
@@ -60,35 +61,50 @@ SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADM
 # frequent cause the bundle is meant to show.
 HOST_KEYS=(DOMAIN EXTRA_SANS CA_FRPS_EXTRA_SANS ALLOWED_IPS FRP_SERVER_ADDR TRUSTED_PROXIES SMTP_HOST SMTP_FROM)
 
-# The key prefix of env_values and sanitize_env, as EREs for LC_ALL=C (grep -E, sed -E)
-# with the bytes spelled out. In front of a key compose skips what Go's unicode.IsSpace
-# calls whitespace, and a BOM: ENV_SP is ASCII whitespace, the BOM and the UTF-8 forms
-# of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE, LINE and PARAGRAPH SEPARATOR,
-# NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC SPACE (as the .env filter of
-# backup.sh). Between key and separator it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
-ENV_SP="([[:space:]]|"$'\xef\xbb\xbf|\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
+# The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
+# bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
+# whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
+# LINE and PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC
+# SPACE; compose trims it from the end of an unquoted value. In front of a key it skips
+# that and a BOM: ENV_SP (as the .env filter of backup.sh). Between key and separator,
+# and between separator and value, it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
+ENV_WS="([[:space:]]|"$'\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
+ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
 ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
 
 # build_redaction_sedfile <envfile> <sedfile> [mask_hosts]
 # Writes a sed script that masks the .env secret values plus generic token forms,
-# and with mask_hosts=1 the host names and addresses of host_rules as well.
+# and with mask_hosts=1 the host names and addresses of host_rules as well. Each
+# value once and the longest first: a value is masked whole before a shorter one
+# inside it (another line of a value over several lines, the value of another key)
+# can cut it in two. A value of SMTP_USER that is also one of another key keeps that
+# key's rule, without word edges. A line of a value that is only whitespace (ENV_WS)
+# is no rule: it holds no secret, and its rule would mask every blank of the logs.
 build_redaction_sedfile() {
     local envfile="$1" sedfile="$2" mask_hosts="${3:-0}"
     : > "$sedfile"
     if [ -f "$envfile" ]; then
-        local key val esc
-        for key in "${SECRET_KEYS[@]}"; do
-            while IFS= read -r val; do
-                # Skip empty or the well-known placeholder (not a real secret).
-                if [ -n "$val" ] && [ "$val" != "change-me-in-production" ]; then
-                    esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
-                    if [ "$key" = SMTP_USER ]; then
-                        esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')"
-                    fi
-                    printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
-                fi
-            done < <(env_values "$envfile" "$key")
-        done
+        local key line val esc
+        while IFS= read -r line; do
+            key="${line%% *}"
+            val="${line#* }"
+            esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
+            if [ "$key" = SMTP_USER ]; then
+                esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')"
+            fi
+            printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
+        done < <(
+            for key in "${SECRET_KEYS[@]}"; do
+                env_values "$envfile" "$key" | LC_ALL=C sed -e "s/^/$key /"
+            done | LC_ALL=C awk -v ws="$ENV_WS" '
+                # Skip whitespace only or the well-known placeholder (not a real secret).
+                { v = substr($0, index($0, " ") + 1) }
+                v !~ ("^" ws "*$") && v != "change-me-in-production" && (!(v in by) || by[v] == "SMTP_USER") {
+                    by[v] = $1
+                }
+                END { for (v in by) print length(v) "\t" by[v] " " v }
+            ' | LC_ALL=C sort -t "$(printf '\t')" -k1,1rn | cut -f2-
+        )
     fi
     # Generic token shapes that may appear in logs regardless of .env. The query
     # parameters stand in the request line of the gateway's and the server's access
@@ -147,42 +163,89 @@ SED
             -e 's|.*|s/&/<host>/gI|'
 }
 
-# env_values <envfile> <key> : every value of <key> in the .env, in the forms
-# env_value_forms gives -> stdout, one per line. LC_ALL=C grep -a: grep takes a
-# line with a byte the caller's locale cannot decode (or a file with a NUL byte)
-# for binary and leaves it out, and its value would stay in the logs. Every line
-# of the key, not the first: compose takes the last one. The key as compose reads
-# it: behind whitespace (ENV_SP), an "export" may lead, '=' or ':' separates,
-# whitespace (ENV_SEP) may stand before it. Not a commented-out line: it is no
-# configuration, and .env.example carries example values there.
+# env_values <envfile> <key> : every value of <key> in the .env as compose reads it
+# -> stdout, one line per line of the value, preceded by the value as the file
+# spells it where the two differ. The logs carry the compose form, a copy of the .env
+# the file form. Every value of the key, not the last only: compose takes the last
+# one, an older one may still stand in a log. The key as compose reads it: behind
+# whitespace (ENV_SP), an "export" may lead, '=' or ':' separates, whitespace
+# (ENV_SEP) may stand before it. Not a commented-out line: it is no configuration,
+# and .env.example carries example values there. The value begins behind the
+# separator and the whitespace (ENV_SEP) after it. Unquoted, it ends before " #",
+# loses the whitespace (ENV_WS) at its end, and $$ is $. In single quotes it is
+# literal but for \' (a '). In double quotes compose decodes \a \b \f \n \r \t \v \$
+# \" \\ and \0 with three octal digits (to UTF-8; a \0 without them loses its 0), and
+# $$ is $. A quote behind an odd number of backslashes does not end the value, and a
+# value that does not end on its line runs on to its closing quote, without one to
+# the end of the file. Only the quotes of <key> are followed: the line that opened a
+# value may stand in a quoted value of another key, and a line it runs on to be an
+# assignment of <key>; such a line gives its own value as well, read as that line
+# alone. awk under LC_ALL=C reads the file byte for byte: grep took a line with a
+# byte the caller's locale cannot decode (or a file with a NUL byte) for binary and
+# left it out.
 env_values() {
-    local line re="^${ENV_SP}*(export${ENV_SP}+)?${2}${ENV_SEP}*[=:]"
-    while IFS= read -r line; do
-        env_value_forms "$line"
-    done < <(LC_ALL=C grep -a -E "$re" "$1" 2>/dev/null)
-}
-
-# env_value_forms <line> : the value of a .env line whose key env_values matched,
-# as compose reads it -> stdout, one per line, preceded by the value as the
-# file spells it where the two differ (the longer one first, so a sed rule masks it
-# whole). The value starts behind the first '=' or ':' (the key holds neither).
-# Compose takes a value in single quotes literally; in double quotes and unquoted
-# it turns $$ into $, and an unquoted value ends before " #" and loses the
-# whitespace at its ends. The logs carry the compose form, a copy of the .env the
-# file form.
-env_value_forms() {
-    local v="${1#*[=:]}" file
-    v="${v#"${v%%[![:space:]]*}"}"  # ltrim
-    case "$v" in
-        \'*\'*) file="${v#\'}"; printf '%s\n' "${file%%\'*}"; return ;;
-        \"*\"*) file="${v#\"}"; file="${file%%\"*}" ;;
-        *)
-            file="${v%% \#*}"
-            file="${file%"${file##*[![:space:]]}"}"  # rtrim
-            ;;
-    esac
-    [ "${file//\$\$/\$}" = "$file" ] || printf '%s\n' "$file"
-    printf '%s\n' "${file//\$\$/\$}"
+    LC_ALL=C awk -v key="$2" -v sp="$ENV_SP" -v ws="$ENV_WS" -v sep="$ENV_SEP" '
+        BEGIN {
+            re = "^" sp "*(export" sp "+)?" key sep "*[=:]"
+            dec["a"] = "\007"; dec["b"] = "\010"; dec["f"] = "\014"; dec["n"] = "\n"; dec["r"] = "\r"
+            dec["t"] = "\t"; dec["v"] = "\013"; dec["$"] = "$$"; dec["\\"] = "\\"
+        }
+        function emit() {
+            if (q != "\047") gsub(/\$\$/, "$", val)
+            if (file != val) print file
+            print val
+            q = ""
+        }
+        # take(s): s is a line of a quoted value, behind its opening quote or one the
+        # value runs on to; file gets it as spelled, val as compose reads it.
+        function take(s,    i, c, d, o) {
+            for (i = 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if (esc) {
+                    esc = 0
+                    if (c == q) val = val c
+                    else if (q == "\047") val = val "\\" c
+                    else if (c in dec) val = val dec[c]
+                    else if (c == "0") {
+                        d = substr(s, i + 1, 3)
+                        sub(/[^0123456789].*/, "", d)
+                        i += length(d)
+                        if (d !~ /^[0123][01234567][01234567]$/) { val = val "\\" d; continue }
+                        o = substr(d, 1, 1) * 64 + substr(d, 2, 1) * 8 + substr(d, 3, 1)
+                        val = val (o < 128 ? sprintf("%c", o) : sprintf("%c%c", 192 + int(o / 64), 128 + o % 64))
+                    } else val = val "\\" c
+                } else if (c == "\\") esc = 1
+                else if (c == q) { file = file substr(s, 1, i - 1); emit(); return }
+                else val = val c
+            }
+            file = file s "\n"
+            if (esc) { val = val "\\"; esc = 0 }
+            val = val "\n"
+        }
+        # start(v): v is a line of key behind its separator; its value begins.
+        function start(v,    i) {
+            sub("^" sep "*", "", v)
+            file = val = ""
+            q = substr(v, 1, 1)
+            if (q == "\"" || q == "\047") { take(substr(v, 2)); return }
+            q = ""
+            if (i = index(v, " #")) v = substr(v, 1, i - 1)
+            sub("(" ws ")+$", "", v)
+            file = val = v
+            emit()
+        }
+        # finish(): a quoted value without its closing quote ends here.
+        function finish() { sub(/\n$/, "", file); sub(/\n$/, "", val); emit() }
+        q != "" && match($0, re) {
+            qq = q; qfile = file; qval = val
+            start(substr($0, RLENGTH + 1))
+            if (q != "") finish()
+            q = qq; file = qfile; val = qval
+        }
+        q != "" { take($0); next }
+        match($0, re) { start(substr($0, RLENGTH + 1)); next }
+        END { if (q != "") finish() }
+    ' "$1" 2>/dev/null
 }
 
 # redact <sedfile> : filter stdin -> stdout through the redaction sed script.
@@ -197,24 +260,54 @@ redact() {
 # build_redaction_sedfile redacts by value, this redacts by key, so a secret is
 # masked even if its value never appeared in a log. The key as compose reads it (as
 # in env_values), and commented out as well (any '#' among the whitespace in front):
-# an old value there may still be valid. The line keeps its form up to the value.
-# LC_ALL=C: under UTF-8, `.*` stops in front of a byte outside UTF-8, and the rest of
-# the value would stay. With mask_hosts=1 the values of the HOST_KEYS become <masked>
-# as well, and the rest of the file runs through host_rules: an address or a name may
-# also stand in a comment or in another key.
+# an old value there may still be valid. The line keeps its form up to the value. A
+# value in quotes that does not end on its line runs on to its closing quote (as in
+# env_values; not in a commented-out line, compose skips it whole), and the lines it
+# runs on to go. awk under LC_ALL=C: byte for byte, a byte outside UTF-8 or a NUL
+# byte passes unchanged; every line is printed with a newline. With mask_hosts=1 the
+# values of the HOST_KEYS become <masked> as well, and the rest of the file runs
+# through host_rules: an address or a name may also stand in a comment or in another
+# key.
 sanitize_env() {
-    local envfile="$1" mask_hosts="${2:-0}" pat re lead rules
-    lead="^((${ENV_SP}|#)*(export${ENV_SP}+)?"
-    pat="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
-    re="${lead}(${pat})${ENV_SEP}*[=:][[:space:]]*).*"
+    local envfile="$1" mask_hosts="${2:-0}" secrets hosts rules prog
+    secrets="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
+    # shellcheck disable=SC2016 # an awk program, $0 is awk's
+    prog='
+        BEGIN {
+            lead = "^(" sp "|#)*(export" sp "+)?"
+            sre = lead "(" secrets ")" sep "*[=:]" sep "*"
+            if (hosts != "") hre = lead "(" hosts ")" sep "*[=:]" sep "*"
+        }
+        function closes(s,    i, c, esc) {
+            for (i = 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if (esc) esc = 0
+                else if (c == "\\") esc = 1
+                else if (c == q) return 1
+            }
+            return 0
+        }
+        # mask(m): the line up to its value, then m; a quoted value that runs on
+        # leaves q set, and the lines up to its closing quote go.
+        function mask(m,    v) {
+            print substr($0, 1, RLENGTH) m
+            if (index(substr($0, 1, RLENGTH), "#")) return
+            v = substr($0, RLENGTH + 1)
+            q = substr(v, 1, 1)
+            if ((q != "\"" && q != "\047") || closes(substr(v, 2))) q = ""
+        }
+        q != "" { if (closes($0)) q = ""; next }
+        match($0, sre) { mask("<redacted>"); next }
+        hre != "" && match($0, hre) { mask("<masked>"); next }
+        { print }
+    '
     if [ "$mask_hosts" != 1 ]; then
-        LC_ALL=C sed -E "s/${re}/\1<redacted>/" "$envfile"
+        LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" -v secrets="$secrets" -v hosts= "$prog" "$envfile"
         return
     fi
     rules="$(host_rules "$envfile")"
-    pat="$(IFS='|'; printf '%s' "${HOST_KEYS[*]}")"
-    LC_ALL=C sed -E -e "s/${re}/\1<redacted>/" \
-        -e "s/${lead}(${pat})${ENV_SEP}*[=:][[:space:]]*).*/\1<masked>/" "$envfile" \
+    hosts="$(IFS='|'; printf '%s' "${HOST_KEYS[*]}")"
+    LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" -v secrets="$secrets" -v hosts="$hosts" "$prog" "$envfile" \
         | LC_ALL=C sed -e "$rules"
 }
 

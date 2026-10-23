@@ -52,7 +52,10 @@ Paket (Härtung, Kevin 2026-10-22).
      maskierten Anführungszeichen. Heute schneidet `:159` am ersten `"`, Werte mit einem dieser Zeichen werden in den
      Logs nicht gefunden (Probe: `ab"cd9esc`, `pq\9bs`, `sq'9sq` bleiben stehen);
    - Werte in Anführungszeichen über mehrere Zeilen; heute bleiben beide Teile in den Logs und die Folgezeilen in
-     `env.sanitized` stehen.
+     `env.sanitized` stehen;
+   - Leerraum um den Wert: zwischen Trenner und Wert überspringt compose auch NEL und NBSP, am Ende eines Werts ohne
+     Anführungszeichen schneidet es jeden Leerraum nach `unicode.IsSpace` ab; in Anführungszeichen bleibt Leerraum
+     Teil des Werts. Das Bundle maskiert die Werte so, wie compose sie liest (T7, Session 2026-10-23).
    Dazu bleiben auskommentierte Zeilen eines Secret-Schlüssels (`#ADMIN_PASSWORD=…`) in `env.sanitized` stehen.
 
 7. **Das Bundle selbst (T8).** `diagnostics.sh:262` schreibt das Bundle mit `tar -czf` direkt unter seinem Namen und mit
@@ -85,8 +88,9 @@ Paket (Härtung, Kevin 2026-10-22).
   ist (T3).
 - Kopf, `--help`, Doku und README sagen bei `SMTP_FROM` genau, was maskiert wird (T4).
 - `SMTP_USER` wird immer maskiert wie die übrigen Zugangsdaten (T5).
-- Das Diagnose-Bundle findet die Secrets der `.env` in den Formen, die compose liest: BOM, Unicode-Leerraum, Escapes,
-  mehrzeilige Werte; `env.sanitized` maskiert auch auskommentierte Zeilen dieser Schlüssel (T6, T7).
+- Das Diagnose-Bundle findet die Secrets der `.env` in den Formen, die compose liest: BOM, Unicode-Leerraum vor dem
+  Schlüssel und um den Wert, Escapes, mehrzeilige Werte; `env.sanitized` maskiert auch auskommentierte Zeilen dieser
+  Schlüssel (T6, T7).
 - Das Bundle ist vom ersten Byte an 0600 und trägt seinen Namen erst vollständig; keine Host-Werte in der Prozessliste
   (T8).
 - `--mask-hosts` maskiert jede Adresse eines Host-Werts, IPv6 mit IPv4-Ende als ein `<ip>`, den Rechnernamen kurz und
@@ -143,7 +147,10 @@ Diagnose-Bundle (T5–T7), der Modus des Bundles (T8) und was `--mask-hosts` mas
   `unicode.IsSpace` und lässt auch doppelt gequotete Werte über Zeilen laufen. Probe Docker Compose v5.5.1,
   `docker compose config --format json`: `A="ab\"cd"` → `ab"cd`; `B="a\\b"` → `a\b`; `C='Let\'s go'` → `Let's go`;
   `D='multi⏎line'` und `E="dq⏎multi"` → Wert mit Zeilenumbruch; `G="tab\there"` → echter Tab; NBSP und EM SPACE vor dem
-  Schlüssel → gelesen; BOM am Dateianfang → gelesen; `#H=` → Kommentar.
+  Schlüssel → gelesen; BOM am Dateianfang → gelesen; `#H=` → Kommentar. Probe derselben Version (2026-10-23, T7):
+  NBSP und NEL zwischen Trenner und Wert → übersprungen, auch vor einem Anführungszeichen; NBSP, NEL und EM SPACE am
+  Ende eines Werts ohne Anführungszeichen → abgeschnitten; NBSP in Anführungszeichen → Teil des Werts; `"\0351"` →
+  `é` als UTF-8, ein `\0` ohne drei Oktalziffern verliert die `0` (`"\08"` → `\8`); `\c` und `\x` bleiben wörtlich.
 - **GNU coreutils 9.7:** `mv -T, --no-target-directory` (Ziel als normale Datei behandeln); `sync [OPTION] [DATEI]…`
   synchronisiert mit Dateiargumenten nur diese (`sync --help`).
 - **pg_dump (PostgreSQL 17):** https://www.postgresql.org/docs/17/app-pgdump.html, Option `--no-sync` (siehe
@@ -161,8 +168,8 @@ Diagnose-Bundle (T5–T7), der Modus des Bundles (T8) und was `--mask-hosts` mas
    `SMTP_USER`: die übrigen Secrets sind lang und zufällig. Folge: ein Benutzername, der ein gewöhnliches Wort ist,
    wird als Wort überall `<redacted>` (sichere Richtung).
 4. **T7: jede Zeile eines mehrzeiligen Werts wird eine eigene Regel** (eine Logzeile trägt höchstens eine Zeile des
-   Werts). Eine kurze Zeile maskiert dann auch Fremdes (sichere Richtung). Alternative „nur Zeilen ab n Zeichen“
-   ließe kurze Teile stehen; verworfen.
+   Werts), außer einer aus reinem Leerraum: sie trägt kein Geheimnis. Eine kurze Zeile maskiert dann auch Fremdes
+   (sichere Richtung). Alternative „nur Zeilen ab n Zeichen“ ließe kurze Teile stehen; verworfen.
 5. **T8: `mktemp` im Zielordner + `mv -fT`** (wie backup.sh) statt nur `umask 077`: die umask wirkt nicht auf eine Datei,
    die unter dem Namen schon liegt. Unter `sudo` gehört das Bundle dann root mit 0600 (Doku-Satz).
 6. **T11: einteilige Namen case-sensitiv und mit strengerem Rand.** Ein Rechnername ohne Punkt ist oft ein gewöhnliches

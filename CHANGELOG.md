@@ -485,7 +485,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Unicode-Leerraum (etwa NBSP oder EM SPACE) und mit NBSP vor dem Trenner. Auskommentierte Zeilen dieser Schluessel
   (`#KEY=...`, auch `# export KEY = ...`) stehen in `env.sanitized` als `#KEY=<redacted>`, die der Host-Schluessel mit
   `--mask-hosts` als `#KEY=<masked>`; in den Logs sucht es ihre Werte nicht, eine auskommentierte Zeile ist keine
-  Konfiguration. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+  Konfiguration. Die Werte liest es so, wie compose sie liest: Escape-Sequenzen in doppelten
+  Anfuehrungszeichen (`\"`, `\\`, `\n`, `\t`, `\$`, Oktal `\0nnn` und weitere) und `\'` in einfachen, Leerraum
+  zwischen Trenner und Wert (auch NBSP) und am Ende eines Werts ohne Anfuehrungszeichen (auch Unicode-Leerraum), Werte
+  in Anfuehrungszeichen ueber mehrere Zeilen. Jede Zeile eines solchen Werts, die nicht nur aus Leerraum besteht,
+  wird in den Logs maskiert, in `env.sanitized` steht `KEY=<redacted>` ohne die Folgezeilen. `report.txt` laeuft jetzt
+  wie die Logs durch die Maskierung.
 - **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
   mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
   abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes

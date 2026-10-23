@@ -37,11 +37,19 @@
 #   (k) under the locale C.UTF-8, a key behind a BOM or Unicode whitespace and with
 #       an NBSP before the separator is found, in the logs and in sanitize_env;
 #       commented-out lines of a secret key are <redacted> in sanitize_env, of a host
-#       key <masked> with --mask-hosts, and their values are no rules for the logs.
+#       key <masked> with --mask-hosts, and their values are no rules for the logs;
+#   (l) .env values with escapes and over several lines, as compose reads them: in
+#       the logs every line of such a value is masked, in both forms where the file
+#       spells it otherwise, the longest value first (SMTP_USER too), a line of
+#       whitespace only not at all (one of punctuation only is), and an assignment
+#       of the key on a line a value runs on to as well; sanitize_env leaves out
+#       the lines a value runs on to, to the end of the file without a closing
+#       quote; under the locale C.UTF-8, an NBSP in front of a value and at the end
+#       of an unquoted one is no part of it, one inside quotes is.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
-#      and the locale C.UTF-8: without it cases (c) and (k) cannot run, and the
-#      test ends with 75)
+#      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
+#      cannot run, and the test ends with 75)
 
 set -euo pipefail
 
@@ -426,6 +434,157 @@ else
         || { echo "(k) sanitize_env --mask-hosts under C.UTF-8: $(cat -v "$tmp/k.san1" | tr '\n' ' ')" >&2; fail=1; }
     cmp -s "$tmp/k.log.exp" "$tmp/k.log.out" \
         || { echo "(k) log lines under C.UTF-8: $(cat -v "$tmp/k.log.out" | tr '\n' ' ')" >&2; fail=1; }
+fi
+
+# --- (l) values with escapes and over several lines, as compose reads them ---------
+# In double quotes compose decodes \" \\ \n \t \$ and \0nnn, in single quotes \'; a
+# quote behind a backslash does not end the value, and a value in quotes runs on over
+# the lines to its closing quote. Every line of the value is a rule for the logs (a
+# log line carries one line of it at most), and where the file spells the value
+# otherwise, that form too: a copy of the .env in a log carries it. sanitize_env keeps
+# the first line as KEY=<redacted> and leaves out the lines the value runs on to.
+env_l="$tmp/.env-escapes"
+cat > "$env_l" <<'EOF'
+SECRET_KEY="ab\"cd9esc"
+POSTGRES_PASSWORD="pq\\9bs"
+MONITOR_API_KEY='sq\'9sq'
+ADMIN_PASSWORD='ml9first
+ml9second'
+SMTP_PASSWORD="dq9first
+dq9second"
+CA_ROOT_PASSPHRASE="nl9first\nnl9second\ttab9\$dol9\0101oct9"
+Z=after9
+EOF
+log_l="$(cat <<'EOF'
+app: key ab"cd9esc
+db: auth pq\9bs
+monitor: key sq'9sq
+admin: ml9first and ml9second
+smtp: dq9first, dq9second
+ca: nl9first
+ca: nl9second<TAB>tab9$dol9Aoct9
+env: SECRET_KEY="ab\"cd9esc" POSTGRES_PASSWORD="pq\\9bs" MONITOR_API_KEY='sq\'9sq'
+env: CA_ROOT_PASSPHRASE="nl9first\nnl9second\ttab9\$dol9\0101oct9"
+z: after9
+EOF
+)"
+log_l="${log_l//<TAB>/$'\t'}"
+exp_l="$(cat <<'EOF'
+app: key <redacted>
+db: auth <redacted>
+monitor: key <redacted>
+admin: <redacted> and <redacted>
+smtp: <redacted>, <redacted>
+ca: <redacted>
+ca: <redacted>
+env: SECRET_KEY="<redacted>" POSTGRES_PASSWORD="<redacted>" MONITOR_API_KEY='<redacted>'
+env: CA_ROOT_PASSPHRASE="<redacted>"
+z: after9
+EOF
+)"
+sed_l="$tmp/redact-l.sed"
+build_redaction_sedfile "$env_l" "$sed_l"
+same "(l) escapes and lines of a value in the logs" "$exp_l" "$(printf '%s\n' "$log_l" | redact "$sed_l")" || fail=1
+exp_ls="$(printf '%s\n' 'SECRET_KEY=<redacted>' 'POSTGRES_PASSWORD=<redacted>' 'MONITOR_API_KEY=<redacted>' \
+    'ADMIN_PASSWORD=<redacted>' 'SMTP_PASSWORD=<redacted>' 'CA_ROOT_PASSPHRASE=<redacted>' 'Z=after9')"
+same "(l) escapes and lines of a value in sanitize_env" "$exp_ls" "$(sanitize_env "$env_l")" || fail=1
+# Without a closing quote the value runs on to the end of the file.
+env_lo="$tmp/.env-open"
+printf 'SECRET_KEY="open9first\nopen9second\n' > "$env_lo"
+sed_lo="$tmp/redact-lo.sed"
+build_redaction_sedfile "$env_lo" "$sed_lo"
+same "(l) a value without its closing quote in the logs" "$(printf '%s\n' 'app: <redacted>' 'app: <redacted>')" \
+    "$(printf '%s\n' 'app: open9first' 'app: open9second' | redact "$sed_lo")" || fail=1
+same "(l) a value without its closing quote in sanitize_env" 'SECRET_KEY=<redacted>' "$(sanitize_env "$env_lo")" \
+    || fail=1
+# A host value over several lines, with --mask-hosts: each line gives its rules, and
+# the line it runs on to goes from sanitize_env with the value.
+env_lh="$tmp/.env-hostlines"
+printf 'EXTRA_SANS="hl9a.example.com,\nhl9b.example.com"\nA=keep9\n' > "$env_lh"
+sed_lh="$tmp/redact-lh.sed"
+build_redaction_sedfile "$env_lh" "$sed_lh" 1
+same "(l) a host value over several lines in the logs" 'san <host> <host>' \
+    "$(printf '%s\n' 'san hl9a.example.com hl9b.example.com' | redact "$sed_lh")" || fail=1
+same "(l) a host value over several lines in sanitize_env" "$(printf '%s\n' 'EXTRA_SANS=<masked>' 'A=keep9')" \
+    "$(sanitize_env "$env_lh" 1)" || fail=1
+# The rules run the longest value first and each value once: a line of a value (Pa,
+# ml9) or the value of another key (pk9) inside a longer one does not cut it in two.
+env_lr="$tmp/.env-order"
+cat > "$env_lr" <<'EOF'
+SECRET_KEY=pk9
+ADMIN_PASSWORD="Pa\nPassphrase9Tail"
+SMTP_PASSWORD="ml9
+ml9-rest-of-secret"
+POSTGRES_PASSWORD=pk9-db-secret
+MONITOR_API_KEY=pk9-db-secret
+EOF
+sed_lr="$tmp/redact-lr.sed"
+build_redaction_sedfile "$env_lr" "$sed_lr"
+same "(l) the longest value first in the logs" \
+    "$(printf '%s\n' 'auth: <redacted>' 'smtp: <redacted>' 'db: <redacted>' 'env: ADMIN_PASSWORD="<redacted>"')" \
+    "$(printf '%s\n' 'auth: Passphrase9Tail' 'smtp: ml9-rest-of-secret' 'db: pk9-db-secret' \
+        'env: ADMIN_PASSWORD="Pa\nPassphrase9Tail"' | redact "$sed_lr")" || fail=1
+same "(l) each value one rule" "" "$(LC_ALL=C sort "$sed_lr" | LC_ALL=C uniq -d)" || fail=1
+# SMTP_USER runs by its length as well: a secret inside the user (relay9) does not cut
+# it in two. A value of SMTP_USER that is also one of another key is one rule, without
+# word edges.
+env_lu="$tmp/.env-userorder"
+printf '%s\n' 'SECRET_KEY=relay9' 'SMTP_USER=dup9user' 'SMTP_USER=relay9user@mail.example.com' \
+    'SMTP_PASSWORD=dup9user' > "$env_lu"
+sed_lu="$tmp/redact-lu.sed"
+build_redaction_sedfile "$env_lu" "$sed_lu"
+same "(l) SMTP_USER by its length in the logs" \
+    "$(printf '%s\n' 'auth as <redacted> ok' 'key <redacted>' 'smtp x<redacted>x')" \
+    "$(printf '%s\n' 'auth as relay9user@mail.example.com ok' 'key relay9' 'smtp xdup9userx' | redact "$sed_lu")" \
+    || fail=1
+same "(l) a value of SMTP_USER and of another key one rule" 1 "$(grep -c dup9user "$sed_lu")" || fail=1
+# A line of a value that is only whitespace (a space; a tab and an NBSP) is no rule: it
+# holds no secret, and every blank of the logs would be masked. A value of punctuation
+# only stays a rule.
+env_lb="$tmp/.env-blank"
+printf '%s\n' 'CA_ROOT_PASSPHRASE="first9part\n \nlast9part"' 'SMTP_PASSWORD="smtp9first' $'\t\xc2\xa0' \
+    'smtp9last"' 'ADMIN_PASSWORD=!!!!!!!!' > "$env_lb"
+sed_lb="$tmp/redact-lb.sed"
+build_redaction_sedfile "$env_lb" "$sed_lb"
+same "(l) a line of whitespace only in the logs" \
+    "$(printf '%s\n' 'GET /x HTTP/1.1 Authorization: Bearer <redacted>' 'ca: <redacted>, <redacted>' \
+        'smtp: <redacted> <redacted>' $'pad:\t\xc2\xa0end' 'admin: <redacted>')" \
+    "$(printf '%s\n' 'GET /x HTTP/1.1 Authorization: Bearer abcdefgh12345678' 'ca: first9part, last9part' \
+        'smtp: smtp9first smtp9last' $'pad:\t\xc2\xa0end' 'admin: !!!!!!!!' | redact "$sed_lb")" || fail=1
+# Only the quotes of the key are followed: a line of the key may stand in the quoted
+# value of another key (compose reads OTHER over three lines), and the value it opens
+# runs on to a later assignment of the key; that assignment gives its value as well.
+env_lq="$tmp/.env-otherquote"
+printf '%s\n' "OTHER='line1" 'SECRET_KEY="fake' "line3'" 'SECRET_KEY=real9secret' > "$env_lq"
+sed_lq="$tmp/redact-lq.sed"
+build_redaction_sedfile "$env_lq" "$sed_lq"
+same "(l) an assignment on a line a value runs on to in the logs" 'app: <redacted>' \
+    "$(printf '%s\n' 'app: real9secret' | redact "$sed_lq")" || fail=1
+same "(l) an assignment on a line a value runs on to in sanitize_env" \
+    "$(printf '%s\n' "OTHER='line1" 'SECRET_KEY=<redacted>')" "$(sanitize_env "$env_lq")" || fail=1
+# Under C.UTF-8: compose skips an NBSP between separator and value, and trims one
+# from the end of an unquoted value; both values are masked without it. Inside quotes
+# the NBSP is part of the value, and the rule masks it with the value. A value in
+# quotes behind an NBSP runs on over the lines as well. Held byte for byte (cmp).
+if [ -n "$LOCALE_SKIP" ]; then
+    LOCALE_SKIP="$LOCALE_SKIP, and neither can the NBSP part of case (l)"
+    echo "SKIP the NBSP part of case (l) needs the locale C.UTF-8 as well"
+else
+    env_ln="$tmp/.env-nbsp"
+    printf 'SECRET_KEY=\xc2\xa0nbsp9front\nPOSTGRES_PASSWORD=nbsp9end\xc2\xa0\nMONITOR_API_KEY="\xc2\xa0nbsp9in\xc2\xa0"\nSMTP_PASSWORD=\xc2\xa0"nbq9first\nnbq9second"\nA=keep9\n' > "$env_ln"
+    printf 'SECRET_KEY=\xc2\xa0<redacted>\nPOSTGRES_PASSWORD=<redacted>\nMONITOR_API_KEY=<redacted>\nSMTP_PASSWORD=\xc2\xa0<redacted>\nA=keep9\n' > "$tmp/l.san.exp"
+    printf 'app: boot with nbsp9front.\ndb: auth nbsp9end ok\nmonitor: key \xc2\xa0nbsp9in\xc2\xa0.\nsmtp: nbq9first nbq9second\n' > "$tmp/l.log"
+    printf 'app: boot with <redacted>.\ndb: auth <redacted> ok\nmonitor: key <redacted>.\nsmtp: <redacted> <redacted>\n' > "$tmp/l.log.exp"
+    rc=0
+    ( export LC_ALL=C.UTF-8
+      sanitize_env "$env_ln" > "$tmp/l.san"
+      build_redaction_sedfile "$env_ln" "$tmp/redact-ln.sed"
+      redact "$tmp/redact-ln.sed" < "$tmp/l.log" > "$tmp/l.log.out" ) || rc=$?
+    [ "$rc" = 0 ] || { echo "(l) the functions failed under C.UTF-8 (rc=$rc)" >&2; fail=1; }
+    cmp -s "$tmp/l.san.exp" "$tmp/l.san" \
+        || { echo "(l) sanitize_env with NBSP under C.UTF-8: $(cat -v "$tmp/l.san" | tr '\n' ' ')" >&2; fail=1; }
+    cmp -s "$tmp/l.log.exp" "$tmp/l.log.out" \
+        || { echo "(l) log lines with NBSP under C.UTF-8: $(cat -v "$tmp/l.log.out" | tr '\n' ' ')" >&2; fail=1; }
 fi
 unset -f uname
 
