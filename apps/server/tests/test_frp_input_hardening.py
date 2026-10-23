@@ -6,14 +6,18 @@
 generated frps/frpc/visitor configs, a secret entropy floor, and a fail-closed
 allow-list default."""
 
+import io
+import json
 import logging
 import tomllib
+import zipfile
 
 import pytest
 from pydantic import ValidationError
 
 from app.modules.frp._helpers import get_allow_users
 from app.modules.frp.config_generator import (
+    active_tunnels,
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
@@ -784,6 +788,175 @@ def test_generator_stays_quiet_for_valid_and_unset_values(caplog):
     assert "webServer" not in frps
     assert frpc["serverPort"] == 1
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+# A tunnel whose stored extra_config the API refuses today keeps its row; written into
+# its proxy, such an entry would make a frpc.toml that does not hold for the whole host.
+_PLUGIN_SECRET = "p" * 32
+
+
+def _stored_tunnel(**over):
+    """A FrpTunnel as the DB may still hold it — the schema never saw its extra_config."""
+    base = dict(
+        id="t-n",
+        server_id="srv1",
+        frp_config_id="legacy",
+        name="n-ssh",
+        tunnel_type="stcp",
+        protocol="ssh",
+        local_ip="127.0.0.1",
+        local_port=22,
+        secret_key="n" * 32,
+        visitor_port=6001,
+        enabled=True,
+    )
+    base.update(over)
+    return FrpTunnel(**base)
+
+
+def _plugin_tunnel(extra_config):
+    return _stored_tunnel(
+        id="t-p",
+        name="p-ssh",
+        secret_key=_PLUGIN_SECRET,
+        visitor_port=6002,
+        extra_config=extra_config,
+    )
+
+
+def _generator_warnings(caplog):
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == _GENERATOR_LOGGER and r.levelno == logging.WARNING
+    ]
+
+
+@pytest.mark.parametrize("key", ["plugin.type", "PLUGIN.type", "Plugin.localPath"])
+def test_generator_leaves_out_a_stored_tunnel_with_a_plugin_key(key, caplog):
+    plugin = _plugin_tunnel(
+        json.dumps(
+            {"transport.useCompression": True, key: "static_file", "plugin.localPath": "/srv/x"}
+        )
+    )
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
+
+    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["n-ssh"]
+    assert _PLUGIN_SECRET not in text
+    warned = _generator_warnings(caplog)
+    assert len(warned) == 1, warned
+    assert "'p-ssh'" in warned[0] and f"'{key}'" in warned[0], warned
+    assert "transport.useCompression" not in warned[0], warned
+    for value in ("static_file", "/srv/x", _PLUGIN_SECRET, _TOKEN):
+        assert value not in warned[0], warned
+
+
+def test_generator_writes_no_proxy_and_no_token_for_only_a_plugin_tunnel(caplog):
+    # The column holds JSON text; the generator also takes a dict, and so does the filter.
+    plugin = _plugin_tunnel({"plugin": "static_file"})
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        assert active_tunnels([plugin]) == []
+        text = generate_frpc_toml(_legacy_row(), [plugin], "srv1")
+
+    frpc = tomllib.loads(text)
+    assert "proxies" not in frpc and frpc["auth"] == {"method": "token"}, frpc
+    assert _TOKEN not in text and _PLUGIN_SECRET not in text
+
+
+@pytest.mark.parametrize("key", NOT_PLUGIN_KEYS)
+def test_generator_keeps_a_tunnel_with_a_neighbour_of_the_plugin_family(key, caplog):
+    tunnel = _stored_tunnel(extra_config=json.dumps({key: True}))
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        frpc = tomllib.loads(generate_frpc_toml(_legacy_row(), [tunnel], "srv1"))
+
+    assert [p["name"] for p in frpc["proxies"]] == ["n-ssh"]
+    assert _generator_warnings(caplog) == []
+
+
+# Stored extra_config the API refuses today (rows from before its checks): by entry, with
+# the key the warning names, or as text that is no JSON object, where it names none.
+REFUSED_BY_ENTRY = [
+    ({" plugin.type": "static_file"}, " plugin.type"),
+    ({"plugin .type": "static_file"}, "plugin .type"),
+    ({'"plugin".type': "static_file"}, '"plugin".type'),
+    ({"x\nplugin.type": "static_file"}, "x\nplugin.type"),
+    ({"transport.useCompression": 'x"\nplugin.type = "static_file'}, "transport.useCompression"),
+]
+NO_JSON_OBJECT = ['{"plugin.type": "static_file"', '["plugin.type"]', "null"]
+
+
+def _assert_left_out(text):
+    proxies = tomllib.loads(text)["proxies"]
+    assert [p["name"] for p in proxies] == ["n-ssh"], proxies
+    assert not any(k.lower() == "plugin" for p in proxies for k in p), proxies
+    assert _PLUGIN_SECRET not in text
+
+
+def _assert_one_line_without_values(warned):
+    assert len(warned) == 1, warned
+    assert "'p-ssh'" in warned[0] and "\n" not in warned[0], warned
+    for value in ("static_file", "/srv/x", _PLUGIN_SECRET, _TOKEN):
+        assert value not in warned[0], warned
+
+
+@pytest.mark.parametrize("extra,key", REFUSED_BY_ENTRY, ids=repr)
+def test_generator_leaves_out_a_stored_tunnel_the_api_would_refuse(extra, key, caplog):
+    plugin = _plugin_tunnel(json.dumps({"transport.useCompression": True, **extra}))
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
+
+    _assert_left_out(text)
+    warned = _generator_warnings(caplog)
+    _assert_one_line_without_values(warned)
+    assert "entries the API refuses" in warned[0] and repr(key) in warned[0], warned
+
+
+@pytest.mark.parametrize("stored", NO_JSON_OBJECT, ids=repr)
+def test_generator_leaves_out_a_stored_tunnel_whose_extra_config_is_no_object(stored, caplog):
+    plugin = _plugin_tunnel(stored)
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
+
+    _assert_left_out(text)
+    warned = _generator_warnings(caplog)
+    _assert_one_line_without_values(warned)
+    assert "no JSON object" in warned[0] and "plugin" not in warned[0], warned
+
+
+STORED_LEFT_OUT = [json.dumps({"plugin.type": "static_file"}), '{"plugin.type": "static_file"']
+
+
+def _store_extra_config(db, stored):
+    _seed_stcp_tunnel(db)
+    db.get(FrpTunnel, "t-a").extra_config = stored
+    db.commit()
+
+
+@pytest.mark.parametrize("stored", STORED_LEFT_OUT, ids=repr)
+def test_frpc_toml_route_answers_404_for_a_host_whose_only_tunnel_is_left_out(
+    stored, test_client, db_session, admin_user
+):
+    _store_extra_config(db_session, stored)
+    r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=_login(test_client))
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.parametrize("stored", STORED_LEFT_OUT, ids=repr)
+def test_bulk_zip_writes_no_frpc_toml_for_a_host_whose_only_tunnel_is_left_out(
+    stored, test_client, db_session, admin_user, caplog
+):
+    _store_extra_config(db_session, stored)
+    h = _login(test_client)
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=h)
+    assert r.status_code == 200, r.text
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    assert "clients/serverA/frpc.toml" not in zf.namelist(), zf.namelist()
+    # Once per tunnel, not per generator call.
+    assert len([m for m in _generator_warnings(caplog) if "'a-ssh'" in m]) == 1, caplog.text
+    # The visitor TOML carries no extra_config and keeps the visitor, like the visitor routes.
+    assert 'name = "a-ssh-visitor"' in zf.read("visitor.toml").decode()
 
 
 # The raw values a mode="before" validator can be handed. Each one used to reach

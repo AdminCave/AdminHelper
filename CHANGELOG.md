@@ -94,6 +94,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `plugin.type` oder `PLUGIN.type`), ergibt bei `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` jetzt `422`;
   bisher speicherte der Server ihn. Proxy-Plugins richtet der Server nicht ein, und der Agent wendet eine frpc.toml
   mit einem solchen Schluessel nicht an. Gespeicherte Eintraege bleiben, wie sie sind. Doku: API-Referenz (DE+EN).
+- **Server: ein gespeicherter FRP-Tunnel, dessen `extra_config` die API heute ablehnt, fehlt in der frpc.toml seines
+  Hosts:** Ein Tunnel, dessen gespeichertes `extra_config` einen Schluessel der plugin-Familie oder einen anderen
+  Eintrag traegt, den die API heute ablehnt (oder kein JSON-Objekt ist), steht nicht mehr in der frpc.toml seines
+  Hosts; der Server schreibt dazu eine WARNING mit Tunnelname und den betroffenen Schluesseln (nie den Werten) ins
+  Log. Eine solche Zeile ergaebe sonst eine frpc.toml, die fuer den ganzen Host nicht gilt; die uebrigen Tunnel des
+  Hosts bleiben. `GET /api/frp/generate/frpc-toml/{server_id}` antwortet `404`, wenn kein anderer Tunnel bleibt, und
+  das Bulk-ZIP enthaelt dann keine `frpc.toml` fuer den Host. Die Zeile in der Datenbank bleibt, wie sie ist. Doku:
+  API-Referenz, Server-Entwicklerseite (DE+EN).
 
 ### Removed
 
