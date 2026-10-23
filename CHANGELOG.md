@@ -51,6 +51,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
   Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
   Entwickler (DE+EN), `/test`-Skill.
+- **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
+  der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
+  jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
+  weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
 
 ### Fixed
 

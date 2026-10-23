@@ -151,6 +151,21 @@ def test_a_chain_with_other_line_endings_still_loads(tmp_path):
     assert set(storage.ensure_hierarchy(tmp_path, None)) == set(pki.SCOPES)
 
 
+def test_the_chain_handed_out_is_built_from_the_checked_certificates(tmp_path):
+    # The file passes the parsed check with text around the two certificates; what the
+    # issuer hands out (enroll responses, trust bundles) is the canonical chain, not the file.
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    inter_pem = (tmp_path / "tunnel.crt").read_bytes()
+    root_pem = (tmp_path / "root.crt").read_bytes()
+    (tmp_path / "tunnel-chain.pem").write_bytes(
+        b"# tunnel intermediate\n\n" + inter_pem + b"\n# root\n" + root_pem + b"\n\n"
+    )
+
+    tunnel = storage.ensure_hierarchy(tmp_path, None)["tunnel"]
+
+    assert tunnel.chain == pki.chain_pem(tunnel.cert, pki.cert_from_pem(root_pem))
+
+
 def test_an_expired_root_aborts_the_boot(monkeypatch, tmp_path):
     _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT + 1)
 

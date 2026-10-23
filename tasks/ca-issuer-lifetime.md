@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: kein Zertifikat überlebt seinen Aussteller, Prüfung der Hierarchie beim Start, Ablaufwarnung — Task-Ledger
-Status: aktiv · Branch: feature/ca-issuer-lifetime · Review: pro Task
+Status: bereit · Branch: feature/ca-issuer-lifetime · Review: pro Task
 Spec: docs/features/ca-issuer-lifetime.md (Roadmap R-0666)
 Heavy: linux-full — `apps/ca-issuer` (PKI): `ensure_hierarchy` prüft beim Start jede geladene Hierarchie, also auch die des Stacks im Sammellauf (`integration-stack` mit Enroll und Renew durch das Gateway, `backup-restore`, `upgrade-path` vom letzten Release mit einer echten Alt-Hierarchie); kein `scenario`: an Leaves aus einer frischen Hierarchie ändert sich nichts (die Begrenzung greift erst in den letzten 365 Tagen eines Intermediates), kein Wire-Format, kein Gateway-, FRP- oder Install-Pfad; kein `windows`: kein Agent- und kein Desktop-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -64,10 +64,12 @@ Orakel: contract — `ensure_hierarchy` gibt nur eine Hierarchie zurück, deren 
 Dedup-Key: bug:ca-issuer:storage.py:ensure-hierarchy-loads-unchecked
 HEAD: 237b450a
 
-### T4 — ensure_hierarchy: die ausgelieferte Kette aus den geprüften Zertifikaten bauen  [ ]
+### T4 — ensure_hierarchy: die ausgelieferte Kette aus den geprüften Zertifikaten bauen  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_storage.py, CHANGELOG.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @be39e4bc 2026-10-23T06:25:39+02:00
+Review: approve (.ah-out/review/ca-issuer-lifetime/T4.verdict.json)
 Änderung: `ensure_hierarchy` gibt `Intermediate(..., chain=pki.chain_pem(cert, root_cert))` zurück statt der gelesenen Dateibytes (`storage.py:169`). Die Prüfung `_chain_is` gegen `[intermediate, root]` bleibt, und eine falsche Kette bricht den Start weiter ab. Test: Eine Kettendatei, deren Bytes nicht genau der kanonischen Kette entsprechen (zusätzlicher Inhalt neben den zwei Zertifikaten), ergibt `Intermediate.chain == pki.chain_pem(intermediate, root)`. Der Test ist zuerst rot.
-Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_gateway_cert.py tests/test_frps_cert.py tests/test_enroll_renew.py
 Doku: CHANGELOG.md (Changed, neutral: der ca-issuer liefert die Zertifikatskette aus den beim Start geprüften Zertifikaten aus)
 Beweis: feature/ca-issuer-lifetime@7e06dfa0 · storage.py:169 übergibt die gelesenen Bytes der Kettendatei · Prüfer-Probe T3 (privat)
 HEAD: 7e06dfa0

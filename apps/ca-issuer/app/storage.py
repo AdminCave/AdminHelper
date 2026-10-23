@@ -166,7 +166,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             raise _invalid_hierarchy(
                 f"scope {scope!r}, {chain_path}: not {cert_path.name} followed by {root_crt.name}"
             )
-        out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=chain)
+        # The check above compares only the certificates in the file; what goes out
+        # (enroll responses, trust bundles) is rebuilt from the two checked ones.
+        out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root))
 
     _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
     for scope, inter in out.items():
