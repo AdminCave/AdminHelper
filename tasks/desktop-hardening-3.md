@@ -91,8 +91,10 @@ Orakel: mutation-sample — `let _ = delete(…)` statt Rückgabe macht Test (a)
 Dedup-Key: bug:desktop:tofu.rs:forget_pin-drops-delete-error
 HEAD: cea7fb9b
 
-### T6 — TOFU: Keyring-Fehler ins Log (R-0771)  [ ]
+### T6 — TOFU: Keyring-Fehler ins Log (R-0771)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tofu.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0999327d 2026-10-23T09:03:29+02:00
+Review: approve (.ah-out/review/desktop-hardening-3/T6.verdict.json)
 Änderung: `keyring_read` (`:210-212`), `keyring_write` (`:216-218`) und `keyring_delete` (nach T5) loggen einen Fehler mit `log::warn!` (wie `password.rs`), mit Operation, Pin-Identität (Host und Port) und Fehlertext, nie dem Fingerprint; die Rückgaben bleiben (`Err(())` für Lesen und Schreiben, damit die Aufrufer fail-closed bleiben). Kein eigener Test: reines Logging, kein Log-Capture im Desktop (Spec, Nicht-Ziele); die TOFU-Tests vor und nach dem Diff grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- tofu::
 Doku: keine (intern)

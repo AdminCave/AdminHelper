@@ -207,19 +207,27 @@ fn keyring_key(identity: &str) -> String {
 /// `Ok(None)` = no pin yet (genuine first use), `Ok(Some)` = the pinned fingerprint,
 /// `Err(())` = the keyring couldn't be read (locked/transient). The caller must treat
 /// `Err` as fail-closed (`PinDecision::Unavailable`), not as "no pin" (3.60).
+/// The keyring helpers log a failure with the pin identity, never the fingerprint
+/// (R-0771).
 fn keyring_read(identity: &str) -> Result<Option<String>, ()> {
-    crate::keyring_store::try_get(&keyring_key(identity)).map_err(|_| ())
+    crate::keyring_store::try_get(&keyring_key(identity)).map_err(|e| {
+        log::warn!("the TOFU pin of {identity} could not be read from the keyring: {e}");
+    })
 }
 
 /// `Err(())` = the keyring did not store the pin; the caller must then not trust
 /// the presented certificate.
 fn keyring_write(identity: &str, fingerprint: &str) -> Result<(), ()> {
-    crate::keyring_store::set(&keyring_key(identity), fingerprint).map_err(|_| ())
+    crate::keyring_store::set(&keyring_key(identity), fingerprint).map_err(|e| {
+        log::warn!("the TOFU pin of {identity} could not be stored in the keyring: {e}");
+    })
 }
 
 /// A missing pin is success (see `keyring_store::delete`); any other failure is an `Err`.
 fn keyring_delete(identity: &str) -> Result<(), AppError> {
-    crate::keyring_store::delete(&keyring_key(identity))
+    crate::keyring_store::delete(&keyring_key(identity)).inspect_err(|e| {
+        log::warn!("the TOFU pin of {identity} could not be deleted from the keyring: {e}");
+    })
 }
 
 // ── rustls verifier ───────────────────────────────────────────────────
