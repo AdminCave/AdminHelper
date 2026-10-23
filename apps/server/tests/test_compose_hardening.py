@@ -34,6 +34,11 @@ content out of the configuration hash it compares on `up`, so the ca-issuer carr
 only says whether a value is set: emptying the value changes the label, `up -d` recreates the
 container, and the old passphrase file goes with it.
 
+The server always trusts the gateway service, by its name, to forward the client address:
+compose puts `gateway` in front of whatever TRUSTED_PROXIES the .env adds, so the per-address
+rate limits, ALLOWED_IPS and the audit log see the client rather than the gateway. The
+scheduler runs the same image but takes no HTTP requests and trusts no proxy.
+
 Only the base file is read: docker-compose.test.yml carries `!override`, which `yaml.safe_load`
 refuses, and the shipped topology is the base file anyway.
 """
@@ -50,6 +55,9 @@ _NO_NEW_PRIVILEGES = "no-new-privileges:true"
 _MASQUERADE = "com.docker.network.bridge.enable_ip_masquerade"
 _PASSPHRASE_SECRET = "ca_root_passphrase"
 _PASSPHRASE_LABEL = "com.admincave.adminhelper.ca-root-passphrase-present"
+# ${VAR:+word}: `word` when the value is set and not empty, else nothing. Unset or empty, the
+# server trusts the gateway alone; set, the gateway and the entries of the .env.
+_SERVER_TRUSTED_PROXIES = "gateway${TRUSTED_PROXIES:+,${TRUSTED_PROXIES}}"
 # Compose reads the units of a byte value as powers of 1024: 8g is 8 GiB.
 _BYTE_UNITS = {"k": 1024, "m": 1024**2, "g": 1024**3}
 
@@ -168,3 +176,12 @@ def test_env_example_keeps_the_passphrase_line_active_and_empty():
     assert [line for line in lines if line.startswith("CA_ROOT_PASSPHRASE=")] == [
         "CA_ROOT_PASSPHRASE="
     ]
+
+
+def test_the_server_always_trusts_the_gateway_and_takes_further_proxies_from_the_env_file():
+    environment = _entries(_services()["server"], "environment")
+    assert environment.get("TRUSTED_PROXIES") == _SERVER_TRUSTED_PROXIES
+
+
+def test_the_scheduler_trusts_no_proxy():
+    assert "TRUSTED_PROXIES" not in _entries(_services()["scheduler"], "environment")

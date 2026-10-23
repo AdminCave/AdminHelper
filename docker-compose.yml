@@ -104,9 +104,13 @@ services:
       # Auf true setzen wenn hinter Reverse-Proxy (X-Forwarded-For auswerten)
       # Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
-      # Empfohlen statt TRUST_PROXY_HEADERS: IPs/CIDRs der Reverse-Proxies
-      # Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      # The gateway service is always trusted, by its name (the server resolves it every 30 s):
+      # the server takes the client address from the X-Forwarded-For the gateway sets.
+      # TRUSTED_PROXIES in .env adds further direct peers of the server (addresses, networks or
+      # host names), e.g. TRUSTED_PROXIES=192.0.2.10,198.51.100.0/24. A proxy in front of the
+      # gateway does not belong there: the gateway does not read its X-Forwarded-For. With
+      # TRUSTED_PROXIES always set, TRUST_PROXY_HEADERS above has no effect under compose.
+      - TRUSTED_PROXIES=gateway${TRUSTED_PROXIES:+,${TRUSTED_PROXIES}}
       # Redis fuer Rate-Limit ueber mehrere Worker hinweg
       - REDIS_URL=redis://redis:6379/0
       # Audit-Log-Aufbewahrung in Tagen (0 = unbegrenzt); taeglicher Prune-Job.
