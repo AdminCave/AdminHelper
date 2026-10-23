@@ -124,18 +124,19 @@
 
           <h2>Container limits</h2>
           <p>Every service of the compose stack runs with <code>no-new-privileges</code>: no process in the container gains privileges when it starts a program, setuid bits and file capabilities have no effect. Each service also has a process limit (<code>pids_limit</code>, counting processes and threads). Once it is reached, starting further processes and threads fails in that container; the host and the other services are not affected.</p>
+          <p>Each service also has a memory limit (<code>mem_limit</code>), far above what it needs idle, so that a memory leak or a runaway query hits only its own container. Once it is reached, the kernel swaps out up to the same amount on a host with swap and then ends a process in that container; if that ends its main process, Docker restarts the container (<code>restart: unless-stopped</code>). The limits reserve no memory, and their sum may exceed the host's RAM. VictoriaMetrics sizes its caches by its limit (60&nbsp;% of it), not by the host's RAM; if you keep many metrics, raise the limit of <code>victoria</code>.</p>
           <table>
-            <thead><tr><th>Service</th><th>Process limit</th></tr></thead>
+            <thead><tr><th>Service</th><th>Process limit</th><th>Memory limit</th></tr></thead>
             <tbody>
-              <tr><td><code>postgres</code></td><td>512</td></tr>
-              <tr><td><code>server</code></td><td>4096</td></tr>
-              <tr><td><code>scheduler</code></td><td>1024</td></tr>
-              <tr><td><code>gateway</code></td><td>512</td></tr>
-              <tr><td><code>ca-issuer</code></td><td>512</td></tr>
-              <tr><td><code>redis</code></td><td>256</td></tr>
-              <tr><td><code>frps</code></td><td>512</td></tr>
-              <tr><td><code>monitoring</code></td><td>1024</td></tr>
-              <tr><td><code>victoria</code></td><td>1024</td></tr>
+              <tr><td><code>postgres</code></td><td>512</td><td>8&nbsp;GiB</td></tr>
+              <tr><td><code>server</code></td><td>4096</td><td>6&nbsp;GiB</td></tr>
+              <tr><td><code>scheduler</code></td><td>1024</td><td>2&nbsp;GiB</td></tr>
+              <tr><td><code>gateway</code></td><td>512</td><td>1&nbsp;GiB</td></tr>
+              <tr><td><code>ca-issuer</code></td><td>512</td><td>512&nbsp;MiB</td></tr>
+              <tr><td><code>redis</code></td><td>256</td><td>512&nbsp;MiB</td></tr>
+              <tr><td><code>frps</code></td><td>512</td><td>2&nbsp;GiB</td></tr>
+              <tr><td><code>monitoring</code></td><td>1024</td><td>4&nbsp;GiB</td></tr>
+              <tr><td><code>victoria</code></td><td>1024</td><td>8&nbsp;GiB</td></tr>
             </tbody>
           </table>
           <p>The monitoring ping check needs no special privileges for this: <code>ping</code> uses ICMP datagram sockets, which compose allows in the <code>monitoring</code> container through <code>net.ipv4.ping_group_range</code>.</p>
@@ -145,8 +146,9 @@
 <pre><code># docker-compose.override.yml
 services:
   server:
-    pids_limit: 8192</code></pre>
-          <p>Then run <code>docker compose up -d server</code>. If you raise <code>WEB_CONCURRENCY</code> a lot, check the server's limit: every Uvicorn worker brings its own thread pool and up to eight hook processes.</p>
+    pids_limit: 8192
+    mem_limit: 8g</code></pre>
+          <p>Then run <code>docker compose up -d server</code>. If you raise <code>WEB_CONCURRENCY</code> a lot, check the server's limits: every Uvicorn worker brings its own thread pool and up to eight hook processes and needs memory of its own.</p>
           <p>On the certless planes, the gateway caps concurrent requests: beyond 16 concurrent requests per client address on the enrollment plane (<code>:8444</code>) and beyond 64 on the package repo (<code>:8445</code>) it answers <code>429</code>, likewise beyond 128 or 256 per plane in total. The 64 on <code>:8445</code> leave room for many agent hosts behind one NAT address. If a request's header does not arrive completely within 10&nbsp;s there, or its body stalls for more than 10&nbsp;s, the gateway closes the connection; it closes an idle keep-alive connection after 15&nbsp;s. The data plane <code>:443</code> is not affected.</p>
           <p id="frpedge">frps sits alone on the network <code>frpedge</code>, which compose creates without IP masquerading: the published ports of frps stay reachable, but packets that frps sends itself leave the host with the container's address as the source, not the host's. Docker drops the answers from version&nbsp;28 on, because it does not pass packets addressed to a container directly, unless the daemon runs with <code>allow-direct-routing</code> or the network in gateway mode <code>nat-unprotected</code> or <code>routed</code>; so no connection beyond the host comes about. With older versions, a machine with a route back into this network could answer (not verified). What remains: packets without an answer still leave the host, and services listening on the Docker host itself stay reachable from the network; the host's firewall protects them, not Docker.</p>
           <div class="callout callout-tip" data-reveal>

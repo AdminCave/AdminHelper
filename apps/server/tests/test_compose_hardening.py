@@ -13,6 +13,9 @@ that a runaway process (a hook script that forks without end, say) exhausts its 
 and not the host. The server's must leave room for one thread pool per uvicorn worker and the
 hook processes on top.
 
+Every service also has a memory limit (mem_limit), far above what it needs idle, so that a leak or
+a runaway query uses up its own container's memory and not the host's.
+
 The monitoring checks run `ping` as the image's app user. Under no-new-privileges a setuid or
 file-capability `ping` gains nothing and falls back to ICMP datagram sockets, which the kernel
 grants only to the groups in net.ipv4.ping_group_range; compose sets the range itself, whatever
@@ -47,6 +50,8 @@ _NO_NEW_PRIVILEGES = "no-new-privileges:true"
 _MASQUERADE = "com.docker.network.bridge.enable_ip_masquerade"
 _PASSPHRASE_SECRET = "ca_root_passphrase"
 _PASSPHRASE_LABEL = "com.admincave.adminhelper.ca-root-passphrase-present"
+# Compose reads the units of a byte value as powers of 1024: 8g is 8 GiB.
+_BYTE_UNITS = {"k": 1024, "m": 1024**2, "g": 1024**3}
 
 
 def _compose() -> dict:
@@ -82,6 +87,19 @@ def test_every_service_has_a_process_limit_and_the_server_room_for_its_workers()
     assert {name: limit for name, limit in limits.items() if type(limit) is not int} == {}
     assert {name: limit for name, limit in limits.items() if limit < 128} == {}
     assert limits["server"] >= 2048
+
+
+def test_every_service_has_a_memory_limit_of_at_least_128m():
+    limits = {name: service.get("mem_limit") for name, service in _services().items()}
+
+    malformed = {
+        name: limit
+        for name, limit in limits.items()
+        if not (isinstance(limit, str) and re.fullmatch(r"[1-9][0-9]*[kmg]", limit))
+    }
+    assert malformed == {}
+    sizes = {name: int(limit[:-1]) * _BYTE_UNITS[limit[-1]] for name, limit in limits.items()}
+    assert {name: limit for name, limit in limits.items() if sizes[name] < 128 * 1024**2} == {}
 
 
 def test_the_monitoring_app_user_may_open_icmp_datagram_sockets():

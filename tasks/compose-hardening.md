@@ -128,8 +128,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 Abhängt von: T4
 
-### T10 — Compose: Speichergrenzen je Dienst  [ ]
+### T10 — Compose: Speichergrenzen je Dienst  [x]
 Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_hardening.py, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @666894bd 2026-10-23T12:06:00+02:00
+Review: approve (.ah-out/review/compose-hardening/T10.verdict.json)
 Änderung (Empfehlung, Spec offene Frage 3): jeder Dienst bekommt `mem_limit` direkt nach seinem `pids_limit` (T1), mit einer Kommentarzeile zum Warum des Werts. Die Werte stehen vor dem Bau fest: Messung `docker stats --no-stream` aller Dienste während eines Stack-Laufs (nach T8), Wert ein großzügiges Vielfaches der Spitze, mindestens server 2g, scheduler 1g, monitoring 1g, postgres 1g, victoria 2g, ca-issuer 256m, gateway 256m, frps 256m, redis 256m; die Session trägt sie nach Kevins Antwort hier ein. Kevins Antwort (2026-10-22): feste Werte postgres 8g, victoria 8g, server 6g, monitoring 4g, scheduler 2g, frps 2g, gateway 1g, ca-issuer 512m, redis 512m; anhebbar per `docker-compose.override.yml` (Doku mit Beispiel); vor dem Bau am laufenden Stack (eigener Projektname, danach entfernt) mit `docker stats --no-stream` prüfen, dass der Leerlauf weit darunter liegt, Messwerte in den Commit-Body. Test in `test_compose_hardening.py`: jeder Dienst hat ein `mem_limit` in einer Form, die Compose annimmt (Zahl mit `k`/`m`/`g`), und keines unter 128m. Zuerst rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py
 Doku: Abschnitt aus T1 (DE+EN): Speichergrenzen je Dienst in der Tabelle, Override-Beispiel mit `mem_limit` · CHANGELOG (Changed, umlautfrei)

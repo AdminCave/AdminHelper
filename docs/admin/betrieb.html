@@ -166,18 +166,19 @@ docker compose up -d server</code></pre>
 
           <h2>Grenzen der Container</h2>
           <p>Alle Dienste des Compose-Stacks laufen mit <code>no-new-privileges</code>: Kein Prozess im Container erhält beim Start eines Programms zusätzliche Rechte, setuid-Bits und Datei-Capabilities bleiben wirkungslos. Dazu hat jeder Dienst eine Prozessgrenze (<code>pids_limit</code>, gezählt werden Prozesse und Threads). Ist sie erreicht, scheitert im betroffenen Container der Start weiterer Prozesse und Threads; der Host und die übrigen Dienste bleiben unberührt.</p>
+          <p>Außerdem hat jeder Dienst eine Speichergrenze (<code>mem_limit</code>), weit über seinem Bedarf im Leerlauf, damit ein Speicherleck oder eine ausufernde Abfrage nur den eigenen Container trifft. Ist sie erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in diesem Container; endet damit dessen Hauptprozess, startet Docker den Container neu (<code>restart: unless-stopped</code>). Die Grenzen reservieren keinen Speicher, ihre Summe darf über dem Arbeitsspeicher des Hosts liegen. VictoriaMetrics richtet seine Caches nach seiner Grenze aus (60&nbsp;% davon), nicht nach dem Arbeitsspeicher des Hosts; wer viele Metriken hält, hebt die Grenze von <code>victoria</code> an.</p>
           <table>
-            <thead><tr><th>Dienst</th><th>Prozessgrenze</th></tr></thead>
+            <thead><tr><th>Dienst</th><th>Prozessgrenze</th><th>Speichergrenze</th></tr></thead>
             <tbody>
-              <tr><td><code>postgres</code></td><td>512</td></tr>
-              <tr><td><code>server</code></td><td>4096</td></tr>
-              <tr><td><code>scheduler</code></td><td>1024</td></tr>
-              <tr><td><code>gateway</code></td><td>512</td></tr>
-              <tr><td><code>ca-issuer</code></td><td>512</td></tr>
-              <tr><td><code>redis</code></td><td>256</td></tr>
-              <tr><td><code>frps</code></td><td>512</td></tr>
-              <tr><td><code>monitoring</code></td><td>1024</td></tr>
-              <tr><td><code>victoria</code></td><td>1024</td></tr>
+              <tr><td><code>postgres</code></td><td>512</td><td>8&nbsp;GiB</td></tr>
+              <tr><td><code>server</code></td><td>4096</td><td>6&nbsp;GiB</td></tr>
+              <tr><td><code>scheduler</code></td><td>1024</td><td>2&nbsp;GiB</td></tr>
+              <tr><td><code>gateway</code></td><td>512</td><td>1&nbsp;GiB</td></tr>
+              <tr><td><code>ca-issuer</code></td><td>512</td><td>512&nbsp;MiB</td></tr>
+              <tr><td><code>redis</code></td><td>256</td><td>512&nbsp;MiB</td></tr>
+              <tr><td><code>frps</code></td><td>512</td><td>2&nbsp;GiB</td></tr>
+              <tr><td><code>monitoring</code></td><td>1024</td><td>4&nbsp;GiB</td></tr>
+              <tr><td><code>victoria</code></td><td>1024</td><td>8&nbsp;GiB</td></tr>
             </tbody>
           </table>
           <p>Der Ping-Check des Monitorings braucht dafür keine Sonderrechte: <code>ping</code> nutzt ICMP-Datagram-Sockets, die Compose im Container <code>monitoring</code> über <code>net.ipv4.ping_group_range</code> erlaubt.</p>
@@ -187,8 +188,9 @@ docker compose up -d server</code></pre>
 <pre><code># docker-compose.override.yml
 services:
   server:
-    pids_limit: 8192</code></pre>
-          <p>Danach <code>docker compose up -d server</code>. Wer <code>WEB_CONCURRENCY</code> stark erhöht, prüft die Grenze des <code>server</code>: Jeder Uvicorn-Worker bringt einen eigenen Thread-Pool und bis zu acht Hook-Prozesse mit.</p>
+    pids_limit: 8192
+    mem_limit: 8g</code></pre>
+          <p>Danach <code>docker compose up -d server</code>. Wer <code>WEB_CONCURRENCY</code> stark erhöht, prüft die Grenzen des <code>server</code>: Jeder Uvicorn-Worker bringt einen eigenen Thread-Pool und bis zu acht Hook-Prozesse mit und braucht eigenen Speicher.</p>
           <p>Auf den zertifikatslosen Ebenen begrenzt das Gateway gleichzeitige Anfragen: Mehr als 16 gleichzeitige Anfragen je Client-Adresse an die Enrollment-Plane (<code>:8444</code>) und mehr als 64 an das Paket-Repo (<code>:8445</code>) beantwortet es mit <code>429</code>, ebenso mehr als 128 bzw. 256 je Ebene insgesamt. Die 64 auf <code>:8445</code> lassen Platz für viele Agent-Hosts hinter einer NAT-Adresse. Kommt der Kopf einer Anfrage dort nicht binnen 10&nbsp;s vollständig an oder stockt ihr Body länger als 10&nbsp;s, schließt das Gateway die Verbindung; eine untätige Keep-Alive-Verbindung schließt es nach 15&nbsp;s. Die Daten-Plane <code>:443</code> bleibt davon unberührt.</p>
           <p id="frpedge">frps hängt allein im Netz <code>frpedge</code>, das Compose ohne IP-Masquerading anlegt: Die veröffentlichten Ports von frps bleiben erreichbar, aber Pakete, die frps selbst losschickt, verlassen den Host mit der Adresse des Containers als Absender, nicht mit der des Hosts. Antworten darauf verwirft Docker ab Version&nbsp;28, weil es Pakete an die Adresse eines Containers nicht direkt durchlässt, sofern der Daemon nicht mit <code>allow-direct-routing</code> läuft und das Netz nicht im Gateway-Modus <code>nat-unprotected</code> oder <code>routed</code>; eine Verbindung über den Host hinaus kommt so nicht zustande. Mit älteren Versionen könnte ein Rechner antworten, der eine Route zurück in dieses Netz hat (nicht verifiziert). Was bleibt: Pakete ohne Antwort verlassen den Host weiterhin, und Dienste, die auf dem Docker-Host selbst lauschen, bleiben aus dem Netz erreichbar; sie schützt die Firewall des Hosts, nicht Docker.</p>
           <div class="callout callout-tip" data-reveal>

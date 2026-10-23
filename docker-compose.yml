@@ -34,6 +34,8 @@ services:
       - no-new-privileges:true
     # Processes: one per connection (max_connections defaults to 100) next to the background workers.
     pids_limit: 512
+    # Memory: shared buffers, one backend per connection and the work memory of large sorts.
+    mem_limit: 8g
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
     # In pki (so the ca-issuer reaches it without sharing the default net with frps)
     # + default (server/scheduler/monitoring). No host port either way (1.1).
@@ -127,6 +129,8 @@ services:
     # .env.example) a thread pool of up to 40 and up to eight hook processes. Raise it together
     # with a large WEB_CONCURRENCY.
     pids_limit: 4096
+    # Memory: per uvicorn worker an interpreter, its requests and up to eight hook processes.
+    mem_limit: 6g
     # TCP-readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
     # 8080, so a successful connect means migrations are done — lets dependants wait on service_healthy
     # instead of racing Alembic (the gateway otherwise serves 502s to fresh clients) (1.22).
@@ -186,6 +190,8 @@ services:
       - no-new-privileges:true
     # Processes and threads: the job thread pools and up to eight hook processes.
     pids_limit: 1024
+    # Memory: one interpreter with its jobs and up to eight hook processes.
+    mem_limit: 2g
     depends_on:
       postgres:
         condition: service_healthy
@@ -235,6 +241,8 @@ services:
       - no-new-privileges:true
     # Processes: the nginx master and one worker per core (worker_processes auto).
     pids_limit: 512
+    # Memory: the nginx master and its workers with their buffers per connection.
+    mem_limit: 1g
     depends_on:
       # nginx resolves the upstream names at startup, so both must already exist.
       ca-issuer:
@@ -302,6 +310,8 @@ services:
       - no-new-privileges:true
     # Processes and threads: one uvicorn process and its thread pool.
     pids_limit: 512
+    # Memory: one uvicorn process that signs certificates and holds no large data.
+    mem_limit: 512m
     # Mounted as /run/secrets/ca_root_passphrase (CA_ROOT_PASSPHRASE_FILE above).
     secrets: [ca_root_passphrase]
     # Compose leaves a secret's content out of the hash it compares on `up`, so emptying
@@ -337,6 +347,8 @@ services:
     # Processes and threads: redis-server and its few background threads; with persistence off
     # it forks no snapshot child.
     pids_limit: 256
+    # Memory: rate-limit counters and the notification pub/sub; nothing is persisted.
+    mem_limit: 512m
     healthcheck:
       # A wedged-but-running process shows unhealthy (not just Up); dependants that
       # wait on service_healthy then hold until redis actually answers (4.49).
@@ -408,6 +420,8 @@ services:
     # Processes and threads: the supervisor, frps with the threads of the Go runtime, and the
     # dashboard requests under way.
     pids_limit: 512
+    # Memory: the buffers of frps grow with the tunnels and their connections.
+    mem_limit: 2g
     depends_on:
       server:
         condition: service_started
@@ -460,6 +474,8 @@ services:
     # Processes and threads: the check scheduler's pool of 30, one ping process per running ping
     # check, and uvicorn's thread pool.
     pids_limit: 1024
+    # Memory: the check scheduler, the ping processes and uvicorn.
+    mem_limit: 4g
     # The ping checks run `ping` as the image's user app. Under no-new-privileges a setuid or
     # file-capability ping gains nothing and opens an ICMP datagram socket, which the kernel
     # grants only to the groups in this range. Docker's default, set here so that it does not
@@ -501,6 +517,8 @@ services:
       - no-new-privileges:true
     # Threads: one Go process whose threads grow with the cores and the queries under way.
     pids_limit: 1024
+    # Memory: VictoriaMetrics sizes its caches to 60% of this limit, not of the host's memory.
+    mem_limit: 8g
 
   # Optionaler Postgres-Backup-Container.
   # Aktivieren mit: docker compose up -d pg-backup
