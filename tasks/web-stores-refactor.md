@@ -139,7 +139,8 @@ Metrik: `wc -l apps/web/src/modals/UserModal.svelte`: 182 → weniger; Payload-Z
 Dedup-Key: ref:web:modals:payload-logic-untested
 HEAD: b25c65a6
 
-### T10 — Server: `GET /api/servers/summary` mit `id`, `name`, `hostname` (R-0723)  [?] (Kevin: neue Admin-Route GET /api/servers/summary (Variante c), Cache je Seitenbesuch (a) oder zurückstellen (d)? Spec, offene Frage 1; Empfehlung: c)
+### T10 — Server: `GET /api/servers/summary` mit `id`, `name`, `hostname` (R-0723)  [ ]
+Entscheidung: Kevin 2026-10-23: Variante (c), neue Admin-Route GET /api/servers/summary.
 Komponente: server · Dateien: apps/server/app/modules/servers/router.py, apps/server/app/modules/servers/schemas.py, apps/server/tests/test_servers_summary.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
 Änderung: `schemas.py`: `class ServerSummary(BaseModel)` mit `id: str`, `name: str`, `hostname: str` (Antwortmodell wie `HookResponse`, `apps/server/app/modules/hooks/schemas.py:57`). `router.py`: `@router.get("/summary", response_model=list[ServerSummary])` vor `get_server` (`:135`, sonst liest FastAPI `summary` als `server_id`), Abhängigkeiten wie `list_servers` (`:89-99`, `get_current_admin`), Abfrage `db.query(Server.id, Server.name, Server.hostname).order_by(Server.name, Server.id)`, ohne Pagination; ein Kommentar nennt das Warum (der Benutzerdialog braucht nur diese Felder; `GET /api/servers` lädt alle Verbindungen und Tunnel). Snapshot neu mit `pytest tests/test_openapi_snapshot.py --update-openapi-snapshot`; der Diff des Snapshots ist nur der neue Pfad und das neue Schema. Neue Tests `test_servers_summary.py` (SPDX; Fixtures `test_client`, `db_session`, `admin_user`, `normal_user` wie `apps/server/tests/test_servers_authz.py`): (a) Admin, zwei Server mit je einer Verbindung → je Server genau die Schlüssel `id`, `name`, `hostname`, sortiert nach Name; (b) leeres Inventar → `[]`; (c) Nicht-Admin → 403; (d) ohne Token → 401. Hosts unter `.example`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_summary.py tests/test_openapi_snapshot.py tests/test_route_auth_gate.py tests/test_servers_authz.py
@@ -150,7 +151,8 @@ Metrik: Bytes der Serverliste für den Dialog bei 500 synthetischen Servern (Pro
 Dedup-Key: ref:web:UserModal.svelte:full-inventory-fetch
 HEAD: b25c65a6
 
-### T11 — Web: der Benutzerdialog lädt nur die Server-Zusammenfassung (R-0723)  [?] (hängt an T10 und Frage 1; bei Variante a schreibt die Session die Task auf einen Cache je Seitenbesuch um)
+### T11 — Web: der Benutzerdialog lädt nur die Server-Zusammenfassung (R-0723)  [ ]
+Entscheidung: Kevin 2026-10-23: Variante (c), der Dialog lädt die Zusammenfassung aus T10.
 Komponente: web · Dateien: apps/web/src/lib/api/servers.ts, apps/web/src/lib/api/types.ts, apps/web/src/modals/UserModal.svelte, apps/web/src/modals/UserModal.test.ts, apps/web/tests/e2e/mocks.ts
 Änderung: `types.ts:82-89`: `Server` wird `ServerSummary { id: string; name: string; hostname: string }` (Nutzer heute nur `servers.ts` und `UserModal.svelte:15`). `servers.ts:14-16`: `list()` wird `listSummaries(): Promise<ServerSummary[]>` → `GET /api/servers/summary`; der Kopfkommentar (`:5-9`) bleibt sinngemäß (einziger Server-Endpunkt des Web). `UserModal.svelte` ruft `listSummaries()`. `UserModal.test.ts`: der Mock von `$lib/api/servers` heißt `listSummaries` (die Fälle aus T8 bleiben, nur der Name ändert sich); neu: beim Öffnen genau ein Aufruf von `listSummaries`. `apps/web/tests/e2e/mocks.ts:297-299`: die Route wird `api('servers/summary')` (leere Liste wie heute); `MOCK_FIXTURES` (`:202`) bekommt `GET servers/summary` mit einer Zeile `{ id, name, hostname }`, damit `src/lib/api/mocks.contract.test.ts` die Form gegen `apps/server/tests/openapi.snapshot.json` prüft.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/UserModal.test.ts src/lib/api/mocks.contract.test.ts src/lib/utils/userForm.test.ts
@@ -161,7 +163,8 @@ Orakel: contract — `MOCK_FIXTURES` gegen den OpenAPI-Snapshot (`apps/web/src/l
 Dedup-Key: ref:web:UserModal.svelte:full-inventory-fetch
 HEAD: b25c65a6
 
-### T12 — Kopier-Helfer `copyToClipboard(text, okKey)` (R-0724)  [?] (Kevin: Fehlertext beim Kopieren als neuer Schlüssel toast.copyFailed „Kopieren fehlgeschlagen“ / „Copy failed“? Spec, offene Frage 2; Empfehlung: ja)
+### T12 — Kopier-Helfer `copyToClipboard(text, okKey)` (R-0724)  [ ]
+Entscheidung: Kevin 2026-10-23: neuer Schlüssel toast.copyFailed „Kopieren fehlgeschlagen“ / „Copy failed“.
 Komponente: web · Dateien: apps/web/src/lib/utils/clipboard.ts, apps/web/src/lib/utils/clipboard.test.ts, apps/web/src/lib/i18n/dictionaries.ts
 Änderung: Neu `clipboard.ts` (SPDX): `async function copyToClipboard(text: string, okKey: string): Promise<boolean>` — `navigator.clipboard.writeText(text)` im `try`; bei Erfolg `showToast(tNow(okKey))` und `true`, sonst `showToast(tNow('toast.copyFailed'), 'error')` und `false` (`tNow` wie `apps/web/src/lib/api/client.ts:40`). `dictionaries.ts`: `toast.copyFailed` DE „Kopieren fehlgeschlagen“, EN „Copy failed“ (neben `toast.apikey.copied`, `:132` / EN `:421`). `clipboard.test.ts` (Toasts über den Store `toasts`, `apps/web/src/lib/stores/notifications.ts:20`): (a) Erfolg → `writeText` mit dem Text, ein Toast `success` mit dem Text des Schlüssels (im Test das vorhandene `toast.hook.tokenCopied`, damit kein Schlüssel nur im Test lebt), Rückgabe `true`; (b) `writeText` lehnt ab → ein Toast `error` „Kopieren fehlgeschlagen“, Rückgabe `false`; (c) kein `navigator.clipboard` (unsicherer Kontext) → wie (b), kein Wurf. Noch kein Dialog nutzt den Helfer (T14).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/utils/clipboard.test.ts src/lib/i18n/i18n.test.ts
@@ -181,7 +184,8 @@ Orakel: contract — kopiert wird der angezeigte Wert, der Erfolgstext bleibt
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T14 — Die vier Dialoge kopieren über den Helfer (R-0724)  [?] (hängt an T12 und Frage 2)
+### T14 — Die vier Dialoge kopieren über den Helfer (R-0724)  [ ]
+Entscheidung: Kevin 2026-10-23: wie T12.
 Komponente: web · Dateien: apps/web/src/modals/KeyRevealModal.svelte, apps/web/src/modals/WebhookTokenModal.svelte, apps/web/src/modals/EnrollTokenModal.svelte, apps/web/src/modals/FrpConfigPreviewModal.svelte, apps/web/src/modals/copyButtons.test.ts, apps/web/src/lib/i18n/dictionaries.ts, CHANGELOG.md
 Änderung: Jeder Kopier-Handler (`KeyRevealModal.svelte:21-27`, `WebhookTokenModal.svelte:30-36`, `EnrollTokenModal.svelte:66-74` mit seinem `if (!grant) return;`, `FrpConfigPreviewModal.svelte:22-29`) wird ein Aufruf von `copyToClipboard(<Wert>, <Schlüssel>)`; ein danach ungenutzter Import von `showToast` geht mit. Schlüssel: neu `toast.copied` (DE „In Zwischenablage kopiert“, EN „Copied to clipboard“) für KeyReveal, Enrollment und FrpConfigPreview; WebhookToken behält `toast.hook.tokenCopied`. `toast.apikey.copied` und `toast.frp.copied` (`dictionaries.ts:132`, `:291`, EN `:421`, `:579`) gehen, weil ohne Nutzer. `copyButtons.test.ts`: die Erfolgsfälle aus T13 bleiben unverändert; neu je Dialog der Fehlerweg (`writeText` lehnt ab → ein Toast `error` „Kopieren fehlgeschlagen“). Zuerst rot auf dem Stand vor dem Diff: der Fehlerweg in drei Dialogen („Clipboard error“) und in FrpConfigPreview („Fehler“). Sieben Dateien, je Dialog etwa fünf Zeilen.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/copyButtons.test.ts src/modals/EnrollTokenModal.test.ts src/lib/utils/clipboard.test.ts src/lib/i18n/i18n.test.ts
