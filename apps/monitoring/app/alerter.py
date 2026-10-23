@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.config import (
     INTERNAL_API_KEY,
     SERVER_HUB_URL,
+    SMTP_CA_FILE,
     SMTP_FROM,
     SMTP_HOST,
     SMTP_PASSWORD,
@@ -62,6 +63,11 @@ _SEVERITY_LEVEL = {"info": 0, "warning": 1, "critical": 2}
 # Bell cooldown (docs/features/monitoring-alert-quality.md): at most one problem
 # per check in this window reaches the notification hub; see hub_decision.
 HUB_COOLDOWN = timedelta(minutes=30)
+
+# The longest title the hub takes: IncomingEvent.title in the server
+# (apps/server/app/modules/notifications/schemas.py). A longer one turns the push
+# into a 422, and the bell gets nothing; test_alerter_hub keeps both equal.
+HUB_TITLE_MAX = 512
 
 
 def resolve_notification(notified_status: str | None, new_status: str) -> str:
@@ -397,11 +403,15 @@ def _emit_to_hub(
     # recoveries (warning/critical -> ok) keep their severity and are pushed.
     if severity == "info":
         return False
+    # The check name has no length limit; mail and webhook keep the full subject.
+    title = msg["subject"]
+    if len(title) > HUB_TITLE_MAX:
+        title = title[: HUB_TITLE_MAX - 1] + "\u2026"
     payload = {
         "event_type": "monitoring.check.transition",
         "severity": severity,
         "category": "monitoring",
-        "title": msg["subject"],
+        "title": title,
         "body": msg["text"],
         "source_type": "server",
         "source_id": check.server_id,
@@ -450,7 +460,15 @@ def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
 
 def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) -> bool:
     """Checks whether cooldown is still active for this rule+check combination."""
-    cutoff = utcnow_naive() - timedelta(minutes=rule.cooldown_minutes)
+    # NULL is the default 30 of the schema, the template sync and the column: the
+    # column is nullable, and PUT /alerts/{id} stores an explicit null.
+    minutes = 30 if rule.cooldown_minutes is None else rule.cooldown_minutes
+    try:
+        cutoff = utcnow_naive() - timedelta(minutes=minutes)
+    except OverflowError:
+        # The schema allows up to int32 minutes, about 4000 years: a window that
+        # reaches back before year 1 counts every earlier successful send.
+        cutoff = datetime.min
     recent = (
         db.query(MonitorAlertLog)
         .filter(
@@ -597,7 +615,9 @@ def _send_webhook(
 
     try:
         # pinned_client connects to an address check_target checked, not to whatever a
-        # second lookup answers; it parses the URL already, so it sits inside the try.
+        # second lookup answers. check_target has read the URL with httpx already; the
+        # client sits inside the try because building it can fail on an unusable proxy
+        # setting from the environment (HTTPS_PROXY=ftp://..., NO_PROXY=host:abc).
         with pinned_client(url, target) as client:
             resp = client.post(url, json=payload, timeout=10, follow_redirects=False)
         if resp.status_code < 300:
@@ -609,7 +629,7 @@ def _send_webhook(
         return False, _webhook_failure(exc)
 
 
-def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
+def _email_failure(exc: Exception, *, in_starttls: bool, loading_ca: bool) -> str:
     """The alert-log reason for a failed send: a fixed text per kind of error. The
     exception text (mail server replies, host names) goes to the service log only."""
     # Every smtplib error and ssl.SSLError is an OSError as well, so the order matters.
@@ -621,9 +641,12 @@ def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
     ):
         return "SMTP server refused the message"
     # SMTPNotSupportedError means "no STARTTLS" only from starttls(); login() and the
-    # send raise it for a missing AUTH or SMTPUTF8 extension.
-    if isinstance(exc, ssl.SSLError) or (
-        in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError)
+    # send raise it for a missing AUTH or SMTPUTF8 extension. An OSError while loading
+    # SMTP_CA_FILE (missing, unreadable) is a TLS setup failure, not a connection one.
+    if (
+        isinstance(exc, ssl.SSLError)
+        or (in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError))
+        or (loading_ca and isinstance(exc, OSError))
     ):
         return "SMTP TLS failed"
     if isinstance(exc, TimeoutError):
@@ -648,10 +671,14 @@ def _send_email(
     if not recipients:
         return False, "No recipients configured"
 
-    smtp_host = config.get("smtp_host") or SMTP_HOST
+    rule_host = str(config.get("smtp_host") or "").strip()
+    # SMTP_USER/SMTP_PASSWORD belong to the relay in SMTP_HOST; a rule naming another host
+    # logs in with its own credentials only, so the global password never reaches that host.
+    env_relay = not rule_host or rule_host.lower() == SMTP_HOST.strip().lower()
+    smtp_host = rule_host or SMTP_HOST
     smtp_port = int(config.get("smtp_port") or SMTP_PORT)
-    smtp_user = config.get("smtp_user") or SMTP_USER
-    smtp_pass = config.get("smtp_password") or SMTP_PASSWORD
+    smtp_user = config.get("smtp_user") or (SMTP_USER if env_relay else "")
+    smtp_pass = config.get("smtp_password") or (SMTP_PASSWORD if env_relay else "")
 
     if not smtp_host:
         return False, "SMTP not configured (SMTP_HOST missing)"
@@ -662,13 +689,19 @@ def _send_email(
     message["To"] = ", ".join(recipients)
     message.attach(MIMEText(msg["text"], "plain"))
 
-    in_starttls = False
+    in_starttls = loading_ca = False
     try:
         # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
         # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
         # verifying context (create_default_context checks cert + hostname), so a
         # MITM cannot strip TLS and harvest the login credentials (3.24).
         ctx = ssl.create_default_context()
+        if SMTP_CA_FILE:
+            # A relay with a private CA (any relay, a rule's own included): added to the system
+            # CAs, checks stay on. A file that cannot be loaded stops the send before connecting.
+            loading_ca = True
+            ctx.load_verify_locations(cafile=SMTP_CA_FILE)
+            loading_ca = False
         if smtp_port == 465:
             smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ctx)
         else:
@@ -688,4 +721,4 @@ def _send_email(
         return True, None
     except Exception as exc:
         logger.error("Email failed: %s: %s", check.name, exc)
-        return False, _email_failure(exc, in_starttls=in_starttls)
+        return False, _email_failure(exc, in_starttls=in_starttls, loading_ca=loading_ca)

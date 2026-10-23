@@ -357,6 +357,13 @@ bash scripts/dev/openapi-breaking.sh server --base origin/main
 bash scripts/dev/openapi-breaking.sh monitoring --base origin/main
 ```
 
+Auch `gnome-keyring` braucht der Pflicht-Schritt `scripts`: `scripts/tests/lib_e2e_stack_test.sh`
+startet fuer seine Keyring-Faelle einen echten `gnome-keyring-daemon` in einer eigenen
+D-Bus-Session und endet ohne `gnome-keyring-daemon`, `dbus-run-session` oder `dbus-send` mit
+Exit 75 — unter `--strict` also rot. CI (Job `ops-scripts`) und die Test-Boxen
+(`scripts/vm/bootstrap_linux.sh`) installieren es; auf der Dev-Box (Debian/Ubuntu):
+`sudo apt-get install --no-install-recommends gnome-keyring dbus`.
+
 ### Geteilte API-Typen (sync-from-web.sh --check)
 
 `apps/web/src/lib/api/types.ts` und `apps/desktop/ui/src/lib/api/types.ts` sind

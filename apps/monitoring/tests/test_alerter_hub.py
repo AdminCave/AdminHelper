@@ -11,7 +11,9 @@ R-0424 adds the bell cooldown (hub_decision) and real-session tests of the bell'
 slot across two dispatches of one check (SQLite here, Postgres in
 test_check_engine_concurrency)."""
 
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -344,6 +346,90 @@ class TestSeverityCapThroughProcessAlert:
         sent, posted = self._run(monkeypatch, "critical", "critical", "ok")
         assert [m["subject"] for m in sent] == ["[AdminHelper Monitor] RECOVERY: disk"]
         assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "ok")]
+
+
+class TestHubTitleLimit:
+    """R-0637: the bell's title is the message subject, cut to the hub's limit;
+    a longer title made the push a 422 and the bell got nothing. Mail and
+    webhook keep the full subject. Real _build_message and _emit_to_hub."""
+
+    def _run(self, monkeypatch, name, old_status, new_status):
+        monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
+        monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
+        sent, posted = [], []
+
+        def fake_dispatch(rule, check, msg):
+            sent.append(msg["subject"])
+            return True, None
+
+        def fake_post(url, **kwargs):
+            posted.append(kwargs["json"]["title"])
+            return SimpleNamespace(status_code=202)
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter.httpx, "post", fake_post)
+        check = make_check(name=name, severity="critical")
+        process_alert(_CapturingDb([make_rule()]), check, old_status, new_status)
+        return sent, posted
+
+    def test_long_problem_title_is_cut(self, monkeypatch):
+        name = "n" * 600
+        sent, posted = self._run(monkeypatch, name, "ok", "critical")
+
+        subject = "[AdminHelper Monitor] CRITICAL: " + name
+        assert sent == [subject]
+        assert len(posted) == 1
+        title = posted[0]
+        assert len(title) == 512
+        assert title.startswith("[AdminHelper Monitor] CRITICAL: ")
+        assert title.endswith("…")
+        assert title == subject[:511] + "…"
+
+    def test_title_at_the_limit_is_unchanged(self, monkeypatch):
+        name = "n" * 480
+        sent, posted = self._run(monkeypatch, name, "ok", "critical")
+
+        subject = "[AdminHelper Monitor] CRITICAL: " + name
+        assert len(subject) == 512
+        assert sent == [subject]
+        assert posted == [subject]
+
+    def test_long_recovery_title_is_cut(self, monkeypatch):
+        name = "n" * 600
+        sent, posted = self._run(monkeypatch, name, "critical", "ok")
+
+        subject = "[AdminHelper Monitor] RECOVERY: " + name
+        assert sent == [subject]
+        assert len(posted) == 1
+        title = posted[0]
+        assert len(title) == 512
+        assert title.startswith("[AdminHelper Monitor] RECOVERY: ")
+        assert title.endswith("…")
+        assert title == subject[:511] + "…"
+
+
+_SERVER_SCHEMAS = (
+    Path(__file__).resolve().parents[3]
+    / "apps"
+    / "server"
+    / "app"
+    / "modules"
+    / "notifications"
+    / "schemas.py"
+)
+
+
+def test_hub_title_max_matches_the_server_schema():
+    # R-0637: HUB_TITLE_MAX mirrors IncomingEvent.title on the server; a drift
+    # would bring the 422 for long titles back without anything turning red.
+    src = _SERVER_SCHEMAS.read_text(encoding="utf-8")
+    cls = re.search(r"^class IncomingEvent\(.*?(?=^class |\Z)", src, re.M | re.S)
+    assert cls, f"class IncomingEvent not found in {_SERVER_SCHEMAS}"
+    field = re.search(
+        r"^\s+title: str = Field\(min_length=1, max_length=(\d+)\)$", cls.group(0), re.M
+    )
+    assert field, f"IncomingEvent.title with max_length not found in {_SERVER_SCHEMAS}"
+    assert int(field.group(1)) == alerter.HUB_TITLE_MAX
 
 
 class TestProcessAlertEmits:

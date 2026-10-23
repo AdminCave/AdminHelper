@@ -112,9 +112,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   // Poll the notification feed app-wide while a server session is active. The
-  // effect re-runs on login/logout; cleanup stops the timer and resets state.
+  // effect re-runs when the server or the user changes; cleanup stops the timer and resets state.
+  // Keyed on both, not on the session object: `session` re-emits an equal object on every
+  // settings save (refreshSettings), and a restart there would empty the feed and drop the OS
+  // notifications of entries arriving in the gap (R-0663). The string key compares by value.
+  let notificationKey = $derived(
+    $session ? JSON.stringify([$session.serverUrl, $session.username]) : null,
+  );
   $effect(() => {
-    if ($session) {
+    if (notificationKey) {
       void activateNotifications();
     }
     return () => deactivateNotifications();

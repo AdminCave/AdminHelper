@@ -23,7 +23,13 @@ from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core import ssrf as ssrf_mod
 from app.core.logging_config import configure_logging
 from app.core.ssrf import Target, UrlVerdict
-from app.models import MonitorAlertRule, MonitorCheck, MonitorMaintenance, MonitorState
+from app.models import (
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorMaintenance,
+    MonitorState,
+)
 
 from ._helpers import _CapturingDb, make_check, make_msg, make_rule, no_env_proxy
 
@@ -105,6 +111,74 @@ class TestIsInCooldown:
     def test_no_recent_log_means_no_cooldown(self):
         db = _FakeDb(first_result=None)
         assert _is_in_cooldown(db, make_rule(cooldown_minutes=30), make_check()) is False
+
+
+def _sent_log(rule_id: str, age: timedelta) -> MonitorAlertLog:
+    """A successful send of rule_id for make_check()'s check, ``age`` before _NOW."""
+    return MonitorAlertLog(
+        alert_rule_id=rule_id,
+        check_id="check-1",
+        old_status="ok",
+        new_status="critical",
+        sent_at=_NOW - age,
+        success=True,
+    )
+
+
+class TestCooldownForEveryStoredValue:
+    """R-0631: _is_in_cooldown answers for every value the column holds. The
+    schema allows up to int32 minutes, whose window reaches back before year 1,
+    and the column is nullable; raising there escaped the per-rule isolation and
+    lost the alert of every rule and the bell's."""
+
+    @pytest.fixture
+    def db(self, monkeypatch):
+        monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
+        return _sqlite_session()
+
+    @pytest.mark.parametrize("minutes", [1_070_000_000, 2_147_483_647])
+    def test_window_before_year_one_counts_every_earlier_send(self, db, minutes):
+        rule = make_rule(cooldown_minutes=minutes)
+        assert _is_in_cooldown(db, rule, make_check()) is False
+        db.add(_sent_log("rule-1", timedelta(days=3653)))
+        db.commit()
+        assert _is_in_cooldown(db, rule, make_check()) is True
+
+    @pytest.mark.parametrize(
+        ("age", "expected"), [(timedelta(minutes=10), True), (timedelta(minutes=40), False)]
+    )
+    def test_null_counts_as_the_default_30(self, db, age, expected):
+        db.add(_sent_log("rule-1", age))
+        db.commit()
+        assert _is_in_cooldown(db, make_rule(cooldown_minutes=None), make_check()) is expected
+
+    def test_a_huge_cooldown_does_not_stop_the_other_rules_or_the_bell(self, db, monkeypatch):
+        def _rule(rid, minutes):
+            return MonitorAlertRule(
+                id=rid, name=rid, channel="webhook", channel_config="{}", cooldown_minutes=minutes
+            )
+
+        db.add(_rule("rule-huge", 2_147_483_647))
+        db.add(_rule("rule-30", 30))
+        db.add(_sent_log("rule-huge", timedelta(days=1)))
+        db.commit()
+        dispatched, posted = [], []
+
+        def fake_dispatch(rule, check, msg):
+            dispatched.append(rule.id)
+            return True, None
+
+        def fake_post(payload, label):
+            posted.append(payload)
+            return True
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter, "_post_hub_event", fake_post)
+
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+        assert dispatched == ["rule-30"]
+        assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "critical")]
 
 
 class TestRecoveryBypassesCooldown:
@@ -289,6 +363,26 @@ class TestWebhookSsrf:
         assert "SSRF" in error
         assert sent == []
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://☃.hooks.example.com/x",  # no IDNA 2008 label
+            "https://hooks.example.com:abc/x",  # a port that is no number
+            "https://hooks.example.com/x\ud800",  # a lone surrogate
+        ],
+    )
+    def test_a_url_httpx_cannot_read_is_rejected_without_request(self, monkeypatch, url):
+        # R-0606: the real guard reads the URL with httpx before the try. A URL httpx
+        # cannot read is the usual rejection, not an exception out of _send_webhook.
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        sent = _requests_below_the_pin(monkeypatch)
+
+        result = alerter._send_webhook({"url": url}, make_rule(), make_check(), make_msg())
+
+        assert result == (False, "Webhook target is private/reserved (not allowed)")
+        assert asked == []
+        assert sent == []
+
     def test_request_connects_to_the_checked_address(self, monkeypatch):
         # ssrf-pin: the connection goes to the address the guard checked. httpx resolving
         # the name a second time could get another answer (DNS rebinding).
@@ -317,6 +411,23 @@ class TestWebhookSsrf:
 
         assert asked == ["hooks.example.com"]
         assert connected == [("192.0.2.10", 3128)]
+        assert (success, error) == (False, "Webhook connection failed")
+
+    def test_beside_a_proxy_no_proxy_connects_to_the_checked_address(self, monkeypatch):
+        # A target that NO_PROXY takes past the proxy (here every target) connects as
+        # without a proxy: to the checked address, not by name.
+        no_env_proxy(monkeypatch)
+        monkeypatch.setenv("HTTPS_PROXY", "http://192.0.2.10:3128")
+        monkeypatch.setenv("NO_PROXY", "*")
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        connected = _connections_refused(monkeypatch)
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com:8443/x"}, make_rule(), make_check(), make_msg()
+        )
+
+        assert asked == ["hooks.example.com"]
+        assert connected == [(_PUBLIC, 8443)]
         assert (success, error) == (False, "Webhook connection failed")
 
 
