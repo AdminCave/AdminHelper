@@ -217,8 +217,9 @@ fn keyring_write(identity: &str, fingerprint: &str) -> Result<(), ()> {
     crate::keyring_store::set(&keyring_key(identity), fingerprint).map_err(|_| ())
 }
 
-fn keyring_delete(identity: &str) {
-    let _ = crate::keyring_store::delete(&keyring_key(identity));
+/// A missing pin is success (see `keyring_store::delete`); any other failure is an `Err`.
+fn keyring_delete(identity: &str) -> Result<(), AppError> {
+    crate::keyring_store::delete(&keyring_key(identity))
 }
 
 // ── rustls verifier ───────────────────────────────────────────────────
@@ -350,16 +351,33 @@ pub fn pinning_client(server_url: &str) -> Result<reqwest::Client, AppError> {
 }
 
 /// Forget the pinned certificate for a server, so the next connection re-pins
-/// (TOFU first use). For recovering from a legitimate certificate rotation.
-pub fn forget_pin(server_url: &str) {
+/// (TOFU first use). For recovering from a legitimate certificate rotation. An
+/// `Err` when the keyring could not delete the pin: the old pin may still decide
+/// the next connection, so the reset must not be reported as done (R-0748).
+pub fn forget_pin(server_url: &str) -> Result<(), AppError> {
+    forget_pin_with(server_url, keyring_delete)
+}
+
+/// [`forget_pin`] with the keyring delete as a parameter, so a test can make it fail.
+fn forget_pin_with(
+    server_url: &str,
+    delete: impl FnOnce(&str) -> Result<(), AppError>,
+) -> Result<(), AppError> {
     let identity = pin_identity(server_url);
     cache()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(&identity);
-    keyring_delete(&identity);
+    // Both caches go even when the delete fails: this process then holds no pin the
+    // user asked to forget, and the next contact reads the keyring again.
+    let deleted = delete(&identity);
     // Drop the cached http client — it may hold a pool pinned to the old cert (5.1).
     crate::http_client::invalidate_client_cache();
+    deleted.map_err(|err| {
+        AppError::Keyring(format!(
+            "the pinned certificate could not be removed from the keyring: {err}"
+        ))
+    })
 }
 
 /// Pin `fingerprint` for `server_url` in the process cache only, as if the keyring
@@ -563,7 +581,8 @@ mod tests {
         // process cache under the SAME pin_identity normalization used when pinning — so a URL with
         // the implicit default port must forget a pin stored under the explicit ":443". A regression
         // that forgets the cache (or normalizes differently) leaves the user stuck in a pin mismatch
-        // until restart. keyring_delete is fail-silent, so this needs no keyring backend.
+        // until restart. Without a keyring_store::memory() guard a test build deletes successfully,
+        // so this needs no keyring backend.
         let identity = pin_identity("https://forget-test.example:443/");
         cache()
             .lock()
@@ -571,7 +590,7 @@ mod tests {
             .insert(identity.clone(), FP_A.to_string());
 
         // A different spelling (no explicit port, trailing path) that normalizes to the same identity.
-        forget_pin("https://forget-test.example/api");
+        forget_pin("https://forget-test.example/api").unwrap();
 
         let present = cache()
             .lock()
@@ -581,6 +600,50 @@ mod tests {
             !present,
             "forget_pin must clear the cached pin under the normalized identity"
         );
+    }
+
+    #[test]
+    fn forget_pin_reports_a_pin_the_keyring_could_not_delete_and_still_clears_the_cache() {
+        // R-0748: the reset reported success while the old pin stayed in the keyring, and
+        // after the next start the connection was refused again.
+        let identity = pin_identity("https://forget-fails.example:443/");
+        cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(identity.clone(), FP_A.to_string());
+
+        let mut asked = None;
+        let err = forget_pin_with("https://forget-fails.example/api", |id| {
+            asked = Some(id.to_string());
+            Err(AppError::Keyring("collection is locked".to_string()))
+        })
+        .unwrap_err();
+
+        assert_eq!(asked.as_deref(), Some(identity.as_str()));
+        let msg = err.to_string();
+        assert!(
+            matches!(&err, AppError::Keyring(_))
+                && msg.contains("the pinned certificate could not be removed from the keyring")
+                && msg.contains("collection is locked"),
+            "{err:?}"
+        );
+        assert!(!msg.contains(FP_A), "{msg}");
+        assert!(
+            !cached(&identity),
+            "a failed keyring delete must not leave the pin in the process cache"
+        );
+    }
+
+    #[test]
+    fn forget_pin_succeeds_when_the_keyring_deletes_the_pin() {
+        let identity = pin_identity("https://forget-ok.example/");
+        cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(identity.clone(), FP_A.to_string());
+
+        assert!(forget_pin_with("https://forget-ok.example", |_| Ok(())).is_ok());
+        assert!(!cached(&identity));
     }
 
     #[test]

@@ -84,6 +84,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Gepinntes Zertifikat zuruecksetzen meldet einen Fehler des Schluesselbunds (R-0748):** Kann der
+  Schluesselbund des Systems den Pin nicht loeschen, melden „Gepinntes Zertifikat zuruecksetzen“ (Anmeldebildschirm
+  und Einstellungen) und „Geraete-Identitaet zuruecksetzen“ jetzt einen Fehler („the pinned certificate could not be
+  removed from the keyring: …“), statt den Reset als erfolgreich zu melden; bisher blieb der alte Pin stehen, und beim
+  naechsten Verbinden lehnte der Desktop die Verbindung wieder ab. Abhilfe: den Schluesselbund entsperren und dasselbe
+  Zuruecksetzen wiederholen. Doku: Troubleshooting (DE+EN).
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen

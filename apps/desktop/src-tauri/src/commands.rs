@@ -90,7 +90,7 @@ pub fn reset_server_cert_pin(app: tauri::AppHandle, server_url: String) -> Resul
 /// [`reset_server_cert_pin`] in the app data dir `base`.
 fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
     let (_, meta) = own_meta(base)?;
-    tofu::forget_pin(&workspace::own_url(&meta, sent)?);
+    tofu::forget_pin(&workspace::own_url(&meta, sent)?)?;
     Ok(())
 }
 
@@ -126,7 +126,10 @@ pub fn is_device_enrolled() -> bool {
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
 /// UI whether that happened. Only at the server of this workspace
-/// ([`sign_in_target`]), where its purge would revoke it too.
+/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the pin
+/// could not be forgotten. The identity entries are deleted best effort before it,
+/// in the same keyring, so they may have stayed as well; the reset can be repeated
+/// (without an identity it ends as `NotEnrolled` and forgets the pin again).
 #[tauri::command]
 pub async fn reset_device_identity(
     app: tauri::AppHandle,
@@ -142,7 +145,8 @@ async fn reset_device_identity_in(
 ) -> Result<enrollment::ResetOutcome, AppError> {
     let server_url = sign_in_target(base, sent, None)?;
     let outcome = enrollment::reset_identity(&server_url).await;
-    tofu::forget_pin(&server_url);
+    tofu::forget_pin(&server_url)
+        .map_err(|err| AppError::Keyring(format!("resetting the device identity: {err}")))?;
     Ok(outcome)
 }
 
