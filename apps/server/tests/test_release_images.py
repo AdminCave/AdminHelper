@@ -21,6 +21,9 @@ supervisor as the POSIX sh the image runs it with.
 The Playwright job of ci.yml installs Chromium alone, the one browser its suite runs, and gives
 the install a deadline of its own below that of the job.
 
+The CA-Issuer jobs of ci.yml hand the database of a Postgres service to the issuer's Postgres
+tests, which skip without one.
+
 The steps are run, where they can be, as Actions runs a step without a shell of its own
 (`bash -e`), on copies of the files they read or with stubs for docker, cosign, gh and npx.
 """
@@ -419,6 +422,25 @@ def test_the_playwright_job_installs_chromium_alone(tmp_path):
     # Without a browser it installs the system packages of every browser Playwright knows;
     # the projects of apps/web/playwright.config.ts all run Desktop Chrome.
     assert install.stdout.split() == ["playwright", "install", "--with-deps", "chromium"]
+
+
+@pytest.mark.parametrize("job", ["ca-issuer", "python-lock-ca-issuer"])
+def test_the_ca_issuer_jobs_run_the_postgres_tests_against_a_service(job):
+    spec = _workflow("ci.yml")["jobs"][job]
+    env = spec.get("env", {})
+    postgres = spec.get("services", {}).get("postgres")
+    assert postgres and postgres["image"].startswith("postgres:"), spec.get("services")
+    db = postgres["env"]
+    (port,) = (mapping.split(":")[0] for mapping in postgres["ports"])
+    # The fixture pg_engine of apps/ca-issuer/tests/test_db_token_store.py skips unless
+    # AH_TEST_DB names a Postgres; this one is the database of the service.
+    assert env.get("AH_TEST_DB") == (
+        f"postgresql+psycopg://{db['POSTGRES_USER']}:{db['POSTGRES_PASSWORD']}"
+        f"@localhost:{port}/{db['POSTGRES_DB']}"
+    ), env
+    # The rest of the suite stays on the in-memory token store: with a DATABASE_URL the
+    # issuer would read its tokens from tables only the server's migrations create.
+    assert "DATABASE_URL" not in env, env
 
 
 def test_ci_shellchecks_the_frps_supervisor_as_posix_sh():

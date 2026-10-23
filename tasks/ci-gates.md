@@ -83,8 +83,10 @@ Beweis: origin/main@b25c65a6 · Lauf 39768448078, ops-scripts: „lib_e2e_stack_
 Dedup-Key: ref:ci:lib_e2e_stack_test.sh:keyring-skip
 HEAD: b25c65a6
 
-### T6 — CA-Issuer-Jobs mit Postgres-Dienst: die pg_engine-Tests laufen in der CI (R-0820)  [ ]
-Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+### T6 — CA-Issuer-Jobs mit Postgres-Dienst: die pg_engine-Tests laufen in der CI (R-0820)  [x]
+Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html, scripts/tests/stack_pytest.sh
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e52ecdf2 2026-10-23T07:01:38+02:00
+Review: approve (.ah-out/review/ci-gates/T6.verdict.json)
 Änderung: Die Jobs `ca-issuer` (`ci.yml:156-176`) und `python-lock-ca-issuer` (`:278-300`) bekommen je einen `services.postgres` wie `python-lock-server` (`:192-205`: `postgres:17-alpine`, Benutzer `adminhelper`, Passwort `cipw`, DB `adminhelper`, Port 5432, Healthcheck) und `env: AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper`; ohne Redis (der ca-issuer braucht keinen). `CA_ALLOW_MEMORY_STORE` bleibt (conftest setzt es, der übrige Testlauf nutzt den Speicher-Store); kein `DATABASE_URL`. Der Kommentar `:175` („no DB service needed“) wird ersetzt: die Suite nutzt den Speicher-Store, die pg_engine-Tests in `test_db_token_store.py` (TOCTOU, Nebenläufigkeit) brauchen den Postgres-Dienst über `AH_TEST_DB` und werden ohne ihn übersprungen. Neuer Struktur-Test in `test_release_images.py` mit den Hilfen `_workflow`/`_step`: beide CA-Issuer-Jobs haben `services.postgres` und ein `AH_TEST_DB`, das auf `postgresql` zeigt; zuerst rot gegen den Stand ohne die Änderung.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (nur, wenn die Seite die CA-Issuer-Jobs oder ihre Dienste beschreibt: Postgres-Dienst für die Nebenläufigkeits-Tests; sonst keine, grep belegt im Commit-Body)
