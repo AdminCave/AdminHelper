@@ -55,8 +55,10 @@ Orakel: contract — jedes gültige Intermediate eines Scopes (aktuell oder reti
 Dedup-Key: feat:ca-issuer:storage.py:bundles-old-and-new
 HEAD: e2304a8b
 
-### T3 — Issuer: /renew akzeptiert Leaves eines retired Intermediates des eigenen Scopes  [ ]
+### T3 — Issuer: /renew akzeptiert Leaves eines retired Intermediates des eigenen Scopes  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_enroll_renew.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @f79e88f2 2026-10-23T20:32:15+02:00
+Review: approve (.ah-out/review/ca-rotation/T3.verdict.json)
 Änderung: `_verify_ca_signed` (`apps/ca-issuer/app/issuer.py:46-75`) prüft die Signatur gegen das aktuelle Intermediate des Scopes und, wenn das scheitert, gegen jedes aus `inter.retired`; passt keins, bleibt der bisherige Fehler. Nur Intermediates des eigenen Scopes zählen (die Regel aus `:51-54` bleibt); die Zeitprüfung des Leafs (`:55-57`) bleibt. Signiert wird immer mit dem aktuellen (`_sign`, `:77-90`). Der Docstring nennt die retired Intermediates. Tests in `test_enroll_renew.py` (`register_client`, Issuer mit selbst gebauten Intermediates wie in R-0666): (a) ein registriertes Leaf eines retired `access`-Intermediates erneuert, das neue Leaf `verify_directly_issued_by` das aktuelle; (b) ein Leaf eines retired `tunnel`-Intermediates mit OU `access` → 403 (wie `test_a_leaf_signed_by_another_scopes_intermediate_does_not_renew`, `:658-670`); (c) ein Leaf eines Intermediates, das weder aktuell noch retired ist → 403. Zuerst rot: (a).
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew.py
 Doku: keine (intern; T10)

@@ -60,30 +60,44 @@ class Issuer:
         x-client-verify: SUCCESS header alone. The `pki` compose network now fences the
         issuer to the gateway (1.1), but this stays a second line: should that boundary
         ever regress, a reachable container still must not be able to POST a self-made
-        cert and renew any identity (3.3). Only that intermediate counts: the issuer
-        always signs a leaf of scope X with intermediate X, so a leaf whose OU names
-        another scope than its signer is not one of ours (R-0224)."""
+        cert and renew any identity (3.3). Only the intermediates of that scope count:
+        the issuer always signs a leaf of scope X with intermediate X, so a leaf whose
+        OU names another scope than its signer is not one of ours (R-0224). Besides the
+        current one these are the scope's retired intermediates while they are valid
+        themselves, so a leaf issued before a rotation still renews (R-0667); its
+        successor is signed by the current one."""
         now = pki._now()
         if not (cert.not_valid_before_utc <= now <= cert.not_valid_after_utc):
             raise IssuanceError("Vorgelegtes Cert ist abgelaufen oder noch nicht gültig")
         inter = self._inter.get(scope)
         if inter is None:
             raise IssuanceError("presented certificate carries an unknown scope")
-        try:
-            inter.cert.public_key().verify(
-                cert.signature,
-                cert.tbs_certificate_bytes,
-                ec.ECDSA(cert.signature_hash_algorithm),
-            )
-        except (InvalidSignature, TypeError, ValueError, UnsupportedAlgorithm) as exc:
-            # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf whose
-            # signature_hash_algorithm is None, an RSA key, or a signature algorithm
-            # cryptography does not know) fails to verify against
-            # our ECDSA intermediate — it is a forgery and must be rejected cleanly
-            # here, never bubble up as a 500 at the issuer.
-            raise IssuanceError(
-                "presented certificate is not signed by the intermediate of its scope"
-            ) from exc
+        # The loader leaves out retired intermediates past their end at boot; this
+        # drops one that ends while the issuer runs.
+        valid_retired = [
+            old
+            for old in inter.retired
+            if old.not_valid_before_utc <= now <= old.not_valid_after_utc
+        ]
+        failure: Exception | None = None
+        for signer in (inter.cert, *valid_retired):
+            try:
+                signer.public_key().verify(
+                    cert.signature,
+                    cert.tbs_certificate_bytes,
+                    ec.ECDSA(cert.signature_hash_algorithm),
+                )
+                return
+            except (InvalidSignature, TypeError, ValueError, UnsupportedAlgorithm) as exc:
+                # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf whose
+                # signature_hash_algorithm is None, an RSA key, or a signature algorithm
+                # cryptography does not know) fails to verify against
+                # our ECDSA intermediate — it is a forgery and must be rejected cleanly
+                # here, never bubble up as a 500 at the issuer.
+                failure = failure or exc
+        raise IssuanceError(
+            "presented certificate is not signed by the intermediate of its scope"
+        ) from failure
 
     def _sign(
         self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec
