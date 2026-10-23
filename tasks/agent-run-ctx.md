@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: ein Kontext und ein Budget je Lauf, Stopp mitten im Zyklus, frpc-Sperre, Log-Datei unter Windows — Task-Ledger
-Status: geplant · Branch: feature/agent-run-ctx · Review: pro Task
+Status: aktiv · Branch: feature/agent-run-ctx · Review: pro Task
 Spec: docs/features/agent-run-ctx.md (Roadmap R-0638, R-0640, R-0406, R-0641, R-0639, R-0619)
 Heavy: linux-full + scenario --agents 1 --tunnel + windows — `apps/agent` (Lauf, Sperren, frpc-Sync, Provisionierung, Collector) läuft im Sammellauf über `main` (der Schritt `agent_monitoring` provisioniert echt und fährt `run --once`, `/feature-build` §5). `scenario --agents 1 --tunnel` vor dem Merge, bleibt ask-first (Spec, offene Frage 2): echte `.deb`, `provision --ca-fp` über das IP-SAN des Gateways (positiver Pfad von T14) und frpc mit Tunnel unter systemd (Deckel T6, Sperre T7, Timer T8). `windows` sind die CI-Jobs „Go Agent (test, Windows)“ und `GOOS=windows go vet` (keine Windows-Vorlage im Pool): `run_windows_test.go` (T2), die Sperren mit Kontext (T3, T7), der Fan-out-Writer (T1) und die Prozesstests von `runTimed` (T9) laufen dort nativ; den Dienst unter einem echten SCM und `agent.log` im Dienst belegt das nicht (R-0541)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
