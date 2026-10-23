@@ -77,12 +77,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dem Lauf gibt `heavy.sh` die GUI-Box frei, wenn Teil `gui` gruen ist; nach einem roten Teil `gui` bleibt sie zur
   Sichtung stehen, bis ihre Frist ablaeuft, und die Notizen nennen `vm.py ssh <vmid>`. Doku: DEVELOPMENT, CI/CD fuer
   Entwickler (DE+EN), `/test`-Skill.
-- **`agent-install.sh` installiert nur den gepinnten Repo-Schluessel:** Bisher verglich das Skript nur den ersten
-  Fingerprint der vom Server geladenen Keyring-Datei mit dem Pin und installierte danach die ganze Datei als
-  `Signed-By` (apt) bzw. `gpgkey` (dnf); weitere Schluessel darin galten damit ebenfalls als vertrauenswuerdig, und
-  stand der gepinnte nicht an erster Stelle, brach die Installation ab. Jetzt importiert das Skript die Datei in ein
-  eigenes, temporaeres GnuPG-Verzeichnis, exportiert daraus nur den Schluessel, dessen Primaer-Fingerprint der Pin ist,
-  und installiert diesen Export, egal an welcher Stelle der Schluessel in der Datei steht. Fehlt er, bricht es ab, bevor
+- **`agent-install.sh` installiert nur den gepinnten Repo-Schluessel:** Das Skript importiert die vom Server geladene
+  Keyring-Datei in ein eigenes, temporaeres GnuPG-Verzeichnis, exportiert daraus nur den Schluessel, dessen
+  Primaer-Fingerprint der Pin ist, und installiert diesen Export als `Signed-By` (apt) bzw. `gpgkey` (dnf), egal an
+  welcher Stelle der Schluessel in der Datei steht; bisher brach die Installation ab, wenn er nicht an erster Stelle
+  stand. Fehlt er, bricht es ab, bevor
   eine Paketquelle geschrieben wird, und nennt den erwarteten und die gefundenen Fingerprints; der Fingerprint eines
   Unterschluessels gilt nicht als Pin. `--gpg-fp` muss aus 40 Hex-Zeichen bestehen. Bestehende Agent-Hosts behalten
   ihren Keyring, bis `agent-install.sh` dort wieder laeuft.
@@ -95,7 +94,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `docker compose`-Aufruf erkannte nur ein `${` ohne gueltigen Platzhalter. Ein nie geschlossenes Anfuehrungszeichen
   und ein Schluessel, den Compose nicht annimmt (auch Text direkt hinter einem schliessenden Anfuehrungszeichen, den
   Compose als naechsten Schluessel liest, oder ein Schluessel mit Leerzeichen), liess sie durch; Compose brach dann
-  jeden Aufruf ab, erst nach Backup und Tausch, und zitierte dabei den Wert bzw. die Zeile. Jetzt endet `update.sh` in
+  jeden Aufruf ab, erst nach Backup und Tausch. Jetzt endet `update.sh` in
   diesen Faellen vorher, ohne etwas zu aendern, auch bei `--check` und `--redeploy`, und nennt den Schluessel des
   Werts oder die Zeilennummer, nie Wert oder Zeile. Ein BOM am Anfang der `.env` nimmt die Pruefung wie Compose an.
   Doku: Installation (DE+EN).
