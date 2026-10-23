@@ -422,6 +422,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Bisher endete das Speichern mit `500`, oder der Wert landete in der `config` eines Checks, und jede Antwort mit
   diesem Check endete danach mit `500`; im Agent-Report ging der ganze Schreibstapel nach VictoriaMetrics verloren,
   samt den Zeilen anderer Server im selben Stapel. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: der Betreff einer Alert-Meldung ist einzeilig:** Eine Alert-Mail fuer einen Check mit Zeilenumbruch
+  im Namen ging nicht raus, das Alert-Log zeigte `SMTP error (HeaderWriteError)`. Jetzt stehen Steuerzeichen (C0,
+  DEL, C1) und die Zeilen- und Absatztrenner U+2028/U+2029 des Check-Namens im Betreff, und damit im Titel der
+  Glocke, als Leerzeichen; der Text der Meldung und das Feld `check_name` des Webhooks tragen den Namen unveraendert.
+  Doku: Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
   `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
   jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als

@@ -69,6 +69,14 @@ HUB_COOLDOWN = timedelta(minutes=30)
 # into a 422, and the bell gets nothing; test_alerter_hub keeps both equal.
 HUB_TITLE_MAX = 512
 
+# In the subject, every control character of the check name (Unicode category Cc: C0, DEL,
+# C1) and the line and paragraph separators become a space, one for one. The subject is a
+# mail header value, and Python's email package refuses to write a header that spans more
+# than one line, so the mail would not go out. Text and check_name keep the name as it is.
+_SUBJECT_TO_SPACE = str.maketrans(
+    dict.fromkeys([*range(0x20), *range(0x7F, 0xA0), 0x2028, 0x2029], " ")
+)
+
 
 def resolve_notification(notified_status: str | None, new_status: str) -> str:
     """Sent-state decision (docs/features/alert-sent-state.md): compare the
@@ -511,9 +519,10 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
         "unknown": "\u2753",
     }
     is_recovery = new_status == "ok"
+    subject_name = check.name.translate(_SUBJECT_TO_SPACE)
 
     if is_recovery:
-        subject = f"[AdminHelper Monitor] RECOVERY: {check.name}"
+        subject = f"[AdminHelper Monitor] RECOVERY: {subject_name}"
         text = (
             f"RECOVERY\n"
             f"Check: {check.name} ({check.check_type})\n"
@@ -525,7 +534,7 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
         # The subject (and with it the bell title) is capped at the check's
         # severity; the text keeps the real status.
         subject_level = min(_STATUS_LEVEL.get(new_status, 1), _severity_level(check.severity))
-        subject = f"[AdminHelper Monitor] {_LEVEL_SEVERITY[subject_level].upper()}: {check.name}"
+        subject = f"[AdminHelper Monitor] {_LEVEL_SEVERITY[subject_level].upper()}: {subject_name}"
         text = (
             f"{label}\n"
             f"Check: {check.name} ({check.check_type})\n"

@@ -2,15 +2,23 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Pure-logic tests for app/alerter.py.
+"""Tests for app/alerter.py: the rule filter (_rule_matches), the cooldown
+(_is_in_cooldown, also for every value the column holds), recovery bypassing the
+cooldown, the message built once per transition and its subject and text
+(_build_message, also as a mail through _send_email), the webhook's SSRF guard and
+log lines, a failing rule not stopping the others, the unknown policy and the
+sent-state, and the alerts muted while the host is down or in a maintenance window.
 
-Tested without a real DB: rule filter (_rule_matches), cooldown time window
-(_is_in_cooldown via a fake query), the guarantee that recovery
-(new_status == 'ok') bypasses the cooldown (process_alert), and the
-unknown-policy (transitions into 'unknown' never notify).
+Most tests use a fake session (_CapturingDb, _FakeDb) and replace _dispatch; the
+webhook tests stub the resolver and the transport below the pinned connection, the
+mail test the SMTP server. Where the query itself is under test (cooldown window,
+enabled rules, host-down and Host Ping lookups), they run on an in-memory SQLite with
+the model schema.
 """
 
+import email.policy
 import logging
+import smtplib
 import socket
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -658,6 +666,98 @@ def test_build_message_recovery_subject_ignores_the_severity(severity):
     msg = alerter._build_message(_CapturingDb([]), check, old_status="critical", new_status="ok")
 
     assert msg["subject"] == "[AdminHelper Monitor] RECOVERY: web"
+
+
+# A check name with a control character (C0, DEL, C1) or U+2028/U+2029, and the name as the
+# subject shows it: one space per character.
+_CONTROL_NAMES = [
+    ("web\r\nnext", "web  next"),
+    ("a\nb", "a b"),
+    ("a\rb", "a b"),
+    ("a\x0bb", "a b"),
+    ("a\x1cb", "a b"),
+    ("a\x7fb", "a b"),
+    ("a\x85b", "a b"),
+    ("a b", "a b"),
+    ("a b", "a b"),
+]
+_ALARM_AND_RECOVERY = [("ok", "critical", "CRITICAL"), ("critical", "ok", "RECOVERY")]
+
+
+@pytest.mark.parametrize(("old_status", "new_status", "label"), _ALARM_AND_RECOVERY)
+@pytest.mark.parametrize(("name", "shown"), _CONTROL_NAMES)
+def test_build_message_subject_shows_control_characters_as_spaces(
+    name, shown, old_status, new_status, label
+):
+    # The subject is a mail header and stays on one line; the text and the webhook's
+    # check_name keep the name as it is.
+    check = make_check(name=name, check_type="http", severity="critical")
+
+    msg = alerter._build_message(_CapturingDb([]), check, old_status, new_status)
+
+    assert msg["subject"] == f"[AdminHelper Monitor] {label}: {shown}"
+    assert f"\nCheck: {name} (http)\n" in msg["text"]
+    assert msg["check_name"] == name
+
+
+@pytest.mark.parametrize(("old_status", "new_status", "label"), _ALARM_AND_RECOVERY)
+# U+007E and U+00A0 border the characters that become a space and stay as they are.
+@pytest.mark.parametrize("name", ["Web 1 – Grüße ✓", "a~\xa0b"])
+def test_build_message_subject_keeps_a_name_without_control_characters(
+    name, old_status, new_status, label
+):
+    check = make_check(name=name, check_type="http", severity="critical")
+
+    msg = alerter._build_message(_CapturingDb([]), check, old_status, new_status)
+
+    assert msg["subject"] == f"[AdminHelper Monitor] {label}: {name}"
+
+
+class _SerializingSMTP(smtplib.SMTP):
+    """smtplib.SMTP without a server: the real send_message flattens the message as it
+    goes on the wire, sendmail keeps the bytes instead of sending them."""
+
+    sent: list[bytes] = []
+
+    def __init__(self, host, port, timeout):
+        # No host, no connection; a fixed local name spares the FQDN lookup.
+        super().__init__(local_hostname="monitor.example")
+
+    def ehlo_or_helo_if_needed(self):
+        pass
+
+    def starttls(self, context=None):
+        return 220, b"ready"
+
+    def sendmail(self, from_addr, to_addrs, msg, mail_options=(), rcpt_options=()):
+        _SerializingSMTP.sent.append(msg)
+        return {}
+
+
+@pytest.mark.parametrize(("old_status", "new_status", "label"), _ALARM_AND_RECOVERY)
+@pytest.mark.parametrize(("name", "shown"), _CONTROL_NAMES)
+def test_mail_for_a_name_with_control_characters_goes_out_with_one_subject(
+    monkeypatch, name, shown, old_status, new_status, label
+):
+    # The real _send_email and smtplib's send_message: a line break in the subject made
+    # the serialization fail, and the mail did not go out.
+    monkeypatch.setattr(alerter.smtplib, "SMTP", _SerializingSMTP)
+    monkeypatch.setattr(_SerializingSMTP, "sent", [])
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", "")
+    check = make_check(name=name, check_type="http", severity="critical")
+    msg = alerter._build_message(_CapturingDb([]), check, old_status, new_status)
+    config = {
+        "recipients": ["ops@monitor.example"],
+        "from": "alerts@monitor.example",
+        "smtp_host": "smtp.monitor.example",
+        "smtp_port": 587,
+    }
+
+    assert alerter._send_email(config, make_rule(channel="email"), check, msg) == (True, None)
+
+    [wire] = _SerializingSMTP.sent
+    sent = email.message_from_bytes(wire, policy=email.policy.default)
+    assert sent.get_all("Subject") == [f"[AdminHelper Monitor] {label}: {shown}"]
 
 
 class TestUnknownNeverNotifies:
