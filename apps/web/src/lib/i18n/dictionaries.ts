@@ -55,6 +55,10 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Typ',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web-Panel nur für Admins',
+    'page.adminOnly.text': 'Bitte den Desktop-Client nutzen.',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Benutzer',
     'page.users.subtitle': 'Zugriffsverwaltung',
@@ -345,6 +349,10 @@ export const translations: Translations = {
 
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Type',
+
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web panel for admins only',
+    'page.adminOnly.text': 'Please use the desktop client.',
 
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Users',

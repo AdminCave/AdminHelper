@@ -156,8 +156,10 @@ only, as only they read the tunnel mappings“ wird „eine von Hand verknüpfte
 Server des Tunnels zugewiesen ist“.
 Abhängt von: T2
 
-### T5 — Web-Panel: übersetzte Hinweisseite für Nicht-Admins (R-0721)  [ ]
+### T5 — Web-Panel: übersetzte Hinweisseite für Nicht-Admins (R-0721)  [x]
 Komponente: web · Dateien: apps/web/src/pages/Placeholder.svelte, apps/web/src/pages/Placeholder.test.ts, apps/web/src/lib/i18n/dictionaries.ts, apps/web/tests/e2e/authz.spec.ts, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @808d7dcb 2026-10-23T06:52:51+02:00
+Review: approve (.ah-out/review/non-admin-access/T5.verdict.json)
 Änderung: `Placeholder.svelte` (`:7-21`) liest `isAdmin` aus `$lib/stores/auth` (`apps/web/src/lib/stores/auth.ts:98`)
 und `t` aus `$lib/i18n`.
 - Nicht-Admin:
