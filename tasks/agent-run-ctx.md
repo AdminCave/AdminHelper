@@ -32,8 +32,10 @@ Für alle Tasks:
   `os.Stdout`, `slog.Default` oder Signale berührt, stellt sie zurück.
 - Platzhalter: Hosts unter `.example`, Adressen aus RFC 5737.
 
-### T1 — Log-Datei auch ohne schreibbares stdout (R-0619)  [ ]
+### T1 — Log-Datei auch ohne schreibbares stdout (R-0619)  [x]
 Komponente: agent · Dateien: apps/agent/internal/logging/logging.go, apps/agent/internal/logging/logging_test.go, apps/agent/internal/logging/logging_linux_test.go, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0327597e 2026-10-23T08:16:13+02:00
+Review: approve (.ah-out/review/agent-run-ctx/T1.verdict.json)
 Änderung: `io.MultiWriter(os.Stdout, …)` in `Init` (`internal/logging/logging.go:57`) wird ein Fan-out-Writer (unexportiert, etwa `fanOut []io.Writer`): `Write` gibt `p` an jedes Ziel, auch nach dem Fehler eines früheren, und meldet `len(p), nil`, sobald ein Ziel alles genommen hat, sonst den ersten Fehler. Der Paket-Kommentar (`:7-16`, „stdout is written first in the MultiWriter so …“) beschreibt danach, dass ein scheiterndes Ziel das andere nicht aufhält. Tests: (a) `logging_test.go` `TestFanOutWriterKeepsWritingAfterAFailingTarget`: erstes Ziel liefert immer einen Fehler, zweites ist ein `bytes.Buffer` → der Puffer hat die Bytes, `Write` meldet `len(p), nil`; scheitern beide, kommt der Fehler (läuft auch im Windows-CI). (b) `logging_linux_test.go` (neu, SPDX-Header wie `internal/logging/eventlog_linux.go`, `//go:build linux`) `TestFanOutInitWritesTheLogFileWhenStdoutFails`: `os.Stdout` durch eine geschlossene Datei ersetzen, `ADMINHELPER_LOG_DIR` auf `t.TempDir()`, `stubInitSeams(t, nil, false)` (`logging_test.go:73-89`), `Init("info")`, eine Zeile loggen → `agent.log` enthält sie. Nur Linux, weil unter Windows der offene Datei-Logger das Temp-Verzeichnis festhielte (`logging_test.go:124-125`). Zuerst rot: (b) auf HEAD (`agent.log` fehlt), (a) kompiliert auf HEAD nicht.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run FanOut
 Doku: CHANGELOG.md (Fixed, umlautfrei: der Agent schreibt agent.log auch als Windows-Dienst, dessen stdout nicht schreibbar ist; bisher brach die Ausgabe nach stdout ab, bevor die Datei die Zeile bekam). `docs/` bleibt (verspricht die Datei schon).

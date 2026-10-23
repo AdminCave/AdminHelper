@@ -166,6 +166,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
   prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
   Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
+- **Agent: `agent.log` auch als Windows-Dienst (R-0619):** Der Agent schreibt jede Log-Zeile nach stdout und in die
+  rotierende Datei `agent.log`. Bisher brach die Ausgabe ab, sobald stdout scheiterte, bevor die Datei die Zeile
+  bekam; ein Windows-Dienst hat kein schreibbares stdout, und `agent.log` unter `%ProgramData%\AdminHelper\logs`
+  blieb so leer. Jetzt bekommt jedes Ziel jede Zeile, auch wenn das andere scheitert; ein nicht schreibbares
+  Log-Verzeichnis haelt die Ausgabe nach stdout weiter nicht auf.
 
 ## [0.46.0] - 2026-10-22
 
