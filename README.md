@@ -283,7 +283,7 @@ GET    /api/servers              # Server list (admin)
 POST   /api/servers              # Create server (admin)
 DELETE /api/servers/{id}         # Delete server (admin)
 
-GET    /api/frp/tunnels         # Tunnel list (admin)
+GET    /api/frp/tunnels         # Tunnel list (admin; user: enabled tunnels of assigned servers)
 GET    /api/frp/visitors        # Visitor list (admin)
 GET    /api/frp/generate/visitor-toml  # Generate visitor config
 GET    /api/frp/provision/{id}/config       # Current frpc.toml (sync agent)
