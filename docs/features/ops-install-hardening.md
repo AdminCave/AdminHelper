@@ -42,7 +42,7 @@ Stand des Codes: `origin/main@b1432223`. Alle `datei:zeile` beziehen sich auf di
    `SMTP_PASSWORD='zz9secret`, `P='ab'cd'ef${q'`, `P="zz9ab"zz9cd"zz9ef"`, `"SMTP_PASSWORD"=zz9secret`,
    `zz9stray!line` und `SMTP PASSWORD=zz9secret` — die Prüfung gibt 0, `docker compose config -q` endet mit 1
    („unterminated quoted value …“, „unexpected character … in variable name …“, „key cannot contain a space“).
-   `P="zz9ab"zz9cd`, `ÄKEY=…`, `a.b-c[0]=…` und eine Zeile mit BOM vor dem Schlüssel nimmt compose an.
+   `P="zz9ab"zz9cd`, `ÄKEY=…`, `a.b-c[0]=…` und ein BOM am Dateianfang vor dem ersten Schlüssel nimmt compose an.
 
 ## Ziel & Nicht-Ziele
 
@@ -105,7 +105,9 @@ Abbruchmeldungen von `update.sh`. Vertrags-Drift: `agent-install.sh` kommt von `
   am Zeilenende (dann ein Schlüssel ohne Wert); sonst „unexpected character %q in variable name %q“ mit der ersten
   Zeile ab dem Schlüssel. `extractVarValue`: Anführungszeichen ohne Ende → „unterminated quoted value %s“. Ein Schlüssel
   mit Leerzeichen → „key cannot contain a space“. Schiedsrichter ist das installierte `docker compose` (Test 32 in
-  `update_test.sh`): v5.5.1 nimmt z. B. ein BOM vor dem Schlüssel an.
+  `update_test.sh`): v5.5.1 nimmt z. B. ein BOM vor dem ersten Schlüssel an, nur am Dateianfang. Bekannte
+  Abweichung (Nachtrag 2026-10-23): einen Schlüssel mit Zahlzeichen außerhalb von ASCII wie `²` (`unicode.IsNumber`)
+  nimmt compose an, die Prüfung lehnt ihn ab; sie bleibt damit auf der strengeren Seite.
 - compose-Doku `.env`-Syntax (https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/,
   gelesen 2026-10-22): „Single-quoted values can span multiple lines“, „Quotes can be escaped with `\`“, „Inline
   comments for quoted values must follow the closing quote“.
