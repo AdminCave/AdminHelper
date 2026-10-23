@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Nicht-Admins: Tunnel-Zuordnungen für den Desktop, Hinweisseite im Web-Panel — Task-Ledger
-Status: bereit · Branch: feature/non-admin-access · Review: pro Task
+Status: erledigt · Branch: feature/non-admin-access · Review: pro Task
 Spec: docs/features/non-admin-access.md (Roadmap R-0484, R-0721)
 Heavy: linux-full — T2 ändert Autorisierung und Antwort einer Server-Route im frp-Modul (`GET /api/frp/tunnels` für Nicht-Admins); der Sammellauf über `main` fährt die Server-API (`run.sh integration`, Schemathesis) und die Desktop-Tunnel-Journeys, die die Route als Admin lesen (`apps/desktop/e2e/test/lib/live.js:254-257`). Die Web-Journey `authz.spec.ts` (T5) läuft schon in der PR-CI (`frontend-e2e`). Kein `scenario`: FRP-Konfiguration, Visitor-TOML, Provisionierung und Datenpfad bleiben unverändert, der Desktop-Code unter Variante A auch (T3, T4 ändern nur Kommentare und Doku). Kein `windows`: kein Plattform-Code. Wählt Kevin Variante B, ändert T3 den Abruf in `tunnel.rs`; dann prüft die Session die Zeile neu
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
