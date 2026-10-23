@@ -182,11 +182,19 @@ def build_intermediate_ca(
     scope: str,
     root_cert: x509.Certificate,
     root_key: ec.EllipticCurvePrivateKey,
+    label: str | None = None,
 ) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """`label` is appended to the CN ("AdminHelper Access Intermediate 2031-05-04"). A
+    rotation passes one so each generation of a scope has its own subject: a client
+    sending only its leaf is matched to its issuer by name in a trust bundle that
+    holds the current and the retired generations side by side."""
     if scope not in SCOPES:
         raise ValueError(f"Unbekannter Scope '{scope}'. Erlaubt: {', '.join(SCOPES)}")
     key = generate_key()
-    subject = _name(f"AdminHelper {scope.capitalize()} Intermediate")
+    common_name = f"AdminHelper {scope.capitalize()} Intermediate"
+    if label:
+        common_name = f"{common_name} {label}"
+    subject = _name(common_name)
     now = _now()
     cert = (
         x509.CertificateBuilder()
