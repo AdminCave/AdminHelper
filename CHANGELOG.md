@@ -9,6 +9,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **SSRF-Schutz: ein Ziel unter `NO_PROXY` verbindet auch neben einem Proxy zur geprueften Adresse (Server und
+  Monitoring):** Ein Ziel, das wegen `NO_PROXY` nicht ueber den gesetzten Proxy geht, verbindet wie ohne Proxy zu
+  einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
+  verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
+  gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
