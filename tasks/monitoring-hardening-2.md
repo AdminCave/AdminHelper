@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Metrik-Filter, Mount-Default, Speicher- und Eingabegrenzen, Nacharbeiten aus monitoring-io — Task-Ledger
-Status: geplant · Branch: feature/monitoring-hardening-2 · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-hardening-2 · Review: pro Task
 Spec: docs/features/monitoring-hardening-2.md (Roadmap R-0749, R-0753, R-0774, R-0799; T4, T6, T8 und T9 gehören zum Paket, Kevin 2026-10-22)
 Heavy: none — nur Interna von `apps/monitoring` und Doku: keine Route, kein Response-Schema, keine OpenAPI-Änderung (`field_validator`/`model_validator(mode="before")` ändern das JSON-Schema nicht; `tests/test_openapi_snapshot.py` steht im Verify von T3 und T9), kein Alembic (nur bei Variante B von T9 käme eine Datenmigration und damit `linux-full` dazu), kein Agent-, Gateway-, Compose-, PKI-, FRP- oder Install-Pfad; T1 ändert nur den PromQL-Selektor des Metrik-Abrufs, T2 einen Tag-Wert
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
