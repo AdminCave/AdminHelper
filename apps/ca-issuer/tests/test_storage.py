@@ -11,6 +11,9 @@ import logging
 import pathlib
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.x509.oid import NameOID
 
 from app import pki, storage
 
@@ -292,17 +295,116 @@ def test_a_retired_file_adds_its_valid_intermediates_and_skips_expired_ones(
     assert expired.not_valid_after_utc.isoformat() in skipped[0]
 
 
-def test_a_retired_intermediate_from_a_foreign_root_aborts_the_boot(tmp_path):
+def _skip_warning(caplog, scope: str, cert) -> str:
+    """The one storage WARNING, which skips `cert` from <scope>-retired.pem: it names the
+    file, the scope and the CN; the caller checks the reason."""
+    warnings = _storage_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert f"{scope}-retired.pem" in warnings[0] and f"'{scope}'" in warnings[0]
+    assert repr(pki.read_identity(cert)[0]) in warnings[0]
+    return warnings[0]
+
+
+def test_the_root_in_a_retired_file_is_skipped_with_a_warning(tmp_path, caplog):
     storage.ensure_hierarchy(tmp_path, b"pw")
+    root, _ = _root(tmp_path)
+    # Self-signed: the root passes a check of its signature against itself.
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(root))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == ()
+    assert "CN" in _skip_warning(caplog, "access", root)
+
+
+def test_another_scopes_intermediate_in_a_retired_file_is_skipped_with_a_warning(
+    monkeypatch, tmp_path, caplog
+):
+    _booted(monkeypatch, tmp_path, days_ago=30)
+    tunnel = _minted(monkeypatch, tmp_path, "tunnel", shift_days=-10)
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(tunnel))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == () and inter["tunnel"].retired == ()
+    assert "CN" in _skip_warning(caplog, "access", tunnel)
+
+
+def test_a_ca_that_may_sign_cas_in_a_retired_file_is_skipped_with_a_warning(
+    monkeypatch, tmp_path, caplog
+):
+    _booted(monkeypatch, tmp_path, days_ago=30)
+    root_cert, root_key = _root(tmp_path)
+    now = pki._now()
+    # The scope's CN and signed by the root, but path_length 1 instead of 0.
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(
+            x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, "AdminHelper Access Intermediate"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AdminHelper"),
+                ]
+            )
+        )
+        .issuer_name(root_cert.subject)
+        .public_key(pki.generate_key().public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=10))
+        .not_valid_after(now + datetime.timedelta(days=100))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=1), critical=True)
+        .sign(root_key, hashes.SHA256())
+    )
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(cert))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == ()
+    assert "path_length" in _skip_warning(caplog, "access", cert)
+
+
+def test_a_retired_intermediate_from_a_foreign_root_is_skipped_with_a_warning(
+    monkeypatch, tmp_path, caplog
+):
+    _booted(monkeypatch, tmp_path, days_ago=30)
+    valid = _minted(monkeypatch, tmp_path, "tunnel", shift_days=-10)
+    _reissue(monkeypatch, tmp_path, "tunnel")
     # Same subject as our root, so only the signature tells them apart.
     foreign_root, foreign_key = pki.build_root_ca()
-    cert, _ = pki.build_intermediate_ca("tunnel", foreign_root, foreign_key)
-    (tmp_path / "tunnel-retired.pem").write_bytes(pki.cert_to_pem(cert))
+    foreign, _ = pki.build_intermediate_ca("tunnel", foreign_root, foreign_key)
+    (tmp_path / "tunnel-retired.pem").write_bytes(pki.chain_pem(foreign, valid))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
 
-    with pytest.raises(
-        RuntimeError, match=r"'tunnel'.*tunnel-retired\.pem.*not signed by root\.crt"
-    ):
-        storage.ensure_hierarchy(tmp_path, None)
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["tunnel"].retired == (valid,)
+    assert "not signed by root" in _skip_warning(caplog, "tunnel", foreign)
+
+
+def test_a_retired_intermediate_not_valid_yet_is_left_out_with_an_info_line(
+    monkeypatch, tmp_path, caplog
+):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    later = _minted(monkeypatch, tmp_path, "access", shift_days=10)
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(later))
+    caplog.clear()
+    caplog.set_level(logging.INFO, logger="ca-issuer.storage")
+
+    assert storage.ensure_hierarchy(tmp_path, None)["access"].retired == ()
+    assert _storage_warnings(caplog) == []
+    infos = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "ca-issuer.storage" and r.levelno == logging.INFO
+    ]
+    assert any("access-retired.pem" in m and "not yet valid" in m for m in infos), infos
 
 
 def test_the_current_intermediate_in_the_retired_file_is_not_retired(monkeypatch, tmp_path):

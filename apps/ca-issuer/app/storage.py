@@ -81,7 +81,7 @@ class Intermediate:
     key: ec.EllipticCurvePrivateKey
     chain: bytes  # intermediate + root (PEM), for trust distribution / fullchain
     # Earlier intermediates of this scope from <scope>-retired.pem, newest first: valid,
-    # signed by the root, never the current one. Verify only — they have no key here.
+    # of this scope under the root, never the current one. Verify only — no key here.
     retired: tuple[x509.Certificate, ...] = ()
 
 
@@ -118,8 +118,10 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     for one not valid yet with CLOCK_HINT.
 
     The optional <scope>-retired.pem adds the scope's earlier intermediates as
-    Intermediate.retired: each must be signed by root.crt (else RuntimeError); one
-    that is outside its validity (INFO line) or equal to the current one is left out."""
+    Intermediate.retired. An entry that is not an intermediate of the scope under
+    root.crt (pki.intermediate_problem) is left out with a WARNING (file, scope, CN,
+    reason) and does not stop the boot; one that is outside its validity (INFO line) or
+    equal to the current one is left out too. A file that is no PEM bundle raises."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     try:
         pki_dir.chmod(0o700)
@@ -242,10 +244,9 @@ def _load_retired(
     retired: list[x509.Certificate] = []
     for cert in certs:
         name = pki.read_identity(cert)[0]
-        if problem := _signature_problem(cert, root):
-            raise _invalid_hierarchy(
-                f"scope {scope!r}, {path}: {name!r} is not signed by root.crt ({problem})"
-            )
+        if problem := pki.intermediate_problem(cert, scope, root):
+            logger.warning("scope %r, %s: skipping retired %r, %s", scope, path.name, name, problem)
+            continue
         if problem := _validity_problem(cert, now):
             logger.info(
                 "scope %r, %s: skipping retired %r, it is %s", scope, path.name, name, problem

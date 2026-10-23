@@ -149,6 +149,18 @@ def test_a_retired_file_with_a_foreign_intermediate_changes_nothing(tmp_path):
     assert _snapshot(tmp_path) == before
 
 
+def test_the_root_in_a_retired_file_changes_nothing(tmp_path):
+    # The boot skips it with a WARNING; the rotation neither carries it on nor drops it.
+    storage.ensure_hierarchy(tmp_path, PW)
+    (tmp_path / "access-retired.pem").write_bytes((tmp_path / "root.crt").read_bytes())
+    before = _snapshot(tmp_path)
+
+    with pytest.raises(rotation.RotationError, match=r"access-retired\.pem.*CN"):
+        rotation.rotate_intermediates(tmp_path, PW)
+
+    assert _snapshot(tmp_path) == before
+
+
 def test_a_second_rotation_keeps_both_predecessors(monkeypatch, tmp_path):
     first = _booted(monkeypatch, tmp_path, days_ago=20)
     second = _rotated(monkeypatch, tmp_path, days_ago=10)

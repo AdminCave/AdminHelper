@@ -71,7 +71,7 @@ def _rotate(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
     planned: list[tuple[RotatedScope, ec.EllipticCurvePrivateKey, list[x509.Certificate]]] = []
     for scope in pki.SCOPES:
         old = _read_cert(pki_dir / f"{scope}.crt")
-        retired = _retired_after(pki_dir / f"{scope}-retired.pem", old, root_cert, now)
+        retired = _retired_after(pki_dir / f"{scope}-retired.pem", scope, old, root_cert, now)
         new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key, label=label)
         planned.append((RotatedScope(scope, old, new_cert), new_key, retired))
 
@@ -132,12 +132,18 @@ def _read_cert(path: Path) -> x509.Certificate:
 
 
 def _retired_after(
-    path: Path, old: x509.Certificate, root: x509.Certificate, now: datetime.datetime
+    path: Path,
+    scope: str,
+    old: x509.Certificate,
+    root: x509.Certificate,
+    now: datetime.datetime,
 ) -> list[x509.Certificate]:
     """What the retired file `path` holds after the rotation, newest first and each
     once: `old` if the root signed it and it is valid now, and the file's entries that
-    have not expired. An entry the root did not sign is a RotationError, as it would
-    stop the issuer's boot."""
+    have not expired. An entry that is not an intermediate of `scope` under the root
+    (pki.intermediate_problem) is a RotationError: the boot skips such an entry
+    unattended, with a WARNING; a rotation that rewrites the file would either carry it
+    on or drop it silently, and that is the operator's call."""
     earlier: list[x509.Certificate] = []
     try:
         data = path.read_bytes() if path.exists() else b""
@@ -146,9 +152,12 @@ def _retired_after(
     except (OSError, ValueError) as exc:
         raise RotationError(f"cannot read {path} as PEM certificates: {exc}") from exc
     for cert in earlier:
-        if not _signed_by(cert, root):
+        if problem := pki.intermediate_problem(cert, scope, root):
             name = pki.read_identity(cert)[0]
-            raise RotationError(f"{path}: {name!r} is not signed by root.crt")
+            raise RotationError(
+                f"{path}: {name!r} is not a retired {scope!r} intermediate, {problem}; "
+                "correct the file (the issuer skips such an entry on boot), then rotate again"
+            )
 
     keep = [c for c in earlier if now < c.not_valid_after_utc]
     if _signed_by(old, root) and old.not_valid_before_utc <= now < old.not_valid_after_utc:
