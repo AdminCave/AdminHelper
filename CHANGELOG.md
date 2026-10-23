@@ -403,6 +403,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Serien ohne `check_id` und liefert je Wert eine Serie statt zwei gleich beschrifteter; die Liste der aktuellen
   Werte im Desktop brach daran ab. Die bisherigen Serien mit Check-Labels bleiben bis zum Ende der Retention in
   VictoriaMetrics, werden aber nicht mehr gelesen. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: der Metrik-Abruf zeigt je Check nur dessen Reihen (R-0749):** Der Metrik-Abruf
+  (`GET /checks/{id}/metrics`) von `agent_ping`, `service_process`, `docker_health`, `proxmox_backup` und
+  `zfs_health` las die Werte nach Server statt nach Check; zwei Checks desselben Typs auf einem Server zeigten deshalb
+  beide dieselben Reihen, jede doppelt. Jetzt liest er sie ueber die `check_id` des Checks; nur `agent_resources`
+  liest CPU, RAM, Platten und Temperaturen weiter je Server. Die Reihen trugen die `check_id` schon bisher, der
+  Verlauf bleibt erhalten. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
   `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
   jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als

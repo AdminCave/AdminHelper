@@ -457,29 +457,20 @@ def get_check_metrics(
 
     all_results = []
 
-    # Agent-based checks: query raw metrics by server_id
-    # (written by the agent router without check_id)
-    agent_types = {
-        "agent_ping",
-        "agent_resources",
-        "service_process",
-        "docker_health",
-        "proxmox_backup",
-        "zfs_health",
-    }
-    use_server_id = check_type in agent_types and server_id
-    filter_label = (
-        f'server_id="{_escape_label(server_id)}"'
-        if use_server_id
-        else f'check_id="{_escape_label(check_id)}"'
-    )
-    if use_server_id and check_type == "agent_resources":
+    # agent_resources is the one type read by server: the agent push writes CPU, RAM,
+    # disks and temperatures per server without check_id (routers/agent.py). Every other
+    # type, push or pull, writes its values through its check result with the check's
+    # labels (build_check_result_lines), so two checks of one type on one server read
+    # only their own series (R-0749).
+    if check_type == "agent_resources" and server_id:
         # Only the push handler's series, which carry no check_id: CPU/RAM copies the
         # checker wrote with its check labels stay in VictoriaMetrics until the retention
         # ends and would come back as a second series of the same name (R-0633).
         # label="" selects the series without that label (Prometheus semantics, probed
         # against the pinned VictoriaMetrics image).
-        filter_label += ',check_id=""'
+        filter_label = f'server_id="{_escape_label(server_id)}",check_id=""'
+    else:
+        filter_label = f'check_id="{_escape_label(check_id)}"'
 
     # Query all type-specific metrics in one __name__ regex range query instead of one serial
     # query_range per metric (up to 4 for e.g. service_process/http): the calls are independent, so
