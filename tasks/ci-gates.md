@@ -72,8 +72,10 @@ Beweis: origin/main@b25c65a6 · `find apps/agent -name '*_windows.go' | wc -l` �
 Dedup-Key: ref:ci:ci.yml:agent-windows-comment
 HEAD: b25c65a6
 
-### T5 — ops-scripts installiert gnome-keyring; lib_e2e_stack_test.sh endet ohne Keyring-Werkzeuge mit 75 (R-0588)  [ ]
+### T5 — ops-scripts installiert gnome-keyring; lib_e2e_stack_test.sh endet ohne Keyring-Werkzeuge mit 75 (R-0588)  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/lib_e2e_stack_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c35ac708 2026-10-23T06:52:35+02:00
+Review: approve (.ah-out/review/ci-gates/T5.verdict.json)
 Änderung: ops-scripts (`ci.yml:833-874`) bekommt neben „Install minisign“ (`:849-850`) einen Schritt `sudo apt-get install -y -qq --no-install-recommends gnome-keyring` mit Kommentar wie bei minisign (ohne ihn endet `lib_e2e_stack_test.sh` mit 75, `--strict` macht das rot). `dbus-run-session`, `dbus-send`, `python3`, `pgrep` hat der Runner schon (Log: nur `gnome-keyring-daemon` fehlt). In `scripts/tests/lib_e2e_stack_test.sh` bleibt die Fallauswahl (`:797-809`); das Ende (`:885-886`) wird: rot bei `FAIL > 0`, sonst Exit 75 mit Meldung, wenn `KR_MISSING` nicht leer ist, sonst 0. Gegenprobe des builders in einem Probe-Worktree (nicht im Bau-Worktree): ein Werkzeug per `PATH` verdeckt → rc 75; mit Werkzeugen → rc 0.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: DEVELOPMENT.md (Absatz neben oasdiff `:321-325`: der Pflicht-Schritt `scripts` braucht gnome-keyring, dbus-run-session und dbus-send, sonst endet `lib_e2e_stack_test.sh` mit 75; CI-Job ops-scripts und die Test-Boxen installieren es) · docs/developer/cicd.html:82 + docs/en/developer/cicd.html:83 (bei „Exit 75 heisst SKIP“: auch die Keyring-Fälle von `lib_e2e_stack_test.sh`)

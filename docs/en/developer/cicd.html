@@ -85,7 +85,10 @@
           PASS although nothing ran &ndash; which is how the seven desktop GUI suites and
           <code>agent_install_test.sh</code> stayed invisible for months. The minisign branches in
           <code>install_test.sh</code> / <code>update_test.sh</code> were the sharper case: they reported
-          <em>PASS</em> after neutralising the signature path. <strong>SKIP does not mean
+          <em>PASS</em> after neutralising the signature path. Likewise the keyring cases of
+          <code>lib_e2e_stack_test.sh</code>: without <code>gnome-keyring-daemon</code>,
+          <code>dbus-run-session</code> or <code>dbus-send</code> the test exits 75 instead of an inner SKIP
+          at exit 0, and the <code>ops-scripts</code> job installs gnome-keyring. <strong>SKIP does not mean
           verified.</strong></p>
           <p><strong>test-skips.</strong> Even inside a green pytest suite a single test can be skipped
           silently. Under <code>--strict</code> the Python suites run with <code>-rs</code> and

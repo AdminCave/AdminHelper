@@ -84,7 +84,10 @@
           gr&uuml;nes PASS, obwohl nichts lief &ndash; so blieben die sieben Desktop-GUI-Suiten und
           <code>agent_install_test.sh</code> monatelang unsichtbar. Die minisign-Weichen in
           <code>install_test.sh</code> / <code>update_test.sh</code> waren der sch&auml;rfere Fall: sie
-          meldeten <em>PASS</em>, nachdem sie den Signaturpfad neutralisiert hatten.
+          meldeten <em>PASS</em>, nachdem sie den Signaturpfad neutralisiert hatten. Ebenso die
+          Keyring-F&auml;lle von <code>lib_e2e_stack_test.sh</code>: ohne <code>gnome-keyring-daemon</code>,
+          <code>dbus-run-session</code> oder <code>dbus-send</code> endet der Test mit 75 statt mit einem
+          inneren SKIP bei Exit 0, und der Job <code>ops-scripts</code> installiert gnome-keyring.
           <strong>SKIP heisst nicht verifiziert.</strong></p>
           <p><strong>test-skips.</strong> Auch innerhalb einer gr&uuml;nen pytest-Suite kann ein einzelner Test
           stillschweigend &uuml;bersprungen werden. Unter <code>--strict</code> laufen die Python-Suiten mit
