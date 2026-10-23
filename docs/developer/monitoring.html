@@ -46,7 +46,8 @@
                                               |  APScheduler -> http / ping /  |
                                               |  tcp / agent_ping ------------>|
                                               |
-[Desktop-Client] -> /api/monitoring/* (admin) -> AdminHelper-Server -> /monitor/* (X-Internal-Key) -> Monitoring-Service</code></pre>
+[Desktop-Client] -> /api/monitoring/* (admin) -> AdminHelper-Server -> {MONITOR_SERVICE_URL}/{path} (X-Internal-Key) -> Monitoring-Service</code></pre>
+          <p>Der Server reicht ohne Pr&auml;fix weiter: Aus <code>/api/monitoring/{path}</code> wird <code>{MONITOR_SERVICE_URL}/{path}</code> (Default <code>http://monitoring:8080</code>), denn der Monitoring-Service h&auml;ngt seine Router ohne <code>prefix</code> ein (<code>apps/monitoring/app/main.py</code>).</p>
 
           <h2>AdminHelper-seitig: <code>monitoring_proxy</code></h2>
           <p>Im AdminHelper-Server gibt es kein eigenes Monitoring-Modul mehr; alles l&auml;uft durch <code>apps/server/app/modules/monitoring_proxy/router.py</code>:</p>
@@ -65,9 +66,11 @@
 &#9474;                         MonitorSeedState, MonitorAgentLiveness, MonitorMaintenance, MonitorTemplateTagAssignment,
 &#9474;                         MonitorCheckTombstone, MonitorHostFacts, MonitorTemplateSuggestionDismissal
 &#9500;&#9472;&#9472; schemas.py            Pydantic Input-Schemas (CheckCreate, AlertRuleCreate, TemplateCreate, MaintenanceInput)
+&#9500;&#9472;&#9472; check_types.py        Check-Typ-Taxonomie, einzige Quelle (CHECK_TYPES, u. a. push_only)
 &#9500;&#9472;&#9472; check_configs.py      Strikte per-Typ-Config-Modelle (unbekannte Keys/Bounds &rarr; 422)
 &#9500;&#9472;&#9472; check_engine.py       execute_check()-Dispatcher
 &#9500;&#9472;&#9472; alerter.py            process_alert() (Guards, Webhook / E-Mail, Cooldown, Hub-Emit)
+&#9500;&#9472;&#9472; alert_bundle.py       Sammelmeldung f&uuml;r Agents, die zusammen ausbleiben oder zur&uuml;ckkehren
 &#9500;&#9472;&#9472; maintenance.py        is_in_maintenance() (einmalig + w&ouml;chentlich, zoneinfo/DST)
 &#9500;&#9472;&#9472; scheduler.py          APScheduler-Integration (Pull-Checks, Cleanup, Tag-Sync, Sammelmeldung)
 &#9500;&#9472;&#9472; builtin_templates.py  Standard-Templates, Tombstone-Seeding, Versionen + Update
@@ -76,7 +79,8 @@
 &#9500;&#9472;&#9472; tag_sync.py           Tag-basierte Zuweisungen (Server-Inventar &rarr; Assignments), Namensabgleich
 &#9500;&#9472;&#9472; checkers/             agent.py / smart.py / http.py / ping.py / tcp.py / plugins.py / forecast.py / system.py
 &#9500;&#9472;&#9472; routers/              admin.py / agent.py / alerts.py / checks.py / templates.py / maintenance.py
-&#9492;&#9472;&#9472; core/                 auth.py / config.py / database.py / victoria.py</code></pre>
+&#9492;&#9472;&#9472; core/                 auth.py / bounds.py / config.py / database.py / logging_config.py /
+                          middleware.py / pagination.py / ssrf.py / time.py / victoria.py</code></pre>
 
           <h2>Push-Checks vs. Pull-Checks</h2>
           <p>Es gibt zwei Klassen von Checks &ndash; entscheidend ist, <em>wer</em> die Daten beschafft:</p>
