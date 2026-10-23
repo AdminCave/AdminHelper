@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import io
 import time
+from concurrent.futures import Future
 
 import pytest
 
 import app.cli as cli
 from app.cli import create_admin, mint_enroll_token, reset_admin
+from app.core import events
 from app.core.auth import (
     _get_user_from_token,
     create_access_token,
@@ -221,3 +223,42 @@ def test_mint_enroll_token_writes_one_audit_entry(db_session, admin_user):
 def test_refused_cli_call_writes_no_audit_entry(db_session, admin_user, refused, expected):
     assert refused(db_session) == expected
     assert _audit_rows(db_session) == []
+
+
+class _RecordingExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        self.calls.append(args)
+        future = Future()
+        future.set_result(None)
+        return future
+
+
+@pytest.fixture()
+def fired(monkeypatch):
+    recorder = _RecordingExecutor()
+    monkeypatch.setattr(events, "_executor", recorder)
+    return recorder.calls
+
+
+def test_create_admin_fires_user_created(db_session, fired):
+    # Same event and payload as POST /api/users, so the security bell also
+    # reports an admin created at the container shell.
+    assert create_admin(db_session, "kevin", "supersecret") == 0
+    user = db_session.query(User).filter_by(username="kevin").one()
+    assert fired == [("user.created", {"id": user.id, "username": "kevin", "is_admin": True})]
+
+
+@pytest.mark.parametrize(
+    "refused",
+    [
+        lambda db: create_admin(db, "kev", "short"),
+        lambda db: create_admin(db, "admin", "password1"),
+    ],
+    ids=["short-password", "existing-user"],
+)
+def test_refused_create_admin_fires_no_event(db_session, admin_user, fired, refused):
+    assert refused(db_session) == 1
+    assert fired == []

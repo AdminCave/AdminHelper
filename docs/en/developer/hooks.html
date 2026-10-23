@@ -51,7 +51,8 @@
               <tr><td><code>connections.imported</code></td><td><code>count</code>, <code>mode</code></td></tr>
               <tr><td><code>server.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>hostname</code>)</td></tr>
               <tr><td><code>server.startup</code></td><td>(no <code>event_data</code>)</td></tr>
-              <tr><td><code>user.created</code> / <code>deleted</code></td><td><code>id</code>, <code>username</code> (<code>created</code> also <code>is_admin</code>)</td></tr>
+              <tr><td><code>user.created</code> / <code>deleted</code></td><td><code>id</code>, <code>username</code> (<code>created</code> also <code>is_admin</code>); <code>created</code> is fired by <code>POST /api/users</code> and likewise by <code>python -m app.cli create-admin</code> (with <code>is_admin</code> <code>true</code>)</td></tr>
+              <tr><td><code>user.promoted</code></td><td><code>id</code>, <code>username</code> — fires when <code>PUT /api/users/{id}</code> grants a user the admin right (<code>is_admin</code> from <code>false</code> to <code>true</code>); a demotion fires no event</td></tr>
               <tr><td><code>frp.config.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
               <tr><td><code>frp.tunnel.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>serverId</code>)</td></tr>
               <tr><td><code>playbook.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
