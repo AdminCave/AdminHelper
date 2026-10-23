@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Drift: Entwicklerweg, Troubleshooting-Befehle des Agents, Visitor-Generator, Kommentare zum mTLS-Default — Task-Ledger
-Status: aktiv · Branch: feature/docs-drift · Review: pro Task
+Status: bereit · Branch: feature/docs-drift · Review: pro Task
 Spec: docs/features/docs-drift.md (Roadmap R-0669, R-0731, R-0584, R-0387)
 Heavy: linux-full — der Diff berührt `apps/gateway` (nur Kommentare in `nginx.conf` und `docker-entrypoint.sh`, T6) und `apps/agent` (nur eine neue Testdatei, T5); CLAUDE.md §5 nennt Gateway und Agent, der Sammellauf über `main` zeigt, dass das Gateway mit der kommentierten `nginx.conf` startet (`integration-stack`). Kein `scenario`: keine Zeile Konfiguration, kein FRP-Datenpfad, keine Provisionierung, keine PKI ändert sich; kein `windows`: der neue Go-Test läuft im PR im CI-Job `agent-windows` mit
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -104,8 +104,10 @@ Dedup-Key: bug:gateway:nginx.conf:mtls-default-comment
 HEAD: e2304a8b
 Semantik: `docs/admin/betrieb.html:262` — „Die Datenebene (<code>:443</code>) läuft seit 0.29.0 per Default <strong>scharf</strong> (<code>MTLS_ENFORCE=true</code>)“
 
-### T7 — Server: Docstrings zum mTLS-Default, Default gepinnt (R-0387)  [ ]
+### T7 — Server: Docstrings zum mTLS-Default, Default gepinnt (R-0387)  [x]
 Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/tests/test_mtls_scope.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fe572af1 2026-10-23T06:44:26+02:00
+Review: approve (.ah-out/review/docs-drift/T7.verdict.json)
 Änderung: (1) Modul-Docstring `apps/server/app/core/identity.py:18-20`: erzwungen ist der Default (`MTLS_ENFORCE` ohne Env oder `true`, `app.core.config`), ein fehlender oder falscher Scope gibt 403; `MTLS_ENFORCE=false` ist der permissive Modus aus dem Rollout (ADR 0002, A3–A7), nur noch für einen manuellen ersten Bootstrap: der Mismatch wird geloggt, die Anfrage läuft weiter. (2) Docstring von `require_scope` (`:233-237`): „Permissive (default)“ → Enforced ist der Default, Permissive mit `MTLS_ENFORCE=false`; Inhalt sonst gleich (wer warnt, wer auf debug bleibt, 403 für ein vom Register abgelehntes Zertifikat in beiden Modi). Code, Log-Texte und `:240` ff. bleiben (feature/server-fixes zieht dort den Körper von `dependency` heraus). (3) Modul-Docstring `apps/server/tests/test_mtls_scope.py:5-10` entsprechend (permissiv mit `MTLS_ENFORCE=false`, erzwungen per Default). (4) Neuer Test in `test_mtls_scope.py`, `test_mtls_enforce_defaults_to_enforced_without_the_env`: Unterprozess `sys.executable -c "from app.core import config; print(config.MTLS_ENFORCE)"`, `cwd` = `apps/server`, Env = `os.environ` ohne `MTLS_ENFORCE`, `DATA_DIR` auf `tmp_path` → Ausgabe `True`; Gegenstück im selben Test mit `MTLS_ENFORCE=false` → `False` (die Probe kann fallen). Keine anderen Werte im Test. Mutations-Gegenprobe in einem eigenen Probe-Worktree (nie im Bau-Worktree, CLAUDE.md §5): Default in `apps/server/app/core/config.py:144` `"true"` → `"false"` → der neue Test rot; Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_mtls_scope.py
 Doku: keine (Docstrings und Test; das Soll steht in `docs/admin/betrieb.html:262`)
