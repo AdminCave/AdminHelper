@@ -61,8 +61,10 @@ Abhängt von: T2 und dem grünen Dispatch-Lauf danach („0 skipped“ in der 3.
 Dedup-Key: ref:ci:ci.yml:server-pytest-strict
 HEAD: b25c65a6
 
-### T4 — Job agent-windows: Kommentar ohne Zählung (R-0500)  [ ]
+### T4 — Job agent-windows: Kommentar ohne Zählung (R-0500)  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4660cd55 2026-10-23T06:36:33+02:00
+Review: approve (.ah-out/review/ci-gates/T4.verdict.json)
 Änderung: Der Kommentar `ci.yml:410-415` („Seven files are windows-tagged … exactly one of them has a test“) wird ohne Zahlen neu gefasst: `GOOS=windows go vet` auf Ubuntu kompiliert nur; hier laufen die plattformübergreifenden und die windows-getaggten Tests (`*_windows_test.go`), die kein anderer Job ausführt; hart mit Absicht (kein `continue-on-error`). Nur der Kommentar, kein Schritt ändert sich. Das Verify zeigt, dass `ci.yml` weiter lädt und die Struktur-Tests grün bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: keine (Kommentar; die Doku nennt die Zahl nirgends, grep über docs/, DEVELOPMENT.md, README.md ohne Treffer)

@@ -412,11 +412,9 @@ jobs:
           go-version: "1.27"
           check-latest: true
           cache-dependency-path: apps/agent/go.sum
-      # Nothing in apps/agent has ever RUN on Windows: `GOOS=windows go vet` on the
-      # ubuntu runner compiles and executes nothing. Seven files are windows-tagged
-      # (sc-query collector, ACL hardening, service install, path resolution) and
-      # exactly one of them has a test — so the day-one value here is the
-      # cross-platform code finally executing on Windows, not the tagged files.
+      # `GOOS=windows go vet` on the ubuntu runner only compiles; it executes nothing.
+      # This job runs the agent's cross-platform tests on Windows and the windows-only
+      # tests (*_windows_test.go), which no other job executes.
       # Hard on purpose (no continue-on-error): a red run here is a finding, not noise.
       - name: go test
         working-directory: apps/agent
