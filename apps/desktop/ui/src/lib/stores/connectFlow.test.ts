@@ -132,8 +132,8 @@ describe('markConnectionUsed mode branches', () => {
   });
 });
 
-// Only admins read mappings, so a non-admin has none; Rust still resolves a target of 127.0.0.1 at
-// the server port of a visitor to the local port that visitor got.
+// A user without a mapping for the connection; Rust still resolves a target of 127.0.0.1 at the
+// server port of a visitor to the local port that visitor got.
 describe('tunnel resolution without mappings', () => {
   const autoConnection = (kind: 'ssh' | 'web'): Connection => ({
     id: `${kind}-auto`,
