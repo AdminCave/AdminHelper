@@ -200,6 +200,55 @@ def test_startup_with_a_db_config_writes_frps_toml(db_session, frp_dir):
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+def _startup_reconcile_log(db, caplog) -> list[logging.LogRecord]:
+    import app.main as m
+
+    with caplog.at_level(logging.INFO, logger=m.logger.name):
+        m._ensure_frps_config(db)
+    return [r for r in caplog.records if r.name == m.logger.name]
+
+
+def test_a_failed_startup_reconcile_logs_the_error_type_only(
+    db_session, frp_dir, monkeypatch, caplog
+):
+    # A database error quotes the connection, password included: like the startup checks
+    # before it, the reconcile logs the type of the error, without its text or a traceback.
+    from sqlalchemy.exc import OperationalError
+
+    from app.modules.frp import _helpers
+
+    def unreachable(db, config_id=None):
+        raise OperationalError(
+            "SELECT 1", {}, Exception("connection failed: password=s3cr3t-pw host=db.example")
+        )
+
+    monkeypatch.setattr(_helpers, "get_frp_config", unreachable)
+    records = _startup_reconcile_log(db_session, caplog)
+
+    warnings = [r.getMessage() for r in records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "OperationalError" in warnings[0]
+    assert "s3cr3t-pw" not in caplog.text
+    assert not [r for r in caplog.records if r.exc_info]
+    assert "Traceback" not in caplog.text
+
+
+def test_a_failed_startup_write_logs_the_error_type_only(db_session, frp_dir, monkeypatch, caplog):
+    db_session.add(_cfg(id="cfg-start", name="cfg-start", created_at=datetime(2020, 1, 1)))
+    db_session.commit()
+
+    def refused(config, **kwargs):
+        raise PermissionError(errno.EACCES, "Permission denied", "/frp/.frps.toml.x.tmp")
+
+    monkeypatch.setattr(docker_manager, "write_frps_config", refused)
+    records = _startup_reconcile_log(db_session, caplog)
+
+    warnings = [r.getMessage() for r in records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "PermissionError" in warnings[0]
+    assert "Permission denied" not in caplog.text
+    assert not [r for r in caplog.records if r.exc_info]
+    assert "Traceback" not in caplog.text
+
+
 @pytest.mark.parametrize("with_db_config", [False, True])
 def test_startup_removes_old_temp_files_and_keeps_fresh_ones(db_session, frp_dir, with_db_config):
     # A SIGKILL or OOM between mkstemp and os.replace leaves the 0600 temp file, with the token of
