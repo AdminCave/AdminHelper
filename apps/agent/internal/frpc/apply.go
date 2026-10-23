@@ -5,15 +5,10 @@
 package frpc
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"adminhelper-agent/internal/config"
@@ -35,7 +30,6 @@ type ApplyParams struct {
 	ServerID       string
 	APIKey         string
 	FrpConfigB64   string
-	PkiBundleB64   string
 	TLS            config.TLSOpts
 }
 
@@ -47,17 +41,12 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	serverID := p.ServerID
 	apiKey := p.APIKey
 	cacert := p.TLS.CACert
-	insecure := p.TLS.Insecure
 
-	frpDir := config.FrpDir()
-	pkiDir := config.FrpPkiDir()
-	// Secret-bearing dirs (CA cert, client keys, the auth token in the conf) ->
-	// 0700, also for raw-binary provisioning where no postinst tightens them; a
-	// protected ACL on Windows, after the data root above them.
-	for _, dir := range []string{frpDir, pkiDir} {
-		if err := config.EnsureDataDir(dir); err != nil {
-			return fmt.Errorf("Verzeichnis anlegen: %w", err)
-		}
+	// Secret-bearing dir (CA cert, the auth token in the conf) -> 0700, also for
+	// raw-binary provisioning where no postinst tightens it; a protected ACL on
+	// Windows, after the data root above it.
+	if err := config.EnsureDataDir(config.FrpDir()); err != nil {
+		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
 
 	// Copy the CA cert if provided
@@ -71,13 +60,12 @@ func WriteSyncConfig(p SyncConfigParams) error {
 		}
 	}
 
-	// Determine the SSL config for sync mode
+	// The sync config names a CA or no trust at all, never INSECURE: --insecure holds for
+	// the provisioning call only, and without a CA the later sync verifies the server
+	// against the system CAs.
 	confCACert := ""
-	confInsecure := false
 	if cacert != "" {
 		confCACert = config.FrpCACert()
-	} else if insecure {
-		confInsecure = true
 	}
 
 	// Write the AdminHelper config
@@ -89,9 +77,6 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	if confCACert != "" {
 		entries = append(entries, config.KeyValue{Key: "CACERT", Value: confCACert})
 	}
-	if confInsecure {
-		entries = append(entries, config.KeyValue{Key: "INSECURE", Value: "1"})
-	}
 	if err := config.WriteKeyValue(config.FrpAdminHelperConf(), entries); err != nil {
 		return fmt.Errorf("Config schreiben: %w", err)
 	}
@@ -99,12 +84,12 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	return nil
 }
 
-// Apply writes the sync config (WriteSyncConfig) and the PKI bundle from a provisioning
-// response, then applies the bundle's frpc.toml the way Sync does (applyConfig): a running frpc
-// restarts onto it (never a reload, see startFrpc), a stopped one is enabled, and a text without
-// proxies (no active tunnel for the host) stops and disables it. NO HTTP call happens here
-// anymore — the token-activate call has been centralized since v0.23.0 in the `provision`
-// subcommand, which invokes `Apply` with the already-decoded values.
+// Apply writes the sync config (WriteSyncConfig), then applies the frpc.toml of a provisioning
+// response the way Sync does (applyConfig): a running frpc restarts onto it (never a reload, see
+// startFrpc), a stopped one is enabled, and a text without proxies (no active tunnel for the
+// host) stops and disables it. NO HTTP call happens here anymore — the token-activate call has
+// been centralized since v0.23.0 in the `provision` subcommand, which invokes `Apply` with the
+// already-decoded values.
 func Apply(p ApplyParams) error {
 	if err := WriteSyncConfig(SyncConfigParams{
 		AdminHelperURL: p.AdminHelperURL,
@@ -118,18 +103,6 @@ func Apply(p ApplyParams) error {
 	serverToml, err := base64.StdEncoding.DecodeString(p.FrpConfigB64)
 	if err != nil {
 		return fmt.Errorf("Config base64 decodieren: %w", err)
-	}
-
-	// Extract the PKI bundle (base64-encoded tar.gz) before frpc starts on the new config. The PKI
-	// is essential for the FRP mTLS handshake — fail hard instead of warning (4.9): otherwise
-	// provisioning reports "OK" while the STCP tunnel silently never establishes (cryptic TLS
-	// errors in the frpc log), and since the provision token is one-time it takes manual
-	// diagnosis to recover.
-	if p.PkiBundleB64 != "" {
-		if err := extractPkiBundle(p.PkiBundleB64, config.FrpDir()); err != nil {
-			return fmt.Errorf("PKI-Bundle entpacken: %w", err)
-		}
-		logger.Infof("PKI-Zertifikate installiert")
 	}
 
 	return warnOnServiceFailure(applyConfig(serverToml, false))
@@ -155,99 +128,5 @@ func warnOnServiceFailure(err error) error {
 		return fmt.Errorf("remove the config hash: %w", rmErr)
 	}
 	logger.Warnf("%v. The next agent run tries again; if it keeps failing, see systemctl status frpc.", err)
-	return nil
-}
-
-// maxBundleBytes limits the total extracted size of the PKI bundle (zip-bomb protection).
-const maxBundleBytes int64 = 10 * 1024 * 1024 // 10 MiB
-
-// extractPkiBundle unpacks a base64-encoded tar.gz archive.
-func extractPkiBundle(b64 string, destDir string) error {
-	data, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		return err
-	}
-	gz, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
-	cleanDest, err := filepath.Abs(filepath.Clean(destDir))
-	if err != nil {
-		return fmt.Errorf("Zielverzeichnis aufloesen: %w", err)
-	}
-
-	var totalBytes int64
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		target, err := filepath.Abs(filepath.Join(cleanDest, hdr.Name))
-		if err != nil {
-			return fmt.Errorf("Pfad aufloesen: %w", err)
-		}
-		rel, err := filepath.Rel(cleanDest, target)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("zip slip erkannt: %s", hdr.Name)
-		}
-
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return err
-			}
-			// Safe default permission; .key additionally gets 0600.
-			// Default 0600 (covers the private keys); only public certs widen to 0644.
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-			if err != nil {
-				return err
-			}
-
-			remaining := maxBundleBytes - totalBytes
-			written, err := io.CopyN(f, tr, remaining+1)
-			if err != nil && err != io.EOF {
-				f.Close()
-				os.Remove(target)
-				return err
-			}
-			if written > remaining {
-				f.Close()
-				os.Remove(target)
-				return fmt.Errorf("zip bomb erkannt: PKI-Bundle ueberschreitet %d Bytes", maxBundleBytes)
-			}
-			totalBytes += written
-			// Sync + checked Close: with a write-back cache the real write
-			// error surfaces only at flush. A truncated .key/.crt written
-			// silently would later fail the mTLS handshake cryptically.
-			if err := f.Sync(); err != nil {
-				f.Close()
-				os.Remove(target)
-				return err
-			}
-			if err := f.Close(); err != nil {
-				os.Remove(target)
-				return err
-			}
-			if err := config.OwnByAdministrators(target); err != nil {
-				return err
-			}
-			if strings.HasSuffix(hdr.Name, ".crt") {
-				if err := os.Chmod(target, 0644); err != nil {
-					return err
-				}
-			}
-		}
-	}
 	return nil
 }

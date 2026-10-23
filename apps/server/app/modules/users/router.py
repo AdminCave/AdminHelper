@@ -105,6 +105,8 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
+    was_admin = user.is_admin
+    old_server_ids = {s.id for s in user.servers}
     if data.password is not None:
         user.hashed_password = hash_password(data.password)
         # Revoke all existing JWTs for this user (password reset invalidates
@@ -141,6 +143,16 @@ def update_user(
         user.servers = servers
     db.commit()
     db.refresh(user)
+    if user.is_admin and not was_admin:
+        fire_event("user.promoted", {"id": user.id, "username": user.username})
+    # detail names the changed fields and carries no value but the new admin flag.
+    changed = []
+    if data.password is not None:
+        changed.append("password")
+    if user.is_admin != was_admin:
+        changed.append(f"is_admin={str(user.is_admin).lower()}")
+    if {s.id for s in user.servers} != old_server_ids:
+        changed.append("server_ids")
     audit.record(
         db,
         "user.updated",
@@ -148,6 +160,7 @@ def update_user(
         object_type="user",
         object_id=user.id,
         object_label=user.username,
+        detail=", ".join(changed) or None,
     )
     return _user_response(user)
 

@@ -28,6 +28,7 @@ import sys
 from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import SessionLocal
+from app.core.events import fire_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import Actor
 from app.core.time import utcnow_naive
@@ -57,6 +58,10 @@ def create_admin(db, username: str, password: str) -> int:
     db.flush()
     db.add(default_admin_subscription(user.id))
     db.commit()
+    # Not lost when the CLI exits right after: concurrent.futures registers a join
+    # of its worker threads at interpreter shutdown, so the hooks and the
+    # notification bridge still run before the process ends.
+    fire_event("user.created", {"id": user.id, "username": user.username, "is_admin": True})
     audit.record(
         db,
         "user.created",
