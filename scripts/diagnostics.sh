@@ -15,11 +15,12 @@
 # parameters api_key, token and access_token, the token in a
 # /hooks/trigger/<token> path and adminhelper_prov_ provisioning tokens.
 # Host names and IP addresses stay in the bundle unless --mask-hosts is given.
-# With it, IPv4 and IPv6 addresses become <ip> by their form, and the names and
-# addresses set in DOMAIN, EXTRA_SANS, CA_FRPS_EXTRA_SANS, ALLOWED_IPS,
-# FRP_SERVER_ADDR, TRUSTED_PROXIES, SMTP_HOST and SMTP_FROM (of SMTP_FROM with a
-# display name, "Name <address>", only the address in angle brackets, not the
-# name), and the name of this machine, become <host> —
+# With it, IPv4 and IPv6 addresses become <ip> by their form, and every name and
+# address set in DOMAIN, EXTRA_SANS, CA_FRPS_EXTRA_SANS, ALLOWED_IPS,
+# FRP_SERVER_ADDR, TRUSTED_PROXIES, SMTP_HOST and SMTP_FROM (of a mailbox in
+# SMTP_FROM with a display name, "Name <address>", only the address in
+# angle brackets, not the name), and the name of this machine, also without its
+# domain, become <host> —
 # in report.txt, the logs and env.sanitized, which shows those keys as <masked>.
 # Other names, such as those of managed servers or webhook targets, stay.
 # compose.yml stays a copy as it is.
@@ -124,16 +125,20 @@ SED
 # host_rules <envfile> : the sed script of --mask-hosts -> stdout. IPv4 addresses
 # (optionally with /prefix) and IPv6 addresses with "::" or eight groups become
 # <ip>; a time HH:MM:SS or a version a.b.c is no address. Then the values of the
-# HOST_KEYS (read as for the secrets, lists split at ',' and whitespace) and this
-# machine's name become <host>, the longest first, so a name is masked whole before
-# a shorter one inside it (example.com in ah.example.com). Of a display name, as in
-# SMTP_FROM="Name <a@b>", only the address in the angle brackets counts, and a part
-# without an ASCII letter or digit (a lone "-") is dropped: either would turn plain
-# words or every "-" of the bundle into <host>. \b on an edge that is a word
-# character (letter, digit, _): a short name must not eat into longer words. The
-# rules ignore case (sed's I), as host names do.
+# HOST_KEYS (read as for the secrets) and this machine's name become <host>, the
+# longest first, so a name is masked whole before a shorter one inside it
+# (example.com in ah.example.com). A value is split at ',', whitespace, '<' and '>',
+# and every part counts. SMTP_FROM is a list of mailboxes: a display name in quotes
+# goes (in the file form of a value in double quotes its quotes are \"), then of a
+# mailbox with angle brackets only the address in them counts, of one without the
+# mailbox itself, and a part without an ASCII letter or digit (a lone "-") is
+# dropped: the words of a display name or every "-" of the bundle would turn into
+# <host>. Of a machine name with a dot its first label counts as well
+# (node9 of node9.example.org): a log may name the machine short. \b on an edge that
+# is a word character (letter, digit, _): a short name must not eat into longer
+# words. The rules ignore case (sed's I), as host names do.
 host_rules() {
-    local envfile="$1" key form
+    local envfile="$1" key form node
     local -a parts
     cat <<'SED'
 s#\b\(\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\.\)\{3\}\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\(/[0-9]\{1,3\}\)\?\b#<ip>#g
@@ -146,16 +151,23 @@ SED
         if [ -f "$envfile" ]; then
             for key in "${HOST_KEYS[@]}"; do
                 while IFS= read -r form; do
-                    if [[ "$form" == *'<'*'>'* ]]; then
-                        form="${form#*<}"
-                        form="${form%%>*}"
-                    fi
                     IFS=$', \t<>' read -r -a parts <<< "$form"
                     printf '%s\n' "${parts[@]}"
-                done < <(env_values "$envfile" "$key")
+                done < <(
+                    if [ "$key" = SMTP_FROM ]; then
+                        env_values "$envfile" "$key" | LC_ALL=C sed -e 's/\\"\([^"\\]\|\\[^"]\)*\\"//g' \
+                            -e 's/"\([^"\\]\|\\.\)*"//g' -e 's/[^,<]*<\([^>,]*\)>[^,]*/\1/g'
+                    else
+                        env_values "$envfile" "$key"
+                    fi
+                )
             done
         fi
-        uname -n 2>/dev/null || true
+        node="$(uname -n 2>/dev/null)" || true
+        printf '%s\n' "$node"
+        if [[ "$node" == *.* ]]; then
+            printf '%s\n' "${node%%.*}"
+        fi
     } | LC_ALL=C awk '/[0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]/ && !seen[tolower($0)]++ {
             print length($0) "\t" $0 }' \
       | LC_ALL=C sort -rn | cut -f2- \

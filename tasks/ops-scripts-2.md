@@ -147,8 +147,10 @@ Doku: CHANGELOG.md nur, wenn sich das sichtbare Verhalten ändert (den Changed-E
 Abhängt von: T12
 Security: ja (Diagnose-Bundle mit Secrets)
 
-### T9 — diagnostics.sh `--mask-hosts`: jede Adresse eines Host-Werts und der kurze Rechnername  [ ]
+### T9 — diagnostics.sh `--mask-hosts`: jede Adresse eines Host-Werts und der kurze Rechnername  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e8593416 2026-10-23T22:58:56+02:00
+Review: approve (.ah-out/review/ops-scripts-2/T9.verdict.json)
 Änderung: `host_rules` (`:100-129`): die Klammer-Auswahl (`:114-117`) gilt nur noch für `SMTP_FROM`, und dort je Postfach: der Wert wird nach dem Entfernen von Anzeigenamen in `"…"` an `,` geteilt, von jedem Postfach zählt der Inhalt von `<…>`, ohne Klammer das Postfach selbst; der Anzeigename bleibt wie bisher stehen. Die übrigen Host-Schlüssel werden an `,`, Leerraum, `<` und `>` geteilt, jedes Teil wird Regel (heute verschluckt eine Klammer den Rest des Werts). Ist `uname -n` ein Name mit Punkt, wird zusätzlich sein erstes Label Regel. Der Kommentar `:95-99` und der Kopf `:17-22` sagen es. Tests in `diagnostics_test.sh`, Fall (i) (`:320-366`) erweitert: `EXTRA_SANS=alt9.example.com <inner9.example.com> tail9.example.com` → alle drei Namen werden in Logzeilen `<host>`; `SMTP_FROM='"Ops9 Team" <ops9@mail.example.com>, dev9@mail.example.com'` → beide Adressen `<host>`, `Ops9 Team` bleibt; `uname -n` = `node9.corp.example.org` (Funktions-Stub wie `:254`) → `node9 started` wird `<host> started`, `node9.corp.example.org` wird `<host>`. Zuerst rot: `alt9`, `tail9`, `dev9` und `node9 started` (Probe am Stand 73bf0d31, Spec Problem 8). Die übrigen Erwartungen von (f) und (i) bleiben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: CHANGELOG.md (den Added-Eintrag `:12-20` anpassen, umlautfrei: jede Adresse eines Host-Werts, bei `SMTP_FROM` jede Adresse ohne Anzeigenamen, der Rechnername auch ohne Domain); die Doku-Sätze aus T4 bleiben richtig

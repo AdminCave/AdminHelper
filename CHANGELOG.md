@@ -23,10 +23,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
   Betrieb & Konfiguration, Monitoring (DE+EN).
 - **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
-  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
-  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
-  `SMTP_HOST` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
-  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und jeden
+  Namen und jede Adresse aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`,
+  `TRUSTED_PROXIES`, `SMTP_HOST` und `SMTP_FROM` (bei `SMTP_FROM` jede Adresse, bei einem Anzeigenamen nur die
+  Adresse in spitzen Klammern, nicht der Name) sowie den Rechnernamen, auch ohne seine Domain, ohne Ruecksicht auf
+  Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
   `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
   Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
   bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung

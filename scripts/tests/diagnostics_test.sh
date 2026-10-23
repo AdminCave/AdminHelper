@@ -31,7 +31,8 @@
 #   (i) --mask-hosts, which values become <host> rules and how they match: the
 #       longest first, at word edges, without regard to case; of a display name
 #       ("Name <address>") only the address, and no list part without a letter or
-#       a digit;
+#       a digit; every part of a value, one in angle brackets and the others, every
+#       mailbox of SMTP_FROM, and the first label of a machine name with a dot;
 #   (j) SMTP_USER is masked like the passwords, with and without --mask-hosts, in
 #       the logs and in sanitize_env, and only as a whole word;
 #   (k) under the locale C.UTF-8, a key behind a BOM or Unicode whitespace and with
@@ -386,6 +387,39 @@ COMPOSE_PROJECT_NAME=ah-prod
 EOF
 )"
 same "(i) display name, list parts, case in sanitize_env" "$exp_js" "$(sanitize_env "$env_j" 1)" || fail=1
+# Every part of a host value is a rule: one in angle brackets takes none of the others
+# with it. SMTP_FROM is a list of mailboxes: of each the address, in angle brackets
+# or bare, the display name in quotes stays, also with a comma in it and where the
+# .env escapes its quotes (\" in double quotes). A machine name with a dot gives its
+# first label as well: a log may name the machine short.
+env_ia="$tmp/.env-every"
+cat > "$env_ia" <<'EOF'
+EXTRA_SANS=alt9.example.com <inner9.example.com> tail9.example.com
+SMTP_FROM='"Ops9 Team" <ops9@mail.example.com>, dev9@mail.example.com'
+SMTP_FROM="\"Ops8, Team\" <ops8@mail.example.com>"
+EOF
+log_ia="$(cat <<'EOF'
+tls: names alt9.example.com, inner9.example.com and tail9.example.com
+mail from "Ops9 Team" <ops9@mail.example.com> cc dev9@mail.example.com
+{"from": "\"Ops8, Team\" <ops8@mail.example.com>"}
+node9 started on node9.corp.example.org
+EOF
+)"
+exp_ia="$(cat <<'EOF'
+tls: names <host>, <host> and <host>
+mail from "Ops9 Team" <<host>> cc <host>
+{"from": "\"Ops8, Team\" <<host>>"}
+<host> started on <host>
+EOF
+)"
+sed_ia="$tmp/redact-ia.sed"
+(
+    # shellcheck disable=SC2317  # called by host_rules of the sourced script
+    uname() { if [ "${1:-}" = -n ]; then echo node9.corp.example.org; else command uname "$@"; fi; }
+    build_redaction_sedfile "$env_ia" "$sed_ia" 1
+)
+same "(i) every part of a host value, every mailbox, the short machine name" "$exp_ia" \
+    "$(printf '%s\n' "$log_ia" | redact "$sed_ia")" || fail=1
 
 # --- (j) SMTP_USER: always masked like the passwords, as a whole word ---------------
 # With some mail providers the SMTP user is itself an access token or a key ID, so no
