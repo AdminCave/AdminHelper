@@ -358,6 +358,9 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
 
     from app.check_engine import execute_check
 
+    # The run takes up to the check's timeout and execute_check opens its own session;
+    # the request's connection goes back to the pool first (R-0615).
+    db.rollback()
     execute_check(check_id)
 
     db.expire_all()
@@ -423,6 +426,17 @@ def get_status_summary(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
+def _series_or_502(response: dict) -> list:
+    """The series of a query_range response, or 502 if the query failed.
+
+    query_range answers every failure with status "error" and an empty result; read as
+    series, a dead VictoriaMetrics would look like "no data" (R-0636). The first failed
+    query ends the request: no partial chart, no further 10 s wait."""
+    if response.get("status") == "error":
+        raise HTTPException(502, "Metrics store unavailable")
+    return response.get("data", {}).get("result", [])
+
+
 @router.get("/checks/{check_id}/metrics", dependencies=[Depends(require_internal)])
 def get_check_metrics(
     check_id: str,
@@ -433,6 +447,10 @@ def get_check_metrics(
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check not found")
+    check_type, server_id = check.check_type, check.server_id
+    # Up to three query_range calls of up to 10 s each follow; the request's connection
+    # goes back to the pool before them (R-0615).
+    db.rollback()
 
     period_map = {"1h": ("1h", "1m"), "6h": ("6h", "5m"), "24h": ("24h", "15m"), "7d": ("7d", "1h")}
     duration, step = period_map[period]
@@ -449,33 +467,40 @@ def get_check_metrics(
         "proxmox_backup",
         "zfs_health",
     }
-    use_server_id = check.check_type in agent_types and check.server_id
+    use_server_id = check_type in agent_types and server_id
     filter_label = (
-        f'server_id="{_escape_label(check.server_id)}"'
+        f'server_id="{_escape_label(server_id)}"'
         if use_server_id
         else f'check_id="{_escape_label(check_id)}"'
     )
+    if use_server_id and check_type == "agent_resources":
+        # Only the push handler's series, which carry no check_id: CPU/RAM copies the
+        # checker wrote with its check labels stay in VictoriaMetrics until the retention
+        # ends and would come back as a second series of the same name (R-0633).
+        # label="" selects the series without that label (Prometheus semantics, probed
+        # against the pinned VictoriaMetrics image).
+        filter_label += ',check_id=""'
 
     # Query all type-specific metrics in one __name__ regex range query instead of one serial
     # query_range per metric (up to 4 for e.g. service_process/http): the calls are independent, so
     # serializing them — each with a 10s httpx timeout — is pure latency on the dashboard path (5.22).
     # PromQL/VictoriaMetrics anchors the __name__ regex fully (^(...)$), and the metric names are
     # literal [a-z_] identifiers, so the |-join matches exactly those names.
-    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms_value"])
+    metric_names = CHECK_TYPE_METRICS.get(check_type, ["monitor_check_duration_ms_value"])
     if metric_names:
         # zfs_health maps to an empty list (only dynamic patterns) — skip rather than fire a
         # degenerate {__name__=~""} query, matching the old loop which ran zero times.
         names = "|".join(metric_names)
         query = f'{{__name__=~"{names}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
-        all_results.extend(result.get("data", {}).get("result", []))
+        all_results.extend(_series_or_502(result))
 
     # Dynamic metrics (zfs pools, disk mounts)
-    pattern = _DYNAMIC_METRIC_PATTERNS.get(check.check_type)
+    pattern = _DYNAMIC_METRIC_PATTERNS.get(check_type)
     if pattern:
         query = f'{{__name__=~"{pattern}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
-        all_results.extend(result.get("data", {}).get("result", []))
+        all_results.extend(_series_or_502(result))
 
     # Status timeline (always, with _value suffix)
     status_query = f'monitor_check_status_value{{check_id="{_escape_label(check_id)}"}}'
@@ -485,8 +510,8 @@ def get_check_metrics(
 
     return {
         "checkId": check_id,
-        "checkType": check.check_type,
+        "checkType": check_type,
         "period": period,
         "data": all_results,
-        "statusHistory": status_result.get("data", {}).get("result", []),
+        "statusHistory": _series_or_502(status_result),
     }
