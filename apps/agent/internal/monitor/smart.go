@@ -5,6 +5,7 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -49,7 +50,9 @@ type SmartDisk struct {
 var smartctlCLI = struct {
 	lookPath func(file string) (string, error)
 	run      func(timeout time.Duration, name string, args ...string) ([]byte, error)
-}{exec.LookPath, runTimed}
+}{exec.LookPath, func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	return runTimed(context.Background(), timeout, name, args...)
+}}
 
 // collectSmart collects SMART data of all detected devices via smartctl. Without a single disk it
 // returns why instead, which the report sends as smart_absent, so a host without smartctl does not

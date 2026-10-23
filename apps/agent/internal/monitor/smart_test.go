@@ -375,7 +375,7 @@ func TestHelperSmartctlProcess(t *testing.T) {
 func smartctlExit(t *testing.T, code int) error {
 	t.Helper()
 	t.Setenv(smartctlHelperEnv, strconv.Itoa(code))
-	_, err := runTimed(time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
+	_, err := runTimed(context.Background(), time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
 		t.Fatalf("helper process: err = %v, want an ExitError with status %d", err, code)

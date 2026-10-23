@@ -24,9 +24,9 @@ func stubReportHost(t *testing.T) {
 	oldInterval := cpuSampleInterval
 	cpuSampleInterval = 0
 	oldPlugins := pluginCollectors
-	pluginCollectors.docker = func() map[string]any { return nil }
-	pluginCollectors.proxmox = func() map[string]any { return nil }
-	pluginCollectors.zfs = func() map[string]any { return nil }
+	pluginCollectors.docker = func(context.Context) map[string]any { return nil }
+	pluginCollectors.proxmox = func(context.Context) map[string]any { return nil }
+	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
 	pluginCollectors.smart = func() ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func() map[string]any { return map[string]any{} }
@@ -176,7 +176,7 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	}
 
 	prevCPU := &cpuSample{Unix: now.Add(-5 * time.Minute).Unix(), Total: 1000, Busy: 200}
-	report, next := buildReportWithState(nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
+	report, next := buildReportWithState(context.Background(), nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
 	if len(handed) != 1 || handed[0].OOMKill == nil || *handed[0].OOMKill != saved {
 		t.Fatalf("collector got %+v, want the saved counter %d", handed, saved)
 	}

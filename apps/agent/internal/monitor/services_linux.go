@@ -7,6 +7,7 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"sort"
@@ -165,7 +166,7 @@ const maxSingleUnitChecks = 50
 // runSystemctl indirects every systemctl call of this file so tests can drive the collector, the
 // batch and the per-unit paths without systemctl (same reason as serviceHealthCollector, 6.18).
 var runSystemctl = func(args ...string) ([]byte, error) {
-	return runWithTimeout("systemctl", args...)
+	return runWithTimeout(context.Background(), "systemctl", args...)
 }
 
 // filterEnabledInactive re-checks the enabled-but-inactive candidates with one batched

@@ -187,7 +187,7 @@ func Push(ctx context.Context) error {
 	}
 
 	reportStatePath := config.MonitorReportStateFile()
-	report, nextReportState := buildReportWithState(cfg.Services, loadReportState(reportStatePath), time.Now())
+	report, nextReportState := buildReportWithState(ctx, cfg.Services, loadReportState(reportStatePath), time.Now())
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(ctx, PushReportParams{

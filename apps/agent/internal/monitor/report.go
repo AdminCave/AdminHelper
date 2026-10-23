@@ -21,13 +21,14 @@ import (
 // BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
 // with the 1s sample; monitor init's test push neither reads nor writes the state.
 func BuildReport(serviceNames []string) map[string]any {
-	report, _ := buildReportWithState(serviceNames, reportState{}, time.Now())
+	report, _ := buildReportWithState(context.Background(), serviceNames, reportState{}, time.Now())
 	return report
 }
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
-// saved. It also returns the state to save once this report has been pushed.
-func buildReportWithState(serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
+// saved. It also returns the state to save once this report has been pushed. ctx ends the tool calls
+// of the docker, proxmox and zfs collectors.
+func buildReportWithState(ctx context.Context, serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
 	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
 	resources := map[string]any{
 		"cpu_percent": cpuPercent,
@@ -83,13 +84,13 @@ func buildReportWithState(serviceNames []string, prev reportState, now time.Time
 	report["systemd"] = svcHealth
 
 	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
-	if docker := pluginCollectors.docker(); docker != nil {
+	if docker := pluginCollectors.docker(ctx); docker != nil {
 		report["docker"] = docker
 	}
-	if proxmox := pluginCollectors.proxmox(); proxmox != nil {
+	if proxmox := pluginCollectors.proxmox(ctx); proxmox != nil {
 		report["proxmox"] = proxmox
 	}
-	if zfs := pluginCollectors.zfs(); zfs != nil {
+	if zfs := pluginCollectors.zfs(ctx); zfs != nil {
 		report["zfs"] = zfs
 	}
 	if smart, absent := pluginCollectors.smart(); smart != nil {
@@ -107,9 +108,9 @@ var pushRetryDelay = 10 * time.Second
 // pluginCollectors indirects the auto-detected plugin collectors so tests can stub the real
 // docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
 var pluginCollectors = struct {
-	docker  func() map[string]any
-	proxmox func() map[string]any
-	zfs     func() map[string]any
+	docker  func(context.Context) map[string]any
+	proxmox func(context.Context) map[string]any
+	zfs     func(context.Context) map[string]any
 	smart   func() ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 

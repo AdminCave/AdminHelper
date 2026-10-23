@@ -138,7 +138,7 @@ func TestHelperSystemStateProcess(t *testing.T) {
 func exitStatus(t *testing.T, code int) error {
 	t.Helper()
 	t.Setenv(systemStateHelperEnv, strconv.Itoa(code))
-	_, err := runTimed(time.Minute, os.Args[0], "-test.run=^TestHelperSystemStateProcess$")
+	_, err := runTimed(context.Background(), time.Minute, os.Args[0], "-test.run=^TestHelperSystemStateProcess$")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code ||
 		!strings.Contains(string(exitErr.Stderr), helperStderr) {

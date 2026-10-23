@@ -7,6 +7,7 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -37,7 +38,9 @@ var rebootRequiredPath = "/var/run/reboot-required"
 var systemCLI = struct {
 	lookPath func(file string) (string, error)
 	run      func(name string, args ...string) ([]byte, error)
-}{exec.LookPath, runWithTimeout}
+}{exec.LookPath, func(name string, args ...string) ([]byte, error) {
+	return runWithTimeout(context.Background(), name, args...)
+}}
 
 // collectSystemState reports the system_state block and returns st, the state the last successful
 // push saved, with what it measured replaced. A field is set only when measured; why one is missing
