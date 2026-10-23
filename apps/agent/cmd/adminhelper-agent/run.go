@@ -129,7 +129,7 @@ func runOnce(ctx context.Context) error {
 	// The agent runs as a oneshot (systemd timer / scheduled task), so renewal
 	// is a check-at-each-run rather than a background timer: if the enrolled cert
 	// is past ~50 % of its lifetime, renew it before the pushes.
-	maybeRenewIdentity()
+	maybeRenewIdentity(ctx)
 	var permanent error
 	if err := frpc.Sync(); err != nil {
 		logger.Errorf("FRPC-Sync Fehler: %v", err)
@@ -149,7 +149,7 @@ func runOnce(ctx context.Context) error {
 // maybeRenewIdentity renews the enrolled mTLS cert when due. Best-effort: a
 // transient issuer outage must not abort the cycle — the current cert is still
 // valid for the remaining lifetime.
-func maybeRenewIdentity() {
+func maybeRenewIdentity(ctx context.Context) {
 	dir := config.AgentPkiDir()
 	if !enroll.Provisioned(dir) {
 		return
@@ -158,7 +158,7 @@ func maybeRenewIdentity() {
 	if err != nil {
 		return // no server URL configured yet; nothing to renew against
 	}
-	renewed, err := enroll.MaybeRenew(dir, base, 30*time.Second)
+	renewed, err := enroll.MaybeRenew(ctx, dir, base, 30*time.Second)
 	if err != nil {
 		logger.Warnf("Cert-Renew Fehler: %v", err)
 		return

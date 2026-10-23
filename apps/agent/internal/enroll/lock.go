@@ -5,6 +5,7 @@
 package enroll
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,9 +39,9 @@ const (
 // its first read of the identity to the commit of the new one: Store renames key,
 // cert and CA one after another, and two commits that interleave leave the key of
 // one with the cert of the other. The lock belongs to the open file, so a second
-// LockIdentity in the same process waits as well. It waits at most identityLockWait
-// and then returns an error that names the lock file.
-func LockIdentity(dir string) (unlock func(), err error) {
+// LockIdentity in the same process waits as well. It waits at most identityLockWait,
+// or until ctx ends, and then returns an error that names the lock file.
+func LockIdentity(ctx context.Context, dir string) (unlock func(), err error) {
 	if err := config.EnsureDataDir(dir); err != nil {
 		return nil, fmt.Errorf("create the identity directory: %w", err)
 	}
@@ -49,7 +50,7 @@ func LockIdentity(dir string) (unlock func(), err error) {
 	if err != nil {
 		return nil, fmt.Errorf("open the identity lock: %w", err)
 	}
-	if err := waitForLock(f, path); err != nil {
+	if err := waitForLock(ctx, f, path); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("lock the identity: %w", err)
 	}
@@ -59,8 +60,9 @@ func LockIdentity(dir string) (unlock func(), err error) {
 	}, nil
 }
 
-// waitForLock tries to lock f until it gets the lock or identityLockWait has passed.
-func waitForLock(f *os.File, path string) error {
+// waitForLock tries to lock f until it gets the lock, identityLockWait has passed
+// or ctx has ended. The error for an ended ctx wraps ctx.Err().
+func waitForLock(ctx context.Context, f *os.File, path string) error {
 	deadline := time.Now().Add(identityLockWait)
 	pause := time.Millisecond
 	for {
@@ -71,7 +73,13 @@ func waitForLock(f *os.File, path string) error {
 		if !time.Now().Before(deadline) {
 			return fmt.Errorf("%s is still locked after %s", path, identityLockWait)
 		}
-		time.Sleep(pause)
+		timer := time.NewTimer(pause)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("stopped waiting for %s: %w", path, ctx.Err())
+		case <-timer.C:
+		}
 		pause = min(2*pause, maxLockPause)
 	}
 }

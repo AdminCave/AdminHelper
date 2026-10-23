@@ -6,6 +6,7 @@ package provision
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -522,7 +523,7 @@ func recordingIssuer(t *testing.T) (*httptest.Server, int, <-chan map[string]any
 // result and the unlock of the held lock, which the cleanup calls too.
 func runEnrollmentBehindLock(t *testing.T, srvURL string, info *enrollmentInfo, bodies <-chan map[string]any) (<-chan error, func()) {
 	t.Helper()
-	unlock, err := enroll.LockIdentity(config.AgentPkiDir())
+	unlock, err := enroll.LockIdentity(context.Background(), config.AgentPkiDir())
 	if err != nil {
 		t.Fatalf("LockIdentity: %v", err)
 	}
@@ -657,7 +658,7 @@ func TestRunEnrollmentHoldsTheIdentityLockUntilItStored(t *testing.T) {
 	// What a renewal that gets the lock reads first.
 	seen := make(chan []byte, 1)
 	go func() {
-		unlock, err := enroll.LockIdentity(dir)
+		unlock, err := enroll.LockIdentity(context.Background(), dir)
 		if err != nil {
 			t.Errorf("LockIdentity: %v", err)
 			seen <- nil

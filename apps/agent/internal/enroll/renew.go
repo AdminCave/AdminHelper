@@ -5,6 +5,7 @@
 package enroll
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -91,16 +92,16 @@ func Renew(dir, baseURL string, timeout time.Duration) error {
 //
 // It takes LockIdentity only for a due identity: a lock that is not released holds
 // up no service cycle with nothing to renew, and one with a due identity gets the
-// error of LockIdentity once its wait is over. The lock is held from reading the
-// certificate to the commit in Store (R-0384). A provisioning that held the lock
-// before it may have dropped or replaced the identity, and the issuer has revoked
-// the line of the old one: so the check runs again under the lock, and a fresh
-// certificate is not renewed.
-func MaybeRenew(dir, baseURL string, timeout time.Duration) (bool, error) {
+// error of LockIdentity once its wait is over or ctx has ended. The lock is held
+// from reading the certificate to the commit in Store (R-0384). A provisioning that
+// held the lock before it may have dropped or replaced the identity, and the issuer
+// has revoked the line of the old one: so the check runs again under the lock, and
+// a fresh certificate is not renewed.
+func MaybeRenew(ctx context.Context, dir, baseURL string, timeout time.Duration) (bool, error) {
 	if due, err := renewalDue(dir); err != nil || !due {
 		return false, err
 	}
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(ctx, dir)
 	if err != nil {
 		return false, err
 	}

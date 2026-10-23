@@ -21,6 +21,7 @@
 package provision
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
@@ -314,7 +315,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	// renewal that finished first is the identity Replaces names, and one that waits
 	// finds the new certificate fresh, instead of storing a renewal of the line this
 	// request has the issuer revoke.
-	unlock, err := enroll.LockIdentity(dir)
+	unlock, err := enroll.LockIdentity(context.Background(), dir)
 	if err != nil {
 		return err
 	}
