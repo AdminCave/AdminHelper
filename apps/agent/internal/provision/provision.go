@@ -42,8 +42,7 @@ import (
 )
 
 type frpBundle struct {
-	Config    string `json:"config"`
-	PkiBundle string `json:"pkiBundle"`
+	Config string `json:"config"`
 }
 
 // enrollmentInfo is the one-time grant the server returns so the agent can fetch
@@ -86,11 +85,16 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 	if err := config.RequireHTTPS(adminHelperURL); err != nil {
 		return err
 	}
-	// One trust source per call: --ca-fp verifies, --cacert trusts a file,
-	// --insecure pins blind. Combinations would silently weaken the strongest
-	// one, so refuse them instead of guessing.
+	// One trust source per call, the same rule for all three: --ca-fp verifies
+	// against a CA fingerprint, --cacert against a CA file, --insecure pins blind.
+	// Any combination would silently weaken the stronger one (beside --insecure,
+	// httpclient.New skips the check even with a CA file), so refuse them instead
+	// of guessing.
 	if caFP != "" && (cacert != "" || insecure) {
 		return fmt.Errorf("--ca-fp cannot be combined with --cacert/--insecure")
+	}
+	if cacert != "" && insecure {
+		return fmt.Errorf("--cacert cannot be combined with --insecure: --cacert already verifies the server")
 	}
 	var fingerprint *[sha256.Size]byte
 	if caFP != "" {
@@ -181,7 +185,6 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			ServerID:       serverID,
 			APIKey:         resp.APIKey,
 			FrpConfigB64:   resp.FRP.Config,
-			PkiBundleB64:   resp.FRP.PkiBundle,
 			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
 		}); err != nil {
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
@@ -235,12 +238,17 @@ func pinVerifiedAnchor(serverCertPEM []byte, fp [sha256.Size]byte) (string, func
 // pinIfBlindInsecure turns a blind --insecure (no --cacert) into TOFU-pinned trust:
 // it writes the cert the server presented on the activate call and returns that as
 // the effective cacert with insecure=false, so the recurring loop verifies against
-// it instead of persisting INSECURE=1 and leaking the API key every cycle. The
-// returned cleanup removes the pinned file (a no-op when nothing was pinned);
-// --insecure thus applies only to this one-off provisioning call.
+// it instead of persisting INSECURE=1 and leaking the API key every cycle. Without a
+// presented cert there is nothing to pin, and it fails instead of handing insecure
+// on: it never returns insecure=true. The returned cleanup removes the pinned file
+// (a no-op when nothing was pinned); --insecure thus applies only to this one-off
+// provisioning call.
 func pinIfBlindInsecure(cacert string, insecure bool, serverCertPEM []byte) (string, bool, func(), error) {
-	if !(insecure && cacert == "" && len(serverCertPEM) > 0) {
-		return cacert, insecure, func() {}, nil
+	if !insecure || cacert != "" {
+		return cacert, false, func() {}, nil
+	}
+	if len(serverCertPEM) == 0 {
+		return "", false, func() {}, fmt.Errorf("--insecure: the server presented no certificate to pin; provision again with a new token and --ca-fp or --cacert")
 	}
 	pinnedPath, err := writePinnedCert(serverCertPEM)
 	if err != nil {

@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
     from app.builtin_templates import reconcile_builtin_templates, seed_builtin_templates
     from app.checkers.agent import hydrate_agent_liveness
     from app.core.database import SessionLocal
+    from app.core.victoria import victoria
     from app.scheduler import (
         load_all_checks,
         schedule_agent_alert_bundle,
@@ -98,6 +99,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.shutdown(wait=False)
     logger.info("Scheduler gestoppt")
+    victoria.close()
 
 
 # The monitoring service is internal-only (reached via the server's

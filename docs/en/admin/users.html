@@ -126,6 +126,7 @@
           <p>With <code>ALLOWED_IPS</code> all access can be limited to a whitelist. Example:</p>
           <div class="code-header"><span>.env</span></div>
 <pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
+          <p><code>ALLOWED_IPS</code> applies to every request to the server, agents and desktop clients included, and checks the client address the gateway sees: the gateway passes it on in <code>X-Forwarded-For</code>, and the server evaluates that header only from the gateway (<code>TRUSTED_PROXIES</code>, see <a href="./installation.html#env">Installation</a>). So the list holds the networks of the clients, not the Docker network of the gateway; with another proxy in front of the gateway, that proxy's address counts. Earlier versions checked the gateway's address here: if you set <code>ALLOWED_IPS</code> to it, add the networks of the clients before the update, or the server rejects them with <code>403</code>. Until the server has resolved the name <code>gateway</code> — on the first requests after it starts, and up to 30&nbsp;s after a restart of the gateway with a new address — it still sees the gateway's address and rejects such a request unless the list holds the Docker network.</p>
           <p>If the list is left empty, access is open (for reverse-proxy- or VPN-protected setups).</p>
 
           <div class="page-nav">

@@ -262,16 +262,9 @@ export function fetchTunnels(): Promise<TunnelMapping[]> {
 
 // ─────────────────────────── Ansible ──────────────────────────────
 
-export function ansibleGenerateInventory(servers: AnsibleTarget[]): Promise<string> {
-  return invoke<string>('ansible_generate_inventory', { servers });
-}
-
-export function ansibleWritePlaybook(filename: string, content: string): Promise<string> {
-  return invoke<string>('ansible_write_playbook', { filename, content });
-}
-
-export function ansibleLaunch(inventoryPath: string, playbookPath: string): Promise<void> {
-  return invoke('ansible_launch', { inventoryPath, playbookPath });
+// The backend loads file name and content of the playbook from the signed-in server itself.
+export function ansibleRun(playbookId: string, targets: AnsibleTarget[]): Promise<void> {
+  return invoke('ansible_run', { playbookId, targets });
 }
 
 // ─────────────────────────── Notifications (SSE) ──────────────────

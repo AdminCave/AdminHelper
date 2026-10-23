@@ -11,7 +11,8 @@ use crate::models::{RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
 use super::rdp_logic::parse_custom_size;
 #[cfg(unix)]
 use super::rdp_logic::{
-    auth_only_unsupported, buffer_has_connected, fit_window_size, hdpi_scale, parse_freerdp_error,
+    auth_only_unsupported, buffer_has_connected, drain_into_tail, fit_window_size, hdpi_scale,
+    interactive_exit_message, parse_freerdp_error, OutputTail,
 };
 
 #[cfg(unix)]
@@ -39,6 +40,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(unix)]
 use tauri::Emitter;
+#[cfg(unix)]
+use zeroize::Zeroize;
 
 #[cfg(unix)]
 use crate::terminal::which;
@@ -53,7 +56,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 #[cfg(unix)]
 const LOGIN_FAIL_THRESHOLD_MS: u64 = 8000;
 #[cfg(unix)]
-const OUTPUT_BUFFER_CAP: usize = 8192; // cap the retained xfreerdp stderr tail
+const OUTPUT_BUFFER_CAP: usize = 8192; // kept tail of each xfreerdp stream, both launch paths
 #[cfg(unix)]
 const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(3); // TCP reachability probe
 
@@ -443,22 +446,23 @@ fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
     });
 }
 
-/// Feed a password to a spawned child's stdin, then scrub the local copy. The
-/// security-critical secret-handling shared by the RDP launch and the auth probe,
-/// so a later hardening (e.g. zeroize, or a forgotten kill on BrokenPipe) can't
-/// land in only one of the two copies.
+/// Feed a password to a spawned child's stdin, then zero the copy this function made
+/// for it. Shared by the RDP launch and the auth probe, so both handle the secret and
+/// a failed write the same way. Only that one copy is zeroed: the string from the IPC,
+/// the `password` argument, the strings from the keyring and the session's tokens stay
+/// in memory as they are.
 #[cfg(unix)]
 fn feed_password_stdin(child: &mut std::process::Child, password: &str) -> Result<(), AppError> {
     if let Some(mut stdin) = child.stdin.take() {
-        let mut payload = format!("{password}\n");
+        // Sized up front: a `format!` that grows its buffer frees the old one with the
+        // password still in it, out of reach of the zeroize below.
+        let mut payload = String::with_capacity(password.len() + 1);
+        payload.push_str(password);
+        payload.push('\n');
         let write_result = stdin.write_all(payload.as_bytes());
-        // Scrub the password copy regardless of the write outcome (parity with the
-        // Windows credential path in password.rs).
-        unsafe {
-            for byte in payload.as_bytes_mut() {
-                *byte = 0;
-            }
-        }
+        // Zero the copy regardless of the write outcome, as the Windows credential path
+        // in password.rs does with its own.
+        payload.zeroize();
         if let Err(e) = write_result {
             // A BrokenPipe (child already exited / refused stdin) would otherwise
             // leave the spawned process around — reap it before propagating.
@@ -531,22 +535,37 @@ fn spawn_rdp_interactive(
     let app_handle = app.clone();
     let cid = correlation_id.to_string();
     std::thread::spawn(move || {
-        if let Ok(output) = child.wait_with_output() {
-            let mut combined = output.stderr;
-            combined.extend_from_slice(&output.stdout);
-            let parsed = parse_freerdp_error(&combined);
-            if let Some(message) = parsed {
-                emit_rdp_error(&app_handle, &cid, message);
-            } else if !buffer_has_connected(&combined) {
-                emit_rdp_error(
-                    &app_handle,
-                    &cid,
-                    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
-                );
-            }
+        if let Some(message) = wait_interactive(child) {
+            emit_rdp_error(&app_handle, &cid, message);
         }
     });
     Ok(())
+}
+
+/// Waits for an interactive xfreerdp and returns the message for its end, if
+/// any. A session can run for hours at `/log-level:INFO`, so each pipe is
+/// drained on a thread of its own into a bounded tail (R-0646); xfreerdp
+/// would block on whichever pipe nobody reads.
+#[cfg(unix)]
+fn wait_interactive(mut child: std::process::Child) -> Option<String> {
+    let stderr = drain_on_thread(child.stderr.take());
+    let stdout = drain_on_thread(child.stdout.take());
+    let exited = child.wait();
+    let collect = |reader: Option<std::thread::JoinHandle<OutputTail>>| {
+        reader
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_else(|| OutputTail::new(OUTPUT_BUFFER_CAP))
+    };
+    let (stderr, stdout) = (collect(stderr), collect(stdout));
+    exited.ok()?;
+    interactive_exit_message(&stderr, &stdout)
+}
+
+#[cfg(unix)]
+fn drain_on_thread(
+    pipe: Option<impl Read + Send + 'static>,
+) -> Option<std::thread::JoinHandle<OutputTail>> {
+    pipe.map(|pipe| std::thread::spawn(move || drain_into_tail(pipe, OUTPUT_BUFFER_CAP)))
 }
 
 #[cfg(unix)]
@@ -772,15 +791,59 @@ mod tests {
 
     #[test]
     fn feed_password_stdin_writes_and_returns_ok() {
-        // `cat` accepts the piped stdin; the helper must write, scrub, and succeed.
+        // `cat` echoes the piped stdin; the helper must write the password and a newline,
+        // zero its own copy, and succeed. Longer than 8 bytes, the size at which a grown
+        // buffer would have held a copy of its own.
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .spawn()
             .expect("cat available");
-        assert!(feed_password_stdin(&mut child, "s3cret").is_ok());
+        assert!(feed_password_stdin(&mut child, "s3cret-passphrase").is_ok());
         // stdin was consumed by the helper, so cat sees EOF and exits.
-        let _ = child.wait();
+        let output = child.wait_with_output().expect("cat exits");
+        assert_eq!(output.stdout, b"s3cret-passphrase\n");
+    }
+
+    /// Runs `script` as a stand-in for xfreerdp through `wait_interactive`; a
+    /// hang fails the test after `limit` instead of blocking the suite.
+    fn wait_interactive_on(script: &str, limit: Duration) -> Option<String> {
+        let child = Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("sh available");
+        let (done, result) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(wait_interactive(child));
+        });
+        result
+            .recv_timeout(limit)
+            .expect("wait_interactive returns in time")
+    }
+
+    // Both pipes fill at once and the marker comes last: a reader that took one pipe after
+    // the other would leave the stub blocked on the second and never return.
+    #[test]
+    fn wait_interactive_drains_both_pipes_of_a_loud_session() {
+        let script = "line='[INFO][com.freerdp.gdi] - frame update'; \
+                      yes \"$line\" | head -c 2097152 & \
+                      yes \"$line\" | head -c 2097152 >&2 & \
+                      wait; \
+                      echo '[INFO][com.freerdp.client.x11] - Connected to 192.0.2.10:3389'";
+        assert_eq!(wait_interactive_on(script, Duration::from_secs(10)), None);
+    }
+
+    #[test]
+    fn wait_interactive_reports_the_error_line_of_a_failed_run() {
+        let script = "echo '[ERROR][com.freerdp.core] - freerdp_set_last_error_ex \
+                      ERRCONNECT_LOGON_FAILURE [0x00020014]' >&2; exit 1";
+        assert_eq!(
+            wait_interactive_on(script, Duration::from_secs(10)).as_deref(),
+            Some("RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.")
+        );
     }
 }
 
