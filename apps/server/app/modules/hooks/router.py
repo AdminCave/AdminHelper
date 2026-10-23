@@ -16,7 +16,9 @@ from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
+from app.core.request_context import actor_from_request
 from app.core.time import iso_utc
+from app.modules.audit import service as audit
 from app.modules.hooks.models import Hook
 
 # Scheduled-hook jobs are owned by the dedicated scheduler process; the web
@@ -142,6 +144,7 @@ def list_hooks(
 @router.post("", response_model=HookCreatedResponse, status_code=status.HTTP_201_CREATED)
 def create_hook(
     data: HookCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
@@ -167,6 +170,15 @@ def create_hook(
     db.add(hook)
     db.commit()
     db.refresh(hook)
+    audit.record(
+        db,
+        "hook.created",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        detail=f"type={hook.hook_type}",
+    )
 
     # next_run is filled in by the scheduler process's reconcile (within seconds);
     # no direct add_job here — the web worker has no running scheduler.
@@ -253,16 +265,22 @@ def get_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_cur
     return _to_dict(hook)
 
 
+# Columns an update can change, in the order the audit detail names them.
+_UPDATE_FIELDS = ("name", "description", "script", "event_triggers", "schedule_interval", "enabled")
+
+
 @router.put("/{hook_id}", response_model=HookDetailResponse)
 def update_hook(
     hook_id: str,
     data: HookUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
+    before = {field: getattr(hook, field) for field in _UPDATE_FIELDS}
 
     if data.name is not None:
         hook.name = data.name
@@ -285,22 +303,56 @@ def update_hook(
     # DB; no direct add/remove_job here (and next_run is refreshed there too).
     db.commit()
     db.refresh(hook)
+    # detail names the changed columns and carries no value but the new enabled flag.
+    changed = [
+        f"enabled={str(hook.enabled).lower()}" if field == "enabled" else field
+        for field in _UPDATE_FIELDS
+        if getattr(hook, field) != before[field]
+    ]
+    audit.record(
+        db,
+        "hook.updated",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        detail=", ".join(changed) or None,
+    )
     return _to_dict(hook)
 
 
 @router.delete("/{hook_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+def delete_hook(
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
+    hook_name = hook.name
     # The scheduler process drops the job on its next reconcile (the hook row is
     # gone); no direct remove_job here.
     db.delete(hook)
     db.commit()
+    audit.record(
+        db,
+        "hook.deleted",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook_id,
+        object_label=hook_name,
+    )
 
 
 @router.post("/{hook_id}/toggle", response_model=HookResponse)
-def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+def toggle_hook(
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
@@ -313,12 +365,24 @@ def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_
 
     db.commit()
     db.refresh(hook)
+    audit.record(
+        db,
+        "hook.updated",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        detail=f"enabled={str(hook.enabled).lower()}",
+    )
     return _to_dict(hook)
 
 
 @router.post("/{hook_id}/rotate")
 def rotate_hook_token(
-    hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
 ):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
@@ -330,12 +394,23 @@ def rotate_hook_token(
     raw_token = generate_api_key()
     hook.hashed_token = hash_api_key(raw_token)
     db.commit()
+    audit.record(
+        db,
+        "hook.token_rotated",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+    )
     return {"token": raw_token}
 
 
 @router.post("/{hook_id}/run")
 def run_hook_manually(
-    hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
 ):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
@@ -358,6 +433,16 @@ def run_hook_manually(
     try:
         result = run_hook_script(script=hook.script, hook_type=hook.hook_type, context=context)
     except Exception as exc:
-        return {"success": False, "error": str(exc), "result": {}, "logs": []}
+        result = {"success": False, "error": str(exc), "result": {}, "logs": []}
 
+    # No detail: the error of a run is the script's own exception text or stderr.
+    audit.record(
+        db,
+        "hook.run",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        status="success" if result.get("success") is True else "failure",
+    )
     return result
