@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # mTLS: `MTLS_ENFORCE` in Server und Gateway gleich, Identitäts-Header nur vom Gateway — Task-Ledger
-Status: geplant · Branch: feature/mtls-consistency · Review: pro Task
+Status: aktiv · Branch: feature/mtls-consistency · Review: pro Task
 Spec: docs/features/mtls-consistency.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --enforce — der Diff ändert, wann der Server eine Zertifikats-Identität annimmt (`apps/server/app/core/identity.py`, T2) und wie er `MTLS_ENFORCE` liest (`apps/server/app/core/config.py`, T1); jede Anfrage mit Client-Zertifikat hängt daran. `linux-full` im Sammellauf über `main`: `integration-stack` (Stack mit `MTLS_ENFORCE=true`, Zertifikats-Wege über das Gateway in den Schritten 4–8b, der neue Schritt aus T3 mit dem Neuanlegen des Gateways), `sse-push` (SSE mit Zertifikat), `upgrade-path`; auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/mtls-consistency`. `scenario` vor dem Merge (ask-first): nur er fährt einen echten Agent von einem zweiten Host mit Zertifikat über das Gateway unter `MTLS_ENFORCE=true` (Provisionierung, Metriken, Konfiguration) gegen die Prüfung der Gegenstelle. Kein `windows`: kein Agent- und kein Desktop-Code; deren CI-Jobs laufen im PR ohnehin. Kein Compose-, Gateway- oder PKI-Diff.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
