@@ -12,6 +12,13 @@ if [ "$(id -u)" = "0" ]; then
     exec gosu app:app sh "$0" "$@"
 fi
 
+# Arguments run instead of the service, as app after the chown above: that is how
+# `docker compose run --rm --no-deps ca-issuer python -m app.cli …` works, also
+# while the service itself does not start (an expired intermediate).
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 # The PKI hierarchy (Root + intermediates) is created/loaded by the app's
 # lifespan (ensure_hierarchy), not here — no DB, no Alembic on this service.
 exec uvicorn app.main:app --host 0.0.0.0 --port 8090

@@ -32,6 +32,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
   und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
   Troubleshooting (DE+EN), README.
+- **CA: Ablaufdaten anzeigen und Zwischenzertifikate unter derselben Root rotieren:**
+  `docker compose run --rm --no-deps ca-issuer python -m app.cli status` zeigt Root, aktuelle und abgeloeste
+  Zwischenzertifikate der internen CA mit Name, Ablaufdatum (UTC) und Resttagen; Exit 1, wenn die Root oder ein
+  aktuelles Zwischenzertifikat weniger als 180 Tage hat, 3, wenn eins davon nicht gueltig oder eine der Dateien nicht
+  lesbar ist, sonst 0. `… python -m app.cli rotate-intermediates` stellt fuer `tunnel`, `access` und `internal` neue
+  Zwischenzertifikate unter derselben Root aus (Name mit Datum, etwa `AdminHelper Access Intermediate 2031-05-04`);
+  die abgeloesten bleiben ohne Schluessel in `<scope>-retired.pem` im Volume `ca-pki`, bis sie ablaufen. Die
+  Root-Passphrase kommt wie beim Dienst aus `CA_ROOT_PASSPHRASE_FILE` bzw. `CA_ROOT_PASSPHRASE`, sonst aus einer
+  Abfrage am Terminal oder der ersten Zeile von stdin, nie aus einem Argument; eine falsche Passphrase aendert nichts.
+  Der Befehl laeuft auch, wenn der `ca-issuer` wegen abgelaufener Zwischenzertifikate nicht startet, und nennt danach
+  den Neustart `docker compose restart ca-issuer gateway`: Der Issuer signiert dann mit den neuen
+  Zwischenzertifikaten und erneuert weiter Zertifikate der abgeloesten, Gateway (`client-ca.pem`) und frps (`ca.crt`)
+  vertrauen alten und neuen, bis die alten ablaufen, und ihre Server-Zertifikate werden unter den neuen neu
+  ausgestellt. Enrollte Agenten und Desktops erneuern wie bisher und uebernehmen dabei die neue Kette. Das Image des
+  `ca-issuer` fuehrt dazu uebergebene Argumente als Nutzer `app` aus statt des Dienstes. Doku: Betrieb (DE+EN).
 
 ### Changed
 
