@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Compose-Härtung: Client-Adresse hinter dem Gateway, Grenzen der Container, CA-Passphrase als Secret, Netz frpedge — Task-Ledger
-Status: aktiv · Branch: feature/compose-hardening · Review: pro Task
+Status: bereit · Branch: feature/compose-hardening · Review: pro Task
 Spec: docs/features/compose-hardening.md (Härtung, Kevin 2026-10-22)
 Heavy: linux-full + scenario --agents 1 --tunnel --enforce — `docker-compose.yml` (alle Dienste: `no-new-privileges`, Prozess- und Speichergrenzen, Capabilities des Gateways, Secret des ca-issuer, Netz `frpedge`, `TRUSTED_PROXIES`), `apps/gateway/nginx.conf`, `apps/ca-issuer` und `scripts/init-secrets.sh` laufen im Sammellauf über `main` (`integration-stack` mit den Schritten aus T8 und T13, `backup-restore`, `upgrade-path` vom letzten Release); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/compose-hardening`. `scenario` vor dem Merge (ask-first): nur er erreicht die veröffentlichten Ports von frps von einem zweiten Host (Tunnel-Datenpfad durch `frpedge` ohne Masquerading, T4, und die Prüfung aus T9) und fährt das Gateway unter `MTLS_ENFORCE=true` mit Clients eines anderen Hosts (T2, T3, T12). Kein `windows`: kein Agent- und kein Desktop-Code.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -158,8 +158,10 @@ Abhängt von: T11
 Beweis: Code-Lesung docker-compose.yml:96-102, apps/server/docker-entrypoint.sh:54-58, apps/server/app/core/middleware.py:74-90
 HEAD: b1432223
 
-### T13 — Stack-Prüfung: Client-Adresse hinter dem Gateway  [ ]
+### T13 — Stack-Prüfung: Client-Adresse hinter dem Gateway  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c05fe4c4 2026-10-23T13:37:44+02:00
+Review: approve (.ah-out/review/compose-hardening/T13.verdict.json)
 Änderung: Neuer Schritt nach dem aus T8. (a) Eine Anmeldung über das Gateway mit falschem Passwort (Zertifikat aus Schritt 5) schreibt `auth.login_failed` mit der Adresse des Clients (`apps/server/app/modules/users/auth_router.py:124`, `:155`); die neueste solche Zeile in `audit_log.source_ip` (`apps/server/app/modules/audit/models.py:35`, gelesen über `e2e_dc exec -T postgres psql`) ist nicht leer und nicht die Adresse des gateway im Default-Netz (`docker inspect`). (b) Gegenprobe: dieselbe Anmeldung direkt an `server:8080` aus dem scheduler-Container mit `X-Forwarded-For: 203.0.113.9` → die neue Zeile trägt die Adresse des scheduler-Containers, nicht `203.0.113.9` (der Server vertraut nur dem Gateway). Den echten Lauf fährt die Session wie bei T8.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)

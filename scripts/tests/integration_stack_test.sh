@@ -792,6 +792,120 @@ compose_limits() {
 }
 compose_limits
 
+# ── 15. The server takes the client address from the gateway and from no one else ──
+# Compose has the server trust the forwarded header of the gateway by name
+# (TRUSTED_PROXIES=gateway): a login through the gateway is recorded with the address of the
+# client the gateway saw, not the gateway's own, and a peer other than the gateway cannot set the
+# address with an X-Forwarded-For of its own. Seen in the audit log, where a failed login leaves
+# auth.login_failed with that address in source_ip.
+# The server looks the name up in a thread of each uvicorn worker, started by the worker's first
+# request that asks for the client address, and then every 30 s; until the first lookup has come
+# back, and for up to 30 s after the gateway took a new address, the gateway's own address
+# counts. Whether that has happened by now must not rest on what steps 1-14 sent: the stack runs
+# one worker, and logins through the gateway, which ask for the address, go first until one is
+# recorded with a client address, for longer than the 30 s between two lookups. Only then do the
+# checks run; a server that never takes the gateway's header fails at that deadline.
+CERT4=(--cert "$E2E_WORK/client4-fullchain.pem" --key "$E2E_WORK/client4.key")
+GATEWAY_IP=""   # the gateway's address in the project's default network
+
+# default_ip <service> — the address of the service's container in the project's default
+# network; empty when it is not running, has none there or a lookup fails.
+default_ip() {
+    local id net
+    id=$(e2e_dc ps -q "$1" 2>/dev/null)
+    net=$(docker network ls -q --no-trunc --filter "label=com.docker.compose.project=$E2E_PROJECT" \
+        --filter "label=com.docker.compose.network=default" 2>/dev/null)
+    [ -n "$id" ] && [ -n "$net" ] && [ "$(wc -l <<<"$net")" = 1 ] || return 0
+    docker inspect --format \
+        "{{range .NetworkSettings.Networks}}{{if eq .NetworkID \"$net\"}}{{.IPAddress}}{{end}}{{end}}" \
+        "$id" 2>/dev/null
+}
+
+# audit_last <action> — "<id> <source_ip>" of the newest audit_log row with that action, the
+# source_ip empty when the row has none; empty without such a row or when psql fails.
+audit_last() {
+    e2e_dc exec -T postgres psql -U adminhelper -d adminhelper -tA -F ' ' -c \
+        "SELECT id, coalesce(source_ip, '') FROM audit_log WHERE action = '$1' ORDER BY id DESC LIMIT 1" \
+        2>/dev/null
+}
+
+# client_login_seen — one admin login through the gateway; true when the auth.login row it wrote
+# holds an address other than the gateway's. LAST: that row, or why there is none.
+client_login_seen() {
+    local before
+    before=$(audit_last auth.login)
+    e2e_login "${CERT4[@]}" || { LAST="login failed: $E2E_LOGIN_ERR"; return 1; }
+    LAST=$(audit_last auth.login)
+    if [ -z "$LAST" ] || [ "${LAST%% *}" = "${before%% *}" ]; then
+        LAST="no new auth.login row ('$LAST')"; return 1
+    fi
+    [ -n "${LAST#* }" ] && [ "${LAST#* }" != "$GATEWAY_IP" ]
+}
+
+client_address() {
+    local server_env token before row code scheduler
+
+    GATEWAY_IP=$(default_ip gateway)
+    [ -n "$GATEWAY_IP" ] || { bad "client address: the gateway has no address in the default network"; return; }
+    # One worker, so the logins before the checks reach the resolver the checks reach.
+    server_env=$(env_lines server)
+    grep -qx 'WEB_CONCURRENCY=1' <<<"$server_env" \
+        || { bad "client address: the server runs without WEB_CONCURRENCY=1, the logins before the checks may reach another worker"; return; }
+
+    # A device certificate of its own, as in 11b: 8b replaced the first one and revoked the second.
+    token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client4.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client4.key" -subj "/CN=itest" -out "$E2E_WORK/client4.csr" 2>/dev/null
+    if [ -z "$token" ] || ! enroll "$token" client4; then
+        bad "client address: could not enroll a device for the logins"; return
+    fi
+    until_ok 40 client_login_seen || {
+        bad "client address: no login through the gateway within 40 s recorded with an address other than" \
+            "the gateway's $GATEWAY_IP (last: '$LAST')"
+        return
+    }
+
+    # a. A failed login through the gateway: auth.login_failed with the client's address.
+    before=$(audit_last auth.login_failed)
+    code=$(curl -k -s "${CERT4[@]}" -o /dev/null -w '%{http_code}' --max-time 5 \
+        -X POST "$E2E_SERVER_URL/api/auth/login" -H 'Content-Type: application/json' \
+        -d '{"username":"admin","password":"not-the-password"}' 2>/dev/null || echo 000)
+    row=$(audit_last auth.login_failed)
+    if [ "$code" = 401 ] && [ -n "$row" ] && [ "${row%% *}" != "${before%% *}" ] \
+        && [ -n "${row#* }" ] && [ "${row#* }" != "$GATEWAY_IP" ]; then
+        ok "a failed login through the gateway (401) is recorded from the client (${row#* }), not the gateway ($GATEWAY_IP)"
+    else
+        bad "failed login through the gateway: HTTP '$code', newest auth.login_failed '$row' (before: '$before')," \
+            "expected 401 and a new row with an address other than the gateway's $GATEWAY_IP"
+    fi
+
+    # b. Counter-check: the same login straight to server:8080 from the scheduler, with an
+    #    X-Forwarded-For of its own, is recorded with the scheduler's address.
+    scheduler=$(default_ip scheduler)
+    [ -n "$scheduler" ] || { bad "client address: the scheduler has no address in the default network"; return; }
+    before=$(audit_last auth.login_failed)
+    code=$(e2e_dc exec -T scheduler python -c '
+import json, urllib.error, urllib.request
+req = urllib.request.Request(
+    "http://server:8080/api/auth/login",
+    data=json.dumps({"username": "admin", "password": "not-the-password"}).encode(),
+    headers={"Content-Type": "application/json", "X-Forwarded-For": "203.0.113.9"},
+)
+try:
+    print(urllib.request.urlopen(req, timeout=10).status)
+except urllib.error.HTTPError as e:
+    print(e.code)' 2>/dev/null)
+    row=$(audit_last auth.login_failed)
+    if [ "$code" = 401 ] && [ -n "$row" ] && [ "${row%% *}" != "${before%% *}" ] && [ "${row#* }" = "$scheduler" ]; then
+        ok "counter-check: the same login from the scheduler with X-Forwarded-For 203.0.113.9 is recorded" \
+            "from the scheduler ($scheduler)"
+    else
+        bad "login from the scheduler with X-Forwarded-For 203.0.113.9: HTTP '$code', newest auth.login_failed" \
+            "'$row' (before: '$before'), expected 401 and a new row from the scheduler's $scheduler"
+    fi
+}
+client_address
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"
