@@ -74,6 +74,7 @@
               <tr><td><code>--strict</code></td><td>Ein SKIP eines Pflicht-Schritts ist ein <strong>Fehler</strong>, kein PASS. Ebenso ein strenger Lauf, in dem &uuml;berhaupt kein Schritt lief.</td></tr>
               <tr><td><code>--only &lt;keys&hellip;&gt;</code></td><td>Beschr&auml;nkt lint/unit auf Komponenten (<code>server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts</code>). Unter <code>--strict</code> gilt ein so angeforderter Schritt als Pflicht. Env-Form: <code>AH_ONLY</code>.</td></tr>
               <tr><td><code>--step &lt;name&gt;</code></td><td>Genau ein Schritt (Teilstring seines Namens). Ein unbekannter oder mehrdeutiger Name wird in einem Trockenlauf abgelehnt, bevor eine Suite startet.</td></tr>
+              <tr><td><code>--part gui|rest</code></td><td>Nur ein Teil des Layers. <code>gui</code> sind die Desktop-GUI-Suiten (<code>desktop_e2e_*</code>), ihre W&auml;chter-Zeile <code>desktop GUI E2E</code> und der Smoke-Test <code>desktop-e2e smoke</code>; <code>rest</code> ist jeder andere Schritt. Die Zuordnung ist ein Pr&auml;dikat und seine Verneinung, so liegt jeder Schritt, auch ein k&uuml;nftiger, in genau einem Teil. Ein Schritt au&szlig;erhalb des Teils l&auml;uft nicht und erscheint weder als SKIP noch im Artefakt (dort steht der Teil im Feld <code>part</code>); <code>--step</code> sucht nur im Teil. Ein anderer Wert ist Exit 2. Daf&uuml;r ist es da: <code>heavy.sh</code> f&auml;hrt die beiden Teile von <code>all</code> gleichzeitig auf zwei Boxen. Env-Form: <code>AH_PART</code>.</td></tr>
               <tr><td><code>AH_REQUIRED</code></td><td>Die Pflicht-Menge dieses Rechners (Step-Ids, Leerzeichen-getrennt), &uuml;berschreibt <code>AH_REQUIRED_DEFAULT</code>; geh&ouml;rt in die gitignorete <code>.devenv.sh</code>. Die wirksame Menge steht unter <code>--strict</code> in der Summary. Ist die Variable nicht gesetzt und der Layer <code>integration</code>, <code>e2e</code> oder <code>all</code>, sind alle Schritte dieses Layers Pflicht (Box-Regel; <code>heavy.sh</code> setzt die Dev-Box-Menge vor dem Box-Lauf zur&uuml;ck).</td></tr>
               <tr><td><code>AH_ARGS</code></td><td>Zus&auml;tzliche Argumente f&uuml;r die Suite selbst (so reicht <code>verify.sh &lt;komp&gt; -- &lt;args&gt;</code> sie durch). Ein so gezielter Lauf l&auml;sst den Schritt <code>schemathesis</code> aus, auch unter <code>--strict</code> ohne Fehler; voll l&auml;uft er in der PR-CI.</td></tr>
             </tbody>
@@ -162,17 +163,46 @@
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
-          <p><code>all</code> = warme Box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
-          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = beides seriell. Der
+          <p><code>all</code> = <code>run.sh all --strict</code> auf <strong>zwei Boxen gleichzeitig</strong>:
+          Teil <code>rest</code> (<code>--part rest</code>) auf der warmen Box des Slots <code>desktop</code>,
+          Teil <code>gui</code> (<code>--part gui</code>, die Desktop-GUI-E2E samt Smoke-Test) auf einer
+          zweiten Box derselben Lane (Slot <code>gui</code>), die geleast wird, w&auml;hrend <code>rest</code>
+          schon l&auml;uft. Das Urteil hei&szlig;t <code>PASS</code> nur mit zwei gr&uuml;nen Teilen: ein Teil,
+          der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch Artefakt, oder ein Artefakt des
+          anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein roter Teil FAIL; der Grund nennt den
+          Teil (<code>&hellip; (gui)</code>) und einen roten anderen Teil (<code>FAIL in part rest</code>).
+          Wird <code>heavy.sh</code> abgebrochen, beendet es beide Teile. Ist die zweite Box auch im zweiten
+          Versuch nicht zu bekommen, l&auml;uft Teil <code>gui</code> nach Teil <code>rest</code> seriell auf der
+          Box des Slots <code>desktop</code> (<code>iter.sh all --strict --part gui</code>, Wiederholungen roter
+          Schritte ebenfalls dort): ein l&auml;ngerer Lauf statt eines verlorenen. Die Notizen sagen es mit der
+          letzten Zeile aus <code>warm-gui.log</code>, die Ebenen-Zeile nennt zweimal dieselbe Box, und das Urteil
+          bleibt <code>PASS</code> nur mit zwei gr&uuml;nen Teilen. Verweigert <code>warm.sh gui</code> (Exit 2),
+          l&auml;uft nichts seriell, der Lauf ist UNVERIFIED. Nach dem Lauf gibt
+          <code>heavy.sh</code> die GUI-Box frei (<code>reap.sh --role gui</code>), wenn Teil <code>gui</code>
+          gr&uuml;n ist (ein <code>flaky</code> Schritt z&auml;hlt nicht als rot); ist er rot oder
+          <code>infra</code>, bleibt sie zur Sichtung stehen, bis ihre Frist abl&auml;uft, und die Notizen nennen
+          <code>vm.py ssh &lt;vmid&gt;</code> &ndash; sofern sie nicht schon vor einer Zweit-VM oder dem Capstone
+          ging (unten). <code>capstone</code> =
+          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = beides seriell, der Capstone
+          bekommt die Box des Slots <code>desktop</code>. Der
           Capstone entf&auml;llt <strong>nur</strong>, wenn die <code>all</code>-Ebene UNVERIFIED endete
-          (sieben VMs brennen sonst in eine kaputte Umgebung) &ndash; ein reines FAIL stoppt ihn nicht. Vorab pr&uuml;ft er <code>vm.py doctor</code> und <code>vm.py list</code>: eine fremde
+          (sieben VMs brennen sonst in eine kaputte Umgebung) &ndash; ein reines FAIL stoppt ihn nicht. Vorab pr&uuml;ft er <code>vm.py doctor</code>
+          (bei <code>all</code> nur f&uuml;r den Slot <code>desktop</code>, wenn seine Box nicht schon l&auml;uft; ob
+          die GUI-Box passt, entscheidet <code>vm.py clone</code>) und <code>vm.py list</code>: eine fremde
           Box hei&szlig;t, die Kapazit&auml;t ist nicht da, und der Lauf bricht ab, bevor er eine VM verbraucht.</p>
           <p>Der Report liegt unter <code>.ah-out/weekly/&lt;jjjj-mm-tt-hhmm&gt;/report.md</code>. Seine
           <strong>erste Zeile</strong> ist das Urteil und wird w&ouml;rtlich zitiert, nie paraphrasiert; danach
-          folgen die Summary-Zeilen der Wrapper <strong>w&ouml;rtlich</strong>, die Schritt-Tabelle, der
+          folgen die Summary-Zeilen der Wrapper <strong>w&ouml;rtlich</strong> (bei <code>all</code> je Teil mit
+          Etikett: <code>[rest] run.sh[all]: &hellip;</code>), die Schritt-Tabelle (alle Schritte beider Teile
+          mit Sekunden und Box, dazu <strong>eine</strong> Ebenen-Zeile mit Wandzeit,
+          <code>&lt;box-rest&gt;+&lt;box-gui&gt;</code> und <code>rest &lt;s&gt; s, gui &lt;s&gt; s</code>), der
           Abschnitt &bdquo;Kevin sichtet", die Notizen, die <code>audit.yml</code>-Zeile und die VM-Liste.
+          Jeder Teil hat sein Log (<code>all-rest.log</code>, <code>all-gui.log</code>) und sein
+          Verzeichnis (<code>rest/</code>, <code>gui/</code>) mit Artefakt, Screenshots und Logs der Box; die
+          JUnit-XML beider Teile liegen zusammen in <code>junit/</code>.
           Nie eine Bewertung, nur Fakten. Die Historie steht in <code>tasks/private/history.csv</code>
-          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>) und wird im privaten Repo
+          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>; die Ebenen-Zeile von
+          <code>all</code> nennt in <code>vm</code> beide Boxen) und wird im privaten Repo
           committet, nie gepusht.</p>
           <table>
             <thead><tr><th>Ergebnis</th><th>Wie es zustande kommt</th><th>Was es hei&szlig;t</th></tr></thead>
@@ -187,7 +217,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           </table>
           <p>Die zweite VM ist ein Worktree <code>.ah-worktrees/w2</code> mit eigener Lane
           (<code>AH_LANE=w2</code>); <code>heavy.sh</code> zerst&ouml;rt die VMs dieser Lane und
-          entfernt den Worktree selbst. Die Boxen der Lane <code>main</code> bleiben unber&uuml;hrt.
+          entfernt den Worktree selbst. Die Boxen der Lane <code>main</code> bleiben unber&uuml;hrt,
+          bis auf die GUI-Box des Laufs: Vor der ersten Zweit-VM und vor dem Capstone
+          (<code>weekly</code>) gibt <code>heavy.sh</code> sie frei (<code>reap.sh --role gui</code>, einmal
+          je Lauf, die Notizen nennen es), weil neben ihr und der Box des Slots <code>desktop</code> die
+          <code>w2</code>-Box bzw. die Capstone-Rollen nicht passen; die Zweit-VM-Pr&uuml;fungen laufen
+          deshalb erst, wenn beide Teile alle Wiederholungen hinter sich haben.
           <code>--base &lt;sha&gt;</code> setzt den Vergleichs-Commit (Default: die j&uuml;ngste
           <code>history.csv</code>-<strong>Ebenen</strong>-Zeile mit
           <code>ebene=all,schritt=-,ergebnis=pass</code>, nicht die eines einzelnen Schritts),

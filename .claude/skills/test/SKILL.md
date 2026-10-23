@@ -46,14 +46,16 @@ timer, no cron, no "while I'm at it". But once Kevin says
 3. Watch it with a background waiter (a `tmux has-session` poll every 2–5 min, or the
    Monitor tool on `.ah-out/weekly/*/report.md`). Do not poll by hand, do not end the
    task early; other lanes may lease VMs meanwhile (`vm.py` checks the host's RAM before every
-   clone). `all` takes ~1.5 h,
-   `capstone` ~3 h, `weekly` both. If the session is compacted or resumed, re-attach the
-   waiter first (`tmux has-session -t ah-<mode>`); the run itself is not affected.
-4. When it ends: quote the report's FIRST line verbatim (the verdict), the two summary
-   lines (`run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
-   (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
+   clone). `all` takes about 1 h on its two boxes (not verified until the first run; ~1.5 h
+   on one box before), `capstone` ~3 h, `weekly` both. If the session is compacted or
+   resumed, re-attach the waiter first (`tmux has-session -t ah-<mode>`); the run itself is
+   not affected.
+4. When it ends: quote the report's FIRST line verbatim (the verdict), the summary lines
+   (`[rest] run.sh[all]`, `[gui] run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
+   (must be empty — a leak is a finding, not a footnote; a GUI box kept after a red part `gui`
+   is no leak, see below). `heavy.sh` has already written
    `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
-   through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
+   through `roadmap.py add`, which commits it itself (a refused row — an open
    duplicate — is in the report's notes). Nothing is left to commit; the session pushes the
    private repo (`git -C tasks/private push`, CLAUDE.md §11).
 5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A
@@ -93,7 +95,17 @@ The same line is on the `AH-STATUS` block's fourth line at session start.
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warm box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone --strict`;
+- `all` = `run.sh all --strict` on two boxes at once: part `rest` (`--part rest`) on the warm
+  box of slot `desktop`, part `gui` (`--part gui`, the desktop GUI E2E) on a second box of the
+  lane (`warm.sh gui`, `iter.sh --slot gui`). PASS only with both parts green; a part that
+  did not run or brought no evidence makes it UNVERIFIED (the reason names the part, and a
+  red other part as `FAIL in part …`). One layer row `all|-|…|<wall>|<box-rest>+<box-gui>|rest
+  <s> s, gui <s> s`; each part has `all-<part>.log` and its pull directory `<part>/`.
+  After the run the GUI box goes (`reap.sh --role gui`) if part `gui` is green (a flaky step
+  is not red); a red or infra part `gui` leaves it up for inspection until its ttl runs out,
+  and the report's notes name `python3 scripts/vm/vm.py ssh <vmid>` — unless it already went
+  before a second VM or the capstone, which need its room.
+  `capstone` = `multibox.sh --capstone --strict`;
   `weekly` = both, serially. The capstone is skipped only when the `all` layer ended
   UNVERIFIED (seven VMs must not burn into a broken environment) — a plain FAIL does not
   stop it.
@@ -143,8 +155,10 @@ the `--delete` sync, so on a REUSED box those build trees survive → cargo/npm 
 incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 min (3.4×).
 
 1. **Warm once** (idempotent — reuses `.vm/warm.env` if the VM is still running):
-   `bash scripts/vm/warm.sh <desktop|server|pond>`
+   `bash scripts/vm/warm.sh <desktop|gui|server|pond>`
    - `desktop` = full box (docker+go+node+rust+tauri) — the general workhorse for `run.sh`.
+   - `gui`     = a second full box of the same lane, a slot of its own, for the GUI part of
+     the weekly run (`heavy.sh all`); your own loop stays on `desktop`.
    - `server`  = server box with the stack UP + admin/monitor creds stashed.
    - `pond`    = server (stack up) + desktop, for the distributed desktop loop.
 2. **Iterate** after each change:
@@ -172,7 +186,7 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
 `vm.py run <vmid> --sync -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/vm/bootstrap_linux.sh'` →
 `vm.py run <vmid> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `vm.py destroy <vmid>`.
 The full verb list, the exit codes and the rules are in the `/vm` skill.
-`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>]`
+`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>] [--part gui|rest]`
 (the `all` layer includes `upgrade_path_test.sh` — last published release → this checkout —
 and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Box rule:**
 with `AH_REQUIRED` unset, `run.sh` makes every step of a heavy layer required — a self-SKIP

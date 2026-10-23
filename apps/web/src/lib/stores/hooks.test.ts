@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// hooks store: the interesting bit is toggle() merging only the fields the API
-// returns onto the matching hook (by id), without disturbing the others.
+// hooks store: toggle() and update() merge only the fields the API returns onto the
+// matching hook (by id), without disturbing the others; create() and update() keep only
+// the fields of Hook in the list, never the script or the once-shown webhook token.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
@@ -57,6 +58,45 @@ describe('hooks store', () => {
     await hooks.update('a', { name: 'renamed' });
     expect(get(hooks).find((x) => x.id === 'a')?.name).toBe('renamed');
     expect(get(hooks).find((x) => x.id === 'b')?.name).toBe('b');
+  });
+
+  it('create keeps neither token nor script in the list but returns both', async () => {
+    await seed([h('a')]);
+    vi.mocked(api.create).mockResolvedValue({
+      ...h('b'),
+      script: 'print("s3cr3t-script")',
+      token: 'whk_s3cr3t',
+    });
+    const created = await hooks.create({ name: 'b', hook_type: 'webhook', script: '' });
+    const entry = get(hooks).find((x) => x.id === 'b');
+    expect(entry).toBeDefined();
+    expect(entry).not.toHaveProperty('token');
+    expect(entry).not.toHaveProperty('script');
+    const stored = JSON.stringify(get(hooks));
+    expect(stored).not.toContain('whk_s3cr3t');
+    expect(stored).not.toContain('s3cr3t-script');
+    expect(created.token).toBe('whk_s3cr3t');
+  });
+
+  it('update keeps no script in the list and leaves the other hooks alone', async () => {
+    await seed([h('a'), h('b')]);
+    vi.mocked(api.update).mockResolvedValue({
+      ...h('a'),
+      name: 'renamed',
+      script: 'print("s3cr3t-script")',
+    });
+    await hooks.update('a', { name: 'renamed' });
+    const a = get(hooks).find((x) => x.id === 'a');
+    expect(a?.name).toBe('renamed');
+    expect(a).not.toHaveProperty('script');
+    expect(get(hooks).find((x) => x.id === 'b')).toEqual(h('b'));
+  });
+
+  it('update keeps a field the response does not carry', async () => {
+    await seed([{ ...h('a'), description: 'keep' }]);
+    vi.mocked(api.update).mockResolvedValue({ ...h('a'), name: 'renamed', script: '' });
+    await hooks.update('a', { name: 'renamed' });
+    expect(get(hooks).find((x) => x.id === 'a')?.description).toBe('keep');
   });
 
   it('remove drops the entry by id', async () => {

@@ -74,6 +74,11 @@ _hook_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_HOOKS)
 # past the worker's own log cap could OOM the parent server — a public-webhook-triggered DoS (4.139).
 _MAX_HOOK_OUTPUT_BYTES = 8 * 1024 * 1024
 
+# Cap on the error text of a failed run in a log line: the error of a worker that exits non-zero
+# is its whole stderr, up to _MAX_HOOK_OUTPUT_BYTES. A traceback ends with the exception, so the
+# end of the text is kept.
+_LOGGED_ERROR_MAX = 1000
+
 _WORKER_SCRIPT = str(Path(__file__).parent / "script_worker.py")
 
 
@@ -260,3 +265,13 @@ def run_hook_script(
         }
 
     return result
+
+
+def failed_run_error(result: dict) -> str | None:
+    """The error text of a failed run, shortened for a log line; None for a successful run."""
+    if result.get("success") is True:
+        return None
+    error = str(result.get("error") or "unknown error")
+    if len(error) > _LOGGED_ERROR_MAX:
+        return "…" + error[-_LOGGED_ERROR_MAX:]
+    return error

@@ -229,6 +229,67 @@ warm_clear desktop
 rm -f "$(vm_warm_file)"
 warm_clear desktop && ok "clearing a missing file is not an error" || bad "clear without a file"
 
+echo "── warm.env is written under a lock ──"
+# The two parts of a heavy run write warm.env from two wrappers at once.
+WF="$(vm_warm_file)"
+if command -v flock >/dev/null 2>&1; then
+  # A holder that keeps warm.env.lock for 2 s: the subshell BECOMES sleep, so the
+  # lock goes when it ends.
+  ( exec 9>"$WF.lock"; flock 9; exec sleep 2 ) & holder=$!
+  for _ in $(seq 1 50); do flock -n "$WF.lock" true 2>/dev/null || break; sleep 0.1; done
+  t0=$(date +%s%N); warm_set held 3010; rc=$?; t1=$(date +%s%N)
+  wait "$holder" 2>/dev/null
+  ms=$(( (t1 - t0) / 1000000 ))
+  [ "$rc" = 0 ] && [ "$ms" -ge 1000 ] && [ "$(warm_get held)" = 3010 ] \
+    && ok "warm_set waits for a held lock (${ms} ms), then writes" \
+    || bad "held lock: rc=$rc after ${ms} ms, held=$(warm_get held)"
+
+  pids=()
+  for i in $(seq 1 20); do warm_set "par$i" "$((4000 + i))" & pids+=("$!"); done
+  failed=0; for p in "${pids[@]}"; do wait "$p" || failed=$((failed + 1)); done
+  missing=""
+  for i in $(seq 1 20); do [ "$(warm_get "par$i")" = "$((4000 + i))" ] || missing="$missing par$i"; done
+  [ "$failed" = 0 ] && [ -z "$missing" ] && ok "20 parallel warm_set of different keys: all 20 stand in warm.env" \
+    || bad "parallel warm_set: $failed failed, missing:$missing — $(cat "$WF")"
+  left="$(compgen -G "$WF.tmp*" || true)"
+  [ -z "$left" ] && ok "... and no warm.env.tmp* is left behind" || bad "temp files left: $left"
+
+  for i in $(seq 1 10); do warm_set "gone$i" "$((5000 + i))"; done
+  pids=()
+  for i in $(seq 1 10); do warm_clear "gone$i" & pids+=("$!"); warm_set "stay$i" "$((6000 + i))" & pids+=("$!"); done
+  wait "${pids[@]}"
+  wrong=""
+  for i in $(seq 1 10); do
+    [ "$(warm_get "stay$i")" = "$((6000 + i))" ] || wrong="$wrong stay$i-missing"
+    [ -z "$(warm_get "gone$i")" ] || wrong="$wrong gone$i-left"
+  done
+  [ -z "$wrong" ] && ok "warm_clear next to a parallel warm_set of another key leaves that key standing" \
+    || bad "clear next to set:$wrong — $(cat "$WF")"
+
+  # A lock that never comes free: a flock that gives up at once stands in for the
+  # 30 s, and records how it was asked.
+  BUSY="$WORK/flock-busy"; mkdir -p "$BUSY"
+  printf '#!/bin/sh\necho "$*" >> "%s"\nexit 1\n' "$WORK/flock-busy.args" > "$BUSY/flock"; chmod +x "$BUSY/flock"
+  cp "$WF" "$WORK/warm-before-busy"
+  out=$( (PATH="$BUSY:$PATH"; warm_set busy 3030; echo "set=$?"; warm_clear par1; echo "clear=$?") 2>&1 )
+  [ "$(sort -u "$WORK/flock-busy.args")" = "-w 30 9" ] && grep -q '^set=1$' <<<"$out" && grep -q '^clear=1$' <<<"$out" \
+    && grep -q 'still held after 30s — busy not written' <<<"$out" && grep -q 'still held after 30s — par1 not written' <<<"$out" \
+    && cmp -s "$WF" "$WORK/warm-before-busy" && [ -z "$(compgen -G "$WF.tmp*" || true)" ] \
+    && ok "a lock not free within 30 s: warm_set and warm_clear return 1, say so on stderr, write nothing" \
+    || bad "busy lock: args=$(cat "$WORK/flock-busy.args" 2>/dev/null) out=$out"
+
+  # Without flock (a PATH with only what the rewrite needs): written as before, and
+  # said once, not once per key.
+  NOFL="$WORK/no-flock"; mkdir -p "$NOFL"
+  for t in dirname mkdir touch grep mv tail cut; do ln -s "$(command -v "$t")" "$NOFL/$t"; done
+  out=$( (PATH="$NOFL"; warm_set nolock1 3040; warm_set nolock2 3041; warm_clear par1
+          echo "got=$(warm_get nolock1),$(warm_get nolock2),$(warm_get par1)") 2>&1 )
+  [ "$(grep -c 'flock not installed' <<<"$out")" = 1 ] && grep -q '^got=3040,3041,$' <<<"$out" \
+    && ok "without flock warm_set and warm_clear write unlocked as before and say so once" || bad "no flock: $out"
+else
+  bad "flock not installed — the lock cases cannot run"
+fi
+
 echo "── markers ──"
 OUT='noise MB_SID=abc123 more noise'
 [ "$(vm_marker MB_SID "$OUT")" = "abc123" ] && ok "a marker is cut out" || bad "marker: $(vm_marker MB_SID "$OUT")"

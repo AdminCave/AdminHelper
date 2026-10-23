@@ -12,6 +12,7 @@ export type Translations = Record<Language, Record<string, string>>;
 export const translations: Translations = {
   de: {
     'error.generic': 'Fehler',
+    'error.timeout': 'Zeitüberschreitung: Der Server hat nicht rechtzeitig geantwortet.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
@@ -89,6 +90,8 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'Benutzer gespeichert',
+    'toast.user.ownPasswordChanged':
+      'Eigenes Passwort geändert – bitte mit dem neuen Passwort anmelden.',
     'toast.user.created': 'Benutzer erstellt',
     'toast.user.deleted': 'Benutzer gelöscht',
     'confirm.user.delete': 'Benutzer wirklich löschen?',
@@ -300,6 +303,7 @@ export const translations: Translations = {
 
   en: {
     'error.generic': 'Error',
+    'error.timeout': 'Request timed out: the server did not answer in time.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Username',
     'login.password': 'Password',
@@ -377,6 +381,7 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'User saved',
+    'toast.user.ownPasswordChanged': 'Your password was changed – sign in with the new password.',
     'toast.user.created': 'User created',
     'toast.user.deleted': 'User deleted',
     'confirm.user.delete': 'Really delete this user?',
