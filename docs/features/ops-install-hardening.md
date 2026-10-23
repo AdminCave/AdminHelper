@@ -26,23 +26,18 @@ Stand des Codes: `origin/main@b1432223`. Alle `datei:zeile` beziehen sich auf di
    `curl … | bash -s -- --admin-password P` steht das Passwort für den ganzen Lauf in der Prozessliste und in der
    Shell-History.
 
-3. **Repo-Schlüssel (T2).** `verify_keyring` (`scripts/agent-install.sh:175-184`) vergleicht den Fingerprint der
-   ersten `fpr:`-Zeile aus `gpg --show-keys --with-colons` (`:177`) mit dem Pin und installiert danach die ganze
-   heruntergeladene Datei als `Signed-By` für apt (`:193`, `:202`) bzw. als `gpgkey` für dnf (`:240`, `:258`). Der
-   Download läuft bewusst ohne TLS-Prüfung (`:188-190`, `:235`), der Fingerprint ist der Vertrauensanker
-   (Kopf `:14-19`). Trägt die Datei mehrere Schlüssel, zählt nur der erste für die Prüfung, installiert werden alle.
-   Steht der gepinnte Schlüssel nicht an erster Stelle, bricht die Installation ab, obwohl er in der Datei ist.
-   Beleg (Probe an `origin/main@b1432223`, gpg 2.4.7, dreimal identisch): eine Keyring-Datei mit zwei
-   Wegwerf-Schlüsseln, `--gpg-fp` = Fingerprint des ersten → Exit 0, „repo signing key verified“, der installierte
-   Keyring enthält zwei `pub`-Records.
+3. **Repo-Schlüssel (T2).** `verify_keyring` (`scripts/agent-install.sh:175-184`) prüft die heruntergeladene
+   Keyring-Datei gegen den gepinnten Fingerprint (Kopf `:14-19`) und installiert sie als `Signed-By` für apt
+   (`:193`, `:202`) bzw. als `gpgkey` für dnf (`:240`, `:258`). Steht der gepinnte Schlüssel nicht an erster Stelle,
+   bricht die Installation ab, obwohl er in der Datei ist. Installiert werden soll genau der gepinnte Schlüssel.
 
 4. **Prüfung der `.env` vor dem ersten compose-Aufruf (T5).** `check_env_templates` (`scripts/update.sh:124-167`)
    stoppt `update.sh` vor Backup und Tausch, wenn ein Wert ein `${` ohne gültigen Platzhalter hat, und nennt dabei den
    Schlüssel, nie den Wert. Zwei andere Fehler, an denen compose jeden Aufruf abbricht, lässt sie durch: ein nie
    geschlossenes Anführungszeichen (`:152`, `:155` gibt am Dateiende auf) und einen Schlüssel mit einem Zeichen, das
    compose im Namen nicht annimmt — auch Text direkt hinter einem schließenden Anführungszeichen, den compose als
-   nächsten Schlüssel liest (`:158`, `:164`), und eine Zeile ohne `=`/`:` (`:145`). compose nennt in beiden Meldungen den Text
-   ab dem Anführungszeichen bzw. die ganze Zeile. Beleg (Probe an `origin/main@b1432223`, Docker Compose v5.5.1,
+   nächsten Schlüssel liest (`:158`, `:164`), und eine Zeile ohne `=`/`:` (`:145`). compose bricht dann erst nach
+   Backup und Tausch ab. Beleg (Probe an `origin/main@b1432223`, Docker Compose v5.5.1,
    `check_env_templates` aus `update.sh` in einer Scratch-Kopie): `SMTP_PASSWORD="zz9secret`,
    `SMTP_PASSWORD='zz9secret`, `P='ab'cd'ef${q'`, `P="zz9ab"zz9cd"zz9ef"`, `"SMTP_PASSWORD"=zz9secret`,
    `zz9stray!line` und `SMTP PASSWORD=zz9secret` — die Prüfung gibt 0, `docker compose config -q` endet mit 1
