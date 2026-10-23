@@ -27,7 +27,7 @@ func BuildReport(serviceNames []string) map[string]any {
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
 // saved. It also returns the state to save once this report has been pushed. ctx ends the tool calls
-// of the service (systemctl, sc), docker, proxmox, zfs and smart collectors.
+// of the system state, service (systemctl, sc), docker, proxmox, zfs and smart collectors.
 func buildReportWithState(ctx context.Context, serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
 	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
 	resources := map[string]any{
@@ -65,7 +65,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, prev repor
 
 	// The collector hands prev on with what it measured replaced, so a value it could not read this
 	// time stays the base for the next report.
-	systemState, next := systemStateCollector(prev)
+	systemState, next := systemStateCollector(ctx, prev)
 	next.CPU = cpuNow
 	if len(systemState) > 0 {
 		report["system_state"] = systemState
