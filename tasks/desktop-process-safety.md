@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Argumente für das Windows-Terminal, frpc nach einem abgebrochenen Lauf, Ausgabe des interaktiven RDP — Task-Ledger
-Status: bereit · Branch: feature/desktop-process-safety · Review: pro Task
+Status: erledigt · Branch: feature/desktop-process-safety · Review: pro Task
 Spec: docs/features/desktop-process-safety.md (Roadmap R-0645, R-0646; T1 und T2 gehören zum Paket, Kevin 2026-10-22)
 Heavy: linux-full + windows — Desktop-Tunnel (CLAUDE.md §5): T3 ändert den ersten Abgleich, den die Tunnel-Journeys im Sammellauf (`desktop_e2e_tunnel.sh`, `desktop_e2e_connect_tunnel.sh`) bei jedem Start eines Workspace-Prozesses fahren; `windows`, weil T1, T2 und T4 Windows-Code sind: `cargo test --locked` nativ im CI-Job `rust-windows` (`.github/workflows/ci.yml:561`), dort laufen die `#[cfg(windows)]`-Tests von T2 und T4; die Desktop-GUI unter Windows bleibt laut `.claude/rules/testing.md` „nicht verifiziert“. Kein `scenario`: der Datenpfad des Tunnels (Visitor-TOML, frps, STCP) bleibt, nur der Lebenslauf des lokalen frpc ändert sich
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
