@@ -22,6 +22,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sich die Datei nicht laden, geht keine Mail hinaus: Der Hub nennt den Grund im Log des `scheduler`-Dienstes, das
   Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
   Betrieb & Konfiguration, Monitoring (DE+EN).
+- **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
+  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
+  `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
+  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
+  bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
+  und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
+  Troubleshooting (DE+EN), README.
 
 ### Changed
 
@@ -242,6 +252,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   fehlgeschlagen, der Grund steht im Log des `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Abhilfe:
   `SMTP_HOST` auf den Namen im Zertifikat des Relays setzen, fuer eine eigene CA `SMTP_CA_FILE` (siehe Added); der
   Relay muss STARTTLS oder implizites TLS auf Port 465 anbieten. Doku: Betrieb & Konfiguration (DE+EN).
+- **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
+  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, und benennt sie erst
+  nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
+  ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
+  bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+- **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
+  der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
+  jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
+  weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
+- **Desktop: der Tunnel-Dialog prueft den Visitor-Port vor dem Speichern (R-0585):** Bei einem STCP-Tunnel lehnt der
+  Dialog einen Visitor-Port ab, der keine ganze Zahl von 1 bis 65535 ist, und nennt den Bereich; bisher kam erst die
+  Ablehnung des Servers (`422`). Ein leeres Feld bleibt erlaubt, dann vergibt der Server einen freien Port. Doku:
+  FRP-Tunnel (DE+EN).
 - **SSRF-Schutz: ein Ziel unter `NO_PROXY` verbindet auch neben einem Proxy zur geprueften Adresse (Server und
   Monitoring):** Ein Ziel, das wegen `NO_PROXY` nicht ueber den gesetzten Proxy geht, verbindet wie ohne Proxy zu
   einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
@@ -432,6 +455,71 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `smtp_host` scheiterte mit `SMTP not configured (SMTP_HOST missing)`, obwohl die Doku den Relay aus der Umgebung
   nennt. Ist `SMTP_HOST` gesetzt, verschicken diese Regeln danach ueber den globalen Relay, mit derselben Pruefung von
   Zertifikat und Hostnamen wie der Notification-Hub. Doku: Betrieb & Konfiguration (DE+EN).
+- **Backup: `env.sanitized` verliert keine Zeilen mehr bei Bytes ausserhalb UTF-8 oder einem NUL-Byte (R-0559):**
+  `scripts/backup.sh` filterte die `.env` unter der Locale des Aufrufers. `grep` haelt eine Zeile mit einem Byte, das
+  diese Locale nicht dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und liess sie aus,
+  bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
+  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
+  `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
+  ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es wie das Diagnose-Bundle auch mit vorangestelltem
+  `export`, mit Leerraum um den Trenner und mit `:` statt `=` als Trenner (`export CA_ROOT_PASSPHRASE=...`,
+  `CA_ROOT_PASSPHRASE = ...`, `CA_ROOT_PASSPHRASE: ...`); ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt
+  stehen.
+- **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und weitere Schreibweisen der `.env`:**
+  `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
+  `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
+  Provisionierungs-Token `adminhelper_prov_...`; die Regel fuer `ah_...` entfaellt, kein Token des Projekts traegt
+  dieses Praefix. Die Secrets der `.env` erkennt es in diesen Schreibweisen: Schluessel auch als `export KEY=...`,
+  `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
+  Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
+  ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
+  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+- **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
+  mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
+  abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes
+  Zertifikat spaetestens mit seinem Aussteller (Client- und Server-Zertifikate mit dem Zwischenzertifikat,
+  Zwischenzertifikate mit der Root); kurz vor dem Ablauf eines Zwischenzertifikats werden neue Zertifikate also
+  kuerzer. Ist das Zwischenzertifikat eines Scopes abgelaufen oder noch nicht gueltig, antworten `/enroll` und
+  `/renew` mit HTTP 503 („the issuing intermediate certificate of scope '…' is expired or not yet valid; see the
+  ca-issuer log“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt unverbraucht. Eine Erneuerung
+  bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn das alte Zertifikat gekuerzt
+  war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer` beim Signieren einmal je Tag und
+  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“). Doku: Betrieb (DE+EN).
+- **ca-issuer: prueft die PKI beim Start (R-0666):** Der `ca-issuer` lud Root und Zwischenzertifikate beim Start ohne
+  jede Pruefung, auch ein abgelaufenes, ein von einer fremden Root signiertes oder eines neben fremdem Schluessel oder
+  fremder Kette. Jetzt prueft er bei jedem Start, auch direkt nach dem ersten: `root.crt` selbstsigniert und gueltig,
+  je Scope `<scope>.crt` von `root.crt` signiert und gueltig, `<scope>.key` der passende Schluessel und
+  `<scope>-chain.pem` genau Zwischenzertifikat und Root (geparst verglichen, Zeilenenden zaehlen nicht). Bei einem
+  Verstoss startet er nicht und nennt Datei, Scope und Grund („PKI hierarchy invalid — …“); das gilt auch fuer eine
+  Host-Uhr vor dem `notBefore` der Root oder eines Zwischenzertifikats. Root und Zwischenzertifikate mit weniger als
+  180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
+  expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
+  Clients bedeutet). Doku: Betrieb (DE+EN).
+- **Desktop: ein gescheiterter Abruf der Verbindungen leert die Liste nicht mehr (R-0658):** Scheitert in einem
+  Server- oder Sync-Workspace der Abruf der Verbindungen, etwa beim Seitenwechsel oder im Sync-Takt waehrend eines
+  Netzausfalls, bleibt die zuletzt geladene Liste stehen, wenn sie aus derselben Quelle stammt (derselbe Server und
+  Benutzer, dieselbe Sync-URL), statt zu verschwinden. Die Liste einer anderen Quelle bleibt nie stehen.
+  „Verbindungen“ zeigt den Fehler mit „Erneut versuchen“ und bei stehen gebliebener Liste den Hinweis, dass es die
+  zuletzt geladene ist; waehrend des Ladens zeigt die Seite „Lade…“ statt „Noch keine Verbindungen angelegt“. Auch
+  das Dashboard zeigt den Fehler mit „Erneut versuchen“ und unter „Zuletzt genutzt“ waehrend des Ladens „Lade…“ statt
+  „Noch keine Verbindungen genutzt“.
+- **Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659):** Unter Linux nimmt die
+  Fenstergroesse „Eingepasst“ die Groesse des Bildschirms statt immer 1088x720, die Skalierung „Automatisch“ erkennt
+  einen HiDPI-Bildschirm, und „HiDPI“ waehlt den Faktor nach dem Bildschirm (`/scale:140` oder `/scale:180`) statt
+  immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht verifiziert.
+- **Desktop: ohne gespeicherte Sprache gilt die Systemsprache (R-0660):** Ist noch keine Sprache gespeichert, etwa
+  nach einer frischen Installation, laeuft die Desktop-UI in der Systemsprache: Deutsch auf einem deutschen System,
+  sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch. Der Einstellungsdialog zeigt diese
+  Sprache; bisher zeigte er „Deutsch“, und Speichern einer beliebigen Einstellung schaltete ungewollt auf Deutsch.
+  Dieselbe Regel gilt schon vor dem Laden der Einstellungen („Lade…“) und fuer die ganze UI, wenn das Laden
+  scheitert; auf einem System in einer anderen Sprache als Deutsch oder Englisch lief die UI dort bisher deutsch.
+- **Desktop: „Loeschen“ im Verbindungs-Editor fragt nach (R-0661):** Bevor der Editor eine Verbindung entfernt, im
+  Server-Modus auf dem Server, und bei RDP ein gespeichertes Passwort, fragt er mit dem Namen der Verbindung nach;
+  „Abbrechen“ oder Escape laesst sie stehen und den Editor offen. Bisher loeschte der Knopf sofort.
+- **Desktop: Speichern der Einstellungen startet die Benachrichtigungen nicht mehr neu (R-0663):** Bisher stoppte
+  jedes Speichern der Einstellungen in einem Server-Workspace den Benachrichtigungs-Stream, leerte den Feed und
+  startete beides neu; der Feed flackerte, und Meldungen aus dieser Luecke kamen ohne OS-Benachrichtigung. Neu
+  gestartet wird nur, wenn Server oder Benutzer wechseln.
 - **SSRF-Schutz: eine URL mit einem einzelnen Surrogat wird abgelehnt (Server und Monitoring, R-0606):** Eine URL
   mit einem einzelnen Surrogat, etwa aus einem JSON-Payload, wird als unlesbar abgelehnt, statt eine Exception zu
   werfen; HTTP-Check, Alert-Webhook und `http_get`/`http_post` der Hooks melden ihre gewoehnliche Ablehnung.

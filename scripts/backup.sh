@@ -23,6 +23,9 @@
 #   ./scripts/backup.sh [--with-victoria] [--output DIR]
 
 set -euo pipefail
+# Everything this script creates (a new output dir, the staging files, the archive)
+# holds the PKI, both DB dumps or the .env: owner-only from the start.
+umask 077
 
 OUT_DIR="./backups"
 WITH_VICTORIA=0
@@ -45,7 +48,8 @@ fi
 
 TS=$(date +%Y-%m-%d_%H-%M-%S)
 STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
+PARTIAL=""
+trap 'rm -rf "$STAGE"; [ -z "$PARTIAL" ] || rm -f -- "$PARTIAL"' EXIT
 
 mkdir -p "$OUT_DIR"
 
@@ -97,7 +101,16 @@ dump_db adminhelper_monitor
 
 # --- Secrets (passphrase stripped) -----------------------------------------
 if [ -f .env ]; then
-    grep -v '^[[:space:]]*CA_ROOT_PASSPHRASE=' .env > "$STAGE/env.sanitized" || true
+    # LC_ALL=C grep -a: grep takes a file with a NUL byte or a byte the caller's
+    # locale cannot decode for binary and leaves lines out, which would drop them
+    # from env.sanitized. The key forms recognised, as in diagnostics.sh: an
+    # "export" may lead, '=' or ':' separates, whitespace may stand around it;
+    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay.
+    # grep -v exits 1 when it filters every line, which is fine; 2 is an error
+    # (a write error too) and aborts the backup.
+    { LC_ALL=C grep -a -v -E '^[[:space:]]*(export[[:space:]]+)?CA_ROOT_PASSPHRASE[[:space:]]*[=:]' .env || [ $? -eq 1 ]; } \
+        > "$STAGE/env.sanitized" \
+        || { echo "[backup] ERROR: could not copy .env without CA_ROOT_PASSPHRASE — backup aborted." >&2; exit 1; }
     echo "[backup] .env gesichert (CA_ROOT_PASSPHRASE entfernt — getrennt aufbewahren!)"
 fi
 
@@ -115,8 +128,15 @@ rotate intermediates.
 EOF
 
 ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
-tar czf "$ARCHIVE" -C "$STAGE" .
-chmod 600 "$ARCHIVE"
+# Write to a hidden temp file in the output dir, then rename: mktemp creates it 0600
+# whatever the umask, so the archive is never readable by others, not even while tar
+# writes it; and a failed or aborted write (disk full, Ctrl-C) leaves no truncated
+# archive under a name that restore.sh and the docs treat as valid. A rename within
+# the dir is atomic and keeps the mode (as in pg-backup.sh).
+PARTIAL=$(mktemp "$OUT_DIR/.adminhelper-backup-$TS.XXXXXX")
+tar czf "$PARTIAL" -C "$STAGE" .
+mv -f "$PARTIAL" "$ARCHIVE"
+PARTIAL=""
 
 echo "[backup] OK -> $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
 echo "[backup] Erinnerung: CA_ROOT_PASSPHRASE separat sichern (nicht im Tarball)."
