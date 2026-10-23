@@ -481,7 +481,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
   Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
   ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
-  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+  auch hinter einem Byte ausserhalb UTF-8 ganz. Einen Schluessel findet es wie compose auch hinter einem BOM oder
+  Unicode-Leerraum (etwa NBSP oder EM SPACE) und mit NBSP vor dem Trenner. Auskommentierte Zeilen dieser Schluessel
+  (`#KEY=...`, auch `# export KEY = ...`) stehen in `env.sanitized` als `#KEY=<redacted>`, die der Host-Schluessel mit
+  `--mask-hosts` als `#KEY=<masked>`; in den Logs sucht es ihre Werte nicht, eine auskommentierte Zeile ist keine
+  Konfiguration. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
 - **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
   mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
   abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes

@@ -60,6 +60,15 @@ SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADM
 # frequent cause the bundle is meant to show.
 HOST_KEYS=(DOMAIN EXTRA_SANS CA_FRPS_EXTRA_SANS ALLOWED_IPS FRP_SERVER_ADDR TRUSTED_PROXIES SMTP_HOST SMTP_FROM)
 
+# The key prefix of env_values and sanitize_env, as EREs for LC_ALL=C (grep -E, sed -E)
+# with the bytes spelled out. In front of a key compose skips what Go's unicode.IsSpace
+# calls whitespace, and a BOM: ENV_SP is ASCII whitespace, the BOM and the UTF-8 forms
+# of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE, LINE and PARAGRAPH SEPARATOR,
+# NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC SPACE (as the .env filter of
+# backup.sh). Between key and separator it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
+ENV_SP="([[:space:]]|"$'\xef\xbb\xbf|\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
+ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
+
 # build_redaction_sedfile <envfile> <sedfile> [mask_hosts]
 # Writes a sed script that masks the .env secret values plus generic token forms,
 # and with mask_hosts=1 the host names and addresses of host_rules as well.
@@ -143,9 +152,11 @@ SED
 # line with a byte the caller's locale cannot decode (or a file with a NUL byte)
 # for binary and leaves it out, and its value would stay in the logs. Every line
 # of the key, not the first: compose takes the last one. The key as compose reads
-# it: an "export" may lead, '=' or ':' separates, whitespace may stand around it.
+# it: behind whitespace (ENV_SP), an "export" may lead, '=' or ':' separates,
+# whitespace (ENV_SEP) may stand before it. Not a commented-out line: it is no
+# configuration, and .env.example carries example values there.
 env_values() {
-    local line re="^[[:space:]]*(export[[:space:]]+)?${2}[[:space:]]*[=:]"
+    local line re="^${ENV_SP}*(export${ENV_SP}+)?${2}${ENV_SEP}*[=:]"
     while IFS= read -r line; do
         env_value_forms "$line"
     done < <(LC_ALL=C grep -a -E "$re" "$1" 2>/dev/null)
@@ -185,15 +196,17 @@ redact() {
 # env.sanitized -> stdout. The second, independent redaction path —
 # build_redaction_sedfile redacts by value, this redacts by key, so a secret is
 # masked even if its value never appeared in a log. The key as compose reads it (as
-# in env_values); the line keeps its form up to the value. LC_ALL=C: under UTF-8,
-# `.*` stops in front of a byte outside UTF-8, and the rest of the value would stay.
-# With mask_hosts=1 the values of the HOST_KEYS become <masked> as well, and the
-# rest of the file runs through host_rules: an address or a name may also stand in
-# a comment or in another key.
+# in env_values), and commented out as well (any '#' among the whitespace in front):
+# an old value there may still be valid. The line keeps its form up to the value.
+# LC_ALL=C: under UTF-8, `.*` stops in front of a byte outside UTF-8, and the rest of
+# the value would stay. With mask_hosts=1 the values of the HOST_KEYS become <masked>
+# as well, and the rest of the file runs through host_rules: an address or a name may
+# also stand in a comment or in another key.
 sanitize_env() {
-    local envfile="$1" mask_hosts="${2:-0}" pat re rules
+    local envfile="$1" mask_hosts="${2:-0}" pat re lead rules
+    lead="^((${ENV_SP}|#)*(export${ENV_SP}+)?"
     pat="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
-    re="^([[:space:]]*(export[[:space:]]+)?(${pat})[[:space:]]*[=:][[:space:]]*).*"
+    re="${lead}(${pat})${ENV_SEP}*[=:][[:space:]]*).*"
     if [ "$mask_hosts" != 1 ]; then
         LC_ALL=C sed -E "s/${re}/\1<redacted>/" "$envfile"
         return
@@ -201,7 +214,7 @@ sanitize_env() {
     rules="$(host_rules "$envfile")"
     pat="$(IFS='|'; printf '%s' "${HOST_KEYS[*]}")"
     LC_ALL=C sed -E -e "s/${re}/\1<redacted>/" \
-        -e "s/^([[:space:]]*(export[[:space:]]+)?(${pat})[[:space:]]*[=:][[:space:]]*).*/\1<masked>/" "$envfile" \
+        -e "s/${lead}(${pat})${ENV_SEP}*[=:][[:space:]]*).*/\1<masked>/" "$envfile" \
         | LC_ALL=C sed -e "$rules"
 }
 

@@ -33,11 +33,15 @@
 #       ("Name <address>") only the address, and no list part without a letter or
 #       a digit;
 #   (j) SMTP_USER is masked like the passwords, with and without --mask-hosts, in
-#       the logs and in sanitize_env, and only as a whole word.
+#       the logs and in sanitize_env, and only as a whole word;
+#   (k) under the locale C.UTF-8, a key behind a BOM or Unicode whitespace and with
+#       an NBSP before the separator is found, in the logs and in sanitize_env;
+#       commented-out lines of a secret key are <redacted> in sanitize_env, of a host
+#       key <masked> with --mask-hosts, and their values are no rules for the logs.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
-#      and the locale C.UTF-8: without it case (c) cannot run, and the test ends
-#      with 75)
+#      and the locale C.UTF-8: without it cases (c) and (k) cannot run, and the
+#      test ends with 75)
 
 set -euo pipefail
 
@@ -264,6 +268,7 @@ EXTRA_SANS=alt.example.com,198.51.100.7
 ALLOWED_IPS=203.0.113.0/24
 SMTP_FROM="Ops9 <ops9@mail.example.com>"
 # FRP_SERVER_ADDR=192.0.2.44
+# old relay at 192.0.2.45
 EOF
 log_h="$(cat <<'EOF'
 upstream [2001:db8::1]:8080
@@ -301,14 +306,16 @@ for leak in 203.0.113 192.0.2 198.51.100 2001:db8 fe80 example.com ops9 node9hos
         fail=1
     fi
 done
-# env.sanitized: the host keys by key, an address in a comment by its shape.
+# env.sanitized: the host keys by key, commented out too, an address in another
+# comment by its shape.
 exp_fs="$(cat <<'EOF'
 SECRET_KEY=<redacted>
 DOMAIN=<masked>
 EXTRA_SANS=<masked>
 ALLOWED_IPS=<masked>
 SMTP_FROM=<masked>
-# FRP_SERVER_ADDR=<ip>
+# FRP_SERVER_ADDR=<masked>
+# old relay at <ip>
 EOF
 )"
 same "(f) --mask-hosts in sanitize_env" "$exp_fs" "$(sanitize_env "$env_f" 1)" || fail=1
@@ -388,6 +395,38 @@ build_redaction_sedfile "$env_u" "$sed_u"
 log_u="$(printf '%s\n' 'adminhelper-server-1 started' 'login admin failed')"
 same "(j) a short SMTP_USER as a whole word" "$(printf '%s\n' 'adminhelper-server-1 started' 'login <redacted> failed')" \
     "$(printf '%s\n' "$log_u" | redact "$sed_u")" || fail=1
+
+# --- (k) a key behind a BOM or Unicode whitespace, commented-out lines, under C.UTF-8
+# Compose reads a key behind a BOM or Unicode whitespace (NBSP, EM SPACE) and with an
+# NBSP between key and separator: such a value is masked in the logs and in
+# env.sanitized, and the line keeps its form up to the value. A commented-out line of
+# a secret key keeps its form with the value <redacted>, one of a host key with
+# --mask-hosts <masked>; its value is no rule for the logs, a commented-out line is no
+# configuration. Held byte for byte (cmp) against files written apart with printf.
+if [ -n "$LOCALE_SKIP" ]; then
+    LOCALE_SKIP="$LOCALE_SKIP, and neither can case (k) (BOM and Unicode whitespace in .env)"
+    echo "SKIP case (k) (BOM and Unicode whitespace in .env) needs the locale C.UTF-8 as well"
+else
+    env_uc="$tmp/.env-unicode"
+    printf '\xef\xbb\xbfSECRET_KEY=bom9secret\n\xc2\xa0POSTGRES_PASSWORD=nbsp9secret\n\xe2\x80\x83MONITOR_API_KEY=em9secret\nADMIN_PASSWORD\xc2\xa0=sep9secret\n#ADMIN_PASSWORD=old9secret\n  # SMTP_PASSWORD = old9smtp\n#DOMAIN=old9.example.com\nA=keep9\n' > "$env_uc"
+    printf '\xef\xbb\xbfSECRET_KEY=<redacted>\n\xc2\xa0POSTGRES_PASSWORD=<redacted>\n\xe2\x80\x83MONITOR_API_KEY=<redacted>\nADMIN_PASSWORD\xc2\xa0=<redacted>\n#ADMIN_PASSWORD=<redacted>\n  # SMTP_PASSWORD = <redacted>\n#DOMAIN=old9.example.com\nA=keep9\n' > "$tmp/k.san.exp"
+    printf '\xef\xbb\xbfSECRET_KEY=<redacted>\n\xc2\xa0POSTGRES_PASSWORD=<redacted>\n\xe2\x80\x83MONITOR_API_KEY=<redacted>\nADMIN_PASSWORD\xc2\xa0=<redacted>\n#ADMIN_PASSWORD=<redacted>\n  # SMTP_PASSWORD = <redacted>\n#DOMAIN=<masked>\nA=keep9\n' > "$tmp/k.san1.exp"
+    printf 'app: boot with bom9secret\ndb: auth nbsp9secret\nmonitor: key em9secret\nadmin: login sep9secret\nold: old9secret\n' > "$tmp/k.log"
+    printf 'app: boot with <redacted>\ndb: auth <redacted>\nmonitor: key <redacted>\nadmin: login <redacted>\nold: old9secret\n' > "$tmp/k.log.exp"
+    rc=0
+    ( export LC_ALL=C.UTF-8
+      sanitize_env "$env_uc" > "$tmp/k.san"
+      sanitize_env "$env_uc" 1 > "$tmp/k.san1"
+      build_redaction_sedfile "$env_uc" "$tmp/redact-k.sed"
+      redact "$tmp/redact-k.sed" < "$tmp/k.log" > "$tmp/k.log.out" ) || rc=$?
+    [ "$rc" = 0 ] || { echo "(k) the functions failed under C.UTF-8 (rc=$rc)" >&2; fail=1; }
+    cmp -s "$tmp/k.san.exp" "$tmp/k.san" \
+        || { echo "(k) sanitize_env under C.UTF-8: $(cat -v "$tmp/k.san" | tr '\n' ' ')" >&2; fail=1; }
+    cmp -s "$tmp/k.san1.exp" "$tmp/k.san1" \
+        || { echo "(k) sanitize_env --mask-hosts under C.UTF-8: $(cat -v "$tmp/k.san1" | tr '\n' ' ')" >&2; fail=1; }
+    cmp -s "$tmp/k.log.exp" "$tmp/k.log.out" \
+        || { echo "(k) log lines under C.UTF-8: $(cat -v "$tmp/k.log.out" | tr '\n' ' ')" >&2; fail=1; }
+fi
 unset -f uname
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
