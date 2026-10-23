@@ -68,8 +68,10 @@ Metrik: cargo clippy --all-targets -- -D warnings (clippy 0.1.99): 1 Fehler → 
 Dedup-Key: ref:desktop:ansible.rs:zombie-tests-stale-docs
 HEAD: cea7fb9b
 
-### T4 — Sync: Doku nennt die erste URL eines Workspace, Test für den Abruf ohne Geräte-Identität  [ ]
+### T4 — Sync: Doku nennt die erste URL eines Workspace, Test für den Abruf ohne Geräte-Identität  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sync.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c17adac6 2026-10-23T08:40:40+02:00
+Review: approve (.ah-out/review/desktop-hardening-3/T4.verdict.json)
 Änderung: `sync::sync_connections` (`sync.rs:11-32`) teilt sich in `fetch(url, allow_self_signed) -> Result<Vec<Connection>, AppError>` (Prüfung `validate_https_url`, Client über `build_client_without_identity`, GET, Parsen, `sanitize_synced_connections`) und den Rest (`write_connections`, Rückgabe); Verhalten unverändert. Neuer Test in `sync.rs`, Aufbau wie `sync_identity_choice_is_part_of_the_client_cache_key` (`http_client.rs:123-145`): `keyring_store::memory()`, Workspace `standard`, eine Geräte-Identität, die kein Client laden kann (`enroll|key`, `enroll|cert`, `enroll|ca` = `not a pem`); `fetch` gegen `https://127.0.0.1:<port>/c.json` mit einem Port aus `test_tls::refused_port()` (`src/test_tls.rs:39`) → `AppError::Network(_)` (die Verbindung wurde versucht, der Client entstand ohne Identität). Gegenprobe im Commit-Body: mit `build_client` statt `build_client_without_identity` scheitert der Test (Fehler beim Laden der Identität statt `Network`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sync
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:247`, der Klammersatz zur CSP `connect-src`: der Server-Verkehr läuft über `api_proxy`; dazu nennt er die erste URL eines Workspace ohne gespeicherte URL: beim ersten Speichern bzw. Anmelden übernimmt er einmal eine URL aus der Oberfläche (`storage::meta_with`), danach nur diese, und der Sync lädt nur von ihr) · kein CHANGELOG (keine Verhaltensänderung)
