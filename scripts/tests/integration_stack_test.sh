@@ -150,21 +150,23 @@ code=$(curl -k -s "${CERT[@]}" \
 # gateway (app.core.identity). Every other service of the default network reaches server:8080
 # as well; the server itself stands in for one here, sending the headers the gateway would set
 # for the cert of step 2 (8b revokes it later). Enforced, a request without an identity gets the
-# 403 of the scope guard on /api/servers. Then the gateway is recreated, as an update does: it
-# may come back with a new address, and the server has to take its headers from the first
-# request on.
+# 403 of the scope guard on /api/servers. Then the gateway is recreated, as an update does, on
+# a new address (a placeholder holds its old one), and the server has to take its headers from
+# the first request on.
 
 # default_ip <service> — the address of the service's container in the project's default
 # network; empty when it is not running, has none there or a lookup fails.
-default_ip() {
-    local id net
-    id=$(e2e_dc ps -q "$1" 2>/dev/null)
+default_ip() { container_ip "$(e2e_dc ps -q "$1" 2>/dev/null)"; }
+
+# container_ip <container> — the same for a container by ID or name.
+container_ip() {
+    local net
     net=$(docker network ls -q --no-trunc --filter "label=com.docker.compose.project=$E2E_PROJECT" \
         --filter "label=com.docker.compose.network=default" 2>/dev/null)
-    [ -n "$id" ] && [ -n "$net" ] && [ "$(wc -l <<<"$net")" = 1 ] || return 0
+    [ -n "$1" ] && [ -n "$net" ] && [ "$(wc -l <<<"$net")" = 1 ] || return 0
     docker inspect --format \
         "{{range .NetworkSettings.Networks}}{{if eq .NetworkID \"$net\"}}{{.IPAddress}}{{end}}{{end}}" \
-        "$id" 2>/dev/null
+        "$1" 2>/dev/null
 }
 
 # direct_servers <with|without> — "<status> <body>" of GET /api/servers with the JWT of step 5,
@@ -196,8 +198,55 @@ via_gateway() {
         -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000
 }
 
+# The container that holds the gateway's old address in (d): a one-off of the service redis,
+# which is on the default network alone, so the teardown's `down` removes it with the stack. A
+# container compose did not start would stay behind and keep the network in use, with `down`
+# still exiting 0.
+IP_PLACEHOLDER="$E2E_PROJECT-ip-placeholder"
+
+# gateway_moved — (d): the gateway stopped, the placeholder started on the address it freed, the
+# gateway recreated (no build, nothing else touched) on another one; once it rejects a certless
+# request again as in step 3, the very next request with the cert -> 200. Leaves the placeholder
+# to the caller.
+gateway_moved() {
+    local old held new code deadline log="$E2E_WORK/gateway-recreate.log"
+    old=$(default_ip gateway)
+    [ -n "$old" ] || { bad "the gateway has no address in the default network before the recreate"; return; }
+    if ! e2e_dc stop gateway >"$log" 2>&1; then
+        bad "stopping the gateway failed"; tail -20 "$log"; return
+    fi
+    # No fixed address: compose run takes none, and docker run --ip on a network without a subnet
+    # of its own needs Docker 29.0.4 (moby#51583). Docker hands out the lowest free address (seen
+    # on Docker 29; in CI the recreated gateway got its own back), the one the gateway just freed.
+    e2e_dc run -d --no-deps --name "$IP_PLACEHOLDER" --entrypoint sleep redis 600 >>"$log" 2>&1
+    held=$(container_ip "$IP_PLACEHOLDER")
+    echo "  info address the stopped gateway freed / the placeholder holds: '$old' / '$held'"
+    [ "$held" = "$old" ] && ok "a placeholder holds the address the stopped gateway freed" \
+        || { bad "the placeholder does not hold the address the stopped gateway freed"; tail -20 "$log"; }
+    if ! e2e_dc up -d --no-deps --force-recreate gateway >>"$log" 2>&1; then
+        bad "recreating the gateway failed"; tail -20 "$log"; return
+    fi
+    deadline=$((SECONDS + 60))
+    while :; do
+        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/auth/me" 2>/dev/null || echo 000)
+        [ "$code" != 400 ] || break
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            bad "the recreated gateway did not reject a certless request with 400 within 60 s (last '$code')"
+            e2e_dc logs --tail 20 gateway; return
+        fi
+        sleep 1
+    done
+    code=$(via_gateway)
+    new=$(default_ip gateway)
+    echo "  info gateway address in the default network before/after the recreate: '$old' -> '$new'"
+    [ -n "$new" ] && [ "$new" != "$old" ] && ok "the recreated gateway came back on another address" \
+        || bad "the recreated gateway did not come back on another address: the fresh lookup goes unproven"
+    [ "$code" = 200 ] && ok "right after the gateway was recreated: cert + JWT through it -> 200" \
+        || bad "right after the gateway was recreated: cert + JWT through it expected 200, got '$code'"
+}
+
 identity_from_gateway() {
-    local pem forged bare code old new deadline same=""
+    local pem forged bare code
 
     pem=$(openssl x509 -in "$E2E_WORK/client-fullchain.pem" 2>/dev/null) && [ -n "$pem" ] \
         || { bad "identity headers: no certificate in client-fullchain.pem"; return; }
@@ -218,28 +267,9 @@ identity_from_gateway() {
     [ "$code" = 200 ] && ok "the same cert + JWT through the gateway -> 200" \
         || bad "cert + JWT through the gateway: expected 200, got '$code'"
 
-    # d. The gateway recreated (no build, nothing else touched); once it rejects a certless
-    #    request again as in step 3, the very next request with the cert -> 200.
-    old=$(default_ip gateway)
-    if ! e2e_dc up -d --no-deps --force-recreate gateway >"$E2E_WORK/gateway-recreate.log" 2>&1; then
-        bad "recreating the gateway failed"; tail -20 "$E2E_WORK/gateway-recreate.log"; return
-    fi
-    deadline=$((SECONDS + 60))
-    while :; do
-        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/auth/me" 2>/dev/null || echo 000)
-        [ "$code" != 400 ] || break
-        if [ "$SECONDS" -ge "$deadline" ]; then
-            bad "the recreated gateway did not reject a certless request with 400 within 60 s (last '$code')"
-            e2e_dc logs --tail 20 gateway; return
-        fi
-        sleep 1
-    done
-    code=$(via_gateway)
-    new=$(default_ip gateway)
-    [ "$old" != "$new" ] || same=" (unchanged, so the server needed no fresh lookup)"
-    echo "  info gateway address in the default network before/after the recreate: '$old' -> '$new'$same"
-    [ "$code" = 200 ] && ok "right after the gateway was recreated: cert + JWT through it -> 200" \
-        || bad "right after the gateway was recreated: cert + JWT through it expected 200, got '$code'"
+    # d. The gateway recreated on another address.
+    gateway_moved
+    docker rm -f "$IP_PLACEHOLDER" >/dev/null 2>&1
 }
 identity_from_gateway
 
