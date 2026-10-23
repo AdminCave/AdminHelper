@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Argumente für das Windows-Terminal, frpc nach einem abgebrochenen Lauf, Ausgabe des interaktiven RDP — Task-Ledger
-Status: aktiv · Branch: feature/desktop-process-safety · Review: pro Task
+Status: bereit · Branch: feature/desktop-process-safety · Review: pro Task
 Spec: docs/features/desktop-process-safety.md (Roadmap R-0645, R-0646; T1 und T2 gehören zum Paket, Kevin 2026-10-22)
 Heavy: linux-full + windows — Desktop-Tunnel (CLAUDE.md §5): T3 ändert den ersten Abgleich, den die Tunnel-Journeys im Sammellauf (`desktop_e2e_tunnel.sh`, `desktop_e2e_connect_tunnel.sh`) bei jedem Start eines Workspace-Prozesses fahren; `windows`, weil T1, T2 und T4 Windows-Code sind: `cargo test --locked` nativ im CI-Job `rust-windows` (`.github/workflows/ci.yml:561`), dort laufen die `#[cfg(windows)]`-Tests von T2 und T4; die Desktop-GUI unter Windows bleibt laut `.claude/rules/testing.md` „nicht verifiziert“. Kein `scenario`: der Datenpfad des Tunnels (Visitor-TOML, frps, STCP) bleibt, nur der Lebenslauf des lokalen frpc ändert sich
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -84,8 +84,10 @@ Orakel: property — die gehaltene Ausgabe ist je Strom durch `cap` begrenzt, un
 Dedup-Key: bug:desktop:rdp.rs:interactive-collects-all-output
 HEAD: b25c65a6
 
-### T6 — Interaktives RDP: Tests pinnen stdout-Fehlerzeile und Marke auf stderr (Fund des testers)  [ ]
+### T6 — Interaktives RDP: Tests pinnen stdout-Fehlerzeile und Marke auf stderr (Fund des testers)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp_logic.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5a20fccd 2026-10-23T09:02:31+02:00
+Review: approve (.ah-out/review/desktop-process-safety/T6.verdict.json)
 Änderung: Nur Tests im `tests`-Modul von `rdp_logic.rs` für `interactive_exit_message` (T5): (a) eine Fehlerzeile, deren Meldung nicht die Verbindungs-Meldung ist, steht nur im stdout-Ende, stderr ist leer → deren Meldung (z. B. `interactive_exit_message(&OutputTail::new(CAP), &tail_of(LOGON_FAILURE)) == Some(AUTH_FAILED_MESSAGE)`); (b) die Marke steht nur im stderr-Ende, stdout ist leer → `None`. Kein Produktcode. Zuerst rot: (a) mit der Mutation, die stdout nicht mehr auf Fehlerzeilen parst (ohne `.or_else(|| parse_freerdp_error(stdout.bytes()))`), (b) mit der Mutation, die nur `stdout.connected()` prüft; beide Mutationen danach zurück.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::rdp_logic
 Doku: keine (nur Tests)

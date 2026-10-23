@@ -446,6 +446,27 @@ mod tests {
     }
 
     #[test]
+    fn interactive_exit_message_finds_an_error_line_only_on_stdout() {
+        // An auth line: its message differs from the connect-failure fallback,
+        // so the result shows that stdout was parsed at all.
+        assert_eq!(
+            interactive_exit_message(&OutputTail::new(CAP), &tail_of(LOGON_FAILURE.as_bytes()))
+                .as_deref(),
+            Some(AUTH_FAILED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn interactive_exit_message_counts_a_marker_only_on_stderr() {
+        let stderr = tail_of(MARKER.as_bytes());
+        assert!(stderr.connected());
+        assert_eq!(
+            interactive_exit_message(&stderr, &OutputTail::new(CAP)),
+            None
+        );
+    }
+
+    #[test]
     fn drain_into_tail_sees_a_marker_read_one_byte_at_a_time() {
         let stdout = drain_into_tail(OneByteReader(MARKER.as_bytes()), CAP);
         assert!(stdout.connected());
