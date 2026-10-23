@@ -32,8 +32,10 @@ Für alle Tasks:
 - Neue Code-Strings sind englisch. Neue Texte im Web stehen in `dictionaries.ts` (DE und EN, gleiche Schlüssel).
 - Platzhalter: Hosts unter `.example`, Adressen aus RFC 5737.
 
-### T1 — Tunnel-Routen: heutige Rechte festhalten (Admin-Liste, Nicht-Admin an Einzel- und Schreib-Routen)  [ ]
+### T1 — Tunnel-Routen: heutige Rechte festhalten (Admin-Liste, Nicht-Admin an Einzel- und Schreib-Routen)  [x]
 Komponente: server · Dateien: apps/server/tests/test_frp_tunnel_access.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @298720d6 2026-10-23T07:01:20+02:00
+Review: approve (.ah-out/review/non-admin-access/T1.verdict.json)
 Änderung: Neue Datei mit SPDX-Header (`reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later`).
 
 Seed im Modul nach dem Muster `test_frp_permissions.py:22-78`:
