@@ -37,8 +37,10 @@ Für alle Tasks:
   `[Unreleased]` stehen (`CHANGELOG.md:12-20` Added, `:67` Changed, `:125` und `:135` Fixed), passen die Tasks diese
   an, statt doppelte Einträge zu schreiben; sonst ein eigener Eintrag.
 
-### T1 — backup.sh: das Archiv liegt nach Exit 0 als Datei unter seinem Namen  [ ]
+### T1 — backup.sh: das Archiv liegt nach Exit 0 als Datei unter seinem Namen  [x]
 Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @99deecd4 2026-10-23T19:38:53+02:00
+Review: approve (.ah-out/review/ops-scripts-2/T1.verdict.json)
 Änderung: `backup.sh:138` `mv -f "$PARTIAL" "$ARCHIVE"` wird `mv -fT -- "$PARTIAL" "$ARCHIVE"` (GNU `--no-target-directory`, wie `scripts/update.sh:495`): ein Verzeichnis unter dem Archivnamen nimmt das Archiv nicht mehr auf, das Backup bricht mit einer englischen Meldung auf stderr und Exit 1 ab, der EXIT-Trap (`:52`) entfernt die Zwischendatei; ein Symlink unter dem Namen wird durch das Archiv ersetzt, sein Ziel bleibt unberührt. Der Kommentar `:131-135` nennt das Warum in einem Satz. Tests in `restore_guard_test.sh`, neuer Fall 16 (der Kopf `:1-29` nennt ihn) mit den Stubs von Fall 10/11 (`:178-215`) und einem `date`-Stub in `$WORK/bk/bin`, der für `+%Y-%m-%d_%H-%M-%S` `2026-10-22_10-00-00` ausgibt und sonst das echte `date` aufruft (Pfad vor dem PATH-Tausch gemerkt, wie `AH_TEST_REAL_TAR`): (a) im Zielordner liegt vorab ein leeres Verzeichnis `adminhelper-backup-2026-10-22_10-00-00.tar.gz` → Exit ≠ 0, das Verzeichnis ist weiter leer, im Zielordner liegt keine Datei `.adminhelper-backup-*`; (b) unter dem Namen liegt ein Symlink auf ein leeres Verzeichnis außerhalb des Zielordners → Exit 0, der Name ist eine reguläre Datei (kein Symlink) mit Modus 600, `tar tzf` listet `./MANIFEST.txt`, das Verzeichnis außerhalb ist leer. Zuerst rot: (a) (Exit 0, das Archiv liegt im Verzeichnis) und (b) (das Archiv liegt im Ziel des Symlinks). Die Fälle 1–15 bleiben grün.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: CHANGELOG.md (den Changed-Eintrag „Backup: Archiv von Anfang an privat …“ `:67` ergänzen, umlautfrei: liegt unter dem Archivnamen schon ein Verzeichnis, bricht das Backup ab, statt das Archiv hineinzulegen; ein Symlink unter dem Namen wird durch das Archiv ersetzt)

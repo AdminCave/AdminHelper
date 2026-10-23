@@ -24,6 +24,10 @@
 # 15: env.sanitized drops CA_ROOT_PASSPHRASE in every key form compose reads
 # (export, whitespace around the separator, ':' as the separator) and keeps a key
 # that only starts with it.
+# 16: backup.sh, against the same stubs and a date stub that fixes the archive
+# name: a directory under that name fails the backup and takes no archive, and no
+# temp file stays; a symlink under it is replaced by the archive, its target
+# stays untouched.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it test 12 cannot run, and the test ends with 75)
@@ -307,6 +311,41 @@ sanitized=$(bk_env "$WORK/bk/f")
 { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f/expected" "$sanitized"; } \
   && ok "env.sanitized drops the passphrase in every key form compose reads" \
   || bad "passphrase key forms: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# --- 16. backup.sh: the archive lands under its name as a file ───────────────
+# Without -T, mv takes a directory under the archive name (or a symlink to one)
+# for the target dir and puts the archive inside it, and backup.sh reports OK.
+# The date stub gives backup.sh's timestamp a fixed value, so the name is known
+# before the run; any other date call goes to the real date.
+AH_TEST_REAL_DATE=$(command -v date); export AH_TEST_REAL_DATE
+cat > "$WORK/bk/bin/date" <<'STUB'
+#!/usr/bin/env bash
+if [ "$#" -eq 1 ] && [ "$1" = '+%Y-%m-%d_%H-%M-%S' ]; then echo 2026-10-22_10-00-00; exit 0; fi
+exec "$AH_TEST_REAL_DATE" "$@"
+STUB
+chmod +x "$WORK/bk/bin/date"
+FIXED_NAME=adminhelper-backup-2026-10-22_10-00-00.tar.gz
+
+mkdir -p "$WORK/bk/g/out/$FIXED_NAME"
+out=$(bk_run "$WORK/bk/g" "$WORK/bk/g/out"); rc=$?
+entries=$(ls -A "$WORK/bk/g/out" 2>/dev/null)
+inside=$(ls -A "$WORK/bk/g/out/$FIXED_NAME" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ -d "$WORK/bk/g/out/$FIXED_NAME" ] && [ -z "$inside" ] && [ "$entries" = "$FIXED_NAME" ] \
+    && grep -q "^\[backup\] ERROR: .*$FIXED_NAME" <<<"$out"; } \
+  && ok "a directory under the archive name fails the backup, takes no archive and keeps no temp file" \
+  || bad "directory in the way: rc=$rc entries=[$entries] inside=[$inside] out=[$out]"
+
+mkdir -p "$WORK/bk/h/out" "$WORK/bk/h/elsewhere"
+ln -s "$WORK/bk/h/elsewhere" "$WORK/bk/h/out/$FIXED_NAME"
+out=$(bk_run "$WORK/bk/h" "$WORK/bk/h/out"); rc=$?
+archive="$WORK/bk/h/out/$FIXED_NAME"
+entries=$(ls -A "$WORK/bk/h/out" 2>/dev/null)
+elsewhere=$(ls -A "$WORK/bk/h/elsewhere" 2>/dev/null)
+members=$(tar tzf "$archive" 2>/dev/null)
+{ [ $rc -eq 0 ] && [ -f "$archive" ] && [ ! -L "$archive" ] && [ "$(stat -c '%a' "$archive")" = 600 ] \
+    && [ "$entries" = "$FIXED_NAME" ] && grep -qx './MANIFEST.txt' <<<"$members" && [ -z "$elsewhere" ]; } \
+  && ok "a symlink under the archive name is replaced by the archive, its target stays empty" \
+  || bad "symlink in the way: rc=$rc type=$(stat -c '%F %a' "$archive" 2>/dev/null) entries=[$entries] elsewhere=[$elsewhere] members=[$members] out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"

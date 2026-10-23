@@ -255,8 +255,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
   Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, und benennt sie erst
   nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
-  ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
-  bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+  ein Archiv noch eine Zwischendatei. Liegt unter dem Archivnamen schon ein Verzeichnis, bricht das Backup ab, statt
+  das Archiv hineinzulegen; ein Symlink unter dem Namen wird durch das Archiv ersetzt, sein Ziel bleibt unberuehrt.
+  Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender bleibt, wie er ist. Wer Backups mit
+  einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
 
 ### Removed
 

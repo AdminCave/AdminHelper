@@ -132,10 +132,13 @@ ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
 # whatever the umask, so the archive is never readable by others, not even while tar
 # writes it; and a failed or aborted write (disk full, Ctrl-C) leaves no truncated
 # archive under a name that restore.sh and the docs treat as valid. A rename within
-# the dir is atomic and keeps the mode (as in pg-backup.sh).
+# the dir is atomic and keeps the mode (as in pg-backup.sh). -T: a directory under the
+# archive name fails the rename instead of taking the archive in, and a symlink there
+# (to a directory too) is replaced, its target left alone (as in update.sh).
 PARTIAL=$(mktemp "$OUT_DIR/.adminhelper-backup-$TS.XXXXXX")
 tar czf "$PARTIAL" -C "$STAGE" .
-mv -f "$PARTIAL" "$ARCHIVE"
+mv -fT -- "$PARTIAL" "$ARCHIVE" \
+    || { echo "[backup] ERROR: could not move the archive to $ARCHIVE (is a directory in the way?) — backup aborted." >&2; exit 1; }
 PARTIAL=""
 
 echo "[backup] OK -> $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
