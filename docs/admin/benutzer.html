@@ -132,6 +132,7 @@
           <p>Mit <code>ALLOWED_IPS</code> lassen sich alle Zugriffe auf eine Whitelist begrenzen. Beispiel:</p>
           <div class="code-header"><span>.env</span></div>
 <pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
+          <p><code>ALLOWED_IPS</code> gilt für alle Anfragen an den Server, also auch für Agents und Desktop-Clients, und prüft die Client-Adresse, die das Gateway sieht: Das Gateway übermittelt sie in <code>X-Forwarded-For</code>, und der Server wertet diesen Header nur vom Gateway aus (<code>TRUSTED_PROXIES</code>, siehe <a href="./installation.html#env">Installation</a>). Die Liste enthält also die Netze der Clients, nicht das Docker-Netz des Gateways; steht ein weiterer Proxy vor dem Gateway, zählt dessen Adresse. Ältere Versionen prüften hier die Adresse des Gateways: Wer <code>ALLOWED_IPS</code> darauf eingestellt hat, trägt vor dem Update die Netze der Clients ein, sonst weist der Server sie mit <code>403</code> ab. Bis der Server den Namen <code>gateway</code> aufgelöst hat — bei den ersten Anfragen nach seinem Start und bis zu 30&nbsp;s nach einem Neustart des Gateways mit neuer Adresse —, sieht er noch die Adresse des Gateways und weist eine solche Anfrage ab, wenn die Liste das Docker-Netz nicht enthält.</p>
           <p>Wird die Liste leer gelassen, ist der Zugriff offen (für Reverse-Proxy- oder VPN-geschützte Setups).</p>
 
           <div class="page-nav">
