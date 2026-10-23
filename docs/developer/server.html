@@ -76,7 +76,7 @@
           </div>
 
           <h2>Auth-Architektur</h2>
-          <p>JWT-Access-Token (HS256, 8h) und Refresh-Token (7d) werden im JSON-Body ausgeliefert; der Refresh-Token wird zusätzlich als <code>HttpOnly; Secure; SameSite=Strict</code>-Cookie (Pfad <code>/api/auth</code>) gesetzt, das Browser-Clients statt <code>localStorage</code> nutzen (Desktop/CLI bleiben beim Body). Token-Claims: <code>sub</code> (Username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (Ausstellzeit), <code>jti</code> (UUID).</p>
+          <p>JWT-Access-Token (HS256, 8h) und Refresh-Token (7d) werden im JSON-Body ausgeliefert; der Refresh-Token wird zusätzlich als <code>HttpOnly; Secure; SameSite=Strict</code>-Cookie (Pfad <code>/api/auth</code>) gesetzt, das Browser-Clients statt <code>localStorage</code> nutzen (Desktop/CLI bleiben beim Body). Browser-Anfragen, erkennbar am Header <code>Sec-Fetch-Site</code> (setzt nur der Browser), bekommen den Refresh-Token nur als Cookie: <code>refresh_token</code> im <code>TokenResponse</code> ist dann <code>""</code>, das Schema bleibt gleich. Token-Claims: <code>sub</code> (Username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (Ausstellzeit), <code>jti</code> (UUID).</p>
           <ol>
             <li>Login signiert beide Tokens und gibt sie im <code>TokenResponse</code> zur&uuml;ck.</li>
             <li>Bei <code>POST /api/auth/refresh</code> pr&uuml;ft der Server Signatur, Ablauf und Blacklist.</li>

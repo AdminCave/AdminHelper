@@ -85,6 +85,8 @@ def _reset_rate_limit(ip: str) -> None:
 # needed, since /refresh + /logout are the only cookie-reading endpoints and
 # the access token stays a Bearer header). Non-browser clients (desktop, CLI)
 # ignore the cookie and keep using the request body — both paths are accepted.
+# A browser request (Sec-Fetch-Site present) gets the refresh token only as the
+# cookie: its JSON field is "" (_token_response).
 REFRESH_COOKIE_NAME = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/auth"
 _REFRESH_COOKIE_MAX_AGE = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
@@ -107,6 +109,19 @@ def _set_refresh_cookie(request: Request, response: Response, token: str) -> Non
 
 def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=REFRESH_COOKIE_NAME, path=_REFRESH_COOKIE_PATH)
+
+
+def _token_response(
+    request: Request, response: Response, access: str, refresh: str
+) -> TokenResponse:
+    _set_refresh_cookie(request, response, refresh)
+    # Only a browser sends Sec-Fetch-Site (Fetch Metadata; a forbidden header, page
+    # scripts can neither set nor drop it). Node fetch sends Sec-Fetch-Mode but not
+    # Sec-Fetch-Site; desktop (reqwest), CLI and scripts send neither. The field stays
+    # a required string, "" for a browser: omitting it or making it nullable would
+    # break the response schema.
+    body_refresh = "" if "sec-fetch-site" in request.headers else refresh
+    return TokenResponse(access_token=access, refresh_token=body_refresh)
 
 
 def _resolve_refresh_token(request: Request, body_token: str | None) -> str | None:
@@ -196,8 +211,7 @@ def login(
     )
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
-    _set_refresh_cookie(request, response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return _token_response(request, response, access, refresh)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -247,8 +261,7 @@ def refresh_token(
     if not blacklist_token(token, db):
         _refuse_reused_refresh(token, request, db)
 
-    _set_refresh_cookie(request, response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return _token_response(request, response, access, refresh)
 
 
 # The route works without a bearer (the refresh token from body or cookie is blacklisted
@@ -371,5 +384,4 @@ def bootstrap(
 
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
-    _set_refresh_cookie(request, response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return _token_response(request, response, access, refresh)
