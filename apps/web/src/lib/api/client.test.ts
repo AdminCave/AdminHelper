@@ -7,7 +7,7 @@
 // (accessToken, refreshInFlight), so every test re-imports a fresh module
 // instance after stubbing localStorage and fetch.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import type { ApiError } from './types';
 
 type ClientModule = typeof import('./client');
@@ -287,12 +287,18 @@ describe('http client token refresh', () => {
     );
 
     const { http } = await importClient();
+    // The i18n instance client.ts loaded with it (vi.resetModules gave both a fresh one).
+    const { tNow } = await import('$lib/i18n');
     const err = await http.get('/api/servers').catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(Error);
     const apiErr = err as ApiError;
     expect(apiErr.name).toBe('ApiError');
     expect(apiErr.status).toBe(0);
+    // Translated (R-0648): the login form and showError show the message as it is.
+    expect(apiErr.message).toBe(tNow('error.timeout'));
+    expect(apiErr.message).not.toBe('Request timed out');
+    expect(apiErr.message).not.toBe('error.timeout');
   });
 
   it('does not refresh-retry a 401 from an /auth/ path, preserving the server message (6.85)', async () => {
@@ -345,6 +351,53 @@ describe('http client token refresh', () => {
     expect(apiErr.message).toBe('Session expired');
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
     expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']); // no retry
+  });
+});
+
+// The server runs a manual hook synchronously, longer than the 15 s that unstick a hung
+// upstream; hooks.run gets its own deadline, every other request keeps 15 s (R-0648).
+describe('http client request deadline', () => {
+  let calls: FetchCall[];
+  let timeoutSpy: MockInstance<typeof AbortSignal.timeout>;
+
+  beforeEach(() => {
+    calls = [];
+    timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        return Promise.resolve(jsonResponse({}));
+      }),
+    );
+  });
+
+  afterEach(() => {
+    timeoutSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('gives a post the deadline it asks for and any other request 15 s', async () => {
+    const { http } = await importClient();
+
+    await http.post('/api/x', {}, { timeoutMs: 75_000 });
+    expect(timeoutSpy).toHaveBeenCalledTimes(1);
+    expect(timeoutSpy).toHaveBeenLastCalledWith(75_000);
+
+    await http.get('/api/x');
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy).toHaveBeenLastCalledWith(15_000);
+  });
+
+  it('runs a hook with a 75 s deadline', async () => {
+    vi.resetModules();
+    const { run } = await import('./hooks');
+
+    await run('h/1');
+
+    expect(calls.map((c) => [c.method, c.path])).toEqual([['POST', '/api/hooks/h%2F1/run']]);
+    expect(timeoutSpy).toHaveBeenCalledTimes(1);
+    expect(timeoutSpy).toHaveBeenCalledWith(75_000);
   });
 });
 

@@ -21,27 +21,25 @@ pusht die Session das private Repo (`git -C tasks/private push`, CLAUDE.md §11)
 
 Alle Aufrufe ohne `--file`: der Default ist die echte Datei. Exit-Codes von `roadmap.py`
 sind Anweisungen: **2** Aufruf oder Übergang falsch (Meldung zeigen, nicht umgehen) ·
-**3** `neu`-Deckel voll · **4** Dublette (die Meldung nennt die offene Zeile) · **5** die
-Datei wurde gerade von Hand geändert (Kevin fragen, ob sein Editor offen ist; nicht
-wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurückgespielt
-(STOPP, berichten).
+**4** Dublette (die Meldung nennt die offene Zeile) · **5** die Datei wurde gerade von Hand
+geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es sagt) ·
+**6** Zeilenzahl passte nicht, `.bak` ist zurückgespielt (STOPP, berichten).
 
 ## `/roadmap` — der Überblick
 
 1. `python3 scripts/dev/roadmap.py show` (liest nur, keine Sperre).
 2. Knapp rendern, in dieser Reihenfolge:
    - **Als Nächstes**: die Punkte, je die erste Zeile, wörtlich.
-   - **In Arbeit**: die `WIP:`-Zeile. `show` druckt nur Zähler; `aktiv`, `bereit` und `pr` sind
-     Anzeige, kein Deckel (CLAUDE.md §2, „Parallel, wo es geht“). Durchgesetzt ist nur `neu` 20:
-     ist er erreicht, nenn ihn dahinter (`add` verweigert dann). Die Zeilen
-     von „In Arbeit" mit ID, Klasse, Status.
-   - **Neu**: nur die Anzahl gegen den Deckel und `ALT` (abgelaufene Zeilen), keine Liste.
+   - **In Arbeit**: die `WIP:`-Zeile. `show` druckt nur Zähler, alle sind Anzeige, kein Deckel:
+     `aktiv`, `bereit` und `pr` (CLAUDE.md §2, „Parallel, wo es geht“) wie `neu` (`add` nimmt
+     jede neue Zeile an, Kevin 2026-10-22). Die Zeilen von „In Arbeit" mit ID, Klasse, Status.
+   - **Neu**: nur die Anzahl und `ALT` (abgelaufene Zeilen), keine Liste.
    - Geplant, Zurückgestellt, Blockiert als Anzahl; Abgeschlossen und Archiv weglassen.
 3. `python3 scripts/dev/roadmap.py lint`. Funde: Anzahl und die ersten drei nennen, nichts
    reparieren — eine doppelte ID oder eine kaputte Zeile ist Kevins Handarbeit. Eine
    Abweichung von `ALT` im Kopf ist keine: der nächste Schreibvorgang rechnet den Kopf neu.
-4. Steht `neu` am Deckel (>= 20: ab da verweigert `add`, und `heavy.sh` bekommt für einen
-   Fund keine Zeile mehr) oder ist `ALT` > 0: `/roadmap triage` vorschlagen, ein Satz.
+4. Steht `neu` bei 20 oder mehr (die Zahl hinter dem Strich im Kopf; `add` nimmt trotzdem
+   an) oder ist `ALT` > 0: `/roadmap triage` vorschlagen, ein Satz.
 
 ## `/roadmap triage` — die neuen Zeilen mit Kevin
 

@@ -25,6 +25,9 @@
 #     --strict         a SKIP of a required step is a FAILURE, not a pass
 #     --only <keys…>   restrict lint/unit to the named components (= AH_ONLY)
 #     --step <name>    run exactly one step (substring of its name, unambiguous)
+#     --part <gui|rest> run one part of the layer (= AH_PART): gui = the desktop
+#                      GUI suites and their smoke test, rest = every other step;
+#                      heavy.sh runs the two parts of `all` on two boxes at once
 #
 # The heavy layers (integration|e2e|all) refuse to run unless AH_ALLOW_REAL=1,
 # so they never fire by accident on a dev box. The /test skill sets it.
@@ -63,7 +66,10 @@ while [ $# -gt 0 ]; do
       shift; [ $# -gt 0 ] || { echo "--step needs a step name"; exit 2; }
       case "$1" in --*) echo "--step needs a step name, got the flag '$1'"; exit 2 ;; esac
       AH_STEP="$1"; shift ;;
-    --*) echo "unknown flag: $1 (use --strict, --only <keys…>, --step <name>)"; exit 2 ;;
+    --part)
+      shift; [ $# -gt 0 ] || { echo "--part needs gui or rest"; exit 2; }
+      AH_PART="$1"; shift ;;
+    --*) echo "unknown flag: $1 (use --strict, --only <keys…>, --step <name>, --part <gui|rest>)"; exit 2 ;;
     *)
       [ -z "$LAYER" ] || { echo "unexpected argument: $1 (layer is already '$LAYER')"; exit 2; }
       LAYER="$1"; shift ;;
@@ -73,6 +79,13 @@ LAYER="${LAYER:-quick}"
 AH_STRICT="${AH_STRICT:-0}"
 AH_ONLY="${AH_ONLY:-}"
 AH_STEP="${AH_STEP:-}"
+AH_PART="${AH_PART:-}"
+# The flag and the env form alike, before a step has run: an unknown part would
+# filter every step away and leave a run that verified nothing.
+case "$AH_PART" in
+  ""|gui|rest) ;;
+  *) echo "unknown part: '$AH_PART' (use gui or rest)"; exit 2 ;;
+esac
 export AH_ONLY AH_STRICT
 
 # Steps that MUST really run under --strict. Ids (not display names) so a host can
@@ -208,10 +221,26 @@ _skip() {
 }
 record_step() { STEP_RESULTS+=("$1|$2|$3"); }
 
-# want_step <name> -> 0 if this step should run at all. With --step it also
-# records the name, so the dry pass can reject an unknown or ambiguous one
-# BEFORE a single suite has run.
+# gui_part_step <name> -> 0 if the step belongs to part gui (--part): the desktop
+# GUI suites under the names layer_e2e runs them by, their guard row and the
+# smoke test, which needs the same Tauri build and display and narrows a red
+# down before them. Part rest is the negation, not a second list: every step, a
+# future one too, lies in exactly one part — with two lists a new step could sit
+# in neither and silently drop out of both runs heavy.sh drives in parallel.
+gui_part_step() {
+  case "$1" in "desktop-e2e smoke"|"desktop GUI E2E"|desktop_e2e_*) return 0 ;; esac
+  return 1
+}
+
+# want_step <name> -> 0 if this step should run at all. A step outside --part is
+# not this run's: it neither runs nor shows up as a SKIP or in the artifact, and
+# --step only searches the part. With --step it also records the name, so the
+# dry pass can reject an unknown or ambiguous one BEFORE a single suite has run.
 want_step() {
+  case "$AH_PART" in
+    gui)  gui_part_step "$1" || return 1 ;;
+    rest) gui_part_step "$1" && return 1 ;;
+  esac
   [ -n "$AH_STEP" ] || return 0
   case "$1" in *"$AH_STEP"*) STEP_NAMES+=("$1"); return 0 ;; esac
   return 1
@@ -446,30 +475,45 @@ json_list() {  # json_list <item…>
   for i in "$@"; do [ "$first" = 1 ] && first=0 || printf ', '; json_str "$i"; done
   printf ']'
 }
-# The evidence fields: the box's own git first, the CLIENT's values second. The
-# sync carries .git along, but only from the main checkout is it a repository;
-# from a worktree it is a pointer into a directory the box does not have, and a
-# box without git — or a tree that arrived by any other route — answers nothing
-# at all. The fields would then be empty on exactly the machine the heavy runs
-# happen on, so the client that synced the tree passes both values in (iter.sh).
+# The evidence fields: the CLIENT's values first, the box's own git second
+# (Kevin, 2026-09-25: the box needs no repository, iter.sh passes head and tree
+# hash in from the client that synced the tree). The box's own hash is the wrong
+# measuring point: it is computed at the END of the run, over a tree the sync
+# shaped (the tracked apps/server/data/.gitkeep stays home) and the run changed.
+# Synced from the main checkout, where .git arrives as a whole repository, it
+# therefore never matched the client's, and heavy.sh discarded every artifact as
+# one from another tree. From a worktree .git is a dead pointer, and the box's
+# git answers nothing at all.
 #
-# The client's values describe the CLIENT's tree, which is not byte-for-byte the box's: the sync
-# excludes what scripts/vm/rsync-exclude.txt lists (today apps/server/data), while the hash
-# excludes tasks/ and the output dirs. The hash therefore only stays truthful as
-# long as no exclude in rsync-exclude.txt covers a tracked source path.
+# iter.sh passes the values only on a run WITH sync; a run without one keeps the
+# answer of its own git. run.sh cannot tell a box from a dev machine: wherever
+# the two variables are set, they are stamped. A local run answers from its own
+# git only while nothing sets them — task-close.sh, whose tree check needs this
+# run's own measurement, unsets both before its Verify. A client value counts
+# only as exactly 40 lowercase hex characters: anything else is no identity, and
+# stamping it would be wrong evidence rather than missing evidence.
 #
-# Fall back on an EMPTY answer, not on a non-zero exit: a git that exits 0 without
-# printing (or one answering for a foreign repo the tree happens to sit in) would
-# otherwise silently win over the value the client computed.
-evidence_field() {  # evidence_field <command…> -- <fallback>
-  local v; v="$("${@:1:$#-1}" 2>/dev/null)"
+# The client's values describe the CLIENT's tree, which is not byte-for-byte the
+# box's: the sync excludes what scripts/vm/rsync-exclude.txt lists, the hash
+# excludes tasks/ and the output dirs. They stay truthful only as long as no
+# exclude covers tracked source beyond that empty .gitkeep.
+#
+# The box's own answer must be hex as well: a git that exits 0 with nothing, or
+# with anything else, on stdout leaves the field empty instead of filling it.
+# The classes are spelled out because a range like 0-9a-f may follow the locale.
+evidence_field() {  # evidence_field <client value> <command…>
+  local c="$1" v; shift
+  if [ "${#c}" -eq 40 ]; then
+    case "$c" in *[!0123456789abcdef]*) ;; *) printf '%s' "$c"; return 0 ;; esac
+  fi
+  v="$("$@" 2>/dev/null)"
   case "$v" in
-    *[!0-9a-f]*|"") printf '%s' "${@: -1}" ;;
-    *)              printf '%s' "$v" ;;
+    *[!0123456789abcdef]*|"") ;;
+    *) printf '%s' "$v" ;;
   esac
 }
-evidence_head()      { evidence_field git rev-parse HEAD "${AH_HEAD:-}"; }
-evidence_tree_hash() { evidence_field bash "$ROOT/scripts/dev/tree-hash.sh" "${AH_TREE_HASH:-}"; }
+evidence_head()      { evidence_field "${AH_HEAD:-}" git rev-parse HEAD; }
+evidence_tree_hash() { evidence_field "${AH_TREE_HASH:-}" bash "$ROOT/scripts/dev/tree-hash.sh"; }
 
 write_artifact() {
   local f="$AH_OUT_DIR/last-$LAYER.json" e name result secs first=1
@@ -485,6 +529,7 @@ write_artifact() {
     printf '  "strict": %s,\n'     "$([ "$AH_STRICT" = 1 ] && echo true || echo false)"
     printf '  "only": %s,\n'       "$(json_str "$AH_ONLY")"
     printf '  "step": %s,\n'       "$(json_str "$AH_STEP")"
+    printf '  "part": %s,\n'       "$(json_str "$AH_PART")"
     printf '  "required": %s,\n'   "$(json_str "$AH_REQUIRED")"
     printf '  "head": %s,\n'       "$(json_str "$(evidence_head)")"
     printf '  "tree_hash": %s,\n'  "$(json_str "$(evidence_tree_hash)")"
@@ -886,8 +931,12 @@ layer_e2e() {
   # Smoke first (cheapest, no backend): tauri-driver->WebKitWebDriver->window+mount.
   # Needs only a display; `npm test` matches the *.e2e.js glob (smoke), not the
   # *.live.js wrappers. Fastest fault localization when all live specs go red (6.141).
+  # ui/ is brought up to its lockfile first: `npm test` builds the app (wdio
+  # onPrepare -> tauri build -> `npm --prefix ui run build`), and the step that
+  # installed ui/ before, desktop-ui vitest, is not in this layer and under --part
+  # gui not on this box — the build would take the template's node_modules.
   if have_node && have_display; then
-    run_step desktop-e2e-smoke "desktop-e2e smoke" -- bash -c 'cd apps/desktop/e2e && npm_ci_if_stale && npm test'
+    run_step desktop-e2e-smoke "desktop-e2e smoke" -- bash -c '(cd apps/desktop/ui && npm_ci_if_stale) && cd apps/desktop/e2e && npm_ci_if_stale && npm test'
   else skip desktop-e2e-smoke "desktop-e2e smoke" "node + display required"; fi
 
   if ! have_docker || ! have_display; then
@@ -946,7 +995,7 @@ run_layer() {
 if [ -n "$AH_STEP" ]; then
   STEP_PROBE=1; run_layer; STEP_PROBE=0
   case "${#STEP_NAMES[@]}" in
-    0) echo "unknown step: '$AH_STEP' (no step of layer '$LAYER' matches — note that"
+    0) echo "unknown step: '$AH_STEP' (no step of layer '$LAYER'${AH_PART:+, part '$AH_PART',} matches — note that"
        echo "  steps behind an unmet precondition, e.g. a missing docker, are not reached)"
        exit 2 ;;
     1) ;;
@@ -974,9 +1023,9 @@ echo "────────────────────────�
 # The same lie one level up: no step failed, so a run in which NOTHING executed
 # would report green. Under --strict that is a failure — an empty run verifies
 # nothing, whatever narrowed it (a typo in --only, an over-trimmed AH_REQUIRED,
-# a box without the toolchain).
+# a box without the toolchain, a --part with no step in this layer).
 if [ "$AH_STRICT" = "1" ] && [ "$PASS" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
-  echo "  strict-failed: no step ran (layer=$LAYER, only=${AH_ONLY:-none}, step=${AH_STEP:-none})"
+  echo "  strict-failed: no step ran (layer=$LAYER, only=${AH_ONLY:-none}, step=${AH_STEP:-none}, part=${AH_PART:-none})"
   STRICT_FAILED+=("no step ran"); FAIL=$((FAIL+1)); FAILED_STEPS+=("no step ran")
 fi
 

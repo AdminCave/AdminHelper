@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// frpConfig store: refresh keeps the first config (or null), and save() routes
-// to create vs update depending on whether a config already exists.
+// frpConfig store: refresh keeps the first config (or null), save() routes
+// to create vs update depending on whether a config already exists, and holds
+// the result the way GET returns it (authToken and dashboardPassword null).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
@@ -48,6 +49,40 @@ describe('frpConfig store', () => {
     expect(api.updateConfig).toHaveBeenCalledWith('1', INPUT);
     expect(api.createConfig).not.toHaveBeenCalled();
     expect(get(frpConfig)?.name).toBe('updated');
+  });
+
+  it('save on create holds the config without authToken and dashboardPassword, like GET', async () => {
+    const created = {
+      ...cfg('new'),
+      authToken: 'frp-s3cr3t-token',
+      dashboardPassword: 'dash-s3cr3t',
+    };
+    vi.mocked(api.createConfig).mockResolvedValue(created);
+    const saved = await frpConfig.save(INPUT, null);
+    const expected = { ...cfg('new'), authToken: null, dashboardPassword: null };
+    expect(get(frpConfig)).toEqual(expected);
+    expect(saved).toEqual(expected);
+    for (const value of [JSON.stringify(get(frpConfig)), JSON.stringify(saved)]) {
+      expect(value).not.toContain('frp-s3cr3t-token');
+      expect(value).not.toContain('dash-s3cr3t');
+    }
+  });
+
+  it('save on update holds the config without authToken and dashboardPassword, like GET', async () => {
+    const updated = {
+      ...cfg('1', 'updated'),
+      authToken: 'frp-s3cr3t-token',
+      dashboardPassword: 'dash-s3cr3t',
+    };
+    vi.mocked(api.updateConfig).mockResolvedValue(updated);
+    const saved = await frpConfig.save(INPUT, cfg('1'));
+    const expected = { ...cfg('1', 'updated'), authToken: null, dashboardPassword: null };
+    expect(get(frpConfig)).toEqual(expected);
+    expect(saved).toEqual(expected);
+    for (const value of [JSON.stringify(get(frpConfig)), JSON.stringify(saved)]) {
+      expect(value).not.toContain('frp-s3cr3t-token');
+      expect(value).not.toContain('dash-s3cr3t');
+    }
   });
 });
 
