@@ -77,9 +77,11 @@ Nicht-Ziele:
   einen gewollten Skip in CI, ist das eine eigene Entscheidung, keine Vorsorge-Abstraktion jetzt.
 - **Die 7-s-Grenze von Fall (b) bleibt** (`lib_e2e_stack_test.sh:739`, gemessen 5–6 s auf der Dev-Box). Der erste
   PR-CI-Lauf nach T5 liefert die erste Messung auf dem Runner; wird der Fall dort flaky, gilt §2.
-- **Nicht in diesem Vorhaben:** Der Job CA-Issuer (`ci.yml:156-187`) hat keinen Postgres-Service; Lauf 39768448078:
-  „106 passed, 6 skipped“, die sechs sind die `pg_engine`-Tests in `apps/ca-issuer/tests/test_db_token_store.py`
-  (Fixture `pg_engine`, `:104-108`). Das ist ein eigener Fund (Vorschlag für eine neue Roadmap-Zeile im Bericht), keine Task hier.
+- **Nachtrag (T6, R-0820):** Die Jobs CA-Issuer und `python-lock-ca-issuer` hatten keinen Postgres-Service; Lauf
+  39768448078: „106 passed, 6 skipped“, die sechs sind die `pg_engine`-Tests in
+  `apps/ca-issuer/tests/test_db_token_store.py` (Fixture `pg_engine`, `:104-108`). Kevin hat die Zeile angenommen und
+  diesem Vorhaben zugeordnet; T6 gibt beiden Jobs einen Postgres-Service und `AH_TEST_DB`. Ein Skip-Gate bekommen sie
+  nicht (wie die 3.12-Leg).
 - `scripts/tests/run.sh` (Harness) bleibt unberührt: die Liste in `test_skip_is_required` braucht keine
   Image-Tests, weil das Gate in CI am JUnit-XML hängt.
 
