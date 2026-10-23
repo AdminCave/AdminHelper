@@ -14,7 +14,8 @@
 //   - with an available monitor service: monitor.Init with the returned key,
 //   - with an FRP config on the server: frpc.Apply with the returned bundle (without an
 //     active tunnel its text has no proxies and frpc stops); without an FRP config
-//     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning).
+//     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning),
+//   - at the end, always: service.EnableTimer (the agent timer, also without monitor and FRP).
 //
 // This way a single command on the target server suffices, regardless of which
 // components (FRP / monitor / server-read only) are configured.
@@ -40,6 +41,7 @@ import (
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/service"
 )
 
 type frpBundle struct {
@@ -71,6 +73,9 @@ var activatePort = 8444
 
 // applyWithoutBundle is frpc.ApplyWithoutBundle; tests swap it, the real one runs systemctl.
 var applyWithoutBundle = frpc.ApplyWithoutBundle
+
+// enableTimer is service.EnableTimer; tests swap it, the real one runs systemctl.
+var enableTimer = service.EnableTimer
 
 // Run redeems a provision token against the server endpoint and
 // installs the returned bundles in a platform-appropriate way. A non-empty
@@ -203,6 +208,13 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			return fmt.Errorf("stop the frpc of an earlier provisioning: %w", err)
 		}
 		fmt.Println("→ Keine FRP-Tunnel fuer diesen Server konfiguriert — FRP wird uebersprungen.")
+	}
+
+	// 3. The timer runs the agent from now on, whatever the server configured, also without
+	// monitor and tunnel (R-0641). A timer that cannot be enabled leaves the provisioning
+	// standing: the token is spent.
+	if err := enableTimer(); err != nil {
+		fmt.Printf("→ Agent timer not enabled (%v) — enable it by hand; until then no run syncs or pushes.\n", err)
 	}
 
 	fmt.Println("OK: Provisioning abgeschlossen.")

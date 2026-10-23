@@ -89,6 +89,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
   wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
   der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+- **Agent: nur die Einrichtung schaltet `adminhelper-agent.timer` ein (R-0641):** Ein Agent-Lauf schaltet den Timer
+  nicht mehr ein. Bisher tat das der FRP-Abgleich bei jedem Einschalten von frpc, auch im Dauerbetrieb `run` ohne
+  `--once`, der dann neben dem Timer lief. Den Timer schalten jetzt `provision`, `monitor init` und `service install`
+  ein, mit einem Deckel von 30 s; `provision` immer, am Ende, auch ohne Monitor und ohne Tunnel (bisher nur mit
+  Monitor oder wenn es frpc einschaltete). Scheitert das, melden `provision` und `monitor init` es und gelingen
+  trotzdem. Doku: Agent fuer Entwickler (DE+EN).
 
 ### Removed
 

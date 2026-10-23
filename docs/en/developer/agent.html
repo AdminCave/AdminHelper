@@ -173,9 +173,9 @@
                 <td colspan="2">Shared code via <code>gopsutil/disk</code>. The filter lists <code>skipFSTypes</code> (squashfs, tmpfs, overlay, proc&hellip;) and <code>skipMountPrefixes</code> (<code>/sys</code>, <code>/proc</code>, <code>/dev/</code>, <code>/snap</code>&hellip;) are Linux-specific; on Windows they never match and filter nothing. <code>free_gb</code> comes on both platforms, <code>inodes_percent</code> on Linux only.</td>
               </tr>
               <tr>
-                <td><code>enableMonitorService()</code><br /><code>platform_*.go</code></td>
-                <td><code>systemctl enable --now adminhelper-agent.timer</code>.</td>
-                <td>No-op: prints a hint to run <code>adminhelper-agent service install</code> (SCM integration left as a TODO).</td>
+                <td><code>service.EnableTimer()</code><br /><code>service_*.go</code></td>
+                <td><code>systemctl enable --now adminhelper-agent.timer</code> (capped at 30&nbsp;s). Called by <code>provision</code> (always, at the end, also without monitor and tunnel), <code>monitor init</code> (after the setup) and <code>service install</code>, never by a run: the FRP sync enables only <code>frpc.service</code>, so <code>run</code> without <code>--once</code> does not run beside the timer. If the call fails, <code>provision</code> and <code>monitor init</code> report it and still succeed; <code>service install</code> stops.</td>
+                <td>No timer: logs a hint to run <code>adminhelper-agent service install</code>.</td>
               </tr>
               <tr>
                 <td><code>service.Install()</code><br /><code>service_*.go</code></td>

@@ -156,6 +156,7 @@ func TestCallActivateRejectsConsumedToken(t *testing.T) {
 }
 
 func TestRunRejectsCAFPCombinedWithOtherTrust(t *testing.T) {
+	stubEnableTimer(t, nil)
 	// One trust source per call: --ca-fp must not be silently weakened by
 	// --insecure or diluted by --cacert. Validation fails BEFORE any network I/O
 	// (the URL is unroutable on purpose — reaching it would hang/fail differently).
@@ -203,6 +204,7 @@ func TestProvisionTrustRefusesCACertWithInsecure(t *testing.T) {
 	origApply := applyWithoutBundle
 	applyWithoutBundle = func() error { return nil }
 	t.Cleanup(func() { applyWithoutBundle = origApply })
+	stubEnableTimer(t, nil)
 
 	err := Run(srv.URL, "tok", "srv-1", cacert, true, "")
 	if n := requests.Load(); n != 0 {
@@ -723,6 +725,7 @@ func TestRunWritesTheSyncConfigWithoutAnFRPBundle(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { applyWithoutBundle = origApply })
+	stubEnableTimer(t, nil)
 
 	if err := Run(srv.URL, "tok", "srv-1", "", true, ""); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -781,6 +784,7 @@ func TestRunRedeemsNothingWhenTheDataRootCannotBeSecured(t *testing.T) {
 	origApply := applyWithoutBundle
 	applyWithoutBundle = func() error { return nil }
 	t.Cleanup(func() { applyWithoutBundle = origApply })
+	stubEnableTimer(t, nil)
 
 	err := Run(srv.URL, "tok", "srv-1", "", true, "")
 	if n := requests.Load(); n != 0 {
@@ -791,5 +795,92 @@ func TestRunRedeemsNothingWhenTheDataRootCannotBeSecured(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), "not redeemed") {
 		t.Fatalf("error = %q, want the directory %q and that the token was not redeemed", err, root)
+	}
+}
+
+// stubEnableTimer puts a counter in place of service.EnableTimer (systemctl on Linux) for one
+// test; the stub returns err.
+func stubEnableTimer(t *testing.T, err error) *int {
+	t.Helper()
+	calls := 0
+	orig := enableTimer
+	enableTimer = func() error { calls++; return err }
+	t.Cleanup(func() { enableTimer = orig })
+	return &calls
+}
+
+// activateWithoutBundle serves an activate call that returns the server API key, but neither a
+// monitor key nor an FRP bundle, points activatePort at it and stubs the stop of frpc.
+func activateWithoutBundle(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/servers/srv-1/provision/activate" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k", "frp": nil})
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	orig := activatePort
+	activatePort = port
+	t.Cleanup(func() { activatePort = orig })
+	origApply := applyWithoutBundle
+	applyWithoutBundle = func() error { return nil }
+	t.Cleanup(func() { applyWithoutBundle = origApply })
+	return srv
+}
+
+// R-0641: a provisioning enables the agent timer once, whatever the server configured, here
+// without monitor key and FRP bundle, where nothing enabled it before. A provisioning that stops
+// before it redeems the token enables nothing.
+func TestRunEnablesTheTimerOnce(t *testing.T) {
+	t.Run("without monitor and FRP bundle", func(t *testing.T) {
+		t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+		t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+		srv := activateWithoutBundle(t)
+		calls := stubEnableTimer(t, nil)
+
+		if err := Run(srv.URL, "tok", "srv-1", "", true, ""); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if *calls != 1 {
+			t.Errorf("timer enabled %d times, want 1", *calls)
+		}
+	})
+	t.Run("data root cannot be secured", func(t *testing.T) {
+		// A directory below a regular file cannot be created on either platform.
+		file := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(file, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("ADMINHELPER_MONITOR_DIR", filepath.Join(file, "adminhelper"))
+		t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+		srv := activateWithoutBundle(t)
+		calls := stubEnableTimer(t, nil)
+
+		if err := Run(srv.URL, "tok", "srv-1", "", true, ""); err == nil {
+			t.Fatal("Run succeeded although the data root cannot be secured")
+		}
+		if *calls != 0 {
+			t.Errorf("timer enabled %d times by a provisioning that stopped before the token, want 0", *calls)
+		}
+	})
+}
+
+// A timer that cannot be enabled does not fail a provisioning that has spent its token: Run
+// reports it and succeeds.
+func TestRunSucceedsWhenTheTimerCannotBeEnabled(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	srv := activateWithoutBundle(t)
+	calls := stubEnableTimer(t, errors.New("systemctl enable --now adminhelper-agent.timer: exit status 1"))
+
+	if err := Run(srv.URL, "tok", "srv-1", "", true, ""); err != nil {
+		t.Fatalf("Run = %v, want nil: the provisioning stands", err)
+	}
+	if *calls != 1 {
+		t.Errorf("timer enabled %d times, want 1", *calls)
 	}
 }

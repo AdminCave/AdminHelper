@@ -39,10 +39,8 @@ func preserveServices(services string) string {
 	return services
 }
 
-// enableTimer is a variable so tests of Init never run systemctl.
-var enableTimer = enableMonitorService
-
-// Init performs the initial setup of the monitor agent.
+// Init performs the initial setup of the monitor agent. It leaves the agent timer to its caller
+// (service.EnableTimer), which enables it once per setup.
 func Init(p InitParams) error {
 	url := p.URL
 	apiKey := p.APIKey
@@ -143,12 +141,6 @@ func Init(p InitParams) error {
 		logger.Warnf("Pruefe URL und API-Key")
 	} else {
 		logger.Infof("Test-Push erfolgreich")
-	}
-
-	// Activate the service (platform-specific)
-	if err := enableTimer(); err != nil {
-		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
-		logger.Warnf("Bitte manuell aktivieren")
 	}
 
 	return nil

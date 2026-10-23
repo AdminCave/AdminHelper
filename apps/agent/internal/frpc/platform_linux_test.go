@@ -120,3 +120,22 @@ func TestFrpcSystemctlIsActiveExitStatus(t *testing.T) {
 		}
 	})
 }
+
+// R-0641: starting frpc is part of a run's sync, so it leaves adminhelper-agent.timer alone;
+// enabled beside a `run` without --once, the timer would run every cycle a second time. Only the
+// setup enables the timer (service.EnableTimer).
+func TestFrpcEnableLeavesTheTimerAlone(t *testing.T) {
+	calls := filepath.Join(t.TempDir(), "calls")
+	fakeSystemctl(t, `printf '%s\n' "$*" >> '`+calls+`'`)
+
+	if err := enableFrpcService(context.Background()); err != nil {
+		t.Fatalf("enableFrpcService: %v", err)
+	}
+	got, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "daemon-reload\nenable --now frpc.service\n"; string(got) != want {
+		t.Errorf("systemctl calls = %q, want %q and no adminhelper-agent.timer", got, want)
+	}
+}

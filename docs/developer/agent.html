@@ -173,9 +173,9 @@
                 <td colspan="2">Gemeinsamer Code via <code>gopsutil/disk</code>. Die Filterlisten <code>skipFSTypes</code> (squashfs, tmpfs, overlay, proc&hellip;) und <code>skipMountPrefixes</code> (<code>/sys</code>, <code>/proc</code>, <code>/dev/</code>, <code>/snap</code>&hellip;) sind Linux-spezifisch; unter Windows treffen sie nicht zu und filtern nichts. <code>free_gb</code> kommt auf beiden Plattformen, <code>inodes_percent</code> nur unter Linux.</td>
               </tr>
               <tr>
-                <td><code>enableMonitorService()</code><br /><code>platform_*.go</code></td>
-                <td><code>systemctl enable --now adminhelper-agent.timer</code>.</td>
-                <td>No-op: gibt den Hinweis aus, <code>adminhelper-agent service install</code> auszuf&uuml;hren (SCM-Integration als TODO offen).</td>
+                <td><code>service.EnableTimer()</code><br /><code>service_*.go</code></td>
+                <td><code>systemctl enable --now adminhelper-agent.timer</code> (Deckel 30&nbsp;s). Aufgerufen von <code>provision</code> (immer, am Ende, auch ohne Monitor und Tunnel), <code>monitor init</code> (nach der Einrichtung) und <code>service install</code>, nie von einem Lauf: Der FRP-Abgleich schaltet nur <code>frpc.service</code> ein, sodass <code>run</code> ohne <code>--once</code> nicht neben dem Timer l&auml;uft. Scheitert der Aufruf, melden <code>provision</code> und <code>monitor init</code> es und gelingen trotzdem; <code>service install</code> bricht ab.</td>
+                <td>Kein Timer: gibt im Log den Hinweis aus, <code>adminhelper-agent service install</code> auszuf&uuml;hren.</td>
               </tr>
               <tr>
                 <td><code>service.Install()</code><br /><code>service_*.go</code></td>

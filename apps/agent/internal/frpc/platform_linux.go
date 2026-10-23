@@ -42,19 +42,15 @@ func systemctl(ctx context.Context, args ...string) error {
 	return err
 }
 
-// enableFrpcService enables frpc and the AdminHelper agent timer via systemd.
+// enableFrpcService enables and starts frpc via systemd. It leaves adminhelper-agent.timer alone:
+// the sync of every run calls it, also of a `run` without --once, beside which an enabled timer
+// would run each cycle twice. Only the setup enables the timer (service.EnableTimer, R-0641).
 func enableFrpcService(ctx context.Context) error {
 	if err := systemctl(ctx, "daemon-reload"); err != nil {
 		return fmt.Errorf("daemon-reload: %w", err)
 	}
-	// Enable each unit separately: a combined `enable --now frpc.service
-	// adminhelper-agent.timer` fails atomically if the timer unit is not
-	// installed yet, dragging frpc down with it.
 	if err := systemctl(ctx, "enable", "--now", "frpc.service"); err != nil {
 		return fmt.Errorf("enable frpc.service: %w", err)
-	}
-	if err := systemctl(ctx, "enable", "--now", "adminhelper-agent.timer"); err != nil {
-		return fmt.Errorf("enable adminhelper-agent.timer: %w", err)
 	}
 	return nil
 }
