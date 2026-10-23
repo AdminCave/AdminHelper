@@ -131,6 +131,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
   `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
   Pakete fuer Hooks gehoeren ins Image. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Hooks: Webhook-Trigger prueft seinen JSON-Body wie jeder andere Request-Body:** Ein NUL-Byte oder ein einzelnes
+  Surrogat (U+D800 bis U+DFFF; JSON schreibt beide nur als Escape) in einem String oder Schluessel des Bodys von
+  `POST /api/hooks/trigger` und `/api/hooks/trigger/{token}` ergibt `422` mit dem Ort im `loc`, statt das Skript damit
+  zu starten; bisher endete die Antwort mit 500, sobald das Skript den Wert zurueckgab, und ein Skript, das ihn
+  speicherte, scheiterte an der Datenbank. Rate-Limit, Token und Aktiv-Status werden weiter vorher geprueft; ein Body,
+  der kein JSON ist, kommt wie bisher als leeres `payload` an. Doku: API-Referenz fuer Entwickler (DE+EN).
 
 ### Removed
 
