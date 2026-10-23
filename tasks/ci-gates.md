@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI-Gates: Image-Tests im Server-Job, Skip-Gate, Keyring in ops-scripts, Playwright-Install — Task-Ledger
-Status: aktiv · Branch: feature/ci-gates · Review: pro Task
+Status: bereit · Branch: feature/ci-gates · Review: pro Task
 Spec: docs/features/ci-gates.md (Roadmap R-0808, R-0475, R-0500, R-0588)
 Heavy: none — nur der CI-Workflow, Struktur-Tests, ein hermetisches Test-Skript und Doku; kein Stack-, Gateway-, PKI-, FRP-, Compose- oder Install-Pfad. Der Beweis der Workflow-Änderungen ist die PR-CI (3.13-Leg des server-Jobs, ops-scripts, Web-Frontend E2E), nicht eine VM
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -52,8 +52,10 @@ Beweis: origin/main@b25c65a6 · Lauf 39768448078, server (3.13): „1926 passed,
 Dedup-Key: ref:ci:ci.yml:server-pytest-strict
 HEAD: b25c65a6
 
-### T3 — server-Job: in der 3.13-Leg macht ein übersprungener Test den Job rot (R-0475)  [ ]
+### T3 — server-Job: in der 3.13-Leg macht ein übersprungener Test den Job rot (R-0475)  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @edf0c1a6 2026-10-23T07:52:04+02:00
+Review: approve (.ah-out/review/ci-gates/T3.verdict.json)
 Änderung: „Run pytest“ (`ci.yml:89-94`) schreibt JUnit-XML (`--junitxml` unter `$RUNNER_TEMP`) und bekommt `-rs`. Direkt danach ein neuer Schritt „No test skipped“ mit demselben `if: matrix.python-version == '3.13'`: Python-stdlib liest die JUnit-Datei, gibt für jeden `<skipped>` `classname::name: message` aus und endet ≠ 0; eine fehlende oder unlesbare Datei ist ebenfalls rot. Struktur-Tests per `_run_step` mit Fixture-Dateien: (a) ohne Skip → rc 0; (b) ein Skip → rc ≠ 0, Test-ID und Grund in der Ausgabe; (c) keine Datei → rc ≠ 0; (d) Reihenfolge, gleiches `if:`, und der Pfad, den der pytest-Befehl schreibt, ist der, den der Schritt liest. Zuerst rot: der neue Test auf HEAD (Schritt fehlt).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: docs/developer/cicd.html:40 + docs/en/developer/cicd.html:40 (die 3.13-Leg ist rot, sobald ein Test übersprungen wird) · docs/developer/cicd.html:89 + docs/en/developer/cicd.html:90 (test-skips: in CI prüft die 3.13-Leg des server-Jobs jeden Skip, nicht nur Pflicht-Tests)
