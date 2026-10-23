@@ -43,8 +43,10 @@ Beweis: origin/main@53a7dbc5 · Code-Lesung apps/server/app/core/ssrf.py:291-299
 Orakel: differential — ein gewöhnlicher `httpx.Client()` in derselben Umgebung entscheidet, ob über den Proxy oder direkt
 HEAD: 53a7dbc5
 
-### T2 — Monitoring: HTTP-Check und Webhook neben einem Proxy, Ziel unter NO_PROXY (gehört zum Paket)  [ ]
+### T2 — Monitoring: HTTP-Check und Webhook neben einem Proxy, Ziel unter NO_PROXY (gehört zum Paket)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_http_checker.py, apps/monitoring/tests/test_alerter.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6009d7e7 2026-10-23T19:18:01+02:00
+Review: approve (.ah-out/review/ssrf-followups/T2.verdict.json)
 Änderung: Je ein Test neben den bestehenden Proxy-Tests (`test_http_checker_with_a_proxy_for_the_scheme_the_proxy_connects`, `test_http_checker.py:289-300`; `TestWebhookSsrf.test_with_a_proxy_for_the_scheme_the_proxy_connects`, `test_alerter.py:306-320`), mit denselben Helfern (`_resolving`, `_connections_refused` bzw. `_resolving_to`, `_connections_refused`): (a) HTTP-Check: `HTTP_PROXY=http://192.0.2.10:3128`, `NO_PROXY=checks.example`, `{"url": "http://checks.example:8080/x"}`, Resolver → `_FIRST` → gefragt genau `["checks.example"]`, verbunden genau `[(_FIRST, 8080)]`, Ergebnis `("critical", "Connection failed: refused by the test")`. (b) Webhook: `HTTPS_PROXY=http://192.0.2.10:3128`, `NO_PROXY=*`, `https://hooks.example.com:8443/x` → gefragt genau `["hooks.example.com"]`, verbunden genau `[(_PUBLIC, 8443)]`, `(False, "Webhook connection failed")`. Rot auf 53a7dbc5 (verbunden an `("checks.example", 8080)` bzw. `("hooks.example.com", 8443)`), grün nach T1: Revert-Probe von T1 in einem eigenen Worktree, Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py tests/test_alerter.py tests/test_ssrf.py
 Doku: keine (Doku und CHANGELOG trägt T1)

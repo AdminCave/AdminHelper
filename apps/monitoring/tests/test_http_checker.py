@@ -302,6 +302,21 @@ def test_http_checker_with_a_proxy_for_the_scheme_the_proxy_connects(monkeypatch
     assert (status, msg) == ("critical", "Connection failed: refused by the test")
 
 
+def test_http_checker_beside_a_proxy_no_proxy_connects_to_the_checked_address(monkeypatch):
+    # A target that NO_PROXY takes past the proxy connects as without a proxy: to the
+    # checked address, not by name (httpx resolving it again could get another answer).
+    monkeypatch.setenv("HTTP_PROXY", "http://192.0.2.10:3128")
+    monkeypatch.setenv("NO_PROXY", "checks.example")
+    asked = _resolving(monkeypatch, {"checks.example": _FIRST})
+    connected = _connections_refused(monkeypatch)
+
+    status, msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example:8080/x"})
+
+    assert asked == ["checks.example"]
+    assert connected == [(_FIRST, 8080)]
+    assert (status, msg) == ("critical", "Connection failed: refused by the test")
+
+
 _MIB = 1_048_576
 _PIECE = 64 * 1024
 

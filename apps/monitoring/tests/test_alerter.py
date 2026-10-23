@@ -393,6 +393,23 @@ class TestWebhookSsrf:
         assert connected == [("192.0.2.10", 3128)]
         assert (success, error) == (False, "Webhook connection failed")
 
+    def test_beside_a_proxy_no_proxy_connects_to_the_checked_address(self, monkeypatch):
+        # A target that NO_PROXY takes past the proxy (here every target) connects as
+        # without a proxy: to the checked address, not by name.
+        no_env_proxy(monkeypatch)
+        monkeypatch.setenv("HTTPS_PROXY", "http://192.0.2.10:3128")
+        monkeypatch.setenv("NO_PROXY", "*")
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        connected = _connections_refused(monkeypatch)
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com:8443/x"}, make_rule(), make_check(), make_msg()
+        )
+
+        assert asked == ["hooks.example.com"]
+        assert connected == [(_PUBLIC, 8443)]
+        assert (success, error) == (False, "Webhook connection failed")
+
 
 # Many webhook services carry the credential in the path or the query, so user info,
 # path, query and fragment of the target must not reach the service log.
