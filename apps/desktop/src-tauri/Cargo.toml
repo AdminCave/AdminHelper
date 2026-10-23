@@ -57,6 +57,9 @@ p12 = "0.6"
 # Parse the server-supplied visitor TOML to allow-list its structure before frpc
 # executes it (3.59) — a compromised server must not inject arbitrary frpc config.
 toml = "0.8"
+# Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
+# Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
+zeroize = "1.8.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
