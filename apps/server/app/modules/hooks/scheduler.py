@@ -95,10 +95,20 @@ def _parse_trigger(interval: str):
     parts = interval.split()
     if len(parts) == 5:
         parts[4] = _cron_weekdays(parts[4])
-        return CronTrigger.from_crontab(" ".join(parts))
+        # Cron expressions are documented as UTC. A trigger built without a timezone takes
+        # tzlocal.get_localzone(), i.e. TZ (Europe/Berlin in Compose), not the scheduler's
+        # timezone="UTC": that one only applies to triggers the scheduler builds from an alias.
+        return CronTrigger.from_crontab(" ".join(parts), timezone=timezone.utc)
     raise ValueError(
         f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(INTERVAL_MAP)} oder Cron (5 Felder)"
     )
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """A job's next_run_time as naive UTC, the storage convention of hooks.next_run
+    (app.core.time). It carries the trigger's zone, which for an interval is still TZ:
+    dropping the tzinfo without converting stored the local wall time as UTC."""
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _execute_scheduled_hook(hook_id: str) -> None:
@@ -123,7 +133,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
         hook.last_run = now.replace(tzinfo=None)
         job = scheduler.get_job(hook_id)
         if job and job.next_run_time:
-            hook.next_run = job.next_run_time.replace(tzinfo=None)
+            hook.next_run = _naive_utc(job.next_run_time)
         db.commit()
 
         try:
@@ -163,7 +173,7 @@ def get_next_run(hook_id: str) -> datetime | None:
     """Get the next_run_time of a registered job."""
     job = scheduler.get_job(hook_id)
     if job and job.next_run_time:
-        return job.next_run_time.replace(tzinfo=None)
+        return _naive_utc(job.next_run_time)
     return None
 
 

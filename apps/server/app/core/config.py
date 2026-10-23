@@ -146,7 +146,8 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 # Ignored if TRUSTED_PROXIES is set.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
 
-# Comma-separated list of IPs/CIDRs of the trusted reverse proxies.
+# Comma-separated list of IPs/CIDRs or host names of the trusted reverse proxies
+# (a name counts with the addresses it resolved to, looked up every 30 s).
 # X-Forwarded-For / X-Real-IP are evaluated ONLY if the direct connection
 # comes from one of these IPs. Recommended over TRUST_PROXY_HEADERS.
 # Example: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
@@ -214,6 +215,10 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Optional path inside the container to a PEM file with the relay's CA (self-signed
+# or company CA). Loaded in addition to the system CAs and used only for SMTP, so
+# certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
+SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
 # Bell-feed retention in days. A daily system job prunes notification rows older

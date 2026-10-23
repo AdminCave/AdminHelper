@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { FrpTunnel } from '$lib/api/types';
+import { tNow } from '$lib/i18n';
 import {
   emptyTunnelForm,
   tunnelToForm,
@@ -111,5 +112,24 @@ describe('validateTunnelForm', () => {
     expect(validateTunnelForm({ ...emptyTunnelForm('s', 'c'), name: 'n', localPort: 22 }).ok).toBe(
       true,
     );
+  });
+
+  const valid = { ...emptyTunnelForm('s', 'c'), name: 'n', localPort: 22 };
+
+  it.each([0, 65536, -1, 1.5])('rejects the stcp visitor port %s', (visitorPort) => {
+    expect(validateTunnelForm({ ...valid, tunnelType: 'stcp', visitorPort })).toEqual({
+      ok: false,
+      message: tNow('infra.tun.validation.visitorPortRange'),
+    });
+  });
+
+  it.each([1, 65535, null])('accepts the stcp visitor port %s', (visitorPort) => {
+    expect(validateTunnelForm({ ...valid, tunnelType: 'stcp', visitorPort })).toEqual({ ok: true });
+  });
+
+  it('does not check the visitor port of an https tunnel', () => {
+    expect(validateTunnelForm({ ...valid, tunnelType: 'https', visitorPort: 0 })).toEqual({
+      ok: true,
+    });
   });
 });

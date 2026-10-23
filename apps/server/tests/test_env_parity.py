@@ -26,6 +26,8 @@ one in a warning message, and that is not a missing default.
 import re
 from pathlib import Path
 
+import yaml
+
 _ROOT = Path(__file__).resolve().parents[3]
 _COMPOSE = _ROOT / "docker-compose.yml"
 _ENV_EXAMPLE = _ROOT / ".env.example"
@@ -164,9 +166,16 @@ def test_compose_gives_no_service_a_key_it_does_not_read():
     )
 
 
+def _secret_sources() -> set[str]:
+    """Variables compose hands on as secrets (`secrets.<name>.environment`): a knob
+    that reaches its service as a file under /run/secrets instead of a `${VAR}`."""
+    secrets = yaml.safe_load(_COMPOSE.read_text(encoding="utf-8")).get("secrets") or {}
+    return {spec["environment"] for spec in secrets.values() if "environment" in (spec or {})}
+
+
 def _substituted_and_documented() -> tuple[set[str], set[str]]:
     return (
-        set(_SUBSTITUTION.findall(_COMPOSE.read_text(encoding="utf-8"))),
+        set(_SUBSTITUTION.findall(_COMPOSE.read_text(encoding="utf-8"))) | _secret_sources(),
         set(_EXAMPLE_KEY.findall(_ENV_EXAMPLE.read_text(encoding="utf-8"))),
     )
 
