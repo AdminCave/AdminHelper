@@ -41,6 +41,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   fuer die Dauer des Aufrufs in der Prozessliste stand. Kennt der installierte Agent `--token-stdin`, schreibt das
   Skript den Token jetzt in dessen stdin. Ein aelterer Agent (aus dem Repo eines noch nicht aktualisierten Servers)
   bekommt ihn wie bisher als `--token`, und das Skript warnt, dass der Token dabei als Programmargument uebergeben wird.
+- **`update.sh` prueft in der `.env` auch Anfuehrungszeichen und Schluessel:** Die Pruefung vor dem ersten
+  `docker compose`-Aufruf erkannte nur ein `${` ohne gueltigen Platzhalter. Ein nie geschlossenes Anfuehrungszeichen
+  und ein Schluessel, den Compose nicht annimmt (auch Text direkt hinter einem schliessenden Anfuehrungszeichen, den
+  Compose als naechsten Schluessel liest, oder ein Schluessel mit Leerzeichen), liess sie durch; Compose brach dann
+  jeden Aufruf ab, erst nach Backup und Tausch, und zitierte dabei den Wert bzw. die Zeile. Jetzt endet `update.sh` in
+  diesen Faellen vorher, ohne etwas zu aendern, auch bei `--check` und `--redeploy`, und nennt den Schluessel des
+  Werts oder die Zeilennummer, nie Wert oder Zeile. Ein BOM am Anfang der `.env` nimmt die Pruefung wie Compose an.
+  Doku: Installation (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
