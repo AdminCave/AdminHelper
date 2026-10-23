@@ -317,8 +317,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Panel buendelte Erneuerungen aber nur innerhalb eines Tabs. Erneuerten zwei Tabs die Sitzung gleichzeitig, etwa
   beim Wiederherstellen des Browsers, schickten beide denselben Refresh-Token; der Server wertete den zweiten als
   Wiederverwendung und beendete alle Sitzungen des Benutzers, auch die des Desktops. Jetzt laufen die Erneuerungen
-  aller Tabs nacheinander (Web Locks), und ein spaeterer Tab schickt schon das neue Cookie. Ohne Web Locks, etwa
-  ausserhalb von HTTPS, buendelt das Panel weiter nur im Tab. Doku: Web-UI fuer Entwickler (DE+EN).
+  aller Tabs nacheinander (Web Locks), und ein spaeterer Tab schickt schon das neue Cookie. Auch die Abmeldung laeuft
+  unter dieser Web Lock: Sie macht das gemeinsame Cookie ungueltig, und eine Erneuerung, die ein anderer Tab zugleich
+  mit ihm schickte, galt ebenso als Wiederverwendung, etwa wenn der Browser nach Ablauf der Inaktivitaetszeit mehrere
+  Tabs wiederherstellt und jeder sich abmeldet. Ohne Web Locks, etwa ausserhalb von HTTPS, buendelt das Panel weiter
+  nur im Tab, und die Abmeldung geht sofort hinaus. Doku: Web-UI fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

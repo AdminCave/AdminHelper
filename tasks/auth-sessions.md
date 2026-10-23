@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Sitzungen: Refresh-Rotation, Tabs, Benutzerbindung, Refresh-Token im Browser, Abmeldung nach Inaktivität — Task-Ledger
-Status: aktiv · Branch: feature/auth-sessions · Review: pro Task
+Status: bereit · Branch: feature/auth-sessions · Review: pro Task
 Spec: docs/features/auth-sessions.md (Roadmap R-0649 (T6); R-0451 ohne Task, siehe Spec „Nicht-Ziele“; T1–T5 und T7–T10 gehören zum Paket, Kevin 2026-10-22)
 Heavy: linux-full — Server-API (Antworten von `/api/auth/login`, `/api/auth/refresh`, `/api/auth/bootstrap` für Browser-Anfragen, neues Feld in `/api/auth/me`), Rotation im Refresh und `docker-compose.yml` (neue Env am Dienst `server`); `web-live` fährt Login und Refresh im echten Browser gegen den Stack. Kein `scenario` (kein FRP-, PKI-, Install- oder Cross-Host-Pfad), kein `windows` (kein Desktop-Code)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -130,8 +130,10 @@ Doku: docs/admin/benutzer.html + docs/en/admin/users.html (der Punkt aus T9: gil
 Abhängt von: T9
 Entscheidung: Kevin 2026-10-22 — ja: eine beim Laden wiederhergestellte Sitzung endet, wenn die letzte Bedienung in diesem Browser länger als das Limit her ist
 
-### T11 — Web: Die Abmeldung läuft unter derselben Web Lock wie die Refreshes  [ ]
+### T11 — Web: Die Abmeldung läuft unter derselben Web Lock wie die Refreshes  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/auth.ts, apps/web/src/lib/api/client.crosstab.test.ts, docs/developer/webui.html, docs/en/developer/webui.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @cece18d4 2026-10-23T11:55:10+02:00
+Review: approve (.ah-out/review/auth-sessions/T11.verdict.json)
 Änderung: Fund des Branch-Reviews: `logout()` (`apps/web/src/lib/api/auth.ts:16-25`) schickt `POST /api/auth/logout` ohne die Lock `adminhelper-auth-refresh`. Stellt der Browser mehrere Tabs nach dem Idle-Limit wieder her, meldet T10 jeden Tab gleich nach seinem Refresh ab; die Abmeldung von Tab A sperrt das Cookie, während der Refresh von Tab B dasselbe Cookie schickt → der Server wertet ihn als Wiederverwendung (T1), alle Sitzungen des Benutzers enden, auch die des Desktops. `client.ts` bekommt einen kleinen exportierten Helfer, der eine Funktion unter derselben Lock ausführt (ohne `navigator.locks` direkt), `tryRefresh` nutzt ihn unverändert im Verhalten, `logout()` schickt den Logout-Request darüber. Kein Deadlock: Web Locks sind nicht reentrant, aber ein Request auf `/auth/`-Pfade ruft nie `tryRefresh` (`client.ts` `request`: `!path.includes('/auth/')`); ein Kommentar nennt das. `clearTokens()` bleibt im `finally`. Tests in `apps/web/src/lib/api/client.crosstab.test.ts` (Muster der bestehenden Fälle, je Tab eigene Modul-Instanz von `./auth` samt `./client`): (d) Tab A `restoreSession()` mit offenem Refresh, Tab B `logout()` → solange der Refresh offen ist, ist kein Logout-Fetch abgeschickt; nach der Refresh-Antwort folgt er; (e) umgekehrt: Logout offen → der Refresh von Tab A wartet; (f) ohne `navigator.locks` geht der Logout sofort hinaus (wie heute). Zuerst rot: (d), (e) auf HEAD.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.crosstab.test.ts src/lib/api/client.test.ts
 Doku: docs/developer/webui.html + docs/en/developer/webui.html (Zeile `auth`: auch die Abmeldung läuft unter der Lock) · CHANGELOG.md (der Fixed-Eintrag „mehrere Tabs erneuern die Sitzung nacheinander (R-0649)“ um die Abmeldung ergänzt, umlautfrei)

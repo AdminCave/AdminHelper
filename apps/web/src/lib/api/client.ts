@@ -69,6 +69,21 @@ export function registerAuthFailureHandler(handler: () => void): void {
   onAuthFailure = handler;
 }
 
+// refreshInFlight bundles only within this tab, but all tabs share the refresh cookie. The server
+// rotates the refresh token and treats a second refresh with the same token as reuse: every
+// session of the user ends (R-0649). A logout blocks the cookie, so a refresh that still sends it
+// counts as reuse too. A Web Lock holds per origin across all tabs: the refreshes and the logout
+// (auth.ts) run under it one after another, and a tab that gets the lock after another one
+// already sends the new cookie. Web Locks exist only in secure contexts (HTTPS, localhost);
+// without them fn runs at once. Web Locks are not reentrant: fn must never wait for tryRefresh,
+// which would wait for the lock fn holds. A request to an /auth/ path never calls tryRefresh.
+export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
+  if ('locks' in navigator) {
+    return await navigator.locks.request('adminhelper-auth-refresh', fn);
+  }
+  return await fn();
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
@@ -88,16 +103,7 @@ async function tryRefresh(): Promise<boolean> {
 
   refreshInFlight = (async () => {
     try {
-      // refreshInFlight bundles only within this tab, but all tabs share the refresh cookie.
-      // The server rotates the refresh token and treats a second refresh with the same token
-      // as reuse: every session of the user ends (R-0649). A Web Lock holds per origin across
-      // all tabs, so their refreshes run one after another, and a tab that gets the lock after
-      // another one already sends the new cookie. Web Locks exist only in secure contexts
-      // (HTTPS, localhost); without them the refresh is bundled within the tab only.
-      if ('locks' in navigator) {
-        return await navigator.locks.request('adminhelper-auth-refresh', refresh);
-      }
-      return await refresh();
+      return await withAuthLock(refresh);
     } catch {
       return false;
     } finally {

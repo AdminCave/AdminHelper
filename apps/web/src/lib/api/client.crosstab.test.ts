@@ -2,21 +2,32 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Refreshes of several tabs (R-0649). All tabs of an origin share the refresh cookie, and the
-// server treats a second refresh with the same token as reuse, which ends every session of the
-// user. Each tab here is its own instance of client.ts (vi.resetModules), so refreshInFlight
+// Refreshes and logouts of several tabs (R-0649). All tabs of an origin share the refresh cookie,
+// and the server treats a second refresh with the same token as reuse, which ends every session
+// of the user; a logout blocks the cookie, so a refresh that sends it after the logout counts as
+// reuse too. Each tab here is its own instance of client.ts (vi.resetModules), so refreshInFlight
 // is per tab, as in the browser; a fake LockManager shared by both stands in for the Web Locks
 // of the origin.
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 type ClientModule = typeof import('./client');
+type AuthModule = typeof import('./auth');
 
 const LOCK_NAME = 'adminhelper-auth-refresh';
+const REFRESH = '/api/auth/refresh';
+const LOGOUT = '/api/auth/logout';
 
 async function openTab(): Promise<ClientModule> {
   vi.resetModules();
   return import('./client');
+}
+
+// A tab whose auth.ts uses the client.ts instance of the same tab.
+async function openAuthTab(): Promise<{ client: ClientModule; auth: AuthModule }> {
+  vi.resetModules();
+  const client = await import('./client');
+  return { client, auth: await import('./auth') };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -83,6 +94,36 @@ function stubRefreshServer(): RefreshServer {
   };
 }
 
+interface AuthServer {
+  sent: () => string[];
+  answer: (path: string, body: unknown, status?: number) => void;
+}
+
+// Every request answers only when the test says so; sent() lists the paths in the order the
+// fetches went out.
+function stubAuthServer(): AuthServer {
+  const sent: string[] = [];
+  const pending = new Map<string, Array<(res: Response) => void>>();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      sent.push(path);
+      return new Promise<Response>((resolve) => {
+        pending.set(path, [...(pending.get(path) ?? []), resolve]);
+      });
+    }),
+  );
+  return {
+    sent: () => [...sent],
+    answer: (path, body, status = 200) => {
+      const next = pending.get(path)?.shift();
+      if (!next) throw new Error(`no request to ${path} is waiting for an answer`);
+      next(jsonResponse(body, status));
+    },
+  };
+}
+
 describe('refresh across tabs', () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, 'locks');
@@ -142,5 +183,72 @@ describe('refresh across tabs', () => {
     await expect(restored).resolves.toBe(true);
     expect(server.sent()).toBe(1);
     expect(tab.getAccessToken()).toBe('access-a');
+  });
+});
+
+describe('logout across tabs', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'locks');
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the logout of a tab only after the refresh of another tab has its answer', async () => {
+    const locks = installLockManager();
+    const server = stubAuthServer();
+    const tabA = await openAuthTab();
+    const tabB = await openAuthTab();
+
+    const restoredA = tabA.client.restoreSession();
+    await vi.waitFor(() => expect(server.sent()).toEqual([REFRESH]));
+    const loggedOutB = tabB.auth.logout();
+    // Give tab B every chance to send its logout while the refresh of tab A is open.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.sent()).toEqual([REFRESH]);
+
+    server.answer(REFRESH, { access_token: 'access-a' });
+    await vi.waitFor(() => expect(server.sent()).toEqual([REFRESH, LOGOUT]));
+    server.answer(LOGOUT, { detail: 'Abgemeldet' });
+
+    await expect(restoredA).resolves.toBe(true);
+    await expect(loggedOutB).resolves.toBeUndefined();
+    expect(locks.requested).toEqual([LOCK_NAME, LOCK_NAME]);
+  });
+
+  it('sends the refresh of a tab only after the logout of another tab has its answer', async () => {
+    installLockManager();
+    const server = stubAuthServer();
+    const tabA = await openAuthTab();
+    const tabB = await openAuthTab();
+    tabB.client.setAccessToken('access-b');
+
+    const loggedOutB = tabB.auth.logout();
+    await vi.waitFor(() => expect(server.sent()).toEqual([LOGOUT]));
+    const restoredA = tabA.client.restoreSession();
+    // Give tab A every chance to send its refresh while the logout of tab B is open.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.sent()).toEqual([LOGOUT]);
+
+    server.answer(LOGOUT, { detail: 'Abgemeldet' });
+    await vi.waitFor(() => expect(server.sent()).toEqual([LOGOUT, REFRESH]));
+    // The answer of the logout cleared the cookie, so the refresh has none to send.
+    server.answer(REFRESH, { detail: 'Not authenticated' }, 401);
+
+    await expect(loggedOutB).resolves.toBeUndefined();
+    await expect(restoredA).resolves.toBe(false);
+    expect(tabB.client.getAccessToken()).toBeNull();
+  });
+
+  it('sends the logout at once when the browser has no Web Locks', async () => {
+    expect('locks' in navigator).toBe(false);
+    const server = stubAuthServer();
+    const tab = await openAuthTab();
+    tab.client.setAccessToken('access-a');
+
+    const loggedOut = tab.auth.logout();
+    await vi.waitFor(() => expect(server.sent()).toEqual([LOGOUT]));
+    server.answer(LOGOUT, { detail: 'Abgemeldet' });
+
+    await expect(loggedOut).resolves.toBeUndefined();
+    expect(tab.client.getAccessToken()).toBeNull();
   });
 });
