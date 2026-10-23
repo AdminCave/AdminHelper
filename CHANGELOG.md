@@ -146,6 +146,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   unveraendert weitergeben kann (leer, mit `"`, mit `%` — Windows Terminal setzt `%NAME%` ein —, mit Steuerzeichen
   oder mit Leerzeichen und abschliessendem `\`), oeffnet nicht, und der Desktop meldet das („Windows Terminal cannot
   pass … unchanged“).
+- **Desktop unter Windows ohne Windows Terminal: die Konsole bekommt jedes Argument unveraendert:** Ist Windows
+  Terminal nicht installiert, oeffnet der Desktop SSH oder einen Ansible-Lauf in einer neuen Konsole mit genau einer
+  cmd-Ebene statt ueber `cmd /C start`. Argumente mit `&`, `|`, `<`, `>`, `^`, `!`, `;`, Klammern oder Leerzeichen
+  kommen unveraendert an (vorher konnte etwa `a&b` als `a^&b` ankommen). Ein Wert mit `"`, `%` oder Steuerzeichen
+  oeffnet nicht, und der Desktop meldet das („The Windows console (cmd) cannot pass … unchanged“). Der Fenstertitel
+  der Konsole kann sich dadurch aendern.
 - **Desktop: ein frpc, der nach einem abgebrochenen Programmlauf weiterlief, endet beim naechsten Start:** Lief frpc
   nach einem abgebrochenen Programmlauf (Task beenden, Absturz) weiter, endet er beim ersten Tunnel-Abgleich des
   naechsten Starts desselben Workspace; seine Tunnel und Ports werden frei. Der Desktop beendet ihn ueber

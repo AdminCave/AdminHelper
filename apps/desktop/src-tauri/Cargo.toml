@@ -62,7 +62,9 @@ toml = "0.8"
 zeroize = "1.8.2"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
+# Threading + SystemInformation: without Windows Terminal, the cmd console starts through
+# CreateProcessW from the system directory (terminal.rs, spawn_in_new_console).
+windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.
