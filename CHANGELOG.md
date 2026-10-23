@@ -89,6 +89,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
   wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
   der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+- **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
+  Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
+  Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
+  FRP-Server-Konfiguration. Bisher stand der Fehler samt Traceback im Log.
+- **Server: `.secret_key`, `.bootstrap_token` und `.bootstrap_setup` entstehen von Anfang an mit Modus 0600:** Den
+  selbst erzeugten Schluessel (kein `SECRET_KEY` gesetzt), den Hash des Setup-Tokens und den Setup-Token schreibt der
+  Server je in eine temporaere Datei im selben Verzeichnis, die von Anfang an nur fuer ihren Besitzer lesbar ist, und
+  benennt sie danach atomar um, wie die `frps.toml`. Bisher entstanden die Dateien mit den Rechten der umask und
+  bekamen erst danach Modus 0600. Ein Fehler beim Entfernen der Bootstrap-Dateien steht mit Dateiname und Fehlertyp im
+  Log; bisher wurde er verworfen.
+- **Server: die Log-Zeilen zum Redis-Backend des Rate-Limits nennen nur Schema, Host und Port:** Von `REDIS_URL`
+  nennen sie nur Schema, Host und Port (bei `unix://` den Socket-Pfad), von einem Verbindungsfehler nur den Typ, wie
+  die Log-Zeilen des Alert-Webhooks. Bisher standen die ganze URL und der Fehlertext im Log.
+- **Server: `POST /api/internal/events` lehnt die Quelltypen `frp_config` und `frps` ab:** Ein Event mit
+  `source_type` `frp_config` oder `frps` ergibt `422` an `source_type`; nichts wird geschrieben. Unter diesen
+  Quelltypen fuehrt der Server seine eigenen Meldungen. Der Monitoring-Dienst sendet `server` und ist nicht betroffen.
 
 ### Removed
 
@@ -166,6 +182,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
   prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
   Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
+- **Server: ein einzelnes Surrogat in einem Request-Body ergibt `422` wie ein NUL-Byte:** Ein einzelnes Surrogat
+  (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben) in irgendeinem String eines Request-Bodies, als Wert oder
+  Schluessel und beliebig tief, ergibt `422` an seiner Stelle; nichts wird gespeichert. Bisher endeten solche Eingaben
+  ausserhalb der frp-Felder und der Felder mit Laengengrenze mit `500`, in Tags wurden sie gespeichert, und jede Antwort
+  mit der Zeile endete danach mit `500`. In `extra_config` der FRP-Server-Konfiguration nennt der Fehler jetzt den
+  Schluessel, unter dem der Wert steht.
 
 ## [0.46.0] - 2026-10-22
 
