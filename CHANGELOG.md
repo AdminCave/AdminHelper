@@ -257,6 +257,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
   ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
   bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+- **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
+  der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
+  jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
+  weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
 
 ### Removed
 
@@ -461,6 +465,27 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
   ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
   auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+- **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
+  mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
+  abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes
+  Zertifikat spaetestens mit seinem Aussteller (Client- und Server-Zertifikate mit dem Zwischenzertifikat,
+  Zwischenzertifikate mit der Root); kurz vor dem Ablauf eines Zwischenzertifikats werden neue Zertifikate also
+  kuerzer. Ist das Zwischenzertifikat eines Scopes abgelaufen oder noch nicht gueltig, antworten `/enroll` und
+  `/renew` mit HTTP 503 („the issuing intermediate certificate of scope '…' is expired or not yet valid; see the
+  ca-issuer log“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt unverbraucht. Eine Erneuerung
+  bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn das alte Zertifikat gekuerzt
+  war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer` beim Signieren einmal je Tag und
+  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“). Doku: Betrieb (DE+EN).
+- **ca-issuer: prueft die PKI beim Start (R-0666):** Der `ca-issuer` lud Root und Zwischenzertifikate beim Start ohne
+  jede Pruefung, auch ein abgelaufenes, ein von einer fremden Root signiertes oder eines neben fremdem Schluessel oder
+  fremder Kette. Jetzt prueft er bei jedem Start, auch direkt nach dem ersten: `root.crt` selbstsigniert und gueltig,
+  je Scope `<scope>.crt` von `root.crt` signiert und gueltig, `<scope>.key` der passende Schluessel und
+  `<scope>-chain.pem` genau Zwischenzertifikat und Root (geparst verglichen, Zeilenenden zaehlen nicht). Bei einem
+  Verstoss startet er nicht und nennt Datei, Scope und Grund („PKI hierarchy invalid — …“); das gilt auch fuer eine
+  Host-Uhr vor dem `notBefore` der Root oder eines Zwischenzertifikats. Root und Zwischenzertifikate mit weniger als
+  180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
+  expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
+  Clients bedeutet). Doku: Betrieb (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

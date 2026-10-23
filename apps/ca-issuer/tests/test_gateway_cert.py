@@ -124,14 +124,14 @@ def test_leaf_needs_remint_detects_missing_and_fresh(tmp_path):
 def test_remints_leaf_once_past_half_life(tmp_path, monkeypatch):
     import datetime
 
-    access, _ = _access_intermediate()
-
     # First boot: mint a leaf dated ~300 days ago (well past half of its 365-day
     # life) by pinning the issuer clock to the past for this call only. The leaf
     # has no client-side auto-renew, so without F4 it would simply expire and take
-    # the gateway down with it.
+    # the gateway down with it. The hierarchy is minted on the same past clock: an
+    # intermediate younger than the leaf would be not yet valid and refuse to sign.
     past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=300)
     monkeypatch.setattr(pki, "_now", lambda: past)
+    access, _ = _access_intermediate()
     ensure_gateway_cert(tmp_path, access, "localhost")
     aged = (tmp_path / "gateway-fullchain.pem").read_bytes()
     monkeypatch.undo()  # back to the real clock
