@@ -16,6 +16,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bearbeiteten Hooks sowie Auth-Token und Dashboard-Passwort einer neuen FRP-Server-Konfiguration bleiben nicht bis
   zum Neuladen im Speicher der Seite; der Webhook-Token wird wie bisher einmal angezeigt. Doku: Web-UI fuer
   Entwickler (DE+EN).
+- **Web: FRP-Konfigurationsvorschau wird beim Schliessen geleert:** Der Text von `frps.toml` bzw. `visitor.toml`
+  (mit Auth-Token, Dashboard-Passwort bzw. STCP-Schluesseln) bleibt nach dem Schliessen der Vorschau nicht mehr bis
+  zum Verlassen der FRP-Seite im Speicher der Seite.
 - **Images server, ca-issuer und monitoring: Programme nur ausfuehrbar:** In den Images von server und scheduler,
   ca-issuer und monitoring gehoeren die Programme unter `/usr/local/bin`, `/usr/local/sbin`, `/usr/bin`, `/usr/sbin`
   und, in server, scheduler und monitoring, die PostgreSQL-Clientprogramme unter `/usr/lib/postgresql` (jede
@@ -33,6 +36,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ziel ab, nennt der Text des `ValueError` (und damit `error` und `logs` eines Laufs, der ihn nicht faengt) vom
   Ziel nur den Hostnamen, ohne Port, Pfad, Query und Zugangsdaten, wie die Log-Zeilen des Alert-Webhooks; hat die
   URL keinen lesbaren Host, steht dort `?`. Typ und Anfang der Texte bleiben. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Roadmap ohne `neu`-Deckel (Entwickler-Werkzeuge, Kevin 2026-10-22):** `roadmap.py add` nimmt jede neue Zeile an,
+  auch wenn schon 20 oder mehr Zeilen `neu` sind; Exit 3 gibt es nicht mehr. `neu N/20` im WIP-Kopf bleibt Anzeige
+  wie `aktiv N/2`. Der Wochenlauf (`heavy.sh`) laesst einen bestaetigten Fund damit nicht mehr ohne Roadmap-Zeile,
+  die Notiz `ROADMAP FULL` im Report entfaellt. Anleitung: `DEVELOPMENT.md`, „Die Roadmap als Skript: `roadmap.py`",
+  und der Skill `/roadmap`.
 - **Sammellauf auf zwei Boxen parallel (R-0603):** `heavy.sh all` faehrt `run.sh all --strict` jetzt als zwei Teile
   gleichzeitig: Teil `rest` auf der warmen Box des Slots `desktop`, Teil `gui` (die Desktop-GUI-E2E samt Smoke-Test,
   `--part gui`) auf einer zweiten Box derselben Lane (`warm.sh gui`, `iter.sh --slot gui`), die geleast wird,
@@ -75,6 +83,30 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (auf einer Zeile, bei mehr als 1000 Zeichen dessen Ende): Event-Hooks unter `app.core.events` im Log des
   `server`-Dienstes, Schedule-Hooks unter `app.modules.hooks.scheduler` im Log des `scheduler`-Dienstes. Ein
   Webhook-Trigger und ein Lauf ueber `POST /api/hooks/{id}/run` melden den Fehler weiter in der Antwort.
+- **Web-Panel startet auch bei gesperrtem Seitenspeicher (R-0654):** Sperrt der Browser die Website-Daten (Cookies
+  und Website-Daten blockiert), wirft schon der Zugriff auf `localStorage` einen `SecurityError`. Das Web-Panel las
+  und loeschte dort beim Laden ungeschuetzt und blieb eine leere Seite, ohne Login-Maske. Jetzt geht jeder Zugriff auf
+  den Seitenspeicher durch einen Helfer, der nie wirft: das Panel zeigt die Login-Maske, die Sprache kommt aus dem
+  Browser, und eine Sprachwahl gilt bis zum Neuladen.
+- **Web-Panel: helles Design uebersteht einen Reload (R-0647):** Das Skript, das das gespeicherte Design vor dem
+  ersten Zeichnen setzt, stand inline in `index.html`; die CSP des Servers (`script-src 'self'`) blockierte es, mit
+  CSP-Fehler in der Konsole. Nach einem Neuladen startete das Panel deshalb dunkel und ueberschrieb die gespeicherte
+  Wahl. Das Skript liegt jetzt als eigene Datei `theme-init.js` beim Panel und laeuft unter der CSP.
+- **Web-Panel: manueller Hook-Lauf endet nicht mehr nach 15 s (R-0648):** Jede Anfrage des Panels gab nach 15 s auf,
+  auch „Ausfuehren“ eines Hooks, den der Server bis zu 30 s lang synchron ausfuehrt. Lief ein Hook 15 bis 30 s, zeigte
+  das Panel „Request timed out“, das Ergebnis ging verloren, und der Knopf wurde wieder frei, waehrend der Hook noch
+  lief. Jetzt wartet das Panel auf den Hook-Lauf 75 s, der Knopf bleibt bis zum Ende gesperrt, und die Meldung bei
+  einer Zeitueberschreitung ist uebersetzt.
+- **Web-Panel: schnelle Neuanmeldung nach dem Abmelden haelt (R-0653):** Das Panel meldete sofort ab, wartete aber
+  nicht auf die Antwort des Servers — und erst diese loescht den Access-Token und das Refresh-Cookie. Meldete sich
+  jemand schneller wieder an, als die Abmeldung beantwortet war, beendete die spaete Antwort die neue Sitzung bei der
+  naechsten Aktion. Jetzt wartet eine neue Anmeldung, bis die Abmeldung beantwortet ist (hoechstens 15 s), auch nach
+  einer abgelaufenen Sitzung. Abmelden leert ausserdem die Benutzer-, Hook-, API-Key- und FRP-Daten im Browser.
+- **Web-Panel: Bearbeiten des eigenen Kontos wirkt sofort (R-0652):** Nahm sich ein Admin im Web-Panel selbst das
+  Admin-Recht, zeigte das Panel weiter die Admin-Seiten, und jede Aktion endete mit einem Fehler; jetzt uebernimmt es
+  die neuen Rechte sofort. Aenderte er sein eigenes Passwort, beendete der Server alle Sitzungen des Kontos, das Panel
+  merkte es aber erst bei der naechsten Aktion („Session expired“); jetzt meldet es sofort ab, mit dem Hinweis, sich
+  mit dem neuen Passwort anzumelden.
 - **Sammellauf: Schritt-Tabelle und Sekunden je Schritt wieder im Report (R-0603):** Bei einem Sammellauf aus dem
   Haupt-Checkout verwarf `heavy.sh` seit dem 2026-09-18 jedes Artefakt der Box („last-all.json describes another
   tree — ignored“): `run.sh` nahm Kopf und Tree-Hash zuerst vom `git` der Box, und deren Hash, am Ende des Laufs ueber
