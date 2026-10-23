@@ -15,6 +15,8 @@ no unauthenticated RCE). Fix = HONEST posture + partial hardening:
 """
 
 import os
+import signal
+import time
 
 from app.modules.hooks.script_runner import run_hook_script
 
@@ -119,8 +121,8 @@ def test_hook_output_flood_is_capped():
 def test_hook_backgrounded_grandchild_does_not_hang_parent():
     # 4.139/4.69: a hook backgrounding a subprocess that inherits fd 1/2 and outlives the worker
     # must not hang the parent. proc.wait() only reaps the direct child, so the reader-thread join
-    # is bounded and the process group is killed to close the inherited pipe. Short timeout so the
-    # bounded join fires quickly; the grandchild (sleep 30) far outlives it.
+    # is bounded and the process group is killed to close the inherited pipe. The grandchild
+    # (sleep 30) far outlives the bounded join.
     import time
 
     start = time.monotonic()
@@ -132,6 +134,73 @@ def test_hook_backgrounded_grandchild_does_not_hang_parent():
     )
     elapsed = time.monotonic() - start
     assert elapsed < 10, f"parent hung on the grandchild's inherited pipe, took {elapsed:.1f}s"
+
+
+# R-0778: the script backgrounds `sleep 40`, which inherits the worker's stdout and stderr and
+# outlives the worker, and writes its PID so the test can end it: in a session of its own it
+# survives the runner's killpg.
+_SLEEP_CMDLINE = b"sleep\x0040\x00"
+
+
+def _background_sleep_script(pid_file, new_session):
+    return (
+        "import subprocess\n"
+        "from pathlib import Path\n"
+        f"proc = subprocess.Popen(['sleep', '40'], start_new_session={new_session})\n"
+        f"Path({str(pid_file)!r}).write_text(str(proc.pid))\n"
+        "result['ok'] = True\n"
+    )
+
+
+def _kill_background_sleep(pid_file):
+    # Only the sleep the script started: once it is gone, its PID may belong to another process.
+    try:
+        pid = int(pid_file.read_text())
+        with open(f"/proc/{pid}/cmdline", "rb") as cmdline:
+            if cmdline.read() != _SLEEP_CMDLINE:
+                return
+        os.kill(pid, signal.SIGKILL)
+    except (FileNotFoundError, ProcessLookupError):
+        pass
+
+
+def test_hook_run_with_a_background_process_in_its_own_session_ends_soon(tmp_path):
+    # The killpg after the first grace does not reach a process in its own session, so the
+    # readers stay blocked; the runner gives up after the second grace instead of after twice
+    # the timeout per reader.
+    pid_file = tmp_path / "sleep.pid"
+    start = time.monotonic()
+    try:
+        run_hook_script(_background_sleep_script(pid_file, True), "webhook", {}, timeout=5)
+        elapsed = time.monotonic() - start
+    finally:
+        _kill_background_sleep(pid_file)
+    assert elapsed < 10, f"run waited for a background process in its own session: {elapsed:.1f}s"
+
+
+def test_hook_run_with_a_background_process_ends_soon_with_the_result(tmp_path):
+    # In the worker's process group the killpg after the first grace ends the background process,
+    # the pipe closes and the runner still gets the worker's output.
+    pid_file = tmp_path / "sleep.pid"
+    start = time.monotonic()
+    try:
+        res = run_hook_script(_background_sleep_script(pid_file, False), "webhook", {}, timeout=5)
+        elapsed = time.monotonic() - start
+    finally:
+        _kill_background_sleep(pid_file)
+    assert elapsed < 8, f"run waited for a background process: {elapsed:.1f}s"
+    assert res["success"] is True, res
+    assert res["result"] == {"ok": True}, res
+
+
+def test_hook_run_at_the_default_timeout_ends_before_the_gateway_gives_up():
+    # The gateway closes /api/... after 60 s without a response (nginx's default
+    # proxy_read_timeout; apps/gateway/nginx.conf sets none for it), and /api/hooks/trigger and
+    # /api/hooks/{id}/run answer only after the run, which takes at most the timeout plus one
+    # reader grace before and one after the killpg.
+    import app.modules.hooks.script_runner as sr
+
+    assert sr.SCRIPT_TIMEOUT_SECONDS + 2 * sr._READER_GRACE_SECONDS < 60
 
 
 def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):

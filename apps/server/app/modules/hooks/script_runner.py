@@ -51,6 +51,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,10 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SCRIPT_TIMEOUT_SECONDS = 30
+
+# How long both reader threads together may take to read the rest of the output once the worker
+# has exited, before and once more after the process group is killed (see the joins below).
+_READER_GRACE_SECONDS = 2
 
 # Defense-in-depth: bound the number of concurrent hook subprocesses so a burst
 # of (slow) hooks can't spawn unbounded processes / exhaust the threadpool +
@@ -218,11 +223,17 @@ def run_hook_script(
 
     # Bound the join: proc.wait() only reaps the direct child, so a hook that backgrounds a
     # grandchild inheriting fd 1/2 keeps the pipe open past the worker's exit — an unbounded join
-    # would hang this request thread indefinitely (bypassing the timeout). If a reader is still
-    # alive after the timeout, kill the whole group (start_new_session ⇒ pgid == proc.pid) to close
-    # the inherited write-ends, then re-join — this preserves the runtime bound 4.69 guarantees.
-    t_out.join(timeout=timeout)
-    t_err.join(timeout=timeout)
+    # would hang this request thread indefinitely (bypassing the timeout). The worker has written
+    # its output when it exits, so the readers only need a short grace, for both together, to read
+    # the rest. If a reader is still alive after it, kill the whole group (start_new_session ⇒
+    # pgid == proc.pid) to close the inherited write-ends, then re-join within the same grace.
+    # A run so ends after at most timeout + 2 × _READER_GRACE_SECONDS (34 s at the default): the
+    # gateway closes /api/... after 60 s without a response (nginx's default proxy_read_timeout,
+    # apps/gateway/nginx.conf sets none for it), and /api/hooks/trigger and /api/hooks/{id}/run
+    # answer only after the run.
+    deadline = time.monotonic() + _READER_GRACE_SECONDS
+    t_out.join(timeout=_READER_GRACE_SECONDS)
+    t_err.join(timeout=max(0.0, deadline - time.monotonic()))
     if t_out.is_alive() or t_err.is_alive():
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -232,9 +243,11 @@ def run_hook_script(
         # session while holding fd 1) would otherwise hang the final join forever. Abandon such a
         # reader — a leaked daemon thread + one fd — rather than hang the request thread; the holder
         # guard below tolerates the unread stream. Only reachable by a pathological trusted-admin
-        # hook, never by the webhook caller, but this keeps the runtime bound absolute.
-        t_out.join(timeout=timeout)
-        t_err.join(timeout=timeout)
+        # hook, never by the webhook caller, but this keeps the bound of
+        # timeout + 2 × _READER_GRACE_SECONDS above absolute.
+        deadline = time.monotonic() + _READER_GRACE_SECONDS
+        t_out.join(timeout=_READER_GRACE_SECONDS)
+        t_err.join(timeout=max(0.0, deadline - time.monotonic()))
     out = out_holder[0] if out_holder else ""
     err = err_holder[0] if err_holder else ""
 

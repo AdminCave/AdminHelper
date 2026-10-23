@@ -41,8 +41,10 @@ Beweis: Code-Lesung apps/server/app/modules/hooks/script_runner.py:150-159
 Orakel: contract — der Worker und seine Python-Kindprozesse laufen mit `sys.flags.no_user_site == 1`
 HEAD: 53a7dbc5
 
-### T2 — Hook-Lauf endet unter dem Lese-Timeout des Gateways (R-0778)  [ ]
+### T2 — Hook-Lauf endet unter dem Lese-Timeout des Gateways (R-0778)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hook_isolation.py, docs/developer/hooks.html, docs/en/developer/hooks.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @75690d71 2026-10-23T06:54:09+02:00
+Review: approve (.ah-out/review/hooks-hardening/T2.verdict.json)
 Abhängt von: T1
 Änderung: Neue Konstante `_READER_GRACE_SECONDS = 2` neben `SCRIPT_TIMEOUT_SECONDS` (`script_runner.py:60`). Nach `proc.wait` warten die beiden Lese-Threads zusammen höchstens diese Frist (eine Deadline über `time.monotonic()` für `t_out.join` und `t_err.join`, `:217-218`) statt je `timeout`; lebt danach einer, `killpg` wie heute (`:219-224`) und noch einmal höchstens dieselbe Frist für beide zusammen (`:229-230`). Der Kommentar `:211-216` und `:225-228` nennt die Obergrenze `timeout + 2 × _READER_GRACE_SECONDS` und das Warum: das Gateway schließt `/api/…` nach 60 s ohne Antwort (nginx-Default `proxy_read_timeout 60s`, `apps/gateway/nginx.conf:121-123` setzt keinen eigenen). Der Timeout-Zweig (`:198-208`), die Texte und `SCRIPT_TIMEOUT_SECONDS` bleiben. Tests in `test_hook_isolation.py` neben `test_hook_backgrounded_grandchild_does_not_hang_parent` (`:119-134`): (a) Skript startet `sleep 40` mit `start_new_session=True` und geerbtem stdout, schreibt die PID nach `tmp_path`, `timeout=5` → `elapsed < 10`; (b) dasselbe ohne eigene Session → `elapsed < 8` und `success` wie heute `True` mit `result` des Skripts; (c) `SCRIPT_TIMEOUT_SECONDS + 2 * _READER_GRACE_SECONDS < 60` mit dem Grund im Kommentar. Zuerst rot: (a) und (b) auf HEAD (Probe: Lauf + `4 × timeout` bzw. `2 × timeout`); (c) fehlt auf HEAD die Konstante. `tests/test_hooks.py::TestHookWorkerRobustness::test_timeout_kills_grandchildren` (`:545-566`) bleibt grün.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py tests/test_hooks.py::TestHookWorkerRobustness
