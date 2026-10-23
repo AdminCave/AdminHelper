@@ -10,7 +10,12 @@ start. The endpoint POST /api/auth/bootstrap accepts this token and uses it to
 create the first admin.
 """
 
+import errno
+import logging
+import os
+import pathlib
 import secrets
+import stat
 
 import pytest
 
@@ -131,6 +136,94 @@ def test_bootstrap_token_written_to_file_not_log(caplog):
     finally:
         BOOTSTRAP_SETUP_FILE.unlink(missing_ok=True)
         BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+
+
+@pytest.fixture()
+def bootstrap_files(tmp_path, monkeypatch):
+    """The bootstrap files of app.main in tmp_path instead of the shared test DATA_DIR."""
+    import app.main as m
+
+    token_file = tmp_path / ".bootstrap_token"
+    setup_file = tmp_path / ".bootstrap_setup"
+    monkeypatch.setattr(m, "BOOTSTRAP_TOKEN_FILE", token_file)
+    monkeypatch.setattr(m, "BOOTSTRAP_SETUP_FILE", setup_file)
+    return token_file, setup_file
+
+
+@pytest.fixture()
+def umask_zero():
+    # Under umask 0 a file created with the default mode is 0666: only a mode set at creation
+    # keeps it private.
+    previous = os.umask(0)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
+@pytest.fixture()
+def no_chmod(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(pathlib.Path, "chmod", refuse)
+    monkeypatch.setattr(os, "chmod", refuse)
+
+
+def test_bootstrap_files_are_0600_from_the_start(bootstrap_files, umask_zero, no_chmod, caplog):
+    """Both bootstrap files are private from their creation on, whatever the umask, with no
+    chmod afterwards whose error could get lost: here every chmod fails."""
+    from app.main import _emit_bootstrap_token
+
+    token_file, setup_file = bootstrap_files
+    with caplog.at_level(logging.WARNING):
+        _emit_bootstrap_token()
+
+    raw = setup_file.read_text(encoding="utf-8")
+    assert raw
+    assert stat.S_IMODE(setup_file.lstat().st_mode) == 0o600
+    assert stat.S_IMODE(token_file.lstat().st_mode) == 0o600
+    assert token_file.read_text(encoding="utf-8") == hash_api_key(raw)
+    assert raw not in token_file.read_text(encoding="utf-8")
+    assert raw not in caplog.text  # the raw token is never logged (3.91)
+    assert sorted(p.name for p in token_file.parent.iterdir()) == [
+        ".bootstrap_setup",
+        ".bootstrap_token",
+    ], "no temp file may stay behind"
+
+
+@pytest.mark.parametrize("failing", [".bootstrap_setup", ".bootstrap_token"])
+def test_a_failed_bootstrap_file_removal_is_logged(bootstrap_files, monkeypatch, caplog, failing):
+    """A bootstrap file that cannot be removed is named in the log with the type of the error,
+    and the other one is removed all the same."""
+    import app.main as m
+
+    token_file, setup_file = bootstrap_files
+    token_file.write_text("hash")
+    setup_file.write_text("raw")
+    stuck = token_file.parent / failing
+    other = setup_file if stuck == token_file else token_file
+    real_unlink = pathlib.Path.unlink
+
+    def unlink(self, missing_ok=False):
+        if self == stuck:
+            raise PermissionError(errno.EACCES, "Permission denied", str(self))
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    with caplog.at_level(logging.INFO, logger=m.logger.name):
+        m._purge_bootstrap_files()
+
+    assert not other.exists()
+    warnings = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == m.logger.name and r.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 1
+    assert failing in warnings[0] and "PermissionError" in warnings[0]
+    assert "Permission denied" not in caplog.text
+    assert not [r for r in caplog.records if r.exc_info]
 
 
 def test_short_env_admin_password_falls_back_to_bootstrap(db_session, monkeypatch):

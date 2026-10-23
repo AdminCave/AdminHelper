@@ -6,12 +6,22 @@
 
 import json
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
+)
+
+AGENT_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "agent"
+    / "internal"
+    / "frpc"
+    / "testdata"
+    / "server_frpc.toml"
 )
 
 
@@ -193,6 +203,45 @@ class TestGenerateFrpcToml:
         ]
         toml = generate_frpc_toml(config, tunnels, "srv1")
         assert toml.count("[[proxies]]") == 2
+
+    def test_agent_fixture_is_the_generator_output(self):
+        """The agent applies a server frpc.toml only in the form this generator writes
+        (checkServerConfig, apps/agent/internal/frpc/servertoml.go), and its tests check that
+        against this fixture. When the generator's output changes, this test fails until the
+        fixture and the agent's check follow; otherwise agents would refuse the new text and
+        keep their old tunnels."""
+        config = _make_config(
+            server_addr="203.0.113.10",
+            bind_port=7000,
+            auth_token="frps-token-placeholder",
+        )
+        # Not in name order: the order in the fixture is the one active_tunnels sorts to.
+        tunnels = [
+            _make_tunnel(
+                name="host-01-web",
+                tunnel_type="https",
+                protocol="web",
+                local_port=443,
+                secret_key=None,
+                custom_domains="web.example, www.web.example",
+            ),
+            _make_tunnel(
+                name="host-01-ssh",
+                local_port=22,
+                secret_key="stcp-secret-placeholder",
+                extra_config=json.dumps(
+                    {
+                        "transport.bandwidthLimit": "1MB",
+                        "transport.useEncryption": True,
+                        "healthCheck.intervalSeconds": 10,
+                    }
+                ),
+            ),
+        ]
+        toml = generate_frpc_toml(config, tunnels, "host-01", ["ops-admin", "ops-backup"])
+        # Bytes, not read_text: universal newlines would turn \r\n into \n, and the agent
+        # refuses a \r.
+        assert toml == AGENT_FIXTURE.read_bytes().decode("utf-8")
 
 
 class TestGenerateVisitorToml:
