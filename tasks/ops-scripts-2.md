@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Betriebsskripte, zweite Runde: Backup-Archiv robust am Zielnamen, Diagnose-Bundle liest die `.env` wie compose und maskiert genauer — Task-Ledger
-Status: geplant · Branch: feature/ops-scripts-2 · Review: pro Task
+Status: aktiv · Branch: feature/ops-scripts-2 · Review: pro Task
 Spec: docs/features/ops-scripts-2.md (Roadmap R-0801, R-0804; T1, T3 und T5–T11 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `scripts/backup.sh` läuft real nur in `scripts/tests/backup_restore_test.sh` (`run.sh integration`, `scripts/tests/run.sh:893`: Backup gegen den laufenden Stack, Totalverlust, Restore), und `scripts/update.sh` ruft es vor jedem Update (`:363`, `:438`); der Sammellauf über `main` zeigt, dass das Archiv nach T1–T3 restorebar bleibt. Kein `scenario`: kein `multibox.sh`-Flag und kein `box_*.sh` ruft `backup.sh` oder `diagnostics.sh` auf; kein `windows`. `diagnostics.sh` fährt kein schwerer Lauf, `diagnostics_test.sh` prüft seine Funktionen und `main` mit Stubs
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
