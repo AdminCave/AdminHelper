@@ -2,15 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// No refresh_token: the browser keeps it only in the HttpOnly cookie, and the server sends the
+// body field to a browser request as an empty string.
 export interface LoginResponse {
   access_token: string;
-  refresh_token: string;
   token_type: string;
 }
 
 export interface RefreshResponse {
   access_token: string;
-  refresh_token: string;
   token_type: string;
 }
 

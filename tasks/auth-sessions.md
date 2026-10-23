@@ -95,8 +95,10 @@ Dedup-Key: bug:web:client.ts:cross-tab-refresh-reuse-logout
 HEAD: b1432223
 Semantik: `docs/admin/benutzer.html:66` — „<strong>Reuse-Detection</strong>: Wird ein geblacklisteter Refresh-Token erneut verwendet, werden <em>alle</em> Sessions des Users sofort invalidiert“; `docs/developer/webui.html:68` — „Nach einem Reload holt <code>restoreSession()</code> den Access-Token &uuml;ber das Cookie neu.“ Kevin 2026-10-22: keine Kulanz am Server, das Web bündelt tab-übergreifend (z. B. `navigator.locks`).
 
-### T7 — Web: Token-Antworten ohne `refresh_token` im Typ  [ ]
+### T7 — Web: Token-Antworten ohne `refresh_token` im Typ  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/types.ts, apps/web/src/lib/api/tokens.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @0e68b1be 2026-10-23T09:30:41+02:00
+Review: approve (.ah-out/review/auth-sessions/T7.verdict.json)
 Änderung: `LoginResponse` und `RefreshResponse` (`apps/web/src/lib/api/types.ts:5-15`) verlieren `refresh_token`: der Browser hält ihn nur im Cookie (nach T3 ist das Feld für Browser leer). Nutzer lesen nur `access_token` (`apps/web/src/lib/api/auth.ts:9-12`, `apps/web/src/lib/api/client.ts:75-76`). Neue Testdatei `apps/web/src/lib/api/tokens.test.ts` (SPDX; bewusst nicht `auth.test.ts`, den Namen kann web-fixes brauchen): (a) `login()` aus `./auth` mit `fetch` per `vi.stubGlobal`: `/api/auth/login` → `{ access_token: 'a1', refresh_token: '', token_type: 'bearer' }`, `/api/auth/me` → ein `UserMe`; `login('admin', 'pw')` postet `{ username, password }`, ruft danach `/api/auth/me` mit `Authorization: Bearer a1`, und `localStorage` enthält danach keinen Schlüssel mit `refresh`; (b) Typ-Pins mit `// @ts-expect-error <Grund>`: ein Zugriff auf `refresh_token` an `LoginResponse` und an `RefreshResponse` ist ein Typfehler (`npm run check` prüft `src/**/*.ts`). Zuerst rot: `npm run check` auf HEAD mit der neuen Datei (zwei unbenutzte `@ts-expect-error`).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/tokens.test.ts
 Doku: keine (intern; die Antwort beschreibt `docs/developer/api-reference.html`, T3)
