@@ -891,8 +891,9 @@ mod tests {
             let _ = std::process::Command::new("kill")
                 .args(["-KILL", "--", &group])
                 .status();
-            let _ = child.wait();
         }
+        // After a try_wait that already had the status, wait returns it again at once.
+        let _ = child.wait();
         let mut stdout = String::new();
         let _ = child.stdout.take().unwrap().read_to_string(&mut stdout);
         let left = (

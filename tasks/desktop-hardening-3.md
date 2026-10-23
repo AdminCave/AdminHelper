@@ -56,8 +56,10 @@ Abhängt von: T1
 Beweis: Code-Lesung apps/desktop/src-tauri/src/ansible.rs:182-186 (nur `/`, `\`, `..` ersetzt), :262-270 und apps/desktop/src-tauri/src/terminal.rs:107-128 (Pfad als Argument an `wt` bzw. `cmd /K`), apps/desktop/src-tauri/src/ansible.rs:74 (`response.json()` ohne Grenze)
 HEAD: cea7fb9b
 
-### T3 — Aufräumen: Kindprozess im Signal-Test einsammeln, veraltete Kommentare und Doku (R-0817)  [ ]
+### T3 — Aufräumen: Kindprozess im Signal-Test einsammeln, veraltete Kommentare und Doku (R-0817)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/http_client.rs, apps/desktop/src-tauri/src/connection/rdp.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5bd9a6c1 2026-10-23T09:41:50+02:00
+Review: approve (.ah-out/review/desktop-hardening-3/T3.verdict.json)
 Änderung: `signal_mid_run` (`ansible.rs:559-609`): nach der Warte-Schleife und dem bedingten `kill -KILL` steht `let _ = child.wait();` unbedingt (std gibt nach einem `try_wait`, der den Status schon hatte, ihn erneut zurück), sodass clippy `zombie_processes` unter `--all-targets` nichts mehr meldet; Verhalten des Tests unverändert. `http_client.rs:48-51`: der Doc-Kommentar von `build_client_without_identity` nennt als Beispiel die Sync-Quelle eines Sync-Workspace (jeder Sync lädt ohne Identität) statt „a sync URL on another origin“. `connection/rdp.rs:778-780`: der Testkommentar sagt, was der Test prüft (Passwort und Zeilenumbruch kommen an, `Ok`), nicht das Nullen. Die Metrik misst der builder vor und nach dem Diff mit `cargo clippy --all-targets -- -D warnings` in `apps/desktop/src-tauri` und schreibt beide Zahlen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:238`, Choke-Point: `build_client` deckt Login, Refresh, `api_proxy`, Tunnel- und Connection-Abruf; der Sync-Abruf baut seinen Client über `build_client_without_identity`, ohne Geräte-Identität, mit derselben TOFU- bzw. CA-Prüfung) · kein CHANGELOG (keine Verhaltensänderung)
