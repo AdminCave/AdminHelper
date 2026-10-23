@@ -40,8 +40,10 @@ Metrik: playwright-core 1.60.0, Paketliste `ubuntu24.04-x64`: 12 tools + 21 chro
 Dedup-Key: bug:ci:ci.yml:playwright-install-hang
 HEAD: b25c65a6
 
-### T2 — server-Job: die 3.13-Leg zieht die Basis-Images aller Image-Tests (R-0475)  [ ]
+### T2 — server-Job: die 3.13-Leg zieht die Basis-Images aller Image-Tests (R-0475)  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ab435f57 2026-10-23T06:29:14+02:00
+Review: approve (.ah-out/review/ci-gates/T2.verdict.json)
 Änderung: Der Schritt „Pull the base of the frps image“ (`ci.yml:86-88`, `if: matrix.python-version == '3.13'`) wird zu „Pull the base images of the image tests“ und zieht die `FROM`-Referenzen von `apps/frps/Dockerfile` (frps-Tests), `apps/gateway/Dockerfile` (nginx, Docker-Tests von `test_gateway_container.py` aus feature/compose-hardening) und `apps/ca-issuer/Dockerfile` (python:3.12-slim, die Fixture `box` in `apps/server/tests/test_images_exec_only.py:204-228`), abgeleitet aus den Dockerfiles wie heute per `sed`, kein zweiter Digest. `timeout-minutes` des server-Jobs (`:33`) von 15 auf 20 (3.13-Leg heute 12:21–12:34). Der Test `test_the_server_job_pulls_the_base_of_the_frps_image_before_its_tests` (`test_release_images.py:362-376`) wird durch einen genaueren ersetzt: Schritt vor „Run pytest“, gleiches `if:`, `docker`-Stub; gezogen werden genau `_image()[0]` (`test_frps_supervisor.py:2021`), `_base()` (`test_images_exec_only.py:142-147`) und die `FROM`-Referenz aus `apps/gateway/Dockerfile:1`, jede einmal. Docstring `test_release_images.py:17-18` und `_PULL_STEP` (`:49`) nachziehen. Zuerst rot: der neue Test auf HEAD (nur frps gezogen).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: docs/developer/cicd.html:40 + docs/en/developer/cicd.html:40 (statt nur `apps/frps/Dockerfile`: die Basis-Images von frps, Gateway und der Python-Images, damit die Image-Tests laufen statt zu überspringen)

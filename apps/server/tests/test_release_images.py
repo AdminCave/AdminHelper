@@ -14,8 +14,9 @@ push built, once the signature that push made checks out.
 
 The frps image builds on the frps image of the FRP release that ci.yml and release.yml pin as
 FRP_VERSION; the lockstep job frp-consistency compares that base with the other pins. The server
-job of ci.yml pulls that base, so the tests that run the frps image run there instead of
-skipping. The ops-scripts job shellchecks the supervisor as the POSIX sh the image runs it with.
+job of ci.yml pulls that base along with those of the gateway and of the Python images, so the
+tests that run an image run there instead of skipping. The ops-scripts job shellchecks the
+supervisor as the POSIX sh the image runs it with.
 
 The Playwright job of ci.yml installs Chromium alone, the one browser its suite runs, and gives
 the install a deadline of its own below that of the job.
@@ -35,10 +36,12 @@ import pytest
 import yaml
 
 from .test_frps_supervisor import _image
+from .test_images_exec_only import _base
 
 _ROOT = Path(__file__).resolve().parents[3]
 _WORKFLOWS = _ROOT / ".github" / "workflows"
 _FRPS_DOCKERFILE = "apps/frps/Dockerfile"
+_GATEWAY_DOCKERFILE = "apps/gateway/Dockerfile"
 _SUPERVISOR = "apps/frps/frps-supervisor.sh"
 _GHCR = re.compile(r"ghcr\.io/admincave/adminhelper/([a-z-]+):")
 _FRPS_BASE = re.compile(r"^FROM (snowdreamtech/frps:(\d+\.\d+\.\d+)@sha256:[0-9a-f]{64})$", re.M)
@@ -49,7 +52,7 @@ _PINNED = (
     _FRPS_DOCKERFILE,
     "scripts/vm/bootstrap_linux.sh",
 )
-_PULL_STEP = "Pull the base of the frps image"
+_PULL_STEP = "Pull the base images of the image tests"
 _PLAYWRIGHT_STEP = "Install Playwright browsers"
 _LATEST_STEP = "Point latest at the signed images of the release"
 _REPO = "ghcr.io/admincave/adminhelper"
@@ -363,21 +366,36 @@ def test_the_lockstep_job_fails_when_the_frps_image_moves_alone(tmp_path):
     assert "FRP_VERSION drift" in result.stdout, result.stdout + result.stderr
 
 
-def test_the_server_job_pulls_the_base_of_the_frps_image_before_its_tests(tmp_path):
-    steps = [step.get("name") for step in _workflow("ci.yml")["jobs"]["server"]["steps"]]
+def _gateway_base() -> str:
+    """The base image of the gateway, the first FROM of its Dockerfile, as the tests that run
+    the gateway image look it up."""
+    dockerfile = (_ROOT / _GATEWAY_DOCKERFILE).read_text(encoding="utf-8")
+    base = re.search(r"^FROM (\S+)$", dockerfile, re.M)
+    assert base, f"{_GATEWAY_DOCKERFILE}: FROM <image>"
+    return base[1]
+
+
+def test_the_server_job_pulls_the_base_of_every_image_test_before_the_tests(tmp_path):
+    job = _workflow("ci.yml")["jobs"]["server"]
+    steps = [step.get("name") for step in job["steps"]]
     assert steps.index(_PULL_STEP) < steps.index("Run pytest"), steps
-    # docker as a stub that prints what it was asked to do.
+    step = _step("ci.yml", "server", _PULL_STEP)
+    # One leg pulls, and that leg is in the matrix.
+    assert step.get("if") == "matrix.python-version == '3.13'", step
+    assert "3.13" in job["strategy"]["matrix"]["python-version"], job["strategy"]
+    # docker as a stub that prints what it was asked to do, one line a call.
     stub = tmp_path / "bin" / "docker"
     stub.parent.mkdir()
     stub.write_text('#!/bin/sh\necho "$@"\n', encoding="utf-8")
     stub.chmod(0o755)
 
     path = f"{stub.parent}:{os.environ['PATH']}"
-    pull = _run_step(_step("ci.yml", "server", _PULL_STEP), tmp_path, _ROOT, path)
+    pull = _run_step(step, tmp_path, _ROOT, path)
     assert pull.returncode == 0, pull.stdout + pull.stderr
-    # The reference the image tests look up before they build the image.
-    base, _, _ = _image()
-    assert pull.stdout.split() == ["pull", base]
+    # The references the image tests look up before they build or start a container, each
+    # pulled once: frps, the last stage of the Python images and the gateway.
+    bases = [_image()[0], _base(), _gateway_base()]
+    assert sorted(pull.stdout.splitlines()) == sorted(f"pull {base}" for base in bases)
 
 
 def test_the_playwright_install_step_gives_up_before_the_job():

@@ -30,7 +30,8 @@ jobs:
   server:
     name: Server (pytest, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The 3.13 leg pulls the base images and runs the image tests on top of the suite.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -81,11 +82,15 @@ jobs:
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
         # hashed requirements.txt lock the image ships is python-lock-server's.
         run: pip install -r requirements-dev.txt
-      # The tests that run the frps image build it from apps/frps and skip without its
-      # base image at hand. They do not depend on the Python version, so one leg runs them.
-      - name: Pull the base of the frps image
+      # The tests that build or start an image skip without its base image at hand: those
+      # of frps, of the gateway and of the Python images, whose last stage builds on the
+      # base of apps/ca-issuer. They do not depend on the Python version, so one leg runs them.
+      - name: Pull the base images of the image tests
         if: matrix.python-version == '3.13'
-        run: docker pull "$(sed -n 's/^FROM //p' apps/frps/Dockerfile)"
+        run: |
+          for dockerfile in apps/frps/Dockerfile apps/gateway/Dockerfile apps/ca-issuer/Dockerfile; do
+            docker pull "$(sed -n 's/^FROM //p' "$dockerfile")"
+          done
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.
