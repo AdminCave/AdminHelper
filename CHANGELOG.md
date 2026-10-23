@@ -160,6 +160,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   weiter wie bisher. Unter Windows endet frpc schon mit dem Programm, auch nach Task beenden oder einem Absturz: Der
   Desktop legt ihn gleich nach dem Start in ein Job Object mit `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; gelingt das nicht,
   steht eine Warnung im Log, und der naechste Start beendet ihn wie oben. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: RDP mit Anmeldung von Hand haelt nur noch das Ende der xfreerdp-Ausgabe (R-0646):** Startet der Desktop
+  xfreerdp ohne Passwort (die Anmeldung geschieht in xfreerdp), haelt er von dessen Ausgabe nur noch die letzten
+  8 KiB je Strom (stdout, stderr) statt der ganzen Sitzung, wie schon der Start mit Passwort. Die Meldungen beim Ende
+  bleiben: Eine Fehlerzeile im gehaltenen Ende ergibt dieselbe Meldung wie bisher, und „RDP Verbindung
+  fehlgeschlagen“ kommt nur, wenn xfreerdp nie eine Verbindung meldete. Eine Fehlerzeile, die frueh in einer langen,
+  danach laufenden Sitzung stand, ergibt am Ende keine Meldung mehr.
 
 ## [0.46.0] - 2026-10-22
 
