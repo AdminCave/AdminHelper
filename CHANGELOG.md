@@ -66,6 +66,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
+  galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
+  (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
+  zeigte bei `TZ` ungleich UTC die Ortszeit als UTC, auch bei Intervall-Hooks; jetzt steht dort der naechste Lauf in
+  UTC. Doku: Server-Entwicklerdoku (DE+EN).
 - **Hooks: Hintergrundprozess eines Skripts verzoegert die Antwort nicht mehr ueber 60 s (R-0778):** Startete ein
   Hook einen Hintergrundprozess, der stdout oder stderr des Workers erbte, kam die Antwort von `/api/hooks/trigger`
   (auch `/api/hooks/trigger/{token}`) und `/api/hooks/{id}/run` erst nach mehr als 60 s, am Gateway also als 504.
