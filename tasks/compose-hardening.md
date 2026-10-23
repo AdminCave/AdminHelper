@@ -110,8 +110,10 @@ Abhängt von: T6
 Beweis: Code-Lesung scripts/init-secrets.sh:103-111 und scripts/update.sh:563 (`migrate_env` ruft `init-secrets.sh` bei jedem Update)
 HEAD: b1432223
 
-### T8 — Stack-Prüfung: Grenzen, Capabilities, Secret und frpedge im laufenden Stack  [ ]
+### T8 — Stack-Prüfung: Grenzen, Capabilities, Secret und frpedge im laufenden Stack  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fb3c93f4 2026-10-23T09:53:00+02:00
+Review: approve (.ah-out/review/compose-hardening/T8.verdict.json)
 Änderung: Neuer Schritt vor der Summary (`scripts/tests/integration_stack_test.sh:636`; Nummer nach dem letzten Schritt auf `main` zur Bauzeit). Er startet scheduler und monitoring mit `e2e_dc up -d --no-deps`, falls sie nicht laufen (wie `:476`); frps und victoria laufen seit Schritt 12 (`:623`). (a) In jedem laufenden Dienst des Projekts hat `/proc/1/status` `NoNewPrivs: 1`, und `docker inspect --format '{{.HostConfig.PidsLimit}}'` ist der Wert aus `e2e_dc config --format json`; Gegenprobe: ein Container desselben gateway-Images außerhalb des Projekts ohne Sicherheits-Optionen zeigt `NoNewPrivs: 0` (die Prüfung kann fallen). (b) gateway: `CapEff` von PID 1 ist die Maske der `cap_add`-Liste aus `e2e_dc config`, jeder nginx-Worker hat eine UID ≠ 0. (c) monitoring: `gosu app:app ping -c1 -W2 127.0.0.1` im Container endet mit 0. (d) ca-issuer: `Config.Env` ohne `CA_ROOT_PASSPHRASE=`, mit `CA_ROOT_PASSPHRASE_FILE=`; `/run/secrets/ca_root_passphrase` ist nicht leer (der Test-Stack setzt die Passphrase, `scripts/tests/lib_e2e_stack.sh:233`); Gegenprobe: `Config.Env` des server enthält `SECRET_KEY=`. (e) Das Netz `frpedge` des Projekts hat `com.docker.network.bridge.enable_ip_masquerade` = `false` (`docker network inspect`), das Default-Netz nicht. Den echten Lauf fährt die Session (Dispatch des `integration-stack`-Jobs auf dem Branch oder `/test` in der Lane); seine Summary-Zeile `integration_stack_test: N passed, 0 failed` kommt in den PR-Text.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
