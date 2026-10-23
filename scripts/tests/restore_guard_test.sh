@@ -17,7 +17,7 @@
 # the archive right after writing it, under umask 022: the archive is 0600 from the
 # first byte and gets its name only once complete, a new output dir is 0700; a
 # failed archive write leaves the output dir empty.
-# 12-14: backup.sh's env.sanitized, against the same stubs and a grep wrapper: under
+# 12-14: backup.sh's env.sanitized, against the same stubs and an awk wrapper: under
 # C.UTF-8 it is .env byte for byte without the CA_ROOT_PASSPHRASE lines, a Latin-1
 # and a NUL byte included; a failing filter aborts the backup and leaves the output
 # dir empty; a .env with nothing but the passphrase gives an empty env.sanitized.
@@ -32,9 +32,14 @@
 # before the rename and the output dir after it; a failing sync fails the backup
 # and leaves the output dir empty.
 # 18: backup.sh --help prints the comment header and stops at the usage line.
+# 19: under C.UTF-8, env.sanitized also drops CA_ROOT_PASSPHRASE commented out,
+# behind a BOM or Unicode whitespace, with NBSP before the separator, and the
+# continuation lines of a quoted value over several lines, to the end of the file
+# if it never closes; a quote after an even number of backslashes closes the
+# value, as compose reads it.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
-#      locale C.UTF-8: without it test 12 cannot run, and the test ends with 75)
+#      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
 
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -245,24 +250,25 @@ entries=$(ls -A "$WORK/bk/b/out" 2>/dev/null)
   || bad "failed write: rc=$rc entries=[$entries] logged=[$(cat "$WORK/bk/b/tar.log" 2>/dev/null)] out=[$out]"
 
 # --- 12.-14. backup.sh: env.sanitized is .env without the passphrase lines ───
-# grep takes a file for binary once it holds a NUL byte or a byte the caller's
-# locale cannot decode, and leaves lines out (exit 0, "binary file matches" on
-# stderr): env.sanitized lost the Latin-1 line, with a NUL byte every line, and
-# `|| true` passed any grep error off as an empty file. The grep wrapper runs the
-# real grep, except that AH_TEST_GREP_FAIL=1 makes the filter on
-# CA_ROOT_PASSPHRASE fail with exit 2 and logs that it did. The expectation is
-# written down apart, never read back from .env. grep ends the last line with a
-# newline, so the expectation has one after Z=last although .env has none.
-AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
-cat > "$WORK/bk/bin/grep" <<'STUB'
+# The filter was a grep once, and grep takes a file for binary once it holds a NUL
+# byte or a byte the caller's locale cannot decode, and leaves lines out (exit 0,
+# "binary file matches" on stderr): env.sanitized lost the Latin-1 line, with a
+# NUL byte every line, and `|| true` passed any grep error off as an empty file.
+# The awk wrapper runs the real awk, except that AH_TEST_AWK_FAIL=1 makes the
+# filter on CA_ROOT_PASSPHRASE fail with exit 2 and logs that it did. The
+# expectation is written down apart, never read back from .env. The filter ends
+# the last line with a newline, so the expectation has one after Z=last although
+# .env has none.
+AH_TEST_REAL_AWK=$(command -v awk); export AH_TEST_REAL_AWK
+cat > "$WORK/bk/bin/awk" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
   *CA_ROOT_PASSPHRASE*)
-    if [ "${AH_TEST_GREP_FAIL:-}" = 1 ]; then echo "$*" >> "$STUB_DIR/grep.log"; exit 2; fi ;;
+    if [ "${AH_TEST_AWK_FAIL:-}" = 1 ]; then echo "$*" >> "$STUB_DIR/awk.log"; exit 2; fi ;;
 esac
-exec "$AH_TEST_REAL_GREP" "$@"
+exec "$AH_TEST_REAL_AWK" "$@"
 STUB
-chmod +x "$WORK/bk/bin/grep"
+chmod +x "$WORK/bk/bin/awk"
 mkdir -p "$WORK/bk/c" "$WORK/bk/d" "$WORK/bk/e"
 # bk_env <stub dir> — extracts env.sanitized from the archive in <stub dir>/out to
 # <stub dir>/x and prints its path (a missing archive or member leaves no file).
@@ -274,7 +280,7 @@ bk_env() {
 
 LOCALE_SKIP=""
 if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
-  LOCALE_SKIP="test 12 (bytes outside UTF-8 in .env) needs the locale C.UTF-8, this system has none"
+  LOCALE_SKIP="tests 12 and 19 (non-ASCII bytes in .env under a UTF-8 locale) need the locale C.UTF-8, this system has none"
   echo "  SKIP $LOCALE_SKIP"
 else
   printf 'SECRET_KEY=abc\nX=caf\xe9-latin1\nCA_ROOT_PASSPHRASE=pp\n  CA_ROOT_PASSPHRASE=pp2\nY=a\0b\nZ=last' > "$WORK/bk/run/.env"
@@ -287,12 +293,12 @@ else
 fi
 
 printf 'SECRET_KEY=sk9secret\nCA_ROOT_PASSPHRASE=pp9secret\n' > "$WORK/bk/run/.env"
-out=$(bk_run "$WORK/bk/d" "$WORK/bk/d/out" AH_TEST_GREP_FAIL=1); rc=$?
+out=$(bk_run "$WORK/bk/d" "$WORK/bk/d/out" AH_TEST_AWK_FAIL=1); rc=$?
 entries=$(ls -A "$WORK/bk/d/out" 2>/dev/null)
-{ [ $rc -ne 0 ] && [ -s "$WORK/bk/d/grep.log" ] && [ ! -e "$WORK/bk/d/tar.log" ] \
+{ [ $rc -ne 0 ] && [ -s "$WORK/bk/d/awk.log" ] && [ ! -e "$WORK/bk/d/tar.log" ] \
     && [ -d "$WORK/bk/d/out" ] && [ -z "$entries" ]; } \
   && ok "a failing .env filter aborts the backup and leaves the output dir empty" \
-  || bad "failing filter: rc=$rc entries=[$entries] grep=[$(cat "$WORK/bk/d/grep.log" 2>/dev/null)] tar=[$(cat "$WORK/bk/d/tar.log" 2>/dev/null)] out=[$out]"
+  || bad "failing filter: rc=$rc entries=[$entries] awk=[$(cat "$WORK/bk/d/awk.log" 2>/dev/null)] tar=[$(cat "$WORK/bk/d/tar.log" 2>/dev/null)] out=[$out]"
 { grep -q 'ERROR.*\.env' <<<"$out" && ! grep -qE 'sk9secret|pp9secret' <<<"$out"; } \
   && ok "the abort says why and names no value" || bad "abort message: [$out]"
 
@@ -399,6 +405,42 @@ out=$(bash "$BACKUP" --help 2>&1); rc=$?
     && ! grep -qv '^#' <<<"$out"; } \
   && ok "backup.sh --help prints the comment header up to the usage line" \
   || bad "--help: rc=$rc out=[$out]"
+
+# --- 19. backup.sh: the passphrase commented out, behind BOM or Unicode space, over lines
+# Compose reads a key behind a BOM or Unicode whitespace (NBSP, EM SPACE) and with
+# NBSP before the separator, and a quoted value runs over lines until its closing
+# quote; a commented-out line holds the value too. The expectations are written
+# down apart; the .env bytes are escapes, so this file stays ASCII.
+if [ -n "$LOCALE_SKIP" ]; then
+  echo "  SKIP test 19 (needs the locale C.UTF-8)"
+else
+  mkdir -p "$WORK/bk/k" "$WORK/bk/l" "$WORK/bk/m"
+  printf '\xef\xbb\xbfCA_ROOT_PASSPHRASE=bom1\nA=1\n#CA_ROOT_PASSPHRASE=old1\n  # export CA_ROOT_PASSPHRASE = old2\n\xc2\xa0CA_ROOT_PASSPHRASE=nbsp1\n\xe2\x80\x83CA_ROOT_PASSPHRASE=em1\nCA_ROOT_PASSPHRASE\xc2\xa0=sep1\nCA_ROOT_PASSPHRASE="ml1\nml2\nml3"\nB=2\nCA_ROOT_PASSPHRASE=\x27sq1\nsq2\x27\nCA_ROOT_PASSPHRASE="esc\\"q1\nesc2"\nCA_ROOT_PASSPHRASE_OLD=keep\n#CA_ROOT_PASSPHRASE_OLD=keep2\nY=caf\xc3\xa9\nZ=last' > "$WORK/bk/run/.env"
+  printf 'A=1\nB=2\nCA_ROOT_PASSPHRASE_OLD=keep\n#CA_ROOT_PASSPHRASE_OLD=keep2\nY=caf\xc3\xa9\nZ=last\n' > "$WORK/bk/k/expected"
+  out=$(bk_run "$WORK/bk/k" "$WORK/bk/k/out" LC_ALL=C.UTF-8); rc=$?
+  sanitized=$(bk_env "$WORK/bk/k")
+  { [ $rc -eq 0 ] && cmp -s "$WORK/bk/k/expected" "$sanitized"; } \
+    && ok "env.sanitized drops the passphrase commented out, behind BOM or Unicode space, and over lines" \
+    || bad "passphrase line forms: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+  printf 'A=1\nCA_ROOT_PASSPHRASE="open1\nrest1\nrest2\n' > "$WORK/bk/run/.env"
+  printf 'A=1\n' > "$WORK/bk/l/expected"
+  out=$(bk_run "$WORK/bk/l" "$WORK/bk/l/out" LC_ALL=C.UTF-8); rc=$?
+  sanitized=$(bk_env "$WORK/bk/l")
+  { [ $rc -eq 0 ] && cmp -s "$WORK/bk/l/expected" "$sanitized"; } \
+    && ok "a passphrase value that never closes is dropped to the end of the file" \
+    || bad "unclosed passphrase value: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+  # Compose pairs backslashes in both quote kinds: after two of them the quote
+  # closes the value (probe: A='a\\' gives a\\, the next line is a key again).
+  printf 'CA_ROOT_PASSPHRASE=\x27ev1\\\\\x27\nC=3\nCA_ROOT_PASSPHRASE="ev2\\\\"\nD=4\n' > "$WORK/bk/run/.env"
+  printf 'C=3\nD=4\n' > "$WORK/bk/m/expected"
+  out=$(bk_run "$WORK/bk/m" "$WORK/bk/m/out" LC_ALL=C.UTF-8); rc=$?
+  sanitized=$(bk_env "$WORK/bk/m")
+  { [ $rc -eq 0 ] && cmp -s "$WORK/bk/m/expected" "$sanitized"; } \
+    && ok "a quote after two backslashes closes the passphrase value, the next lines stay" \
+    || bad "even backslashes: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+fi
 
 echo
 echo "──────────────────────────────────────────"

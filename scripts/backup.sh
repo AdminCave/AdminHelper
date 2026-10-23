@@ -101,15 +101,44 @@ dump_db adminhelper_monitor
 
 # --- Secrets (passphrase stripped) -----------------------------------------
 if [ -f .env ]; then
-    # LC_ALL=C grep -a: grep takes a file with a NUL byte or a byte the caller's
-    # locale cannot decode for binary and leaves lines out, which would drop them
-    # from env.sanitized. The key forms recognised, as in diagnostics.sh: an
-    # "export" may lead, '=' or ':' separates, whitespace may stand around it;
-    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay.
-    # grep -v exits 1 when it filters every line, which is fine; 2 is an error
-    # (a write error too) and aborts the backup.
-    { LC_ALL=C grep -a -v -E '^[[:space:]]*(export[[:space:]]+)?CA_ROOT_PASSPHRASE[[:space:]]*[=:]' .env || [ $? -eq 1 ]; } \
-        > "$STAGE/env.sanitized" \
+    # Drops every line that sets CA_ROOT_PASSPHRASE in a form compose reads, and
+    # the commented-out ones: before the key any mix of whitespace, '#', a BOM and
+    # the Unicode spaces compose skips (Go's unicode.IsSpace; their UTF-8 bytes in
+    # sp), then an optional "export"; '=' or ':' separates, whitespace (NEL and
+    # NBSP too) may stand before it. A quoted value that does not close on its line
+    # runs on to its closing quote, as in compose (a quote after an odd number of
+    # backslashes does not close it), and without one to the end of the file:
+    # those lines go too. CA_ROOT_PASSPHRASE_OLD and the like are other keys and
+    # stay. LC_ALL=C: awk reads bytes, so a NUL byte or a byte the caller's locale
+    # cannot decode passes unchanged (grep took such a file for binary and left
+    # lines out). Every other line is printed as is, the last with a newline; any
+    # awk error (a write error too) aborts the backup.
+    LC_ALL=C awk '
+        BEGIN {
+            sp = "([[:space:]]|\357\273\277|\302[\205\240]|\341\232\200|\342\200[\200\201\202\203\204\205\206\207\210\211\212\250\251\257]|\342\201\237|\343\200\200)"
+            sep = "([[:space:]]|\302[\205\240])"
+            key = "^(" sp "|#)*(export" sp "+)?CA_ROOT_PASSPHRASE" sep "*[=:]"
+        }
+        function closes(s,    i, c, esc) {
+            for (i = 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if (esc) esc = 0
+                else if (c == "\\") esc = 1
+                else if (c == quote) return 1
+            }
+            return 0
+        }
+        quote != "" { if (closes($0)) quote = ""; next }
+        match($0, key) {
+            if (index(substr($0, 1, RLENGTH), "#")) next
+            rest = substr($0, RLENGTH + 1)
+            sub("^" sep "*", "", rest)
+            quote = substr(rest, 1, 1)
+            if ((quote != "\"" && quote != "\047") || closes(substr(rest, 2))) quote = ""
+            next
+        }
+        { print }
+    ' .env > "$STAGE/env.sanitized" \
         || { echo "[backup] ERROR: could not copy .env without CA_ROOT_PASSPHRASE — backup aborted." >&2; exit 1; }
     echo "[backup] .env gesichert (CA_ROOT_PASSPHRASE entfernt — getrennt aufbewahren!)"
 fi
