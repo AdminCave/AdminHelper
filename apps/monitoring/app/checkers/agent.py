@@ -121,8 +121,9 @@ def agent_number(value: object) -> int | float | None:
     return value if finite else None
 
 
-# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
-# that router imports app.checkers (R-0459).
+# The one cap on a report list for the checkers and the push handler (routers/agent.py),
+# both through capped_objects: a compromised or misconfigured agent must not flood the
+# service with a huge list (3.76, R-0632).
 _MAX_REPORT_ENTRIES = 500
 
 
@@ -355,10 +356,12 @@ class AgentResourcesChecker:
             if level:
                 problem_levels[key] = level
 
-        # CPU
+        # CPU and memory: no metric here, as with disks and temperatures below. The agent
+        # router already writes monitor_agent_cpu_percent/monitor_agent_memory_percent per
+        # server; a copy with this check's labels was a second series of the same name
+        # (R-0633). Still graded below.
         cpu = agent_number(resources.get("cpu_percent"))
         if cpu is not None:
-            metrics["agent_cpu_percent"] = cpu
             cpu_crit = config.get("cpu_crit", 95)
             cpu_warn = config.get("cpu_warn", 80)
             grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
@@ -366,7 +369,6 @@ class AgentResourcesChecker:
         # Memory
         mem = agent_number(resources.get("memory_percent"))
         if mem is not None:
-            metrics["agent_memory_percent"] = mem
             mem_crit = config.get("memory_crit", 95)
             mem_warn = config.get("memory_warn", 80)
             grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
