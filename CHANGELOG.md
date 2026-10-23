@@ -9,6 +9,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop, Ansible: Inventory und Playbook eines Laufs in einem eigenen Verzeichnis:** Beide liegen je Lauf in einem
+  eigenen, frisch angelegten Verzeichnis `adminhelper_ansible_<pid>_<n>_<zeit>` im Temp-Verzeichnis, unter Linux und
+  macOS nur fuer den eigenen Nutzer lesbar (Modus 0700); neben ihnen liegt nur, was der Lauf schreibt. Scheitert ein
+  Schritt vor dem Start, entfernt der Desktop das ganze Verzeichnis, auch eine halb geschriebene Datei; unter Linux
+  entfernt das Terminal es nach dem Lauf. Doku: Desktop fuer Entwickler, Ansible (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).

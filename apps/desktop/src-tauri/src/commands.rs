@@ -947,21 +947,32 @@ mod tests {
         assert_eq!(*starts.0.borrow(), [Vec::<String>::new()]);
     }
 
-    /// The ansible temp files (`adminhelper_ansible…` in the temp dir) whose name or content holds
-    /// `marker`, each removed by its full path. Other tests write such files at the same time; the
-    /// marker tells this test's apart.
+    /// The files of the ansible run directories (`adminhelper_ansible_…` in the temp dir) whose
+    /// name or content holds `marker`; each directory with such a file is removed by its full
+    /// path. Other tests write run directories at the same time; the marker tells this test's
+    /// apart.
     fn remove_ansible_files_with(marker: &str) -> Vec<PathBuf> {
         let mut found = Vec::new();
         for entry in fs::read_dir(std::env::temp_dir()).unwrap().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.starts_with("adminhelper_ansible") {
+            if !name.starts_with("adminhelper_ansible_") {
                 continue;
             }
-            let path = entry.path();
-            let holds = fs::read_to_string(&path).is_ok_and(|text| text.contains(marker));
-            if name.contains(marker) || holds {
-                let _ = fs::remove_file(&path);
-                found.push(path);
+            let dir = entry.path();
+            let Ok(files) = fs::read_dir(&dir) else {
+                continue;
+            };
+            let marked: Vec<PathBuf> = files
+                .flatten()
+                .filter(|file| {
+                    file.file_name().to_string_lossy().contains(marker)
+                        || fs::read_to_string(file.path()).is_ok_and(|text| text.contains(marker))
+                })
+                .map(|file| file.path())
+                .collect();
+            if !marked.is_empty() {
+                let _ = fs::remove_dir_all(&dir);
+                found.extend(marked);
             }
         }
         found
