@@ -190,7 +190,9 @@ Doku:
 Dedup-Key: ref:web:Placeholder.svelte:non-admin-dead-end
 HEAD: b25c65a6
 
-### T6 — Web-Panel: übersetzte Seite für einen Admin auf einer unbekannten Route  [ ]
+### T6 — Web-Panel: übersetzte Seite für einen Admin auf einer unbekannten Route  [x]
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @73d21d5d 2026-10-23T06:59:38+02:00
+Review: approve (.ah-out/review/non-admin-access/T6.verdict.json)
 Entscheidung: Kevin 2026-10-22: (a) übersetzte Seite "Seite nicht gefunden" mit Link auf die Benutzerseite (#/users).
 Komponente: web · Dateien: apps/web/src/pages/Placeholder.svelte, apps/web/src/pages/Placeholder.test.ts, apps/web/src/lib/i18n/dictionaries.ts, CHANGELOG.md
 Änderung (Empfehlung a):

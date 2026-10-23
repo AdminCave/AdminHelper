@@ -35,6 +35,10 @@ function renderPage(lang: Language) {
   return {
     title: container.querySelector('.page-title')?.textContent?.trim(),
     text: container.textContent ?? '',
+    links: [...container.querySelectorAll('a')].map((a) => ({
+      href: a.getAttribute('href'),
+      label: a.textContent?.trim(),
+    })),
   };
 }
 
@@ -77,4 +81,21 @@ describe('Placeholder for an admin', () => {
       expect(page.text).not.toContain(dict['page.adminOnly.text']);
     }
   });
+
+  it.each([
+    ['de', 'Seite nicht gefunden', 'Zur Benutzerverwaltung'],
+    ['en', 'Page not found', 'Go to user management'],
+  ] as const)(
+    'says the page was not found and links to the users page (%s)',
+    (lang, title, back) => {
+      const page = renderPage(lang);
+
+      expect(page.title).toBe(title);
+      expect(page.links).toEqual([{ href: '#/users', label: back }]);
+      // An admin only lands here on an unknown path; the old migration notice is gone.
+      expect(page.text).not.toContain('Nicht verfuegbar');
+      expect(page.text).not.toContain('portiert');
+      expect(page.text).not.toContain('spaeteren');
+    },
+  );
 });

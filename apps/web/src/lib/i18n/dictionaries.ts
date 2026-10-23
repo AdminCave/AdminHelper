@@ -58,6 +58,8 @@ export const translations: Translations = {
     // ── Catch-all Page ────────────────────────────────────────────────
     'page.adminOnly.title': 'Web-Panel nur für Admins',
     'page.adminOnly.text': 'Bitte den Desktop-Client nutzen.',
+    'page.notFound.title': 'Seite nicht gefunden',
+    'page.notFound.back': 'Zur Benutzerverwaltung',
 
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Benutzer',
@@ -353,6 +355,8 @@ export const translations: Translations = {
     // ── Catch-all Page ────────────────────────────────────────────────
     'page.adminOnly.title': 'Web panel for admins only',
     'page.adminOnly.text': 'Please use the desktop client.',
+    'page.notFound.title': 'Page not found',
+    'page.notFound.back': 'Go to user management',
 
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Users',

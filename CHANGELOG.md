@@ -13,6 +13,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   einen uebersetzten Hinweis, dass das Panel Admins vorbehalten ist und der Desktop-Client der Weg ist (DE „Web-Panel
   nur fuer Admins“, EN „Web panel for admins only“), statt der alten Platzhalterseite „Nicht verfuegbar“. Doku:
   Admin-Handbuch, Benutzer (DE+EN).
+- **Web: Seite „nicht gefunden“ fuer Admins (R-0721):** Eine unbekannte Adresse im Web-Panel zeigt Admins eine
+  uebersetzte Seite „nicht gefunden“ (DE „Seite nicht gefunden“, EN „Page not found“) mit Link zur
+  Benutzerverwaltung, statt der alten Platzhalterseite „Nicht verfuegbar“.
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
