@@ -41,6 +41,32 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+WEB_IDLE_TIMEOUT_DEFAULT_MINUTES = 30
+
+
+def parse_web_idle_timeout(raw: str | None) -> int:
+    """Minutes without user input after which the web panel signs out (0 = off)."""
+    value = (raw or "").strip()
+    if not value:
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    try:
+        minutes = int(value)
+    except ValueError:
+        minutes = -1
+    if minutes < 0:
+        # Fall back instead of refusing to start: a typo in this knob should not take the
+        # whole panel down.
+        logger.warning(
+            "WEB_IDLE_TIMEOUT_MINUTES=%r is not a whole number >= 0, using %d",
+            raw,
+            WEB_IDLE_TIMEOUT_DEFAULT_MINUTES,
+        )
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    return minutes
+
+
+WEB_IDLE_TIMEOUT_MINUTES = parse_web_idle_timeout(os.environ.get("WEB_IDLE_TIMEOUT_MINUTES", ""))
+
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see server/alembic/), no longer by
 # Base.metadata.create_all().
