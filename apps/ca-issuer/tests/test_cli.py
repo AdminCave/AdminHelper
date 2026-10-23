@@ -133,7 +133,11 @@ def test_rotate_with_the_secret_file(monkeypatch, pki_dir, tmp_path, capsys):
     assert rc == 0
     for scope in pki.SCOPES:
         assert f"{scope}:" in out
-    assert "docker compose restart ca-issuer gateway" in out
+    # The gateway restarts only after the issuer is healthy, i.e. has re-minted its certs.
+    steps = ("docker compose restart ca-issuer", "healthy", "docker compose restart gateway")
+    at = [out.index(step) for step in steps]
+    assert at == sorted(at)
+    assert "restart ca-issuer gateway" not in out
 
     assert cli.main(["status"]) == 0
     retired = [line for line in capsys.readouterr().out.splitlines() if "(retired)" in line]

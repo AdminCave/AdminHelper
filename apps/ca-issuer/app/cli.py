@@ -34,7 +34,16 @@ OK, WARN, BAD = 0, 1, 3
 
 _ROLE_WIDTH = len(f"{max(pki.SCOPES, key=len)} (retired)")
 _CN_WIDTH = len("AdminHelper Internal Intermediate YYYY-MM-DD")  # pads, never cuts
-_RESTART = "restart: docker compose restart ca-issuer gateway (frps follows by itself)"
+# Not `restart ca-issuer gateway`: the gateway reads its certificates only at its own start
+# and would read them before the issuer has re-minted them under the new intermediates.
+# Not depends_on service_healthy in compose either: a ca-issuer that does not start would
+# then take :443 down with it.
+_RESTART = (
+    "restart:\n"
+    "  docker compose restart ca-issuer\n"
+    "  wait until docker compose ps shows ca-issuer as healthy\n"
+    "  docker compose restart gateway  (frps follows by itself)"
+)
 
 
 def status(pki_dir: Path) -> int:

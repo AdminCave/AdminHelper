@@ -150,8 +150,10 @@ Abhängt von: T1, T4
 Orakel: contract — `retired` enthält nur zeitlich gültige, von der Root signierte Intermediates des eigenen Scopes mit `path_length=0`; jeder andere Eintrag ist beim Start eine WARNING, bei der Rotation ein Abbruch vor dem Schreiben
 HEAD: 0dec7a74
 
-### T12 — Neustart-Hinweis: erst ca-issuer, healthy abwarten, dann gateway  [ ]
+### T12 — Neustart-Hinweis: erst ca-issuer, healthy abwarten, dann gateway  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py, apps/ca-issuer/tests/test_cli.py, CHANGELOG.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @da34a2a1 2026-10-23T22:32:55+02:00
+Review: approve (.ah-out/review/ca-rotation/T12.verdict.json)
 Änderung (Session 2026-10-23, aus dem Review zu T7): Der Hinweis nach `rotate-intermediates` (`_RESTART`, `apps/ca-issuer/app/cli.py:37`) nennt die Schritte in dieser Reihenfolge: `docker compose restart ca-issuer`, warten, bis `docker compose ps` ihn als `healthy` zeigt, dann `docker compose restart gateway` (frps folgt selbst). Warum (Kommentar an der Konstante): das Gateway liest seine Zertifikate nur beim eigenen Start; mit einem gemeinsamen `restart ca-issuer gateway` liest es sie, bevor der `ca-issuer` die Server-Zertifikate neu ausgestellt hat (dasselbe Rennen wie beim Update in T7). Kein `depends_on: service_healthy` in Compose: ohne startenden `ca-issuer` gäbe es sonst kein `:443`. CHANGELOG: der Satz im Added-Eintrag (`CHANGELOG.md:44-45`, „nennt danach den Neustart `docker compose restart ca-issuer gateway`“) nennt dieselbe Reihenfolge, umlautfrei. Test in `test_cli.py` (T5 (c), `:136`): statt `docker compose restart ca-issuer gateway` prüft er, dass `docker compose restart ca-issuer` vor `healthy` und dieses vor `docker compose restart gateway` in der Ausgabe steht und `restart ca-issuer gateway` nicht vorkommt. Zuerst rot: der geänderte Assert.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py
 Doku: CHANGELOG.md (Added-Eintrag aus T5) · Betreiber-Doku in T10

@@ -42,7 +42,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Root-Passphrase kommt wie beim Dienst aus `CA_ROOT_PASSPHRASE_FILE` bzw. `CA_ROOT_PASSPHRASE`, sonst aus einer
   Abfrage am Terminal oder der ersten Zeile von stdin, nie aus einem Argument; eine falsche Passphrase aendert nichts.
   Der Befehl laeuft auch, wenn der `ca-issuer` wegen abgelaufener Zwischenzertifikate nicht startet, und nennt danach
-  den Neustart `docker compose restart ca-issuer gateway`: Der Issuer signiert dann mit den neuen
+  den Neustart: erst `docker compose restart ca-issuer`, warten, bis `docker compose ps` ihn als `healthy` zeigt, dann
+  `docker compose restart gateway`, denn das Gateway liest seine Zertifikate nur beim eigenen Start und soll sie erst
+  lesen, nachdem der `ca-issuer` sie neu ausgestellt hat. Der Issuer signiert dann mit den neuen
   Zwischenzertifikaten und erneuert weiter Zertifikate der abgeloesten, Gateway (`client-ca.pem`) und frps (`ca.crt`)
   vertrauen alten und neuen, bis die alten ablaufen, und ihre Server-Zertifikate werden unter den neuen neu
   ausgestellt. Enrollte Agenten und Desktops erneuern wie bisher und uebernehmen dabei die neue Kette. Das Image des
