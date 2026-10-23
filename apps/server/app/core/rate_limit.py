@@ -19,6 +19,7 @@ import logging
 import threading
 import time
 from typing import Protocol
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("adminhelper.rate_limit")
 
@@ -121,6 +122,26 @@ _next_redis_retry = 0.0
 _REDIS_RETRY_COOLDOWN = 60.0
 
 
+def _redis_target(url: str) -> str:
+    """Scheme, host and port of a Redis URL (for `unix://` the socket path) for the log. A Redis
+    URL carries credentials in the netloc or as a query parameter (redis-py passes unknown query
+    names on as connection arguments), so nothing else of it is logged — like `_log_host` in the
+    monitoring alerter."""
+    try:
+        parts = urlsplit(url)
+        if parts.scheme == "unix":
+            return f"unix://{parts.path}" if parts.path else "?"
+        if not parts.hostname:
+            return "?"
+        port = parts.port
+    except ValueError:
+        # urlsplit raises on a malformed IPv6 literal, .port on a port that is no number or out of
+        # range.
+        return "?"
+    target = f"{parts.scheme}://{parts.hostname}"
+    return f"{target}:{port}" if port is not None else target
+
+
 def get_backend() -> RateLimitBackend:
     global _backend, _next_redis_retry
     # A live Redis backend is kept for good; an In-Memory fallback is retried once the cooldown
@@ -144,7 +165,7 @@ def get_backend() -> RateLimitBackend:
             )
             client.ping()
             _backend = RedisBackend(client)
-            logger.info("Rate-Limit nutzt Redis (%s)", REDIS_URL)
+            logger.info("Rate-Limit nutzt Redis (%s)", _redis_target(REDIS_URL))
             return _backend
         except ImportError:
             # redis-py absent doesn't change at runtime — stop retrying.
@@ -153,9 +174,9 @@ def get_backend() -> RateLimitBackend:
         except Exception as e:
             logger.warning(
                 "Redis nicht erreichbar (%s) — In-Memory, retry in %.0fs: %s",
-                REDIS_URL,
+                _redis_target(REDIS_URL),
                 _REDIS_RETRY_COOLDOWN,
-                e,
+                type(e).__name__,
             )
             _next_redis_retry = time.monotonic() + _REDIS_RETRY_COOLDOWN
     else:
