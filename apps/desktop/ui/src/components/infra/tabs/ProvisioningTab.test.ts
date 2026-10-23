@@ -11,15 +11,17 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import { setLanguage } from '$lib/i18n';
+import { setLanguage, tNow } from '$lib/i18n';
 
 const FP = 'ab'.repeat(32);
+const SERVER_ID = '3f2b8c1e-5d4a-4b6f-9e2d-7a1c0b9e8f42';
 
 const h = vi.hoisted(() => ({
   pinnedCaFingerprint: vi.fn(async (): Promise<string | null> => null),
   createToken: vi.fn(async () => ({ token: 'tok-123', id: 't1' })),
   listTokens: vi.fn(async () => []),
   allowSelfSigned: { value: false },
+  serverUrl: { value: 'https://srm.example' },
 }));
 
 vi.mock('$lib/bridge', () => ({ pinnedCaFingerprint: h.pinnedCaFingerprint }));
@@ -30,7 +32,10 @@ vi.mock('$lib/stores/session', async () => {
   const { readable, writable } = await import('svelte/store');
   return {
     session: readable({
-      serverUrl: 'https://srm.example',
+      // Read at click time, so a test can hand the tab another session URL.
+      get serverUrl() {
+        return h.serverUrl.value;
+      },
       username: 'admin',
       isAdmin: true,
     }),
@@ -40,13 +45,15 @@ vi.mock('$lib/stores/session', async () => {
 vi.mock('$lib/stores/statusBar', () => ({ reportError: vi.fn(), showStatus: vi.fn() }));
 
 import ProvisioningTab from './ProvisioningTab.svelte';
+import { reportError } from '$lib/stores/statusBar';
 
-const server = { id: 'sid-9', name: 'srv' } as never;
+const server = { id: SERVER_ID, name: 'srv' } as never;
 
 setLanguage('de');
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  h.serverUrl.value = 'https://srm.example';
 });
 
 describe('ProvisioningTab — trust anchor handover', () => {
@@ -64,7 +71,7 @@ describe('ProvisioningTab — trust anchor handover', () => {
     expect(script).toContain('scripts/agent-install.sh');
     expect(script).toContain('--server https://srm.example');
     expect(script).toContain('--token tok-123');
-    expect(script).toContain('--server-id sid-9');
+    expect(script).toContain(`--server-id ${SERVER_ID}`);
     expect(script).toContain(`--ca-fp ${FP}`);
 
     const plain = getByTestId('provision-command').textContent ?? '';
@@ -88,5 +95,61 @@ describe('ProvisioningTab — trust anchor handover', () => {
     // the plain command honours it exactly like the login path does.
     const plain = getByTestId('provision-command').textContent ?? '';
     expect(plain).not.toContain('--ca-fp');
+  });
+});
+
+// Both commands run as root on the target host. A token or server ID that is not in the form
+// the server issues yields no command at all; every value is exactly one shell word.
+describe('ProvisioningTab — the values in the commands', () => {
+  async function createWith(srv: unknown) {
+    h.pinnedCaFingerprint.mockResolvedValue(null);
+    const view = render(ProvisioningTab, { server: srv as never });
+    await waitFor(() => expect(h.listTokens).toHaveBeenCalledTimes(1));
+    await fireEvent.click(view.getByText('Token erzeugen'));
+    return view;
+  }
+
+  async function expectNoCommand(view: Awaited<ReturnType<typeof createWith>>): Promise<void> {
+    await waitFor(() => expect(reportError).toHaveBeenCalledWith(tNow('infra.prov.badResponse')));
+    expect(view.queryByTestId('script-command')).toBeNull();
+    expect(view.queryByTestId('provision-command')).toBeNull();
+    // The token exists on the server all the same, so the list is reloaded.
+    await waitFor(() => expect(h.listTokens).toHaveBeenCalledTimes(2));
+  }
+
+  it.each(['tok;id', '$(id)'])('shows no command for the token %s', async (token) => {
+    h.createToken.mockResolvedValueOnce({ token, id: 't1' });
+    await expectNoCommand(await createWith(server));
+  });
+
+  it('shows no command for a server ID that is not a UUID', async () => {
+    await expectNoCommand(await createWith({ id: 'sid-9;id', name: 'srv' }));
+  });
+
+  it('clears the commands of an earlier token when the next response is malformed', async () => {
+    const view = await createWith(server);
+    await waitFor(() => expect(view.queryByTestId('provision-command')).not.toBeNull());
+
+    h.createToken.mockResolvedValueOnce({ token: 'tok;id', id: 't2' });
+    await fireEvent.click(view.getByText('Token erzeugen'));
+    await waitFor(() => expect(reportError).toHaveBeenCalledWith(tNow('infra.prov.badResponse')));
+    expect(view.queryByTestId('script-command')).toBeNull();
+    expect(view.queryByTestId('provision-command')).toBeNull();
+  });
+
+  it('puts a session URL with a quote into single quotes in both commands', async () => {
+    h.serverUrl.value = "https://srm.example/a'b";
+    const view = await createWith(server);
+    await waitFor(() => expect(view.queryByTestId('script-command')).not.toBeNull());
+
+    const quoted = "'https://srm.example/a'\\''b'";
+    const script = view.getByTestId('script-command').textContent ?? '';
+    const plain = view.getByTestId('provision-command').textContent ?? '';
+    expect(script).toContain(`--server ${quoted} `);
+    expect(plain).toContain(`--url ${quoted} `);
+    // The values the server issues stay as they are.
+    expect(plain).toContain('--token tok-123 ');
+    expect(plain).toContain(`--server-id ${SERVER_ID}`);
+    expect(reportError).not.toHaveBeenCalled();
   });
 });

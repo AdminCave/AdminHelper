@@ -993,7 +993,7 @@ func TestReloadRefusesALocalHeadFromTheServer(t *testing.T) {
 // Only keys and tables count: a value that names webServer, as a proxy name may, passes.
 func TestReloadLocalHeadCheckLetsValuesPass(t *testing.T) {
 	toml := []byte("serverAddr = \"1.2.3.4\"\nuser = \"webServer\"\n\n[[proxies]]\nname = \"loginFailExit\"\n")
-	if err := checkServerHead(toml); err != nil {
-		t.Errorf("checkServerHead = %v, want nil when only values name webServer or loginFailExit", err)
+	if err := checkServerConfig(toml); err != nil {
+		t.Errorf("checkServerConfig = %v, want nil when only values name webServer or loginFailExit", err)
 	}
 }

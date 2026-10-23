@@ -64,6 +64,11 @@ _SEVERITY_LEVEL = {"info": 0, "warning": 1, "critical": 2}
 # per check in this window reaches the notification hub; see hub_decision.
 HUB_COOLDOWN = timedelta(minutes=30)
 
+# The longest title the hub takes: IncomingEvent.title in the server
+# (apps/server/app/modules/notifications/schemas.py). A longer one turns the push
+# into a 422, and the bell gets nothing; test_alerter_hub keeps both equal.
+HUB_TITLE_MAX = 512
+
 
 def resolve_notification(notified_status: str | None, new_status: str) -> str:
     """Sent-state decision (docs/features/alert-sent-state.md): compare the
@@ -398,11 +403,15 @@ def _emit_to_hub(
     # recoveries (warning/critical -> ok) keep their severity and are pushed.
     if severity == "info":
         return False
+    # The check name has no length limit; mail and webhook keep the full subject.
+    title = msg["subject"]
+    if len(title) > HUB_TITLE_MAX:
+        title = title[: HUB_TITLE_MAX - 1] + "\u2026"
     payload = {
         "event_type": "monitoring.check.transition",
         "severity": severity,
         "category": "monitoring",
-        "title": msg["subject"],
+        "title": title,
         "body": msg["text"],
         "source_type": "server",
         "source_id": check.server_id,
@@ -451,7 +460,15 @@ def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
 
 def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) -> bool:
     """Checks whether cooldown is still active for this rule+check combination."""
-    cutoff = utcnow_naive() - timedelta(minutes=rule.cooldown_minutes)
+    # NULL is the default 30 of the schema, the template sync and the column: the
+    # column is nullable, and PUT /alerts/{id} stores an explicit null.
+    minutes = 30 if rule.cooldown_minutes is None else rule.cooldown_minutes
+    try:
+        cutoff = utcnow_naive() - timedelta(minutes=minutes)
+    except OverflowError:
+        # The schema allows up to int32 minutes, about 4000 years: a window that
+        # reaches back before year 1 counts every earlier successful send.
+        cutoff = datetime.min
     recent = (
         db.query(MonitorAlertLog)
         .filter(

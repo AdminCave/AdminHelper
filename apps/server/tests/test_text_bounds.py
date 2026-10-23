@@ -14,11 +14,25 @@ those exclusions were off and not_a_server_error could see the route again.
 
 The bound is deliberately only the NUL byte: every other control character is
 storable, and the TOML-injection guards in frp/schemas.py are a separate
-concern."""
+concern.
+
+A lone surrogate (U+D800 to U+DFFF, on the wire only as a JSON escape) is
+refused the same way, at the end of this file: it has no UTF-8 form, so psycopg
+could not bind it to a text column (500), and in tags json.dumps stored it as
+an escape, after which every answer carrying the row was a 500."""
+
+import json
 
 import pytest
 
+from app.modules.connections.models import Connection
+from app.modules.frp.models import FrpTunnel
+from tests.test_frp_tunnels import _body as _tunnel_body
+from tests.test_frp_tunnels import _seed as _seed_tunnel
+from tests.test_validation_response import _strict_loads
+
 NUL = chr(0)
+LONE = "\ud800"
 AUDIT_FILTERS = ("action", "actor_type", "object_type", "object_id", "status", "q")
 
 
@@ -157,3 +171,93 @@ def test_api_key_name_rejects_a_nul_byte(test_client, db_session, admin_user):
     )
     assert nul.status_code == 422, nul.text
     assert nul.json()["detail"][0]["loc"][-1] == "name"
+
+
+# --- a lone surrogate ---
+
+
+def _send_lone(test_client, method: str, url: str, body: dict, headers: dict):
+    # Only a JSON escape spells a lone surrogate on the wire; it has no UTF-8 form.
+    content = json.dumps(body)
+    assert "\\ud800" in content
+    return test_client.request(
+        method, url, content=content, headers={**headers, "Content-Type": "application/json"}
+    )
+
+
+def _refused_at(r, loc: list) -> None:
+    """One 422 at `loc`, readable as any client reads it: strict UTF-8."""
+    assert r.status_code == 422, r.text
+    assert [error["loc"] for error in _strict_loads(r.content)["detail"]] == [loc], r.text
+
+
+def _lists_stay_readable(test_client, headers: dict) -> tuple[list, list]:
+    servers = test_client.get("/api/servers", headers=headers)
+    assert servers.status_code == 200, servers.text
+    connections = test_client.get("/api/connections", headers=headers)
+    assert connections.status_code == 200, connections.text
+    return servers.json(), connections.json()
+
+
+# A text column each (psycopg could not bind the value) and a tag list (stored as an escape).
+SERVER_FIELDS = [
+    ("hostname", LONE, ["body", "hostname"]),
+    ("notes", LONE, ["body", "notes"]),
+    ("tags", ["ok", LONE], ["body", "tags", 1]),
+]
+TUNNEL_FIELDS = [
+    ("protocol", LONE, ["body", "protocol"]),
+    ("connection_id", LONE, ["body", "connection_id"]),
+    ("tags", ["ok", LONE], ["body", "tags", 1]),
+]
+
+
+def test_server_fields_reject_a_lone_surrogate(test_client, db_session, admin_user):
+    headers = _login(test_client)
+    sent = {"name": "srv-a", "hostname": "a.example.test", "notes": "n", "tags": ["ok"]}
+    created = test_client.post("/api/servers", json=sent, headers=headers)
+    assert created.status_code == 201, created.text
+    server_id = created.json()["id"]
+
+    for field, value, loc in SERVER_FIELDS:
+        body = {"name": "srv-b", "hostname": "b.example.test", field: value}
+        _refused_at(_send_lone(test_client, "POST", "/api/servers", body, headers), loc)
+        url = f"/api/servers/{server_id}"
+        _refused_at(_send_lone(test_client, "PUT", url, {field: value}, headers), loc)
+
+    servers, _ = _lists_stay_readable(test_client, headers)
+    assert [{key: s[key] for key in ("id", *sent)} for s in servers] == [{"id": server_id, **sent}]
+
+
+def test_tunnel_fields_reject_a_lone_surrogate(test_client, db_session, admin_user):
+    _seed_tunnel(db_session)
+    headers = _login(test_client)
+
+    for field, value, loc in TUNNEL_FIELDS:
+        body = _tunnel_body(**{field: value})
+        _refused_at(_send_lone(test_client, "POST", "/api/frp/tunnels", body, headers), loc)
+        url = "/api/frp/tunnels/t-a"
+        _refused_at(_send_lone(test_client, "PUT", url, {field: value}, headers), loc)
+
+    db_session.expire_all()
+    stored = db_session.query(FrpTunnel).one()
+    assert (stored.id, stored.protocol, stored.connection_id, stored.tags) == (
+        "t-a",
+        "ssh",
+        None,
+        None,
+    )
+    servers, _ = _lists_stay_readable(test_client, headers)
+    assert [t["id"] for s in servers for t in s["frpTunnels"]] == ["t-a"]
+
+
+def test_connection_tags_reject_a_lone_surrogate(test_client, db_session, admin_user):
+    headers = _login(test_client)
+    body = {"name": "c1", "kind": "ssh", "host": "c1.example.test", "tags": ["ok", LONE]}
+    _refused_at(
+        _send_lone(test_client, "POST", "/api/connections", body, headers), ["body", "tags", 1]
+    )
+
+    servers, connections = _lists_stay_readable(test_client, headers)
+    assert (servers, connections) == ([], [])
+    assert db_session.query(Connection).count() == 0
