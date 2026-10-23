@@ -605,9 +605,10 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
   eine ID, die ein Hand-Edit wieder entfernt hat, nicht ein zweites Mal. `--proof` und
   `Dedup-Key: <key>` stehen mit in „Quelle / Beweis"; `Ablauf` folgt der Klasse (IDEE 60
-  Tage, REF 90 Tage, sonst `nie`). Bei 20 `neu`-Zeilen ist Schluss (Exit 3). Traegt eine
-  offene Zeile den Dedup-Key schon, ist das Exit 4 mit ihrer ID, und ein leerer Commit
-  `roadmap: dedup <key> -> R-nnnn` haelt die Weigerung fuer `stats` fest.
+  Tage, REF 90 Tage, sonst `nie`). Wie viele Zeilen schon `neu` sind, haelt `add` nicht auf:
+  `neu N/20` im WIP-Kopf ist Anzeige wie `aktiv N/2`. Traegt eine offene Zeile den Dedup-Key
+  schon, ist das Exit 4 mit ihrer ID, und ein leerer Commit `roadmap: dedup <key> -> R-nnnn`
+  haelt die Weigerung fuer `stats` fest.
 - `status` setzt den Status und verschiebt die Zeile in den Abschnitt, der zu ihm gehoert.
   Erlaubt sind nur die Uebergaenge der Tabelle `TRANSITIONS` im Skript (sonst Exit 2);
   derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
@@ -1340,8 +1341,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   aendern nichts. Eine neue Zeile gibt es erst beim naechsten roten Lauf nach einem gruenen, und
   auch dann nur, wenn die alte REL-Zeile nicht mehr offen ist: ihr Dedup-Key `rel:deps-audit`
   haelt die neue sonst zurueck. Roadmap-Zeilen legt `heavy.sh` ueber `roadmap.py add` an; ist
-  der Deckel von 20 `neu`-Zeilen voll oder die Zeile schon offen, steht das laut in den Notizen
-  des Reports.
+  die Zeile schon offen oder scheitert `add`, steht das laut in den Notizen des Reports.
 - **JUnit:** Die pytest-Schritte von `run.sh` schreiben `.ah-out/junit/<schritt-id>.xml`
   (`monitoring-pytest`, `ca-issuer-pytest`, `server-pytest`, fuer Schemathesis eine Datei je
   Dienst: `schemathesis-server` usw.), `stack-pytest` je Test `stack-<name>.xml`, Playwright
