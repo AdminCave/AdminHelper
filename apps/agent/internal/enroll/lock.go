@@ -45,14 +45,28 @@ func LockIdentity(ctx context.Context, dir string) (unlock func(), err error) {
 	if err := config.EnsureDataDir(dir); err != nil {
 		return nil, fmt.Errorf("create the identity directory: %w", err)
 	}
-	path := filepath.Join(dir, LockFileName)
+	unlock, err = LockFile(ctx, filepath.Join(dir, LockFileName), identityLockWait)
+	if err != nil {
+		return nil, fmt.Errorf("lock the identity: %w", err)
+	}
+	return unlock, nil
+}
+
+// LockFile waits for the exclusive lock on the file at path, which it creates if it
+// is missing, and returns the function that releases it. It only creates the file:
+// the caller secures the directory first, in the same call (EnsureDataDir). On
+// Windows it takes only a lock file that SYSTEM or the Administrators own. The lock
+// belongs to the open file, so a second LockFile on path in the same process waits
+// as well. It waits at most wait, or until ctx ends, and then returns an error that
+// names path.
+func LockFile(ctx context.Context, path string, wait time.Duration) (unlock func(), err error) {
 	f, err := openLockFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("open the identity lock: %w", err)
+		return nil, fmt.Errorf("open the lock file: %w", err)
 	}
-	if err := waitForLock(ctx, f, path); err != nil {
+	if err := waitForLock(ctx, f, path, wait); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("lock the identity: %w", err)
+		return nil, err
 	}
 	return func() {
 		_ = unlockFile(f)
@@ -60,10 +74,10 @@ func LockIdentity(ctx context.Context, dir string) (unlock func(), err error) {
 	}, nil
 }
 
-// waitForLock tries to lock f until it gets the lock, identityLockWait has passed
-// or ctx has ended. The error for an ended ctx wraps ctx.Err().
-func waitForLock(ctx context.Context, f *os.File, path string) error {
-	deadline := time.Now().Add(identityLockWait)
+// waitForLock tries to lock f until it gets the lock, wait has passed or ctx has
+// ended. The error for an ended ctx wraps ctx.Err().
+func waitForLock(ctx context.Context, f *os.File, path string, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
 	pause := time.Millisecond
 	for {
 		locked, err := tryLockFile(f)
@@ -71,7 +85,7 @@ func waitForLock(ctx context.Context, f *os.File, path string) error {
 			return err
 		}
 		if !time.Now().Before(deadline) {
-			return fmt.Errorf("%s is still locked after %s", path, identityLockWait)
+			return fmt.Errorf("%s is still locked after %s", path, wait)
 		}
 		timer := time.NewTimer(pause)
 		select {
@@ -84,7 +98,7 @@ func waitForLock(ctx context.Context, f *os.File, path string) error {
 	}
 }
 
-// lockOwnerAllowed reports whether LockIdentity takes a lock file whose owner is the
+// lockOwnerAllowed reports whether LockFile takes a lock file whose owner is the
 // SID sid (string form). Only Windows asks: the agent creates the lock file owned by
 // the Administrators there, and one whose owner is neither SYSTEM nor the
 // Administrators is not a lock file the agent created.

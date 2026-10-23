@@ -85,6 +85,11 @@ func Sync(ctx context.Context) error {
 		if err := secureFrpDir(); err != nil {
 			return err
 		}
+		unlock, err := lockFrpc(ctx)
+		if err != nil {
+			return err
+		}
+		defer unlock()
 		return syncWithoutFrpConfig(ctx)
 	}
 	if err != nil {
@@ -130,6 +135,14 @@ func Sync(ctx context.Context) error {
 	if err := secureFrpDir(); err != nil {
 		return err
 	}
+	// Taken only on a change, and nothing above is checked again under it: what the sync applies
+	// is the server's config, checked against its hash, and should a provisioning have held the
+	// lock meanwhile, the next run compares the hashes again.
+	unlock, err := lockFrpc(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	// Without a tunnel applyConfig stops frpc, which needs no admin API.
 	if stuck && hasProxies(newConfig) {
 		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
@@ -151,6 +164,28 @@ func secureFrpDir() error {
 		return fmt.Errorf("secure the FRP directory %s: %w; frpc and its files stay as they are", dir, err)
 	}
 	return nil
+}
+
+// frpcLockWait is how long a change to frpc's state waits for the frpc lock before it gives
+// up. The sync and the provisioning hold the lock for a few service calls, on Linux of 15 s at
+// most each (systemctlTimeout).
+var frpcLockWait = 60 * time.Second
+
+// frpcLockFile is the file in the FRP directory whose exclusive lock serializes the changes to
+// frpc's state: frpc.toml (staged under the fixed name frpc.toml.tmp), the hashes, admin.conf,
+// adminhelper.conf and the frpc service. A run of the agent (Sync) and a provisioning (Apply)
+// would otherwise change them at the same time.
+func frpcLockFile() string { return filepath.Join(config.FrpDir(), "frpc.lock") }
+
+// lockFrpc waits for the frpc lock, at most frpcLockWait or until ctx ends, and returns the
+// function that releases it. The lock file is created only in a directory the same call has
+// secured (secureFrpDir, EnsureDataDir), like every other file there.
+func lockFrpc(ctx context.Context) (unlock func(), err error) {
+	unlock, err = enroll.LockFile(ctx, frpcLockFile(), frpcLockWait)
+	if err != nil {
+		return nil, fmt.Errorf("lock the frpc state: %w; frpc and its files stay as they are", err)
+	}
+	return unlock, nil
 }
 
 // frpcStuck reports whether frpc should run but does not. It should run while frpc.toml is in

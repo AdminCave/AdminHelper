@@ -177,6 +177,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erreichen das Signal und Stop/Shutdown des Dienstes den laufenden Durchlauf und brechen ihn ab; der Agent endet,
   sobald der Durchlauf zurueck ist, hoechstens nach 10 s, und der Dienst meldet bis dahin `StopPending`. Ein zweites
   Ctrl-C beendet den Dauerbetrieb sofort.
+- **Agent: Provisionierung und Agent-Lauf aendern frpc nicht mehr gleichzeitig (R-0641):** `frpc.toml`, die
+  Hash-Dateien, `admin.conf`, `adminhelper.conf` und den frpc-Dienst aendern Provisionierung und FRP-Abgleich jetzt
+  nur unter der Sperre `/etc/frp/frpc.lock` (Windows `%ProgramData%\AdminHelper\frp\frpc.lock`); bisher konnten ein
+  Timer-Lauf und eine Provisionierung dieselben Dateien zugleich schreiben. Ein zweiter Aufruf wartet hoechstens
+  60 s, ein Lauf zudem nur, bis er endet, und bricht dann mit einem Fehler ab, der die Sperrdatei nennt; ein Lauf
+  ohne Aenderung sperrt nichts. Doku: Agent fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 

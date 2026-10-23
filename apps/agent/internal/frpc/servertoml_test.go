@@ -182,7 +182,8 @@ var refusedOverTheFlows = map[string]string{
 
 // A sync refuses a server text out of the generator's form: an error, and nothing in the FRP
 // directory changes (frpc.toml, hash, admin.conf), frpc is neither started nor stopped, so the
-// next run tries again.
+// next run tries again. The text is checked under the frpc lock, so only the empty lock file is
+// new.
 func TestServerConfigRefusedBySync(t *testing.T) {
 	for name, toml := range refusedOverTheFlows {
 		t.Run(name, func(t *testing.T) {
@@ -191,12 +192,14 @@ func TestServerConfigRefusedBySync(t *testing.T) {
 			calls.active = true
 			serveToml(t, []byte(toml))
 			files, actions := frpFiles(t), *calls
+			want := maps.Clone(files)
+			want["frpc.lock"] = ""
 
 			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must refuse the server's text")
 			}
-			if got := frpFiles(t); !maps.Equal(got, files) {
-				t.Errorf("the FRP directory holds %q, want it unchanged %q", got, files)
+			if got := frpFiles(t); !maps.Equal(got, want) {
+				t.Errorf("the FRP directory holds %q, want it unchanged but for the empty lock file %q", got, want)
 			}
 			if *calls != actions {
 				t.Errorf("frpc service state %+v, want it unchanged %+v (no start, stop or reload)", *calls, actions)
