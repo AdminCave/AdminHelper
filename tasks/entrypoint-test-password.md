@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entrypoint-Test: Leck-Probe mit eigenem Passwort — Task-Ledger
-Status: bereit · Branch: feature/entrypoint-test-password · Review: am Ende
+Status: erledigt · Branch: feature/entrypoint-test-password · Review: am Ende
 Spec: docs/features/entrypoint-test-password.md (Roadmap R-0824)
 Heavy: none — nur Testcode in `apps/server/tests/`; nach dem Merge fährt die Session den Schritt `server pytest` einzeln auf einer Box über `main`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
