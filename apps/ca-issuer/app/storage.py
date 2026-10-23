@@ -34,6 +34,21 @@ from app import pki
 
 logger = logging.getLogger("ca-issuer.storage")
 
+# Appended to every message about an intermediate's end (boot, signing, 503): the command
+# of app/cli.py. Never to the root's: it issues intermediates under the root, not a root.
+ROTATE_HINT = (
+    "rotate with: docker compose run --rm --no-deps ca-issuer python -m app.cli "
+    "rotate-intermediates"
+)
+# Said instead where an intermediate is not valid yet. It is valid from its issuing
+# (pki.build_intermediate_ca), so this clock is behind the one that issued it; a rotation
+# under it would not keep that intermediate as retired (rotation._retired_after), and once
+# the clock is right nothing would trust the leaves it signed.
+CLOCK_HINT = (
+    "check the host clock (NTP), it is behind the issuing of this intermediate; "
+    "do not rotate: under this clock a rotation drops the current intermediate"
+)
+
 # Re-mint a provisioned server leaf (gateway/frps) once it is past this much of
 # its lifetime. Unlike native client certs these leaves have no client-side
 # auto-renew, so a stack restart refreshes them through this check — well before
@@ -98,7 +113,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     Every boot then checks what it loaded and raises RuntimeError (file, scope,
     reason) unless root.crt is self-signed and valid now and each intermediate is
     signed by it, valid now, matches its key and has the chain [intermediate, root].
-    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING.
+    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING. What
+    concerns an intermediate's end (abort or WARNING) ends with ROTATE_HINT, the abort
+    for one not valid yet with CLOCK_HINT.
 
     The optional <scope>-retired.pem adds the scope's earlier intermediates as
     Intermediate.retired: each must be signed by root.crt (else RuntimeError); one
@@ -166,7 +183,10 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
                 f"scope {scope!r}, {cert_path}: not signed by {root_crt.name} ({problem})"
             )
         if problem := _validity_problem(cert, now):
-            raise _invalid_hierarchy(f"scope {scope!r}, {cert_path}: the intermediate is {problem}")
+            hint = ROTATE_HINT if now >= cert.not_valid_after_utc else CLOCK_HINT
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {cert_path}: the intermediate is {problem}", hint=hint
+            )
         if not _holds_key(cert, key):
             raise _invalid_hierarchy(
                 f"scope {scope!r}, {key_path}: not the private key of {cert_path.name}"
@@ -187,12 +207,14 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
 
     _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
     for scope, inter in out.items():
-        _warn_if_ending(f"intermediate {scope!r}", inter.cert, now)
+        _warn_if_ending(f"intermediate {scope!r}", inter.cert, now, f"; {ROTATE_HINT}")
     return out
 
 
-def _invalid_hierarchy(detail: str) -> RuntimeError:
-    return RuntimeError(f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it.")
+def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
+    # The hint goes last, without a full stop, so the command copies off the line as is.
+    message = f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it"
+    return RuntimeError(f"{message}; {hint}" if hint else f"{message}.")
 
 
 def _load_retired(

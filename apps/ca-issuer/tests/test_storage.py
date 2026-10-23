@@ -100,16 +100,21 @@ def test_an_expired_intermediate_aborts_the_boot(monkeypatch, tmp_path):
     _reissue(monkeypatch, tmp_path, "access")
     _reissue(monkeypatch, tmp_path, "internal")
 
-    with pytest.raises(RuntimeError, match=r"'tunnel'.*tunnel\.crt.*expired"):
+    with pytest.raises(RuntimeError, match=r"'tunnel'.*tunnel\.crt.*expired") as exc:
         storage.ensure_hierarchy(tmp_path, None)
+    assert "app.cli rotate-intermediates" in str(exc.value)
+    assert "NTP" not in str(exc.value)
 
 
 def test_a_not_yet_valid_intermediate_aborts_the_boot(monkeypatch, tmp_path):
     storage.ensure_hierarchy(tmp_path, b"pw")
     _reissue(monkeypatch, tmp_path, "tunnel", shift_days=10)
 
-    with pytest.raises(RuntimeError, match=r"'tunnel'.*tunnel\.crt.*not yet valid"):
+    with pytest.raises(RuntimeError, match=r"'tunnel'.*tunnel\.crt.*not yet valid") as exc:
         storage.ensure_hierarchy(tmp_path, None)
+    # Valid from its issuing: the clock is behind, and a rotation under it would drop it.
+    assert "NTP" in str(exc.value)
+    assert "app.cli rotate-intermediates" not in str(exc.value)
 
 
 def test_an_intermediate_from_a_foreign_root_aborts_the_boot(tmp_path):
@@ -194,6 +199,7 @@ def test_an_intermediate_near_its_end_loads_with_one_warning(monkeypatch, tmp_pa
     assert len(warnings) == 1, warnings
     assert "'tunnel'" in warnings[0]
     assert inter["tunnel"].cert.not_valid_after_utc.isoformat() in warnings[0]
+    assert "app.cli rotate-intermediates" in warnings[0]
 
 
 def test_a_root_near_its_end_warns_that_clients_must_enroll_again(monkeypatch, tmp_path, caplog):
@@ -213,6 +219,9 @@ def test_a_root_near_its_end_warns_that_clients_must_enroll_again(monkeypatch, t
     assert len(root_warnings) == 1, warnings
     assert root_cert.not_valid_after_utc.isoformat() in root_warnings[0]
     assert "enroll" in root_warnings[0]
+    # The command renews the intermediates under the root, never the root itself.
+    assert "app.cli rotate-intermediates" not in root_warnings[0]
+    assert all("app.cli rotate-intermediates" in w for w in warnings if w not in root_warnings)
 
 
 def test_a_fresh_hierarchy_does_not_warn(tmp_path, caplog):

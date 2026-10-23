@@ -20,7 +20,7 @@ from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
-from app.storage import Intermediate
+from app.storage import CLOCK_HINT, ROTATE_HINT, Intermediate
 from app.tokens import CertRecord, EnrollmentGrant, RenewalRefused, TokenStore, kind_of
 
 logger = logging.getLogger("ca-issuer.issuer")
@@ -107,10 +107,15 @@ class Issuer:
         try:
             leaf = pki.sign_leaf(csr, inter.cert, inter.key, spec)
         except pki.IssuerNotValid as exc:
-            logger.error("intermediate %r cannot sign: %s", inter.scope, exc)
+            # Only an expired intermediate is cured by a rotation (see storage.CLOCK_HINT).
+            if pki._now() >= inter.cert.not_valid_after_utc:
+                state, hint = "expired", ROTATE_HINT
+            else:
+                state, hint = "not yet valid", CLOCK_HINT
+            logger.error("intermediate %r cannot sign: %s; %s", inter.scope, exc, hint)
             raise IssuerUnavailable(
-                f"the issuing intermediate certificate of scope '{inter.scope}' is expired "
-                "or not yet valid; see the ca-issuer log"
+                f"the issuing intermediate certificate of scope '{inter.scope}' is {state}; "
+                f"see the ca-issuer log and {hint}"
             ) from exc
         self._warn_if_ending(inter)
         leaf_pem = pki.cert_to_pem(leaf)
@@ -132,10 +137,11 @@ class Issuer:
                 return
             self._warned_on[inter.scope] = now.date()
         logger.warning(
-            "intermediate %r expires on %s (%d days left)",
+            "intermediate %r expires on %s (%d days left); %s",
             inter.scope,
             inter.cert.not_valid_after_utc.isoformat(),
             left,
+            ROTATE_HINT,
         )
 
     @staticmethod

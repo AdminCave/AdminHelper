@@ -827,7 +827,8 @@ def test_of_two_renewals_taking_one_certificate_over_the_later_is_refused():
 
 def _issuer_with(client, monkeypatch, scope: str, days_left: float) -> Intermediate:
     """Swap in an issuer whose only intermediate, of `scope`, has `days_left` left on
-    the real clock (negative = expired): minted on a PKI clock shifted into the past."""
+    the real clock (negative = expired, above pki.VALIDITY_DAYS_INTERMEDIATE = not yet
+    valid): minted on a PKI clock shifted by that much."""
     then = pki._now() + datetime.timedelta(days=days_left - pki.VALIDITY_DAYS_INTERMEDIATE)
     with monkeypatch.context() as m:
         m.setattr(pki, "_now", lambda: then)
@@ -856,8 +857,10 @@ def test_enroll_under_an_expired_intermediate_is_a_503_and_spends_no_token(
 
     assert r.status_code == 503, r.text
     assert "'access'" in r.json()["detail"]
+    assert "app.cli rotate-intermediates" in r.json()["detail"]
     errors = _issuer_records(caplog, logging.ERROR)
     assert len(errors) == 1 and "'access'" in errors[0] and "expired" in errors[0]
+    assert "app.cli rotate-intermediates" in errors[0]
     store = register_client.app.state.token_store
     assert store.consume("t1") == EnrollmentGrant("alice", "access")
 
@@ -875,7 +878,30 @@ def test_renew_under_an_expired_intermediate_is_a_503(register_client, monkeypat
 
     assert r.status_code == 503, r.text
     assert "'tunnel'" in r.json()["detail"]
+    assert "app.cli rotate-intermediates" in r.json()["detail"]
     assert register_client.app.state.token_store.line_of(_fp(old)) is None
+
+
+def test_enroll_under_a_not_yet_valid_intermediate_names_the_clock_not_the_rotation(
+    register_client, monkeypatch, caplog
+):
+    # Valid from its issuing, ten days ahead: this clock is behind, and a rotation
+    # under it would not keep the intermediate as retired.
+    _issuer_with(
+        register_client, monkeypatch, "access", days_left=pki.VALIDITY_DAYS_INTERMEDIATE + 10
+    )
+    _mint(register_client, "t1", EnrollmentGrant("alice", "access"))
+
+    r = register_client.post("/enroll", json={"token": "t1", "csr": _csr_pem("alice")})
+
+    assert r.status_code == 503, r.text
+    detail = r.json()["detail"]
+    assert "'access'" in detail and "not yet valid" in detail and "NTP" in detail
+    assert "expired" not in detail
+    assert "app.cli rotate-intermediates" not in detail
+    errors = _issuer_records(caplog, logging.ERROR)
+    assert len(errors) == 1 and "NTP" in errors[0]
+    assert "app.cli rotate-intermediates" not in errors[0]
 
 
 def test_a_short_native_leaf_renews_at_the_full_native_lifetime(client, monkeypatch):
@@ -909,6 +935,7 @@ def test_an_intermediate_near_its_end_warns_once_a_utc_day(client, monkeypatch, 
     assert len(warnings) == 1, warnings
     assert "'access'" in warnings[0]
     assert inter.cert.not_valid_after_utc.isoformat() in warnings[0]
+    assert "app.cli rotate-intermediates" in warnings[0]
 
     # The next UTC day warns again.
     tomorrow = pki._now() + datetime.timedelta(days=1)

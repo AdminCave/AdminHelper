@@ -92,8 +92,10 @@ Abhängt von: T4
 Dedup-Key: feat:ca-issuer:cli.py:rotate-command
 HEAD: e2304a8b
 
-### T6 — Meldungen nennen den Rotationsbefehl  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_storage.py, apps/ca-issuer/tests/test_enroll_renew.py
+### T6 — Meldungen nennen den Rotationsbefehl  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_storage.py, apps/ca-issuer/tests/test_enroll_renew.py, CHANGELOG.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @3b5707ff 2026-10-23T21:22:57+02:00
+Review: approve (.ah-out/review/ca-rotation/T6.verdict.json)
 Änderung: Die Ablaufwarnungen aus R-0666 (beim Start in `ensure_hierarchy`, beim Signieren in `Issuer._sign`), der Startabbruch bei einem abgelaufenen oder noch nicht gültigen Intermediate und der `detail`-Text der 503 hängen den Befehl aus T5 an: „rotate with: docker compose run --rm --no-deps ca-issuer python -m app.cli rotate-intermediates“ (eine Konstante, an einer Stelle definiert). Die Root-Warnung nennt ihn nicht (eine Root-Erneuerung kann der Befehl nicht). Die Tests aus R-0666 zu diesen Meldungen (`test_storage.py`, `test_enroll_renew.py`) prüfen zusätzlich, dass der Text `app.cli rotate-intermediates` enthält; für die Root-Warnung, dass er es nicht enthält. Zuerst rot: die neuen Asserts.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_enroll_renew.py
 Doku: keine (die Meldungen beschreibt T10)
