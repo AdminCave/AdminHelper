@@ -201,6 +201,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   enthalten sind: Bisher pruefte der Server die Adresse des Gateways, danach weist er Clients ausserhalb der Liste mit
   403 ab. Steht ein weiterer Proxy vor dem Gateway, sieht der Server dessen Adresse; ein Eintrag in `TRUSTED_PROXIES`
   aendert daran nichts. Doku: Installation, Benutzer (DE+EN).
+- **Server liest `MTLS_ENFORCE` wie das Gateway:** `true`, `1`, `yes` und `on` erzwingen, `false`, `0`, `no` und `off`
+  schalten permissiv (Gross-/Kleinschreibung egal), ungesetzt oder leer gilt der Default (erzwungen); jeder andere
+  Wert erzwingt die Scope-Pruefung je Route ebenfalls und loggt eine Warnung. Bisher lief der Server bei `on`, einem
+  leeren oder einem unbekannten Wert still permissiv, waehrend das Gateway am Handshake ein Zertifikat verlangte. Wer
+  `MTLS_ENFORCE=on` gesetzt hat, bekommt fuer Zertifikate mit falschem Scope jetzt 403 statt nur einer Log-Zeile. Ein
+  Test haelt die Tabelle des Servers und die des Gateways gleich. Doku: Betrieb (DE+EN), `.env.example`.
 
 ### Removed
 
