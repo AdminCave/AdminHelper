@@ -109,12 +109,15 @@ def run_hook_script(
     # HOME/LANG are set so HOME- and locale-sensitive code behaves predictably rather than
     # defaulting oddly; a configured egress proxy is forwarded below so a hook's HTTP calls
     # (http_get/http_post) honour it — that's egress/SSRF control, not a secret (4.138).
+    # PYTHONNOUSERSITE does for every Python process a script starts what -s does for the worker
+    # (see the Popen call).
     server_dir = str(Path(__file__).parents[3])  # server/
     worker_env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", "/tmp"),
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "PYTHONPATH": server_dir,
+        "PYTHONNOUSERSITE": "1",
         "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
         "DATA_DIR": os.environ.get("DATA_DIR", ""),
     }
@@ -147,8 +150,12 @@ def run_hook_script(
         # WHOLE tree, not just the direct child: hook scripts get real builtins and can spawn
         # grandchildren (os.system, subprocess, multiprocessing) that would otherwise be orphaned
         # and keep running unbounded past the timeout (4.69).
+        # -s leaves out the user site: the image's Python has no venv, so without it the worker
+        # would put $HOME/.local/lib/pythonX.Y/site-packages on sys.path and run a usercustomize
+        # from there — with the HOME fallback above, under /tmp. -I and -E are no option: they
+        # ignore PYTHONPATH, which the worker needs to import app.
         proc = subprocess.Popen(
-            [sys.executable, _WORKER_SCRIPT],
+            [sys.executable, "-s", _WORKER_SCRIPT],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

@@ -30,8 +30,10 @@ Für alle Tasks:
   unter `tmp_path`, die das Skript schreibt); kein `sleep` überlebt den Test.
 - Platzhalter: Hosts unter `.example`, Adressen aus RFC 5737.
 
-### T1 — Hook-Worker startet ohne User-Site  [ ]
+### T1 — Hook-Worker startet ohne User-Site  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hook_isolation.py, docs/developer/hooks.html, docs/en/developer/hooks.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7477f9cb 2026-10-23T06:36:13+02:00
+Review: approve (.ah-out/review/hooks-hardening/T1.verdict.json)
 Änderung: Der Worker startet mit `[sys.executable, "-s", _WORKER_SCRIPT]` (`script_runner.py:150-159`), und `worker_env` (`:113-120`) bekommt `"PYTHONNOUSERSITE": "1"`, damit auch Python-Prozesse, die ein Skript startet, die User-Site weglassen. Kommentar fürs Warum an der Popen-Zeile: der `HOME`-Rückfall (`:115`) ist `/tmp`, und ein Python ohne venv nähme `$HOME/.local/…/site-packages` samt `usercustomize`; `-I`/`-E` gehen nicht, weil der Worker `PYTHONPATH` braucht (`:117`). `HOME`, `LANG`, `PYTHONPATH`, die Proxy-Weitergabe und alles andere bleiben. Tests in `test_hook_isolation.py` mit `_worker_env` (`:31-37`) bzw. `run_hook_script`: (a) ein Skript loggt `sys.flags.no_user_site` → `1`; (b) `_worker_env("PYTHONNOUSERSITE")` → `{"PYTHONNOUSERSITE": "1"}`; (c) wie (a) mit `_unset_server_env(monkeypatch, "HOME")` (der Rückfall-Fall). Zuerst rot: (a) und (b) auf HEAD (im venv ist `site.ENABLE_USER_SITE` immer `False`, deshalb prüft der Test das Flag, nicht das Laden). Die bestehenden Env-Tests (`:137-182`) bleiben grün.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py
 Doku: docs/developer/hooks.html:85 + docs/en/developer/hooks.html:85 (Liste des Env um `PYTHONNOUSERSITE=1` ergänzen; der Worker startet mit `-s`, ohne User-Site) · CHANGELOG.md (Changed, umlautfrei: der Hook-Worker startet mit `-s` und `PYTHONNOUSERSITE=1` und laedt keine Python-Pakete aus dem Benutzerverzeichnis; Pakete fuer Hooks gehoeren ins Image)

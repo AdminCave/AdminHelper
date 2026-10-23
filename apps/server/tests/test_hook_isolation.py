@@ -160,6 +160,44 @@ def test_hook_worker_env_falls_back_for_home_and_lang(monkeypatch):
     assert _worker_env("HOME", "LANG") == {"HOME": "/tmp", "LANG": "C.UTF-8"}
 
 
+# Inside a venv site.ENABLE_USER_SITE is always False, so the tests check the flag that -s and
+# PYTHONNOUSERSITE set, not whether a user site gets loaded. The child is a Python process the
+# script starts itself; it inherits only the worker's env.
+_NO_USER_SITE_SCRIPT = (
+    "import os, subprocess, sys\n"
+    "log('HOME=' + os.environ.get('HOME', '__NONE__'))\n"
+    "log('worker=' + str(sys.flags.no_user_site))\n"
+    "child = subprocess.run(\n"
+    "    [sys.executable, '-c', 'import sys; print(sys.flags.no_user_site)'],\n"
+    "    capture_output=True, text=True, check=True,\n"
+    ")\n"
+    "log('child=' + child.stdout.strip())\n"
+)
+
+
+def _no_user_site_flags():
+    res = run_hook_script(_NO_USER_SITE_SCRIPT, "webhook", {})
+    assert res["success"] is True, res
+    return dict(line.split("=", 1) for line in res["logs"])
+
+
+def test_hook_worker_and_its_python_children_run_without_user_site():
+    flags = _no_user_site_flags()
+    assert (flags["worker"], flags["child"]) == ("1", "1"), flags
+
+
+def test_hook_worker_env_sets_pythonnousersite():
+    assert _worker_env("PYTHONNOUSERSITE") == {"PYTHONNOUSERSITE": "1"}
+
+
+def test_hook_worker_runs_without_user_site_on_the_home_fallback(monkeypatch):
+    # The fallback case: with HOME=/tmp the user site would be a directory any local user can
+    # create.
+    _unset_server_env(monkeypatch, "HOME")
+    flags = _no_user_site_flags()
+    assert flags == {"HOME": "/tmp", "worker": "1", "child": "1"}, flags
+
+
 def test_hook_worker_env_forwards_lowercase_proxy_vars_as_set(monkeypatch):
     _unset_server_env(monkeypatch, *_PROXY_VARS)
     monkeypatch.setenv("http_proxy", "http://192.0.2.10:3128")

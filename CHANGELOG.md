@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
+  und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
+  `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
+  Pakete fuer Hooks gehoeren ins Image. Doku: Hook-Entwicklerdoku (DE+EN).
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
