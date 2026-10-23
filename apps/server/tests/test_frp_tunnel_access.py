@@ -3,11 +3,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Who may use the FRP tunnel routes (/api/frp/tunnels) and what they get back: an admin lists
-every tunnel in the full shape with the secret masked; a non-admin, even one the tunnel's server
-is assigned to, gets 403 on the single-tunnel read and on every write, and nothing changes."""
+every tunnel in the full shape with the secret masked; a non-admin lists only the enabled tunnels
+of his assigned servers, each with just the fields the desktop reads (TunnelMapping), and gets 403
+on the single-tunnel read and on every write, even when the tunnel's server is assigned to him."""
+
+import re
+from pathlib import Path
 
 import pytest
 
+from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
 
@@ -31,6 +36,25 @@ _FULL_FIELDS = {
     "createdAt",
 }
 
+# What a non-admin reads per tunnel, written out here rather than imported, so a field dropped
+# from the server's list shows up as a missing key.
+_MAPPING_KEYS = {
+    "id",
+    "serverId",
+    "tunnelType",
+    "protocol",
+    "localPort",
+    "visitorPort",
+    "customDomains",
+    "connectionId",
+    "enabled",
+    "name",
+}
+
+_TUNNEL_RS = (
+    Path(__file__).resolve().parents[3] / "apps" / "desktop" / "src-tauri" / "src" / "tunnel.rs"
+)
+
 
 def _login(client, username: str, password: str) -> dict:
     r = client.post("/api/auth/login", json={"username": username, "password": password})
@@ -38,7 +62,9 @@ def _login(client, username: str, password: str) -> dict:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def _make_tunnel(db, *, tid: str, server_id: str, name: str, visitor_port: int) -> None:
+def _make_tunnel(
+    db, *, tid: str, server_id: str, name: str, visitor_port: int, enabled: bool = True
+) -> None:
     db.add(
         FrpTunnel(
             id=tid,
@@ -50,7 +76,7 @@ def _make_tunnel(db, *, tid: str, server_id: str, name: str, visitor_port: int) 
             local_port=22,
             secret_key=f"secret-of-{tid}-do-not-leak",
             visitor_port=visitor_port,
-            enabled=True,
+            enabled=enabled,
         )
     )
 
@@ -70,6 +96,28 @@ def tunnels(db_session):
     db_session.add(Server(id="srv-b", name="serverB", hostname="b.example"))
     _make_tunnel(db_session, tid="t-a", server_id="srv-a", name="a-ssh", visitor_port=6000)
     _make_tunnel(db_session, tid="t-b", server_id="srv-b", name="b-ssh", visitor_port=6001)
+    db_session.commit()
+
+
+@pytest.fixture()
+def more_tunnels(db_session, tunnels):
+    # On srv-a besides t-a: a disabled STCP tunnel and an HTTPS one.
+    _make_tunnel(
+        db_session, tid="t-off", server_id="srv-a", name="a-off", visitor_port=6003, enabled=False
+    )
+    db_session.add(
+        FrpTunnel(
+            id="t-web",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="a-web",
+            tunnel_type="https",
+            protocol="web",
+            local_port=443,
+            custom_domains="web.example",
+            enabled=True,
+        )
+    )
     db_session.commit()
 
 
@@ -128,3 +176,71 @@ def test_non_admin_with_the_server_assigned_is_refused_and_nothing_changes(
     r = test_client.request(method, path, json=body, headers=h)
     assert r.status_code == 403, r.text
     assert _stored_tunnels(db_session) == before
+
+
+def _list_as_viewer(client, params: dict | None = None) -> list[dict]:
+    h = _login(client, "viewer", "viewerpass")
+    r = client.get("/api/frp/tunnels", params=params, headers=h)
+    assert r.status_code == 200, r.text
+    assert "do-not-leak" not in r.text
+    return r.json()
+
+
+def test_non_admin_lists_the_enabled_tunnels_of_his_servers_in_the_mapping_shape(
+    test_client, db_session, normal_user, more_tunnels
+):
+    normal_user.servers.append(db_session.get(Server, "srv-a"))
+    db_session.commit()
+    stored = {t.id: t.to_dict(mask_secrets=True) for t in db_session.query(FrpTunnel).all()}
+
+    listed = _list_as_viewer(test_client)
+    assert {t["id"] for t in listed} == {"t-a", "t-web"}
+    for t in listed:
+        assert set(t) == _MAPPING_KEYS, t["id"]
+        assert "secretKey" not in t, t["id"]
+        assert t == {k: stored[t["id"]][k] for k in _MAPPING_KEYS}, t["id"]
+    web = next(t for t in listed if t["id"] == "t-web")
+    assert web["customDomains"] == "web.example"
+
+
+def test_non_admin_without_assigned_server_lists_nothing(
+    test_client, db_session, normal_user, more_tunnels
+):
+    assert _list_as_viewer(test_client) == []
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        pytest.param({"server_id": "srv-b"}, set(), id="foreign-server"),
+        pytest.param({"frp_config_id": "cfg-unknown"}, set(), id="unknown-config"),
+        pytest.param({"server_id": "srv-a"}, {"t-a", "t-web"}, id="own-server"),
+    ],
+)
+def test_non_admin_query_parameters_only_narrow(
+    test_client, db_session, normal_user, more_tunnels, params, expected
+):
+    normal_user.servers.append(db_session.get(Server, "srv-a"))
+    db_session.commit()
+    assert {t["id"] for t in _list_as_viewer(test_client, params)} == expected
+
+
+def _camel(snake: str) -> str:
+    head, *rest = snake.split("_")
+    return head + "".join(part.capitalize() for part in rest)
+
+
+def test_mapping_fields_match_the_desktop_tunnel_mapping():
+    # The desktop deserialises every listed tunnel into TunnelMapping; a field the server leaves
+    # out that the struct requires fails it for every non-admin.
+    src = _TUNNEL_RS.read_text(encoding="utf-8")
+    m = re.search(
+        r'#\[serde\(rename_all = "camelCase"\)\]\s*pub struct TunnelMapping \{(.*?)\n\}', src, re.S
+    )
+    assert m, f"camelCase struct TunnelMapping not found in {_TUNNEL_RS}"
+    body = m.group(1)
+    # A per-field serde attribute would change the wire name this test derives.
+    assert "#[serde" not in body
+    rust_fields = {_camel(f) for f in re.findall(r"^\s*pub (\w+):", body, re.M)}
+    assert "localPort" in rust_fields
+    assert rust_fields == set(tunnel_router._MAPPING_FIELDS)

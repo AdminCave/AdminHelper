@@ -69,7 +69,9 @@ Doku: keine (intern)
 Orakel: mutation-sample — M1 bis M3 an `tunnel_router.py`, je eine allein
 HEAD: b25c65a6
 
-### T2 — `GET /api/frp/tunnels`: Nicht-Admins lesen die freigegebenen Tunnel ihrer Server, nur die Felder des Desktops (R-0484)  [ ]
+### T2 — `GET /api/frp/tunnels`: Nicht-Admins lesen die freigegebenen Tunnel ihrer Server, nur die Felder des Desktops (R-0484)  [x]
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @92d9620e 2026-10-23T07:27:43+02:00
+Review: approve (.ah-out/review/non-admin-access/T2.verdict.json)
 Entscheidung: Kevin 2026-10-22: Variante A + D2 + F2 (Filter im bestehenden Endpunkt, nur freigegebene Tunnel der zugewiesenen Server, genau die zehn Felder von TunnelMapping).
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_tunnel_access.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
 Änderung (Variante A + D2 + F2): `list_tunnels` (`tunnel_router.py:25-38`) hängt an
