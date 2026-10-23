@@ -17,7 +17,7 @@ from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
-from app.models import MonitorAlertLog, MonitorAlertRule
+from app.models import MonitorAlertLog, MonitorAlertRule, keep_smtp_password
 from app.schemas import VALID_CHANNELS, VALID_SEVERITIES, AlertRuleCreate, AlertRuleUpdate
 
 router = APIRouter()
@@ -107,16 +107,15 @@ def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends
             setattr(rule, field, getattr(data, field))
     if "channel_config" in sent:
         new_cfg = dict(data.channel_config or {})
-        # A masked ("***") or empty smtp_password means "unchanged": keep the stored
-        # secret rather than overwriting it with the mask to_dict returned, so
-        # editing an unrelated field never wipes or leaks the password (3.27).
-        if new_cfg.get("smtp_password") in ("***", "", None):
-            old_cfg = json.loads(rule.channel_config) if rule.channel_config else {}
-            old_pw = old_cfg.get("smtp_password")
-            if old_pw:
-                new_cfg["smtp_password"] = old_pw
-            else:
-                new_cfg.pop("smtp_password", None)
+        # A masked ("***") or empty smtp_password means "unchanged" for the same relay:
+        # keep the stored secret rather than overwriting it with the mask to_dict
+        # returned, so editing an unrelated field never wipes or leaks the password
+        # (3.27); a changed relay never gets the stored one.
+        old_cfg = json.loads(rule.channel_config) if rule.channel_config else {}
+        try:
+            keep_smtp_password(new_cfg, old_cfg)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
         rule.channel_config = json.dumps(new_cfg)
 
     db.commit()

@@ -8,6 +8,7 @@ from the grant not the CSR, tokens are one-time, deprovisioned identities
 cannot renew."""
 
 import datetime
+import logging
 import urllib.parse
 import uuid
 
@@ -21,7 +22,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
 from app import config, db, pki
+from app.issuer import Issuer
 from app.main import app
+from app.storage import Intermediate
 from app.tokens import (
     CertRecord,
     EnrollmentGrant,
@@ -810,3 +813,110 @@ def test_of_two_renewals_taking_one_certificate_over_the_later_is_refused():
     line = store.line_of(current.fingerprint)
     assert store.line_of(CertRecord.of(earlier).fingerprint).line_id == line.line_id
     assert store.line_of(CertRecord.of(later).fingerprint) is None
+
+
+# R-0666: an intermediate past its end signs nothing (503, the token stays), a renewal
+# gets the full policy of its audience, and one near its end warns once a UTC day.
+
+
+def _issuer_with(client, monkeypatch, scope: str, days_left: float) -> Intermediate:
+    """Swap in an issuer whose only intermediate, of `scope`, has `days_left` left on
+    the real clock (negative = expired): minted on a PKI clock shifted into the past."""
+    then = pki._now() + datetime.timedelta(days=days_left - pki.VALIDITY_DAYS_INTERMEDIATE)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: then)
+        root_cert, root_key = pki.build_root_ca()
+        cert, key = pki.build_intermediate_ca(scope, root_cert, root_key)
+    inter = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root_cert))
+    client.app.state.issuer = Issuer({scope: inter}, client.app.state.token_store)
+    return inter
+
+
+def _issuer_records(caplog, level: int) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "ca-issuer.issuer" and r.levelno == level
+    ]
+
+
+def test_enroll_under_an_expired_intermediate_is_a_503_and_spends_no_token(
+    register_client, monkeypatch, caplog
+):
+    _issuer_with(register_client, monkeypatch, "access", days_left=-1)
+    _mint(register_client, "t1", EnrollmentGrant("alice", "access"))
+
+    r = register_client.post("/enroll", json={"token": "t1", "csr": _csr_pem("alice")})
+
+    assert r.status_code == 503, r.text
+    assert "'access'" in r.json()["detail"]
+    errors = _issuer_records(caplog, logging.ERROR)
+    assert len(errors) == 1 and "'access'" in errors[0] and "expired" in errors[0]
+    store = register_client.app.state.token_store
+    assert store.consume("t1") == EnrollmentGrant("alice", "access")
+
+
+def test_renew_under_an_expired_intermediate_is_a_503(register_client, monkeypatch):
+    _issuer_with(register_client, monkeypatch, "tunnel", days_left=-1)
+    now = _now_naive()
+    _installed(register_client, now + datetime.timedelta(days=1))
+    # Still valid itself, as a leaf signed before the cut that outlives its intermediate.
+    old = _unrecorded_leaf(
+        register_client, "agent-13", "tunnel", not_before=now - datetime.timedelta(hours=1), days=30
+    )
+
+    r = _renew(register_client, old)
+
+    assert r.status_code == 503, r.text
+    assert "'tunnel'" in r.json()["detail"]
+    assert register_client.app.state.token_store.line_of(_fp(old)) is None
+
+
+def test_a_short_native_leaf_renews_at_the_full_native_lifetime(client, monkeypatch):
+    # 30 days, as sign_leaf cuts a leaf shortly before its intermediate's end: the
+    # successor must not inherit the cut.
+    with monkeypatch.context() as m:
+        m.setattr(pki, "LEAF_DAYS_NATIVE", 30)
+        old_pem = _enroll(client, "agent-14", "tunnel")
+    old = _leaf(old_pem)
+    assert abs((old.not_valid_after_utc - old.not_valid_before_utc).days - 30) <= 1
+
+    r = _renew(client, old_pem)
+
+    assert r.status_code == 200, r.text
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    assert abs(span.days - pki.LEAF_DAYS_NATIVE) <= 1
+
+
+def test_an_intermediate_near_its_end_warns_once_a_utc_day(client, monkeypatch, caplog):
+    inter = _issuer_with(client, monkeypatch, "access", days_left=10)
+    caplog.set_level(logging.WARNING, logger="ca-issuer.issuer")
+    store = client.app.state.token_store
+
+    for token in ("t1", "t2"):
+        store.mint(token, EnrollmentGrant("alice", "access"))
+        r = client.post("/enroll", json={"token": token, "csr": _csr_pem("alice")})
+        assert r.status_code == 200, r.text
+
+    warnings = _issuer_records(caplog, logging.WARNING)
+    assert len(warnings) == 1, warnings
+    assert "'access'" in warnings[0]
+    assert inter.cert.not_valid_after_utc.isoformat() in warnings[0]
+
+    # The next UTC day warns again.
+    tomorrow = pki._now() + datetime.timedelta(days=1)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: tomorrow)
+        store.mint("t3", EnrollmentGrant("alice", "access"))
+        r = client.post("/enroll", json={"token": "t3", "csr": _csr_pem("alice")})
+        assert r.status_code == 200, r.text
+    assert len(_issuer_records(caplog, logging.WARNING)) == 2
+
+
+def test_a_fresh_intermediate_does_not_warn(client, caplog):
+    caplog.set_level(logging.WARNING, logger="ca-issuer.issuer")
+
+    _enroll(client, "alice", "access")
+
+    assert _issuer_records(caplog, logging.WARNING) == []

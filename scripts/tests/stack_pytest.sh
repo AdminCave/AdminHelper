@@ -109,8 +109,8 @@ stack_test ca-issuer-register-recheck apps/ca-issuer \
   tests/test_db_token_store.py::test_a_deprovisioning_while_signing_refuses_the_renewal \
   "AH_TEST_DB=$ITEST_DATABASE_URL"
 # The identity lock (R-0292, R-0306): renewing, revoking and enrolling one identity go
-# one after the other. The advisory lock is Postgres only; the PR CI's ca-issuer job
-# has no Postgres, so these run nowhere else.
+# one after the other. The advisory lock is Postgres only; the PR CI's ca-issuer jobs
+# run these against their Postgres service as well.
 stack_test ca-issuer-renew-waits-revoke apps/ca-issuer \
   tests/test_db_token_store.py::test_a_renewal_that_takes_over_waits_for_a_revocation_and_is_refused \
   "AH_TEST_DB=$ITEST_DATABASE_URL"

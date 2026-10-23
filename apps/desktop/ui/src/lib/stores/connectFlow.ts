@@ -146,8 +146,9 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
 }
 
 /**
- * Where `connection` is reached: Rust resolves it through a tunnel mapping (admins only) or, at
- * 127.0.0.1/localhost and the server port of a visitor, to the local port that visitor got.
+ * Where `connection` is reached: Rust resolves it through a tunnel mapping (an admin's, or one on
+ * a server assigned to the user) or, at 127.0.0.1/localhost and the server port of a visitor, to
+ * the local port that visitor got.
  * `null` once the status bar shows why Rust refused it (a loopback port of another workspace's
  * tunnel, say): open_connection would refuse the same target, so nothing may ask for a password
  * or check the URL first.
