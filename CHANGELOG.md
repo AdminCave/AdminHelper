@@ -90,7 +90,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ca-issuer log“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt unverbraucht. Eine Erneuerung
   bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn das alte Zertifikat gekuerzt
   war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer` beim Signieren einmal je Tag und
-  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“).
+  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“). Doku: Betrieb (DE+EN).
+- **ca-issuer: prueft die PKI beim Start (R-0666):** Der `ca-issuer` lud Root und Zwischenzertifikate beim Start ohne
+  jede Pruefung, auch ein abgelaufenes, ein von einer fremden Root signiertes oder eines neben fremdem Schluessel oder
+  fremder Kette. Jetzt prueft er bei jedem Start, auch direkt nach dem ersten: `root.crt` selbstsigniert und gueltig,
+  je Scope `<scope>.crt` von `root.crt` signiert und gueltig, `<scope>.key` der passende Schluessel und
+  `<scope>-chain.pem` genau Zwischenzertifikat und Root (geparst verglichen, Zeilenenden zaehlen nicht). Bei einem
+  Verstoss startet er nicht und nennt Datei, Scope und Grund („PKI hierarchy invalid — …“); das gilt auch fuer eine
+  Host-Uhr vor dem `notBefore` der Root oder eines Zwischenzertifikats. Root und Zwischenzertifikate mit weniger als
+  180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
+  expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
+  Clients bedeutet). Doku: Betrieb (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
