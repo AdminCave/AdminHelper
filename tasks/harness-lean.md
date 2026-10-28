@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness schlanker: Hauptsession baut, ein Reviewer prüft Code und Tests — Task-Ledger
-Status: bereit · Branch: feature/harness-lean · Review: am Ende
+Status: aktiv · Branch: feature/harness-lean · Review: am Ende
 Spec: docs/features/harness-lean.md (Roadmap R-0915)
 Heavy: none — Regel-, Skill- und Agenten-Texte, Shell-Skripte unter `scripts/dev` mit hermetischen Tests; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,9 +53,17 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test harness_consistency_test
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN · CHANGELOG
 
+### T6 — Review-Funde: Digest ohne Vertrauen in den Log-Inhalt, final prüft auch Merges  [ ]
+Komponente: scripts · Dateien: scripts/dev/log-digest.sh, scripts/tests/log_digest_test.sh, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, CLAUDE.md, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Funde des Branch-Reviews (wichtig ×2, nit): `log-digest.sh` nimmt keine Grenze mehr aus dem Inhalt eines Schritts — die Schlusszeilen zählen nur am Log-Ende, je Schritt gilt das schlechteste Ergebnis (widersprüchliche Zeilen werden genannt), ein Auszug reicht vom ersten Kopf bis zum letzten Ergebnis des Namens; Test mit eingefangener run.sh-Ausgabe im roten Abschnitt. `review.sh final` wertet einen Merge nach dem Urteil, der eigene Änderungen trägt (`diff-tree --cc`; CHANGELOG.md und das Ledger ausgenommen), als veraltet. CLAUDE.md §2 verweist für die Merge-Bedingungen nur noch auf `/feature-build` §4.7.
+Verify: bash scripts/dev/verify.sh scripts --strict -- log_digest_test verify_test review_scripts_test harness_consistency_test doc_smoke_test
+Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN
+
 ## Entscheidungen
 - 2026-10-28 T1: `verify.sh` streamt auf einem Terminal weiter und zeigt sonst nur den Digest — Kevin sieht einen Handlauf live, das Modell bekommt die Kurzform.
 - 2026-10-28 T2: Aktualität des Branch-Urteils über `head` und die Commits der eigenen Linie danach (`--first-parent`), nicht über mtime — ein Merge von `main` und der Ledger-Commit `erledigt` folgen dem Urteil regulär.
 - 2026-10-28 T4: Modelle als Aliase `sonnet`/`opus` statt fester IDs — sie zeigen heute auf 5.5 und folgen neuen Versionen ohne Änderung.
 - 2026-10-28 T4: `advisor` als eigene, nur lesende Agent-Datei statt `general-purpose` mit Modell-Override — Grenzen (implementiert nicht) und Modell/Effort stehen fest im Frontmatter.
 - 2026-10-28 T4: die Abschnittsnummern von `CLAUDE.md` bleiben — über hundert Verweise in Skills, Skripten und Ledgern zeigen auf sie.
+- 2026-10-28 T6: der Digest liest Grenzen nicht aus dem Lauf-Artefakt, sondern aus der Lage im Log (Schlussblock am Ende, schlechtestes Ergebnis je Schritt) — so arbeitet er auch über tmux-Logs ohne Artefakt; im Zweifel zeigt er mehr.
+- 2026-10-28 T6: `review.sh final` nimmt `CHANGELOG.md` von der Merge-Prüfung aus — `merge=union` erzeugt dort bei jedem Basis-Merge eigene Zeilen, die `/feature-build` §4.6 von Hand prüft.
