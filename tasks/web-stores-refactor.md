@@ -77,8 +77,10 @@ Orakel: contract — eine Antwort aus einer beendeten Sitzung schreibt nicht in 
 Dedup-Key: bug:web:stores/frp.ts:save-without-refreshgen
 HEAD: b25c65a6
 
-### T4 — Store `frpConfig`: `save()` gegen ein laufendes `refresh()` und nach dem Abmelden (R-0777)  [ ]
+### T4 — Store `frpConfig`: `save()` gegen ein laufendes `refresh()` und nach dem Abmelden (R-0777)  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/frp.ts, apps/web/src/lib/stores/frp.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @767e1206 2026-10-28T16:00:34+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T4.verdict.json)
 Änderung: `frp.ts` bekommt die Regel aus T3 für ein Einzelobjekt: eine Epoche, die nur `reset()` erhöht; `save()` (`:30-41`) merkt sie sich vor dem API-Aufruf, erhöht nach der Antwort `refreshGen` und setzt den Store nur, wenn die Epoche gleich blieb; es gibt `saved` in jedem Fall zurück. Die Maskierung (`:34-38`) bleibt. Der Kommentar `:11-12` beschreibt die Regel selbst (heute „see users.ts“; nach T2 trägt `users.ts` den Guard nicht mehr). Neue Tests in `frp.test.ts` (`deferred()` wie `apps/web/src/lib/stores/reset.test.ts:26-30`, vorher `frpConfig.reset()`): (a) ein `refresh()` startet, `save(INPUT, cfg('1'))` gelingt, danach liefert `listConfigs` `[cfg('1', 'old')]` → der Store hält die gespeicherte Konfiguration; (b) `save()` antwortet nach `reset()` → der Store bleibt `null`, `save()` gibt die Konfiguration trotzdem zurück; (c) nach `reset()` lädt ein `refresh()` der neuen Sitzung `[cfg('2')]`, danach antwortet das alte `save()` → der Store hält `cfg('2')`. Zuerst rot auf HEAD (dreimal identisch): (a), (b), (c). Die bestehenden Tests (`frp.test.ts:27-97`) bleiben unverändert grün.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/frp.test.ts src/lib/stores/reset.test.ts
 Doku: CHANGELOG.md (Fixed, umlautfrei: die gespeicherte FRP-Server-Konfiguration wird nicht mehr von einem noch laufenden Laden der Seite ueberschrieben)
@@ -243,3 +245,6 @@ Beweis: origin/main@b25c65a6 · Code-Lesung `apps/web/src/pages/Audit.svelte:114
 Orakel: contract — was `GET /api/audit` je Eintrag liefert, zeigt die Ansicht
 Dedup-Key: ref:web:Audit.svelte:detail-not-shown
 HEAD: b25c65a6
+
+## Entscheidungen
+- 2026-10-28 T4: save() erhoeht refreshGen nur, wenn die Epoche gleich blieb (die Task sagt: nach der Antwort immer) — ein Bump nach reset() verwuerfe das Laden der naechsten Sitzung; ein Kontrolltest in frp.test.ts haelt das fest.

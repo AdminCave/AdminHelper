@@ -336,6 +336,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jemand schneller wieder an, als die Abmeldung beantwortet war, beendete die spaete Antwort die neue Sitzung bei der
   naechsten Aktion. Jetzt wartet eine neue Anmeldung, bis die Abmeldung beantwortet ist (hoechstens 15 s), auch nach
   einer abgelaufenen Sitzung. Abmelden leert ausserdem die Benutzer-, Hook-, API-Key- und FRP-Daten im Browser.
+- **Web-Panel: gespeicherte FRP-Server-Konfiguration bleibt stehen:** Die gespeicherte FRP-Server-Konfiguration wird
+  nicht mehr von einem noch laufenden Laden der Seite ueberschrieben, das vor dem Speichern begonnen hatte. Kommt die
+  Antwort auf das Speichern erst nach dem Abmelden an, erscheint die Konfiguration nicht mehr in der naechsten Sitzung.
 - **Web-Panel: Bearbeiten des eigenen Kontos wirkt sofort (R-0652):** Nahm sich ein Admin im Web-Panel selbst das
   Admin-Recht, zeigte das Panel weiter die Admin-Seiten, und jede Aktion endete mit einem Fehler; jetzt uebernimmt es
   die neuen Rechte sofort. Aenderte er sein eigenes Passwort, beendete der Server alle Sitzungen des Kontos, das Panel
