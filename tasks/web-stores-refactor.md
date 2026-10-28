@@ -220,7 +220,7 @@ Metrik: gelöschte Zeilen: 5 in `auth.ts`, 4 in `Button.svelte`
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T17 — Toter Code: `getAccessToken` (R-0724)  [?] (nach dem Merge von main nutzt apps/web/src/lib/api/client.crosstab.test.ts getAccessToken (5 Assertions, Z. 153/154/185/238/252); entfernen hiesse diese Tests mitaendern (Dateien + Aenderung der Task) - Entscheidung: T17 verwerfen oder erweitern)
+### T17 — Toter Code: `getAccessToken` (R-0724)  [~] (verworfen (Kevin 2026-10-28): getAccessToken ist nicht tot, client.crosstab.test.ts nutzt ihn)
 Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts
 Änderung: `getAccessToken` (`client.ts:46-48`) geht. Im Test 'retries the original request with the new token after a successful refresh' (`client.test.ts:74-104`) gehen `getAccessToken` aus dem Import (`:91`) und die Assertion `:101`; an ihre Stelle tritt eine Folgeanfrage: ein zweites `http.get` schickt `Authorization: Bearer new-token`, ohne erneuten Refresh. Der Test bleibt und prüft dasselbe (der gehaltene Token ist der neue).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
