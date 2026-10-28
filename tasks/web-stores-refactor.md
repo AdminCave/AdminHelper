@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Store-Fabrik und Stale-Guards, Formular-Payloads, schlanke Serverliste, Kopier-Helfer, toter Code, Audit-Detail — Task-Ledger
-Status: erledigt · Branch: feature/web-stores-refactor · Review: pro Task
+Status: aktiv · Branch: feature/web-stores-refactor · Review: pro Task
 Spec: docs/features/web-stores-refactor.md (Roadmap R-0722, R-0723, R-0724, R-0777, R-0779, R-0757)
 Heavy: linux-full — T10 fügt die Server-Route `GET /api/servers/summary` hinzu (apps/server-API, CLAUDE.md §5), und `web-live` (`scripts/tests/web_live.sh`, `apps/web/tests/live/smoke.live.spec.ts:60-66`) öffnet den Benutzerdialog gegen den echten Stack; kein `scenario` (kein FRP-, PKI-, Install- oder Cross-Host-Pfad), kein `windows` (kein Desktop- oder Agent-Code). Entscheidet Kevin bei Frage 1 gegen T10 (Variante a oder d), setzt die Session `Heavy: none`: alles Übrige ist Web-Code, die Web-E2E mockt die API
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -275,6 +275,14 @@ Beweis: origin/main@b25c65a6 · Code-Lesung `apps/web/src/pages/Audit.svelte:114
 Orakel: contract — was `GET /api/audit` je Eintrag liefert, zeigt die Ansicht
 Dedup-Key: ref:web:Audit.svelte:detail-not-shown
 HEAD: b25c65a6
+
+### T19 — Lockstep-Check: `Server` ist kein gemeinsames Symbol mehr (R-0723)  [ ]
+Komponente: scripts · Dateien: apps/desktop/ui/scripts/sync-from-web.sh, scripts/tests/sync_check_test.sh
+Änderung: T11 benennt im Web `Server` in `ServerSummary` um (nur `id`, `name`, `hostname`); der Desktop behält sein volles `Server`. Der CI-Schritt „Shared API types in lockstep with the web frontend“ (`sync-from-web.sh --check`) ist deshalb auf PR #290 rot: `CHECK_SHARED` (`sync-from-web.sh:107`) verlangt `Server` auf beiden Seiten. Kevin 2026-10-28: Fix-Task. `Server` geht aus `CHECK_SHARED`, der Kommentar darüber nennt drei Symbole. In `sync_check_test.sh` zieht der Fall „ein gemeinsames Symbol verschwindet“ von `Server` auf `FrpStatus` um (gleich stark: ein einzelnes erwartetes Symbol fehlt auf einer Seite → Exit 1), die Kommentare nennen drei Symbole. Neuer Fall: `sync-from-web.sh --check` auf dem echten Checkout endet mit 0 — lokal fuhr bisher nur die CI diesen Check, darum fiel die Drift erst auf dem PR auf. Zuerst rot: der neue Fall auf HEAD.
+Verify: bash scripts/dev/verify.sh scripts --strict -- sync_check_test
+Doku: keine (interne Prüfung, nicht dokumentiert)
+Beweis: PR #290, CI-Job „Desktop-UI (svelte-check + lint + vitest) + E2E lint“, Lauf 40747391035: „FEHLER: src/lib/api/types.ts: erwartete gemeinsame Symbole fehlen auf einer Seite: Server“; lokal `bash apps/desktop/ui/scripts/sync-from-web.sh --check` → Exit 1
+HEAD: 60b12ad6
 
 ## Entscheidungen
 - 2026-10-28 T4: save() erhoeht refreshGen nur, wenn die Epoche gleich blieb (die Task sagt: nach der Antwort immer) — ein Bump nach reset() verwuerfe das Laden der naechsten Sitzung; ein Kontrolltest in frp.test.ts haelt das fest.
