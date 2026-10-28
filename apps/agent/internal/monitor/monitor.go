@@ -39,10 +39,8 @@ func preserveServices(services string) string {
 	return services
 }
 
-// enableTimer is a variable so tests of Init never run systemctl.
-var enableTimer = enableMonitorService
-
-// Init performs the initial setup of the monitor agent.
+// Init performs the initial setup of the monitor agent. It leaves the agent timer to its caller
+// (service.EnableTimer), which enables it once per setup.
 func Init(p InitParams) error {
 	url := p.URL
 	apiKey := p.APIKey
@@ -145,12 +143,6 @@ func Init(p InitParams) error {
 		logger.Infof("Test-Push erfolgreich")
 	}
 
-	// Activate the service (platform-specific)
-	if err := enableTimer(); err != nil {
-		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
-		logger.Warnf("Bitte manuell aktivieren")
-	}
-
 	return nil
 }
 
@@ -180,6 +172,11 @@ func fetchServerCertPEM(rawURL string) ([]byte, error) {
 	return pemBytes, nil
 }
 
+// pushReserve is the time a run keeps for PushReport after the collection: one
+// request of at most 15 s, the retry delay of 10 s and the retry's 15 s
+// (report.go: pushRetryDelay, the client timeout), plus a margin.
+var pushReserve = 45 * time.Second
+
 // Push reads the config and sends a one-off report. The ctx aborts the push
 // retry backoff on shutdown so a stopping service is not blocked up to 10s.
 func Push(ctx context.Context) error {
@@ -195,7 +192,16 @@ func Push(ctx context.Context) error {
 	}
 
 	reportStatePath := config.MonitorReportStateFile()
-	report, nextReportState := buildReportWithState(cfg.Services, loadReportState(reportStatePath), time.Now())
+	// With a deadline (a run of the agent), the collection ends pushReserve before it:
+	// a slow tool costs its part of the report, not the push. Without one (monitor push
+	// by hand) the collection runs as long as its tools do.
+	collectCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		collectCtx, cancel = context.WithDeadline(ctx, deadline.Add(-pushReserve))
+		defer cancel()
+	}
+	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, loadReportState(reportStatePath), time.Now())
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(ctx, PushReportParams{

@@ -5,6 +5,7 @@
 package frpc
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -34,20 +35,35 @@ type ApplyParams struct {
 }
 
 // WriteSyncConfig writes adminhelper.conf, the config every later Sync runs on, and the
-// CA copy it names. Provisioning writes it with and without an FRP bundle: a host
-// without it never gets a tunnel created after its provisioning (R-0398).
+// CA copy it names, under the frpc lock. Provisioning writes it with and without an FRP
+// bundle: a host without it never gets a tunnel created after its provisioning (R-0398).
 func WriteSyncConfig(p SyncConfigParams) error {
-	adminHelperURL := strings.TrimRight(p.AdminHelperURL, "/")
-	serverID := p.ServerID
-	apiKey := p.APIKey
-	cacert := p.TLS.CACert
+	unlock, err := lockSyncConfigDir()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return writeSyncConfig(p)
+}
 
+// lockSyncConfigDir secures the FRP directory, then takes the frpc lock in it, for a
+// provisioning: interactive, so it waits without a ctx, frpcLockWait at most.
+func lockSyncConfigDir() (unlock func(), err error) {
 	// Secret-bearing dir (CA cert, the auth token in the conf) -> 0700, also for
 	// raw-binary provisioning where no postinst tightens it; a protected ACL on
 	// Windows, after the data root above it.
 	if err := config.EnsureDataDir(config.FrpDir()); err != nil {
-		return fmt.Errorf("Verzeichnis anlegen: %w", err)
+		return nil, fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
+	return lockFrpc(context.Background())
+}
+
+// writeSyncConfig is WriteSyncConfig in a secured FRP directory, under the frpc lock.
+func writeSyncConfig(p SyncConfigParams) error {
+	adminHelperURL := strings.TrimRight(p.AdminHelperURL, "/")
+	serverID := p.ServerID
+	apiKey := p.APIKey
+	cacert := p.TLS.CACert
 
 	// Copy the CA cert if provided
 	if cacert != "" {
@@ -87,11 +103,16 @@ func WriteSyncConfig(p SyncConfigParams) error {
 // Apply writes the sync config (WriteSyncConfig), then applies the frpc.toml of a provisioning
 // response the way Sync does (applyConfig): a running frpc restarts onto it (never a reload, see
 // startFrpc), a stopped one is enabled, and a text without proxies (no active tunnel for the
-// host) stops and disables it. NO HTTP call happens here anymore — the token-activate call has
-// been centralized since v0.23.0 in the `provision` subcommand, which invokes `Apply` with the
-// already-decoded values.
+// host) stops and disables it. It holds the frpc lock from securing the FRP directory to the
+// end. NO HTTP call happens here anymore — the token-activate call has been centralized since
+// v0.23.0 in the `provision` subcommand, which invokes `Apply` with the already-decoded values.
 func Apply(p ApplyParams) error {
-	if err := WriteSyncConfig(SyncConfigParams{
+	unlock, err := lockSyncConfigDir()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := writeSyncConfig(SyncConfigParams{
 		AdminHelperURL: p.AdminHelperURL,
 		ServerID:       p.ServerID,
 		APIKey:         p.APIKey,
@@ -105,15 +126,24 @@ func Apply(p ApplyParams) error {
 		return fmt.Errorf("Config base64 decodieren: %w", err)
 	}
 
-	return warnOnServiceFailure(applyConfig(serverToml, false))
+	return warnOnServiceFailure(applyConfig(context.Background(), serverToml, false))
 }
 
 // ApplyWithoutBundle is Apply for a provisioning without an FRP bundle: the server has no FRP
 // config (an older server sends none also for a host without a tunnel; a current one sends a
 // text without proxies, on which Apply stops frpc). A frpc of an earlier provisioning stops,
-// like on a null hash in Sync, and the next sync sets up a tunnel created later (R-0398).
+// like on a null hash in Sync, and the next sync sets up a tunnel created later (R-0398). It
+// secures the FRP directory and holds the frpc lock like Sync on a null hash.
 func ApplyWithoutBundle() error {
-	return warnOnServiceFailure(syncWithoutFrpConfig())
+	if err := secureFrpDir(); err != nil {
+		return err
+	}
+	unlock, err := lockFrpc(context.Background())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return warnOnServiceFailure(syncWithoutFrpConfig(context.Background()))
 }
 
 // warnOnServiceFailure turns a failed start or stop of frpc at provisioning into a warning, as
