@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -121,5 +122,108 @@ func TestServeNeverRunsTwoCycles(t *testing.T) {
 	within(t, returned, 2*time.Second, "serve returned after cancel")
 	if overlap.Load() {
 		t.Fatal("two cycles ran at the same time")
+	}
+}
+
+// setRunPhases replaces the budgets and the phases of runOnce for one test.
+func setRunPhases(t *testing.T, run, renew, sync time.Duration,
+	renewF func(context.Context), syncF, pushF func(context.Context) error) {
+	t.Helper()
+	oldRun, oldRenew, oldSync := runBudget, renewBudget, syncBudget
+	oldRenewF, oldSyncF, oldPushF := renewPhase, syncPhase, pushPhase
+	runBudget, renewBudget, syncBudget = run, renew, sync
+	renewPhase, syncPhase, pushPhase = renewF, syncF, pushF
+	t.Cleanup(func() {
+		runBudget, renewBudget, syncBudget = oldRun, oldRenew, oldSync
+		renewPhase, syncPhase, pushPhase = oldRenewF, oldSyncF, oldPushF
+	})
+}
+
+func TestRunOnceBudgetKeepsThePushWhenSyncHangs(t *testing.T) {
+	var renewReturned, syncDeadline, syncEnded time.Time
+	var pushCalls atomic.Int32
+	var pushCtxErr error
+	var pushDeadline time.Time
+	var pushHasDeadline bool
+	setRunPhases(t, time.Second, 200*time.Millisecond, 200*time.Millisecond,
+		func(ctx context.Context) {
+			<-ctx.Done()
+			renewReturned = time.Now()
+		},
+		func(ctx context.Context) error {
+			syncDeadline, _ = ctx.Deadline()
+			<-ctx.Done()
+			syncEnded = time.Now()
+			return ctx.Err()
+		},
+		func(ctx context.Context) error {
+			pushCalls.Add(1)
+			pushCtxErr = ctx.Err()
+			pushDeadline, pushHasDeadline = ctx.Deadline()
+			return nil
+		})
+
+	start := time.Now()
+	done := make(chan struct{})
+	go func() {
+		_ = runOnce(context.Background())
+		close(done)
+	}()
+	within(t, done, 1500*time.Millisecond, "runOnce returned")
+
+	if got := pushCalls.Load(); got != 1 {
+		t.Fatalf("push calls = %d, want 1", got)
+	}
+	if pushCtxErr != nil {
+		t.Fatalf("the push got an ended context: %v", pushCtxErr)
+	}
+	// The push runs under the run's budget, which leaves monitor.Push its reserve.
+	if !pushHasDeadline || pushDeadline.After(start.Add(1100*time.Millisecond)) {
+		t.Fatalf("push deadline = %v (set %v), want the run's budget of 1s", pushDeadline.Sub(start), pushHasDeadline)
+	}
+	// The sync budget starts when the renewal is back, not with the run: a sync
+	// context derived from the renewal's, or a wrong budget, ends earlier.
+	if min := renewReturned.Add(200 * time.Millisecond); syncDeadline.Before(min) {
+		t.Fatalf("sync deadline %s before the renewal's return + 200ms (%s)",
+			syncDeadline.Sub(start), min.Sub(start))
+	}
+	if syncEnded.Sub(start) > 900*time.Millisecond {
+		t.Fatalf("the sync ended %s after the start, want it at its own budget", syncEnded.Sub(start))
+	}
+}
+
+func TestRunOnceBudgetEndsWithTheParent(t *testing.T) {
+	renewing := make(chan struct{})
+	var syncErr, pushErr atomic.Value
+	setRunPhases(t, time.Minute, time.Minute, time.Minute,
+		func(ctx context.Context) {
+			close(renewing)
+			<-ctx.Done()
+		},
+		func(ctx context.Context) error {
+			syncErr.Store(fmt.Sprint(ctx.Err()))
+			return ctx.Err()
+		},
+		func(ctx context.Context) error {
+			pushErr.Store(fmt.Sprint(ctx.Err()))
+			return ctx.Err()
+		})
+
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		_ = runOnce(parent)
+		close(done)
+	}()
+	within(t, renewing, time.Second, "renewal started")
+	cancel()
+	within(t, done, time.Second, "runOnce returned after the parent ended")
+
+	if got := syncErr.Load(); got != context.Canceled.Error() {
+		t.Fatalf("sync context = %v, want %v", got, context.Canceled)
+	}
+	if got := pushErr.Load(); got != context.Canceled.Error() {
+		t.Fatalf("push context = %v, want %v", got, context.Canceled)
 	}
 }

@@ -172,6 +172,11 @@ func fetchServerCertPEM(rawURL string) ([]byte, error) {
 	return pemBytes, nil
 }
 
+// pushReserve is the time a run keeps for PushReport after the collection: one
+// request of at most 15 s, the retry delay of 10 s and the retry's 15 s
+// (report.go: pushRetryDelay, the client timeout), plus a margin.
+var pushReserve = 45 * time.Second
+
 // Push reads the config and sends a one-off report. The ctx aborts the push
 // retry backoff on shutdown so a stopping service is not blocked up to 10s.
 func Push(ctx context.Context) error {
@@ -187,7 +192,16 @@ func Push(ctx context.Context) error {
 	}
 
 	reportStatePath := config.MonitorReportStateFile()
-	report, nextReportState := buildReportWithState(ctx, cfg.Services, loadReportState(reportStatePath), time.Now())
+	// With a deadline (a run of the agent), the collection ends pushReserve before it:
+	// a slow tool costs its part of the report, not the push. Without one (monitor push
+	// by hand) the collection runs as long as its tools do.
+	collectCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		collectCtx, cancel = context.WithDeadline(ctx, deadline.Add(-pushReserve))
+		defer cancel()
+	}
+	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, loadReportState(reportStatePath), time.Now())
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(ctx, PushReportParams{

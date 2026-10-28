@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"adminhelper-agent/internal/config"
 )
 
 // stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
@@ -331,5 +333,48 @@ func TestPushReportAbortsInFlightRequestOnContextCancel(t *testing.T) {
 	}
 	if got := attempts.Load(); got != 1 {
 		t.Errorf("attempts = %d, erwartet 1 (kein Retry)", got)
+	}
+}
+
+func TestPushBudgetKeepsThePushReserve(t *testing.T) {
+	stubReportHost(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	oldReserve := pushReserve
+	pushReserve = 300 * time.Millisecond
+	t.Cleanup(func() { pushReserve = oldReserve })
+	// A collector that hangs until its context ends: only the collection deadline
+	// pushReserve before the run's deadline leaves the push its time.
+	pluginCollectors.docker = func(ctx context.Context) map[string]any {
+		<-ctx.Done()
+		return nil
+	}
+
+	received := make(chan time.Time, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- time.Now()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	if err := Push(ctx); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	select {
+	case at := <-received:
+		if !at.Before(deadline) {
+			t.Fatalf("report received %s after the deadline", at.Sub(deadline))
+		}
+	default:
+		t.Fatal("the server got no report")
 	}
 }

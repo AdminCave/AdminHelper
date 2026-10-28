@@ -113,6 +113,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: jeder Lauf hat ein Budget von 240 s mit Reserve fuer den Monitor-Push:** Erneuerung und FRP-Abgleich
+  haben je hoechstens 60 s, die Erhebung des Reports endet 45 s vor dem Ende des Laufs, der Push hat diese 45 s. Ein
+  haengendes `systemctl`, ein haengender Sync oder ein langsames Werkzeug kostet damit seine Phase statt des Reports;
+  bisher konnten die Einzeldeckel zusammen ueber 500 s dauern, waehrend systemd den Lauf nach 270 s beendet. Das
+  Ende eines Laufs reicht bis in die Sperre, die Erneuerung, den Sync und jeden Werkzeug-Aufruf. Doku: Agent fuer
+  Entwickler (DE+EN).
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen

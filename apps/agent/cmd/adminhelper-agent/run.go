@@ -35,6 +35,24 @@ var cycle = func(ctx context.Context) { _ = runOnce(ctx) }
 
 var logger = logging.For("agent")
 
+// The budget of one run. The sum of the phases' own caps (renewal, every systemctl
+// call of the sync, every tool of the report) exceeds 500 s, while systemd ends a
+// oneshot run after TimeoutStartSec=270 (systemd/adminhelper-agent.service): without a
+// budget a hanging renewal or sync costs the report. 240 s keeps 30 s below the unit;
+// renewal and sync get at most 60 s each, the push keeps its reserve (monitor.Push).
+var (
+	runBudget   = 240 * time.Second
+	renewBudget = 60 * time.Second
+	syncBudget  = 60 * time.Second
+)
+
+// The phases of runOnce; seams for the tests.
+var (
+	renewPhase = maybeRenewIdentity
+	syncPhase  = frpc.Sync
+	pushPhase  = monitor.Push
+)
+
 func runCmd() *cobra.Command {
 	var once bool
 
@@ -125,25 +143,44 @@ func serve(ctx context.Context, interval time.Duration, cycle func(context.Conte
 // non-zero and systemd's OnFailure fires. Transient failures (5xx, network) are
 // logged and swallowed — the next run retries (4.80/4.81). The long-running loop
 // discards the return and keeps ticking.
-func runOnce(ctx context.Context) error {
+func runOnce(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, runBudget)
+	defer cancel()
+
 	// The agent runs as a oneshot (systemd timer / scheduled task), so renewal
 	// is a check-at-each-run rather than a background timer: if the enrolled cert
 	// is past ~50 % of its lifetime, renew it before the pushes.
-	maybeRenewIdentity(ctx)
+	renewCtx, endRenew := context.WithTimeout(ctx, renewBudget)
+	renewPhase(renewCtx)
+	logPhaseBudget(renewCtx, ctx, "renewal", renewBudget)
+	endRenew()
+
 	var permanent error
-	if err := frpc.Sync(ctx); err != nil {
+	syncCtx, endSync := context.WithTimeout(ctx, syncBudget)
+	err := syncPhase(syncCtx)
+	logPhaseBudget(syncCtx, ctx, "FRP sync", syncBudget)
+	endSync()
+	if err != nil {
 		logger.Errorf("FRPC-Sync Fehler: %v", err)
 		if errors.Is(err, httpclient.ErrPermanent) {
 			permanent = err
 		}
 	}
-	if err := monitor.Push(ctx); err != nil {
+	if err := pushPhase(ctx); err != nil {
 		logger.Errorf("Monitor-Push Fehler: %v", err)
 		if permanent == nil && errors.Is(err, httpclient.ErrPermanent) {
 			permanent = err
 		}
 	}
 	return permanent
+}
+
+// logPhaseBudget names a phase that ran into its own budget; an end of the run itself
+// (signal, service stop, run budget) is no phase's doing.
+func logPhaseBudget(phase, run context.Context, name string, budget time.Duration) {
+	if run.Err() == nil && errors.Is(phase.Err(), context.DeadlineExceeded) {
+		logger.Warnf("%s ended at its budget of %s", name, budget)
+	}
 }
 
 // maybeRenewIdentity renews the enrolled mTLS cert when due. Best-effort: a
