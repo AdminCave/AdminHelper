@@ -391,6 +391,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Ein gespeicherter Visitor-Port ausserhalb 1-65535 wird beim Aendern ersetzt (R-0570):** Ein `PUT
+  /api/frp/tunnels/{id}` ohne `visitor_port` gibt einem STCP-Tunnel mit einem solchen Altwert einen freien Port; die
+  automatisch angelegte Verbindung zeigt auf diesen statt auf einen Port, an dem nie ein Visitor lauscht. Doku:
+  FRP-Tunnel und API-Referenz fuer Entwickler (DE+EN).
+- **FRP: Ein gespeicherter lokaler Port ausserhalb 1-65535 kostet nicht mehr alle Tunnel des Hosts (R-0560):** Der
+  Server laesst einen solchen Tunnel aus der frpc-Konfiguration des Agents weg und schreibt eine Warnung ins
+  Server-Log; vorher lehnte frpc die ganze Konfiguration ab. Doku: FRP-Tunnel (DE+EN).
+- **FRP: Der lokale Port eines Tunnels nimmt nur 1-65535 an (R-0560):** `POST` und `PUT /api/frp/tunnels` mit
+  einem `local_port` ausserhalb 1-65535 (im `PUT` auch `null`) antworten `422` an `local_port`; vorher wurde der Wert
+  gespeichert, und ein groesserer Wert machte die frpc-Konfiguration des Agents ungueltig, sodass alle Tunnel des
+  Hosts ausfielen (`null` ergab 409 mit falscher Meldung). Doku: API-Referenz fuer Entwickler (DE+EN).
+- **FRP: Tunnel mit unbekannter Verbindung ergibt 422, ein verlorenes Rennen 409 (R-0656):** Eine `connection_id`,
+  zu der es keine Verbindung gibt, ergibt `422` an `connection_id`: bei `POST /api/frp/tunnels` statt 500, bei `PUT`
+  statt `409` mit falscher Meldung. Ein verlorenes Rennen um Name oder Visitor-Port ergibt beim Anlegen und beim
+  Aendern mit automatischer Verbindung `409` statt 500. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **Server: der Monitoring-Proxy antwortet 502 oder 504 statt 500 (R-0655):** Ist der Monitoring-Dienst nicht
+  erreichbar, etwa waehrend eines Neustarts, antworten Agent-Report und Admin-Proxy mit `502`, ohne Antwort binnen
+  30 s mit `504`; bisher endete jeder Aufruf mit einem unbehandelten Fehler (500). Das Log nennt nur den Fehlertyp.
+  Doku: API-Referenz fuer Entwickler (DE+EN).
+- **Server: ein offener Benachrichtigungs-Stream haelt keine Datenbank-Verbindung mehr (R-0618):** Mit
+  Client-Zertifikat hielt jeder Desktop fuer seine ganze Sitzung eine Verbindung aus dem Pool; die Scope-Pruefung des
+  Streams laeuft jetzt auf der kurzen Session der Anmeldung. Ohne passendes Zertifikat antwortet er im erzwungenen
+  Modus wie bisher mit 403.
+- **Hooks: eine geleerte Beschreibung wird gespeichert (R-0651):** `PUT /api/hooks/{id}` mit `"description": null`
+  loescht die Beschreibung; bisher meldete der Dialog "gespeichert" und zeigte wieder den alten Text. Ein fehlendes
+  Feld laesst sie unveraendert. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **Hooks: Schedule-Hooks mit festem Intervall laufen wieder (R-0617):** Hooks mit einem Intervall von 1m bis 24h
+  liefen nie, weil der Abgleich des Schedulers alle 30 s ihren naechsten Lauf neu setzte. Ein unveraenderter Job
+  behaelt jetzt seinen naechsten Lauf; Cron-Hooks waren nicht betroffen.
 - **Agent: jeder Lauf hat ein Budget von 240 s mit Reserve fuer den Monitor-Push:** Erneuerung und FRP-Abgleich
   haben je hoechstens 60 s, die Erhebung des Reports endet 45 s vor dem Ende des Laufs, der Push hat diese 45 s. Ein
   haengendes `systemctl`, ein haengender Sync oder ein langsames Werkzeug kostet damit seine Phase statt des Reports;
