@@ -131,8 +131,10 @@ Metrik: `wc -l apps/web/src/modals/HookModal.svelte`: 206 → weniger; Payload-Z
 Dedup-Key: ref:web:modals:payload-logic-untested
 HEAD: b25c65a6
 
-### T8 — UserModal: Anlegen, Server-Zuweisung und Ladefehler pinnen (R-0722)  [ ]
+### T8 — UserModal: Anlegen, Server-Zuweisung und Ladefehler pinnen (R-0722)  [x]
 Komponente: web · Dateien: apps/web/src/modals/UserModal.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @0c186c56 2026-10-28T17:22:20+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T8.verdict.json)
 Änderung: Neue `describe`-Blöcke neben den Fällen zu R-0652 (`UserModal.test.ts:72-140`, bleiben unverändert). Der Mock von `$lib/api/servers` (heute `list: vi.fn(async () => [])`) liefert je Test zwei Server `{ id: 's1', name: 'web-01', hostname: 'web-01.example' }`, `{ id: 's2', name: 'db-01', hostname: 'db-01.example' }`; der Mock von `$lib/api/users` bekommt `create` (wie heute `update`). Die Hilfe `renderModal` nimmt an, die einzige Checkbox sei „Admin“; die neuen Tests suchen Server-Checkboxen über ihren Namen. Fälle: (a) Anlegen: Benutzername `'  alice  '`, Passwort, Klick auf `db-01` → `create({ username: 'alice', password, is_admin: false, server_ids: ['s2'] })`, Toast `toast.user.created`, `onClose`; (b) Anlegen ohne Passwort → kein Aufruf, Toast `modal.user.passwordRequired`; (c) einen anderen Benutzer mit `server_ids: ['s1']` bearbeiten, `s1` ab- und `s2` anwählen, Passwort leer → `update(id, { is_admin, server_ids: ['s2'] })` ohne Schlüssel `password`, Toast `toast.user.saved`; (d) die Liste zeigt Name und Hostname je Server; (e) `list()` wirft → Hinweis `page.users.serverLoadFailed` und eine Fehlermeldung; (f) leere Liste → `page.users.noServers`. Kein Produktionscode ändert sich; die Datei ist auf HEAD grün.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/UserModal.test.ts
 Doku: keine (nur Tests)
@@ -258,3 +260,4 @@ HEAD: b25c65a6
 
 ## Entscheidungen
 - 2026-10-28 T4: save() erhoeht refreshGen nur, wenn die Epoche gleich blieb (die Task sagt: nach der Antwort immer) — ein Bump nach reset() verwuerfe das Laden der naechsten Sitzung; ein Kontrolltest in frp.test.ts haelt das fest.
+- 2026-10-28 T8: UserModal.test.ts war von T2 (ac86adde) bis T8 rot: listStore liest api.list beim Laden des Moduls, der Mock von $lib/api/users hatte kein list; das Verify von T2 nannte die Datei nicht. T8 ergaenzt list im Mock; vor dem PR faehrt die Abschlusspruefung die ganze Web-Suite.
