@@ -6,6 +6,7 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
+from app.modules.connections.models import Connection
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import FrpTunnelCreate, FrpTunnelUpdate
@@ -77,6 +79,25 @@ def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:
     )
 
 
+def _reject_unknown_connection(db: Session, connection_id: str | None) -> None:
+    """A connection_id no row matches reached the INSERT and failed on its foreign key.
+    RequestValidationError, not HTTPException, so the 422 keeps the shape the OpenAPI
+    schema declares (as _reject_unknown_server in connections/router.py)."""
+    if connection_id is None:
+        return
+    if db.query(Connection.id).filter(Connection.id == connection_id).first() is None:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "connection_id"),
+                    "msg": "connection not found",
+                    "input": connection_id,
+                }
+            ]
+        )
+
+
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
@@ -102,6 +123,7 @@ def create_tunnel(
     config = db.query(FrpServerConfig).filter(FrpServerConfig.id == data.frp_config_id).first()
     if not config:
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
+    _reject_unknown_connection(db, data.connection_id)
 
     existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
     if existing:
@@ -146,12 +168,10 @@ def create_tunnel(
         tags=json.dumps(data.tags) if data.tags else None,
     )
     db.add(tunnel)
-    db.flush()
-
-    if data.auto_create_connection:
-        _attach_auto_connection(db, tunnel, data.auto_connection_username)
-
     try:
+        db.flush()
+        if data.auto_create_connection:
+            _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
     except IntegrityError:
         # Lost a race against a concurrent create on the same proxy name or
@@ -195,6 +215,8 @@ def update_tunnel(
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
     sent = data.model_fields_set
+    if "connection_id" in sent:
+        _reject_unknown_connection(db, data.connection_id)
     # Responses never carry the secret, so an editor sends the field back
     # empty: on update, null or "" means "keep the stored secret".
     if "secret_key" in sent and not data.secret_key:
@@ -258,10 +280,9 @@ def update_tunnel(
     if "tags" in sent:
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
-    if data.auto_create_connection and not tunnel.connection_id:
-        _attach_auto_connection(db, tunnel, data.auto_connection_username)
-
     try:
+        if data.auto_create_connection and not tunnel.connection_id:
+            _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
     except IntegrityError:
         db.rollback()

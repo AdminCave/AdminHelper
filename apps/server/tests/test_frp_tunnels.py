@@ -6,6 +6,8 @@
 STCP secret autogeneration, and the duplicate-name conflict — none of which had a test, so a
 regression removing the conflict check would only surface as frps misbehaviour in production (6.74)."""
 
+from app.modules.connections.models import Connection
+from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
 
@@ -294,3 +296,81 @@ def test_put_to_https_with_a_taken_port_is_not_a_409(test_client, db_session, ad
     r = test_client.put("/api/frp/tunnels/t-a", json={**_HTTPS, "visitor_port": 6001}, headers=h)
     assert r.status_code == 200, r.text
     assert _stored(db_session, "t-a").visitor_port is None
+
+
+# --- R-0656: an unknown connection_id is a 422, a lost race a 409 --------------
+
+
+def test_create_with_an_unknown_connection_is_422(test_client, db_session, admin_user):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.post("/api/frp/tunnels", json=_body(connection_id="missing"), headers=h)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "connection_id"]
+    assert db_session.query(FrpTunnel).filter_by(name="neu").first() is None
+
+
+def test_update_to_an_unknown_connection_is_422(test_client, db_session, admin_user):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-a", json={"connection_id": "missing"}, headers=h)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "connection_id"]
+    db_session.expire_all()
+    assert db_session.get(FrpTunnel, "t-a").connection_id is None
+
+
+def test_create_with_an_existing_connection_is_stored(test_client, db_session, admin_user):
+    _seed(db_session)
+    db_session.add(
+        Connection(
+            id="c-1", name="conn", kind="ssh", host="a.example.test", port=22, server_id="srv-a"
+        )
+    )
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.post("/api/frp/tunnels", json=_body(connection_id="c-1"), headers=h)
+    assert r.status_code == 201, r.text
+    assert db_session.query(FrpTunnel).filter_by(name="neu").one().connection_id == "c-1"
+
+
+def test_a_lost_race_on_create_is_409(test_client, db_session, admin_user, monkeypatch):
+    # The read-then-check misses a concurrent insert; the flush hits the unique constraint.
+    _seed(db_session)
+    monkeypatch.setattr(tunnel_router, "next_visitor_port", lambda db, **kw: 6000)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.post("/api/frp/tunnels", json=_body(), headers=h)
+    assert r.status_code == 409, r.text
+    assert db_session.query(FrpTunnel).filter_by(name="neu").first() is None
+
+
+def test_a_lost_race_on_update_with_an_auto_connection_is_409(
+    test_client, db_session, admin_user, monkeypatch
+):
+    _seed(db_session)
+    db_session.add(
+        FrpTunnel(
+            id="t-b",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="b-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="other-secret",
+            visitor_port=6001,
+            enabled=True,
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(tunnel_router, "_port_taken", lambda *a: False)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put(
+        "/api/frp/tunnels/t-b",
+        json={"visitor_port": 6000, "auto_create_connection": True},
+        headers=h,
+    )
+    assert r.status_code == 409, r.text
+    db_session.expire_all()
+    assert db_session.get(FrpTunnel, "t-b").visitor_port == 6001
+    assert db_session.query(Connection).filter(Connection.name.like("% (via FRP)")).count() == 0

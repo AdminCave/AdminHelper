@@ -343,6 +343,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Tunnel mit unbekannter Verbindung ergibt 422, ein verlorenes Rennen 409 (R-0656):** Eine `connection_id`,
+  zu der es keine Verbindung gibt, ergibt `422` an `connection_id`: bei `POST /api/frp/tunnels` statt 500, bei `PUT`
+  statt `409` mit falscher Meldung. Ein verlorenes Rennen um Name oder Visitor-Port ergibt beim Anlegen und beim
+  Aendern mit automatischer Verbindung `409` statt 500. Doku: API-Referenz fuer Entwickler (DE+EN).
 - **Server: der Monitoring-Proxy antwortet 502 oder 504 statt 500 (R-0655):** Ist der Monitoring-Dienst nicht
   erreichbar, etwa waehrend eines Neustarts, antworten Agent-Report und Admin-Proxy mit `502`, ohne Antwort binnen
   30 s mit `504`; bisher endete jeder Aufruf mit einem unbehandelten Fehler (500). Das Log nennt nur den Fehlertyp.
