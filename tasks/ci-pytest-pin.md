@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI wieder grün: pytest unter 9.2 halten, bis pytest-alembic 9.2 verträgt — Task-Ledger
-Status: bereit · Branch: feature/ci-pytest-pin · Review: am Ende
+Status: erledigt · Branch: feature/ci-pytest-pin · Review: am Ende
 Spec: Roadmap R-0916
 Heavy: none — nur Test-Abhängigkeiten in `requirements-dev.txt`; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad, das Image installiert sie nicht.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
