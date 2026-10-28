@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Metrik-Filter, Mount-Default, Speicher- und Eingabegrenzen, Nacharbeiten aus monitoring-io — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-hardening-2 · Review: pro Task
+Status: bereit · Branch: feature/monitoring-hardening-2 · Review: pro Task
 Spec: docs/features/monitoring-hardening-2.md (Roadmap R-0749, R-0753, R-0774, R-0799; T4, T6, T8 und T9 gehören zum Paket, Kevin 2026-10-22)
 Heavy: none — nur Interna von `apps/monitoring` und Doku: keine Route, kein Response-Schema, keine OpenAPI-Änderung (`field_validator`/`model_validator(mode="before")` ändern das JSON-Schema nicht; `tests/test_openapi_snapshot.py` steht im Verify von T3 und T9), kein Alembic (nur bei Variante B von T9 käme eine Datenmigration und damit `linux-full` dazu), kein Agent-, Gateway-, Compose-, PKI-, FRP- oder Install-Pfad; T1 ändert nur den PromQL-Selektor des Metrik-Abrufs, T2 einen Tag-Wert
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -179,8 +179,10 @@ Orakel: contract — ein Lauf eines gelöschten Checks antwortet wie jeder ander
 Dedup-Key: ref:monitoring:io-nits
 HEAD: 13f340e4
 
-### T13 — Statuswechsel erst nach dem Speichern loggen (R-0799)  [ ]
+### T13 — Statuswechsel erst nach dem Speichern loggen (R-0799)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_execute_check.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @06f881fc 2026-10-28T16:43:00+01:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T13.verdict.json)
 Änderung: `apply_result` (`app/check_engine.py:167`) loggt nicht mehr (`:244-253` entfällt, der Docstring `:180-183` nennt die Log-Zeile nicht mehr); neue öffentliche Funktion `log_transition(name, old_status, new_status, message)` in `app/check_engine.py`, Logger `monitor.engine`, Text wie heute `"Check '%s': %s -> %s (%s)"`. Bedingung und Meldung wie heute (`:242-253`): Es gab vorher einen Zustand (`state is not None` vor `apply_result`) und `eff_status != old_status`; die Meldung ist das `message` des Ergebnisses. `execute_check` ruft sie nach `db.commit()` (`:368`); der Push-Pfad merkt den Wechsel eines Checks erst nach dem Ende seines Savepoints (neben `check_lines`, `app/routers/agent.py:256`) und loggt nach dem gemeinsamen Commit (`:261-270`). Tests: (a) in `tests/test_agent_report.py` wie `test_a_database_error_costs_only_its_check` (`:846-890`, beide Parameter), aber beide Checks vorher `ok` → genau eine Zeile `ok -> critical` unter `monitor.engine`, die von `chk-b`; (b) in `tests/test_execute_check.py`: `db.commit` scheitert (Naht über die Session-Fabrik wie `_wire_counting`) → keine Zeile `->`, die ERROR-Zeile „execute_check(c1) fehlgeschlagen“ kommt; Erfolgsfall mit Wechsel → genau eine Zeile. `test_status_transition_is_logged_on_the_push_path` (`:800-836`) bleibt unverändert grün. Zuerst rot: (a), (b) auf HEAD.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_execute_check.py tests/test_check_engine.py
 Doku: keine (die Doku nennt den Zeitpunkt der Zeile nicht; vorher `grep -n "\-> \|Statuswechsel\|transition" docs/developer/monitoring.html`)

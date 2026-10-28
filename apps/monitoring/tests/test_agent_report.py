@@ -916,6 +916,57 @@ def test_a_database_error_costs_only_its_check(client_db, monkeypatch, caplog, f
     assert len(failures) == 1, [r.getMessage() for r in caplog.records]
 
 
+@pytest.mark.parametrize(
+    "flush_in_check",
+    [
+        pytest.param(True, id="error-inside-the-check"),
+        pytest.param(False, id="error-at-the-savepoint-release"),
+    ],
+)
+def test_only_the_saved_transition_is_logged(client_db, monkeypatch, caplog, flush_in_check):
+    # As above, with both checks ok before: the broken check's savepoint is rolled back,
+    # so its transition did not happen and gets no line; the other one gets exactly one.
+    from app.models import MonitorAgentLiveness
+    from app.routers import agent as agent_router
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-a", "agent_resources")
+    _add_push_check(factory, "chk-b", "agent_resources")
+    client.post("/agent/srv-1/report", json=_report(cpu=5))
+    with factory() as db:
+        assert {s.check_id: s.status for s in db.query(MonitorState)} == {
+            "chk-a": "ok",
+            "chk-b": "ok",
+        }
+    real_apply_result = agent_router.apply_result
+
+    def apply_result_breaking_the_first_check(db, check, *args, **kwargs):
+        result = real_apply_result(db, check, *args, **kwargs)
+        if check.id == "chk-a":
+            db.add(MonitorAgentLiveness(server_id="broken", last_report_at=None))
+            if flush_in_check:
+                db.flush()
+        return result
+
+    monkeypatch.setattr(agent_router, "apply_result", apply_result_breaking_the_first_check)
+    monkeypatch.setattr(agent_router, "_dispatch_alert_bg", lambda *alert: None)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
+        r = client.post("/agent/srv-1/report", json=_report(cpu=99))
+    assert r.status_code == 200, r.text
+    transitions = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "monitor.engine" and "->" in r.getMessage()
+    ]
+    assert len(transitions) == 1, transitions
+    assert "ok -> critical" in transitions[0]
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-a").one().status == "ok"
+        assert db.query(MonitorState).filter_by(check_id="chk-b").one().status == "critical"
+
+
 def _add_docker_check(factory, consecutive_fails: int) -> str:
     with factory() as db:
         db.add(

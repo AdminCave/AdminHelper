@@ -14,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from app.check_engine import _dispatch_alert_bg, apply_result
+from app.check_engine import _dispatch_alert_bg, apply_result, log_transition
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import (
@@ -144,6 +144,7 @@ def agent_report(
     # (check_id, old_status, new_status) for each sent-state discrepancy; dispatched in
     # the background after the response so webhook/SMTP never block the request.
     pending_alerts: list[tuple[str, str, str]] = []
+    transitions: list[tuple[str, str, str, str]] = []
     agent_checks = (
         db.query(MonitorCheck)
         .filter(
@@ -242,6 +243,7 @@ def agent_report(
                 # per-metric hysteresis memory ('problems') across one degenerate
                 # push (T38). notify is collected here and dispatched only after the
                 # batch commit: a blocking webhook/SMTP must not stall this request.
+                had_state = state is not None
                 old_status, eff_status, decision = apply_result(
                     db,
                     check,
@@ -257,6 +259,8 @@ def agent_report(
             continue
 
         check_lines.extend(result_lines)
+        if had_state and eff_status != old_status:
+            transitions.append((check.name, old_status, eff_status, state.message))
         if decision == "notify":
             pending_alerts.append((check.id, old_status, eff_status))
         checks_updated += 1
@@ -271,6 +275,10 @@ def agent_report(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save the check evaluation",
             )
+        # Logged only once saved: a transition of a check whose savepoint or the shared
+        # commit failed did not happen.
+        for transition in transitions:
+            log_transition(*transition)
 
     # Flush all collected per-check metrics in a single write (5.20).
     if check_lines:
