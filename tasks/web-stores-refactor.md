@@ -117,8 +117,10 @@ Orakel: contract — die Payloads nach `HookCreate`/`HookUpdate` (`apps/web/src/
 Dedup-Key: ref:web:modals:payload-logic-untested
 HEAD: b25c65a6
 
-### T7 — HookModal: Formular → Payload als reine Funktionen (R-0722)  [ ]
+### T7 — HookModal: Formular → Payload als reine Funktionen (R-0722)  [x]
 Komponente: web · Dateien: apps/web/src/lib/utils/hookForm.ts, apps/web/src/lib/utils/hookForm.test.ts, apps/web/src/modals/HookModal.svelte
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @99ef641c 2026-10-28T17:16:36+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T7.verdict.json)
 Änderung: Neu `hookForm.ts` (SPDX; nicht `apps/web/src/lib/utils/hooks.ts`, das audit-coverage ändert): `interface HookForm { name; description; hookType; script; events: string[]; interval; cron }`, `hookFormFrom(editing: HookDetail | null): HookForm` (heute das `$effect` `HookModal.svelte:33-49` samt Preset-Erkennung), `validateHookForm(form): 'modal.hook.selectEvent' | 'modal.hook.selectInterval' | null` (`:74-82`), `hookCreatePayload(form): HookCreate` und `hookUpdatePayload(form): HookUpdate` (`:85-103`). Der Dialog hält weiter seine `$state`-Felder und ruft die Funktionen; Toasts, `onClose` und das Token bleiben in der Komponente. `hookForm.test.ts`: die Fälle aus T6 (a)–(h) auf Funktionsebene, dazu `hookFormFrom(null)` (`webhook`, `1h`) und ein Preset beim Bearbeiten (`interval = '6h'`, `cron = ''`). `HookModal.test.ts` (T6) ändert sich nicht und ist vor und nach dem Diff grün (beide Summary-Zeilen in den Commit-Body). Mutations-Stichprobe im Probe-Worktree, je allein an `hookForm.ts`: M1 `name.trim()` → `name`; M2 `|| null` → `|| ''`; M3 `cron.trim()` → `cron`; M4 `event_triggers` auch bei `schedule` → erwartet je `HookModal.test.ts` und `hookForm.test.ts` rot.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/utils/hookForm.test.ts src/modals/HookModal.test.ts
 Doku: keine (intern)
