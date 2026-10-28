@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { auth, currentUser } from '$lib/stores/auth';
   import * as serversApi from '$lib/api/servers';
   import { showToast, showError } from '$lib/stores/notifications';
-  import type { Server, User } from '$lib/api/types';
+  import type { ServerSummary, User } from '$lib/api/types';
   import {
     endsOwnSession,
     userCreatePayload,
@@ -32,7 +32,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let username = $state('');
   let password = $state('');
   let isAdmin = $state(false);
-  let serverList = $state<Server[]>([]);
+  let serverList = $state<ServerSummary[]>([]);
   let serverLoadFailed = $state(false);
   let selectedServerIds = $state<Set<string>>(new Set());
   let submitting = $state(false);
@@ -52,7 +52,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   async function loadServers() {
     serverLoadFailed = false;
     try {
-      serverList = await serversApi.list();
+      serverList = await serversApi.listSummaries();
     } catch (err) {
       // Surface the failure instead of showing the empty "no servers" state — otherwise an admin
       // thinks there are no servers, saves the user with no assignments, and (when editing) can't

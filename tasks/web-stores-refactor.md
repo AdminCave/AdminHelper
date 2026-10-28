@@ -171,9 +171,11 @@ Metrik: Bytes der Serverliste für den Dialog bei 500 synthetischen Servern (Pro
 Dedup-Key: ref:web:UserModal.svelte:full-inventory-fetch
 HEAD: b25c65a6
 
-### T11 — Web: der Benutzerdialog lädt nur die Server-Zusammenfassung (R-0723)  [ ]
+### T11 — Web: der Benutzerdialog lädt nur die Server-Zusammenfassung (R-0723)  [x]
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @302636c4 2026-10-28T18:00:01+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T11.verdict.json)
 Entscheidung: Kevin 2026-10-23: Variante (c), der Dialog lädt die Zusammenfassung aus T10.
-Komponente: web · Dateien: apps/web/src/lib/api/servers.ts, apps/web/src/lib/api/types.ts, apps/web/src/modals/UserModal.svelte, apps/web/src/modals/UserModal.test.ts, apps/web/tests/e2e/mocks.ts
+Komponente: web · Dateien: apps/web/src/lib/api/servers.ts, apps/web/src/lib/api/types.ts, apps/web/src/modals/UserModal.svelte, apps/web/src/modals/UserModal.test.ts, apps/web/tests/e2e/mocks.ts, apps/web/src/lib/api/mocks.contract.test.ts
 Änderung: `types.ts:82-89`: `Server` wird `ServerSummary { id: string; name: string; hostname: string }` (Nutzer heute nur `servers.ts` und `UserModal.svelte:15`). `servers.ts:14-16`: `list()` wird `listSummaries(): Promise<ServerSummary[]>` → `GET /api/servers/summary`; der Kopfkommentar (`:5-9`) bleibt sinngemäß (einziger Server-Endpunkt des Web). `UserModal.svelte` ruft `listSummaries()`. `UserModal.test.ts`: der Mock von `$lib/api/servers` heißt `listSummaries` (die Fälle aus T8 bleiben, nur der Name ändert sich); neu: beim Öffnen genau ein Aufruf von `listSummaries`. `apps/web/tests/e2e/mocks.ts:297-299`: die Route wird `api('servers/summary')` (leere Liste wie heute); `MOCK_FIXTURES` (`:202`) bekommt `GET servers/summary` mit einer Zeile `{ id, name, hostname }`, damit `src/lib/api/mocks.contract.test.ts` die Form gegen `apps/server/tests/openapi.snapshot.json` prüft.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/UserModal.test.ts src/lib/api/mocks.contract.test.ts src/lib/utils/userForm.test.ts
 Doku: keine (den CHANGELOG-Eintrag trägt T10; `docs/developer/webui.html:80` nennt `servers.ts` weiter „nur für die User↔Server-Zuweisung“)

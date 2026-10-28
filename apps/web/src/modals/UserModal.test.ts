@@ -11,7 +11,7 @@ import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('$lib/api/users', () => ({ list: vi.fn(), update: vi.fn(), create: vi.fn() }));
-vi.mock('$lib/api/servers', () => ({ list: vi.fn(async () => []) }));
+vi.mock('$lib/api/servers', () => ({ listSummaries: vi.fn(async () => []) }));
 // A session without a server, as in ConfirmDialog.test.ts.
 vi.mock('$lib/api/client', () => ({
   restoreSession: vi.fn(async () => true),
@@ -28,7 +28,7 @@ import { update, create } from '$lib/api/users';
 import * as serversApi from '$lib/api/servers';
 import * as authApi from '$lib/api/auth';
 import { auth, isAdmin } from '$lib/stores/auth';
-import { ApiError, type Server, type User } from '$lib/api/types';
+import { ApiError, type ServerSummary, type User } from '$lib/api/types';
 import { language } from '$lib/i18n';
 import { translations } from '$lib/i18n/dictionaries';
 import { toasts, dismissToast } from '$lib/stores/notifications';
@@ -148,17 +148,17 @@ describe('UserModal form and server list', () => {
   const SERVERS = [
     { id: 's1', name: 'web-01', hostname: 'web-01.example' },
     { id: 's2', name: 'db-01', hostname: 'db-01.example' },
-  ] as Server[];
+  ] as ServerSummary[];
 
   beforeEach(() => {
-    vi.mocked(serversApi.list).mockResolvedValue(SERVERS);
+    vi.mocked(serversApi.listSummaries).mockClear().mockResolvedValue(SERVERS);
     vi.mocked(create)
       .mockReset()
       .mockImplementation(async (data) => ({ id: 3, ...data }) as User);
   });
 
   afterEach(() => {
-    vi.mocked(serversApi.list).mockReset().mockResolvedValue([]);
+    vi.mocked(serversApi.listSummaries).mockReset().mockResolvedValue([]);
   });
 
   function serverBox(container: HTMLElement, name: string): HTMLInputElement {
@@ -230,7 +230,7 @@ describe('UserModal form and server list', () => {
   });
 
   it('a list that fails to load says so and shows the error', async () => {
-    vi.mocked(serversApi.list).mockRejectedValue(new ApiError(500, 'inventory down'));
+    vi.mocked(serversApi.listSummaries).mockRejectedValue(new ApiError(500, 'inventory down'));
     const m = open(null);
 
     await waitFor(() =>
@@ -242,8 +242,14 @@ describe('UserModal form and server list', () => {
     expect(m.view.container.textContent).not.toContain(de['page.users.noServers']);
   });
 
+  it('opening the dialog loads the server summary once', async () => {
+    const m = open(null);
+    await waitFor(() => expect(serverBox(m.view.container, 'web-01')).toBeTruthy());
+    expect(serversApi.listSummaries).toHaveBeenCalledTimes(1);
+  });
+
   it('an empty list says there are no servers', async () => {
-    vi.mocked(serversApi.list).mockResolvedValue([]);
+    vi.mocked(serversApi.listSummaries).mockResolvedValue([]);
     const m = open(null);
 
     await waitFor(() => expect(m.view.container.textContent).toContain(de['page.users.noServers']));
