@@ -46,7 +46,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `builder` und `tester` entfallen; die Session plant, implementiert und korrigiert jede Task selbst, `reviewer`
   prueft vor jedem Task-Commit und vor dem PR den ganzen Branch ueber Code und Tests (Abdeckung, echte Assertions,
   Fehlerpfade, hoechstens drei Gegenproben), `security` bleibt fuer Risikopfade, `advisor` hilft gezielt bei
-  schwierigen Fragen. Die Session startet mit Sonnet (Effort high), die Pruefer laufen auf Opus (high).
+  schwierigen Fragen. Session und Pruefer laufen auf Opus mit Effort high (nicht mehr xhigh); Sonnet gezielt per
+  `claude --model sonnet`, xhigh per `advisor` oder `claude --effort xhigh`.
   `review.sh final` prueft das Branch-Urteil vor PR und Merge. `verify.sh` legt die volle Ausgabe unter
   `.ah-out/logs/` ab und zeigt einen Digest (`log-digest.sh`), `--full` streamt alles. Doku darf in einer Doku-Task
   desselben Ledgers gebuendelt werden und ist vor der Abschlusspruefung DE+EN vollstaendig. Doku: CI/CD fuer

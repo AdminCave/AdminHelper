@@ -555,8 +555,9 @@ Gearbeitet wird in einer interaktiven Claude-Code-Session in tmux, die Kevin im 
 Vorhabens, §5 Tests, §6 Rollen, Pruefer und Modelle, §7 Commit, §8 Roadmap und Worktrees, §13
 Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welche Teile es dafuer gibt.
 
-- **Modelle:** `.claude/settings.json` startet die Session mit `model: sonnet` und `effortLevel: high`;
-  `claude --model opus --effort xhigh` oder `/model` ueberschreiben das fuer eine Session. Die
+- **Modelle:** `.claude/settings.json` startet die Session mit `model: opus` und `effortLevel: high`
+  (vor den Benutzer-Settings); `claude --model sonnet` fuer klar begrenzte Arbeit, `claude --effort xhigh`
+  fuer ein Architektur-Vorhaben oder `/model` und `/effort` ueberschreiben das fuer eine Session. Die
   Sub-Agenten tragen Modell und Effort im Frontmatter.
 - **Sub-Agenten** in `.claude/agents/`: `reviewer` (eine Task vor dem Commit, oder der Branch vor dem PR
   ueber Code und Tests), `security` (Risikopfade), `advisor` (nur lesend, gezielte Hilfe bei

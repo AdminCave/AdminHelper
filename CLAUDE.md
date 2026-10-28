@@ -89,7 +89,7 @@ Vor dem ersten Lauf eines Vorhabens `.claude/rules/testing.md` lesen (Ebenen, SK
 ## 6. Rollen, Prüfer, Modelle (`.claude/agents/`)
 | Rolle | Modell | Aufgabe |
 |---|---|---|
-| Session | Sonnet, high (`.claude/settings.json`) | plant einfach, implementiert, korrigiert, schließt Tasks, Doku, Übersetzung |
+| Session | Opus, high (`.claude/settings.json`) | plant, implementiert, korrigiert, schließt Tasks, Doku, Übersetzung |
 | `reviewer` | Opus, high | `task`: jede Task vor ihrem Commit (nicht bei `Review: am Ende`); `branch`: Abschlussprüfung von Code und Tests |
 | `security` | Opus, high | dazu bei Risikopfad (`scripts/dev/review-risk.txt`, `review.sh risk`) |
 | `advisor` | Opus, high; per Aufruf `xhigh` | schwierige Architektur, festgefahrene Fehlersuche, Sicherheitsfragen; implementiert nicht |
@@ -98,11 +98,12 @@ Vor dem ersten Lauf eines Vorhabens `.claude/rules/testing.md` lesen (Ebenen, SK
   Arbeitsverzeichnis der Session: `git -C <wt>`, `bash <wt>/scripts/…`); Kevin tippt `@agent-<name>`. Den Auftrag
   trägt die Agent-Datei; die Session gibt nur Eingaben (Einsatzart, Slug, Task-ID, Diff-Pfade, Summary-Zeile,
   Scratch-Verzeichnis), keine Bewertung.
-- **Stärker nur gezielt:** Nach zwei ähnlichen Versuchen ohne Fortschritt fragt die Session den `advisor`, statt
+- **Mehr Effort nur gezielt:** Nach zwei ähnlichen Versuchen ohne Fortschritt fragt die Session den `advisor`, statt
   weiter zu probieren; `xhigh` nur für die schwersten Fragen, `max` nur mit Begründung in `## Entscheidungen`.
-  Fehlende Infrastruktur (Werkzeug, VM, Netz, Rechte) ist kein Grund für ein stärkeres Modell, sondern STOPP und
-  Bericht. Ihr eigenes Modell schaltet die Session nicht um; ein ganzes Architektur-Vorhaben empfiehlt sie Kevin mit
-  `/model opus` bzw. `claude --model opus --effort xhigh`.
+  Fehlende Infrastruktur (Werkzeug, VM, Netz, Rechte) ist kein Grund für mehr Modell oder Effort, sondern STOPP und
+  Bericht. Modell und Effort der eigenen Session schaltet die Session nicht um; sie empfiehlt Kevin
+  `claude --effort xhigh` für ein ganzes Architektur-Vorhaben und `claude --model sonnet` für klar begrenzte
+  Arbeit (reine Doku, Übersetzung, REF-Bündel) (Kevin 2026-10-28).
 - **Urteile:** `<wt>/.ah-out/review/<slug>/<id>.verdict.json` bzw. `branch.verdict.json` (Form in
   `.claude/agents/reviewer.md`). Kann ein Prüfer nicht schreiben, schreibt die Session das gemeldete JSON wörtlich
   (Kevin 2026-10-21).

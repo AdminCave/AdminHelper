@@ -17,9 +17,9 @@ Commit auf dem Feature-Branch (R-0065).
 (3a). Alle drei enden am selben Design-Gate (4). Eine SEC-Zeile plant keiner der drei Wege: das
 Gate committet in dieses öffentliche Repo, SEC-Funde bleiben unter `tasks/private/` (3a).
 
-Modell: die Session plant selbst (CLAUDE.md §6) und liest Code und Doku direkt, ohne Explorer-Sub-Agenten.
-Schwierige Architektur oder Sicherheitsfragen: gezielt `advisor` fragen, oder Kevin fährt die Planung mit Opus
-(CLAUDE.md §6). Vor dem Schreiben `.claude/rules/docs.md` und `.claude/rules/testing.md` lesen. Sprache: Deutsch,
+Modell: die Session plant selbst (Opus, high; CLAUDE.md §6) und liest Code und Doku direkt, ohne
+Explorer-Sub-Agenten. Schwierige Architektur oder Sicherheitsfragen: gezielt `advisor` fragen (per Aufruf `xhigh`),
+oder Kevin fährt die Planung mit `claude --effort xhigh` (CLAUDE.md §6). Vor dem Schreiben `.claude/rules/docs.md` und `.claude/rules/testing.md` lesen. Sprache: Deutsch,
 Bezeichner im Original (CLAUDE.md).
 
 ## 0. Interaktiv arbeiten
