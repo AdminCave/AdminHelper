@@ -343,6 +343,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Ein gespeicherter lokaler Port ausserhalb 1-65535 kostet nicht mehr alle Tunnel des Hosts (R-0560):** Der
+  Server laesst einen solchen Tunnel aus der frpc-Konfiguration des Agents weg und schreibt eine Warnung ins
+  Server-Log; vorher lehnte frpc die ganze Konfiguration ab. Doku: FRP-Tunnel (DE+EN).
 - **FRP: Der lokale Port eines Tunnels nimmt nur 1-65535 an (R-0560):** `POST` und `PUT /api/frp/tunnels` mit
   einem `local_port` ausserhalb 1-65535 (im `PUT` auch `null`) antworten `422` an `local_port`; vorher wurde der Wert
   gespeichert, und ein groesserer Wert machte die frpc-Konfiguration des Agents ungueltig, sodass alle Tunnel des

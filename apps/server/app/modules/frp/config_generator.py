@@ -192,10 +192,32 @@ def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     return kept
 
 
+def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out tunnels whose local_port is no port from 1 to 65535.
+
+    frpc refuses the whole config for a localPort outside 0..65535 (ValidatePort,
+    v0.69.1), which took down every tunnel of the host, and 0 is no target. The API
+    holds new values in range (R-0560); rows from before stay as they are. Only the
+    proxy is left out, the visitor config is untouched."""
+    kept = []
+    for tunnel in tunnels:
+        if not _is_port(tunnel.local_port):
+            logger.warning(
+                "FRP tunnel %s: local_port %r is outside %d-%d, left out of the frpc config",
+                tunnel.name,
+                tunnel.local_port,
+                PORT_MIN,
+                PORT_MAX,
+            )
+            continue
+        kept.append(tunnel)
+    return kept
+
+
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, stcp only with
-    a secret, and none whose stored extra_config the API would refuse
-    (without_refused_extra_config). Without an active tunnel, the text carries no frps
+    a secret, a local_port from 1 to 65535 (without_unreachable_local), and none whose
+    stored extra_config the API would refuse (without_refused_extra_config). Without an active tunnel, the text carries no frps
     token; config-hash, config download and provisioning bundle all come from that
     text, so they can't drift.
 
@@ -203,7 +225,9 @@ def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     returns rows in physical order, which an UPDATE of a column outside the config
     (connection_id) changes. Unsorted, the hash would change with the same config."""
     return sorted(
-        without_refused_extra_config(without_secretless_stcp([t for t in tunnels if t.enabled])),
+        without_refused_extra_config(
+            without_unreachable_local(without_secretless_stcp([t for t in tunnels if t.enabled]))
+        ),
         key=lambda t: t.name,
     )
 
