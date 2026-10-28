@@ -615,7 +615,9 @@ def _send_webhook(
 
     try:
         # pinned_client connects to an address check_target checked, not to whatever a
-        # second lookup answers; it parses the URL already, so it sits inside the try.
+        # second lookup answers. check_target has read the URL with httpx already; the
+        # client sits inside the try because building it can fail on an unusable proxy
+        # setting from the environment (HTTPS_PROXY=ftp://..., NO_PROXY=host:abc).
         with pinned_client(url, target) as client:
             resp = client.post(url, json=payload, timeout=10, follow_redirects=False)
         if resp.status_code < 300:

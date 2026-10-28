@@ -137,6 +137,38 @@ def test_http_checker_verify_ssl_off_only_for_real_false(monkeypatch, stored, ve
     assert seen == [verify]
 
 
+@pytest.mark.parametrize("verify", [False, True])
+def test_http_checker_verify_ssl_holds_on_the_redirect_hop(monkeypatch, verify):
+    # R-0599: a redirect hop gets a client of its own; verify_ssl has to reach its
+    # transport as well, not only the first request's.
+    _resolving(monkeypatch, {"checks.example": _FIRST, "moved.example": _SECOND})
+    seen = []
+    sent = []
+    real_init = httpx.HTTPTransport.__init__
+
+    def recording_init(transport, *args, **kwargs):
+        seen.append(kwargs["verify"])
+        real_init(transport, *args, **kwargs)
+
+    def fake_send(_transport, request):
+        sent.append(request)
+        if len(sent) == 1:
+            return httpx.Response(
+                302, headers={"location": "http://moved.example/"}, request=request
+            )
+        return httpx.Response(200, text="ok", request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "__init__", recording_init)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "verify_ssl": verify}
+    )
+
+    assert status == "ok"
+    assert seen == [verify, verify]
+    assert ("[TLS verification disabled]" in msg) is not verify
+
+
 def test_http_checker_blocks_private_initial_url(monkeypatch):
     # The is_private_url guard runs BEFORE the request; the existing tests only cover the redirect-hop
     # guard. A private initial URL must be refused with no request at all (6.52).
@@ -220,6 +252,34 @@ def test_http_checker_unresolvable_initial_url_says_so(monkeypatch):
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://☃.example/",  # no IDNA 2008 label
+        "http://checks.example:abc/",  # a port that is no number
+        "http://checks.example/\ud800",  # a lone surrogate
+    ],
+)
+def test_http_checker_rejects_a_url_httpx_cannot_read_without_a_request(monkeypatch, url):
+    # R-0606: the real guard reads the URL with httpx before the try. A URL httpx cannot
+    # read is the usual rejection, not an exception out of run().
+    asked = _resolving(monkeypatch, {"checks.example": _FIRST})
+    sent = []
+    monkeypatch.setattr(
+        httpx.HTTPTransport, "handle_request", lambda _transport, request: sent.append(request)
+    )
+
+    result = http_mod.HttpChecker().run({"url": url})
+
+    assert result == (
+        "unknown",
+        "URL points to a private/reserved address, rejected by the SSRF guard",
+        None,
+    )
+    assert asked == []
+    assert sent == []
+
+
 def test_http_checker_unresolvable_redirect_target_says_so(monkeypatch):
     # Only the hop's host fails to resolve; the public IP literal resolves for real.
     real_resolve = ssrf_mod._resolve
@@ -299,6 +359,21 @@ def test_http_checker_with_a_proxy_for_the_scheme_the_proxy_connects(monkeypatch
 
     assert asked == ["checks.example"]
     assert connected == [("192.0.2.10", 3128)]
+    assert (status, msg) == ("critical", "Connection failed: refused by the test")
+
+
+def test_http_checker_beside_a_proxy_no_proxy_connects_to_the_checked_address(monkeypatch):
+    # A target that NO_PROXY takes past the proxy connects as without a proxy: to the
+    # checked address, not by name (httpx resolving it again could get another answer).
+    monkeypatch.setenv("HTTP_PROXY", "http://192.0.2.10:3128")
+    monkeypatch.setenv("NO_PROXY", "checks.example")
+    asked = _resolving(monkeypatch, {"checks.example": _FIRST})
+    connected = _connections_refused(monkeypatch)
+
+    status, msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example:8080/x"})
+
+    assert asked == ["checks.example"]
+    assert connected == [(_FIRST, 8080)]
     assert (status, msg) == ("critical", "Connection failed: refused by the test")
 
 

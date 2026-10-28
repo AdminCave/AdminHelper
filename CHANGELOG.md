@@ -56,9 +56,26 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Uhr des Hosts hinter dem Ausstellen eines aktuellen Zwischenzertifikats nach, bricht die Rotation ab und aendert
   nichts, denn unter dieser Uhr wuerde sie dem aktuellen Zwischenzertifikat nicht mehr vertrauen; die Meldung nennt
   Datei, Name und Beginn der Gueltigkeit. Doku: Betrieb (DE+EN).
+- **Web-Panel: Abmeldung nach Inaktivitaet:** Das Web-Panel meldet in allen offenen Tabs ab, wenn in keinem davon
+  30 Minuten lang bedient wurde (Maus, Tastatur, Touch); ein Hinweis bleibt stehen, bis man ihn schliesst. Die Dauer
+  stellt die neue Env `WEB_IDLE_TIMEOUT_MINUTES` am Dienst `server` ein (`0` = aus, ein ungueltiger Wert gilt als 30),
+  der Server liefert sie im neuen Feld `idle_timeout_minutes` von `GET /api/auth/me`. Das gilt auch nach Neuladen
+  oder Wiederoeffnen im selben Browser: Liegt die letzte Bedienung dort laenger zurueck, endet die wiederhergestellte
+  Sitzung beim Laden sofort mit demselben Hinweis. Doku: Benutzer & Zugriff, Installation, API-Referenz, Web-UI fuer
+  Entwickler (DE+EN).
 
 ### Changed
 
+- **Entwicklung mit Claude Code: die Session baut selbst, ein Reviewer prueft Code und Tests:** Die Sub-Agenten
+  `builder` und `tester` entfallen; die Session plant, implementiert und korrigiert jede Task selbst, `reviewer`
+  prueft vor jedem Task-Commit und vor dem PR den ganzen Branch ueber Code und Tests (Abdeckung, echte Assertions,
+  Fehlerpfade, hoechstens drei Gegenproben), `security` bleibt fuer Risikopfade, `advisor` hilft gezielt bei
+  schwierigen Fragen. Session und Pruefer laufen auf Opus mit Effort high (nicht mehr xhigh); Sonnet gezielt per
+  `claude --model sonnet`, xhigh per `advisor` oder `claude --effort xhigh`.
+  `review.sh final` prueft das Branch-Urteil vor PR und Merge. `verify.sh` legt die volle Ausgabe unter
+  `.ah-out/logs/` ab und zeigt einen Digest (`log-digest.sh`), `--full` streamt alles. Doku darf in einer Doku-Task
+  desselben Ledgers gebuendelt werden und ist vor der Abschlusspruefung DE+EN vollstaendig. Doku: CI/CD fuer
+  Entwickler (DE+EN), DEVELOPMENT.md.
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
@@ -296,6 +313,40 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zeigt; bis dahin sendet das Gateway die Root nicht. Ein Desktop, der vor seiner Registrierung dem selbstsignierten
   Zertifikat des Gateways vertraut hat, bestaetigt das neue einmal. Ein voller TLS-Handshake wird rund 430 Byte
   groesser.
+- **Desktop: der Tunnel-Dialog prueft den Visitor-Port vor dem Speichern (R-0585):** Bei einem STCP-Tunnel lehnt der
+  Dialog einen Visitor-Port ab, der keine ganze Zahl von 1 bis 65535 ist, und nennt den Bereich; bisher kam erst die
+  Ablehnung des Servers (`422`). Ein leeres Feld bleibt erlaubt, dann vergibt der Server einen freien Port. Doku:
+  FRP-Tunnel (DE+EN).
+- **SSRF-Schutz: ein Ziel unter `NO_PROXY` verbindet auch neben einem Proxy zur geprueften Adresse (Server und
+  Monitoring):** Ein Ziel, das wegen `NO_PROXY` nicht ueber den gesetzten Proxy geht, verbindet wie ohne Proxy zu
+  einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
+  verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
+  gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
+- **Server: gleichzeitige Refreshes mit demselben Refresh-Token:** Das neue Token-Paar bekommt nur der Aufruf, der
+  den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
+  wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
+  Entwickler (DE+EN).
+- **Server: neu angelegte Benutzer:** Ein neu angelegter Benutzer nimmt nur Tokens an, die ab seinem Anlegen
+  ausgestellt wurden (`users.tokens_valid_after` steht auf der Anlegezeit, ganze Sekunde), gleich ob er ueber die
+  API, den Bootstrap, `ADMIN_PASSWORD` oder die CLI entsteht. Bestehende Benutzer bleiben unveraendert. Doku: Server
+  fuer Entwickler (DE+EN).
+- **Server: Refresh-Token im Browser nur als Cookie:** Browser-Anfragen (Header `Sec-Fetch-Site`) an Login, Refresh
+  und Bootstrap bekommen den Refresh-Token nur noch als HttpOnly-Cookie; `refresh_token` im JSON ist dann leer (`""`),
+  das Schema bleibt gleich. Desktop, CLI und Skripte bekommen ihn unveraendert im JSON. Doku: API-Referenz und Server
+  fuer Entwickler (DE+EN).
+- **Server liest `MTLS_ENFORCE` wie das Gateway:** `true`, `1`, `yes` und `on` erzwingen, `false`, `0`, `no` und `off`
+  schalten permissiv (Gross-/Kleinschreibung egal), ungesetzt oder leer gilt der Default (erzwungen); jeder andere
+  Wert erzwingt die Scope-Pruefung je Route ebenfalls und loggt eine Warnung. Bisher lief der Server bei `on`, einem
+  leeren oder einem unbekannten Wert still permissiv, waehrend das Gateway am Handshake ein Zertifikat verlangte. Wer
+  `MTLS_ENFORCE=on` gesetzt hat, bekommt fuer Zertifikate mit falschem Scope jetzt 403 statt nur einer Log-Zeile. Ein
+  Test haelt die Tabelle des Servers und die des Gateways gleich. Doku: Betrieb (DE+EN), `.env.example`.
+- **Server wertet die Zertifikats-Header nur noch aus, wenn die Anfrage direkt vom Gateway kommt:** `X-Client-Verify`
+  und `X-Client-Cert` zaehlen nur, wenn die Gegenstelle eine aktuelle Adresse des Compose-Dienstes `gateway` ist. Von
+  jeder anderen Gegenstelle gilt die Anfrage als ohne Client-Zertifikat, und der Server loggt eine Warnung mit der
+  Adresse (hoechstens einmal je Adresse und Minute). Kommt eine Anfrage mit Zertifikat von einer Adresse, die der
+  Server nicht kennt, loest er den Namen `gateway` sofort neu auf (hoechstens einmal je Sekunde; eine Anfrage wartet
+  darauf hoechstens 1 s), damit ein neu angelegtes Gateway gleich wieder zaehlt. Ohne den Namen `gateway`, also
+  ausserhalb von Compose, gibt es keine Zertifikats-Identitaet. Doku: Entwickler-Handbuch (DE+EN).
 
 ### Removed
 
@@ -522,6 +573,43 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
   expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
   Clients bedeutet). Doku: Betrieb (DE+EN).
+- **Desktop: ein gescheiterter Abruf der Verbindungen leert die Liste nicht mehr (R-0658):** Scheitert in einem
+  Server- oder Sync-Workspace der Abruf der Verbindungen, etwa beim Seitenwechsel oder im Sync-Takt waehrend eines
+  Netzausfalls, bleibt die zuletzt geladene Liste stehen, wenn sie aus derselben Quelle stammt (derselbe Server und
+  Benutzer, dieselbe Sync-URL), statt zu verschwinden. Die Liste einer anderen Quelle bleibt nie stehen.
+  „Verbindungen“ zeigt den Fehler mit „Erneut versuchen“ und bei stehen gebliebener Liste den Hinweis, dass es die
+  zuletzt geladene ist; waehrend des Ladens zeigt die Seite „Lade…“ statt „Noch keine Verbindungen angelegt“. Auch
+  das Dashboard zeigt den Fehler mit „Erneut versuchen“ und unter „Zuletzt genutzt“ waehrend des Ladens „Lade…“ statt
+  „Noch keine Verbindungen genutzt“.
+- **Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659):** Unter Linux nimmt die
+  Fenstergroesse „Eingepasst“ die Groesse des Bildschirms statt immer 1088x720, die Skalierung „Automatisch“ erkennt
+  einen HiDPI-Bildschirm, und „HiDPI“ waehlt den Faktor nach dem Bildschirm (`/scale:140` oder `/scale:180`) statt
+  immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht verifiziert.
+- **Desktop: ohne gespeicherte Sprache gilt die Systemsprache (R-0660):** Ist noch keine Sprache gespeichert, etwa
+  nach einer frischen Installation, laeuft die Desktop-UI in der Systemsprache: Deutsch auf einem deutschen System,
+  sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch. Der Einstellungsdialog zeigt diese
+  Sprache; bisher zeigte er „Deutsch“, und Speichern einer beliebigen Einstellung schaltete ungewollt auf Deutsch.
+  Dieselbe Regel gilt schon vor dem Laden der Einstellungen („Lade…“) und fuer die ganze UI, wenn das Laden
+  scheitert; auf einem System in einer anderen Sprache als Deutsch oder Englisch lief die UI dort bisher deutsch.
+- **Desktop: „Loeschen“ im Verbindungs-Editor fragt nach (R-0661):** Bevor der Editor eine Verbindung entfernt, im
+  Server-Modus auf dem Server, und bei RDP ein gespeichertes Passwort, fragt er mit dem Namen der Verbindung nach;
+  „Abbrechen“ oder Escape laesst sie stehen und den Editor offen. Bisher loeschte der Knopf sofort.
+- **Desktop: Speichern der Einstellungen startet die Benachrichtigungen nicht mehr neu (R-0663):** Bisher stoppte
+  jedes Speichern der Einstellungen in einem Server-Workspace den Benachrichtigungs-Stream, leerte den Feed und
+  startete beides neu; der Feed flackerte, und Meldungen aus dieser Luecke kamen ohne OS-Benachrichtigung. Neu
+  gestartet wird nur, wenn Server oder Benutzer wechseln.
+- **SSRF-Schutz: eine URL mit einem einzelnen Surrogat wird abgelehnt (Server und Monitoring, R-0606):** Eine URL
+  mit einem einzelnen Surrogat, etwa aus einem JSON-Payload, wird als unlesbar abgelehnt, statt eine Exception zu
+  werfen; HTTP-Check, Alert-Webhook und `http_get`/`http_post` der Hooks melden ihre gewoehnliche Ablehnung.
+- **Web-Panel: mehrere Tabs erneuern die Sitzung nacheinander (R-0649):** Alle Tabs teilen das Refresh-Cookie, das
+  Panel buendelte Erneuerungen aber nur innerhalb eines Tabs. Erneuerten zwei Tabs die Sitzung gleichzeitig, etwa
+  beim Wiederherstellen des Browsers, schickten beide denselben Refresh-Token; der Server wertete den zweiten als
+  Wiederverwendung und beendete alle Sitzungen des Benutzers, auch die des Desktops. Jetzt laufen die Erneuerungen
+  aller Tabs nacheinander (Web Locks), und ein spaeterer Tab schickt schon das neue Cookie. Auch die Abmeldung laeuft
+  unter dieser Web Lock: Sie macht das gemeinsame Cookie ungueltig, und eine Erneuerung, die ein anderer Tab zugleich
+  mit ihm schickte, galt ebenso als Wiederverwendung, etwa wenn der Browser nach Ablauf der Inaktivitaetszeit mehrere
+  Tabs wiederherstellt und jeder sich abmeldet. Ohne Web Locks, etwa ausserhalb von HTTPS, buendelt das Panel weiter
+  nur im Tab, und die Abmeldung geht sofort hinaus. Doku: Web-UI fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
