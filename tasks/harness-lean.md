@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness schlanker: Hauptsession baut, ein Reviewer prüft Code und Tests — Task-Ledger
-Status: bereit · Branch: feature/harness-lean · Review: am Ende
+Status: aktiv · Branch: feature/harness-lean · Review: am Ende
 Spec: docs/features/harness-lean.md (Roadmap R-0915)
 Heavy: none — Regel-, Skill- und Agenten-Texte, Shell-Skripte unter `scripts/dev` mit hermetischen Tests; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -68,6 +68,12 @@ Review: am Ende (Branch-Review)
 Änderung: `settings.json` `model: opus` (Effort bleibt `high`); `CLAUDE.md` §6 Rollentabelle und Modell-Absatz (Sonnet gezielt per `claude --model sonnet`, xhigh per `advisor` oder `claude --effort xhigh`); `/feature-plan`, `DEVELOPMENT.md`, CHANGELOG und Spec ziehen nach; der Konsistenztest prüft Opus/high für die Session.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test doc_smoke_test
 Doku: DEVELOPMENT.md · CHANGELOG (die cicd-Seiten nennen kein Session-Modell)
+
+### T8 — Digest: Schlussblock nur aus Schlusszeilen (Nit aus Runde 2)  [ ]
+Komponente: scripts · Dateien: scripts/dev/log-digest.sh, scripts/tests/log_digest_test.sh
+Änderung: Eine Summary gilt nur als Schlussblock von `run.sh`, wenn danach ausschließlich dessen Schlusszeilen folgen (`required (strict):`, `strict-failed:`, `artifact:`, `failed:`, höchstens sechs); bricht ein Lauf kurz nach einer eingefangenen Summary ab, zeigt der Digest das Log-Ende. Testfall dazu.
+Verify: bash scripts/dev/verify.sh scripts --strict -- log_digest_test verify_test
+Doku: keine (DEVELOPMENT.md und cicd.html beschreiben den Schlussblock schon so)
 
 ## Entscheidungen
 - 2026-10-28 T1: `verify.sh` streamt auf einem Terminal weiter und zeigt sonst nur den Digest — Kevin sieht einen Handlauf live, das Modell bekommt die Kurzform.
