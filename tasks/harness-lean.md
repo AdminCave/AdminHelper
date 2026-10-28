@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness schlanker: Hauptsession baut, ein Reviewer prüft Code und Tests — Task-Ledger
-Status: bereit · Branch: feature/harness-lean · Review: am Ende
+Status: aktiv · Branch: feature/harness-lean · Review: am Ende
 Spec: docs/features/harness-lean.md (Roadmap R-0915)
 Heavy: none — Regel-, Skill- und Agenten-Texte, Shell-Skripte unter `scripts/dev` mit hermetischen Tests; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
