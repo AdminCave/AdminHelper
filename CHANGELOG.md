@@ -327,6 +327,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Skript selbst im Zielordner angelegt hat, und bleibt auch in einem Ordner mit Default-ACL 0600; liegt unter ihrem
   Namen etwas anderes, oder haelt das Ziel keinen Unix-Eigentuemer und -Modus (wie ein CIFS-, vfat- oder NTFS-Mount in
   der Regel), bricht der Lauf mit einem Hinweis ab. Doku: Troubleshooting (DE+EN).
+- **Server liest `MTLS_ENFORCE` wie das Gateway:** `true`, `1`, `yes` und `on` erzwingen, `false`, `0`, `no` und `off`
+  schalten permissiv (Gross-/Kleinschreibung egal), ungesetzt oder leer gilt der Default (erzwungen); jeder andere
+  Wert erzwingt die Scope-Pruefung je Route ebenfalls und loggt eine Warnung. Bisher lief der Server bei `on`, einem
+  leeren oder einem unbekannten Wert still permissiv, waehrend das Gateway am Handshake ein Zertifikat verlangte. Wer
+  `MTLS_ENFORCE=on` gesetzt hat, bekommt fuer Zertifikate mit falschem Scope jetzt 403 statt nur einer Log-Zeile. Ein
+  Test haelt die Tabelle des Servers und die des Gateways gleich. Doku: Betrieb (DE+EN), `.env.example`.
+- **Server wertet die Zertifikats-Header nur noch aus, wenn die Anfrage direkt vom Gateway kommt:** `X-Client-Verify`
+  und `X-Client-Cert` zaehlen nur, wenn die Gegenstelle eine aktuelle Adresse des Compose-Dienstes `gateway` ist. Von
+  jeder anderen Gegenstelle gilt die Anfrage als ohne Client-Zertifikat, und der Server loggt eine Warnung mit der
+  Adresse (hoechstens einmal je Adresse und Minute). Kommt eine Anfrage mit Zertifikat von einer Adresse, die der
+  Server nicht kennt, loest er den Namen `gateway` sofort neu auf (hoechstens einmal je Sekunde; eine Anfrage wartet
+  darauf hoechstens 1 s), damit ein neu angelegtes Gateway gleich wieder zaehlt. Ohne den Namen `gateway`, also
+  ausserhalb von Compose, gibt es keine Zertifikats-Identitaet. Doku: Entwickler-Handbuch (DE+EN).
 
 ### Removed
 

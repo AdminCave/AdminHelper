@@ -63,58 +63,101 @@ def _in_networks(ip_str: str, networks: list) -> bool:
 
 _NAME_TTL = 30.0  # seconds until a resolved name is looked up again
 _NAME_RETRY = 5.0  # the same after a failed lookup
+_NAME_URGENT_GAP = 1.0  # at least this long between two lookups out of turn
 
 
 class _NameResolver:
-    """The addresses of the host names in TRUSTED_PROXIES.
+    """The addresses of a list of host names: those in TRUSTED_PROXIES, and the
+    gateway whose requests may carry a client certificate (app.core.identity).
 
-    The request path never waits on DNS: a daemon thread, started on the first
-    read, looks the names up every _NAME_TTL seconds (_NAME_RETRY after a failure)
-    and publishes the result, and a read returns the last one. Until the first
+    A read never waits on DNS: a daemon thread, started on the first read, looks
+    the names up every _NAME_TTL seconds (_NAME_RETRY after a failure) and
+    publishes the result, and a read returns the last one. Until the first
     lookup, and while a lookup fails, a name adds no address, so the direct
     address counts. A failed name loses its old addresses: after a restart of
-    its container they may belong to another one."""
+    its container they may belong to another one. Only has_address waits, on a
+    miss and for a bounded time."""
 
-    def __init__(self, names: list[str], getaddrinfo=socket.getaddrinfo):
+    def __init__(
+        self,
+        names: list[str],
+        getaddrinfo=socket.getaddrinfo,
+        *,
+        label: str = "TRUSTED_PROXIES",
+        thread_name: str = "trusted-proxy-names",
+    ):
         self.names = names
         self._getaddrinfo = getaddrinfo
+        self._label = label
+        self._thread_name = thread_name
         self._networks: list = []
         self._failing: set[str] = set()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        # One round at a time, so a slow round of the thread cannot publish its
+        # older answer over the one a lookup out of turn has just published.
+        self._round = threading.Lock()
+        self._urgent: threading.Thread | None = None
+        self._urgent_at = 0.0
 
     def networks(self) -> list:
         if self.names and self._thread is None:
             self._start()
         return self._networks
 
+    def has_address(self, address: str, wait: float) -> bool:
+        """Whether `address` is one of the names' addresses. On a miss the names
+        are looked up again out of turn and the caller waits up to `wait` seconds
+        for that lookup, so a name whose container came back with a new address
+        counts at once. Over all callers there is at most one such lookup per
+        _NAME_URGENT_GAP seconds, and none while one runs: a caller that misses
+        meanwhile waits for the running one or takes the last answer. The wait
+        blocks the calling thread, so the event loop must not call this."""
+        if _in_networks(address, self.networks()):
+            return True
+        with self._lock:
+            urgent = self._urgent
+            now = time.monotonic()
+            if urgent is None or (
+                not urgent.is_alive() and now - self._urgent_at >= _NAME_URGENT_GAP
+            ):
+                urgent = threading.Thread(
+                    target=self.refresh, name=f"{self._thread_name}-now", daemon=True
+                )
+                self._urgent, self._urgent_at = urgent, now
+                urgent.start()
+        urgent.join(wait)
+        return _in_networks(address, self._networks)
+
     def refresh(self) -> float:
         """Looks every name up once; returns the seconds until the next round."""
-        found = set()
-        for name in self.names:
-            try:
-                infos = self._getaddrinfo(name, None, type=socket.SOCK_STREAM)
-                networks = {ipaddress.ip_network(info[4][0]) for info in infos}
-            except (OSError, ValueError) as exc:
-                if name not in self._failing:
-                    self._failing.add(name)
-                    logger.warning(
-                        "TRUSTED_PROXIES: cannot resolve %r (%s); "
-                        "its forwarded headers are ignored until it resolves",
-                        name,
-                        exc,
-                    )
-                continue
-            self._failing.discard(name)
-            found |= networks
-        self._networks = list(found)
-        return _NAME_RETRY if self._failing else _NAME_TTL
+        with self._round:
+            found = set()
+            for name in self.names:
+                try:
+                    infos = self._getaddrinfo(name, None, type=socket.SOCK_STREAM)
+                    networks = {ipaddress.ip_network(info[4][0]) for info in infos}
+                except (OSError, ValueError) as exc:
+                    if name not in self._failing:
+                        self._failing.add(name)
+                        logger.warning(
+                            "%s: cannot resolve %r (%s); "
+                            "its forwarded headers are ignored until it resolves",
+                            self._label,
+                            name,
+                            exc,
+                        )
+                    continue
+                self._failing.discard(name)
+                found |= networks
+            self._networks = list(found)
+            return _NAME_RETRY if self._failing else _NAME_TTL
 
     def _start(self) -> None:
         with self._lock:
             if self._thread is None:
                 self._thread = threading.Thread(
-                    target=self._run, name="trusted-proxy-names", daemon=True
+                    target=self._run, name=self._thread_name, daemon=True
                 )
                 self._thread.start()
 
