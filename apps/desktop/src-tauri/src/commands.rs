@@ -260,14 +260,24 @@ pub fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), Ap
     storage::save_settings(&app, &settings)
 }
 
+/// Loads the connections of the sync workspace of this process from the source it keeps
+/// ([`sync_source`]), never with the device identity, and keeps them as its own.
 #[tauri::command]
 pub async fn sync_connections(
     app: tauri::AppHandle,
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
+    let source = sync_source(&storage::app_data_dir(&app)?, &url)?;
     let allow_self_signed = self_signed_setting(&app, None);
-    let server_url = storage::load_settings(&app).ok().and_then(|s| s.server_url);
-    sync::sync_connections(app, url, allow_self_signed, server_url).await
+    sync::sync_connections(app, source, allow_self_signed).await
+}
+
+/// The source a sync of the workspace of this process loads, in the app data dir `base`,
+/// `sent` being the one the webview names ([`workspace::sync_url`]). The launcher syncs
+/// nothing.
+fn sync_source(base: &Path, sent: &str) -> Result<String, AppError> {
+    let (_, meta) = own_meta(base)?;
+    workspace::sync_url(&meta, sent)
 }
 
 #[tauri::command]
@@ -633,30 +643,55 @@ pub fn open_launcher() -> Result<(), AppError> {
     open_launcher_with(&launcher::AppSpawner::new()?)
 }
 
+/// Workspace only: runs the playbook `playbook_id` of the signed-in server on `targets` in a
+/// terminal. File name and content come from the server, not from the webview
+/// ([`ansible::fetch_playbook`], [`ansible_run_with`]).
 #[tauri::command]
-pub fn ansible_generate_inventory(
-    servers: Vec<ansible::AnsibleTarget>,
-) -> Result<String, AppError> {
-    ansible::generate_inventory(&servers)
+pub async fn ansible_run(
+    session: State<'_, SessionState>,
+    playbook_id: String,
+    targets: Vec<ansible::AnsibleTarget>,
+) -> Result<(), AppError> {
+    let session = session.inner();
+    ansible_run_with(
+        &playbook_id,
+        targets,
+        |id| async move { ansible::fetch_playbook(session, &id).await },
+        ansible::launch_ansible,
+    )
+    .await
 }
 
-#[tauri::command]
-pub fn ansible_write_playbook(filename: String, content: String) -> Result<String, AppError> {
-    ansible::write_playbook_temp(&filename, &content)
-}
-
-#[tauri::command]
-pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
-    ansible::launch_ansible(&inventory_path, &playbook_path)
+/// [`ansible_run`] with the fetch of the playbook and the launch passed in. The id is checked
+/// before anything goes to the server ([`ansible::check_playbook_id`]); the files are written
+/// and launched on a blocking thread, and a step that fails takes the files written so far
+/// with it ([`ansible::run`]).
+async fn ansible_run_with<F, Fut, L>(
+    playbook_id: &str,
+    targets: Vec<ansible::AnsibleTarget>,
+    fetch: F,
+    launch: L,
+) -> Result<(), AppError>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<ansible::Playbook, AppError>>,
+    L: FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+{
+    only(Side::Workspace)?;
+    ansible::check_playbook_id(playbook_id)?;
+    let playbook = fetch(playbook_id.to_string()).await?;
+    blocking(move || ansible::run(&targets, &playbook, launch)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        check_server_cert_in, delete_workspace_in, enroll_with_token_in, list_workspaces_in,
-        open_launcher_with, open_workspace_in, reject_foreign_port, reset_device_identity_in,
-        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target,
+        ansible_run_with, check_server_cert_in, delete_workspace_in, enroll_with_token_in,
+        list_workspaces_in, open_launcher_with, open_workspace_in, reject_foreign_port,
+        reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
+        sign_in_target, sync_source,
     };
+    use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
     use crate::keyring_store;
@@ -665,9 +700,10 @@ mod tests {
     use crate::port_registry::PortRegistry;
     use crate::storage;
     use crate::workspace::{self, Meta, Registry, RegistryEntry, PALETTE};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::path::{Path, PathBuf};
     use std::process::ExitStatus;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use std::{fs, io};
 
@@ -909,6 +945,258 @@ mod tests {
         let _in_a_workspace = entered("standard");
         open_launcher_with(&starts).unwrap();
         assert_eq!(*starts.0.borrow(), [Vec::<String>::new()]);
+    }
+
+    /// The ansible temp files (`adminhelper_ansible…` in the temp dir) whose name or content holds
+    /// `marker`, each removed by its full path. Other tests write such files at the same time; the
+    /// marker tells this test's apart.
+    fn remove_ansible_files_with(marker: &str) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        for entry in fs::read_dir(std::env::temp_dir()).unwrap().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.starts_with("adminhelper_ansible") {
+                continue;
+            }
+            let path = entry.path();
+            let holds = fs::read_to_string(&path).is_ok_and(|text| text.contains(marker));
+            if name.contains(marker) || holds {
+                let _ = fs::remove_file(&path);
+                found.push(path);
+            }
+        }
+        found
+    }
+
+    const PLAYBOOK_ID: &str = "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f";
+
+    /// The target `<marker>.example` in the group `web`: the inventory of a run holds `marker`.
+    fn marked_targets(marker: &str) -> Vec<AnsibleTarget> {
+        vec![AnsibleTarget {
+            hostname: format!("{marker}.example"),
+            groups: vec!["web".to_string()],
+        }]
+    }
+
+    /// A playbook `site.yml` whose content holds `marker`.
+    fn marked_playbook(marker: &str) -> Playbook {
+        Playbook {
+            filename: "site.yml".to_string(),
+            content: format!("# {marker}\n- hosts: all\n"),
+        }
+    }
+
+    /// What every launch got: inventory path and content, playbook path and content.
+    type Launches = Arc<Mutex<Vec<[String; 4]>>>;
+
+    /// A launch that notes what it gets (see [`Launches`]), then answers `answer`.
+    fn noting_launch(
+        answer: Result<(), AppError>,
+    ) -> (
+        Launches,
+        impl FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+    ) {
+        let launches = Launches::default();
+        let noted = Arc::clone(&launches);
+        let launch = move |inventory: &str, playbook: &str| {
+            let read = |path: &str| fs::read_to_string(path).unwrap_or_default();
+            noted.lock().unwrap().push([
+                inventory.to_string(),
+                read(inventory),
+                playbook.to_string(),
+                read(playbook),
+            ]);
+            answer
+        };
+        (launches, launch)
+    }
+
+    #[tokio::test]
+    async fn ansible_run_launches_the_fetched_playbook_on_the_targets() {
+        let marker = format!("run-fetched-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+        let asked = RefCell::new(Vec::new());
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |id| {
+                asked.borrow_mut().push(id);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let mut written = remove_ansible_files_with(&marker);
+        written.sort();
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(*asked.borrow(), [PLAYBOOK_ID]);
+        let launches = launches.lock().unwrap().clone();
+        assert_eq!(launches.len(), 1, "{launches:?}");
+        let [inventory, inventory_text, playbook, playbook_text] = &launches[0];
+        assert_eq!(playbook_text, &marked_playbook(&marker).content);
+        assert!(playbook.ends_with("_site.yml"), "{playbook}");
+        assert!(
+            inventory_text.contains(&format!("[all]\n{marker}.example\n"))
+                && inventory_text.contains(&format!("[web]\n{marker}.example\n")),
+            "{inventory_text}"
+        );
+        // A launch that succeeded leaves both files to the run.
+        let mut handed = vec![PathBuf::from(inventory), PathBuf::from(playbook)];
+        handed.sort();
+        assert_eq!(written, handed);
+    }
+
+    #[tokio::test]
+    async fn ansible_run_writes_no_file_when_the_fetch_fails() {
+        let marker = format!("run-fetch-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async {
+                Err::<Playbook, _>(AppError::Validation(
+                    "the playbook could not be loaded (404 Not Found)".to_string(),
+                ))
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert_refused(result, "could not be loaded", "fetch");
+        assert_eq!(
+            written,
+            Vec::<PathBuf>::new(),
+            "a failed fetch wrote a file"
+        );
+        assert_eq!(
+            launches.lock().unwrap().len(),
+            0,
+            "launched without a playbook"
+        );
+    }
+
+    #[tokio::test]
+    async fn ansible_run_removes_both_files_when_the_launch_fails() {
+        let marker = format!("run-launch-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) =
+            noting_launch(Err(AppError::Connection("no terminal found".to_string())));
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async { Ok(marked_playbook(&marker)) },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(matches!(result, Err(AppError::Connection(_))), "{result:?}");
+        let launches = launches.lock().unwrap().clone();
+        assert_eq!(launches.len(), 1, "{launches:?}");
+        let [inventory, _, playbook, playbook_text] = &launches[0];
+        assert_eq!(playbook_text, &marked_playbook(&marker).content);
+        assert_eq!(
+            written,
+            Vec::<PathBuf>::new(),
+            "files left after a failed launch"
+        );
+        assert!(!Path::new(inventory).exists() && !Path::new(playbook).exists());
+    }
+
+    #[tokio::test]
+    async fn ansible_run_removes_the_inventory_when_the_playbook_cannot_be_written() {
+        let marker = format!("run-write-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+
+        // No file system takes a name with a NUL byte.
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async {
+                Ok(Playbook {
+                    filename: "site\0.yml".to_string(),
+                    ..marked_playbook(&marker)
+                })
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(written, Vec::<PathBuf>::new(), "the inventory was left");
+        assert_eq!(
+            launches.lock().unwrap().len(),
+            0,
+            "launched without a playbook"
+        );
+    }
+
+    #[tokio::test]
+    async fn ansible_run_never_fetches_for_an_id_that_is_no_uuid() {
+        let marker = format!("run-bad-id-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let fetches = Cell::new(0);
+        let path_behind = format!("{PLAYBOOK_ID}/content");
+        let traversal = format!("../{PLAYBOOK_ID}");
+
+        for id in [
+            "",
+            "pb1",
+            &PLAYBOOK_ID[..35],
+            &path_behind,
+            &traversal,
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6g",
+        ] {
+            let (launches, launch) = noting_launch(Ok(()));
+            let result = ansible_run_with(
+                id,
+                marked_targets(&marker),
+                |_| {
+                    fetches.set(fetches.get() + 1);
+                    async { Ok(marked_playbook(&marker)) }
+                },
+                launch,
+            )
+            .await;
+            assert_refused(result, "invalid playbook id", id);
+            assert_eq!(launches.lock().unwrap().len(), 0, "{id}");
+        }
+
+        assert_eq!(fetches.get(), 0, "fetched for an id that is no UUID");
+        assert_eq!(remove_ansible_files_with(&marker), Vec::<PathBuf>::new());
+    }
+
+    #[tokio::test]
+    async fn ansible_run_runs_only_in_a_workspace() {
+        let marker = format!("run-only-in-a-workspace-{}", std::process::id());
+        let fetches = Cell::new(0);
+        let (launches, launch) = noting_launch(Ok(()));
+
+        // The launcher has no workspace.
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| {
+                fetches.set(fetches.get() + 1);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert_refused(result, "only the process of a workspace", "ansible_run");
+        assert_eq!(fetches.get(), 0, "the launcher fetched a playbook");
+        assert_eq!(launches.lock().unwrap().len(), 0, "the launcher launched");
+        assert_eq!(written, Vec::<PathBuf>::new(), "the launcher wrote a file");
     }
 
     #[test]
@@ -1376,6 +1664,110 @@ mod tests {
             let _c = entered("w-0000000c");
             reset_server_cert_pin_in(base, "https://other.example.com").unwrap();
             assert_eq!(pinned(), [false, false, false]);
+        }
+    }
+
+    // ── Where the sync of the workspace of this process loads from ──
+
+    /// The source of the sync workspace below; its query carries a key.
+    const SYNC_SOURCE: &str = "https://sync.example/c.json?api_key=k1";
+
+    /// Lays out `base` with a workspace of each kind: `w-0000000a` at the server
+    /// `https://ah.example`, `w-0000000b` syncing from [`SYNC_SOURCE`], `w-0000000c` syncing
+    /// without a source yet, `w-0000000e` local.
+    fn sync_workspaces(base: &Path) {
+        for (id, kind, url) in [
+            ("w-0000000a", SyncMode::Server, Some("https://ah.example")),
+            ("w-0000000b", SyncMode::Sync, Some(SYNC_SOURCE)),
+            ("w-0000000c", SyncMode::Sync, None),
+            ("w-0000000e", SyncMode::Local, None),
+        ] {
+            Meta {
+                kind,
+                name: id.to_string(),
+                color: PALETTE[0].to_string(),
+                url: url.map(String::from),
+                interval_minutes: 1,
+                allow_self_signed_certs: false,
+                last_username: None,
+                legacy_keys: false,
+            }
+            .store(&base.join("workspaces").join(id))
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn sync_binding_loads_the_source_the_sync_workspace_keeps() {
+        let scratch = Scratch::new("sync-source");
+        let base = &scratch.0;
+        sync_workspaces(base);
+        let _b = entered("w-0000000b");
+        for sent in [SYNC_SOURCE, "  https://sync.example/c.json?api_key=k1 \n"] {
+            assert_eq!(sync_source(base, sent).unwrap(), SYNC_SOURCE, "{sent:?}");
+        }
+    }
+
+    #[test]
+    fn sync_binding_refuses_another_source_of_the_same_server_and_names_none() {
+        let scratch = Scratch::new("sync-other-source");
+        let base = &scratch.0;
+        sync_workspaces(base);
+        let _b = entered("w-0000000b");
+        for other in [
+            "https://sync.example/d.json?api_key=k1",
+            "https://sync.example/c.json?api_key=k2",
+            "https://sync.example/c.json",
+            "https://sync.example/c.json?api_key=k1&page=2",
+        ] {
+            let refused = sync_source(base, other).unwrap_err();
+            assert!(
+                matches!(&refused, AppError::Validation(_)),
+                "{other}: {refused:?}"
+            );
+            let says = refused.to_string();
+            assert!(
+                says.contains("syncs only from the sync URL it keeps"),
+                "{other}: {says}"
+            );
+            for secret in ["api_key", "k1", "c.json"] {
+                assert!(!says.contains(secret), "{other}: {says}");
+            }
+        }
+    }
+
+    #[test]
+    fn sync_binding_syncs_only_in_a_sync_workspace_with_a_source() {
+        let scratch = Scratch::new("sync-where");
+        let base = &scratch.0;
+        sync_workspaces(base);
+
+        // The launcher syncs nothing.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = sync_source(base, SYNC_SOURCE).unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        {
+            // A server workspace, not even from the URL of its own server.
+            let _a = entered("w-0000000a");
+            for sent in ["https://ah.example", SYNC_SOURCE] {
+                assert_refused(sync_source(base, sent), "only a sync workspace syncs", sent);
+            }
+        }
+        {
+            let _e = entered("w-0000000e");
+            assert_refused(
+                sync_source(base, SYNC_SOURCE),
+                "only a sync workspace syncs",
+                "local",
+            );
+        }
+        {
+            let _c = entered("w-0000000c");
+            assert_refused(
+                sync_source(base, SYNC_SOURCE),
+                "this sync workspace has no sync URL yet",
+                "no source",
+            );
         }
     }
 }

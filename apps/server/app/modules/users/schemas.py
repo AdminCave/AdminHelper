@@ -51,6 +51,7 @@ class UserMe(BaseModel):
     id: int
     username: str
     is_admin: bool
+    idle_timeout_minutes: int
 
     model_config = {"from_attributes": True}
 

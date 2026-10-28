@@ -61,7 +61,7 @@ Setting a row's own status again is always allowed: it files a row left in
 the wrong section into its own, and turns an alias into the real word.
 
 Exit codes: 0 ok · 1 lint findings · 2 usage (no such file, bad arguments) ·
-3 the `neu` cap (20) is reached · 4 an open row already carries the Dedup-Key
+4 an open row already carries the Dedup-Key
 (recorded as an empty commit `roadmap: dedup <key> -> R-nnnn`, for stats) ·
 5 the file was just changed by hand · 6 the row count came out wrong (restored) ·
 74 gh could not list the merged PRs (sync). next: 1 when no row is ready.
@@ -147,10 +147,10 @@ SECTION_OF = {
 }
 CLOSED = frozenset({"abgeschlossen", "abgelehnt"})
 ALIASES = {"geparkt": "zurückgestellt", "erledigt": "abgeschlossen"}
-# The header's counters, in the order it prints them. Only `add` enforces one (neu); the
-# others are shown, not held: CLAUDE.md section 2 runs in parallel wherever it can.
+# The header's counters, in the order it prints them. They are shown, not held:
+# CLAUDE.md section 2 runs in parallel wherever it can, and `add` takes every new
+# row, so no finding waits for a triage to get one (Kevin 2026-10-22).
 WIP_CAPS = (("aktiv", 2), ("bereit", 2), ("pr", 3), ("neu", 20))
-NEU_CAP = dict(WIP_CAPS)["neu"]
 # Which status may follow which (the Ledger chain of the spec, plus the ways
 # out: zurückgestellt, blockiert, abgelehnt). A closed row only turns
 # abgelehnt — a throwaway row that must not count as done.
@@ -754,9 +754,6 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     def change(roadmap: Roadmap) -> str:
         rows = [r for _, r in roadmap.rows() if r.well_formed]
-        neu = sum(r.state == "neu" for r in rows)
-        if neu >= NEU_CAP:
-            raise Refused(3, f"the neu cap is reached ({neu}/{NEU_CAP}) — triage first")
         if args.dedup_key:
             owner = next((r.id for r in rows if r.is_open and r.dedup_key == args.dedup_key), None)
             if owner:

@@ -9,6 +9,8 @@
 #   - MONITOR_API_KEY    (Shared Secret AdminHelper <-> Monitoring; Default leer)
 #   - POSTGRES_PASSWORD  (Postgres-Cluster Server + Monitoring; Default leer)
 #   - CA_ROOT_PASSPHRASE (verschluesselt den kalten PKI-Root-Key; Default leer)
+#     Only generated in the run that generates POSTGRES_PASSWORD too (a fresh
+#     install); with POSTGRES_PASSWORD set, an empty value stays empty.
 #
 # Usage:
 #   ./scripts/init-secrets.sh           # operiert auf ./.env
@@ -93,21 +95,32 @@ fi
 # POSTGRES_PASSWORD (Server + Monitoring teilen sich Postgres-Cluster) — 32 Bytes hex
 # Wenn leer, weigert sich der Postgres-Container zu starten (Default-
 # Verhalten von postgres-Image seit 2017).
+pg_generated=0
 if is_set_safely "POSTGRES_PASSWORD"; then
     left_alone+=("POSTGRES_PASSWORD")
 else
     upsert "POSTGRES_PASSWORD" "$(openssl rand -hex 32)"
     generated+=("POSTGRES_PASSWORD")
+    pg_generated=1
 fi
 
 # CA_ROOT_PASSPHRASE (verschluesselt den kalten PKI-Root-Key, ADR 0001 D7) —
 # 32 Bytes hex. Nur beim ersten Start des ca-issuer noetig (Hierarchie-Erzeugung).
 # Getrennt sichern und NICHT in Backups legen.
+# Generated only in the run that generates POSTGRES_PASSWORD too: a fresh install,
+# whose Postgres and PKI volumes come up together. After the first start the value
+# is meant to be empty, and update.sh runs this script on every update: a new
+# passphrase there would not match the root key in ca-pki. Asking Docker about that
+# volume would need the project name and a running daemon, so a set
+# POSTGRES_PASSWORD stands in for it.
+ca_left_empty=0
 if is_set_safely "CA_ROOT_PASSPHRASE"; then
     left_alone+=("CA_ROOT_PASSPHRASE")
-else
+elif [ "$pg_generated" = 1 ]; then
     upsert "CA_ROOT_PASSPHRASE" "$(openssl rand -hex 32)"
     generated+=("CA_ROOT_PASSPHRASE")
+else
+    ca_left_empty=1
 fi
 
 # Permission auf 0600 setzen — Secrets sollen nicht weltlesbar sein
@@ -118,5 +131,8 @@ if [ "${#generated[@]}" -gt 0 ]; then
 fi
 if [ "${#left_alone[@]}" -gt 0 ]; then
     echo "→ Bereits gesetzt, nicht angefasst: ${left_alone[*]}"
+fi
+if [ "$ca_left_empty" = 1 ]; then
+    echo "→ CA_ROOT_PASSPHRASE stays empty: only the ca-issuer's first start needs it, and POSTGRES_PASSWORD was set already. On a new install with POSTGRES_PASSWORD set beforehand, set CA_ROOT_PASSPHRASE by hand."
 fi
 echo "✓ Secrets-Init abgeschlossen."

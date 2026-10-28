@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { tNow } from '$lib/i18n';
+import { storageRemove } from '$lib/utils/storage';
 import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 
 // The long-lived refresh token lives in an HttpOnly cookie (set by the server),
@@ -10,8 +12,8 @@ import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 // exfiltrate it from persistent storage. On a fresh page load the access token
 // is gone; the app rehydrates it via tryRefresh() (the refresh cookie survives).
 // Purge any access/refresh-token copies left in storage by an older build.
-localStorage.removeItem('adminhelper_token');
-localStorage.removeItem('adminhelper_refresh_token');
+storageRemove('adminhelper_token');
+storageRemove('adminhelper_refresh_token');
 
 let accessToken: string | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
@@ -19,15 +21,23 @@ let onAuthFailure: (() => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+export interface RequestOptions {
+  timeoutMs?: number;
+}
+
 // Abort a hung request (dead nginx upstream / no TCP response) after a bounded time instead of
 // waiting minutes for the browser's internal timeout — otherwise 'submitting' stays true, save
 // buttons stay disabled, login hangs, and hydrate() blocks the boot spinner forever (4.74).
-async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  input: string,
+  init?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
   try {
-    return await fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    return await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new ApiError(0, 'Request timed out');
+      throw new ApiError(0, tNow('error.timeout'));
     }
     throw err;
   }
@@ -59,22 +69,41 @@ export function registerAuthFailureHandler(handler: () => void): void {
   onAuthFailure = handler;
 }
 
+// refreshInFlight bundles only within this tab, but all tabs share the refresh cookie. The server
+// rotates the refresh token and treats a second refresh with the same token as reuse: every
+// session of the user ends (R-0649). A logout blocks the cookie, so a refresh that still sends it
+// counts as reuse too. A Web Lock holds per origin across all tabs: the refreshes and the logout
+// (auth.ts) run under it one after another, and a tab that gets the lock after another one
+// already sends the new cookie. Web Locks exist only in secure contexts (HTTPS, localhost);
+// without them fn runs at once. Web Locks are not reentrant: fn must never wait for tryRefresh,
+// which would wait for the lock fn holds. A request to an /auth/ path never calls tryRefresh.
+export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
+  if ('locks' in navigator) {
+    return await navigator.locks.request('adminhelper-auth-refresh', fn);
+  }
+  return await fn();
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
+  const refresh = async (): Promise<boolean> => {
+    // The refresh token rides along as the HttpOnly cookie (same-origin
+    // request → sent automatically); the body is intentionally empty.
+    const res = await fetchWithTimeout('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as RefreshResponse;
+    setAccessToken(data.access_token);
+    return true;
+  };
+
   refreshInFlight = (async () => {
     try {
-      // The refresh token rides along as the HttpOnly cookie (same-origin
-      // request → sent automatically); the body is intentionally empty.
-      const res = await fetchWithTimeout('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      if (!res.ok) return false;
-      const data = (await res.json()) as RefreshResponse;
-      setAccessToken(data.access_token);
-      return true;
+      return await withAuthLock(refresh);
     } catch {
       return false;
     } finally {
@@ -85,18 +114,23 @@ async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
-async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+  opts?: RequestOptions,
+): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const jsonBody = body !== undefined ? JSON.stringify(body) : undefined;
 
-  let res = await fetchWithTimeout(path, { method, headers, body: jsonBody });
+  let res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
 
   if (res.status === 401 && !path.includes('/auth/')) {
     const refreshed = await tryRefresh();
     if (refreshed && accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
-      res = await fetchWithTimeout(path, { method, headers, body: jsonBody });
+      res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
     } else {
       onAuthFailure?.();
       throw new ApiError(401, 'Session expired');
@@ -167,7 +201,8 @@ export async function requestRaw(path: string): Promise<Response> {
 
 export const http = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  post: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
+    request<T>('POST', path, body, opts),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),

@@ -14,7 +14,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     viewMode,
     loadForCurrentMode as loadConnections,
     connections,
+    connectionsStore,
+    loading,
   } from '$lib/stores/connections';
+  import ConnectionsLoadError from '../components/ConnectionsLoadError.svelte';
   import { tunnelMappings } from '$lib/stores/tunnel';
   import { toCardMeta, groupedTagKeys, type ConnectionGroup } from '$lib/models/connection';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
@@ -243,9 +246,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </div>
 {/snippet}
 
+<ConnectionsLoadError />
+
 {#if $connections.length === 0}
   <div class="list" use:accelerateScroll={LIST_FACTOR}>
-    <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.empty')}</div>
+    {#if $loading}
+      <div class="dash-empty" style="padding: var(--sp-6);">{$t('loading.generic')}</div>
+    {:else if !$connectionsStore.error}
+      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.empty')}</div>
+    {/if}
   </div>
 {:else if $viewMode === 'list' && $groupFilter === 'single'}
   <div class="list" use:accelerateScroll={LIST_FACTOR}>

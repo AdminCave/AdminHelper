@@ -7,7 +7,7 @@
 #
 #   bash scripts/dev/task-close.sh <ledger> <id> [--stage] (-m "<message>" | --message-file <file>)
 #
-# The builder sub-agent builds, the reviewer sub-agent judges; this script runs
+# The session builds, the reviewer sub-agent judges; this script runs
 # outside the model and turns that into one mechanical sequence:
 #
 #    1. input             a ledger under tasks/*.md (not the README or the
@@ -145,7 +145,7 @@ TREE_HASH="$(bash scripts/dev/tree-hash.sh)" || infra "tree-hash.sh failed"
 INDEX_TREE="$(git write-tree)" || infra "git write-tree failed"
 
 # ── 4. deleted test files ────────────────────────────────────────────────────
-# The declaration as committed (HEAD), never the worktree: a builder must not be
+# The declaration as committed (HEAD), never the worktree: whoever builds must not be
 # able to grant itself the exception in the same run.
 COMMITTED_TASK="$(git show "HEAD:$LEDGER" 2>/dev/null | awk -v id="$ID" '
   $0 ~ "^###[ \t]+" id "([ \t]|$)" { insec = 1; next }
@@ -226,6 +226,11 @@ else
   esac
 fi
 echo "── verify.sh $VERIFY_COMPONENTS --strict ${VERIFY_ARGS:+-- $VERIFY_ARGS}"
+# The tree check after the run needs the hash run.sh measures over THIS checkout.
+# run.sh stamps a client's AH_TREE_HASH/AH_HEAD instead (what iter.sh passes to a
+# box), so values left in this environment would stand in for the measurement.
+# task-close.sh never runs on a box: here they have no business at all.
+unset AH_HEAD AH_TREE_HASH
 # Word lists, not a shell line: `set -f` keeps a `*` in the ledger from being
 # expanded against the repo root, and quotes in it stay characters either way.
 set -f

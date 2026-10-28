@@ -12,11 +12,13 @@ export type Translations = Record<Language, Record<string, string>>;
 export const translations: Translations = {
   de: {
     'error.generic': 'Fehler',
+    'error.timeout': 'Zeitüberschreitung: Der Server hat nicht rechtzeitig geantwortet.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
     'login.failed': 'Anmeldung fehlgeschlagen',
+    'toast.session.idle': 'Nach {minutes} Minuten ohne Bedienung abgemeldet.',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Benutzer',
@@ -54,6 +56,12 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Typ',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web-Panel nur für Admins',
+    'page.adminOnly.text': 'Bitte den Desktop-Client nutzen.',
+    'page.notFound.title': 'Seite nicht gefunden',
+    'page.notFound.back': 'Zur Benutzerverwaltung',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Benutzer',
     'page.users.subtitle': 'Zugriffsverwaltung',
@@ -89,6 +97,8 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'Benutzer gespeichert',
+    'toast.user.ownPasswordChanged':
+      'Eigenes Passwort geändert – bitte mit dem neuen Passwort anmelden.',
     'toast.user.created': 'Benutzer erstellt',
     'toast.user.deleted': 'Benutzer gelöscht',
     'confirm.user.delete': 'Benutzer wirklich löschen?',
@@ -148,6 +158,7 @@ export const translations: Translations = {
     'hook.event.connections.imported': 'Verbindungen importiert',
     'hook.event.user.created': 'Benutzer erstellt',
     'hook.event.user.deleted': 'Benutzer gelöscht',
+    'hook.event.user.promoted': 'Benutzer zum Admin hochgestuft',
     'hook.event.server.created': 'Server erstellt',
     'hook.event.server.updated': 'Server geändert',
     'hook.event.server.deleted': 'Server gelöscht',
@@ -300,11 +311,13 @@ export const translations: Translations = {
 
   en: {
     'error.generic': 'Error',
+    'error.timeout': 'Request timed out: the server did not answer in time.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Username',
     'login.password': 'Password',
     'login.submit': 'Sign in',
     'login.failed': 'Login failed',
+    'toast.session.idle': 'Signed out after {minutes} minutes without activity.',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Users',
@@ -342,6 +355,12 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Type',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web panel for admins only',
+    'page.adminOnly.text': 'Please use the desktop client.',
+    'page.notFound.title': 'Page not found',
+    'page.notFound.back': 'Go to user management',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Users',
     'page.users.subtitle': 'Access management',
@@ -377,6 +396,7 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'User saved',
+    'toast.user.ownPasswordChanged': 'Your password was changed – sign in with the new password.',
     'toast.user.created': 'User created',
     'toast.user.deleted': 'User deleted',
     'confirm.user.delete': 'Really delete this user?',
@@ -435,6 +455,7 @@ export const translations: Translations = {
     'hook.event.connections.imported': 'Connections imported',
     'hook.event.user.created': 'User created',
     'hook.event.user.deleted': 'User deleted',
+    'hook.event.user.promoted': 'User promoted to admin',
     'hook.event.server.created': 'Server created',
     'hook.event.server.updated': 'Server updated',
     'hook.event.server.deleted': 'Server deleted',

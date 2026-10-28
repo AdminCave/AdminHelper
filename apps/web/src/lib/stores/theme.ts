@@ -8,9 +8,10 @@ export type Theme = 'dark' | 'light';
 
 const STORAGE_KEY = 'ah-theme';
 
-// The FOUC-free inline script in index.html has already applied data-theme before the
-// first paint; initialise from the attribute the browser is already showing so the store
-// never disagrees with what is on screen. Default = dark (attribute absent).
+// The FOUC-free script public/theme-init.js (loaded from the <head> of index.html) has
+// already applied data-theme before the first paint; initialise from the attribute the
+// browser is already showing so the store never disagrees with what is on screen.
+// Default = dark (attribute absent).
 function initial(): Theme {
   if (typeof document !== 'undefined') {
     const attr = document.documentElement.dataset.theme;

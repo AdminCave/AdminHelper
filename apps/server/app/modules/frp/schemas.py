@@ -17,14 +17,19 @@ from app.modules.frp.extra_config import ALLOWED_KEYS, value_allowed
 # of a TOML string and inject a directive (quote, backslash, newline, control
 # chars — DEL included, TOML forbids it in a basic string) at the boundary, so
 # the generator stays a pure interpolation. (Defense in depth — the fields are
-# admin-set, so this is hardening, not an open hole.)
+# admin-set, so this is hardening, not an open hole.) TOML allows the C1 controls
+# U+0080 to U+009F in a basic string, but the agent refuses every line of a
+# frpc.toml with a unicode.IsControl character (U+0000 to U+001F, U+007F to
+# U+009F), so they are rejected as well and the host is not left without a config.
 _TOML_BREAKERS = set('"\\\n\r')
 
 
 def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
     if v is None:
         return v
-    if any(c in _TOML_BREAKERS for c in v) or any(ord(c) < 0x20 or c == "\x7f" for c in v):
+    if any(c in _TOML_BREAKERS for c in v) or any(
+        ord(c) < 0x20 or c == "\x7f" or 0x80 <= ord(c) <= 0x9F for c in v
+    ):
         raise ValueError("enthält unzulässige Zeichen (Anführungszeichen/Backslash/Steuerzeichen)")
     # JSON can spell one as \ud800, and it has no UTF-8 form: no config file carries it.
     if any("\ud800" <= c <= "\udfff" for c in v):
@@ -73,6 +78,27 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
             _reject_toml_breakers(value)
         elif not isinstance(value, (bool, int, float)):
             raise ValueError(f"extra_config-Wert für '{key}' muss str, bool, int oder float sein")
+    return v
+
+
+# frp maps the fields of a proxy without regard to case and reads its plugin from the
+# member `plugin`, so `plugin`, `plugin.type` and `PLUGIN.type` all set up a proxy plugin.
+# The server sets up none, and the agent refuses a frpc.toml with such a key in a proxy
+# (apps/agent/internal/frpc/servertoml.go), so the whole host would get no config.
+def is_plugin_key(key: str) -> bool:
+    """Whether an extra_config key belongs to the plugin family: its first segment is
+    `plugin` in any case. A key that passed _TOML_BARE_KEY is ASCII, so lower() is enough."""
+    return key.split(".", 1)[0].lower() == "plugin"
+
+
+def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
+    v = _check_extra_config(v)
+    for key in v or {}:
+        if is_plugin_key(key):
+            raise ValueError(
+                f"extra_config key '{key}' belongs to the plugin family; "
+                "a tunnel sets up no proxy plugin"
+            )
     return v
 
 
@@ -258,7 +284,7 @@ class FrpTunnelCreate(RequestModel):
         _reject_toml_breakers
     )
     _v_secret = field_validator("secret_key")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 class FrpTunnelUpdate(RequestModel):
@@ -282,7 +308,7 @@ class FrpTunnelUpdate(RequestModel):
         _reject_toml_breakers
     )
     _v_secret = field_validator("secret_key")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 # --- Responses ---

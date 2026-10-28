@@ -133,7 +133,10 @@ def test_a_url_httpx_cannot_read_stores_a_fixed_reason(monkeypatch, caplog):
     with caplog.at_level(logging.INFO, logger="monitor.alerter"):
         assert _dispatch(rule, CHECK, MSG) == (False, "Webhook request failed (InvalidURL)")
 
-    assert _alerter_lines(caplog) == ["Webhook failed: c -> hooks.example.com: Invalid port: 'abc'"]
+    # The wording is httpx's (R-0599): a new one in an httpx release changes nothing here.
+    with pytest.raises(httpx.InvalidURL) as info:
+        httpx.URL("https://hooks.example.com:abc/x")
+    assert _alerter_lines(caplog) == [f"Webhook failed: c -> hooks.example.com: {info.value}"]
 
 
 class _FailingSMTP:
@@ -279,14 +282,17 @@ class TestEmailChannel:
 
 
 class _FakeSMTP:
-    """Records the class used, whether starttls() ran, and the login/send calls (6.49)."""
+    """Records the class used, whether starttls() ran, the TLS contexts handed to the
+    constructor (SMTP_SSL) and to starttls(), and the login/send calls (6.49)."""
 
     instances: list = []
 
     def __init__(self, host, port, timeout, context=None):
         self.host = host
         self.port = port
+        self.context = context
         self.starttls_called = False
+        self.starttls_context = None
         self.login_args = None
         self.sent = False
         _FakeSMTP.instances.append(self)
@@ -299,6 +305,7 @@ class _FakeSMTP:
 
     def starttls(self, context=None):
         self.starttls_called = True
+        self.starttls_context = context
 
     def login(self, user, pw):
         self.login_args = (user, pw)
@@ -352,3 +359,151 @@ def test_login_skipped_without_credentials(monkeypatch):
     ok, err = _send_email(_mail_cfg(25), _rule(), CHECK, MSG)
     assert ok, err
     assert _FakeSMTP.instances[-1].login_args is None
+
+
+_RULE_HOST = {"smtp_host": "rule-host.example"}
+_ENV_LOGIN = ("env-user", "env-pw")
+
+
+@pytest.mark.parametrize(
+    ("env_host", "cfg", "host", "login"),
+    [
+        ("relay.example", _RULE_HOST, "rule-host.example", None),
+        ("relay.example", {**_RULE_HOST, "smtp_user": "rule-user"}, "rule-host.example", None),
+        (
+            "relay.example",
+            {**_RULE_HOST, "smtp_user": "rule-user", "smtp_password": "rule-pw"},
+            "rule-host.example",
+            ("rule-user", "rule-pw"),
+        ),
+        ("relay.example", {}, "relay.example", _ENV_LOGIN),
+        ("relay.example", {"smtp_host": " RELAY.example "}, "RELAY.example", _ENV_LOGIN),
+        ("", _RULE_HOST, "rule-host.example", None),
+    ],
+    ids=[
+        "other-host-without-credentials",
+        "other-host-with-user-only",
+        "other-host-with-own-credentials",
+        "env-relay",
+        "env-relay-named-by-the-rule",
+        "no-env-relay",
+    ],
+)
+def test_env_credentials_only_reach_the_env_relay(monkeypatch, env_host, cfg, host, login):
+    # SMTP_USER/SMTP_PASSWORD belong to the relay in SMTP_HOST: a rule that names another
+    # host must never hand them to it, not even field by field next to its own user.
+    _FakeSMTP.instances = []
+    monkeypatch.setattr(alerter.smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", _forbidden)
+    monkeypatch.setattr(alerter, "SMTP_HOST", env_host)
+    monkeypatch.setattr(alerter, "SMTP_PORT", 587)
+    monkeypatch.setattr(alerter, "SMTP_USER", "env-user")
+    monkeypatch.setattr(alerter, "SMTP_PASSWORD", "env-pw")
+
+    ok, err = _send_email({"recipients": ["a@x"], **cfg}, _rule(), CHECK, MSG)
+
+    assert ok, err
+    srv = _FakeSMTP.instances[-1]
+    assert srv.host == host
+    assert srv.login_args == login
+    assert srv.sent
+
+
+# SMTP_CA_FILE (smtp-hardening T6): a relay's private CA joins the verifying context on top
+# of the system CAs. A self-signed CA stands in for it: the public certificate only, made
+# once with openssl, because the monitoring test deps carry no X.509 builder; loading a CA
+# does not check its validity dates.
+_CA_CN = "smtp-hardening test relay CA"
+_CA_PEM = """\
+-----BEGIN CERTIFICATE-----
+MIIBtjCCAVugAwIBAgIUOztpyIreEgsQEB7T29R5AfTK/e0wCgYIKoZIzj0EAwIw
+JzElMCMGA1UEAwwcc210cC1oYXJkZW5pbmcgdGVzdCByZWxheSBDQTAgFw0yNjEw
+MjIwOTI1MzJaGA8yMTI2MDkyODA5MjUzMlowJzElMCMGA1UEAwwcc210cC1oYXJk
+ZW5pbmcgdGVzdCByZWxheSBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABP7x
+aX7U7uMP0LDZaaaXMUiMHzGhcIvYsBU8H7w6gz56O2XyRF6eeZ6kEZV1yqL7qK1M
+18g+clH8jkStUkrGEnejYzBhMB0GA1UdDgQWBBTSUiVoRJzi2coL9XA6MHCaUe10
+VzAfBgNVHSMEGDAWgBTSUiVoRJzi2coL9XA6MHCaUe10VzAPBgNVHRMBAf8EBTAD
+AQH/MA4GA1UdDwEB/wQEAwIBBjAKBggqhkjOPQQDAgNJADBGAiEAoBw1Jofu1PWJ
+vmfsjaVFeueVvKDKtj8bKNcKJ2rMcjoCIQCLRWtnwaY9vUJ8OGmEyBwFNZdEj9Jl
+Zyr6vIlsH5rhkg==
+-----END CERTIFICATE-----
+"""
+
+
+def _ca_common_names(ctx) -> list[str]:
+    return [
+        value
+        for cert in ctx.get_ca_certs()
+        for rdn in cert["subject"]
+        for key, value in rdn
+        if key == "commonName"
+    ]
+
+
+def _sent_context(monkeypatch, port):
+    """The TLS context _send_email hands to SMTP_SSL (465) or to starttls() (any other
+    port), for a rule naming its own relay: the CA file holds for every relay."""
+    _FakeSMTP.instances = []
+    used, unused = ("SMTP_SSL", "SMTP") if port == 465 else ("SMTP", "SMTP_SSL")
+    monkeypatch.setattr(alerter.smtplib, used, _FakeSMTP)
+    monkeypatch.setattr(alerter.smtplib, unused, _forbidden)
+    ok, err = _send_email(_mail_cfg(port), _rule(), CHECK, MSG)
+    assert ok, err
+    srv = _FakeSMTP.instances[-1]
+    assert srv.sent
+    return srv.context if port == 465 else srv.starttls_context
+
+
+def _assert_verifying(ctx):
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+
+
+@pytest.mark.parametrize("port", [587, 465])
+def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tmp_path, port):
+    ca_file = tmp_path / "smtp-ca.pem"
+    ca_file.write_text(_CA_PEM)
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", str(ca_file))
+
+    ctx = _sent_context(monkeypatch, port)
+
+    assert _CA_CN in _ca_common_names(ctx)
+    # On top of the system CAs, not instead of them: a context built from the file alone
+    # would reject every public relay. Holds on a box without a CA bundle too (0 + 1).
+    system_cas = ssl.create_default_context().cert_store_stats()["x509_ca"]
+    assert ctx.cert_store_stats()["x509_ca"] == system_cas + 1
+    _assert_verifying(ctx)  # an extra CA, not a weaker check
+
+
+@pytest.mark.parametrize("port", [587, 465])
+def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, port):
+    # Pairs with the test above: the CA in the file is what put its name there.
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", "")
+
+    ctx = _sent_context(monkeypatch, port)
+
+    assert _CA_CN not in _ca_common_names(ctx)
+    _assert_verifying(ctx)
+
+
+@pytest.mark.parametrize("content", [None, "not a certificate\n"], ids=["missing", "not-pem"])
+@pytest.mark.parametrize("port", [587, 465])
+def test_unloadable_smtp_ca_file_stores_tls_failed_without_connecting(
+    monkeypatch, caplog, tmp_path, port, content
+):
+    ca_file = tmp_path / "smtp-ca.pem"
+    if content is not None:
+        ca_file.write_text(content)
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", str(ca_file))
+    connects = []
+    monkeypatch.setattr(alerter.smtplib, "SMTP", lambda *a, **k: connects.append(a))
+    monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", lambda *a, **k: connects.append(a))
+    rule = _rule("email", config=_mail_cfg(port, smtp_user="u", smtp_password="p"))
+
+    with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+        assert _dispatch(rule, CHECK, MSG) == (False, "SMTP TLS failed")
+
+    assert connects == []  # no connection, so the relay sees nothing, credentials included
+    lines = _alerter_lines(caplog)
+    assert len(lines) == 1 and lines[0].startswith("Email failed: c: ")

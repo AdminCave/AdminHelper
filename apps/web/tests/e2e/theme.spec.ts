@@ -7,10 +7,17 @@ import { mockApi } from './mocks';
 
 // Theme toggle journey: from the authenticated app the sidebar toggle flips dark<->light
 // (data-theme attribute + True-Black vs pure-white background), and the choice survives a
-// reload because the FOUC inline script in index.html re-applies the persisted theme
-// before the first paint. Toggle *store* logic is unit-tested in
-// src/lib/stores/theme.test.ts; this covers the real button + browser reload.
+// reload because public/theme-init.js, loaded as a file from the <head>, re-applies the
+// persisted theme before the first paint. The project chromium-build runs this against the
+// build with the CSP as a header, as the server sends it. Toggle *store* logic is unit-tested
+// in src/lib/stores/theme.test.ts; this covers the real button + browser reload.
 test('sidebar toggle switches theme and it survives a reload', async ({ page }) => {
+  const violations: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && msg.text().includes('Content Security Policy')) {
+      violations.push(msg.text());
+    }
+  });
   await mockApi(page);
   await page.goto('/#/users');
   await page.waitForSelector('.page-title', { state: 'visible' });
@@ -31,10 +38,11 @@ test('sidebar toggle switches theme and it survives a reload', async ({ page }) 
     'rgb(255, 255, 255)',
   );
 
-  // reload: the FOUC script must re-apply the persisted light theme before paint
+  // reload: public/theme-init.js must re-apply the persisted light theme before paint
   await page.reload();
   await page.waitForSelector('.page-title', { state: 'visible' });
   expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe(
     'light',
   );
+  expect(violations).toEqual([]);
 });

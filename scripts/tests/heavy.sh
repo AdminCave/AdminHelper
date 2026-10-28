@@ -8,7 +8,11 @@
 #   bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm]
 #                                 [--notify]
 #
-#     all       scripts/vm/warm.sh desktop  ->  scripts/vm/iter.sh all --strict
+#     all       scripts/vm/warm.sh desktop, then two parts at once on two boxes:
+#                 rest  scripts/vm/iter.sh all --strict --part rest
+#                 gui   scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
+#               no GUI box after a retry: part gui after part rest, on the desktop box
+#               PASS only with both parts green
 #     capstone  scripts/tests/multibox.sh --capstone --strict
 #     weekly    all, then capstone — serially, capstone only after `all` has a
 #               verdict (seven VMs must not burn into an already-known failure)
@@ -31,8 +35,8 @@
 # whole point — "SKIP heisst nicht verifiziert" (CLAUDE.md).
 #
 # Overrides for the hermetic test (heavy_test.sh), never for real runs:
-#   AH_HEAVY_WRAPPERS  one directory holding warm.sh / iter.sh / multibox.sh
-#                      (really scripts/vm and scripts/tests)
+#   AH_HEAVY_WRAPPERS  one directory holding warm.sh / iter.sh / reap.sh /
+#                      multibox.sh (really scripts/vm and scripts/tests)
 #   AH_PRIVATE_DIR     the private repo (default tasks/private)
 #   AH_OUT_DIR         output root (default .ah-out)
 #   AH_HEAVY_ROOT      the checkout to worktree from (default: this repo) — the
@@ -77,9 +81,9 @@ export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-100}"
 
 AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"; export AH_OUT_DIR
 PRIVATE_DIR="${AH_PRIVATE_DIR:-$ROOT/tasks/private}"
-# Two homes, one override: warm.sh and iter.sh live next to vm.py, multibox.sh
-# next to the role scripts it drives. AH_HEAVY_WRAPPERS points both at one
-# directory of shims for heavy_test.sh.
+# Two homes, one override: warm.sh, iter.sh and reap.sh live next to vm.py,
+# multibox.sh next to the role scripts it drives. AH_HEAVY_WRAPPERS points both
+# at one directory of shims for heavy_test.sh.
 WRAPPERS="${AH_HEAVY_WRAPPERS:-$ROOT/scripts/vm}"
 MB_WRAPPERS="${AH_HEAVY_WRAPPERS:-$DIR}"
 STAMP="$(date +%Y-%m-%d-%H%M)"
@@ -120,7 +124,9 @@ mask_stream() {  # mask_stream < text -> URL hosts, /nodes/<name>, UPIDs, user@h
   LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#(^|[^A-Za-z0-9_.-])nodes/[^/[:space:]]+#\1nodes/<node>#g; s#UPID[^/[:space:]]*#<upid>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g'
 }
 mask_addr() { printf '%s' "$1" | mask_stream; }  # mask_addr <text> -> the same, for one value
-note()      { NOTES+=("$1"); echo "  $(mask_addr "$1")"; }
+# A part of `all` runs in a background subshell, where NOTES dies with it: there
+# NOTE_FILE is set, and run_all reads the file back into NOTES after the wait.
+note()      { NOTES+=("$1"); [ -z "${NOTE_FILE:-}" ] || printf '%s\n' "$1" >> "$NOTE_FILE"; echo "  $(mask_addr "$1")"; }
 
 # ── pre-flight ────────────────────────────────────────────────────────────────
 # Kevin's own warm boxes and other lanes' ponds are none of this run's business:
@@ -129,14 +135,10 @@ note()      { NOTES+=("$1"); echo "  $(mask_addr "$1")"; }
 # Returns 2 when the provider could not be ASKED. "No strays" and "no answer"
 # must never look the same: the second one would let the run claim a clean
 # hypervisor it never saw and then lease eight boxes on top of whatever is there.
-foreign_boxes() {
-  local json
-  # The exit code is not the question: `list` answers 74 when it FINDS something
-  # (a VM of our lane nobody claims), and that JSON is exactly what this guard
-  # wants to read. Emptiness is the failure — then the hypervisor was not asked.
-  json="$(vm_py list --json 2>/dev/null)"
-  [ -n "$json" ] || return 2
-  printf '%s' "$json" | python3 -c '
+foreign_boxes() {  # foreign_boxes <list-json>
+  # Emptiness is the failure — then the hypervisor was not asked.
+  [ -n "$1" ] || return 2
+  printf '%s' "$1" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -157,6 +159,34 @@ for vm in data.get("vms", []):
 ' "$(vm_lane)"
 }
 
+# slots_to_clone <list-json> -> the slots of `all` that warm.sh will have to
+# clone, comma-separated, possibly none. A slot whose box is running counts as
+# nothing: doctor would otherwise reserve a second box on top of the one it
+# already holds. Only the desktop slot is asked: a GUI box that does not fit no
+# longer stops the run, part gui then runs on the desktop box (run_all), and
+# whether it fits is the capacity check of vm.py clone to say.
+slots_to_clone() {
+  printf '%s' "$1" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except ValueError:
+    data = {}
+lane, slots = sys.argv[1], sys.argv[2:]
+running = {str(v.get("vmid")): v for v in data.get("vms", []) if v.get("status") == "running"}
+need = []
+for i in range(0, len(slots), 3):
+    slot, vmid, name = slots[i:i + 3]
+    v = running.get(vmid) if vmid else None
+    # The test warm.sh applies before it reuses a slot (slot_state): a box it
+    # would not take over is one it clones.
+    if (not v or v.get("lane") != lane or (v.get("role") or "") != slot or v.get("scenario")
+            or (name and (v.get("name") or "") != name)):
+        need.append(slot)
+print(",".join(need))
+' "$(vm_lane)" desktop "$(warm_get desktop)" "$(warm_get desktop_name)"
+}
+
 preflight() {
   echo "== pre-flight =="
   # The lane first, before the hypervisor is asked anything: in a worktree that
@@ -168,21 +198,28 @@ preflight() {
     return 74
   fi
   vm_load_env || { set_infra "vm.py env not loaded (~/.config/adminhelper/pve.env, .claude/settings.local.json)"; return 74; }
+  # The listing first: which roles doctor must fit depends on it, and the
+  # foreign-box check below reads the same answer. The exit code is not the
+  # question: `list` answers 74 when it FINDS something (a VM of our lane nobody
+  # claims), and that JSON is exactly what the guard wants to read.
+  local json; json="$(vm_py list --json 2>/dev/null)"
   # --roles: doctor's capacity check needs to know what the run is about to ask
-  # for, or it reports "fits" against a single probe box. `all` warms one desktop
-  # box, `capstone` clones the seven of the multibox scenario.
-  # weekly starts with `all`, so one desktop box is what it needs HERE; the
-  # capstone that follows runs its own doctor over its seven roles before it
-  # clones anything (multibox.sh).
-  local roles="desktop"
-  [ "$MODE" = capstone ] && roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
+  # for, or it reports "fits" against a single probe box. `all` must have the
+  # desktop slot, cloned only without a running box — an empty list is a check
+  # against nothing new; its gui slot it can do without (slots_to_clone).
+  # `capstone` clones the seven of the multibox scenario. weekly starts with
+  # `all`, so its slots are what it needs HERE; the capstone that follows runs
+  # its own doctor over its seven roles before it clones anything (multibox.sh).
+  local roles
+  if [ "$MODE" = capstone ]; then roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
+  else roles="$(slots_to_clone "$json")"; fi
   if ! vm_py doctor --roles "$roles" >"$OUT/doctor.log" 2>&1; then
     set_infra "vm.py doctor red (see doctor.log)"
     tail -5 "$OUT/doctor.log" | mask_stream | sed 's/^/  /'
     return 74
   fi
   note "vm.py doctor ok"
-  local strays rc=0; strays="$(foreign_boxes | paste -sd'; ' -)" || rc=$?
+  local strays rc=0; strays="$(foreign_boxes "$json" | paste -sd'; ' -)" || rc=$?
   if [ "$rc" != 0 ]; then
     set_infra "vm.py list unavailable — cannot rule out foreign boxes"
     note "vm.py list did not answer — not starting a run on an unknown hypervisor"
@@ -201,30 +238,28 @@ preflight() {
 # The wrappers print their result; heavy.sh copies the line VERBATIM instead of
 # re-deriving it. A re-derived number is a second source of truth, and the point
 # of the report is that it can be checked against the run.
-# iter.sh pulls the box's .ah-out back into $AH_OUT_DIR, where the NEXT run
-# overwrites it. The report points at $OUT, so what it points at has to be there
-# — copied, not moved, so a following `iter.sh` on the same box still finds what
-# it expects.
-collect_artifacts() {
+# iter.sh pulls the box's .ah-out back into the pull directory (its $AH_OUT_DIR):
+# each part of `all` has its own under $OUT, so the screenshots and service logs
+# stay there, per part, where the report points (Artefakte: $OUT). The JUnit XMLs
+# of both parts go together into $OUT/junit, which the report counts — their
+# names are unique per step. Nothing overwrites a part's directory afterwards: a
+# retry of a red step pulls into the shared $AH_OUT_DIR.
+collect_artifacts() {  # collect_artifacts <pull-dir>
   local d
-  for d in screenshots logs junit; do
-    [ -d "$AH_OUT_DIR/$d" ] || continue
-    cp -r "$AH_OUT_DIR/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
+  for d in screenshots logs; do
+    [ -d "$1/$d" ] && note "artifacts: $d/ in $1"
   done
+  [ -d "$1/junit" ] || return 0
+  mkdir -p "$OUT/junit" && cp -r "$1/junit/." "$OUT/junit/" 2>/dev/null && note "artifacts: junit/ -> $OUT/junit"
 }
 
-# iter.sh tees the box's stdout into this file as well as showing it, so the
-# summary line survives a wrapper that died before printing one itself. The first
-# real run reported PASS from an exit code alone for want of it — the summary and
-# last-all.json were on disk the whole time, just not where this script looked.
-BOX_OUT="$AH_OUT_DIR/last.out.log"
-
-capture_summary() {  # capture_summary <logfile> <grep-pattern>
+capture_summary() {  # capture_summary <logfile> <grep-pattern> [<label>]
   local line
   line="$(grep -aE "$2" "$1" 2>/dev/null | tail -1)"
   [ -n "$line" ] || return 1
-  # Leading run.sh indentation stripped, the text itself untouched.
-  SUMMARY_LINES+=("$(printf '%s' "$line" | sed 's/^[[:space:]]*//')")
+  # Leading run.sh indentation stripped, the text itself untouched; a label, if
+  # any, goes in front as "[<label>] ".
+  SUMMARY_LINES+=("${3:+[$3] }$(printf '%s' "$line" | sed 's/^[[:space:]]*//')")
 }
 
 # Since 2b the wrappers DO speak 74 — vm.py answers infrastructure with it and
@@ -259,52 +294,115 @@ infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or not
 # is not a documented prerequisite anywhere in this repo.
 # run.sh stamps every artifact with the head and tree_hash the client passed in.
 # An artifact from another tree is a leftover, not evidence of this run.
-artifact_is_ours() {  # artifact_is_ours <artifact>
-  python3 - "$1" "$COMMIT" "$TREE" <<'PY' 2>/dev/null
+# When it is not ours, stdout names what the artifact claims, for the note.
+# It also names the part it ran (run.sh --part). One of this tree but of another
+# part is no leftover: the box ran something other than it was told, and a green
+# artifact of the rest part must never stand in for the GUI suites.
+artifact_is_ours() {  # artifact_is_ours <artifact> <part> -> 0 = ours; 1 = another tree, stdout "head <h>, tree_hash <t>"; 3 = another part, stdout its part as JSON
+  python3 - "$1" "$COMMIT" "$TREE" "$2" <<'PY' 2>/dev/null
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
+    print("unreadable")
     sys.exit(1)
 head, tree = d.get("head", ""), d.get("tree_hash", "")
 # An artifact that carries no evidence fields cannot be attributed either way;
 # only a MISMATCH disqualifies it (a box without .git legitimately writes none).
-sys.exit(1 if (head and head != sys.argv[2]) or (tree and tree != sys.argv[3]) else 0)
+if (head and head != sys.argv[2]) or (tree and tree != sys.argv[3]):
+    print("head %s, tree_hash %s" % (head or "-", tree or "-"))
+    sys.exit(1)
+# run.sh writes the field on every run, empty without --part: a missing one is
+# not this run.sh either.
+if d.get("part") != sys.argv[4]:
+    print(json.dumps(d.get("part")))
+    sys.exit(3)
 PY
 }
 
-read_steps() {  # read_steps <artifact> -> lines "<name>\t<result>\t<seconds>"
+read_steps() {  # read_steps <artifact> <part> -> lines "<name>\t<result>\t<seconds>\t<part>"
   [ -f "$1" ] || return 1
-  python3 - "$1" <<'PY' 2>/dev/null
+  python3 - "$1" "$2" <<'PY' 2>/dev/null
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
     sys.exit(1)
 for s in d.get("steps", []):
-    print("%s\t%s\t%s" % (s.get("name", "?"), s.get("result", "?"), s.get("seconds", 0)))
+    print("%s\t%s\t%s\t%s" % (s.get("name", "?"), s.get("result", "?"), s.get("seconds", 0), sys.argv[2]))
 PY
 }
 
 # ── the two layers ────────────────────────────────────────────────────────────
-run_all() {
-  echo "== all: warm box + run.sh all --strict =="
-  local log="$OUT/all.log" rc=0 t_layer0=$SECONDS
-  # One retry: the first real run died because the PROVIDER's own guest bootstrap
-  # raced cloud-init for the apt lists lock on a fresh VM — transient, and it cost
-  # the whole run. A second attempt is minutes; a lost weekly is a week.
-  # Keyed on the exit status, not on warm.env: the file says which box, not
-  # whether THIS call succeeded, and a stale entry would read as success.
-  local warm_rc=0 t_wall0
-  t_wall0="$(date +%s)"
-  bash "$WRAPPERS/warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
+# One retry: the first real run died because the PROVIDER's own guest bootstrap
+# raced cloud-init for the apt lists lock on a fresh VM — transient, and it cost
+# the whole run. A second attempt is minutes; a lost weekly is a week.
+# Keyed on the exit status, not on warm.env: the file says which box, not
+# whether THIS call succeeded, and a stale entry would read as success.
+warm_lease() {  # warm_lease <slot> <log> -> the exit code of the last warm.sh call
+  local rc=0
+  bash "$WRAPPERS/warm.sh" "$1" >"$2" 2>&1 </dev/null || rc=$?
   # Exit 2 is warm.sh refusing (a usage error, or lane state it will not read), not
   # the race above: a second attempt would only repeat it and blame the bootstrap.
-  if [ "$warm_rc" != 0 ] && [ "$warm_rc" != 2 ]; then
-    note "warm lease failed — retrying once (the guest bootstrap is racy on a fresh VM)"
-    warm_rc=0
-    bash "$WRAPPERS/warm.sh" desktop >>"$OUT/warm.log" 2>&1 || warm_rc=$?
+  if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+    note "warm lease ($1) failed — retrying once (the guest bootstrap is racy on a fresh VM)"
+    rc=0
+    bash "$WRAPPERS/warm.sh" "$1" >>"$2" 2>&1 </dev/null || rc=$?
   fi
+  return "$rc"
+}
+
+# `all` runs as two parts at once (run.sh --part): `rest` on the box of the slot
+# desktop, `gui` — the desktop GUI E2E, ~30 min at the end of a single run, which
+# need nothing the other steps do — on a second box of the lane (slot gui). The
+# GUI box is leased while rest already runs: a cold one (bootstrap + Tauri build)
+# would otherwise sit in front of everything. Each part logs to its own file and
+# pulls into its own directory, so neither can overwrite the other's evidence.
+# Without a GUI box part gui runs after part rest on the desktop box (run_all).
+#
+# part_job runs in the background. It leases its slot unless that is desktop
+# (run_all holds that box already), runs the part and writes $OUT/<part>.rc:
+# "<exit code> <seconds> <stage>", stage `lease` when the box was never had.
+# The file, not the status of `wait`: wait answers 127 for a pid that is no child
+# of this shell, and that must never be read as a result. The seconds include the
+# lease — a cold GUI box is part of what its part costs.
+part_job() {  # part_job <part> <slot>
+  local part="$1" slot="$2" rc=0 t0=$SECONDS slot_flag=()
+  NOTE_FILE="$OUT/$part.notes"
+  if [ "$slot" != desktop ]; then
+    warm_lease "$slot" "$OUT/warm-$slot.log" || rc=$?
+    if [ "$rc" != 0 ]; then
+      echo "$rc $((SECONDS - t0)) lease" > "$OUT/$part.rc"
+      return 0
+    fi
+    slot_flag=(--slot "$slot")
+  fi
+  AH_OUT_DIR="$OUT/$part" bash "$WRAPPERS/iter.sh" ${slot_flag[@]+"${slot_flag[@]}"} \
+    all --strict --part "$part" >"$OUT/all-$part.log" 2>&1 </dev/null || rc=$?
+  echo "$rc $((SECONDS - t0)) run" > "$OUT/$part.rc"
+}
+
+# A background job of a non-interactive shell ignores SIGINT, and none of them
+# hears a signal sent to heavy.sh: Ctrl-C in the tmux window, or a kill, would end
+# heavy.sh and leave both suites running on their boxes. So the trap ends each job
+# with everything it started (iter.sh, vm.py, ssh) — a process before its
+# children, so it starts no next command once the current one dies.
+PART_PIDS=()
+kill_tree() {  # kill_tree <pid>
+  local kids c
+  kids="$(pgrep -P "$1" 2>/dev/null)"
+  kill -TERM "$1" 2>/dev/null
+  for c in $kids; do kill_tree "$c"; done
+}
+stop_parts() {
+  local p
+  for p in ${PART_PIDS[@]+"${PART_PIDS[@]}"}; do kill_tree "$p"; done
+}
+
+run_all() {
+  echo "== all: warm box + run.sh all --strict, parts rest and gui on two boxes =="
+  local t_layer0=$SECONDS warm_rc=0
+  warm_lease desktop "$OUT/warm.log" || warm_rc=$?
   if [ "$warm_rc" = 2 ]; then
     set_infra "warm.sh refused (exit 2), see warm.log"
     tail -5 "$OUT/warm.log" | mask_stream | sed 's/^/  /'
@@ -320,132 +418,246 @@ run_all() {
     FINDINGS+=("all|-|infra|$((SECONDS - t_layer0))|-|warm box could not be leased")
     return 74
   fi
-  local box; box="$(warm_get desktop)"; box="${box:-?}"
-  note "warm box: $box"
-  # Drop the previous run's artifact FIRST. If the box dies before the pull, the
-  # old file stays behind and its steps would be filed under today's date, commit
-  # and tree hash — two green rows for steps that never ran. run.sh deletes its
-  # own artifact for the same reason: missing evidence is honest, stale is not.
-  rm -f "$AH_OUT_DIR/last-all.json"
-  # The same for the JUnit XMLs: the pull merges into this directory, so a file
-  # from an earlier run or a local verify.sh would be copied and counted as today's.
-  rm -rf "$AH_OUT_DIR/junit"
-  local t0=$SECONDS
-  bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
-  local secs_layer=$((SECONDS - t0))
+  local -A part_box=() part_res=() part_detail=() part_secs=()
+  part_box[rest]="$(warm_get desktop)"
+  note "warm box: ${part_box[rest]:-?} (part rest)"
+  local part slot rc s stage line
+  : > "$OUT/steps-all.tsv"
+  for part in rest gui; do
+    # The pull directory of the part. Drop a previous run's artifact FIRST: the run
+    # directory is named by the minute, so a run started in the same minute left
+    # its files here. If the box dies before the pull, the old file stays behind
+    # and its steps would be filed under today's date, commit and tree hash — green
+    # rows for steps that never ran. run.sh deletes its own artifact for the same
+    # reason: missing evidence is honest, stale is not. The same for the JUnit
+    # XMLs: the pull merges into this directory, so an old file would be copied
+    # and counted as today's.
+    mkdir -p "$OUT/$part"
+    rm -f "$OUT/$part/last-all.json" "$OUT/$part.rc" "$OUT/$part.notes"
+    rm -rf "$OUT/$part/junit"
+  done
+  # The stamp of both parts for the freshness check of their box capture: the
+  # moment their jobs start.
+  local t0=$SECONDS since
+  since="$(date +%s)"
+  trap 'stop_parts; exit 130' INT
+  trap 'stop_parts; exit 143' TERM
+  trap 'stop_parts; exit 129' HUP
+  PART_PIDS=()
+  part_job rest desktop & PART_PIDS+=("$!")
+  part_job gui gui & PART_PIDS+=("$!")
+  wait "${PART_PIDS[@]}"
+  local -A part_slot=([rest]=desktop [gui]=gui) part_since=([rest]="$since" [gui]="$since")
+  # No GUI box even on the retry (Kevin 2026-10-21): part gui runs after part
+  # rest on the desktop box — a longer run instead of a lost one. A refusal
+  # (exit 2) is no missing box and stays UNVERIFIED. Its own stamp: a capture in
+  # gui/ written while part rest ran is older than this run of part gui and must
+  # not pass for its own.
+  rc=0 stage=none
+  [ -f "$OUT/gui.rc" ] && read -r rc _ stage < "$OUT/gui.rc"
+  if [ "$stage" = lease ] && [ "$rc" != 2 ]; then
+    tail -5 "$OUT/warm-gui.log" | mask_stream | sed 's/^/  /'
+    line="$(tail -1 "$OUT/warm-gui.log" 2>/dev/null | sed 's/^[[:space:]]*//')"
+    note "part gui runs serially on the desktop box ${part_box[rest]:-?} after part rest: no GUI box, warm.sh gui failed after a retry (${line:-warm-gui.log is empty})"
+    rm -f "$OUT/gui.rc"
+    part_slot[gui]=desktop
+    part_since[gui]="$(date +%s)"
+    PART_PIDS=()
+    part_job gui desktop & PART_PIDS+=("$!")
+    wait "${PART_PIDS[@]}"
+  fi
+  trap - INT TERM HUP
+  PART_PIDS=()
+  local wall=$((SECONDS - t0))
+
+  for part in rest gui; do
+    slot="${part_slot[$part]}"
+    if [ -f "$OUT/$part.notes" ]; then
+      while IFS= read -r line; do NOTES+=("$line"); done < "$OUT/$part.notes"
+    fi
+    rc=74 s=0 stage=none
+    [ -f "$OUT/$part.rc" ] && read -r rc s stage < "$OUT/$part.rc"
+    case "$rc$s" in ''|*[!0-9]*) rc=74 s=0 stage=none ;; esac
+    part_secs[$part]="$s"
+    part_box[$part]="$(warm_get "$slot")"; part_box[$part]="${part_box[$part]:-?}"
+    case "$stage" in
+      run)
+        # A part on the gui slot leased the GUI box, so this run holds it
+        # (release_gui_box). Run on the desktop box, part gui holds none.
+        [ "$slot" = gui ] && GUI_HELD=1
+        evaluate_all "$OUT/all-$part.log" "$rc" "${part_box[$part]}" "$OUT/$part" "$part" "$slot" "${part_since[$part]}" ;;
+      lease)
+        # Only a refusal is left here: any other failed lease has run the part
+        # on the desktop box (above).
+        part_box[$part]="-"
+        tail -5 "$OUT/warm-$slot.log" | mask_stream | sed 's/^/  /'
+        PART_RESULT=infra PART_DETAIL="warm.sh refused (exit $rc), see warm-$slot.log" ;;
+      *)
+        PART_RESULT=infra PART_DETAIL="the part ended without a result (no $part.rc)" ;;
+    esac
+    part_res[$part]="$PART_RESULT"; part_detail[$part]="$PART_DETAIL"
+    note "part $part: $PART_RESULT after $s s on ${part_box[$part]}${PART_DETAIL:+ — $PART_DETAIL}"
+  done
+  GUI_RESULT="${part_res[gui]}"
+  # Both parts have had every retry; only now may the GUI box go for a w2 box.
+  judge_candidates
+
+  # One verdict from two parts. Infra in either makes the run UNVERIFIED, and the
+  # reason names a red part as well, whichever of the two was judged first:
+  # set_fail after set_infra keeps nothing, so the FAIL would vanish. Otherwise a
+  # red part makes it FAIL. PASS only with two green parts.
+  local result=pass why="" failed=""
+  for part in rest gui; do
+    case "${part_res[$part]}" in
+      infra) why="${why:+$why; }${part_detail[$part]} ($part)" ;;
+      fail)  failed="${failed:+$failed, }$part" ;;
+    esac
+  done
+  if [ -n "$why" ]; then
+    result=infra; set_infra "$why${failed:+; FAIL in part $failed}"
+  elif [ -n "$failed" ]; then
+    result=fail; set_fail
+  fi
+  FINDINGS+=("all|-|$result|$wall|${part_box[rest]}+${part_box[gui]}|rest ${part_secs[rest]} s, gui ${part_secs[gui]} s")
+}
+
+# One finished part of `all`, judged: its summary line, the artifact it pulled and
+# its red steps, re-run on the box of its slot. The label names the part (rest or
+# gui): it prefixes the summary line, tags the part's rows in steps-all.tsv and
+# has to match the artifact's own. <since> is the epoch second the part's job
+# started, the stamp that tells this run's box capture from a leftover. Sets
+# PART_RESULT (pass, fail or infra) and PART_DETAIL; run_all combines the two parts
+# into the verdict and the one layer row.
+PART_RESULT=""; PART_DETAIL=""
+evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <since>
+  local log="$1" rc="$2" box="$3" pull="$4" label="$5" slot="$6" since="$7" logname="${1##*/}"
+  PART_RESULT="pass"; PART_DETAIL=""
+  # iter.sh tees the box's stdout into this file as well as showing it, so the
+  # summary line survives a wrapper that died before printing one itself. The first
+  # real run reported PASS from an exit code alone for want of it — the summary and
+  # last-all.json were on disk the whole time, just not where this script looked.
+  local box_out="$pull/last.out.log" summary=0
   tail -25 "$log" | mask_stream | sed 's/^/  /'
   # $log first — iter.sh passes the box's output through — then where it also
-  # captured it, but only if that file belongs to THIS run. $BOX_OUT is a fixed
+  # captured it, but only if that file belongs to THIS run. $box_out is a fixed
   # path each run overwrites: if the wrapper died before writing it, the previous
   # run's summary is still sitting there, and adopting it is the same lie as a
   # stale artifact. The artifact carries a tree hash to check; a log does not, so
   # its mtime is the only honest stamp.
-  if ! capture_summary "$log" 'run\.sh\[all\]:'; then
-    if [ -f "$BOX_OUT" ] && [ "$(stat -c %Y "$BOX_OUT" 2>/dev/null || echo 0)" -ge "$t_wall0" ]; then
-      capture_summary "$BOX_OUT" 'run\.sh\[all\]:' || note "no run.sh[all] summary line in $log or $BOX_OUT"
-    else
-      note "no summary line: $log has none and $BOX_OUT predates this run"
-    fi
+  if capture_summary "$log" 'run\.sh\[all\]:' "$label"; then
+    summary=1
+  elif [ -f "$box_out" ] && [ "$(stat -c %Y "$box_out" 2>/dev/null || echo 0)" -ge "$since" ]; then
+    if capture_summary "$box_out" 'run\.sh\[all\]:' "$label"; then summary=1
+    else note "no run.sh[all] summary line in $log or $box_out"; fi
+  else
+    note "no summary line: $log has none and $box_out predates this run"
   fi
-  collect_artifacts
+  collect_artifacts "$pull"
 
-  # INFRA first, and it ends the layer: a step that could not RUN says nothing
+  # INFRA first, and it ends the part: a step that could not RUN says nothing
   # about the code, and re-running it three times would only spend VM time on an
   # environment problem. Never a regression (spec: classification rule 1).
   local marker; marker="$(infra_marker "$log")"
   if [ -n "$marker" ]; then
-    set_infra "the 'all' layer could not run: $marker"
-    note "infra marker in all.log: $marker"
-    FINDINGS+=("all|-|infra|$secs_layer|$box|$marker")
+    note "infra marker in $logname: $marker"
+    PART_RESULT=infra PART_DETAIL="the 'all' layer could not run: $marker"
     return 0
   fi
   if [ "$rc" = 74 ]; then
-    set_infra "iter.sh all exited 74 (infrastructure)"
-    FINDINGS+=("all|-|infra|$secs_layer|$box|wrapper exit 74")
+    PART_RESULT=infra PART_DETAIL="iter.sh all exited 74 (infrastructure)"
     return 0
   fi
 
   # Whatever the exit code says, the artifact is what the box actually did.
-  local art="$AH_OUT_DIR/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0
-  if [ -f "$art" ] && ! artifact_is_ours "$art"; then
-    note "last-all.json describes another tree — ignored (evidence must match this run)"
-    rm -f "$art"
+  local art="$pull/last-all.json" tsv="$OUT/steps-all.tsv" name result secs part verdict
+  local reds=0 redsteps=0 steps_read=0 theirs ours=0
+  if [ -f "$art" ]; then
+    theirs="$(artifact_is_ours "$art" "$label")" || ours=$?
+    if [ "$ours" = 3 ]; then
+      note "last-all.json of part $label names part $theirs — the box did not run part $label"
+      PART_RESULT=infra PART_DETAIL="the box ran part $theirs, not $label"
+      return 0
+    fi
+    # Both identities in the note, so the report carries the cause: a bare
+    # "another tree" went unexplained for 16 runs (R-0603).
+    if [ "$ours" != 0 ]; then
+      note "last-all.json describes another tree — ignored (evidence must match this run): artifact ${theirs:-?}; this run head $COMMIT, tree_hash $TREE"
+      rm -f "$art"
+    fi
   fi
-  if read_steps "$art" > "$OUT/steps-all.tsv"; then
+  if read_steps "$art" "$label" >> "$tsv"; then
     steps_read=1
-    cp "$art" "$OUT/last-all.json" 2>/dev/null || true
     # A required step the box could not RUN (strict-failed = SKIP under --strict,
     # since the box rule made every heavy step required) says nothing about the
-    # code: INFRA for the layer, never a red step, no retries — and the weekly
+    # code: INFRA for the part, never a red step, no retries — and the weekly
     # must not burn seven capstone VMs behind it. The box prints the strict-failed
-    # line into its own capture, not into all.log, so the artifact is the only
-    # place this is visible from here.
+    # line into its own capture, not into the part's log, so the artifact is the
+    # only place this is visible from here.
     local strict_steps
-    strict_steps="$(awk -F'\t' '$2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$OUT/steps-all.tsv")"
+    strict_steps="$(awk -F'\t' -v p="$label" '$4 == p && $2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$tsv")"
     if [ -n "$strict_steps" ]; then
-      while IFS="$(printf '\t')" read -r name result secs <&3; do
-        [ -n "$name" ] || continue
+      while IFS="$(printf '\t')" read -r name result secs part <&3; do
+        [ -n "$name" ] && [ "$part" = "$label" ] || continue
         local detail=""
         case "$result" in
           strict-failed) result="infra"; detail="strict-failed on the box (required step could not run)" ;;
           fail)          detail="not classified (layer infra)" ;;
         esac
         FINDINGS+=("all|$name|$result|$secs|$box|$detail")
-      done 3< "$OUT/steps-all.tsv"
-      set_infra "required step(s) could not run on the box (strict-failed): $strict_steps"
-      FINDINGS+=("all|-|infra|$secs_layer|$box|strict-failed: $strict_steps")
+      done 3< "$tsv"
+      PART_RESULT=infra PART_DETAIL="required step(s) could not run on the box (strict-failed): $strict_steps"
       return 0
     fi
     # fd 3, not stdin: classify_red_step leases and drives boxes, and anything
     # in there that reaches ssh without its own stdin would read the rest of this
     # file and end the loop after the first red step (R-0092).
-    while IFS="$(printf '\t')" read -r name result secs <&3; do
-      [ -n "$name" ] || continue
+    while IFS="$(printf '\t')" read -r name result secs part <&3; do
+      [ -n "$name" ] && [ "$part" = "$label" ] || continue
       verdict="$result"; STEP_DETAIL=""
       if [ "$result" = "fail" ]; then
         redsteps=$((redsteps + 1))
         # Sets CLASS_VERDICT + STEP_DETAIL. NOT called through $(...): the notes
         # it appends and the detail it sets would die with the subshell, and its
         # progress output would end up inside the captured verdict.
-        classify_red_step "$name" "$log" "$box"
+        classify_red_step "$name" "$log" "$box" "$slot"
         verdict="$CLASS_VERDICT"
         case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
       fi
       FINDINGS+=("all|$name|$verdict|$secs|$box|$STEP_DETAIL")
-    done 3< "$OUT/steps-all.tsv"
+      if [ "$verdict" = kandidat ]; then
+        CANDIDATES+=("$((${#FINDINGS[@]} - 1))|$name|$CAND_SPEC|$CAND_MARKER")
+      fi
+    done 3< "$tsv"
   else
-    note "no readable last-all.json — per-step results unavailable"
+    note "no readable last-all.json from part $label — per-step results unavailable"
     # Exit 2 is a refusal (vm.py run declining a box of another lane, or a usage
     # error): nothing ran, so there is no red step to count, see below.
     [ "$rc" = 0 ] || [ "$rc" = 2 ] || reds=1
   fi
 
   if [ "$reds" -gt 0 ]; then
-    set_fail; FINDINGS+=("all|-|fail|$secs_layer|$box|$reds step(s) red after retries")
+    PART_RESULT=fail PART_DETAIL="$reds step(s) red after retries"
   elif [ "$redsteps" -gt 0 ]; then
     # Red steps, all of them green again on a retry: the wrapper's non-zero exit
     # is explained, and a quarantined flake is not a failing run (spec 3b).
-    FINDINGS+=("all|-|pass|$secs_layer|$box|$redsteps flaky step(s), quarantined")
+    PART_DETAIL="$redsteps flaky step(s), quarantined"
   elif [ "$rc" = 0 ]; then
     # "The wrapper exited 0" is not evidence — it is a claim. Without a summary
     # line AND without a readable artifact, nothing is known about which steps
-    # ran, so the run is UNVERIFIED rather than green. This is the rule the whole
+    # ran, so the part is UNVERIFIED rather than green. This is the rule the whole
     # stage is built on, applied to heavy.sh itself (found by the first real run,
-    # which reported PASS from an exit code and an empty step table).
-    if [ "$steps_read" = 0 ] && [ "${#SUMMARY_LINES[@]}" -eq 0 ]; then
-      set_infra "the layer exited 0 but produced no evidence (no summary line, no artifact)"
-      FINDINGS+=("all|-|infra|$secs_layer|$box|exit 0 without evidence")
-      return 0
+    # which reported PASS from an exit code and an empty step table). Counted per
+    # part: the other part's summary line says nothing about this one.
+    if [ "$steps_read" = 0 ] && [ "$summary" = 0 ]; then
+      PART_RESULT=infra PART_DETAIL="the layer exited 0 but produced no evidence (no summary line, no artifact)"
     fi
-    FINDINGS+=("all|-|pass|$secs_layer|$box|")
   elif [ "$rc" = 2 ]; then
     # A refusal says nothing about the code: UNVERIFIED, never a regression.
-    set_infra "iter.sh all refused (exit 2), see all.log"
-    FINDINGS+=("all|-|infra|$secs_layer|$box|iter.sh all refused (exit 2)")
+    PART_RESULT=infra PART_DETAIL="iter.sh all refused (exit 2), see $logname"
   else
     # Every step green but the wrapper red: something outside the step list said
     # no (a crashed run, a strict layer that ran nothing). Not quietly a pass.
-    set_fail; FINDINGS+=("all|-|fail|$secs_layer|$box|wrapper exit $rc without a red step")
+    PART_RESULT=fail PART_DETAIL="wrapper exit $rc without a red step"
   fi
 }
 
@@ -455,7 +667,7 @@ run_all() {
 # different experiment. One green run makes it FLAKY (quarantined, not a
 # failure); three reds with the SAME first marker make it a candidate for the
 # second-VM check.
-STEP_DETAIL=""; CLASS_VERDICT=""
+STEP_DETAIL=""; CLASS_VERDICT=""; CAND_SPEC=""; CAND_MARKER=""
 RETRIES=3
 
 # The first line the step printed that reads like a failure. Two identical reds
@@ -479,23 +691,28 @@ failing_spec() {  # failing_spec <step> <log>
 # on this: it reads steps-all.tsv from fd 3, since the second box's warm.sh once
 # drained the file through stdin and cut the report after the first red step
 # (R-0092).
-rerun_step() {  # rerun_step <step> <spec-or-empty> <logfile> -> rc
-  if [ -n "$2" ]; then
-    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
+rerun_step() {  # rerun_step <slot> <step> <spec-or-empty> <logfile> -> rc
+  # desktop is iter.sh's default slot and goes without --slot.
+  local slot_flag=()
+  [ "$1" = desktop ] || slot_flag=(--slot "$1")
+  if [ -n "$3" ]; then
+    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" "${slot_flag[@]+"${slot_flag[@]}"}" \
+      --cmd "AH_SPEC=$3 bash scripts/tests/$2.sh" >"$4" 2>&1 </dev/null
   else
-    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" all --strict --step "$1" >"$3" 2>&1 </dev/null
+    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" "${slot_flag[@]+"${slot_flag[@]}"}" \
+      all --strict --step "$2" >"$4" 2>&1 </dev/null
   fi
 }
 
-classify_red_step() {  # classify_red_step <step> <all-log> <box>; sets CLASS_VERDICT
-  local step="$1" log="$2" box="$3" spec i rc rlog marker first="" same=1 safe
+classify_red_step() {  # classify_red_step <step> <all-log> <box> <slot>; sets CLASS_VERDICT
+  local step="$1" log="$2" box="$3" slot="$4" spec i rc rlog marker first="" same=1 safe
   spec="$(failing_spec "$step" "$log")"
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
   CLASS_VERDICT="fail"; STEP_DETAIL=""
   note "red step '$step'${spec:+ (spec $spec)} — up to $RETRIES retries on $box"
   for i in $(seq 1 "$RETRIES"); do
     rlog="$OUT/retry-$safe-$i.log"
-    rc=0; rerun_step "$step" "$spec" "$rlog" || rc=$?
+    rc=0; rerun_step "$slot" "$step" "$spec" "$rlog" || rc=$?
     if [ "$rc" = 0 ]; then
       quarantine "$step"
       STEP_DETAIL="green on retry $i — quarantined"
@@ -510,7 +727,11 @@ classify_red_step() {  # classify_red_step <step> <all-log> <box>; sets CLASS_VE
   done
   if [ "$same" = 1 ]; then
     note "  3x red with the same marker -> candidate"
-    second_vm_check "$step" "$spec" "${first:-none}"
+    # The second VM waits for judge_candidates, after the retries of both parts:
+    # it frees the GUI box first, and a red GUI step retried after that would
+    # have iter.sh warm a fresh box that never got this tree.
+    CLASS_VERDICT="kandidat"; STEP_DETAIL="3x red (${first:-none})"
+    CAND_SPEC="$spec" CAND_MARKER="${first:-none}"
   else
     # Red every time but in different ways: reproducibly broken, yet not the
     # stable signature a regression claim needs.
@@ -530,7 +751,8 @@ classify_red_step() {  # classify_red_step <step> <all-log> <box>; sets CLASS_VE
 #   base red too         -> extern       (environment/dependency, not our change)
 #
 # The worktree and its lane belong to this function; Kevin's own warm box
-# (lane `main`) is never touched.
+# (lane `main`) is never touched — only the GUI box this run leased makes room
+# first (release_gui_box).
 W2_DIR=""
 last_pass_commit() {
   [ -f "$HISTORY" ] || return 0
@@ -557,6 +779,57 @@ w2_teardown() {
   W2_DIR=""
 }
 
+# The GUI box of `all` holds as much RAM as the desktop box next to it. With both
+# still held, the w2 box does not fit, nor do the capstone's roles: a candidate
+# ended unbestaetigt instead of reg or extern, the capstone UNVERIFIED. So the
+# GUI box goes first — once per run, and only if this run leased it. A failed
+# release is a note: whether the next clone fits is vm.py's capacity check to say.
+GUI_HELD=0
+release_gui_box() {  # release_gui_box <when, for the note> [<what a failed release leaves>]
+  [ "$GUI_HELD" = 1 ] || return 0
+  GUI_HELD=0
+  local box rc=0
+  box="$(warm_get gui)"
+  bash "$WRAPPERS/reap.sh" --role gui >>"$OUT/reap-gui.log" 2>&1 </dev/null || rc=$?
+  if [ "$rc" = 0 ]; then
+    note "gui box ${box:-?} released $1 (reap.sh --role gui)"
+  else
+    note "gui box ${box:-?} not released $1: reap.sh --role gui exited $rc (see reap-gui.log) — ${2:-the capacity check of vm.py decides the next clone}"
+  fi
+}
+
+# After the run (Kevin 2026-10-21): a green part gui frees its box; a red one
+# (infra included) stays for inspection — unless the second VM or the capstone
+# took it first. Part rest sets the wall time, so a GUI box kept warm would
+# shorten the next part gui but hardly the next run, and hold its RAM until its
+# ttl runs out. GUI_RESULT is how part gui ended (pass, fail or infra; run_all).
+GUI_RESULT=""
+settle_gui_box() {
+  [ "$GUI_HELD" = 1 ] || return 0
+  if [ "$GUI_RESULT" = pass ]; then
+    release_gui_box "after a green part gui" "the reaper takes it when its ttl runs out"
+    return 0
+  fi
+  local box; box="$(warm_get gui)"
+  note "gui box ${box:-?} kept for inspection (part gui: ${GUI_RESULT:-?}): python3 scripts/vm/vm.py ssh ${box:-<vmid>} — reap.sh --role gui frees it, else the reaper when its ttl runs out"
+}
+
+# The candidates of `all`, "<index of the step's row in FINDINGS>|<step>|<spec>|
+# <marker>". They go to the second VM only once both parts have had all their
+# retries (classify_red_step); each check rewrites its step's row.
+CANDIDATES=()
+judge_candidates() {
+  local c idx step spec marker ebene schritt secs vm
+  for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
+    IFS='|' read -r idx step spec marker <<<"$c"
+    note "second VM for '$step'"
+    second_vm_check "$step" "$spec" "$marker"
+    IFS='|' read -r ebene schritt _ secs vm _ <<<"${FINDINGS[$idx]}"
+    FINDINGS[$idx]="$ebene|$schritt|$CLASS_VERDICT|$secs|$vm|$STEP_DETAIL"
+  done
+  CANDIDATES=()
+}
+
 second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDICT
   local step="$1" spec="$2" marker="$3" rc base safe
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
@@ -577,6 +850,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  could not create the w2 worktree — candidate stays unconfirmed"
     return 0
   fi
+  release_gui_box "before the second-VM check"
   if ! AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); second box could not be leased"
     note "  second box could not be leased — candidate stays unconfirmed"
@@ -622,10 +896,11 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
 # reconstruction. The FREEING of it stays his (D4): the row is `neu`, never
 # `freigegeben`.
 # The row goes in through roadmap.py (stage 5): the lock, the .bak, the row-count
-# check, the Dedup-Key and the commit in the private repo are its job. A refused
-# row is said loudly in the report — a full `neu` cap must not lose a finding
-# quietly. The new ID comes back in ROADMAP_ID, not on stdout: called as $(...),
-# every note here would die with the subshell, and none reached the report.
+# check, the Dedup-Key and the commit in the private repo are its job; it takes
+# every new row, however many are `neu`. A refused or failed add is said loudly in
+# the report — no finding may be lost quietly. The new ID comes back in
+# ROADMAP_ID, not on stdout: called as $(...), every note here would die with
+# the subshell, and none reached the report.
 roadmap_append() {  # roadmap_append <klasse> <titel> <quelle> <ledger|""> <dedup-key> -> ROADMAP_ID
   local rm="$PRIVATE_DIR/ROADMAP.md" err="$OUT/roadmap-add.err" id rc why
   ROADMAP_ID=""
@@ -635,11 +910,10 @@ roadmap_append() {  # roadmap_append <klasse> <titel> <quelle> <ledger|""> <dedu
   mkdir -p "$OUT" 2>/dev/null
   id="$(python3 "$VM_ROOT/scripts/dev/roadmap.py" --file "$rm" add --class "$1" --title "$2" \
         --source "$3" --dedup-key "$5" "${ledger[@]+"${ledger[@]}"}" 2>"$err")"; rc=$?
-  why="$(grep -m1 -e 'Dedup-Key' -e 'cap is reached' "$err" 2>/dev/null | sed 's/^roadmap.py: //')"
+  why="$(grep -m1 'Dedup-Key' "$err" 2>/dev/null | sed 's/^roadmap.py: //')"
   case "$rc" in
     0) ROADMAP_ID="$id"; return 0 ;;
     4) note "roadmap: $why — no second row" ;;
-    3) note "ROADMAP FULL: $why — the $1 finding '$2' got NO row" ;;
     *) note "roadmap.py add failed (exit $rc): $(tail -1 "$err" 2>/dev/null | sed 's/^roadmap.py: //') — no row appended" ;;
   esac
   return 1
@@ -685,10 +959,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression $step ($DATE) — Task-Ledger
-Status: geplant · Branch: feature/$1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: geplant · Branch: feature/$1 · Review: am Ende
 Roadmap: $rid · Quelle: Wochenlauf $STAMP
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (\`/test\`: \`bash scripts/tests/run.sh all --strict --step "$step"\`)
-DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 ### R1 — $step wieder grün  [ ]
@@ -1059,9 +1333,15 @@ if preflight; then
       if [ "$VERDICT" = "UNVERIFIED" ]; then
         note "capstone skipped: the 'all' layer is UNVERIFIED — fix the infrastructure first"
       else
+        # The capstone fits its roles before the first clone; the GUI box is no
+        # longer needed and would only stand in the way.
+        release_gui_box "before the capstone"
         run_capstone
       fi ;;
   esac
+  # Before the report: its note belongs in it, and the VM list there shows the
+  # box gone.
+  settle_gui_box
 fi
 
 check_audit
