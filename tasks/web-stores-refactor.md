@@ -68,8 +68,10 @@ Metrik: Kopien des Guard-Musters (`git grep -c refreshGen`, git 2.47.3): users 7
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T3 — Stores: eine Mutationsantwort nach dem Abmelden ändert keine Liste (R-0777)  [ ]
+### T3 — Stores: eine Mutationsantwort nach dem Abmelden ändert keine Liste (R-0777)  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/listStore.ts, apps/web/src/lib/stores/refreshGuard.test.ts, docs/developer/webui.html, docs/en/developer/webui.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @ac86adde 2026-10-28T16:56:21+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T3.verdict.json)
 Änderung: `listStore.ts` führt neben der Refresh-Generation eine Sitzungs-Epoche, die nur `reset()` erhöht. `mutate` merkt sie sich vor `call()`; hat sie sich bis zur Antwort geändert, gibt `mutate` das Ergebnis zurück, ohne die Generation zu erhöhen und ohne `apply`. Ein Kommentar nennt das Warum. Neue Tests in `refreshGuard.test.ts`, je über die neun Mutationen aus T1: (d) die Antwort kommt nach `reset()` → der Store bleibt leer; (e) nach `reset()` startet ein `refresh()` der neuen Sitzung, dann kommt die alte Antwort, dann die neue Liste `[X]` → der Store hält `[X]`. Zuerst rot auf dem Stand nach T2 (dreimal identisch, Summary-Zeilen in den Commit-Body): (d) für die drei `create` (die Liste trägt die alte Zeile), (e) für alle neun (die Erhöhung verwirft das neue `refresh()`). T1 (a)–(c) bleiben grün.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/refreshGuard.test.ts src/lib/stores/reset.test.ts
 Doku: `docs/developer/webui.html:64` + `docs/en/developer/webui.html:64` (Abschnitt Stores): die Listen-Stores `users`, `hooks`, `apikeys` entstehen aus `listStore.ts`; eine Antwort, die nach einer neueren Änderung oder nach dem Abmelden ankommt, ändert die Liste nicht · CHANGELOG.md (Fixed, umlautfrei: eine Aenderung im Web-Panel, deren Antwort erst nach dem Abmelden ankommt, erscheint nicht mehr in der Liste und leert die erste Liste der naechsten Sitzung nicht mehr)

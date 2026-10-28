@@ -4,7 +4,8 @@
 
 // Stale-response guard of the list stores (R-0724), pinned per mutation path: a refresh() whose
 // list() resolves after a mutation or after a newer refresh() must not overwrite the store, and a
-// mutation the API rejects must not drop a refresh() still in flight.
+// mutation the API rejects must not drop a refresh() still in flight. A mutation answered after a
+// logout (reset()) changes no list, neither the empty one nor the next session's (R-0777).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get, type Readable } from 'svelte/store';
@@ -93,6 +94,8 @@ interface MutationCase {
   after: unknown[];
   // Queue the API's answer to the next call of the mutation.
   succeed(): void;
+  // The next call waits; the returned function answers it with the response.
+  succeedLater(): () => void;
   fail(err: Error): void;
   run(): Promise<unknown>;
 }
@@ -110,6 +113,11 @@ function mutationCase<R>(
     on,
     after,
     succeed: () => call.mockResolvedValueOnce(response),
+    succeedLater: () => {
+      const d = deferred<R>();
+      call.mockReturnValueOnce(d.promise);
+      return () => d.resolve(response);
+    },
     fail: (err) => call.mockRejectedValueOnce(err),
     run,
   };
@@ -124,20 +132,20 @@ const hook = (id: string, name = id, enabled = true): Hook => ({
 });
 const key = (id: number): ApiKey => ({ id, name: `k${id}`, permission: 'read' });
 
-const USERS = storeCase('users', users, vi.mocked(usersApi.list), [user(1), user(2)], [user(3)]);
+const USERS = storeCase('users', users, vi.mocked(usersApi.list), [user(1), user(2)], [user(4)]);
 const HOOKS = storeCase(
   'hooks',
   hooks,
   vi.mocked(hooksApi.list),
   [hook('a'), hook('b')],
-  [hook('c')],
+  [hook('d')],
 );
 const APIKEYS = storeCase(
   'apikeys',
   apikeys,
   vi.mocked(apikeysApi.list),
   [key(1), key(2)],
-  [key(3)],
+  [key(4)],
 );
 
 const mutations: MutationCase[] = [
@@ -247,6 +255,34 @@ describe.each(mutations)('$name', (m) => {
     await expect(m.run()).rejects.toThrow('rejected');
     expect(get(m.on.store)).toEqual(m.on.before);
 
+    answerList('fresh');
+    await refresh;
+    expect(get(m.on.store)).toEqual(m.on.fresh);
+  });
+});
+
+describe.each(mutations)('$name answered after a logout', (m) => {
+  it('leaves the emptied store empty', async () => {
+    await m.on.seed();
+    const answer = m.succeedLater();
+    const running = m.run();
+
+    m.on.store.reset();
+    answer();
+    await running;
+    expect(get(m.on.store)).toEqual([]);
+  });
+
+  it("keeps the next session's list", async () => {
+    await m.on.seed();
+    const answer = m.succeedLater();
+    const running = m.run();
+
+    m.on.store.reset();
+    const answerList = m.on.listLater();
+    const refresh = m.on.store.refresh();
+    answer();
+    await running;
     answerList('fresh');
     await refresh;
     expect(get(m.on.store)).toEqual(m.on.fresh);
