@@ -23,11 +23,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
   Betrieb & Konfiguration, Monitoring (DE+EN).
 - **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
-  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
-  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
-  `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
-  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
-  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` (eine
+  IPv6-Adresse mit IPv4-Ende wie `::ffff:192.0.2.1` als eine Adresse; ein Image-Tag aus vier Zahlen wie
+  `.../server:1.2.3.4` bleibt stehen) und jeden Namen und jede Adresse aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`,
+  `TRUSTED_PROXIES`, `SMTP_HOST` und `SMTP_FROM` (bei `SMTP_FROM` jede Adresse, bei einem Anzeigenamen nur die
+  Adresse in spitzen Klammern, nicht der Name) sowie den Rechnernamen, auch ohne seine Domain, durch `<host>`, in
+  `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Ein Name mit Punkt trifft ohne Ruecksicht auf
+  Gross-/Kleinschreibung und samt der Namen darunter (`registry.ah.example.com` bei `DOMAIN=ah.example.com`); ein
+  Rechnername ohne Punkt nur in seiner Schreibweise und als ganzes Wort, samt einer Domain dahinter, nicht als Teil
+  eines Dienst- oder Image-Namens (`adminhelper-server-1`, `.../server:0.46.0` bleiben stehen). Andere Namen, etwa verwalteter Server oder
   Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
   bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
   und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
@@ -128,8 +133,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Servers nur an, wenn jede Zeile die Form des Generators hat: leer, `[transport.tls]`, `[[proxies]]` oder
   `schluessel = wert` mit einem einzeiligen Wert. In der Wurzel nimmt er nur die Schluessel, die der Server schreibt,
   in einem Proxy keinen Schluessel, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben
-  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels speichert der
-  Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
+  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels lehnt der Server
+  mit `422` ab), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
   wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
   der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
 - **Agent: nur die Einrichtung schaltet `adminhelper-agent.timer` ein (R-0641):** Ein Agent-Lauf schaltet den Timer
@@ -181,6 +186,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
   Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
   Entwickler (DE+EN).
+- **Server: das `extra_config` eines FRP-Tunnels nimmt keinen Schluessel der plugin-Familie an:** Ein Schluessel im
+  `extra_config` eines FRP-Tunnels, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben (etwa
+  `plugin.type` oder `PLUGIN.type`), ergibt bei `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` jetzt `422`;
+  bisher speicherte der Server ihn. Proxy-Plugins richtet der Server nicht ein, und der Agent wendet eine frpc.toml
+  mit einem solchen Schluessel nicht an. Gespeicherte Eintraege bleiben, wie sie sind. Doku: API-Referenz (DE+EN).
+- **Server: ein gespeicherter FRP-Tunnel, dessen `extra_config` die API heute ablehnt, fehlt in der frpc.toml seines
+  Hosts:** Ein Tunnel, dessen gespeichertes `extra_config` einen Schluessel der plugin-Familie oder einen anderen
+  Eintrag traegt, den die API heute ablehnt (oder kein JSON-Objekt ist), steht nicht mehr in der frpc.toml seines
+  Hosts; der Server schreibt dazu eine WARNING mit Tunnelname und den betroffenen Schluesseln (nie den Werten) ins
+  Log. Eine solche Zeile ergaebe sonst eine frpc.toml, die fuer den ganzen Host nicht gilt; die uebrigen Tunnel des
+  Hosts bleiben. `GET /api/frp/generate/frpc-toml/{server_id}` antwortet `404`, wenn kein anderer Tunnel bleibt, und
+  das Bulk-ZIP enthaelt dann keine `frpc.toml` fuer den Host. Die Zeile in der Datenbank bleibt, wie sie ist. Doku:
+  API-Referenz, Server-Entwicklerseite (DE+EN).
 - **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
   und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
   `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
@@ -283,10 +301,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `SMTP_HOST` auf den Namen im Zertifikat des Relays setzen, fuer eine eigene CA `SMTP_CA_FILE` (siehe Added); der
   Relay muss STARTTLS oder implizites TLS auf Port 465 anbieten. Doku: Betrieb & Konfiguration (DE+EN).
 - **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
-  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, und benennt sie erst
-  nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
-  ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
-  bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, bringt ihre Daten mit
+  `sync` (nur diese Datei) auf die Platte und benennt sie erst danach in `adminhelper-backup-<ts>.tar.gz` um; danach
+  synchronisiert es den Zielordner. So zeigt der Name auch nach einem Stromausfall nicht auf eine leere oder
+  gekuerzte Datei. Ein Lauf, der bis zum Umbenennen scheitert, hinterlaesst weder ein Archiv noch eine Zwischendatei;
+  scheitert das `sync` des Zielordners, endet das Backup mit Fehler, das Archiv bleibt liegen. Liegt unter dem
+  Archivnamen schon ein Verzeichnis, bricht das Backup ab, statt das Archiv hineinzulegen; ein Symlink unter dem Namen
+  wird durch das Archiv ersetzt, sein Ziel bleibt unberuehrt. Einen neu angelegten Zielordner legt das Skript mit
+  0700 an, ein bestehender bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst
+  frei. Das Archiv wird nur in die Zwischendatei geschrieben, die das Skript selbst angelegt hat, und bleibt auch in
+  einem Ordner mit Default-ACL 0600; liegt unter ihrem Namen etwas anderes (etwa ein Link), oder kann das Ziel keinen
+  Unix-Eigentuemer und -Modus halten (wie ein CIFS-, vfat- oder NTFS-Mount in der Regel), bricht das Backup mit einem Hinweis ab: lokal
+  sichern und das Archiv danach kopieren. `scripts/backup.sh --help` zeigt nur die Hilfe. Doku: Betrieb (DE+EN).
 - **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
   der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
   jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
@@ -300,6 +326,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
   verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
   gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
+- **Monitoring: Check-Namen ohne Steuerzeichen:** Ein Check-Name mit einem Steuerzeichen (C0 wie Zeilenumbruch oder
+  Tab, dazu DEL) ergibt `422` an der Stelle des Namens („must not contain control characters“), in `POST /checks`,
+  `PUT /checks/{id}` und in den Check-Definitionen von `POST /templates` und `PUT /templates/{id}`; die Grenze ist
+  dieselbe wie bei den FRP-Feldern des Servers. Andere Zeichen, auch C1 und U+2028/U+2029, bleiben erlaubt.
+  Gespeicherte Namen bleiben, wie sie sind, und ihre Alerts gehen weiter hinaus. Wer einen solchen Check oder ein
+  solches Template bearbeitet und dabei den Namen mitschickt, wie der Desktop bei jedem Speichern, entfernt die
+  Steuerzeichen aus dem Namen, sonst kommt `422`.
 - **Server: gleichzeitige Refreshes mit demselben Refresh-Token:** Das neue Token-Paar bekommt nur der Aufruf, der
   den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
   wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
@@ -312,6 +345,34 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und Bootstrap bekommen den Refresh-Token nur noch als HttpOnly-Cookie; `refresh_token` im JSON ist dann leer (`""`),
   das Schema bleibt gleich. Desktop, CLI und Skripte bekommen ihn unveraendert im JSON. Doku: API-Referenz und Server
   fuer Entwickler (DE+EN).
+- **Diagnose-Bundle: `SMTP_USER` immer maskiert wie die Passwoerter:** Bei manchen Mail-Anbietern ist der
+  SMTP-Benutzer selbst ein Zugangs-Token oder eine Key-ID. `scripts/diagnostics.sh` behandelt `SMTP_USER` darum wie
+  `SMTP_PASSWORD`: mit und ohne `--mask-hosts` steht in `env.sanitized` `SMTP_USER=<redacted>`, und sein Wert wird in
+  `report.txt` und den Logs `<redacted>`; kein Schalter stellt das ab. Der Wert wird nur als ganzes Wort ersetzt, ein
+  kurzer Benutzer wie `admin` laesst `adminhelper` stehen. Doku: Troubleshooting (DE+EN), README.
+- **Diagnose-Bundle: von Anfang an nur fuer den ausfuehrenden Nutzer lesbar und erst vollstaendig unter seinem
+  Namen:** `scripts/diagnostics.sh` schreibt das Bundle in eine versteckte Zwischendatei im Zielordner, die von Anfang
+  an den Modus 0600 hat, und benennt sie erst danach in `adminhelper-diagnostics-<ts>.tar.gz` um; auch die Dateien
+  darin sind nur fuer diesen Nutzer lesbar. Ein Lauf, der vorher scheitert, hinterlaesst weder ein Bundle noch eine
+  Zwischendatei. Eine Datei, die schon unter dem Namen liegt, wird ersetzt, statt mit ihren Rechten ueberschrieben zu
+  werden. Mit `sudo` gestartet gehoert das Bundle root. Die Namen und Adressen fuer `--mask-hosts` stehen waehrend des
+  Laufs nicht mehr in der Prozessliste. Wie beim Backup wird das Bundle nur in die Zwischendatei geschrieben, die das
+  Skript selbst im Zielordner angelegt hat, und bleibt auch in einem Ordner mit Default-ACL 0600; liegt unter ihrem
+  Namen etwas anderes, oder haelt das Ziel keinen Unix-Eigentuemer und -Modus (wie ein CIFS-, vfat- oder NTFS-Mount in
+  der Regel), bricht der Lauf mit einem Hinweis ab. Doku: Troubleshooting (DE+EN).
+- **Server liest `MTLS_ENFORCE` wie das Gateway:** `true`, `1`, `yes` und `on` erzwingen, `false`, `0`, `no` und `off`
+  schalten permissiv (Gross-/Kleinschreibung egal), ungesetzt oder leer gilt der Default (erzwungen); jeder andere
+  Wert erzwingt die Scope-Pruefung je Route ebenfalls und loggt eine Warnung. Bisher lief der Server bei `on`, einem
+  leeren oder einem unbekannten Wert still permissiv, waehrend das Gateway am Handshake ein Zertifikat verlangte. Wer
+  `MTLS_ENFORCE=on` gesetzt hat, bekommt fuer Zertifikate mit falschem Scope jetzt 403 statt nur einer Log-Zeile. Ein
+  Test haelt die Tabelle des Servers und die des Gateways gleich. Doku: Betrieb (DE+EN), `.env.example`.
+- **Server wertet die Zertifikats-Header nur noch aus, wenn die Anfrage direkt vom Gateway kommt:** `X-Client-Verify`
+  und `X-Client-Cert` zaehlen nur, wenn die Gegenstelle eine aktuelle Adresse des Compose-Dienstes `gateway` ist. Von
+  jeder anderen Gegenstelle gilt die Anfrage als ohne Client-Zertifikat, und der Server loggt eine Warnung mit der
+  Adresse (hoechstens einmal je Adresse und Minute). Kommt eine Anfrage mit Zertifikat von einer Adresse, die der
+  Server nicht kennt, loest er den Namen `gateway` sofort neu auf (hoechstens einmal je Sekunde; eine Anfrage wartet
+  darauf hoechstens 1 s), damit ein neu angelegtes Gateway gleich wieder zaehlt. Ohne den Namen `gateway`, also
+  ausserhalb von Compose, gibt es keine Zertifikats-Identitaet. Doku: Entwickler-Handbuch (DE+EN).
 
 ### Removed
 
@@ -329,6 +390,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisher konnten die Einzeldeckel zusammen ueber 500 s dauern, waehrend systemd den Lauf nach 270 s beendet. Das
   Ende eines Laufs reicht bis in die Sperre, die Erneuerung, den Sync und jeden Werkzeug-Aufruf. Doku: Agent fuer
   Entwickler (DE+EN).
+- **Monitoring: ein waehrend des manuellen Laufs geloeschter Check antwortet 404:** `POST /checks/{id}/run` auf einen
+  Check, der waehrend des Laufs geloescht wird, antwortet 404 „Check not found“ statt 500; das Ergebnis des Laufs
+  wird wie bisher verworfen.
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen
@@ -450,15 +514,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitorings nicht mehr erschoepfen, Agent-Reports und API-Anfragen bekommen weiter eine Verbindung. Wird ein Check
   waehrend seines Laufs geloescht, verwirft das Monitoring dessen Ergebnis ohne Fehlerprotokoll.
 - **Monitoring: Schreiben nach VictoriaMetrics blockiert weder Checks noch Agent-Reports (R-0615, R-0636):** Die
-  Metriken gehen in einen Puffer (bis 100 000 Zeilen), den ein eigener Thread in Stapeln bis 10 000 Zeilen nach
-  VictoriaMetrics schreibt; ein haengendes VictoriaMetrics haelt keinen Check und keinen Agent-Report mehr bis zu
-  rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht mehr dreimal gesendet,
-  sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx werden weiter bis zu
-  dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl hoechstens einmal je
-  Minute; beim Herunterfahren leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
+  Metriken gehen in einen Puffer (bis 100 000 Zeilen und hoechstens 64 MiB), den ein eigener Thread in Stapeln bis
+  10 000 Zeilen nach VictoriaMetrics schreibt; ein haengendes VictoriaMetrics haelt keinen Check und keinen
+  Agent-Report mehr bis zu rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht
+  mehr dreimal gesendet, sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx
+  werden weiter bis zu dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl
+  beim Verwerfen hoechstens einmal je Minute, spaetestens aber, sobald der Puffer wieder leer ist; beim Herunterfahren
+  leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein nicht erreichbares VictoriaMetrics erscheint als Fehler (R-0636):** Scheitert eine Abfrage an
   VictoriaMetrics, antwortet der Metrik-Abruf (`GET /checks/{id}/metrics`) mit HTTP 502 „Metrics store unavailable“
-  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der
+  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt im Desktop „Fehler beim Laden“ statt
+  „keine Daten“. Der
   Check `disk_forecast` steht dann auf `unknown` mit „Metrics store unavailable“ statt „No disk history yet“. Doku:
   Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: CPU- und RAM-Verlauf eines Servers kommt einmal statt doppelt (R-0633):** Der Check
@@ -468,16 +534,40 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Serien ohne `check_id` und liefert je Wert eine Serie statt zwei gleich beschrifteter; die Liste der aktuellen
   Werte im Desktop brach daran ab. Die bisherigen Serien mit Check-Labels bleiben bis zum Ende der Retention in
   VictoriaMetrics, werden aber nicht mehr gelesen. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: der Metrik-Abruf zeigt je Check nur dessen Reihen (R-0749):** Der Metrik-Abruf
+  (`GET /checks/{id}/metrics`) von `agent_ping`, `service_process`, `docker_health`, `proxmox_backup` und
+  `zfs_health` las die Werte nach Server statt nach Check; zwei Checks desselben Typs auf einem Server zeigten deshalb
+  beide dieselben Reihen, jede doppelt. Jetzt liest er sie ueber die `check_id` des Checks; nur `agent_resources`
+  liest CPU, RAM, Platten und Temperaturen weiter je Server. Die Reihen trugen die `check_id` schon bisher, der
+  Verlauf bleibt erhalten. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: eine Platte ohne lesbaren Mountpoint bekommt eine eigene Reihe (R-0753):** Der Agent-Push schreibt
+  eine Platte ohne `mount` (oder mit einem `mount`, der kein String ist) als `mount=?`, wie der Check
+  `agent_resources` sie schon nennt. Bisher landete sie mit `mount=/` in der Reihe der Root-Platte und verfaelschte
+  deren Prognose in `disk_forecast`. Bisherige Werte solcher Platten bleiben bis zum Ende der Retention in der Reihe
+  von `/`. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein einzelnes Surrogat in einem Request-Body oder Agent-Report ergibt `422` wie ein NUL-Byte
+  (R-0774):** Ein einzelnes Surrogat (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben, etwa `\ud800`) in
+  irgendeinem String eines Request-Bodys, als Wert oder Schluessel und beliebig tief, ergibt `422` an seiner Stelle;
+  nichts wird gespeichert. Ein Agent-Report damit ergibt ebenso `422`, die Liveness des Servers zaehlt trotzdem.
+  Bisher endete das Speichern mit `500`, oder der Wert landete in der `config` eines Checks, und jede Antwort mit
+  diesem Check endete danach mit `500`; im Agent-Report ging der ganze Schreibstapel nach VictoriaMetrics verloren,
+  samt den Zeilen anderer Server im selben Stapel. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: der Betreff einer Alert-Meldung ist einzeilig:** Eine Alert-Mail fuer einen Check mit Zeilenumbruch
+  im Namen ging nicht raus, das Alert-Log zeigte `SMTP error (HeaderWriteError)`. Jetzt stehen Steuerzeichen (C0,
+  DEL, C1) und die Zeilen- und Absatztrenner U+2028/U+2029 des Check-Namens im Betreff, und damit im Titel der
+  Glocke, als Leerzeichen; der Text der Meldung und das Feld `check_name` des Webhooks tragen den Namen unveraendert.
+  Doku: Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
-  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
-  jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
+  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen.
+  Jetzt wird ein Eintrag, der kein Objekt ist, uebersprungen; eine Liste als `fstype` zaehlt wie ein fehlender
+  `fstype`, die Platte wird geschrieben. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
   String (sonst wie ohne das Feld) und Messwerte nur als JSON-Zahl: einen Zahl-String wie `"97"` schreibt der
   Agent-Push nicht mehr als Messwert. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein Datenbankfehler bei einem Check eines Agent-Reports kostet nur diesen Check (R-0635):** Jeder
   Push-Check eines Agent-Reports wird in einem eigenen Savepoint ausgewertet. Scheitert ein Check an der Datenbank
   (Deadlock, Abbruch beim Sperren seines Zustands, gescheitertes Schreiben), verwirft das Monitoring nur dessen
   Ergebnis samt Status-Punkt und Alert; bisher scheiterten alle folgenden Checks und das Speichern, der Report endete
-  mit HTTP 500, und die Ergebnisse des ganzen Reports gingen verloren.
+  mit HTTP 500 oder speicherte still nichts, und die Ergebnisse des ganzen Reports gingen verloren.
 - **Monitoring: eine Alert-Regel mit sehr grossem oder leerem Cooldown bricht den Versand nicht mehr ab (R-0631):**
   Eine Regel mit `cooldown_minutes` ueber rund 1 065 000 000 (etwa 2000 Jahre, das Schema erlaubt bis 2 147 483 647)
   oder ohne Wert (`null`, etwa nach `PUT /alerts/{id}` mit `"cooldown_minutes": null`) brach beim Pruefen ihres
@@ -490,12 +580,27 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ab, und Glocke, Hub-Mail und Event-Hook blieben aus. Jetzt wird der Titel auf 512 Zeichen gekuerzt (die ersten 511
   und `…`); der Betreff von Mail und Webhook der Alert-Regeln bleibt ungekuerzt.
 - **Monitoring: der HTTP-Check liest hoechstens 1 MiB, und `timeout` gilt fuer den ganzen Check (R-0616):** Der
+  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; eine komprimierte Antwort
+  (gzip, deflate) entpackt er dafuer schrittweise und hoechstens bis 1 MiB. Ohne `search_string` liest er den Body
+  gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den ganzen
+  Check statt je Anfrage und Phase: jede Anfrage, auch nach einem Redirect, bekommt die verbleibende Zeit, und das
+  Lesen des Bodys endet mit der Frist; ein einzelner Lesevorgang, auch der der Kopfzeilen, wartet bis zur
+  verbleibenden Zeit, eine Antwort, die stueckweise kommt, kann den Check also ueber `timeout` hinaus halten. Ein
+  Server, der den Body troepfeln liess, hielt den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not found
+  in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string` keinen
+  Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
   Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; ohne `search_string` liest
   er ihn gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den
   ganzen Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt
   den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
   found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
   keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+- **Server: Steuerzeichen U+0080 bis U+009F in FRP-Feldern und im Servernamen ergeben `422` (R-0786):** Ein
+  Steuerzeichen U+0080 bis U+009F in einem Textfeld eines FRP-Tunnels (auch einem `extra_config`-Wert) oder der
+  FRP-Server-Konfiguration oder im Servernamen ergibt bei `POST` und `PUT` jetzt `422`, wie die uebrigen
+  Steuerzeichen; bisher speicherte der Server es. TOML erlaubt diese Zeichen in einem String, der Agent verweigert
+  aber eine frpc.toml mit einem solchen Zeichen, und der Host bekaeme keine Konfiguration. Gespeicherte Werte bleiben,
+  wie sie sind. Doku: API-Referenz (DE+EN).
 - **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
   galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
   (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
@@ -524,12 +629,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `scripts/backup.sh` filterte die `.env` unter der Locale des Aufrufers. `grep` haelt eine Zeile mit einem Byte, das
   diese Locale nicht dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und liess sie aus,
   bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
-  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
+  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C awk`):
   `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
   ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es wie das Diagnose-Bundle auch mit vorangestelltem
   `export`, mit Leerraum um den Trenner und mit `:` statt `=` als Trenner (`export CA_ROOT_PASSPHRASE=...`,
   `CA_ROOT_PASSPHRASE = ...`, `CA_ROOT_PASSPHRASE: ...`); ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt
-  stehen.
+  stehen. Entfernt werden auch auskommentierte Zeilen (`#CA_ROOT_PASSPHRASE=...`), Zeilen mit BOM oder
+  Unicode-Leerraum (etwa NBSP) vor dem Schluessel oder NBSP vor dem Trenner, die compose ebenso liest, und die
+  Folgezeilen eines Werts in Anfuehrungszeichen ueber mehrere Zeilen bis zum schliessenden Anfuehrungszeichen, ohne
+  eines bis zum Dateiende.
 - **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und weitere Schreibweisen der `.env`:**
   `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
   `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
@@ -538,7 +646,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
   Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
   ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
-  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+  auch hinter einem Byte ausserhalb UTF-8 ganz. Einen Schluessel findet es wie compose auch hinter einem BOM oder
+  Unicode-Leerraum (etwa NBSP oder EM SPACE) und mit NBSP vor dem Trenner. Auskommentierte Zeilen dieser Schluessel
+  (`#KEY=...`, auch `# export KEY = ...`) stehen in `env.sanitized` als `#KEY=<redacted>`, die der Host-Schluessel mit
+  `--mask-hosts` als `#KEY=<masked>`; in den Logs sucht es ihre Werte nicht, eine auskommentierte Zeile ist keine
+  Konfiguration. Die Werte liest es so, wie compose sie liest: Escape-Sequenzen in doppelten
+  Anfuehrungszeichen (`\"`, `\\`, `\n`, `\t`, `\$`, Oktal `\0nnn` und weitere) und `\'` in einfachen, Leerraum
+  zwischen Trenner und Wert (auch NBSP) und am Ende eines Werts ohne Anfuehrungszeichen (auch Unicode-Leerraum), Werte
+  in Anfuehrungszeichen ueber mehrere Zeilen. Jede Zeile eines solchen Werts, die nicht nur aus Leerraum besteht,
+  wird in den Logs maskiert, in `env.sanitized` steht `KEY=<redacted>` ohne die Folgezeilen. `report.txt` laeuft jetzt
+  wie die Logs durch die Maskierung.
 - **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
   mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
   abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes

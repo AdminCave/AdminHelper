@@ -116,19 +116,26 @@ def _query_kind(query: str) -> str:
     return "static"
 
 
-def _metrics_with_store(client_db, monkeypatch, failing: str | None):
-    """GET /checks/chk-r/metrics against a VictoriaMetrics that refuses the connection
-    for the `failing` query and answers every other one. Returns (response, kinds asked)."""
+def _metrics_with_store(
+    client_db,
+    monkeypatch,
+    failing: str | None,
+    check_id: str = "chk-r",
+    check_type: str = "agent_resources",
+):
+    """GET /checks/<check_id>/metrics for a check of check_type on srv-1 against a
+    VictoriaMetrics that refuses the connection for the `failing` query kind and answers
+    every other one. Returns (response, queries asked)."""
     from app.core import victoria as victoria_mod
 
     client, factory = client_db
     with factory() as db:
         db.add(
             MonitorCheck(
-                id="chk-r",
+                id=check_id,
                 server_id="srv-1",
                 name="Resources",
-                check_type="agent_resources",
+                check_type=check_type,
                 config="{}",
                 enabled=True,
             )
@@ -138,8 +145,9 @@ def _metrics_with_store(client_db, monkeypatch, failing: str | None):
     asked: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        kind = _query_kind(request.url.params["query"])
-        asked.append(kind)
+        query = request.url.params["query"]
+        asked.append(query)
+        kind = _query_kind(query)
         if kind == failing:
             raise httpx.ConnectError("connection refused", request=request)
         return httpx.Response(
@@ -150,7 +158,7 @@ def _metrics_with_store(client_db, monkeypatch, failing: str | None):
     transport_client = httpx.Client(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(victoria_mod.victoria, "_client", transport_client)
     try:
-        return client.get("/checks/chk-r/metrics"), asked
+        return client.get(f"/checks/{check_id}/metrics"), asked
     finally:
         transport_client.close()
 
@@ -163,14 +171,14 @@ def test_metrics_answer_502_when_a_query_fails(client_db, monkeypatch, failing):
     assert r.status_code == 502, r.text
     assert r.json() == {"detail": "Metrics store unavailable"}  # no partial series
     # The failed query is the last one asked: no further wait on a dead store.
-    assert asked == _QUERY_ORDER[: _QUERY_ORDER.index(failing) + 1]
+    assert [_query_kind(q) for q in asked] == _QUERY_ORDER[: _QUERY_ORDER.index(failing) + 1]
 
 
 def test_metrics_answer_200_when_every_query_succeeds(client_db, monkeypatch):
     r, asked = _metrics_with_store(client_db, monkeypatch, None)
 
     assert r.status_code == 200, r.text
-    assert asked == _QUERY_ORDER
+    assert [_query_kind(q) for q in asked] == _QUERY_ORDER
     assert r.json() == {
         "checkId": "chk-r",
         "checkType": "agent_resources",
@@ -178,3 +186,43 @@ def test_metrics_answer_200_when_every_query_succeeds(client_db, monkeypatch):
         "data": [_SERIES["static"], _SERIES["dynamic"]],
         "statusHistory": [_SERIES["status"]],
     }
+
+
+# R-0749: only the push handler writes series without check_id (agent_resources, per
+# server); every other agent type writes its values through its check result, labelled
+# with the check.
+@pytest.mark.parametrize(
+    "check_type",
+    ["agent_ping", "service_process", "docker_health", "proxmox_backup", "zfs_health"],
+)
+def test_metrics_of_a_check_labelled_agent_type_select_by_check_id(
+    client_db, monkeypatch, check_type
+):
+    r, asked = _metrics_with_store(client_db, monkeypatch, None, "chk-a", check_type)
+
+    assert r.status_code == 200, r.text
+    assert len(asked) == 2  # its values and the status timeline
+    for query in asked:
+        assert 'check_id="chk-a"' in query
+        assert "server_id=" not in query
+
+
+def test_metrics_of_two_checks_of_one_type_on_one_server_stay_apart(client_db, monkeypatch):
+    r1, first = _metrics_with_store(client_db, monkeypatch, None, "chk-d1", "docker_health")
+    r2, second = _metrics_with_store(client_db, monkeypatch, None, "chk-d2", "docker_health")
+
+    assert (r1.status_code, r2.status_code) == (200, 200), (r1.text, r2.text)
+    assert len(first) == len(second) == 2
+    assert set(first).isdisjoint(second)
+
+
+def test_metrics_of_agent_resources_keep_reading_the_push_series_by_server(client_db, monkeypatch):
+    r, asked = _metrics_with_store(client_db, monkeypatch, None)
+
+    assert r.status_code == 200, r.text
+    assert asked == [
+        '{__name__=~"monitor_agent_cpu_percent_value|monitor_agent_memory_percent_value",'
+        'server_id="srv-1",check_id=""}',
+        '{__name__=~"monitor_agent_(disk_percent|temp).*_value",server_id="srv-1",check_id=""}',
+        'monitor_check_status_value{check_id="chk-r"}',
+    ]
