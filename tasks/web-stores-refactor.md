@@ -210,7 +210,9 @@ Orakel: contract — kopiert wird der angezeigte Wert, der Erfolgstext bleibt
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T14 — Die vier Dialoge kopieren über den Helfer (R-0724)  [ ]
+### T14 — Die vier Dialoge kopieren über den Helfer (R-0724)  [x]
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @608622c7 2026-10-28T18:14:11+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T14.verdict.json)
 Entscheidung: Kevin 2026-10-23: wie T12.
 Komponente: web · Dateien: apps/web/src/modals/KeyRevealModal.svelte, apps/web/src/modals/WebhookTokenModal.svelte, apps/web/src/modals/EnrollTokenModal.svelte, apps/web/src/modals/FrpConfigPreviewModal.svelte, apps/web/src/modals/copyButtons.test.ts, apps/web/src/lib/i18n/dictionaries.ts, CHANGELOG.md
 Änderung: Jeder Kopier-Handler (`KeyRevealModal.svelte:21-27`, `WebhookTokenModal.svelte:30-36`, `EnrollTokenModal.svelte:66-74` mit seinem `if (!grant) return;`, `FrpConfigPreviewModal.svelte:22-29`) wird ein Aufruf von `copyToClipboard(<Wert>, <Schlüssel>)`; ein danach ungenutzter Import von `showToast` geht mit. Schlüssel: neu `toast.copied` (DE „In Zwischenablage kopiert“, EN „Copied to clipboard“) für KeyReveal, Enrollment und FrpConfigPreview; WebhookToken behält `toast.hook.tokenCopied`. `toast.apikey.copied` und `toast.frp.copied` (`dictionaries.ts:132`, `:291`, EN `:421`, `:579`) gehen, weil ohne Nutzer. `copyButtons.test.ts`: die Erfolgsfälle aus T13 bleiben unverändert; neu je Dialog der Fehlerweg (`writeText` lehnt ab → ein Toast `error` „Kopieren fehlgeschlagen“). Zuerst rot auf dem Stand vor dem Diff: der Fehlerweg in drei Dialogen („Clipboard error“) und in FrpConfigPreview („Fehler“). Sieben Dateien, je Dialog etwa fünf Zeilen.

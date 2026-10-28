@@ -115,4 +115,19 @@ describe.each(cases)('$name copy button', (c) => {
       expect(get(toasts).map((t) => [t.kind, t.message])).toEqual([['success', c.toast]]),
     );
   });
+
+  it('a refused copy says "copy failed"', async () => {
+    const writeText = vi.fn(() => Promise.reject(new Error('denied')));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const view = render(c.component, { props: c.props }) as unknown as Shown;
+    await c.prepare?.(view);
+
+    await fireEvent.click(view.getByRole('button', { name: 'Kopieren' }));
+
+    await waitFor(() =>
+      expect(get(toasts).map((t) => [t.kind, t.message])).toEqual([
+        ['error', 'Kopieren fehlgeschlagen'],
+      ]),
+    );
+  });
 });

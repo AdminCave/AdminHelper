@@ -136,7 +136,7 @@ export const translations: Translations = {
     'modal.apikey.titleNew': 'Neuer API-Key',
     'modal.apikey.titleReveal': 'API-Key erstellt',
     'modal.apikey.revealHint': 'Dieser Schlüssel wird nur einmal angezeigt. Kopiere ihn jetzt.',
-    'toast.apikey.copied': 'In Zwischenablage kopiert',
+    'toast.copied': 'In Zwischenablage kopiert',
     'toast.copyFailed': 'Kopieren fehlgeschlagen',
     'toast.apikey.deleted': 'API-Key gelöscht',
     'confirm.apikey.delete': 'API-Key wirklich löschen?',
@@ -297,7 +297,6 @@ export const translations: Translations = {
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP-Config gespeichert',
     'toast.frpConfig.created': 'FRP-Config erstellt',
-    'toast.frp.copied': 'In Zwischenablage kopiert',
     'toast.frp.zipDownloaded': 'ZIP heruntergeladen',
 
     // ── FRP Status ────────────────────────────────────────────────────
@@ -434,7 +433,7 @@ export const translations: Translations = {
     'modal.apikey.titleNew': 'New API Key',
     'modal.apikey.titleReveal': 'API Key created',
     'modal.apikey.revealHint': 'This key will only be shown once. Copy it now.',
-    'toast.apikey.copied': 'Copied to clipboard',
+    'toast.copied': 'Copied to clipboard',
     'toast.copyFailed': 'Copy failed',
     'toast.apikey.deleted': 'API key deleted',
     'confirm.apikey.delete': 'Really delete this API key?',
@@ -594,7 +593,6 @@ export const translations: Translations = {
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP config saved',
     'toast.frpConfig.created': 'FRP config created',
-    'toast.frp.copied': 'Copied to clipboard',
     'toast.frp.zipDownloaded': 'ZIP downloaded',
 
     // ── FRP Status ────────────────────────────────────────────────────
