@@ -37,8 +37,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test heavy_test task_close_test
 Doku: keine (die Dateien sind selbst Regel und Format)
 
-### T4 — Regeln, Agenten, Skills, Modelle  [ ]
+### T4 — Regeln, Agenten, Skills, Modelle  [x]
 Komponente: scripts · Dateien: CLAUDE.md, .claude/agents/builder.md, .claude/agents/tester.md, .claude/agents/reviewer.md, .claude/agents/security.md, .claude/agents/advisor.md, .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/test/SKILL.md, .claude/rules/docs.md, .claude/rules/testing.md, .claude/settings.json, scripts/tests/harness_consistency_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1b223975 2026-10-28T12:54:47+01:00
+Review: am Ende (Branch-Review)
 Änderung: `CLAUDE.md` gekürzt auf Grundregeln mit Verweisen; Rollen Session/`reviewer` (task, branch)/`security`/`advisor`; `builder` und `tester` gelöscht; `/feature-build` und `/feature-plan` nach der Spec; Modelle in `settings.json` und Frontmatter; Doku-Regel. Neuer hermetischer Test prüft die Konsistenz von Regeln, Skills, Agenten, Settings und Skripten.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test ledger_test
 Doku: → T5
@@ -50,3 +52,8 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test harness_co
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN · CHANGELOG
 
 ## Entscheidungen
+- 2026-10-28 T1: `verify.sh` streamt auf einem Terminal weiter und zeigt sonst nur den Digest — Kevin sieht einen Handlauf live, das Modell bekommt die Kurzform.
+- 2026-10-28 T2: Aktualität des Branch-Urteils über `head` und die Commits der eigenen Linie danach (`--first-parent`), nicht über mtime — ein Merge von `main` und der Ledger-Commit `erledigt` folgen dem Urteil regulär.
+- 2026-10-28 T4: Modelle als Aliase `sonnet`/`opus` statt fester IDs — sie zeigen heute auf 5.5 und folgen neuen Versionen ohne Änderung.
+- 2026-10-28 T4: `advisor` als eigene, nur lesende Agent-Datei statt `general-purpose` mit Modell-Override — Grenzen (implementiert nicht) und Modell/Effort stehen fest im Frontmatter.
+- 2026-10-28 T4: die Abschnittsnummern von `CLAUDE.md` bleiben — über hundert Verweise in Skills, Skripten und Ledgern zeigen auf sie.

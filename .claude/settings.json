@@ -1,4 +1,6 @@
 {
+  "model": "sonnet",
+  "effortLevel": "high",
   "permissions": {
     "allow": [
       "Bash(python3 scripts/vm/vm.py:*)",
