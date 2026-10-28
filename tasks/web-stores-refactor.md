@@ -225,8 +225,10 @@ Metrik: eigene Kopier-Handler in Dialogen (`git grep -c "navigator.clipboard.wri
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T15 — Router: tote Exporte `navigate`, `currentPath`, `segments` (R-0724)  [ ]
+### T15 — Router: tote Exporte `navigate`, `currentPath`, `segments` (R-0724)  [x]
 Komponente: web · Dateien: apps/web/src/lib/router.ts, apps/web/src/lib/router.test.ts, docs/developer/webui.html, docs/en/developer/webui.html
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @00c2f526 2026-10-28T18:19:42+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T15.verdict.json)
 Änderung: `navigate` (`router.ts:20-27`), `currentPath` (`:35-37`) und `segments` (`:39`) gehen; der Import (`:5`) wird `import { writable } from 'svelte/store';`. `path` und `replace` bleiben (Nutzer `apps/web/src/App.svelte:10`, `apps/web/src/lib/components/layout/Router.svelte:8`, `apps/web/src/lib/components/layout/Sidebar.svelte:11`). `router.test.ts`: 'readHash normalizes "#/servers" to "/servers" on init', 'defaults to /users when the hash is empty' und 'replace updates the store via replaceState (no history push)' lesen den Pfad über `get(path)` statt `currentPath()`; der Kopfkommentar (`:5-8`) verliert „navigate's manual store-set on the already-active hash“.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/router.test.ts src/lib/routeGuard.test.ts
 Doku: `docs/developer/webui.html:60` + `docs/en/developer/webui.html:60`: statt „exportiert `navigate()`, `replace()`, `currentPath()` und einen `segments`-Derived-Store“ nun „exportiert den lesbaren Store `path` und `replace()`“

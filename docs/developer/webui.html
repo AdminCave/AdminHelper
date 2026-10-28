@@ -58,7 +58,7 @@
 &#9492;&#9472;&#9472; vite.config.ts</code></pre>
 
           <h2>Routing</h2>
-          <p>Hash-Router (kein SSR, kein Client-Router von SvelteKit): Die Pfade sind <code>#/users</code>, <code>#/apikeys</code> usw. Das funktioniert zuverl&auml;ssig hinter beliebigen Reverse-Proxies, ohne dass der Server SPA-Fallbacks verstehen muss. Implementierung in <code>src/lib/router.ts</code> &ndash; ein <code>writable</code> <code>_path</code> mit <code>hashchange</code>-Listener; exportiert <code>navigate()</code>, <code>replace()</code>, <code>currentPath()</code> und einen <code>segments</code>-Derived-Store.</p>
+          <p>Hash-Router (kein SSR, kein Client-Router von SvelteKit): Die Pfade sind <code>#/users</code>, <code>#/apikeys</code> usw. Das funktioniert zuverl&auml;ssig hinter beliebigen Reverse-Proxies, ohne dass der Server SPA-Fallbacks verstehen muss. Implementierung in <code>src/lib/router.ts</code> &ndash; ein <code>writable</code> <code>_path</code> mit <code>hashchange</code>-Listener; exportiert den lesbaren Store <code>path</code> und <code>replace()</code>.</p>
           <p>Produktiv-Routen seit v0.32.0: <code>#/users</code> (Standard-Landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP-<em>Server</em>-Konfiguration), seit v0.35.0 dazu <code>#/audit</code> (Audit-Log). Die früheren operativen Routen (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, Tunnel) sind in den Desktop-Client umgezogen.</p>
 
           <h2>Stores</h2>
