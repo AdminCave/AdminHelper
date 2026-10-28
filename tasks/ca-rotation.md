@@ -121,8 +121,10 @@ Doku: `docs/admin/agent-deployment.html:187` + `docs/en/admin/agent-deployment.h
 Abhängt von: T7
 HEAD: e2304a8b
 
-### T9 — Stack-Prüfung: Rotation im laufenden Stack  [ ]
+### T9 — Stack-Prüfung: Rotation im laufenden Stack  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a869b877 2026-10-28T17:49:54+01:00
+Review: approve (.ah-out/review/ca-rotation/T9.verdict.json)
 Änderung: Neuer letzter Schritt vor der Summary (`scripts/tests/integration_stack_test.sh:756`; Nummer nach dem letzten Schritt auf `main` zur Bauzeit), weil er die Hierarchie für alle folgenden Schritte ändert. Ablauf: `e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli status` (Exit 0); `e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli rotate-intermediates` mit der Passphrase des Test-Stacks (`scripts/tests/lib_e2e_stack.sh:233`; über Secret-Datei, falls compose-hardening gemergt ist, sonst auf stdin) → Exit 0; `e2e_dc restart ca-issuer`, warten bis healthy, `e2e_dc restart gateway`. Danach: (a) `status` listet drei retired; (b) das Leaf, das das Gateway auf `:443` präsentiert (`openssl s_client -showcerts`), hat als Issuer-CN ein Intermediate mit dem Datum des Laufs (mit T7 zusätzlich: drittes Zertifikat = Root); (c) das vor der Rotation enrollte Client-Zertifikat erreicht die API über `:443` mit Fullchain **und** nur mit dem Leaf (Leaf-only wie ein Browser-`.p12`: geht nur, weil `client-ca.pem` das retired Intermediate trägt); (d) `/ca/renew` mit dem alten Zertifikat → ok, das neue Leaf stammt vom neuen Intermediate; (e) eine frische Enrollment → Leaf vom neuen Intermediate, erreicht die API; (f) `ca.crt` im frps-Volume (`e2e_dc exec -T ca-issuer cat /app/frps-certs/ca.crt`) enthält altes und neues tunnel-Intermediate. Gegenprobe im Commit-Body (einmal lokal, nicht im Skript): ohne `e2e_dc restart gateway` scheitert (b), weil das Gateway noch das Leaf des alten Intermediates zeigt — die Prüfung kann fallen. Den echten Lauf fährt die Session (Dispatch des `integration-stack`-Jobs auf dem Branch oder `/test` in der Lane); seine Summary-Zeile kommt in den PR-Text.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
