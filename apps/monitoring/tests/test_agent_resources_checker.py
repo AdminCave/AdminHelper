@@ -42,7 +42,9 @@ def test_empty_resources_is_unknown():
 def test_all_below_warn_is_ok():
     status, _msg, metrics = CHECKER.evaluate(T, _report(cpu_percent=10, memory_percent=20))
     assert status == "ok"
-    assert metrics["agent_cpu_percent"] == 10
+    # Graded, not written: the push handler writes CPU and RAM per server (R-0633).
+    assert set(metrics) == {"_details"}
+    assert (metrics["_details"]["cpu"], metrics["_details"]["memory"]) == (10, 20)
 
 
 def test_cpu_exactly_at_warn_is_warning():
@@ -265,8 +267,9 @@ def test_load_without_load_5m_is_not_rated():
 
 def test_a_report_without_the_new_fields_is_rated_as_before():
     # An agent before report v3: load without cpu_count, no swap, no inodes, no free GB.
-    # Status, message and metrics are those the checker gave before swap, inodes, load and
-    # the free-GB gate; _details only gains the new keys, empty (no disk ignored).
+    # Status and message are those the checker gave before swap, inodes, load and the
+    # free-GB gate; _details only gains the new keys, empty (no disk ignored). No CPU/RAM
+    # values next to _details: the push handler writes them per server (R-0633).
     report = _report(
         cpu_percent=12.5,
         memory_percent=83,
@@ -281,8 +284,6 @@ def test_a_report_without_the_new_fields_is_rated_as_before():
     status, message, metrics = CHECKER.evaluate({}, report, {"problems": {"memory": "warning"}})
     assert (status, message) == ("warning", "RAM 83% (>=80%); Disk / 91% (>=85%)")
     assert metrics == {
-        "agent_cpu_percent": 12.5,
-        "agent_memory_percent": 83,
         "_details": {
             "cpu": 12.5,
             "memory": 83,

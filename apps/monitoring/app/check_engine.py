@@ -293,14 +293,23 @@ def execute_check(check_id: str) -> None:
         if check.check_type in PUSH_ONLY_TYPES:
             return
 
-        config = resolve_config_server_id(config, check.check_type, check.server_id)
+        check_type, server_id, name = check.check_type, check.server_id, check.name
+        config = resolve_config_server_id(config, check_type, server_id)
 
         checker = None
         if config is not None:
             try:
-                checker = get_checker(check.check_type)
+                checker = get_checker(check_type)
             except ValueError as exc:
-                logger.warning("Check %s: %s", check.name, exc)
+                logger.warning("Check %s: %s", name, exc)
+
+        # End the read transaction before the run: the checker takes up to its configured
+        # timeout (at most 300 s) and the metric write follows. Held over both, the 30
+        # scheduler workers (scheduler.py) could take all 30 pool connections
+        # (core/database.py) whenever a target or VictoriaMetrics hangs, and agent reports
+        # and API requests would fail (R-0615). The rollback expires `check`; until it is
+        # read again below, only the values taken above are used.
+        db.rollback()
 
         # A corrupt config or an unknown check type must surface as unknown so the normal alert
         # chain fires — not silently freeze the state on its last value (a "dead" check that still
@@ -317,7 +326,7 @@ def execute_check(check_id: str) -> None:
                 result_status = "unknown"
                 message = f"Unexpected error: {exc}"
                 metrics = None
-                logger.exception("Check %s fehlgeschlagen", check.name)
+                logger.exception("Check %s fehlgeschlagen", name)
         duration_ms = int((time.monotonic() - start) * 1000)
 
         # Extract structured details (not sent to VictoriaMetrics)
@@ -327,10 +336,10 @@ def execute_check(check_id: str) -> None:
 
         # Send metrics to VictoriaMetrics
         victoria.write_check_result(
-            check_id=check.id,
-            check_type=check.check_type,
-            server_id=check.server_id,
-            name=check.name,
+            check_id=check_id,
+            check_type=check_type,
+            server_id=server_id,
+            name=name,
             status=result_status,
             duration_ms=duration_ms,
             extra_metrics=metrics,
@@ -344,10 +353,15 @@ def execute_check(check_id: str) -> None:
         # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
         state = (
             db.query(MonitorState)
-            .filter(MonitorState.check_id == check.id)
+            .filter(MonitorState.check_id == check_id)
             .with_for_update()
             .first()
         )
+        # Read again: the check may have been changed or deleted during the run.
+        check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+        if check is None:
+            logger.debug("Check %s was deleted during its run, result dropped", check_id)
+            return
         old_status, eff_status, decision = apply_result(
             db, check, state, result_status, message, details, now
         )
@@ -360,8 +374,8 @@ def execute_check(check_id: str) -> None:
         # A heartbeat's discrepancy stays open for the agent alert bundle
         # (alert_bundle.flush_agent_alerts), which reports agents that go silent
         # or come back together in one message.
-        if decision == "notify" and check.check_type != "agent_ping":
-            _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
+        if decision == "notify" and check_type != "agent_ping":
+            _alert_pool.submit(_dispatch_alert_bg, check_id, old_status, eff_status)
 
     except Exception:
         logger.exception("execute_check(%s) fehlgeschlagen", check_id)

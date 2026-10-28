@@ -5,7 +5,9 @@
 """HTTP checker SSRF behaviour: redirects are followed manually and every hop is
 re-checked against the SSRF guard (3.5), instead of follow_redirects=True letting a
 public URL bounce into the internal network unchecked. The first request and every
-hop connect to an address the guard checked for their host (ssrf-pin)."""
+hop connect to an address the guard checked for their host (ssrf-pin). The body is
+read only for search_string and only up to 1 MiB, and timeout is one deadline over
+every hop and the read (R-0616)."""
 
 import socket
 
@@ -135,6 +137,38 @@ def test_http_checker_verify_ssl_off_only_for_real_false(monkeypatch, stored, ve
     assert seen == [verify]
 
 
+@pytest.mark.parametrize("verify", [False, True])
+def test_http_checker_verify_ssl_holds_on_the_redirect_hop(monkeypatch, verify):
+    # R-0599: a redirect hop gets a client of its own; verify_ssl has to reach its
+    # transport as well, not only the first request's.
+    _resolving(monkeypatch, {"checks.example": _FIRST, "moved.example": _SECOND})
+    seen = []
+    sent = []
+    real_init = httpx.HTTPTransport.__init__
+
+    def recording_init(transport, *args, **kwargs):
+        seen.append(kwargs["verify"])
+        real_init(transport, *args, **kwargs)
+
+    def fake_send(_transport, request):
+        sent.append(request)
+        if len(sent) == 1:
+            return httpx.Response(
+                302, headers={"location": "http://moved.example/"}, request=request
+            )
+        return httpx.Response(200, text="ok", request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "__init__", recording_init)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "verify_ssl": verify}
+    )
+
+    assert status == "ok"
+    assert seen == [verify, verify]
+    assert ("[TLS verification disabled]" in msg) is not verify
+
+
 def test_http_checker_blocks_private_initial_url(monkeypatch):
     # The is_private_url guard runs BEFORE the request; the existing tests only cover the redirect-hop
     # guard. A private initial URL must be refused with no request at all (6.52).
@@ -218,6 +252,34 @@ def test_http_checker_unresolvable_initial_url_says_so(monkeypatch):
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://☃.example/",  # no IDNA 2008 label
+        "http://checks.example:abc/",  # a port that is no number
+        "http://checks.example/\ud800",  # a lone surrogate
+    ],
+)
+def test_http_checker_rejects_a_url_httpx_cannot_read_without_a_request(monkeypatch, url):
+    # R-0606: the real guard reads the URL with httpx before the try. A URL httpx cannot
+    # read is the usual rejection, not an exception out of run().
+    asked = _resolving(monkeypatch, {"checks.example": _FIRST})
+    sent = []
+    monkeypatch.setattr(
+        httpx.HTTPTransport, "handle_request", lambda _transport, request: sent.append(request)
+    )
+
+    result = http_mod.HttpChecker().run({"url": url})
+
+    assert result == (
+        "unknown",
+        "URL points to a private/reserved address, rejected by the SSRF guard",
+        None,
+    )
+    assert asked == []
+    assert sent == []
+
+
 def test_http_checker_unresolvable_redirect_target_says_so(monkeypatch):
     # Only the hop's host fails to resolve; the public IP literal resolves for real.
     real_resolve = ssrf_mod._resolve
@@ -298,3 +360,157 @@ def test_http_checker_with_a_proxy_for_the_scheme_the_proxy_connects(monkeypatch
     assert asked == ["checks.example"]
     assert connected == [("192.0.2.10", 3128)]
     assert (status, msg) == ("critical", "Connection failed: refused by the test")
+
+
+def test_http_checker_beside_a_proxy_no_proxy_connects_to_the_checked_address(monkeypatch):
+    # A target that NO_PROXY takes past the proxy connects as without a proxy: to the
+    # checked address, not by name (httpx resolving it again could get another answer).
+    monkeypatch.setenv("HTTP_PROXY", "http://192.0.2.10:3128")
+    monkeypatch.setenv("NO_PROXY", "checks.example")
+    asked = _resolving(monkeypatch, {"checks.example": _FIRST})
+    connected = _connections_refused(monkeypatch)
+
+    status, msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example:8080/x"})
+
+    assert asked == ["checks.example"]
+    assert connected == [(_FIRST, 8080)]
+    assert (status, msg) == ("critical", "Connection failed: refused by the test")
+
+
+_MIB = 1_048_576
+_PIECE = 64 * 1024
+
+
+class _Clock:
+    """Stands in for the checker's clock; a test moves it forward."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _body(read: list[int], pieces: int, piece: bytes = b"x" * _PIECE, *, tick=None):
+    """A streamed body of `pieces` pieces; each piece handed out is noted in `read`
+    and runs `tick` first."""
+    for _ in range(pieces):
+        if tick is not None:
+            tick()
+        read.append(len(piece))
+        yield piece
+
+
+def test_http_checker_looks_for_search_string_in_the_first_mib_only(monkeypatch):
+    # R-0616: an 8 MiB body is read only up to 1 MiB (plus the piece that crossed
+    # it); the message says where the text was looked for.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    read: list[int] = []
+
+    def fake_send(_transport, request):
+        return httpx.Response(200, content=_body(read, 8 * _MIB // _PIECE), request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, metrics = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "search_string": "needle"}
+    )
+
+    assert (status, msg) == (
+        "critical",
+        "Text 'needle' not found in the first 1 MiB of the response",
+    )
+    assert metrics["http_status_code"] == 200
+    assert sum(read) <= _MIB + _PIECE
+
+
+def test_http_checker_without_search_string_reads_no_body(monkeypatch):
+    # R-0616: only search_string needs the body; without it not a byte is read.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    read: list[int] = []
+
+    def fake_send(_transport, request):
+        return httpx.Response(200, content=_body(read, 8 * _MIB // _PIECE), request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, _msg, metrics = http_mod.HttpChecker().run({"url": "http://checks.example/"})
+
+    assert status == "ok"
+    assert metrics["http_status_code"] == 200
+    assert read == []
+
+
+def test_http_checker_finds_search_string_at_the_end_of_the_first_mib(monkeypatch):
+    # The text ends on the last byte of the first MiB, in a body much longer than that.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    read: list[int] = []
+    first_mib = b"x" * (_MIB - len(b"needle")) + b"needle"
+
+    def body():
+        read.append(len(first_mib))
+        yield first_mib
+        yield from _body(read, 7 * _MIB // _PIECE)
+
+    def fake_send(_transport, request):
+        return httpx.Response(200, content=body(), request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "search_string": "needle"}
+    )
+
+    assert status == "ok", msg
+    assert sum(read) <= _MIB + _PIECE
+
+
+def test_http_checker_timeout_is_one_deadline_over_all_hops(monkeypatch):
+    # R-0616: timeout holds for the whole check, not anew per request. Each hop takes
+    # 6 s of 10: the second request gets the 4 s left, a third is never sent.
+    _resolving(
+        monkeypatch,
+        {"checks.example": _FIRST, "hop1.example": _SECOND, "hop2.example": _FIRST},
+    )
+    clock = _Clock()
+    monkeypatch.setattr(http_mod, "_now", clock)
+    sent = []
+
+    def fake_send(_transport, request):
+        sent.append(request)
+        clock.now += 6
+        if len(sent) < 3:
+            return httpx.Response(
+                302, headers={"location": f"http://hop{len(sent)}.example/"}, request=request
+            )
+        return httpx.Response(200, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    result = http_mod.HttpChecker().run({"url": "http://checks.example/", "timeout": 10})
+
+    assert result == ("critical", "Timeout after 10s", None)
+    assert [r.headers["host"] for r in sent] == ["checks.example", "hop1.example"]
+    assert sent[0].extensions["timeout"]["read"] == pytest.approx(10)
+    assert sent[1].extensions["timeout"]["read"] == pytest.approx(4)
+
+
+def test_http_checker_timeout_covers_reading_the_body(monkeypatch):
+    # R-0616: a body trickling in, 3 s per piece, cannot hold the check past its
+    # 10 s: it ends as a timeout after the piece that crossed the deadline.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    clock = _Clock()
+    monkeypatch.setattr(http_mod, "_now", clock)
+    read: list[int] = []
+
+    def tick():
+        clock.now += 3
+
+    def fake_send(_transport, request):
+        return httpx.Response(
+            200, content=_body(read, 100, b"x" * 1024, tick=tick), request=request
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
+    result = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "timeout": 10, "search_string": "needle"}
+    )
+
+    assert result == ("critical", "Timeout after 10s", None)
+    assert len(read) <= 4
