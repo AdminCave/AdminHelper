@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Fixes: Intervall-Hooks, SSE-Verbindung, Hook-Beschreibung, Monitoring-Proxy, Tunnel-Anlage und -Ports, Passwort in Test-Ausgaben — Task-Ledger
-Status: geplant · Branch: feature/server-fixes · Review: pro Task
+Status: aktiv · Branch: feature/server-fixes · Review: pro Task
 Spec: docs/features/server-fixes.md (Roadmap R-0591, R-0617, R-0651, R-0618, R-0655, R-0656, R-0560, R-0570)
 Heavy: linux-full — Server-API-Verhalten im Stack: Mount der SSE-Route (Schritt `sse-push`), Monitoring-Proxy, `POST`/`PUT /api/frp/tunnels` und der frpc-Generator für gespeicherte Altwerte; läuft im Sammellauf. Kein `scenario`: für jeden Tunnel mit `local_port` und `visitor_port` von 1 bis 65535 bleiben frpc- und Visitor-TOML byte-gleich, OpenAPI bleibt unverändert, kein Gateway-, PKI-, Compose- oder Install-Pfad. Kein `windows`: kein Agent- und kein Desktop-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
