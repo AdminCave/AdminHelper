@@ -959,10 +959,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression $step ($DATE) — Task-Ledger
-Status: geplant · Branch: feature/$1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: geplant · Branch: feature/$1 · Review: am Ende
 Roadmap: $rid · Quelle: Wochenlauf $STAMP
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (\`/test\`: \`bash scripts/tests/run.sh all --strict --step "$step"\`)
-DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 ### R1 — $step wieder grün  [ ]

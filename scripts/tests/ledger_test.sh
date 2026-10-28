@@ -421,6 +421,19 @@ for case in "Orakel: gefühl|Orakel: 'gefühl' is not" "Dedup-Key: web-vitest|De
   [ $rc -eq 1 ] && grep -qF "${case#*|}" <<<"$OUT" && ok "an error: ${case%%|*}" || bad "${case%%|*}: rc=$rc out=$OUT"
 done
 
+# `Doku: → T<n>` hands the docs to another task of the ledger (tasks/README.md).
+for line in "Doku: → T1" "Doku: → T1 (Abschnitt Betrieb, DE+EN)" "Doku: keine (intern)" "Doku: docs/a.html DE+EN, → T9 im Text"; do
+  with_task_line "$line"
+  l lint fixture
+  [ $rc -eq 0 ] && ok "valid: $line" || bad "$line: rc=$rc out=$OUT"
+done
+for case in "Doku: → T9|T2: Doku: → 'T9' names no other task" "Doku: → T2|T2: Doku: → 'T2' names no other task" \
+            "Doku: →|T2: Doku: → '' names no other task"; do
+  with_task_line "${case%%|*}"
+  l lint fixture
+  [ $rc -eq 1 ] && grep -qF "${case#*|}" <<<"$OUT" && ok "an error: ${case%%|*}" || bad "${case%%|*}: rc=$rc out=$OUT"
+done
+
 # ══ the real ledgers ══════════════════════════════════════════════════════════
 echo "── the real ledgers ──"
 grep -q 'ledger_test' "$REPO_ROOT/scripts/tests/run.sh" \

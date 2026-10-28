@@ -943,6 +943,112 @@ r pr-body
 [ $rc -eq 2 ] && grep -q 'pr-body needs' <<<"$OUT" && ok "no ledger -> 2" || bad "no ledger: rc=$rc out=$OUT"
 
 
+# ══ final: the closing check of a branch ══════════════════════════════════════
+echo "── final ──"
+reset_index
+cat > "$FIX/tasks/fin.md" <<'MD'
+# Abschluss-Fixture — Task-Ledger
+Status: bereit · Branch: feature/fin · Review: pro Task
+Spec: docs/features/fin.md (Roadmap R-0998)
+### T1 — eins  [x]
+Evidenz: run.sh[quick] scripts: 1 passed, 0 failed, 0 skipped
+### T2 — zwei  [~] (entfaellt)
+MD
+fcommit() { git -C "$FIX" add -A -- "$@" && git -C "$FIX" commit --quiet --message "$CMSG"; }
+CMSG="plan fin" fcommit tasks/fin.md
+# fin_verdict [<python statements on v>] — the reviewer's branch verdict on HEAD.
+fin_verdict() {
+  mkdir -p "$FIX/.ah-out/review/fin"
+  python3 - "$FIX/.ah-out/review/fin/branch.verdict.json" "$(git -C "$FIX" rev-parse HEAD)" "${1-}" <<'PY'
+import json, sys
+path, head, patch = sys.argv[1:4]
+v = {"mode": "branch", "verdict": "approve", "head": head,
+     "code": {"verdict": "approve", "checked": ["1", "2", "3", "4", "5", "6", "7"],
+              "evidence": ["git diff main... read in full", "bash -n scripts/dev/tool.sh"],
+              "findings": [{"severity": "nit", "file": "scripts/dev/tool.sh", "line": 2, "what": "printf over echo"}]},
+     "tests": {"verdict": "approve", "coverage": [{"file": "scripts/dev/tool.sh", "tests": ["scripts/tests/tool_test.sh"]}],
+               "probes": [{"test": "tests/test_tool.py::test_echo", "result": "red", "evidence": "rc=1 without the fix on 10.0.0.7"}],
+               "evidence": ["verify.sh scripts --strict -- tool_test: 1 passed"], "findings": []}}
+exec(patch)
+json.dump(v, open(path, "w"))
+PY
+}
+fin() { r final "$FIX/tasks/fin.md"; }
+fin
+[ $rc -eq 3 ] && grep -q 'no branch verdict at .ah-out/review/fin/branch.verdict.json' <<<"$OUT" \
+  && ok "no branch verdict -> 3" || bad "none: rc=$rc out=$OUT"
+fin_verdict; fin
+[ $rc -eq 0 ] && ok "a current approve for code and tests -> 0" || bad "approve: rc=$rc out=$OUT"
+grep -q '^### Abschlussprüfung (reviewer, Branch)' <<<"$OUT" && grep -q "geprüft auf \`$(git -C "$FIX" rev-parse --short=8 HEAD)\`" <<<"$OUT" \
+  && ok "the PR section names the judged commit" || bad "section: $OUT"
+grep -qF -- '- **Code:** approve (Kriterien 1, 2, 3, 4, 5, 6, 7) — Evidenz: git diff main... read in full' <<<"$OUT" \
+  && grep -qF -- '- **Tests:** approve — Abdeckung: 1 Dateien — Evidenz: verify.sh scripts' <<<"$OUT" \
+  && ok "code and tests each with their evidence" || bad "parts: $OUT"
+grep -qF 'Gegenprobe `tests/test_tool.py::test_echo`: rot ohne den Fix' <<<"$OUT" && ! grep -q '10\.0\.0\.7' <<<"$OUT" \
+  && ok "the probe, its address cut out" || bad "probe: $OUT"
+grep -qF '[code] nit `scripts/dev/tool.sh:2` — printf over echo' <<<"$OUT" && ok "the nits go along" || bad "nits: $OUT"
+fin_verdict 'v["tests"]["probes"] = []'; fin
+[ $rc -eq 0 ] && grep -q 'keine Gegenprobe' <<<"$OUT" && ok "no probe is allowed and said" || bad "no probe: rc=$rc out=$OUT"
+for c in 'v["verdict"] = "request_changes"|the verdict is .request_changes., not approve' \
+         'v["tests"]["verdict"] = "request_changes"|tests: the verdict is' \
+         'del v["tests"]|no tests part' \
+         'v["code"]["evidence"] = [" "]|code: no evidence' \
+         'v["code"]["findings"].append({"severity": "blocker", "file": "x", "line": 1, "what": "y"})|code: approve beside a blocker' \
+         'v["tests"]["probes"] = [{"test": "t%d" % i, "result": "red"} for i in range(4)]|tests: 4 probes, at most three' \
+         'v["tests"]["probes"][0]["result"] = "passed"|a result other than red' \
+         'del v["tests"]["coverage"]|tests: no coverage list' \
+         'del v["tests"]["probes"]|tests: no probes list' \
+         'del v["head"]|names no head commit' \
+         'v["head"] = "0123456789abcdef0123456789abcdef01234567"|is not in the history of HEAD'; do
+  fin_verdict "${c%%|*}"; fin
+  [ $rc -eq 3 ] && grep -q -- "${c#*|}" <<<"$OUT" && ok "${c%%|*} -> 3" || bad "${c%%|*}: rc=$rc out=$OUT"
+done
+fin_verdict 'v["verdict"] = "request_changes"; v["code"]["evidence"] = []'; fin
+[ "$(grep -c '^  - ' <<<"$OUT")" = 2 ] && ok "every reason at once" || bad "reasons: $OUT"
+printf '{"verdict": ' > "$FIX/.ah-out/review/fin/branch.verdict.json"; fin
+[ $rc -eq 3 ] && grep -q 'unreadable' <<<"$OUT" && ok "a broken verdict file -> 3" || bad "broken: rc=$rc out=$OUT"
+
+# After the verdict: the ledger alone and merges keep it current, anything else does not.
+fin_verdict
+printf 'Status: erledigt\n' >> "$FIX/tasks/fin.md"; CMSG="chore(ledger): fin erledigt" fcommit tasks/fin.md
+fin
+[ $rc -eq 0 ] && ok "a ledger commit after the verdict keeps it current" || bad "ledger commit: rc=$rc out=$OUT"
+JUDGED="$(git -C "$FIX" rev-parse HEAD)"
+printf 'echo main\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="main moved on" fcommit scripts/dev/tool.sh
+SIDE_TIP="$(git -C "$FIX" rev-parse HEAD)"
+git -C "$FIX" reset -q --hard "$JUDGED"
+fin_verdict
+git -C "$FIX" merge -q --no-ff -m "Merge main" "$SIDE_TIP"
+fin
+[ $rc -eq 0 ] && ok "a merge of main after the verdict keeps it current" || bad "merge: rc=$rc out=$OUT"
+# A merge that resolves a conflict brings code no parent had.
+JUDGED="$(git -C "$FIX" rev-parse HEAD)"
+printf 'echo side\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="side change" fcommit scripts/dev/tool.sh
+SIDE_TIP="$(git -C "$FIX" rev-parse HEAD)"
+git -C "$FIX" reset -q --hard "$JUDGED"
+printf 'echo ours\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="our change" fcommit scripts/dev/tool.sh
+printf '## [Unreleased]\n- ours\n' >> "$FIX/CHANGELOG.md"; CMSG="our changelog" fcommit CHANGELOG.md
+fin_verdict
+git -C "$FIX" merge -q --no-ff -m "Merge side" "$SIDE_TIP" >/dev/null 2>&1
+printf 'set -e\necho hello\necho main\necho resolved\n' > "$FIX/scripts/dev/tool.sh"
+CMSG="Merge side" fcommit scripts/dev/tool.sh
+fin
+[ $rc -eq 3 ] && grep -q "merges after the verdict head that change files beyond both parents.*scripts/dev/tool.sh" <<<"$OUT" \
+  && ok "a merge that resolves a conflict after the verdict -> 3, named" || bad "evil merge: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard "$JUDGED"; fin_verdict
+printf 'echo fix\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="fix: late change" fcommit scripts/dev/tool.sh
+fin
+[ $rc -eq 3 ] && grep -q 'commits after the verdict head that change more than the ledger.*fix: late change' <<<"$OUT" \
+  && ok "a code commit after the verdict -> 3, named" || bad "stale: rc=$rc out=$OUT"
+fin_verdict
+sed -i 's/^### T1 — eins  \[x\]/### T1 — eins  [ ]/' "$FIX/tasks/fin.md"; fin
+[ $rc -eq 3 ] && grep -q 'task T1 is still open' <<<"$OUT" && ok "an open task -> 3" || bad "open: rc=$rc out=$OUT"
+sed -i 's/^### T1 — eins  \[ \]/### T1 — eins  [?] (welche Farbe?)/' "$FIX/tasks/fin.md"; fin
+[ $rc -eq 3 ] && grep -q 'task T1 is a question' <<<"$OUT" && ok "a [?] task -> 3" || bad "question: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/fin.md
+r final; [ $rc -eq 2 ] && grep -q 'final needs <ledger>' <<<"$OUT" && ok "no ledger -> 2" || bad "bare final: rc=$rc"
+r final "$WORK/nosuch.md"; [ $rc -eq 2 ] && ok "a missing ledger -> 2" || bad "missing: rc=$rc"
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_scripts_test' \
