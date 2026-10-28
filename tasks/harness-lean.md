@@ -61,6 +61,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- log_digest_test verify_test review_scripts_test harness_consistency_test doc_smoke_test
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN
 
+### T7 — Session-Modell Opus high statt Sonnet (Kevin 2026-10-28)  [ ]
+Komponente: scripts · Dateien: .claude/settings.json, CLAUDE.md, .claude/skills/feature-plan/SKILL.md, scripts/tests/harness_consistency_test.sh, DEVELOPMENT.md, CHANGELOG.md, docs/features/harness-lean.md
+Änderung: `settings.json` `model: opus` (Effort bleibt `high`); `CLAUDE.md` §6 Rollentabelle und Modell-Absatz (Sonnet gezielt per `claude --model sonnet`, xhigh per `advisor` oder `claude --effort xhigh`); `/feature-plan`, `DEVELOPMENT.md`, CHANGELOG und Spec ziehen nach; der Konsistenztest prüft Opus/high für die Session.
+Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test doc_smoke_test
+Doku: DEVELOPMENT.md · CHANGELOG (die cicd-Seiten nennen kein Session-Modell)
+
 ## Entscheidungen
 - 2026-10-28 T1: `verify.sh` streamt auf einem Terminal weiter und zeigt sonst nur den Digest — Kevin sieht einen Handlauf live, das Modell bekommt die Kurzform.
 - 2026-10-28 T2: Aktualität des Branch-Urteils über `head` und die Commits der eigenen Linie danach (`--first-parent`), nicht über mtime — ein Merge von `main` und der Ledger-Commit `erledigt` folgen dem Urteil regulär.
@@ -68,4 +74,5 @@ Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN
 - 2026-10-28 T4: `advisor` als eigene, nur lesende Agent-Datei statt `general-purpose` mit Modell-Override — Grenzen (implementiert nicht) und Modell/Effort stehen fest im Frontmatter.
 - 2026-10-28 T4: die Abschnittsnummern von `CLAUDE.md` bleiben — über hundert Verweise in Skills, Skripten und Ledgern zeigen auf sie.
 - 2026-10-28 T6: der Digest liest Grenzen nicht aus dem Lauf-Artefakt, sondern aus der Lage im Log (Schlussblock am Ende, schlechtestes Ergebnis je Schritt) — so arbeitet er auch über tmux-Logs ohne Artefakt; im Zweifel zeigt er mehr.
+- 2026-10-28 T7: Kevin: die Session läuft auf Opus 5.5 mit Effort high statt auf Sonnet; „nicht Opus für alles auf xhigh“ — xhigh nur über `advisor` oder eine bewusst so gestartete Session.
 - 2026-10-28 T6: `review.sh final` nimmt `CHANGELOG.md` von der Merge-Prüfung aus — `merge=union` erzeugt dort bei jedem Basis-Merge eigene Zeilen, die `/feature-build` §4.6 von Hand prüft.
