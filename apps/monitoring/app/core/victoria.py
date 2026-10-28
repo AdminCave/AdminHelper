@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import sys
 import threading
 import time
 
@@ -16,9 +17,11 @@ from app.core.config import VICTORIA_METRICS_URL
 
 logger = logging.getLogger("monitor.victoria")
 
-# Write buffer of VictoriaClient: about an hour of agent reports from 250 servers while
-# VictoriaMetrics is down. A batch stays far below VictoriaMetrics' 64 MB request limit.
+# Write buffer of VictoriaClient: the two caps bound the memory it holds while VictoriaMetrics
+# does not accept writes. 100 000 lines are about an hour of agent reports from 250 servers only
+# for lines of about 100 characters. A batch takes at most _MAX_BATCH_LINES lines off the buffer.
 _MAX_PENDING_LINES = 100_000
+_MAX_PENDING_BYTES = 64 * 1024 * 1024
 _MAX_BATCH_LINES = 10_000
 _DROP_WARNING_INTERVAL = 60.0
 
@@ -110,6 +113,16 @@ def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
     return f"{prefix} {field} {ts}"
 
 
+def _warn_dropped(dropped: int) -> None:
+    logger.warning(
+        "VictoriaMetrics write buffer full (%d lines or %d bytes): "
+        "dropped %d lines since the last report",
+        _MAX_PENDING_LINES,
+        _MAX_PENDING_BYTES,
+        dropped,
+    )
+
+
 class VictoriaClient:
     """Client for the VictoriaMetrics HTTP API."""
 
@@ -118,6 +131,7 @@ class VictoriaClient:
         self._client = httpx.Client(timeout=10)
         self._cond = threading.Condition(threading.Lock())
         self._pending: list[str] = []
+        self._pending_bytes = 0
         self._thread: threading.Thread | None = None
         self._stopping = False
         self._dropped = 0
@@ -133,9 +147,16 @@ class VictoriaClient:
             len(metrics),
             metrics[0][:200] if metrics else "-",
         )
+        # The memory a line holds, not its length: one character beyond Latin-1 makes CPython
+        # store the whole line with 2 or 4 bytes per character.
+        size = sum(sys.getsizeof(line) for line in metrics)
         with self._cond:
-            if len(self._pending) + len(metrics) <= _MAX_PENDING_LINES:
+            if (
+                len(self._pending) + len(metrics) <= _MAX_PENDING_LINES
+                and self._pending_bytes + size <= _MAX_PENDING_BYTES
+            ):
                 self._pending.extend(metrics)
+                self._pending_bytes += size
                 if self._thread is None:
                     thread = threading.Thread(target=self._run, name="victoria-writer", daemon=True)
                     thread.start()
@@ -150,11 +171,7 @@ class VictoriaClient:
             ):
                 return
             dropped, self._dropped, self._last_drop_warning = self._dropped, 0, now
-        logger.warning(
-            "VictoriaMetrics write buffer full (%d lines): dropped %d lines since the last report",
-            _MAX_PENDING_LINES,
-            dropped,
-        )
+        _warn_dropped(dropped)
 
     def close(self, timeout: float = 5.0) -> None:
         """Sends what is buffered for up to ``timeout`` seconds; the writer thread ends once the
@@ -180,6 +197,14 @@ class VictoriaClient:
                     return
                 batch = self._pending[:_MAX_BATCH_LINES]
                 del self._pending[: len(batch)]
+                self._pending_bytes -= sum(sys.getsizeof(line) for line in batch)
+                # write() only counts what it drops within a minute of a warning: without a later
+                # drop that number would never reach the log, so the emptied buffer reports it.
+                dropped = 0
+                if not self._pending and self._dropped:
+                    dropped, self._dropped, self._last_drop_warning = self._dropped, 0, _now()
+            if dropped:
+                _warn_dropped(dropped)
             try:
                 self._send(batch)
             except Exception:
