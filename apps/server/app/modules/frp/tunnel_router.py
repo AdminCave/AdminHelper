@@ -18,7 +18,7 @@ from app.modules.audit import service as audit
 from app.modules.connections.models import Connection
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.schemas import FrpTunnelCreate, FrpTunnelUpdate
+from app.modules.frp.schemas import PORT_MAX, PORT_MIN, FrpTunnelCreate, FrpTunnelUpdate
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
@@ -79,6 +79,24 @@ def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:
     )
 
 
+def _reject_bad_local_port(value: int | None) -> None:
+    """frpc refuses the whole config of a host for a localPort outside 0-65535, and 0 is no
+    target. Checked here, not in the schema, so the published OpenAPI contract stays as it is;
+    RequestValidationError keeps the 422 in the declared shape."""
+    if value is not None and PORT_MIN <= value <= PORT_MAX:
+        return
+    raise RequestValidationError(
+        [
+            {
+                "type": "value_error",
+                "loc": ("body", "local_port"),
+                "msg": "local_port must be a port from 1 to 65535",
+                "input": value,
+            }
+        ]
+    )
+
+
 def _reject_unknown_connection(db: Session, connection_id: str | None) -> None:
     """A connection_id no row matches reached the INSERT and failed on its foreign key.
     RequestValidationError, not HTTPException, so the 422 keeps the shape the OpenAPI
@@ -116,6 +134,7 @@ def create_tunnel(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    _reject_bad_local_port(data.local_port)
     server = db.query(Server).filter(Server.id == data.server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
@@ -210,11 +229,13 @@ def update_tunnel(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    sent = data.model_fields_set
+    if "local_port" in sent:
+        _reject_bad_local_port(data.local_port)
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
-    sent = data.model_fields_set
     if "connection_id" in sent:
         _reject_unknown_connection(db, data.connection_id)
     # Responses never carry the secret, so an editor sends the field back

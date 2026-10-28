@@ -343,6 +343,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Der lokale Port eines Tunnels nimmt nur 1-65535 an (R-0560):** `POST` und `PUT /api/frp/tunnels` mit
+  einem `local_port` ausserhalb 1-65535 (im `PUT` auch `null`) antworten `422` an `local_port`; vorher wurde der Wert
+  gespeichert, und ein groesserer Wert machte die frpc-Konfiguration des Agents ungueltig, sodass alle Tunnel des
+  Hosts ausfielen (`null` ergab 409 mit falscher Meldung). Doku: API-Referenz fuer Entwickler (DE+EN).
 - **FRP: Tunnel mit unbekannter Verbindung ergibt 422, ein verlorenes Rennen 409 (R-0656):** Eine `connection_id`,
   zu der es keine Verbindung gibt, ergibt `422` an `connection_id`: bei `POST /api/frp/tunnels` statt 500, bei `PUT`
   statt `409` mit falscher Meldung. Ein verlorenes Rennen um Name oder Visitor-Port ergibt beim Anlegen und beim
