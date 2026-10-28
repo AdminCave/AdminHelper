@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Auftrag Kevin 2026-10-28, einmaliger Ablauf: die Session baut alle Tasks selbst, ohne Sub-Agenten; danach
 genau ein unabhängiger Reviewer über den Branch (daher `Review: am Ende`). Harness-Pfade auf Kevins Wort.
 
-### T1 — verify.sh: volles Log in eine Datei, ins Modell nur Digest  [ ]
+### T1 — verify.sh: volles Log in eine Datei, ins Modell nur Digest  [x]
 Komponente: scripts · Dateien: scripts/dev/log-digest.sh, scripts/dev/verify.sh, scripts/tests/log_digest_test.sh, scripts/tests/verify_test.sh, scripts/tests/run.sh, .claude/settings.json
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @18821e0a 2026-10-28T12:30:45+01:00
+Review: am Ende (Branch-Review)
 Änderung: `log-digest.sh <log> [<rc>]` druckt aus einer `run.sh`-Ausgabe jede PASS/FAIL/SKIP-Zeile außer den per `--only`/`--` ausgelassenen (gezählt), jede `strict-failed:`-Zeile, je rotem Schritt Fehlerzeilen und Ende seines Abschnitts mit Zeilenbereich, die Summary, Exit und Logpfad; ohne Summary das Log-Ende. `verify.sh` schreibt die volle Ausgabe nach `.ah-out/logs/verify-*.log` (die letzten 30 bleiben), druckt den Digest, `--full` streamt zusätzlich; `last-verify.json` trägt `log`. Test neu, in die Liste des scripts-Blocks.
 Verify: bash scripts/dev/verify.sh scripts --strict -- log_digest_test verify_test task_close_test
 Doku: → T5

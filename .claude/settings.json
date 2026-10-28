@@ -18,6 +18,7 @@
       "Bash(npm run:*)",
       "Bash(bash scripts/tests/run.sh:*)",
       "Bash(bash scripts/dev/verify.sh:*)",
+      "Bash(bash scripts/dev/log-digest.sh:*)",
       "Bash(bash scripts/dev/format-file.sh:*)",
       "Bash(reuse annotate:*)",
       "Bash(git switch:*)",
