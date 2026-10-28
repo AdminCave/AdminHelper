@@ -41,8 +41,11 @@
 # file, an own file or a FIFO under the temp name, a temp file another tool made 0644
 # (a mount without Unix mode) or one with a second hard link fails the backup with
 # the hint to back up locally, leaves the other file as it was and no archive; so
-# does a temp name swapped for a link after the open (a stat wrapper does the swap).
+# does a temp name swapped for a link after the open (a stat wrapper does the swap) and
+# a temp path that leads out of the output dir through a linked dir; a name swapped
+# for a dangling link just before the open creates nothing through it.
 # 21: the archive is 0600 in an output dir with a default ACL.
+# 22: --output with a trailing slash: the temp file still counts as in the output dir.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
@@ -473,6 +476,9 @@ if [ "$#" -eq 1 ] && [[ "$1" == */.adminhelper-backup-*.XXXXXX ]]; then
     printf '%s\n' "$name"
     exit 0
   fi
+  if [ -n "${AH_TEST_MKTEMP_DIRLINK:-}" ]; then
+    exec "$AH_TEST_REAL_MKTEMP" "$AH_TEST_MKTEMP_DIRLINK/${1##*/}"
+  fi
   if [ -n "${AH_TEST_MKTEMP_MODE:-}${AH_TEST_MKTEMP_HARDLINK:-}" ]; then
     name=$("$AH_TEST_REAL_MKTEMP" "$1") || exit
     [ -z "${AH_TEST_MKTEMP_MODE:-}" ] || chmod "$AH_TEST_MKTEMP_MODE" "$name" || exit
@@ -565,6 +571,45 @@ entries=$(ls -A "$WORK/bk/t/out" 2>/dev/null)
   && ok "a temp name swapped for a link after the open fails the backup, nothing is written" \
   || bad "name swapped after the open: rc=$rc swapped=$([ -e "$WORK/bk/t/swapped" ] && echo y || echo n) entries=[$entries] moved=$(stat -c %s "$WORK/bk/t/elsewhere/moved" 2>&1) out=[$out]"
 
+# A temp path through a linked dir part (the mktemp stub with AH_TEST_MKTEMP_DIRLINK
+# prints the template's name under that link): the file there passes every check on
+# the descriptor, so only the check that the temp file lies in the output dir stops it.
+mkdir -p "$WORK/bk/u/out" "$WORK/bk/u/elsewhere"
+ln -s "$WORK/bk/u/elsewhere" "$WORK/bk/u/out/.lnk"
+out=$(bk_tmp_run "$WORK/bk/u" AH_TEST_MKTEMP_DIRLINK="$WORK/bk/u/out/.lnk"); rc=$?
+entries=$(ls -A "$WORK/bk/u/out" 2>/dev/null)
+others=$(find "$WORK/bk/u/elsewhere" -type f -size +0 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ "$entries" = .lnk ] && [ -z "$others" ] \
+    && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a temp path through a linked dir fails the backup, nothing is written there" \
+  || bad "temp path through a linked dir: rc=$rc entries=[$entries] others=[$others] out=[$out]"
+
+# The name swapped for a link to a path that does not exist, between the check that it
+# is no link and its open (a function named [ under BASH_ENV does the swap): the open
+# must not create that path; the backup stops and writes nothing.
+cat > "$WORK/bk/swap-env.sh" <<'EOF'
+#!/usr/bin/env bash
+# Sourced through BASH_ENV: right after the script's check that the temp name is no
+# link, the name becomes a link to a path that does not exist yet (once).
+[() {
+  builtin [ "$@"; local rc=$?
+  if [[ -n "${AH_TEST_SWAP_TO:-}" && $# -eq 4 && "$1" == '!' && "$2" == -L \
+      && "$3" == */.adminhelper-* && ! -e "$AH_TEST_SWAP_MARK" ]]; then
+    : > "$AH_TEST_SWAP_MARK"
+    rm -f -- "$3" && ln -s -- "$AH_TEST_SWAP_TO" "$3"
+  fi
+  return $rc
+}
+EOF
+mkdir -p "$WORK/bk/w" "$WORK/bk/w/elsewhere"
+out=$(bk_tmp_run "$WORK/bk/w" BASH_ENV="$WORK/bk/swap-env.sh" AH_TEST_SWAP_TO="$WORK/bk/w/elsewhere/created" \
+    AH_TEST_SWAP_MARK="$WORK/bk/w/swapped"); rc=$?
+entries=$(ls -A "$WORK/bk/w/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -e "$WORK/bk/w/swapped" ] && [ ! -e "$WORK/bk/w/elsewhere/created" ] \
+    && [ ! -L "$WORK/bk/w/elsewhere/created" ] && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a temp name swapped for a dangling link before the open creates nothing there" \
+  || bad "swap before the open: rc=$rc swapped=$([ -e "$WORK/bk/w/swapped" ] && echo y || echo n) created=$([ -e "$WORK/bk/w/elsewhere/created" ] && echo y || echo n) entries=[$entries] out=[$out]"
+
 # --- 21. backup.sh: the archive stays 0600 under a default ACL ──────────────
 # A default ACL on the output dir replaces the umask for new files there; the mode
 # must still come from mktemp. Without setfacl or ACL support the case says so
@@ -584,6 +629,15 @@ archive="$WORK/bk/q/out/$entries"
     && { [ -n "$acl_note" ] || getfacl -p "$WORK/bk/q/out" 2>/dev/null | grep -qx 'default:group::rwx'; }; } \
   && ok "the archive is 0600 in an output dir with a default ACL" \
   || bad "default ACL: rc=$rc entries=[$entries] mode=$(stat -c '%a' "$archive" 2>&1) acl_note=[$acl_note] out=[$out]"
+
+# --- 22. backup.sh: --output with a trailing slash ───────────────────────────
+mkdir -p "$WORK/bk/v"
+out=$( ( cd "$WORK/bk/run" && umask 022 \
+    && env STUB_DIR="$WORK/bk/v" PATH="$WORK/bk/bin:$PATH" bash "$BACKUP" --output "$WORK/bk/v/out/" </dev/null 2>&1 ) ); rc=$?
+entries=$(ls -A "$WORK/bk/v/out" 2>/dev/null)
+{ [ $rc -eq 0 ] && [ "$entries" = "$FIXED_NAME" ]; } \
+  && ok "--output with a trailing slash writes the archive" \
+  || bad "trailing slash: rc=$rc entries=[$entries] out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"

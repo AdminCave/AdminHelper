@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Betriebsskripte, zweite Runde: Backup-Archiv robust am Zielnamen, Diagnose-Bundle liest die `.env` wie compose und maskiert genauer — Task-Ledger
-Status: aktiv · Branch: feature/ops-scripts-2 · Review: pro Task
+Status: bereit · Branch: feature/ops-scripts-2 · Review: pro Task
 Spec: docs/features/ops-scripts-2.md (Roadmap R-0801, R-0804; T1, T3 und T5–T11 gehören zum Paket, Härtung, Kevin 2026-10-22)
 Heavy: linux-full — `scripts/backup.sh` läuft real nur in `scripts/tests/backup_restore_test.sh` (`run.sh integration`, `scripts/tests/run.sh:893`: Backup gegen den laufenden Stack, Totalverlust, Restore), und `scripts/update.sh` ruft es vor jedem Update (`:363`, `:438`); der Sammellauf über `main` zeigt, dass das Archiv nach T1–T3 restorebar bleibt. Kein `scenario`: kein `multibox.sh`-Flag und kein `box_*.sh` ruft `backup.sh` oder `diagnostics.sh` auf; kein `windows`. `diagnostics.sh` fährt kein schwerer Lauf, `diagnostics_test.sh` prüft seine Funktionen und `main` mit Stubs
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -142,7 +142,9 @@ Beweis: Code-Lesung scripts/backup.sh:170-171
 Security: ja (Backup-Archiv mit Secrets)
 HEAD: b6377a77
 
-### T13 — diagnostics.sh: Bundle über denselben geprüften Deskriptor wie backup.sh  [ ]
+### T13 — diagnostics.sh: Bundle über denselben geprüften Deskriptor wie backup.sh  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @955b6c61 2026-10-28T16:40:20+01:00
+Review: approve (.ah-out/review/ops-scripts-2/T13.verdict.json)
 Entscheidung: Kevin 2026-10-28 (AskUserQuestion, Q34): abbrechen mit Hinweis. Scheitert die Pruefung des Deskriptors (etwa auf einem Ziel ohne Unix-Eigentuemer/-Modus wie CIFS, vfat, NTFS), endet der Lauf mit Exit != 0 und einer englischen Meldung, die raet, lokal zu sichern und danach zu kopieren; kein Opt-out.
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, CHANGELOG.md, scripts/backup.sh, scripts/tests/restore_guard_test.sh
 Änderung: Nachtrag der Session vom 2026-10-23. `scripts/diagnostics.sh` legt das Bundle mit demselben Muster an wie `backup.sh` nach T12, statt über `mktemp -u` und `dd conv=excl` (T8): `mktemp` legt die Zwischendatei an (0600, exklusiv), das Skript öffnet sie, ohne sie anzulegen, prüft den offenen Deskriptor (Pfad, Eigentümer, Modus 600, Linkzahl 1, Größe 0) und schreibt `tar -czf -` über ihn; der Deskriptor wird vor `mv -fT` geschlossen. Scheitert eine Prüfung, endet der Lauf mit Exit ≠ 0 und einer englischen Meldung, ohne zu schreiben, und der EXIT-Trap räumt auf. Danach unterscheiden sich beide Skripte in diesem Punkt nicht, kein Kommentar begründet eine Abweichung. Tests in `diagnostics_test.sh`: die Fälle von (m) bleiben grün (Link auf eine Datei und auf ein FIFO unter `timeout`, scheiterndes `tar`, Modus 600 unter `umask 022`); neu ein `mktemp`-Stub, dessen ausgegebener Pfad über einen verlinkten Verzeichnisteil aus dem Zielordner führt (Exit ≠ 0, Ziel außerhalb unverändert, im Zielordner kein Rest), und ein Zielordner mit Default-ACL (`setfacl -d -m g::rwx`) → Bundle 0600; fehlen `setfacl` oder ACL-Unterstützung, meldet der Fall das laut (kein stiller Skip), und der Commit-Body nennt, wo er gelaufen ist. Zuerst rot gegen den Stand von T8: der Fall mit verlinktem Verzeichnisteil und der ACL-Fall. Die übrigen Fälle bleiben grün.

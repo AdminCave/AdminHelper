@@ -168,17 +168,20 @@ ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
 # the name on an empty or truncated file: sync the file before the rename and the
 # dir (its new entry) after it; only these two, a bare sync flushes every filesystem.
 #
-# tar writes only into the file mktemp created: the name is opened without being
-# created or truncated, and the open descriptor is checked before the first byte (a
+# tar writes only into the file mktemp created: it lies in the output dir itself, the
+# name is opened for reading only (no O_CREAT, so nothing new appears through a link
+# put there in between) and that same open file again for appending, without
+# truncating it, and the open descriptor is checked before the first byte (a
 # regular file of ours, 0600, one link, still empty, the same file as the name, which
 # is no link).
 # Anything else under that name (a link to a file or a FIFO elsewhere) aborts the
 # backup instead of taking the archive. The mode comes from mktemp and stays 0600 in a
 # dir with a default ACL; a target without Unix owner and mode fails the check.
-PARTIAL=$(mktemp "$OUT_DIR/.adminhelper-backup-$TS.XXXXXX")
+PARTIAL=$(mktemp "${OUT_DIR%/}/.adminhelper-backup-$TS.XXXXXX")
 archive_fd_ok() {
-    [ -f "$PARTIAL" ] && [ ! -L "$PARTIAL" ] || return 1
-    exec 3>>"$PARTIAL" || return 1
+    [ "${PARTIAL%/*}" = "${OUT_DIR%/}" ] && [ -f "$PARTIAL" ] && [ ! -L "$PARTIAL" ] || return 1
+    exec 4<"$PARTIAL" || return 1
+    exec 3>>/dev/fd/4 || return 1
     # One comparison of the descriptor's inode with the name's own (lstat, no link
     # followed): a link under the name has an inode of its own, so a name swapped
     # between two separate tests cannot pass. With one link, the name is the file's
@@ -192,7 +195,7 @@ archive_fd_ok || {
     exit 1
 }
 tar czf - -C "$STAGE" . >&3
-exec 3>&-
+exec 3>&- 4<&-
 sync -- "$PARTIAL" \
     || { echo "[backup] ERROR: could not flush the archive to disk — backup aborted." >&2; exit 1; }
 mv -fT -- "$PARTIAL" "$ARCHIVE" \

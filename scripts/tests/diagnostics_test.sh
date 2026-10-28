@@ -53,8 +53,11 @@
 #       of an unquoted one is no part of it, one inside quotes is;
 #   (m) main under umask 022: the bundle has mode 600, replaces a file under its
 #       name instead of writing into it, and leaves no temp file, also when tar
-#       fails or a link already holds the temp name (nothing is written through
-#       it); no value of the .env stands in the arguments of sed.
+#       fails, a link already holds the temp name (nothing is written through
+#       it), the temp path leads out of the output dir through a linked dir or the
+#       name turns into a dangling link just before the open (nothing is created); it
+#       stays 0600 in a dir with a default ACL; no value of the .env stands in the
+#       arguments of sed.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -870,6 +873,91 @@ for m_to in outside fifo; do
         || { echo "(m) a link to the $m_to left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
 done
 [ ! -s "$m/outside" ] || { echo "(m) the bundle went into the target of a link under the temp name" >&2; fail=1; }
+
+# A temp path that leads out of the output dir through a linked dir part: the file
+# mktemp made there passes every check on the descriptor, so the run must stop on the
+# dir itself. The stub's own link stays; nothing else may.
+mkdir -p "$m/bin-dirlink" "$m/elsewhere"
+ln -s -- "$m/elsewhere" "$m/out/.lnk"
+cat > "$m/bin-dirlink/mktemp" <<EOF
+#!/usr/bin/env bash
+case "\${!#}" in
+    */.adminhelper-diagnostics-*)
+        base="\${!#}"; base="\${base##*/}"
+        "$(type -P mktemp)" -- "$m/out/.lnk/\$base" ;;
+    *) exec "$(type -P mktemp)" "\$@" ;;
+esac
+EOF
+chmod +x "$m/bin-dirlink/mktemp"
+rc=0
+( umask 022 && cd "$m" && PATH="$m/bin-dirlink:$m/bin:$PATH" TMPDIR="$tmp" \
+    timeout 30 bash "$ROOT/scripts/diagnostics.sh" --output "$m/out" ) > "$m/run-dirlink.log" 2>&1 || rc=$?
+case "$rc" in
+    0) echo "(m) a temp path through a linked dir: exit 0" >&2; fail=1 ;;
+    124) echo "(m) a temp path through a linked dir: the run hung" >&2; fail=1 ;;
+esac
+grep -q '^\[diagnostics\] ERROR: ' "$m/run-dirlink.log" \
+    || { echo "(m) a temp path through a linked dir: no ERROR line" >&2; fail=1; }
+m_same || { echo "(m) a temp path through a linked dir changed the earlier bundle" >&2; fail=1; }
+m_else="$(find "$m/elsewhere" -type f -size +0 | head -1)"
+[ -z "$m_else" ] || { echo "(m) the bundle went through the linked dir: $m_else" >&2; fail=1; }
+m_left="$(ls -A "$m/out" | LC_ALL=C sort | tr '\n' ' ')"
+[ "$m_left" = ".lnk ${m_bundle##*/} " ] \
+    || { echo "(m) a temp path through a linked dir left in the output dir: $m_left" >&2; fail=1; }
+rm -f -- "$m/out/.lnk"
+
+# The temp name swapped for a link to a path that does not exist, between the check
+# that it is no link and its open (a function named [ under BASH_ENV): the open must
+# not create that path, and the run stops.
+cat > "$m/swap-env.sh" <<'EOF'
+#!/usr/bin/env bash
+# Sourced through BASH_ENV: right after the script's check that the temp name is no
+# link, the name becomes a link to a path that does not exist yet (once).
+[() {
+  builtin [ "$@"; local rc=$?
+  if [[ -n "${AH_TEST_SWAP_TO:-}" && $# -eq 4 && "$1" == '!' && "$2" == -L \
+      && "$3" == */.adminhelper-* && ! -e "$AH_TEST_SWAP_MARK" ]]; then
+    : > "$AH_TEST_SWAP_MARK"
+    rm -f -- "$3" && ln -s -- "$AH_TEST_SWAP_TO" "$3"
+  fi
+  return $rc
+}
+EOF
+rc=0
+( umask 022 && cd "$m" && BASH_ENV="$m/swap-env.sh" AH_TEST_SWAP_TO="$m/created" AH_TEST_SWAP_MARK="$m/swapped" \
+    PATH="$m/bin:$PATH" TMPDIR="$tmp" timeout 30 bash "$ROOT/scripts/diagnostics.sh" --output "$m/out" ) \
+    > "$m/run-swap.log" 2>&1 || rc=$?
+case "$rc" in
+    0) echo "(m) a name swapped before the open: exit 0" >&2; fail=1 ;;
+    124) echo "(m) a name swapped before the open: the run hung" >&2; fail=1 ;;
+esac
+[ -e "$m/swapped" ] || { echo "(m) a name swapped before the open: the swap did not happen" >&2; fail=1; }
+{ [ ! -e "$m/created" ] && [ ! -L "$m/created" ]; } \
+    || { echo "(m) the open created the target of a link swapped in before it" >&2; fail=1; }
+m_same || { echo "(m) a name swapped before the open changed the earlier bundle" >&2; fail=1; }
+m_left="$(ls -A "$m/out")"
+[ "$m_left" = "${m_bundle##*/}" ] \
+    || { echo "(m) a name swapped before the open left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+
+# A default ACL on the output dir: the bundle is still 0600, its mode comes from
+# mktemp. Without setfacl or ACL support the case says so and checks the mode alone.
+mkdir -p "$m/acl"
+m_acl_note=""
+if ! command -v setfacl >/dev/null 2>&1; then
+    m_acl_note="setfacl not installed"
+elif ! m_acl_err="$(setfacl -d -m g::rwx,o::rwx "$m/acl" 2>&1)"; then
+    m_acl_note="no ACL on $(df -T "$m/acl" | awk 'NR==2 {print $2}'): $m_acl_err"
+fi
+[ -z "$m_acl_note" ] || echo "NOTE: (m) the ACL case ran WITHOUT a default ACL ($m_acl_note); only the mode is checked"
+rc=0
+( umask 022 && cd "$m" && PATH="$m/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" \
+    --output "$m/acl" ) > "$m/run-acl.log" 2>&1 || rc=$?
+m_acl_bundle="$m/acl/${m_bundle##*/}"
+[ "$rc" = 0 ] || { echo "(m) main into a dir with a default ACL: exit $rc" >&2; fail=1; }
+[ "$(stat -c '%a' "$m_acl_bundle" 2>&1)" = 600 ] \
+    || { echo "(m) the bundle in a dir with a default ACL has mode $(stat -c '%a' "$m_acl_bundle" 2>&1)" >&2; fail=1; }
+[ -n "$m_acl_note" ] || getfacl -p "$m/acl" 2>/dev/null | grep -qx 'default:group::rwx' \
+    || { echo "(m) the default ACL was not set on the output dir" >&2; fail=1; }
 
 cat > "$m/bin-tar/tar" <<'EOF'
 #!/usr/bin/env bash

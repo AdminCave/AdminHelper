@@ -313,7 +313,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   darin sind nur fuer diesen Nutzer lesbar. Ein Lauf, der vorher scheitert, hinterlaesst weder ein Bundle noch eine
   Zwischendatei. Eine Datei, die schon unter dem Namen liegt, wird ersetzt, statt mit ihren Rechten ueberschrieben zu
   werden. Mit `sudo` gestartet gehoert das Bundle root. Die Namen und Adressen fuer `--mask-hosts` stehen waehrend des
-  Laufs nicht mehr in der Prozessliste. Doku: Troubleshooting (DE+EN).
+  Laufs nicht mehr in der Prozessliste. Wie beim Backup wird das Bundle nur in die Zwischendatei geschrieben, die das
+  Skript selbst im Zielordner angelegt hat, und bleibt auch in einem Ordner mit Default-ACL 0600; liegt unter ihrem
+  Namen etwas anderes, oder haelt das Ziel keinen Unix-Eigentuemer und -Modus (wie ein CIFS-, vfat- oder NTFS-Mount in
+  der Regel), bricht der Lauf mit einem Hinweis ab. Doku: Troubleshooting (DE+EN).
 
 ### Removed
 

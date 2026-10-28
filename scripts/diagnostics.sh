@@ -426,15 +426,30 @@ main() {
     archive="${OUT_DIR%/}/adminhelper-diagnostics-${ts}.tar.gz"
     # Write to a hidden temp file in the output dir, then rename: a file already under
     # the name is replaced instead of written into with its mode and owner, and a
-    # failed run leaves no half-written bundle under the name. The one open of the temp
-    # file creates it: exclusively (dd conv=excl, O_CREAT|O_EXCL), so anything already
-    # under its name, a link included, fails the run and is neither written nor
-    # followed, and 0600 (umask 077, here as well, so the mode does not rest on main).
-    # tar writes to the pipe and opens no path; dd without count keeps every short
-    # read, and pipefail fails the run on a failing tar. -T: a directory under the
-    # name fails the rename instead of taking the bundle in.
-    partial="$(mktemp -u -- "${OUT_DIR%/}/.adminhelper-diagnostics-${ts}.XXXXXX")"
-    ( umask 077; tar -czf - -C "$stage" . | dd of="$partial" conv=excl bs=64K status=none )
+    # failed run leaves no half-written bundle under the name. As in backup.sh, tar
+    # writes only into the file mktemp created (0600 whatever the umask or a default
+    # ACL): it lies in the output dir itself, its name is opened for reading only (no
+    # O_CREAT, so nothing new appears through a link put there in between) and that
+    # same open file again for appending, and the open descriptor is checked before the
+    # first byte (a regular file of ours, 0600, one link, still empty, the same inode as
+    # the name without following a link); anything else stops the run. pipefail is not
+    # needed: tar writes to the descriptor itself. -T: a directory under the name fails
+    # the rename instead of taking the bundle in.
+    partial="$(mktemp -- "${OUT_DIR%/}/.adminhelper-diagnostics-${ts}.XXXXXX")"
+    bundle_fd_ok() {
+        [ "${partial%/*}" = "${OUT_DIR%/}" ] && [ -f "$partial" ] && [ ! -L "$partial" ] || return 1
+        exec 4<"$partial" || return 1
+        exec 3>>/dev/fd/4 || return 1
+        [ "$(stat -L -c '%u %a %h %s' /dev/fd/3)" = "$(id -u) 600 1 0" ] \
+            && [ "$(stat -L -c '%d %i' /dev/fd/3)" = "$(stat -c '%d %i' -- "$partial")" ]
+    }
+    bundle_fd_ok || {
+        echo "[diagnostics] ERROR: $partial is not a file of its own that only you can read (owner, mode 600, one link, empty) — no bundle written." >&2
+        echo "[diagnostics] A target that does not keep Unix owner and mode (as a CIFS, vfat or NTFS mount often does not) cannot hold the bundle safely: write it to a local directory and copy it from there." >&2
+        exit 1
+    }
+    tar -czf - -C "$stage" . >&3
+    exec 3>&- 4<&-
     mv -fT -- "$partial" "$archive"
     partial=""
 
