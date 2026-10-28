@@ -42,8 +42,10 @@ Für alle Tasks:
   ca-issuer-lifetime, ca-rotation, compose-hardening, install-restore, ops-scripts-hardening, smtp-hardening
   (`betrieb.html`, `operations.html`); alle `CHANGELOG.md`. Vor jedem Push origin/main hineinmergen.
 
-### T1 — Stores: Stale-Guard je Mutationsweg pinnen (R-0724)  [ ]
+### T1 — Stores: Stale-Guard je Mutationsweg pinnen (R-0724)  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/refreshGuard.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @13e9a05c 2026-10-28T15:47:51+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T1.verdict.json)
 Änderung: Neue Testdatei (SPDX wie `reset.test.ts`), `vi.mock` für `$lib/api/users` (`list`, `create`, `update`, `remove`), `$lib/api/hooks` (`list`, `create`, `update`, `remove`, `toggle`), `$lib/api/apikeys` (`list`, `create`, `remove`); `deferred()` wie `apps/web/src/lib/stores/reset.test.ts:26-30`; vor jedem Test `reset()` der drei Stores und `vi.clearAllMocks()` (die Stores sind Modul-Singletons). `describe.each` über die neun Mutationen (`users.create/update/remove`, `hooks.create/update/remove/toggle`, `apikeys.create/remove`), je mit Ausgangsliste, Aufruf und erwarteter Liste: (a) ein `refresh()`, dessen `list()` vor der Mutation startet und nach ihr mit der alten Liste ankommt, überschreibt das Ergebnis der Mutation nicht; (b) lehnt die API die Mutation ab, setzt ein laufendes `refresh()` seine Liste weiter (heute erhöht die Mutation die Generation erst nach dem `await`, `apps/web/src/lib/stores/users.ts:31-36`). Je Store: (c) zwei `refresh()`, das ältere kommt zuletzt an → der Store hält die Liste des neueren. Kein Produktionscode ändert sich; die Datei ist auf HEAD grün (Summary-Zeile in den Commit-Body).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/refreshGuard.test.ts
 Doku: keine (nur Tests)
