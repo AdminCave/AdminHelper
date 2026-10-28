@@ -343,6 +343,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Ein gespeicherter Visitor-Port ausserhalb 1-65535 wird beim Aendern ersetzt (R-0570):** Ein `PUT
+  /api/frp/tunnels/{id}` ohne `visitor_port` gibt einem STCP-Tunnel mit einem solchen Altwert einen freien Port; die
+  automatisch angelegte Verbindung zeigt auf diesen statt auf einen Port, an dem nie ein Visitor lauscht. Doku:
+  FRP-Tunnel und API-Referenz fuer Entwickler (DE+EN).
 - **FRP: Ein gespeicherter lokaler Port ausserhalb 1-65535 kostet nicht mehr alle Tunnel des Hosts (R-0560):** Der
   Server laesst einen solchen Tunnel aus der frpc-Konfiguration des Agents weg und schreibt eine Warnung ins
   Server-Log; vorher lehnte frpc die ganze Konfiguration ab. Doku: FRP-Tunnel (DE+EN).

@@ -6,6 +6,8 @@
 STCP secret autogeneration, and the duplicate-name conflict — none of which had a test, so a
 regression removing the conflict check would only surface as frps misbehaviour in production (6.74)."""
 
+import pytest
+
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -374,3 +376,77 @@ def test_a_lost_race_on_update_with_an_auto_connection_is_409(
     db_session.expire_all()
     assert db_session.get(FrpTunnel, "t-b").visitor_port == 6001
     assert db_session.query(Connection).filter(Connection.name.like("% (via FRP)")).count() == 0
+
+
+# R-0570: a visitor port outside 1-65535 stored before R-0533 stayed on a PUT without
+# visitor_port, and the auto-connection was created for it (127.0.0.1:70000), a port no
+# visitor ever binds. It is replaced like a stored port another tunnel took meanwhile.
+def _seed_legacy_port(db, port: int) -> None:
+    _seed(db)
+    db.add(
+        FrpTunnel(
+            id="t-old",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="old-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="old-secret",
+            visitor_port=port,
+            enabled=True,
+        )
+    )
+    db.commit()
+
+
+def _assigned_port(r) -> int:
+    from app.core.config import VISITOR_PORT_END, VISITOR_PORT_START
+
+    port = r.json()["visitorPort"]
+    assert VISITOR_PORT_START <= port <= VISITOR_PORT_END and port != 6000, r.text
+    return port
+
+
+def _auto_connection(db, tunnel_id: str) -> Connection:
+    db.expire_all()
+    tunnel = db.get(FrpTunnel, tunnel_id)
+    assert tunnel.connection_id is not None
+    return db.get(Connection, tunnel.connection_id)
+
+
+@pytest.mark.parametrize("legacy", [70000, -1])
+def test_a_stored_port_outside_the_range_is_replaced_for_the_auto_connection(
+    test_client, db_session, admin_user, legacy
+):
+    _seed_legacy_port(db_session, legacy)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-old", json={"auto_create_connection": True}, headers=h)
+    assert r.status_code == 200, r.text
+    port = _assigned_port(r)
+    conn = _auto_connection(db_session, "t-old")
+    assert (conn.host, conn.port) == ("127.0.0.1", port)
+
+
+def test_a_stored_port_outside_the_range_is_replaced_on_any_update(
+    test_client, db_session, admin_user
+):
+    _seed_legacy_port(db_session, 70000)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-old", json={"name": "old-renamed"}, headers=h)
+    assert r.status_code == 200, r.text
+    port = _assigned_port(r)
+    db_session.expire_all()
+    assert db_session.get(FrpTunnel, "t-old").visitor_port == port
+
+
+def test_a_stored_port_in_the_range_stays_for_the_auto_connection(
+    test_client, db_session, admin_user
+):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-a", json={"auto_create_connection": True}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["visitorPort"] == 6000
+    conn = _auto_connection(db_session, "t-a")
+    assert (conn.host, conn.port) == ("127.0.0.1", 6000)

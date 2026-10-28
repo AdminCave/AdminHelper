@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Fixes: Intervall-Hooks, SSE-Verbindung, Hook-Beschreibung, Monitoring-Proxy, Tunnel-Anlage und -Ports, Passwort in Test-Ausgaben — Task-Ledger
-Status: aktiv · Branch: feature/server-fixes · Review: pro Task
+Status: bereit · Branch: feature/server-fixes · Review: pro Task
 Spec: docs/features/server-fixes.md (Roadmap R-0591, R-0617, R-0651, R-0618, R-0655, R-0656, R-0560, R-0570)
 Heavy: linux-full — Server-API-Verhalten im Stack: Mount der SSE-Route (Schritt `sse-push`), Monitoring-Proxy, `POST`/`PUT /api/frp/tunnels` und der frpc-Generator für gespeicherte Altwerte; läuft im Sammellauf. Kein `scenario`: für jeden Tunnel mit `local_port` und `visitor_port` von 1 bis 65535 bleiben frpc- und Visitor-TOML byte-gleich, OpenAPI bleibt unverändert, kein Gateway-, PKI-, Compose- oder Install-Pfad. Kein `windows`: kein Agent- und kein Desktop-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -135,8 +135,10 @@ Orakel: contract — kein `localPort` außerhalb 1–65535 in einer frpc-Konfigu
 HEAD: b1432223
 Semantik: Vorbild `docs/admin/frp-tunnel.html:105` — „Ein schon gespeicherter Visitor-Port außerhalb 1–65535 und ein STCP-Tunnel ohne Visitor-Port bleiben in der Datenbank; der Server lässt den Visitor eines solchen Tunnels aus der Visitor-Konfiguration weg und schreibt dazu eine Warnung ins Server-Log, auf dem Agent bleibt der Tunnel bestehen.“
 
-### T9 — Tunnel ändern: ein gespeicherter Visitor-Port außerhalb 1–65535 wird ersetzt, die automatische Verbindung bekommt den neuen (R-0570)  [ ]
+### T9 — Tunnel ändern: ein gespeicherter Visitor-Port außerhalb 1–65535 wird ersetzt, die automatische Verbindung bekommt den neuen (R-0570)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_tunnels.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0eb986e0 2026-10-28T19:17:51+01:00
+Review: approve (.ah-out/review/server-fixes/T9.verdict.json)
 Änderung: In `update_tunnel`, STCP-Zweig (`tunnel_router.py:214-228`): ist `"visitor_port"` nicht gesendet und der gespeicherte Port kein Port von 1 bis 65535 (`PORT_MIN`/`PORT_MAX`, `schemas.py:143-144`), wird er wie ein leerer behandelt (`None`), sodass `:225-226` einen freien vergibt — dieselbe Regel wie für einen inzwischen belegten Port (`:217-224`); den Kommentar dort ergänzen. Ein gesendeter Port bleibt Sache des Schemas (422). `create_auto_connection` (`apps/server/app/modules/frp/_helpers.py:31-59`) bleibt. Tests in `test_frp_tunnels.py` (`_login`, `_seed`, `:13-44`; Altzeilen direkt per `db_session.add(FrpTunnel(...))`, am Schema vorbei): (a) STCP-Tunnel mit `visitor_port=70000` ohne Verbindung, `PUT {"auto_create_connection": true}` → 200, `visitorPort` im Bereich `VISITOR_PORT_START`–`VISITOR_PORT_END` (`apps/server/app/core/config.py:84-85`) und ungleich 6000 (`t-a`), die neue Verbindung hat `host` `127.0.0.1` und genau diesen `port`; (b) dasselbe mit `-1`; (c) `PUT {"name": "…"}` ohne `auto_create_connection` auf einer Altzeile mit `70000` → Port ersetzt; (d) Gegenstück: `t-a` mit 6000, `PUT {"auto_create_connection": true}` → `visitorPort` bleibt 6000, die Verbindung hat Port 6000. Zuerst rot: (a), (b), (c) auf HEAD (Verbindung bzw. Tunnel mit `70000`/`-1`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_openapi_snapshot.py
 Doku: docs/admin/frp-tunnel.html:105 + docs/en/admin/frp-tunnel.html:105 (gespeicherte Altwerte bleiben, bis der Tunnel das nächste Mal geändert wird; eine Änderung ohne Visitor-Port gibt einem solchen STCP-Tunnel einen freien Port, auch für die automatisch angelegte Verbindung) · docs/developer/api-reference.html:143 + docs/en/developer/api-reference.html:143 („vergibt einen freien Port, wenn der gespeicherte inzwischen belegt ist“ → „… belegt ist oder außerhalb 1 bis 65535 liegt“) · CHANGELOG.md (Fixed, umlautfrei)

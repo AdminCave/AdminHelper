@@ -285,10 +285,15 @@ def update_tunnel(
         if (
             tunnel.visitor_port
             and "visitor_port" not in sent
-            and _port_taken(db, tunnel.visitor_port, tunnel_id)
+            and (
+                not PORT_MIN <= tunnel.visitor_port <= PORT_MAX
+                or _port_taken(db, tunnel.visitor_port, tunnel_id)
+            )
         ):
             # A stored port another stcp tunnel took meanwhile (rows from before https
-            # cleared it) is replaced; only a port the client sends is a 409.
+            # cleared it) is replaced, and so is one outside 1-65535 stored before R-0533:
+            # the auto-connection would point at it, and no visitor ever binds it. Only a
+            # port the client sends is a 409 (or a 422 from the schema).
             tunnel.visitor_port = None
         if not tunnel.visitor_port:
             tunnel.visitor_port = next_visitor_port(db, exclude_tunnel_id=tunnel_id)
