@@ -137,6 +137,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   mit `422` ab), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
   wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
   der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
+- **Agent: nur die Einrichtung schaltet `adminhelper-agent.timer` ein (R-0641):** Ein Agent-Lauf schaltet den Timer
+  nicht mehr ein. Bisher tat das der FRP-Abgleich bei jedem Einschalten von frpc, auch im Dauerbetrieb `run` ohne
+  `--once`, der dann neben dem Timer lief. Den Timer schalten jetzt `provision`, `monitor init` und `service install`
+  ein, mit einem Deckel von 30 s; `provision` immer, am Ende, auch ohne Monitor und ohne Tunnel (bisher nur mit
+  Monitor oder wenn es frpc einschaltete). Scheitert das, melden `provision` und `monitor init` es und gelingen
+  trotzdem. Doku: Agent fuer Entwickler (DE+EN).
+- **Agent: `provision --ca-fp` prueft auch den Hostnamen (R-0639):** Nennt das Zertifikat des Gateways den Host aus
+  `--url` nicht, bricht `provision --ca-fp` jetzt ab, bevor der Einmal-Token den Host verlaesst; die Meldung nennt den
+  Host und die Namen des Zertifikats. Bisher nahm der Erstkontakt das Zertifikat an, loeste den Token ein und meldete
+  „OK: Provisioning abgeschlossen.“, danach scheiterte jeder Lauf an der Hostnamen-Pruefung. Das betrifft auch Befehle
+  aus dem Provisionierungs-Tab eines Desktops, der ueber eine IP-Adresse verbunden ist, die das Zertifikat nicht nennt
+  (eine IP-Adresse nennt es nur, wenn sie beim Ausstellen in `EXTRA_SANS` des Servers stand). Doku: Agent-Deployment
+  (DE+EN).
 - **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
   Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
   Server eine Warnung mit dem Fehlertyp, ohne Fehlertext und ohne Traceback, wie die uebrigen Startpruefungen der
@@ -371,6 +384,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: jeder Lauf hat ein Budget von 240 s mit Reserve fuer den Monitor-Push:** Erneuerung und FRP-Abgleich
+  haben je hoechstens 60 s, die Erhebung des Reports endet 45 s vor dem Ende des Laufs, der Push hat diese 45 s. Ein
+  haengendes `systemctl`, ein haengender Sync oder ein langsames Werkzeug kostet damit seine Phase statt des Reports;
+  bisher konnten die Einzeldeckel zusammen ueber 500 s dauern, waehrend systemd den Lauf nach 270 s beendet. Das
+  Ende eines Laufs reicht bis in die Sperre, die Erneuerung, den Sync und jeden Werkzeug-Aufruf. Doku: Agent fuer
+  Entwickler (DE+EN).
 - **Monitoring: ein waehrend des manuellen Laufs geloeschter Check antwortet 404:** `POST /checks/{id}/run` auf einen
   Check, der waehrend des Laufs geloescht wird, antwortet 404 „Check not found“ statt 500; das Ergebnis des Laufs
   wird wie bisher verworfen.
@@ -440,6 +459,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sobald die Haelfte der Laufzeit um ist), statt `frpc rotate`, 30 Tagen Restlaufzeit und CRL. Ein Test im Agent
   prueft jeden Aufruf in der Doku, der `adminhelper-agent` als eigenes Wort nennt, gegen die CLI;
   Aufrufe ueber die `.exe` oder einen Pfad liest er nicht. Doku: Troubleshooting (DE+EN).
+- **Agent: `agent.log` auch als Windows-Dienst (R-0619):** Der Agent schreibt jede Log-Zeile nach stdout und in die
+  rotierende Datei `agent.log`. Bisher brach die Ausgabe ab, sobald stdout scheiterte, bevor die Datei die Zeile
+  bekam; ein Windows-Dienst hat kein schreibbares stdout, und `agent.log` unter `%ProgramData%\AdminHelper\logs`
+  blieb so leer. Jetzt bekommt jedes Ziel jede Zeile, auch wenn das andere scheitert; ein nicht schreibbares
+  Log-Verzeichnis haelt die Ausgabe nach stdout weiter nicht auf.
+- **Agent: Ctrl-C, SIGTERM und Dienst-Stopp brechen einen laufenden Durchlauf ab (R-0640):** Im Dauerbetrieb
+  (`run` ohne `--once`) wirkte SIGINT/SIGTERM erst, wenn der laufende Durchlauf (Erneuerung, FRP-Sync, Monitor-Push)
+  von selbst fertig war. Der Windows-Dienst endete beim Stopp dagegen sofort, auch mitten in einem Durchlauf. Jetzt
+  erreichen das Signal und Stop/Shutdown des Dienstes den laufenden Durchlauf und brechen ihn ab; der Agent endet,
+  sobald der Durchlauf zurueck ist, hoechstens nach 10 s, und der Dienst meldet bis dahin `StopPending`. Ein zweites
+  Ctrl-C beendet den Dauerbetrieb sofort.
+- **Agent: Provisionierung und Agent-Lauf aendern frpc nicht mehr gleichzeitig (R-0641):** `frpc.toml`, die
+  Hash-Dateien, `admin.conf`, `adminhelper.conf` und den frpc-Dienst aendern Provisionierung und FRP-Abgleich jetzt
+  nur unter der Sperre `/etc/frp/frpc.lock` (Windows `%ProgramData%\AdminHelper\frp\frpc.lock`); bisher konnten ein
+  Timer-Lauf und eine Provisionierung dieselben Dateien zugleich schreiben. Ein zweiter Aufruf wartet hoechstens
+  60 s, ein Lauf zudem nur, bis er endet, und bricht dann mit einem Fehler ab, der die Sperrdatei nennt; ein Lauf
+  ohne Aenderung sperrt nichts. Doku: Agent fuer Entwickler (DE+EN).
 - **Server: ein einzelnes Surrogat in einem Request-Body ergibt `422` wie ein NUL-Byte:** Ein einzelnes Surrogat
   (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben) in irgendeinem String eines Request-Bodies, als Wert oder
   Schluessel und beliebig tief, ergibt `422` an seiner Stelle; nichts wird gespeichert. Bisher endeten solche Eingaben

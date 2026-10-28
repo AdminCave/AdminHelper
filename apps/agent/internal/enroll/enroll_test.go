@@ -6,6 +6,7 @@ package enroll
 
 import (
 	"bytes"
+	"context"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
@@ -70,7 +71,7 @@ func TestSubmitParsesIssueResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := Submit(srv.Client(), srv.URL, Request{Token: "tok", CSR: "csr-pem"})
+	got, err := Submit(context.Background(), srv.Client(), srv.URL, Request{Token: "tok", CSR: "csr-pem"})
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestSubmitRejectsHTTPError(t *testing.T) {
 		http.Error(w, "bad token", http.StatusForbidden)
 	}))
 	defer srv.Close()
-	if _, err := Submit(srv.Client(), srv.URL, Request{}); err == nil {
+	if _, err := Submit(context.Background(), srv.Client(), srv.URL, Request{}); err == nil {
 		t.Fatal("erwartet Fehler bei HTTP 403")
 	}
 }
@@ -95,7 +96,7 @@ func TestSubmitRejectsIncompleteResponse(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(IssueResponse{Cert: "leaf"})
 	}))
 	defer srv.Close()
-	if _, err := Submit(srv.Client(), srv.URL, Request{}); err == nil {
+	if _, err := Submit(context.Background(), srv.Client(), srv.URL, Request{}); err == nil {
 		t.Fatal("erwartet Fehler bei unvollstaendiger Antwort")
 	}
 }

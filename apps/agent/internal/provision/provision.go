@@ -14,13 +14,15 @@
 //   - with an available monitor service: monitor.Init with the returned key,
 //   - with an FRP config on the server: frpc.Apply with the returned bundle (without an
 //     active tunnel its text has no proxies and frpc stops); without an FRP config
-//     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning).
+//     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning),
+//   - at the end, always: service.EnableTimer (the agent timer, also without monitor and FRP).
 //
 // This way a single command on the target server suffices, regardless of which
 // components (FRP / monitor / server-read only) are configured.
 package provision
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
@@ -39,6 +41,7 @@ import (
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/service"
 )
 
 type frpBundle struct {
@@ -71,12 +74,16 @@ var activatePort = 8444
 // applyWithoutBundle is frpc.ApplyWithoutBundle; tests swap it, the real one runs systemctl.
 var applyWithoutBundle = frpc.ApplyWithoutBundle
 
+// enableTimer is service.EnableTimer; tests swap it, the real one runs systemctl.
+var enableTimer = service.EnableTimer
+
 // Run redeems a provision token against the server endpoint and
 // installs the returned bundles in a platform-appropriate way. A non-empty
 // caFP (SHA-256 of the internal CA, handed over out-of-band via the desktop's
 // provisioning tab) upgrades the first contact from trust-on-first-use to a
 // VERIFIED handshake: the token never leaves the host unless the presented
-// chain proves the pinned CA (httpclient.NewCAFingerprint).
+// chain proves the pinned CA and its leaf names the host of adminHelperURL
+// (httpclient.NewCAFingerprint).
 func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP string) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 	if adminHelperURL == "" || token == "" || serverID == "" {
@@ -204,6 +211,13 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fmt.Println("→ Keine FRP-Tunnel fuer diesen Server konfiguriert — FRP wird uebersprungen.")
 	}
 
+	// 3. The timer runs the agent from now on, whatever the server configured, also without
+	// monitor and tunnel (R-0641). A timer that cannot be enabled leaves the provisioning
+	// standing: the token is spent.
+	if err := enableTimer(); err != nil {
+		fmt.Printf("→ Agent timer not enabled (%v) — enable it by hand; until then no run syncs or pushes.\n", err)
+	}
+
 	fmt.Println("OK: Provisioning abgeschlossen.")
 	return nil
 }
@@ -314,7 +328,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	// renewal that finished first is the identity Replaces names, and one that waits
 	// finds the new certificate fresh, instead of storing a renewal of the line this
 	// request has the issuer revoke.
-	unlock, err := enroll.LockIdentity(dir)
+	unlock, err := enroll.LockIdentity(context.Background(), dir)
 	if err != nil {
 		return err
 	}
@@ -340,7 +354,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 		CSR:      string(csr),
 		Replaces: enroll.LeafFingerprint(dir),
 	}
-	issued, err := enroll.Submit(client, endpoint, req)
+	issued, err := enroll.Submit(context.Background(), client, endpoint, req)
 	if err != nil {
 		return err
 	}
@@ -389,9 +403,14 @@ func activateEndpoint(adminHelperURL string, port int, serverID string) (string,
 func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool, fingerprint *[sha256.Size]byte, enrollPort int) (*activateResponse, []byte, error) {
 	var client *http.Client
 	if fingerprint != nil {
-		// Anchor verify inside the handshake: the provision token below is only
-		// ever sent over a connection that proved the pinned CA (3.45 hardened).
-		client = httpclient.NewCAFingerprint(*fingerprint, 30*time.Second)
+		u, err := url.Parse(adminHelperURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse --url: %w", err)
+		}
+		// Anchor and hostname verify inside the handshake: the provision token below is
+		// only ever sent over a connection that proved the pinned CA (3.45 hardened) and
+		// names the host of --url, which every later call verifies (R-0639).
+		client = httpclient.NewCAFingerprint(*fingerprint, u.Hostname(), 30*time.Second)
 	} else {
 		var err error
 		client, err = httpclient.New(cacert, insecure, 30*time.Second)

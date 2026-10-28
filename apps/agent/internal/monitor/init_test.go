@@ -46,24 +46,13 @@ func TestFetchServerCertPEMUnreachable(t *testing.T) {
 	}
 }
 
-// initTrustEnv points Init at an empty monitor dir, stubs the report collectors, shortens
-// the push backoff and puts timer in place of the service activation (systemctl on Linux).
-func initTrustEnv(t *testing.T, timer func() error) {
+// initTrustEnv points Init at an empty monitor dir, stubs the report collectors and shortens
+// the push backoff.
+func initTrustEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	stubReportHost(t)
 	shortenRetryDelay(t)
-	orig := enableTimer
-	enableTimer = timer
-	t.Cleanup(func() { enableTimer = orig })
-}
-
-// timerMustNotRun is the service activation of an Init call that has to stop earlier.
-func timerMustNotRun(t *testing.T) func() error {
-	return func() error {
-		t.Error("Init activated the monitor service, want it to stop before")
-		return nil
-	}
 }
 
 // assertNothingStored fails for a monitor.conf or ca.crt that a refused Init left behind.
@@ -77,7 +66,7 @@ func assertNothingStored(t *testing.T) {
 }
 
 func TestMonitorInitTrustRefusesCACertWithInsecure(t *testing.T) {
-	initTrustEnv(t, timerMustNotRun(t))
+	initTrustEnv(t)
 	cacert := filepath.Join(t.TempDir(), "ca.pem")
 	if err := os.WriteFile(cacert, []byte("-----BEGIN CERTIFICATE-----\nY2E=\n-----END CERTIFICATE-----\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -92,7 +81,7 @@ func TestMonitorInitTrustRefusesCACertWithInsecure(t *testing.T) {
 }
 
 func TestMonitorInitTrustBlindInsecureWithoutACertificateFails(t *testing.T) {
-	initTrustEnv(t, timerMustNotRun(t))
+	initTrustEnv(t)
 
 	// A closed port: there is no certificate to pin.
 	err := Init(InitParams{URL: "https://127.0.0.1:1", APIKey: "key", ServerID: "srv-1",
@@ -113,8 +102,7 @@ func TestMonitorInitTrustBlindInsecurePinsThePresentedCertificate(t *testing.T) 
 		}
 	}))
 	defer srv.Close()
-	var enabled int
-	initTrustEnv(t, func() error { enabled++; return nil })
+	initTrustEnv(t)
 
 	if err := Init(InitParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1",
 		TLS: config.TLSOpts{Insecure: true}}); err != nil {
@@ -139,8 +127,5 @@ func TestMonitorInitTrustBlindInsecurePinsThePresentedCertificate(t *testing.T) 
 	}
 	if n := pushes.Load(); n == 0 {
 		t.Error("no test push reached the server, want one verified against the pin")
-	}
-	if enabled != 1 {
-		t.Errorf("monitor service activated %d times, want 1", enabled)
 	}
 }
