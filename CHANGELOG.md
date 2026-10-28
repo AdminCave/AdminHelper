@@ -128,8 +128,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Servers nur an, wenn jede Zeile die Form des Generators hat: leer, `[transport.tls]`, `[[proxies]]` oder
   `schluessel = wert` mit einem einzeiligen Wert. In der Wurzel nimmt er nur die Schluessel, die der Server schreibt,
   in einem Proxy keinen Schluessel, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben
-  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels speichert der
-  Server weiter), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
+  (Proxy-Plugins richtet der Server nicht ein; einen solchen `extra_config`-Schluessel eines Tunnels lehnt der Server
+  mit `422` ab), kein Schluessel steht in einer Tabelle zweimal, und der Text enthaelt kein `{{`. Einen anderen Text
   wendet er nicht an: Er meldet einen Fehler mit Zeile und Schluessel (nie den Wert), schreibt und startet nichts, und
   der naechste Lauf versucht es erneut. Doku: Agent-Entwicklerseite und API-Referenz (DE+EN).
 - **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
@@ -168,6 +168,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
   Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
   Entwickler (DE+EN).
+- **Server: das `extra_config` eines FRP-Tunnels nimmt keinen Schluessel der plugin-Familie an:** Ein Schluessel im
+  `extra_config` eines FRP-Tunnels, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben (etwa
+  `plugin.type` oder `PLUGIN.type`), ergibt bei `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` jetzt `422`;
+  bisher speicherte der Server ihn. Proxy-Plugins richtet der Server nicht ein, und der Agent wendet eine frpc.toml
+  mit einem solchen Schluessel nicht an. Gespeicherte Eintraege bleiben, wie sie sind. Doku: API-Referenz (DE+EN).
+- **Server: ein gespeicherter FRP-Tunnel, dessen `extra_config` die API heute ablehnt, fehlt in der frpc.toml seines
+  Hosts:** Ein Tunnel, dessen gespeichertes `extra_config` einen Schluessel der plugin-Familie oder einen anderen
+  Eintrag traegt, den die API heute ablehnt (oder kein JSON-Objekt ist), steht nicht mehr in der frpc.toml seines
+  Hosts; der Server schreibt dazu eine WARNING mit Tunnelname und den betroffenen Schluesseln (nie den Werten) ins
+  Log. Eine solche Zeile ergaebe sonst eine frpc.toml, die fuer den ganzen Host nicht gilt; die uebrigen Tunnel des
+  Hosts bleiben. `GET /api/frp/generate/frpc-toml/{server_id}` antwortet `404`, wenn kein anderer Tunnel bleibt, und
+  das Bulk-ZIP enthaelt dann keine `frpc.toml` fuer den Host. Die Zeile in der Datenbank bleibt, wie sie ist. Doku:
+  API-Referenz, Server-Entwicklerseite (DE+EN).
 - **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
   und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
   `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
@@ -306,6 +319,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und Bootstrap bekommen den Refresh-Token nur noch als HttpOnly-Cookie; `refresh_token` im JSON ist dann leer (`""`),
   das Schema bleibt gleich. Desktop, CLI und Skripte bekommen ihn unveraendert im JSON. Doku: API-Referenz und Server
   fuer Entwickler (DE+EN).
+- **Server liest `MTLS_ENFORCE` wie das Gateway:** `true`, `1`, `yes` und `on` erzwingen, `false`, `0`, `no` und `off`
+  schalten permissiv (Gross-/Kleinschreibung egal), ungesetzt oder leer gilt der Default (erzwungen); jeder andere
+  Wert erzwingt die Scope-Pruefung je Route ebenfalls und loggt eine Warnung. Bisher lief der Server bei `on`, einem
+  leeren oder einem unbekannten Wert still permissiv, waehrend das Gateway am Handshake ein Zertifikat verlangte. Wer
+  `MTLS_ENFORCE=on` gesetzt hat, bekommt fuer Zertifikate mit falschem Scope jetzt 403 statt nur einer Log-Zeile. Ein
+  Test haelt die Tabelle des Servers und die des Gateways gleich. Doku: Betrieb (DE+EN), `.env.example`.
+- **Server wertet die Zertifikats-Header nur noch aus, wenn die Anfrage direkt vom Gateway kommt:** `X-Client-Verify`
+  und `X-Client-Cert` zaehlen nur, wenn die Gegenstelle eine aktuelle Adresse des Compose-Dienstes `gateway` ist. Von
+  jeder anderen Gegenstelle gilt die Anfrage als ohne Client-Zertifikat, und der Server loggt eine Warnung mit der
+  Adresse (hoechstens einmal je Adresse und Minute). Kommt eine Anfrage mit Zertifikat von einer Adresse, die der
+  Server nicht kennt, loest er den Namen `gateway` sofort neu auf (hoechstens einmal je Sekunde; eine Anfrage wartet
+  darauf hoechstens 1 s), damit ein neu angelegtes Gateway gleich wieder zaehlt. Ohne den Namen `gateway`, also
+  ausserhalb von Compose, gibt es keine Zertifikats-Identitaet. Doku: Entwickler-Handbuch (DE+EN).
 
 ### Removed
 
@@ -499,6 +525,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Server, der den Body troepfeln liess, hielt den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not found
   in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string` keinen
   Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; ohne `search_string` liest
+  er ihn gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den
+  ganzen Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt
+  den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
+  found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
+  keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+- **Server: Steuerzeichen U+0080 bis U+009F in FRP-Feldern und im Servernamen ergeben `422` (R-0786):** Ein
+  Steuerzeichen U+0080 bis U+009F in einem Textfeld eines FRP-Tunnels (auch einem `extra_config`-Wert) oder der
+  FRP-Server-Konfiguration oder im Servernamen ergibt bei `POST` und `PUT` jetzt `422`, wie die uebrigen
+  Steuerzeichen; bisher speicherte der Server es. TOML erlaubt diese Zeichen in einem String, der Agent verweigert
+  aber eine frpc.toml mit einem solchen Zeichen, und der Host bekaeme keine Konfiguration. Gespeicherte Werte bleiben,
+  wie sie sind. Doku: API-Referenz (DE+EN).
 - **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
   galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
   (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
