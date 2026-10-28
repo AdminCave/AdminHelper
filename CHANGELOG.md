@@ -288,6 +288,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: ein waehrend des manuellen Laufs geloeschter Check antwortet 404:** `POST /checks/{id}/run` auf einen
+  Check, der waehrend des Laufs geloescht wird, antwortet 404 „Check not found“ statt 500; das Ergebnis des Laufs
+  wird wie bisher verworfen.
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen

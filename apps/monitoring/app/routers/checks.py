@@ -363,7 +363,10 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     db.rollback()
     execute_check(check_id)
 
-    db.expire_all()
+    # The rollback above expired `check`; a check deleted during the run is gone now.
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if not check:
+        raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
 

@@ -236,7 +236,10 @@ def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, file_engin
     factory = sessionmaker(bind=file_engine)
     _seed(factory)
 
+    ran = []
+
     def deleting_run(cfg):
+        ran.append(cfg)
         with factory() as other:
             other.query(MonitorCheck).filter(MonitorCheck.id == "c1").delete()
             other.commit()
@@ -249,9 +252,13 @@ def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, file_engin
     with caplog.at_level(logging.DEBUG, logger="monitor.engine"):
         ce.execute_check("c1")
 
+    assert len(ran) == 1
     with factory() as db:
         assert db.query(MonitorState).count() == 0
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert "Check c1 was deleted during its run, result dropped" in [
+        r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG
+    ]
     assert submits == []
 
 
@@ -284,3 +291,41 @@ def test_manual_run_holds_no_pooled_connection(monkeypatch, file_engine):
     assert held == [("run", 0), ("write", 0)]
     assert r.json()["id"] == "c1"
     assert r.json()["state"]["status"] == "critical"
+
+
+def test_manual_run_of_a_check_deleted_during_its_run_is_404(monkeypatch, file_engine):
+    from fastapi.testclient import TestClient
+
+    from app.core.auth import require_internal
+    from app.core.database import get_db
+    from app.main import app
+
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory)
+    ran = []
+
+    def deleting_run(cfg):
+        ran.append(cfg)
+        with factory() as other:
+            other.query(MonitorCheck).filter(MonitorCheck.id == "c1").delete()
+            other.commit()
+        return "critical", "msg", None
+
+    _wire_counting(monkeypatch, factory, file_engine, [], run=deleting_run)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    def override_get_db():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, override_get_db)
+    monkeypatch.setitem(app.dependency_overrides, require_internal, lambda: None)
+
+    r = TestClient(app, raise_server_exceptions=False).post("/checks/c1/run")
+
+    assert len(ran) == 1
+    assert r.status_code == 404, r.text
+    assert r.json() == {"detail": "Check not found"}

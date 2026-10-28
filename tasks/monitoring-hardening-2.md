@@ -167,8 +167,10 @@ Metrik: Texte der API ohne Fall in `tests/test_api_error_texts.py`, davon „Met
 Dedup-Key: ref:monitoring:io-nits
 HEAD: 13f340e4
 
-### T12 — Manueller Lauf: ein währenddessen gelöschter Check ergibt 404 statt 500 (R-0799)  [ ]
+### T12 — Manueller Lauf: ein währenddessen gelöschter Check ergibt 404 statt 500 (R-0799)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_execute_check.py, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @47454047 2026-10-28T15:57:32+01:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T12.verdict.json)
 Änderung: `run_check_now` (`app/routers/checks.py:340-368`) liest den Check nach `execute_check(check_id)` (`:364`) neu; fehlt er, `HTTPException(404, "Check not found")` (Text wie `:345`). `db.expire_all()` (`:366`) entfällt: `db.rollback()` (`:363`) hat alle Objekte der Session schon abgelaufen. Tests in `tests/test_execute_check.py`: (a) wie `test_manual_run_holds_no_pooled_connection` (`:258`) mit einem Lauf, der den Check löscht (wie `deleting_run`, `:239-243`) → 404 `{"detail": "Check not found"}`; auf HEAD wirft die Antwort `ObjectDeletedError` (500); (b) `test_a_check_deleted_during_its_run_drops_the_result` (`:235-255`) prüft zusätzlich, dass der Lauf lief, und die DEBUG-Zeile „Check c1 was deleted during its run, result dropped“ (`app/check_engine.py:363`); seine Assertions bleiben. Zuerst rot: (a) auf HEAD.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_execute_check.py tests/test_api_error_texts.py
 Doku: CHANGELOG.md (Fixed, umlautfrei: `POST /checks/{id}/run` auf einen Check, der waehrend des Laufs geloescht wird, antwortet 404 statt 500)
