@@ -171,8 +171,10 @@ Abhängt von: T9
 Beweis: Code-Lesung scripts/diagnostics.sh:104-108
 HEAD: 73bf0d31
 
-### T11 — diagnostics.sh `--mask-hosts`: einteilige Namen nur als ganzes Wort, Namen samt Domain-Kette  [ ]
+### T11 — diagnostics.sh `--mask-hosts`: einteilige Namen nur als ganzes Wort, Namen samt Domain-Kette  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @48440a34 2026-10-28T15:39:27+01:00
+Review: approve (.ah-out/review/ops-scripts-2/T11.verdict.json)
 Änderung: Regel-Bau in `host_rules` (`:124-128`): Ein Name ohne Punkt (etwa `uname -n` = `server`) trifft nur in seiner Schreibweise (ohne `I`), nicht hinter einem Zeichen aus `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-`, nicht hinter `<Wortzeichen>/` und nicht vor einem Zeichen aus `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-`; eine folgende Kette `.label` wird mit ersetzt (`node9.corp.example.org:443` → `<host>:443`). Ein Name mit Punkt trifft weiter ohne Rücksicht auf Groß-/Kleinschreibung (Ränder wie bisher) und ersetzt eine vorangehende Kette `label.` mit (`registry.ah.example.com:5000` → `<host>:5000`). Der Kommentar `:95-99` und der Kopf sagen es. Tests in `diagnostics_test.sh`, Fall (i) erweitert: mit `uname -n` = `server` bleiben `adminhelper-server-1 started`, `image ghcr.io/admincave/adminhelper/server:0.46.0` und `Server started`, `GET http://server:8443/` wird `GET http://<host>:8443/`, `server up` wird `<host> up`; mit `uname -n` = `node9` wird `node9.corp.example.org:443` `<host>:443`; mit `DOMAIN=ah.example.com` wird `registry.ah.example.com:5000` `<host>:5000`. Die bestehenden Erwartungen von (f) und (i) bleiben (`node9hostname up` bleibt, `AH.Example.com` maskiert `ah.example.com`). Zuerst rot: `adminhelper-server-1`, das Image, `Server started`, `node9.corp…` und `registry.ah…` (Probe am Stand 73bf0d31, Spec Problem 8).
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: CHANGELOG.md (den Added-Eintrag `:12-20` anpassen, umlautfrei: ohne Ruecksicht auf Gross-/Kleinschreibung gilt fuer Namen mit Punkt; ein Rechnername ohne Punkt nur in seiner Schreibweise und als ganzes Wort, nicht als Teil eines Dienst- oder Image-Namens)

@@ -27,9 +27,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   IPv6-Adresse mit IPv4-Ende wie `::ffff:192.0.2.1` als eine Adresse; ein Image-Tag aus vier Zahlen wie
   `.../server:1.2.3.4` bleibt stehen) und jeden Namen und jede Adresse aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`,
   `TRUSTED_PROXIES`, `SMTP_HOST` und `SMTP_FROM` (bei `SMTP_FROM` jede Adresse, bei einem Anzeigenamen nur die
-  Adresse in spitzen Klammern, nicht der Name) sowie den Rechnernamen, auch ohne seine Domain, ohne Ruecksicht auf
-  Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
-  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  Adresse in spitzen Klammern, nicht der Name) sowie den Rechnernamen, auch ohne seine Domain, durch `<host>`, in
+  `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Ein Name mit Punkt trifft ohne Ruecksicht auf
+  Gross-/Kleinschreibung und samt der Namen darunter (`registry.ah.example.com` bei `DOMAIN=ah.example.com`); ein
+  Rechnername ohne Punkt nur in seiner Schreibweise und als ganzes Wort, samt einer Domain dahinter, nicht als Teil
+  eines Dienst- oder Image-Namens (`adminhelper-server-1`, `.../server:0.46.0` bleiben stehen). Andere Namen, etwa verwalteter Server oder
   Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
   bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
   und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:

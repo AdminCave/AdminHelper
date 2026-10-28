@@ -22,6 +22,9 @@
 # angle brackets, not the name), and the name of this machine, also without its
 # domain, become <host> —
 # in report.txt, the logs and env.sanitized, which shows those keys as <masked>.
+# A name with a dot matches in any case and takes the names under it along; a
+# machine name without a dot only in its spelling and as a whole word, not as part
+# of a service or image name.
 # Other names, such as those of managed servers or webhook targets, stay.
 # compose.yml stays a copy as it is.
 # ALWAYS skim the bundle before sending — redaction is best-effort, not a
@@ -140,9 +143,16 @@ SED
 # <host>. Of a machine name with a dot its first label counts as well
 # (node9 of node9.example.org): a log may name the machine short. \b on an edge that
 # is a word character (letter, digit, _): a short name must not eat into longer
-# words. The rules ignore case (sed's I), as host names do.
+# words. A name with a dot ignores case (sed's I), as host names do, and takes a
+# chain of labels before it along (registry.ah.example.com). A name without a dot is
+# often a word or a service: it counts only in its spelling and as a whole word, not
+# behind a word character, '.', '-' or a path segment (<word>/), nor before a word
+# character or '-'; a domain behind it goes with it. sed has no look-behind: such an
+# occurrence gets its first letter turned into a newline, which a line never holds,
+# and back after the rule.
 host_rules() {
-    local envfile="$1" key form node
+    local envfile="$1" key form node name first rest
+    local w=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_
     local -a parts
     cat <<'SED'
 s#\(\b\([0-9A-Fa-f]\{1,4\}:\)\{6\}\|\b\([0-9A-Fa-f]\{1,4\}:\)\{1,5\}\(:[0-9A-Fa-f]\{1,4\}\)\{0,4\}:\|\B::\([0-9A-Fa-f]\{1,4\}:\)\{0,5\}\)\(\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\.\)\{3\}\(25[0-5]\|2[0-4][0-9]\|1[0-9][0-9]\|[1-9]\?[0-9]\)\(/[0-9]\{1,3\}\)\?\b#<ip>#g
@@ -172,14 +182,27 @@ SED
         fi
         node="$(uname -n 2>/dev/null)" || true
         printf '%s\n' "$node"
-        if [[ "$node" == *.* ]]; then
+        if [[ "$node" == *.* && "${node%%.*}" == *[!0123456789]* ]]; then
             printf '%s\n' "${node%%.*}"
         fi
-    } | LC_ALL=C awk '/[0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]/ && !seen[tolower($0)]++ {
-            print length($0) "\t" $0 }' \
+    } | LC_ALL=C awk '/[0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]/ &&
+            !seen[index($0, ".") ? tolower($0) : $0]++ { print length($0) "\t" $0 }' \
       | LC_ALL=C sort -rn | cut -f2- \
-      | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g' -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/' \
-            -e 's|.*|s/&/<host>/gI|'
+      | while IFS= read -r name; do
+            if [[ "$name" == *.* ]]; then
+                printf 's/\\([%s-]\\{1,\\}\\.\\)*%s/<host>/gI\n' "$w" "$(printf '%s' "$name" \
+                    | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g' -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')"
+                continue
+            fi
+            first="$(printf '%s' "${name:0:1}" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
+            rest="$(printf '%s' "${name:1}" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
+            for _ in 1 2; do
+                printf 's/\\([%s.\\n-]\\|[%s\\n]\\/\\)%s\\(%s\\)/\\1\\n\\2/g\n' "$w" "$w" "$first" "$rest"
+                printf 's/%s\\(%s[%s\\n-]\\)/\\n\\1/g\n' "$first" "$rest" "$w"
+            done
+            printf 's/%s%s\\(\\.[%s\\n-]\\{1,\\}\\)*/<host>/g\n' "$first" "$rest" "$w"
+            printf 's/\\n/%s/g\n' "$(printf '%s' "${name:0:1}" | LC_ALL=C sed -e 's/[\\&/]/\\&/g')"
+        done
 }
 
 # env_values <envfile> <key> : every value of <key> in the .env as compose reads it

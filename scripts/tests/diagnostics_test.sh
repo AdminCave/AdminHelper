@@ -30,10 +30,13 @@
 #       angle brackets is masked, and ends with the usage line; an unknown
 #       option still ends with 2;
 #   (i) --mask-hosts, which values become <host> rules and how they match: the
-#       longest first, at word edges, without regard to case; of a display name
-#       ("Name <address>") only the address, and no list part without a letter or
-#       a digit; every part of a value, one in angle brackets and the others, every
-#       mailbox of SMTP_FROM, and the first label of a machine name with a dot;
+#       longest first, at word edges; a name with a dot without regard to case and
+#       with the names under it, one without a dot only in its spelling, as a whole
+#       word (not in a service or image name) and with the domain behind it; of a
+#       display name ("Name <address>") only the address, and no list part without
+#       a letter or a digit; every part of a value, one in angle brackets and the
+#       others, every mailbox of SMTP_FROM, and the first label of a machine name
+#       with a dot unless it is digits only;
 #   (j) SMTP_USER is masked like the passwords, with and without --mask-hosts, in
 #       the logs and in sanitize_env, and only as a whole word;
 #   (k) under the locale C.UTF-8, a key behind a BOM or Unicode whitespace and with
@@ -434,6 +437,63 @@ sed_ia="$tmp/redact-ia.sed"
 )
 same "(i) every part of a host value, every mailbox, the short machine name" "$exp_ia" \
     "$(printf '%s\n' "$log_ia" | redact "$sed_ia")" || fail=1
+# A name without a dot is often a word or the name of a service: it counts only in
+# the spelling of uname -n and as a whole word, not as part of a name joined by '-',
+# '.' or '_' nor as a path segment behind a word (.../server:), and a domain behind it
+# goes with it, also one that holds the name again (server.server.example.org); two
+# names in a row (serverserver) are one word. A name with a dot takes the names under
+# it along. Of a machine name with a dot, a first label of digits only is no rule: it
+# would take that number wherever it stands (192 of 192.0.2.5).
+env_ib="$tmp/.env-edges"
+printf 'DOMAIN=ah.example.com\n' > "$env_ib"
+log_ib="$(cat <<'EOF'
+adminhelper-server-1 started
+image ghcr.io/admincave/adminhelper/server:0.46.0 pulled
+Server started
+GET http://server:8443/
+server up
+server server, xserverserver serverserver server_x restarted server.
+peer server.server.example.org:8443 up
+push to registry.ah.example.com:5000 done
+node9.corp.example.org:443 reachable
+queue 192 items at 10:00:00 on 192.0.2.5
+EOF
+)"
+exp_ib="$(cat <<'EOF'
+adminhelper-server-1 started
+image ghcr.io/admincave/adminhelper/server:0.46.0 pulled
+Server started
+GET http://<host>:8443/
+<host> up
+<host> <host>, xserverserver serverserver server_x restarted <host>.
+peer <host>:8443 up
+push to <host>:5000 done
+node9.corp.example.org:443 reachable
+queue 192 items at 10:00:00 on <ip>
+EOF
+)"
+# The other machine names leave the server lines alone.
+exp_id="$(printf '%s\n' "$log_ib" | sed -e 's/registry\.ah\.example\.com/<host>/' -e 's/192\.0\.2\.5/<ip>/')"
+exp_ic="$(printf '%s\n' "$exp_id" | sed -e 's/^node9\.corp\.example\.org:443/<host>:443/')"
+sed_ib="$tmp/redact-ib.sed"
+sed_ic="$tmp/redact-ic.sed"
+sed_id="$tmp/redact-id.sed"
+(
+    node_i=server
+    # shellcheck disable=SC2317  # called by host_rules of the sourced script
+    uname() { if [ "${1:-}" = -n ]; then echo "$node_i"; else command uname "$@"; fi; }
+    build_redaction_sedfile "$env_ib" "$sed_ib" 1
+    node_i=node9
+    build_redaction_sedfile "$env_ib" "$sed_ic" 1
+    node_i=192.0.2.5
+    build_redaction_sedfile "$env_ib" "$sed_id" 1
+)
+same "(i) a name without a dot as a whole word, in its spelling (uname -n = server)" "$exp_ib" \
+    "$(printf '%s\n' "$log_ib" | redact "$sed_ib")" || fail=1
+same "(i) a name without a dot with the domain behind it (uname -n = node9)" "$exp_ic" \
+    "$(printf '%s\n' "$log_ib" | redact "$sed_ic")" || fail=1
+same "(i) no rule for a first label of digits only (uname -n = 192.0.2.5)" "$exp_id" \
+    "$(printf '%s\n' "$log_ib" | redact "$sed_id")" || fail=1
 
 # --- (j) SMTP_USER: always masked like the passwords, as a whole word ---------------
 # With some mail providers the SMTP user is itself an access token or a key ID, so no
