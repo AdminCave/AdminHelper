@@ -154,8 +154,10 @@ Beweis: origin/feature/monitoring-io@13f340e4 · Code-Lesung an den genannten St
 Dedup-Key: ref:monitoring:io-nits
 HEAD: 13f340e4
 
-### T11 — Test: Fehlertext „Metrics store unavailable“ (R-0799)  [ ]
+### T11 — Test: Fehlertext „Metrics store unavailable“ (R-0799)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_api_error_texts.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2e0da1da 2026-10-28T15:48:06+01:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T11.verdict.json)
 Änderung: Ein Fall für `GET /checks/{id}/metrics`, dessen VictoriaMetrics-Abfrage scheitert (Naht wie `tests/test_checks_metrics.py:159-166`) → 502, `detail` exakt „Metrics store unavailable“; die Datei verspricht „One case per text the API can reach“ (`tests/test_api_error_texts.py:5-8`). Mutations-Stichprobe in einer Kopie im eigenen Scratch-Verzeichnis: der Text in `app/routers/checks.py` (`_series_or_502`, vorher greppen) geändert → der neue Fall rot; Ergebnis und beide Summary-Zeilen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_api_error_texts.py
 Doku: keine (nur Tests)
