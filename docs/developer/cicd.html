@@ -244,7 +244,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           <h2>Verify-Konvention (<code>scripts/dev/verify.sh</code>)</h2>
           <p>Die <code>Verify:</code>-Zeile einer Task ruft eine Komponenten-Suite immer in dieser Form auf:</p>
           <div class="code-header"><span>bash</span></div>
-          <pre><code>bash scripts/dev/verify.sh &lt;komponente&gt; [&lt;komponente&gt; &hellip;] [--strict] [--tree &lt;pfad&gt;] [-- &lt;args&gt;]</code></pre>
+          <pre><code>bash scripts/dev/verify.sh &lt;komponente&gt; [&lt;komponente&gt; &hellip;] [--strict] [--full] [--tree &lt;pfad&gt;] [-- &lt;args&gt;]</code></pre>
           <p>Das Skript sourct <code>.devenv.sh</code> (bzw. <code>$AH_DEVENV</code>), l&ouml;st
           <code>AH_TEST_DB</code> auf, delegiert an <code>run.sh quick --only &lt;komponente&gt; &hellip;</code>
           (also Lint <em>und</em> Unit dieser Komponenten, mehrere in einem Lauf; <code>-- &lt;args&gt;</code> nur
@@ -257,6 +257,17 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           Allowlist: eine Bash-Allow-Regel matcht nie &uuml;ber ein Env-Pr&auml;fix, <code>source .devenv.sh
           &amp;&amp; DATABASE_URL=&hellip; pytest</code> ist also nicht freigebbar. Env-Bedarf l&ouml;st das
           Skript auf, der Aufrufer schreibt Flags.</p>
+          <p>Die volle Ausgabe der Suite landet in <code>.ah-out/logs/verify-&lt;zeit&gt;-&lt;pid&gt;.log</code> (die
+          neuesten 30 bleiben, <code>last-verify.json</code> nennt den Pfad unter <code>log</code>); auf stdout steht der
+          Digest von <code>scripts/dev/log-digest.sh</code>: eine Zeile je Schritt (per <code>--only</code> oder
+          <code>--</code> ausgelassene nur als Zahl), je rotem oder selbst &uuml;bersprungenem Schritt seine
+          Fehlerzeilen und sein Ende mit Zeilennummern, der Schlussblock von <code>run.sh</code> (Summary,
+          <code>strict-failed</code>- und <code>failed</code>-Liste), Exit-Code und Logpfad; ohne Schlussblock am
+          Log-Ende das Ende des Logs. Eingefangene <code>run.sh</code>-Ausgabe eines roten Tests setzt keine Grenzen:
+          je Schritt gilt das schlechteste Ergebnis, Widerspr&uuml;che werden genannt. Keine Schritt-Zeile wird
+          gek&uuml;rzt, nur die Ausz&uuml;ge sind begrenzt. Auf einem Terminal oder mit <code>--full</code> l&auml;uft die volle Ausgabe zus&auml;tzlich mit.
+          <code>bash scripts/dev/log-digest.sh &lt;log&gt; [&lt;exit&gt;]</code> fasst jedes andere
+          <code>run.sh</code>-Log genauso zusammen.</p>
 
           <h2>Beweis-Konvention (Ledger)</h2>
           <p>Eine Task, die einen <em>Fund</em> umsetzt (von Kevin, aus dem Wochenlauf, sp&auml;ter von der
@@ -285,11 +296,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           echten Ledger, in der <code>scripts</code>-Suite und im CI-Job <code>ops-scripts</code>. Den Inhalt pr&uuml;ft
           der Reviewer.</p>
 
-          <h2>Review und Abschluss einer Task</h2>
-          <p>Gepr&uuml;ft wird von Sub-Agenten mit festem Auftrag (<code>.claude/agents/</code>): <code>reviewer</code>
-          je Task und &uuml;ber den Branch, <code>tester</code> vor dem Abschluss eines Vorhabens, <code>security</code>
-          bei einem Risikopfad. Der Reviewer legt sein Urteil als JSON unter
-          <code>.ah-out/review/&lt;slug&gt;/&lt;id&gt;.verdict.json</code> ab. Ohne Modell bleiben drei Pr&uuml;fer:</p>
+          <h2>Review und Abschluss</h2>
+          <p>Die Session baut jede Task selbst; gepr&uuml;ft wird von Sub-Agenten mit festem Auftrag
+          (<code>.claude/agents/</code>, Rollen und Modelle in <code>CLAUDE.md</code> &sect;6): <code>reviewer</code> in
+          der Einsatzart <code>task</code> vor jedem Task-Commit und in der Einsatzart <code>branch</code> vor dem PR
+          &ndash; dann &uuml;ber Code <em>und</em> Tests (Abdeckung je ge&auml;nderter Produktdatei, echte Assertions,
+          Fehlerpfade, h&ouml;chstens drei Gegenproben im Probe-Worktree, ob ein Test ohne den Fix rot wird) &ndash;,
+          <code>security</code> zus&auml;tzlich bei einem Risikopfad. Der Reviewer legt sein Urteil als JSON unter
+          <code>.ah-out/review/&lt;slug&gt;/&lt;id&gt;.verdict.json</code> bzw. <code>branch.verdict.json</code> ab; das
+          Branch-Urteil nennt den gepr&uuml;ften Commit und f&uuml;hrt Code- und Testteil mit Evidenz. Ohne Modell
+          bleiben vier Pr&uuml;fer:</p>
           <table>
             <thead><tr><th>Pr&uuml;fer</th><th>Frage</th><th>Ergebnis</th></tr></thead>
             <tbody>
@@ -305,6 +321,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               Evidenz und Review; ohne Evidenz &bdquo;unverifiziert&ldquo;; Adressen, Hostnamen privater Netze
               (<code>.lan</code>, <code>.local</code>, &hellip;) und VMIDs hinter <code>vm</code>, <code>template</code>,
               &hellip; entfernt</td></tr>
+              <tr><td><code>review.sh final</code></td><td>Darf der Branch in den PR und den Merge? Alle Tasks zu, das
+              Branch-Urteil vorhanden, <code>approve</code> gesamt, f&uuml;r Code und f&uuml;r Tests, je mit Evidenz,
+              eine Abdeckungsliste, h&ouml;chstens drei Gegenproben, kein <code>blocker</code>, und seit dem
+              gepr&uuml;ften Commit auf der eigenen Linie nur reine Ledger-Commits und Merges ohne eigene
+              &Auml;nderungen (<code>CHANGELOG.md</code> ausgenommen)?</td><td>Exit&nbsp;0 mit dem
+              PR-Abschnitt (bereinigt wie <code>pr-body</code>), Exit&nbsp;3 mit jedem Grund</td></tr>
             </tbody>
           </table>
           <p><code>task-close.sh</code> schlie&szlig;t eine Task in zehn Stufen: Eingabe, Handarbeits-Task
@@ -422,7 +444,8 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           wie ein g&uuml;ltiger Wert); ein <code>environment:</code>-Key muss vom Code dieses Dienstes gelesen
           werden (sonst ist er ein &Uuml;berbleibsel oder eine halb gelandete Umbenennung); und jede
           <code>${VAR}</code>-Substitution muss in <code>.env.example</code> stehen und umgekehrt &ndash; ein
-          dokumentierter Stellhebel, den Compose nicht durchreicht, bewirkt beim Setzen nichts. Keine
+          dokumentierter Stellhebel, den Compose nicht durchreicht, bewirkt beim Setzen nichts. Als durchgereicht
+          z&auml;hlt auch die Quelle eines Compose-Secrets (<code>secrets.*.environment</code>). Keine
           Ausnahmeliste: wo eine Regel eine Ausnahme gebraucht h&auml;tte, war die Regel falsch.</p>
 
           <p><strong>Geteilte API-Typen</strong> (<code>sync-from-web.sh --check</code>): die beiden

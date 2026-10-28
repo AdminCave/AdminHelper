@@ -97,9 +97,9 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         return None
-    # Credential-invalidation watermark: reject tokens issued before a password
-    # reset. A token without an `iat` (issued before this claim existed) is also
-    # rejected once a watermark is set.
+    # Credential-invalidation watermark: reject tokens issued before the user was
+    # created or before a password reset. A token without an `iat` (issued before
+    # this claim existed) is also rejected once a watermark is set.
     if user.tokens_valid_after is not None:
         iat = payload.get("iat")
         if iat is None:

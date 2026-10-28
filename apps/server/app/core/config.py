@@ -60,6 +60,32 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+WEB_IDLE_TIMEOUT_DEFAULT_MINUTES = 30
+
+
+def parse_web_idle_timeout(raw: str | None) -> int:
+    """Minutes without user input after which the web panel signs out (0 = off)."""
+    value = (raw or "").strip()
+    if not value:
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    try:
+        minutes = int(value)
+    except ValueError:
+        minutes = -1
+    if minutes < 0:
+        # Fall back instead of refusing to start: a typo in this knob should not take the
+        # whole panel down.
+        logger.warning(
+            "WEB_IDLE_TIMEOUT_MINUTES=%r is not a whole number >= 0, using %d",
+            raw,
+            WEB_IDLE_TIMEOUT_DEFAULT_MINUTES,
+        )
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    return minutes
+
+
+WEB_IDLE_TIMEOUT_MINUTES = parse_web_idle_timeout(os.environ.get("WEB_IDLE_TIMEOUT_MINUTES", ""))
+
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see server/alembic/), no longer by
 # Base.metadata.create_all().
@@ -120,7 +146,8 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 # Ignored if TRUSTED_PROXIES is set.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
 
-# Comma-separated list of IPs/CIDRs of the trusted reverse proxies.
+# Comma-separated list of IPs/CIDRs or host names of the trusted reverse proxies
+# (a name counts with the addresses it resolved to, looked up every 30 s).
 # X-Forwarded-For / X-Real-IP are evaluated ONLY if the direct connection
 # comes from one of these IPs. Recommended over TRUST_PROXY_HEADERS.
 # Example: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
@@ -188,6 +215,10 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Optional path inside the container to a PEM file with the relay's CA (self-signed
+# or company CA). Loaded in addition to the system CAs and used only for SMTP, so
+# certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
+SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
 # Bell-feed retention in days. A daily system job prunes notification rows older

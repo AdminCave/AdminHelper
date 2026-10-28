@@ -66,10 +66,11 @@ pub async fn fetch_tunnels(session: &SessionState) -> Result<Vec<TunnelMapping>,
 /// running frpc listen, empty while none runs; an STCP target resolves only to the local port of
 /// one of them and otherwise stays as it is.
 ///
-/// A mapping of the connection decides first (only admins read mappings); its visitor port is the
-/// server port of a visitor. Without one, a target of `127.0.0.1` or `localhost` at the server port
-/// of a visitor resolves to that visitor: the server's automatic connections name it so. The
-/// allow-list admits every server port once, so the visitor is never ambiguous.
+/// A mapping of the connection decides first (admins read all, other users those of the enabled
+/// tunnels on the servers assigned to them); its visitor port is the server port of a visitor.
+/// Without one, a target of `127.0.0.1` or `localhost` at the server port of a visitor resolves to
+/// that visitor: the server's automatic connections name it so. The allow-list admits every server
+/// port once, so the visitor is never ambiguous.
 pub fn resolve_connection(
     connection: &Connection,
     tunnels: &[TunnelMapping],
@@ -402,8 +403,8 @@ mod tests {
         ]
     }
 
-    /// A connection to `host`:`port` with no tunnel of its own, as a non-admin sees an automatic
-    /// one.
+    /// A connection to `host`:`port` with no tunnel of its own, as an automatic one looks without
+    /// its mapping.
     fn literal(kind: ConnectionKind, host: &str, port: u16) -> Connection {
         Connection {
             kind,
@@ -570,8 +571,9 @@ mod tests {
 
     #[test]
     fn literal_loopback_target_resolves_without_a_mapping() {
-        // A non-admin reads no mappings; the server's automatic connection names the visitor's
-        // server port on loopback. A mapping of another connection changes nothing.
+        // A non-admin reads only the mappings of the servers assigned to them; without one, the
+        // server's automatic connection names the visitor's server port on loopback. A mapping of
+        // another connection changes nothing.
         let other = [tunnel("other", "stcp", "rdp")];
         for tunnels in [&[][..], &other[..]] {
             for (host, port, visitor, local) in [

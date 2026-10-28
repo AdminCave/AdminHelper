@@ -2815,6 +2815,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "idle_timeout_minutes": {
+            "title": "Idle Timeout Minutes",
+            "type": "integer"
+          },
           "is_admin": {
             "title": "Is Admin",
             "type": "boolean"
@@ -2827,7 +2831,8 @@
         "required": [
           "id",
           "username",
-          "is_admin"
+          "is_admin",
+          "idle_timeout_minutes"
         ],
         "title": "UserMe",
         "type": "object"
