@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Store-Fabrik und Stale-Guards, Formular-Payloads, schlanke Serverliste, Kopier-Helfer, toter Code, Audit-Detail — Task-Ledger
-Status: bereit · Branch: feature/web-stores-refactor · Review: pro Task
+Status: erledigt · Branch: feature/web-stores-refactor · Review: pro Task
 Spec: docs/features/web-stores-refactor.md (Roadmap R-0722, R-0723, R-0724, R-0777, R-0779, R-0757)
 Heavy: linux-full — T10 fügt die Server-Route `GET /api/servers/summary` hinzu (apps/server-API, CLAUDE.md §5), und `web-live` (`scripts/tests/web_live.sh`, `apps/web/tests/live/smoke.live.spec.ts:60-66`) öffnet den Benutzerdialog gegen den echten Stack; kein `scenario` (kein FRP-, PKI-, Install- oder Cross-Host-Pfad), kein `windows` (kein Desktop- oder Agent-Code). Entscheidet Kevin bei Frage 1 gegen T10 (Variante a oder d), setzt die Session `Heavy: none`: alles Übrige ist Web-Code, die Web-E2E mockt die API
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
