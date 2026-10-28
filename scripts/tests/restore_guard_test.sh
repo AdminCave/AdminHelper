@@ -37,6 +37,12 @@
 # continuation lines of a quoted value over several lines, to the end of the file
 # if it never closes; a quote after an even number of backslashes closes the
 # value, as compose reads it.
+# 20: backup.sh writes the archive only into the temp file it created: a link to a
+# file, an own file or a FIFO under the temp name, a temp file another tool made 0644
+# (a mount without Unix mode) or one with a second hard link fails the backup with
+# the hint to back up locally, leaves the other file as it was and no archive; so
+# does a temp name swapped for a link after the open (a stat wrapper does the swap).
+# 21: the archive is 0600 in an output dir with a default ACL.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
@@ -191,8 +197,9 @@ out=$(pg_restore_run "$WORK/pg/b" adminhelper_monitor); rc=$?
 # --- 10./11. backup.sh: archive 0600 from the first byte, named once complete ──
 # The docker stub plays a running stack: postgres is up, every service tars its
 # data dir (non-empty output), pg_dump writes bytes; any other call fails. The tar
-# wrapper runs the real tar for the archive write (czf <file> -C <dir> .), then
-# logs the mode and the name the file had while tar wrote it; AH_TEST_TAR_FAIL=1
+# wrapper runs the real tar for the archive write (czf <file> -C <dir> ., or czf - into
+# a regular file on stdout), then logs the mode and the name the file had while tar
+# wrote it; AH_TEST_TAR_FAIL=1
 # makes that write fail (exit 2) after the bytes are on disk.
 BACKUP="$REPO_ROOT/scripts/backup.sh"
 mkdir -p "$WORK/bk/bin" "$WORK/bk/run" "$WORK/bk/a" "$WORK/bk/b"
@@ -209,9 +216,16 @@ STUB
 AH_TEST_REAL_TAR=$(command -v tar); export AH_TEST_REAL_TAR
 cat > "$WORK/bk/bin/tar" <<'STUB'
 #!/usr/bin/env bash
-if [ "$#" -eq 5 ] && [ "$1" = czf ] && [ "$2" != - ] && [ "$3" = -C ] && [ "$5" = . ]; then
+if [ "$#" -eq 5 ] && [ "$1" = czf ] && [ "$3" = -C ] && [ "$5" = . ] \
+    && { [ "$2" != - ] || [ -f "/proc/$$/fd/1" ]; }; then
   "$AH_TEST_REAL_TAR" "$@" || exit
-  stat -c '%a %n' "$2" >> "$STUB_DIR/tar.log"
+  # An archive written to stdout (a file descriptor of backup.sh) is logged by the
+  # file behind it, the name included.
+  if [ "$2" = - ]; then
+    printf '%s %s\n' "$(stat -L -c '%a' "/proc/$$/fd/1")" "$(readlink "/proc/$$/fd/1")" >> "$STUB_DIR/tar.log"
+  else
+    stat -c '%a %n' "$2" >> "$STUB_DIR/tar.log"
+  fi
   [ "${AH_TEST_TAR_FAIL:-}" != 1 ] || exit 2
   exit 0
 fi
@@ -441,6 +455,135 @@ else
     && ok "a quote after two backslashes closes the passphrase value, the next lines stay" \
     || bad "even backslashes: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
 fi
+
+# --- 20. backup.sh: tar writes only into the temp file it created ────────────
+# The mktemp stub plays a name that is something else once backup.sh opens it: with
+# AH_TEST_MKTEMP_LINK set, the archive template gets a fresh name with a symlink to
+# that target under it; with AH_TEST_MKTEMP_MODE the real temp file gets that mode (a
+# mount without Unix mode shows its fixed one); with AH_TEST_MKTEMP_HARDLINK it gets a
+# second hard link at that path. Every other call goes to the real mktemp. Each run
+# under timeout 30, so a FIFO that would block the write shows as 124.
+AH_TEST_REAL_MKTEMP=$(command -v mktemp); export AH_TEST_REAL_MKTEMP
+cat > "$WORK/bk/bin/mktemp" <<'STUB'
+#!/usr/bin/env bash
+if [ "$#" -eq 1 ] && [[ "$1" == */.adminhelper-backup-*.XXXXXX ]]; then
+  if [ -n "${AH_TEST_MKTEMP_LINK:-}" ]; then
+    name=$("$AH_TEST_REAL_MKTEMP" -u "$1") || exit
+    ln -s "$AH_TEST_MKTEMP_LINK" "$name" || exit
+    printf '%s\n' "$name"
+    exit 0
+  fi
+  if [ -n "${AH_TEST_MKTEMP_MODE:-}${AH_TEST_MKTEMP_HARDLINK:-}" ]; then
+    name=$("$AH_TEST_REAL_MKTEMP" "$1") || exit
+    [ -z "${AH_TEST_MKTEMP_MODE:-}" ] || chmod "$AH_TEST_MKTEMP_MODE" "$name" || exit
+    [ -z "${AH_TEST_MKTEMP_HARDLINK:-}" ] || ln "$name" "$AH_TEST_MKTEMP_HARDLINK" || exit
+    printf '%s\n' "$name"
+    exit 0
+  fi
+fi
+exec "$AH_TEST_REAL_MKTEMP" "$@"
+STUB
+chmod +x "$WORK/bk/bin/mktemp"
+# bk_tmp_run <stub dir> [VAR=value…] — backup.sh as in bk_run, under timeout 30.
+bk_tmp_run() {
+  local stub="$1"; shift
+  ( cd "$WORK/bk/run" && umask 022 \
+      && env "$@" STUB_DIR="$stub" PATH="$WORK/bk/bin:$PATH" \
+         timeout 30 bash "$BACKUP" --output "$stub/out" </dev/null 2>&1 )
+}
+# bk_link_run <stub dir> <link target> — the temp name a symlink to <link target>.
+bk_link_run() { bk_tmp_run "$1" AH_TEST_MKTEMP_LINK="$2"; }
+
+mkdir -p "$WORK/bk/n" "$WORK/bk/n/elsewhere"
+: > "$WORK/bk/n/elsewhere/foreign"
+out=$(bk_link_run "$WORK/bk/n" "$WORK/bk/n/elsewhere/foreign"); rc=$?
+entries=$(ls -A "$WORK/bk/n/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -f "$WORK/bk/n/elsewhere/foreign" ] && [ ! -s "$WORK/bk/n/elsewhere/foreign" ] \
+    && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a link to another file under the temp name fails the backup, the file stays empty" \
+  || bad "link to another file: rc=$rc size=$(stat -c %s "$WORK/bk/n/elsewhere/foreign" 2>&1) entries=[$entries] out=[$out]"
+
+mkdir -p "$WORK/bk/o" "$WORK/bk/o/elsewhere"
+printf 'own data\n' > "$WORK/bk/o/elsewhere/own"
+cp -p "$WORK/bk/o/elsewhere/own" "$WORK/bk/o/own.before"
+out=$(bk_link_run "$WORK/bk/o" "$WORK/bk/o/elsewhere/own"); rc=$?
+entries=$(ls -A "$WORK/bk/o/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && cmp -s "$WORK/bk/o/own.before" "$WORK/bk/o/elsewhere/own" \
+    && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a link to an own file under the temp name fails the backup, the file stays as it was" \
+  || bad "link to an own file: rc=$rc entries=[$entries] own=[$(cat "$WORK/bk/o/elsewhere/own" | head -c 64 | od -c | head -2)] out=[$out]"
+
+mkdir -p "$WORK/bk/p" "$WORK/bk/p/elsewhere"
+mkfifo "$WORK/bk/p/elsewhere/fifo"
+out=$(bk_link_run "$WORK/bk/p" "$WORK/bk/p/elsewhere/fifo"); rc=$?
+entries=$(ls -A "$WORK/bk/p/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -p "$WORK/bk/p/elsewhere/fifo" ] \
+    && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a link to a FIFO under the temp name fails the backup without blocking" \
+  || bad "link to a FIFO: rc=$rc entries=[$entries] out=[$out]"
+
+# The checks on the open descriptor: a temp file that is not 0600 (as on a CIFS or vfat
+# mount) or that has a second link passes the checks on the name but not those on the
+# descriptor, and the backup stops with the hint to back up locally.
+mkdir -p "$WORK/bk/r"
+out=$(bk_tmp_run "$WORK/bk/r" AH_TEST_MKTEMP_MODE=644); rc=$?
+entries=$(ls -A "$WORK/bk/r/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out" \
+    && grep -q 'back up to a local directory' <<<"$out"; } \
+  && ok "a temp file without mode 600 fails the backup with the hint to back up locally" \
+  || bad "temp file 0644: rc=$rc entries=[$entries] out=[$out]"
+
+mkdir -p "$WORK/bk/s" "$WORK/bk/s/elsewhere"
+out=$(bk_tmp_run "$WORK/bk/s" AH_TEST_MKTEMP_HARDLINK="$WORK/bk/s/elsewhere/second"); rc=$?
+entries=$(ls -A "$WORK/bk/s/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -z "$entries" ] && [ ! -s "$WORK/bk/s/elsewhere/second" ] \
+    && grep -q 'back up to a local directory' <<<"$out"; } \
+  && ok "a temp file with a second hard link fails the backup, the other name stays empty" \
+  || bad "temp file with two links: rc=$rc entries=[$entries] second=$(stat -c %s "$WORK/bk/s/elsewhere/second" 2>&1) out=[$out]"
+
+# A name swapped after the open: the stat wrapper, on the first check of fd 3, moves
+# the temp file out of the output dir and leaves a symlink to it under the temp name.
+# The descriptor still passes owner, mode, links and size; only the comparison of its
+# inode with the name's own (no link followed) sees the swap.
+AH_TEST_REAL_STAT=$(command -v stat); export AH_TEST_REAL_STAT
+cat > "$WORK/bk/bin/stat" <<'STUB'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_STAT_SWAP:-}" ] && [ "$*" = "-L -c %u %a %h %s /dev/fd/3" ] && [ ! -e "$STUB_DIR/swapped" ]; then
+  : > "$STUB_DIR/swapped"
+  name=$(readlink "/proc/$PPID/fd/3") || exit
+  mv -- "$name" "$AH_TEST_STAT_SWAP" && ln -s "$AH_TEST_STAT_SWAP" "$name" || exit
+fi
+exec "$AH_TEST_REAL_STAT" "$@"
+STUB
+chmod +x "$WORK/bk/bin/stat"
+mkdir -p "$WORK/bk/t" "$WORK/bk/t/elsewhere"
+out=$(bk_tmp_run "$WORK/bk/t" AH_TEST_STAT_SWAP="$WORK/bk/t/elsewhere/moved"); rc=$?
+entries=$(ls -A "$WORK/bk/t/out" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -e "$WORK/bk/t/swapped" ] && [ -z "$entries" ] \
+    && [ -f "$WORK/bk/t/elsewhere/moved" ] && [ ! -s "$WORK/bk/t/elsewhere/moved" ] \
+    && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
+  && ok "a temp name swapped for a link after the open fails the backup, nothing is written" \
+  || bad "name swapped after the open: rc=$rc swapped=$([ -e "$WORK/bk/t/swapped" ] && echo y || echo n) entries=[$entries] moved=$(stat -c %s "$WORK/bk/t/elsewhere/moved" 2>&1) out=[$out]"
+
+# --- 21. backup.sh: the archive stays 0600 under a default ACL ──────────────
+# A default ACL on the output dir replaces the umask for new files there; the mode
+# must still come from mktemp. Without setfacl or ACL support the case says so
+# loudly and checks the mode without the ACL.
+mkdir -p "$WORK/bk/q/out"
+acl_note=""
+if ! command -v setfacl >/dev/null 2>&1; then
+  acl_note="setfacl not installed"
+elif ! acl_err=$(setfacl -d -m g::rwx,o::rwx "$WORK/bk/q/out" 2>&1); then
+  acl_note="no ACL on $(df -T "$WORK/bk/q/out" | awk 'NR==2 {print $2}'): $acl_err"
+fi
+[ -z "$acl_note" ] || echo "  NOTE  21 ran WITHOUT a default ACL ($acl_note); only the mode is checked"
+out=$(bk_run "$WORK/bk/q" "$WORK/bk/q/out"); rc=$?
+entries=$(ls -A "$WORK/bk/q/out" 2>/dev/null)
+archive="$WORK/bk/q/out/$entries"
+{ [ $rc -eq 0 ] && [ "$entries" = "$FIXED_NAME" ] && [ "$(stat -c '%a' "$archive")" = 600 ] \
+    && { [ -n "$acl_note" ] || getfacl -p "$WORK/bk/q/out" 2>/dev/null | grep -qx 'default:group::rwx'; }; } \
+  && ok "the archive is 0600 in an output dir with a default ACL" \
+  || bad "default ACL: rc=$rc entries=[$entries] mode=$(stat -c '%a' "$archive" 2>&1) acl_note=[$acl_note] out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"

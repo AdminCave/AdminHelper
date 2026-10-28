@@ -273,7 +273,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Archivnamen schon ein Verzeichnis, bricht das Backup ab, statt das Archiv hineinzulegen; ein Symlink unter dem Namen
   wird durch das Archiv ersetzt, sein Ziel bleibt unberuehrt. Einen neu angelegten Zielordner legt das Skript mit
   0700 an, ein bestehender bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst
-  frei. `scripts/backup.sh --help` zeigt nur die Hilfe. Doku: Betrieb (DE+EN).
+  frei. Das Archiv wird nur in die Zwischendatei geschrieben, die das Skript selbst angelegt hat, und bleibt auch in
+  einem Ordner mit Default-ACL 0600; liegt unter ihrem Namen etwas anderes (etwa ein Link), oder kann das Ziel keinen
+  Unix-Eigentuemer und -Modus halten (wie ein CIFS-, vfat- oder NTFS-Mount in der Regel), bricht das Backup mit einem Hinweis ab: lokal
+  sichern und das Archiv danach kopieren. `scripts/backup.sh --help` zeigt nur die Hilfe. Doku: Betrieb (DE+EN).
 - **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
   der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
   jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`

@@ -167,8 +167,32 @@ ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
 # rename can reach the disk before the data does, and a power loss would then leave
 # the name on an empty or truncated file: sync the file before the rename and the
 # dir (its new entry) after it; only these two, a bare sync flushes every filesystem.
+#
+# tar writes only into the file mktemp created: the name is opened without being
+# created or truncated, and the open descriptor is checked before the first byte (a
+# regular file of ours, 0600, one link, still empty, the same file as the name, which
+# is no link).
+# Anything else under that name (a link to a file or a FIFO elsewhere) aborts the
+# backup instead of taking the archive. The mode comes from mktemp and stays 0600 in a
+# dir with a default ACL; a target without Unix owner and mode fails the check.
 PARTIAL=$(mktemp "$OUT_DIR/.adminhelper-backup-$TS.XXXXXX")
-tar czf "$PARTIAL" -C "$STAGE" .
+archive_fd_ok() {
+    [ -f "$PARTIAL" ] && [ ! -L "$PARTIAL" ] || return 1
+    exec 3>>"$PARTIAL" || return 1
+    # One comparison of the descriptor's inode with the name's own (lstat, no link
+    # followed): a link under the name has an inode of its own, so a name swapped
+    # between two separate tests cannot pass. With one link, the name is the file's
+    # only one.
+    [ "$(stat -L -c '%u %a %h %s' /dev/fd/3)" = "$(id -u) 600 1 0" ] \
+        && [ "$(stat -L -c '%d %i' /dev/fd/3)" = "$(stat -c '%d %i' -- "$PARTIAL")" ]
+}
+archive_fd_ok || {
+    echo "[backup] ERROR: $PARTIAL is not a file of its own that only you can read (owner, mode 600, one link, empty) — backup aborted." >&2
+    echo "[backup] A target that does not keep Unix owner and mode (as a CIFS, vfat or NTFS mount often does not) cannot hold the archive safely: back up to a local directory and copy the archive from there." >&2
+    exit 1
+}
+tar czf - -C "$STAGE" . >&3
+exec 3>&-
 sync -- "$PARTIAL" \
     || { echo "[backup] ERROR: could not flush the archive to disk — backup aborted." >&2; exit 1; }
 mv -fT -- "$PARTIAL" "$ARCHIVE" \

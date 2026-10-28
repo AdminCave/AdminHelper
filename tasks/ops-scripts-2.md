@@ -129,9 +129,11 @@ Abhängt von: T7
 Beweis: Code-Lesung scripts/diagnostics.sh:191, :195, :262
 HEAD: 73bf0d31
 
-### T12 — backup.sh: Archiv nur in die selbst angelegte Zwischendatei schreiben, Modus 0600 auch unter einer Default-ACL  [ ]
+### T12 — backup.sh: Archiv nur in die selbst angelegte Zwischendatei schreiben, Modus 0600 auch unter einer Default-ACL  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3af748c5 2026-10-28T16:11:19+01:00
+Review: approve (.ah-out/review/ops-scripts-2/T12.verdict.json)
 Entscheidung: Kevin 2026-10-28 (AskUserQuestion, Q34): abbrechen mit Hinweis. Scheitert die Pruefung des Deskriptors (etwa auf einem Ziel ohne Unix-Eigentuemer/-Modus wie CIFS, vfat, NTFS), endet der Lauf mit Exit != 0 und einer englischen Meldung, die raet, lokal zu sichern und danach zu kopieren; kein Opt-out.
-Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html
 Änderung: Nachtrag der Session vom 2026-10-23 aus dem Review von T8. `scripts/backup.sh` (Abschnitt nach `ARCHIVE=`, heute `PARTIAL=$(mktemp …)` und `tar czf "$PARTIAL"`): `mktemp` legt die Zwischendatei weiter an (0600, exklusiv); vor dem Öffnen muss der Name eine reguläre Datei und kein Link sein, dann `exec 3>>"$PARTIAL"` (ohne Kürzen). Vor dem ersten Byte prüft das Skript den offenen Deskriptor: Eigentümer von `/dev/fd/3` ist der ausführende Nutzer (`stat -L -c %u` gegen `id -u`), Modus 600, Linkzahl 1, `[ /dev/fd/3 -ef "$PARTIAL" ]` und `[ ! -L "$PARTIAL" ]`; scheitert eine Prüfung, endet das Skript mit Exit ≠ 0 und einer englischen Meldung, schreibt nichts, und der EXIT-Trap räumt auf. Danach `tar czf - -C "$STAGE" . >&3`, fd 3 wird vor `sync`/`mv` geschlossen; `sync`-Kette (T2), `mv -fT` (T1), Trap und Meldungen bleiben. Der Modus der Datei kommt von `mktemp` und bleibt 0600 auch in einem Zielordner mit Default-ACL; ein kurzer Kommentar nennt das neutral. Tests in `restore_guard_test.sh`: der tar-Wrapper der Fälle 10–11, der den Modus des Archivs direkt nach dem Schreiben protokolliert, prüft dieselbe Zusage weiter (0600 vom ersten Byte, Name erst vollständig), nicht schwächer; neuer Fall 20 mit einem `mktemp`-Stub, der unter dem Namen, den er für die Archiv-Vorlage ausgibt, einen Link anlegt: (a) auf eine fremde Datei außerhalb des Zielordners, (b) auf eine eigene Datei außerhalb (Inhalt vorher bekannt), (c) auf ein FIFO außerhalb; jeder Lauf unter `timeout 30` → Exit ≠ 0 und ≠ 124, das Link-Ziel unverändert (leer bzw. bitgleich), im Zielordner kein Archiv und keine Zwischendatei. Fall 21: Zielordner mit Default-ACL (`setfacl -d -m g::rwx`) → das Archiv ist 0600 (Gruppenrechte leer); fehlt `setfacl` oder kann das Dateisystem keine ACL, meldet der Fall das laut (kein stiller Skip) und prüft den Modus ohne ACL, und der Commit-Body nennt, wo der ACL-Fall gelaufen ist. Zuerst rot gegen den Stand von HEAD: 20 (a)/(b) (Exit 0, Archiv im Link-Ziel), 20 (c) (hängt). Die Fälle 1–19 bleiben grün.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: CHANGELOG.md (den Changed-Eintrag des Backup-Archivs ergänzen, umlautfrei, neutral: das Archiv wird nur in die Zwischendatei geschrieben, die das Skript selbst angelegt hat, und bleibt auch in einem Ordner mit Default-ACL 0600; liegt unter ihrem Namen etwas anderes, bricht das Backup ab) · `docs/admin/betrieb.html:92` und `docs/en/admin/operations.html:59` bleiben richtig
@@ -181,3 +183,7 @@ Doku: CHANGELOG.md (den Added-Eintrag `:12-20` anpassen, umlautfrei: ohne Ruecks
 Abhängt von: T10
 Beweis: Code-Lesung scripts/diagnostics.sh:124-128
 HEAD: 73bf0d31
+
+## Entscheidungen
+- 2026-10-28 T12: Betriebsdoku (DE+EN) nennt die Grenze aus Kevins Q34-Antwort (Ziel ohne Unix-Eigentuemer/-Modus bricht ab, lokal sichern und kopieren); Dateien der Task darum um die beiden Seiten erweitert.
+- 2026-10-28 T12: Deskriptor und Name werden in einem Inode-Vergleich geprueft (stat -L auf fd 3 gegen lstat des Namens); Fall 20(f) deckt ihn (ein stat-Wrapper ersetzt den Namen nach dem Oeffnen durch einen Link).
