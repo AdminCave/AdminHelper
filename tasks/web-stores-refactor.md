@@ -198,8 +198,10 @@ Orakel: contract — ein übersetzter Fehlertext für alle Kopier-Knöpfe
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T13 — Kopier-Knöpfe der vier Dialoge pinnen (R-0724)  [ ]
+### T13 — Kopier-Knöpfe der vier Dialoge pinnen (R-0724)  [x]
 Komponente: web · Dateien: apps/web/src/modals/copyButtons.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @d0393d78 2026-10-28T18:08:33+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T13.verdict.json)
 Änderung: Neue Testdatei (SPDX), `describe.each` über `KeyRevealModal` (Wert), `WebhookTokenModal` (Token), `EnrollTokenModal` (Token nach dem Ausstellen, wie `apps/web/src/modals/EnrollTokenModal.test.ts:94-104`) und `FrpConfigPreviewModal` (Inhalt): Klick auf den Kopier-Knopf → `navigator.clipboard.writeText` mit genau dem angezeigten Wert und ein Erfolgs-Toast mit dem heutigen Text („In Zwischenablage kopiert“ bzw. „Token kopiert“). Den Fehlerweg pinnt die Datei noch nicht (er ändert sich in T14). Props je Dialog aus der Komponente lesen; Platzhalter-Werte ohne echtes Token-Format. Kein Produktionscode ändert sich; auf HEAD grün.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/copyButtons.test.ts
 Doku: keine (nur Tests)
