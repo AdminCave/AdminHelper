@@ -64,6 +64,20 @@ class TestBootstrapEndpoint:
         # Token consumed
         assert not BOOTSTRAP_TOKEN_FILE.exists()
 
+    def test_browser_bootstrap_gets_the_refresh_token_only_as_cookie(
+        self, test_client, fresh_token
+    ):
+        res = test_client.post(
+            "/api/auth/bootstrap",
+            json={"token": fresh_token, "username": "first", "password": "abcdefgh"},
+            headers={"Sec-Fetch-Site": "same-origin"},
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["refresh_token"] == ""
+        assert res.json()["access_token"]
+        assert test_client.cookies.get("refresh_token")
+        assert "httponly" in res.headers.get("set-cookie", "").lower()
+
     def test_wrong_token_fails_and_does_not_consume_file(self, test_client, fresh_token):
         res = test_client.post(
             "/api/auth/bootstrap",
