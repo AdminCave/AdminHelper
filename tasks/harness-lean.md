@@ -21,8 +21,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- log_digest_test verify_test task_close_test
 Doku: → T5
 
-### T2 — review.sh final: Abschlussprüfung aus dem Branch-Urteil  [ ]
+### T2 — review.sh final: Abschlussprüfung aus dem Branch-Urteil  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3d5b59e7 2026-10-28T12:36:12+01:00
+Review: am Ende (Branch-Review)
 Änderung: `review.sh final <ledger>` liest `.ah-out/review/<slug>/branch.verdict.json` des Worktrees, verlangt `verdict`, `code.verdict` und `tests.verdict` = `approve`, einen `head`, nach dem nur Merges oder reine Ledger-Commits folgen, und höchstens drei `tests.probes`; keine offene `[ ]`/`[?]`-Task. Exit 0 mit dem PR-Abschnitt (Code, Tests, Gegenproben, Funde), 3 mit den Gründen, 2 Aufruf.
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: → T5
