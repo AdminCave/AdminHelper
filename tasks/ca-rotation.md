@@ -192,3 +192,4 @@ HEAD: 280b3f3a
 
 ## Entscheidungen
 - 2026-10-28 T15: (c) ohne Produktaenderung, der Test bleibt als Pin — mit dem gepinnten cryptography 50.0.1 (wie 49.0.0) wirft verify_directly_issued_by bei unbekanntem Signaturalgorithmus ValueError("Unsupported signature algorithm"), das intermediate_problem schon faengt; ein except UnsupportedAlgorithm waere toter Code (Probe mit getauschter OID, Test (c) ohne Fix gruen).
+- 2026-10-28 T9: echter Lauf per Dispatch (ci.yml --ref feature/ca-rotation, Run 40729828716): integration_stack_test: 87 passed, 0 failed, alle neun Rotationspruefungen ok. Die Gegenprobe ohne `e2e_dc restart gateway` lief nicht als eigener Stack-Lauf (braucht einen Wegwerf-Branch im oeffentlichen Repo); belegt hat sie der Reviewer am Zertifikatsstand: das Gateway-Leaf vor dem Neustart stammt vom ersten Intermediate, dessen CN kein Datum traegt, (b) faellt also.
