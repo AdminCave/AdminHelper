@@ -299,7 +299,8 @@ def update_hook(
 
     if data.name is not None:
         hook.name = data.name
-    if data.description is not None:
+    # A sent null clears the description; only a missing field leaves it as it is.
+    if "description" in data.model_fields_set:
         hook.description = data.description
     if data.script is not None:
         hook.script = data.script

@@ -114,7 +114,7 @@
           <div class="endpoint"><span class="method-get">GET</span><code>/api/hooks</code></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks</code><p>Body: <code>{ name, hook_type: "webhook"|"event"|"schedule", event_triggers?: [...], schedule_interval?, script, enabled }</code>. Bei <code>webhook</code> wird der Token serverseitig generiert (einmalig in der Response).</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/hooks/{id}</code></div>
-          <div class="endpoint"><span class="method-put">PUT</span><code>/api/hooks/{id}</code></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/hooks/{id}</code><p>&Uuml;bernommen werden die gesendeten Felder; <code>"description": null</code> l&ouml;scht die Beschreibung, ein fehlendes Feld l&auml;sst sie unver&auml;ndert.</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/hooks/{id}</code><p>Entfernt automatisch aus dem Scheduler, falls Schedule-Hook.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/toggle</code><p>Enable/Disable; aktualisiert Scheduler-Registrierung.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/rotate</code><p>Webhook-Token erneuern.</p></div>

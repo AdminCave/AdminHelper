@@ -114,7 +114,7 @@
           <div class="endpoint"><span class="method-get">GET</span><code>/api/hooks</code></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks</code><p>Body: <code>{ name, hook_type: "webhook"|"event"|"schedule", event_triggers?: [...], schedule_interval?, script, enabled }</code>. For <code>webhook</code> the token is generated server-side (returned once).</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/hooks/{id}</code></div>
-          <div class="endpoint"><span class="method-put">PUT</span><code>/api/hooks/{id}</code></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/hooks/{id}</code><p>Takes the fields sent; <code>"description": null</code> clears the description, a missing field leaves it as it is.</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/hooks/{id}</code><p>Auto-removes from the scheduler if it was a schedule hook.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/toggle</code><p>Enable/disable; updates scheduler registration.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/rotate</code><p>Rotate webhook token.</p></div>

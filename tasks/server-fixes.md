@@ -58,8 +58,10 @@ Dedup-Key: bug:server:hooks/scheduler.py:reconcile-resets-interval-trigger
 HEAD: b1432223
 Semantik: `docs/developer/server.html:161` — „Trigger-Typen: vordefinierte Intervalle (1m, 5m, 15m, 30m, 1h, 6h, 12h, 24h) oder Cron (5 Felder)“; `:162` — „Der Scheduler-Prozess gleicht die Schedule-Hooks alle 30&nbsp;s aus der DB ab (<code>reconcile_scheduled_hooks()</code> — neu/ge&auml;ndert/gel&ouml;scht) und schreibt <code>next_run</code> zur&uuml;ck.“
 
-### T3 — Hooks: `"description": null` im `PUT` löscht die Beschreibung (R-0651)  [ ]
+### T3 — Hooks: `"description": null` im `PUT` löscht die Beschreibung (R-0651)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/tests/test_hooks.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2de25b32 2026-10-28T18:45:40+01:00
+Review: approve (.ah-out/review/server-fixes/T3.verdict.json)
 Änderung: `update_hook` (`router.py:257-288`): `if "description" in data.model_fields_set: hook.description = data.description` statt `is not None` (`:269-270`), wie `update_server_config` (`apps/server/app/modules/frp/config_router.py:121`). Die übrigen Felder bleiben bei `is not None` (ihre Spalten sind NOT NULL oder `None` heißt dort „unverändert“). Kein Docstring einer Route ändert sich. Tests in `test_hooks.py` neben `test_invalid_update_answers_in_the_promised_format` (`:195-207`), mit `_login` und `WEBHOOK` (`:15-22`): (a) Hook mit `description: "alt"` anlegen, `PUT {"description": null}` → 200, Antwort und `GET /api/hooks/{id}` mit `description` `null`; (b) `PUT {"name": "wh-neu"}` ohne `description` → Beschreibung bleibt `alt`; (c) `PUT {"description": "neu"}` → `neu`. Zuerst rot: (a) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html:117 + docs/en/developer/api-reference.html:117 (ein `<p>` an `PUT /api/hooks/{id}`: übernommen werden die gesendeten Felder; `"description": null` löscht die Beschreibung, ein fehlendes Feld lässt sie unverändert) · CHANGELOG.md (Fixed, umlautfrei: eine geleerte Hook-Beschreibung wird gespeichert; bisher meldete der Dialog „gespeichert“ und zeigte wieder den alten Text)

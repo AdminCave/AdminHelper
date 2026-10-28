@@ -343,6 +343,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Hooks: eine geleerte Beschreibung wird gespeichert (R-0651):** `PUT /api/hooks/{id}` mit `"description": null`
+  loescht die Beschreibung; bisher meldete der Dialog "gespeichert" und zeigte wieder den alten Text. Ein fehlendes
+  Feld laesst sie unveraendert. Doku: API-Referenz fuer Entwickler (DE+EN).
 - **Hooks: Schedule-Hooks mit festem Intervall laufen wieder (R-0617):** Hooks mit einem Intervall von 1m bis 24h
   liefen nie, weil der Abgleich des Schedulers alle 30 s ihren naechsten Lauf neu setzte. Ein unveraenderter Job
   behaelt jetzt seinen naechsten Lauf; Cron-Hooks waren nicht betroffen.
