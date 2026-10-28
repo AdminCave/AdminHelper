@@ -336,6 +336,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jemand schneller wieder an, als die Abmeldung beantwortet war, beendete die spaete Antwort die neue Sitzung bei der
   naechsten Aktion. Jetzt wartet eine neue Anmeldung, bis die Abmeldung beantwortet ist (hoechstens 15 s), auch nach
   einer abgelaufenen Sitzung. Abmelden leert ausserdem die Benutzer-, Hook-, API-Key- und FRP-Daten im Browser.
+- **Web-Panel: eine Anfrage der vorigen Sitzung meldet die neue nicht mehr ab:** Endet eine Anfrage, die vor dem
+  Abmelden startete, erst nach erneutem Anmelden mit 401, meldet sie die neue Sitzung nicht mehr ab und wird nicht
+  mit deren Token wiederholt; sie endet mit `Session expired`.
 - **Web-Panel: eine Aenderung, deren Antwort erst nach dem Abmelden ankommt, aendert keine Liste mehr:** Kommt die
   Antwort auf das Anlegen, Bearbeiten oder Loeschen eines Benutzers, Hooks oder API-Keys erst nach dem Abmelden an,
   erscheint der Eintrag nicht mehr in der geleerten Liste, und die erste Liste der naechsten Sitzung wird nicht mehr
