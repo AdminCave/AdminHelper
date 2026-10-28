@@ -343,6 +343,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Hooks: Schedule-Hooks mit festem Intervall laufen wieder (R-0617):** Hooks mit einem Intervall von 1m bis 24h
+  liefen nie, weil der Abgleich des Schedulers alle 30 s ihren naechsten Lauf neu setzte. Ein unveraenderter Job
+  behaelt jetzt seinen naechsten Lauf; Cron-Hooks waren nicht betroffen.
 - **Monitoring: ein waehrend des manuellen Laufs geloeschter Check antwortet 404:** `POST /checks/{id}/run` auf einen
   Check, der waehrend des Laufs geloescht wird, antwortet 404 „Check not found“ statt 500; das Ergebnis des Laufs
   wird wie bisher verworfen.
