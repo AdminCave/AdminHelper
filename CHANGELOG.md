@@ -270,6 +270,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
   verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
   gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
+- **Monitoring: Check-Namen ohne Steuerzeichen:** Ein Check-Name mit einem Steuerzeichen (C0 wie Zeilenumbruch oder
+  Tab, dazu DEL) ergibt `422` an der Stelle des Namens („must not contain control characters“), in `POST /checks`,
+  `PUT /checks/{id}` und in den Check-Definitionen von `POST /templates` und `PUT /templates/{id}`; die Grenze ist
+  dieselbe wie bei den FRP-Feldern des Servers. Andere Zeichen, auch C1 und U+2028/U+2029, bleiben erlaubt.
+  Gespeicherte Namen bleiben, wie sie sind, und ihre Alerts gehen weiter hinaus. Wer einen solchen Check oder ein
+  solches Template bearbeitet und dabei den Namen mitschickt, wie der Desktop bei jedem Speichern, entfernt die
+  Steuerzeichen aus dem Namen, sonst kommt `422`.
 
 ### Removed
 
