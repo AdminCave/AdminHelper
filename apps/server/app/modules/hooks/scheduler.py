@@ -152,8 +152,14 @@ def _execute_scheduled_hook(hook_id: str) -> None:
 
 
 def add_hook(hook_id: str, interval: str) -> None:
-    """Register or update a scheduled hook (replace_existing=True)."""
+    """Register a scheduled hook, or register it again if its trigger changed; a job
+    whose trigger is unchanged keeps its next run."""
     trigger = _parse_trigger(interval)
+    # A new IntervalTrigger starts at now + interval, and the reconcile calls this every
+    # 30 s: replacing an unchanged job would push its next run out forever.
+    job = scheduler.get_job(hook_id)
+    if job is not None and str(job.trigger) == str(trigger):
+        return
     scheduler.add_job(
         _execute_scheduled_hook,
         trigger=trigger,
@@ -189,7 +195,8 @@ def reconcile_scheduled_hooks(db=None) -> None:
     Runs in the dedicated scheduler process: the web workers no longer register
     jobs directly (they have no running scheduler), so this reconcile is how a
     newly created / changed / deleted scheduled hook reaches the scheduler. It
-    is idempotent — add_hook uses replace_existing, and stale jobs are removed.
+    is idempotent — add_hook leaves an unchanged job alone and replaces a changed one,
+    and stale jobs are removed.
     Also persists next_run back to the DB so the API can show it. ``db`` is an
     optional session (the periodic job opens its own; tests inject one).
     """
@@ -211,7 +218,7 @@ def reconcile_scheduled_hooks(db=None) -> None:
             if not hook.schedule_interval:
                 continue
             try:
-                add_hook(hook.id, hook.schedule_interval)  # replace_existing -> idempotent
+                add_hook(hook.id, hook.schedule_interval)  # unchanged job stays -> idempotent
                 active_ids.add(hook.id)
             except ValueError:
                 key = (hook.id, hook.schedule_interval)

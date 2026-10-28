@@ -617,6 +617,55 @@ def test_tunnel_update_holds_the_visitor_port_range(test_client, db_session, adm
         assert _stored_tunnels(db_session) == {"t-a": edge}
 
 
+# R-0560: local_port goes unchecked into the frpc.toml as localPort, and frpc refuses
+# the whole config for a value outside 0-65535, so every tunnel of the host fell over.
+# The schema keeps the INTEGER range (contract), the handler holds 1-65535.
+def _stored_local_ports(db):
+    db.expire_all()
+    return {t.id: t.local_port for t in db.query(FrpTunnel).all()}
+
+
+def test_tunnel_create_answers_422_outside_the_local_port_range(
+    test_client, db_session, admin_user
+):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    body = {
+        "server_id": "srv-a",
+        "frp_config_id": "cfg-1",
+        "tunnel_type": "stcp",
+        "protocol": "ssh",
+    }
+    for i, bad in enumerate((0, -1, 65536, 70000, 2147483647)):
+        r = test_client.post(
+            "/api/frp/tunnels", json={**body, "name": f"bad-{i}", "local_port": bad}, headers=h
+        )
+        assert r.status_code == 422, (bad, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", "local_port"], r.text
+    assert _stored_local_ports(db_session) == {"t-a": 22}
+
+    for edge in (1, 65535):
+        r = test_client.post(
+            "/api/frp/tunnels", json={**body, "name": f"ok-{edge}", "local_port": edge}, headers=h
+        )
+        assert r.status_code == 201, (edge, r.text)
+        assert _stored_local_ports(db_session)[r.json()["id"]] == edge
+
+
+def test_tunnel_update_holds_the_local_port_range(test_client, db_session, admin_user):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    for bad in (0, 65536, None):
+        r = test_client.put("/api/frp/tunnels/t-a", json={"local_port": bad}, headers=h)
+        assert r.status_code == 422, (bad, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", "local_port"], r.text
+        assert _stored_local_ports(db_session) == {"t-a": 22}
+
+    r = test_client.put("/api/frp/tunnels/t-a", json={"local_port": 65535}, headers=h)
+    assert r.status_code == 200, r.text
+    assert _stored_local_ports(db_session) == {"t-a": 65535}
+
+
 def test_tunnel_routes_answer_422_for_a_c1_control_character_in_the_name(
     test_client, db_session, admin_user
 ):
