@@ -23,11 +23,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
   Betrieb & Konfiguration, Monitoring (DE+EN).
 - **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
-  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
-  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
-  `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
-  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
-  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` (eine
+  IPv6-Adresse mit IPv4-Ende wie `::ffff:192.0.2.1` als eine Adresse; ein Image-Tag aus vier Zahlen wie
+  `.../server:1.2.3.4` bleibt stehen) und jeden Namen und jede Adresse aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`,
+  `TRUSTED_PROXIES`, `SMTP_HOST` und `SMTP_FROM` (bei `SMTP_FROM` jede Adresse, bei einem Anzeigenamen nur die
+  Adresse in spitzen Klammern, nicht der Name) sowie den Rechnernamen, auch ohne seine Domain, durch `<host>`, in
+  `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Ein Name mit Punkt trifft ohne Ruecksicht auf
+  Gross-/Kleinschreibung und samt der Namen darunter (`registry.ah.example.com` bei `DOMAIN=ah.example.com`); ein
+  Rechnername ohne Punkt nur in seiner Schreibweise und als ganzes Wort, samt einer Domain dahinter, nicht als Teil
+  eines Dienst- oder Image-Namens (`adminhelper-server-1`, `.../server:0.46.0` bleiben stehen). Andere Namen, etwa verwalteter Server oder
   Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
   bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
   und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
@@ -283,10 +288,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `SMTP_HOST` auf den Namen im Zertifikat des Relays setzen, fuer eine eigene CA `SMTP_CA_FILE` (siehe Added); der
   Relay muss STARTTLS oder implizites TLS auf Port 465 anbieten. Doku: Betrieb & Konfiguration (DE+EN).
 - **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
-  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, und benennt sie erst
-  nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
-  ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
-  bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, bringt ihre Daten mit
+  `sync` (nur diese Datei) auf die Platte und benennt sie erst danach in `adminhelper-backup-<ts>.tar.gz` um; danach
+  synchronisiert es den Zielordner. So zeigt der Name auch nach einem Stromausfall nicht auf eine leere oder
+  gekuerzte Datei. Ein Lauf, der bis zum Umbenennen scheitert, hinterlaesst weder ein Archiv noch eine Zwischendatei;
+  scheitert das `sync` des Zielordners, endet das Backup mit Fehler, das Archiv bleibt liegen. Liegt unter dem
+  Archivnamen schon ein Verzeichnis, bricht das Backup ab, statt das Archiv hineinzulegen; ein Symlink unter dem Namen
+  wird durch das Archiv ersetzt, sein Ziel bleibt unberuehrt. Einen neu angelegten Zielordner legt das Skript mit
+  0700 an, ein bestehender bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst
+  frei. Das Archiv wird nur in die Zwischendatei geschrieben, die das Skript selbst angelegt hat, und bleibt auch in
+  einem Ordner mit Default-ACL 0600; liegt unter ihrem Namen etwas anderes (etwa ein Link), oder kann das Ziel keinen
+  Unix-Eigentuemer und -Modus halten (wie ein CIFS-, vfat- oder NTFS-Mount in der Regel), bricht das Backup mit einem Hinweis ab: lokal
+  sichern und das Archiv danach kopieren. `scripts/backup.sh --help` zeigt nur die Hilfe. Doku: Betrieb (DE+EN).
 - **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
   der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
   jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
@@ -319,6 +332,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und Bootstrap bekommen den Refresh-Token nur noch als HttpOnly-Cookie; `refresh_token` im JSON ist dann leer (`""`),
   das Schema bleibt gleich. Desktop, CLI und Skripte bekommen ihn unveraendert im JSON. Doku: API-Referenz und Server
   fuer Entwickler (DE+EN).
+- **Diagnose-Bundle: `SMTP_USER` immer maskiert wie die Passwoerter:** Bei manchen Mail-Anbietern ist der
+  SMTP-Benutzer selbst ein Zugangs-Token oder eine Key-ID. `scripts/diagnostics.sh` behandelt `SMTP_USER` darum wie
+  `SMTP_PASSWORD`: mit und ohne `--mask-hosts` steht in `env.sanitized` `SMTP_USER=<redacted>`, und sein Wert wird in
+  `report.txt` und den Logs `<redacted>`; kein Schalter stellt das ab. Der Wert wird nur als ganzes Wort ersetzt, ein
+  kurzer Benutzer wie `admin` laesst `adminhelper` stehen. Doku: Troubleshooting (DE+EN), README.
+- **Diagnose-Bundle: von Anfang an nur fuer den ausfuehrenden Nutzer lesbar und erst vollstaendig unter seinem
+  Namen:** `scripts/diagnostics.sh` schreibt das Bundle in eine versteckte Zwischendatei im Zielordner, die von Anfang
+  an den Modus 0600 hat, und benennt sie erst danach in `adminhelper-diagnostics-<ts>.tar.gz` um; auch die Dateien
+  darin sind nur fuer diesen Nutzer lesbar. Ein Lauf, der vorher scheitert, hinterlaesst weder ein Bundle noch eine
+  Zwischendatei. Eine Datei, die schon unter dem Namen liegt, wird ersetzt, statt mit ihren Rechten ueberschrieben zu
+  werden. Mit `sudo` gestartet gehoert das Bundle root. Die Namen und Adressen fuer `--mask-hosts` stehen waehrend des
+  Laufs nicht mehr in der Prozessliste. Wie beim Backup wird das Bundle nur in die Zwischendatei geschrieben, die das
+  Skript selbst im Zielordner angelegt hat, und bleibt auch in einem Ordner mit Default-ACL 0600; liegt unter ihrem
+  Namen etwas anderes, oder haelt das Ziel keinen Unix-Eigentuemer und -Modus (wie ein CIFS-, vfat- oder NTFS-Mount in
+  der Regel), bricht der Lauf mit einem Hinweis ab. Doku: Troubleshooting (DE+EN).
 - **Server liest `MTLS_ENFORCE` wie das Gateway:** `true`, `1`, `yes` und `on` erzwingen, `false`, `0`, `no` und `off`
   schalten permissiv (Gross-/Kleinschreibung egal), ungesetzt oder leer gilt der Default (erzwungen); jeder andere
   Wert erzwingt die Scope-Pruefung je Route ebenfalls und loggt eine Warnung. Bisher lief der Server bei `on`, einem
@@ -594,12 +622,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `scripts/backup.sh` filterte die `.env` unter der Locale des Aufrufers. `grep` haelt eine Zeile mit einem Byte, das
   diese Locale nicht dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und liess sie aus,
   bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
-  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
+  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C awk`):
   `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
   ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es wie das Diagnose-Bundle auch mit vorangestelltem
   `export`, mit Leerraum um den Trenner und mit `:` statt `=` als Trenner (`export CA_ROOT_PASSPHRASE=...`,
   `CA_ROOT_PASSPHRASE = ...`, `CA_ROOT_PASSPHRASE: ...`); ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt
-  stehen.
+  stehen. Entfernt werden auch auskommentierte Zeilen (`#CA_ROOT_PASSPHRASE=...`), Zeilen mit BOM oder
+  Unicode-Leerraum (etwa NBSP) vor dem Schluessel oder NBSP vor dem Trenner, die compose ebenso liest, und die
+  Folgezeilen eines Werts in Anfuehrungszeichen ueber mehrere Zeilen bis zum schliessenden Anfuehrungszeichen, ohne
+  eines bis zum Dateiende.
 - **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und weitere Schreibweisen der `.env`:**
   `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
   `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
@@ -608,7 +639,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
   Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
   ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
-  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+  auch hinter einem Byte ausserhalb UTF-8 ganz. Einen Schluessel findet es wie compose auch hinter einem BOM oder
+  Unicode-Leerraum (etwa NBSP oder EM SPACE) und mit NBSP vor dem Trenner. Auskommentierte Zeilen dieser Schluessel
+  (`#KEY=...`, auch `# export KEY = ...`) stehen in `env.sanitized` als `#KEY=<redacted>`, die der Host-Schluessel mit
+  `--mask-hosts` als `#KEY=<masked>`; in den Logs sucht es ihre Werte nicht, eine auskommentierte Zeile ist keine
+  Konfiguration. Die Werte liest es so, wie compose sie liest: Escape-Sequenzen in doppelten
+  Anfuehrungszeichen (`\"`, `\\`, `\n`, `\t`, `\$`, Oktal `\0nnn` und weitere) und `\'` in einfachen, Leerraum
+  zwischen Trenner und Wert (auch NBSP) und am Ende eines Werts ohne Anfuehrungszeichen (auch Unicode-Leerraum), Werte
+  in Anfuehrungszeichen ueber mehrere Zeilen. Jede Zeile eines solchen Werts, die nicht nur aus Leerraum besteht,
+  wird in den Logs maskiert, in `env.sanitized` steht `KEY=<redacted>` ohne die Folgezeilen. `report.txt` laeuft jetzt
+  wie die Logs durch die Maskierung.
 - **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
   mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
   abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes
