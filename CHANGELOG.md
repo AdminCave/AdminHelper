@@ -45,6 +45,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Web-Panel: das Audit-Log zeigt die Spalte Detail:** Je Eintrag steht das Detail mit in der Tabelle, etwa die
+  geaenderten Felder eines `user.updated`; bisher war es nur ueber `GET /api/audit` zu sehen. Doku: Betrieb (DE+EN).
 - **Web-Panel: ein gescheitertes Kopieren meldet sich ueberall gleich:** Scheitert das Kopieren in die Zwischenablage,
   melden alle Dialoge des Web-Panels uebersetzt „Kopieren fehlgeschlagen“ statt „Clipboard error“ oder „Fehler“.
 - **Entwicklung mit Claude Code: die Session baut selbst, ein Reviewer prueft Code und Tests:** Die Sub-Agenten

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web: Store-Fabrik und Stale-Guards, Formular-Payloads, schlanke Serverliste, Kopier-Helfer, toter Code, Audit-Detail — Task-Ledger
-Status: aktiv · Branch: feature/web-stores-refactor · Review: pro Task
+Status: bereit · Branch: feature/web-stores-refactor · Review: pro Task
 Spec: docs/features/web-stores-refactor.md (Roadmap R-0722, R-0723, R-0724, R-0777, R-0779, R-0757)
 Heavy: linux-full — T10 fügt die Server-Route `GET /api/servers/summary` hinzu (apps/server-API, CLAUDE.md §5), und `web-live` (`scripts/tests/web_live.sh`, `apps/web/tests/live/smoke.live.spec.ts:60-66`) öffnet den Benutzerdialog gegen den echten Stack; kein `scenario` (kein FRP-, PKI-, Install- oder Cross-Host-Pfad), kein `windows` (kein Desktop- oder Agent-Code). Entscheidet Kevin bei Frage 1 gegen T10 (Variante a oder d), setzt die Session `Heavy: none`: alles Übrige ist Web-Code, die Web-E2E mockt die API
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -264,8 +264,10 @@ Metrik: gelöschte Zeilen: 4 in `client.ts`
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T18 — Audit-Ansicht zeigt `detail` (R-0757)  [ ]
+### T18 — Audit-Ansicht zeigt `detail` (R-0757)  [x]
 Komponente: web · Dateien: apps/web/src/pages/Audit.svelte, apps/web/src/pages/Audit.test.ts, apps/web/src/lib/i18n/dictionaries.ts, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @23c0276a 2026-10-28T18:26:27+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T18.verdict.json)
 Änderung: Neue Spalte zwischen Objekt (`Audit.svelte:120`, `:134`) und IP: Kopf `page.audit.col.detail` (DE „Detail“, EN „Detail“, neben `page.audit.col.object`, `dictionaries.ts:114` / EN `:403`), Zelle `{e.detail ?? '–'}` wie die IP (`:135`), CSS mit `overflow-wrap: anywhere`, damit ein langer Text die Tabelle nicht sprengt. Der Text bleibt Text (Svelte escaped, kein `{@html}`). Neue Testdatei `Audit.test.ts` (SPDX; `vi.mock('$lib/api/audit', …)` liefert zwei Einträge, einer mit `detail: 'is_admin, server_ids'`, einer mit `detail: null`): (a) die Tabelle hat die Spalte „Detail“, und die Zeile des ersten Eintrags zeigt `is_admin, server_ids`; (b) die des zweiten zeigt `–`; (c) ein `detail` `<b>x</b>` erscheint als Text, kein `<b>`-Element in der Tabelle. Zuerst rot auf HEAD: (a), (c).
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Audit.test.ts src/lib/i18n/i18n.test.ts
 Doku: `docs/admin/betrieb.html:133` + `docs/en/admin/operations.html:92`: die Ansicht zeigt je Eintrag auch das Detail (etwa geänderte Felder) · CHANGELOG.md (Changed, umlautfrei: das Audit-Log im Web-Panel zeigt die Spalte Detail)
