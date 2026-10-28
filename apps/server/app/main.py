@@ -474,7 +474,9 @@ app.include_router(monitoring_proxy_router)
 # the event ingress is service-to-service (X-Internal-Key, no router-level scope).
 app.include_router(notifications_feed_router, dependencies=_access)
 app.include_router(notifications_prefs_router, dependencies=_access)
-app.include_router(notifications_stream_router, dependencies=_access)
+# The stream checks the access scope itself on a short session: a router dependency would
+# hold its get_db session open for as long as the stream runs.
+app.include_router(notifications_stream_router)
 app.include_router(notifications_internal_router)
 app.include_router(servers_internal_router)
 app.include_router(ansible_router, dependencies=_access)

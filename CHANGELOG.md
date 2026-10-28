@@ -343,6 +343,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: ein offener Benachrichtigungs-Stream haelt keine Datenbank-Verbindung mehr (R-0618):** Mit
+  Client-Zertifikat hielt jeder Desktop fuer seine ganze Sitzung eine Verbindung aus dem Pool; die Scope-Pruefung des
+  Streams laeuft jetzt auf der kurzen Session der Anmeldung. Ohne passendes Zertifikat antwortet er im erzwungenen
+  Modus wie bisher mit 403.
 - **Hooks: eine geleerte Beschreibung wird gespeichert (R-0651):** `PUT /api/hooks/{id}` mit `"description": null`
   loescht die Beschreibung; bisher meldete der Dialog "gespeichert" und zeigte wieder den alten Text. Ein fehlendes
   Feld laesst sie unveraendert. Doku: API-Referenz fuer Entwickler (DE+EN).

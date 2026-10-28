@@ -292,6 +292,46 @@ def _deny_refused(request: Request, identity: ClientIdentity) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_REVOKED)
 
 
+def check_scope(
+    request: Request, identity: ClientIdentity, db: Session, allowed: frozenset[str]
+) -> ClientIdentity:
+    """The check of require_scope on a session the caller holds: the SSE stream runs it on
+    its short session, so no get_db session lives as long as the stream."""
+    # Check the scope before the register query, and only a cert of a wanted scope asks the
+    # register (5.27): enforced, a wrong-scope cert is rejected anyway; permissive, it grants
+    # nothing here and the request rests on its other credentials, so the scope mismatch is
+    # what gets logged.
+    if identity.verified and identity.scope in allowed:
+        if _refused(request, db, identity):
+            _deny_refused(request, identity)
+        return identity
+
+    if config.MTLS_ENFORCE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kein gültiges Client-Zertifikat mit passendem Scope",
+        )
+
+    wanted = "/".join(sorted(allowed))
+    if identity.verified:
+        logger.warning(
+            "mTLS permissiv: %s %s erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
+            request.method,
+            request.url.path,
+            wanted,
+            identity.scope,
+            identity.cn,
+        )
+    else:
+        logger.debug(
+            "mTLS permissiv: %s %s ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
+            request.method,
+            request.url.path,
+            wanted,
+        )
+    return identity
+
+
 def require_scope(*allowed: str):
     """Dependency factory: require the client cert to carry one of ``allowed``
     scopes and not be revoked. Dual-use routes pass several (e.g. agent + admin
@@ -309,38 +349,6 @@ def require_scope(*allowed: str):
         identity: ClientIdentity = Depends(get_client_identity),
         db: Session = Depends(get_db),
     ) -> ClientIdentity:
-        # Check the scope before the register query, and only a cert of a wanted scope asks the
-        # register (5.27): enforced, a wrong-scope cert is rejected anyway; permissive, it grants
-        # nothing here and the request rests on its other credentials, so the scope mismatch is
-        # what gets logged.
-        if identity.verified and identity.scope in allowed_set:
-            if _refused(request, db, identity):
-                _deny_refused(request, identity)
-            return identity
-
-        if config.MTLS_ENFORCE:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Kein gültiges Client-Zertifikat mit passendem Scope",
-            )
-
-        wanted = "/".join(sorted(allowed_set))
-        if identity.verified:
-            logger.warning(
-                "mTLS permissiv: %s %s erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
-                request.method,
-                request.url.path,
-                wanted,
-                identity.scope,
-                identity.cn,
-            )
-        else:
-            logger.debug(
-                "mTLS permissiv: %s %s ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
-                request.method,
-                request.url.path,
-                wanted,
-            )
-        return identity
+        return check_scope(request, identity, db, allowed_set)
 
     return dependency
