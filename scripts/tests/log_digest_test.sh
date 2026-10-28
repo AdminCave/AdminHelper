@@ -209,6 +209,12 @@ for i in $(seq 1 8); do echo "  ok   more output $i" >> "$WORK/nested-cut.log"; 
 d "$WORK/nested-cut.log" 143
 grep -q '^── no closing summary' <<<"$OUT" && ! grep -q '^  run.sh\[' <<<"$OUT" \
   && ok "a captured summary deep in the log is no closing block" || bad "cut: $OUT"
+# ... nor one a line or two before the end, when the line after it is not run.sh's.
+sed '/^  exit 1 · log: \/elsewhere.log/q' "$WORK/nested.log" > "$WORK/nested-short.log"
+d "$WORK/nested-short.log" 143
+grep -q '^── no closing summary' <<<"$OUT" && grep -q ':   exit 1 · log: /elsewhere.log' <<<"$OUT" \
+  && ! grep -q '^  run.sh\[' <<<"$OUT" && ok "a captured summary right before the end is no closing block either" \
+  || bad "short cut: $OUT"
 
 # ── usage ───────────────────────────────────────────────────────────────────
 echo "── usage ──"

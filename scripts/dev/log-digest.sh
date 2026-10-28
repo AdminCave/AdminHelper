@@ -83,13 +83,14 @@ BEGIN { TAILN = 20; ERRMAX = 60; ENDN = 40; pass = 0 }
 FNR == 1 { pass++ }
 pass == 1 {
   l = clean($0); total = FNR
-  if (l ~ /^  run\.sh\[[^]]*\]: /) { lastsum = FNR; after = 0 }
-  else if (l ~ /[^ \t]/) after++
+  if (l ~ /^  run\.sh\[[^]]*\]: /) { lastsum = FNR; after = 0; foreign = 0 }
+  else if (l ~ /[^ \t]/) { after++; if (l !~ /^  (required \(strict\)|strict-failed|artifact|failed): /) foreign++ }
   next
 }
-# run.sh writes at most the required set, the strict-failed list, the artifact
-# line and the failed list after its summary; a summary further up is not its own.
-pass == 2 && FNR == 1 { top = (lastsum && after <= 6) ? lastsum : total + 1 }
+# After its summary run.sh writes only the required set, the strict-failed list,
+# the artifact line and the failed list. A summary followed by anything else is
+# captured output, and the run ended without its own.
+pass == 2 && FNR == 1 { top = (lastsum && after <= 6 && !foreign) ? lastsum : total + 1 }
 pass == 2 {
   if (FNR >= top) next
   l = clean($0)
