@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Eingaben: C1-Steuerzeichen und Proxy-Plugin-Schlüssel an der Server-Grenze — Task-Ledger
-Status: aktiv · Branch: feature/frp-config-validation · Review: pro Task
+Status: bereit · Branch: feature/frp-config-validation · Review: pro Task
 Spec: docs/features/frp-config-validation.md (Roadmap R-0786; T2 und T3 gehören zum Paket, Kevin 2026-10-22)
 Heavy: linux-full, scenario, windows — CLAUDE.md §5 (FRP-Pfad, Session fe 2026-10-22): Boundary-Validierung von `POST`/`PUT` auf `/api/frp/tunnels`, `/api/frp/server-config` und `/api/servers` (`frp/schemas.py`), deren Werte in die frpc-Config der Agents gehen, dazu ein Filter im frpc-Generator; `scenario` = `--agents 1 --tunnel --enforce` vor dem Merge (fährt die Session), `windows` = die Windows-Jobs der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -70,7 +70,7 @@ Beweis: Code-Lesung apps/server/app/modules/frp/config_generator.py:134-142 (`ac
 Orakel: contract — ein Tunnel, den `is_plugin_key` trifft, steht in keiner frpc.toml des Servers
 HEAD: b25c65a6
 
-### T4 — Generator-Filter: Umfang der Regel aus T3 (Kevin)  [ ]
+### T4 — Generator-Filter: Umfang der Regel aus T3 (Kevin)  [~] (Kevin 2026-10-28: Variante A, die breite Regel aus T3 bleibt; keine Codeaenderung)
 Entscheidung: Kevin 2026-10-28 (AskUserQuestion): Variante A, die breite Regel aus T3 bleibt (ein gespeicherter Tunnel fehlt in der frpc.toml, wenn sein extra_config die heutige Tunnel-Pruefung der API nicht besteht).
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_input_hardening.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
 Änderung: Bei A keine Codeänderung, die Task wird `[~]` mit Kevins Wort. Bei B prüft `_api_takes` (`apps/server/app/modules/frp/config_generator.py:131`) statt `_check_tunnel_extra_config` eine eigene, feste Regel: `is_plugin_key`, die Schlüsselform nach `_TOML_BARE_KEY` und für String-Werte Anführungszeichen, Backslash und Steuerzeichen U+0000–U+001F/U+007F (ohne C1, ohne `{{`). Kaputtes JSON und Nicht-Objekte bleiben weggelassen. Tests in `test_frp_input_hardening.py`: `REFUSED_BY_ENTRY` und `NO_JSON_OBJECT` bleiben rot ohne den Filter; neu: ein gespeicherter Wert mit `"\x85"` oder `{{` bleibt im Proxy, ohne WARNING. Dazu der Nit des testers: `test_generator_leaves_out_a_stored_tunnel_with_a_plugin_key` prüft auch die Formulierung „plugin keys“.
