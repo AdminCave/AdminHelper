@@ -105,8 +105,10 @@ Orakel: contract — `onAuthFailure` und die Wiederholung gelten nur für Anfrag
 Dedup-Key: bug:web:stores/auth.ts:stale-auth-failure
 HEAD: b25c65a6
 
-### T6 — HookModal: Payload und Validierung pinnen (R-0722)  [ ]
+### T6 — HookModal: Payload und Validierung pinnen (R-0722)  [x]
 Komponente: web · Dateien: apps/web/src/modals/HookModal.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @c72a775d 2026-10-28T17:11:37+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T6.verdict.json)
 Änderung: Neue Komponenten-Testdatei (SPDX, `@testing-library/svelte` wie `apps/web/src/modals/UserModal.test.ts:9-10`); `vi.mock('$lib/stores/hooks', …)` mit `create`/`update` als `vi.fn` (der Dialog ruft den Store, `HookModal.svelte:12`, `:94`, `:105`), Toasts über `$lib/stores/notifications`. Fälle, je mit genauem Payload (`toHaveBeenCalledWith`): (a) Webhook anlegen: Name `'  deploy  '` → `'deploy'`, Beschreibung nur Leerzeichen → `null`, weder `event_triggers` noch `schedule_interval`; die Antwort trägt `token` → `onClose({ token })`; (b) Event-Hook ohne Event → kein Aufruf, Toast `modal.hook.selectEvent`; (c) Event-Hook mit zwei Events → `event_triggers` in Klickreihenfolge; (d) Schedule-Hook mit Preset `6h` → `schedule_interval: '6h'`; (e) Schedule-Hook `custom` mit Cron `'  */5 * * * *  '` → getrimmt; (f) `custom` leer → kein Aufruf, Toast `modal.hook.selectInterval`; (g) Bearbeiten eines Schedule-Hooks mit `schedule_interval: '*/7 * * * *'` (kein Preset): das Formular zeigt `custom` und den Cron; geleerte Beschreibung → `update(id, { name, description: null, script, schedule_interval })` ohne `hook_type` und `event_triggers`; (h) Bearbeiten eines Event-Hooks → `event_triggers`, kein `schedule_interval`; (i) der Store wirft → `onClose` nicht gerufen. Kein Produktionscode ändert sich; die Datei ist auf HEAD grün.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/HookModal.test.ts
 Doku: keine (nur Tests)
