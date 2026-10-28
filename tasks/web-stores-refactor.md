@@ -185,7 +185,9 @@ Orakel: contract — `MOCK_FIXTURES` gegen den OpenAPI-Snapshot (`apps/web/src/l
 Dedup-Key: ref:web:UserModal.svelte:full-inventory-fetch
 HEAD: b25c65a6
 
-### T12 — Kopier-Helfer `copyToClipboard(text, okKey)` (R-0724)  [ ]
+### T12 — Kopier-Helfer `copyToClipboard(text, okKey)` (R-0724)  [x]
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @10b3b282 2026-10-28T18:04:11+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T12.verdict.json)
 Entscheidung: Kevin 2026-10-23: neuer Schlüssel toast.copyFailed „Kopieren fehlgeschlagen“ / „Copy failed“.
 Komponente: web · Dateien: apps/web/src/lib/utils/clipboard.ts, apps/web/src/lib/utils/clipboard.test.ts, apps/web/src/lib/i18n/dictionaries.ts
 Änderung: Neu `clipboard.ts` (SPDX): `async function copyToClipboard(text: string, okKey: string): Promise<boolean>` — `navigator.clipboard.writeText(text)` im `try`; bei Erfolg `showToast(tNow(okKey))` und `true`, sonst `showToast(tNow('toast.copyFailed'), 'error')` und `false` (`tNow` wie `apps/web/src/lib/api/client.ts:40`). `dictionaries.ts`: `toast.copyFailed` DE „Kopieren fehlgeschlagen“, EN „Copy failed“ (neben `toast.apikey.copied`, `:132` / EN `:421`). `clipboard.test.ts` (Toasts über den Store `toasts`, `apps/web/src/lib/stores/notifications.ts:20`): (a) Erfolg → `writeText` mit dem Text, ein Toast `success` mit dem Text des Schlüssels (im Test das vorhandene `toast.hook.tokenCopied`, damit kein Schlüssel nur im Test lebt), Rückgabe `true`; (b) `writeText` lehnt ab → ein Toast `error` „Kopieren fehlgeschlagen“, Rückgabe `false`; (c) kein `navigator.clipboard` (unsicherer Kontext) → wie (b), kein Wurf. Noch kein Dialog nutzt den Helfer (T14).

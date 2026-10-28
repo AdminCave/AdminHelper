@@ -137,6 +137,7 @@ export const translations: Translations = {
     'modal.apikey.titleReveal': 'API-Key erstellt',
     'modal.apikey.revealHint': 'Dieser Schlüssel wird nur einmal angezeigt. Kopiere ihn jetzt.',
     'toast.apikey.copied': 'In Zwischenablage kopiert',
+    'toast.copyFailed': 'Kopieren fehlgeschlagen',
     'toast.apikey.deleted': 'API-Key gelöscht',
     'confirm.apikey.delete': 'API-Key wirklich löschen?',
 
@@ -434,6 +435,7 @@ export const translations: Translations = {
     'modal.apikey.titleReveal': 'API Key created',
     'modal.apikey.revealHint': 'This key will only be shown once. Copy it now.',
     'toast.apikey.copied': 'Copied to clipboard',
+    'toast.copyFailed': 'Copy failed',
     'toast.apikey.deleted': 'API key deleted',
     'confirm.apikey.delete': 'Really delete this API key?',
 
