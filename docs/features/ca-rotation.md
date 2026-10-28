@@ -121,7 +121,8 @@ Root. Der Agent bleibt unverändert (er sucht den Fingerprint in jeder präsenti
 ## Trade-offs & Alternativen
 
 1. **Bedienung (offene Frage 1, T5).** (a) Befehl im Image: `docker compose run --rm --no-deps ca-issuer python -m
-   app.cli rotate-intermediates`, danach `docker compose restart ca-issuer gateway` — **Empfehlung**: geht auch bei
+   app.cli rotate-intermediates`, danach `docker compose restart ca-issuer`, `healthy` abwarten, dann
+   `docker compose restart gateway` (T12) — **Empfehlung**: geht auch bei
    gestopptem Issuer, die Passphrase steht nie in argv, Compose-Datei oder Log, ein Image für alles; der Befehl gibt
    den Neustart-Befehl aus. (b) Zusätzlich `scripts/ca-rotate.sh` auf dem Host, der die Schritte bündelt: ein Befehl
    weniger zu vergessen, aber neue Host-Skript-Fläche mit Docker-Attrappe in den Tests, für eine Handlung alle paar
@@ -141,8 +142,9 @@ Root. Der Agent bleibt unverändert (er sucht den Fingerprint in jeder präsenti
    Zertifikat). Eine Sperrdatei (`flock`) verhindert zwei Rotationen zugleich.
 5. **CN je Generation (T4).** `AdminHelper <Scope> Intermediate <YYYY-MM-DD>` für rotierte Intermediates; die erste
    Generation behält ihren Namen. Grund: eindeutige Issuer-Suche in nginx/OpenSSL bei Leaf-only-Clients, ohne sich
-   auf AKI/SKI-Auswahl zu verlassen; lesbar im Log und im Browser. Nichts im Repo liest den CN eines Intermediates
-   (der Server liest nur das Leaf, `identity.py:84-105`).
+   auf AKI/SKI-Auswahl zu verlassen; lesbar im Log und im Browser. Seit T11 liest der `ca-issuer` den CN eines
+   Intermediates (`pki.intermediate_problem`: retired-Einträge, Rotation, `status`), mit T14 auch der Agent; ein
+   geändertes CN-Format ließe den Start jeden retired-Eintrag überspringen.
 6. **`--ca-fp` (offene Frage 2, T7/T8).** (a) Root-Fingerprint — **Empfehlung**: das Gateway hängt die Root an seine
    Fullchain, der Desktop zeigt den Fingerprint des letzten Zertifikats seiner Kette (der Root); der Agent bleibt
    unverändert, alte Befehle mit dem Intermediate-Fingerprint gelten bis zur nächsten Rotation. Kosten: ~600 Byte je
@@ -154,7 +156,8 @@ Root. Der Agent bleibt unverändert (er sucht den Fingerprint in jeder präsenti
 
 ## Risiken & Rollback
 
-- Neustart: `docker compose restart ca-issuer gateway` unterbricht `:443` kurz; frps startet nach dem Re-Mint seines
+- Neustart: `docker compose restart ca-issuer`, `healthy` abwarten, dann `docker compose restart gateway` (T12)
+  unterbricht `:443` kurz; frps startet nach dem Re-Mint seines
   Leafs selbst neu (Tunnel kurz weg, Agenten verbinden neu). Zwischen dem Neustart des Issuers und dem des Gateways
   signiert der Issuer schon mit dem neuen Intermediate, das Gateway kennt es noch nicht: ein in diesen Sekunden
   ausgestelltes Browser-Zertifikat (nur Leaf) wird bis zum Gateway-Neustart abgelehnt; Agent und Desktop schicken die
