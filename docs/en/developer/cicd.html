@@ -256,10 +256,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           writes flags only.</p>
           <p>The suite&rsquo;s whole output goes to <code>.ah-out/logs/verify-&lt;time&gt;-&lt;pid&gt;.log</code> (the
           newest 30 stay, <code>last-verify.json</code> names the path under <code>log</code>); stdout carries the
-          digest of <code>scripts/dev/log-digest.sh</code>: every step line (those left out by <code>--only</code> or
-          <code>--</code> only as a count), every <code>strict-failed:</code> line, for each red or self-skipped step
-          its error lines and its end with line numbers, the summary, exit code and log path; without a summary the
-          end of the log. No step line is ever cut, only the excerpts are bounded. On a terminal or with
+          digest of <code>scripts/dev/log-digest.sh</code>: one line per step (those left out by <code>--only</code>
+          or <code>--</code> only as a count), for each red or self-skipped step its error lines and its end with line
+          numbers, the closing block of <code>run.sh</code> (summary, <code>strict-failed</code> and
+          <code>failed</code> list), exit code and log path; without a closing block at the end of the log, the end of
+          the log. Captured <code>run.sh</code> output of a red test sets no boundaries: each step shows its worst
+          result, and disagreeing lines are named. No step line is ever cut, only the excerpts are bounded. On a terminal or with
           <code>--full</code> the whole output streams as well. <code>bash scripts/dev/log-digest.sh &lt;log&gt;
           [&lt;exit&gt;]</code> condenses any other <code>run.sh</code> log the same way.</p>
 
@@ -317,7 +319,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td><code>review.sh final</code></td><td>May the branch go to a PR and be merged? All tasks closed,
               the branch verdict present, <code>approve</code> overall, for the code and for the tests, each with
               evidence, a coverage list, at most three probes, no <code>blocker</code>, and since the judged commit
-              only merges and ledger-only commits on the branch&rsquo;s own line?</td><td>exit&nbsp;0 with the PR
+              only ledger-only commits and merges without changes of their own (<code>CHANGELOG.md</code> aside) on
+              the branch&rsquo;s own line?</td><td>exit&nbsp;0 with the PR
               section (cleaned like <code>pr-body</code>), exit&nbsp;3 with every reason</td></tr>
             </tbody>
           </table>

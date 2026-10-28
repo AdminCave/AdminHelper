@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness schlanker: Hauptsession baut, ein Reviewer prüft Code und Tests — Task-Ledger
-Status: aktiv · Branch: feature/harness-lean · Review: am Ende
+Status: bereit · Branch: feature/harness-lean · Review: am Ende
 Spec: docs/features/harness-lean.md (Roadmap R-0915)
 Heavy: none — Regel-, Skill- und Agenten-Texte, Shell-Skripte unter `scripts/dev` mit hermetischen Tests; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test harness_consistency_test
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN · CHANGELOG
 
-### T6 — Review-Funde: Digest ohne Vertrauen in den Log-Inhalt, final prüft auch Merges  [ ]
+### T6 — Review-Funde: Digest ohne Vertrauen in den Log-Inhalt, final prüft auch Merges  [x]
 Komponente: scripts · Dateien: scripts/dev/log-digest.sh, scripts/tests/log_digest_test.sh, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, CLAUDE.md, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f651aaf1 2026-10-28T13:27:21+01:00
+Review: am Ende (Branch-Review)
 Änderung: Funde des Branch-Reviews (wichtig ×2, nit): `log-digest.sh` nimmt keine Grenze mehr aus dem Inhalt eines Schritts — die Schlusszeilen zählen nur am Log-Ende, je Schritt gilt das schlechteste Ergebnis (widersprüchliche Zeilen werden genannt), ein Auszug reicht vom ersten Kopf bis zum letzten Ergebnis des Namens; Test mit eingefangener run.sh-Ausgabe im roten Abschnitt. `review.sh final` wertet einen Merge nach dem Urteil, der eigene Änderungen trägt (`diff-tree --cc`; CHANGELOG.md und das Ledger ausgenommen), als veraltet. CLAUDE.md §2 verweist für die Merge-Bedingungen nur noch auf `/feature-build` §4.7.
 Verify: bash scripts/dev/verify.sh scripts --strict -- log_digest_test verify_test review_scripts_test harness_consistency_test doc_smoke_test
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN

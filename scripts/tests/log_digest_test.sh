@@ -109,12 +109,17 @@ grep -q '^  exit 1 · log: ' <<<"$OUT" && ok "exit 1 is named" || bad "exit: $OU
   echo "  PASS  monitoring pytest"
   echo "  strict-failed: tests/test_m.py:3: needs redis (test-skip)"
   echo "  run.sh[quick]: 1 passed, 3 failed, 2 skipped, 14 test-skips, 0 reruns"
+  echo "  required (strict): go-agent desktop-cargo monitoring-pytest"
+  echo "  strict-failed: go agent (vet+test+cross) cargo test (desktop) tests/test_m.py:3: needs redis"
+  echo "  artifact: /x/last-quick.json"
+  echo "  failed: go agent (vet+test+cross) cargo test (desktop) tests/test_m.py:3: needs redis"
 } > "$WORK/skip.log"
 
 echo "── skips ──"
 d "$WORK/skip.log" 1
 grep -qx '  SKIP  cargo test (desktop) (cargo not installed)' <<<"$OUT" && ok "a SKIP with a reason of its own" || bad "skip: $OUT"
-[ "$(grep -c '^  strict-failed: ' <<<"$OUT")" = 3 ] && ok "every strict-failed line" || bad "strict-failed: $OUT"
+grep -qx '  strict-failed: go agent (vet+test+cross) cargo test (desktop) tests/test_m.py:3: needs redis' <<<"$OUT" \
+  && ok "run.sh's strict-failed list, every name in it" || bad "strict-failed: $OUT"
 grep -q '^── go agent (vet+test+cross): log lines' <<<"$OUT" && grep -q ': go: command not found' <<<"$OUT" \
   && ok "a self-skipped step shows why" || bad "self-skip excerpt: $OUT"
 [ "$(grep -c '^  SKIPPED \[1\]' <<<"$OUT")" = 10 ] && grep -qx '  (14 pytest SKIPPED lines in all)' <<<"$OUT" \
@@ -143,15 +148,67 @@ grep -qx '  … 20 more error lines in that range' <<<"$OUT" && [ "$(grep -cE '^
 } > "$WORK/abort.log"
 echo "── no summary ──"
 d "$WORK/abort.log" 2
-grep -q '^── no summary line' <<<"$OUT" && ok "the missing summary is named" || bad "no-summary: $OUT"
+grep -q '^── no closing summary' <<<"$OUT" && ok "the missing summary is named" || bad "no-summary: $OUT"
 grep -q ": unknown AH_ONLY key: 'nixkomponente'" <<<"$OUT" && ok "the last line is shown" || bad "last line: $OUT"
 grep -q ': setup 22$' <<<"$OUT" && ok "the last 40 lines" || bad "tail start: $OUT"
 grep -q ': setup 21$' <<<"$OUT" && bad "more than 40 lines" || ok "not more"
 grep -q '^  exit 2 · log: ' <<<"$OUT" && ok "the exit code too" || bad "exit: $OUT"
 : > "$WORK/empty.log"
 d "$WORK/empty.log" 74
-grep -q '^── no summary line' <<<"$OUT" && grep -q '^  exit 74 · log: .* (0 lines)' <<<"$OUT" \
+grep -q '^── no closing summary' <<<"$OUT" && grep -q '^  exit 74 · log: .* (0 lines)' <<<"$OUT" \
   && ok "an empty log is a missing summary, not a clean digest" || bad "empty: $OUT"
+
+# ── output that looks like run.sh, inside a step ────────────────────────────
+# A red shell test prints the run.sh or digest text it captured: headers, step
+# lines and a summary of a run that is not this one. None of it may decide where
+# this run's steps begin and end, or what its summary says.
+{
+  hdr "ruff check (scripts)"; echo "All checks passed!"; echo "  PASS  ruff check (scripts)"
+  hdr "scripts (hermetic)"
+  echo "  ── verify_test"
+  echo "  FAIL digest: the captured output follows"
+  hdr "scripts (hermetic)"
+  for i in $(seq 1 5); do echo "  ok   case $i"; done
+  echo "  FAIL bad case: expected 3, got 0"
+  echo "  FAIL  scripts (hermetic)"
+  echo "  FAIL  ruff check (scripts)"
+  echo "  SKIP  server pytest (AH_ONLY)"
+  echo "  run.sh[quick]: 0 passed, 1 failed, 1 skipped, 0 test-skips, 0 reruns"
+  echo "  exit 1 · log: /elsewhere.log (205 lines)"
+  for i in $(seq 1 30); do echo "  ok   later case $i"; done
+  echo "  FAIL the real one: rc=1, expected 0"
+  echo "     verify_test: FAILED (rc=1)"
+  echo "  1 of 34 failed: verify_test"
+  echo "  FAIL  scripts (hermetic)"
+  hdr "vm.py pytest"; echo "292 passed"; echo "  PASS  vm.py pytest"
+  echo "──────────────"
+  echo "  run.sh[quick]: 2 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+  echo "  required (strict): ruff-vm scripts vm-pytest"
+  echo "  artifact: /x/last-quick.json"
+  echo "  failed: scripts (hermetic)"
+} > "$WORK/nested.log"
+REAL_NO="$(grep -n '^  FAIL the real one' "$WORK/nested.log" | cut -d: -f1)"
+echo "── nested run.sh output ──"
+d "$WORK/nested.log" 1
+grep -q "^  $REAL_NO:   FAIL the real one: rc=1, expected 0$" <<<"$OUT" \
+  && ok "the real error line of the red step, behind the captured output" || bad "real error line $REAL_NO: $OUT"
+grep -q ':   1 of 34 failed: verify_test$' <<<"$OUT" && ok "and the end of its section" || bad "section end: $OUT"
+[ "$(grep -c '^  FAIL  scripts (hermetic)$' <<<"$OUT")" = 1 ] && grep -qx '  PASS  vm.py pytest' <<<"$OUT" \
+  && ok "each step once; the step after the captured output is still found" || bad "steps: $OUT"
+grep -qx '  run.sh\[quick\]: 2 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns' <<<"$OUT" \
+  && [ "$(grep -c '^  run.sh\[' <<<"$OUT")" = 1 ] \
+  && ok "the summary is the one at the end, not the captured one" || bad "summary: $OUT"
+grep -qx '  FAIL  ruff check (scripts)' <<<"$OUT" \
+  && grep -q '^  (result lines disagree for: ruff check (scripts) — ' <<<"$OUT" \
+  && ok "a step with conflicting result lines shows the worst and says so" || bad "conflict: $OUT"
+grep -qx '  failed: scripts (hermetic)' <<<"$OUT" && ok "run.sh's failed list" || bad "failed: $OUT"
+# The captured run ends the log when run.sh never got to write its own end: then
+# its summary is no closing block, and the end of the log is shown.
+sed '/^──────────────$/,$d' "$WORK/nested.log" > "$WORK/nested-cut.log"
+for i in $(seq 1 8); do echo "  ok   more output $i" >> "$WORK/nested-cut.log"; done
+d "$WORK/nested-cut.log" 143
+grep -q '^── no closing summary' <<<"$OUT" && ! grep -q '^  run.sh\[' <<<"$OUT" \
+  && ok "a captured summary deep in the log is no closing block" || bad "cut: $OUT"
 
 # ── usage ───────────────────────────────────────────────────────────────────
 echo "── usage ──"
@@ -168,6 +225,9 @@ if command -v mawk >/dev/null 2>&1; then
     && grep -q ': 1 failed, 300 passed' <<<"$OUT" && ok "mawk: the same excerpt" || bad "mawk: rc=$rc $OUT"
   OUT=$(PATH="$WORK/bin:$PATH" bash "$DIGEST" "$WORK/abort.log" 2 2>&1)
   grep -q ': setup 22$' <<<"$OUT" && ! grep -q ': setup 21$' <<<"$OUT" && ok "mawk: the same tail" || bad "mawk tail: $OUT"
+  OUT=$(PATH="$WORK/bin:$PATH" bash "$DIGEST" "$WORK/nested.log" 1 2>&1)
+  grep -q "^  $REAL_NO:   FAIL the real one" <<<"$OUT" && grep -q '^  (result lines disagree for: ruff check' <<<"$OUT" \
+    && ok "mawk: the same nested case" || bad "mawk nested: $OUT"
 else
   echo "  (mawk not installed — the default awk only)"
 fi

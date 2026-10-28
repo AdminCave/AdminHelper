@@ -300,11 +300,14 @@ nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
 
 **Log und Digest.** Die volle Ausgabe der Suite landet in
 `.ah-out/logs/verify-<zeit>-<pid>.log` (die neuesten 30 bleiben; `last-verify.json` nennt
-den Pfad unter `log`). Auf stdout steht der Digest von `scripts/dev/log-digest.sh`: jede
-Schritt-Zeile (die per `--only` oder `--` ausgelassenen nur als Zahl), jede
-`strict-failed:`-Zeile, je rotem oder selbst uebersprungenem Schritt seine Fehlerzeilen (hoechstens
-60) und die letzten 20 Zeilen seines Abschnitts mit Zeilennummern, die Summary, Exit-Code und
-Logpfad; ohne Summary die letzten 40 Zeilen. Keine Schritt-Zeile wird gekuerzt. Mehr liest man
+den Pfad unter `log`). Auf stdout steht der Digest von `scripts/dev/log-digest.sh`: eine Zeile je
+Schritt (die per `--only` oder `--` ausgelassenen nur als Zahl), je rotem oder selbst
+uebersprungenem Schritt seine Fehlerzeilen (hoechstens 60) und die letzten 20 Zeilen seines
+Abschnitts mit Zeilennummern, dann der Schlussblock von `run.sh` (Summary, `strict-failed`- und
+`failed`-Liste), Exit-Code und Logpfad; steht kein Schlussblock am Ende des Logs, die letzten 40
+Zeilen. Gibt ein roter Test eingefangene `run.sh`-Ausgabe aus, setzt sie keine Grenzen: je Schritt
+gilt das schlechteste Ergebnis, widerspruechliche Zeilen werden genannt, und ein Auszug zeigt im
+Zweifel mehr. Keine Schritt-Zeile wird gekuerzt. Mehr liest man
 gezielt (`sed -n <a>,<b>p <log>`). Auf einem Terminal oder mit `--full` laeuft die volle Ausgabe
 zusaetzlich mit. Jedes andere `run.sh`-Log fasst `bash scripts/dev/log-digest.sh <log> [<exit>]`
 genauso zusammen.
@@ -534,8 +537,9 @@ nur, dass `task-close.sh` sie aus dem eigenen Lauf erzeugt. Deshalb steht `ledge
 (`.ah-out/review/<slug>/branch.verdict.json` des Worktrees, in dem das Ledger liegt): keine Task mehr `[ ]`
 oder `[?]`, `approve` gesamt, fuer den Code- und fuer den Testteil, beide mit Evidenz, eine Abdeckungsliste,
 hoechstens drei Gegenproben (`red`, `green`, `not-runnable`), kein `blocker` neben einem `approve`, und seit
-dem geprueften Commit (`head`) auf der eigenen Linie des Branches nur Merges und Commits, die allein das Ledger
-aendern. Exit 0 druckt den PR-Abschnitt (Adressen und Hostnamen entfernt wie bei `pr-body`), Exit 3 jeden
+dem geprueften Commit (`head`) auf der eigenen Linie des Branches nur Commits, die allein das Ledger aendern, und
+Merges ohne eigene Aenderungen (ein aufgeloester Konflikt zaehlt als neue Aenderung; `CHANGELOG.md` mit seinem
+`merge=union` ausgenommen). Exit 0 druckt den PR-Abschnitt (Adressen und Hostnamen entfernt wie bei `pr-body`), Exit 3 jeden
 Grund, Exit 2 einen Aufruffehler.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter

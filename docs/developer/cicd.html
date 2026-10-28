@@ -259,11 +259,13 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           Skript auf, der Aufrufer schreibt Flags.</p>
           <p>Die volle Ausgabe der Suite landet in <code>.ah-out/logs/verify-&lt;zeit&gt;-&lt;pid&gt;.log</code> (die
           neuesten 30 bleiben, <code>last-verify.json</code> nennt den Pfad unter <code>log</code>); auf stdout steht der
-          Digest von <code>scripts/dev/log-digest.sh</code>: jede Schritt-Zeile (per <code>--only</code> oder
-          <code>--</code> ausgelassene nur als Zahl), jede <code>strict-failed:</code>-Zeile, je rotem oder
-          selbst &uuml;bersprungenem Schritt seine Fehlerzeilen und sein Ende mit Zeilennummern, die Summary, Exit-Code
-          und Logpfad; ohne Summary das Ende des Logs. Keine Schritt-Zeile wird gek&uuml;rzt, nur die Ausz&uuml;ge sind
-          begrenzt. Auf einem Terminal oder mit <code>--full</code> l&auml;uft die volle Ausgabe zus&auml;tzlich mit.
+          Digest von <code>scripts/dev/log-digest.sh</code>: eine Zeile je Schritt (per <code>--only</code> oder
+          <code>--</code> ausgelassene nur als Zahl), je rotem oder selbst &uuml;bersprungenem Schritt seine
+          Fehlerzeilen und sein Ende mit Zeilennummern, der Schlussblock von <code>run.sh</code> (Summary,
+          <code>strict-failed</code>- und <code>failed</code>-Liste), Exit-Code und Logpfad; ohne Schlussblock am
+          Log-Ende das Ende des Logs. Eingefangene <code>run.sh</code>-Ausgabe eines roten Tests setzt keine Grenzen:
+          je Schritt gilt das schlechteste Ergebnis, Widerspr&uuml;che werden genannt. Keine Schritt-Zeile wird
+          gek&uuml;rzt, nur die Ausz&uuml;ge sind begrenzt. Auf einem Terminal oder mit <code>--full</code> l&auml;uft die volle Ausgabe zus&auml;tzlich mit.
           <code>bash scripts/dev/log-digest.sh &lt;log&gt; [&lt;exit&gt;]</code> fasst jedes andere
           <code>run.sh</code>-Log genauso zusammen.</p>
 
@@ -322,7 +324,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td><code>review.sh final</code></td><td>Darf der Branch in den PR und den Merge? Alle Tasks zu, das
               Branch-Urteil vorhanden, <code>approve</code> gesamt, f&uuml;r Code und f&uuml;r Tests, je mit Evidenz,
               eine Abdeckungsliste, h&ouml;chstens drei Gegenproben, kein <code>blocker</code>, und seit dem
-              gepr&uuml;ften Commit auf der eigenen Linie nur Merges und reine Ledger-Commits?</td><td>Exit&nbsp;0 mit dem
+              gepr&uuml;ften Commit auf der eigenen Linie nur reine Ledger-Commits und Merges ohne eigene
+              &Auml;nderungen (<code>CHANGELOG.md</code> ausgenommen)?</td><td>Exit&nbsp;0 mit dem
               PR-Abschnitt (bereinigt wie <code>pr-body</code>), Exit&nbsp;3 mit jedem Grund</td></tr>
             </tbody>
           </table>

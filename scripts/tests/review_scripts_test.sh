@@ -1021,6 +1021,21 @@ fin_verdict
 git -C "$FIX" merge -q --no-ff -m "Merge main" "$SIDE_TIP"
 fin
 [ $rc -eq 0 ] && ok "a merge of main after the verdict keeps it current" || bad "merge: rc=$rc out=$OUT"
+# A merge that resolves a conflict brings code no parent had.
+JUDGED="$(git -C "$FIX" rev-parse HEAD)"
+printf 'echo side\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="side change" fcommit scripts/dev/tool.sh
+SIDE_TIP="$(git -C "$FIX" rev-parse HEAD)"
+git -C "$FIX" reset -q --hard "$JUDGED"
+printf 'echo ours\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="our change" fcommit scripts/dev/tool.sh
+printf '## [Unreleased]\n- ours\n' >> "$FIX/CHANGELOG.md"; CMSG="our changelog" fcommit CHANGELOG.md
+fin_verdict
+git -C "$FIX" merge -q --no-ff -m "Merge side" "$SIDE_TIP" >/dev/null 2>&1
+printf 'set -e\necho hello\necho main\necho resolved\n' > "$FIX/scripts/dev/tool.sh"
+CMSG="Merge side" fcommit scripts/dev/tool.sh
+fin
+[ $rc -eq 3 ] && grep -q "merges after the verdict head that change files beyond both parents.*scripts/dev/tool.sh" <<<"$OUT" \
+  && ok "a merge that resolves a conflict after the verdict -> 3, named" || bad "evil merge: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard "$JUDGED"; fin_verdict
 printf 'echo fix\n' >> "$FIX/scripts/dev/tool.sh"; CMSG="fix: late change" fcommit scripts/dev/tool.sh
 fin
 [ $rc -eq 3 ] && grep -q 'commits after the verdict head that change more than the ledger.*fix: late change' <<<"$OUT" \

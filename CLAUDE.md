@@ -33,9 +33,8 @@ Worktree (Kriterien `/feature-plan` §4): die Session wechselt zwischen ihnen, w
 laufen, oder Kevin startet je Vorhaben eine Session. Seriell bleibt, was sich Contract-Dateien, eine Test-DB oder
 eine Abhängigkeit teilt: Parallelität darf keine Prüfung kosten.
 
-**Merge:** Eigene PRs merged die Session selbst, auch zu `CLAUDE.md`, `.claude/`, `scripts/` (Kevin 2026-10-17), wenn
-CI, die Läufe aus §5, `review.sh final` und nötige `security`-Urteile grün sind; eine Ersatzprüfung der Session (§6)
-ist kein `approve` (Bedingungen und Ablauf: `/feature-build` §4.7). Kevin merged fremde PRs und PRs, die
+**Merge:** Eigene PRs merged die Session selbst, auch zu `CLAUDE.md`, `.claude/`, `scripts/` (Kevin 2026-10-17), sobald
+die Bedingungen aus `/feature-build` §4.7 erfüllt sind. Kevin merged fremde PRs und PRs, die
 `.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern (sie wirken
 ohne Release auf Nutzer oder Secrets). Ist `main` rot, wird der letzte Merge revertiert, und bis `main` grün ist, wird
 nichts gemergt; flaky heißt Rerun plus Roadmap-Zeile.

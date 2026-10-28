@@ -43,7 +43,8 @@
 #              code and for the tests, with evidence for both, a coverage list,
 #              at most three probes (red | green | not-runnable) and no blocker,
 #              given on a commit after which the branch's own line brought only
-#              merges and commits to the ledger alone. <wt> is the checkout the
+#              commits to the ledger alone and merges without changes of their
+#              own (CHANGELOG.md aside). <wt> is the checkout the
 #              ledger lies in. Prints the PR section (cleaned like pr-body); exit
 #              3 with every reason the branch is not closable.
 #
@@ -525,6 +526,23 @@ def final():
             elif r.stdout.strip():
                 why.append("commits after the verdict head that change more than the ledger"
                            " — the reviewer has not seen them: " + "; ".join(r.stdout.split("\n")[:5]).strip("; "))
+            # A merge that brings changes of its own (a resolved conflict) is new
+            # code too: --cc keeps exactly the hunks no parent had. CHANGELOG.md is
+            # merged by union and checked by hand (/feature-build §4.6).
+            own = []
+            for m in git("rev-list", "--first-parent", "--merges", head + "..HEAD").stdout.split():
+                d = git("-c", "core.quotePath=false", "diff-tree", "--cc", "-p", "--no-commit-id", "--text",
+                        "--no-ext-diff", "--no-textconv", "--no-color", m)
+                path = ""
+                for dl in d.stdout.split("\n"):
+                    if dl.startswith("diff --cc "):
+                        path = dl[len("diff --cc "):]
+                    elif dl.startswith("@@@") and path not in ("tasks/%s.md" % slug, "CHANGELOG.md"):
+                        own.append("%s %s" % (m[:8], path))
+                        path = ""
+            if own:
+                why.append("merges after the verdict head that change files beyond both parents (a resolved"
+                           " conflict) — the reviewer has not seen them: " + "; ".join(own[:5]))
         now = git("rev-parse", "--short=8", "HEAD").stdout.strip()
     if why:
         print("review.sh final: %s is not closable:" % ledger, file=sys.stderr)
