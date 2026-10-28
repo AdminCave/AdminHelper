@@ -142,8 +142,10 @@ Doku: CHANGELOG.md (Changed, umlautfrei: Check-Namen mit Steuerzeichen (Zeilenum
 Beweis: Code-Lesung apps/monitoring/app/schemas.py:26
 HEAD: 13f340e4
 
-### T10 — Doku und CHANGELOG nach monitoring-io präzisieren (R-0799)  [ ]
+### T10 — Doku und CHANGELOG nach monitoring-io präzisieren (R-0799)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @68c3f527 2026-10-28T15:41:13+01:00
+Review: approve (.ah-out/review/monitoring-hardening-2/T10.verdict.json)
 Änderung: DE und EN an denselben Stellen, Code-Stellen nach T6 greppen. (1) `docs/admin/monitoring.html:149`, `timeout`: gilt für den ganzen Check, jede Anfrage bekommt die verbleibende Zeit, das Lesen des Bodys endet mit der Frist; ein einzelner Lesevorgang, auch der Kopfzeilen, wartet bis zur verbleibenden Zeit, eine Antwort, die stückweise kommt, kann den Check über `timeout` hinaus halten (`app/checkers/http.py:73`). (2) `:227`: Die aufgeklappte Grafik zeigt bei HTTP 502 des Metrik-Abrufs „Fehler beim Laden“ (EN „Error loading“, `apps/desktop/ui/src/components/monitoring/section/ExpandChart.svelte:80`, `apps/desktop/ui/src/lib/i18n/dictionaries.ts:674`, `:1464`) statt leerer Reihen. (3) `docs/developer/monitoring.html:175`, `http.py`: `search_string` wird in den ersten 1 MiB des entpackten Bodys gesucht; `gzip` und `deflate` entpackt der Check schrittweise selbst, andere Kodierungen bleiben roh (nach T6). (4) `CHANGELOG.md`: `:127` (Grafik zeigt „Fehler beim Laden“), `:137-139` (ein Eintrag, der kein Objekt ist, wird uebersprungen; eine Liste als `fstype` zaehlt wie ein fehlender `fstype`, die Platte wird geschrieben), `:145-146` (der Report endete mit HTTP 500 oder speicherte still nichts), `:160-161` (wie (1)).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Stellen selbst

@@ -401,7 +401,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein nicht erreichbares VictoriaMetrics erscheint als Fehler (R-0636):** Scheitert eine Abfrage an
   VictoriaMetrics, antwortet der Metrik-Abruf (`GET /checks/{id}/metrics`) mit HTTP 502 „Metrics store unavailable“
-  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der
+  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt im Desktop „Fehler beim Laden“ statt
+  „keine Daten“. Der
   Check `disk_forecast` steht dann auf `unknown` mit „Metrics store unavailable“ statt „No disk history yet“. Doku:
   Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: CPU- und RAM-Verlauf eines Servers kommt einmal statt doppelt (R-0633):** Der Check
@@ -435,15 +436,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Glocke, als Leerzeichen; der Text der Meldung und das Feld `check_name` des Webhooks tragen den Namen unveraendert.
   Doku: Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
-  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
-  jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
+  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen.
+  Jetzt wird ein Eintrag, der kein Objekt ist, uebersprungen; eine Liste als `fstype` zaehlt wie ein fehlender
+  `fstype`, die Platte wird geschrieben. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
   String (sonst wie ohne das Feld) und Messwerte nur als JSON-Zahl: einen Zahl-String wie `"97"` schreibt der
   Agent-Push nicht mehr als Messwert. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein Datenbankfehler bei einem Check eines Agent-Reports kostet nur diesen Check (R-0635):** Jeder
   Push-Check eines Agent-Reports wird in einem eigenen Savepoint ausgewertet. Scheitert ein Check an der Datenbank
   (Deadlock, Abbruch beim Sperren seines Zustands, gescheitertes Schreiben), verwirft das Monitoring nur dessen
   Ergebnis samt Status-Punkt und Alert; bisher scheiterten alle folgenden Checks und das Speichern, der Report endete
-  mit HTTP 500, und die Ergebnisse des ganzen Reports gingen verloren.
+  mit HTTP 500 oder speicherte still nichts, und die Ergebnisse des ganzen Reports gingen verloren.
 - **Monitoring: eine Alert-Regel mit sehr grossem oder leerem Cooldown bricht den Versand nicht mehr ab (R-0631):**
   Eine Regel mit `cooldown_minutes` ueber rund 1 065 000 000 (etwa 2000 Jahre, das Schema erlaubt bis 2 147 483 647)
   oder ohne Wert (`null`, etwa nach `PUT /alerts/{id}` mit `"cooldown_minutes": null`) brach beim Pruefen ihres
@@ -459,8 +461,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; eine komprimierte Antwort
   (gzip, deflate) entpackt er dafuer schrittweise und hoechstens bis 1 MiB. Ohne `search_string` liest er den Body
   gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den ganzen
-  Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt den
-  Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not found
+  Check statt je Anfrage und Phase: jede Anfrage, auch nach einem Redirect, bekommt die verbleibende Zeit, und das
+  Lesen des Bodys endet mit der Frist; ein einzelner Lesevorgang, auch der der Kopfzeilen, wartet bis zur
+  verbleibenden Zeit, eine Antwort, die stueckweise kommt, kann den Check also ueber `timeout` hinaus halten. Ein
+  Server, der den Body troepfeln liess, hielt den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not found
   in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string` keinen
   Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
 - **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
