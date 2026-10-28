@@ -29,8 +29,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: → T5
 
-### T3 — Ledger-Format, REG-Ledger, Skript-Kommentare  [ ]
+### T3 — Ledger-Format, REG-Ledger, Skript-Kommentare  [x]
 Komponente: scripts · Dateien: tasks/README.md, tasks/templates/task.md, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, scripts/dev/task-close.sh, scripts/dev/review-risk.txt
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a755fa14 2026-10-28T12:40:54+01:00
+Review: am Ende (Branch-Review)
 Änderung: `tasks/README.md`: Task-Zuschnitt, `Doku:`-Formen (`→ T<n>` für die Doku-Task), Abschnitt `## Entscheidungen`, Status `bereit` ohne `tester`. `ledger.sh lint`: `Doku: → T<n>` nennt eine Task desselben Ledgers. Das REG-Ledger aus `heavy.sh` ohne `Modell: Opus`, mit der neuen DoD-Zeile. Kommentare in `task-close.sh` und `review-risk.txt` ohne `builder`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test heavy_test task_close_test
 Doku: keine (die Dateien sind selbst Regel und Format)
