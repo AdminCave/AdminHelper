@@ -11,6 +11,7 @@ are forwarded internally within the Docker network to the monitoring container.
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 import httpx
@@ -28,6 +29,18 @@ from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
+
+logger = logging.getLogger(__name__)
+
+
+def _upstream_error(route: str, exc: httpx.HTTPError) -> HTTPException:
+    """The answer for a forward the monitoring service did not answer: 504 for a timeout,
+    502 for anything else. Logged with the type only: the message carries the URL."""
+    logger.warning("monitoring proxy (%s): %s", route, type(exc).__name__)
+    if isinstance(exc, httpx.TimeoutException):
+        return HTTPException(status_code=504, detail="monitoring service timed out")
+    return HTTPException(status_code=502, detail="monitoring service unreachable")
+
 
 # The agent-report ingest is public (X-API-Key, no JWT). Cap per-IP so an
 # unauthenticated flood can't drive the proxy-forward + monitoring auth path.
@@ -106,14 +119,17 @@ async def proxy_agent_report(
         raise HTTPException(status_code=429, detail="Zu viele Agent-Reports")
     # `server_id` is percent-DECODED by Starlette: re-encode it, or a '?'/'#' truncates the
     # target URL (another monitoring route) and a control character makes httpx raise InvalidURL.
-    resp = await _client.post(
-        f"{_MONITOR_BASE}/agent/{quote(server_id, safe='')}/report",
-        content=await request.body(),
-        headers={
-            "X-API-Key": request.headers.get("x-api-key", ""),
-            "Content-Type": request.headers.get("content-type", "application/json"),
-        },
-    )
+    try:
+        resp = await _client.post(
+            f"{_MONITOR_BASE}/agent/{quote(server_id, safe='')}/report",
+            content=await request.body(),
+            headers={
+                "X-API-Key": request.headers.get("x-api-key", ""),
+                "Content-Type": request.headers.get("content-type", "application/json"),
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise _upstream_error("agent report", exc) from None
     return Response(
         content=resp.content,
         status_code=resp.status_code,
@@ -179,7 +195,7 @@ async def proxy_to_monitoring(
         # message carries the target URL.
         if not isinstance(exc, _NOT_SENT):
             await _audit_write(db, request, forward_path, "error", f"error={type(exc).__name__}")
-        raise
+        raise _upstream_error("admin proxy", exc) from None
     await _audit_write(
         db,
         request,

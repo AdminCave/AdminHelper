@@ -343,6 +343,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: der Monitoring-Proxy antwortet 502 oder 504 statt 500 (R-0655):** Ist der Monitoring-Dienst nicht
+  erreichbar, etwa waehrend eines Neustarts, antworten Agent-Report und Admin-Proxy mit `502`, ohne Antwort binnen
+  30 s mit `504`; bisher endete jeder Aufruf mit einem unbehandelten Fehler (500). Das Log nennt nur den Fehlertyp.
+  Doku: API-Referenz fuer Entwickler (DE+EN).
 - **Server: ein offener Benachrichtigungs-Stream haelt keine Datenbank-Verbindung mehr (R-0618):** Mit
   Client-Zertifikat hielt jeder Desktop fuer seine ganze Sitzung eine Verbindung aus dem Pool; die Scope-Pruefung des
   Streams laeuft jetzt auf der kurzen Session der Anmeldung. Ohne passendes Zertifikat antwortet er im erzwungenen

@@ -170,7 +170,7 @@
 
           <h2>Monitoring (reverse proxy)</h2>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/agent/{server_id}/report</code><p><strong>Public</strong> (X-API-Key). Forwards the agent push 1:1 to the monitoring microservice.</p></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/monitoring/{path:path}</code><p>Admin-only reverse proxy. Allowed path prefixes: <code>checks</code>, <code>alerts</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>. Path traversal is blocked.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/monitoring/{path:path}</code><p>Admin-only reverse proxy. Allowed path prefixes: <code>checks</code>, <code>alerts</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>. Path traversal is blocked. If the monitoring service cannot be reached, the proxy answers <code>502</code>, with no answer within 30&nbsp;s <code>504</code>.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/{path:path}</code></div>
           <div class="endpoint"><span class="method-put">PUT</span><code>/api/monitoring/{path:path}</code></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/monitoring/{path:path}</code></div>
