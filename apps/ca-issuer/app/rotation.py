@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -152,11 +151,15 @@ def _retired_after(
     now: datetime.datetime,
 ) -> list[x509.Certificate]:
     """What the retired file `path` holds after the rotation, newest first and each
-    once: `old` if the root signed it and it is valid now, and the file's entries that
-    have not expired. An entry that is not an intermediate of `scope` under the root
-    (pki.intermediate_problem) is a RotationError: the boot skips such an entry
-    unattended, with a WARNING; a rotation that rewrites the file would either carry it
-    on or drop it silently, and that is the operator's call."""
+    once: `old` if it is an intermediate of `scope` under the root
+    (pki.intermediate_problem) and valid now, and the file's entries that have not
+    expired. An `old` that is not one (a restore with the scopes mixed up, a foreign
+    certificate) is replaced without being kept: the rotation is also the way to replace
+    a wrong <scope>.crt, and kept it would be an entry the boot skips and the next
+    rotation stops at. An entry of the file that is not an intermediate of `scope` under
+    the root is a RotationError: the boot skips such an entry unattended, with a WARNING;
+    a rotation that rewrites the file would either carry it on or drop it silently, and
+    that is the operator's call."""
     earlier: list[x509.Certificate] = []
     try:
         data = path.read_bytes() if path.exists() else b""
@@ -173,19 +176,14 @@ def _retired_after(
             )
 
     keep = [c for c in earlier if now < c.not_valid_after_utc]
-    if _signed_by(old, root) and old.not_valid_before_utc <= now < old.not_valid_after_utc:
+    if (
+        pki.intermediate_problem(old, scope, root) is None
+        and old.not_valid_before_utc <= now < old.not_valid_after_utc
+    ):
         keep.append(old)
     der = serialization.Encoding.DER
     unique = {c.public_bytes(der): c for c in keep}
     return sorted(unique.values(), key=lambda c: c.not_valid_before_utc, reverse=True)
-
-
-def _signed_by(cert: x509.Certificate, issuer: x509.Certificate) -> bool:
-    try:
-        cert.verify_directly_issued_by(issuer)
-    except (InvalidSignature, ValueError, TypeError):
-        return False
-    return True
 
 
 def _replace(path: Path, data: bytes, mode: int) -> None:

@@ -257,6 +257,24 @@ def test_an_expired_intermediate_is_replaced_but_not_retired(monkeypatch, tmp_pa
         assert _retired_file(tmp_path, r.scope) == []
 
 
+def test_another_scopes_intermediate_as_current_is_replaced_but_not_retired(tmp_path):
+    # A restore with the scopes mixed up: access.crt holds tunnel's intermediate, signed by
+    # the root and valid. Retired, it would be an entry the boot skips and the next
+    # rotation stops at; the rotation replaces it, as it replaces any wrong <scope>.crt.
+    tunnel = storage.ensure_hierarchy(tmp_path, PW)["tunnel"].cert
+    (tmp_path / "access.crt").write_bytes(pki.cert_to_pem(tunnel))
+    (tmp_path / "access-chain.pem").write_bytes((tmp_path / "tunnel-chain.pem").read_bytes())
+
+    first = {r.scope: r for r in rotation.rotate_intermediates(tmp_path, PW)}
+
+    assert first["access"].old == tunnel
+    assert _retired_file(tmp_path, "access") == []
+    assert _retired_file(tmp_path, "tunnel") == [tunnel]
+    second = {r.scope: r for r in rotation.rotate_intermediates(tmp_path, PW)}
+    assert second["access"].old == first["access"].new
+    assert storage.ensure_hierarchy(tmp_path, None)["access"].retired == (first["access"].new,)
+
+
 def test_a_current_intermediate_not_valid_yet_changes_nothing(monkeypatch, tmp_path):
     # access was issued ten days after the others; this clock is five days behind that.
     # Replaced under it, access would not be kept as retired.

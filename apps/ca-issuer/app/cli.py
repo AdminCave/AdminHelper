@@ -29,7 +29,9 @@ from app import config, pki, rotation
 
 # status: 0 all fine, 1 the root or a current intermediate has fewer than
 # pki.EXPIRY_WARN_DAYS left, 3 one of them is not valid now or not readable (2 is
-# argparse's usage error). Retired intermediates never raise it: they run out by design.
+# argparse's usage error). Retired intermediates never raise it by their time: they run
+# out by design. An entry of a retired file that the boot skips with a WARNING (not an
+# intermediate of its scope under the root, pki.intermediate_problem) is 1, marked SKIPPED.
 OK, WARN, BAD = 0, 1, 3
 
 _ROLE_WIDTH = len(f"{max(pki.SCOPES, key=len)} (retired)")
@@ -51,9 +53,13 @@ def status(pki_dir: Path) -> int:
     one line each; return the exit code (see OK, WARN, BAD)."""
     now = pki._now()
     worst = _show_current("root", pki_dir / "root.crt", now)
+    try:
+        root: x509.Certificate | None = pki.cert_from_pem((pki_dir / "root.crt").read_bytes())
+    except (OSError, ValueError):
+        root = None  # shown as unreadable above; the retired entries go unchecked
     for scope in pki.SCOPES:
         worst = max(worst, _show_current(scope, pki_dir / f"{scope}.crt", now))
-        worst = max(worst, _show_retired(scope, pki_dir / f"{scope}-retired.pem", now))
+        worst = max(worst, _show_retired(scope, pki_dir / f"{scope}-retired.pem", now, root))
     return worst
 
 
@@ -72,7 +78,9 @@ def _show_current(role: str, path: Path, now: datetime.datetime) -> int:
     return OK
 
 
-def _show_retired(scope: str, path: Path, now: datetime.datetime) -> int:
+def _show_retired(
+    scope: str, path: Path, now: datetime.datetime, root: x509.Certificate | None
+) -> int:
     role = f"{scope} (retired)"
     try:
         data = path.read_bytes()
@@ -85,9 +93,15 @@ def _show_retired(scope: str, path: Path, now: datetime.datetime) -> int:
     except ValueError as exc:
         # The issuer does not start with a retired file it cannot read.
         return _unreadable(role, path, exc)
+    worst = OK
     for cert in certs:
-        print(_line(role, cert, now))
-    return OK
+        # The boot's rule (storage.ensure_hierarchy): such an entry is skipped whatever its time.
+        if root is not None and (problem := pki.intermediate_problem(cert, scope, root)):
+            print(f"{_line(role, cert, now)}  SKIPPED ({problem})")
+            worst = WARN
+        else:
+            print(_line(role, cert, now))
+    return worst
 
 
 def _unreadable(role: str, path: Path, exc: Exception) -> int:
@@ -160,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser(
         "status",
         help="show root, current and retired intermediates with their end (exit 0 ok, "
-        f"1 fewer than {pki.EXPIRY_WARN_DAYS} days left, 3 expired or unreadable)",
+        f"1 fewer than {pki.EXPIRY_WARN_DAYS} days left or a retired entry the boot skips, "
+        "3 expired or unreadable)",
     )
     commands.add_parser(
         "rotate-intermediates",

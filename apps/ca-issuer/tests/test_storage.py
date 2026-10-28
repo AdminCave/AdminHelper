@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
 
 from app import pki, storage
@@ -386,6 +386,32 @@ def test_a_retired_intermediate_from_a_foreign_root_is_skipped_with_a_warning(
 
     assert inter["tunnel"].retired == (valid,)
     assert "not signed by root" in _skip_warning(caplog, "tunnel", foreign)
+
+
+# A signature algorithm cryptography does not know, swapped in at both places it is named
+# (the TBS signature field and the outer one) for an OID of the same length.
+_ECDSA_SHA256_OID = bytes.fromhex("06082a8648ce3d040302")  # 1.2.840.10045.4.3.2
+_UNKNOWN_SIGNATURE_OID = bytes.fromhex("06082a8648ce3d04030f")  # 1.2.840.10045.4.3.15
+
+
+def test_a_retired_intermediate_with_an_unknown_signature_algorithm_is_skipped_with_a_warning(
+    monkeypatch, tmp_path, caplog
+):
+    _booted(monkeypatch, tmp_path, days_ago=30)
+    der = _minted(monkeypatch, tmp_path, "access", shift_days=-10).public_bytes(
+        serialization.Encoding.DER
+    )
+    assert der.count(_ECDSA_SHA256_OID) == 2
+    odd = x509.load_der_x509_certificate(der.replace(_ECDSA_SHA256_OID, _UNKNOWN_SIGNATURE_OID))
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(odd))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == ()
+    warning = _skip_warning(caplog, "access", odd)
+    assert "not signed by root" in warning and "signature algorithm" in warning.lower()
 
 
 def test_a_retired_intermediate_not_valid_yet_is_left_out_with_an_info_line(

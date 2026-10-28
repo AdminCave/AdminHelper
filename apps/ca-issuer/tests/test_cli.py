@@ -17,6 +17,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.x509.oid import NameOID
 
 from app import cli, pki, rotation, storage
 
@@ -49,8 +52,8 @@ def _stdin(monkeypatch, text: str) -> None:
 
 def _cert_with_days_left(monkeypatch, role: str, days: int):
     """A root ("root") or an intermediate of scope `role` that has `days` left (negative:
-    expired that long ago). The CLI reads only the certificate, so a throwaway root
-    stands in as the issuer of the intermediate."""
+    expired that long ago). The CLI checks the issuer of retired entries only, so a
+    throwaway root stands in as the issuer of the intermediate."""
     lifetime = pki.VALIDITY_DAYS_ROOT if role == "root" else pki.VALIDITY_DAYS_INTERMEDIATE
     then = pki._now() - datetime.timedelta(days=lifetime - days)
     with monkeypatch.context() as m:
@@ -59,6 +62,30 @@ def _cert_with_days_left(monkeypatch, role: str, days: int):
         if role == "root":
             return root_cert
         return pki.build_intermediate_ca(role, root_cert, root_key)[0]
+
+
+def _root_of(d: Path) -> x509.Certificate:
+    return pki.cert_from_pem((d / "root.crt").read_bytes())
+
+
+def _retired_with_days_left(d: Path, scope: str, days: int) -> x509.Certificate:
+    """An intermediate of `scope` under the root of d, as pki.build_intermediate_ca makes
+    one, that has `days` left (negative: expired that long ago). Built by hand: pki issues
+    nothing before its issuer's start, and the root of d is from today."""
+    root_key = pki.key_from_pem((d / "root.key.enc").read_bytes(), PW)
+    now = pki._now()
+    cn = f"AdminHelper {scope.capitalize()} Intermediate"
+    return (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)]))
+        .issuer_name(_root_of(d).subject)
+        .public_key(pki.generate_key().public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=pki.VALIDITY_DAYS_INTERMEDIATE - days))
+        .not_valid_after(now + datetime.timedelta(days=days))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(root_key, hashes.SHA256())
+    )
 
 
 def test_status_of_a_fresh_hierarchy(pki_dir, capsys):
@@ -109,8 +136,8 @@ def test_status_of_a_missing_root_is_3(pki_dir, capsys):
 
 def test_status_lists_retired_ones_without_judging_them(monkeypatch, pki_dir, capsys):
     # A retired intermediate runs out by design; an expired one is only dropped at the next boot.
-    valid = _cert_with_days_left(monkeypatch, "access", 10)
-    expired = _cert_with_days_left(monkeypatch, "access", -1)
+    valid = _retired_with_days_left(pki_dir, "access", 10)
+    expired = _retired_with_days_left(pki_dir, "access", -1)
     (pki_dir / "access-retired.pem").write_bytes(pki.chain_pem(valid, expired))
 
     rc = cli.main(["status"])
@@ -119,6 +146,35 @@ def test_status_lists_retired_ones_without_judging_them(monkeypatch, pki_dir, ca
     assert rc == 0
     assert len(retired) == 2
     assert all(line.startswith("access (retired)") for line in retired)
+    assert not any("SKIPPED" in line for line in retired)
+
+
+def test_status_marks_a_retired_entry_the_boot_skips(pki_dir, capsys):
+    # The boot skips it with a WARNING (storage.ensure_hierarchy); status says so, exit 1.
+    root = _root_of(pki_dir)
+    valid = _retired_with_days_left(pki_dir, "access", 10)
+    (pki_dir / "access-retired.pem").write_bytes(pki.chain_pem(root, valid))
+
+    rc = cli.main(["status"])
+
+    retired = [line for line in capsys.readouterr().out.splitlines() if "(retired)" in line]
+    assert rc == 1
+    assert len(retired) == 2
+    assert pki.read_identity(root)[0] in retired[0]
+    assert "SKIPPED (its CN is not 'AdminHelper Access Intermediate'" in retired[0]
+    assert pki.read_identity(valid)[0] in retired[1] and "SKIPPED" not in retired[1]
+
+
+def test_status_without_a_root_lists_retired_ones_unchecked(monkeypatch, pki_dir, capsys):
+    # Nothing to check them against: the missing root is the finding (3).
+    other = _cert_with_days_left(monkeypatch, "access", 10)  # from a throwaway root
+    (pki_dir / "access-retired.pem").write_bytes(pki.cert_to_pem(other))
+    (pki_dir / "root.crt").unlink()
+
+    assert cli.main(["status"]) == 3
+
+    retired = [line for line in capsys.readouterr().out.splitlines() if "(retired)" in line]
+    assert len(retired) == 1 and "SKIPPED" not in retired[0]
 
 
 def test_rotate_with_the_secret_file(monkeypatch, pki_dir, tmp_path, capsys):

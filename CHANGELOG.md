@@ -36,7 +36,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `docker compose run --rm --no-deps ca-issuer python -m app.cli status` zeigt Root, aktuelle und abgeloeste
   Zwischenzertifikate der internen CA mit Name, Ablaufdatum (UTC) und Resttagen; Exit 1, wenn die Root oder ein
   aktuelles Zwischenzertifikat weniger als 180 Tage hat, 3, wenn eins davon nicht gueltig oder eine der Dateien nicht
-  lesbar ist, sonst 0. `… python -m app.cli rotate-intermediates` stellt fuer `tunnel`, `access` und `internal` neue
+  lesbar ist, sonst 0. Exit 1 auch, wenn ein Eintrag der Datei `<scope>-retired.pem` (unten) kein Zwischenzertifikat
+  seines Scopes unter der Root ist: Der Start ueberspringt ihn mit einer WARNING, `status` markiert ihn mit `SKIPPED`
+  und dem Grund. `… python -m app.cli rotate-intermediates` stellt fuer `tunnel`, `access` und `internal` neue
   Zwischenzertifikate unter derselben Root aus (Name mit Datum, etwa `AdminHelper Access Intermediate 2031-05-04`);
   die abgeloesten bleiben ohne Schluessel in `<scope>-retired.pem` im Volume `ca-pki`, bis sie ablaufen. Die
   Root-Passphrase kommt wie beim Dienst aus `CA_ROOT_PASSPHRASE_FILE` bzw. `CA_ROOT_PASSPHRASE`, sonst aus einer
