@@ -450,12 +450,12 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
 
           <p><strong>Geteilte API-Typen</strong> (<code>sync-from-web.sh --check</code>): die beiden
           <code>api/types.ts</code> sind l&auml;ngst keine gemeinsame Datei mehr &ndash; das Web beschreibt die
-          Admin-Panel-API (25 Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole, und nur die
+          Admin-Panel-API (25 Exporte), das Desktop die Client-API (58). Gemeinsam sind drei Symbole, und nur die
           k&ouml;nnen driften. Gepr&uuml;ft wird deshalb die Schnittmenge, und als Teilmenge statt als Gleichheit:
-          jede Zeile der Web-Seite muss im Desktop stehen, das Desktop darf mehr f&uuml;hren. <code>Server</code>
-          tut das auch zu Recht &ndash; <code>to_dict()</code> liefert <code>connections</code>, das Admin-Panel
-          ignoriert es nur. Blind ist die Regel in einer Richtung: entfernt das Web ein Feld, bleibt die Teilmenge
-          erf&uuml;llt und das Desktop beh&auml;lt die Leiche. Die vier erwarteten gemeinsamen Symbole stehen
+          jede Zeile der Web-Seite muss im Desktop stehen, das Desktop darf mehr f&uuml;hren (bis R-0723 tat das das gemeinsame
+          <code>Server</code> mit <code>connections</code>, das das Admin-Panel nur ignorierte; seitdem kennt das
+          Web nur <code>ServerSummary</code>). Blind ist die Regel in einer Richtung: entfernt das Web ein Feld, bleibt die Teilmenge
+          erf&uuml;llt und das Desktop beh&auml;lt die Leiche. Die drei erwarteten gemeinsamen Symbole stehen
           namentlich im Skript, damit ein einzelnes Verschwinden auff&auml;llt.</p>
 
           <h2>Container-Images (ghcr.io)</h2>
