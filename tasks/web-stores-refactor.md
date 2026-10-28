@@ -239,8 +239,10 @@ Metrik: gelöschte Zeilen in `router.ts` (13 der 39) und drei Tests in `router.t
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T16 — Toter Code: `requireUser` und die Prop `size` von `Button` (R-0724)  [ ]
+### T16 — Toter Code: `requireUser` und die Prop `size` von `Button` (R-0724)  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/auth.ts, apps/web/src/lib/components/ui/Button.svelte
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @e6460176 2026-10-28T18:22:13+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T16.verdict.json)
 Änderung: `requireUser` (`auth.ts:104-108`) geht; `get` und `User` bleiben genutzt (`:87`, `:15`, `:86`). In `Button.svelte` gehen der Typ `Size` (`:11`), die Prop `size` (`:16`, `:30`) und ihr Zweig in der Klasse (`:41`); die CSS-Klasse `.btn.small` bleibt (rohe `<button class="btn small">`).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/auth.test.ts src/lib/components/ui/ConfirmDialog.test.ts src/modals/FrpConfigModal.test.ts
 Doku: keine (`git grep -n requireUser -- docs` leer; die Prop ist nicht dokumentiert)
