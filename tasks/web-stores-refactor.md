@@ -143,8 +143,10 @@ Orakel: contract — die Payloads nach `UserCreate`/`UserUpdate` (`apps/web/src/
 Dedup-Key: ref:web:modals:payload-logic-untested
 HEAD: b25c65a6
 
-### T9 — UserModal: Formular → Payload als reine Funktionen (R-0722)  [ ]
+### T9 — UserModal: Formular → Payload als reine Funktionen (R-0722)  [x]
 Komponente: web · Dateien: apps/web/src/lib/utils/userForm.ts, apps/web/src/lib/utils/userForm.test.ts, apps/web/src/modals/UserModal.svelte
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @fa44ce50 2026-10-28T17:42:01+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T9.verdict.json)
 Änderung: Neu `userForm.ts` (SPDX): `interface UserForm { username; password; isAdmin; serverIds: string[] }`, `validateUserForm(form, editing): 'modal.user.passwordRequired' | null`, `userCreatePayload(form): UserCreate`, `userUpdatePayload(form): UserUpdate` (Passwort nur, wenn gesetzt), `endsOwnSession(form, editing, currentUserId): boolean` (heute `ownPassword` in `onSubmit`, `UserModal.svelte:67-110`). Der Dialog ruft sie; Store-Aufrufe, `auth.logout()`/`auth.applySelfUpdate()`, Toasts und `onClose` bleiben in der Komponente. `userForm.test.ts`: die Fälle aus T8 (a)–(c) und die Regel aus R-0652 auf Funktionsebene (eigenes Konto mit Passwort → `true`; eigenes Konto ohne Passwort und fremdes Konto mit Passwort → `false`). `UserModal.test.ts` ändert sich nicht und ist vor und nach dem Diff grün. Mutations-Stichprobe im Probe-Worktree, je allein an `userForm.ts`: M1 `username.trim()` → `username`; M2 Passwort im Update immer mitsenden; M3 `endsOwnSession` ohne Vergleich der ID → erwartet je `UserModal.test.ts` und `userForm.test.ts` rot.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/utils/userForm.test.ts src/modals/UserModal.test.ts
 Doku: keine (intern)
