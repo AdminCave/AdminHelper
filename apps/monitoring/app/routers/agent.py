@@ -14,18 +14,19 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from app.check_engine import _dispatch_alert_bg, apply_result
+from app.check_engine import _dispatch_alert_bg, apply_result, log_transition
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import (
     EXCLUDED_FSTYPES,
+    NO_MOUNT,
     agent_number,
     capped_objects,
     entry_text,
     record_agent_report,
 )
 from app.core.auth import require_agent
-from app.core.bounds import _find_nul
+from app.core.bounds import _find_unstorable
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, victoria
@@ -65,19 +66,21 @@ def agent_report(
         db.rollback()
         logger.exception("Persistieren der Agent-Liveness fehlgeschlagen (%s)", server_id)
 
-    # A NUL anywhere in the report would die in a text column further down. Refused
-    # here, AFTER the liveness above and not on the parameter: liveness is not report
-    # content, and a refused report must not turn into a "server down" alarm.
-    found = _find_nul(report)
+    # A NUL anywhere in the report would die in a text column further down, a lone
+    # surrogate in a tag value would fail to encode in VictoriaClient._send and take
+    # the whole batch with it, lines of other servers included. Refused here, AFTER
+    # the liveness above and not on the parameter: liveness is not report content,
+    # and a refused report must not turn into a "server down" alarm.
+    found = _find_unstorable(report)
     if found is not None:
-        loc, value = found
-        logger.warning("Agent report from %s refused: NUL byte at %s", server_id, list(loc))
+        loc, value, reason = found
+        logger.warning("Agent report from %s refused: %s at %s", server_id, reason, list(loc))
         raise RequestValidationError(
             [
                 {
                     "type": "value_error",
                     "loc": ("body", *loc),
-                    "msg": "Value error, must not contain a NUL byte",
+                    "msg": f"Value error, {reason}",
                     "input": value,
                 }
             ]
@@ -108,7 +111,7 @@ def agent_report(
             for disk in capped_objects(resources.get("disks")):
                 if entry_text(disk, "fstype", "_real_") in EXCLUDED_FSTYPES:
                     continue
-                disk_tags = {**base_tags, "mount": entry_text(disk, "mount", "/")}
+                disk_tags = {**base_tags, "mount": entry_text(disk, "mount", NO_MOUNT)}
                 pct = agent_number(disk.get("percent"))
                 if pct is not None:
                     lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
@@ -141,6 +144,7 @@ def agent_report(
     # (check_id, old_status, new_status) for each sent-state discrepancy; dispatched in
     # the background after the response so webhook/SMTP never block the request.
     pending_alerts: list[tuple[str, str, str]] = []
+    transitions: list[tuple[str, str, str, str]] = []
     agent_checks = (
         db.query(MonitorCheck)
         .filter(
@@ -239,6 +243,7 @@ def agent_report(
                 # per-metric hysteresis memory ('problems') across one degenerate
                 # push (T38). notify is collected here and dispatched only after the
                 # batch commit: a blocking webhook/SMTP must not stall this request.
+                had_state = state is not None
                 old_status, eff_status, decision = apply_result(
                     db,
                     check,
@@ -254,6 +259,8 @@ def agent_report(
             continue
 
         check_lines.extend(result_lines)
+        if had_state and eff_status != old_status:
+            transitions.append((check.name, old_status, eff_status, state.message))
         if decision == "notify":
             pending_alerts.append((check.id, old_status, eff_status))
         checks_updated += 1
@@ -268,6 +275,10 @@ def agent_report(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save the check evaluation",
             )
+        # Logged only once saved: a transition of a check whose savepoint or the shared
+        # commit failed did not happen.
+        for transition in transitions:
+            log_transition(*transition)
 
     # Flush all collected per-check metrics in a single write (5.20).
     if check_lines:

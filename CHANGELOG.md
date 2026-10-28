@@ -300,6 +300,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
   verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
   gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
+- **Monitoring: Check-Namen ohne Steuerzeichen:** Ein Check-Name mit einem Steuerzeichen (C0 wie Zeilenumbruch oder
+  Tab, dazu DEL) ergibt `422` an der Stelle des Namens („must not contain control characters“), in `POST /checks`,
+  `PUT /checks/{id}` und in den Check-Definitionen von `POST /templates` und `PUT /templates/{id}`; die Grenze ist
+  dieselbe wie bei den FRP-Feldern des Servers. Andere Zeichen, auch C1 und U+2028/U+2029, bleiben erlaubt.
+  Gespeicherte Namen bleiben, wie sie sind, und ihre Alerts gehen weiter hinaus. Wer einen solchen Check oder ein
+  solches Template bearbeitet und dabei den Namen mitschickt, wie der Desktop bei jedem Speichern, entfernt die
+  Steuerzeichen aus dem Namen, sonst kommt `422`.
 - **Server: gleichzeitige Refreshes mit demselben Refresh-Token:** Das neue Token-Paar bekommt nur der Aufruf, der
   den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
   wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
@@ -336,6 +343,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: ein waehrend des manuellen Laufs geloeschter Check antwortet 404:** `POST /checks/{id}/run` auf einen
+  Check, der waehrend des Laufs geloescht wird, antwortet 404 „Check not found“ statt 500; das Ergebnis des Laufs
+  wird wie bisher verworfen.
 - **Desktop: der Zertifikat-Pin gilt erst, wenn er im Schluesselbund gespeichert ist:** Mit „Selbstsignierte
   Zertifikate erlauben“ pinnt der Desktop beim ersten Verbinden das Server-Zertifikat im Schluesselbund des Systems.
   Laesst sich der Pin dort nicht speichern oder nicht lesen, lehnt der Desktop die Verbindung jetzt mit einem eigenen
@@ -440,15 +450,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitorings nicht mehr erschoepfen, Agent-Reports und API-Anfragen bekommen weiter eine Verbindung. Wird ein Check
   waehrend seines Laufs geloescht, verwirft das Monitoring dessen Ergebnis ohne Fehlerprotokoll.
 - **Monitoring: Schreiben nach VictoriaMetrics blockiert weder Checks noch Agent-Reports (R-0615, R-0636):** Die
-  Metriken gehen in einen Puffer (bis 100 000 Zeilen), den ein eigener Thread in Stapeln bis 10 000 Zeilen nach
-  VictoriaMetrics schreibt; ein haengendes VictoriaMetrics haelt keinen Check und keinen Agent-Report mehr bis zu
-  rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht mehr dreimal gesendet,
-  sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx werden weiter bis zu
-  dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl hoechstens einmal je
-  Minute; beim Herunterfahren leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
+  Metriken gehen in einen Puffer (bis 100 000 Zeilen und hoechstens 64 MiB), den ein eigener Thread in Stapeln bis
+  10 000 Zeilen nach VictoriaMetrics schreibt; ein haengendes VictoriaMetrics haelt keinen Check und keinen
+  Agent-Report mehr bis zu rund 30 s bzw. 60 s auf. Eine von VictoriaMetrics abgelehnte Zeile (HTTP 4xx) wird nicht
+  mehr dreimal gesendet, sondern einmal mit Status und Anfang der Antwort geloggt; Timeout, Verbindungsfehler und 5xx
+  werden weiter bis zu dreimal versucht. Ist der Puffer voll, verwirft das Monitoring neue Zeilen und meldet die Zahl
+  beim Verwerfen hoechstens einmal je Minute, spaetestens aber, sobald der Puffer wieder leer ist; beim Herunterfahren
+  leert es den Puffer bis zu 5 s. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein nicht erreichbares VictoriaMetrics erscheint als Fehler (R-0636):** Scheitert eine Abfrage an
   VictoriaMetrics, antwortet der Metrik-Abruf (`GET /checks/{id}/metrics`) mit HTTP 502 „Metrics store unavailable“
-  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt diesen Fehler statt „keine Daten“. Der
+  statt mit leeren Reihen, und die aufgeklappte Grafik eines Checks zeigt im Desktop „Fehler beim Laden“ statt
+  „keine Daten“. Der
   Check `disk_forecast` steht dann auf `unknown` mit „Metrics store unavailable“ statt „No disk history yet“. Doku:
   Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: CPU- und RAM-Verlauf eines Servers kommt einmal statt doppelt (R-0633):** Der Check
@@ -458,16 +470,40 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Serien ohne `check_id` und liefert je Wert eine Serie statt zwei gleich beschrifteter; die Liste der aktuellen
   Werte im Desktop brach daran ab. Die bisherigen Serien mit Check-Labels bleiben bis zum Ende der Retention in
   VictoriaMetrics, werden aber nicht mehr gelesen. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: der Metrik-Abruf zeigt je Check nur dessen Reihen (R-0749):** Der Metrik-Abruf
+  (`GET /checks/{id}/metrics`) von `agent_ping`, `service_process`, `docker_health`, `proxmox_backup` und
+  `zfs_health` las die Werte nach Server statt nach Check; zwei Checks desselben Typs auf einem Server zeigten deshalb
+  beide dieselben Reihen, jede doppelt. Jetzt liest er sie ueber die `check_id` des Checks; nur `agent_resources`
+  liest CPU, RAM, Platten und Temperaturen weiter je Server. Die Reihen trugen die `check_id` schon bisher, der
+  Verlauf bleibt erhalten. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: eine Platte ohne lesbaren Mountpoint bekommt eine eigene Reihe (R-0753):** Der Agent-Push schreibt
+  eine Platte ohne `mount` (oder mit einem `mount`, der kein String ist) als `mount=?`, wie der Check
+  `agent_resources` sie schon nennt. Bisher landete sie mit `mount=/` in der Reihe der Root-Platte und verfaelschte
+  deren Prognose in `disk_forecast`. Bisherige Werte solcher Platten bleiben bis zum Ende der Retention in der Reihe
+  von `/`. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: ein einzelnes Surrogat in einem Request-Body oder Agent-Report ergibt `422` wie ein NUL-Byte
+  (R-0774):** Ein einzelnes Surrogat (U+D800 bis U+DFFF, in JSON nur als Escape geschrieben, etwa `\ud800`) in
+  irgendeinem String eines Request-Bodys, als Wert oder Schluessel und beliebig tief, ergibt `422` an seiner Stelle;
+  nichts wird gespeichert. Ein Agent-Report damit ergibt ebenso `422`, die Liveness des Servers zaehlt trotzdem.
+  Bisher endete das Speichern mit `500`, oder der Wert landete in der `config` eines Checks, und jede Antwort mit
+  diesem Check endete danach mit `500`; im Agent-Report ging der ganze Schreibstapel nach VictoriaMetrics verloren,
+  samt den Zeilen anderer Server im selben Stapel. Doku: Monitoring fuer Entwickler (DE+EN).
+- **Monitoring: der Betreff einer Alert-Meldung ist einzeilig:** Eine Alert-Mail fuer einen Check mit Zeilenumbruch
+  im Namen ging nicht raus, das Alert-Log zeigte `SMTP error (HeaderWriteError)`. Jetzt stehen Steuerzeichen (C0,
+  DEL, C1) und die Zeilen- und Absatztrenner U+2028/U+2029 des Check-Namens im Betreff, und damit im Titel der
+  Glocke, als Leerzeichen; der Text der Meldung und das Feld `check_name` des Webhooks tragen den Namen unveraendert.
+  Doku: Monitoring fuer Administratoren (DE+EN).
 - **Monitoring: ein kaputter Eintrag im Agent-Report kostet nur sich selbst (R-0632):** Ein Eintrag in `disks` oder
-  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen;
-  jetzt wird nur dieser Eintrag uebersprungen. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
+  `temperatures`, der kein Objekt ist, oder eine Liste als `fstype` liess bisher alle Metriken des Reports wegfallen.
+  Jetzt wird ein Eintrag, der kein Objekt ist, uebersprungen; eine Liste als `fstype` zaehlt wie ein fehlender
+  `fstype`, die Platte wird geschrieben. Wie bei den Checkern zaehlen `fstype`, `mount` und `sensor` nur als
   String (sonst wie ohne das Feld) und Messwerte nur als JSON-Zahl: einen Zahl-String wie `"97"` schreibt der
   Agent-Push nicht mehr als Messwert. Doku: Monitoring fuer Entwickler (DE+EN).
 - **Monitoring: ein Datenbankfehler bei einem Check eines Agent-Reports kostet nur diesen Check (R-0635):** Jeder
   Push-Check eines Agent-Reports wird in einem eigenen Savepoint ausgewertet. Scheitert ein Check an der Datenbank
   (Deadlock, Abbruch beim Sperren seines Zustands, gescheitertes Schreiben), verwirft das Monitoring nur dessen
   Ergebnis samt Status-Punkt und Alert; bisher scheiterten alle folgenden Checks und das Speichern, der Report endete
-  mit HTTP 500, und die Ergebnisse des ganzen Reports gingen verloren.
+  mit HTTP 500 oder speicherte still nichts, und die Ergebnisse des ganzen Reports gingen verloren.
 - **Monitoring: eine Alert-Regel mit sehr grossem oder leerem Cooldown bricht den Versand nicht mehr ab (R-0631):**
   Eine Regel mit `cooldown_minutes` ueber rund 1 065 000 000 (etwa 2000 Jahre, das Schema erlaubt bis 2 147 483 647)
   oder ohne Wert (`null`, etwa nach `PUT /alerts/{id}` mit `"cooldown_minutes": null`) brach beim Pruefen ihres
@@ -480,6 +516,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ab, und Glocke, Hub-Mail und Event-Hook blieben aus. Jetzt wird der Titel auf 512 Zeichen gekuerzt (die ersten 511
   und `…`); der Betreff von Mail und Webhook der Alert-Regeln bleibt ungekuerzt.
 - **Monitoring: der HTTP-Check liest hoechstens 1 MiB, und `timeout` gilt fuer den ganzen Check (R-0616):** Der
+  Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; eine komprimierte Antwort
+  (gzip, deflate) entpackt er dafuer schrittweise und hoechstens bis 1 MiB. Ohne `search_string` liest er den Body
+  gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den ganzen
+  Check statt je Anfrage und Phase: jede Anfrage, auch nach einem Redirect, bekommt die verbleibende Zeit, und das
+  Lesen des Bodys endet mit der Frist; ein einzelner Lesevorgang, auch der der Kopfzeilen, wartet bis zur
+  verbleibenden Zeit, eine Antwort, die stueckweise kommt, kann den Check also ueber `timeout` hinaus halten. Ein
+  Server, der den Body troepfeln liess, hielt den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not found
+  in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string` keinen
+  Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
   Check liest den Body nur noch mit `search_string` und davon hoechstens die ersten 1 MiB; ohne `search_string` liest
   er ihn gar nicht, auch bei Redirects nicht. Bisher holte er jede Antwort samt ganzem Body. `timeout` gilt fuer den
   ganzen Check samt Redirects und Lesen statt je Anfrage und Phase; ein Server, der den Body troepfeln liess, hielt
