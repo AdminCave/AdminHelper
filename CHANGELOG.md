@@ -42,6 +42,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Entwicklung mit Claude Code: die Session baut selbst, ein Reviewer prueft Code und Tests:** Die Sub-Agenten
+  `builder` und `tester` entfallen; die Session plant, implementiert und korrigiert jede Task selbst, `reviewer`
+  prueft vor jedem Task-Commit und vor dem PR den ganzen Branch ueber Code und Tests (Abdeckung, echte Assertions,
+  Fehlerpfade, hoechstens drei Gegenproben), `security` bleibt fuer Risikopfade, `advisor` hilft gezielt bei
+  schwierigen Fragen. Die Session startet mit Sonnet (Effort high), die Pruefer laufen auf Opus (high).
+  `review.sh final` prueft das Branch-Urteil vor PR und Merge. `verify.sh` legt die volle Ausgabe unter
+  `.ah-out/logs/` ab und zeigt einen Digest (`log-digest.sh`), `--full` streamt alles. Doku darf in einer Doku-Task
+  desselben Ledgers gebuendelt werden und ist vor der Abschlusspruefung DE+EN vollstaendig. Doku: CI/CD fuer
+  Entwickler (DE+EN), DEVELOPMENT.md.
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).

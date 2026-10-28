@@ -76,7 +76,8 @@ ROLES="$(sed -n '/^## 6\./,/^## 7\./p' "$ROOT/CLAUDE.md" | sed -n 's/^| `\([a-z-
 GONE=""
 for a in builder tester; do
   [ -f "$ROOT/.claude/agents/$a.md" ] && continue
-  hits="$(cd "$ROOT" && grep -rnE "subagent_type:? *\`?$a\b|\`$a\`|@agent-$a\b|$a\.verdict\.json" "${HARNESS[@]}" scripts/dev 2>/dev/null)"
+  hits="$(cd "$ROOT" && grep -rnE "subagent_type:? *\`?$a\b|\`$a\`|<code>$a</code>|@agent-$a\b|$a\.verdict\.json" \
+    "${HARNESS[@]}" scripts/dev DEVELOPMENT.md docs/developer/cicd.html docs/en/developer/cicd.html 2>/dev/null)"
   [ -z "$hits" ] || GONE="$GONE"$'\n'"$hits"
 done
 [ -z "$GONE" ] && ok "no text calls a removed agent (builder, tester)" || bad "removed agents still called:$GONE"

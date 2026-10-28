@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness schlanker: Hauptsession baut, ein Reviewer prüft Code und Tests — Task-Ledger
-Status: aktiv · Branch: feature/harness-lean · Review: am Ende
+Status: bereit · Branch: feature/harness-lean · Review: am Ende
 Spec: docs/features/harness-lean.md (Roadmap R-0915)
 Heavy: none — Regel-, Skill- und Agenten-Texte, Shell-Skripte unter `scripts/dev` mit hermetischen Tests; kein Stack-, Gateway-, PKI-, Compose- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test ledger_test
 Doku: → T5
 
-### T5 — Doku DE+EN und CHANGELOG  [ ]
-Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+### T5 — Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md, scripts/tests/harness_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @16db3f7e 2026-10-28T12:58:18+01:00
+Review: am Ende (Branch-Review)
 Änderung: `DEVELOPMENT.md` (verify.sh-Log und Digest, Task schliessen, Entwicklung mit Claude Code), `cicd.html` DE+EN (Verify-Konvention, Review und Abschluss mit `review.sh final`), CHANGELOG `Changed`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test harness_consistency_test
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN · CHANGELOG

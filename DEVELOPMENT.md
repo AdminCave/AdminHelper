@@ -265,7 +265,7 @@ Komponenten-Suite startet. Es sourct `.devenv.sh` (bzw. `$AH_DEVENV`), loest
 `AH_TEST_DB` auf und delegiert an `scripts/tests/run.sh`:
 
 ```bash
-bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--tree <pfad>] [-- <args>]
+bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--full] [--tree <pfad>] [-- <args>]
 
 bash scripts/dev/verify.sh monitoring --strict           # eine Komponente
 bash scripts/dev/verify.sh web desktop-e2e --strict      # mehrere, in einem Lauf
@@ -297,6 +297,17 @@ vorerst im `TMPDIR` des Aufrufers (meist `/tmp`).
 Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
 ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
 nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
+
+**Log und Digest.** Die volle Ausgabe der Suite landet in
+`.ah-out/logs/verify-<zeit>-<pid>.log` (die neuesten 30 bleiben; `last-verify.json` nennt
+den Pfad unter `log`). Auf stdout steht der Digest von `scripts/dev/log-digest.sh`: jede
+Schritt-Zeile (die per `--only` oder `--` ausgelassenen nur als Zahl), jede
+`strict-failed:`-Zeile, je rotem oder selbst uebersprungenem Schritt seine Fehlerzeilen (hoechstens
+60) und die letzten 20 Zeilen seines Abschnitts mit Zeilennummern, die Summary, Exit-Code und
+Logpfad; ohne Summary die letzten 40 Zeilen. Keine Schritt-Zeile wird gekuerzt. Mehr liest man
+gezielt (`sed -n <a>,<b>p <log>`). Auf einem Terminal oder mit `--full` laeuft die volle Ausgabe
+zusaetzlich mit. Jedes andere `run.sh`-Log fasst `bash scripts/dev/log-digest.sh <log> [<exit>]`
+genauso zusammen.
 
 ### OpenAPI-Snapshot aktualisieren
 
@@ -475,11 +486,11 @@ veralteten geplanten Workflow — kein Trigger, keine `WARN:`-Zeile. Manuell:
 ### Task schliessen: `ledger.sh` und `task-close.sh`
 
 Kein Modell setzt selbst einen Haken oder macht einen Task-Commit. Der Weg einer Task, im Worktree des
-Vorhabens:
+Vorhabens (Ablauf: `.claude/skills/feature-build/SKILL.md`):
 
 ```bash
 bash scripts/dev/ledger.sh start tasks/<slug>.md T7      # .vm/active-task: Komponente + Dateien
-# ... builder baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
+# ... die Session baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
 bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 ```
 
@@ -511,11 +522,21 @@ ohne Ankuendigung · `4` private Datei oder Token im Diff, geaenderte Ankuendigu
 lauffaehig oder Handarbeits-Task. Nach einem Fehler in Schritt 9 oder 10 setzt ein zweiter Lauf
 dieselbe Zeile neu.
 
-`ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`, `mark-skip`,
-`mark-question`, `set-files`, `status`, `lint`); Details in [`tasks/README.md`](tasks/README.md).
+`ledger.sh` ist die einzige Stelle, die Task-Status, Haken und Kopf eines Ledgers schreibt (`start`,
+`mark-done`, `mark-skip`, `mark-question`, `set-files`, `status`, `lint`); Plan und `## Entscheidungen` schreibt
+die Session von Hand. Details in [`tasks/README.md`](tasks/README.md).
 **`--evidence` ist ein Feld, kein Beweis:** `mark-done` nimmt jede Zeichenkette; wahr macht die Zeile
 nur, dass `task-close.sh` sie aus dem eigenen Lauf erzeugt. Deshalb steht `ledger.sh mark-done` in
 `.claude/settings.json` unter `ask`.
+
+**Abschluss eines Vorhabens: `review.sh final`.** Vor dem PR prueft
+`bash scripts/dev/review.sh final tasks/<slug>.md` das Branch-Urteil des `reviewer`
+(`.ah-out/review/<slug>/branch.verdict.json` des Worktrees, in dem das Ledger liegt): keine Task mehr `[ ]`
+oder `[?]`, `approve` gesamt, fuer den Code- und fuer den Testteil, beide mit Evidenz, eine Abdeckungsliste,
+hoechstens drei Gegenproben (`red`, `green`, `not-runnable`), kein `blocker` neben einem `approve`, und seit
+dem geprueften Commit (`head`) auf der eigenen Linie des Branches nur Merges und Commits, die allein das Ledger
+aendern. Exit 0 druckt den PR-Abschnitt (Adressen und Hostnamen entfernt wie bei `pr-body`), Exit 3 jeden
+Grund, Exit 2 einen Aufruffehler.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
@@ -525,17 +546,21 @@ den `Unreleased`-Block (`.claude/rules/release.md`).
 
 ### Entwicklung mit Claude Code
 
-Gearbeitet wird in **einer** interaktiven Claude-Code-Session in tmux (Opus), die Kevin im
-Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebenslauf eines Vorhabens,
-§5 Tests, §6 Pruefer, §7 Commit, §8 Roadmap und Worktrees); hier steht, welche Teile es dafuer gibt.
+Gearbeitet wird in einer interaktiven Claude-Code-Session in tmux, die Kevin im Haupt-Checkout auf
+`main` startet. Die Regeln stehen in `CLAUDE.md` (§2 wer entscheidet und baut, §4 Lebenslauf eines
+Vorhabens, §5 Tests, §6 Rollen, Pruefer und Modelle, §7 Commit, §8 Roadmap und Worktrees, §13
+Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welche Teile es dafuer gibt.
 
-- **Sub-Agenten** in `.claude/agents/`: `builder` baut eine Task, `reviewer` prueft einen Task- oder
-  Branch-Diff gegen sieben Kriterien, `tester` prueft vor dem Abschluss, ob die Tests da und echt
-  sind, `security` prueft Risikopfade. Die Session ruft sie ueber das Agent-Werkzeug mit
-  `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
+- **Modelle:** `.claude/settings.json` startet die Session mit `model: sonnet` und `effortLevel: high`;
+  `claude --model opus --effort xhigh` oder `/model` ueberschreiben das fuer eine Session. Die
+  Sub-Agenten tragen Modell und Effort im Frontmatter.
+- **Sub-Agenten** in `.claude/agents/`: `reviewer` (eine Task vor dem Commit, oder der Branch vor dem PR
+  ueber Code und Tests), `security` (Risikopfade), `advisor` (nur lesend, gezielte Hilfe bei
+  schwierigen Fragen). Gebaut wird in der Session selbst. Die Session ruft sie ueber das Agent-Werkzeug
+  mit `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
   jeder Aufruf nennt den absoluten Worktree-Pfad, die Agenten arbeiten mit `git -C <wt>` und
   `bash <wt>/scripts/…`. Eine neue Agent-Datei sieht eine laufende Session nur, wenn
-  `.claude/agents/` bei ihrem Start schon existierte.
+  `.claude/agents/` bei ihrem Start schon existierte und der Haupt-Checkout sie traegt.
 - **Worktrees:** Jedes Vorhaben baut in `../AdminHelper-<slug>` auf `feature/<slug>`.
   `bash scripts/dev/worktree-setup.sh <pfad> <slug>` richtet ihn ein (eigene Test-DB, eigenes Venv,
   `node_modules` als Hardlink-Kopie, frpc-Sidecar, Venv-Links, `.vm/lane`);
@@ -555,7 +580,7 @@ Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebensl
 - **Lange Laeufe** (Suiten ueber zehn Minuten, `/test`, Wochenlauf) laufen in einem tmux-Fenster ohne
   Modell, Ausgabe und Exit-Code in Dateien:
   `tmux new-window -d -n ah-quick "( . ./.devenv.sh; bash scripts/tests/run.sh quick --strict ) > <log> 2>&1; echo \$? > <rc>"`.
-  Die Session wartet auf die `rc`-Datei und liest danach das Log.
+  Die Session wartet auf die `rc`-Datei und liest danach `bash scripts/dev/log-digest.sh <log> <rc>`.
 - **Python-Sperre:** `server-pytest` und `schemathesis` warten ueber `/var/lib/adminhelper-dev/py.lock`
   (ohne das Verzeichnis `~/.cache/adminhelper-py.lock`) aufeinander, ueber alle Worktrees (Abschnitt
   „Python-Tests lokal“).
