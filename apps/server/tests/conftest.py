@@ -120,6 +120,23 @@ def _no_event_threads(request):
         yield
 
 
+@pytest.fixture(autouse=True)
+def _every_peer_is_the_gateway(request):
+    # The server takes the identity headers only from the gateway (app.core.identity,
+    # _from_gateway). The suite has no gateway: its requests come from no peer or from
+    # "testclient", and no test should look the name up. So here every peer counts as
+    # the gateway; tests of that check itself are marked identity_source. A context of
+    # its own, so that a test's monkeypatch.undo() keeps the stand-in.
+    if request.node.get_closest_marker("identity_source") is not None:
+        yield
+        return
+    from app.core import identity
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(identity, "_from_gateway", lambda _request: True)
+        yield
+
+
 class AppEngineBlocked(Exception):
     """Raised in place of a connection of the app engine while a test runs (see
     _no_app_engine)."""
@@ -368,6 +385,11 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "app_engine: the test may connect through the app engine (see _no_app_engine)"
+    )
+    config.addinivalue_line(
+        "markers",
+        "identity_source: identity headers count only from the gateway "
+        "(see _every_peer_is_the_gateway)",
     )
 
 
