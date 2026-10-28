@@ -30,16 +30,15 @@
 # die beiden Dateien sind laengst keine gemeinsame Datei mehr. Das Web-types.ts
 # beschreibt die Admin-Panel-API (25 Exporte: User, ApiKey, Hook, Audit), das
 # Desktop-types.ts die Client-API (58 Exporte: Connection, Monitoring,
-# Notifications, Playbooks). Gemeinsam sind genau VIER Symbole - FrpConfig,
-# FrpStatus, FrpStatusProxy, Server. Nur die sind doppelt gepflegt, nur die
-# koennen driften.
+# Notifications, Playbooks). Gemeinsam sind genau DREI Symbole - FrpConfig,
+# FrpStatus, FrpStatusProxy. Nur die sind doppelt gepflegt, nur die koennen
+# driften.
 #
-# Teilmenge statt Gleichheit, weil dieselbe Server-Antwort links und rechts
-# unterschiedlich weit projiziert wird: `Server` traegt im Desktop zusaetzlich
-# `connections?: Connection[]`, und das ist richtig - `to_dict()` liefert das Feld
-# (zusammen mit `createdAt` und `frpTunnels`, die KEINE der beiden Seiten
-# deklariert), das Admin-Panel ignoriert es nur. Die Regel faengt den realen Fall:
-# das Web zieht ein neues Server-Feld nach, das Desktop nicht.
+# Teilmenge statt Gleichheit, weil dieselbe Antwort links und rechts
+# unterschiedlich weit projiziert werden darf: bis R-0723 trug das gemeinsame
+# `Server` im Desktop zusaetzlich `connections?: Connection[]`, das das
+# Admin-Panel nur ignorierte (seitdem kennt das Web nur ServerSummary). Die Regel
+# faengt den realen Fall: das Web zieht ein neues Feld nach, das Desktop nicht.
 #
 # WO DER GUARD BLIND IST: die Loeschrichtung. Entfernt das Web ein Feld, bleibt
 # die Teilmenge erfuellt - das Desktop behaelt die Leiche, und niemand meldet es.
@@ -102,9 +101,10 @@ symbol_block() {
 # Zaehl-Boden greift erst, wenn mehrere Symbole auf einmal verschwinden - genau
 # der unrealistische Fall. Der realistische ist der einzelne Refactor: ein Symbol
 # umbenannt oder geloescht, und der Guard meldet weiter "keine Abweichung" fuer
-# den Rest. Faellt eines dieser vier legitim weg, ist das eine bewusste Aenderung
-# dieser Zeile - kein stilles Schrumpfen.
-CHECK_SHARED=(FrpConfig FrpStatus FrpStatusProxy Server)
+# den Rest. Faellt eines dieser drei legitim weg, ist das eine bewusste Aenderung
+# dieser Zeile - kein stilles Schrumpfen. Server fiel mit R-0723 weg: das Web
+# kennt nur noch ServerSummary (id, name, hostname), der Desktop sein volles Server.
+CHECK_SHARED=(FrpConfig FrpStatus FrpStatusProxy)
 
 check_file() {
   local rel="$1" src="$2" dst="$3" sym shared=0 differing=0

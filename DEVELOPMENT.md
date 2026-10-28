@@ -382,8 +382,8 @@ Exit 75 — unter `--strict` also rot. CI (Job `ops-scripts`) und die Test-Boxen
 
 `apps/web/src/lib/api/types.ts` und `apps/desktop/ui/src/lib/api/types.ts` sind
 **keine** gemeinsame Datei mehr: das Web beschreibt die Admin-Panel-API (25
-Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole —
-`FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server`.
+Exporte), das Desktop die Client-API (58). Gemeinsam sind drei Symbole —
+`FrpConfig`, `FrpStatus`, `FrpStatusProxy`.
 
 ```bash
 bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
@@ -391,13 +391,13 @@ bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
 
 Geprueft wird die Schnittmenge, und zwar als **Teilmenge**: jede Zeile des
 Web-Blocks muss im Desktop-Block stehen, das Desktop darf mehr fuehren. Das ist
-kein Kompromiss, sondern die richtige Invariante — `Server` traegt im Desktop
-zusaetzlich `connections?: Connection[]`, weil `to_dict()` das Feld liefert und
-nur das Admin-Panel es ignoriert. Der reale Drift, den die Regel faengt: das Web
-zieht ein neues Server-Feld nach, das Desktop nicht.
+kein Kompromiss, sondern die richtige Invariante — bis R-0723 trug das gemeinsame
+`Server` im Desktop zusaetzlich `connections?: Connection[]`, das nur das
+Admin-Panel ignorierte (seitdem kennt das Web nur `ServerSummary`). Der reale
+Drift, den die Regel faengt: das Web zieht ein neues Feld nach, das Desktop nicht.
 
 Quell-Exporte ohne Gegenstueck im Ziel werden nur berichtet, nicht bemaengelt.
-Die vier erwarteten gemeinsamen Symbole stehen namentlich im Skript
+Die drei erwarteten gemeinsamen Symbole stehen namentlich im Skript
 (`CHECK_SHARED`): verschwindet eines von einer Seite, ist das ein Fehler, keine
 kleinere gruene Menge. Ein blosser Zaehl-Boden haette erst bei zwei gleichzeitigen
 Verlusten gegriffen — der realistische Fall ist der einzelne Refactor.

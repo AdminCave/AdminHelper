@@ -9,6 +9,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Server: `GET /api/servers/summary`:** liefert je Server nur `id`, `name` und `hostname`, nach Name sortiert
+  (admin), fuer die Server-Zuweisung im Benutzerdialog des Web-Panels, das dafuer bisher das ganze Inventar samt
+  Verbindungen und Tunneln lud. Doku: API-Referenz fuer Entwickler (DE+EN).
 - **Event `user.promoted` bei einer Hochstufung zum Admin:** Setzt `PUT /api/users/{id}` das Admin-Recht eines
   Benutzers von `false` auf `true`, feuert der Server das Event `user.promoted` mit `id` und `username`; Event-Hooks
   koennen es abonnieren (Auswahl im Web mit Beschriftung DE+EN). Die Glocke meldet die Hochstufung unter
@@ -47,6 +50,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Web-Panel: das Audit-Log zeigt die Spalte Detail:** Je Eintrag steht das Detail mit in der Tabelle, etwa die
+  geaenderten Felder eines `user.updated`; bisher war es nur ueber `GET /api/audit` zu sehen. Doku: Betrieb (DE+EN).
+- **Web-Panel: ein gescheitertes Kopieren meldet sich ueberall gleich:** Scheitert das Kopieren in die Zwischenablage,
+  melden alle Dialoge des Web-Panels uebersetzt „Kopieren fehlgeschlagen“ statt „Clipboard error“ oder „Fehler“.
 - **Entwicklung mit Claude Code: die Session baut selbst, ein Reviewer prueft Code und Tests:** Die Sub-Agenten
   `builder` und `tester` entfallen; die Session plant, implementiert und korrigiert jede Task selbst, `reviewer`
   prueft vor jedem Task-Commit und vor dem PR den ganzen Branch ueber Code und Tests (Abdeckung, echte Assertions,
@@ -458,6 +465,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jemand schneller wieder an, als die Abmeldung beantwortet war, beendete die spaete Antwort die neue Sitzung bei der
   naechsten Aktion. Jetzt wartet eine neue Anmeldung, bis die Abmeldung beantwortet ist (hoechstens 15 s), auch nach
   einer abgelaufenen Sitzung. Abmelden leert ausserdem die Benutzer-, Hook-, API-Key- und FRP-Daten im Browser.
+- **Web-Panel: eine Anfrage der vorigen Sitzung meldet die neue nicht mehr ab:** Endet eine Anfrage, die vor dem
+  Abmelden startete, erst nach erneutem Anmelden mit 401, meldet sie die neue Sitzung nicht mehr ab und wird nicht
+  mit deren Token wiederholt; sie endet mit `Session expired`.
+- **Web-Panel: eine Aenderung, deren Antwort erst nach dem Abmelden ankommt, aendert keine Liste mehr:** Kommt die
+  Antwort auf das Anlegen, Bearbeiten oder Loeschen eines Benutzers, Hooks oder API-Keys erst nach dem Abmelden an,
+  erscheint der Eintrag nicht mehr in der geleerten Liste, und die erste Liste der naechsten Sitzung wird nicht mehr
+  verworfen.
+- **Web-Panel: gespeicherte FRP-Server-Konfiguration bleibt stehen:** Die gespeicherte FRP-Server-Konfiguration wird
+  nicht mehr von einem noch laufenden Laden der Seite ueberschrieben, das vor dem Speichern begonnen hatte. Kommt die
+  Antwort auf das Speichern erst nach dem Abmelden an, erscheint die Konfiguration nicht mehr in der naechsten Sitzung.
 - **Web-Panel: Bearbeiten des eigenen Kontos wirkt sofort (R-0652):** Nahm sich ein Admin im Web-Panel selbst das
   Admin-Recht, zeigte das Panel weiter die Admin-Seiten, und jede Aktion endete mit einem Fehler; jetzt uebernimmt es
   die neuen Rechte sofort. Aenderte er sein eigenes Passwort, beendete der Server alle Sitzungen des Kontos, das Panel
