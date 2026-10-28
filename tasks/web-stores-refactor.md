@@ -54,8 +54,10 @@ Orakel: contract — der Guard, wie `apps/web/src/lib/stores/users.ts:11-13` ihn
 Dedup-Key: ref:web:copy-handler-and-dead-code
 HEAD: b25c65a6
 
-### T2 — Stores: Fabrik `listStore<T>` für users, hooks, apikeys (R-0724)  [ ]
+### T2 — Stores: Fabrik `listStore<T>` für users, hooks, apikeys (R-0724)  [x]
 Komponente: web · Dateien: apps/web/src/lib/stores/listStore.ts, apps/web/src/lib/stores/users.ts, apps/web/src/lib/stores/hooks.ts, apps/web/src/lib/stores/apikeys.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @1a05af54 2026-10-28T16:49:36+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T2.verdict.json)
 Änderung: Neu `listStore.ts` (SPDX): `listStore<T>(fetchList: () => Promise<T[]>)` liefert `{ subscribe, refresh, reset, mutate }`; `refresh()` und `reset()` wie heute (`users.ts:19-29`); `mutate<R>(call: () => Promise<R>, apply: (list: T[], result: R) => T[]): Promise<R>` wartet auf `call()`, erhöht danach die Generation, wendet `apply` an und gibt das Ergebnis zurück (eine Ablehnung erhöht nichts, wie heute). Der Kommentar `users.ts:11-13` zieht mit um. `users`, `hooks`, `apikeys` behalten ihre öffentliche Form (`subscribe`, `refresh`, `reset`, `create`, `update`, `remove`, `toggle`; Signaturen und Rückgaben unverändert) und rufen intern `mutate`; `HOOK_FIELDS`/`toListEntry` (`hooks.ts:11-35`) und die Projektion beim Anlegen eines Keys (`apikeys.ts:33-36`) bleiben im jeweiligen Store. `frp.ts` bleibt (T4). Kein Test ändert sich; die Verify-Dateien vor und nach dem Diff grün (beide Summary-Zeilen in den Commit-Body). Mutations-Stichprobe im Probe-Worktree, je allein an `listStore.ts`: M1 Erhöhung in `mutate` gestrichen → T1 (a) rot; M2 `refresh()` setzt ohne Generationsvergleich → T1 (c) rot; M3 Erhöhung vor dem `await` → T1 (b) rot. Ergebnis in den Commit-Body.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/refreshGuard.test.ts src/lib/stores/users.test.ts src/lib/stores/hooks.test.ts src/lib/stores/apikeys.test.ts src/lib/stores/reset.test.ts
 Doku: keine (intern; der Satz zu `listStore.ts` in `docs/developer/webui.html` kommt mit T3)
