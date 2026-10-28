@@ -1,12 +1,12 @@
 ---
 name: feature-plan
-description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus kleinen, autonom abarbeitbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate mit Bericht an Kevin; danach gibt die Session die Zeile selbst frei — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --bundle <komponente> die REF-Zeilen einer Komponente als Sammel-Ledger.
+description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus fachlich zusammenhängenden, gemeinsam testbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate mit Bericht an Kevin; danach gibt die Session die Zeile selbst frei — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --bundle <komponente> die REF-Zeilen einer Komponente als Sammel-Ledger.
 ---
 
 # Feature planen & in autonome Tasks zerlegen
 
 Diese Phase macht aus einer Idee zwei Artefakte: eine **Spec** und eine **Task-Ledger**
-aus so kleinen, unabhängig verifizierbaren Aufgaben, dass `/feature-build` sie ohne
+aus fachlich zusammenhängenden, je für sich verifizierbaren Aufgaben, die `/feature-build` ohne
 Rückfragen abarbeiten kann. **Am Ende: Design-Gate — Bericht an Kevin, dann gibt die Session selbst frei (4).
 In dieser Phase entsteht KEIN Produktivcode.** Spec und Ledger werden am Gate der erste
 Commit auf dem Feature-Branch (R-0065).
@@ -17,8 +17,10 @@ Commit auf dem Feature-Branch (R-0065).
 (3a). Alle drei enden am selben Design-Gate (4). Eine SEC-Zeile plant keiner der drei Wege: das
 Gate committet in dieses öffentliche Repo, SEC-Funde bleiben unter `tasks/private/` (3a).
 
-Modell: **mindestens Opus**, auch für Explorer- und Verifikations-Subagenten dieser Phase
-(`model: opus`; Kevin, 2026-09-18). Sprache: Deutsch, Bezeichner im Original (CLAUDE.md).
+Modell: die Session plant selbst (Opus, high; CLAUDE.md §6) und liest Code und Doku direkt, ohne
+Explorer-Sub-Agenten. Schwierige Architektur oder Sicherheitsfragen: gezielt `advisor` fragen (per Aufruf `xhigh`),
+oder Kevin fährt die Planung mit `claude --effort xhigh` (CLAUDE.md §6). Vor dem Schreiben `.claude/rules/docs.md` und `.claude/rules/testing.md` lesen. Sprache: Deutsch,
+Bezeichner im Original (CLAUDE.md).
 
 ## 0. Interaktiv arbeiten
 Sobald eine echte Mehrdeutigkeit auftaucht, die die Spec verändert (Scope, gewünschtes
@@ -30,8 +32,8 @@ alles, was das *Was* oder das sichtbare Verhalten betrifft, wird gefragt.
 - Kommt das Vorhaben aus der Roadmap (`R-nnnn`), zuerst die Zeile lesen:
   `python3 scripts/dev/roadmap.py show R-nnnn` (Quelle, Beweis, Abhängigkeiten, Dedup-Key).
 - Scope und Erfolgskriterium klären; Produktentscheidungen nicht still treffen.
-- Betroffene Komponenten explorieren (Explore-Agenten oder direkt lesen) und **konkrete Dateien
-  nennen**: Module, API-Routen, Pydantic-Schemas, DB-Tabellen, UI-Seiten, Rust-Commands, Go-Pakete.
+- Betroffene Komponenten lesen und **konkrete Dateien nennen**: Module, API-Routen, Pydantic-Schemas,
+  DB-Tabellen, UI-Seiten, Rust-Commands, Go-Pakete.
 - In `docs/` nachschlagen, wie sich Bestehendes verhält. Berührt das Vorhaben ein externes
   Wire-Protokoll (**FRP**, **Tauri**, **VictoriaMetrics**), die offizielle Doku per `WebFetch` lesen.
 
@@ -40,7 +42,8 @@ Slug = kurz, kebab-case. Abschnitte: **Problem / Motivation** · **Ziel & Nicht-
 **Betroffene Komponenten & Dateien** · **Datenmodell / API / Migrationen** (Alembic? Vertrags-Drift
 Server ↔ Web ↔ Desktop ↔ Agent?) · **Externe Integrationen** (mit Doku-Link) · **Trade-offs &
 Alternativen** (mit Empfehlung) · **Risiken & Rollback** · **Doku-Impact** (1–2 Sätze, proportional:
-sichtbare Änderungen DE+EN, Bugfixes und internes Refactoring „keine“) · **Offene Fragen**.
+die Seiten mit dokumentiertem Verhalten, API, Architektur, Konfiguration, Installation oder Betrieb, DE+EN;
+internes Refactoring „keine“) · **Offene Fragen**.
 
 ## 3. Ledger schreiben → `tasks/<slug>.md`
 Immer eine eigene Datei pro Vorhaben (Format: `tasks/README.md`). Kopf:
@@ -50,7 +53,7 @@ Immer eine eigene Datei pro Vorhaben (Format: `tasks/README.md`). Kopf:
 Status: geplant · Branch: feature/<slug> · Review: pro Task
 Spec: docs/features/<slug>.md (Roadmap R-nnnn)
 Heavy: none — <warum keine schwere Suite>
-DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 ```
 `Review: am Ende` für ein **Kurz-Ledger** mit ≤ 3 Tasks (ein Review über den Branch-Diff).
@@ -60,18 +63,24 @@ Desktop-Journeys, `docker-compose*.yml`); `scenario <flags>` (Cross-Host: FRP-Tu
 :8444-Provisioning, `build-deb.sh`/`build-rpm.sh`, `scripts/install|update`, mTLS/PKI; nur die
 passenden Flags, bleibt ask-first); `windows` (die Windows-VM).
 
-**Task-Größe = autonomietauglich:**
-- Eine Task ≈ eine fokussierte Änderung, möglichst eine Komponente, ≤ ~3 Dateien.
+**Task-Zuschnitt: zusammenhängend statt klein.**
+- Eine Task ist eine fachlich zusammengehörige Änderung, die gemeinsam getestet wird und als ein Commit Sinn
+  ergibt — etwa Route, Schema, Test und Client-Aufruf einer Funktion, nicht vier Mini-Tasks. Richtwert: eine
+  Komponente (ein `Verify:`), bis etwa acht Dateien; mehr nur mit Begründung im Ledger.
+- Getrennt wird, was unabhängige Risiken trägt (Migration, Auth/PKI, Wire-Format, Install) oder einzeln
+  zurücknehmbar sein muss, und was Risikopfade (`scripts/dev/review-risk.txt`) mit Routinearbeit mischen würde.
 - Jede Task hat ein **`Verify:`** in Flag-Form ohne Env-Präfix:
   `bash scripts/dev/verify.sh <komponente> --strict [-- <test>]`. Schwere Läufe stehen in `Heavy:`,
   nie in einer Task.
-- Jede Task ist unabhängig testbar; Reihenfolge nur bei echter Abhängigkeit.
+- Jede Task ist für sich testbar; Reihenfolge nur bei echter Abhängigkeit.
 - Steckt in einer Task eine Design-Entscheidung, gehört sie als offene Frage in die Spec. Ist es eine Entscheidung
   aus Kevins Bereich (CLAUDE.md §2), die weder die Roadmap-Zeile noch sein Wort schon trifft, trägt die Task
   `[?] (<Frage>)` in der Überschrift (die Form von `ledger.sh mark-question`) und wird erst nach seiner Antwort
   gebaut.
 - Neue Datei ⇒ die Task nennt den SPDX-Header. Neuer Flow ⇒ die Task enthält den Test.
-- `Doku:` nach Augenmaß; die meisten Tasks sind `Doku: keine (intern)`.
+- `Doku:` nach `.claude/rules/docs.md`: die Dateien, die die Task selbst nachzieht; oder `→ T<n>`, wenn eine
+  Doku-Task am Ende des Ledgers die abgestimmten Abschnitte DE+EN gebündelt nachzieht; oder `keine (<Grund>)` bei
+  Änderungen ohne dokumentierten Einfluss.
 - `Komponente:` ist der Name aus `verify.sh` (`server`, `web`, `desktop-ui` …), kein Pfad: `task-close.sh`
   vergleicht ihn wörtlich mit den Komponenten des `Verify:`.
 
@@ -81,7 +90,7 @@ Task-Schema:
 Komponente: <komponente> · Dateien: …
 Änderung: <was genau, 1–3 Sätze>
 Verify: bash scripts/dev/verify.sh <komponente> --strict
-Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
+Doku: <docs/… DE+EN · README · CHANGELOG  |  → T<n>  |  keine (Grund)>
 Abhängt von: T<k>   (nur falls nötig)
 Test-Löschung: <datei>::<test> — <Grund>   (nur falls nötig; ganze Datei: <datei>::*)
 ```

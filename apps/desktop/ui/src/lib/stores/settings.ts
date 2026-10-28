@@ -54,8 +54,9 @@ export async function syncNow(notify: boolean): Promise<void> {
   const current = get(sessionStore).settings;
   if (!current || current.mode !== 'sync' || !current.url) return;
   // reloadForMode never throws — it catches internally and records the failure in the store's
-  // error state (and empties the list). Check that instead of a dead try/catch, or a failed sync
-  // would clear the connection list AND still flash "sync successful" (4.42).
+  // error state (the list stays if the last successful fetch had the same URL, else it empties).
+  // Check that instead of a dead try/catch, or a failed sync would still flash "sync successful"
+  // (4.42).
   await reloadForMode(current, null);
   if (!notify) return;
   const { error } = get(connectionsStore);

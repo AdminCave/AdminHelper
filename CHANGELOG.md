@@ -29,9 +29,44 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `--admin-password` funktioniert weiter und weist auf stderr auf `--admin-password-file` hin; beide zusammen sind ein
   Fehler. README und Installations-Doku (DE+EN) nennen fuer den nicht-interaktiven Lauf nur noch
   `--admin-password-file`.
+- **`SMTP_CA_FILE` fuer Relays mit eigener CA, im Notification-Hub und im Monitoring:** Die optionale Variable nennt
+  eine PEM-Datei im Container mit der CA des Relays (selbstsigniertes Zertifikat oder Firmen-CA). Hub und E-Mail-Kanal
+  der Alert-Regeln laden sie zusaetzlich zu den System-CAs, im Monitoring fuer jeden Relay, auch den einer Regel;
+  Zertifikat und Hostname werden weiter geprueft. Eingebunden wird sie per `docker-compose.override.yml` (Variable und
+  Datei fuer `server`, `scheduler` und `monitoring`), nicht ueber `docker-compose.yml` oder `.env.example`. Laesst
+  sich die Datei nicht laden, geht keine Mail hinaus: Der Hub nennt den Grund im Log des `scheduler`-Dienstes, das
+  Monitoring vermerkt `SMTP TLS failed` im Alert-Log. Ein Relay ohne STARTTLS bleibt auch damit aussen vor. Doku:
+  Betrieb & Konfiguration, Monitoring (DE+EN).
+- **Diagnose-Bundle: IP-Adressen und die Hostnamen der Installation auf Wunsch maskieren:**
+  `scripts/diagnostics.sh --mask-hosts` ersetzt IPv4- und IPv6-Adressen nach ihrer Form durch `<ip>` und die Namen
+  und Adressen aus `DOMAIN`, `EXTRA_SANS`, `CA_FRPS_EXTRA_SANS`, `ALLOWED_IPS`, `FRP_SERVER_ADDR`, `TRUSTED_PROXIES`,
+  `SMTP_HOST`, `SMTP_USER` und `SMTP_FROM` (bei einem Anzeigenamen nur die Adresse in spitzen Klammern) sowie den
+  Rechnernamen ohne Ruecksicht auf Gross-/Kleinschreibung durch `<host>`, in `report.txt`, den Logs und
+  `env.sanitized` (dort stehen diese Schluessel als `<masked>`). Andere Namen, etwa verwalteter Server oder
+  Webhook-Ziele, bleiben auch mit dem Schalter stehen. Ohne den Schalter bleiben Hostnamen und Adressen stehen wie
+  bisher, damit Domain- und Zertifikatsfehler im Bundle zu sehen sind; Skript-Kopf, `--help`, die Abschlussmeldung
+  und die Doku sagen das jetzt, statt das Bundle pauschal als unbedenklich fuer ein Issue zu bezeichnen. Doku:
+  Troubleshooting (DE+EN), README.
+- **Web-Panel: Abmeldung nach Inaktivitaet:** Das Web-Panel meldet in allen offenen Tabs ab, wenn in keinem davon
+  30 Minuten lang bedient wurde (Maus, Tastatur, Touch); ein Hinweis bleibt stehen, bis man ihn schliesst. Die Dauer
+  stellt die neue Env `WEB_IDLE_TIMEOUT_MINUTES` am Dienst `server` ein (`0` = aus, ein ungueltiger Wert gilt als 30),
+  der Server liefert sie im neuen Feld `idle_timeout_minutes` von `GET /api/auth/me`. Das gilt auch nach Neuladen
+  oder Wiederoeffnen im selben Browser: Liegt die letzte Bedienung dort laenger zurueck, endet die wiederhergestellte
+  Sitzung beim Laden sofort mit demselben Hinweis. Doku: Benutzer & Zugriff, Installation, API-Referenz, Web-UI fuer
+  Entwickler (DE+EN).
 
 ### Changed
 
+- **Entwicklung mit Claude Code: die Session baut selbst, ein Reviewer prueft Code und Tests:** Die Sub-Agenten
+  `builder` und `tester` entfallen; die Session plant, implementiert und korrigiert jede Task selbst, `reviewer`
+  prueft vor jedem Task-Commit und vor dem PR den ganzen Branch ueber Code und Tests (Abdeckung, echte Assertions,
+  Fehlerpfade, hoechstens drei Gegenproben), `security` bleibt fuer Risikopfade, `advisor` hilft gezielt bei
+  schwierigen Fragen. Session und Pruefer laufen auf Opus mit Effort high (nicht mehr xhigh); Sonnet gezielt per
+  `claude --model sonnet`, xhigh per `advisor` oder `claude --effort xhigh`.
+  `review.sh final` prueft das Branch-Urteil vor PR und Merge. `verify.sh` legt die volle Ausgabe unter
+  `.ah-out/logs/` ab und zeigt einen Digest (`log-digest.sh`), `--full` streamt alles. Doku darf in einer Doku-Task
+  desselben Ledgers gebuendelt werden und ist vor der Abschlusspruefung DE+EN vollstaendig. Doku: CI/CD fuer
+  Entwickler (DE+EN), DEVELOPMENT.md.
 - **Desktop: „Gepinntes Zertifikat zuruecksetzen“ in den Einstellungen fragt vorher nach:** Der Knopf zeigt vor dem
   Zuruecksetzen dieselbe Warnung wie der Anmeldebildschirm und setzt den Pin erst nach der Bestaetigung zurueck;
   Abbrechen laesst den Pin stehen. Doku: Desktop fuer Entwickler, Troubleshooting (DE+EN).
@@ -169,6 +204,137 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   diesen Faellen vorher, ohne etwas zu aendern, auch bei `--check` und `--redeploy`, und nennt den Schluessel des
   Werts oder die Zeilennummer, nie Wert oder Zeile. Ein BOM am Anfang der `.env` nimmt die Pruefung wie Compose an.
   Doku: Installation (DE+EN).
+- **Hooks: Worker laedt keine Python-Pakete aus dem Benutzerverzeichnis:** Der Hook-Worker startet mit `python -s`
+  und bekommt `PYTHONNOUSERSITE=1`; weder er noch Python-Prozesse, die ein Skript startet, nehmen
+  `$HOME/.local/lib/python3.X/site-packages` (samt `usercustomize`) auf, auch nicht beim Rueckfall `HOME=/tmp`.
+  Pakete fuer Hooks gehoeren ins Image. Doku: Hook-Entwicklerdoku (DE+EN).
+- **Hooks: Webhook-Trigger prueft seinen JSON-Body wie jeder andere Request-Body:** Ein NUL-Byte oder ein einzelnes
+  Surrogat (U+D800 bis U+DFFF; JSON schreibt beide nur als Escape) in einem String oder Schluessel des Bodys von
+  `POST /api/hooks/trigger` und `/api/hooks/trigger/{token}` ergibt `422` mit dem Ort im `loc`, statt das Skript damit
+  zu starten; bisher endete die Antwort mit 500, sobald das Skript den Wert zurueckgab, und ein Skript, das ihn
+  speicherte, scheiterte an der Datenbank. Rate-Limit, Token und Aktiv-Status werden weiter vorher geprueft; ein Body,
+  der kein JSON ist, kommt wie bisher als leeres `payload` an. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **`create-admin --password` gibt das Passwort vor dem Anlegen ueber stdin an einen frischen Prozess weiter:**
+  `python -m app.cli create-admin --password …` ersetzt sich vor dem Anlegen des Benutzers per `exec` durch
+  `create-admin --password-stdin` und legt das Passwort dafuer auf stdin; Hooks auf `user.created` laufen so in einem
+  Prozess, dessen Kommandozeile das Passwort nicht traegt. Bis zum Neustart steht es dort weiter, Interpreter-Optionen
+  des ersten Aufrufs (`python -X …`) gelten danach nicht mehr, und Meldungen, die der Server beim Laden seiner
+  Konfiguration auf stderr schreibt, erscheinen zweimal. Ein Passwort mit Zeilenumbruch (das `--password-stdin`
+  nie annehmen konnte) oder eines, das samt Zeilenumbruch nicht in den Puffer einer Pipe passt (unter Linux meist
+  64 KiB), lehnt `--password` mit Exit 2 ab. Empfohlen bleibt `--password-stdin`. Doku: README.
+- **Compose: alle Dienste mit no-new-privileges und Prozessgrenze:** Jeder Dienst in `docker-compose.yml` laeuft mit
+  `no-new-privileges` (bisher nur frps) und hat eine Prozessgrenze (`pids_limit`, Prozesse und Threads): server 4096;
+  scheduler, monitoring und victoria 1024; postgres, gateway, ca-issuer und frps 512; redis 256. Der Dienst monitoring
+  setzt `net.ipv4.ping_group_range` selbst, damit der Ping-Check ohne Sonderrechte laeuft. Eine Grenze hebt man per
+  `docker-compose.override.yml` an, die `update.sh` stehen laesst; wer `WEB_CONCURRENCY` stark erhoeht, prueft die
+  Grenze des server. Doku: Betrieb (DE+EN).
+- **Compose: Speichergrenze je Dienst:** Jeder Dienst in `docker-compose.yml` hat eine Speichergrenze (`mem_limit`):
+  postgres und victoria 8 GiB, server 6 GiB, monitoring 4 GiB, scheduler und frps 2 GiB, gateway 1 GiB, ca-issuer und
+  redis 512 MiB. Die Grenzen liegen weit ueber dem Bedarf im Leerlauf und reservieren keinen Speicher; ist eine
+  erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in
+  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics richtet seine Caches nach
+  seiner Grenze aus (60 Prozent davon) statt nach dem Arbeitsspeicher des Hosts. Eine Grenze hebt man per
+  `docker-compose.override.yml` an. Doku: Betrieb (DE+EN).
+- **Compose: Gateway nur mit den Capabilities, die nginx braucht:** Der Dienst gateway laeuft mit `cap_drop: [ALL]`
+  und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker
+  laufen als Nutzer `nginx` ohne Capabilities. Wie bei frps setzt Compose `net.ipv4.ip_unprivileged_port_start` auf 0,
+  damit nginx die Ports 443, 8444 und 8445 ohne `NET_BIND_SERVICE` oeffnet. Doku: Betrieb (DE+EN).
+- **Gateway: Verbindungsgrenzen und kurze Timeouts auf den certless Ebenen:** Auf :8444 (Enrollment) und :8445
+  (Paket-Repo) beantwortet das Gateway mehr als 16 bzw. 64 gleichzeitige Anfragen je Client-Adresse und mehr als 128
+  bzw. 256 je Ebene mit 429. Dort schliesst es eine Verbindung, deren Anfrage-Kopf nicht binnen 10 s ankommt oder deren
+  Body laenger als 10 s stockt, und untaetige Keep-Alive-Verbindungen nach 15 s (bisher 60 s bzw. 75 s). Die
+  Daten-Plane :443 bleibt unveraendert. Doku: Betrieb (DE+EN).
+- **Compose: Netz frpedge ohne IP-Masquerading:** Das Netz `frpedge`, in dem frps allein haengt, legt Compose ohne
+  IP-Masquerading an: frps baut keine Verbindungen ueber den Host hinaus auf, seine veroeffentlichten Ports bleiben
+  erreichbar. Die Betriebs-Doku nennt, was bleibt (Pakete ohne Antwort, Dienste des Hosts selbst), und zeigt eine
+  optionale Regel in der Kette `DOCKER-USER`. Die Doku der Netze nennt Postgres neben Gateway und ca-issuer im Netz
+  `pki`. Doku: Betrieb, Entwicklung (DE+EN).
+- **Compose: CA-Root-Passphrase als Secret statt Umgebungsvariable:** Der ca-issuer bekommt `CA_ROOT_PASSPHRASE`
+  als Compose-Secret, eine Datei unter `/run/secrets`, und nicht mehr als Umgebungsvariable; damit steht sie nicht
+  mehr in der Umgebung des Containers (`docker inspect`, `/proc/<pid>/environ`). Compose liest den Wert weiter aus
+  `CA_ROOT_PASSPHRASE` in der `.env` und setzt `CA_ROOT_PASSPHRASE_FILE` selbst. Nach dem ersten Start darf der Wert
+  leer sein; danach erzeugt `docker compose up -d` den ca-issuer neu, und die Datei verschwindet (ein Label des
+  Dienstes traegt, ob ein Wert gesetzt ist, nie den Wert). Die Zeile `CA_ROOT_PASSPHRASE=` muss bleiben: fehlt sie,
+  bricht `docker compose up` ab. Voraussetzung ist Docker Compose v2.6 oder neuer. Doku: Installation (DE+EN).
+- **init-secrets.sh: CA-Root-Passphrase nur bei frischer Installation:** `scripts/init-secrets.sh` erzeugt
+  `CA_ROOT_PASSPHRASE` nur noch in dem Lauf, der auch `POSTGRES_PASSWORD` erzeugt, also bei einer frischen
+  Installation. Bisher fuellte das naechste Update (`update.sh` ruft das Skript auf) einen geleerten Wert mit einer
+  neuen Passphrase, die nicht zum vorhandenen Root-Key passte. Ist `POSTGRES_PASSWORD` gesetzt, bleibt ein leerer Wert
+  leer, und das Skript sagt es in einer Zeile. Wer `POSTGRES_PASSWORD` vor der Installation von Hand setzt, setzt auch
+  `CA_ROOT_PASSPHRASE` von Hand, sonst bricht der erste Start des ca-issuer ab. `restore.sh` sagt, dass `.env.restored`
+  die Zeile `CA_ROOT_PASSPHRASE=` braucht, bevor sie die `.env` ersetzt. Doku: Betrieb (DE+EN).
+- **Server und Compose: Client-Adresse hinter dem Gateway:** Compose setzt `TRUSTED_PROXIES` beim server auf den
+  Dienst `gateway`, gefolgt von einem Wert aus der `.env`; `TRUSTED_PROXIES` nimmt dafuer neben Adressen und Netzen
+  auch Hostnamen, die der Server alle 30 s neu aufloest. Hinter dem Gateway beziehen sich damit die Ratenlimits je
+  Adresse (Login, Webhook-Trigger, Agent-Reports), `ALLOWED_IPS` und die Adresse im Audit-Log auf den Client statt auf
+  das Gateway. Forwarded-Header anderer Gegenstellen wertet der Server weiterhin nicht aus, und `TRUST_PROXY_HEADERS`
+  wirkt unter Compose nicht mehr. Wer `ALLOWED_IPS` gesetzt hat, prueft vor dem Update, dass die Netze der Clients
+  enthalten sind: Bisher pruefte der Server die Adresse des Gateways, danach weist er Clients ausserhalb der Liste mit
+  403 ab. Steht ein weiterer Proxy vor dem Gateway, sieht der Server dessen Adresse; ein Eintrag in `TRUSTED_PROXIES`
+  aendert daran nichts. Doku: Installation, Benutzer (DE+EN).
+- **Web: Hinweisseite fuer Benutzer ohne Admin-Rechte (R-0721):** Benutzer ohne Admin-Rechte sehen im Web-Panel
+  einen uebersetzten Hinweis, dass das Panel Admins vorbehalten ist und der Desktop-Client der Weg ist (DE „Web-Panel
+  nur fuer Admins“, EN „Web panel for admins only“), statt der alten Platzhalterseite „Nicht verfuegbar“. Doku:
+  Admin-Handbuch, Benutzer (DE+EN).
+- **Web: Seite „nicht gefunden“ fuer Admins (R-0721):** Eine unbekannte Adresse im Web-Panel zeigt Admins eine
+  uebersetzte Seite „nicht gefunden“ (DE „Seite nicht gefunden“, EN „Page not found“) mit Link zur
+  Benutzerverwaltung, statt der alten Platzhalterseite „Nicht verfuegbar“.
+- **Monitoring: E-Mail-Alert-Regeln mit eigenem `smtp_host` melden sich nur mit eigenen Zugangsdaten an:**
+  `SMTP_USER` und `SMTP_PASSWORD` gelten nur fuer den Relay aus `SMTP_HOST` (Vergleich ohne Gross-/Kleinschreibung).
+  Eine Regel, die einen anderen `smtp_host` setzt, meldet sich nur mit ihren eigenen `smtp_user` und `smtp_password`
+  an; fehlt eins davon, verschickt sie ohne Anmeldung. Verlangt ihr Relay eine Anmeldung, steht im Alert-Log dann
+  `SMTP server refused the message`; Abhilfe sind eigene `smtp_user` und `smtp_password` in der Regel. Regeln ohne
+  `smtp_host` oder mit dem Host aus `SMTP_HOST` verhalten sich wie bisher. Doku: Monitoring (DE+EN).
+- **Monitoring: Template-Antworten zeigen ein `smtp_password` in Alert-Definitionen als `***`, wie die
+  Alert-Regeln:** Das gilt fuer `GET /templates`, `GET /templates/{id}`, die Antworten von `POST`/`PUT /templates` und
+  von `POST /templates/{id}/builtin-update` sowie fuer `current` in `GET /templates/{id}/builtin-update`. Ein
+  `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort der
+  Definition mit derselben `def_id` (wie `PUT /alerts/{id}`); eine neue Definition speichert dann keins, ebenso
+  `POST /templates` mit `***` oder leerem Wert. Wer ein Template aus einer API-Antwort neu anlegt, gibt das Passwort im
+  `POST` neu ein.
+- **Monitoring: Beim Bearbeiten von E-Mail-Alert-Regeln und Alert-Definitionen von Templates gilt `***` nur bei
+  unveraendertem `smtp_host`/`smtp_port` als „Passwort unveraendert“:** Ein `PUT /alerts/{id}` oder
+  `PUT /templates/{id}` mit `***`, leerem oder fehlendem `smtp_password` behaelt das gespeicherte Passwort nur, solange
+  `smtp_host` (ohne Gross-/Kleinschreibung) und `smtp_port` gleich bleiben. Aendert derselbe Aufruf den Relay, lehnt
+  er `***` mit 422 ab und speichert nichts; ohne Passwort entfaellt das gespeicherte. Nach einem Relay-Wechsel ist das
+  Passwort neu einzugeben. Doku: Monitoring (DE+EN).
+- **Notification-Hub: E-Mails nutzen STARTTLS auf jedem Port ausser 465 und pruefen Zertifikat und Hostnamen des
+  Relays, wie der E-Mail-Kanal des Monitorings:** Ein Relay ohne STARTTLS (etwa ein lokaler Mailserver auf Port 25)
+  oder mit einem Zertifikat, dem der Container nicht vertraut oder das nicht zu `SMTP_HOST` passt, nimmt danach keine
+  Hub-Mails mehr an: Die Outbox wiederholt bis `NOTIFICATION_MAX_ATTEMPTS` und markiert die Mail dann als
+  fehlgeschlagen, der Grund steht im Log des `scheduler`-Dienstes; Glocke und Desktop-Hinweise bleiben. Abhilfe:
+  `SMTP_HOST` auf den Namen im Zertifikat des Relays setzen, fuer eine eigene CA `SMTP_CA_FILE` (siehe Added); der
+  Relay muss STARTTLS oder implizites TLS auf Port 465 anbieten. Doku: Betrieb & Konfiguration (DE+EN).
+- **Backup: Archiv von Anfang an privat und erst vollstaendig unter seinem Namen:** `scripts/backup.sh` schreibt das
+  Archiv in eine versteckte Zwischendatei im Zielordner, die von Anfang an den Modus 0600 hat, und benennt sie erst
+  nach dem vollstaendigen Schreiben in `adminhelper-backup-<ts>.tar.gz` um; ein gescheiterter Lauf hinterlaesst weder
+  ein Archiv noch eine Zwischendatei. Einen neu angelegten Zielordner legt das Skript mit 0700 an, ein bestehender
+  bleibt, wie er ist. Wer Backups mit einem anderen Nutzer abholt, gibt den Ordner selbst frei. Doku: Betrieb (DE+EN).
+- **ca-issuer: Zertifikatskette aus den geprueften Zertifikaten (R-0666):** Die Kette eines Zwischenzertifikats, die
+  der `ca-issuer` ausliefert (Antworten von `/enroll` und `/renew`, Vertrauensbuendel fuer Gateway und frps), baut er
+  jetzt aus Zwischenzertifikat und Root, die er beim Start geprueft hat, statt den Inhalt von `<scope>-chain.pem`
+  weiterzugeben. Eine Kettendatei, die nicht genau Zwischenzertifikat und Root enthaelt, bricht den Start weiter ab.
+- **Desktop: der Tunnel-Dialog prueft den Visitor-Port vor dem Speichern (R-0585):** Bei einem STCP-Tunnel lehnt der
+  Dialog einen Visitor-Port ab, der keine ganze Zahl von 1 bis 65535 ist, und nennt den Bereich; bisher kam erst die
+  Ablehnung des Servers (`422`). Ein leeres Feld bleibt erlaubt, dann vergibt der Server einen freien Port. Doku:
+  FRP-Tunnel (DE+EN).
+- **SSRF-Schutz: ein Ziel unter `NO_PROXY` verbindet auch neben einem Proxy zur geprueften Adresse (Server und
+  Monitoring):** Ein Ziel, das wegen `NO_PROXY` nicht ueber den gesetzten Proxy geht, verbindet wie ohne Proxy zu
+  einer der geprueften Adressen, im HTTP-Check, im Alert-Webhook und in `http_get`/`http_post` der Hooks; bisher
+  verband httpx es direkt ueber den Namen, den es dafuer ein zweites Mal aufloeste. Welche Anfragen ueber den Proxy
+  gehen, bleibt gleich. Doku: Monitoring-Administration, Monitoring- und Hook-Entwicklerdoku (DE+EN).
+- **Server: gleichzeitige Refreshes mit demselben Refresh-Token:** Das neue Token-Paar bekommt nur der Aufruf, der
+  den alten Refresh-Token sperrt; jeder weitere zaehlt als Wiederverwendung und beendet die Sitzungen des Benutzers,
+  wie ein spaeterer Refresh mit einem schon verbrauchten Token. Clients buendeln ihre Refreshes. Doku: Server fuer
+  Entwickler (DE+EN).
+- **Server: neu angelegte Benutzer:** Ein neu angelegter Benutzer nimmt nur Tokens an, die ab seinem Anlegen
+  ausgestellt wurden (`users.tokens_valid_after` steht auf der Anlegezeit, ganze Sekunde), gleich ob er ueber die
+  API, den Bootstrap, `ADMIN_PASSWORD` oder die CLI entsteht. Bestehende Benutzer bleiben unveraendert. Doku: Server
+  fuer Entwickler (DE+EN).
+- **Server: Refresh-Token im Browser nur als Cookie:** Browser-Anfragen (Header `Sec-Fetch-Site`) an Login, Refresh
+  und Bootstrap bekommen den Refresh-Token nur noch als HttpOnly-Cookie; `refresh_token` im JSON ist dann leer (`""`),
+  das Schema bleibt gleich. Desktop, CLI und Skripte bekommen ihn unveraendert im JSON. Doku: API-Referenz und Server
+  fuer Entwickler (DE+EN).
 
 ### Removed
 
@@ -330,6 +496,107 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   den Check bisher unbegrenzt. Fehlt `search_string` in einer laengeren Antwort, lautet die Meldung „Text '…' not
   found in the first 1 MiB of the response“. Die Antwortzeit (`http_response_ms`) enthaelt ohne `search_string`
   keinen Body-Download mehr. Doku: Monitoring fuer Administratoren (DE+EN).
+- **Hooks: Cron-Ausdruecke von Schedule-Hooks gelten in UTC (R-0756):** wie in der Betriebsdoku beschrieben; bisher
+  galt `TZ` des Containers (Voreinstellung `Europe/Berlin`). Bestehende Cron-Hooks laufen dort nach dem Update 1 h
+  (Winter) bzw. 2 h (Sommer) spaeter als bisher; wer die Ortszeit will, schreibt den Ausdruck in UTC um. `next_run`
+  zeigte bei `TZ` ungleich UTC die Ortszeit als UTC, auch bei Intervall-Hooks; jetzt steht dort der naechste Lauf in
+  UTC. Doku: Server-Entwicklerdoku (DE+EN).
+- **Hooks: Hintergrundprozess eines Skripts verzoegert die Antwort nicht mehr ueber 60 s (R-0778):** Startete ein
+  Hook einen Hintergrundprozess, der stdout oder stderr des Workers erbte, kam die Antwort von `/api/hooks/trigger`
+  (auch `/api/hooks/trigger/{token}`) und `/api/hooks/{id}/run` erst nach mehr als 60 s, am Gateway also als 504.
+  Nach dem Ende des Workers wartet der Runner jetzt hoechstens 2 s auf den Rest der Ausgabe, killt dann die
+  Prozessgruppe und wartet noch einmal hoechstens 2 s; ein Lauf dauert so hoechstens 34 s. Doku:
+  Hook-Entwicklerdoku (DE+EN).
+- **Desktop: Tunnel fuer Benutzer ohne Admin-Rechte (R-0484):** Der Desktop loest fuer Benutzer ohne
+  Admin-Rechte auch Verbindungen auf, die ein Admin von Hand mit einem Tunnel verknuepft hat, und zeigt an ihren
+  Verbindungen den Tunnel. Dafuer liefert `GET /api/frp/tunnels` einem Nicht-Admin statt `403` die freigegebenen
+  Tunnel seiner zugewiesenen Server, je nur mit den Feldern, die der Desktop liest (ohne Secret, ohne
+  `localIp`, `frpConfigId`, `extraConfig`, `tags`, `createdAt`); ohne zugewiesenen Server eine leere Liste.
+  Admins bekommen die Liste wie bisher; die uebrigen Tunnel-Routen bleiben Admins vorbehalten. Doku:
+  API-Referenz (DE+EN).
+- **Monitoring: E-Mail-Alert-Regeln ohne eigenen `smtp_host` nutzen den Relay aus `SMTP_HOST` (R-0634):** Compose
+  reicht `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` und `SMTP_FROM` jetzt auch an den Dienst
+  `monitoring`, wie an `server` und `scheduler`. Bisher fehlten sie dort, und jede E-Mail-Regel ohne eigenen
+  `smtp_host` scheiterte mit `SMTP not configured (SMTP_HOST missing)`, obwohl die Doku den Relay aus der Umgebung
+  nennt. Ist `SMTP_HOST` gesetzt, verschicken diese Regeln danach ueber den globalen Relay, mit derselben Pruefung von
+  Zertifikat und Hostnamen wie der Notification-Hub. Doku: Betrieb & Konfiguration (DE+EN).
+- **Backup: `env.sanitized` verliert keine Zeilen mehr bei Bytes ausserhalb UTF-8 oder einem NUL-Byte (R-0559):**
+  `scripts/backup.sh` filterte die `.env` unter der Locale des Aufrufers. `grep` haelt eine Zeile mit einem Byte, das
+  diese Locale nicht dekodieren kann (etwa ein Latin-1-Umlaut unter einer UTF-8-Locale), fuer binaer und liess sie aus,
+  bei einem NUL-Byte alle Zeilen; ein Fehler von `grep` blieb unbemerkt, und das Backup lief mit einer gekuerzten oder
+  leeren `env.sanitized` durch. Jetzt liest `backup.sh` die `.env` Byte fuer Byte (`LC_ALL=C grep -a`):
+  `env.sanitized` ist die `.env` ohne die `CA_ROOT_PASSPHRASE`-Zeilen, und ein Fehler beim Filtern bricht das Backup
+  ab, ohne ein Archiv zu hinterlassen. Den Schluessel erkennt es wie das Diagnose-Bundle auch mit vorangestelltem
+  `export`, mit Leerraum um den Trenner und mit `:` statt `=` als Trenner (`export CA_ROOT_PASSPHRASE=...`,
+  `CA_ROOT_PASSPHRASE = ...`, `CA_ROOT_PASSPHRASE: ...`); ein anderer Schluessel wie `CA_ROOT_PASSPHRASE_OLD` bleibt
+  stehen.
+- **Diagnose-Bundle: Maskierung kennt die Token-Formen der Access-Logs und weitere Schreibweisen der `.env`:**
+  `scripts/diagnostics.sh` maskiert jetzt auch API-Keys und Token als Query-Parameter (`api_key`, `token`,
+  `access_token`, Gross-/Kleinschreibung egal), das Token im Pfad `/hooks/trigger/<token>` und
+  Provisionierungs-Token `adminhelper_prov_...`; die Regel fuer `ah_...` entfaellt, kein Token des Projekts traegt
+  dieses Praefix. Die Secrets der `.env` erkennt es in diesen Schreibweisen: Schluessel auch als `export KEY=...`,
+  `KEY = ...` oder `KEY: ...` (in `env.sanitized` wie in den Logs), Werte in einfachen oder doppelten
+  Anfuehrungszeichen, mit `$$` (auch als `$` gesucht, wie compose es einsetzt) oder einem Kommentar hinter ` #`; steht
+  ein Schluessel mehrfach da, wird jeder Wert maskiert. Es liest die `.env` Byte fuer Byte und maskiert einen Wert
+  auch hinter einem Byte ausserhalb UTF-8 ganz. `report.txt` laeuft jetzt wie die Logs durch die Maskierung.
+- **ca-issuer: kein Zertifikat ueberlebt mehr sein Zwischenzertifikat (R-0666):** Der `ca-issuer` stellte Zertifikate
+  mit voller Laufzeit aus, auch wenn das signierende Zwischenzertifikat frueher ablief, und signierte mit einem
+  abgelaufenen Zwischenzertifikat still weiter Zertifikate, die kein Client mehr annimmt. Jetzt endet jedes
+  Zertifikat spaetestens mit seinem Aussteller (Client- und Server-Zertifikate mit dem Zwischenzertifikat,
+  Zwischenzertifikate mit der Root); kurz vor dem Ablauf eines Zwischenzertifikats werden neue Zertifikate also
+  kuerzer. Ist das Zwischenzertifikat eines Scopes abgelaufen oder noch nicht gueltig, antworten `/enroll` und
+  `/renew` mit HTTP 503 („the issuing intermediate certificate of scope '…' is expired or not yet valid; see the
+  ca-issuer log“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt unverbraucht. Eine Erneuerung
+  bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn das alte Zertifikat gekuerzt
+  war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer` beim Signieren einmal je Tag und
+  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“). Doku: Betrieb (DE+EN).
+- **ca-issuer: prueft die PKI beim Start (R-0666):** Der `ca-issuer` lud Root und Zwischenzertifikate beim Start ohne
+  jede Pruefung, auch ein abgelaufenes, ein von einer fremden Root signiertes oder eines neben fremdem Schluessel oder
+  fremder Kette. Jetzt prueft er bei jedem Start, auch direkt nach dem ersten: `root.crt` selbstsigniert und gueltig,
+  je Scope `<scope>.crt` von `root.crt` signiert und gueltig, `<scope>.key` der passende Schluessel und
+  `<scope>-chain.pem` genau Zwischenzertifikat und Root (geparst verglichen, Zeilenenden zaehlen nicht). Bei einem
+  Verstoss startet er nicht und nennt Datei, Scope und Grund („PKI hierarchy invalid — …“); das gilt auch fuer eine
+  Host-Uhr vor dem `notBefore` der Root oder eines Zwischenzertifikats. Root und Zwischenzertifikate mit weniger als
+  180 Tagen Restlaufzeit stehen bei jedem Start als WARNING im Log (Logger `ca-issuer.storage`, „intermediate '…'
+  expires on … (N days left)“, „root expires on …“ mit dem Hinweis, dass eine neue Root ein neues Enrollment aller
+  Clients bedeutet). Doku: Betrieb (DE+EN).
+- **Desktop: ein gescheiterter Abruf der Verbindungen leert die Liste nicht mehr (R-0658):** Scheitert in einem
+  Server- oder Sync-Workspace der Abruf der Verbindungen, etwa beim Seitenwechsel oder im Sync-Takt waehrend eines
+  Netzausfalls, bleibt die zuletzt geladene Liste stehen, wenn sie aus derselben Quelle stammt (derselbe Server und
+  Benutzer, dieselbe Sync-URL), statt zu verschwinden. Die Liste einer anderen Quelle bleibt nie stehen.
+  „Verbindungen“ zeigt den Fehler mit „Erneut versuchen“ und bei stehen gebliebener Liste den Hinweis, dass es die
+  zuletzt geladene ist; waehrend des Ladens zeigt die Seite „Lade…“ statt „Noch keine Verbindungen angelegt“. Auch
+  das Dashboard zeigt den Fehler mit „Erneut versuchen“ und unter „Zuletzt genutzt“ waehrend des Ladens „Lade…“ statt
+  „Noch keine Verbindungen genutzt“.
+- **Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659):** Unter Linux nimmt die
+  Fenstergroesse „Eingepasst“ die Groesse des Bildschirms statt immer 1088x720, die Skalierung „Automatisch“ erkennt
+  einen HiDPI-Bildschirm, und „HiDPI“ waehlt den Faktor nach dem Bildschirm (`/scale:140` oder `/scale:180`) statt
+  immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht verifiziert.
+- **Desktop: ohne gespeicherte Sprache gilt die Systemsprache (R-0660):** Ist noch keine Sprache gespeichert, etwa
+  nach einer frischen Installation, laeuft die Desktop-UI in der Systemsprache: Deutsch auf einem deutschen System,
+  sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch. Der Einstellungsdialog zeigt diese
+  Sprache; bisher zeigte er „Deutsch“, und Speichern einer beliebigen Einstellung schaltete ungewollt auf Deutsch.
+  Dieselbe Regel gilt schon vor dem Laden der Einstellungen („Lade…“) und fuer die ganze UI, wenn das Laden
+  scheitert; auf einem System in einer anderen Sprache als Deutsch oder Englisch lief die UI dort bisher deutsch.
+- **Desktop: „Loeschen“ im Verbindungs-Editor fragt nach (R-0661):** Bevor der Editor eine Verbindung entfernt, im
+  Server-Modus auf dem Server, und bei RDP ein gespeichertes Passwort, fragt er mit dem Namen der Verbindung nach;
+  „Abbrechen“ oder Escape laesst sie stehen und den Editor offen. Bisher loeschte der Knopf sofort.
+- **Desktop: Speichern der Einstellungen startet die Benachrichtigungen nicht mehr neu (R-0663):** Bisher stoppte
+  jedes Speichern der Einstellungen in einem Server-Workspace den Benachrichtigungs-Stream, leerte den Feed und
+  startete beides neu; der Feed flackerte, und Meldungen aus dieser Luecke kamen ohne OS-Benachrichtigung. Neu
+  gestartet wird nur, wenn Server oder Benutzer wechseln.
+- **SSRF-Schutz: eine URL mit einem einzelnen Surrogat wird abgelehnt (Server und Monitoring, R-0606):** Eine URL
+  mit einem einzelnen Surrogat, etwa aus einem JSON-Payload, wird als unlesbar abgelehnt, statt eine Exception zu
+  werfen; HTTP-Check, Alert-Webhook und `http_get`/`http_post` der Hooks melden ihre gewoehnliche Ablehnung.
+- **Web-Panel: mehrere Tabs erneuern die Sitzung nacheinander (R-0649):** Alle Tabs teilen das Refresh-Cookie, das
+  Panel buendelte Erneuerungen aber nur innerhalb eines Tabs. Erneuerten zwei Tabs die Sitzung gleichzeitig, etwa
+  beim Wiederherstellen des Browsers, schickten beide denselben Refresh-Token; der Server wertete den zweiten als
+  Wiederverwendung und beendete alle Sitzungen des Benutzers, auch die des Desktops. Jetzt laufen die Erneuerungen
+  aller Tabs nacheinander (Web Locks), und ein spaeterer Tab schickt schon das neue Cookie. Auch die Abmeldung laeuft
+  unter dieser Web Lock: Sie macht das gemeinsame Cookie ungueltig, und eine Erneuerung, die ein anderer Tab zugleich
+  mit ihm schickte, galt ebenso als Wiederverwendung, etwa wenn der Browser nach Ablauf der Inaktivitaetszeit mehrere
+  Tabs wiederherstellt und jeder sich abmeldet. Ohne Web Locks, etwa ausserhalb von HTTPS, buendelt das Panel weiter
+  nur im Tab, und die Abmeldung geht sofort hinaus. Doku: Web-UI fuer Entwickler (DE+EN).
 
 ## [0.46.0] - 2026-10-22
 
