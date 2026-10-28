@@ -9,6 +9,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Server: `GET /api/servers/summary`:** liefert je Server nur `id`, `name` und `hostname`, nach Name sortiert
+  (admin), fuer die Server-Zuweisung im Benutzerdialog des Web-Panels, das dafuer bisher das ganze Inventar samt
+  Verbindungen und Tunneln lud. Doku: API-Referenz fuer Entwickler (DE+EN).
 - **Event `user.promoted` bei einer Hochstufung zum Admin:** Setzt `PUT /api/users/{id}` das Admin-Recht eines
   Benutzers von `false` auf `true`, feuert der Server das Event `user.promoted` mit `id` und `username`; Event-Hooks
   koennen es abonnieren (Auswahl im Web mit Beschriftung DE+EN). Die Glocke meldet die Hochstufung unter

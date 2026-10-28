@@ -157,7 +157,9 @@ Metrik: `wc -l apps/web/src/modals/UserModal.svelte`: 182 → weniger; Payload-Z
 Dedup-Key: ref:web:modals:payload-logic-untested
 HEAD: b25c65a6
 
-### T10 — Server: `GET /api/servers/summary` mit `id`, `name`, `hostname` (R-0723)  [ ]
+### T10 — Server: `GET /api/servers/summary` mit `id`, `name`, `hostname` (R-0723)  [x]
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4a7a4cc0 2026-10-28T17:55:00+01:00
+Review: approve (.ah-out/review/web-stores-refactor/T10.verdict.json)
 Entscheidung: Kevin 2026-10-23: Variante (c), neue Admin-Route GET /api/servers/summary.
 Komponente: server · Dateien: apps/server/app/modules/servers/router.py, apps/server/app/modules/servers/schemas.py, apps/server/tests/test_servers_summary.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
 Änderung: `schemas.py`: `class ServerSummary(BaseModel)` mit `id: str`, `name: str`, `hostname: str` (Antwortmodell wie `HookResponse`, `apps/server/app/modules/hooks/schemas.py:57`). `router.py`: `@router.get("/summary", response_model=list[ServerSummary])` vor `get_server` (`:135`, sonst liest FastAPI `summary` als `server_id`), Abhängigkeiten wie `list_servers` (`:89-99`, `get_current_admin`), Abfrage `db.query(Server.id, Server.name, Server.hostname).order_by(Server.name, Server.id)`, ohne Pagination; ein Kommentar nennt das Warum (der Benutzerdialog braucht nur diese Felder; `GET /api/servers` lädt alle Verbindungen und Tunnel). Snapshot neu mit `pytest tests/test_openapi_snapshot.py --update-openapi-snapshot`; der Diff des Snapshots ist nur der neue Pfad und das neue Schema. Neue Tests `test_servers_summary.py` (SPDX; Fixtures `test_client`, `db_session`, `admin_user`, `normal_user` wie `apps/server/tests/test_servers_authz.py`): (a) Admin, zwei Server mit je einer Verbindung → je Server genau die Schlüssel `id`, `name`, `hostname`, sortiert nach Name; (b) leeres Inventar → `[]`; (c) Nicht-Admin → 403; (d) ohne Token → 401. Hosts unter `.example`.
