@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Nachzüge: hingenommene Restrisiken, Drift zwischen Doku und Code, CHANGELOG-Glättung — Task-Ledger
-Status: aktiv · Branch: feature/docs-residual-risks · Review: pro Task
+Status: bereit · Branch: feature/docs-residual-risks · Review: pro Task
 Spec: docs/features/docs-residual-risks.md (Roadmap R-0798, R-0453, R-0754, R-0758, R-0769, R-0770, R-0791, R-0794, R-0595, R-0782, R-0602, R-0609, R-0732, R-0792, R-0601)
 Heavy: linux-full — `docker-compose.yml` (nur ein Kommentar) und das Monitoring-Image (`apps/monitoring/docker-entrypoint.sh`, zwei Meldungstexte) in T10, bei Kevins Ja zu T15 `apps/desktop/src-tauri/src/frpc.rs` (Desktop-Tunnel); läuft im Sammellauf über `main`. Kein scenario: weder FRP-Konfiguration noch Visitor-TOML noch Datenpfad ändern sich, T15 ändert nur, wann der Desktop seinen frpc stoppt (Unit-Test). Kein windows über die PR-CI hinaus: kein plattformspezifischer Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -217,7 +217,9 @@ Orakel: contract — Eintrag gegen `fit_window_size` und das UI-Label
 Dedup-Key: bug:docs:changelog:r0659-wording
 HEAD: b25c65a6
 
-### T15 — Desktop: 403 auf das Visitor-Bundle stoppt frpc wie 404 (R-0453, optional)  [ ]
+### T15 — Desktop: 403 auf das Visitor-Bundle stoppt frpc wie 404 (R-0453, optional)  [x]
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f20fb539 2026-10-29T11:26:40+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T15.verdict.json)
 Entscheidung: Kevin 2026-10-23: (a) 403 wie 404, frpc stoppt; nur frpc.rs, kein IPC-Vertrag.
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
 Änderung: Variante (a). `carries_bundle` (`apps/desktop/src-tauri/src/frpc.rs:277-287`) gibt für `FORBIDDEN` wie für `NOT_FOUND` `Ok(false)` zurück; damit führt der Abgleich auf `stopped` (kein neues Ergebnis, kein IPC-Vertrag: `apps/desktop/src-tauri/src/models.rs:180-187`, UI `apps/desktop/ui/src/lib/stores/tunnel.ts:216-227`). Doc-Kommentare `frpc.rs:271-276` und `:1186-1189` mitziehen (403: der Server verweigert dem Gerät oder Benutzer den Zugang, etwa nach Widerruf; 401 trotz erneuerter Sitzung bleibt ein Fehler). Tests: neuer `refresh_403_means_no_tunnels` (`carries_bundle(FORBIDDEN)` → `Ok(false)`), in `refresh_500_and_every_other_failure_is_an_error` (`:2045-2049`) fällt 403 aus der Liste. Zuerst rot: der neue Test auf HEAD. Doku: der Satz zu `:259` aus T7 nennt 403 bei `stopped`. CHANGELOG (Changed, umlautfrei): Verweigert der Server dem Desktop das Visitor-Bundle (403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers), stoppt der Desktop seinen Tunnel beim naechsten Abgleich.

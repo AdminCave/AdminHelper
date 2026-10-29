@@ -272,10 +272,11 @@ async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle
 
 /// Whether a visitor-bundle reply with this status carries a bundle. 404 is no error but "no
 /// tunnels": the server answers it both without an FRP config and when the user sees no usable
-/// STCP tunnel (generate_router.py). Every other non-2xx — a 401 the refresh could not cure
-/// included — is an error.
+/// STCP tunnel (generate_router.py). 403 is "no tunnels" too: the server refuses the device or
+/// the user access, say after a revocation, so the tunnels go. Every other non-2xx — a 401 the
+/// refresh could not cure included — is an error.
 fn carries_bundle(status: reqwest::StatusCode) -> Result<bool, AppError> {
-    if status == reqwest::StatusCode::NOT_FOUND {
+    if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::FORBIDDEN {
         return Ok(false);
     }
     if !status.is_success() {
@@ -1385,8 +1386,9 @@ fn start_fresh(
 }
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
-/// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure, a session that changed meanwhile) leaves the running frpc alone. The fetch
+/// reload or leave it; no tunnels (404, or 403: access refused) stop it. A failure before that
+/// (network, 5xx, a 401 the refresh could not cure, a session that changed meanwhile) leaves the
+/// running frpc alone. The fetch
 /// goes to the signed-in server with the session's current access token (see
 /// [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
@@ -2245,8 +2247,13 @@ method = "token"
     }
 
     #[test]
+    fn refresh_403_means_no_tunnels() {
+        assert!(!carries_bundle(reqwest::StatusCode::FORBIDDEN).unwrap());
+    }
+
+    #[test]
     fn refresh_500_and_every_other_failure_is_an_error() {
-        for code in [500, 502, 503, 401, 403] {
+        for code in [500, 502, 503, 401] {
             let status = reqwest::StatusCode::from_u16(code).unwrap();
             assert!(carries_bundle(status).is_err(), "{status}");
         }

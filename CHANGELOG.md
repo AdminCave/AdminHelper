@@ -65,6 +65,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: verweigert der Server das Visitor-Bundle, stoppt der Tunnel (R-0453):** Antwortet der Server beim
+  Abgleich mit 403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers, stoppt der Desktop seinen Tunnel
+  beim naechsten Abgleich wie bei 404, statt frpc mit der alten Konfiguration weiterlaufen zu lassen. Doku: Desktop
+  fuer Entwickler (DE+EN).
 - **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
   der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
   gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).
