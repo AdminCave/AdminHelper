@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-1 — Task-Ledger
-Status: geplant · Branch: feature/kern-deps-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-deps-1 · Review: am Ende
 Spec: docs/features/kern-deps-1.md (Roadmap R-0922)
 Heavy: linux-full — T3 ändert den Unterbau der Desktop-GUI-E2E (webdriverio → undici), der nur im Sammellauf läuft
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
