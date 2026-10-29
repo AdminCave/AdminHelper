@@ -31,7 +31,7 @@ an (Code und Compose); ein permissiver Rollout geht per `MTLS_ENFORCE=false`.
 | Entscheidung | Stand |
 |---|---|
 | D1 Root → tunnel/access/internal | ✅ `ca-issuer` erzeugt die Hierarchie beim First-Boot |
-| D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); Agent pinnt die Root |
+| D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); der Agent vertraut nur seiner Kettendatei `ca.crt` (Intermediate + Root) |
 | D3 mTLS-Pflicht `:443` | ✅ **enforced** per Default (ab 0.29.0, Code + Compose); Permissiv-Rollout per `MTLS_ENFORCE=false` (Schalter umgesetzt + **end-to-end verifiziert**: permissiv↔enforced↔rollback, A8) |
 | D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; Schnell-Widerruf pro Gerät (Zertifikats-Register) und pro Benutzer als Zeitpunkt (`revoked_identities`), R-0224 |
 | D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |

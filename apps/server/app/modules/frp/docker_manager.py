@@ -11,7 +11,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from app.core.config import FRP_CONFIG_DIR
+from app.core.config import FRP_CONFIG_DIR, fsync_dir
 from app.modules.frp.config_generator import generate_frps_toml
 
 logger = logging.getLogger(__name__)
@@ -26,11 +26,11 @@ STALE_TEMP_AGE = 60  # seconds
 def write_frps_config(config, *, warn_restart: bool = False) -> Path:
     """Writes frps.toml into FRP_CONFIG_DIR. Returns the file path.
 
-    The file is swapped in atomically (temp file in the same directory, fsync, os.replace):
-    frps watches it and picks a change up by itself, so it must never see an empty or
-    half-written file. warn_restart=True marks a change made at runtime (create/update via
-    the web UI) and logs that frps applies it; at startup frps boots straight from the
-    fresh file, so nothing is logged about it.
+    The file is swapped in atomically (temp file in the same directory, fsync, os.replace,
+    then an fsync of the directory so the swap survives a crash): frps watches it and picks a
+    change up by itself, so it must never see an empty or half-written file. warn_restart=True
+    marks a change made at runtime (create/update via the web UI) and logs that frps applies
+    it; at startup frps boots straight from the fresh file, so nothing is logged about it.
     """
     toml = generate_frps_toml(config)
     path = FRP_CONFIG_DIR / "frps.toml"
@@ -48,6 +48,7 @@ def write_frps_config(config, *, warn_restart: bool = False) -> Path:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    fsync_dir(FRP_CONFIG_DIR)
     logger.info("frps.toml geschrieben: %s", path)
     if warn_restart:
         logger.info("frps.toml changed at runtime (%s); frps applies the change by itself", path)
@@ -95,7 +96,7 @@ def remove_frps_config() -> None:
         path.unlink()
     except FileNotFoundError:
         return
-    except OSError:
-        logger.exception("could not remove frps.toml (%s)", path)
+    except OSError as exc:
+        logger.error("could not remove frps.toml (%s): %s", path, type(exc).__name__)
         return
     logger.info("frps.toml entfernt: %s", path)

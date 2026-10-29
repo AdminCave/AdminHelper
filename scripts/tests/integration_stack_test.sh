@@ -144,6 +144,135 @@ code=$(curl -k -s "${CERT[@]}" \
 [ "$code" = "401" ] && ok "smuggled X-Client-* neutralized on the SSE route (401)" \
     || bad "header smuggling not neutralized on SSE route: got '$code'"
 
+# ── 7b. The server takes the identity headers from the gateway alone ─────────
+# The gateway sets X-Client-Verify/X-Client-Cert from the verified cert (step 7); the server
+# reads them only from a request whose direct peer is an address of the compose service
+# gateway (app.core.identity). Every other service of the default network reaches server:8080
+# as well; the server itself stands in for one here, sending the headers the gateway would set
+# for the cert of step 2 (8b revokes it later). Enforced, a request without an identity gets the
+# 403 of the scope guard on /api/servers. Then the gateway is recreated, as an update does, on
+# a new address (a placeholder holds its old one), and the server has to take its headers from
+# the first request on.
+
+# default_ip <service> — the address of the service's container in the project's default
+# network; empty when it is not running, has none there or a lookup fails.
+default_ip() { container_ip "$(e2e_dc ps -q "$1" 2>/dev/null)"; }
+
+# container_ip <container> — the same for a container by ID or name.
+container_ip() {
+    local net
+    net=$(docker network ls -q --no-trunc --filter "label=com.docker.compose.project=$E2E_PROJECT" \
+        --filter "label=com.docker.compose.network=default" 2>/dev/null)
+    [ -n "$1" ] && [ -n "$net" ] && [ "$(wc -l <<<"$net")" = 1 ] || return 0
+    docker inspect --format \
+        "{{range .NetworkSettings.Networks}}{{if eq .NetworkID \"$net\"}}{{.IPAddress}}{{end}}{{end}}" \
+        "$1" 2>/dev/null
+}
+
+# direct_servers <with|without> — "<status> <body>" of GET /api/servers with the JWT of step 5,
+# sent from the server container straight to server:8080; "with" adds X-Client-Verify: SUCCESS
+# and X-Client-Cert, the PEM on stdin escaped like nginx's $ssl_client_escaped_cert. Empty when
+# the exec fails. server:8080, not localhost: uvicorn takes the peer from X-Forwarded-For when
+# the request comes over loopback.
+direct_servers() {
+    e2e_dc exec -T server python -c '
+import sys, urllib.error, urllib.parse, urllib.request
+jwt, mode = sys.argv[1:3]
+headers = {"Authorization": "Bearer " + jwt}
+if mode == "with":
+    headers["X-Client-Verify"] = "SUCCESS"
+    headers["X-Client-Cert"] = urllib.parse.quote(sys.stdin.read())
+req = urllib.request.Request("http://server:8080/api/servers", headers=headers)
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        status, body = resp.status, resp.read()
+except urllib.error.HTTPError as e:
+    status, body = e.code, e.read()
+print(status, body.decode("ascii", "backslashreplace"))' "$JWT" "$1" 2>/dev/null
+}
+
+# via_gateway — the status of the same GET with the cert of step 2 and the JWT through the
+# gateway, as in step 6.
+via_gateway() {
+    curl -k -s "${CERT[@]}" -H "Authorization: Bearer $JWT" \
+        -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000
+}
+
+# The container that holds the gateway's old address in (d): a one-off of the service redis,
+# which is on the default network alone, so the teardown's `down` removes it with the stack. A
+# container compose did not start would stay behind and keep the network in use, with `down`
+# still exiting 0.
+IP_PLACEHOLDER="$E2E_PROJECT-ip-placeholder"
+
+# gateway_moved — (d): the gateway stopped, the placeholder started on the address it freed, the
+# gateway recreated (no build, nothing else touched) on another one; once it rejects a certless
+# request again as in step 3, the very next request with the cert -> 200. Leaves the placeholder
+# to the caller.
+gateway_moved() {
+    local old held new code deadline log="$E2E_WORK/gateway-recreate.log"
+    old=$(default_ip gateway)
+    [ -n "$old" ] || { bad "the gateway has no address in the default network before the recreate"; return; }
+    if ! e2e_dc stop gateway >"$log" 2>&1; then
+        bad "stopping the gateway failed"; tail -20 "$log"; return
+    fi
+    # No fixed address: compose run takes none, and docker run --ip on a network without a subnet
+    # of its own needs Docker 29.0.4 (moby#51583). Docker hands out the lowest free address (seen
+    # on Docker 29; in CI the recreated gateway got its own back), the one the gateway just freed.
+    e2e_dc run -d --no-deps --name "$IP_PLACEHOLDER" --entrypoint sleep redis 600 >>"$log" 2>&1
+    held=$(container_ip "$IP_PLACEHOLDER")
+    echo "  info address the stopped gateway freed / the placeholder holds: '$old' / '$held'"
+    [ "$held" = "$old" ] && ok "a placeholder holds the address the stopped gateway freed" \
+        || { bad "the placeholder does not hold the address the stopped gateway freed"; tail -20 "$log"; }
+    if ! e2e_dc up -d --no-deps --force-recreate gateway >>"$log" 2>&1; then
+        bad "recreating the gateway failed"; tail -20 "$log"; return
+    fi
+    deadline=$((SECONDS + 60))
+    while :; do
+        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/auth/me" 2>/dev/null || echo 000)
+        [ "$code" != 400 ] || break
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            bad "the recreated gateway did not reject a certless request with 400 within 60 s (last '$code')"
+            e2e_dc logs --tail 20 gateway; return
+        fi
+        sleep 1
+    done
+    code=$(via_gateway)
+    new=$(default_ip gateway)
+    echo "  info gateway address in the default network before/after the recreate: '$old' -> '$new'"
+    [ -n "$new" ] && [ "$new" != "$old" ] && ok "the recreated gateway came back on another address" \
+        || bad "the recreated gateway did not come back on another address: the fresh lookup goes unproven"
+    [ "$code" = 200 ] && ok "right after the gateway was recreated: cert + JWT through it -> 200" \
+        || bad "right after the gateway was recreated: cert + JWT through it expected 200, got '$code'"
+}
+
+identity_from_gateway() {
+    local pem forged bare code
+
+    pem=$(openssl x509 -in "$E2E_WORK/client-fullchain.pem" 2>/dev/null) && [ -n "$pem" ] \
+        || { bad "identity headers: no certificate in client-fullchain.pem"; return; }
+
+    # a. The gateway's headers straight to server:8080: no identity, the 403.
+    # b. Counter-check: the same request without them reaches the server and gets the same 403,
+    #    so (a) rests on nothing but the identity the server did not take.
+    forged=$(direct_servers with <<<"$pem")
+    bare=$(direct_servers without)
+    [ "${forged%% *}" = 403 ] && [ "$forged" = "$bare" ] \
+        && ok "identity headers straight to server:8080, not from the gateway: no identity (403 as without them)" \
+        || bad "identity headers straight to server:8080: got '$forged', expected 403 as without them ('$bare')"
+    [ "${bare%% *}" = 403 ] && ok "counter-check: server:8080 without the headers -> 403 (reached, no identity)" \
+        || bad "server:8080 without the headers: expected 403, got '$bare'"
+
+    # c. The same cert through the gateway -> 200.
+    code=$(via_gateway)
+    [ "$code" = 200 ] && ok "the same cert + JWT through the gateway -> 200" \
+        || bad "cert + JWT through the gateway: expected 200, got '$code'"
+
+    # d. The gateway recreated on another address.
+    gateway_moved
+    docker rm -f "$IP_PLACEHOLDER" >/dev/null 2>&1
+}
+identity_from_gateway
+
 # ── 8. /ca/renew through the gateway — the real ssl_client_escaped_cert path (6.48)
 # The renew endpoint takes the gateway-verified current cert (not a fresh token), so
 # this exercises the header/cert data path the enroll test doesn't. A fresh CSR reusing
@@ -752,6 +881,266 @@ app_not_dumpable() {
     e2e_dc exec -T server sh -c 'kill "$1"; rm -f "$2"' _ "${LAST%% *}" "$copy" >/dev/null 2>&1
 }
 app_not_dumpable
+
+# ── 14. Limits, capabilities, the passphrase secret and frpedge in the running stack ──
+# What docker-compose.yml sets has to hold on the containers and networks compose created:
+# every service with no-new-privileges and its process limit, the gateway's nginx master with
+# only the capabilities of its cap_add list and workers that are not root, ping as app in
+# monitoring, the CA root passphrase as a file in the ca-issuer and not in its environment, and
+# frpedge without IP masquerading. Compared with the values `docker compose config` resolves
+# for this project (overlay included), not with numbers repeated here.
+CFG=""   # `docker compose config --format json` of the project; holds the .env's secrets, never printed
+
+# cfg_pids_limits — "<service> <pids_limit>" for each service in CFG; "-" for a service without a
+# positive integer limit.
+cfg_pids_limits() {
+    python3 -c '
+import json, sys
+for name, svc in sorted(json.load(sys.stdin)["services"].items()):
+    limit = svc.get("pids_limit")
+    print(name, limit if type(limit) is int and limit > 0 else "-")' <<<"$CFG" 2>/dev/null
+}
+
+# cfg_cap_mask <service> — the cap_add list of the service in CFG as /proc/<pid>/status shows a
+# set of capabilities (16 hex digits); empty when the list names one it does not know.
+cfg_cap_mask() {
+    python3 -c '
+import json, sys
+# The bit of each capability is its index here (linux/capability.h).
+bits = """CHOWN DAC_OVERRIDE DAC_READ_SEARCH FOWNER FSETID KILL SETGID SETUID SETPCAP LINUX_IMMUTABLE
+    NET_BIND_SERVICE NET_BROADCAST NET_ADMIN NET_RAW IPC_LOCK IPC_OWNER SYS_MODULE SYS_RAWIO SYS_CHROOT
+    SYS_PTRACE SYS_PACCT SYS_ADMIN SYS_BOOT SYS_NICE SYS_RESOURCE SYS_TIME SYS_TTY_CONFIG MKNOD LEASE
+    AUDIT_WRITE AUDIT_CONTROL SETFCAP MAC_OVERRIDE MAC_ADMIN SYSLOG WAKE_ALARM BLOCK_SUSPEND AUDIT_READ
+    PERFMON BPF CHECKPOINT_RESTORE""".split()
+svc = json.load(sys.stdin)["services"][sys.argv[1]]
+caps = [c.upper().removeprefix("CAP_") for c in svc.get("cap_add") or []]
+if all(c in bits for c in caps):
+    print("%016x" % sum(1 << bits.index(c) for c in caps))' "$1" <<<"$CFG" 2>/dev/null
+}
+
+# pid1 <service> <field> — the value of the field in /proc/1/status in the service; empty when the
+# exec fails or the field is missing.
+pid1() {
+    e2e_dc exec -T "$1" cat /proc/1/status 2>/dev/null | awk -v f="$2:" '$1 == f { print $2 }'
+}
+
+# gateway_procs — "<name> <ppid> <uid>,<euid>,<suid>,<fsuid>" for each process in the gateway.
+gateway_procs() {
+    # shellcheck disable=SC2016 # expanded by the container's sh and its awk
+    e2e_dc exec -T gateway sh -c 'for s in /proc/[0-9]*/status; do awk "$1" "$s" 2>/dev/null; done' _ \
+        '/^Name:/ { n = $2 } /^PPid:/ { p = $2 } /^Uid:/ { u = $2 "," $3 "," $4 "," $5 }
+         END { if (n != "") print n, p, u }' 2>/dev/null
+}
+
+# env_lines <service> — the Config.Env of the service's container, one entry per line. Holds
+# secrets: only compared, never printed.
+env_lines() {
+    local id
+    id=$(e2e_dc ps -q "$1" 2>/dev/null)
+    [ -n "$id" ] || return 1
+    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$id" 2>/dev/null
+}
+
+# net_masq <network> — the masquerade option of the project network compose calls <network>,
+# empty when the network does not set it; non-zero unless exactly one such network exists.
+net_masq() {
+    local ids
+    ids=$(docker network ls -q --filter "label=com.docker.compose.project=$E2E_PROJECT" \
+        --filter "label=com.docker.compose.network=$1" 2>/dev/null)
+    [ -n "$ids" ] && [ "$(wc -l <<<"$ids")" = 1 ] || return 1
+    docker network inspect --format '{{index .Options "com.docker.network.bridge.enable_ip_masquerade"}}' \
+        "$ids" 2>/dev/null
+}
+
+compose_limits() {
+    local svc down=() names=() limits=() i id nnp have want name capeff workers root image
+    local issuer_env server_env frpedge default none="<not exactly one network>"
+
+    # The scheduler and monitoring run since 13 unless that stopped before it; --no-deps as in
+    # 11b, so neither server nor ca-issuer is recreated.
+    for svc in scheduler monitoring; do
+        [ -n "$(e2e_dc ps -q --status running "$svc" 2>/dev/null)" ] || down+=("$svc")
+    done
+    if [ "${#down[@]}" -gt 0 ] \
+        && ! e2e_dc up -d --no-deps --build "${down[@]}" >"$E2E_WORK/limits-up.log" 2>&1; then
+        bad "${down[*]} did not come up"; tail -20 "$E2E_WORK/limits-up.log"; return
+    fi
+    CFG=$(e2e_dc config --format json 2>/dev/null)
+    while read -r svc want; do
+        [ -n "$svc" ] || continue
+        names+=("$svc"); limits+=("$want")
+    done <<<"$(cfg_pids_limits)"
+    [ "${#names[@]}" -gt 0 ] || { bad "docker compose config listed no services"; return; }
+
+    # a. Every service of the compose file runs with no-new-privileges and its process limit.
+    for i in "${!names[@]}"; do
+        svc=${names[$i]}; want=${limits[$i]}
+        id=$(e2e_dc ps -q --status running "$svc" 2>/dev/null)
+        if [ -z "$id" ]; then
+            bad "$svc: not running, its limits unchecked"; continue
+        fi
+        nnp=$(pid1 "$svc" NoNewPrivs)
+        have=$(docker inspect --format '{{.HostConfig.PidsLimit}}' "$id" 2>/dev/null)
+        if [ "$nnp" = 1 ] && [ "$want" != - ] && [ "$have" = "$want" ]; then
+            ok "$svc: PID 1 with NoNewPrivs 1, pids limit $have as in the compose config"
+        else
+            bad "$svc: NoNewPrivs '$nnp' (expected 1), pids limit '$have' (compose config: '$want')"
+        fi
+    done
+    # Counter-check: the gateway's image outside the project without any option, cat as PID 1
+    # reading its own status.
+    image=$(docker inspect --format '{{.Image}}' "$(e2e_dc ps -q gateway 2>/dev/null)" 2>/dev/null)
+    nnp=$(docker run --rm --network none --entrypoint cat "$image" /proc/1/status 2>/dev/null \
+        | awk '$1 == "NoNewPrivs:" { print $2 }')
+    [ "$nnp" = 0 ] && ok "counter-check: a container of the gateway image without the options has NoNewPrivs 0" \
+        || bad "counter-check: a container of the gateway image without the options has NoNewPrivs '$nnp'" \
+            "(expected 0) — the check above could not fail"
+
+    # b. The gateway's nginx master keeps exactly its cap_add list; its workers are not root.
+    want=$(cfg_cap_mask gateway)
+    name=$(pid1 gateway Name); capeff=$(pid1 gateway CapEff)
+    [ "$name" = nginx ] && [ -n "$want" ] && [ "$capeff" = "$want" ] \
+        && ok "gateway: nginx master (PID 1) with CapEff $capeff, the cap_add list of the compose config" \
+        || bad "gateway: PID 1 '$name' with CapEff '$capeff', expected nginx with '$want' (cap_add)"
+    workers=$(gateway_procs | awk '$1 == "nginx" && $2 == 1 { print $3 }')
+    root=$(grep -E '(^|,)0(,|$)' <<<"$workers")
+    [ -n "$workers" ] && [ -z "$root" ] \
+        && ok "gateway: $(wc -l <<<"$workers") nginx workers, none with UID 0 ($(sort -u <<<"$workers" | paste -sd ' '))" \
+        || bad "gateway: nginx workers (uid,euid,suid,fsuid) '$(paste -sd ' ' <<<"$workers")', expected some, none with 0"
+
+    # c. monitoring: ping as app under no-new-privileges, over the ICMP datagram socket the
+    #    service's ping_group_range allows.
+    e2e_dc exec -T monitoring gosu app:app ping -c1 -W2 127.0.0.1 >/dev/null 2>&1 \
+        && ok "monitoring: ping as app reaches 127.0.0.1 under no-new-privileges" \
+        || bad "monitoring: ping as app failed under no-new-privileges"
+
+    # d. ca-issuer: the passphrase as a secret file, not in the container's environment.
+    issuer_env=$(env_lines ca-issuer); server_env=$(env_lines server)
+    if [ -z "$issuer_env" ]; then
+        bad "ca-issuer: could not read Config.Env"
+    elif grep -q '^CA_ROOT_PASSPHRASE=' <<<"$issuer_env"; then
+        bad "ca-issuer: CA_ROOT_PASSPHRASE is in the container's environment"
+    elif ! grep -qx 'CA_ROOT_PASSPHRASE_FILE=/run/secrets/ca_root_passphrase' <<<"$issuer_env"; then
+        bad "ca-issuer: no CA_ROOT_PASSPHRASE_FILE=/run/secrets/ca_root_passphrase in Config.Env"
+    elif ! e2e_dc exec -T ca-issuer test -s /run/secrets/ca_root_passphrase >/dev/null 2>&1; then
+        bad "ca-issuer: /run/secrets/ca_root_passphrase is missing or empty"
+    else
+        ok "ca-issuer: CA_ROOT_PASSPHRASE not in Config.Env, CA_ROOT_PASSPHRASE_FILE points at" \
+            "/run/secrets/ca_root_passphrase, which is not empty"
+    fi
+    grep -q '^SECRET_KEY=' <<<"$server_env" \
+        && ok "counter-check: the same read of Config.Env finds SECRET_KEY in the server's" \
+        || bad "counter-check: no SECRET_KEY in the server's Config.Env — the check above could not fail"
+
+    # e. frpedge without IP masquerading; the default network keeps it (option unset or true).
+    frpedge=$(net_masq frpedge) || frpedge=$none
+    default=$(net_masq default) || default=$none
+    [ "$frpedge" = false ] && { [ -z "$default" ] || [ "$default" = true ]; } \
+        && ok "frpedge: com.docker.network.bridge.enable_ip_masquerade false; the default network keeps masquerading (${default:-unset})" \
+        || bad "enable_ip_masquerade: frpedge '$frpedge' (expected false), default '$default' (expected unset or true)"
+}
+compose_limits
+
+# ── 15. The server takes the client address from the gateway and from no one else ──
+# Compose has the server trust the forwarded header of the gateway by name
+# (TRUSTED_PROXIES=gateway): a login through the gateway is recorded with the address of the
+# client the gateway saw, not the gateway's own, and a peer other than the gateway cannot set the
+# address with an X-Forwarded-For of its own. Seen in the audit log, where a failed login leaves
+# auth.login_failed with that address in source_ip.
+# The server looks the name up in a thread of each uvicorn worker, started by the worker's first
+# request that asks for the client address, and then every 30 s; until the first lookup has come
+# back, and for up to 30 s after the gateway took a new address, the gateway's own address
+# counts. Whether that has happened by now must not rest on what steps 1-14 sent: the stack runs
+# one worker, and logins through the gateway, which ask for the address, go first until one is
+# recorded with a client address, for longer than the 30 s between two lookups. Only then do the
+# checks run; a server that never takes the gateway's header fails at that deadline.
+CERT4=(--cert "$E2E_WORK/client4-fullchain.pem" --key "$E2E_WORK/client4.key")
+GATEWAY_IP=""   # the gateway's address in the project's default network
+
+# audit_last <action> — "<id> <source_ip>" of the newest audit_log row with that action, the
+# source_ip empty when the row has none; empty without such a row or when psql fails.
+audit_last() {
+    e2e_dc exec -T postgres psql -U adminhelper -d adminhelper -tA -F ' ' -c \
+        "SELECT id, coalesce(source_ip, '') FROM audit_log WHERE action = '$1' ORDER BY id DESC LIMIT 1" \
+        2>/dev/null
+}
+
+# client_login_seen — one admin login through the gateway; true when the auth.login row it wrote
+# holds an address other than the gateway's. LAST: that row, or why there is none.
+client_login_seen() {
+    local before
+    before=$(audit_last auth.login)
+    e2e_login "${CERT4[@]}" || { LAST="login failed: $E2E_LOGIN_ERR"; return 1; }
+    LAST=$(audit_last auth.login)
+    if [ -z "$LAST" ] || [ "${LAST%% *}" = "${before%% *}" ]; then
+        LAST="no new auth.login row ('$LAST')"; return 1
+    fi
+    [ -n "${LAST#* }" ] && [ "${LAST#* }" != "$GATEWAY_IP" ]
+}
+
+client_address() {
+    local server_env token before row code scheduler
+
+    GATEWAY_IP=$(default_ip gateway)
+    [ -n "$GATEWAY_IP" ] || { bad "client address: the gateway has no address in the default network"; return; }
+    # One worker, so the logins before the checks reach the resolver the checks reach.
+    server_env=$(env_lines server)
+    grep -qx 'WEB_CONCURRENCY=1' <<<"$server_env" \
+        || { bad "client address: the server runs without WEB_CONCURRENCY=1, the logins before the checks may reach another worker"; return; }
+
+    # A device certificate of its own, as in 11b: 8b replaced the first one and revoked the second.
+    token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client4.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client4.key" -subj "/CN=itest" -out "$E2E_WORK/client4.csr" 2>/dev/null
+    if [ -z "$token" ] || ! enroll "$token" client4; then
+        bad "client address: could not enroll a device for the logins"; return
+    fi
+    until_ok 40 client_login_seen || {
+        bad "client address: no login through the gateway within 40 s recorded with an address other than" \
+            "the gateway's $GATEWAY_IP (last: '$LAST')"
+        return
+    }
+
+    # a. A failed login through the gateway: auth.login_failed with the client's address.
+    before=$(audit_last auth.login_failed)
+    code=$(curl -k -s "${CERT4[@]}" -o /dev/null -w '%{http_code}' --max-time 5 \
+        -X POST "$E2E_SERVER_URL/api/auth/login" -H 'Content-Type: application/json' \
+        -d '{"username":"admin","password":"not-the-password"}' 2>/dev/null || echo 000)
+    row=$(audit_last auth.login_failed)
+    if [ "$code" = 401 ] && [ -n "$row" ] && [ "${row%% *}" != "${before%% *}" ] \
+        && [ -n "${row#* }" ] && [ "${row#* }" != "$GATEWAY_IP" ]; then
+        ok "a failed login through the gateway (401) is recorded from the client (${row#* }), not the gateway ($GATEWAY_IP)"
+    else
+        bad "failed login through the gateway: HTTP '$code', newest auth.login_failed '$row' (before: '$before')," \
+            "expected 401 and a new row with an address other than the gateway's $GATEWAY_IP"
+    fi
+
+    # b. Counter-check: the same login straight to server:8080 from the scheduler, with an
+    #    X-Forwarded-For of its own, is recorded with the scheduler's address.
+    scheduler=$(default_ip scheduler)
+    [ -n "$scheduler" ] || { bad "client address: the scheduler has no address in the default network"; return; }
+    before=$(audit_last auth.login_failed)
+    code=$(e2e_dc exec -T scheduler python -c '
+import json, urllib.error, urllib.request
+req = urllib.request.Request(
+    "http://server:8080/api/auth/login",
+    data=json.dumps({"username": "admin", "password": "not-the-password"}).encode(),
+    headers={"Content-Type": "application/json", "X-Forwarded-For": "203.0.113.9"},
+)
+try:
+    print(urllib.request.urlopen(req, timeout=10).status)
+except urllib.error.HTTPError as e:
+    print(e.code)' 2>/dev/null)
+    row=$(audit_last auth.login_failed)
+    if [ "$code" = 401 ] && [ -n "$row" ] && [ "${row%% *}" != "${before%% *}" ] && [ "${row#* }" = "$scheduler" ]; then
+        ok "counter-check: the same login from the scheduler with X-Forwarded-For 203.0.113.9 is recorded" \
+            "from the scheduler ($scheduler)"
+    else
+        bad "login from the scheduler with X-Forwarded-For 203.0.113.9: HTTP '$code', newest auth.login_failed" \
+            "'$row' (before: '$before'), expected 401 and a new row from the scheduler's $scheduler"
+    fi
+}
+client_address
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

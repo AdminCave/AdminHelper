@@ -1180,7 +1180,7 @@ mod tests {
             listener.local_addr().unwrap().port()
         );
         // A pin an earlier test left for this port would decide instead of this server.
-        crate::tofu::forget_pin(&url);
+        crate::tofu::forget_pin(&url).unwrap();
         // The handshake runs on a tokio worker without a test keyring, where storing a
         // first-use pin fails and the connection is refused; so this server's certificate
         // is pinned up front. The tests check the session's choice of client, not pinning.
@@ -1215,8 +1215,8 @@ mod tests {
         (url, log)
     }
 
-    /// A GET that trusts the server's certificate on first use, whatever the session chose:
-    /// a call that wanted self-signed certificates allowed.
+    /// A GET that accepts the test server's self-signed certificate, whatever the session
+    /// chose. No first contact: `serve_self_signed` pins that certificate up front.
     fn get_allowing_self_signed(
         server_url: &str,
         _session_choice: bool,

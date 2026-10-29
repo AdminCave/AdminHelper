@@ -123,9 +123,9 @@ func EnsureSecureDir(dir string) error {
 
 // EnsureDataDir is EnsureSecureDir for a directory of the agent's data. EnsureSecureDir
 // opens the directory above dir by path, so a dir below the data root (MonitorDir,
-// which holds frp, frp\pki, logs and identity) is secured only after the root, in the
-// same run: the root's tree is clean then, and only SYSTEM and the Administrators can
-// add to it. A dir outside the root (an ADMINHELPER_*_DIR override) is secured alone.
+// which holds frp, logs and identity) is secured only after the root, in the same run:
+// the root's tree is clean then, and only SYSTEM and the Administrators can add to it.
+// A dir outside the root (an ADMINHELPER_*_DIR override) is secured alone.
 func EnsureDataDir(dir string) error {
 	root := MonitorDir()
 	if rel, err := filepath.Rel(root, dir); err == nil && rel != "." && filepath.IsLocal(rel) {

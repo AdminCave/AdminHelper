@@ -6,6 +6,8 @@
 
 from datetime import timedelta
 
+import pytest
+
 from app.core.auth import (
     _get_user_from_token,
     blacklist_token,
@@ -17,6 +19,7 @@ from app.core.auth import (
     hash_password,
     verify_password,
 )
+from tests.token_claims import claims_for
 
 
 class TestPasswordHashing:
@@ -60,7 +63,7 @@ class TestTokenCreation:
 
         from app.core.config import ALGORITHM, SECRET_KEY
 
-        token = create_access_token({"sub": "admin"})
+        token = create_access_token(claims_for("admin"))
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         assert payload["sub"] == "admin"
         assert payload["type"] == "access"
@@ -71,7 +74,7 @@ class TestTokenCreation:
 
         from app.core.config import ALGORITHM, SECRET_KEY
 
-        token = create_refresh_token({"sub": "admin"})
+        token = create_refresh_token(claims_for("admin"))
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         assert payload["type"] == "refresh"
 
@@ -80,32 +83,32 @@ class TestTokenCreation:
 
         from app.core.config import ALGORITHM, SECRET_KEY
 
-        token = create_access_token({"sub": "user1"}, expires_delta=timedelta(minutes=1))
+        token = create_access_token(claims_for("user1"), expires_delta=timedelta(minutes=1))
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         assert payload["sub"] == "user1"
 
 
 class TestTokenValidation:
     def test_valid_access_token(self, db_session, admin_user):
-        token = create_access_token({"sub": admin_user.username})
+        token = create_access_token(claims_for(admin_user.username))
         user = _get_user_from_token(token, db_session)
         assert user is not None
         assert user.username == "admin"
 
     def test_refresh_token_rejected_as_access(self, db_session, admin_user):
-        token = create_refresh_token({"sub": admin_user.username})
+        token = create_refresh_token(claims_for(admin_user.username))
         user = _get_user_from_token(token, db_session)
         assert user is None
 
     def test_refresh_token_accepted_with_correct_type(self, db_session, admin_user):
-        token = create_refresh_token({"sub": admin_user.username})
+        token = create_refresh_token(claims_for(admin_user.username))
         user = get_user_from_refresh_token(token, db_session)
         assert user is not None
         assert user.username == "admin"
 
     def test_expired_token_returns_none(self, db_session, admin_user):
         token = create_access_token(
-            {"sub": admin_user.username},
+            claims_for(admin_user.username),
             expires_delta=timedelta(seconds=-10),
         )
         user = _get_user_from_token(token, db_session)
@@ -116,11 +119,11 @@ class TestTokenValidation:
         assert user is None
 
     def test_nonexistent_user_returns_none(self, db_session):
-        token = create_access_token({"sub": "ghost"})
+        token = create_access_token(claims_for("ghost"))
         user = _get_user_from_token(token, db_session)
         assert user is None
 
-    def test_missing_sub_returns_none(self, db_session):
+    def test_missing_uid_returns_none(self, db_session):
         token = create_access_token({})
         user = _get_user_from_token(token, db_session)
         assert user is None
@@ -136,14 +139,14 @@ class TestPasswordResetRevocation:
         from app.core.config import ALGORITHM, SECRET_KEY
 
         payload = jwt.decode(
-            create_access_token({"sub": "admin"}), SECRET_KEY, algorithms=[ALGORITHM]
+            create_access_token(claims_for("admin")), SECRET_KEY, algorithms=[ALGORITHM]
         )
         assert "iat" in payload
 
     def test_token_before_watermark_rejected(self, db_session, admin_user):
         from datetime import datetime, timedelta, timezone
 
-        token = create_access_token({"sub": admin_user.username})
+        token = create_access_token(claims_for(admin_user.username))
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         # Watermark set AFTER the token was issued -> token is stale.
         admin_user.tokens_valid_after = now + timedelta(hours=1)
@@ -157,7 +160,7 @@ class TestPasswordResetRevocation:
         # Watermark in the past -> a freshly issued token is still valid.
         admin_user.tokens_valid_after = now - timedelta(hours=1)
         db_session.commit()
-        token = create_access_token({"sub": admin_user.username})
+        token = create_access_token(claims_for(admin_user.username))
         user = _get_user_from_token(token, db_session)
         assert user is not None and user.username == "admin"
 
@@ -174,6 +177,7 @@ class TestPasswordResetRevocation:
         legacy = jwt.encode(
             {
                 "sub": admin_user.username,
+                "uid": admin_user.id,
                 "type": "access",
                 "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
                 "jti": "legacy-no-iat",
@@ -347,6 +351,72 @@ class TestRefreshCookie:
         assert rot.status_code == 200
         assert rot.json()["access_token"]
 
+    def test_browser_login_gets_the_refresh_token_only_as_cookie(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers={"Sec-Fetch-Site": "same-origin"},
+        )
+        assert login.status_code == 200
+        assert login.json()["refresh_token"] == ""
+        assert login.json()["access_token"]
+        assert test_client.cookies.get("refresh_token")
+        assert "httponly" in login.headers.get("set-cookie", "").lower()
+
+    def test_browser_refresh_via_cookie_gets_no_body_token(self, test_client, admin_user):
+        browser = {"Sec-Fetch-Site": "same-origin"}
+        test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers=browser,
+        )
+        old = test_client.cookies.get("refresh_token")
+        assert old
+
+        rot = test_client.post("/api/auth/refresh", headers=browser)
+
+        assert rot.status_code == 200
+        assert rot.json()["refresh_token"] == ""
+        assert rot.json()["access_token"]
+        new = test_client.cookies.get("refresh_token")
+        assert new and new != old
+        reuse = test_client.post("/api/auth/refresh", json={"refresh_token": old})
+        assert reuse.status_code == 401
+
+    @pytest.mark.parametrize("site", ["same-origin", "same-site", "cross-site", "none"])
+    def test_any_sec_fetch_site_value_hides_the_body_token(self, test_client, admin_user, site):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers={"Sec-Fetch-Site": site},
+        )
+        assert login.status_code == 200
+        assert login.json()["refresh_token"] == ""
+
+    @pytest.mark.parametrize("headers", [{}, {"Sec-Fetch-Mode": "cors"}], ids=["none", "mode-only"])
+    def test_non_browser_login_and_refresh_keep_the_body_token(
+        self, test_client, admin_user, headers
+    ):
+        # Node fetch sends Sec-Fetch-Mode but not Sec-Fetch-Site; it still gets the body token.
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers=headers,
+        )
+        assert login.status_code == 200
+        body_token = login.json()["refresh_token"]
+        assert body_token
+        assert body_token == test_client.cookies.get("refresh_token")
+
+        rot = test_client.post(
+            "/api/auth/refresh", json={"refresh_token": body_token}, headers=headers
+        )
+
+        assert rot.status_code == 200
+        rotated = rot.json()["refresh_token"]
+        assert rotated and rotated != body_token
+        assert rotated == test_client.cookies.get("refresh_token")
+
 
 class TestTokenBlacklist:
     def test_duplicate_jti_returns_false_not_error(self, db_session, admin_user):
@@ -354,6 +424,6 @@ class TestTokenBlacklist:
         # raise an IntegrityError on the duplicate jti PK (which surfaced as a 500 in the parallel
         # multi-tab-refresh / double-click-logout race). With the TOCTOU pre-check removed, the
         # second sequential call drives the same except-IntegrityError branch the race hits.
-        token = create_access_token({"sub": admin_user.username})
+        token = create_access_token(claims_for(admin_user.username))
         assert blacklist_token(token, db_session) is True  # newly added
         assert blacklist_token(token, db_session) is False  # PK conflict -> benign False

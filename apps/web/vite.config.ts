@@ -13,7 +13,9 @@ import path from 'node:path';
 // is deliberately absent: it's ignored in a meta CSP and belongs in the gateway header.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'", // the Vite build emits no inline scripts (verified)
+  // No inline scripts: neither the Vite bundle (verified) nor index.html, whose theme init
+  // before the first paint is the file public/theme-init.js.
+  "script-src 'self'",
   "style-src 'self' 'unsafe-inline'", // components use inline style= attributes
   "img-src 'self' data:",
   "font-src 'self'",
@@ -43,12 +45,12 @@ export default defineConfig({
     },
   },
   build: {
-    // Waehrend der Migration lokal nach dist/ bauen.
-    // Erst in Phase 11 auf '../server/frontend' umstellen (Dockerfile-Cutover).
+    // Vite builds into dist/; the root Dockerfile (stage frontend-build) copies dist/ into
+    // the server image, which serves it under frontend/.
     outDir: path.resolve(__dirname, './dist'),
     emptyOutDir: true,
-    // No production sourcemaps: after the cutover to ../server/frontend they'd be served
-    // publicly, exposing internal comments / auth-flow hints and easing client-logic
+    // No production sourcemaps: the server image serves the build publicly, so they would
+    // expose internal comments / auth-flow hints and ease client-logic
     // reconnaissance (3.102). Set true locally to debug a production build.
     sourcemap: false,
     target: 'es2022',
@@ -56,9 +58,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/api': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/api': 'http://127.0.0.1:8080',
     },
+  },
+  // `vite preview` (Playwright project chromium-build) serves the build with the CSP as a
+  // header, like the server (script-src 'self' there too, apps/server/app/main.py). A
+  // header covers the whole document; the meta element above only covers what follows it
+  // before </head> (CSP3 §3.3), so an inline script ahead of it would pass unnoticed.
+  preview: {
+    headers: { 'Content-Security-Policy': CSP },
   },
 });

@@ -7,14 +7,39 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const serviceName = "adminhelper-agent"
+
+// timerTimeout caps enabling the timer: a hung systemd or D-Bus would otherwise hold the setup
+// command for good. A var only so tests can shorten it.
+var timerTimeout = 30 * time.Second
+
+// EnableTimer enables and starts adminhelper-agent.timer. Only the setup calls it (provision,
+// monitor init, service install), never a run: beside a `run` without --once an enabled timer
+// would run each cycle twice (R-0641). A call that the cap ended returns
+// context.DeadlineExceeded, not the "signal: killed" of the kill.
+func EnableTimer() error {
+	ctx, cancel := context.WithTimeout(context.Background(), timerTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "enable", "--now", serviceName+".timer")
+	cmd.WaitDelay = 2 * time.Second
+	err := cmd.Run()
+	if err != nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return fmt.Errorf("systemctl enable --now %s.timer: %w", serviceName, err)
+	}
+	return nil
+}
 
 // Install registers the AdminHelper agent as a systemd service with a timer.
 func Install() error {
@@ -88,7 +113,7 @@ WantedBy=timers.target
 	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
 		return fmt.Errorf("daemon-reload: %w", err)
 	}
-	if err := exec.Command("systemctl", "enable", "--now", serviceName+".timer").Run(); err != nil {
+	if err := EnableTimer(); err != nil {
 		return fmt.Errorf("Timer aktivieren: %w", err)
 	}
 	fmt.Printf("Service installiert: %s.timer aktiv\n", serviceName)

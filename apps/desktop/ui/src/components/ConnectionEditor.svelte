@@ -21,10 +21,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import * as bridge from '$lib/bridge';
   import { accelerateScroll, PANEL_FACTOR } from '$lib/utils/scrollAcceleration';
   import { t } from '$lib/i18n';
+  import { confirmDialog } from './ui/ConfirmDialog.svelte';
 
   let form = $state<Connection>(emptyConnection());
   let tagsInput = $state('');
   let isNew = $state(true);
+  // The delete question sits in App's layer, outside this overlay, but the focus stays on
+  // "Delete" in here: its Escape reaches the overlay's handler before the dialog's own and
+  // would close the editor under the question. A count, as in SettingsModal: a second click
+  // replaces the open question, and the first one's end must not lift the second one's guard.
+  let asking = 0;
 
   $effect(() => {
     const st = $editorState;
@@ -65,6 +71,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   async function onDelete(): Promise<void> {
     if (isNew) return;
     const target = form;
+    asking += 1;
+    const ok = await confirmDialog(
+      $t('editor.deleteConfirm', { name: target.name || target.host }),
+      { confirmLabel: $t('action.delete') },
+    );
+    asking -= 1;
+    if (!ok) return;
     try {
       await remove(target.id);
       if (target.kind === 'rdp') {
@@ -108,7 +121,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     onclick={(e) => {
       if (e.target === e.currentTarget) onClose();
     }}
-    onkeydown={(e) => e.key === 'Escape' && onClose()}
+    onkeydown={(e) => {
+      if (e.key === 'Escape' && !asking) onClose();
+    }}
     tabindex="-1"
   >
     <div class="editor-panel" use:accelerateScroll={PANEL_FACTOR}>
