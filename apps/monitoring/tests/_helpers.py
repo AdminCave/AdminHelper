@@ -50,8 +50,8 @@ def make_check(**kw):
 
 
 def make_msg(**kw):
-    """Fake _build_message() result — built once per transition in process_alert
-    now (2.30) and passed to _dispatch / _send_* / _emit_to_hub."""
+    """Fake build_message() result — built once per transition in process_alert
+    now (2.30) and passed to _dispatch / _send_* / emit_to_hub."""
     defaults = dict(
         check_name="c",
         check_type="ping",
@@ -148,7 +148,7 @@ class _CapturingDb:
         return self._rules
 
     def first(self):
-        # _build_message queries MonitorState here; no state row in these tests.
+        # build_message queries MonitorState here; no state row in these tests.
         return None
 
     def add(self, entry):

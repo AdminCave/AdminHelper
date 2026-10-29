@@ -189,7 +189,7 @@ def test_two_writers_do_not_lose_an_increment_or_double_alert(pg_sessionmaker, m
     # The hub emit runs after the dispatch; without DATA_DIR/SERVER_HUB_URL set it
     # would reach for the network. Patched by its real name — with raising=False a
     # typo here would silently patch nothing.
-    monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **kw: None)
+    monkeypatch.setattr(alerter, "emit_to_hub", lambda *a, **kw: None)
     pool = _InlinePool()
     monkeypatch.setattr(check_engine, "_alert_pool", pool)
 
@@ -302,7 +302,7 @@ def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypa
         return True, None
 
     monkeypatch.setattr(alerter, "_dispatch", _record_send)
-    monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **kw: None)
+    monkeypatch.setattr(alerter, "emit_to_hub", lambda *a, **kw: None)
 
     real_resolve = alerter.resolve_notification
 

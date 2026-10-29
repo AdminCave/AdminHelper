@@ -23,9 +23,9 @@ from sqlalchemy.orm import sessionmaker
 from app import alerter
 from app.alerter import (
     HUB_COOLDOWN,
-    _emit_to_hub,
     _hub_severity,
     _severity_level,
+    emit_to_hub,
     hub_decision,
     process_alert,
 )
@@ -144,9 +144,7 @@ class TestEmitToHub:
     def _patch(self, monkeypatch, url="http://hub:8080", key="secret"):
         monkeypatch.setattr(alerter, "SERVER_HUB_URL", url)
         monkeypatch.setattr(alerter, "INTERNAL_API_KEY", key)
-        monkeypatch.setattr(
-            alerter, "_build_message", lambda *a, **k: {"subject": "S", "text": "T"}
-        )
+        monkeypatch.setattr(alerter, "build_message", lambda *a, **k: {"subject": "S", "text": "T"})
 
     def test_no_request_when_unconfigured(self, monkeypatch):
         calls = {"n": 0}
@@ -155,7 +153,7 @@ class TestEmitToHub:
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
-        _emit_to_hub(make_check(), "ok", "critical", make_msg())
+        emit_to_hub(make_check(), "ok", "critical", make_msg())
         assert calls["n"] == 0
 
     def test_posts_event_with_internal_key(self, monkeypatch):
@@ -169,7 +167,7 @@ class TestEmitToHub:
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", fake_post)
 
-        _emit_to_hub(make_check(server_id="srv-1"), "ok", "critical", make_msg())
+        emit_to_hub(make_check(server_id="srv-1"), "ok", "critical", make_msg())
 
         assert captured["url"] == "http://hub:8080/api/internal/events"
         assert captured["headers"]["X-Internal-Key"] == "secret"
@@ -192,7 +190,7 @@ class TestEmitToHub:
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", fake_post)
 
-        _emit_to_hub(make_check(), "critical", "ok", make_msg())
+        emit_to_hub(make_check(), "critical", "ok", make_msg())
         # worse-of-both severity stays critical, but new_status exposes the leg.
         assert captured["json"]["severity"] == "critical"
         assert captured["json"]["new_status"] == "ok"
@@ -205,7 +203,7 @@ class TestEmitToHub:
 
         monkeypatch.setattr(alerter.httpx, "post", boom)
         # Must not raise — a failed push cannot break the alert path.
-        _emit_to_hub(make_check(), "ok", "critical", make_msg())
+        emit_to_hub(make_check(), "ok", "critical", make_msg())
 
     def test_info_transition_is_not_pushed(self, monkeypatch):
         calls = {"n": 0}
@@ -213,14 +211,14 @@ class TestEmitToHub:
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
-        _emit_to_hub(make_check(), "pending", "ok", make_msg())  # info-level → skip, no spam
+        emit_to_hub(make_check(), "pending", "ok", make_msg())  # info-level → skip, no spam
         assert calls["n"] == 0
 
     def test_non_2xx_response_does_not_raise(self, monkeypatch):
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
         # A rejected push (e.g. key mismatch) is logged, not raised.
-        _emit_to_hub(make_check(), "ok", "critical", make_msg())
+        emit_to_hub(make_check(), "ok", "critical", make_msg())
 
     def _capture_posts(self, monkeypatch):
         posted = []
@@ -240,8 +238,8 @@ class TestEmitToHub:
         posted = self._capture_posts(monkeypatch)
         check = make_check(severity="warning")
 
-        _emit_to_hub(check, "ok", "critical", make_msg())
-        _emit_to_hub(check, "critical", "ok", make_msg())
+        emit_to_hub(check, "ok", "critical", make_msg())
+        emit_to_hub(check, "critical", "ok", make_msg())
 
         assert [(p["severity"], p["new_status"]) for p in posted] == [
             ("warning", "critical"),
@@ -252,8 +250,8 @@ class TestEmitToHub:
         posted = self._capture_posts(monkeypatch)
         check = make_check(severity="info")
 
-        _emit_to_hub(check, "ok", "critical", make_msg())
-        _emit_to_hub(check, "critical", "ok", make_msg())
+        emit_to_hub(check, "ok", "critical", make_msg())
+        emit_to_hub(check, "critical", "ok", make_msg())
 
         assert posted == []
 
@@ -261,34 +259,34 @@ class TestEmitToHub:
         # R-0424: the bell's record (hub_status, hub_sent_at) follows only an
         # accepted event.
         self._capture_posts(monkeypatch)
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is True
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is True
         # info-level: nothing sent
-        assert _emit_to_hub(make_check(), "pending", "ok", make_msg()) is False
+        assert emit_to_hub(make_check(), "pending", "ok", make_msg()) is False
 
         monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
 
         def boom(*a, **k):
             raise RuntimeError("network down")
 
         monkeypatch.setattr(alerter.httpx, "post", boom)
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
 
         monkeypatch.setattr(alerter, "SERVER_HUB_URL", "")
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
 
     def test_severity_given_replaces_the_computed_one(self, monkeypatch):
         posted = self._capture_posts(monkeypatch)
         check = make_check(severity="warning")
 
-        assert _emit_to_hub(check, "warning", "ok", make_msg(), severity="critical") is True
+        assert emit_to_hub(check, "warning", "ok", make_msg(), severity="critical") is True
 
         assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "ok")]
 
 
 class TestSeverityCapThroughProcessAlert:
-    """R-0424: one transition through process_alert with the real _build_message
-    and _emit_to_hub. Rule channels and hub carry the capped label and severity;
+    """R-0424: one transition through process_alert with the real build_message
+    and emit_to_hub. Rule channels and hub carry the capped label and severity;
     the text keeps the real transition and the check's severity."""
 
     def _run(self, monkeypatch, severity, old_status, new_status):
@@ -351,7 +349,7 @@ class TestSeverityCapThroughProcessAlert:
 class TestHubTitleLimit:
     """R-0637: the bell's title is the message subject, cut to the hub's limit;
     a longer title made the push a 422 and the bell got nothing. Mail and
-    webhook keep the full subject. Real _build_message and _emit_to_hub."""
+    webhook keep the full subject. Real build_message and emit_to_hub."""
 
     def _run(self, monkeypatch, name, old_status, new_status):
         monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
@@ -439,7 +437,7 @@ class TestProcessAlertEmits:
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
         monkeypatch.setattr(
             alerter,
-            "_emit_to_hub",
+            "emit_to_hub",
             lambda check, old, new, msg, severity=None: seen.update(old=old, new=new),
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "critical")
@@ -448,7 +446,7 @@ class TestProcessAlertEmits:
     def test_no_emit_when_status_unchanged(self, monkeypatch):
         calls = {"n": 0}
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "ok")
         assert calls["n"] == 0
@@ -457,7 +455,7 @@ class TestProcessAlertEmits:
         # unknown-Policy: the hub is suppressed together with the rule dispatch.
         calls = {"n": 0}
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "warning", "unknown")
         assert calls["n"] == 0

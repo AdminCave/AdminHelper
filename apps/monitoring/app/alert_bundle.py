@@ -308,7 +308,7 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
         # Built once per member and shared by the rules and the bell, as in
         # process_alert.
         if entry.check.id not in singles:
-            singles[entry.check.id] = alerter._build_message(
+            singles[entry.check.id] = alerter.build_message(
                 db, entry.check, entry.old_status, spec.status
             )
         return singles[entry.check.id]
@@ -361,15 +361,15 @@ def _send_rules(
 
 
 def _bundle_message(kind: _Kind, members: list[Entry], names: dict[str, str]) -> dict:
-    """The message of a bundle in the shape of _build_message, plus ``members``.
+    """The message of a bundle in the shape of build_message, plus ``members``.
     The label is capped like a single subject, at the highest severity of the
     members; the text keeps the real status."""
     is_recovery = kind.status == "ok"
-    level = max(alerter._severity_level(m.check.severity) for m in members)
+    severity = alerter.highest_severity(m.check.severity for m in members)
     if is_recovery:
         label = head = "RECOVERY"
     else:
-        label = alerter._LEVEL_SEVERITY[min(alerter._STATUS_LEVEL[kind.status], level)].upper()
+        label = alerter.capped_label(kind.status, severity)
         head = kind.status.upper()
     count = f"{len(members)} {kind.wording}"
     lines = [_line(m, names) for m in members[:MAX_TEXT_LINES]]
@@ -380,7 +380,7 @@ def _bundle_message(kind: _Kind, members: list[Entry], names: dict[str, str]) ->
         "check_name": None,
         "check_type": members[0].check.check_type,
         "server_id": None,
-        "severity": alerter._LEVEL_SEVERITY[level],
+        "severity": severity,
         "old_status": kind.old_status,
         "new_status": kind.status,
         "is_recovery": is_recovery,
@@ -426,7 +426,10 @@ def _send_bell(
     # servers whose own check is critical, and min_severity applies per server.
     levels: dict[str, list[Entry]] = {}
     for m in emit:
-        levels.setdefault(_bell_severity(kind, m), []).append(m)
+        severity = alerter.bell_severity(
+            m.state.hub_status, m.old_status, kind.status, m.check.severity
+        )
+        levels.setdefault(severity, []).append(m)
     singles: list[tuple[Entry, dict, str]] = []
     bundles: list[tuple[list[Entry], dict]] = []
     for severity, group in levels.items():
@@ -446,21 +449,16 @@ def _send_bell(
 
     accepted: list[Entry] = []
     for m, msg, severity in singles:
-        if alerter._emit_to_hub(m.check, m.old_status, kind.status, msg, severity=severity):
+        if alerter.emit_to_hub(m.check, m.old_status, kind.status, msg, severity=severity):
             accepted.append(m)
     for chunk, payload in bundles:
-        if alerter._post_hub_event(payload, "agent bundle"):
+        if alerter.post_hub_event(payload, "agent bundle"):
             accepted += chunk
+    # What the bell now shows of each member, as process_alert records it.
     for m in accepted:
-        _record_bell(m, kind.status, now)
-
-
-def _bell_severity(kind: _Kind, entry: Entry) -> str:
-    """The level the member reaches the bell with, as in process_alert: capped at
-    the check's severity, a recovery at the level its alarm reached the bell with."""
-    if kind.status == "ok":
-        return entry.state.hub_status
-    return alerter._hub_severity(entry.old_status, kind.status, entry.check.severity)
+        m.state.hub_status, m.state.hub_sent_at = alerter.bell_record(
+            kind.status, m.check.severity, m.state.hub_sent_at, now
+        )
 
 
 def _bundle_payload(kind: _Kind, severity: str, server_ids: list[str]) -> dict:
@@ -474,11 +472,3 @@ def _bundle_payload(kind: _Kind, severity: str, server_ids: list[str]) -> dict:
         "source_ids": server_ids,
         "new_status": kind.status,
     }
-
-
-def _record_bell(entry: Entry, status: str, now: datetime) -> None:
-    """What the bell now shows of the member, as process_alert records it: a
-    problem starts the cooldown, a recovery leaves hub_sent_at as it was."""
-    entry.state.hub_status = alerter._capped_status(status, entry.check.severity)
-    if status != "ok":
-        entry.state.hub_sent_at = now
