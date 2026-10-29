@@ -57,12 +57,14 @@ Dedup-Key: bug:server:hooks/router.py:nan-body
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_webhook_payload.py tests/test_openapi_snapshot.py
 Doku: changelog.d/kern-server-1.md (nur bei Code-Änderung)
 
-### T6 — CLI: Passwort über 128 Zeichen abweisen (R-0839)  [ ]
-Komponente: server · Dateien: apps/server/app/cli.py, apps/server/tests/test_cli.py, changelog.d/kern-server-1.md
+### T6 — CLI: Passwort über 128 Zeichen abweisen (R-0839)  [x]
+Komponente: server · Dateien: apps/server/app/cli.py, apps/server/tests/test_cli.py, changelog.d/kern-server-1.md, apps/server/app/modules/users/schemas.py, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2eb1f866 2026-10-29T17:58:47+01:00
+Review: approve (.ah-out/review/kern-server-1/T6.verdict.json)
 Änderung: Erst belegen: ein CLI-Passwort mit 129 Zeichen wird angenommen, der Login damit scheitert an der Schema-Grenze (`app/modules/users/schemas.py:23`). Dann weisen `create_admin` und `reset_admin` (`app/cli.py:50-93`) wie bei der Mindestlänge mit Exit 1 ab, die Grenze aus derselben Konstante wie das Schema.
 Beweis: Code-Lesung `app/cli.py:52`, `:86` (nicht verifiziert)
 Dedup-Key: bug:server:cli.py:password-max-len
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cli.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cli.py tests/test_openapi_snapshot.py
 Doku: changelog.d/kern-server-1.md
 
 ### T7 — Bootstrap: Prüfen und Anlegen unter einer Sperre (R-0942)  [ ]
@@ -81,3 +83,4 @@ Doku: docs/admin/installation.html + EN (TRUSTED_PROXIES-Namen) · changelog.d/k
 
 ## Entscheidungen
 - T3: Nur der Rückfall wird ersetzt (Zeilentitel R-0836): ein gesetztes `HOME` des Servers geht weiter unverändert durch. Ein vorhandenes `hooks-home` mit weiteren Rechten wird auf 0700 gesetzt; ist es nicht nutzbar (OSError), scheitert der Lauf vor dem Semaphor mit Fehler statt auf `/tmp` zurückzufallen. Die zwei Bestandstests zum `/tmp`-Rückfall erwarten jetzt `DATA_DIR/hooks-home` (gewollte Verhaltensänderung).
+- T6: Die Grenze liegt jetzt als `PASSWORD_MAX_LEN` in `users/schemas.py` (alle vier Passwortfelder nutzen sie), die CLI importiert sie; vorher stand 128 viermal als Literal. Doku in `troubleshooting.html` DE+EN, wo `reset-admin` beschrieben ist (benutzer.html/users.html nennen die CLI nicht).

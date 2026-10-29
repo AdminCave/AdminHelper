@@ -13,3 +13,5 @@
 - **Server-Hooks: NaN/Infinity im Webhook-Body ergibt 422:** Ein JSON-Body mit `NaN`, `Infinity` oder `-Infinity`
   fuehrte zu 500, sobald die Antwort ihn zurueckgab; der Trigger lehnt nicht-endliche Zahlen jetzt mit 422 an
   ihrer Stelle ab.
+- **Server-CLI: Passwort ueber 128 Zeichen abgewiesen:** `create-admin` und `reset-admin` nahmen ein Passwort an,
+  mit dem der Login (hoechstens 128 Zeichen) nie gelingen konnte; sie weisen es jetzt mit Exit 1 ab.
