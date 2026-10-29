@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # API-Verträge: Antwortmodelle für Server und Monitoring, Client-Typen gegen den Snapshot (Teil monitoring) — Task-Ledger
-Status: bereit · Branch: feature/api-contracts-monitoring · Review: pro Task
+Status: erledigt · Branch: feature/api-contracts-monitoring · Review: pro Task
 Spec: docs/features/api-contracts.md (Roadmap R-0685)
 Heavy: none — Teil-Ledger von tasks/api-contracts.md (T13–T17); die schwere Prüfung (linux-full + scenario + windows) fährt das Vorhabens-Ledger vor dem Merge
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
