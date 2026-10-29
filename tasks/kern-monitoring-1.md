@@ -32,8 +32,10 @@ Dedup-Key: bug:monitoring:http.py:redirect-no-location-text
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: changelog.d/kern-monitoring-1.md
 
-### T3 — POST /alerts lehnt das maskierte Passwort ab (R-0828)  [ ]
+### T3 — POST /alerts lehnt das maskierte Passwort ab (R-0828)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/alerts.py, apps/monitoring/tests/test_alert_secrets.py, changelog.d/kern-monitoring-1.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @a3e6c1a4 2026-10-29T21:06:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-1/T3.verdict.json)
 Änderung: `create_alert_rule` (`routers/alerts.py:42`) antwortet auf `channel_config.smtp_password == "***"` mit 422, statt die Maske zu speichern. Test zuerst rot.
 Beweis: Code-Lesung feature/smtp-hardening@0a5e5262 apps/monitoring/app/routers/alerts.py:42-55; Test: POST mit smtp_password "***" → 422, nichts gespeichert
 Dedup-Key: bug:monitoring:alerts.py:create-mask-password
