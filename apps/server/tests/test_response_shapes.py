@@ -13,6 +13,7 @@ import json
 import pytest
 from fastapi.encoders import jsonable_encoder
 
+from app.modules.ansible.models import Playbook
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -55,6 +56,11 @@ def _ref_name(schema: dict) -> str:
         ("/api/frp/tunnels", "post", "FrpTunnelOut"),
         ("/api/frp/tunnels/{tunnel_id}", "get", "FrpTunnelOut"),
         ("/api/frp/tunnels/{tunnel_id}", "put", "FrpTunnelOut"),
+        ("/api/ansible/playbooks", "get", "PlaybookOut"),
+        ("/api/ansible/playbooks", "post", "PlaybookOut"),
+        ("/api/ansible/playbooks/{playbook_id}", "get", "PlaybookOut"),
+        ("/api/ansible/playbooks/{playbook_id}", "put", "PlaybookOut"),
+        ("/api/ansible/playbooks/{playbook_id}/content", "get", "PlaybookContentOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -372,3 +378,54 @@ class TestTunnelShape:
         updated = test_client.put(f"/api/frp/tunnels/{tid}", json={"tags": ["x"]}, headers=h)
         assert updated.status_code == 200, updated.text
         assert updated.json() == self._expected(db_session, tid)
+
+
+class TestPlaybookShape:
+    def _expected(self, db, playbook_id):
+        playbook = db.get(Playbook, playbook_id)
+        db.refresh(playbook)
+        return jsonable_encoder(playbook.to_dict())
+
+    def test_list_and_get_equal_to_dict(self, test_client, db_session, admin_user):
+        db_session.add(
+            Playbook(
+                id="pb-full",
+                name="full",
+                filename="full.yml",
+                description="desc",
+                tags='["web", "db"]',
+            )
+        )
+        # NULL description and tags: to_dict hands out "" and [].
+        db_session.add(Playbook(id="pb-sparse", name="sparse", filename="sparse.yaml"))
+        db_session.commit()
+        h = _login(test_client)
+        r = test_client.get("/api/ansible/playbooks", headers=h)
+        assert r.status_code == 200, r.text
+        by_id = {p["id"]: p for p in r.json()}
+        for pid in ("pb-full", "pb-sparse"):
+            assert by_id[pid] == self._expected(db_session, pid)
+            got = test_client.get(f"/api/ansible/playbooks/{pid}", headers=h)
+            assert got.status_code == 200, got.text
+            assert got.json() == self._expected(db_session, pid)
+        assert by_id["pb-sparse"]["description"] == "" and by_id["pb-sparse"]["tags"] == []
+        assert by_id["pb-sparse"]["updatedAt"] is None
+
+    def test_post_content_put_equal_to_dict(self, test_client, db_session, admin_user):
+        h = _login(test_client)
+        body = {"name": "made", "filename": "made.yml", "tags": ["x"], "content": "- hosts: all\n"}
+        created = test_client.post("/api/ansible/playbooks", json=body, headers=h)
+        assert created.status_code == 201, created.text
+        pid = created.json()["id"]
+        assert created.json() == self._expected(db_session, pid)
+
+        content = test_client.get(f"/api/ansible/playbooks/{pid}/content", headers=h)
+        assert content.status_code == 200, content.text
+        assert content.json() == {"content": "- hosts: all\n"}
+
+        updated = test_client.put(
+            f"/api/ansible/playbooks/{pid}", json={"description": "changed"}, headers=h
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json() == self._expected(db_session, pid)
+        test_client.delete(f"/api/ansible/playbooks/{pid}", headers=h)

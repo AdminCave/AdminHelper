@@ -2594,6 +2594,19 @@
         "title": "NotificationPrefsUpdate",
         "type": "object"
       },
+      "PlaybookContentOut": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "PlaybookContentOut",
+        "type": "object"
+      },
       "PlaybookCreate": {
         "properties": {
           "content": {
@@ -2635,6 +2648,67 @@
           "content"
         ],
         "title": "PlaybookCreate",
+        "type": "object"
+      },
+      "PlaybookOut": {
+        "description": "A playbook as Playbook.to_dict hands it out.",
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "filename",
+          "description",
+          "tags",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PlaybookOut",
         "type": "object"
       },
       "PlaybookUpdate": {
@@ -3331,7 +3405,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlaybookOut"
+                  },
+                  "title": "Response List Playbooks Api Ansible Playbooks Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -3363,7 +3443,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3446,7 +3528,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3499,7 +3583,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3544,7 +3630,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookContentOut"
+                }
               }
             },
             "description": "Successful Response"

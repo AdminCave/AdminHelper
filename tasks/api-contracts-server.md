@@ -94,8 +94,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T5 — ansible: `PlaybookOut` und `PlaybookContentOut` (R-0684)  [ ]
+### T5 — ansible: `PlaybookOut` und `PlaybookContentOut` (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/ansible/schemas.py, apps/server/app/modules/ansible/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @07695b0c 2026-10-29T22:23:38+01:00
+Review: approve (.ah-out/review/api-contracts-server/T5.verdict.json)
 Änderung: `PlaybookOut` wie `Playbook.to_dict` (`apps/server/app/modules/ansible/models.py:25-34`): `id`, `name`, `filename: str`, `description: str` (`or ""`), `tags` (Regel 3), `createdAt`, `updatedAt: Optional[str]`. `PlaybookContentOut` `{content: str}` (`apps/server/app/modules/ansible/router.py:118`). Routen `GET ''` (`:40`), `POST ''` (`:46`), `GET /{playbook_id}` (`:94`), `GET /{playbook_id}/content` (`:104`), `PUT /{playbook_id}` (`:122`). Tests nach Muster.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_ansible.py
 Doku: keine
