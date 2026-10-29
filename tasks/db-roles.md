@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Postgres: eine Rolle je Dienst statt des gemeinsamen Superusers — Task-Ledger
-Status: bereit · Branch: feature/db-roles · Review: pro Task
+Status: erledigt · Branch: feature/db-roles · Review: pro Task
 Spec: docs/features/db-roles.md
 Heavy: linux-full — `docker-compose.yml`, Server-Entrypoint, alle Dienste mit Postgres; der Sammellauf fährt `integration_stack` und `upgrade_path_test.sh` (letztes Release mit Bestandsdaten → dieser Stand). `scenario --agents 1` vor dem Merge (Agent-Report über monitoring mit neuer Rolle; Kevin fragen). Kein `windows`. PR merged Kevin (Datenmigration, `update.sh`-Pfad über `init-secrets.sh`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
