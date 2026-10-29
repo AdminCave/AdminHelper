@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: blockierende Keyring- und Sperr-Zugriffe, Frist beim Verbindungsaufbau, Tunnel-Ports, Ansible-Temp-Dateien — Task-Ledger
-Status: aktiv · Branch: feature/desktop-blocking · Review: pro Task
+Status: bereit · Branch: feature/desktop-blocking · Review: pro Task
 Spec: docs/features/desktop-blocking.md (Roadmap R-0643, R-0644, R-0642, R-0569, R-0572, R-0574)
 Heavy: linux-full + scenario --agents 0 --desktop --enforce + windows — T5 und T8 ändern, wie jede Desktop-Journey Einstellungen, Passwort-Status und Geräte-Identität liest (GUI-E2E im Sammellauf, `run.sh e2e`, u. a. `desktop_e2e_connect.sh`, `desktop_e2e_tunnel.sh`, `desktop_e2e_workspaces.sh`); T8 und T9 ändern Desktop-Enrollment und TOFU (CLAUDE.md §5), die nur die Desktop-Journeys gegen einen entfernten Server unter `MTLS_ENFORCE` über Hosts hinweg zeigen (`multibox.sh --desktop --enforce`, S3; ask-first, Spec offene Frage 1); `windows` ist der CI-Job `rust-windows` (`cargo test`, kein Windows im Pool): T7 ändert den mstsc-Start (`rdp.rs`, `cfg(windows)`), T5 und T8 laufen dort mit allen Tests. Kein `--tunnel`: der FRP-Datenpfad bleibt, `frpc.rs` ändert sich nicht.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -148,8 +148,10 @@ Orakel: property — unter der globalen Pin-Sperre kein Keyring-Zugriff; je Iden
 Dedup-Key: bug:desktop:http_client.rs:keyring-read-per-request
 HEAD: b1432223
 
-### T10 — Quelltext-Test der Blocking-Commands auch mit CRLF-Checkout (rust-windows rot)  [ ]
+### T10 — Quelltext-Test der Blocking-Commands auch mit CRLF-Checkout (rust-windows rot)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0ad39e8d 2026-10-29T08:14:18+01:00
+Review: approve (.ah-out/review/desktop-blocking/T10.verdict.json)
 Änderung: `commands_that_wait_run_on_a_blocking_thread` (T5) liest `commands.rs` per `include_str!` und sucht `#[tauri::command]\npub async fn …` und `\n}\n`; der Windows-Runner checkt mit CRLF aus, der Test fiel dort für jeden Command (`reset_server_cert_pin is not an async command`, PR #295, Job rust-windows). Der Test normalisiert `\r\n` zu `\n`, bevor er sucht.
 Beweis: PR #295 Desktop-Backend (cargo test, Windows), run 40833303189: 605 passed, 1 failed, commands.rs:1849
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- commands::tests::commands_that_wait_run_on_a_blocking_thread

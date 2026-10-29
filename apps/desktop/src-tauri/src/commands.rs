@@ -1831,7 +1831,8 @@ mod tests {
     /// and does its work through `blocking`.
     #[test]
     fn commands_that_wait_run_on_a_blocking_thread() {
-        let source = include_str!("commands.rs");
+        // A Windows checkout carries CRLF line ends.
+        let source = include_str!("commands.rs").replace("\r\n", "\n");
         for name in [
             "reset_server_cert_pin",
             "pinned_ca_fingerprint",
