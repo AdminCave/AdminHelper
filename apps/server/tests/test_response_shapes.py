@@ -9,6 +9,7 @@ schema in the live OpenAPI names the model, and (b) the body over the real route
 the producer hands out, for a full row and a sparse one; (c) covers each conditional key."""
 
 import datetime
+import hashlib
 import json
 import secrets
 import uuid
@@ -85,6 +86,8 @@ def _ref_name(schema: dict) -> str:
         ("/api/enrollment/token", "post", "EnrollmentGrantOut"),
         ("/api/enrollment/token/for", "post", "EnrollmentGrantOut"),
         ("/api/audit", "get", "AuditLogOut"),
+        ("/api/frp/generate/visitor-bundle", "get", "VisitorBundleOut"),
+        ("/api/frp/provision/{server_id}/config-hash", "get", "ConfigHashOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -710,3 +713,67 @@ class TestAuditShape:
             "sourceIp",
             "detail",
         }
+
+
+class TestFrpBundleShape:
+    def _seed_config(self, db):
+        db.add(
+            FrpServerConfig(
+                id="cfg-b",
+                name="b",
+                server_addr="frps.example",
+                bind_port=7000,
+                auth_token="frps-auth-token-value",
+            )
+        )
+        db.add(Server(id="srv-b", name="b", hostname="b.example"))
+        db.commit()
+
+    def _seed_tunnel(self, db):
+        db.add(
+            FrpTunnel(
+                id="t-b",
+                server_id="srv-b",
+                frp_config_id="cfg-b",
+                name="b-ssh",
+                tunnel_type="stcp",
+                protocol="ssh",
+                local_port=22,
+                secret_key="tunnel-secret-value",
+                visitor_port=6000,
+                enabled=True,
+            )
+        )
+        db.commit()
+
+    def test_visitor_bundle_answers_toml_and_an_empty_pki(
+        self, test_client, db_session, admin_user
+    ):
+        self._seed_config(db_session)
+        self._seed_tunnel(db_session)
+        h = _login(test_client)
+        r = test_client.get("/api/frp/generate/visitor-bundle", headers=h)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert list(body) == ["toml", "pki"]
+        assert body["pki"] == {}
+        assert "[[visitors]]" in body["toml"]
+
+    def test_config_hash_is_null_without_a_config(self, test_client, db_session, admin_user):
+        db_session.add(Server(id="srv-b", name="b", hostname="b.example"))
+        db_session.commit()
+        r = test_client.get("/api/frp/provision/srv-b/config-hash", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        assert r.json() == {"hash": None}
+
+    def test_config_hash_is_the_hash_of_the_served_config(
+        self, test_client, db_session, admin_user
+    ):
+        self._seed_config(db_session)
+        self._seed_tunnel(db_session)
+        h = _login(test_client)
+        toml = test_client.get("/api/frp/provision/srv-b/config", headers=h)
+        assert toml.status_code == 200, toml.text
+        r = test_client.get("/api/frp/provision/srv-b/config-hash", headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # API-Verträge: Antwortmodelle für Server und Monitoring, Client-Typen gegen den Snapshot (Teil server) — Task-Ledger
-Status: aktiv · Branch: feature/api-contracts-server · Review: pro Task
+Status: bereit · Branch: feature/api-contracts-server · Review: pro Task
 Spec: docs/features/api-contracts.md (Roadmap R-0684; R-0407 erledigt T10 mit)
 Heavy: none — Teil-Ledger von tasks/api-contracts.md (T1–T12); die schwere Prüfung (linux-full + scenario + windows) fährt das Vorhabens-Ledger vor dem Merge
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -84,8 +84,10 @@ Orakel: contract — `FrpTunnelOut` gegen `FrpTunnel.to_dict(mask_secrets=True)`
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T4 — frp: `VisitorBundleOut` und `ConfigHashOut` (R-0684)  [ ]
+### T4 — frp: `VisitorBundleOut` und `ConfigHashOut` (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/generate_router.py, apps/server/app/modules/frp/provision_router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @13295a7d 2026-10-29T23:22:22+01:00
+Review: approve (.ah-out/review/api-contracts-server/T4.verdict.json)
 Änderung: In `frp/schemas.py` unter „Responses“: `VisitorBundleOut` `{toml: str, pki: dict[str, Any]}` (`apps/server/app/modules/frp/generate_router.py:159`, `pki` ist heute `{}`), `ConfigHashOut` `{hash: Optional[str]}` (`apps/server/app/modules/frp/provision_router.py:89`, `:92`). Routen `GET /generate/visitor-bundle` (`generate_router.py:137`) und `GET /provision/{server_id}/config-hash` (`provision_router.py:76`). Tests nach Muster; (c) `config-hash` mit und ohne Tunnel (`hash` null bzw. String). Die Nicht-JSON-Routen derselben Dateien bleiben (Spec, Nicht-Ziele).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_frp_tunnels.py tests/test_frp_provision_authz.py
 Doku: keine

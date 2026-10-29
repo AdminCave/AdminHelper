@@ -463,3 +463,15 @@ class FrpSupervisorStatus(BaseModel):
     lastEvent: Optional[str]
     lastEventAt: Optional[UtcDatetime]
     publishedBindPort: int
+
+
+class VisitorBundleOut(BaseModel):
+    # pki stays {}: the server mints no PKI material any more, the key stays for the
+    # desktop's response shape (gen_visitor_bundle).
+    toml: str
+    pki: dict[str, Any]
+
+
+class ConfigHashOut(BaseModel):
+    # null without an FRP config: nothing to sync (R-0398).
+    hash: Optional[str]

@@ -26,6 +26,7 @@ from app.modules.frp.config_generator import (
     without_unreachable_local,
 )
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.schemas import VisitorBundleOut
 from app.modules.servers.models import Server
 from app.modules.users.models import User
 
@@ -139,7 +140,7 @@ def gen_visitor_toml(
     return PlainTextResponse(toml, media_type="application/toml")
 
 
-@router.get("/generate/visitor-bundle")
+@router.get("/generate/visitor-bundle", response_model=VisitorBundleOut)
 def gen_visitor_bundle(
     config_id: str | None = Query(None),
     db: Session = Depends(get_db),

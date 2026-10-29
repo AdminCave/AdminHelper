@@ -337,6 +337,26 @@
         "title": "BootstrapRequest",
         "type": "object"
       },
+      "ConfigHashOut": {
+        "properties": {
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hash"
+          }
+        },
+        "required": [
+          "hash"
+        ],
+        "title": "ConfigHashOut",
+        "type": "object"
+      },
       "ConnectionCreate": {
         "additionalProperties": true,
         "properties": {
@@ -4040,6 +4060,25 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VisitorBundleOut": {
+        "properties": {
+          "pki": {
+            "additionalProperties": true,
+            "title": "Pki",
+            "type": "object"
+          },
+          "toml": {
+            "title": "Toml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "toml",
+          "pki"
+        ],
+        "title": "VisitorBundleOut",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -5442,7 +5481,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorBundleOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5607,7 +5648,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigHashOut"
+                }
               }
             },
             "description": "Successful Response"
