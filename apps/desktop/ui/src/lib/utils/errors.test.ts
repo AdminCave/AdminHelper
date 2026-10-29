@@ -6,7 +6,15 @@
 // (R-0276). errRaw keeps them for the one place that branches on them.
 
 import { describe, it, expect } from 'vitest';
-import { IpcError, errCode, errMsg, errRaw, errStatus, SESSION_EXPIRED } from './errors';
+import {
+  IpcError,
+  errCode,
+  errMsg,
+  errRaw,
+  errStatus,
+  isSessionExpired,
+  SESSION_EXPIRED,
+} from './errors';
 
 const CODES = [
   'ERR_CA_PIN_MISMATCH',
@@ -65,5 +73,18 @@ describe('errCode and errStatus', () => {
     expect(errStatus(new Error('HTTP 409: conflict'))).toBeUndefined();
     expect(errCode('ERR_CERT_REVOKED: x')).toBeUndefined();
     expect(errStatus('409')).toBeUndefined();
+  });
+});
+
+describe('isSessionExpired', () => {
+  it('is the code of the refusal, never its text', () => {
+    expect(SESSION_EXPIRED).toBe('ERR_SESSION_EXPIRED');
+    expect(
+      isSessionExpired(new IpcError('Session expired, please sign in again', SESSION_EXPIRED)),
+    ).toBe(true);
+    expect(isSessionExpired(new IpcError(SESSION_EXPIRED, 'ERR_HTTP', 401))).toBe(false);
+    expect(isSessionExpired(new IpcError(SESSION_EXPIRED))).toBe(false);
+    expect(isSessionExpired(new Error(SESSION_EXPIRED))).toBe(false);
+    expect(isSessionExpired(SESSION_EXPIRED)).toBe(false);
   });
 });

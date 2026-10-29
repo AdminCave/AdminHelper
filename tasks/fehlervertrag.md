@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fehlervertrag Server → Clients: `code` neben `detail`, strukturierte Fehler über die Desktop-IPC — Task-Ledger
-Status: aktiv · Branch: feature/fehlervertrag · Review: pro Task
+Status: bereit · Branch: feature/fehlervertrag · Review: pro Task
 Spec: docs/features/fehlervertrag.md (Roadmap R-0664, R-0662, R-0709; Kevin 2026-10-22: optionales Feld `code` ja)
 Heavy: linux-full + scenario --agents 0 --desktop --enforce + windows — linux-full: Server-API (die 403 der Zertifikatsprüfung tragen `code`; `scripts/tests/integration_stack_test.sh:218` prüft 403 `ERR_CERT_REVOKED` am Stack) und jede Desktop-Journey (jeder Command-Fehler kommt als `{code, message, status?}` über die IPC; Login-, Trust- und Proxy-Fehler, `enroll-trust-dialog.live.js`, `logout.live.js:69`); scenario `--desktop --enforce`: Anmeldung und Registrierung des echten Desktops gegen erzwungenes mTLS mit den Zertifikatscodes und `ERR_MTLS_CERT_REQUIRED`, dazu Desktop-Enrollment (`revoked_by`, CLAUDE.md §5), bleibt ask-first; windows: die CI-Jobs (der Pool hat keine Windows-Vorlage), der Fehlertyp ist plattformunabhängig, kein `cfg(windows)`-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -192,8 +192,10 @@ Orakel: contract — die 409-Fälle hängen am Status, nicht am Text
 Dedup-Key: bug:desktop:proxy.rs:raw-error-body-to-ui
 HEAD: 237b450a
 
-### T13 — Desktop-UI: abgelaufene Sitzung über den Code (R-0709)  [ ]
+### T13 — Desktop-UI: abgelaufene Sitzung über den Code (R-0709)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/errors.ts, apps/desktop/ui/src/lib/utils/errors.test.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @490e6629 2026-10-29T14:14:38+01:00
+Review: approve (.ah-out/review/fehlervertrag/T13.verdict.json)
 Änderung: `apps/desktop/ui/src/lib/utils/errors.ts:27-31`: `SESSION_EXPIRED` ist der Code `'ERR_SESSION_EXPIRED'` (wie `AppError::code()` aus T5), neu `isSessionExpired(err)` = `errCode(err) === SESSION_EXPIRED`. `apps/desktop/ui/src/lib/stores/monitoring.ts` (`:8`, `:194`, `:246`, `:260`, `:273`, `:386`) prüft `isSessionExpired(err)` statt `errMsg(err) !== SESSION_EXPIRED`. Tests: `monitoring.test.ts:168-172` lehnt mit `new IpcError('Session expired, please sign in again', 'ERR_SESSION_EXPIRED')` ab (der Text aus `apps/desktop/src-tauri/src/error.rs:90`) → `monitoringError` null, kein `reportError`; Gegenfall: ein `Error` mit dem Text `ERR_SESSION_EXPIRED` ohne Code → gemeldet; `errors.test.ts`: `isSessionExpired` für `IpcError` mit und ohne den Code und für `Error`; `:34-37` bleibt. Zuerst rot: der `IpcError`-Fall auf HEAD (der Text ist nicht `'SESSION_EXPIRED'`).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/monitoring.test.ts src/lib/utils/errors.test.ts
 Doku: CHANGELOG.md (Fixed, umlautfrei: nach dem Ende der Sitzung meldet das Monitoring des Desktops keinen Fehler mehr in der Statusleiste; die Anmeldung erscheint wie bisher)

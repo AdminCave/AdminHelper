@@ -471,6 +471,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: kein Monitoring-Fehler nach dem Ende der Sitzung:** Nach dem Ende der Sitzung meldet das
+  Monitoring des Desktops keinen Fehler mehr in der Statusleiste; die Anmeldung erscheint wie bisher.
 - **Desktop: Hilfen der Anmeldung nur nach dem Code:** Die Hilfen des Anmeldebildschirms — Vertrauensdialog,
   Pin oder Geraete-Identitaet zuruecksetzen, Geraet registrieren, die Hinweise zum Zertifikat des Geraets
   (anderer Benutzer, nicht mehr gueltig) — richten sich nur nach dem Code des Fehlers;

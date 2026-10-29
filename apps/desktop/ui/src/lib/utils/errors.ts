@@ -90,6 +90,10 @@ export function errStatus(err: unknown): number | undefined {
   return err instanceof IpcError ? err.status : undefined;
 }
 
-/** Sentinel the session layer throws when the JWT expired (surfaced by refresh);
- * callers suppress the error toast when errMsg(err) matches it. */
-export const SESSION_EXPIRED = 'SESSION_EXPIRED';
+/** The code of a refusal whose session is gone (AppError::SessionExpired, error.rs): the
+ * login screen follows, so callers report no error for it. */
+export const SESSION_EXPIRED = 'ERR_SESSION_EXPIRED';
+
+export function isSessionExpired(err: unknown): boolean {
+  return errCode(err) === SESSION_EXPIRED;
+}
