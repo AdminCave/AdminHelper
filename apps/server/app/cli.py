@@ -174,13 +174,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p_admin = sub.add_parser("create-admin", help="Create the first admin user")
     p_admin.add_argument("--username", required=True)
-    p_admin.add_argument(
+    # Exclusive: with both, --password would stay in argv, as the restart only fires without
+    # --password-stdin.
+    admin_pw = p_admin.add_mutually_exclusive_group()
+    admin_pw.add_argument(
         "--password",
         help="Admin password. Visible in the process argv (/proc/<pid>/cmdline) until the "
         "CLI hands it over stdin to a fresh process, before the user is created — prefer "
         "--password-stdin.",
     )
-    p_admin.add_argument(
+    admin_pw.add_argument(
         "--password-stdin",
         action="store_true",
         help="Read the password from the first line of stdin (no argv leak).",
@@ -188,12 +191,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p_reset = sub.add_parser("reset-admin", help="Reset an existing user's password (recovery)")
     p_reset.add_argument("--username", required=True)
-    p_reset.add_argument(
+    reset_pw = p_reset.add_mutually_exclusive_group()
+    reset_pw.add_argument(
         "--password",
         help="New password. INSECURE: visible in the process argv "
         "(/proc/<pid>/cmdline) for the duration of the call — prefer --password-stdin.",
     )
-    p_reset.add_argument(
+    reset_pw.add_argument(
         "--password-stdin",
         action="store_true",
         help="Read the password from the first line of stdin (no argv leak).",
