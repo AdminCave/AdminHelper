@@ -91,7 +91,8 @@ services:
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
       # libpq variables for the entrypoint's pg_isready wait. No PGPASSWORD:
       # pg_isready does not authenticate, and the password already travels in
-      # DATABASE_URL. Only the monitoring entrypoint runs psql and needs it.
+      # DATABASE_URL. Only the monitoring entrypoint opens a session (psycopg, to
+      # create its database) and needs it.
       - PGHOST=postgres
       - PGPORT=5432
       - PGUSER=adminhelper

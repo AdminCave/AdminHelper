@@ -162,10 +162,10 @@ allowUsers = ["ops-admin"]</code></pre>
           <p>Since the web workers have no running scheduler, the hook CRUD routers no longer register jobs directly; they only persist the hook row. The scheduler process reconciles schedule hooks from the DB every 30&nbsp;s (<code>reconcile_scheduled_hooks()</code> — added/changed/removed) and writes <code>next_run</code> back. Multi-worker is enabled via <code>WEB_CONCURRENCY</code> (default 1); Redis is then required for a correct global rate limit, and the DB pool applies per worker (<code>DB_POOL_SIZE</code>/<code>DB_MAX_OVERFLOW</code>).</p>
           <p>The event bus in <code>core/events.py</code> distributes events through a ThreadPoolExecutor (4 workers, fire-and-forget). Active event types:</p>
           <ul>
-            <li><code>server.created</code>, <code>server.updated</code>, <code>server.deleted</code></li>
+            <li><code>server.created</code>, <code>server.updated</code>, <code>server.deleted</code>, <code>server.startup</code> (when each web worker starts, so N times with <code>WEB_CONCURRENCY=N</code>; the scheduler does not fire it)</li>
             <li><code>connection.created</code>, <code>connection.updated</code>, <code>connection.deleted</code>, <code>connections.imported</code></li>
             <li><code>user.created</code>, <code>user.deleted</code>, <code>user.promoted</code></li>
-            <li><code>api_key.created</code>, <code>api_key.deleted</code></li>
+            <li><code>alert.triggered</code> (per affected server when a monitoring check turns <code>critical</code>)</li>
             <li><code>frp.config.created</code>, <code>frp.config.updated</code>, <code>frp.config.deleted</code></li>
             <li><code>frp.tunnel.created</code>, <code>frp.tunnel.updated</code>, <code>frp.tunnel.deleted</code></li>
             <li><code>playbook.created</code>, <code>playbook.updated</code>, <code>playbook.deleted</code></li>

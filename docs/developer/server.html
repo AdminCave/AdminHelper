@@ -162,10 +162,10 @@ allowUsers = ["ops-admin"]</code></pre>
           <p>Weil die Web-Worker keinen laufenden Scheduler haben, registrieren die Hook-CRUD-Router <strong>keine</strong> Jobs mehr direkt; sie schreiben nur die Hook-Zeile. Der Scheduler-Prozess gleicht die Schedule-Hooks alle 30&nbsp;s aus der DB ab (<code>reconcile_scheduled_hooks()</code> — neu/ge&auml;ndert/gel&ouml;scht) und schreibt <code>next_run</code> zur&uuml;ck. Multi-Worker wird &uuml;ber <code>WEB_CONCURRENCY</code> aktiviert (Default 1); Redis ist dann f&uuml;r global korrektes Rate-Limiting Pflicht, und der DB-Pool gilt pro Worker (<code>DB_POOL_SIZE</code>/<code>DB_MAX_OVERFLOW</code>).</p>
           <p>Der Event-Bus in <code>core/events.py</code> verteilt Events &uuml;ber einen ThreadPoolExecutor (4 Worker, fire-and-forget). Aktive Event-Typen:</p>
           <ul>
-            <li><code>server.created</code>, <code>server.updated</code>, <code>server.deleted</code></li>
+            <li><code>server.created</code>, <code>server.updated</code>, <code>server.deleted</code>, <code>server.startup</code> (beim Start jedes Web-Workers, bei <code>WEB_CONCURRENCY=N</code> also N-mal; der Scheduler feuert es nicht)</li>
             <li><code>connection.created</code>, <code>connection.updated</code>, <code>connection.deleted</code>, <code>connections.imported</code></li>
             <li><code>user.created</code>, <code>user.deleted</code>, <code>user.promoted</code></li>
-            <li><code>api_key.created</code>, <code>api_key.deleted</code></li>
+            <li><code>alert.triggered</code> (je betroffenem Server, wenn ein Monitoring-Check nach <code>critical</code> wechselt)</li>
             <li><code>frp.config.created</code>, <code>frp.config.updated</code>, <code>frp.config.deleted</code></li>
             <li><code>frp.tunnel.created</code>, <code>frp.tunnel.updated</code>, <code>frp.tunnel.deleted</code></li>
             <li><code>playbook.created</code>, <code>playbook.updated</code>, <code>playbook.deleted</code></li>
