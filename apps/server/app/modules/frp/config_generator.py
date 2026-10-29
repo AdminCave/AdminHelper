@@ -14,6 +14,7 @@ from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
     _check_tunnel_extra_config,
+    _reject_toml_breakers,
     is_plugin_key,
 )
 
@@ -215,6 +216,37 @@ def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     return kept
 
 
+# The tunnel fields the generator writes as quoted TOML strings and the API checks with
+# _reject_toml_breakers (TunnelCreate/TunnelUpdate).
+_CHECKED_TUNNEL_FIELDS = ("name", "local_ip", "custom_domains", "secret_key")
+
+
+def without_refused_fields(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out tunnels with a stored name, local_ip, custom_domains or secret_key the
+    API would refuse.
+
+    Rows from before the schema checked these fields are not migrated, and the generator
+    writes them verbatim into frpc and visitor TOML. The warning names the field, never
+    its value: secret_key is a secret."""
+    kept = []
+    for tunnel in tunnels:
+        refused = []
+        for field in _CHECKED_TUNNEL_FIELDS:
+            try:
+                _reject_toml_breakers(getattr(tunnel, field))
+            except ValueError:
+                refused.append(field)
+        if refused:
+            logger.warning(
+                "FRP tunnel %r: stored %s would be refused by the API, left out of the config",
+                tunnel.name,
+                ", ".join(refused),
+            )
+            continue
+        kept.append(tunnel)
+    return kept
+
+
 def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """Leave out tunnels whose local_port is no port from 1 to 65535.
 
@@ -240,7 +272,8 @@ def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, stcp only with
     a secret, a local_port from 1 to 65535 (without_unreachable_local), and none whose
-    stored extra_config the API would refuse (without_refused_extra_config). Without an active tunnel, the text carries no frps
+    stored fields (without_refused_fields) or extra_config (without_refused_extra_config)
+    the API would refuse. Without an active tunnel, the text carries no frps
     token; config-hash, config download and provisioning bundle all come from that
     text, so they can't drift.
 
@@ -249,7 +282,9 @@ def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     (connection_id) changes. Unsorted, the hash would change with the same config."""
     return sorted(
         without_refused_extra_config(
-            without_unreachable_local(without_secretless_stcp([t for t in tunnels if t.enabled]))
+            without_unreachable_local(
+                without_refused_fields(without_secretless_stcp([t for t in tunnels if t.enabled]))
+            )
         ),
         key=lambda t: t.name,
     )
@@ -447,7 +482,9 @@ def generate_visitor_toml(
     lines.extend(_tls_client_block())
 
     stcp_tunnels = without_unbindable_visitor(
-        without_secretless_stcp([t for t in tunnels if t.tunnel_type == "stcp" and t.enabled])
+        without_refused_fields(
+            without_secretless_stcp([t for t in tunnels if t.tunnel_type == "stcp" and t.enabled])
+        )
     )
     stcp_tunnels.sort(key=lambda t: t.visitor_port)
 

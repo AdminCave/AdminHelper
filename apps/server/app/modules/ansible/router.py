@@ -18,7 +18,12 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.request_context import actor_from_request
 from app.modules.ansible.models import Playbook
-from app.modules.ansible.schemas import PlaybookCreate, PlaybookUpdate
+from app.modules.ansible.schemas import (
+    PlaybookContentOut,
+    PlaybookCreate,
+    PlaybookOut,
+    PlaybookUpdate,
+)
 from app.modules.audit import service as audit
 
 logger = logging.getLogger("adminhelper.ansible")
@@ -36,13 +41,13 @@ def _playbook_path(playbook_id: str, filename: str):
     return PLAYBOOKS_DIR / playbook_id / safe_name
 
 
-@router.get("")
+@router.get("", response_model=list[PlaybookOut])
 def list_playbooks(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     playbooks = db.query(Playbook).order_by(Playbook.name).all()
     return [p.to_dict() for p in playbooks]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=PlaybookOut)
 def create_playbook(
     data: PlaybookCreate,
     request: Request,
@@ -90,7 +95,7 @@ def create_playbook(
     return playbook.to_dict()
 
 
-@router.get("/{playbook_id}")
+@router.get("/{playbook_id}", response_model=PlaybookOut)
 def get_playbook(
     playbook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
 ):
@@ -100,7 +105,7 @@ def get_playbook(
     return playbook.to_dict()
 
 
-@router.get("/{playbook_id}/content")
+@router.get("/{playbook_id}/content", response_model=PlaybookContentOut)
 def get_playbook_content(
     playbook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
 ):
@@ -118,7 +123,7 @@ def get_playbook_content(
     return {"content": content}
 
 
-@router.put("/{playbook_id}")
+@router.put("/{playbook_id}", response_model=PlaybookOut)
 def update_playbook(
     playbook_id: str,
     data: PlaybookUpdate,
