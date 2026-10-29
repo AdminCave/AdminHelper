@@ -721,6 +721,35 @@ def test_http_checker_keeps_nothing_after_the_end_of_a_compressed_body(monkeypat
     assert peak < 8 * _MIB
 
 
+@pytest.mark.parametrize(
+    ("layers", "expected"),
+    [
+        (5, ("ok", None)),
+        (6, ("unknown", "Error: Too many content encodings (>5)")),
+    ],
+)
+def test_http_checker_takes_at_most_five_content_encodings(monkeypatch, layers, expected):
+    # Each gzip or deflate layer costs a decompressor; as urllib3, at most five.
+    _resolving(monkeypatch, {"checks.example": _FIRST})
+    body, codings = b"hello", []
+    for i in range(layers):
+        coding = ("gzip", "deflate")[i % 2]
+        body = _gzipped(body) if coding == "gzip" else _zlib_deflated(body)
+        codings.append(coding)
+    monkeypatch.setattr(
+        httpx.HTTPTransport,
+        "handle_request",
+        _compressed_reply(", ".join(codings), body, _PIECE),
+    )
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://checks.example/", "search_string": "hello"}
+    )
+
+    assert status == expected[0]
+    if expected[1] is not None:
+        assert msg == expected[1]
+
+
 def test_http_checker_timeout_covers_pieces_that_inflate_to_nothing(monkeypatch):
     # The deadline holds for every raw piece, also one that inflates to nothing: here
     # bytes after the end of the gzip stream, 3 s per piece of a check of 10 s.

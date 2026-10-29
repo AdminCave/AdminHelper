@@ -14,8 +14,10 @@ Für alle Tasks: Zeilenangaben `origin/main@33295e76`, vor dem Schreiben neu gre
 `apps/monitoring/app/`. Neue Code-Strings englisch, CHANGELOG umlautfrei in `changelog.d/kern-monitoring-1.md`.
 `security` zusätzlich bei T1 (und wo `review.sh risk` es verlangt). Einzelheiten der SEC-Zeile privat.
 
-### T1 — HTTP-Check: höchstens fünf Content-Encoding-Schichten (R-0921)  [ ]
+### T1 — HTTP-Check: höchstens fünf Content-Encoding-Schichten (R-0921)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/tests/test_http_checker.py, changelog.d/kern-monitoring-1.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f5a32a80 2026-10-29T20:59:39+01:00
+Review: approve (.ah-out/review/kern-monitoring-1/T1.verdict.json)
 Änderung: `_decoded` (`checkers/http.py:167`) weist mehr als fünf `gzip`/`deflate`-Schichten mit `httpx.DecodingError` ab, bevor es eine Schicht anlegt (wie urllib3); der Check meldet `unknown`. Test zuerst rot: sechs Schichten → abgewiesen, fünf → dekodiert.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: changelog.d/kern-monitoring-1.md, docs/developer/monitoring.html:180 + EN

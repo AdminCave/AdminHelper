@@ -15,6 +15,8 @@ from app.core.ssrf import UrlVerdict, check_target, pinned_client
 # Redirects are followed manually (see run) so every hop is re-checked against the
 # SSRF guard; cap the chain length like a browser would.
 _MAX_REDIRECTS = 5
+# As urllib3 (MultiDecoder): each layer holds a decompressor, httpx sets no limit.
+_MAX_ENCODINGS = 5
 # search_string is looked for in this much of the body and no further: a huge or endless
 # response must not fill the scheduler worker's memory (R-0616).
 _MAX_BODY_BYTES = 1_048_576
@@ -181,7 +183,10 @@ def _decoded(resp: httpx.Response, room: Callable[[], int]) -> Iterator[bytes]:
         coding.strip().lower()
         for coding in resp.headers.get_list("content-encoding", split_commas=True)
     ]
-    layers = [_Inflater(coding) for coding in reversed(codings) if coding in ("gzip", "deflate")]
+    inflated = [coding for coding in reversed(codings) if coding in ("gzip", "deflate")]
+    if len(inflated) > _MAX_ENCODINGS:
+        raise httpx.DecodingError(f"Too many content encodings (>{_MAX_ENCODINGS})")
+    layers = [_Inflater(coding) for coding in inflated]
     for piece in resp.iter_raw():
         if not layers:
             yield piece
