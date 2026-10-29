@@ -98,6 +98,22 @@ def test_main_create_admin_still_accepts_password_arg(monkeypatch):
     assert captured == {"u": "kevin", "p": "arg-secret"}
 
 
+@pytest.mark.parametrize("command", ["create-admin", "reset-admin"])
+def test_main_refuses_password_together_with_password_stdin(restart, capsys, monkeypatch, command):
+    # With both flags the restart would not fire and the --password value would stay in argv.
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["app.cli", command, "--username", "kevin", "--password", "arg-secret", "--password-stdin"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+    assert restart.execv == []
+    assert restart.dup2 == []
+
+
 def test_main_create_admin_requires_a_password(monkeypatch):
     monkeypatch.setattr(cli, "SessionLocal", lambda: _FakeDB())
     with pytest.raises(SystemExit):  # parser.error exits when neither is given

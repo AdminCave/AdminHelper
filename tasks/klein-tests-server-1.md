@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-server-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-server-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-tests-server-1 · Review: pro Task
 Spec: docs/features/klein-tests-server-1.md (Roadmap R-0925, R-0889, R-0892)
 Heavy: none — nur Server-Unit-Tests und eine CLI-Argumentprüfung, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,8 +29,10 @@ Dedup-Key: ref:server:auth_router.py:refresh-no-jti-test
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_auth_token_lifecycle.py
 Doku: keine (nur Tests)
 
-### T3 — Hook-Worker `-s`, gemeinsame Deadline, CLI-Flag-Kombination (R-0892)  [ ]
+### T3 — Hook-Worker `-s`, gemeinsame Deadline, CLI-Flag-Kombination (R-0892)  [x]
 Komponente: server · Dateien: apps/server/tests/test_hook_isolation.py, apps/server/tests/test_cli.py, apps/server/app/cli.py, changelog.d/klein-tests-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9e89a1a8 2026-10-29T16:27:42+01:00
+Review: approve (.ah-out/review/klein-tests-server-1/T3.verdict.json)
 Änderung: (a) Test, dass der Worker mit `-s` startet, unabhängig von `PYTHONNOUSERSITE` (Popen-Argv); (b) Test, der die gemeinsame Reader-Deadline pinnt (zwei gehaltene Streams enden nach einer Grace, nicht zwei); (c) `create-admin`/`reset-admin` lehnen `--password` zusammen mit `--password-stdin` per `parser.error` ab, Test dazu.
 Dedup-Key: ref:server:cli.py:password-flag-combo
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py tests/test_cli.py
