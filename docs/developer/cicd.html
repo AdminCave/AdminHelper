@@ -586,7 +586,7 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
           <ol>
             <li>Versionen in den oben gelisteten Dateien auf den Zielwert hochziehen.</li>
             <li>Footer-Versionen in <code>docs/**/*.html</code> aktualisieren (Footer-Span + Landing-„Was ist neu" + Code-Samples). Auf die <em>Klasse</em> filtern (<code>grep -rl 'class="sidebar-footer"'</code>), nicht auf das einzeilige Markup: die beiden Landing-Pages schreiben den Footer &uuml;ber zwei Zeilen und hingen deshalb von 0.43.2 bis 0.45.0 fest.</li>
-            <li><code>CHANGELOG.md</code> pflegen (Keep-a-Changelog: neuer Abschnitt + Link-Ref).</li>
+            <li><code>CHANGELOG.md</code> pflegen: zuerst <code>python3 scripts/release/changelog-assemble.py</code> &ndash; jeder Branch schreibt seine Eintr&auml;ge nach <code>changelog.d/&lt;slug&gt;.md</code>, das Skript faltet sie in <code>## [Unreleased]</code> und l&ouml;scht sie; dann Keep-a-Changelog: neuer Abschnitt + Link-Ref. <code>check-versions.sh</code> meldet ein nicht gefaltetes Fragment.</li>
             <li><code>bash scripts/release/check-versions.sh X.Y.Z</code> &ndash; muss <code>0 missing</code> melden. Derselbe Aufruf l&auml;uft im Release-Workflow auf dem Tag.</li>
             <li>Commit &amp; Tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>

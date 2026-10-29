@@ -26,6 +26,10 @@ tauri.conf/Agent-Tag/FRP_VERSION).
 Suiten; die Summary-Zeile gegen den Diff halten, einzelne Tests fahren ist erlaubt. Urteil zusätzlich als JSON nach
 `WT/.ah-out/review/<slug>/<id>.verdict.json`:
 `{"mode":"task","verdict":"approve|request_changes","findings":[{"severity":"blocker|wichtig|nit","file":"…","line":0,"what":"…"}],"checked":["1","2","3","4","5","6","7"]}`.
+**Mehrere Tasks eines Zugs:** setzt die Session dich mit einer neuen Task-ID fort, prüfst du diese Task wie eine
+neue (eigener Stand `<scratch>/<neue-id>.snap`, ihr Diff, ihre Urteilsdatei); Regeln, Ledger-Kopf und Spec kennst du
+schon, nachlesen nur, was die Task neu berührt. Frühere Tasks sind committet und nicht mehr Gegenstand. Bist du
+kompaktiert worden, sag das in deiner Antwort: dann startet die Session für die nächste Task einen frischen Prüfer.
 
 **Einsatzart `branch`** (Abschlussprüfung): `git -C WT diff main...` als Ganzes, unabhängig von den Task-Urteilen.
 - *Code:* die sieben Kriterien über den Branch, dazu das Zusammenspiel der Tasks, keine offene Task, Doku DE+EN
