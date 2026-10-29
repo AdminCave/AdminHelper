@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: extra_config eines Tunnels nur in der Form, die der Agent annimmt — Task-Ledger
-Status: geplant · Branch: feature/frp-extra-config-keys · Review: am Ende
+Status: aktiv · Branch: feature/frp-extra-config-keys · Review: am Ende
 Spec: docs/features/frp-extra-config-keys.md
 Heavy: linux-full — Server-API (`POST`/`PUT /api/frp/tunnels`) und der frpc-Generator für gespeicherte Altwerte. Kein `scenario`: für jeden Tunnel, dessen `extra_config` die neuen Regeln erfüllt, bleibt die `frpc.toml` byte-gleich; kein Agent-, PKI- oder Install-Pfad. Kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
