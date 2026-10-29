@@ -179,8 +179,10 @@ Orakel: contract — Doku und Kommentare gegen Lockdateien und Dockerfile
 Dedup-Key: ref:docs:stale-versions-comments
 HEAD: b25c65a6
 
-### T12 — Hook-Beispiele: Test hält `docs/examples` frei von Adressen außerhalb RFC 5737 (R-0601)  [ ]
+### T12 — Hook-Beispiele: Test hält `docs/examples` frei von Adressen außerhalb RFC 5737 (R-0601)  [x]
 Komponente: server · Dateien: apps/server/tests/test_hook_examples.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @53b585bf 2026-10-29T11:11:49+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T12.verdict.json)
 Änderung: Neben `test_example_http_helper_keywords_match_worker_signature` (`:32`): ein Helfer `_foreign_ipv4(text) -> list[str]` findet jede gepunktete Vierergruppe (`(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])`) und gibt die zurück, die keine IPv4-Adresse in `192.0.2.0/24`, `198.51.100.0/24` oder `203.0.113.0/24` ist (`ipaddress`; eine Gruppe, die keine gültige Adresse ist, zählt als Fund). Test (a): über jede Datei unter `docs/examples` (rekursiv, als Text) ist die Liste leer; die Meldung nennt Datei und Adresse. Test (b), Gegenprobe des Helfers: `198.18.0.1` (RFC 2544) und `8.8.8.8` werden gemeldet, `192.0.2.1`, `198.51.100.7`, `203.0.113.255` und `1.2.3` nicht. Der Modul-Docstring bekommt einen Satz zum zweiten Zweck. IPv6 prüft der Test nicht (Spec, Nicht-Ziele). Zuerst rot: (a) mit einer Probe-Zeile `10.0.0.1` in einer Kopie eines Beispiels (nur lokal, nicht committet; Ergebnis in den Commit-Body).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_examples.py
 Doku: keine (Test); kein CHANGELOG
