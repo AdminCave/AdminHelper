@@ -800,7 +800,7 @@ def client_db(monkeypatch):
     monkeypatch.setattr(victoria_mod.victoria, "write", lambda lines: None)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
     # Background alert dispatch opens its OWN session via database.SessionLocal (not get_db). Without
-    # this patch _dispatch_alert_bg would hit the real DATABASE_URL — a hidden network dependency that
+    # this patch dispatch_alert_bg would hit the real DATABASE_URL — a hidden network dependency that
     # silently exercises the swallowed error path instead of the dispatch path, and a DROP'd connect
     # would hang the suite (6.61). Mirrors test_agent_report.py.
     import app.core.database as database_mod

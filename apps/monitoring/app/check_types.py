@@ -2,15 +2,15 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Central check-type taxonomy — single source of truth.
+"""Central check-type taxonomy: the types and whether each is push-only.
 
 A neutral module so the scheduler, check engine, agent router and checks router
-all import the type set from one place. The set was previously spread across
-schemas.VALID_CHECK_TYPES and scheduler.PUSH_ONLY_TYPES (and could drift, e.g. a
-new type added to one but not the other); deriving both from one table keeps them
-in lockstep. It also lets scheduler and check_engine import at module level
-instead of via function-local imports (which only avoided a real scheduler <->
-check_engine import cycle by importing late).
+all import the type set from one place, and scheduler and check_engine can import
+it at module level (a function-local import only avoided a real scheduler <->
+check_engine import cycle by importing late). The tables per type live with their
+users: the checker registry (checkers/__init__.py), the config models
+(check_configs.py) and the metric names (routers/checks.py);
+tests/test_check_type_parity.py keeps them equal to this set.
 """
 
 from __future__ import annotations

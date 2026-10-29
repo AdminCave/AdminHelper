@@ -54,6 +54,14 @@ def _filled(cls):
     return row
 
 
+# Facts a to_dict takes from its caller instead of computing them.
+_TO_DICT_KWARGS = {"MonitorTemplate": {"builtin_edited": False, "builtin_update_available": False}}
+
+
+def _dict(cls) -> dict:
+    return _filled(cls).to_dict(**_TO_DICT_KWARGS.get(cls.__name__, {}))
+
+
 def _timestamps(out: dict) -> dict:
     found = {}
     for key, value in out.items():
@@ -69,11 +77,11 @@ def _timestamps(out: dict) -> dict:
 
 @pytest.mark.parametrize("cls", _MODELS, ids=lambda cls: cls.__name__)
 def test_every_timestamp_ends_in_z(cls):
-    for key, value in _timestamps(_filled(cls).to_dict()).items():
+    for key, value in _timestamps(_dict(cls)).items():
         assert value.endswith("Z"), f"{cls.__name__}.{key} = {value!r}"
         assert datetime.fromisoformat(value) == NAIVE.replace(tzinfo=timezone.utc)
 
 
 def test_all_known_timestamp_fields_are_checked():
-    found = {(cls.__name__, key) for cls in _MODELS for key in _timestamps(_filled(cls).to_dict())}
+    found = {(cls.__name__, key) for cls in _MODELS for key in _timestamps(_dict(cls))}
     assert _EXPECTED <= found, _EXPECTED - found
