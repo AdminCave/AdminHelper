@@ -178,33 +178,68 @@ var refusedOverTheFlows = map[string]string{
 	"[common] in a multi-line string": "serverAddr = \"203.0.113.10\"\nuser = '''\n[common]\nend = 1'''\n\n[[proxies]]\nname = \"ssh\"\n",
 	"log.to":                          "serverAddr = \"203.0.113.10\"\nlog.to = \"/tmp/frpc.log\"\n\n[[proxies]]\nname = \"ssh\"\n",
 	"includes":                        "serverAddr = \"203.0.113.10\"\nincludes = [\"/tmp/*.toml\"]\n\n[[proxies]]\nname = \"ssh\"\n",
+	"proxy plugin":                    "serverAddr = \"203.0.113.10\"\n\n[[proxies]]\nname = \"ssh\"\nplugin.type = \"http_proxy\"\n",
 }
 
-// A sync refuses a server text out of the generator's form: an error, and nothing in the FRP
-// directory changes (frpc.toml, hash, admin.conf), frpc is neither started nor stopped, so the
-// next run tries again. The text is checked under the frpc lock, so only the empty lock file is
-// new.
+// A sync refuses a server text out of the generator's form, and frpc does not run on the old
+// frpc.toml meanwhile: it is stopped and disabled, frpc.toml and the hash go (the next run fetches
+// and checks again), admin.conf stays. The text is checked under the frpc lock, so the empty lock
+// file is new. A second refused run finds nothing left and does not touch the service again.
 func TestServerConfigRefusedBySync(t *testing.T) {
 	for name, toml := range refusedOverTheFlows {
 		t.Run(name, func(t *testing.T) {
 			calls := setupSyncTest(t, "https://unused.example")
 			writeFrpcState(t)
 			calls.active = true
-			serveToml(t, []byte(toml))
-			files, actions := frpFiles(t), *calls
-			want := maps.Clone(files)
+			fetches := serveToml(t, []byte(toml))
+			want := maps.Clone(frpFiles(t))
+			delete(want, "frpc.toml")
+			delete(want, ".config-hash")
 			want["frpc.lock"] = ""
 
 			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must refuse the server's text")
 			}
 			if got := frpFiles(t); !maps.Equal(got, want) {
-				t.Errorf("the FRP directory holds %q, want it unchanged but for the empty lock file %q", got, want)
+				t.Errorf("the FRP directory holds %q, want %q (frpc.toml and hash removed)", got, want)
 			}
-			if *calls != actions {
-				t.Errorf("frpc service state %+v, want it unchanged %+v (no start, stop or reload)", *calls, actions)
+			if calls.disables != 1 || calls.active || calls.enables+calls.restarts+calls.reloads != 0 {
+				t.Errorf("frpc service state %+v, want it stopped and disabled once, nothing started", *calls)
+			}
+
+			if err := Sync(context.Background()); err == nil {
+				t.Fatal("the second Sync must refuse the server's text again")
+			}
+			if calls.disables != 1 || *fetches != 2 {
+				t.Errorf("after the second run disables = %d, config fetches = %d, want 1 and 2", calls.disables, *fetches)
 			}
 		})
+	}
+}
+
+// Once the server sends a text that passes again, the next sync starts frpc on it like on a
+// first tunnel.
+func TestServerConfigAcceptedAfterARefusalStartsFrpc(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	writeFrpcState(t)
+	calls.active = true
+	serveToml(t, []byte(refusedOverTheFlows["proxy plugin"]))
+	if err := Sync(context.Background()); err == nil {
+		t.Fatal("Sync must refuse the server's text")
+	}
+
+	serveToml(t, tunnelToml)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync with a text that passes: %v", err)
+	}
+	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+		t.Errorf("frpc.toml = %q, want %q", got, want)
+	}
+	if got := readFile(t, config.FrpHashFile()); got != hashConfig(tunnelToml) {
+		t.Errorf("hash file = %q, want %q", got, hashConfig(tunnelToml))
+	}
+	if calls.enables != 1 || !calls.active {
+		t.Errorf("frpc service state %+v, want it enabled and running", *calls)
 	}
 }
 
@@ -229,7 +264,9 @@ func TestServerConfigFixtureAppliedBySync(t *testing.T) {
 	}
 }
 
-// The provisioning refuses such a text too: an error, and no frpc.toml.
+// The provisioning refuses such a text too: an error, and no frpc.toml. On a first provisioning
+// nothing of frpc is there, so the service is not touched; a re-provisioning stops the frpc
+// that ran on the former config, like a sync.
 func TestServerConfigRefusedByApply(t *testing.T) {
 	for name, toml := range refusedOverTheFlows {
 		t.Run(name, func(t *testing.T) {
@@ -243,6 +280,21 @@ func TestServerConfigRefusedByApply(t *testing.T) {
 			}
 			if calls.restarts+calls.enables+calls.disables+calls.reloads != 0 {
 				t.Errorf("frpc service calls %+v, want none", *calls)
+			}
+		})
+		t.Run(name+", re-provisioning", func(t *testing.T) {
+			calls := setupSyncTest(t, "https://srv.example")
+			writeFrpcState(t)
+			calls.active = true
+
+			if err := applyBundle([]byte(toml)); err == nil {
+				t.Fatal("Apply must refuse the server's text")
+			}
+			if !frpcGone() {
+				t.Errorf("frpc.toml or the hash is still there, want both removed")
+			}
+			if calls.disables != 1 || calls.active || calls.enables+calls.restarts+calls.reloads != 0 {
+				t.Errorf("frpc service state %+v, want it stopped and disabled once, nothing started", *calls)
 			}
 		})
 	}
