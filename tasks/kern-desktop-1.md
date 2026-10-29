@@ -15,8 +15,10 @@ Für alle Tasks: Zeilenangaben `origin/main@fd3a3b32`, vor dem Schreiben neu gre
 `security` zusätzlich bei T1, T2, T3, T4 (und wo `review.sh risk` es verlangt). Nicht anfassen: `enrollment.rs`,
 `ProvisioningTab.svelte` (offener Branch feature/ca-rotation).
 
-### T1 — Sync-Antworten begrenzt lesen (R-0876)  [ ]
+### T1 — Sync-Antworten begrenzt lesen (R-0876)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sync.rs, changelog.d/kern-desktop-1.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c5a43031 2026-10-29T18:43:37+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T1.verdict.json)
 Änderung: `fetch` (`sync.rs:35`) und `fetch_server_connections` (`:81`) lesen die Antwort wie `ansible.rs:71-104`: über die deklarierte Länge abgewiesen, sonst stückweise bis 16 MiB; die Fehlermeldung zitiert die Antwort nicht. Test zuerst rot: übergroße Antwort des Test-Servers → Fehler, die bisherigen Verbindungen bleiben.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sync
 Doku: changelog.d/kern-desktop-1.md
