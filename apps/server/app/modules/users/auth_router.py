@@ -385,8 +385,8 @@ def bootstrap(
     for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
         try:
             f.unlink(missing_ok=True)
-        except OSError:
-            logger.warning("Bootstrap-Datei konnte nicht geloescht werden: %s", f)
+        except OSError as exc:
+            logger.warning("bootstrap file %s not removed (%s)", f, type(exc).__name__)
 
     _reset_rate_limit(ip)
     logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)

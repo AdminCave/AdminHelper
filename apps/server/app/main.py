@@ -2,9 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import fcntl
 import json
 import logging
 import math
+import os
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -129,9 +131,43 @@ def _purge_bootstrap_files():
             logger.warning("bootstrap file %s not removed (%s)", f, type(exc).__name__)
 
 
+# Every uvicorn worker runs the lifespan, so without a lock each would write its own token and
+# hash. The lock belongs to the process until it ends: exactly one worker of a start writes, and
+# a restart draws anew. The file is never deleted (a second lock file and a worker still holding
+# the old one would give two leaders). A constant, not derived from BOOTSTRAP_TOKEN_FILE at call
+# time.
+_BOOTSTRAP_LOCK_FILE = BOOTSTRAP_TOKEN_FILE.with_name(".bootstrap.lock")
+_bootstrap_lock_fd: int | None = None
+
+
+def _hold_bootstrap_lock() -> bool:
+    global _bootstrap_lock_fd
+    if _bootstrap_lock_fd is not None:
+        return True
+    fd = None
+    try:
+        fd = os.open(_BOOTSTRAP_LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        logger.info("bootstrap token left to another worker of this start")
+        return False
+    except OSError as exc:
+        if fd is not None:
+            os.close(fd)
+        logger.warning(
+            "bootstrap lock unavailable (%s); writing the token anyway", type(exc).__name__
+        )
+        return True
+    _bootstrap_lock_fd = fd
+    return True
+
+
 def _emit_bootstrap_token():
     """Generates a one-time bootstrap token: hash to disk for verification, raw token to
     a 0600 file for the operator to read — never logged in cleartext (3.91)."""
+    if not _hold_bootstrap_lock():
+        return
     token = secrets.token_urlsafe(32)
     write_private_file(BOOTSTRAP_TOKEN_FILE, hash_api_key(token))
     # Raw token to a 0600 file, NOT the log: docker keeps logs (json-file, 5x10MB) and
@@ -365,12 +401,14 @@ async def lifespan(app: FastAPI):
     # The SSE fan-out subscription IS per web worker (each holds its own streams).
     try:
         await stream_hub.start(REDIS_URL)
-    except Exception:
+    except Exception as exc:
         # Redis carries only the optional SSE push fan-out — rate-limit already degrades to
         # in-memory and SSE has a polling fallback. A brief Redis outage at boot (compose race,
         # a Redis restart during a server redeploy) must not crash-loop the whole API; start
         # best-effort and let push stay disabled until the next boot (4.68).
-        logger.exception("SSE-Fan-out-Start fehlgeschlagen — Push deaktiviert (Polling-Fallback)")
+        logger.warning(
+            "SSE fan-out not started (%s); push disabled, clients poll", type(exc).__name__
+        )
     fire_event("server.startup", {})
     yield
     await stream_hub.stop()

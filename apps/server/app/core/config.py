@@ -14,6 +14,21 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def fsync_dir(path: Path) -> None:
+    """Syncs the directory path; a failure is logged with its type and not raised."""
+    # The directory entry an os.replace wrote is durable only after an fsync of the directory
+    # (fsync(2)). The file is already in place at that point: raising would make the caller
+    # treat a swap that worked as failed.
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        logger.warning("directory %s not synced (%s)", path, type(exc).__name__)
+
+
 def write_private_file(path: Path, text: str) -> None:
     """Writes text (UTF-8) to path, readable and writable by its owner only, atomically."""
     # mkstemp creates the temp file 0600, never wider whatever the umask: no window with wider
@@ -31,6 +46,41 @@ def write_private_file(path: Path, text: str) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    fsync_dir(path.parent)
+
+
+def publish_private_file_once(path: Path, text: str) -> str:
+    """Publishes text at path unless another process did first; returns what path holds."""
+    # link creates the name atomically and only once, and the name points to a complete file
+    # from the start, unlike O_EXCL, where a reader could see the file before it is written.
+    # Server workers and the scheduler start at the same time.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(text.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
+            try:
+                existing = path.read_text().strip()
+            except FileNotFoundError:
+                existing = ""
+            if existing:
+                return existing
+            write_private_file(path, text)
+            return text
+        except OSError as exc:
+            logger.warning(
+                "%s not published exclusively (%s); writing it in place", path, type(exc).__name__
+            )
+            write_private_file(path, text)
+            return text
+        fsync_dir(path.parent)
+        return text
+    finally:
+        Path(tmp).unlink(missing_ok=True)
 
 
 def _resolve_secret_key() -> str:
@@ -50,9 +100,12 @@ def _resolve_secret_key() -> str:
             "SECRET_KEY ist der unsichere Default! Generiere automatisch einen sicheren Key."
         )
     generated = secrets.token_urlsafe(64)
-    write_private_file(key_file, generated)
-    logger.info("SECRET_KEY auto-generiert und in %s gespeichert", key_file)
-    return generated
+    key = publish_private_file_once(key_file, generated)
+    if key == generated:
+        logger.info("SECRET_KEY auto-generiert und in %s gespeichert", key_file)
+    else:
+        logger.info("SECRET_KEY of another process adopted from %s", key_file)
+    return key
 
 
 SECRET_KEY = _resolve_secret_key()

@@ -69,6 +69,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Abgleich mit 403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers, stoppt der Desktop seinen Tunnel
   beim naechsten Abgleich wie bei 404, statt frpc mit der alten Konfiguration weiterlaufen zu lassen. Doku: Desktop
   fuer Entwickler (DE+EN).
+- **Server-Log nennt bei weiteren Fehlern nur den Fehlertyp:** Scheitert das Entfernen der `frps.toml`, steht im
+  Log der Fehlertyp ohne Traceback und ohne Fehlertext (R-0766). Die Warnungen des Redis-Rate-Limits nennen nur den
+  Fehlertyp, und ein IPv6-Host steht im Log in eckigen Klammern (R-0776). Ein gescheiterter Start des SSE-Push und
+  ein Loeschfehler der Bootstrap-Dateien nach dem ersten Admin stehen mit Fehlertyp, ohne Traceback, im Log (R-0776).
+- **Desktop, Provisionierungs-Tab: der Einzeiler enthaelt den Token nicht mehr:** `agent-install.sh` fragt ihn beim
+  Ausfuehren verdeckt ueber `/dev/tty` ab, der Tab zeigt ihn zum Kopieren daneben; so steht er weder in der
+  Shell-History noch in der Prozessliste noch im sudo-Log (mit einem Agent, der `--token-stdin` kennt; aeltere bekommen
+  ihn mit Warnung als Argument). Kopieren des Einzeilers blendet den Token nicht aus. Der Befehl "Nur provisionieren"
+  behaelt `--token`. Doku: Agent-Deployment (DE+EN), README.
 - **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
   der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
   gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).
@@ -203,6 +212,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Server: `POST /api/internal/events` lehnt die Quelltypen `frp_config` und `frps` ab:** Ein Event mit
   `source_type` `frp_config` oder `frps` ergibt `422` an `source_type`; nichts wird geschrieben. Unter diesen
   Quelltypen fuehrt der Server seine eigenen Meldungen. Der Monitoring-Dienst sendet `server` und ist nicht betroffen.
+- **Desktop, Ansible: Inventory und Playbook eines Laufs in einem eigenen Verzeichnis:** Beide liegen je Lauf in einem
+  eigenen, frisch angelegten Verzeichnis `adminhelper_ansible_<pid>_<n>_<zeit>` im Temp-Verzeichnis, unter Linux und
+  macOS nur fuer den eigenen Nutzer lesbar (Modus 0700); neben ihnen liegt nur, was der Lauf schreibt. Scheitert ein
+  Schritt vor dem Start, entfernt der Desktop das ganze Verzeichnis, auch eine halb geschriebene Datei; unter Linux
+  entfernt das Terminal es nach dem Lauf. Doku: Desktop fuer Entwickler, Ansible (DE+EN).
+- **Desktop, Ansible: Playbook-Dateiname nur aus sicheren Zeichen, Server-Antwort hoechstens 16 MiB:** Der Dateiname
+  des Playbooks behaelt nur ASCII-Buchstaben, Ziffern, Punkt, Unterstrich und Bindestrich, andere Zeichen werden zu
+  Unterstrichen (unter Windows geht der Pfad an Windows Terminal und `cmd`). Die Antwort des Servers auf den
+  Playbook-Abruf liest der Desktop hoechstens 16 MiB weit; eine groessere oder eine, die kein Playbook ist, bricht den
+  Lauf mit einem Fehler ab, der die Antwort nicht zitiert.
 - **Audit-Log: Hooks, Provisionierungs-Token und Monitoring-Proxy:** Das Audit-Log erfasst jetzt die Aktionen der
   Admins an Hooks (`hook.created`, `hook.updated` mit den geaenderten Feldern in `detail`, auch fuer das Ein- und
   Ausschalten, `hook.deleted`, `hook.token_rotated`, `hook.run` mit `success` oder `failure`), das Erzeugen eines
@@ -442,6 +461,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin (R-0768):** Sie legen nur noch eine
+  Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus.
+- **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
+  gemeinsamen Schluessel (R-0761):** Wer ihn nicht zuerst schreibt, uebernimmt den des anderen Prozesses. Vorher konnte
+  jeder Prozess einen eigenen erzeugen, und JWTs galten nicht prozessuebergreifend.
+- **Server: mit `WEB_CONCURRENCY` > 1 erzeugt nur noch ein Worker das einmalige Setup-Token (R-0762):** Bisher
+  schrieb jeder Worker ein eigenes Token und einen eigenen Hash; danach passten `.bootstrap_setup` und
+  `.bootstrap_token` oft nicht zusammen, und das Token aus der Datei wurde abgewiesen. Jetzt passen beide immer
+  zusammen, und der Hinweis steht einmal im Log. Neu ist die leere Datei `data/.bootstrap.lock`.
 - **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
   System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
   ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
@@ -628,6 +656,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bleiben: Eine Fehlerzeile im gehaltenen Ende ergibt dieselbe Meldung wie bisher, und „RDP Verbindung
   fehlgeschlagen“ kommt nur, wenn xfreerdp nie eine Verbindung meldete. Eine Fehlerzeile, die frueh in einer langen,
   danach laufenden Sitzung stand, ergibt am Ende keine Meldung mehr.
+- **Desktop, Provisionierungs-Tab: Backslash im erzeugten Befehl auch fuer fish woertlich:** Ein Backslash in der
+  Server-URL steht im angezeigten Installationsbefehl jetzt ausserhalb der einfachen Anfuehrungszeichen als `\\`, so
+  dass POSIX-Shells (sh, bash, zsh) und fish denselben Wert lesen; fish las `\\` und `\'` innerhalb einfacher
+  Anfuehrungszeichen als Escape. Werte ohne Backslash sehen aus wie bisher.
+- **Desktop: Gepinntes Zertifikat zuruecksetzen meldet einen Fehler des Schluesselbunds (R-0748):** Kann der
+  Schluesselbund des Systems den Pin nicht loeschen, melden „Gepinntes Zertifikat zuruecksetzen“ (Anmeldebildschirm
+  und Einstellungen) und „Geraete-Identitaet zuruecksetzen“ jetzt einen Fehler („the pinned certificate could not be
+  removed from the keyring: …“), statt den Reset als erfolgreich zu melden; bisher blieb der alte Pin stehen, und beim
+  naechsten Verbinden lehnte der Desktop die Verbindung wieder ab. Abhilfe: den Schluesselbund entsperren und dasselbe
+  Zuruecksetzen wiederholen. Doku: Troubleshooting (DE+EN).
 - **Monitoring: keine Datenbankverbindung waehrend Messung und Metrik-Abfrage (R-0615):** Ein Check, ein manueller
   Lauf (`POST /checks/{id}/run`) und ein Metrik-Abruf (`GET /checks/{id}/metrics`) halten waehrend der Messung bzw.
   der VictoriaMetrics-Abfrage keine Datenbankverbindung mehr; ein haengendes Ziel kann den Verbindungs-Pool des

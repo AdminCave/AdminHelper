@@ -1180,7 +1180,7 @@ mod tests {
             listener.local_addr().unwrap().port()
         );
         // A pin an earlier test left for this port would decide instead of this server.
-        crate::tofu::forget_pin(&url);
+        crate::tofu::forget_pin(&url).unwrap();
         // The handshake runs on a tokio worker without a test keyring, where storing a
         // first-use pin fails and the connection is refused; so this server's certificate
         // is pinned up front. The tests check the session's choice of client, not pinning.
