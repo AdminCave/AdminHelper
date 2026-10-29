@@ -72,8 +72,10 @@ Orakel: contract — das Modell gegen `Server.to_dict` über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T3 — frp: Tunnel-Routen mit dem vorhandenen `FrpTunnelOut` (R-0684)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+### T3 — frp: Tunnel-Routen mit dem vorhandenen `FrpTunnelOut` (R-0684)  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json, apps/server/app/modules/frp/schemas.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @6cf32628 2026-10-29T22:16:45+01:00
+Review: approve (.ah-out/review/api-contracts-server/T3.verdict.json)
 Änderung: `response_model=list[FrpTunnelOut]` an `GET /tunnels` (`apps/server/app/modules/frp/tunnel_router.py:26`), `FrpTunnelOut` an `POST /tunnels` (`:67`), `GET /tunnels/{tunnel_id}` (`:153`), `PUT /tunnels/{tunnel_id}` (`:161`). Das Modell (`frp/schemas.py:312-328`) bildet `FrpTunnel.to_dict(mask_secrets=True)` (`frp/models.py:111-131`) schon ab und bleibt unverändert (es steht seit R-0043 im Snapshot unter `FrpServerConfigDetail`); `tags: list[str]` vorher nach Regel 3 an den Schreibern prüfen, bei einem Widerspruch `[?]` statt das Modell zu ändern. Tests nach Muster, `secretKey` ist in jeder Antwort `null`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_frp_tunnels.py
 Doku: keine
@@ -177,3 +179,6 @@ HEAD: b25c65a6
 - T1: `ConnectionOut.tags` ist `Any`, nicht `list[Any]` wie im Plan: ein Import vor v0.36.0 schrieb einen
   Nicht-Listen-Wert unverändert, eine solche Altzeile machte die ganze Liste zur 500 (Regel 3). Der Snapshot zeigt
   `tags` damit ungetypt; die Client-Vertragstests (T19/T20) lesen es als unbekannt.
+- T3: `GET /api/frp/tunnels` gibt Nicht-Admins seit dem Plan nur die `_MAPPING_FIELDS` (TunnelMapping des Desktops);
+  ein reines `list[FrpTunnelOut]` machte ihre Liste zur 500. Deklariert ist `list[FrpTunnelOut | TunnelMappingOut]`
+  mit `union_mode="left_to_right"` (die volle Zeile zuerst; die Gegenprobe mit umgedrehter Reihenfolge: 2 failed).

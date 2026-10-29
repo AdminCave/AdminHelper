@@ -3022,6 +3022,93 @@
         "title": "TokenResponse",
         "type": "object"
       },
+      "TunnelMappingOut": {
+        "description": "A tunnel as a non-admin lists it: the keys of _MAPPING_FIELDS (tunnel_router.py).",
+        "properties": {
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectionid"
+          },
+          "customDomains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customdomains"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "localPort": {
+            "title": "Localport",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "tunnelType": {
+            "title": "Tunneltype",
+            "type": "string"
+          },
+          "visitorPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visitorport"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "tunnelType",
+          "protocol",
+          "localPort",
+          "visitorPort",
+          "customDomains",
+          "connectionId",
+          "enabled",
+          "name"
+        ],
+        "title": "TunnelMappingOut",
+        "type": "object"
+      },
       "UserCreate": {
         "properties": {
           "is_admin": {
@@ -5099,7 +5186,20 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/FrpTunnelOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/TunnelMappingOut"
+                      }
+                    ]
+                  },
+                  "title": "Response List Tunnels Api Frp Tunnels Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -5141,7 +5241,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpTunnelOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5224,7 +5326,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpTunnelOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5277,7 +5381,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpTunnelOut"
+                }
               }
             },
             "description": "Successful Response"

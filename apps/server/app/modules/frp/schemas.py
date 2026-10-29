@@ -405,6 +405,26 @@ class FrpTunnelOut(BaseModel):
     createdAt: Optional[str]
 
 
+class TunnelMappingOut(BaseModel):
+    """A tunnel as a non-admin lists it: the keys of _MAPPING_FIELDS (tunnel_router.py)."""
+
+    id: str
+    serverId: str
+    tunnelType: str
+    protocol: str
+    localPort: int
+    visitorPort: Optional[int]
+    customDomains: Optional[str]
+    connectionId: Optional[str]
+    enabled: Optional[bool]
+    name: str
+
+
+# The admin's full row first: a full row also passes TunnelMappingOut, which drops its other
+# keys; a mapping row lacks the keys FrpTunnelOut requires and falls through to the second.
+TunnelListItem = Annotated[FrpTunnelOut | TunnelMappingOut, Field(union_mode="left_to_right")]
+
+
 class FrpServerConfigDetail(FrpServerConfigOut):
     tunnels: list[FrpTunnelOut]
 

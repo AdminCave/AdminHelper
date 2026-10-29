@@ -14,6 +14,7 @@ import pytest
 from fastapi.encoders import jsonable_encoder
 
 from app.modules.connections.models import Connection
+from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
 
@@ -51,6 +52,9 @@ def _ref_name(schema: dict) -> str:
         ("/api/servers/{server_id}", "get", "ServerOut"),
         ("/api/servers/{server_id}", "put", "ServerOut"),
         ("/api/internal/servers", "get", "InternalServerOut"),
+        ("/api/frp/tunnels", "post", "FrpTunnelOut"),
+        ("/api/frp/tunnels/{tunnel_id}", "get", "FrpTunnelOut"),
+        ("/api/frp/tunnels/{tunnel_id}", "put", "FrpTunnelOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -260,3 +264,111 @@ class TestServerShape:
         assert r.json() == [
             {"id": "srv-full", "hostname": "full.example", "name": "full", "tags": ["prod"]}
         ]
+
+
+def test_tunnel_list_declares_both_shapes():
+    items = _response_ref("/api/frp/tunnels", "get")["items"]
+    assert [ref["$ref"].rsplit("/", 1)[-1] for ref in items["anyOf"]] == [
+        "FrpTunnelOut",
+        "TunnelMappingOut",
+    ]
+
+
+class TestTunnelShape:
+    """The admin reads FrpTunnel.to_dict(mask_secrets=True), a non-admin the mapping keys."""
+
+    def _seed(self, db):
+        db.add(
+            FrpServerConfig(
+                id="cfg-t",
+                name="t",
+                server_addr="frps.example",
+                bind_port=7000,
+                auth_token="frps-auth-token-value",
+            )
+        )
+        db.add(Server(id="srv-t", name="t", hostname="t.example"))
+        db.add(
+            FrpTunnel(
+                id="t-full",
+                server_id="srv-t",
+                frp_config_id="cfg-t",
+                name="a-full",
+                tunnel_type="https",
+                protocol="web",
+                local_ip="127.0.0.1",
+                local_port=443,
+                secret_key="tunnel-secret-value",
+                custom_domains="web.example",
+                extra_config=json.dumps({"transport.useEncryption": True}),
+                tags='["edge"]',
+                enabled=True,
+            )
+        )
+        db.add(
+            FrpTunnel(
+                id="t-sparse",
+                server_id="srv-t",
+                frp_config_id="cfg-t",
+                name="b-sparse",
+                tunnel_type="stcp",
+                protocol="ssh",
+                local_ip=None,
+                local_port=22,
+                enabled=True,
+            )
+        )
+        db.commit()
+
+    def _expected(self, db, tunnel_id):
+        tunnel = db.get(FrpTunnel, tunnel_id)
+        db.refresh(tunnel)
+        return jsonable_encoder(tunnel.to_dict(mask_secrets=True))
+
+    def test_admin_list_and_get_equal_to_dict(self, test_client, db_session, admin_user):
+        self._seed(db_session)
+        h = _login(test_client)
+        r = test_client.get("/api/frp/tunnels", headers=h)
+        assert r.status_code == 200, r.text
+        want = [self._expected(db_session, t) for t in ("t-full", "t-sparse")]
+        assert r.json() == want
+        assert all(t["secretKey"] is None for t in r.json())
+        for tid, row in zip(("t-full", "t-sparse"), want):
+            got = test_client.get(f"/api/frp/tunnels/{tid}", headers=h)
+            assert got.status_code == 200, got.text
+            assert got.json() == row
+
+    def test_non_admin_list_keeps_the_mapping_shape(self, test_client, db_session, normal_user):
+        self._seed(db_session)
+        normal_user.servers.append(db_session.get(Server, "srv-t"))
+        db_session.commit()
+        r = test_client.post(
+            "/api/auth/login", json={"username": "viewer", "password": "viewerpass"}
+        )
+        h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        r = test_client.get("/api/frp/tunnels", headers=h)
+        assert r.status_code == 200, r.text
+        keys = tunnel_router._MAPPING_FIELDS
+        assert r.json() == [
+            {k: self._expected(db_session, t)[k] for k in keys} for t in ("t-full", "t-sparse")
+        ]
+
+    def test_post_put_equal_to_dict(self, test_client, db_session, admin_user):
+        self._seed(db_session)
+        h = _login(test_client)
+        body = {
+            "server_id": "srv-t",
+            "frp_config_id": "cfg-t",
+            "name": "made",
+            "tunnel_type": "stcp",
+            "protocol": "ssh",
+            "local_port": 22,
+        }
+        created = test_client.post("/api/frp/tunnels", json=body, headers=h)
+        assert created.status_code == 201, created.text
+        tid = created.json()["id"]
+        assert created.json() == self._expected(db_session, tid)
+        assert created.json()["secretKey"] is None
+        updated = test_client.put(f"/api/frp/tunnels/{tid}", json={"tags": ["x"]}, headers=h)
+        assert updated.status_code == 200, updated.text
+        assert updated.json() == self._expected(db_session, tid)
