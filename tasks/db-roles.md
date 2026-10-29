@@ -54,7 +54,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: → T4
 Abhängt von: T2
 
-### T6 — pg-restore.sh: Restore mit der Dienst-Rolle  [?] (pg-restore.sh meldet sich mit der Dienst-Rolle statt des Superusers an und lehnt eine Superuser-Sitzung ab — einverstanden?)
+### T6 — pg-restore.sh: Restore mit der Dienst-Rolle  [~] (Kevin 2026-10-29: Restore bleibt mit Superuser)
 Komponente: scripts · Dateien: scripts/pg-restore.sh, scripts/tests/restore_guard_test.sh, docker-compose.yml
 Änderung: `pg-restore.sh` (im auskommentierten `pg-backup`-Dienst) nimmt `PGUSER`/`PGPASSWORD` der Dienst-Rolle der Ziel-DB und bricht ab, wenn die Sitzung Superuser ist (Katalogabfrage mit `search_path=pg_catalog`); Aufrufbeispiel und Kommentar in `docker-compose.yml` nachziehen. Test: Abbruch bei Superuser-Sitzung (psql-Stub), Restore-Aufruf ohne Superuser.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
