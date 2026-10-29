@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { get } from 'svelte/store';
-import type { AuthSession, Settings, TunnelMapping } from '$lib/bridge/types';
+import type { AuthSession, Settings, TunnelMapping, WorkspaceContext } from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   conn: { error: null as string | null },
@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   stopTunnel: vi.fn(),
   reloadWindow: vi.fn(),
   listen: vi.fn(),
+  workspaceContext: vi.fn(),
 }));
 
 vi.mock('./connections', () => ({
@@ -56,6 +57,7 @@ vi.mock('$lib/bridge', () => ({
   refreshTunnel: h.refreshTunnel,
   fetchTunnels: h.fetchTunnels,
   stopTunnel: h.stopTunnel,
+  workspaceContext: h.workspaceContext,
 }));
 vi.mock('./tunnel', () => ({ stop: h.tunnelStop, startIfServerMode: h.tunnelStart }));
 vi.mock('$lib/utils/reloadWindow', () => ({ reloadWindow: h.reloadWindow }));
@@ -204,6 +206,18 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     enabled: true,
     name: 'db',
   };
+  const SERVER_WORKSPACE: WorkspaceContext = {
+    launcher: false,
+    workspace: {
+      id: 'standard',
+      name: 'Standard',
+      color: '#3b82f6',
+      kind: 'server',
+      host: 'srv',
+      open: true,
+    },
+  };
+  let errorSpy: MockInstance<typeof console.error>;
   let logoutAndReload: () => Promise<void>;
   let listenForSessionExpiry: () => Promise<() => void>;
   let session: typeof import('./session');
@@ -218,9 +232,12 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     h.refreshTunnel.mockResolvedValue({
       status: { running: true, visitors: ['db-visitor'] },
       outcome: 'started',
+      refused: null,
     });
     h.fetchTunnels.mockResolvedValue([MAPPING]);
     h.stopTunnel.mockResolvedValue(undefined);
+    h.workspaceContext.mockResolvedValue(SERVER_WORKSPACE);
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.resetModules();
     vi.doUnmock('./session');
     vi.doUnmock('./tunnel');
@@ -235,6 +252,10 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
   });
 
   afterEach(() => {
+    // A logged error is a path the real app does not take (hydrate failed before the mock
+    // knew `workspaceContext`).
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
     vi.useRealTimers();
     sessionStorage.clear();
   });

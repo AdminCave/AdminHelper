@@ -173,12 +173,16 @@ func verifyAnchorFingerprint(rawCerts [][]byte, fp [sha256.Size]byte, host strin
 				"(possible MITM — or a wrong/outdated --ca-fp value)")
 	}
 	leaf := certs[0]
-	if leaf.Equal(anchor) {
-		// The pinned certificate IS the leaf — direct pin, nothing to chain.
-		return verifyLeafNamesHost(leaf, host)
-	}
 	roots := x509.NewCertPool()
 	roots.AddCert(anchor)
+	if leaf.Equal(anchor) {
+		// The pinned certificate IS the leaf — direct pin, nothing to chain. Verify against
+		// itself as the only root still enforces its validity and EKU, as the chain does.
+		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots}); err != nil {
+			return fmt.Errorf("the pinned certificate the server presented does not verify: %w", err)
+		}
+		return verifyLeafNamesHost(leaf, host)
+	}
 	intermediates := x509.NewCertPool()
 	for _, c := range certs[1:] {
 		if !c.Equal(anchor) {

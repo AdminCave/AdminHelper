@@ -141,6 +141,27 @@ func TestServerConfigRefusesProxyPlugins(t *testing.T) {
 	}
 }
 
+// A key with more segments than any frp field has is refused, without its text in the error;
+// a key of maxKeySegments segments still passes.
+func TestServerConfigRefusesKeysWithTooManySegments(t *testing.T) {
+	const head = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\n"
+	long := strings.Repeat("a.", 5000) + "a"
+	err := checkServerConfig([]byte(head + long + " = 1\n"))
+	if err == nil {
+		t.Fatal("checkServerConfig = nil, want the key refused")
+	}
+	if want := "line 6: a key with more than"; !strings.Contains(err.Error(), want) {
+		t.Errorf("checkServerConfig = %q, want it to contain %q", err, want)
+	}
+	if strings.Contains(err.Error(), "a.a.a.a") {
+		t.Errorf("checkServerConfig = %q, want the key left out", err)
+	}
+	limit := strings.Repeat("b.", maxKeySegments-1) + "b"
+	if err := checkServerConfig([]byte(head + limit + " = 1\n")); err != nil {
+		t.Errorf("checkServerConfig(%d segments) = %v, want nil", maxKeySegments, err)
+	}
+}
+
 // The error names line and key, never the value: a refused line may hold auth.token or a
 // secretKey.
 func TestServerConfigErrorHidesTheValue(t *testing.T) {

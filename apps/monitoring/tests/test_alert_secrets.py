@@ -429,3 +429,19 @@ def test_template_put_for_another_relay_without_password_drops_it(client_db):
     rule = _template_rule_config(factory, tid)
     assert rule["smtp_host"] == "relay-b.example"
     assert "smtp_password" not in rule
+
+
+def test_alert_post_with_the_mask_as_password_is_refused(client_db):
+    # A new rule has no stored password the mask could stand for: storing "***" would
+    # send it to the relay as the password.
+    client, factory = client_db
+
+    r = client.post(
+        "/alerts",
+        json={"name": "r", "channel": "email", "channel_config": _relay_a_config("***")},
+    )
+
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == "smtp_password must be the password itself, not the mask '***'"
+    with factory() as db:
+        assert db.query(MonitorAlertRule).count() == 0

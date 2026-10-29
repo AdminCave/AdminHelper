@@ -51,6 +51,17 @@ func loadAdminAPI() (adminAPI, error) {
 	return renewAdminAPI()
 }
 
+// adminAPIListens reports whether frpc listens on the admin port admin.conf names, without
+// writing a new one.
+func adminAPIListens() bool {
+	kv, err := config.LoadKeyValue(adminConfFile())
+	if err != nil {
+		return false
+	}
+	api, ok := parseAdminAPI(kv)
+	return ok && ownsAdminPort(api.port)
+}
+
 // renewAdminAPI writes admin.conf with a free port on loopback and a new password. Sync also
 // calls it when frpc does not start: after a reboot another process may hold the old port, and
 // frpc does not start without it. The old password goes with the old port.

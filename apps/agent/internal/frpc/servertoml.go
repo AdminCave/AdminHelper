@@ -42,6 +42,10 @@ var serverValue = regexp.MustCompile(`^(?:` + strings.Join([]string{
 	`-?inf|nan`,
 }, "|") + `)$`)
 
+// maxKeySegments bounds the segments of a key. No frp field lies that deep, so frpc would refuse
+// a deeper key anyway; the bound keeps the work per key small however long the line is.
+const maxKeySegments = 32
+
 // serverHead is a table head whose name may stand in an error message.
 var serverHead = regexp.MustCompile(`^\[\[?[A-Za-z0-9_.-]+\]\]?$`)
 
@@ -101,6 +105,9 @@ func checkServerConfig(serverToml []byte) error {
 			return refuse(n, fmt.Sprintf("the value of %s is not one the server writes", key))
 		}
 		path := prefix + key
+		if strings.Count(path, ".") >= maxKeySegments {
+			return refuse(n, fmt.Sprintf("a key with more than %d segments", maxKeySegments))
+		}
 		if !inProxies {
 			if !serverRootKeys[path] {
 				return refuse(n, fmt.Sprintf("%s is no key the server sets in the root", path))
@@ -132,14 +139,20 @@ func (t keyTable) add(path string) bool {
 	if _, taken := t[path]; taken {
 		return false
 	}
-	segments := strings.Split(path, ".")
-	for i := 1; i < len(segments); i++ {
-		if t[strings.Join(segments[:i], ".")] {
+	// The prefixes are slices of path, so they share its bytes.
+	var prefixes []string
+	for i, c := range path {
+		if c == '.' {
+			prefixes = append(prefixes, path[:i])
+		}
+	}
+	for _, p := range prefixes {
+		if t[p] {
 			return false
 		}
 	}
-	for i := 1; i < len(segments); i++ {
-		t[strings.Join(segments[:i], ".")] = false
+	for _, p := range prefixes {
+		t[p] = false
 	}
 	t[path] = true
 	return true

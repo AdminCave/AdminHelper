@@ -60,6 +60,8 @@ let inFlight: {
 // One status-bar message per series of failures (failed reconciliations, frpc-error); a
 // successful reconciliation ends the series, inside a restart series only its end does.
 let errorReported = false;
+// One status-bar message per refusal of the tunnels: the ticks after it find it again.
+let refusalReported = false;
 // A frpc that ended unexpectedly waits for the restart planned in `restartTimer`; the next
 // pause is `restartDelay`, null outside a restart series. Any reconciliation that starts in
 // the meantime is that restart and drops the timer. `startedAt` is when the running frpc
@@ -80,6 +82,7 @@ function stopPolling(): void {
   pollTimer = null;
   cancelRestart();
   endRestarts();
+  refusalReported = false;
 }
 
 function cancelRestart(): void {
@@ -215,6 +218,12 @@ async function reconcileOnce(gen: number): Promise<void> {
   }
   const stopped = refresh.outcome === 'stopped';
   if (stopped) endRestarts(); // no STCP tunnel wants frpc: nothing left to restart
+  if (refresh.refused == null) {
+    refusalReported = false;
+  } else if (!refusalReported) {
+    refusalReported = true;
+    reportError(tNow('error.tunnel.refused', { code: refresh.refused }));
+  }
   let mappings: TunnelMapping[];
   try {
     mappings = await bridge.fetchTunnels();
