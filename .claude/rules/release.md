@@ -42,7 +42,9 @@ rot ist, bricht dort den Draft ab.
    `release.yml` ab.
 2. `apps/desktop/src-tauri/Cargo.toml` `version`.
 3. `apps/desktop/src-tauri/Cargo.lock` — nach dem Bump `cargo check -q` laufen lassen, sonst wird `--locked` im CI rot.
-4. `CHANGELOG.md` — neuer Abschnitt `## [X.Y.Z] - YYYY-MM-DD`.
+4. `CHANGELOG.md` — zuerst `python3 scripts/release/changelog-assemble.py` (faltet `changelog.d/*.md` in
+   `## [Unreleased]` und löscht die Fragmente; `check-versions.sh` meldet ein übrig gebliebenes), dann wird
+   `## [Unreleased]` zum neuen Abschnitt `## [X.Y.Z] - YYYY-MM-DD` und darüber ein leeres `## [Unreleased]`.
 5. Doku-Sidebar-Footer (**38** HTML-Dateien, DE + EN) — auf die Klasse filtern, nicht auf das
    einzeilige Markup: `docs/index.html` und `docs/en/index.html` schreiben den Footer über zwei
    Zeilen und hingen deshalb von 0.43.2 bis 0.45.0 fest:

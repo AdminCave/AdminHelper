@@ -4,6 +4,7 @@ paths:
   - "README.md"
   - "DEVELOPMENT.md"
   - "CHANGELOG.md"
+  - "changelog.d/**"
 ---
 
 # Doku-Regeln
@@ -31,7 +32,9 @@ die Seite dadurch benutzbar bleibt:
 - **`CLAUDE.md`, `.claude/`, `tasks/README.md`** — der Ablauf für Sessions und Agenten; `DEVELOPMENT.md` und
   `cicd.html` verweisen darauf, statt ihn zu wiederholen.
 - **`CHANGELOG.md`** — Keep a Changelog + SemVer: `## [X.Y.Z] - YYYY-MM-DD` mit Added/Changed/Fixed/Removed; Einträge
-  umlautfrei (ae/oe/ue), Gedankenstrich „—"; Neues unter `## [Unreleased]`.
+  umlautfrei (ae/oe/ue), Gedankenstrich „—". Neues schreibt ein Branch nicht hier hinein, sondern in sein Fragment
+  `changelog.d/<slug>.md` (nur `### Added` … `### Security` mit Einträgen, `changelog.d/README.md`): parallele
+  Branches ändern so nie dieselbe Datei. Der Release faltet die Fragmente in `## [Unreleased]`.
 
 **Wie:**
 - Übersetzt (DE ↔ EN) werden die fertig abgestimmten, geänderten Abschnitte, nicht Zwischenstände.
