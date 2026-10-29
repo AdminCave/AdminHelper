@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: extra_config eines Tunnels nur in der Form, die der Agent annimmt — Task-Ledger
-Status: bereit · Branch: feature/frp-extra-config-keys · Review: am Ende
+Status: aktiv · Branch: feature/frp-extra-config-keys · Review: am Ende
 Spec: docs/features/frp-extra-config-keys.md
 Heavy: linux-full — Server-API (`POST`/`PUT /api/frp/tunnels`) und der frpc-Generator für gespeicherte Altwerte. Kein `scenario`: für jeden Tunnel, dessen `extra_config` die neuen Regeln erfüllt, bleibt die `frpc.toml` byte-gleich; kein Agent-, PKI- oder Install-Pfad. Kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,5 +26,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py tests/test_config_generator.py tests/test_frp_provision_sync.py
 Doku: docs/developer/server.html + docs/en/developer/server.html (`:119`, welche gespeicherte `extra_config` der Generator weglässt: auch eine, die die heutige Schlüssel- und Zahlenprüfung nicht besteht) · CHANGELOG.md (Fixed, umlautfrei)
 Abhängt von: T1
+
+### T3 — Funde der Abschlussprüfung: Kollisionsprüfung linear, Generator-Schlüssel gepinnt  [ ]
+Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_input_hardening.py
+Änderung: Die Kollisionsprüfung in `_check_tunnel_extra_config` vergleicht jeden Schlüssel mit allen bisherigen und wächst quadratisch (reviewer und security, branch: 8000 Schlüssel ≈ 10 s im Event-Loop). Neu wie `keyTable.add` im Agent: ein dict Pfad → „ist Schlüssel“; je Schlüssel nur der Pfad selbst und seine Segment-Präfixe nachschlagen, danach die Präfixe als Tabelle eintragen, O(n·Tiefe). Der Fehlertext zu ungültigen Schlüsseln nennt das Verbot leerer Segmente. Tests: (a) 20000 verschiedene Schlüssel werden in unter 1 s angenommen; (b) die Schlüssel eines vom Generator geschriebenen `[[proxies]]` (stcp und https) sind genau `_GENERATOR_PROXY_KEYS` bzw. eine Teilmenge davon, damit eine neue Generator-Zeile die Liste nicht still überholt. Die bisherigen Fälle bleiben grün. Gegenprobe: (a) mit der alten Schleife rot.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py
+Doku: keine (Verhalten unverändert)
+Abhängt von: T2
 
 ## Entscheidungen
