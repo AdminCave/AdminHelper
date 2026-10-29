@@ -8,6 +8,7 @@ from typing import NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core import config
@@ -58,6 +59,9 @@ _WINDOW_SECONDS = 60
 # verify_password against it, so a missing username costs the same ~bcrypt time as a
 # wrong password — otherwise the short-circuit is a timing oracle for enumeration (3.94).
 _DUMMY_HASH = hash_password("login-timing-equalizer")
+# One key of its own; the two-key space of the identity locks (enrollment/models.py) does not
+# overlap with it.
+_BOOTSTRAP_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext('adminhelper.bootstrap'))"
 
 
 def _rate_limit_key(ip: str) -> str:
@@ -335,6 +339,9 @@ def bootstrap(
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
 
+    # Several workers serve this route: without the lock two calls with the token can both
+    # see "no user" and both create an admin. Held until the commit below.
+    db.execute(text(_BOOTSTRAP_LOCK_SQL))
     if db.query(User).count() > 0:
         # Server is already initialized – bootstrap is no longer possible.
         # Same response as 'no token active' to avoid disclosing the DB state.

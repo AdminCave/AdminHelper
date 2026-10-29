@@ -67,8 +67,10 @@ Dedup-Key: bug:server:cli.py:password-max-len
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cli.py tests/test_openapi_snapshot.py
 Doku: changelog.d/kern-server-1.md
 
-### T7 — Bootstrap: Prüfen und Anlegen unter einer Sperre (R-0942)  [ ]
+### T7 — Bootstrap: Prüfen und Anlegen unter einer Sperre (R-0942)  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/auth_router.py, apps/server/tests/test_bootstrap.py, changelog.d/kern-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5e971cb0 2026-10-29T18:03:54+01:00
+Review: approve (.ah-out/review/kern-server-1/T7.verdict.json)
 Änderung: `bootstrap` (`app/modules/users/auth_router.py:321-398`) nimmt vor der Prüfung „kein Nutzer“ einen Transaktions-Advisory-Lock auf Postgres (Form wie `app/modules/enrollment/models.py:108`) und hält ihn bis zum Commit. Test (Postgres): zwei gleichzeitige Bootstrap-Aufrufe mit gültigem Token und verschiedenen Namen → genau ein Admin, der andere 409.
 Beweis: Code-Lesung `auth_router.py:338-372` (feature/server-multiworker@572b6b5d)
 Dedup-Key: bug:server:auth_router.py:bootstrap

@@ -15,3 +15,6 @@
   ihrer Stelle ab.
 - **Server-CLI: Passwort ueber 128 Zeichen abgewiesen:** `create-admin` und `reset-admin` nahmen ein Passwort an,
   mit dem der Login (hoechstens 128 Zeichen) nie gelingen konnte; sie weisen es jetzt mit Exit 1 ab.
+- **Server: Bootstrap mit mehreren Workern legt genau einen Admin an:** Zwei gleichzeitige Aufrufe mit dem
+  Setup-Token konnten zwei Admins anlegen; die Pruefung "noch kein Nutzer" und das Anlegen laufen jetzt unter einer
+  Postgres-Sperre.
