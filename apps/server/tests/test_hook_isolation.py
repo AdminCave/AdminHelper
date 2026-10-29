@@ -15,9 +15,12 @@ no unauthenticated RCE). Fix = HONEST posture + partial hardening:
 """
 
 import os
+import pathlib
 import signal
+import stat
 import time
 
+from app.core import config
 from app.modules.hooks.script_runner import run_hook_script
 
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")
@@ -193,6 +196,18 @@ def test_hook_run_with_a_background_process_ends_soon_with_the_result(tmp_path):
     assert res["result"] == {"ok": True}, res
 
 
+def test_hook_run_keeps_the_result_a_background_process_in_its_own_session_holds_open(tmp_path):
+    # R-0846: the worker has written its result before it exits; the background process keeps the
+    # pipe open past both graces, and the runner still evaluates what it read until then.
+    pid_file = tmp_path / "sleep.pid"
+    try:
+        res = run_hook_script(_background_sleep_script(pid_file, True), "webhook", {}, timeout=5)
+    finally:
+        _kill_background_sleep(pid_file)
+    assert res["success"] is True, res
+    assert res["result"] == {"ok": True}, res
+
+
 def test_hook_reader_grace_is_one_deadline_for_both_streams(monkeypatch):
     # A grandchild holds stdout and stderr open past the worker's exit. Both readers share one
     # grace: the second join gets what is left of it, so the held run takes one grace longer
@@ -244,11 +259,63 @@ def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
     assert "PROXY=http://proxy.example:3128" in joined, res
 
 
-def test_hook_worker_env_falls_back_for_home_and_lang(monkeypatch):
-    # docs/developer/hooks.html: HOME falls back to /tmp and LANG to C.UTF-8 when the server has
-    # neither.
+def test_hook_worker_env_falls_back_for_home_and_lang(monkeypatch, tmp_path):
+    # docs/developer/hooks.html: HOME falls back to a private directory under DATA_DIR and LANG to
+    # C.UTF-8 when the server has neither.
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     _unset_server_env(monkeypatch, "HOME", "LANG")
-    assert _worker_env("HOME", "LANG") == {"HOME": "/tmp", "LANG": "C.UTF-8"}
+    assert _worker_env("HOME", "LANG") == {"HOME": str(tmp_path / "hooks-home"), "LANG": "C.UTF-8"}
+
+
+def test_hook_home_fallback_is_created_0700(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    _unset_server_env(monkeypatch, "HOME")
+    previous = os.umask(0)
+    try:
+        assert _worker_env("HOME") == {"HOME": str(tmp_path / "hooks-home")}
+    finally:
+        os.umask(previous)
+    home = tmp_path / "hooks-home"
+    assert home.is_dir()
+    assert stat.S_IMODE(home.stat().st_mode) == 0o700
+
+
+def test_hook_home_fallback_with_wider_rights_is_narrowed_to_0700(monkeypatch, tmp_path):
+    home = tmp_path / "hooks-home"
+    home.mkdir()
+    home.chmod(0o777)
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    _unset_server_env(monkeypatch, "HOME")
+    assert _worker_env("HOME") == {"HOME": str(home)}
+    assert stat.S_IMODE(home.stat().st_mode) == 0o700
+
+
+def test_hook_home_fallback_that_is_not_a_directory_fails_the_run(monkeypatch, tmp_path, caplog):
+    # The caller sees the exception type only; the path is in the server log.
+    (tmp_path / "hooks-home").write_text("")
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    _unset_server_env(monkeypatch, "HOME")
+    res = run_hook_script("result['ok'] = True", "webhook", {})
+    assert res["success"] is False, res
+    assert res["error"] == "Hook HOME unusable: FileExistsError", res
+    assert str(tmp_path) not in repr(res)
+    assert str(tmp_path / "hooks-home") in caplog.text
+
+
+def test_a_relative_data_dir_gives_an_absolute_hook_home(monkeypatch, tmp_path):
+    # The worker runs with cwd=server_dir, so a relative HOME would point elsewhere.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "DATA_DIR", pathlib.Path("data"))
+    (tmp_path / "data").mkdir()
+    _unset_server_env(monkeypatch, "HOME")
+    assert _worker_env("HOME") == {"HOME": str(tmp_path.resolve() / "data" / "hooks-home")}
+
+
+def test_server_home_is_passed_through_unchanged(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setenv("HOME", "/srv/somewhere")
+    assert _worker_env("HOME") == {"HOME": "/srv/somewhere"}
+    assert not (tmp_path / "hooks-home").exists()
 
 
 # Inside a venv site.ENABLE_USER_SITE is always False, so the tests check the flag that -s and
@@ -301,12 +368,12 @@ def test_hook_worker_env_sets_pythonnousersite():
     assert _worker_env("PYTHONNOUSERSITE") == {"PYTHONNOUSERSITE": "1"}
 
 
-def test_hook_worker_runs_without_user_site_on_the_home_fallback(monkeypatch):
-    # The fallback case: with HOME=/tmp the user site would be a directory any local user can
-    # create.
+def test_hook_worker_runs_without_user_site_on_the_home_fallback(monkeypatch, tmp_path):
+    # The fallback case: the user site would sit under the fallback HOME.
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     _unset_server_env(monkeypatch, "HOME")
     flags = _no_user_site_flags()
-    assert flags == {"HOME": "/tmp", "worker": "1", "child": "1"}, flags
+    assert flags == {"HOME": str(tmp_path / "hooks-home"), "worker": "1", "child": "1"}, flags
 
 
 def test_hook_worker_env_forwards_lowercase_proxy_vars_as_set(monkeypatch):

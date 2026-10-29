@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import math
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
@@ -194,6 +195,24 @@ def create_hook(
 _SAFE_WEBHOOK_HEADERS = {"content-type", "user-agent", "x-hook-source"}
 
 
+def _find_non_finite(payload) -> tuple | None:
+    """Location of a NaN or an infinity in the payload, if any.
+
+    Python's json reads NaN, Infinity and -Infinity although JSON has none of them, and the
+    answer cannot carry them back (JSONResponse writes with allow_nan=False): a script that
+    returned the payload made the answer a 500. Stack, not recursion, like _find_unstorable."""
+    stack: list[tuple[tuple, object]] = [((), payload)]
+    while stack:
+        loc, value = stack.pop()
+        if isinstance(value, float) and not math.isfinite(value):
+            return loc
+        if isinstance(value, dict):
+            stack.extend(((*loc, key), item) for key, item in value.items())
+        elif isinstance(value, list):
+            stack.extend(((*loc, i), item) for i, item in enumerate(value))
+    return None
+
+
 async def _do_trigger(token: str, request: Request, db: Session):
     # This helper must stay async (request.json(), run_in_threadpool), so the
     # sync pieces — Redis rate-limit increment and the DB lookup — must not run
@@ -226,6 +245,16 @@ async def _do_trigger(token: str, request: Request, db: Session):
                     "loc": ("body", *loc),
                     "msg": f"Value error, {reason}",
                     "input": value,
+                }
+            ]
+        )
+    if (loc := _find_non_finite(payload)) is not None:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", *loc),
+                    "msg": "Value error, must be a finite number",
                 }
             ]
         )
