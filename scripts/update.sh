@@ -25,9 +25,11 @@
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
 # runtime files + .env before the swap; on a failed swap, .env migration, agent-repo
 # refresh, image pull, or `docker compose up --wait` (recreate plus the health
-# check of every service that has one) it auto-rolls-back the runtime files + image
-# pins and says "zurueckgerollt" only when the old state comes up healthy again (use
-# --no-rollback to inspect the broken state). The updater updates
+# check of every service that has one), and on SIGINT, SIGTERM or SIGHUP (Ctrl-C,
+# kill, a dropped SSH session) once the snapshot exists, it auto-rolls-back the
+# runtime files + image pins and says "zurueckgerollt" only when the old state comes
+# up healthy again (use --no-rollback to inspect the broken state). The image pins
+# reach .env only after the pull. The updater updates
 # ITSELF: if the release ships a newer update.sh it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
@@ -442,7 +444,7 @@ update_agent_repo() {
 # turn healthy and fails on an unhealthy or exited container; a service without
 # one counts as soon as it runs (probed with Compose v5.5.1, docs/features/update-rollback.md).
 stack_up() {
-    log "Starte den Stack und warte auf die Healthchecks (Alembic laeuft beim Start)..."
+    log "Starting the stack and waiting for the health checks (Alembic runs at startup)..."
     docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}"
 }
 
@@ -568,12 +570,12 @@ restore_snapshot() {
 # limit, an image the release did not publish) comes before the recreate, so
 # nothing of the new version ever ran: the installed state is the snapshot plus the
 # old .env as a whole, pins of a floating tag included. No recreate needed. $1 says
-# what failed, $2 is the way on that --no-rollback names: once .env is pinned on
-# the target, a bare re-run would call the install current. $3 replaces what
-# --no-rollback says stays: a failed swap comes before the re-pin.
+# what failed, $2 is the way on that --no-rollback names: the new runtime files
+# stay, so --ref applies the release again. $3 replaces what --no-rollback says
+# stays: the pins reach .env only after the pull (pin_images).
 rollback_before_deploy() {
     if [ "$NO_ROLLBACK" = 1 ]; then
-        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien + Image-Pins bleiben stehen}, Container unveraendert. $2"
+        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien bleiben stehen, Image-Pins unveraendert}, Container unveraendert. $2"
     fi
     local incomplete=0
     echo >&2
@@ -622,11 +624,34 @@ swap_runtime_files() {
         fi
     done
 }
+# --- Abort by signal: roll back like a failure at the same point ------------
+# From here on files change. bash runs a trap only once the foreground command
+# ends; a dropped SSH session sends SIGHUP to the whole foreground process group,
+# so docker compose ends too. Before the recreate the containers are untouched,
+# after it they may run the new version. The rollback itself ignores further
+# signals. After SIGHUP the terminal is gone, so its messages go to a log file.
+DEPLOY_STARTED=0
+on_signal() {
+    trap '' INT TERM HUP
+    if [ "$1" = HUP ]; then
+        local logf
+        logf="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
+        ( umask 077; : >> "$logf" ) && exec >> "$logf" 2>&1
+    fi
+    if [ "$DEPLOY_STARTED" = 1 ]; then
+        rollback_after_deploy "interrupted by SIG$1"
+    fi
+    rollback_before_deploy "interrupted by SIG$1" \
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+}
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'on_signal HUP' HUP
 swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlgeschlagen" \
     "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
     "teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
 
-# --- .env migration: add new keys, fill new secrets, re-pin images ----------
+# --- .env migration: add new keys, fill new secrets --------------------------
 # One step: the caller tests the status, which turns set -e off in here, so every
 # part that can fail returns 1 itself, and the caller rolls the whole .env back.
 # Additive only: append active KEY=value from the new .env.example that .env is
@@ -650,15 +675,6 @@ migrate_env() {
     fi
     # Fill any newly-added empty secrets (idempotent — leaves set values alone).
     ./scripts/init-secrets.sh >/dev/null || return 1
-
-    # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
-    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}" || return 1
-    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}" || return 1
-    upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}" || return 1
-    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}" || return 1
-    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}" || return 1
-    chmod 600 .env 2>/dev/null || true
-    log "Images gepinnt auf :${TARGET_VER}"
 }
 migrate_env || rollback_before_deploy ".env-Migration fehlgeschlagen" \
     ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
@@ -707,9 +723,30 @@ rollback_after_deploy() {
 }
 
 # --- Deploy + health check, with automatic rollback on failure --------------
+# The target images, KEY=image, for the pull and the pins (vX.Y.Z -> :X.Y.Z).
+TARGET_IMAGES=()
+for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+    TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
+done
+# The pull gets the target images from the environment, which Compose ranks above
+# .env (docs/features/update-rollback.md): .env keeps the old pins until every image
+# is here, so an abort during the pull leaves nothing to undo in it.
 log "Ziehe die Images..."
-docker compose pull \
+env "${TARGET_IMAGES[@]}" docker compose pull \
     || rollback_before_deploy "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit/Image nicht veroeffentlicht?)" \
-        "Weiter mit ./scripts/update.sh --redeploy (gepinnte Images erneut ziehen und starten) oder --ref ${TARGET} (Release erneut anwenden)."
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+# One step, like migrate_env: the caller tests the status.
+pin_images() {
+    local kv
+    for kv in "${TARGET_IMAGES[@]}"; do
+        upsert_env "${kv%%=*}" "${kv#*=}" || return 1
+    done
+    chmod 600 .env 2>/dev/null || true
+    log "Images gepinnt auf :${TARGET_VER}"
+}
+pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \
+    ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
+    "neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
+DEPLOY_STARTED=1
 stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
 log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"

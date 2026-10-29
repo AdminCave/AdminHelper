@@ -65,12 +65,26 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # up` (and creates the marker), AH_TEST_UP_FAIL=always every one;
 # AH_TEST_UP_LOCK_ONCE=<marker> takes the write right of .env at the first
 # `compose up` (and creates the marker); AH_TEST_DOCKER_LOG records every call,
-# one per line ---
+# one per line; AH_TEST_PULL_LOG records, per pull, SERVER_IMAGE from the
+# environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
+# AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
+# and wait up to 30 s for <marker> ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
+block() {
+  : > "$1.started"
+  for _ in $(seq 300); do [ -e "$1" ] && return; sleep 0.1; done
+}
+case "$*" in
+  "compose pull"*)
+    [ -z "${AH_TEST_PULL_LOG:-}" ] \
+      || printf 'env=%s dotenv=%s\n' "${SERVER_IMAGE:-}" "$(grep -m1 '^SERVER_IMAGE=' .env)" >> "$AH_TEST_PULL_LOG"
+    [ -z "${AH_TEST_PULL_BLOCK:-}" ] || [ -e "$AH_TEST_PULL_BLOCK" ] || block "$AH_TEST_PULL_BLOCK" ;;
+  "compose up -d"*) [ -z "${AH_TEST_UP_BLOCK:-}" ] || [ -e "$AH_TEST_UP_BLOCK" ] || block "$AH_TEST_UP_BLOCK" ;;
+esac
 case "$*" in
   "compose up --help")
     if [ "${AH_TEST_NO_WAIT:-0}" = 1 ]; then echo "  -d, --detach   Detached mode"
@@ -520,12 +534,15 @@ out=$(AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
 # ── 17. --no-rollback: a pull failure leaves the new files for inspection ────
 INST="$WORK/inst17"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_PULL=1 run_update "$INST" --no-rollback 2>&1); rc=$?
+# The pins reach .env only after the pull, so they stay on 0.33.0; the new runtime
+# files stay for inspection.
 { [ $rc -ne 0 ] && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*--no-rollback' <<<"$out" \
-    && grep -q 'server:0.34.0' "$INST/.env"; } \
-  && ok "--no-rollback keeps the new state after a pull failure" || bad "--no-rollback pull failure: rc=$rc"
-# A bare re-run would now call 0.34.0 current, so the message has to name the way on.
-grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*--no-rollback.*--redeploy.*--ref v0\.34\.0' <<<"$out" \
-  && ok "--no-rollback pull failure names --redeploy and --ref v0.34.0" || bad "--no-rollback message: $out"
+    && grep -q 'marker: 0.34.0' "$INST/docker-compose.yml" && pinned_on "$INST" 0.33.0; } \
+  && ok "--no-rollback keeps the new files and the old pins after a pull failure" || bad "--no-rollback pull failure: rc=$rc"
+# --redeploy would pull the old pins; --ref applies the release again.
+{ grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*--no-rollback.*Image-Pins unveraendert.*--ref v0\.34\.0' <<<"$out" \
+    && ! grep -q -- '--redeploy' <<<"$(grep 'FEHLER: ' <<<"$out")"; } \
+  && ok "--no-rollback pull failure names --ref v0.34.0, not --redeploy" || bad "--no-rollback message: $out"
 
 # ── 18. --redeploy: nothing is swapped, a failed pull only needs a message ───
 INST="$WORK/inst18"; make_install 0.34.0 "$SRC_NEW" "$INST"
@@ -615,11 +632,13 @@ out=$(run_update "$WORK/inst20-http" 2>&1); rc=$?
   && ok "after an agent-repo failure the next run retries and lands on 0.34.0" \
   || bad "no retry after an agent-repo failure: rc=$rc"
 
-# ── 21. --no-rollback: an agent-repo failure leaves the new state, names the way on
+# ── 21. --no-rollback: an agent-repo failure leaves the new files, names the way on
 make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
 INST="$WORK/inst21"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_REPO_HTTP=500 run_update "$INST" --no-rollback 2>&1); rc=$?
-{ [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env"; } \
+# The repo refresh comes before the pull, and the pins after it.
+{ [ $rc -ne 0 ] && grep -q 'marker: 0.34.0' "$INST/docker-compose.yml" && pinned_on "$INST" 0.33.0 \
+    && grep -q 'Image-Pins unveraendert' <<<"$out"; } \
   && ok "--no-rollback keeps the new state after an agent-repo failure" \
   || bad "--no-rollback agent-repo failure: rc=$rc $out"
 # --redeploy never calls update_agent_repo: it would start 0.34.0 on the old ./repo.
@@ -752,7 +771,8 @@ left=$(find "$INST" -maxdepth 1 -name '.env*' ! -name .env ! -name .env.example 
 [ -z "$left" ] && ok "a .env write error left no copy of .env behind" || bad ".env write error left: $left"
 grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
   && ok "a .env write error rolled back the runtime files" || bad ".env write error: compose not rolled back"
-{ grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
+# The pull comes before the pin now and touches no container.
+{ grep -q '^compose version' "$DLOG" && ! grep -q '^compose up -d' "$DLOG"; } \
   && ok "a .env write error touched no container" || bad ".env write error: docker calls $(tr '\n' ';' < "$DLOG")"
 # --no-rollback: .env may be half migrated, so only --ref re-applies the release.
 INST="$WORK/inst28b"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -1341,6 +1361,61 @@ out=$(AH_TEST_NO_WAIT=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=
     && [ -z "$(find "$INST/backups" -mindepth 1 2>/dev/null)" ] && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
   && ok "a compose without --wait: no backup, no snapshot, no pull or up, .env unchanged" \
   || bad "compose without --wait changed something: $(tr '\n' ';' < "$DLOG") backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"
+
+# ── 44. the pins reach .env after the pull; a signal rolls back ─────────────
+# A pin before the pull left .env on the target when the pull was cut short (a
+# dropped SSH session): the next run called the install current with the old
+# containers. The pull now gets the target images from the environment.
+INST="$WORK/inst44a"; make_install 0.33.0 "$SRC_OLD" "$INST"
+PLOG="$WORK/inst44a.pull"; : > "$PLOG"
+out=$(AH_TEST_PULL_LOG="$PLOG" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(cat "$PLOG")" = "env=ghcr.io/admincave/adminhelper/server:0.34.0 dotenv=SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:0.33.0" ] \
+    && pinned_on "$INST" 0.34.0; } \
+  && ok "the pull takes the target images from the environment, .env is pinned after it" \
+  || bad "pull env/pins: rc=$rc $(cat "$PLOG")"
+# Run update.sh in its own process group, as a login shell runs the foreground
+# job; $1 install dir, $2 marker, $3 the env var that blocks, $4 the signal.
+# Sets rc and leaves stdout/stderr in $1.out.
+interrupt_update() {
+  local inst="$1" marker="$2" var="$3" sig="$4" pid pgid
+  ( cd "$inst" && exec env "$var=$marker" AH_TEST_DOCKER_LOG="$inst.docker" AH_TEST_HEALTH=0 \
+      setsid bash ./scripts/update.sh ) > "$inst.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 300); do [ -e "$marker.started" ] && break; sleep 0.1; done
+  pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
+  if [ -e "$marker.started" ] && [ -n "$pgid" ]; then kill -"$sig" -- "-$pgid"; fi
+  : > "$marker"
+  rc=0; wait "$pid" || rc=$?
+}
+snapshot_install() { ( cd "$1" && sha256sum .env docker-compose.yml .env.example scripts/* ); }
+INST="$WORK/inst44b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+interrupt_update "$INST" "$WORK/inst44b.block" AH_TEST_PULL_BLOCK HUP
+sed 's/^/    │ /' "$INST.out"
+hup_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -q '^compose up -d' "$INST.docker"; } \
+  && ok "SIGHUP during the pull: .env, compose and scripts as before, no container started" \
+  || bad "SIGHUP during the pull: rc=$rc, docker $(tr '\n' ';' < "$INST.docker")"
+{ [ -n "$hup_log" ] && grep -q 'FEHLER: interrupted by SIGHUP.*zurueckgerollt auf 0\.33\.0' "$hup_log"; } \
+  && ok "SIGHUP: the rollback is told in a 0600 backups/update-*.log" || bad "SIGHUP log: ${hup_log:-none} $(find "$INST/backups" -maxdepth 1 -printf '%f %m; ')"
+out=$(run_update "$INST" --check 2>&1)
+{ grep -q 'Installiert: 0.33.0' <<<"$out" && grep -q 'Update verfuegbar' <<<"$out"; } \
+  && ok "after SIGHUP --check reports 0.33.0 and an update" || bad "SIGHUP --check: $out"
+INST="$WORK/inst44c"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+interrupt_update "$INST" "$WORK/inst44c.block" AH_TEST_PULL_BLOCK TERM
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -q '^compose up -d' "$INST.docker" \
+    && grep -q 'FEHLER: interrupted by SIGTERM.*zurueckgerollt auf 0\.33\.0' "$INST.out" \
+    && [ -z "$(find "$INST/backups" -maxdepth 1 -name 'update-*.log')" ]; } \
+  && ok "SIGTERM during the pull: rolled back, message on stderr, no log file" \
+  || bad "SIGTERM during the pull: rc=$rc $(cat "$INST.out")"
+INST="$WORK/inst44d"; make_install 0.33.0 "$SRC_OLD" "$INST"
+interrupt_update "$INST" "$WORK/inst44d.block" AH_TEST_UP_BLOCK TERM
+{ [ $rc -ne 0 ] && pinned_on "$INST" 0.33.0 && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && [ "$(grep -c '^compose up -d --wait --wait-timeout ' "$INST.docker")" = 2 ] \
+    && grep -q 'FEHLER: interrupted by SIGTERM.*zurueckgerollt auf 0\.33\.0\.' "$INST.out"; } \
+  && ok "SIGTERM during compose up: rolled back after the deploy and started again" \
+  || bad "SIGTERM during compose up: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
 
 echo
 echo "──────────────────────────────────────────"
