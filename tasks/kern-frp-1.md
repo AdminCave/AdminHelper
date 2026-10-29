@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-1 · Review: pro Task
 Spec: docs/features/kern-frp-1.md (Roadmap R-0894, R-0926)
 Heavy: linux-full — Server-API (FRP-Generator-Routen); kein Wire-Format- oder Install-Pfad ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,5 +32,12 @@ Dedup-Key: ref:server:frp/generate_router.py:active-tunnel-prefilter
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py
 Doku: changelog.d/kern-frp-1.md, docs/developer/api-reference.html:150-153 + EN
 Abhängt von: T1
+
+### T3 — Entwickler-Doku: Bedingungen von active_tunnels vollständig (R-0894, Fund der Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html
+Änderung: Die Klammer zu `active_tunnels` im Absatz zum Agent-Sync (`docs/developer/server.html:101` + EN) nennt auch `local_port` 1–65535 und die gespeicherten Felder, die `without_refused_fields` prüft; erst damit stimmt „genau die `[[proxies]]` des Generators“.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/server.html:101 + EN
+Task-Review: am Ende
 
 ## Entscheidungen
