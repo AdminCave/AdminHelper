@@ -78,8 +78,10 @@ Dedup-Key: bug:docs:server.html:event-list-drift
 HEAD: b25c65a6
 Semantik: `docs/developer/hooks.html:53`, `:58` nennen `server.startup` und `alert.triggered` schon als Events für Hooks.
 
-### T4 — Betrieb: Logger des Schedulers vollständig (R-0609)  [ ]
+### T4 — Betrieb: Logger des Schedulers vollständig (R-0609)  [x]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @18283d92 2026-10-29T10:20:32+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T4.verdict.json)
 Änderung: `docs/admin/betrieb.html:124` / `docs/en/admin/operations.html:83`, Punkt `app.modules.hooks.scheduler`: neben gescheiterten Schedule-Hooks (Name, Fehlertext) auch die Warnung zu einem Schedule-Hook mit unlesbarem Intervall (einmal je Hook, `apps/server/app/modules/hooks/scheduler.py:210-215`) und die System-Jobs (Aufräumen von Blacklist, Enrollment- und Provision-Token, Zertifikats-Register, Audit, Benachrichtigungen, Outbox-Versand, frps-Überwachung; Ergebnis als INFO, ein Fehler mit Traceback, `:262-275`, Jobs `:304-467`); weiter im Log des `scheduler`-Dienstes. Die Job-Liste vor dem Schreiben neu greppen (`grep -n '_run_in_session("' apps/server/app/modules/hooks/scheduler.py`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG
