@@ -208,6 +208,43 @@ def apply_result(
     Returns (old_status, effective status, notification decision).
     """
     old_status = state.status if state else "pending"
+    eff_status, message, new_fail_count, new_ok_count = _damp(
+        check, state, old_status, result_status, message
+    )
+    state = _write_state(
+        db,
+        check,
+        state,
+        now,
+        eff_status,
+        message,
+        new_fail_count,
+        new_ok_count,
+        details,
+        keep_previous_details_when_absent,
+    )
+
+    # Alerting on a DISCREPANCY to the last reported status, not on the raw
+    # transition (sent-state, alert-sent-state T4): once a suppression
+    # (maintenance/host-down) is gone, the next cycle catches the pending
+    # report up even though the status itself did not change. A silent_ack
+    # (an ok that never had a reported problem) is pure bookkeeping and is
+    # recorded inline — no BG task. process_alert re-checks the decision
+    # under FOR UPDATE, so a stale read here only costs a no-op task.
+    decision = resolve_notification(state.notified_status, eff_status)
+    if decision == "silent_ack":
+        state.notified_status = eff_status
+    return old_status, eff_status, decision
+
+
+def _damp(
+    check: MonitorCheck,
+    state: MonitorState | None,
+    old_status: str,
+    result_status: str,
+    message: str,
+) -> tuple[str, str, int, int]:
+    """(effective status, message with its damping suffix, fail count, ok count)."""
     notified_status = state.notified_status if state else None
     prev_fail_count = state.fail_count if state else 0
     new_fail_count = next_fail_count(result_status, prev_fail_count)
@@ -232,7 +269,22 @@ def apply_result(
         message = f"{message} (failure {new_fail_count}/{check.consecutive_fails})"
     elif held:
         message = f"{message} (recovery {new_ok_count}/{check.consecutive_oks})"
+    return eff_status, message, new_fail_count, new_ok_count
 
+
+def _write_state(
+    db: Session,
+    check: MonitorCheck,
+    state: MonitorState | None,
+    now: datetime,
+    eff_status: str,
+    message: str,
+    new_fail_count: int,
+    new_ok_count: int,
+    details: dict | None,
+    keep_previous_details_when_absent: bool,
+) -> MonitorState:
+    """Creates the state of a check's first result or updates the existing one."""
     has_details = (details is not None) if keep_previous_details_when_absent else bool(details)
     details_json = json.dumps(details) if has_details else None
 
@@ -258,18 +310,7 @@ def apply_result(
         state.message = message
         if has_details or not keep_previous_details_when_absent:
             state.details = details_json
-
-    # Alerting on a DISCREPANCY to the last reported status, not on the raw
-    # transition (sent-state, alert-sent-state T4): once a suppression
-    # (maintenance/host-down) is gone, the next cycle catches the pending
-    # report up even though the status itself did not change. A silent_ack
-    # (an ok that never had a reported problem) is pure bookkeeping and is
-    # recorded inline — no BG task. process_alert re-checks the decision
-    # under FOR UPDATE, so a stale read here only costs a no-op task.
-    decision = resolve_notification(state.notified_status, eff_status)
-    if decision == "silent_ack":
-        state.notified_status = eff_status
-    return old_status, eff_status, decision
+    return state
 
 
 def execute_check(check_id: str) -> None:

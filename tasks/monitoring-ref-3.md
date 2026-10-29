@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alarm-Protokoll einmal, Typ-Tabellen gepinnt, Scheduler-Job nach dem Commit, Modulgrenzen, lange Funktionen — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-ref-3 · Review: pro Task
+Status: bereit · Branch: feature/monitoring-ref-3 · Review: pro Task
 Spec: docs/features/monitoring-ref-3.md (Roadmap R-0693, R-0694, R-0695, R-0696, R-0697, R-0728)
 Heavy: none — nur Interna von `apps/monitoring` (Alarm-Pfad, Push-Handler, Reihenfolge Commit/Scheduler, Typ-Tabellen, Modulgrenzen); keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung (T1: `regex=` und `pattern=` ergeben dasselbe Schema, Probe in der Spec), kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP- oder Install-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Die FOR-UPDATE-Tests (`tests/test_check_engine_concurrency.py`) fährt die PR-CI gegen Postgres (`ci.yml`, Job `monitoring`, `DATABASE_URL`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -214,8 +214,10 @@ Metrik: `evaluate` 171 → ≤ 60 Zeilen, längste neue Funktion ≤ 60 (AST, Py
 Dedup-Key: ref:cross:python:long-functions
 HEAD: 237b450a
 
-### T14 — apply_result in benannte Schritte (R-0728)  [ ]
+### T14 — apply_result in benannte Schritte (R-0728)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @573ed519 2026-10-29T12:51:56+01:00
+Review: approve (.ah-out/review/monitoring-ref-3/T14.verdict.json)
 Änderung: `apply_result` (`apps/monitoring/app/check_engine.py:167-272`, 106 Zeilen, davon 22 Zeilen Docstring und 11 Signatur) ruft zwei private Schritte: die Dämpfung (Zähler `next_fail_count`/`next_ok_count`, `effective_status`, `holds_recovery`, Kürzung auf `MAX_MESSAGE` vor dem Suffix, Suffix „(failure n/m)“ bzw. „(recovery n/m)“) und das Schreiben des States (neu anlegen oder aktualisieren samt INFO-Zeile `"Check '%s': %s -> %s (%s)"` und der Regel für `keep_previous_details_when_absent`); die Sent-State-Entscheidung (`resolve_notification`, `silent_ack`) bleibt im Rumpf. Docstring, Rückgabe und die Tokens, die `tests/test_architecture_transitions.py:25-32` in `check_engine.py` verlangt, bleiben. `apply_result` höchstens 70 Zeilen samt Docstring, keine neue Funktion über 60.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_architecture_transitions.py tests/test_execute_check.py tests/test_agent_report.py tests/test_check_engine_concurrency.py
 Doku: keine (intern)
@@ -236,3 +238,4 @@ HEAD: 237b450a
 - 2026-10-29 T11: Schritte heißen `_record_liveness`, `_refuse_unstorable_report` (der Name `_find_nul` ist auf main `find_unstorable`, T10), `_store_host_facts`, `_report_lines`, `_push_checks`, `_evaluate_push_check` (Savepoint; gibt Zeilen, Übergang und Alert erst nach dem Block zurück, `try`/`continue` bleibt im Rumpf), `_result_lines`, `_locked_state`, `_prev_details`, `_commit_evaluation`; Kommentare zum Warum ziehen wörtlich zu ihrem Schritt
 - 2026-10-29 T12: Die Hysterese-Buchführung (problems, status, problem_levels, prev_problems) trägt eine kleine Klasse `_Grader` statt einer Closure, damit die Schritte `_grade_usage`, `_grade_load`, `_grade_disks`, `_grade_temperatures` Modulfunktionen bleiben; `_resources_message`/`_resources_details` bauen Meldung und Details. Der Zweig „prev_problems ist kein dict“ ist jetzt ein Ausdruck in `_Grader.__init__` (Coverage zählt ihn nicht mehr als eigene Zeile: 46 → 45 fehlende Zeilen, kein Test entfiel).
 - 2026-10-29 T13: `evaluate` ruft `_absent_result`, `_smart_thresholds`, je Platte `_grade_disk` (Methode, weil sie wie zuvor `self._check_ata`/`self._check_nvme` ruft; darin `_check_common` für SMART-Urteil, Uncorrectables, Exit-Code-Bits und Temperatur mit eigener Liste wie `_check_ata`, 2.32), `_disk_metrics` und `_smart_result`. `if category != "critical": category = "warning"` steht als `_worse(category, "warning")` (gleichwertig bei Kategorie ok/warning/critical); Reihenfolge der Probleme bleibt, weil die Listen in derselben Folge verlängert werden.
+- 2026-10-29 T14: Die INFO-Zeile `"Check '%s': %s -> %s (%s)"` steht auf main schon in `log_transition` (Aufrufer nach dem Commit), nicht mehr in `apply_result`; `_write_state` schreibt also nur den State (neu oder aktualisiert, Regel `keep_previous_details_when_absent`) und gibt ihn zurück, `_damp` trägt Zähler, Hold, Kürzung und Suffix; die Sent-State-Entscheidung bleibt im Rumpf. `old_status` rechnet der Rumpf (Rückgabe) und reicht es an `_damp`.
