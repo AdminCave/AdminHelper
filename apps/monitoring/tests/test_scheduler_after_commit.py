@@ -6,7 +6,7 @@
 
 A job is built from the DB only when the service starts. Removing it before a commit that
 then fails leaves a check in the DB that no longer runs until the next restart; the
-template sync already orders it this way (template_sync._apply_scheduler_actions). The
+template sync already orders it this way (template_sync.apply_scheduler_actions). The
 order is invisible to a test that only looks at the end state, so an after_commit
 listener and a recorder for remove_check write one event list.
 """
