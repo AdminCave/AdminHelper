@@ -10,8 +10,10 @@ Heavy: none — Unit-Tests in Server und Monitoring, kein Stack-, PKI- oder Inst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — test_alert_secrets: entfernter Port und leerer Host (R-0831)  [ ]
+### T1 — test_alert_secrets: entfernter Port und leerer Host (R-0831)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_alert_secrets.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f1c8cdac 2026-10-30T00:45:29+01:00
+Review: am Ende (Branch-Review)
 Änderung: `test_alert_put_with_the_mask_for_another_relay_is_refused` bekommt die Parameter `port-removed` (`smtp_port: None`) und `host-blank` (`smtp_host: "  "`); beide sind ein anderes Relay als das gespeicherte und werden mit 422 abgelehnt. Gegenprobe: `_smtp_relay` ohne Port bzw. ohne Host im Vergleich macht den jeweiligen Fall rot (danach zurückgenommen).
 Beweis: R-0831 Code-Lesung apps/monitoring/tests/test_alert_secrets.py:321
 Dedup-Key: ref:tests:smtp-hardening:nits
