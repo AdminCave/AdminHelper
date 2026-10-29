@@ -51,7 +51,7 @@
           <ul>
             <li><strong>frps-Server-Cert</strong>: vom <code>ca-issuer</code> unter <code>tunnel</code> ausgestellt (ECDSA P-256, SAN = öffentliche frps-Adresse), beim ersten Start ins frps-Volume provisioniert. Der CA-Key erreicht das internet-zugewandte frps nie.</li>
             <li><strong>Agent-Tunnel-Cert</strong>: der Agent <em>enrollt</em> es beim Provisioning on-device (A4) — dasselbe <code>tunnel</code>-Cert dient Server-Pushes <em>und</em> dem frp-Tunnel.</li>
-            <li><strong>trustedCaFile</strong>: beidseitig die <code>tunnel</code>-Kette (Intermediate + Root).</li>
+            <li><strong>trustedCaFile</strong>: frps vertraut der <code>tunnel</code>-Kette und zusätzlich dem <code>access</code>-Intermediate, weil der Desktop-Visitor sein <code>access</code>-Zertifikat vorlegt. frpc (Agent und Desktop) prüft das frps-Zertifikat gegen die Kettendatei <code>ca.crt</code> aus seinem Enrollment.</li>
           </ul>
 
           <div class="callout callout-note" data-reveal>
@@ -73,6 +73,11 @@
           <p><strong>Abgelehnte Konfiguration:</strong> Besteht die neue Konfiguration die Prüfung des Supervisors nicht, übernimmt frps sie nicht und läuft mit der letzten gültigen weiter, also mit dem bisherigen Token. Der Block <em>Zustand des frps</em> auf der FRP-Seite zeigt dann „Läuft mit der letzten gültigen Konfiguration“ mit dem Grund, und Admins bekommen in der Glocke die Mitteilung „Neue FRP-Konfiguration nicht übernommen“. Agents und Desktops, die das neue Token schon haben, verbinden sich erst wieder, wenn frps eine gültige Konfiguration mit diesem Token übernommen hat. Gründe und Ereignisse erklärt <a href="./betrieb.html#frps-supervisor">Betrieb → frps-Supervisor</a>.</p>
 
           <p><strong>Gilt für jede Änderung an <code>frps.toml</code> und an den frps-Zertifikaten:</strong> Nicht nur die Token-Rotation — auch geänderte Ports, Dashboard-Zugangsdaten, <code>vhost</code>-Einstellungen, <code>max_ports_per_client</code> oder <code>extra_config</code> und ein vom <code>ca-issuer</code> erneuertes frps-Zertifikat übernimmt frps so selbst: kurzer Neustart, alle Tunnel einige Sekunden getrennt, Mitteilung an Admins und Nutzer mit Tunnel-Zugriff. Name und Server-Adresse stehen nicht in <code>frps.toml</code>; sie zu ändern oder die Konfiguration unverändert zu speichern startet frps nicht neu. Wird die FRP-Server-Konfiguration gelöscht, stoppt frps (Mitteilung „FRP-Server gestoppt“ an Admins).</p>
+
+          <h2 id="revoke-access">Zugang zum Tunnel entziehen</h2>
+          <p>Einen Benutzer löschen, ein Gerät widerrufen, eine Server-Zuordnung oder die Admin-Rolle entziehen sperrt die API, aber nicht den Tunnel. frps prüft beim Verbindungsaufbau nur <code>auth.token</code> und ob das Client-Zertifikat zur Kette passt; eine Sperrliste kennt frp nicht.</p>
+          <p>Die Visitor-Konfiguration eines Benutzers trägt <code>auth.token</code> und den <code>secretKey</code> jedes STCP-Tunnels, den er sieht (ein Admin alle aktiven STCP-Tunnel, sonst die seiner Server). Der Desktop hält sie, solange der Tunnel läuft, und eine Kopie bleibt gültig. Wer sie hat, erreicht diese Tunnel, bis ihre <code>secretKey</code>s rotiert sind (siehe <em>Tunneltypen</em> unten), und frps, bis sein eigenes Client-Zertifikat abläuft oder <code>auth.token</code> rotiert ist (Abschnitt oben, mit Wartungsfenster).</p>
+          <p>Deshalb: die <code>secretKey</code>s aller Tunnel rotieren, die der Benutzer sah; soll er frps gar nicht mehr erreichen, zusätzlich <code>auth.token</code> rotieren.</p>
 
           <h2 id="server-config">FRP-Server-Konfiguration bearbeiten</h2>
           <p>Die FRP-Server-Konfiguration pflegst du im Web-Interface auf der Seite <em>FRP</em>. Beim Bearbeiten gilt:</p>
