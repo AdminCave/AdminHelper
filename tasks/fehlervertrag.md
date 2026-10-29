@@ -179,8 +179,10 @@ Orakel: contract — die Hinweise hängen am Code, nicht am Text
 Dedup-Key: ref:desktop:error.rs:string-errors-at-ipc
 HEAD: 237b450a
 
-### T12 — Desktop-UI: 409 über `errStatus`, `request.ts` sagt, was gilt (R-0662)  [ ]
+### T12 — Desktop-UI: 409 über `errStatus`, `request.ts` sagt, was gilt (R-0662)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/infra.ts, apps/desktop/ui/src/lib/stores/infra.test.ts, apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.svelte, apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.test.ts, apps/desktop/ui/src/lib/api/request.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fa0ea5e3 2026-10-29T14:09:23+01:00
+Review: approve (.ah-out/review/fehlervertrag/T12.verdict.json)
 Änderung: `apps/desktop/ui/src/lib/stores/infra.ts:123` und `apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.svelte:135` prüfen `errStatus(err) === 409` statt `msg.startsWith('HTTP 409')`. `apps/desktop/ui/src/lib/api/request.ts:12-16` beschreibt, was gilt: ein Nicht-2xx lehnt mit einem `IpcError` ab (Status, Code, Text aus `detail` wie `errorDetail` im Web), der Kommentar `:44-45` ebenso. Tests: `infra.test.ts:124-132` und `BuiltinUpdateModal.test.ts:292-305` lehnen mit `new IpcError('<Text>', 'ERR_HTTP', 409)` ab, ihr Verhalten bleibt; neu je ein Gegenfall: ein Fehler ohne Status, dessen Text mit `HTTP 409` beginnt (`new Error('HTTP 409: …')`) → als Fehler gemeldet, nicht als Erfolg bzw. „kein Update mehr“. Zuerst rot: die Gegenfälle auf HEAD.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/infra.test.ts src/components/monitoring/BuiltinUpdateModal.test.ts
 Doku: keine (den sichtbaren Teil trägt der CHANGELOG-Eintrag von T6)
