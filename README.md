@@ -173,8 +173,9 @@ curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/
 It prints the admin login and an **enrollment token**. Redeem the token in the
 desktop client in a server workspace under *"Enroll this device with a token"* (server URL + token) — the client
 generates its mTLS cert **on-device** — then log in normally; export the browser
-`.p12` afterwards from the desktop. Flags: `--admin-password … --yes`
-(non-interactive), `--permissive` (opt out of enforced mTLS). Updates:
+`.p12` afterwards from the desktop. Flags: `--admin-password-file <file> … --yes`
+(non-interactive; the admin password is the first line of the file, keep the file
+readable only by you), `--permissive` (opt out of enforced mTLS). Updates:
 `./scripts/update.sh` inside the created `adminhelper/` directory — release-bound
 (moves to the latest published release, backup-first, verified bundle, automatic
 rollback on a failed health check; `--ref vX.Y.Z` pins, `--check` is a dry run).

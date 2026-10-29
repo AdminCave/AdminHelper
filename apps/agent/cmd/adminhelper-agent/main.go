@@ -5,9 +5,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -82,26 +86,56 @@ func diagnosticsCmd() *cobra.Command {
 
 // --- Provision subcommand (server-centric, replaces frpc init since v0.23.0) ---
 
+// runProvision is provision.Run; tests swap it to see what the command hands over.
+var runProvision = provision.Run
+
+// maxStdinToken bounds what --token-stdin reads: a stdin that never sends a newline
+// must not hold the command or grow its memory.
+const maxStdinToken = 4 << 10
+
+// readStdinToken returns the first line of in, trimmed, so the token does not have to
+// be a program argument (visible in the process list). Its errors never quote what
+// was read.
+func readStdinToken(in io.Reader) (string, error) {
+	line, err := bufio.NewReader(io.LimitReader(in, maxStdinToken)).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("read the provision token from stdin: %w", err)
+	}
+	if token := strings.TrimSpace(line); token != "" {
+		return token, nil
+	}
+	return "", errors.New("no provision token on stdin")
+}
+
 func provisionCmd() *cobra.Command {
 	var url, token, serverID, cacert, caFP string
-	var insecure bool
+	var insecure, tokenStdin bool
 
 	cmd := &cobra.Command{
 		Use:   "provision",
 		Short: "Provision this host against an AdminHelper server (server API key + optional monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return provision.Run(url, token, serverID, cacert, insecure, caFP)
+			if tokenStdin {
+				t, err := readStdinToken(cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				token = t
+			}
+			return runProvision(url, token, serverID, cacert, insecure, caFP)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "AdminHelper server URL (required)")
-	cmd.Flags().StringVar(&token, "token", "", "provision token (required)")
+	cmd.Flags().StringVar(&token, "token", "", "provision token (or --token-stdin)")
+	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the provision token from stdin")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "server ID (required)")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA certificate for a self-signed server")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.Flags().StringVar(&caFP, "ca-fp", "",
 		"SHA-256 fingerprint of the internal CA (shown in the provisioning tab) — verifies the first contact instead of TOFU")
 	cmd.MarkFlagRequired("url")
-	cmd.MarkFlagRequired("token")
+	cmd.MarkFlagsOneRequired("token", "token-stdin")
+	cmd.MarkFlagsMutuallyExclusive("token", "token-stdin")
 	cmd.MarkFlagRequired("server-id")
 	return cmd
 }
