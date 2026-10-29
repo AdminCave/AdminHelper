@@ -20,8 +20,10 @@ Dedup-Key: bug:server:tests/test_route_auth_gate.py:include-deps
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_route_auth_gate.py tests/test_stream.py
 Doku: keine (nur Tests)
 
-### T2 — Refresh-Token ohne jti/exp ist Reuse (R-0889)  [ ]
+### T2 — Refresh-Token ohne jti/exp ist Reuse (R-0889)  [x]
 Komponente: server · Dateien: apps/server/tests/test_auth_token_lifecycle.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @60ed4083 2026-10-29T16:18:37+01:00
+Review: approve (.ah-out/review/klein-tests-server-1/T2.verdict.json)
 Änderung: Test, dass ein sonst gültiges Refresh-Token ohne `jti`/`exp` am Rotationsschritt (`blacklist_token` False) 401 liefert und die Familie beendet (Watermark gesetzt).
 Dedup-Key: ref:server:auth_router.py:refresh-no-jti-test
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_auth_token_lifecycle.py
