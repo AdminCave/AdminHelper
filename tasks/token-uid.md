@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Tokens an die Benutzer-ID binden — Task-Ledger
-Status: aktiv · Branch: feature/token-uid · Review: am Ende
+Status: bereit · Branch: feature/token-uid · Review: am Ende
 Spec: docs/features/token-uid.md
 Heavy: linux-full — Server-Auth (Login, Refresh, alle JWT-Routen und der SSE-Stream gehen über `_get_user_from_token`); der Stack-Test meldet sich über das Gateway an. Kein `scenario` (kein Agent-, PKI- oder Install-Pfad), kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -18,8 +18,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_token_uid.py tests/test_auth.py tests/test_user_token_watermark.py tests/test_stream.py tests/test_openapi_snapshot.py
 Doku: docs/developer/server.html + docs/en/developer/server.html (Absatz „Token-Claims“: `uid`; Liste Rotation/Reuse-Detection: Zuordnung über die ID, Tokens ohne `uid` gelten nicht) · CHANGELOG.md (Changed, umlautfrei: Tokens nennen das Konto per ID; nach dem Update melden sich alle einmal neu an)
 
-### T2 — Test: der iat-Zweig bleibt gedeckt  [ ]
+### T2 — Test: der iat-Zweig bleibt gedeckt  [x]
 Komponente: server · Dateien: apps/server/tests/test_auth.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8821b1ed 2026-10-29T05:57:35+01:00
+Review: am Ende (Branch-Review)
 Änderung: `test_token_without_iat_rejected_when_watermark_set` (`test_auth.py:168`) baut seinen Token ohne `iat` auch mit `uid` = ID des Kontos; sonst scheitert er schon am fehlenden `uid`, und der `iat`-Zweig in `_get_user_from_token` bleibt ungedeckt (reviewer, branch). `test_missing_sub_returns_none` heißt `test_missing_uid_returns_none` (der Token hat weder `sub` noch `uid`, er scheitert am `uid`). Gegenprobe: der `iat`-Zweig auf `return user` → rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_auth.py tests/test_token_uid.py
 Doku: keine (nur Tests)

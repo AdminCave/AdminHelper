@@ -123,7 +123,7 @@ class TestTokenValidation:
         user = _get_user_from_token(token, db_session)
         assert user is None
 
-    def test_missing_sub_returns_none(self, db_session):
+    def test_missing_uid_returns_none(self, db_session):
         token = create_access_token({})
         user = _get_user_from_token(token, db_session)
         assert user is None
@@ -177,6 +177,7 @@ class TestPasswordResetRevocation:
         legacy = jwt.encode(
             {
                 "sub": admin_user.username,
+                "uid": admin_user.id,
                 "type": "access",
                 "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
                 "jti": "legacy-no-iat",
