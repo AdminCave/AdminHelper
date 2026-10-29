@@ -50,8 +50,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien DE+EN
 Dedup-Key: bug:docs:developer/index.html:frpc-placeholder
 
-### T5 — Agent-Deployment: `--token-stdin` in den manuellen Beispielen (R-0863, nur Doku)  [ ]
+### T5 — Agent-Deployment: `--token-stdin` in den manuellen Beispielen (R-0863, nur Doku)  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1574c40a 2026-10-29T13:13:49+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T5.verdict.json)
 Änderung: Die zwei manuellen Beispiele (`agent-deployment.html:147-156`, EN `:146-155`, Linux und PowerShell) von `provision --token <…>` auf `--token-stdin` umstellen (Token über stdin; Aufruf in `apps/agent` gegenlesen, Flag-Tabelle `:178` beachten). Nicht in dieser Task: `postinst`, `adminhelper-agent.spec`, `packaging_rpm_test.go` (Install-Paketierung, offen in der Notiz von R-0863).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
