@@ -4,13 +4,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Postgres: eine Rolle je Dienst statt des gemeinsamen Superusers — Task-Ledger
-Status: geplant · Branch: feature/db-roles · Review: pro Task
+Status: aktiv · Branch: feature/db-roles · Review: pro Task
 Spec: docs/features/db-roles.md
 Heavy: linux-full — `docker-compose.yml`, Server-Entrypoint, alle Dienste mit Postgres; der Sammellauf fährt `integration_stack` und `upgrade_path_test.sh` (letztes Release mit Bestandsdaten → dieser Stand). `scenario --agents 1` vor dem Merge (Agent-Report über monitoring mit neuer Rolle; Kevin fragen). Kein `windows`. PR merged Kevin (Datenmigration, `update.sh`-Pfad über `init-secrets.sh`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — `app.db_roles`: Rollen, Eigentum, CONNECT und die Rechte des ca-issuer  [?] (Kevin: Plan freigeben; Offene Frage 1 Scheduler-Rolle)
+### T1 — `app.db_roles`: Rollen, Eigentum, CONNECT und die Rechte des ca-issuer  [ ]
 Komponente: server · Dateien: apps/server/app/db_roles.py, apps/server/docker-entrypoint.sh, apps/server/tests/test_db_roles_sql.py, scripts/tests/db_roles_test.sh
 Änderung: Neues Modul (SPDX) mit zwei Befehlen. `setup` (Superuser aus `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`): legt `ah_server`, `ah_scheduler`, `ah_monitor`, `ah_ca` an bzw. setzt ihr Passwort aus `SERVER_DB_PASSWORD` … `CA_DB_PASSWORD` (`NOSUPERUSER NOCREATEDB NOCREATEROLE LOGIN`), legt `adminhelper_monitor` an, falls sie fehlt, setzt die Eigentümer (DB, Schema `public`, jede Tabelle, Sequenz, Sicht und jeden Typ in `public`) auf `ah_server` bzw. `ah_monitor`, entzieht `CONNECT` für `PUBLIC` und gibt es den Rollen ihrer DB, `ALTER DEFAULT PRIVILEGES FOR ROLE ah_server` DML für `ah_scheduler`. `grant-ca` (als `ah_server` nach `alembic upgrade head` im Server-Entrypoint, `docker-entrypoint.sh:44`): `SELECT/INSERT/UPDATE` wie `apps/ca-issuer/app/db.py` sie braucht auf `enrollment_tokens`, `revoked_identities`, `device_lines`, `issued_certificates`, `certificate_register_state` (+ Sequenzen), sonst nichts. Beide idempotent; Bezeichner per `psycopg.sql.Identifier`, Passwörter als Parameter, nie im Log. Rollennamen per Umgebung überschreibbar (Tests im geteilten Cluster). Tests: `test_db_roles_sql.py` (SQL-Erzeugung, ohne DB); `scripts/tests/db_roles_test.sh` (Wegwerf-`postgres:17-alpine`, Server-Venv): frische DB und Bestand (Tabellen als Superuser angelegt) → nach `setup` und `grant-ca` besitzt `ah_server` alles in `public`, keine Rolle ist Superuser, `ah_ca` liest `users` nicht und verbindet sich nicht mit `adminhelper_monitor`, `ah_monitor` nicht mit `adminhelper`, `ah_scheduler` darf `INSERT` auf eine später von `ah_server` angelegte Tabelle; zweiter Lauf ändert nichts. Zuerst rot: alles (Modul fehlt).
 Verify: bash scripts/dev/verify.sh server scripts --strict
@@ -37,3 +37,4 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task
 
 ## Entscheidungen
+- 2026-10-29 Kevin: Plan freigegeben; der Scheduler bekommt eine eigene Rolle mit nur DML (Offene Frage 1).
