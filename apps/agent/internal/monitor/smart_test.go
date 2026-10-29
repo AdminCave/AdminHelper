@@ -351,6 +351,33 @@ func TestCollectSmartSomeDisksReadable(t *testing.T) {
 	}
 }
 
+func TestCollectSmartPassesItsContextToEveryCall(t *testing.T) {
+	// The scan and each device query run under the collector's context, not a fresh one: that
+	// is what lets the end of the run's context stop them.
+	type ctxKey struct{}
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda": {out: ataFixture}, "/dev/nvme0": {out: nvmeFixture},
+	})
+	fake := smartctlCLI.run
+	var mu sync.Mutex
+	got := map[string]bool{}
+	smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+		mu.Lock()
+		got[args[len(args)-1]] = c.Value(ctxKey{}) == t.Name()
+		mu.Unlock()
+		return fake(c, timeout, name, args...)
+	}
+	collectSmart(context.WithValue(context.Background(), ctxKey{}, t.Name()))
+	if len(got) != 3 {
+		t.Fatalf("smartctl calls = %v, want the scan and two devices", got)
+	}
+	for call, ok := range got {
+		if !ok {
+			t.Errorf("the call ending in %s did not get the collector's context", call)
+		}
+	}
+}
+
 func TestCollectSmartStopsAtTheEndOfTheContext(t *testing.T) {
 	// The queries run in parallel, so the loop checks the context before it starts each one, and every
 	// query that runs ends with it: a disk read before stays, a query the context ended drops out.
