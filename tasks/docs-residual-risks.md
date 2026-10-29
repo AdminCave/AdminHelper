@@ -154,8 +154,10 @@ Dedup-Key: bug:dev:data-dir-not-ignored
 HEAD: b25c65a6
 Semantik: R-0602 (Dedup `ref:docs:development-monitoring-db-fallback`) in derselben Task, weil sie dieselbe Datei trifft. `feature/docs-drift` übernimmt `DATA_DIR=../data` in `docs/developer/index.html` (DE `:92`, EN `:65`); die `.gitignore`-Zeile deckt auch diese Kopien, ohne dass T9 an docs-drift hängt.
 
-### T10 — Compose-Kommentar und englische Meldungen des Monitoring-Entrypoints (R-0732)  [ ]
+### T10 — Compose-Kommentar und englische Meldungen des Monitoring-Entrypoints (R-0732)  [x]
 Komponente: server · Dateien: docker-compose.yml, apps/monitoring/docker-entrypoint.sh, apps/server/tests/test_images_exec_only.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c7ba607f 2026-10-29T11:08:56+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T10.verdict.json)
 Änderung: (1) `docker-compose.yml:85-87`, letzter Satz des Kommentars: statt „Only the monitoring entrypoint runs psql and needs it.“ etwa „Only the monitoring entrypoint opens a session (psycopg, to create its database) and needs it.“ Nur dieser Kommentar; `feature/compose-hardening` und `feature/smtp-hardening` ändern die Datei an anderen Stellen. (2) `apps/monitoring/docker-entrypoint.sh:51` und `:54`, die zwei Meldungen des Python-Heredocs (seit PR #255 neu): `[entrypoint] Creating database {name}...` und `[entrypoint] ERROR: database {name}: {exc}`; die deutschen `echo`-Zeilen davor und danach sind Alt-Bestand und bleiben. (3) `apps/server/tests/test_images_exec_only.py:347` und `:357` auf die neuen Texte. Zuerst rot: (3) allein auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py
 Doku: keine (Kommentar und Log-Texte; keine Doku zitiert sie, `git grep -n 'Lege Datenbank' -- docs` leer); kein CHANGELOG
