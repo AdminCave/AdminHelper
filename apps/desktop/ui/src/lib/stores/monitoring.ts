@@ -5,7 +5,7 @@
 // Monitoring store: holds checks, servers, filters, alert rules, alert log.
 // Auto-refresh via activate()/deactivate() from the monitoring page.
 
-import { errMsg, SESSION_EXPIRED } from '$lib/utils/errors';
+import { errMsg, isSessionExpired } from '$lib/utils/errors';
 import { writable, derived } from 'svelte/store';
 import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
@@ -191,7 +191,7 @@ export async function loadServers(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, servers: [] }));
     const msg = errMsg(err);
-    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+    if (!isSessionExpired(err)) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -243,7 +243,7 @@ export async function loadMonitoring(): Promise<void> {
       checks: [],
       loading: false,
       hasLoaded: true,
-      error: msg === SESSION_EXPIRED ? null : msg,
+      error: isSessionExpired(err) ? null : msg,
     }));
   }
 }
@@ -257,7 +257,7 @@ export async function loadAlerts(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, alerts: [] }));
     const msg = errMsg(err);
-    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+    if (!isSessionExpired(err)) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -270,7 +270,7 @@ export async function loadAlertLog(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, log: [] }));
     const msg = errMsg(err);
-    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+    if (!isSessionExpired(err)) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -383,7 +383,7 @@ export async function loadTemplates(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, templates: [] }));
     const msg = errMsg(err);
-    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+    if (!isSessionExpired(err)) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 

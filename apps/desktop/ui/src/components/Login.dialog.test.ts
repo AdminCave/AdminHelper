@@ -11,9 +11,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage, tNow } from '$lib/i18n';
 import type { ResetOutcome } from '$lib/bridge';
+import { IpcError } from '$lib/utils/errors';
 
-const REVOKED =
-  'Login fehlgeschlagen (403 Forbidden): {"detail":"ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device identity and register the device again."}';
+const REVOKED = new IpcError(
+  'This device certificate is no longer valid. Reset the device identity and register the device again.',
+  'ERR_CERT_REVOKED',
+  403,
+);
 
 const h = vi.hoisted(() => ({
   login: vi.fn(),
@@ -54,7 +58,7 @@ afterEach(() => {
 
 // Signs in with a revoked certificate, clicks the reset and returns the question.
 async function askReset(container: HTMLElement): Promise<HTMLElement> {
-  h.login.mockRejectedValueOnce(new Error(REVOKED));
+  h.login.mockRejectedValueOnce(REVOKED);
   const url = container.querySelector<HTMLInputElement>('input[type="url"]')!;
   const user = container.querySelector<HTMLInputElement>('input[type="text"]')!;
   const pass = container.querySelector<HTMLInputElement>('input[type="password"]')!;

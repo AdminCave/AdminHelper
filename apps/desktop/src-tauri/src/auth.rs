@@ -44,21 +44,12 @@ const NGINX_NO_CLIENT_CERT: &str = "No required SSL certificate was sent";
 /// The error a failed login reports. The gateway's no-certificate page becomes a
 /// stable code the login screen keys its hint off (ERR_* pattern, Login.svelte,
 /// like ERR_TLS_UNKNOWN_ISSUER in error.rs): the prose may change, the code must
-/// not (R-0222). Any other answer stays the status plus the redacted body.
+/// not (R-0222). Any other answer is the server's refusal (`AppError::http`).
 fn login_failure(status: reqwest::StatusCode, body: &str) -> AppError {
     if status == reqwest::StatusCode::BAD_REQUEST && body.contains(NGINX_NO_CLIENT_CERT) {
-        return AppError::Validation(
-            "ERR_MTLS_CERT_REQUIRED: The server requires a device certificate (mTLS is \
-             enforced). Enroll this device with a one-time enrollment token from your \
-             administrator."
-                .to_string(),
-        );
+        return AppError::MtlsCertRequired;
     }
-    AppError::Validation(format!(
-        "Login fehlgeschlagen ({}): {}",
-        status,
-        crate::diagnostics::redact_body(body)
-    ))
+    AppError::http(status.as_u16(), body)
 }
 
 /// Signs in and keeps the session in `session`, together with `allow_self_signed`: every
@@ -252,7 +243,9 @@ mod tests {
 
     #[test]
     fn the_gateway_no_cert_page_becomes_the_stable_code() {
-        let msg = login_failure(StatusCode::BAD_REQUEST, NGINX_496_PAGE).to_string();
+        let err = login_failure(StatusCode::BAD_REQUEST, NGINX_496_PAGE);
+        assert_eq!(err.code(), "ERR_MTLS_CERT_REQUIRED");
+        let msg = err.to_string();
         assert!(msg.starts_with("ERR_MTLS_CERT_REQUIRED: "), "{msg}");
         assert!(
             !msg.contains("<html>"),
@@ -260,23 +253,43 @@ mod tests {
         );
     }
 
+    /// The refusal of `login_failure(status, body)` as it crosses the IPC.
+    fn refusal_of(status: StatusCode, body: &str) -> serde_json::Value {
+        serde_json::to_value(login_failure(status, body)).unwrap()
+    }
+
     #[test]
-    fn other_failures_keep_the_status_and_the_body() {
-        for (status, body) in [
-            (StatusCode::BAD_REQUEST, "{\"detail\":\"bad request\"}"),
-            (
+    fn other_failures_carry_status_code_and_detail() {
+        assert_eq!(
+            refusal_of(StatusCode::BAD_REQUEST, r#"{"detail":"bad request"}"#),
+            serde_json::json!({ "code": "ERR_HTTP", "message": "bad request", "status": 400 })
+        );
+        assert_eq!(
+            refusal_of(
                 StatusCode::UNAUTHORIZED,
-                "{\"detail\":\"Invalid credentials\"}",
+                r#"{"detail":"Invalid credentials"}"#
             ),
-            // The page text under another status is not the gateway's 496 answer.
-            (StatusCode::FORBIDDEN, NGINX_496_PAGE),
-            (StatusCode::INTERNAL_SERVER_ERROR, NGINX_496_PAGE),
+            serde_json::json!({ "code": "ERR_HTTP", "message": "Invalid credentials", "status": 401 })
+        );
+        assert_eq!(
+            refusal_of(
+                StatusCode::FORBIDDEN,
+                r#"{"detail":"ERR_CERT_USER_MISMATCH: The client certificate belongs to another user.","code":"ERR_CERT_USER_MISMATCH"}"#
+            ),
+            serde_json::json!({
+                "code": "ERR_CERT_USER_MISMATCH",
+                "message": "The client certificate belongs to another user.",
+                "status": 403
+            })
+        );
+        // The page text under another status is not the gateway's 496 answer.
+        for (status, text) in [
+            (StatusCode::FORBIDDEN, "HTTP 403"),
+            (StatusCode::INTERNAL_SERVER_ERROR, "HTTP 500"),
         ] {
-            let msg = login_failure(status, body).to_string();
-            assert!(!msg.contains("ERR_MTLS_CERT_REQUIRED"), "{status}: {msg}");
-            assert!(
-                msg.starts_with(&format!("Login fehlgeschlagen ({status}): ")),
-                "{status}: {msg}"
+            assert_eq!(
+                refusal_of(status, NGINX_496_PAGE),
+                serde_json::json!({ "code": "ERR_HTTP", "message": text, "status": status.as_u16() })
             );
         }
     }
@@ -284,9 +297,12 @@ mod tests {
     #[test]
     fn other_failures_still_redact_the_body() {
         let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
-        let msg = login_failure(StatusCode::UNAUTHORIZED, &format!("token {jwt}")).to_string();
+        let body = serde_json::json!({ "detail": format!("token {jwt}") }).to_string();
+        let msg = login_failure(StatusCode::UNAUTHORIZED, &body).to_string();
         assert!(msg.contains("<redacted-jwt>"), "{msg}");
         assert!(!msg.contains(jwt), "{msg}");
+        let msg = login_failure(StatusCode::UNAUTHORIZED, &format!("token {jwt}")).to_string();
+        assert_eq!(msg, "HTTP 401");
     }
 
     const SERVER: &str = "https://adminhelper.example:8443";

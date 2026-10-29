@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { errRaw, withoutErrorCodes } from '$lib/utils/errors';
+  import { errCode, errRaw, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setAllowSelfSignedCerts, settings } from '$lib/stores/session';
   import { context, openLauncher, reloadContextForUrl } from '$lib/stores/workspace';
@@ -41,6 +41,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let password = $state('');
   let enrollToken = $state('');
   let error = $state('');
+  // The code of the refusal behind `error`: the helpers below branch on it, never on the
+  // text, which can carry the server's words (R-0709).
+  let errorCode = $state<string | undefined>();
   // What a reload that ended the session left to say (session expired, R-0430).
   let info = $state(takeLoginNotice());
   let busy = $state(false);
@@ -54,39 +57,42 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // The original message, shown inline (code stripped) if the user declines.
   let trustError = $state('');
 
+  function showError(text: string, code?: string): void {
+    error = text;
+    errorCode = code;
+  }
+
   function switchMode(next: 'login' | 'enroll'): void {
     mode = next;
-    error = '';
+    showError('');
     info = '';
   }
 
   // A pinned-certificate / enrolled-CA mismatch (server reinstall or MITM) is a
   // dead end here otherwise: the only reset actions live in the settings modal,
   // which is unreachable until logged in. Detect it and offer the matching reset
-  // right on the login screen. Match the backend's stable, language-independent
-  // error codes (not its German prose, which is free to change / be localized):
+  // right on the login screen. Branch on the backend's stable code:
   // ERR_CA_PIN_MISMATCH is the enrolled-CA case (reset device identity),
-  // ERR_TOFU_PIN_MISMATCH the self-signed leaf case (reset pin). The codes arrive
-  // buried in the reqwest source chain, so match them anywhere in the string.
-  let caPinError = $derived(error.includes('ERR_CA_PIN_MISMATCH'));
-  let pinError = $derived(error.includes('ERR_TOFU_PIN_MISMATCH') || caPinError);
+  // ERR_TOFU_PIN_MISMATCH the self-signed leaf case (reset pin).
+  let caPinError = $derived(errorCode === 'ERR_CA_PIN_MISMATCH');
+  let pinError = $derived(errorCode === 'ERR_TOFU_PIN_MISMATCH' || caPinError);
   // Under enforced mTLS a device without a certificate is turned away at the
   // gateway before the login (auth.rs, R-0222): name that and offer the token
   // form instead of the raw message.
-  let mtlsRequired = $derived(error.includes('ERR_MTLS_CERT_REQUIRED'));
+  let mtlsRequired = $derived(errorCode === 'ERR_MTLS_CERT_REQUIRED');
   // Under mTLS the device certificate belongs to one user (R-0223): signing in as
   // another one is refused. Name that and offer to register the device anew.
-  let certUserMismatch = $derived(error.includes('ERR_CERT_USER_MISMATCH'));
+  let certUserMismatch = $derived(errorCode === 'ERR_CERT_USER_MISMATCH');
   // A certificate the server no longer admits (R-0224): revoked, or not recorded once
   // the transition is over. The way out is the same, a reset and a new registration.
-  let certRevoked = $derived(error.includes('ERR_CERT_REVOKED'));
+  let certRevoked = $derived(errorCode === 'ERR_CERT_REVOKED');
   // Never show the machine-readable code to the user; keep only the human text.
   let displayError = $derived(withoutErrorCodes(error));
 
   async function resetCertTrust(): Promise<void> {
     const target = targetUrl();
     if (!target) {
-      error = $t('login.resetPin.missingUrl');
+      showError($t('login.resetPin.missingUrl'));
       return;
     }
     // A pin mismatch is exactly the signature of an active MITM, and this is where
@@ -106,10 +112,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       } else {
         await resetServerCertPin(target);
       }
-      error = '';
+      showError('');
       info = resetInfo('login.resetPin.done', outcome);
     } catch (err) {
-      error = errRaw(err);
+      showError(errRaw(err), errCode(err));
     } finally {
       busy = false;
     }
@@ -127,7 +133,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   async function resetIdentity(confirmKey: string, doneKey: string): Promise<void> {
     const target = targetUrl();
     if (!target) {
-      error = $t('login.resetPin.missingUrl');
+      showError($t('login.resetPin.missingUrl'));
       return;
     }
     const ok = await confirmDialog($t(confirmKey), { confirmLabel: $t('login.resetDeviceId') });
@@ -135,10 +141,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     busy = true;
     try {
       const outcome = await resetDeviceIdentity(target);
-      error = '';
+      showError('');
       info = resetInfo(doneKey, outcome);
     } catch (err) {
-      error = errRaw(err);
+      showError(errRaw(err), errCode(err));
     } finally {
       busy = false;
     }
@@ -147,10 +153,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // The way out of the login screen: the kind of a workspace is fixed, another server or no
   // server at all is another workspace, which the launcher opens.
   function toLauncher(): void {
-    error = '';
+    showError('');
     info = '';
     openLauncher().catch((err) => {
-      error = errRaw(err);
+      showError(errRaw(err), errCode(err));
     });
   }
 
@@ -184,17 +190,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // dead-end error; everything else surfaces inline as before.
   function surfaceError(err: unknown, retry: 'login' | 'enroll'): void {
     const msg = errRaw(err);
-    if (msg.includes('ERR_TLS_UNKNOWN_ISSUER')) {
+    const code = errCode(err);
+    if (code === 'ERR_TLS_UNKNOWN_ISSUER') {
       trustError = msg;
       trustPrompt = retry;
     } else {
-      error = msg;
+      showError(msg, code);
     }
   }
 
   async function handleSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    error = '';
+    showError('');
     info = '';
     busy = true;
     try {
@@ -208,7 +215,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   async function handleEnroll(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    error = '';
+    showError('');
     info = '';
     busy = true;
     try {
@@ -235,7 +242,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         await doEnroll();
       }
     } catch (err) {
-      error = errRaw(err);
+      showError(errRaw(err), errCode(err));
     } finally {
       busy = false;
     }
@@ -243,7 +250,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function declineServerCert(): void {
     // Keep the full message — displayError strips the machine-readable code.
-    error = trustError;
+    showError(trustError, 'ERR_TLS_UNKNOWN_ISSUER');
     trustPrompt = null;
   }
 </script>

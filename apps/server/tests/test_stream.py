@@ -246,43 +246,18 @@ def _stream_route():
     return next(r for r in _collect_api_routes(app) if r.path == "/api/notifications/stream")
 
 
-def _include_dependency_qualnames(path: str) -> set[str]:
-    """The dependencies an include_router(..., dependencies=...) adds to the router that
-    holds `path`, with their own sub-dependencies. FastAPI >= 0.138 keeps them on the
-    include (_IncludedRouter.include_context), not in the route's dependant."""
-    from fastapi.dependencies.utils import get_dependant
-
-    from app.main import app
-
-    names: set[str] = set()
-
-    def walk(dependant) -> None:
-        for dep in dependant.dependencies:
-            names.add(f"{dep.call.__module__}:{dep.call.__qualname__}")
-            walk(dep)
-
-    for node in app.routes:
-        ctx = getattr(node, "include_context", None)
-        routes = getattr(getattr(ctx, "included_router", None), "routes", None) or ()
-        if any(getattr(r, "path", None) == path for r in routes):
-            for depends in ctx.dependencies:
-                call = depends.dependency
-                names.add(f"{call.__module__}:{call.__qualname__}")
-                walk(get_dependant(path=path, call=call))
-    return names
-
-
 def test_the_include_walk_sees_a_router_scope_guard():
     # Positive control: the feed router is included with the access scope guard, whose
     # get_db the walk must find; else a changed FastAPI would leave the next test blind.
+    from tests.test_route_auth_gate import _include_dependency_qualnames
+
     assert "app.core.database:get_db" in _include_dependency_qualnames("/api/notifications")
 
 
 def test_the_stream_route_depends_on_no_get_db():
     from tests.test_route_auth_gate import _dependency_qualnames
 
-    route = _stream_route()
-    names = _dependency_qualnames(route) | _include_dependency_qualnames(route.path)
+    names = _dependency_qualnames(_stream_route())
     assert "app.core.database:get_db" not in names, sorted(names)
 
 

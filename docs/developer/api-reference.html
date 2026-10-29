@@ -224,6 +224,16 @@ Content-Type: application/json
 
           <p>Fehler folgen Pydantic-Validations-Konventionen. Gibt ein <code>422</code> eine Eingabe mit einem einzelnen Surrogat zur&uuml;ck, schreibt der Body jedes Zeichen au&szlig;erhalb von ASCII als JSON-Escape (<code>\uXXXX</code>).</p>
 
+          <p>Ein Fehler, auf den ein Client reagieren soll, tr&auml;gt neben <code>detail</code> das Feld <code>code</code>: stabil, in der Form <code>ERR_&hellip;</code>. <code>detail</code> bleibt Text und beginnt aus Kompatibilit&auml;t mit <code>&lt;code&gt;: </code>; der Wortlaut dahinter kann sich &auml;ndern. Heute tragen die <code>403</code> der Zertifikatspr&uuml;fung einen Code: <code>ERR_CERT_REVOKED</code> (Zertifikat widerrufen oder nicht registriert), <code>ERR_CERT_USER_MISMATCH</code> (Zertifikat eines anderen Benutzers), <code>ERR_CERT_SERVER_MISMATCH</code> (Agent-Zertifikat eines anderen Servers). Clients verzweigen an <code>code</code>, nie am Text. Alle anderen Fehler haben kein <code>code</code>.</p>
+          <div class="code-header"><span>json</span></div>
+<pre><code>HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{
+  "detail": "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device identity and register the device again.",
+  "code": "ERR_CERT_REVOKED"
+}</code></pre>
+
           <h2>Rate-Limits</h2>
           <ul>
             <li>Login: 5 Fehlversuche / 60&nbsp;s / IP (Redis, In-Memory-Fallback).</li>
