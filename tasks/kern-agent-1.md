@@ -14,8 +14,10 @@ Für alle Tasks: Zeilenangaben `origin/main@fd3a3b32`, vor dem Schreiben neu gre
 `apps/agent/`. Neue Code-Strings englisch, CHANGELOG umlautfrei in `changelog.d/kern-agent-1.md`. `security`
 zusätzlich bei T1, T2, T3 (und wo `review.sh risk` es verlangt). Einzelheiten der SEC-Zeilen privat.
 
-### T1 — frpc-Abgleich: Reload ohne systemd, kein Hash-Verlust beim Abbruch (R-0884, R-0879)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go, changelog.d/kern-agent-1.md
+### T1 — frpc-Abgleich: Reload ohne systemd, kein Hash-Verlust beim Abbruch (R-0884, R-0879)  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go, changelog.d/kern-agent-1.md, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/admin.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2dc72cec 2026-10-29T19:23:21+01:00
+Review: approve (.ah-out/review/kern-agent-1/T1.verdict.json)
 Änderung: `startFrpc` (`internal/frpc/sync.go:357`) lädt bei einem Fehler von `isActive` über die Admin-API, wenn ein Reload erlaubt ist, der gemeinsame Teil dem gestarteten entspricht und frpc auf seinem Admin-Port lauscht; sonst Fehler wie bisher. Ist `ctx` beendet, kehrt `startFrpc` vor `startedOn` (`:391`) zurück, `.started-hash` bleibt. Tests je Regel über die Seams, zuerst rot.
 Beweis: Code-Lesung feature/agent-run-ctx@f3c2b1db internal/frpc/sync.go startFrpc (R-0879); Test: ctx beendet während reloadService → .started-hash noch vorhanden
 Dedup-Key: bug:agent:sync.go:startFrpc-hash-on-cancel
@@ -56,3 +58,4 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
 Doku: changelog.d/kern-agent-1.md
 
 ## Entscheidungen
+- T1: `TestSyncFrpcSystemctlWithoutAnswerChangesNothing` (R-0638) setzt jetzt `ownsAdminPort=false`: ohne systemd-Antwort aendert der Abgleich weiter nichts, solange frpc nicht auf seinem Admin-Port lauscht; lauscht er, laedt er (R-0884). Alle Asserts des Tests bleiben. Der Vorab-Check nutzt `adminAPIListens` (admin.go), nicht `loadAdminAPI`, weil das admin.conf neu schreiben kann.

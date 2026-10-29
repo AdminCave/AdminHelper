@@ -103,11 +103,15 @@ func Sync(ctx context.Context) error {
 	}
 
 	// Checked whatever the hash says: a changed config does not free a held admin port. Without an
-	// answer from systemd the sync changes nothing: a frpc that may run must not count as stuck,
-	// which would renew its admin API and restart it.
+	// answer from systemd a frpc that may run must not count as stuck, which would renew its admin
+	// API and restart it; a changed config then reaches it only by a reload (startFrpc), so the sync
+	// goes on only while frpc listens on its admin API, and otherwise changes nothing.
 	stuck, err := frpcStuck(ctx)
 	if err != nil {
-		return err
+		if remoteHash == localHash || !adminAPIListens() {
+			return err
+		}
+		logger.Warnf("%v; frpc listens on its admin API, the sync tries a reload", err)
 	}
 	// After an agent update the text in place has not been through this agent's check yet: fetch
 	// and check it once, even with the same hash.
@@ -353,13 +357,21 @@ func refuseServerConfig(ctx context.Context, refusal error) error {
 // connections; frp takes only the proxies from a reload, so it stands in for a restart only while
 // the common part is the one frpc started on. The reload goes only to the agent's own frpc
 // (ownsAdminPort). The provisioning (mayReload false) always restarts: it may have enrolled a new
-// identity, and a reload does not connect to frps anew, only a restart does.
+// identity, and a reload does not connect to frps anew, only a restart does. Without an answer
+// from systemd the reload is the only way to drop a removed tunnel while others remain.
 func startFrpc(ctx context.Context, frpcToml []byte, adminPort int, mayReload bool) (string, error) {
 	common := hashConfig(commonPart(frpcToml))
+	reloadable := mayReload && startedCommon() == common
 	active, err := isActive(ctx)
 	if err != nil {
 		// Fails like a start: the hash stays for the next run, the provisioning only warns.
-		return "", fmt.Errorf("%w: %w", errFrpcService, err)
+		if !reloadable || !ownsAdminPort(adminPort) {
+			return "", fmt.Errorf("%w: %w", errFrpcService, err)
+		}
+		if reloadErr := reloadService(ctx); reloadErr != nil {
+			return "", fmt.Errorf("%w: %w; the reload over the admin API failed too: %v", errFrpcService, err, reloadErr)
+		}
+		return "reloaded without an answer from systemd", nil
 	}
 	if !active {
 		if err := startedOn(ctx, common, enableService, "enable and start frpc"); err != nil {
@@ -367,7 +379,7 @@ func startFrpc(ctx context.Context, frpcToml []byte, adminPort int, mayReload bo
 		}
 		return "enabled and started", nil
 	}
-	if mayReload && startedCommon() == common {
+	if reloadable {
 		if !ownsAdminPort(adminPort) {
 			logger.Warnf("frpc does not listen on its admin port 127.0.0.1:%d, restarting frpc instead of a reload", adminPort)
 		} else if err := reloadService(ctx); err != nil {
@@ -387,8 +399,12 @@ func startedHashFile() string { return filepath.Join(config.FrpDir(), ".started-
 
 // startedOn runs start (enable or restart) and records the common part frpc started on. The old
 // record goes first: after a failed start frpc may still run on the old common part, and the next
-// run must restart it rather than reload.
+// run must restart it rather than reload. A run that has ended starts nothing and keeps the record:
+// nothing was started, so frpc still runs on the common part recorded.
 func startedOn(ctx context.Context, common string, start func(context.Context) error, what string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %s: %w", errFrpcService, what, err)
+	}
 	if err := os.Remove(startedHashFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove %s: %w", startedHashFile(), err)
 	}
