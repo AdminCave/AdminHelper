@@ -727,6 +727,52 @@
         "title": "DeviceResponse",
         "type": "object"
       },
+      "EnrollmentGrantOut": {
+        "description": "A one-time enrollment token, redeemable at the ca-issuer's enroll plane.",
+        "properties": {
+          "browser": {
+            "title": "Browser",
+            "type": "boolean"
+          },
+          "enrollPort": {
+            "title": "Enrollport",
+            "type": "integer"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "subjectId": {
+            "title": "Subjectid",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "subjectId",
+          "scope",
+          "browser",
+          "enrollPort",
+          "expiresAt"
+        ],
+        "title": "EnrollmentGrantOut",
+        "type": "object"
+      },
       "EnrollmentTokenForRequest": {
         "properties": {
           "browser": {
@@ -5020,7 +5066,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentGrantOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5065,7 +5113,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentGrantOut"
+                }
               }
             },
             "description": "Successful Response"

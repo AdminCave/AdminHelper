@@ -81,6 +81,8 @@ def _ref_name(schema: dict) -> str:
         ("/api/auth/logout", "post", "LogoutOut"),
         ("/api/users/me/servers", "get", "MyServerOut"),
         ("/api/hooks/{hook_id}/rotate", "post", "HookTokenOut"),
+        ("/api/enrollment/token", "post", "EnrollmentGrantOut"),
+        ("/api/enrollment/token/for", "post", "EnrollmentGrantOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -641,3 +643,27 @@ class TestHookShape:
         body = r.json()
         assert list(body) == ["token"]
         assert isinstance(body["token"], str) and body["token"] != old
+
+
+GRANT_KEYS = ["token", "subjectId", "scope", "browser", "enrollPort", "expiresAt"]
+
+
+class TestEnrollmentShape:
+    def test_self_grant_answers_with_every_key(self, test_client, admin_user):
+        r = test_client.post("/api/enrollment/token", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert list(body) == GRANT_KEYS
+        assert body["subjectId"] == "admin" and body["browser"] is False
+        assert isinstance(body["expiresAt"], str) and isinstance(body["enrollPort"], int)
+
+    def test_browser_grant_for_another_user(self, test_client, admin_user, normal_user):
+        r = test_client.post(
+            "/api/enrollment/token/for",
+            json={"username": normal_user.username, "browser": True},
+            headers=_login(test_client),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert list(body) == GRANT_KEYS
+        assert body["subjectId"] == normal_user.username and body["browser"] is True

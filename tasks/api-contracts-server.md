@@ -154,8 +154,10 @@ Orakel: contract — das Modell gegen das Dict-Literal über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T10 — enrollment: `EnrollmentGrantOut` (R-0684, R-0407)  [ ]
+### T10 — enrollment: `EnrollmentGrantOut` (R-0684, R-0407)  [x]
 Komponente: server · Dateien: apps/server/app/modules/enrollment/schemas.py, apps/server/app/modules/enrollment/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4c0f800a 2026-10-29T23:01:23+01:00
+Review: approve (.ah-out/review/api-contracts-server/T10.verdict.json)
 Änderung: Neue Datei `enrollment/schemas.py` (SPDX) mit `EnrollmentGrantOut` `{token: str, subjectId: str, scope: str, browser: bool, enrollPort: int, expiresAt: Optional[str]}` wie `_mint_token` (`apps/server/app/modules/enrollment/router.py:44-65`) an `POST /token` (`:79`) und `POST /token/for` (`:108`). Tests nach Muster (Browser- und Nicht-Browser-Grant). Der Web-Mock `makeEnrollmentGrant` (`apps/web/tests/e2e/mocks.ts:123-133`) hat genau diese Schlüssel; damit prüft `apps/web/src/lib/api/mocks.contract.test.ts` die Fixture `enrollment/token/for`: Pin `:146` von 16 auf 17, Kommentar `:142-145` nennt nur noch `audit` als offen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_enrollment_mint.py  und bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine
@@ -192,3 +194,5 @@ HEAD: b25c65a6
 - T3: `GET /api/frp/tunnels` gibt Nicht-Admins seit dem Plan nur die `_MAPPING_FIELDS` (TunnelMapping des Desktops);
   ein reines `list[FrpTunnelOut]` machte ihre Liste zur 500. Deklariert ist `list[FrpTunnelOut | TunnelMappingOut]`
   mit `union_mode="left_to_right"` (die volle Zeile zuerst; die Gegenprobe mit umgedrehter Reihenfolge: 2 failed).
+- T10: Der Pin in `mocks.contract.test.ts` stand schon auf 17 (nicht 16 wie im Plan, ein früherer Merge hob ihn);
+  mit der Enrollment-Fixture geht er auf 18, offen bleibt nur `audit` (T12).
