@@ -97,3 +97,4 @@ HEAD: 237b450a
 
 ## Entscheidungen
 - 2026-10-29 T2: der Docker-Test zieht das gepinnte victoria-Image, wenn es lokal fehlt (sonst SKIP): so läuft er auch in der Server-CI, statt dort immer zu überspringen. Die Ausnahmeliste kennt nur `scheduler`; kommt mit db-roles der Einmal-Dienst `db-init` auf main, nimmt der Basis-Merge ihn mit Grund auf.
+- 2026-10-29 T4: Mindestversion Compose v2.17 für `up --wait-timeout` (`--wait` seit v2.1.1) aus den docker/compose Release Notes v2.17.0 (PR docker/compose#10276), per `gh api repos/docker/compose/releases` nachgelesen.
