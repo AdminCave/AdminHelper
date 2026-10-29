@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-smtp-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-smtp-1 · Review: am Ende
+Status: bereit · Branch: feature/klein-ref-smtp-1 · Review: am Ende
 Spec: docs/features/klein-ref-smtp-1.md (Roadmap R-0831)
 Heavy: none — Unit-Tests in Server und Monitoring, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Dedup-Key: ref:tests:smtp-hardening:nits
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
 Doku: keine (Test)
 
-### T3 — test_email_sender: Spion auch im Test mit CA-Datei (R-0831, Abschlussprüfung Runde 1)  [ ]
+### T3 — test_email_sender: Spion auch im Test mit CA-Datei (R-0831, Abschlussprüfung Runde 1)  [x]
 Komponente: server · Dateien: apps/server/tests/test_email_sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @58db9539 2026-10-30T00:52:38+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Spion um `ssl.create_default_context` mit `assert created == [ctx]` steht zusätzlich in `test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context` (dort läuft der Datei-Zweig; eine Datei-only-Mutante bestand die Zählung auf einer Box mit lazy CA-Verzeichnis). Gemeinsamer Helfer für den Spion; der Kommentar im Test ohne CA-Datei verweist auf den Test darüber statt auf „CA counts above“. Gegenprobe: `ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)` nur bei gesetzter CA-Datei vor `load_verify_locations` macht den Test rot (danach zurückgenommen).
 Beweis: Abschlussprüfung klein-ref-smtp-1, Urteil Runde 1
 Dedup-Key: ref:tests:smtp-hardening:nits
