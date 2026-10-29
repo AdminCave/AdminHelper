@@ -14,8 +14,10 @@ Für alle Tasks: Zeilenangaben `origin/main@33295e76`, vor dem Schreiben neu gre
 `apps/server/app/modules/frp/`. Neue Code-Strings englisch, CHANGELOG umlautfrei in `changelog.d/kern-frp-1.md`.
 `security` je Task. Einzelheiten der SEC-Zeile privat.
 
-### T1 — Generator lässt Tunnel mit abgelehnten Feldwerten aus (R-0894)  [ ]
+### T1 — Generator lässt Tunnel mit abgelehnten Feldwerten aus (R-0894)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_config_generator.py, changelog.d/kern-frp-1.md, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e9329613 2026-10-29T21:12:18+01:00
+Review: approve (.ah-out/review/kern-frp-1/T1.verdict.json)
 Änderung: Ein neuer Filter in `config_generator.py` lässt Tunnel aus, deren `name`, `local_ip`, `custom_domains` oder `secret_key` `_reject_toml_breakers` (`schemas.py:27`) nicht bestehen, und warnt mit dem Namen per `repr`, ohne Werte; eingehängt in `active_tunnels` (:240) und in die Kette von `generate_visitor_toml` (:427). Test zuerst rot: je Feld eine Altzeile → kein Block in frpc- und Visitor-TOML, die übrigen Tunnel bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py
 Doku: changelog.d/kern-frp-1.md, docs/developer/server.html:110-111 + EN
