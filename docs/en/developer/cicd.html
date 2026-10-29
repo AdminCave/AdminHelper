@@ -355,10 +355,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>Environment parity</td><td><code>docker-compose.yml</code>, <code>.env.example</code></td><td>the three Python services' <code>config.py</code></td><td>job <code>server</code></td></tr>
               <tr><td>Shared API types</td><td><code>apps/web/src/lib/api/types.ts</code></td><td><code>apps/desktop/ui/src/lib/api/types.ts</code></td><td>job <code>desktop-ui</code></td></tr>
               <tr><td>Web types against the server snapshot</td><td>the interfaces in <code>apps/web/src/lib/api/types.ts</code> (mapping table in <code>apps/web/src/lib/api/types.contract.test.ts</code>)</td><td>the component schemas in <code>apps/server/tests/openapi.snapshot.json</code>: response &ndash; every field declared, every schema field described or in <code>omit</code> with a reason, not required &rarr; <code>?</code>, nullable &rarr; <code>| null</code>, the same primitive kind; request &ndash; required without <code>?</code>, <code>null</code> only where the schema allows it. Every interface is mapped or explicitly exempt</td><td>job <code>frontend</code></td></tr>
+              <tr><td>Desktop types against both snapshots</td><td>the interfaces in <code>apps/desktop/ui/src/lib/api/types.ts</code> (mapping table in <code>apps/desktop/ui/src/lib/api/types.contract.test.ts</code>, naming the snapshot per interface)</td><td>the component schemas in <code>apps/server/tests/openapi.snapshot.json</code> and <code>apps/monitoring/tests/openapi.snapshot.json</code>, by the same rules as the web types</td><td>job <code>desktop-ui</code></td></tr>
             </tbody>
           </table>
           <p>The <strong>snapshot</strong> is the contract the web frontend, the desktop UI and the agent rely
-          on without ever being compiled against it. Re-record it <em>in the same commit</em> as the API
+          on without ever being compiled against it. The contract tests of the web frontend and the desktop
+          UI hold their types against it (rows above), the agent's are not checked. Re-record it <em>in the same commit</em> as the API
           change &ndash; otherwise the job is red:</p>
           <div class="code-header"><span>bash</span></div>
           <pre><code>cd apps/server      &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot

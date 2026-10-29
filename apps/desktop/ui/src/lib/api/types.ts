@@ -29,6 +29,8 @@ export interface Server {
   tags?: string[];
   notes?: string | null;
   connections?: Connection[];
+  frpTunnels?: FrpTunnel[];
+  createdAt?: string | null;
 }
 
 export interface ServerInput {
@@ -108,13 +110,13 @@ export interface FrpTunnel {
   name: string;
   tunnelType: FrpTunnelType;
   protocol: FrpProtocol;
-  localIp: string;
+  localIp: string | null;
   localPort: number;
   secretKey?: string | null;
   customDomains?: string | null;
   visitorPort?: number | null;
   connectionId?: string | null;
-  enabled: boolean;
+  enabled: boolean | null;
   tags?: string[];
   createdAt?: string | null;
 }
@@ -156,7 +158,7 @@ export interface FrpStatus {
 export interface FrpProvisionToken {
   id: string;
   serverId: string;
-  expiresAt: string;
+  expiresAt: string | null;
   usedAt?: string | null;
   isValid: boolean;
   createdAt?: string | null;
@@ -164,7 +166,7 @@ export interface FrpProvisionToken {
 
 export interface FrpProvisionTokenCreateResult {
   token: string;
-  expiresAt: string;
+  expiresAt: string | null;
   serverId: string;
   serverName: string;
 }
@@ -556,7 +558,7 @@ export type NotificationScopeType = 'all' | 'tag' | 'server';
 // One bell-feed entry (mirrors the server's Notification.to_dict()).
 export interface NotificationItem {
   id: number;
-  createdAt: string;
+  createdAt: string | null;
   severity: NotificationSeverity;
   category: string;
   eventType: string;

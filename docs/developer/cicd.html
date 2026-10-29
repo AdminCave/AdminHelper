@@ -360,10 +360,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>Env-Parit&auml;t</td><td><code>docker-compose.yml</code>, <code>.env.example</code></td><td><code>config.py</code> der drei Python-Dienste</td><td>Job <code>server</code></td></tr>
               <tr><td>Geteilte API-Typen</td><td><code>apps/web/src/lib/api/types.ts</code></td><td><code>apps/desktop/ui/src/lib/api/types.ts</code></td><td>Job <code>desktop-ui</code></td></tr>
               <tr><td>Web-Typen gegen den Server-Snapshot</td><td>die Interfaces in <code>apps/web/src/lib/api/types.ts</code> (Zuordnungstabelle in <code>apps/web/src/lib/api/types.contract.test.ts</code>)</td><td>die Komponenten-Schemas in <code>apps/server/tests/openapi.snapshot.json</code>: Antwort &ndash; jedes Feld deklariert, jedes Schema-Feld beschrieben oder mit Grund in <code>omit</code>, nicht verpflichtend &rarr; <code>?</code>, nullbar &rarr; <code>| null</code>, gleiche primitive Art; Anfrage &ndash; verpflichtend ohne <code>?</code>, <code>null</code> nur, wo das Schema es erlaubt. Jedes Interface ist zugeordnet oder ausdr&uuml;cklich ausgenommen</td><td>Job <code>frontend</code></td></tr>
+              <tr><td>Desktop-Typen gegen beide Snapshots</td><td>die Interfaces in <code>apps/desktop/ui/src/lib/api/types.ts</code> (Zuordnungstabelle in <code>apps/desktop/ui/src/lib/api/types.contract.test.ts</code>, je Interface der Snapshot)</td><td>die Komponenten-Schemas in <code>apps/server/tests/openapi.snapshot.json</code> und <code>apps/monitoring/tests/openapi.snapshot.json</code>, nach denselben Regeln wie die Web-Typen</td><td>Job <code>desktop-ui</code></td></tr>
             </tbody>
           </table>
           <p>Der <strong>Snapshot</strong> ist der Vertrag, den Web-Frontend, Desktop-UI und Agent benutzen,
-          ohne gegen ihn kompiliert zu werden. Er wird <em>im selben Commit</em> wie die API-&Auml;nderung neu
+          ohne gegen ihn kompiliert zu werden. Die Typen von Web-Frontend und Desktop-UI pr&uuml;fen ihre
+          Vertragstests gegen ihn (Zeilen oben), die des Agents nicht. Er wird <em>im selben Commit</em> wie die API-&Auml;nderung neu
           aufgezeichnet &ndash; sonst ist der Job rot:</p>
           <div class="code-header"><span>bash</span></div>
           <pre><code>cd apps/server      &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot
