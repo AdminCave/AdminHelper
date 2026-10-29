@@ -13,22 +13,29 @@ pub async fn sync_connections(
     url: String,
     allow_self_signed: bool,
 ) -> Result<Vec<Connection>, AppError> {
-    validate_https_url(&url)?;
+    let connections = fetch(&url, allow_self_signed).await?;
+    write_connections(&app, &connections)?;
+    Ok(connections)
+}
+
+/// The launchable connections at the sync source `url`.
+async fn fetch(url: &str, allow_self_signed: bool) -> Result<Vec<Connection>, AppError> {
+    validate_https_url(url)?;
     // https-only is enforced above. A sync runs only in a sync workspace, from the
     // source it keeps (`workspace::sync_url`); such a workspace has no server, and
     // the device identity is for the server of a workspace only. The fetch never
     // presents it: it goes like a device that isn't enrolled, pinning on first use
     // (TOFU) when self-signed certificates are allowed and checking the public CA
     // otherwise.
-    let client = crate::http_client::build_client_without_identity(&url, allow_self_signed)?;
-    let response = client.get(&url).send().await?.error_for_status()?;
+    let client = crate::http_client::build_client_without_identity(url, allow_self_signed)?;
+    let response = client.get(url).send().await?.error_for_status()?;
     // Parse leniently like fetch_connections_jwt: the server list may hold kinds
     // the launcher can't open (or malformed rows) — skip those instead of failing
     // the whole sync by strict-decoding the batch into Vec<Connection>.
     let raw: Vec<serde_json::Value> = response.json().await?;
-    let connections = sanitize_synced_connections(parse_launchable_connections(raw));
-    write_connections(&app, &connections)?;
-    Ok(connections)
+    Ok(sanitize_synced_connections(parse_launchable_connections(
+        raw,
+    )))
 }
 
 /// The desktop launcher only understands ssh/rdp/web connections, the only kinds
@@ -111,6 +118,33 @@ mod tests {
             json!({"kind": "ssh"}), // missing required id/name -> skipped, not fatal
         ];
         assert_eq!(parse_launchable_connections(raw).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn sync_fetch_goes_without_the_device_identity() {
+        // An enrolled identity that can't build an mTLS client: a fetch that wanted it would
+        // fail on loading it before any connection; one without it reaches the network.
+        let _keyring = crate::keyring_store::memory();
+        let _standard = crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        });
+        for key in ["enroll|key", "enroll|cert", "enroll|ca"] {
+            crate::keyring_store::set(key, "not a pem").unwrap();
+        }
+        assert!(crate::enrollment::is_enrolled());
+        // Held, not freed: nobody answers at the sync source.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let url = format!("https://127.0.0.1:{port}/c.json");
+
+        for allow_self_signed in [false, true] {
+            let fetched = fetch(&url, allow_self_signed).await;
+            assert!(
+                matches!(fetched, Err(AppError::Network(_))),
+                "allow_self_signed={allow_self_signed}: {fetched:?}"
+            );
+        }
     }
 
     #[tokio::test]

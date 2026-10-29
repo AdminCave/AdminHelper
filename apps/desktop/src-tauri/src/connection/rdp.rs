@@ -844,9 +844,8 @@ mod tests {
 
     #[test]
     fn feed_password_stdin_writes_and_returns_ok() {
-        // `cat` echoes the piped stdin; the helper must write the password and a newline,
-        // zero its own copy, and succeed. Longer than 8 bytes, the size at which a grown
-        // buffer would have held a copy of its own.
+        // `cat` echoes the piped stdin: the password and a newline arrive, and the helper
+        // returns Ok. Whether it zeroes its own copy is not observable from here.
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

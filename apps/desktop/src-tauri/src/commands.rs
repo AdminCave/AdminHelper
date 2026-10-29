@@ -94,7 +94,7 @@ pub async fn reset_server_cert_pin(
 /// [`reset_server_cert_pin`] in the app data dir `base`.
 fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
     let (_, meta) = own_meta(base)?;
-    tofu::forget_pin(&workspace::own_url(&meta, sent)?);
+    tofu::forget_pin(&workspace::own_url(&meta, sent)?)?;
     Ok(())
 }
 
@@ -130,7 +130,10 @@ pub async fn is_device_enrolled() -> Result<bool, AppError> {
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
 /// UI whether that happened. Only at the server of this workspace
-/// ([`sign_in_target`]), where its purge would revoke it too.
+/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the pin
+/// could not be forgotten. The identity entries are deleted best effort before it,
+/// in the same keyring, so they may have stayed as well; the reset can be repeated
+/// (without an identity it ends as `NotEnrolled` and forgets the pin again).
 #[tauri::command]
 pub async fn reset_device_identity(
     app: tauri::AppHandle,
@@ -146,7 +149,8 @@ async fn reset_device_identity_in(
 ) -> Result<enrollment::ResetOutcome, AppError> {
     let server_url = sign_in_target(base, sent, None)?;
     let outcome = enrollment::reset_identity(&server_url).await;
-    tofu::forget_pin(&server_url);
+    tofu::forget_pin(&server_url)
+        .map_err(|err| AppError::Keyring(format!("resetting the device identity: {err}")))?;
     Ok(outcome)
 }
 
@@ -1002,21 +1006,32 @@ mod tests {
         assert_eq!(*starts.0.borrow(), [Vec::<String>::new()]);
     }
 
-    /// The ansible temp files (`adminhelper_ansible…` in the temp dir) whose name or content holds
-    /// `marker`, each removed by its full path. Other tests write such files at the same time; the
-    /// marker tells this test's apart.
+    /// The files of the ansible run directories (`adminhelper_ansible_…` in the temp dir) whose
+    /// name or content holds `marker`; each directory with such a file is removed by its full
+    /// path. Other tests write run directories at the same time; the marker tells this test's
+    /// apart.
     fn remove_ansible_files_with(marker: &str) -> Vec<PathBuf> {
         let mut found = Vec::new();
         for entry in fs::read_dir(std::env::temp_dir()).unwrap().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.starts_with("adminhelper_ansible") {
+            if !name.starts_with("adminhelper_ansible_") {
                 continue;
             }
-            let path = entry.path();
-            let holds = fs::read_to_string(&path).is_ok_and(|text| text.contains(marker));
-            if name.contains(marker) || holds {
-                let _ = fs::remove_file(&path);
-                found.push(path);
+            let dir = entry.path();
+            let Ok(files) = fs::read_dir(&dir) else {
+                continue;
+            };
+            let marked: Vec<PathBuf> = files
+                .flatten()
+                .filter(|file| {
+                    file.file_name().to_string_lossy().contains(marker)
+                        || fs::read_to_string(file.path()).is_ok_and(|text| text.contains(marker))
+                })
+                .map(|file| file.path())
+                .collect();
+            if !marked.is_empty() {
+                let _ = fs::remove_dir_all(&dir);
+                found.extend(marked);
             }
         }
         found
@@ -1170,13 +1185,13 @@ mod tests {
         let _in_a_workspace = entered("standard");
         let (launches, launch) = noting_launch(Ok(()));
 
-        // No file system takes a name with a NUL byte.
+        // No file system takes a name of 300 bytes (ENAMETOOLONG).
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
             |_| async {
                 Ok(Playbook {
-                    filename: "site\0.yml".to_string(),
+                    filename: "a".repeat(300),
                     ..marked_playbook(&marker)
                 })
             },

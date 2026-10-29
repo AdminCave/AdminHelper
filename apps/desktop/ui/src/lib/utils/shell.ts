@@ -7,11 +7,14 @@
 const SAFE = /^[A-Za-z0-9@%+=:,./_-]+$/;
 
 /**
- * `value` as exactly one POSIX shell word with exactly that value. Inside single quotes every
- * character is literal and a single quote cannot occur (POSIX Shell Command Language 2.2.2), so
- * each `'` closes the quote, adds an escaped `\'` and reopens it.
+ * `value` as exactly one shell word that POSIX shells and fish both read as exactly that value.
+ * Inside single quotes POSIX takes every character literally and a single quote cannot occur
+ * (POSIX Shell Command Language 2.2.2), while fish reads `\\` and `\'` there as escapes
+ * (https://fishshell.com/docs/current/language.html#quotes). So no `'` and no `\` stays inside
+ * the quotes: each closes the quote, follows as `\'` or `\\` (both shells read that as the
+ * character itself outside quotes, POSIX 2.2.1) and reopens it.
  */
 export function shellQuote(value: string): string {
   if (SAFE.test(value)) return value;
-  return `'${value.replace(/'/g, "'\\''")}'`;
+  return `'${value.replace(/['\\]/g, (c) => `'\\${c}'`)}'`;
 }
