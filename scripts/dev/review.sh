@@ -12,6 +12,9 @@
 #   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
 #                                                       does a diff need the security reviewer
 #   bash scripts/dev/review.sh pr-body <ledger>         the PR text out of the ledger
+#   bash scripts/dev/review.sh final <ledger>           is the branch closable: the reviewer's branch
+#                                                       verdict, current, approve for code and tests;
+#                                                       prints its PR section
 #
 # Deterministic and model-free. The git hooks in scripts/dev/hooks and
 # task-close.sh run sec; the CI job "Public repo guard (review.sh sec)" runs it
@@ -34,13 +37,23 @@
 #              [?] tasks apart. A task without evidence reads "unverifiziert".
 #              Addresses, host names and VMIDs are cut out of every ledger line
 #              it copies: this text goes to a public repo.
+#   final      the closing check of a branch: no task of the ledger is still [ ]
+#              or [?], and <wt>/.ah-out/review/<slug>/branch.verdict.json, the
+#              reviewer's verdict in mode branch, says approve overall, for the
+#              code and for the tests, with evidence for both, a coverage list,
+#              at most three probes (red | green | not-runnable) and no blocker,
+#              given on a commit after which the branch's own line brought only
+#              commits to the ledger alone and merges without changes of their
+#              own (CHANGELOG.md aside). <wt> is the checkout the
+#              ledger lies in. Prints the PR section (cleaned like pr-body); exit
+#              3 with every reason the branch is not closable.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
 # git diff does not — so the answer for a brand-new file exists only once it is
 # staged, which is the state task-close.sh works on anyway.
 #
-# Exit: 0 clean · 2 usage · 4 blocked (sec)
+# Exit: 0 clean · 2 usage · 3 not closable (final) · 4 blocked (sec)
 
 set -uo pipefail
 
@@ -358,16 +371,17 @@ case "$VERB" in
     fi
     ;;
 
-  pr-body)
+  pr-body|final)
     LEDGER="${ARGS[0]-}"
-    [ -n "$LEDGER" ] && [ "${#ARGS[@]}" -eq 1 ] || die "pr-body needs <ledger>"
+    [ -n "$LEDGER" ] && [ "${#ARGS[@]}" -eq 1 ] || die "$VERB needs <ledger>"
     case "$LEDGER" in /*) ;; *) LEDGER="$CALLER_PWD/$LEDGER" ;; esac
     [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
-    command -v python3 >/dev/null 2>&1 || die "pr-body needs python3"
-    python3 - "$LEDGER" <<'PY' || die "could not read $LEDGER"
-import ipaddress, os, re, sys
+    command -v python3 >/dev/null 2>&1 || die "$VERB needs python3"
+    rc=0
+    python3 - "$VERB" "$LEDGER" <<'PY' || rc=$?
+import ipaddress, json, os, re, subprocess, sys
 
-ledger = sys.argv[1]
+mode, ledger = sys.argv[1], sys.argv[2]
 # This text goes to a public repo (CLAUDE.md: no homelab names): addresses, host
 # names of a private network and VM ids come out of every line it copies.
 # Loopback stays, a file name like settings.local.json stays. A bare host name
@@ -439,6 +453,133 @@ for l in lines:
     elif cur is not None and key in ("Evidenz", "Review") and key not in cur:
         cur[key] = l.split(":", 1)[1]
 
+def final():
+    """review.sh final: is the branch closable? Reasons to stderr, exit 3."""
+    wt = os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
+    slug = os.path.basename(ledger)[:-3] if ledger.endswith(".md") else os.path.basename(ledger)
+    rel = os.path.join(".ah-out", "review", slug, "branch.verdict.json")
+    why = []
+    for t in tasks:
+        if t["box"] in " ?!":
+            why.append("task %s is %s" % (t["id"], {" ": "still open [ ]", "?": "a question [?]",
+                                                    "!": "unreadable (heading without a box)"}[t["box"]]))
+    try:
+        v = json.load(open(os.path.join(wt, rel), encoding="utf-8"))
+    except FileNotFoundError:
+        v = None
+        why.append("no branch verdict at %s — the reviewer has not judged the branch" % rel)
+    except (OSError, ValueError) as e:
+        v = None
+        why.append("%s is unreadable (%s)" % (rel, type(e).__name__))
+    if v is not None and not isinstance(v, dict):
+        why.append("%s is not a JSON object" % rel)
+        v = None
+
+    def git(*a):
+        return subprocess.run(["git", "-C", wt] + list(a), capture_output=True, text=True)
+
+    head = now = ""
+    if v is not None:
+        if v.get("verdict") != "approve":
+            why.append("the verdict is %r, not approve" % v.get("verdict"))
+        sec = {}
+        for name in ("code", "tests"):
+            s = v.get(name)
+            if not isinstance(s, dict):
+                why.append("no %s part in the verdict" % name)
+                continue
+            sec[name] = s
+            if s.get("verdict") != "approve":
+                why.append("%s: the verdict is %r, not approve" % (name, s.get("verdict")))
+            ev = s.get("evidence")
+            if not isinstance(ev, list) or not [e for e in ev if isinstance(e, str) and e.strip()]:
+                why.append("%s: no evidence (a list of what was run or read)" % name)
+            fs = s.get("findings", [])
+            if not isinstance(fs, list) or not all(isinstance(f, dict) for f in fs):
+                why.append("%s: findings is not a list of objects" % name)
+            elif s.get("verdict") == "approve" and [f for f in fs if f.get("severity") == "blocker"]:
+                why.append("%s: approve beside a blocker finding" % name)
+        t = sec.get("tests", {})
+        if "tests" in sec:
+            if not isinstance(t.get("coverage"), list):
+                why.append("tests: no coverage list (changed product file -> its tests)")
+            probes = t.get("probes")
+            if not isinstance(probes, list):
+                why.append("tests: no probes list (empty when nothing could be reverted)")
+            elif len(probes) > 3:
+                why.append("tests: %d probes, at most three" % len(probes))
+            elif not all(isinstance(p, dict) and isinstance(p.get("test"), str) and p.get("test")
+                         and p.get("result") in ("red", "green", "not-runnable") for p in probes):
+                why.append("tests: a probe without test, or a result other than red | green | not-runnable")
+        head = v.get("head") if isinstance(v.get("head"), str) else ""
+        if not re.fullmatch(r"[0-9a-f]{7,40}", head):
+            why.append("the verdict names no head commit (\"head\": the HEAD it judged)")
+        elif git("merge-base", "--is-ancestor", head, "HEAD").returncode != 0:
+            why.append("the verdict head %s is not in the history of HEAD" % head[:12])
+        else:
+            # The branch's own line only: a merge of main brings main's commits
+            # along, and they are judged where they were merged.
+            r = git("log", "--first-parent", "--no-merges", "--format=%h %s", head + "..HEAD",
+                    "--", ".", ":(exclude)tasks/%s.md" % slug)
+            if r.returncode != 0:
+                why.append("git could not read %s..HEAD" % head[:12])
+            elif r.stdout.strip():
+                why.append("commits after the verdict head that change more than the ledger"
+                           " — the reviewer has not seen them: " + "; ".join(r.stdout.split("\n")[:5]).strip("; "))
+            # A merge that brings changes of its own (a resolved conflict) is new
+            # code too: --cc keeps exactly the hunks no parent had. CHANGELOG.md is
+            # merged by union and checked by hand (/feature-build §4.6).
+            own = []
+            for m in git("rev-list", "--first-parent", "--merges", head + "..HEAD").stdout.split():
+                d = git("-c", "core.quotePath=false", "diff-tree", "--cc", "-p", "--no-commit-id", "--text",
+                        "--no-ext-diff", "--no-textconv", "--no-color", m)
+                path = ""
+                for dl in d.stdout.split("\n"):
+                    if dl.startswith("diff --cc "):
+                        path = dl[len("diff --cc "):]
+                    elif dl.startswith("@@@") and path not in ("tasks/%s.md" % slug, "CHANGELOG.md"):
+                        own.append("%s %s" % (m[:8], path))
+                        path = ""
+            if own:
+                why.append("merges after the verdict head that change files beyond both parents (a resolved"
+                           " conflict) — the reviewer has not seen them: " + "; ".join(own[:5]))
+        now = git("rev-parse", "--short=8", "HEAD").stdout.strip()
+    if why:
+        print("review.sh final: %s is not closable:" % ledger, file=sys.stderr)
+        for w in why:
+            print("  - " + w, file=sys.stderr)
+        sys.exit(3)
+
+    def items(xs):
+        return "; ".join(clean(x) for x in xs if isinstance(x, str) and x.strip())
+
+    code, tests = v["code"], v["tests"]
+    res = {"red": "rot ohne den Fix", "green": "grün ohne den Fix", "not-runnable": "nicht lauffähig"}
+    out = ["### Abschlussprüfung (reviewer, Branch)", "",
+           "- **Urteil:** approve, geprüft auf `%s` (HEAD `%s`)" % (head[:8], now)]
+    checked = code.get("checked") if isinstance(code.get("checked"), list) else []
+    out.append("- **Code:** approve%s — Evidenz: %s" % (
+        " (Kriterien %s)" % ", ".join(str(c) for c in checked) if checked else "", items(code["evidence"])))
+    out.append("- **Tests:** approve — Abdeckung: %d Dateien — Evidenz: %s" % (
+        len(tests["coverage"]), items(tests["evidence"])))
+    for p in tests["probes"]:
+        out.append("  - Gegenprobe `%s`: %s%s" % (clean(p["test"]), res[p["result"]],
+                                                   " — " + clean(p["evidence"]) if isinstance(p.get("evidence"), str) and p["evidence"].strip() else ""))
+    if not tests["probes"]:
+        out.append("  - keine Gegenprobe")
+    fs = [(n, f) for n in ("code", "tests") for f in v[n].get("findings", [])]
+    if fs:
+        out += ["- **Funde (nicht blockierend):**"]
+        for n, f in fs:
+            loc = "%s:%s" % (f.get("file", "?"), f.get("line", 0)) if f.get("file") else "—"
+            out.append("  - [%s] %s `%s` — %s" % (n, clean(str(f.get("severity", "?"))), clean(loc), clean(str(f.get("what", "")))))
+    print("\n".join(out))
+
+
+if mode == "final":
+    final()
+    sys.exit(0)
+
 out = ["## " + clean(title), ""]
 for key in ("Spec", "Roadmap", "Heavy"):
     if key in head:
@@ -469,6 +610,7 @@ for box, heading in (("~", "Übersprungen"), ("?", "Offene Fragen")):
                 for t in some]
 print("\n".join(out))
 PY
+    case "$rc" in 0) ;; 3) exit 3 ;; *) die "could not read $LEDGER" ;; esac
     ;;
 
   -h|--help) usage ;;

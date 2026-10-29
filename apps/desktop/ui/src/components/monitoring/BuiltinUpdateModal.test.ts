@@ -39,6 +39,7 @@ import { get } from 'svelte/store';
 import type { MonitoringBuiltinUpdate, MonitoringTemplateFull } from '$lib/api/types';
 import { setLanguage } from '$lib/i18n';
 import { clearStatus, status } from '$lib/stores/statusBar';
+import { IpcError } from '$lib/utils/errors';
 import MonitoringTemplates from './MonitoringTemplates.svelte';
 
 const BADGE = 'Update verfügbar';
@@ -292,7 +293,7 @@ describe('BuiltinUpdateModal — taking the update (T11)', () => {
   it('a 409 (taken meanwhile) explains itself and reloads the list', async () => {
     const root = await mountList([tpl()]);
     const dlg = await openUpdate(root);
-    h.applyBuiltinUpdate.mockRejectedValue('HTTP 409: {"detail":"No update available"}');
+    h.applyBuiltinUpdate.mockRejectedValue(new IpcError('No update available', 'ERR_HTTP', 409));
     h.fetchTemplates.mockResolvedValue([
       tpl({ builtinVersion: 2, builtinEdited: false, builtinUpdateAvailable: false }),
     ]);
@@ -306,6 +307,23 @@ describe('BuiltinUpdateModal — taking the update (T11)', () => {
     expect(get(status)?.text).not.toContain('HTTP');
     expect(h.fetchTemplates).toHaveBeenCalledTimes(2);
     expect(badges(root)).toHaveLength(0);
+  });
+
+  it('a text that only starts like a 409 is reported, the modal stays', async () => {
+    const root = await mountList([tpl()]);
+    const dlg = await openUpdate(root);
+    h.applyBuiltinUpdate.mockRejectedValue(new Error('HTTP 409: No update available'));
+
+    await fireEvent.click(applyButton(dlg));
+
+    await waitFor(() =>
+      expect(get(status)).toMatchObject({
+        isError: true,
+        text: 'HTTP 409: No update available',
+      }),
+    );
+    expect(dialog(root)).not.toBeNull();
+    expect(h.fetchTemplates).toHaveBeenCalledTimes(1);
   });
 
   it('another failure keeps the modal open for a retry and reports the error', async () => {

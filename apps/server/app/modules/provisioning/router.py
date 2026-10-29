@@ -58,6 +58,7 @@ router = APIRouter(prefix="/api/servers", tags=["provisioning"])
 @router.post("/{server_id}/provision/token")
 def create_provision_token(
     server_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
     _scope=Depends(require_scope(SCOPE_ACCESS)),
@@ -79,6 +80,15 @@ def create_provision_token(
     db.add(token)
     db.commit()
     db.refresh(token)
+    audit.record(
+        db,
+        "provision.token.minted",
+        object_type="server",
+        object_id=server_id,
+        object_label=server.name,
+        detail="ttl=24h",
+        actor=actor_from_request(request),
+    )
 
     return {
         "token": raw_token,

@@ -122,7 +122,24 @@ mod memory_backend {
 
     pub(super) fn switch(on: bool) {
         STORE.with(|store| *store.borrow_mut() = on.then(HashMap::new));
+        EPOCH.with(|epoch| epoch.set(epoch.get() + 1));
     }
+
+    thread_local! {
+        static EPOCH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    }
+
+    pub(super) fn epoch() -> u64 {
+        EPOCH.with(|epoch| epoch.get())
+    }
+}
+
+/// Which in-memory keyring this thread has: it changes with every [`memory`] guard, so a
+/// cache of keyring contents (the held device identity) can tell a test's keyring from the
+/// one of an earlier test on the same thread.
+#[cfg(test)]
+pub fn memory_epoch() -> u64 {
+    memory_backend::epoch()
 }
 
 #[cfg(unix)]

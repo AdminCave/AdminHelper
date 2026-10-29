@@ -21,6 +21,15 @@ from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
 DEFAULT_CONSECUTIVE_OKS = 2
 
 
+def _no_control_characters(name: str | None) -> str | None:
+    # C0 and DEL, the boundary of the server's FRP fields. C1 and U+2028/U+2029 pass:
+    # the alert subject turns them into spaces itself, as it does for a name stored
+    # before this rule (alerter._SUBJECT_TO_SPACE).
+    if name is not None and any(ord(c) < 0x20 or c == "\x7f" for c in name):
+        raise ValueError("must not contain control characters")
+    return name
+
+
 class CheckCreate(RequestModel):
     server_id: str | None = None
     name: str
@@ -32,6 +41,11 @@ class CheckCreate(RequestModel):
     severity: str = "critical"
     consecutive_fails: IntColumn = 3
     consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = DEFAULT_CONSECUTIVE_OKS
+
+    @field_validator("name")
+    @classmethod
+    def _name_valid(cls, v: str) -> str:
+        return _no_control_characters(v)
 
     # Per-type config validation (T4): a typo'd key or out-of-range threshold
     # must fail here, not surface as a permanently-unknown check at runtime.
@@ -53,6 +67,11 @@ class CheckUpdate(RequestModel):
     severity: str | None = None
     consecutive_fails: IntColumn | None = None
     consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_valid(cls, v: str | None) -> str | None:
+        return _no_control_characters(v)
 
     # Leaving the key out leaves the value unchanged; an explicit null would reach
     # the NOT NULL column and fail there as a 500.
@@ -95,6 +114,11 @@ class TemplateCheckDef(RequestModel):
     consecutive_fails: IntColumn = 3
     consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = DEFAULT_CONSECUTIVE_OKS
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_valid(cls, v: str) -> str:
+        return _no_control_characters(v)
 
     # Same boundary the /checks router enforces for CheckCreate — so a template
     # check goes through identical validation instead of failing only later at

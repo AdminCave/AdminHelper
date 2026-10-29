@@ -130,6 +130,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  // The text carries the FRP credentials (auth token, dashboard password, STCP secret keys); it
+  // goes with the preview instead of staying until the page is left. Opening fetches it again.
+  function closePreview() {
+    previewOpen = false;
+    previewContent = '';
+  }
+
   async function downloadBulkZip() {
     try {
       const blob = await api.getBulkZip();
@@ -263,6 +270,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   open={previewOpen}
   title={previewTitle}
   content={previewContent}
-  onClose={() => (previewOpen = false)}
+  onClose={closePreview}
 />
 <FrpStatusModal open={statusOpen} onClose={() => (statusOpen = false)} />

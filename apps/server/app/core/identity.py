@@ -6,23 +6,30 @@
 
 The gateway (nginx) terminates TLS + mTLS and forwards the verified client cert
 as headers. uvicorn cannot see the cert itself (V1), so the app reads identity
-from those headers — trusted ONLY because the server has no host port and is
-reachable solely through the gateway, which strips any client-supplied
-``X-Client-*`` headers and sets them from the real, verified cert.
+from those headers — trusted ONLY because the server takes them from the gateway
+alone: the request's direct peer has to be an address of the compose service
+``gateway`` (``_from_gateway``). The gateway strips any client-supplied
+``X-Client-*`` headers and sets them from the real, verified cert. The missing
+host port keeps out only the outside: the other services of the compose network
+reach the server as well, and their headers count as no cert.
 
 Scopes map to the PKI intermediates (ADR 0001 §3.1): ``access`` = humans
 (desktop / browser), ``tunnel`` = agents (they live under the tunnel
 intermediate). The scope is carried in the cert's OU, set by the ca-issuer from
 the enrollment grant — a client cannot widen it via its CSR.
 
-Rollout (ADR 0002): ``require_scope`` is **permissive** by default — a missing or
-mismatched scope is logged but the request proceeds, so the data plane stays
-usable before clients have certs (A3–A7). A8 sets ``MTLS_ENFORCE=true`` to reject.
+Enforcement (ADR 0002, A8): ``require_scope`` is **enforced** by default
+(``MTLS_ENFORCE`` unset or ``true``, ``app.core.config``) — a missing or
+mismatched scope gets a 403. ``MTLS_ENFORCE=false`` is the permissive mode of the
+rollout (A3–A7), kept only for a manual first bootstrap: the mismatch is logged
+and the request proceeds.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
@@ -35,6 +42,8 @@ from sqlalchemy.orm import Session
 
 from app.core import config
 from app.core.database import get_db
+from app.core.errors import CodedHTTPException
+from app.core.middleware import _NameResolver
 
 logger = logging.getLogger("adminhelper.identity")
 
@@ -47,6 +56,18 @@ SCOPE_AGENT = "tunnel"  # agents (under the tunnel intermediate, ADR 0001 §3.1)
 # enroll plane strips them entirely. Mirrors what the ca-issuer reads on /renew.
 _H_VERIFY = "x-client-verify"
 _H_CERT = "x-client-cert"  # URL-escaped PEM ($ssl_client_escaped_cert)
+
+# The compose service whose requests may carry those headers (_from_gateway). A list
+# of its own, not TRUSTED_PROXIES: an entry there vouches for the client address a
+# proxy forwards, not for a client certificate.
+_GATEWAY_NAMES = ("gateway",)
+_GATEWAY = _NameResolver(list(_GATEWAY_NAMES), label="mTLS identity", thread_name="gateway-names")
+# A recreated gateway (an update) comes back with a new address: a request from an
+# unknown peer waits this long for the fresh lookup that has_address starts.
+_GATEWAY_WAIT = 1.0
+_IGNORED_LOG_INTERVAL = 60.0  # one warning per peer and minute
+_ignored_logged: dict[str | None, float] = {}
+_ignored_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -75,13 +96,60 @@ def _first(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> str | None:
     return attrs[0].value if attrs else None
 
 
+def _from_gateway(request: Request) -> bool:
+    """Whether the request's direct peer is the gateway, decided once per request
+    like the register's answer in _refused: a request reads its identity several
+    times (the scope guard, then the binding to the user), and a resolver that
+    changes in between must neither split the answer nor make the request wait
+    twice."""
+    cached = getattr(request.state, "from_gateway", None)
+    if cached is None:
+        cached = _peer_is_gateway(request)
+        request.state.from_gateway = cached
+    return cached
+
+
+def _peer_is_gateway(request: Request) -> bool:
+    """Whether the direct peer is a current address of _GATEWAY_NAMES. If not, a
+    warning names the peer, at most once a minute each. The peer is uvicorn's
+    scope["client"], which it rewrites from X-Forwarded-For only for peers in
+    FORWARDED_ALLOW_IPS (default the loopback addresses), so a forwarded header
+    from another service cannot pose as the gateway."""
+    peer = request.client.host if request.client else None
+    if peer is not None and _GATEWAY.has_address(peer, wait=_GATEWAY_WAIT):
+        return True
+    now = time.monotonic()
+    with _ignored_lock:
+        last = _ignored_logged.get(peer)
+        if last is not None and now - last < _IGNORED_LOG_INTERVAL:
+            return False
+        for seen, at in list(_ignored_logged.items()):
+            if now - at >= _IGNORED_LOG_INTERVAL:
+                del _ignored_logged[seen]
+        _ignored_logged[peer] = now
+    logger.warning(
+        "mTLS: %s %r from %s carries client certificate headers but does not come "
+        "from the gateway; they are ignored",
+        request.method,
+        request.url.path,
+        peer or "an unknown peer",
+    )
+    return False
+
+
 def get_client_identity(request: Request) -> ClientIdentity:
     """Parse the gateway-forwarded client identity from the verified cert.
 
     The cert PEM is the authoritative source (not the DN header), so the scope is
     read the same way the ca-issuer reads it on renewal. Returns the unverified
-    placeholder whenever the gateway did not report a SUCCESS-verified cert."""
+    placeholder whenever the gateway did not report a SUCCESS-verified cert, or
+    the request does not come from the gateway. Only a request that reports one
+    asks the resolver, so plain requests never wait on DNS; one from an unknown
+    peer may wait up to _GATEWAY_WAIT. So this stays a sync function, which
+    FastAPI runs in its threadpool, and its callers stay off the event loop."""
     if request.headers.get(_H_VERIFY, "").upper() != "SUCCESS":
+        return _UNVERIFIED
+    if not _from_gateway(request):
         return _UNVERIFIED
     escaped = request.headers.get(_H_CERT, "")
     # Cap the header before unquote()+parse: a very large forwarded value would otherwise burn
@@ -105,25 +173,29 @@ def get_client_identity(request: Request) -> ClientIdentity:
     )
 
 
-# The detail of the 403 a client keys its hint off (the ERR_* pattern of the desktop);
-# the prose may change, the code must not.
+# The 403 for a certificate of another user. A client branches on its code, the
+# body's `code`; the detail keeps it as prefix for clients that still read the text.
+# The prose may change, the code must not.
+CERT_USER_MISMATCH_CODE = "ERR_CERT_USER_MISMATCH"
 CERT_USER_MISMATCH = (
-    "ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. Sign in as "
+    f"{CERT_USER_MISMATCH_CODE}: The client certificate belongs to another user. Sign in as "
     "that user, or register this device for yourself."
 )
 
 
 # The 403 for an agent certificate on a route of another server (R-0283).
+CERT_SERVER_MISMATCH_CODE = "ERR_CERT_SERVER_MISMATCH"
 CERT_SERVER_MISMATCH = (
-    "ERR_CERT_SERVER_MISMATCH: The client certificate belongs to another server. "
+    f"{CERT_SERVER_MISMATCH_CODE}: The client certificate belongs to another server. "
     "Provision this host for the server it reports for."
 )
 
 
 # The 403 for a certificate the register refuses: revoked, or not recorded after the
-# transition (R-0224). The desktop keys its hint off the code, as with CERT_USER_MISMATCH.
+# transition (R-0224). A client keys its hint off the code, as with CERT_USER_MISMATCH.
+CERT_REVOKED_CODE = "ERR_CERT_REVOKED"
 CERT_REVOKED = (
-    "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device "
+    f"{CERT_REVOKED_CODE}: This device certificate is no longer valid. Reset the device "
     "identity and register the device again."
 )
 
@@ -143,14 +215,14 @@ def require_cert_user(request: Request, username: str, db: Session) -> None:
     if identity.scope == SCOPE_ACCESS and identity.cn == username:
         return
     logger.warning(
-        "mTLS: %s %s — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
+        "mTLS: %s %r — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
         request.method,
         request.url.path,
         identity.cn,
         identity.scope,
         username,
     )
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_USER_MISMATCH)
+    raise CodedHTTPException(status.HTTP_403_FORBIDDEN, CERT_USER_MISMATCH, CERT_USER_MISMATCH_CODE)
 
 
 def require_cert_server(server_id: str, request: Request) -> None:
@@ -163,13 +235,15 @@ def require_cert_server(server_id: str, request: Request) -> None:
     if not identity.verified or identity.scope != SCOPE_AGENT or identity.cn == server_id:
         return
     logger.warning(
-        "mTLS: %s %s — agent certificate CN=%s is not for server %s",
+        "mTLS: %s %r — agent certificate CN=%s is not for server %s",
         request.method,
         request.url.path,
         identity.cn,
         server_id,
     )
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_SERVER_MISMATCH)
+    raise CodedHTTPException(
+        status.HTTP_403_FORBIDDEN, CERT_SERVER_MISMATCH, CERT_SERVER_MISMATCH_CODE
+    )
 
 
 def _is_revoked(
@@ -216,13 +290,53 @@ def _refused(request: Request, db: Session, identity: ClientIdentity) -> bool:
 
 def _deny_refused(request: Request, identity: ClientIdentity) -> None:
     logger.warning(
-        "mTLS: %s %s — client certificate CN=%s (scope=%s) is revoked or not recorded",
+        "mTLS: %s %r — client certificate CN=%s (scope=%s) is revoked or not recorded",
         request.method,
         request.url.path,
         identity.cn,
         identity.scope,
     )
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_REVOKED)
+    raise CodedHTTPException(status.HTTP_403_FORBIDDEN, CERT_REVOKED, CERT_REVOKED_CODE)
+
+
+def check_scope(
+    request: Request, identity: ClientIdentity, db: Session, allowed: frozenset[str]
+) -> ClientIdentity:
+    """The check of require_scope on a session the caller holds: the SSE stream runs it on
+    its short session, so no get_db session lives as long as the stream."""
+    # Check the scope before the register query, and only a cert of a wanted scope asks the
+    # register (5.27): enforced, a wrong-scope cert is rejected anyway; permissive, it grants
+    # nothing here and the request rests on its other credentials, so the scope mismatch is
+    # what gets logged.
+    if identity.verified and identity.scope in allowed:
+        if _refused(request, db, identity):
+            _deny_refused(request, identity)
+        return identity
+
+    if config.MTLS_ENFORCE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kein gültiges Client-Zertifikat mit passendem Scope",
+        )
+
+    wanted = "/".join(sorted(allowed))
+    if identity.verified:
+        logger.warning(
+            "mTLS permissiv: %s %r erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
+            request.method,
+            request.url.path,
+            wanted,
+            identity.scope,
+            identity.cn,
+        )
+    else:
+        logger.debug(
+            "mTLS permissiv: %s %r ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
+            request.method,
+            request.url.path,
+            wanted,
+        )
+    return identity
 
 
 def require_scope(*allowed: str):
@@ -230,11 +344,11 @@ def require_scope(*allowed: str):
     scopes and not be revoked. Dual-use routes pass several (e.g. agent + admin
     read the same config).
 
-    Permissive (default): a missing/mismatched cert is logged but the request
-    proceeds — only a *wrong-scope* cert warns; the expected "no cert yet" case stays
-    at debug so the rollout doesn't spam logs. Enforced (``MTLS_ENFORCE``, A8): either
-    returns 403. A presented certificate the register refuses gets the 403 in both
-    modes, like the binding to the user (R-0224)."""
+    Enforced (default, ``MTLS_ENFORCE``, A8): a missing/mismatched cert returns 403.
+    Permissive (``MTLS_ENFORCE=false``): either is logged but the request proceeds —
+    only a *wrong-scope* cert warns; the expected "no cert yet" case stays at debug so
+    the rollout doesn't spam logs. A presented certificate the register refuses gets
+    the 403 in both modes, like the binding to the user (R-0224)."""
     allowed_set = frozenset(allowed)
 
     def dependency(
@@ -242,38 +356,6 @@ def require_scope(*allowed: str):
         identity: ClientIdentity = Depends(get_client_identity),
         db: Session = Depends(get_db),
     ) -> ClientIdentity:
-        # Check the scope before the register query, and only a cert of a wanted scope asks the
-        # register (5.27): enforced, a wrong-scope cert is rejected anyway; permissive, it grants
-        # nothing here and the request rests on its other credentials, so the scope mismatch is
-        # what gets logged.
-        if identity.verified and identity.scope in allowed_set:
-            if _refused(request, db, identity):
-                _deny_refused(request, identity)
-            return identity
-
-        if config.MTLS_ENFORCE:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Kein gültiges Client-Zertifikat mit passendem Scope",
-            )
-
-        wanted = "/".join(sorted(allowed_set))
-        if identity.verified:
-            logger.warning(
-                "mTLS permissiv: %s %s erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
-                request.method,
-                request.url.path,
-                wanted,
-                identity.scope,
-                identity.cn,
-            )
-        else:
-            logger.debug(
-                "mTLS permissiv: %s %s ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
-                request.method,
-                request.url.path,
-                wanted,
-            )
-        return identity
+        return check_scope(request, identity, db, allowed_set)
 
     return dependency

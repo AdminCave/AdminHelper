@@ -525,30 +525,55 @@ class TestValidationErrorAnswer:
             (["body", "f"], "Input should be a finite number"),
         ]
 
-    @pytest.mark.parametrize(
-        ("config", "echoed"),
-        [
-            ('{"target": 5}', {"target": 5}),
-            ('{"target": 5, "timeout": NaN}', {"target": 5, "timeout": None}),
-        ],
-        ids=["surrogate", "surrogate-and-NaN"],
-    )
-    def test_a_lone_surrogate_in_the_input_is_escaped(self, client_db, monkeypatch, config, echoed):
+    def test_a_lone_surrogate_in_the_input_is_escaped(self, client_db, monkeypatch):
         # JSON spells a lone surrogate as \ud800 and json.loads reads it, but UTF-8 has no
-        # form for it: JSONResponse could not encode the echoed body, a 500.
+        # form for it: JSONResponse could not encode the echoed input, a 500. RequestModel
+        # refuses such a body before any field check (test_nul.py); its 422 echoes the string.
         monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
         client, _ = client_db
-        body = f'{{"name": "\\ud800", "check_type": "ping", "config": {config}}}'
+        body = '{"name": "\\ud800", "check_type": "ping", "config": {"target": 5}}'
         r = client.post("/checks", content=body, headers=_JSON)
         assert (r.status_code, r.headers["content-type"]) == (422, "application/json")
+        assert b"\\ud800" in r.content
         # Strict UTF-8, as any client reads it.
         answer = json.loads(r.content.decode("utf-8"))
         assert_every_reader_reads(answer)
         [error] = answer["detail"]
-        assert "target: Input should be a valid string" in error["msg"]
-        assert error["input"] == {"name": "\ud800", "check_type": "ping", "config": echoed}
+        assert (error["loc"], error["input"], error["msg"]) == (
+            ["body", "name"],
+            "\ud800",
+            "Value error, must not contain a lone surrogate (U+D800 to U+DFFF)",
+        )
         r = client.get("/checks")
         assert (r.status_code, r.json()) == (200, [])
+
+    def test_a_lone_surrogate_beside_a_non_finite_number_is_escaped(self):
+        # Over HTTP this body now ends at RequestModel (above), so the handler gets the error
+        # FastAPI built for it before: the config check's, echoing the body as Starlette
+        # parses it.
+        sent = json.loads(
+            '{"name": "\\ud800", "check_type": "ping", "config": {"target": 5, "timeout": NaN}}'
+        )
+        errors = [
+            {
+                "type": "value_error",
+                "loc": ("body",),
+                "msg": "Value error, Invalid config for ping: target: Input should be a valid string",
+                "input": sent,
+            }
+        ]
+        ours, _ = self._handlers()
+        status, content = self._answer(ours, errors)
+        assert status == 422
+        assert b"\\ud800" in content
+        answer = json.loads(content.decode("utf-8"))
+        assert_every_reader_reads(answer)
+        [error] = answer["detail"]
+        assert error["input"] == {
+            "name": "\ud800",
+            "check_type": "ping",
+            "config": {"target": 5, "timeout": None},
+        }
 
 
 class TestExcludeVmids:

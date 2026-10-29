@@ -39,6 +39,7 @@ dependencies = [
  "url",
  "windows",
  "x509-parser",
+ "zeroize",
 ]
 
 [[package]]

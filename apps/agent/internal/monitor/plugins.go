@@ -28,34 +28,46 @@ const dockerTimeout = 10 * time.Second
 // (no push, no FRPC sync for that run). A var only so tests can shorten it.
 var pluginTimeout = 15 * time.Second
 
-// runWithTimeout runs a plugin command under pluginTimeout, mirroring the docker
+// runWithTimeout runs a plugin command under pluginTimeout and ctx, mirroring the docker
 // path, so a hung external tool can never block the report cycle. Through runTimed, a
 // call the timeout ended returns context.DeadlineExceeded, which the systemctl and sc
 // reasons (commandFailure) name as a timeout instead of the ExitError exec reports
 // ("signal: killed" on Linux, "exit status 1" on Windows).
-func runWithTimeout(name string, args ...string) ([]byte, error) {
-	return runTimed(pluginTimeout, name, args...)
+func runWithTimeout(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return runTimed(ctx, pluginTimeout, name, args...)
 }
 
 // dockerCLI indirects collectDocker's docker lookup and calls so tests can drive every path without
 // docker, which is slow and host-dependent (same reason as pluginCollectors, 6.18).
 var dockerCLI = struct {
 	lookPath func(file string) (string, error)
-	run      func(args ...string) ([]byte, error)
+	run      func(ctx context.Context, args ...string) ([]byte, error)
 }{exec.LookPath, runDocker}
 
 // runDocker runs one docker CLI call under dockerTimeout.
-func runDocker(args ...string) ([]byte, error) {
-	return runTimed(dockerTimeout, "docker", args...)
+func runDocker(ctx context.Context, args ...string) ([]byte, error) {
+	return runTimed(ctx, dockerTimeout, "docker", args...)
 }
 
-// runTimed runs a command under timeout. A call the timeout killed returns context.DeadlineExceeded:
-// exec itself reports it as the ExitError "signal: killed", which would pass a hanging tool off as a
-// failing one.
-func runTimed(timeout time.Duration, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// commandWaitDelay bounds how long runTimed waits for a command's pipes once its context ended or the
+// command exited. The kill reaches only the tool: a grandchild that inherited its stdout (a daemon, a
+// pager) kept the pipe open, and Output read it past the timeout until the grandchild ended.
+const commandWaitDelay = 2 * time.Second
+
+// runTimed runs a command under timeout and ctx, whichever ends first. A call either ended returns the
+// context's error (context.DeadlineExceeded at the timeout or the deadline of ctx, context.Canceled
+// when ctx was canceled): exec itself reports it as the ExitError "signal: killed", which would pass a
+// hanging tool off as a failing one. exec.ErrWaitDelay means the command exited 0 and only a child of
+// it held the pipe past commandWaitDelay: the command's output is complete, so it is no error.
+func runTimed(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = commandWaitDelay
+	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return out, nil
+	}
 	if err != nil && ctx.Err() != nil {
 		return out, ctx.Err()
 	}
@@ -67,15 +79,15 @@ func runTimed(timeout time.Duration, name string, args ...string) ([]byte, error
 // does not answer, a failing or hanging call or unreadable output is available=false with an error
 // code, so the monitoring service can raise it instead of seeing no data. Every abort is logged, so
 // `diagnose` shows the reason.
-func collectDocker() map[string]any {
+func collectDocker(ctx context.Context) map[string]any {
 	if _, err := dockerCLI.lookPath("docker"); err != nil {
 		return nil
 	}
-	if _, err := dockerCLI.run("info"); err != nil {
+	if _, err := dockerCLI.run(ctx, "info"); err != nil {
 		return dockerUnavailable("info", "daemon_unreachable", err)
 	}
 
-	out, err := dockerCLI.run("ps", "-a", "--format", "{{json .}}")
+	out, err := dockerCLI.run(ctx, "ps", "-a", "--format", "{{json .}}")
 	if err != nil {
 		return dockerUnavailable("ps", "cli_failed", err)
 	}
@@ -93,7 +105,7 @@ func collectDocker() map[string]any {
 
 	// ONE batch inspect for all containers, as plain JSON: a Go template on .State.Health.Status fails
 	// for a container without a healthcheck.
-	out, err = dockerCLI.run(append([]string{"inspect", "--type", "container"}, ids...)...)
+	out, err = dockerCLI.run(ctx, append([]string{"inspect", "--type", "container"}, ids...)...)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return dockerUnavailable("inspect", "timeout", err)
 	}
@@ -221,13 +233,13 @@ type dockerInspect struct {
 // from, so tests can drive every path without pvesh (same reason as dockerCLI).
 var pveshCLI = struct {
 	lookPath func(file string) (string, error)
-	run      func(args ...string) ([]byte, error)
+	run      func(ctx context.Context, args ...string) ([]byte, error)
 	hostname func() (string, error)
 }{exec.LookPath, runPvesh, os.Hostname}
 
 // runPvesh runs one pvesh call under pluginTimeout (runWithTimeout).
-func runPvesh(args ...string) ([]byte, error) {
-	return runWithTimeout("pvesh", args...)
+func runPvesh(ctx context.Context, args ...string) ([]byte, error) {
+	return runWithTimeout(ctx, "pvesh", args...)
 }
 
 // pveshGet runs `pvesh get <path> <args> --output-format json` and decodes the answer into out, a
@@ -235,9 +247,9 @@ func runPvesh(args ...string) ([]byte, error) {
 // proxmoxUnavailable, "" on success: a call the timeout ended is timeout, an exit status or a pvesh
 // that did not start cli_failed, an answer that is no JSON of out's form parse_failed. null decodes
 // without error, to a nil map or slice, so it is checked for on its own.
-func pveshGet(out any, path string, args ...string) (code, text string) {
+func pveshGet(ctx context.Context, out any, path string, args ...string) (code, text string) {
 	call := "pvesh get " + path
-	raw, err := pveshCLI.run(append(append([]string{"get", path}, args...), "--output-format", "json")...)
+	raw, err := pveshCLI.run(ctx, append(append([]string{"get", path}, args...), "--output-format", "json")...)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout", fmt.Sprintf("%s timed out after %s", call, pluginTimeout)
@@ -254,7 +266,7 @@ func pveshGet(out any, path string, args ...string) (code, text string) {
 // hostname, or a node status, backup index or VM list that could not be read, is available=false
 // with an error code (proxmoxUnavailable), so the monitoring service can raise it instead of seeing
 // no data.
-func collectProxmox() map[string]any {
+func collectProxmox(ctx context.Context) map[string]any {
 	if _, err := pveshCLI.lookPath("pvesh"); err != nil {
 		return nil
 	}
@@ -265,7 +277,7 @@ func collectProxmox() map[string]any {
 	}
 	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
 	var nd map[string]any
-	if code, text := pveshGet(&nd, "/nodes/"+nodeName+"/status"); code != "" {
+	if code, text := pveshGet(ctx, &nd, "/nodes/"+nodeName+"/status"); code != "" {
 		return proxmoxUnavailable(code, text)
 	}
 	memData, _ := nd["memory"].(map[string]any)
@@ -282,7 +294,7 @@ func collectProxmox() map[string]any {
 	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages)). Without
 	// every backup storage read, each VM whose backups sit on a missing one would go out without
 	// last_backup_ts, which the server reads as "No backup" (critical): an outage instead.
-	backupIndex, code, text := buildBackupIndex(nodeName)
+	backupIndex, code, text := buildBackupIndex(ctx, nodeName)
 	if code != "" {
 		return proxmoxUnavailable(code, text)
 	}
@@ -290,7 +302,7 @@ func collectProxmox() map[string]any {
 	// VMs + LXC containers. A VM list that could not be read is an outage, not an empty list: the
 	// server reads a block without VMs as "no VMs" (ok).
 	var vms []map[string]any
-	if code, text = pveshGet(&vms, "/cluster/resources", "--type", "vm"); code != "" {
+	if code, text = pveshGet(ctx, &vms, "/cluster/resources", "--type", "vm"); code != "" {
 		return proxmoxUnavailable(code, text)
 	}
 	vmList := make([]map[string]any, 0, len(vms))
@@ -338,12 +350,12 @@ func proxmoxUnavailable(code, text string) map[string]any {
 // call fails here). An incomplete index returns nil with the outage code and its text for
 // proxmoxUnavailable, a complete one code "": the list or a content call could not be read
 // (pveshGet), or a backup storage is not active (backup_index_incomplete).
-func buildBackupIndex(nodeName string) (index map[int]int64, code, text string) {
+func buildBackupIndex(ctx context.Context, nodeName string) (index map[int]int64, code, text string) {
 	index = make(map[int]int64)
 
 	storagesPath := "/nodes/" + nodeName + "/storage"
 	var storages []map[string]any
-	if code, text = pveshGet(&storages, storagesPath, "--content", "backup"); code != "" {
+	if code, text = pveshGet(ctx, &storages, storagesPath, "--content", "backup"); code != "" {
 		return nil, code, text
 	}
 
@@ -357,7 +369,7 @@ func buildBackupIndex(nodeName string) (index map[int]int64, code, text string) 
 
 		// Fetch all backups of this storage at once (without the --vmid filter)
 		var items []map[string]any
-		if code, text = pveshGet(&items, storagesPath+"/"+sid+"/content", "--content", "backup"); code != "" {
+		if code, text = pveshGet(ctx, &items, storagesPath+"/"+sid+"/content", "--content", "backup"); code != "" {
 			return nil, code, text
 		}
 		for _, item := range items {
@@ -378,24 +390,24 @@ func buildBackupIndex(nodeName string) (index map[int]int64, code, text string) 
 // (same reason as dockerCLI).
 var zpoolCLI = struct {
 	lookPath func(file string) (string, error)
-	run      func(args ...string) ([]byte, error)
+	run      func(ctx context.Context, args ...string) ([]byte, error)
 }{exec.LookPath, runZpool}
 
 // runZpool runs one zpool call under pluginTimeout; runTimed, so a hung zpool is a timeout.
-func runZpool(args ...string) ([]byte, error) {
-	return runTimed(pluginTimeout, "zpool", args...)
+func runZpool(ctx context.Context, args ...string) ([]byte, error) {
+	return runTimed(ctx, pluginTimeout, "zpool", args...)
 }
 
 // collectZFS collects ZFS pool information (Linux only). No zpool binary means ZFS is not installed
 // and stays silent (nil). With the CLI present the block is always sent: a failing or hanging
 // `zpool list` is available=false with an error code, so the monitoring service can raise it instead
 // of seeing no data.
-func collectZFS() map[string]any {
+func collectZFS(ctx context.Context) map[string]any {
 	if _, err := zpoolCLI.lookPath("zpool"); err != nil {
 		return nil
 	}
 
-	out, err := zpoolCLI.run("list", "-H", "-o",
+	out, err := zpoolCLI.run(ctx, "list", "-H", "-o",
 		"name,size,alloc,free,cap,health")
 	if err != nil {
 		return zfsUnavailable(err)
@@ -407,7 +419,7 @@ func collectZFS() map[string]any {
 	// Error details for non-ONLINE pools
 	for _, p := range pools {
 		if p["health"] != "ONLINE" {
-			statusOut, err := zpoolCLI.run("status", "-x")
+			statusOut, err := zpoolCLI.run(ctx, "status", "-x")
 			if err == nil {
 				result["errors"] = strings.TrimSpace(string(statusOut))
 			}

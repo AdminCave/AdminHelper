@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
@@ -179,6 +180,14 @@ def require_internal_key(x_internal_key: str | None = Depends(_internal_key_sche
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")
 
 
+# The source types under which the server keeps notices of its own and by which it finds
+# them again: frp_config (main._report_rejected_fields, a field set already reported) and
+# frps (frp.supervisor_watch, an event already told and the hourly limit). A row from this
+# ingress under one of them would count as such a notice. IncomingEvent keeps taking them:
+# the server builds its own notices with it.
+_SERVER_SOURCE_TYPES = frozenset({"frp_config", "frps"})
+
+
 @internal_router.post("/events", status_code=status.HTTP_202_ACCEPTED)
 def ingest(
     event: IncomingEvent,
@@ -186,6 +195,18 @@ def ingest(
     _internal: None = Depends(require_internal_key),
 ):
     """Accept one event from an event source and fan it out to recipients."""
+    if event.source_type in _SERVER_SOURCE_TYPES:
+        # The 422 the schema declares (HTTPValidationError), as for a body it refuses.
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "source_type"),
+                    "msg": "reserved for notices of the server itself",
+                    "input": event.source_type,
+                }
+            ]
+        )
     notified = ingest_event(db, event)
     if (
         event.event_type == "monitoring.check.transition"

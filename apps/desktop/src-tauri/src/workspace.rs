@@ -759,6 +759,30 @@ pub fn sign_in_url(meta: &Meta, sent: &str) -> Result<String, AppError> {
     own_url(meta, sent)
 }
 
+/// The source a sync of the workspace `meta` loads, `sent` being the one its window names: the
+/// one it keeps, trimmed, which `sent`, trimmed, must spell the same. That is the rule by which
+/// the save of the settings tells a sync source (`storage::meta_with`): another path or query
+/// is another source, even of the same server. Only a sync workspace syncs, and only once it
+/// has a source. An error names no URL: a sync source may carry credentials.
+pub fn sync_url(meta: &Meta, sent: &str) -> Result<String, AppError> {
+    if meta.kind != SyncMode::Sync {
+        return Err(AppError::Validation(
+            "only a sync workspace syncs".to_string(),
+        ));
+    }
+    let Some(kept) = meta.url.as_deref().map(str::trim) else {
+        return Err(AppError::Validation(
+            "this sync workspace has no sync URL yet".to_string(),
+        ));
+    };
+    if sent.trim() != kept {
+        return Err(AppError::Validation(
+            "this workspace syncs only from the sync URL it keeps".to_string(),
+        ));
+    }
+    Ok(kept.to_string())
+}
+
 /// Refuses the sign-in of `username` at `url` in the workspace `own` while another of
 /// `workspaces` (each with its `workspace.json`) signs in to the same server ([`server_origin`])
 /// as the same user (its `lastUsername`, case aside): a user of an installation signs in in one
@@ -866,10 +890,10 @@ mod tests {
 
     use super::{
         acquire, acquire_within, check_side, check_sign_in_once, context, current, enter, is_open,
-        metas, own_url, same_server, set_current, shown_url, sign_in_url, startup, AppError, Held,
-        InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side, Workspace, WorkspaceId,
-        ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE,
-        REGISTRY_FILE, USAGE,
+        metas, own_url, same_server, set_current, shown_url, sign_in_url, startup, sync_url,
+        AppError, Held, InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side, Workspace,
+        WorkspaceId, ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE,
+        META_FILE, PALETTE, REGISTRY_FILE, USAGE,
     };
     use crate::models::SyncMode;
 
@@ -1752,6 +1776,86 @@ mod tests {
         assert!(!same_server("https://h", "http://h"));
         assert!(!same_server("https://h", "https://h:8443"));
         assert!(!same_server("not a url", "not a url"));
+    }
+
+    // ── Where the sync of a workspace loads from ──
+
+    const SOURCE: &str = "https://sync.example/c.json?api_key=k1";
+
+    /// [`meta`] as a sync workspace with `url`.
+    fn sync_meta(url: Option<&str>) -> Meta {
+        Meta {
+            kind: SyncMode::Sync,
+            url: url.map(String::from),
+            ..meta()
+        }
+    }
+
+    #[test]
+    fn sync_binding_a_sync_workspace_loads_the_source_it_keeps() {
+        for sent in [SOURCE, " https://sync.example/c.json?api_key=k1\n"] {
+            assert_eq!(
+                sync_url(&sync_meta(Some(SOURCE)), sent).unwrap(),
+                SOURCE,
+                "{sent:?}"
+            );
+        }
+        // The source as it keeps it, trimmed.
+        assert_eq!(
+            sync_url(
+                &sync_meta(Some(" https://sync.example/c.json?api_key=k1 ")),
+                SOURCE
+            )
+            .unwrap(),
+            SOURCE
+        );
+    }
+
+    #[test]
+    fn sync_binding_another_source_is_refused_and_the_error_names_no_url() {
+        for other in [
+            "https://sync.example/d.json?api_key=k1",
+            "https://sync.example/c.json?api_key=k2",
+            "https://sync.example/c.json",
+            "https://SYNC.example/c.json?api_key=k1",
+            "https://sync.example:443/c.json?api_key=k1",
+            "https://other.example/c.json?api_key=k1",
+            "",
+        ] {
+            let refused = sync_url(&sync_meta(Some(SOURCE)), other).unwrap_err();
+            assert!(
+                matches!(&refused, AppError::Validation(msg)
+                    if msg == "this workspace syncs only from the sync URL it keeps"),
+                "{other:?}: {refused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sync_binding_a_sync_workspace_without_a_source_syncs_nothing() {
+        assert_refused(
+            sync_url(&sync_meta(None), SOURCE),
+            "this sync workspace has no sync URL yet",
+            "no source",
+        );
+    }
+
+    #[test]
+    fn sync_binding_only_a_sync_workspace_syncs() {
+        for kind in [SyncMode::Server, SyncMode::Local] {
+            for url in [Some(SOURCE), Some("https://ah.example"), None] {
+                let meta = Meta {
+                    kind: kind.clone(),
+                    url: url.map(String::from),
+                    ..meta()
+                };
+                assert_refused(
+                    sync_url(&meta, url.unwrap_or(SOURCE)),
+                    "only a sync workspace syncs",
+                    &format!("{kind:?} {url:?}"),
+                );
+            }
+        }
     }
 
     #[test]

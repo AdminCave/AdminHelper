@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app import config
-from app.issuer import IssuanceError, Issuer
+from app.issuer import IssuanceError, Issuer, IssuerUnavailable
 from app.storage import Intermediate, ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
 
@@ -132,6 +132,10 @@ def enroll(body: EnrollRequest, issuer: Issuer = Depends(get_issuer)):
         return issuer.enroll(body.token, body.csr.encode(), body.replaces)
     except IssuanceError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except IssuerUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
 
 @app.post("/renew")
@@ -152,3 +156,7 @@ def renew(body: RenewRequest, request: Request, issuer: Issuer = Depends(get_iss
         return issuer.renew(cert_pem, body.csr.encode())
     except IssuanceError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except IssuerUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc

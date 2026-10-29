@@ -2,11 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { writable } from 'svelte/store';
 import type { Hook, HookCreate, HookCreateResult, HookDetail, HookUpdate } from '$lib/api/types';
 import * as api from '$lib/api/hooks';
-
-const _hooks = writable<Hook[]>([]);
+import { listStore } from './listStore';
 
 // The list holds only what GET /api/hooks returns (HookResponse in
 // apps/server/app/modules/hooks/router.py). The create and detail responses add the script and, for
@@ -34,48 +32,38 @@ function toListEntry(h: Hook): Hook {
   return entry as Hook;
 }
 
-// Stale-response guard (see users.ts): a slow refresh() list() must not overwrite state a mutation
-// already changed — else e.g. a just-removed hook reappears (4.145).
-let refreshGen = 0;
+const list = listStore<Hook>(api.list);
 
 export const hooks = {
-  subscribe: _hooks.subscribe,
+  subscribe: list.subscribe,
+  refresh: list.refresh,
+  reset: list.reset,
 
-  async refresh(): Promise<void> {
-    const gen = ++refreshGen;
-    const list = await api.list();
-    if (gen === refreshGen) _hooks.set(list);
+  create(data: HookCreate): Promise<HookCreateResult> {
+    return list.mutate(
+      () => api.create(data),
+      (hooks, created) => [...hooks, toListEntry(created)],
+    );
   },
 
-  // Logout empties the store (see users.ts).
-  reset(): void {
-    refreshGen++;
-    _hooks.set([]);
+  update(id: string, data: HookUpdate): Promise<HookDetail> {
+    return list.mutate(
+      () => api.update(id, data),
+      (hooks, updated) => hooks.map((h) => (h.id === id ? { ...h, ...toListEntry(updated) } : h)),
+    );
   },
 
-  async create(data: HookCreate): Promise<HookCreateResult> {
-    const created = await api.create(data);
-    refreshGen++;
-    _hooks.update((list) => [...list, toListEntry(created)]);
-    return created;
-  },
-
-  async update(id: string, data: HookUpdate): Promise<HookDetail> {
-    const updated = await api.update(id, data);
-    refreshGen++;
-    _hooks.update((list) => list.map((h) => (h.id === id ? { ...h, ...toListEntry(updated) } : h)));
-    return updated;
-  },
-
-  async remove(id: string): Promise<void> {
-    await api.remove(id);
-    refreshGen++;
-    _hooks.update((list) => list.filter((h) => h.id !== id));
+  remove(id: string): Promise<void> {
+    return list.mutate(
+      () => api.remove(id),
+      (hooks) => hooks.filter((h) => h.id !== id),
+    );
   },
 
   async toggle(id: string): Promise<void> {
-    const updated = await api.toggle(id);
-    refreshGen++;
-    _hooks.update((list) => list.map((h) => (h.id === id ? { ...h, ...updated } : h)));
+    await list.mutate(
+      () => api.toggle(id),
+      (hooks, updated) => hooks.map((h) => (h.id === id ? { ...h, ...updated } : h)),
+    );
   },
 };

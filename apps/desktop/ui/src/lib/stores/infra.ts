@@ -7,7 +7,7 @@
 // and drives the create/edit/delete server modal. Server mode only — the page
 // that uses it is gated like monitoring/ansible.
 
-import { errMsg } from '$lib/utils/errors';
+import { errMsg, errStatus } from '$lib/utils/errors';
 import { writable, derived } from 'svelte/store';
 import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
@@ -119,14 +119,13 @@ export async function saveServer(
             );
             showStatus(tNow('infra.status.templateAssigned'));
           } catch (err) {
-            const msg = errMsg(err);
-            if (msg.startsWith('HTTP 409')) {
+            if (errStatus(err) === 409) {
               // The create nudge can let the tag-sync materialize a tag-bound
               // assignment before this opt-in call lands — the template IS
               // assigned then, not an error (T45).
               showStatus(tNow('infra.status.templateAssigned'));
             } else {
-              reportError(tNow('infra.error.templateAssign', { message: msg }));
+              reportError(tNow('infra.error.templateAssign', { message: errMsg(err) }));
             }
           }
         }

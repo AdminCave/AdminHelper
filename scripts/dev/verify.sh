@@ -5,13 +5,14 @@
 #
 # verify.sh — the one way a task's Verify: line runs a component's fast suite.
 #
-#   bash scripts/dev/verify.sh <component> [<component> …] [--strict] [--tree <path>] [-- <args>]
+#   bash scripts/dev/verify.sh <component> [<component> …] [--strict] [--full] [--tree <path>] [-- <args>]
 #
 #     <component>  server monitoring ca-issuer agent desktop desktop-rs
 #                  desktop-ui desktop-e2e web scripts — or `all` for every
 #                  component (alone). Runs the lint AND unit steps of all the
 #                  components named, in one run.
 #     --strict     a SKIP of a required step fails the run (see run.sh)
+#     --full       stream the suite's whole output as well (the default on a terminal)
 #     --tree       run against another checkout (a worktree), not this one
 #     -- <args>    extra arguments for the suite itself — one component only, e.g.
 #                  `verify.sh server --strict -- tests/test_auth.py -k lifecycle`
@@ -26,6 +27,12 @@
 # run.sh artifact plus what only this wrapper knows (component, args, tree). A run
 # that did not leaves NO file — stale evidence is worse than none.
 #
+# The suite's whole output goes to $AH_OUT_DIR/logs/verify-<time>-<pid>.log (the
+# newest 30 stay); stdout gets its digest (scripts/dev/log-digest.sh: every step
+# line, the excerpts of red steps, the summary, exit and log path). A model reads
+# that first and the log only where it needs more; --full or a terminal streams
+# everything as before.
+#
 # AH_DEVENV=<path> overrides the devenv file (default <tree>/.devenv.sh).
 # Sourcing it means --tree executes a file from the tree it points at; that is the
 # same trust level as the checkout's own scripts, and --tree is chosen by the
@@ -38,10 +45,11 @@ set -uo pipefail
 usage() { sed -n '/^#   bash scripts\/dev\/verify.sh/,/^# Why this exists/p' "$0" \
   | sed '$d; s/^# \{0,1\}//'; }
 
-COMPONENTS=() STRICT=0 TREE="" ARGS=()
+COMPONENTS=() STRICT=0 FULL=0 TREE="" ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --strict) STRICT=1; shift ;;
+    --full) FULL=1; shift ;;
     --tree)
       shift; [ $# -gt 0 ] || { echo "--tree needs a path"; exit 2; }
       TREE="$1"; shift ;;
@@ -123,7 +131,23 @@ fi
 cd "$TREE" || exit 2
 export AH_ARGS="${ARGS[*]:-}"
 
-"${CMD[@]}"; rc=$?
+LOG_DIR="$OUT_DIR/logs"
+mkdir -p "$LOG_DIR" || { echo "verify.sh: cannot create $LOG_DIR" >&2; exit 2; }
+LOG="$LOG_DIR/verify-$(date +%Y%m%d-%H%M%S)-$$.log"
+[ -t 1 ] && FULL=1
+if [ "$FULL" = 1 ]; then
+  "${CMD[@]}" 2>&1 | tee "$LOG"; rc=${PIPESTATUS[0]}
+else
+  "${CMD[@]}" > "$LOG" 2>&1; rc=$?
+fi
+# The digest comes from the wrapper's own checkout, like this script: --tree
+# points at a tree to test, not at the tools that report on it. If it cannot
+# run, the end of the log stands in, so a red run never reads as silence.
+bash "$SELF_ROOT/scripts/dev/log-digest.sh" "$LOG" "$rc" \
+  || { echo "  (log-digest failed — the last 40 lines of $LOG:)"; tail -n 40 "$LOG"; }
+# Bounded: the newest 30 logs of this tree, by name (time first, so by age).
+find "$LOG_DIR" -maxdepth 1 -type f -name 'verify-[0-9]*-[0-9]*-[0-9]*.log' -printf '%f\n' | sort -r | tail -n +31 \
+  | while IFS= read -r old; do rm -f -- "$LOG_DIR/$old"; done
 
 # last-verify.json = the run's own artifact plus the three things only this
 # wrapper knows. Reusing run.sh's file keeps one schema instead of two that
@@ -139,8 +163,8 @@ json_str() {
 if [ -s "$SRC" ] && [ "$(tail -n1 "$SRC")" = "}" ]; then
   {
     sed '$d' "$SRC"
-    printf ',\n  "component": %s,\n  "args": %s,\n  "tree": %s\n}\n' \
-      "$(json_str "$COMPONENT")" "$(json_str "${ARGS[*]:-}")" "$(json_str "$TREE")"
+    printf ',\n  "component": %s,\n  "args": %s,\n  "tree": %s,\n  "log": %s\n}\n' \
+      "$(json_str "$COMPONENT")" "$(json_str "${ARGS[*]:-}")" "$(json_str "$TREE")" "$(json_str "$LOG")"
   } > "$DST" && echo "  verify: $DST"
 else
   echo "  verify: no complete run artifact at $SRC — last-verify.json not written" >&2

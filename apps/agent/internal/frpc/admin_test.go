@@ -5,6 +5,7 @@
 package frpc
 
 import (
+	"context"
 	"encoding/hex"
 	"net"
 	"os"
@@ -36,7 +37,7 @@ func checkAdminConf(t *testing.T, kv map[string]string) {
 func TestReloadAdminConfIsPrivateAndStable(t *testing.T) {
 	setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	adminConf := filepath.Join(config.FrpDir(), "admin.conf")
@@ -63,7 +64,7 @@ func TestReloadAdminConfIsPrivateAndStable(t *testing.T) {
 	}
 
 	serveToml(t, twoTunnelsToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a second tunnel: %v", err)
 	}
 	if second := readFile(t, adminConf); second != string(first) {

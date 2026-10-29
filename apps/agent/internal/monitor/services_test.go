@@ -51,6 +51,7 @@ func TestCommandFailure(t *testing.T) {
 		"exit status":   {time.Minute, failed, "exit status 3"},
 		"not started": {time.Minute, &exec.Error{Name: "/usr/bin/docker", Err: exec.ErrNotFound},
 			"docker did not start"},
+		"canceled": {time.Minute, context.Canceled, "canceled before it ended"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := commandFailure("docker", tc.timeout, tc.err); got != tc.want {

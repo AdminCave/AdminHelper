@@ -7,8 +7,8 @@
 // clears every running attempt. These tests cover that race guard plus markConnectionUsed's
 // mode-specific branches (6.5), the tunnel resolution without mappings, the keyring key of a
 // stored RDP password behind a tunnel, the user and domain from the password prompt, which
-// password a start takes after the prompt's "remember password", when the prompt offers it, and
-// that a refused resolution ends the start.
+// password a start takes after the prompt's "remember password", when the prompt offers it, that
+// a refused resolution ends the start, and the screen an RDP start hands to Rust.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -74,6 +74,9 @@ const FOREIGN_PORT =
   'port 6001 on this machine belongs to the tunnel of another workspace; start the tunnel of ' +
   'this workspace to connect';
 
+// The screen jsdom reports to an RDP start that stubs none: no size, a device pixel ratio of 1.
+const JSDOM_CLIENT = { screenWidth: 0, screenHeight: 0, scaleFactor: 1 };
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.setSession({ settings: { mode: 'local', storePasswords: false }, session: null });
@@ -132,8 +135,8 @@ describe('markConnectionUsed mode branches', () => {
   });
 });
 
-// Only admins read mappings, so a non-admin has none; Rust still resolves a target of 127.0.0.1 at
-// the server port of a visitor to the local port that visitor got.
+// A user without a mapping for the connection; Rust still resolves a target of 127.0.0.1 at the
+// server port of a visitor to the local port that visitor got.
 describe('tunnel resolution without mappings', () => {
   const autoConnection = (kind: 'ssh' | 'web'): Connection => ({
     id: `${kind}-auto`,
@@ -254,7 +257,7 @@ describe('stored RDP password behind a tunnel', () => {
     expect(invoke).toHaveBeenCalledWith('open_connection_stored', {
       connection: resolved,
       credentialConnection: listed,
-      client: undefined,
+      client: JSDOM_CLIENT,
       correlationId: expect.any(String),
     });
   });
@@ -308,7 +311,7 @@ describe('RDP password prompt behind a tunnel', () => {
     expect(invoke).toHaveBeenCalledWith('open_connection', {
       connection: { ...typed, port: 23002 },
       password: 'pw',
-      client: undefined,
+      client: JSDOM_CLIENT,
       correlationId: expect.any(String),
     });
   });
@@ -390,7 +393,7 @@ describe('RDP start after the prompt remembers the password', () => {
     expect(invoke).toHaveBeenCalledWith('open_connection_stored', {
       connection: { ...typed, port: 23004 },
       credentialConnection: typed,
-      client: undefined,
+      client: JSDOM_CLIENT,
       correlationId: expect.any(String),
     });
     expect(invoke).not.toHaveBeenCalledWith('open_connection', expect.anything());
@@ -404,7 +407,7 @@ describe('RDP start after the prompt remembers the password', () => {
     expect(invoke).toHaveBeenCalledWith('open_connection', {
       connection: { ...typed, port: 23004 },
       password: 'pw',
-      client: undefined,
+      client: JSDOM_CLIENT,
       correlationId: expect.any(String),
     });
     expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
@@ -417,7 +420,7 @@ describe('RDP start after the prompt remembers the password', () => {
     expect(invoke).toHaveBeenCalledWith('open_connection', {
       connection: { ...typed, port: 23004 },
       password: 'pw',
-      client: undefined,
+      client: JSDOM_CLIENT,
       correlationId: expect.any(String),
     });
     expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
@@ -434,7 +437,7 @@ describe('RDP start after the prompt remembers the password', () => {
     expect(invoke).toHaveBeenCalledWith('open_connection', {
       connection: { ...typed, port: 23004 },
       password: 'pw',
-      client: undefined,
+      client: JSDOM_CLIENT,
       correlationId: expect.any(String),
     });
     expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
@@ -536,5 +539,77 @@ describe('RDP start Rust refuses to resolve', () => {
     expect(reportError).toHaveBeenCalledTimes(1);
     expect(invoke).not.toHaveBeenCalledWith('open_connection', expect.anything());
     expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
+  });
+});
+
+// Same fresh module graph: Rust sizes "Fit" from the screen and picks the scale of "Automatic" and
+// "HiDPI" from it (rdp_logic.rs fit_window_size, hdpi_scale), so both ways to start RDP hand it on.
+describe('RDP start hands the screen to Rust', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.doUnmock('@tauri-apps/api/core');
+  });
+
+  const listed: Connection = {
+    id: 'r6',
+    name: 'rdp',
+    kind: 'rdp',
+    host: 'rdp.example.com',
+    port: 3389,
+    username: 'admin',
+    tags: [],
+    trustCert: false,
+  };
+
+  async function connectOnHidpiScreen(stored: boolean) {
+    const invoke = vi.fn(async (cmd: string, args?: { connection?: Connection }) => {
+      if (cmd === 'password_state') return { canStore: true, stored };
+      if (cmd === 'resolve_connection') return { connection: args?.connection, viaTunnel: false };
+      return undefined;
+    });
+
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.resetModules();
+    vi.doUnmock('$lib/bridge');
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke }));
+    const prompt = await import('./passwordPrompt');
+    vi.mocked(prompt.requestPassword).mockResolvedValue({
+      cancelled: false,
+      updated: listed,
+      password: 'pw',
+      remember: false,
+    });
+    const flow = await import('./connectFlow');
+    // After the import: the window may have moved to another screen since, the start reads it.
+    vi.stubGlobal('screen', { width: 1920, height: 1080 });
+    vi.stubGlobal('devicePixelRatio', 2);
+    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    vi.useFakeTimers();
+
+    await flow.initiateConnect(listed);
+    return invoke;
+  }
+
+  it('hands the screen to open_connection after the password prompt', async () => {
+    const invoke = await connectOnHidpiScreen(false);
+
+    expect(invoke).toHaveBeenCalledWith('open_connection', {
+      connection: listed,
+      password: 'pw',
+      client: { screenWidth: 1920, screenHeight: 1080, scaleFactor: 2 },
+      correlationId: expect.any(String),
+    });
+  });
+
+  it('hands the screen to open_connection_stored with a stored password', async () => {
+    const invoke = await connectOnHidpiScreen(true);
+
+    expect(invoke).toHaveBeenCalledWith('open_connection_stored', {
+      connection: listed,
+      credentialConnection: listed,
+      client: { screenWidth: 1920, screenHeight: 1080, scaleFactor: 2 },
+      correlationId: expect.any(String),
+    });
   });
 });

@@ -6,7 +6,8 @@
 # fresh generation, idempotence (a re-run leaves existing secrets stable — the
 # POSTGRES_PASSWORD stability the stale-volume auth guard depends on), placeholder
 # replacement, quoted-value recognition (audit 6.71), a write that hits a full
-# disk (R-0516), a .env with bytes outside UTF-8 or a NUL byte (R-0530), and a
+# disk (R-0516), CA_ROOT_PASSPHRASE only in the run that generates
+# POSTGRES_PASSWORD, a .env with bytes outside UTF-8 or a NUL byte (R-0530), and a
 # read-only .env with a terminal on stdin (R-0538).
 #
 # Run: bash scripts/tests/init-secrets_test.sh   (needs bash, openssl, coreutils, the
@@ -107,6 +108,35 @@ for k in SECRET_KEY MONITOR_API_KEY POSTGRES_PASSWORD CA_ROOT_PASSPHRASE; do
 done
 { [ "$allgen" = 1 ] && [ "$(grep -c '^SECRET_KEY=' "$ENV")" -eq 1 ]; } \
   && ok "one-key .env: all four secrets generated, one SECRET_KEY line" || bad "one-key .env: not all four secrets or a duplicate SECRET_KEY line"
+
+# ── 6b. CA_ROOT_PASSPHRASE only in the run that generates POSTGRES_PASSWORD ──
+# Only the ca-issuer's first start needs the passphrase; after it the value is
+# meant to be empty, and update.sh runs init-secrets.sh on every update. A set
+# POSTGRES_PASSWORD means the volumes exist already: a new passphrase would not
+# match the root key in ca-pki. (a) set POSTGRES_PASSWORD: the empty line stays,
+# with a hint on stdout; (b) a fresh install: both generated, no hint.
+CA_HINT="→ CA_ROOT_PASSPHRASE stays empty"
+ENV="$WORK/env-ca-update"
+printf '%s\n' SECRET_KEY=already-set MONITOR_API_KEY=already-set POSTGRES_PASSWORD=already-set CA_ROOT_PASSPHRASE= > "$ENV"
+out=$(bash "$INIT" "$ENV" 2>/dev/null); rc=$?
+[ $rc -eq 0 ] && ok "set POSTGRES_PASSWORD, empty CA_ROOT_PASSPHRASE: exit 0" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "set POSTGRES_PASSWORD, empty CA_ROOT_PASSPHRASE: exit $rc"; }
+[ "$(LC_ALL=C grep -a '^CA_ROOT_PASSPHRASE=' "$ENV")" = CA_ROOT_PASSPHRASE= ] \
+  && ok "set POSTGRES_PASSWORD: CA_ROOT_PASSPHRASE stays one empty line" \
+  || bad "set POSTGRES_PASSWORD: CA_ROOT_PASSPHRASE lines $(LC_ALL=C grep -a '^CA_ROOT_PASSPHRASE=' "$ENV" | tr '\n' ' ')"
+grep -qF "$CA_HINT" <<<"$out" && ok "set POSTGRES_PASSWORD: the hint on stdout" || bad "set POSTGRES_PASSWORD: no hint on stdout: $out"
+ENV="$WORK/env-ca-fresh"
+printf '%s\n' SECRET_KEY=already-set MONITOR_API_KEY=already-set POSTGRES_PASSWORD= CA_ROOT_PASSPHRASE= > "$ENV"
+out=$(bash "$INIT" "$ENV" 2>/dev/null); rc=$?
+[ $rc -eq 0 ] && ok "empty POSTGRES_PASSWORD and CA_ROOT_PASSPHRASE: exit 0" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "empty POSTGRES_PASSWORD and CA_ROOT_PASSPHRASE: exit $rc"; }
+both=1
+for k in POSTGRES_PASSWORD CA_ROOT_PASSPHRASE; do
+  [ "$(LC_ALL=C grep -a -c -x -E "$k=[0-9a-f]{64}" "$ENV")" = 1 ] || both=0
+done
+[ "$both" = 1 ] && ok "fresh install: POSTGRES_PASSWORD and CA_ROOT_PASSPHRASE generated (64-hex, one line each)" \
+  || bad "fresh install: .env now $(tr '\n' ' ' < "$ENV")"
+! grep -qF "$CA_HINT" <<<"$out" && ok "fresh install: no hint" || bad "fresh install: the hint, though both were generated: $out"
 
 # ── 7. bytes outside UTF-8 or a NUL byte: no line lost, no set secret renewed ─
 # grep takes a file for binary once it holds a NUL byte or a byte the caller's

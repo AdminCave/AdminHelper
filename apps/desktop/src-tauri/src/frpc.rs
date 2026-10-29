@@ -245,14 +245,18 @@ struct VisitorBundle {
     // identity instead; any `pki` field the server still sends is ignored.
 }
 
+/// A visitor-bundle reply: the bundle, `None` for no tunnels (see [`carries_bundle`]), and
+/// the HTTP code if the server refused the access (403).
+struct BundleReply {
+    bundle: Option<VisitorBundle>,
+    refused: Option<u16>,
+}
+
 /// Fetch the visitor bundle from the server. TOML only — the server no longer
-/// ships PKI (D6); the identity comes from enrollment. `None` means the user has
-/// no tunnels (see [`carries_bundle`]). Comes with the sign-in it was fetched for; a bundle
-/// that arrives after that user signed out, or after someone else signed in, is refused,
-/// so frpc never takes over the tunnels of a session that is gone.
-async fn fetch_visitor_bundle(
-    session: &SessionState,
-) -> Result<(Option<VisitorBundle>, SignedIn), AppError> {
+/// ships PKI (D6); the identity comes from enrollment. Comes with the sign-in it was fetched
+/// for; a bundle that arrives after that user signed out, or after someone else signed in, is
+/// refused, so frpc never takes over the tunnels of a session that is gone.
+async fn fetch_visitor_bundle(session: &SessionState) -> Result<(BundleReply, SignedIn), AppError> {
     let path = "/api/frp/generate/visitor-bundle";
     let (response, who) = auth::authenticated_get(session, path).await?;
     let bundle = bundle_from(response).await?;
@@ -260,22 +264,31 @@ async fn fetch_visitor_bundle(
     Ok((bundle, who))
 }
 
-/// The bundle a visitor-bundle reply carries; `None` means no tunnels (see [`carries_bundle`]).
-async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle>, AppError> {
-    if !carries_bundle(response.status())? {
-        return Ok(None);
+/// What a visitor-bundle reply carries (see [`carries_bundle`]).
+async fn bundle_from(response: reqwest::Response) -> Result<BundleReply, AppError> {
+    let status = response.status();
+    if !carries_bundle(status)? {
+        let refused = (status == reqwest::StatusCode::FORBIDDEN).then_some(status.as_u16());
+        return Ok(BundleReply {
+            bundle: None,
+            refused,
+        });
     }
 
     let bundle: VisitorBundle = response.json().await.map_err(AppError::from)?;
-    Ok(Some(bundle))
+    Ok(BundleReply {
+        bundle: Some(bundle),
+        refused: None,
+    })
 }
 
 /// Whether a visitor-bundle reply with this status carries a bundle. 404 is no error but "no
 /// tunnels": the server answers it both without an FRP config and when the user sees no usable
-/// STCP tunnel (generate_router.py). Every other non-2xx — a 401 the refresh could not cure
-/// included — is an error.
+/// STCP tunnel (generate_router.py). 403 is "no tunnels" too: the server refuses the device or
+/// the user access, say after a revocation, so the tunnels go. Every other non-2xx — a 401 the
+/// refresh could not cure included — is an error.
 fn carries_bundle(status: reqwest::StatusCode) -> Result<bool, AppError> {
-    if status == reqwest::StatusCode::NOT_FOUND {
+    if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::FORBIDDEN {
         return Ok(false);
     }
     if !status.is_success() {
@@ -505,6 +518,10 @@ const ADMIN_API_USER: &str = "adminhelper";
 
 /// How long frpc may take to answer a reload before the reconciliation restarts it instead.
 const RELOAD_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long a frpc an aborted run left behind may take to answer its stop, and then to close its
+/// admin port.
+const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The config frpc runs: the allow-listed server TOML with the desktop's local head in its root,
 /// as the text frpc reads. `loginFailExit = false` keeps frpc retrying while frps is unreachable
@@ -843,6 +860,11 @@ fn start_frpc(
         .spawn()
         .map_err(|e| AppError::Connection(format!("frpc konnte nicht gestartet werden: {e}")))?;
 
+    // `child` holds the process handle of frpc, so its pid names this frpc even if it already
+    // ended.
+    #[cfg(windows)]
+    end_with_this_process(child.pid());
+
     // Tag this spawn with a generation. A stop→start restart kills the old process and spawns a
     // new one, but the killed process's Terminated event arrives asynchronously — often AFTER
     // the new spawn. Without this check its log task would wipe the NEW tunnel's child (the
@@ -906,6 +928,77 @@ fn start_frpc(
     Ok(())
 }
 
+/// Puts frpc (`pid`) into the job object of this process, so Windows ends frpc when this process
+/// ends, on any path ("End task" and crashes too): frpc does not end with the process that started
+/// it, and Windows has no SIGPIPE to end it at its next log line. If that fails, frpc runs on as
+/// before and the first reconciliation of the next start stops it.
+#[cfg(windows)]
+fn end_with_this_process(pid: u32) {
+    // A static is never dropped: the handle stays open while this process lives, only this
+    // process holds it, and Windows closes it when the process ends.
+    static JOB: std::sync::OnceLock<std::io::Result<std::os::windows::io::OwnedHandle>> =
+        std::sync::OnceLock::new();
+    let assigned = match JOB.get_or_init(kill_on_close_job) {
+        Ok(job) => assign_to_job(job, pid).map_err(|e| format!("not assigned to the job: {e}")),
+        Err(e) => Err(format!("no job object: {e}")),
+    };
+    if let Err(e) = assigned {
+        log::warn!("[frpc] frpc (pid {pid}) does not end with this process, {e}");
+    }
+}
+
+/// A new job object whose processes Windows ends when its last handle closes. The handle is not
+/// inheritable: a child of this process holding it would keep the job, and frpc, alive.
+#[cfg(windows)]
+fn kill_on_close_job() -> std::io::Result<std::os::windows::io::OwnedHandle> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::{
+        CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    // SAFETY: no security attributes (the handle is not inheritable) and no name; the call reads
+    // nothing else.
+    let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) }?;
+    // SAFETY: CreateJobObjectW succeeded, so the handle is open, and nothing else owns it.
+    let job = unsafe { OwnedHandle::from_raw_handle(job.0) };
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    // SAFETY: `job` is open, `limits` is the struct the class names, lives across the call, and
+    // the length is its size.
+    unsafe {
+        SetInformationJobObject(
+            HANDLE(job.as_raw_handle()),
+            JobObjectExtendedLimitInformation,
+            std::ptr::from_ref(&limits).cast(),
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    }?;
+    Ok(job)
+}
+
+/// Puts the process `pid` into `job`.
+#[cfg(windows)]
+fn assign_to_job(job: &std::os::windows::io::OwnedHandle, pid: u32) -> std::io::Result<()> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::AssignProcessToJobObject;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+
+    // SAFETY: the call takes plain values and returns a new handle or an error.
+    let process = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, pid) }?;
+    // SAFETY: OpenProcess succeeded, so the handle is open, and nothing else owns it; dropping it
+    // closes it.
+    let process = unsafe { OwnedHandle::from_raw_handle(process.0) };
+    // SAFETY: both handles are open across the call.
+    unsafe {
+        AssignProcessToJobObject(HANDLE(job.as_raw_handle()), HANDLE(process.as_raw_handle()))
+    }?;
+    Ok(())
+}
+
 /// Stop the running frpc process and remove its runtime files: they lie only while it runs. The
 /// process stops even if they cannot go; the error then says so, and the log too, as the stops on
 /// a sign-in change and at exit drop the error.
@@ -951,15 +1044,20 @@ fn same_sign_in(a: &SignedIn, b: &SignedIn) -> bool {
     a.server_url == b.server_url && a.username == b.username
 }
 
-/// Ask the running frpc to reload its config file through its admin API on loopback.
-async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
-    // An own client: no proxy may see the password, and a reload that hangs counts as failed.
+/// A client for frpc's admin API on loopback. An own one: no proxy may see the password, it
+/// follows no redirect, and a call that hangs past `timeout` counts as failed.
+fn admin_api_client(timeout: Duration) -> Result<reqwest::Client, AppError> {
     let client = crate::http_client::with_timeouts(reqwest::Client::builder())
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(RELOAD_TIMEOUT)
+        .timeout(timeout)
         .build()?;
-    let response = client
+    Ok(client)
+}
+
+/// Ask the running frpc to reload its config file through its admin API on loopback.
+async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
+    let response = admin_api_client(RELOAD_TIMEOUT)?
         .get(format!("http://127.0.0.1:{}/api/reload", head.port))
         .basic_auth(ADMIN_API_USER, Some(&head.password))
         .send()
@@ -971,6 +1069,116 @@ async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
         )));
     }
     Ok(())
+}
+
+/// Ask the frpc behind `head` to stop through its admin API on loopback.
+async fn request_stop(head: &LocalHead) -> Result<(), AppError> {
+    let response = admin_api_client(STOP_TIMEOUT)?
+        .post(format!("http://127.0.0.1:{}/api/stop", head.port))
+        .basic_auth(ADMIN_API_USER, Some(&head.password))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(AppError::Connection(format!(
+            "frpc stop answered {}",
+            response.status()
+        )));
+    }
+    Ok(())
+}
+
+/// The local head in `config`, the text of a frpc config: `webServer` exactly as
+/// [`with_local_head`] writes it, on 127.0.0.1 for [`ADMIN_API_USER`] with a port from 1 to 65535
+/// and a hex password, and nothing else in it. The error never holds the password.
+fn local_head_in(config: &str) -> Result<LocalHead, AppError> {
+    let parsed: toml::Value =
+        toml::from_str(config).map_err(|e| parse_error("frpc config", config, &e))?;
+    let web_server = parsed.get("webServer").and_then(toml::Value::as_table);
+    let port = web_server
+        .and_then(|table| table.get("port"))
+        .and_then(toml::Value::as_integer)
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|&port| port != 0);
+    let password = web_server
+        .and_then(|table| table.get("password"))
+        .and_then(toml::Value::as_str)
+        .filter(|password| !password.is_empty() && password.bytes().all(|b| b.is_ascii_hexdigit()));
+    match (web_server, port, password) {
+        (Some(web_server), Some(port), Some(password))
+            if *web_server == admin_api(port, password) =>
+        {
+            Ok(LocalHead {
+                port,
+                password: password.to_string(),
+            })
+        }
+        _ => Err(AppError::Validation(
+            "frpc config: webServer is not the desktop's local head".to_string(),
+        )),
+    }
+}
+
+/// The local head in the `visitor.toml` an earlier process of this workspace left in `run_dir`;
+/// `None`, logged without the password, if there is none or it is not the desktop's.
+fn head_left_behind(run_dir: &Path) -> Option<LocalHead> {
+    // Like `empty_run_dir`, before anything is read: a symlink or a junction is no run dir of ours.
+    if let Ok(meta) = std::fs::symlink_metadata(run_dir) {
+        if !meta.is_dir() {
+            log::warn!(
+                "[frpc] {} is a symlink, a junction or a file, not a run dir: no frpc left behind to stop",
+                run_dir.display()
+            );
+            return None;
+        }
+    }
+    let path = run_dir.join(VISITOR_CONFIG);
+    let head = match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::info!("[frpc] no frpc config left behind in {}", run_dir.display());
+            return None;
+        }
+        read => read
+            .map_err(AppError::from)
+            .and_then(|config| local_head_in(&config)),
+    };
+    head.inspect_err(|e| {
+        log::warn!(
+            "[frpc] {} names no frpc left behind to stop: {e}",
+            path.display()
+        )
+    })
+    .ok()
+}
+
+/// Stop the frpc an aborted earlier process of this workspace left running behind `head`, and
+/// wait up to [`STOP_TIMEOUT`] for its admin port to close: then it has ended and let go of the
+/// visitors' ports too. A failure is logged only; there is no frpc any more, or the one there is
+/// not ours.
+async fn stop_left_behind(head: &LocalHead) {
+    if let Err(e) = request_stop(head).await {
+        log::warn!(
+            "[frpc] the frpc left behind on admin port {} was not stopped: {e}",
+            head.port
+        );
+        return;
+    }
+    let closed = async {
+        let admin_port = (std::net::Ipv4Addr::LOCALHOST, head.port);
+        while tokio::net::TcpStream::connect(admin_port).await.is_ok() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    };
+    match tokio::time::timeout(STOP_TIMEOUT, closed).await {
+        Ok(()) => log::info!(
+            "[frpc] stopped the frpc left behind on admin port {}",
+            head.port
+        ),
+        Err(_) => log::warn!(
+            "[frpc] the admin port {} of the stopped frpc left behind did not close within {}s",
+            head.port,
+            STOP_TIMEOUT.as_secs()
+        ),
+    }
 }
 
 /// Give every visitor of `config` its local port from `ports` and rewrite it to listen there (see
@@ -1016,6 +1224,21 @@ async fn reconcile(
     who: SignedIn,
     since: u64,
 ) -> Result<RefreshOutcome, AppError> {
+    // Before the first reconciliation of this process clears the run dir, the frpc of the one that
+    // wrote it goes, should it still run: frpc does not end with the process that started it, and
+    // it keeps the tunnels of its sign-in open and the visitors' ports taken. The head in its
+    // visitor.toml reaches exactly that frpc, the password is its own. No guard across the await.
+    let left_behind = {
+        let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+        if guard.run_dir.is_none() {
+            head_left_behind(sidecar.run_dir())
+        } else {
+            None
+        }
+    };
+    if let Some(head) = left_behind {
+        stop_left_behind(&head).await;
+    }
     {
         let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
         if guard.run_dir.is_none() {
@@ -1185,10 +1408,10 @@ fn start_fresh(
 }
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
-/// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure, a session that changed meanwhile) leaves the running frpc alone. The fetch
-/// goes to the signed-in server with the session's current access token (see
-/// [`auth::authenticated_get`]).
+/// reload or leave it; no tunnels (404, or 403: access refused, then named in `refused`) stop
+/// it. A failure before that (network, 5xx, a 401 the refresh could not cure, a session that
+/// changed meanwhile) leaves the running frpc alone. The fetch goes to the signed-in server
+/// with the session's current access token (see [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
     app: tauri::AppHandle,
     state: FrpcState,
@@ -1199,18 +1422,19 @@ pub async fn refresh_tunnel(
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
     let data_dir = app_data_dir(&app)?;
     let run_dir = runtime_dir(&data_dir)?;
-    let (bundle, who) = fetch_visitor_bundle(session).await?;
+    let (reply, who) = fetch_visitor_bundle(session).await?;
     let ports = PortRegistry::new(&data_dir);
     let sidecar = AppSidecar {
         app: &app,
         run_dir,
         data_dir,
     };
-    let server_toml = bundle.as_ref().map(|bundle| bundle.toml.as_str());
+    let server_toml = reply.bundle.as_ref().map(|bundle| bundle.toml.as_str());
     let outcome = reconcile(&state, &sidecar, &ports, server_toml, who, since).await?;
     Ok(TunnelRefresh {
         status: tunnel_status(&state),
         outcome,
+        refused: reply.refused,
     })
 }
 
@@ -1221,13 +1445,14 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
+    use std::time::Duration;
 
     use super::{
         bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
         reconcile, remap_visitors, request_reload, rewrite_identity_paths, runtime_dir, stop_frpc,
-        tunnel_status, validate_visitor_toml, visitor_names, with_local_head, write_visitor_config,
-        Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding,
-        NO_IDENTITY_HINT, VISITOR_CONFIG,
+        stop_left_behind, tunnel_status, validate_visitor_toml, visitor_names, with_local_head,
+        write_visitor_config, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar,
+        VisitorBinding, NO_IDENTITY_HINT, VISITOR_CONFIG,
     };
     use crate::error::AppError;
     use crate::keyring_store;
@@ -1728,6 +1953,8 @@ bindPort = 6000
 
         // Without an enrolled identity a TLS table in dotted keys stops the start with the hint.
         keyring_store::delete("enroll|key").unwrap();
+        // Deleted past enrollment, which holds what it read: read the keyring again.
+        crate::enrollment::reload_identity();
         let dir = scratch_dir("identity-missing");
         let error = write_visitor_config(&dir, &dotted, &head(7400, "c0ffee")).unwrap_err();
         assert!(
@@ -2042,8 +2269,13 @@ method = "token"
     }
 
     #[test]
+    fn refresh_403_means_no_tunnels() {
+        assert!(!carries_bundle(reqwest::StatusCode::FORBIDDEN).unwrap());
+    }
+
+    #[test]
     fn refresh_500_and_every_other_failure_is_an_error() {
-        for code in [500, 502, 503, 401, 403] {
+        for code in [500, 502, 503, 401] {
             let status = reqwest::StatusCode::from_u16(code).unwrap();
             assert!(carries_bundle(status).is_err(), "{status}");
         }
@@ -3184,6 +3416,246 @@ method = "token"
         assert_eq!(names_in(run), ["identity", "kept", VISITOR_CONFIG]);
     }
 
+    /// Writes into the run dir of `sidecar` what a process killed while its frpc ran leaves
+    /// there: that frpc's config, behind the head at `port` with the password c0ffee, as `edit`
+    /// changes it.
+    fn left_behind(sidecar: &DiskSidecar, port: u16, edit: fn(&mut toml::Table)) {
+        let mut config = parse(&with_local_head(SERVER_TOML, port, "c0ffee").unwrap());
+        edit(config.as_table_mut().unwrap());
+        std::fs::create_dir_all(sidecar.run_dir()).unwrap();
+        let text = toml::to_string(&config).unwrap();
+        std::fs::write(sidecar.run_dir().join(VISITOR_CONFIG), text).unwrap();
+    }
+
+    /// The `webServer` table of a frpc config.
+    fn web_server(config: &mut toml::Table) -> &mut toml::Table {
+        config
+            .get_mut("webServer")
+            .and_then(toml::Value::as_table_mut)
+            .unwrap()
+    }
+
+    /// The value of the Authorization header in the request head `request`.
+    fn authorization(request: &str) -> Option<&str> {
+        request.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("authorization")
+                .then_some(value.trim())
+        })
+    }
+
+    /// How long a test waits for a stop that must not come. The reconciliation awaits the reply
+    /// to a stop, so one it sent has reached its fake by the time it returns.
+    const NO_STOP_WITHIN: Duration = Duration::from_secs(1);
+
+    #[tokio::test]
+    async fn the_first_reconciliation_stops_the_frpc_an_aborted_run_left_behind() {
+        let ports = TempPorts::new();
+        let _keyring = enrolled();
+        let state = idle();
+        let sidecar = DiskSidecar::new(&ports.dir);
+        let (port, request) = serve_one(reply("200 OK", "")).await;
+        left_behind(&sidecar, port, |_| {});
+
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        let request = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .expect("no stop reached the frpc left behind")
+            .unwrap();
+        assert!(
+            request.starts_with("POST /api/stop HTTP/1.1\r\n"),
+            "{request}"
+        );
+        // base64("adminhelper:c0ffee")
+        assert_eq!(
+            authorization(&request),
+            Some("Basic YWRtaW5oZWxwZXI6YzBmZmVl")
+        );
+        assert_eq!(outcome, RefreshOutcome::Started);
+        // The old config went before the first write; what lies there is the new one.
+        let run = sidecar.run_dir();
+        assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()]);
+        assert_eq!(names_in(run), ["identity", VISITOR_CONFIG]);
+        let written = parse(&std::fs::read_to_string(run.join(VISITOR_CONFIG)).unwrap());
+        let new_head = sidecar.inner.writes.borrow()[0].1.clone();
+        assert_eq!(
+            written["webServer"]["password"].as_str(),
+            Some(new_head.password.as_str())
+        );
+
+        // Only the first reconciliation of a process stops: from then on the frpc behind the
+        // head in the run dir is its own.
+        let (port, request) = serve_one(reply("200 OK", "")).await;
+        left_behind(&sidecar, port, |_| {});
+        let since = lock(&state).generation;
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Unchanged);
+        assert!(
+            tokio::time::timeout(NO_STOP_WITHIN, request).await.is_err(),
+            "a later reconciliation stopped a frpc"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_first_reconciliation_stops_nothing_behind_a_head_that_is_not_the_desktops() {
+        type Edit = fn(&mut toml::Table);
+        let cases: [(&str, Edit); 3] = [
+            ("webServer.addr 0.0.0.0", |config| {
+                web_server(config).insert("addr".to_string(), "0.0.0.0".into());
+            }),
+            ("a password that is not hex", |config| {
+                web_server(config).insert("password".to_string(), "not hex".into());
+            }),
+            ("no webServer", |config| {
+                config.remove("webServer");
+            }),
+        ];
+        for (case, edit) in cases {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let sidecar = DiskSidecar::new(&ports.dir);
+            let (port, request) = serve_one(reply("200 OK", "")).await;
+            left_behind(&sidecar, port, edit);
+
+            let outcome = reconcile(
+                &idle(),
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(outcome, RefreshOutcome::Started, "{case}");
+            assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()], "{case}");
+            assert!(
+                tokio::time::timeout(NO_STOP_WITHIN, request).await.is_err(),
+                "{case}: a stop went out"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn no_head_is_read_from_a_run_dir_that_is_a_symlink() {
+        let ports = TempPorts::new();
+        let sidecar = DiskSidecar::new(&ports.dir);
+        left_behind(&sidecar, 4000, |_| {});
+        assert!(super::head_left_behind(sidecar.run_dir()).is_some());
+
+        let link = ports.dir.join("linked-run");
+        std::os::unix::fs::symlink(sidecar.run_dir(), &link).unwrap();
+        assert!(super::head_left_behind(&link).is_none());
+    }
+
+    #[tokio::test]
+    async fn the_first_reconciliation_starts_when_the_frpc_left_behind_is_gone_or_refuses() {
+        for case in ["no listener", "401"] {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let sidecar = DiskSidecar::new(&ports.dir);
+            let (_reserved, port, served) = if case == "no listener" {
+                let (reserved, port) = crate::test_tls::refused_port();
+                (Some(reserved), port, None)
+            } else {
+                let (port, served) = serve_one(reply("401 Unauthorized", "")).await;
+                (None, port, Some(served))
+            };
+            left_behind(&sidecar, port, |_| {});
+
+            let outcome = reconcile(
+                &idle(),
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(outcome, RefreshOutcome::Started, "{case}");
+            assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()], "{case}");
+            assert_eq!(
+                names_in(sidecar.run_dir()),
+                ["identity", VISITOR_CONFIG],
+                "{case}"
+            );
+            // The stop went out and was answered; a failure inside the server task shows here.
+            if let Some(served) = served {
+                tokio::time::timeout(Duration::from_secs(5), served)
+                    .await
+                    .expect("the 401 server task did not end")
+                    .unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_left_behind_returns_only_once_the_admin_port_is_closed() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (close, closing) = tokio::sync::oneshot::channel::<()>();
+        // Answers the stop, then keeps its port open like an frpc still shutting down, until the
+        // test says it is gone; the listener drops with the task and frees the port.
+        let server = tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                head.extend_from_slice(&buf[..n]);
+            }
+            tcp.write_all(reply("200 OK", "").as_bytes()).await.unwrap();
+            let _ = tcp.shutdown().await;
+            tokio::select! {
+                _ = async { loop { let _ = listener.accept().await; } } => {}
+                _ = closing => {}
+            }
+        });
+
+        let left = head(port, "c0ffee");
+        let stopping = tokio::spawn(async move { stop_left_behind(&left).await });
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(
+            !stopping.is_finished(),
+            "returned while the admin port still answered"
+        );
+        close.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stopping)
+            .await
+            .expect("did not return after the admin port closed")
+            .unwrap();
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn the_first_reconciliation_removes_the_runtime_files_of_versions_before_workspaces() {
         for case in ["removable", "visitor.toml that cannot go"] {
@@ -3625,15 +4097,31 @@ method = "token"
 
         let (port, _request) = serve_one(reply("404 Not Found", "")).await;
         let none = bundle_from(get(port).await.unwrap()).await.unwrap();
-        assert!(none.is_none());
+        assert!(none.bundle.is_none());
+        assert_eq!(none.refused, None);
 
         let body = r#"{"toml":"serverAddr = \"f\""}"#;
         let (port, _request) = serve_one(reply("200 OK", body)).await;
         let bundle = bundle_from(get(port).await.unwrap()).await.unwrap();
-        assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
+        assert_eq!(bundle.refused, None);
+        assert_eq!(bundle.bundle.expect("a bundle").toml, "serverAddr = \"f\"");
 
         let (port, _request) = serve_one(reply("500 Internal Server Error", "")).await;
         assert!(bundle_from(get(port).await.unwrap()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_bundle_reply_403_is_no_tunnels_and_names_the_refusal() {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let (port, _request) = serve_one(reply("403 Forbidden", "")).await;
+        let response = client
+            .get(format!("http://127.0.0.1:{port}/"))
+            .send()
+            .await
+            .unwrap();
+        let refused = bundle_from(response).await.unwrap();
+        assert!(refused.bundle.is_none());
+        assert_eq!(refused.refused, Some(403));
     }
 
     #[tokio::test]
@@ -3691,8 +4179,8 @@ method = "token"
             match next {
                 // The same user signed in again: the tunnels are still theirs.
                 Some("ops-admin") => {
-                    let (bundle, who) = fetched.expect("the bundle");
-                    assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
+                    let (reply, who) = fetched.expect("the bundle");
+                    assert_eq!(reply.bundle.expect("a bundle").toml, "serverAddr = \"f\"");
                     assert_eq!(
                         (who.server_url.as_str(), who.username.as_str()),
                         (server.as_str(), "ops-admin")
@@ -3701,5 +4189,48 @@ method = "token"
                 _ => assert!(fetched.is_err(), "{next:?}"),
             }
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn closing_the_job_ends_the_process_in_it_and_no_other() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        let ping = || {
+            Command::new("ping")
+                .args(["-n", "30", "127.0.0.1"])
+                .stdout(Stdio::null())
+                .spawn()
+                .expect("ping starts")
+        };
+        let job = super::kill_on_close_job().expect("job object");
+        // Both start after the job exists: one that inherited its handle would keep it open.
+        let mut assigned = ping();
+        let mut other = ping();
+        super::assign_to_job(&job, assigned.id()).expect("assigned to the job");
+        drop(job);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let ended = loop {
+            if assigned.try_wait().expect("try_wait").is_some() {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        // Counter-check: closing the job ends nothing outside it.
+        let other_runs = other.try_wait().expect("try_wait").is_none();
+        for child in [&mut assigned, &mut other] {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        assert!(
+            ended,
+            "the process in the job still ran 5 s after the job closed"
+        );
+        assert!(other_runs, "a process outside the job ended with it");
     }
 }

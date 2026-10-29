@@ -19,6 +19,7 @@ import logging
 import threading
 import time
 from typing import Protocol
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("adminhelper.rate_limit")
 
@@ -91,7 +92,9 @@ class RedisBackend:
             value = self._client.get(key)
             return int(value) if value else 0
         except Exception as e:
-            logger.warning("Redis get fehlgeschlagen (%s) — degradiere auf In-Memory: %s", key, e)
+            logger.warning(
+                "Redis get failed (%s), falling back to in-memory: %s", key, type(e).__name__
+            )
             return self._fallback.get_count(key)
 
     def increment(self, key: str, window_seconds: int) -> int:
@@ -102,14 +105,16 @@ class RedisBackend:
             result = pipe.execute()
             return int(result[0])
         except Exception as e:
-            logger.warning("Redis incr fehlgeschlagen (%s) — degradiere auf In-Memory: %s", key, e)
+            logger.warning(
+                "Redis incr failed (%s), falling back to in-memory: %s", key, type(e).__name__
+            )
             return self._fallback.increment(key, window_seconds)
 
     def reset(self, key: str) -> None:
         try:
             self._client.delete(key)
         except Exception as e:
-            logger.warning("Redis del fehlgeschlagen (%s): %s", key, e)
+            logger.warning("Redis del failed (%s): %s", key, type(e).__name__)
         self._fallback.reset(key)
 
 
@@ -119,6 +124,28 @@ _backend: RateLimitBackend | None = None
 # a permanent fallback counts the limit per-worker instead of globally until the next deploy (4.133).
 _next_redis_retry = 0.0
 _REDIS_RETRY_COOLDOWN = 60.0
+
+
+def _redis_target(url: str) -> str:
+    """Scheme, host and port of a Redis URL (for `unix://` the socket path) for the log. A Redis
+    URL carries credentials in the netloc or as a query parameter (redis-py passes unknown query
+    names on as connection arguments), so nothing else of it is logged — like `_log_host` in the
+    monitoring alerter."""
+    try:
+        parts = urlsplit(url)
+        if parts.scheme == "unix":
+            return f"unix://{parts.path}" if parts.path else "?"
+        if not parts.hostname:
+            return "?"
+        port = parts.port
+    except ValueError:
+        # urlsplit raises on a malformed IPv6 literal, .port on a port that is no number or out of
+        # range.
+        return "?"
+    # An IPv6 literal keeps its brackets, or its colons run into the port.
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    target = f"{parts.scheme}://{host}"
+    return f"{target}:{port}" if port is not None else target
 
 
 def get_backend() -> RateLimitBackend:
@@ -144,18 +171,18 @@ def get_backend() -> RateLimitBackend:
             )
             client.ping()
             _backend = RedisBackend(client)
-            logger.info("Rate-Limit nutzt Redis (%s)", REDIS_URL)
+            logger.info("Rate limit uses Redis (%s)", _redis_target(REDIS_URL))
             return _backend
         except ImportError:
             # redis-py absent doesn't change at runtime — stop retrying.
-            logger.warning("redis-py nicht installiert — fallback auf In-Memory-Rate-Limit")
+            logger.warning("redis-py is not installed — falling back to the in-memory rate limit")
             _next_redis_retry = float("inf")
         except Exception as e:
             logger.warning(
-                "Redis nicht erreichbar (%s) — In-Memory, retry in %.0fs: %s",
-                REDIS_URL,
+                "Redis unreachable (%s) — in-memory rate limit, retry in %.0fs: %s",
+                _redis_target(REDIS_URL),
                 _REDIS_RETRY_COOLDOWN,
-                e,
+                type(e).__name__,
             )
             _next_redis_retry = time.monotonic() + _REDIS_RETRY_COOLDOWN
     else:
@@ -164,7 +191,7 @@ def get_backend() -> RateLimitBackend:
 
     if _backend is None:
         _backend = InMemoryBackend()
-        logger.info("Rate-Limit nutzt In-Memory")
+        logger.info("Rate limit uses in-memory counters")
     return _backend
 
 

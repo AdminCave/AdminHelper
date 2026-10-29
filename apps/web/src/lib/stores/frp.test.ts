@@ -95,3 +95,73 @@ describe('frpConfig store rejection (6.90)', () => {
     expect(get(frpConfig)).toBeNull();
   });
 });
+
+// save() against a refresh() still in flight and against a logout (reset()) before its answer.
+describe('frpConfig store: stale responses around save()', () => {
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  const masked = (c: FrpConfig): FrpConfig => ({ ...c, authToken: null, dashboardPassword: null });
+
+  beforeEach(() => frpConfig.reset());
+
+  it('a refresh() started before save() does not bring the old config back', async () => {
+    const list = deferred<FrpConfig[]>();
+    vi.mocked(api.listConfigs).mockReturnValueOnce(list.promise);
+    const refreshing = frpConfig.refresh();
+
+    vi.mocked(api.updateConfig).mockResolvedValueOnce(cfg('1', 'new'));
+    await frpConfig.save(INPUT, cfg('1'));
+
+    list.resolve([cfg('1', 'old')]);
+    await refreshing;
+    expect(get(frpConfig)).toEqual(masked(cfg('1', 'new')));
+  });
+
+  it('save() answered after reset() leaves the store empty and still returns the config', async () => {
+    const response = deferred<FrpConfig>();
+    vi.mocked(api.createConfig).mockReturnValueOnce(response.promise);
+    const saving = frpConfig.save(INPUT, null);
+
+    frpConfig.reset();
+    response.resolve(cfg('1'));
+    await expect(saving).resolves.toEqual(masked(cfg('1')));
+    expect(get(frpConfig)).toBeNull();
+  });
+
+  it('save() answered after the next session loaded its config does not replace it', async () => {
+    const response = deferred<FrpConfig>();
+    vi.mocked(api.updateConfig).mockReturnValueOnce(response.promise);
+    const saving = frpConfig.save(INPUT, cfg('1'));
+
+    frpConfig.reset();
+    vi.mocked(api.listConfigs).mockResolvedValueOnce([cfg('2')]);
+    await frpConfig.refresh();
+
+    response.resolve(cfg('1', 'old session'));
+    await saving;
+    expect(get(frpConfig)).toEqual(cfg('2'));
+  });
+
+  // Control: green before the fix too; a save() that bumped the generation after reset() would
+  // make the next session's load drop its config.
+  it('save() answered while the next session loads does not drop that load', async () => {
+    const response = deferred<FrpConfig>();
+    vi.mocked(api.updateConfig).mockReturnValueOnce(response.promise);
+    const saving = frpConfig.save(INPUT, cfg('1'));
+
+    frpConfig.reset();
+    const list = deferred<FrpConfig[]>();
+    vi.mocked(api.listConfigs).mockReturnValueOnce(list.promise);
+    const refreshing = frpConfig.refresh();
+
+    response.resolve(cfg('1', 'old session'));
+    await saving;
+    list.resolve([cfg('2')]);
+    await refreshing;
+    expect(get(frpConfig)).toEqual(cfg('2'));
+  });
+});

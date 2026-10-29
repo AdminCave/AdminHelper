@@ -100,11 +100,12 @@ def test_frps_key_is_0600(tmp_path):
 def test_remints_frps_leaf_once_past_half_life(tmp_path, monkeypatch):
     import datetime
 
-    tunnel, _ = _tunnel_intermediate()
-
-    # First boot: mint an frps leaf dated ~300 days ago (past half of its life).
+    # First boot: mint an frps leaf dated ~300 days ago (past half of its life),
+    # under a hierarchy minted on the same past clock (an intermediate younger
+    # than the leaf would be not yet valid and refuse to sign).
     past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=300)
     monkeypatch.setattr(pki, "_now", lambda: past)
+    tunnel, _ = _tunnel_intermediate()
     ensure_frps_cert(tmp_path, tunnel, "frp.example")
     aged = (tmp_path / "frps.crt").read_bytes()
     monkeypatch.undo()

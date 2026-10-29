@@ -82,15 +82,23 @@ export const groupedConnections = derived(
 // there was no out-of-order guard here, unlike the monitoring store's statusGen (4.39).
 let loadGen = 0;
 
+// The source of the list in memory, set by a successful reloadForMode: server and user, sync URL,
+// or the file. A failed fetch of the same source keeps the list, so a page switch or a sync tick
+// during an outage does not wipe what was just on screen; a failed fetch of any other source
+// empties it, so the list of another server, user or URL never stays visible (R-0658).
+let loadedFrom: string | null = null;
+
 export async function load(): Promise<void> {
   const gen = ++loadGen;
   _state.update((s) => ({ ...s, loading: true, error: null }));
   try {
     const items = await bridge.loadConnections();
     if (gen !== loadGen) return;
+    loadedFrom = null;
     _state.set({ items, loading: false, error: null });
   } catch (err) {
     if (gen !== loadGen) return;
+    loadedFrom = null;
     _state.set({ items: [], loading: false, error: errMsg(err) });
   }
 }
@@ -109,20 +117,26 @@ export async function reloadForMode(
   if (!settings) return load();
   const gen = ++loadGen;
   _state.update((s) => ({ ...s, loading: true, error: null }));
+  let source = 'file';
   try {
     let items: Connection[];
     if (settings.mode === 'server' && session) {
+      source = JSON.stringify(['server', session.serverUrl, session.username]);
       items = await bridge.fetchConnectionsJwt();
     } else if (settings.mode === 'sync' && settings.url) {
+      source = JSON.stringify(['sync', settings.url]);
       items = await bridge.syncConnections(settings.url);
     } else {
       items = await bridge.loadConnections();
     }
     if (gen !== loadGen) return;
+    loadedFrom = source;
     _state.set({ items, loading: false, error: null });
   } catch (err) {
     if (gen !== loadGen) return;
-    _state.set({ items: [], loading: false, error: errMsg(err) });
+    const keep = loadedFrom === source;
+    if (!keep) loadedFrom = null;
+    _state.update((s) => ({ items: keep ? s.items : [], loading: false, error: errMsg(err) }));
   }
 }
 
@@ -137,6 +151,7 @@ export async function saveAll(items: Connection[]): Promise<void> {
  * Logout must drop the in-memory view but must NOT overwrite that file — in local mode that
  * would erase the user's locally saved connections. */
 export function clearInMemory(): void {
+  loadedFrom = null;
   _state.set({ items: [], loading: false, error: null });
 }
 

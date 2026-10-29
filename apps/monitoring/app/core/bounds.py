@@ -15,6 +15,7 @@ into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
 0``) or leave the default a plain value.
 """
 
+import re
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -40,40 +41,52 @@ Weekday = Annotated[int, Field(ge=0, le=6)]
 WindowMinutes = Annotated[int, Field(ge=1, le=1440)]
 
 
-def _find_nul(data: dict) -> tuple[tuple, str] | None:
-    """Location and value of a string in `data` that carries a NUL, if any.
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 
-    Postgres stores no 0x00 in a text value; psycopg raises DataError while
-    binding it, before the query runs. Walks with an explicit stack rather than
-    recursion: the body is whatever the client nested, and a RecursionError here
-    would be the 500 this exists to prevent."""
+
+def _unstorable(text: str) -> str | None:
+    """Why `text` can be neither stored nor answered, if it cannot."""
+    if "\x00" in text:
+        return "must not contain a NUL byte"
+    if _LONE_SURROGATE.search(text):
+        return "must not contain a lone surrogate (U+D800 to U+DFFF)"
+    return None
+
+
+def find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
+    """Location, value and reason of a string in `data` that _unstorable refuses,
+    if any.
+
+    Walks with an explicit stack rather than recursion: the body is whatever the
+    client nested, and a RecursionError here would be the 500 this exists to
+    prevent."""
     stack: list[tuple[tuple, Any]] = [((), data)]
     while stack:
         loc, value = stack.pop()
         if isinstance(value, str):
-            if "\x00" in value:
-                return loc, value
+            if reason := _unstorable(value):
+                return loc, value, reason
         elif isinstance(value, dict):
             for key, item in value.items():
-                if isinstance(key, str) and "\x00" in key:
-                    return (*loc, key), key
+                if isinstance(key, str) and (reason := _unstorable(key)):
+                    return (*loc, key), key, reason
                 stack.append(((*loc, key), item))
         elif isinstance(value, list):
             stack.extend(((*loc, i), item) for i, item in enumerate(value))
     return None
 
 
-def _refuse_nul(data: Any, title: str) -> Any:
+def _refuse_unstorable(data: Any, title: str) -> Any:
     # Anything that is not a dict passes through untouched and meets its own
-    # type check. The rejection is a ValidationError carrying the NUL's own
+    # type check. The rejection is a ValidationError carrying the string's own
     # location, which pydantic merges into the field path — a ValueError here
     # would only say ["body"].
     if not isinstance(data, dict):
         return data
-    found = _find_nul(data)
+    found = find_unstorable(data)
     if found is None:
         return data
-    loc, value = found
+    loc, value, reason = found
     raise ValidationError.from_exception_data(
         title,
         [
@@ -81,7 +94,7 @@ def _refuse_nul(data: Any, title: str) -> Any:
                 type="value_error",
                 loc=loc,
                 input=value,
-                ctx={"error": ValueError("must not contain a NUL byte")},
+                ctx={"error": ValueError(reason)},
             )
         ],
     )
@@ -89,10 +102,17 @@ def _refuse_nul(data: Any, title: str) -> Any:
 
 class RequestModel(BaseModel):
     """Base of every schema that describes a request body: no string anywhere in
-    it may carry a NUL byte. A copy of the server's class of the same name, like
-    the rest of this file (see the module docstring)."""
+    it may carry a NUL byte or a lone surrogate. A copy of the server's class of
+    the same name, like the rest of this file (see the module docstring).
+
+    Postgres stores no 0x00 in a text value: psycopg raises DataError while
+    binding it, before the query runs. A lone surrogate (U+D800 to U+DFFF; JSON
+    spells one only as an escape, \\ud800) has no UTF-8 form: the driver cannot
+    bind it to a text column either. Where a route stores a value as json.dumps
+    text (a check's config), the escape went into the row, and every later
+    response carrying that row was a 500."""
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_nul_anywhere(cls, data: Any) -> Any:
-        return _refuse_nul(data, cls.__name__)
+    def _reject_unstorable_anywhere(cls, data: Any) -> Any:
+        return _refuse_unstorable(data, cls.__name__)

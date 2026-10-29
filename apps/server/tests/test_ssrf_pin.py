@@ -15,6 +15,8 @@ monitoring copy is the same code (test_ssrf_parity.py), so it is covered here to
 
 import datetime
 import http.server
+import inspect
+import itertools
 import socket
 import ssl
 import threading
@@ -35,6 +37,7 @@ _V4 = "93.184.216.34"
 _V4_B = "93.184.216.35"
 _V6 = "2606:2800:220:1:248:1893:25c8:1946"
 _PROXY = "http://192.0.2.10:3128"
+_PROXY_CONNECTION = ("192.0.2.10", 3128)
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
 # A call's timeout travels as a request extension, which the pin rebuilds per address;
 # not httpx's default of 5 s, so the client's default cannot pass for the call's own.
@@ -44,7 +47,7 @@ _TIMEOUT = 7
 @pytest.fixture(autouse=True)
 def _no_proxy_from_the_shell(monkeypatch):
     # The direct path is the one under test; a proxy in the developer's environment
-    # would take these requests past the pin. The proxy branch sets its own below.
+    # would take these requests past the pin. The proxy tests below set their own.
     for name in _PROXY_VARS:
         monkeypatch.delenv(name, raising=False)
         monkeypatch.delenv(name.lower(), raising=False)
@@ -189,6 +192,27 @@ def test_a_host_httpx_cannot_send_is_rejected_without_resolving(monkeypatch, url
     target = check_target(url)
 
     assert target == Target(UrlVerdict.PRIVATE)
+    assert asked == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://pinned.example/\ud800",
+        "http://pinned.example/?q=\udcff",
+        "http://pinned.example/#\ud800",
+        "http://us\ud800er@pinned.example/",
+    ],
+)
+def test_a_lone_surrogate_makes_the_url_unreadable_without_resolving(monkeypatch, url):
+    # A hook gets such a str from a JSON payload (json.loads('"\\ud800"')); httpx
+    # raises UnicodeEncodeError on it, not InvalidURL, and the guard must not raise.
+    asked = _resolving_to(monkeypatch, _V4)
+
+    target = check_target(url)
+
+    assert target == Target(UrlVerdict.PRIVATE)
+    assert ssrf_mod.is_private_url(url) is True
     assert asked == []
 
 
@@ -357,8 +381,8 @@ def test_a_request_for_another_host_is_refused_without_connecting(monkeypatch, o
 @pytest.mark.parametrize("with_proxy", [False, True])
 @pytest.mark.parametrize("answer", [_addr_info(_V4, "10.0.0.1"), None])
 def test_a_rejected_target_gets_no_client(monkeypatch, answer, with_proxy):
-    # Checked before the proxy branch: a proxy in the environment must not turn a
-    # rejected target into an unpinned client.
+    # Checked before the environment's proxies are read: a proxy there must not turn a
+    # rejected target into a client that goes out through it unpinned.
     if with_proxy:
         monkeypatch.setenv("HTTPS_PROXY", _PROXY)
     monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: answer)
@@ -434,6 +458,205 @@ def test_with_a_proxy_the_request_leaves_with_the_hostname(monkeypatch):
     (sent,) = seen
     assert sent.url == httpx.URL(url)
     assert "sni_hostname" not in sent.extensions
+
+
+@pytest.mark.parametrize("verify", [False, True, "context"])
+def test_the_proxy_transport_gets_the_callers_verify(monkeypatch, verify):
+    # pinned_client builds the proxy transports itself; an httpx.Client(verify=...)
+    # used to hand the value on to its own. Bound against the real signature, so a
+    # transport built without verify records httpx's default, not a missing value.
+    if verify == "context":
+        verify = ssl.create_default_context()
+    monkeypatch.setenv("HTTPS_PROXY", _PROXY)
+    _resolving_to(monkeypatch, _V4)
+    real_init = httpx.HTTPTransport.__init__
+    signature = inspect.signature(real_init)
+    built: list[tuple[httpx.HTTPTransport, dict]] = []
+
+    def _init(self, *args, **kwargs):
+        bound = signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        built.append((self, bound.arguments))
+        real_init(self, *args, **kwargs)
+
+    handled: list[httpx.HTTPTransport] = []
+
+    def _handle(self, _request):
+        handled.append(self)
+        return httpx.Response(200)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "__init__", _init)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _handle)
+    url = "https://pinned.example/x"
+
+    with pinned_client(url, check_target(url), verify=verify) as client:
+        client.get(url, timeout=5)
+
+    ((proxy_transport, proxy_args),) = [(t, a) for t, a in built if a["proxy"] is not None]
+    ((_, inner_args),) = [(t, a) for t, a in built if a["proxy"] is None]
+    assert proxy_args["proxy"] == _PROXY
+    assert proxy_args["verify"] is verify
+    assert inner_args["verify"] is verify
+    # The one proxy transport is the one mounted for https://: it handled the request.
+    assert handled == [proxy_transport]
+
+
+def _setenv(monkeypatch, env: dict[str, str]) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+
+def _port(url: str) -> int:
+    parsed = httpx.URL(url)
+    return parsed.port or (443 if parsed.scheme == "https" else 80)
+
+
+@pytest.mark.parametrize(
+    ("env", "url"),
+    [
+        ({"HTTP_PROXY": _PROXY, "NO_PROXY": "*"}, "http://pinned.example/x"),
+        ({"HTTP_PROXY": _PROXY, "NO_PROXY": "pinned.example"}, "http://pinned.example/x"),
+        ({"HTTP_PROXY": _PROXY, "NO_PROXY": ".example"}, "http://pinned.example/x"),
+        ({"HTTP_PROXY": _PROXY, "NO_PROXY": "PINNED.EXAMPLE"}, "http://pinned.example/x"),
+        ({"HTTPS_PROXY": _PROXY, "no_proxy": "other.example, *"}, "https://pinned.example/x"),
+        (
+            {"https_proxy": _PROXY, "NO_PROXY": "https://pinned.example"},
+            "https://pinned.example/x",
+        ),
+        (
+            {"ALL_PROXY": _PROXY, "NO_PROXY": "pinned.example:8443"},
+            "https://pinned.example:8443/x",
+        ),
+    ],
+)
+def test_a_target_under_no_proxy_connects_to_the_checked_address(monkeypatch, env, url):
+    # httpx would connect to such a target directly: the direct path, and the pin with it.
+    _setenv(monkeypatch, env)
+    _resolving_to(monkeypatch, _V4)
+    connections = _connections(monkeypatch)
+
+    with pinned_client(url, check_target(url)) as client, pytest.raises(httpx.ConnectError):
+        client.get(url, timeout=5)
+
+    assert connections == [(_V4, _port(url))]
+
+
+@pytest.mark.parametrize(
+    "no_proxy",
+    [
+        "other.example",
+        "pinned.example:8080",  # another port
+        "https://pinned.example",  # another scheme
+        ".pinned.example",  # subdomains only
+    ],
+)
+def test_a_target_no_proxy_does_not_cover_keeps_the_proxy(monkeypatch, no_proxy):
+    _setenv(monkeypatch, {"HTTP_PROXY": _PROXY, "NO_PROXY": no_proxy})
+    _resolving_to(monkeypatch, _V4)
+    connections = _connections(monkeypatch)
+    url = "http://pinned.example/x"
+
+    with pinned_client(url, check_target(url)) as client, pytest.raises(httpx.ConnectError):
+        client.get(url, timeout=5)
+
+    assert connections == [_PROXY_CONNECTION]
+
+
+def _connected(client: httpx.Client, url: str, connections: list[tuple]) -> list[tuple]:
+    connections.clear()
+    with client, pytest.raises(httpx.ConnectError):
+        client.get(url, timeout=5)
+    return list(connections)
+
+
+def test_with_a_proxy_httpx_picks_the_path_and_the_direct_one_is_pinned(monkeypatch):
+    # The oracle is a plain httpx.Client in the same environment: where it goes to the
+    # proxy, pinned_client goes to the proxy; where it connects to the host itself,
+    # pinned_client connects to the address the guard checked for that host.
+    _resolving_to(monkeypatch, _V4)
+    connections = _connections(monkeypatch)
+    # One SSL context for every client and transport: one each makes this test take
+    # seconds, and the route does not depend on it.
+    tls = ssl.create_default_context()
+    proxy_envs = [("HTTP_PROXY",), ("HTTPS_PROXY",), ("ALL_PROXY",), ("HTTP_PROXY", "HTTPS_PROXY")]
+    no_proxies = [
+        None,
+        "*",
+        "pinned.example",
+        ".example",
+        ".pinned.example",
+        "example",
+        "pinned.example:8080",
+        "http://pinned.example",
+        "other.example",
+        "other.example, *",
+    ]
+    urls = [
+        "http://pinned.example/x",
+        "http://pinned.example:8080/x",
+        "https://pinned.example/x",
+        "https://sub.pinned.example/x",
+    ]
+    outcomes = {"proxy": 0, "direct": 0}
+    differing = []
+
+    for names, no_proxy, url in itertools.product(proxy_envs, no_proxies, urls):
+        env = dict.fromkeys(names, _PROXY)
+        if no_proxy is not None:
+            env["NO_PROXY"] = no_proxy
+        with monkeypatch.context() as scoped:
+            _setenv(scoped, env)
+            plain = _connected(httpx.Client(verify=tls), url, connections)
+            pinned = _connected(pinned_client(url, check_target(url), verify=tls), url, connections)
+        if plain == [_PROXY_CONNECTION]:
+            outcomes["proxy"] += 1
+            expected = plain
+        else:
+            assert plain == [(httpx.URL(url).host, _port(url))], (env, url)
+            outcomes["direct"] += 1
+            expected = [(_V4, _port(url))]
+        if pinned != expected:
+            differing.append((env, url, pinned))
+
+    assert differing == []
+    assert outcomes["proxy"] > 0
+    assert outcomes["direct"] > 0
+
+
+def test_under_no_proxy_the_request_leaves_through_the_pin(monkeypatch):
+    _setenv(monkeypatch, {"HTTPS_PROXY": _PROXY, "NO_PROXY": "pinned.example"})
+    _resolving_to(monkeypatch, _V4)
+    seen = _below_the_pin(monkeypatch, lambda _n: httpx.Response(200))
+    url = "https://pinned.example/x"
+
+    with pinned_client(url, check_target(url)) as client:
+        client.get(url, timeout=5)
+
+    (sent,) = seen
+    assert sent.url.host == _V4
+    assert sent.headers["host"] == "pinned.example"
+    assert sent.extensions["sni_hostname"] == "pinned.example"
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        # No proxy, so no mount from NO_PROXY: a port that is no number cannot fail.
+        {"NO_PROXY": "pinned.example:abc"},
+        # A proxy httpx cannot use (ftp://), set only for a scheme this URL does not have.
+        {"HTTPS_PROXY": "ftp://192.0.2.10:21"},
+    ],
+)
+def test_without_a_proxy_for_the_scheme_the_environment_cannot_fail_the_client(monkeypatch, env):
+    _setenv(monkeypatch, env)
+    _resolving_to(monkeypatch, _V4)
+    connections = _connections(monkeypatch)
+    url = "http://pinned.example/x"
+
+    with pinned_client(url, check_target(url)) as client, pytest.raises(httpx.ConnectError):
+        client.get(url, timeout=5)
+
+    assert connections == [(_V4, 80)]
 
 
 # --- a real TLS handshake ---------------------------------------------------------

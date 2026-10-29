@@ -16,6 +16,8 @@
 #   2  apps/desktop/src-tauri/Cargo.toml        [package] version
 #   3  apps/desktop/src-tauri/Cargo.lock        package "adminhelper"
 #   4  CHANGELOG.md                             section "## [X.Y.Z]"
+#   4b changelog.d/                             no fragment left (only README.md):
+#                                               changelog-assemble.py folded them
 #   5  docs/**/*.html                           sidebar footers <span>vX.Y.Z</span>
 #   6  docs/index.html + docs/en/index.html     the "what's new" callouts
 #
@@ -94,6 +96,12 @@ fi
 if [ ! -f "$CHANGELOG" ]; then missing "CHANGELOG.md" "file not found"
 elif grep -q "^## \[$VER_RE\]" "$CHANGELOG"; then ok "CHANGELOG.md" "section ## [$VER]"
 else missing "CHANGELOG.md" "no section '## [$VER]'"
+fi
+# 4b — every branch writes changelog.d/<slug>.md; one left over is an entry the
+# release would not carry.
+left="$(find "$ROOT/changelog.d" -maxdepth 1 -name '*.md' ! -name README.md -printf '%f ' 2>/dev/null)"
+if [ -z "$left" ]; then ok "changelog.d" "no fragment left"
+else missing "changelog.d" "not folded: ${left% } (scripts/release/changelog-assemble.py)"
 fi
 
 # 5 — the sidebar footers, DE + EN. Reported by file: "one of them is old" is

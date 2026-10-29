@@ -4,11 +4,14 @@
 
 import logging
 import secrets
+from typing import NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core import config
 from app.core.auth import (
     blacklist_token,
     create_access_token,
@@ -18,6 +21,8 @@ from app.core.auth import (
     hash_api_key,
     hash_password,
     is_token_blacklisted,
+    token_claims,
+    user_id_from_token_unverified,
     username_from_token_unverified,
     verify_password,
 )
@@ -54,6 +59,9 @@ _WINDOW_SECONDS = 60
 # verify_password against it, so a missing username costs the same ~bcrypt time as a
 # wrong password — otherwise the short-circuit is a timing oracle for enumeration (3.94).
 _DUMMY_HASH = hash_password("login-timing-equalizer")
+# One key of its own; the two-key space of the identity locks (enrollment/models.py) does not
+# overlap with it.
+_BOOTSTRAP_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext('adminhelper.bootstrap'))"
 
 
 def _rate_limit_key(ip: str) -> str:
@@ -84,6 +92,8 @@ def _reset_rate_limit(ip: str) -> None:
 # needed, since /refresh + /logout are the only cookie-reading endpoints and
 # the access token stays a Bearer header). Non-browser clients (desktop, CLI)
 # ignore the cookie and keep using the request body — both paths are accepted.
+# A browser request (Sec-Fetch-Site present) gets the refresh token only as the
+# cookie: its JSON field is "" (_token_response).
 REFRESH_COOKIE_NAME = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/auth"
 _REFRESH_COOKIE_MAX_AGE = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
@@ -108,10 +118,46 @@ def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=REFRESH_COOKIE_NAME, path=_REFRESH_COOKIE_PATH)
 
 
+def _token_response(
+    request: Request, response: Response, access: str, refresh: str
+) -> TokenResponse:
+    _set_refresh_cookie(request, response, refresh)
+    # Only a browser sends Sec-Fetch-Site (Fetch Metadata; a forbidden header, page
+    # scripts can neither set nor drop it). Node fetch sends Sec-Fetch-Mode but not
+    # Sec-Fetch-Site; desktop (reqwest), CLI and scripts send neither. The field stays
+    # a required string, "" for a browser: omitting it or making it nullable would
+    # break the response schema.
+    body_refresh = "" if "sec-fetch-site" in request.headers else refresh
+    return TokenResponse(access_token=access, refresh_token=body_refresh)
+
+
 def _resolve_refresh_token(request: Request, body_token: str | None) -> str | None:
     """Refresh token from the request body (non-browser clients) or, failing
     that, the HttpOnly cookie (browser)."""
     return body_token or request.cookies.get(REFRESH_COOKIE_NAME)
+
+
+def _refuse_reused_refresh(token: str, request: Request, db: Session) -> NoReturn:
+    logger.warning(
+        "Refresh-Token-Reuse erkannt von IP=%s — moeglicher Token-Diebstahl",
+        resolve_client_ip(request),
+    )
+    # Containment: a replayed (already-rotated) refresh token is a theft
+    # signal. Kill the WHOLE token family for this user via the validity
+    # watermark — otherwise the attacker's already-rotated chain (which they
+    # obtained by refreshing first) stays valid indefinitely; only the single
+    # replayed token would be blocked.
+    # By the account id: a name may belong to a newer account than the token's.
+    reused_id = user_id_from_token_unverified(token)
+    if reused_id is not None:
+        reused_user = db.get(User, reused_id)
+        if reused_user is not None:
+            reused_user.tokens_valid_after = utcnow_naive()
+            db.commit()
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Ungültiger oder abgelaufener Refresh-Token",
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -171,10 +217,9 @@ def login(
         object_id=user.id,
         object_label=user.username,
     )
-    access = create_access_token({"sub": user.username})
-    refresh = create_refresh_token({"sub": user.username})
-    _set_refresh_cookie(request, response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    access = create_access_token(token_claims(user))
+    refresh = create_refresh_token(token_claims(user))
+    return _token_response(request, response, access, refresh)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -195,28 +240,14 @@ def refresh_token(
     # again is a theft signal. It differs from "expired/invalid" by the
     # explicitly set blacklist entry.
     if is_token_blacklisted(token, db):
-        logger.warning(
-            "Refresh-Token-Reuse erkannt von IP=%s — moeglicher Token-Diebstahl",
-            resolve_client_ip(request),
-        )
-        # Containment: a replayed (already-rotated) refresh token is a theft
-        # signal. Kill the WHOLE token family for this user via the validity
-        # watermark — otherwise the attacker's already-rotated chain (which they
-        # obtained by refreshing first) stays valid indefinitely; only the single
-        # replayed token would be blocked.
-        reused_username = username_from_token_unverified(token)
-        if reused_username:
-            reused_user = db.query(User).filter(User.username == reused_username).first()
-            if reused_user is not None:
-                reused_user.tokens_valid_after = utcnow_naive()
-                db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ungültiger oder abgelaufener Refresh-Token",
-        )
+        _refuse_reused_refresh(token, request, db)
 
     user = get_user_from_refresh_token(token, db)
     if not user:
+        # A concurrent call with the same token may have committed its blacklist row
+        # since the check above; then this lookup failed on that row, which is reuse.
+        if is_token_blacklisted(token, db):
+            _refuse_reused_refresh(token, request, db)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger oder abgelaufener Refresh-Token",
@@ -224,15 +255,21 @@ def refresh_token(
     # Before the rotation, so a refused refresh does not use up the token.
     require_cert_user(request, user.username, db)
 
-    # Rotation: blacklist the old refresh token immediately so it cannot be used
-    # again. A parallel attacker with a copy of the token thereby fails from the
-    # legitimate client's next refresh onward.
-    blacklist_token(token, db)
+    # Issued before the blacklist commit: their `iat` then precedes the watermark a
+    # concurrent call with the same token sets once it fails after that commit, so a
+    # reuse kills this pair too. Issued after it, a delayed call could stamp a later
+    # second and outlive the watermark (`iat` has whole seconds, core/auth.py).
+    access = create_access_token(token_claims(user))
+    refresh = create_refresh_token(token_claims(user))
 
-    access = create_access_token({"sub": user.username})
-    refresh = create_refresh_token({"sub": user.username})
-    _set_refresh_cookie(request, response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    # Rotation: only the call that blacklists the old refresh token gets the new
+    # pair. False means the jti was already there (a concurrent call with the same
+    # token won) or the token carries no jti/exp; either way it is reuse, and the
+    # pair above is discarded.
+    if not blacklist_token(token, db):
+        _refuse_reused_refresh(token, request, db)
+
+    return _token_response(request, response, access, refresh)
 
 
 # The route works without a bearer (the refresh token from body or cookie is blacklisted
@@ -277,7 +314,12 @@ def logout(
 
 @router.get("/me", response_model=UserMe)
 def me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return UserMe(
+        id=current_user.id,
+        username=current_user.username,
+        is_admin=current_user.is_admin,
+        idle_timeout_minutes=config.WEB_IDLE_TIMEOUT_MINUTES,
+    )
 
 
 @router.post("/bootstrap", response_model=TokenResponse, status_code=201)
@@ -297,6 +339,9 @@ def bootstrap(
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
 
+    # Several workers serve this route: without the lock two calls with the token can both
+    # see "no user" and both create an admin. Held until the commit below.
+    db.execute(text(_BOOTSTRAP_LOCK_SQL))
     if db.query(User).count() > 0:
         # Server is already initialized – bootstrap is no longer possible.
         # Same response as 'no token active' to avoid disclosing the DB state.
@@ -347,13 +392,12 @@ def bootstrap(
     for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
         try:
             f.unlink(missing_ok=True)
-        except OSError:
-            logger.warning("Bootstrap-Datei konnte nicht geloescht werden: %s", f)
+        except OSError as exc:
+            logger.warning("bootstrap file %s not removed (%s)", f, type(exc).__name__)
 
     _reset_rate_limit(ip)
     logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)
 
-    access = create_access_token({"sub": user.username})
-    refresh = create_refresh_token({"sub": user.username})
-    _set_refresh_cookie(request, response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    access = create_access_token(token_claims(user))
+    refresh = create_refresh_token(token_claims(user))
+    return _token_response(request, response, access, refresh)

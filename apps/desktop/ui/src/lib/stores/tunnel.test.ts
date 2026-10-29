@@ -29,7 +29,9 @@ vi.mock('$lib/bridge', () => ({
   stopTunnel: h.stopTunnel,
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError }));
-vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k }));
+vi.mock('$lib/i18n', () => ({
+  tNow: (k: string, vars?: Record<string, unknown>) => (vars ? `${k} ${JSON.stringify(vars)}` : k),
+}));
 vi.mock('./session', () => ({
   sessionStore: {
     subscribe: (run: (v: unknown) => void) => {
@@ -79,7 +81,11 @@ const HTTPS: TunnelMapping = {
 
 function refreshed(outcome: RefreshOutcome): TunnelRefresh {
   const running = outcome !== 'stopped';
-  return { status: { running, visitors: running ? ['db-visitor'] : [] }, outcome };
+  return { status: { running, visitors: running ? ['db-visitor'] : [] }, outcome, refused: null };
+}
+
+function refusedBy(code: number): TunnelRefresh {
+  return { ...refreshed('stopped'), refused: code };
 }
 
 function deferred<T>(): {
@@ -319,6 +325,34 @@ describe('tunnel store: polling (R-0402)', () => {
     expect(get(tunnelUi)).toBe('idle');
     expect(getMappings()).toEqual([MAPPING]);
     expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('stopped because the server refused the tunnels -> idle, one message with the code while it lasts', async () => {
+    h.refreshTunnel.mockResolvedValue(refusedBy(403));
+    await startIfServerMode();
+    expect(get(tunnelUi)).toBe('idle');
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+    expect(h.reportError).toHaveBeenCalledWith('error.tunnel.refused {"code":403}');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refusal after a run without one is a new message', async () => {
+    h.refreshTunnel.mockResolvedValueOnce(refusedBy(403));
+    await startIfServerMode();
+    h.refreshTunnel.mockResolvedValueOnce(refreshed('started'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    h.refreshTunnel.mockResolvedValueOnce(refusedBy(403));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.reportError).toHaveBeenCalledTimes(2);
+  });
+
+  it('a new activation reports a lasting refusal again', async () => {
+    h.refreshTunnel.mockResolvedValue(refusedBy(403));
+    await startIfServerMode();
+    await startIfServerMode();
+    expect(h.reportError).toHaveBeenCalledTimes(2);
   });
 
   it('stop() still clears the mappings a stopped run loaded', async () => {
@@ -689,7 +723,7 @@ describe('tunnel store: restart after an unexpected end (R-0402)', () => {
 
     // It compared against the frpc that ended since: the series goes on.
     h.refreshTunnel.mockRejectedValueOnce(new Error('502'));
-    slow.resolve({ status: { running: false, visitors: [] }, outcome: 'unchanged' });
+    slow.resolve({ status: { running: false, visitors: [] }, outcome: 'unchanged', refused: null });
     await vi.advanceTimersByTimeAsync(0);
     expect(h.refreshTunnel).toHaveBeenCalledTimes(3); // the restart, right after it
     await vi.advanceTimersByTimeAsync(9_999);

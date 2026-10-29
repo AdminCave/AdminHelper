@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { http, setAccessToken, clearTokens } from './client';
+import { http, setAccessToken, clearTokens, withAuthLock } from './client';
 import type { LoginResponse, User } from './types';
 
 export async function login(username: string, password: string): Promise<User> {
@@ -15,8 +15,10 @@ export async function login(username: string, password: string): Promise<User> {
 
 export async function logout(): Promise<void> {
   try {
-    // The refresh cookie is sent automatically and cleared by the server.
-    await http.post('/api/auth/logout');
+    // The refresh cookie is sent automatically and cleared by the server. Under the lock of the
+    // refreshes, so no other tab sends the cookie this logout blocks. No deadlock: a request to an
+    // /auth/ path never calls tryRefresh, which would wait for the lock held here.
+    await withAuthLock(() => http.post('/api/auth/logout'));
   } catch {
     // The local clear must happen in any case (e.g. if the server is unreachable).
   } finally {

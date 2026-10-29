@@ -18,6 +18,7 @@ into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
 0``) or leave the default a plain value.
 """
 
+import re
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -47,8 +48,21 @@ IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
 Offset = Annotated[int, Field(ge=0, le=2147483647)]
 
 
-def _find_nul(data: dict) -> tuple[tuple, str] | None:
-    """Location and value of a string in `data` that carries a NUL, if any.
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _unstorable(text: str) -> str | None:
+    """Why `text` can be neither stored nor answered, if it cannot."""
+    if "\x00" in text:
+        return "must not contain a NUL byte"
+    if _LONE_SURROGATE.search(text):
+        return "must not contain a lone surrogate (U+D800 to U+DFFF)"
+    return None
+
+
+def _find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
+    """Location, value and reason of a string in `data` that _unstorable refuses,
+    if any.
 
     Walks with an explicit stack rather than recursion: the body is whatever the
     client nested, and a RecursionError here would be the 500 this exists to
@@ -57,12 +71,12 @@ def _find_nul(data: dict) -> tuple[tuple, str] | None:
     while stack:
         loc, value = stack.pop()
         if isinstance(value, str):
-            if "\x00" in value:
-                return loc, value
+            if reason := _unstorable(value):
+                return loc, value, reason
         elif isinstance(value, dict):
             for key, item in value.items():
-                if isinstance(key, str) and "\x00" in key:
-                    return (*loc, key), key
+                if isinstance(key, str) and (reason := _unstorable(key)):
+                    return (*loc, key), key, reason
                 stack.append(((*loc, key), item))
         elif isinstance(value, list):
             stack.extend(((*loc, i), item) for i, item in enumerate(value))
@@ -71,13 +85,17 @@ def _find_nul(data: dict) -> tuple[tuple, str] | None:
 
 class RequestModel(BaseModel):
     """Base of every schema that describes a request body: no string anywhere in
-    it may carry a NUL byte.
+    it may carry a NUL byte or a lone surrogate.
 
     Postgres stores no 0x00 in a text value: psycopg raises DataError while
     binding the parameter, before the query runs, so the route never produced a
-    response at all — HTTP 500. Deliberately only that byte, not control
-    characters in general: the TOML guards in frp/schemas.py are a separate
-    concern with their own reason.
+    response at all — HTTP 500. A lone surrogate (U+D800 to U+DFFF; JSON spells
+    one only as an escape, \\ud800) has no UTF-8 form: psycopg cannot bind it to
+    a text column either, and JSONResponse cannot write it. Where a route stores
+    a value as json.dumps text (tags), the escape went into the row, and every
+    later response carrying that row was a 500. Deliberately only these two, not
+    control characters in general: the TOML guards in frp/schemas.py are a
+    separate concern with their own reason.
 
     A model_validator, not a per-field type: the rule is a property of the input
     as a whole, and a subclass cannot forget it on a new field. mode="before"
@@ -85,19 +103,19 @@ class RequestModel(BaseModel):
     and meets the model's own type check — the uncaught TypeError that
     _validate_tags once raised on a raw bool is the failure this avoids.
 
-    The rejection is raised as a ValidationError carrying the NUL's own
+    The rejection is raised as a ValidationError carrying the string's own
     location, which pydantic merges into the field path: the client sees
     loc ["body", "server_ids", 1], not just ["body"]."""
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_nul_anywhere(cls, data: Any) -> Any:
+    def _reject_unstorable_anywhere(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
-        found = _find_nul(data)
+        found = _find_unstorable(data)
         if found is None:
             return data
-        loc, value = found
+        loc, value, reason = found
         raise ValidationError.from_exception_data(
             cls.__name__,
             [
@@ -105,7 +123,7 @@ class RequestModel(BaseModel):
                     type="value_error",
                     loc=loc,
                     input=value,
-                    ctx={"error": ValueError("must not contain a NUL byte")},
+                    ctx={"error": ValueError(reason)},
                 )
             ],
         )

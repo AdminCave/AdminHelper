@@ -51,6 +51,14 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
     return [c.to_dict(state=states.get(c.id)) for c in checks]
 
 
+def _schedule(check: MonitorCheck) -> None:
+    """Brings the running scheduler in line with a committed check."""
+    if check.enabled:
+        add_check(check.id, check.interval, check.check_type)
+    else:
+        remove_check(check.id)
+
+
 def _same_config(a, b) -> bool:
     """== on parsed JSON, except that a bool never equals a number: 0 == False would
     let a 0 sent for a stored false count as unchanged and skip the strict boundary.
@@ -177,8 +185,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(check)
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
+    _schedule(check)
 
     return check.to_dict(state=state)
 
@@ -261,10 +268,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(check)
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
-    else:
-        remove_check(check.id)
+    _schedule(check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -281,10 +285,11 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
 
-    remove_check(check.id)
     tombstone_check(db, check)
     db.delete(check)
     db.commit()
+    # Only now: if the commit fails, the check stays and its job must keep running.
+    remove_check(check_id)
 
 
 @router.post("/checks/{check_id}/toggle", dependencies=[Depends(require_internal)])
@@ -298,10 +303,7 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
     mark_overrides(db, check, {"enabled": check.enabled})
     db.commit()
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
-    else:
-        remove_check(check.id)
+    _schedule(check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -328,10 +330,7 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(check)
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
-    else:
-        remove_check(check.id)
+    _schedule(check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -358,9 +357,15 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
 
     from app.check_engine import execute_check
 
+    # The run takes up to the check's timeout and execute_check opens its own session;
+    # the request's connection goes back to the pool first (R-0615).
+    db.rollback()
     execute_check(check_id)
 
-    db.expire_all()
+    # The rollback above expired `check`; a check deleted during the run is gone now.
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if not check:
+        raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
 
@@ -423,59 +428,72 @@ def get_status_summary(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
+def _series_or_502(response: dict) -> list:
+    """The series of a query_range response, or 502 if the query failed.
+
+    query_range answers every failure with status "error" and an empty result; read as
+    series, a dead VictoriaMetrics would look like "no data" (R-0636). The first failed
+    query ends the request: no partial chart, no further 10 s wait."""
+    if response.get("status") == "error":
+        raise HTTPException(502, "Metrics store unavailable")
+    return response.get("data", {}).get("result", [])
+
+
 @router.get("/checks/{check_id}/metrics", dependencies=[Depends(require_internal)])
 def get_check_metrics(
     check_id: str,
-    period: str = Query("1h", regex="^(1h|6h|24h|7d)$"),
+    period: str = Query("1h", pattern="^(1h|6h|24h|7d)$"),
     db: Session = Depends(get_db),
 ):
     """Type-specific time-series metrics + status timeline from VictoriaMetrics."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check not found")
+    check_type, server_id = check.check_type, check.server_id
+    # Up to three query_range calls of up to 10 s each follow; the request's connection
+    # goes back to the pool before them (R-0615).
+    db.rollback()
 
     period_map = {"1h": ("1h", "1m"), "6h": ("6h", "5m"), "24h": ("24h", "15m"), "7d": ("7d", "1h")}
     duration, step = period_map[period]
 
     all_results = []
 
-    # Agent-based checks: query raw metrics by server_id
-    # (written by the agent router without check_id)
-    agent_types = {
-        "agent_ping",
-        "agent_resources",
-        "service_process",
-        "docker_health",
-        "proxmox_backup",
-        "zfs_health",
-    }
-    use_server_id = check.check_type in agent_types and check.server_id
-    filter_label = (
-        f'server_id="{_escape_label(check.server_id)}"'
-        if use_server_id
-        else f'check_id="{_escape_label(check_id)}"'
-    )
+    # agent_resources is the one type read by server: the agent push writes CPU, RAM,
+    # disks and temperatures per server without check_id (routers/agent.py). Every other
+    # type, push or pull, writes its values through its check result with the check's
+    # labels (build_check_result_lines), so two checks of one type on one server read
+    # only their own series (R-0749).
+    if check_type == "agent_resources" and server_id:
+        # Only the push handler's series, which carry no check_id: CPU/RAM copies the
+        # checker wrote with its check labels stay in VictoriaMetrics until the retention
+        # ends and would come back as a second series of the same name (R-0633).
+        # label="" selects the series without that label (Prometheus semantics, probed
+        # against the pinned VictoriaMetrics image).
+        filter_label = f'server_id="{_escape_label(server_id)}",check_id=""'
+    else:
+        filter_label = f'check_id="{_escape_label(check_id)}"'
 
     # Query all type-specific metrics in one __name__ regex range query instead of one serial
     # query_range per metric (up to 4 for e.g. service_process/http): the calls are independent, so
     # serializing them — each with a 10s httpx timeout — is pure latency on the dashboard path (5.22).
     # PromQL/VictoriaMetrics anchors the __name__ regex fully (^(...)$), and the metric names are
     # literal [a-z_] identifiers, so the |-join matches exactly those names.
-    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms_value"])
+    metric_names = CHECK_TYPE_METRICS.get(check_type, ["monitor_check_duration_ms_value"])
     if metric_names:
         # zfs_health maps to an empty list (only dynamic patterns) — skip rather than fire a
         # degenerate {__name__=~""} query, matching the old loop which ran zero times.
         names = "|".join(metric_names)
         query = f'{{__name__=~"{names}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
-        all_results.extend(result.get("data", {}).get("result", []))
+        all_results.extend(_series_or_502(result))
 
     # Dynamic metrics (zfs pools, disk mounts)
-    pattern = _DYNAMIC_METRIC_PATTERNS.get(check.check_type)
+    pattern = _DYNAMIC_METRIC_PATTERNS.get(check_type)
     if pattern:
         query = f'{{__name__=~"{pattern}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
-        all_results.extend(result.get("data", {}).get("result", []))
+        all_results.extend(_series_or_502(result))
 
     # Status timeline (always, with _value suffix)
     status_query = f'monitor_check_status_value{{check_id="{_escape_label(check_id)}"}}'
@@ -485,8 +503,8 @@ def get_check_metrics(
 
     return {
         "checkId": check_id,
-        "checkType": check.check_type,
+        "checkType": check_type,
         "period": period,
         "data": all_results,
-        "statusHistory": status_result.get("data", {}).get("result", []),
+        "statusHistory": _series_or_502(status_result),
     }

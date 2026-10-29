@@ -64,6 +64,10 @@ class DiskForecastChecker:
         data = victoria.query_range(
             query=query, start=f"now-{int(window_hours)}h", end="now", step="10m"
         )
+        # query_range answers every failure with status "error" and an empty result;
+        # without this a dead VictoriaMetrics would read as missing history (R-0636).
+        if data.get("status") == "error":
+            return "unknown", "Metrics store unavailable", None
         results = data.get("data", {}).get("result", [])
         if not results:
             return "unknown", "No disk history yet", None

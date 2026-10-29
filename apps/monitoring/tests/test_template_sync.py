@@ -31,9 +31,9 @@ from app.models import (
 )
 from app.routers import checks as checks_router
 from app.schemas import CheckUpdate
+from app.server_cleanup import cleanup_server
 from app.template_sync import (
     apply_template,
-    cleanup_server,
     remove_template,
     substitute_variables,
     sync_template,
@@ -170,6 +170,18 @@ def test_apply_creates_checks_states_and_alerts(db):
     rule = db.query(MonitorAlertRule).one()
     assert rule.name == "Mail Web 01"
     assert rule.match_server_id == "srv-1"
+
+
+def test_apply_writes_no_control_characters_from_the_assignment(db):
+    # hostname and server_name reach the check name past its schema validator, so
+    # C0 and DEL in them become spaces, as in every other substituted field.
+    tpl = _template(db, [PING_DEF])
+
+    apply_template(db, tpl, "srv-1", "web01\x7f.example", "Web\n01\x1b")
+
+    check = db.query(MonitorCheck).one()
+    assert check.name == "Ping Web 01 "
+    assert json.loads(check.config)["host"] == "web01 .example"
 
 
 def test_apply_passes_check_type_so_push_only_is_skippable(db):
@@ -357,10 +369,13 @@ def test_cleanup_server_removes_everything_for_server(db):
     db.add(MonitorMaintenance(id="m-global", server_id=None, kind="once", enabled=True))
     db.add(MonitorAgentLiveness(server_id="srv-1", last_report_at=datetime(2026, 1, 1)))
     db.commit()
+    check_ids = sorted(c.id for c in db.query(MonitorCheck))
 
     result = cleanup_server(db, "srv-1")
 
     assert result == {"checksDeleted": 2, "alertsDeleted": 1}
+    # The scheduler loses the jobs too, through template_sync's scheduler hooks.
+    assert sorted(db.removed) == check_ids
     assert db.query(MonitorCheck).count() == 0
     assert db.query(MonitorAlertRule).count() == 0
     assert db.query(MonitorTemplateAssignment).count() == 0

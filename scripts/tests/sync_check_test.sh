@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# sync_check_test.sh — hermetic test for `sync-from-web.sh --check`.
+# sync_check_test.sh — hermetic test for `sync-from-web.sh --check`, plus one
+# case that runs it on this checkout (the last one, deliberately not hermetic).
 #
 # Fixture checkouts under a temp dir: the script derives its repo root from
 # BASH_SOURCE, so a copy of it next to a fixture apps/web + apps/desktop/ui is
@@ -30,8 +31,8 @@ WORK=$(mktemp -d) || { echo "cannot create a temp dir" >&2; exit 2; }
 trap 'rm -rf "$WORK"' EXIT
 
 # fixture <dir> <web-types-body> <desktop-types-body>
-# The shared set the script pins is FrpConfig/FrpStatus/FrpStatusProxy/Server, so
-# every fixture has to carry those four unless the case is about one going away.
+# The shared set the script pins is FrpConfig/FrpStatus/FrpStatusProxy, so every
+# fixture has to carry those three unless the case is about one going away.
 fixture() {
   local d="$1"
   mkdir -p "$d/apps/web/src/lib/api" "$d/apps/desktop/ui/scripts" "$d/apps/desktop/ui/src/lib/api"
@@ -113,9 +114,9 @@ D="$WORK/renamed"; fixture "$D" "${WEB_BASE/  hostname: string;/  host_name: str
 run_case "field renamed on the web side -> exit 1" 1 "host_name" "$D"
 
 # ── a shared symbol disappears from the desktop ─────────────────────────────
-# The realistic failure: ONE refactor, not all four at once. A mere count floor
-# would still read three of four as "no drift".
-D="$WORK/gone"; fixture "$D" "$WEB_BASE" "${DESKTOP_BASE/export interface Server {/export interface ServerRow {}"
+# The realistic failure: ONE refactor, not all three at once. A mere count floor
+# would still read two of three as "no drift".
+D="$WORK/gone"; fixture "$D" "$WEB_BASE" "${DESKTOP_BASE/export interface FrpStatus {/export interface FrpStatusRow {}"
 run_case "one shared symbol renamed away -> exit 1" 1 "erwartete gemeinsame Symbole fehlen" "$D"
 
 # ── a type alias with an object body must be read whole ─────────────────────
@@ -143,6 +144,12 @@ run_case "missing target file -> exit 1" 1 "Ziel-Datei fehlt" "$D"
 D="$WORK/flag"; fixture "$D" "$WEB_BASE" "$DESKTOP_BASE"
 out=$(bash "$D/apps/desktop/ui/scripts/sync-from-web.sh" --nope 2>&1); rc=$?
 if [ "$rc" = 2 ]; then ok "unknown flag -> exit 2"; else bad "unknown flag -> exit $rc (want 2)"; fi
+
+# ── the checkout itself is in lockstep ──────────────────────────────────────
+# Not hermetic on purpose: only the CI job ran --check on the real tree, so a
+# rename on the web side (Server -> ServerSummary, R-0723) first showed on the PR.
+out=$(bash "$SCRIPT" --check 2>&1); rc=$?
+if [ "$rc" = 0 ]; then ok "this checkout passes --check"; else bad "this checkout fails --check (rc=$rc): $(printf '%s' "$out" | grep -m1 FEHLER)"; fi
 
 echo "sync_check_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

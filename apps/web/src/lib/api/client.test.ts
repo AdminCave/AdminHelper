@@ -406,7 +406,7 @@ describe('http client error messages', () => {
     vi.unstubAllGlobals();
   });
 
-  async function messageOf(body: unknown, status = 422): Promise<string> {
+  async function errorOf(body: unknown, status = 422): Promise<ApiError> {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(jsonResponse(body, status))),
@@ -414,7 +414,11 @@ describe('http client error messages', () => {
     const { http } = await importClient();
     const err = await http.get('/api/hooks').catch((e: unknown) => e);
     expect((err as ApiError).name).toBe('ApiError');
-    return (err as ApiError).message;
+    return err as ApiError;
+  }
+
+  async function messageOf(body: unknown, status = 422): Promise<string> {
+    return (await errorOf(body, status)).message;
   }
 
   // The OpenAPI promises HTTPValidationError for a 422 (R-0207): a list of
@@ -444,5 +448,232 @@ describe('http client error messages', () => {
 
   it('falls back to the status when the list carries no msg', async () => {
     expect(await messageOf({ detail: [{ loc: ['body'] }] })).toBe('HTTP 422');
+  });
+
+  // R-0664: an error a client reacts to carries a stable code next to the text; the
+  // detail keeps the code as prefix for older clients, the message drops it.
+  const REVOKED_TEXT = 'This device certificate is no longer valid.';
+
+  it('takes the code and shows the detail without its prefix', async () => {
+    const err = await errorOf(
+      { detail: `ERR_CERT_REVOKED: ${REVOKED_TEXT}`, code: 'ERR_CERT_REVOKED' },
+      403,
+    );
+    expect(err.message).toBe(REVOKED_TEXT);
+    expect(err.code).toBe('ERR_CERT_REVOKED');
+    expect(err.status).toBe(403);
+  });
+
+  it('keeps the prefix when the server sends no code', async () => {
+    const err = await errorOf({ detail: `ERR_CERT_REVOKED: ${REVOKED_TEXT}` }, 403);
+    expect(err.message).toBe(`ERR_CERT_REVOKED: ${REVOKED_TEXT}`);
+    expect(err.code).toBeUndefined();
+  });
+
+  it.each([['err_x'], [42], [`ERR_${'A'.repeat(65)}`]])(
+    'ignores a code that is not of the form ERR_… (%s)',
+    async (code) => {
+      const detail = `${String(code)}: ${REVOKED_TEXT}`;
+      const err = await errorOf({ detail, code }, 403);
+      expect(err.code).toBeUndefined();
+      expect(err.message).toBe(detail);
+    },
+  );
+
+  it('leaves a detail without the prefix as it is', async () => {
+    const err = await errorOf({ detail: REVOKED_TEXT, code: 'ERR_CERT_REVOKED' }, 403);
+    expect(err.message).toBe(REVOKED_TEXT);
+    expect(err.code).toBe('ERR_CERT_REVOKED');
+  });
+
+  it('shows the msg texts of a 422 list that carries a code', async () => {
+    const body = {
+      detail: [
+        { loc: ['body', 'a'], msg: 'first', type: 'value_error' },
+        { loc: ['body', 'b'], msg: 'second', type: 'missing' },
+      ],
+      code: 'ERR_PROBE',
+    };
+    expect(await messageOf(body)).toBe('first; second');
+  });
+});
+
+// R-0779: a request started in a session that ended (logout, then a new login) and that answers
+// 401 only afterwards belongs to the old session: it must neither refresh, retry with the new
+// session's token nor run the auth-failure handler, which would end the new session.
+describe('http client: a 401 of a request from an ended session', () => {
+  let calls: FetchCall[];
+
+  beforeEach(() => {
+    calls = [];
+    vi.stubGlobal('localStorage', createLocalStorageStub());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function deferredResponse(): { promise: Promise<Response>; resolve: (r: Response) => void } {
+    let resolve!: (r: Response) => void;
+    const promise = new Promise<Response>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  // fetch: the first /api/servers waits for `first`, the refresh answers `refresh` (or waits for it).
+  function stubFetch(first: Promise<Response>, refresh: () => Promise<Response>): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') return refresh();
+        if (calls.filter((c) => c.path === path).length === 1) return first;
+        return Promise.resolve(jsonResponse({ ok: true }));
+      }),
+    );
+  }
+
+  function expectSessionExpired(err: unknown): void {
+    expect(err).toBeInstanceOf(Error);
+    expect((err as ApiError).status).toBe(401);
+    expect((err as ApiError).message).toBe('Session expired');
+  }
+
+  it('does not refresh and leaves the new session alone', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('is not retried with the new token, even where a refresh would succeed', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ access_token: 'newer' })));
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+  });
+
+  it('a refresh of the old session that fails after the new login leaves the new session alone', async () => {
+    const refresh = deferredResponse();
+    stubFetch(Promise.resolve(jsonResponse({ detail: 'expired' }, 401)), () => refresh.promise);
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/auth/refresh'));
+    clearTokens();
+    setAccessToken('new-token');
+    refresh.resolve(jsonResponse({ detail: 'no' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']);
+  });
+
+  it('requestRaw: does not refresh and leaves the new session alone', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
+    const { requestRaw, setAccessToken, clearTokens, registerAuthFailureHandler } =
+      await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = requestRaw('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('a logout alone ends the session for a request still open', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ access_token: 'newer' })));
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('a login alone starts a new session for a request sent while logged out', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ access_token: 'newer' })));
+    const { http, setAccessToken, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('a refresh answered after the logout sets no token', async () => {
+    const refresh = deferredResponse();
+    stubFetch(Promise.resolve(jsonResponse({ detail: 'expired' }, 401)), () => refresh.promise);
+    const { http, setAccessToken, clearTokens, getAccessToken } = await importClient();
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/auth/refresh'));
+    clearTokens();
+    refresh.resolve(jsonResponse({ access_token: 'late-token' }));
+
+    expectSessionExpired(await pending);
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it('a new token within the same session still ends it on a failed refresh', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
+    const { http, setAccessToken, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('t1');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    setAccessToken('t2');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).toHaveBeenCalledTimes(1);
   });
 });

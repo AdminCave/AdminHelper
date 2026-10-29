@@ -45,12 +45,12 @@ export default defineConfig({
     },
   },
   build: {
-    // Waehrend der Migration lokal nach dist/ bauen.
-    // Erst in Phase 11 auf '../server/frontend' umstellen (Dockerfile-Cutover).
+    // Vite builds into dist/; the root Dockerfile (stage frontend-build) copies dist/ into
+    // the server image, which serves it under frontend/.
     outDir: path.resolve(__dirname, './dist'),
     emptyOutDir: true,
-    // No production sourcemaps: after the cutover to ../server/frontend they'd be served
-    // publicly, exposing internal comments / auth-flow hints and easing client-logic
+    // No production sourcemaps: the server image serves the build publicly, so they would
+    // expose internal comments / auth-flow hints and ease client-logic
     // reconnaissance (3.102). Set true locally to debug a production build.
     sourcemap: false,
     target: 'es2022',
@@ -58,9 +58,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/api': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/api': 'http://127.0.0.1:8080',
     },
   },
   // `vite preview` (Playwright project chromium-build) serves the build with the CSP as a

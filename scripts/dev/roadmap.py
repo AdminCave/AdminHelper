@@ -15,8 +15,10 @@
                                 --ledger and --pr fill their columns, also on the same status
     approve <id> [--revoke]     geplant -> freigegeben, or back; the note stays
     show [<id>] [--wip]         one row, the WIP counters, or the overview
-    next [--status S] [--exclude-components C …]
+    next [--status S] [--exclude-components C …] [--stufe klein|kern|arch]
                                 the next row to build; exit 1 when there is none
+    zuege [--stufe klein|kern|arch]  the trains: open rows grouped by their ledger, waiting ones
+                                first (highest class, then the fullest); exit 1 when none
     sync                        rows in `pr` whose PRs are merged (gh) -> abgeschlossen
     stats [--days N]            tasks/day, Kevin-min/PR, wait per state, stale, dedup
 
@@ -915,6 +917,8 @@ def cmd_next(args: argparse.Namespace) -> int:
             continue
         if components_of(r) & excluded:
             continue
+        if args.stufe and train_stage(r.cells[LEDGER]) != args.stufe:
+            continue
         # Fail-closed, but only where a list asks for disjoint rows: a ledger
         # nobody can read may touch any component.
         if excluded and ledger_nowhere(r):
@@ -931,6 +935,51 @@ def cmd_next(args: argparse.Namespace) -> int:
     _, _, r = min(ready, key=lambda c: (c[0], c[1]))
     ledger = f" ({r.cells[LEDGER]})" if r.cells[LEDGER] not in ("", "—", "-") else ""
     print(f"{r.id} {r.cells[KLASSE]} {r.cells[TITEL]}{ledger}")
+    return 0
+
+
+# A train (Zug) is the set of rows whose Ledger column names the same ledger:
+# triage assigns a row to one when Kevin accepts it, /feature-plan --zug plans
+# them together. A `klein-` ledger belongs to the Sonnet session (small rows), an
+# `arch-` ledger to its own architecture session, every other one to the Opus
+# session (CLAUDE.md section 2) — so no session picks up another one's project.
+TRAIN_WAITING = ("geplant", "freigegeben")
+TRAIN_MOVING = ("aktiv", "bereit", "pr")
+STAGES = ("klein", "kern", "arch")
+
+
+def train_stage(ledger: str) -> str:
+    name = pathlib.PurePosixPath(ledger).name
+    return next((s for s in ("klein", "arch") if name.startswith(f"{s}-")), "kern")
+
+
+def cmd_zuege(args: argparse.Namespace) -> int:
+    trains: dict[str, list[Row]] = {}
+    for _, r in Roadmap.load(roadmap_path(args.file)).rows():
+        if not r.well_formed or r.state not in TRAIN_WAITING + TRAIN_MOVING:
+            continue
+        ledger = r.cells[LEDGER]
+        if ledger in ("", "—", "-") or (args.stufe and train_stage(ledger) != args.stufe):
+            continue
+        trains.setdefault(ledger, []).append(r)
+    if not trains:
+        print("zuege: no train", file=sys.stderr)
+        return 1
+    lines = []
+    for ledger, rs in trains.items():
+        waiting = [r for r in rs if r.state in TRAIN_WAITING]
+        moving = len(rs) - len(waiting)
+        top = min(CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)) for r in waiting or rs)
+        state = f"unterwegs ({moving} von {len(rs)})" if moving else "wartet"
+        ids = " ".join(f"{r.id}:{r.cells[KLASSE]}" for r in rs)
+        # A moving train takes no new row; of the waiting ones the highest
+        # class goes first, then the fullest.
+        key = (moving > 0, top, -len(waiting), ledger)
+        lines.append(
+            (key, f"{ledger} · {train_stage(ledger)} · {state} · {len(rs)} Zeilen · {ids}")
+        )
+    for _, line in sorted(lines):
+        print(line)
     return 0
 
 
@@ -1164,7 +1213,11 @@ def main(argv: list[str] | None = None) -> int:
     nx = sub.add_parser("next", help="the next row to build")
     nx.add_argument("--status", default="freigegeben", choices=sorted(SECTION_OF))
     nx.add_argument("--exclude-components", nargs="+", metavar="C", help="skip rows touching these")
+    nx.add_argument("--stufe", choices=STAGES, help="only rows of this session's trains")
     nx.set_defaults(func=cmd_next)
+    zu = sub.add_parser("zuege", help="the trains: rows grouped by their ledger, waiting first")
+    zu.add_argument("--stufe", choices=STAGES, help="only the trains of this session")
+    zu.set_defaults(func=cmd_zuege)
     sub.add_parser("sync", help="close rows in pr whose PRs are merged").set_defaults(func=cmd_sync)
     sa = sub.add_parser("stats", help="tasks/day, Kevin-min/PR, wait per state, stale, dedup")
     sa.add_argument("--days", type=int, default=30, help="the window for tasks/day (default 30)")

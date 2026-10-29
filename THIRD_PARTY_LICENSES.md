@@ -123,7 +123,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `tauri-plugin-notification`, `tauri-plugin-log`,
 `tauri-plugin-single-instance` (nur Desktop-Ziele), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `x509-parser`, `p12`,
-`toml` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
+`toml`, `zeroize` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
 > Paket ist seit Aug. 2025 archiviert, seine PEM-Parser wanderten in die

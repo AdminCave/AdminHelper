@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The non-trivial ansible store logic (6.41): runPlaybook's pipeline order
-// (fetchContent -> generateInventory -> writePlaybook -> launch) with the running-flag reset in the
-// finally even on failure, and toggleTag's all-selected group toggle. A hung running flag would block
-// the wizard forever; the plain selection tests don't touch either.
+// The non-trivial ansible store logic (6.41): runPlaybook hands the run to the backend in one call
+// (ansibleRun with the playbook id and the targets; the backend loads the playbook itself) with the
+// running-flag reset in the finally even on failure, and toggleTag's all-selected group toggle. A hung
+// running flag would block the wizard forever; the plain selection tests don't touch either.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
@@ -16,9 +16,7 @@ const h = vi.hoisted(() => ({
   fetchPlaybooks: vi.fn(),
   fetchServers: vi.fn(),
   fetchContent: vi.fn(),
-  generateInventory: vi.fn(),
-  writePlaybook: vi.fn(),
-  launch: vi.fn(),
+  run: vi.fn(),
   reportError: vi.fn(),
 }));
 
@@ -30,11 +28,7 @@ vi.mock('$lib/api/ansible', () => ({
     fetchContent: h.fetchContent,
   },
 }));
-vi.mock('$lib/bridge', () => ({
-  ansibleGenerateInventory: h.generateInventory,
-  ansibleWritePlaybook: h.writePlaybook,
-  ansibleLaunch: h.launch,
-}));
+vi.mock('$lib/bridge', () => ({ ansibleRun: h.run }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError, showStatus: vi.fn() }));
 vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k }));
 
@@ -71,29 +65,15 @@ describe('ansible store: runPlaybook + toggleTag (6.41)', () => {
     selectPlaybook(pb.id);
     toggleServer('s1');
 
-    const order: string[] = [];
-    h.fetchContent.mockImplementation(async () => {
-      order.push('fetchContent');
-      return { content: 'yaml' };
-    });
-    h.generateInventory.mockImplementation(async () => {
-      order.push('generateInventory');
-      return '/inv';
-    });
-    h.writePlaybook.mockImplementation(async () => {
-      order.push('writePlaybook');
-      return '/pb';
-    });
-    h.launch.mockImplementation(async () => {
-      order.push('launch');
-      throw new Error('no terminal');
-    });
+    h.run.mockRejectedValue(new Error('no terminal'));
 
     await runPlaybook();
 
-    expect(order).toEqual(['fetchContent', 'generateInventory', 'writePlaybook', 'launch']);
-    expect(get(ansibleRunning)).toBe(false); // reset in finally despite the launch failure
-    expect(h.reportError).toHaveBeenCalled();
+    // One call with the id and the targets: the content never passes through the UI.
+    expect(h.run.mock.calls).toEqual([[pb.id, [{ hostname: 'web.lan', groups: ['web'] }]]]);
+    expect(h.fetchContent).not.toHaveBeenCalled();
+    expect(get(ansibleRunning)).toBe(false); // reset in finally despite the run failure
+    expect(h.reportError).toHaveBeenCalledWith('no terminal');
   });
 
   it('does nothing without a selected playbook or servers', async () => {
@@ -101,7 +81,7 @@ describe('ansible store: runPlaybook + toggleTag (6.41)', () => {
     // No playbook selected -> pipeline is not entered.
     toggleServer('s1');
     await runPlaybook();
-    expect(h.fetchContent).not.toHaveBeenCalled();
+    expect(h.run).not.toHaveBeenCalled();
   });
 
   it('toggleTag selects the whole group, then deselects it when fully selected', async () => {

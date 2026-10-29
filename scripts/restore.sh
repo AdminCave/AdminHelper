@@ -168,8 +168,9 @@ if [ -f "$STAGE/env.sanitized" ]; then
     cp "$STAGE/env.sanitized" ./.env.restored
     chmod 600 ./.env.restored
     echo "[restore] .env aus dem Backup nach ./.env.restored geschrieben (OHNE CA_ROOT_PASSPHRASE)."
-    echo "[restore]   -> mit der getrennt aufbewahrten CA_ROOT_PASSPHRASE ergänzen und nach .env übernehmen,"
-    echo "[restore]      falls dies ein frischer Host ist. Der Stack läuft auch ohne die Passphrase."
+    echo "[restore]   -> on a fresh host: move it to .env and add the line CA_ROOT_PASSPHRASE= (empty or with"
+    echo "[restore]      the separately kept passphrase); without that line docker compose up aborts."
+    echo "[restore]      The restored hierarchy does not need the value to start."
 fi
 
 echo "[restore] Fertig. Der ca-issuer lädt die wiederhergestellte Hierarchie — Agenten bleiben vertraut."

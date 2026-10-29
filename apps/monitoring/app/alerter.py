@@ -16,9 +16,11 @@ import json
 import logging
 import smtplib
 import ssl
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 import httpx
@@ -28,6 +30,7 @@ from sqlalchemy.orm import Session
 from app.core.config import (
     INTERNAL_API_KEY,
     SERVER_HUB_URL,
+    SMTP_CA_FILE,
     SMTP_FROM,
     SMTP_HOST,
     SMTP_PASSWORD,
@@ -54,7 +57,7 @@ logger = logging.getLogger("monitor.alerter")
 # severity warning "warning". unknown is treated as warning-level. ok and
 # pending are level 0 ("nothing wrong"), so a check first coming up clean
 # (pending->ok) and every transition of an info check are NOT pushed (see
-# _emit_to_hub). The same table caps the label in the message subject.
+# emit_to_hub). The same table caps the label in the message subject.
 _STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "critical": 2}
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
 _SEVERITY_LEVEL = {"info": 0, "warning": 1, "critical": 2}
@@ -62,6 +65,19 @@ _SEVERITY_LEVEL = {"info": 0, "warning": 1, "critical": 2}
 # Bell cooldown (docs/features/monitoring-alert-quality.md): at most one problem
 # per check in this window reaches the notification hub; see hub_decision.
 HUB_COOLDOWN = timedelta(minutes=30)
+
+# The longest title the hub takes: IncomingEvent.title in the server
+# (apps/server/app/modules/notifications/schemas.py). A longer one turns the push
+# into a 422, and the bell gets nothing; test_alerter_hub keeps both equal.
+HUB_TITLE_MAX = 512
+
+# In the subject, every control character of the check name (Unicode category Cc: C0, DEL,
+# C1) and the line and paragraph separators become a space, one for one. The subject is a
+# mail header value, and Python's email package refuses to write a header that spans more
+# than one line, so the mail would not go out. Text and check_name keep the name as it is.
+_SUBJECT_TO_SPACE = str.maketrans(
+    dict.fromkeys([*range(0x20), *range(0x7F, 0xA0), 0x2028, 0x2029], " ")
+)
 
 
 def resolve_notification(notified_status: str | None, new_status: str) -> str:
@@ -85,6 +101,65 @@ def resolve_notification(notified_status: str | None, new_status: str) -> str:
     if new_status == "ok" and notified_status not in ("warning", "critical"):
         return "silent_ack"
     return "notify"
+
+
+def enabled_rules(db: Session) -> list[MonitorAlertRule]:
+    return db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
+
+
+def reported_status(notified: str | None) -> str:
+    """The receiver-facing "old" status: the last REPORTED one. None/pending/unknown
+    mean "nothing was ever reported" (unknown only via the migration backfill) and
+    read as ok."""
+    return notified if notified not in (None, "pending", "unknown") else "ok"
+
+
+def rule_applies(
+    db: Session, rule: MonitorAlertRule, check: MonitorCheck, *, is_recovery: bool
+) -> bool:
+    if not _rule_matches(rule, check):
+        return False
+    # Never block recovery alerts via cooldown
+    if not is_recovery and _is_in_cooldown(db, rule, check):
+        logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
+        return False
+    return True
+
+
+def send_to_rule(
+    db: Session,
+    rule: MonitorAlertRule,
+    members: Sequence[tuple[MonitorCheck, str]],
+    msg: dict,
+    new_status: str,
+    sent_at: datetime | None = None,
+) -> None:
+    """Sends one message over the rule's channel and adds an alert-log row per
+    member (check, reported old status), so the rule's cooldown per check holds.
+    The first member stands in as the check the channel names in its service log.
+    Without ``sent_at`` the rows carry the time after the send."""
+    try:
+        success, error = _dispatch(rule, members[0][0], msg)
+    except Exception as exc:
+        # Isolate each rule's dispatch: a misconfigured rule (e.g. smtp_port "abc" or
+        # non-string recipients, which parse in _send_email BEFORE its own try) would
+        # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
+        # other rule's already-created alert log, silently suppressing all their alerts (4.45).
+        logger.exception("Alert dispatch failed for rule %s", rule.id)
+        success, error = False, f"Dispatch failed ({type(exc).__name__})"
+    stamp = sent_at if sent_at is not None else utcnow_naive()
+    for check, old_status in members:
+        db.add(
+            MonitorAlertLog(
+                alert_rule_id=rule.id,
+                check_id=check.id,
+                old_status=old_status,
+                new_status=new_status,
+                sent_at=stamp,
+                success=success,
+                error=error,
+            )
+        )
 
 
 def process_alert(
@@ -112,9 +187,47 @@ def process_alert(
     reserves the bell's slot (hub_status, hub_sent_at); handing it back after a
     failed hub POST likewise comes with the caller's commit.
     """
-    # Claim phase — a short FOR UPDATE window with no I/O inside. The lock
-    # serializes concurrent BG dispatches for the same check: the second one
-    # re-reads the already-claimed notified_status and skips (no-op on sqlite).
+    claim = _claim_transition(db, check, old_status, new_status)
+    if claim is None:
+        return
+
+    # Build the alert message once per transition on the caller's session, then
+    # reuse it for every rule dispatch and the hub emit — avoids N+1 sessions and
+    # a text that could diverge if the state row changed between builds (2.30).
+    msg = build_message(db, check, claim.reported_old, claim.new_status)
+
+    is_recovery = claim.new_status == "ok"
+    for rule in claim.rules:
+        if rule_applies(db, rule, check, is_recovery=is_recovery):
+            send_to_rule(db, rule, [(check, claim.reported_old)], msg, claim.new_status)
+
+    # The claim was committed before the I/O above; only the alert-log rows
+    # remain for the caller's commit.
+    db.flush()
+
+    _notify_bell(db, check, claim, msg)
+
+
+class _Claim(NamedTuple):
+    """What _claim_transition committed: the transition to report and the bell's
+    slot before and after the reservation."""
+
+    state: MonitorState | None
+    rules: list[MonitorAlertRule]
+    reported_old: str
+    new_status: str
+    hub_emit: bool
+    hub_before: tuple[str | None, datetime | None]
+    hub_reserved: tuple[str | None, datetime | None]
+
+
+def _claim_transition(
+    db: Session, check: MonitorCheck, old_status: str, new_status: str
+) -> _Claim | None:
+    """The claim phase of process_alert — a short FOR UPDATE window with no I/O
+    inside, committed before any channel I/O. None when nothing is to be sent."""
+    # The lock serializes concurrent BG dispatches for the same check: the second
+    # one re-reads the already-claimed notified_status and skips (no-op on sqlite).
     state = (
         db.query(MonitorState).filter(MonitorState.check_id == check.id).with_for_update().first()
     )
@@ -127,15 +240,14 @@ def process_alert(
     if decision == "skip":
         # Nothing new to report (incl. every transition INTO 'unknown' — the
         # unknown policy; a pre-unknown discrepancy stays pending for catch-up).
-        return
+        return None
     if decision == "silent_ack":
         # An ok that never had a reported problem (first evaluation, unknown
         # flapping): record it as reported WITHOUT dispatching a recovery.
         if state is not None:
             state.notified_status = current
             db.flush()
-        return
-    new_status = current
+        return None
 
     # Maintenance windows and host-down (muted_reason): the state transition has
     # already been persisted by the caller — only notifications are muted, and
@@ -144,37 +256,10 @@ def process_alert(
     reason = muted_reason(db, check, utcnow_naive())
     if reason is not None:
         logger.debug("Alert for check %s suppressed (%s)", check.id, reason)
-        return
+        return None
 
-    rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
-
-    is_recovery = new_status == "ok"
-    # The receiver-facing "old" is the last REPORTED status, not the raw
-    # transition: a catch-up after host-down reads ok -> critical, a
-    # post-maintenance recovery critical -> ok. None/pending/unknown mean
-    # "nothing was ever reported" (unknown only via the migration backfill)
-    # and read as ok.
-    reported_old = notified if notified not in (None, "pending", "unknown") else "ok"
-
-    # The bell (notification hub) has its own cooldown (hub_decision). It
-    # decides under the same lock and its slot is reserved with the claim, so a
-    # dispatch of this check that starts while this one is still in its hub POST
-    # reads what this one is about to show, not the record from before. What the
-    # bell skips is dropped: the claim records the transition as reported,
-    # nothing is caught up. Without a state row (the notified fallback above)
-    # the bell is taken to have shown what the rules reported, and nothing is
-    # recorded.
-    now = utcnow_naive()
-    if state is not None:
-        hub_before = (state.hub_status, state.hub_sent_at)
-    else:
-        hub_before = (_capped_status(notified, check.severity), None)
-    hub_emit = hub_decision(*hub_before, new_status, check.severity, now) == "emit"
-    # A problem starts the cooldown, a recovery leaves hub_sent_at as it was.
-    hub_reserved = (
-        _capped_status(new_status, check.severity),
-        hub_before[1] if is_recovery else now,
-    )
+    rules = enabled_rules(db)
+    hub_emit, hub_before, hub_reserved = _reserve_bell(state, check, notified, current)
 
     # Claim BEFORE the channel I/O and commit it: the row lock is released, so
     # scheduler workers and push threads never wait on webhook/SMTP timeouts
@@ -182,60 +267,52 @@ def process_alert(
     # no longer re-fire an already-sent alert — at-most-once by design
     # ("reported" = the claim persisted).
     if state is not None:
-        state.notified_status = new_status
+        state.notified_status = current
         if hub_emit:
             state.hub_status, state.hub_sent_at = hub_reserved
         db.commit()
+    # The receiver-facing "old" is the last REPORTED status, not the raw
+    # transition: a catch-up after host-down reads ok -> critical, a
+    # post-maintenance recovery critical -> ok.
+    return _Claim(
+        state, rules, reported_status(notified), current, hub_emit, hub_before, hub_reserved
+    )
 
-    # Build the alert message once per transition on the caller's session, then
-    # reuse it for every rule dispatch and the hub emit — avoids N+1 sessions and
-    # a text that could diverge if the state row changed between builds (2.30).
-    msg = _build_message(db, check, reported_old, new_status)
 
-    for rule in rules:
-        if not _rule_matches(rule, check):
-            continue
-        # Never block recovery alerts via cooldown
-        if not is_recovery and _is_in_cooldown(db, rule, check):
-            logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
-            continue
+def _reserve_bell(
+    state: MonitorState | None, check: MonitorCheck, notified: str | None, new_status: str
+) -> tuple[bool, tuple[str | None, datetime | None], tuple[str | None, datetime | None]]:
+    """(emit, slot before, slot reserved) of the bell for this transition.
 
-        try:
-            success, error = _dispatch(rule, check, msg)
-        except Exception as exc:
-            # Isolate each rule's dispatch: a misconfigured rule (e.g. smtp_port "abc" or
-            # non-string recipients, which parse in _send_email BEFORE its own try) would
-            # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
-            # other rule's already-created alert log, silently suppressing all their alerts (4.45).
-            logger.exception("Alert-Dispatch fuer Rule %s fehlgeschlagen", rule.id)
-            success, error = False, f"Dispatch failed ({type(exc).__name__})"
+    The bell (notification hub) has its own cooldown (hub_decision). It decides
+    under the claim's lock and its slot is reserved with the claim, so a dispatch
+    of this check that starts while this one is still in its hub POST reads what
+    this one is about to show, not the record from before. What the bell skips is
+    dropped: the claim records the transition as reported, nothing is caught up.
+    Without a state row (the notified fallback) the bell is taken to have shown
+    what the rules reported, and nothing is recorded."""
+    now = utcnow_naive()
+    if state is not None:
+        before = (state.hub_status, state.hub_sent_at)
+    else:
+        before = (_capped_status(notified, check.severity), None)
+    emit = hub_decision(*before, new_status, check.severity, now) == "emit"
+    return emit, before, bell_record(new_status, check.severity, before[1], now)
 
-        log_entry = MonitorAlertLog(
-            alert_rule_id=rule.id,
-            check_id=check.id,
-            old_status=reported_old,
-            new_status=new_status,
-            sent_at=utcnow_naive(),
-            success=success,
-            error=error,
-        )
-        db.add(log_entry)
 
-    # The claim was committed before the I/O above; only the alert-log rows
-    # remain for the caller's commit.
-    db.flush()
-
-    # Independently of the rule-based webhook/email dispatch above, push the
-    # transition to the server's notification hub for per-user routing.
-    if not hub_emit:
+def _notify_bell(db: Session, check: MonitorCheck, claim: _Claim, msg: dict) -> None:
+    """Independently of the rule-based webhook/email dispatch, push the transition
+    to the server's notification hub for per-user routing; a failed POST hands the
+    reserved slot back."""
+    if not claim.hub_emit:
         return
-    # A recovery reaches the bell at the level its alarm reached it with, not at
-    # the check's severity as it is now: lowered in between, a subscriber with
-    # min_severity critical would see the alarm but never the all-clear.
-    severity = hub_before[0] if is_recovery else None
-    if _emit_to_hub(check, reported_old, new_status, msg, severity=severity) or state is None:
+    severity = bell_severity(
+        claim.hub_before[0], claim.reported_old, claim.new_status, check.severity
+    )
+    if emit_to_hub(check, claim.reported_old, claim.new_status, msg, severity=severity):
         return
-    _release_hub_slot(db, check.id, hub_reserved, hub_before)
+    if claim.state is not None:
+        _release_hub_slot(db, check.id, claim.hub_reserved, claim.hub_before)
 
 
 def _release_hub_slot(
@@ -333,6 +410,34 @@ def _hub_severity(old_status: str, new_status: str, severity: str) -> str:
     return _LEVEL_SEVERITY[min(level, _severity_level(severity))]
 
 
+def highest_severity(severities: Iterable[str]) -> str:
+    return _LEVEL_SEVERITY[max(_severity_level(s) for s in severities)]
+
+
+def capped_label(status: str, severity: str) -> str:
+    """The label of a message subject: the status at most at the severity."""
+    return _LEVEL_SEVERITY[min(_STATUS_LEVEL.get(status, 1), _severity_level(severity))].upper()
+
+
+def bell_severity(hub_status: str | None, old_status: str, new_status: str, severity: str) -> str:
+    """The level a transition reaches the bell with: capped at the check's severity
+    (_hub_severity). A recovery reaches it at the level its alarm reached it with
+    (``hub_status``), not at the check's severity as it is now: lowered in between,
+    a subscriber with min_severity critical would see the alarm but never the
+    all-clear."""
+    if new_status == "ok":
+        return hub_status
+    return _hub_severity(old_status, new_status, severity)
+
+
+def bell_record(
+    status: str, severity: str, sent_at: datetime | None, now: datetime
+) -> tuple[str | None, datetime | None]:
+    """(hub_status, hub_sent_at) once the bell showed ``status``: a problem starts
+    the cooldown, a recovery leaves hub_sent_at as it was."""
+    return _capped_status(status, severity), sent_at if status == "ok" else now
+
+
 def _capped_status(status: str | None, severity: str) -> str | None:
     """What hub_status records of a status: a problem at most at the check's
     severity, the level its event reached the bell with (warning/critical, info
@@ -375,7 +480,7 @@ def hub_decision(
     return "emit"
 
 
-def _emit_to_hub(
+def emit_to_hub(
     check: MonitorCheck,
     old_status: str,
     new_status: str,
@@ -397,11 +502,15 @@ def _emit_to_hub(
     # recoveries (warning/critical -> ok) keep their severity and are pushed.
     if severity == "info":
         return False
+    # The check name has no length limit; mail and webhook keep the full subject.
+    title = msg["subject"]
+    if len(title) > HUB_TITLE_MAX:
+        title = title[: HUB_TITLE_MAX - 1] + "\u2026"
     payload = {
         "event_type": "monitoring.check.transition",
         "severity": severity,
         "category": "monitoring",
-        "title": msg["subject"],
+        "title": title,
         "body": msg["text"],
         "source_type": "server",
         "source_id": check.server_id,
@@ -412,10 +521,10 @@ def _emit_to_hub(
         # not fire on the critical -> ok leg).
         "new_status": new_status,
     }
-    return _post_hub_event(payload, check.name)
+    return post_hub_event(payload, check.name)
 
 
-def _post_hub_event(payload: dict, label: str) -> bool:
+def post_hub_event(payload: dict, label: str) -> bool:
     """POST one event to the server's notification hub; True when the hub
     accepted it. Never raises: errors are logged under ``label``."""
     if not SERVER_HUB_URL or not INTERNAL_API_KEY:
@@ -450,7 +559,15 @@ def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
 
 def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) -> bool:
     """Checks whether cooldown is still active for this rule+check combination."""
-    cutoff = utcnow_naive() - timedelta(minutes=rule.cooldown_minutes)
+    # NULL is the default 30 of the schema, the template sync and the column: the
+    # column is nullable, and PUT /alerts/{id} stores an explicit null.
+    minutes = 30 if rule.cooldown_minutes is None else rule.cooldown_minutes
+    try:
+        cutoff = utcnow_naive() - timedelta(minutes=minutes)
+    except OverflowError:
+        # The schema allows up to int32 minutes, about 4000 years: a window that
+        # reaches back before year 1 counts every earlier successful send.
+        cutoff = datetime.min
     recent = (
         db.query(MonitorAlertLog)
         .filter(
@@ -483,7 +600,7 @@ def _dispatch(
         return False, f"Unknown channel: {rule.channel}"
 
 
-def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status: str) -> dict:
+def build_message(db: Session, check: MonitorCheck, old_status: str, new_status: str) -> dict:
     """Builds the alert message as a dict. Uses the caller's session (built once
     per transition in process_alert), so it must not open its own (2.30)."""
     status_icons = {
@@ -493,9 +610,10 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
         "unknown": "\u2753",
     }
     is_recovery = new_status == "ok"
+    subject_name = check.name.translate(_SUBJECT_TO_SPACE)
 
     if is_recovery:
-        subject = f"[AdminHelper Monitor] RECOVERY: {check.name}"
+        subject = f"[AdminHelper Monitor] RECOVERY: {subject_name}"
         text = (
             f"RECOVERY\n"
             f"Check: {check.name} ({check.check_type})\n"
@@ -506,8 +624,9 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
         label = "CRITICAL" if new_status == "critical" else new_status.upper()
         # The subject (and with it the bell title) is capped at the check's
         # severity; the text keeps the real status.
-        subject_level = min(_STATUS_LEVEL.get(new_status, 1), _severity_level(check.severity))
-        subject = f"[AdminHelper Monitor] {_LEVEL_SEVERITY[subject_level].upper()}: {check.name}"
+        subject = (
+            f"[AdminHelper Monitor] {capped_label(new_status, check.severity)}: {subject_name}"
+        )
         text = (
             f"{label}\n"
             f"Check: {check.name} ({check.check_type})\n"
@@ -597,7 +716,9 @@ def _send_webhook(
 
     try:
         # pinned_client connects to an address check_target checked, not to whatever a
-        # second lookup answers; it parses the URL already, so it sits inside the try.
+        # second lookup answers. check_target has read the URL with httpx already; the
+        # client sits inside the try because building it can fail on an unusable proxy
+        # setting from the environment (HTTPS_PROXY=ftp://..., NO_PROXY=host:abc).
         with pinned_client(url, target) as client:
             resp = client.post(url, json=payload, timeout=10, follow_redirects=False)
         if resp.status_code < 300:
@@ -609,7 +730,7 @@ def _send_webhook(
         return False, _webhook_failure(exc)
 
 
-def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
+def _email_failure(exc: Exception, *, in_starttls: bool, loading_ca: bool) -> str:
     """The alert-log reason for a failed send: a fixed text per kind of error. The
     exception text (mail server replies, host names) goes to the service log only."""
     # Every smtplib error and ssl.SSLError is an OSError as well, so the order matters.
@@ -621,9 +742,12 @@ def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
     ):
         return "SMTP server refused the message"
     # SMTPNotSupportedError means "no STARTTLS" only from starttls(); login() and the
-    # send raise it for a missing AUTH or SMTPUTF8 extension.
-    if isinstance(exc, ssl.SSLError) or (
-        in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError)
+    # send raise it for a missing AUTH or SMTPUTF8 extension. An OSError while loading
+    # SMTP_CA_FILE (missing, unreadable) is a TLS setup failure, not a connection one.
+    if (
+        isinstance(exc, ssl.SSLError)
+        or (in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError))
+        or (loading_ca and isinstance(exc, OSError))
     ):
         return "SMTP TLS failed"
     if isinstance(exc, TimeoutError):
@@ -648,10 +772,14 @@ def _send_email(
     if not recipients:
         return False, "No recipients configured"
 
-    smtp_host = config.get("smtp_host") or SMTP_HOST
+    rule_host = str(config.get("smtp_host") or "").strip()
+    # SMTP_USER/SMTP_PASSWORD belong to the relay in SMTP_HOST; a rule naming another host
+    # logs in with its own credentials only, so the global password never reaches that host.
+    env_relay = not rule_host or rule_host.lower() == SMTP_HOST.strip().lower()
+    smtp_host = rule_host or SMTP_HOST
     smtp_port = int(config.get("smtp_port") or SMTP_PORT)
-    smtp_user = config.get("smtp_user") or SMTP_USER
-    smtp_pass = config.get("smtp_password") or SMTP_PASSWORD
+    smtp_user = config.get("smtp_user") or (SMTP_USER if env_relay else "")
+    smtp_pass = config.get("smtp_password") or (SMTP_PASSWORD if env_relay else "")
 
     if not smtp_host:
         return False, "SMTP not configured (SMTP_HOST missing)"
@@ -662,13 +790,19 @@ def _send_email(
     message["To"] = ", ".join(recipients)
     message.attach(MIMEText(msg["text"], "plain"))
 
-    in_starttls = False
+    in_starttls = loading_ca = False
     try:
         # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
         # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
         # verifying context (create_default_context checks cert + hostname), so a
         # MITM cannot strip TLS and harvest the login credentials (3.24).
         ctx = ssl.create_default_context()
+        if SMTP_CA_FILE:
+            # A relay with a private CA (any relay, a rule's own included): added to the system
+            # CAs, checks stay on. A file that cannot be loaded stops the send before connecting.
+            loading_ca = True
+            ctx.load_verify_locations(cafile=SMTP_CA_FILE)
+            loading_ca = False
         if smtp_port == 465:
             smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ctx)
         else:
@@ -688,4 +822,4 @@ def _send_email(
         return True, None
     except Exception as exc:
         logger.error("Email failed: %s: %s", check.name, exc)
-        return False, _email_failure(exc, in_starttls=in_starttls)
+        return False, _email_failure(exc, in_starttls=in_starttls, loading_ca=loading_ca)

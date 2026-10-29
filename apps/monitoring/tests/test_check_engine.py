@@ -280,7 +280,7 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
 
     assert len(submitted) == 1, submitted
     fn, args = submitted[0]
-    assert fn is ce._dispatch_alert_bg
+    assert fn is ce.dispatch_alert_bg
     assert args == ("c1", "ok", "critical")
 
 
@@ -334,7 +334,7 @@ def test_execute_check_leaves_a_heartbeat_to_the_agent_alert_bundle(
     with factory() as db:
         state = db.query(MonitorState).filter_by(check_id="c1").one()
         assert (state.status, state.notified_status) == ("critical", "ok")
-    assert submitted == [(ce._dispatch_alert_bg, ("c1", "ok", "critical"))] * dispatched
+    assert submitted == [(ce.dispatch_alert_bg, ("c1", "ok", "critical"))] * dispatched
 
 
 class TestResolveConfigServerId:

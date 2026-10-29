@@ -11,7 +11,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     loadForCurrentMode as loadConnections,
     kindCounts,
     recentConnections,
+    loading,
   } from '$lib/stores/connections';
+  import ConnectionsLoadError from '../components/ConnectionsLoadError.svelte';
   import { timeAgo } from '$lib/utils/timeAgo';
   import type { Connection } from '$lib/bridge/types';
   import { initiateConnect } from '$lib/stores/connectFlow';
@@ -30,6 +32,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     void initiateConnect(c);
   }
 </script>
+
+<ConnectionsLoadError />
 
 <div class="dash-stats">
   <div class="stat-card --accent">
@@ -72,6 +76,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
           </div>
         {/each}
       </div>
+    {:else if $loading}
+      <div class="dash-empty">{$t('loading.generic')}</div>
     {:else}
       <div class="dash-empty">{$t('dashboard.empty')}</div>
     {/if}

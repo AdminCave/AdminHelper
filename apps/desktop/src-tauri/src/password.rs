@@ -1165,7 +1165,8 @@ pub fn windows_store_credential(
 }
 
 /// Writes `password` as the generic credential `target` of `username`, kept as long as
-/// `persist` says, with `comment` if there is one.
+/// `persist` says, with `comment` if there is one. Afterwards it zeroes the UTF-16 copy it
+/// made for the write; the `password` string it got stays in memory as it is.
 #[cfg(target_os = "windows")]
 fn windows_write_credential(
     target: &str,
@@ -1177,6 +1178,7 @@ fn windows_write_credential(
     use windows::core::PWSTR;
     use windows::Win32::Foundation::GetLastError;
     use windows::Win32::Security::Credentials::{CredWriteW, CREDENTIALW, CRED_TYPE_GENERIC};
+    use zeroize::Zeroize;
 
     let target_w = to_utf16_null(target);
     let username_w = to_utf16_null(username);
@@ -1195,9 +1197,7 @@ fn windows_write_credential(
     credential.Persist = persist;
 
     let ok = unsafe { CredWriteW(&credential, 0) }.is_ok();
-    for byte in &mut secret_bytes {
-        *byte = 0;
-    }
+    secret_bytes.zeroize();
     if ok {
         Ok(())
     } else {

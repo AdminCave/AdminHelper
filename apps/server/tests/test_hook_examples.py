@@ -11,10 +11,15 @@ is a TypeError at runtime. event_hook_notify.py passed json= and its except bran
 logged that TypeError as a failed notification (R-0490). No test executes the
 examples, so the drift stayed invisible; this one compares each call against the
 signature the worker really injects.
+
+The examples also carry addresses, and those stay within the documentation networks of
+RFC 5737, so a copied example never points at a real host.
 """
 
 import ast
 import inspect
+import ipaddress
+import re
 from pathlib import Path
 
 from app.modules.hooks import script_worker
@@ -59,3 +64,37 @@ def test_example_http_helper_keywords_match_worker_signature():
 
     assert calls, f"no http_get/http_post call in {_EXAMPLES_DIR}"
     assert not problems, "\n".join(problems)
+
+
+_DOTTED_QUAD = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+_DOC_NETS = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
+
+
+def _foreign_ipv4(text: str) -> list[str]:
+    """Every dotted quad in text that is no address of an RFC 5737 network."""
+    found = []
+    for quad in _DOTTED_QUAD.findall(text):
+        try:
+            addr = ipaddress.IPv4Address(quad)
+        except ipaddress.AddressValueError:
+            found.append(quad)
+            continue
+        if not any(addr in net for net in _DOC_NETS):
+            found.append(quad)
+    return found
+
+
+def test_examples_use_only_rfc5737_addresses():
+    files = sorted(p for p in _EXAMPLES_DIR.rglob("*") if p.is_file())
+    assert files, f"no hook examples under {_EXAMPLES_DIR}"
+    problems = [
+        f"{path.relative_to(_ROOT)}: {quad}"
+        for path in files
+        for quad in _foreign_ipv4(path.read_text(encoding="utf-8"))
+    ]
+    assert not problems, problems
+
+
+def test_foreign_ipv4_flags_addresses_outside_the_documentation_networks():
+    assert _foreign_ipv4("a 198.18.0.1 b 8.8.8.8") == ["198.18.0.1", "8.8.8.8"]
+    assert _foreign_ipv4("192.0.2.1 198.51.100.7 203.0.113.255 1.2.3") == []

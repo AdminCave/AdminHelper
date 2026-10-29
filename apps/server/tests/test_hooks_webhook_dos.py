@@ -8,7 +8,10 @@
   test pins that the offloaded webhook path still works end-to-end.
 - #9: the per-IP trigger limit now uses the central rate_limit backend (with
   eviction/TTL) instead of an unbounded hand-rolled dict.
+- R-0845: the timeout also bounds a run whose worker does not read its payload.
 """
+
+import threading
 
 from app.core.rate_limit import reset_backend_for_tests
 
@@ -69,3 +72,26 @@ def test_disabled_webhook_is_403(test_client, db_session, admin_user):
 
     r = test_client.post(f"/api/hooks/trigger/{wt}", json={})
     assert r.status_code == 403, r.text
+
+
+def test_a_run_whose_worker_does_not_read_a_large_payload_ends_at_the_timeout(
+    tmp_path, monkeypatch
+):
+    # R-0845: a payload larger than the pipe buffer blocks a writer whose reader never reads; the
+    # timeout must bound that write as well, not only the wait for the worker's exit.
+    import app.modules.hooks.script_runner as sr
+
+    worker = tmp_path / "deaf_worker.py"
+    worker.write_text("import time\ntime.sleep(15)\n")
+    monkeypatch.setattr(sr, "_WORKER_SCRIPT", str(worker))
+    results = []
+    runner = threading.Thread(
+        target=lambda: results.append(
+            sr.run_hook_script("#" * (1 << 20), "webhook", {}, timeout=1)
+        ),
+        daemon=True,
+    )
+    runner.start()
+    runner.join(10)
+    assert not runner.is_alive(), "the run blocked on writing the payload past its timeout"
+    assert results[0]["error"] == "Timeout nach 1s", results

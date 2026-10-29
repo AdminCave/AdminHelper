@@ -24,6 +24,7 @@ the last test runs that program of its entrypoint against the test database."""
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -344,17 +345,20 @@ def test_the_entrypoint_of_monitoring_creates_its_database_once(pg_engine):
         assert not exists()
         first = run()
         assert (first.returncode, first.stderr) == (0, ""), first.stderr
-        assert first.stdout == f"[entrypoint] Lege Datenbank {name} an...\n"
+        assert first.stdout == f"[entrypoint] Creating database {name}...\n"
         assert exists()
         again = run()
         assert (again.returncode, again.stdout, again.stderr) == (0, "", ""), again.stderr
         # A database it cannot reach ends the entrypoint, with a line that names no password.
-        # Checked first and without the values, so a failure prints no password either.
-        failed = run(ADMIN_DB=f"{name}-missing")
-        leaked = bool(url.password) and url.password in failed.stdout + failed.stderr
+        # The probe is a password of its own, not that of the test database: one like `test`
+        # (testcontainers) stands in the database name the line names. Checked first and
+        # without the values, so a failure prints no password either.
+        sentinel = secrets.token_hex(16)
+        failed = run(ADMIN_DB=f"{name}-missing", PGPASSWORD=sentinel)
+        leaked = sentinel in failed.stdout + failed.stderr
         assert not leaked, "the output of the failed run names the password"
         assert failed.returncode == 1, failed.stderr
-        assert failed.stderr.startswith(f"[entrypoint] FEHLER: Datenbank {name}: "), failed.stderr
+        assert failed.stderr.startswith(f"[entrypoint] ERROR: database {name}: "), failed.stderr
     finally:
         with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))

@@ -11,7 +11,9 @@ client's CSR nor the calling server can widen identity, scope or lifetime.
 
 from __future__ import annotations
 
+import datetime
 import logging
+import threading
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
@@ -28,6 +30,11 @@ class IssuanceError(Exception):
     """Raised when issuance is refused (bad token, deprovisioned, bad input)."""
 
 
+class IssuerUnavailable(Exception):
+    """Raised when the intermediate of a scope is expired or not yet valid: a fault of
+    the service, not a refusal of the client, so deliberately no IssuanceError."""
+
+
 def _leaf_days(grant: EnrollmentGrant) -> int:
     return pki.LEAF_DAYS_BROWSER if grant.browser else pki.LEAF_DAYS_NATIVE
 
@@ -36,6 +43,10 @@ class Issuer:
     def __init__(self, intermediates: dict[str, Intermediate], tokens: TokenStore) -> None:
         self._inter = intermediates
         self.tokens = tokens  # public: lifespan exposes it on app.state for minting/tests
+        # The UTC day each scope last warned that its intermediate ends soon: once a day
+        # is enough, however many leaves it signs (sync endpoints run in a threadpool).
+        self._warned_on: dict[str, datetime.date] = {}
+        self._warned_lock = threading.Lock()
 
     def _intermediate(self, scope: str) -> Intermediate:
         inter = self._inter.get(scope)
@@ -79,7 +90,15 @@ class Issuer:
     ) -> tuple[x509.Certificate, dict[str, str]]:
         """The signed leaf (for the register) and the response body."""
         inter = self._intermediate(spec.scope)
-        leaf = pki.sign_leaf(csr, inter.cert, inter.key, spec)
+        try:
+            leaf = pki.sign_leaf(csr, inter.cert, inter.key, spec)
+        except pki.IssuerNotValid as exc:
+            logger.error("intermediate %r cannot sign: %s", inter.scope, exc)
+            raise IssuerUnavailable(
+                f"the issuing intermediate certificate of scope '{inter.scope}' is expired "
+                "or not yet valid; see the ca-issuer log"
+            ) from exc
+        self._warn_if_ending(inter)
         leaf_pem = pki.cert_to_pem(leaf)
         return leaf, {
             "cert": leaf_pem.decode(),
@@ -88,6 +107,22 @@ class Issuer:
             # trust bundle = intermediate + root (what a client pins/validates against)
             "chain": inter.chain.decode(),
         }
+
+    def _warn_if_ending(self, inter: Intermediate) -> None:
+        now = pki._now()
+        left = pki.days_left(inter.cert, now)
+        if left >= pki.EXPIRY_WARN_DAYS:
+            return
+        with self._warned_lock:
+            if self._warned_on.get(inter.scope) == now.date():
+                return
+            self._warned_on[inter.scope] = now.date()
+        logger.warning(
+            "intermediate %r expires on %s (%d days left)",
+            inter.scope,
+            inter.cert.not_valid_after_utc.isoformat(),
+            left,
+        )
 
     @staticmethod
     def _load_csr(csr_pem: bytes) -> x509.CertificateSigningRequest:
@@ -153,16 +188,17 @@ class Issuer:
         csr = self._load_csr(csr_pem)
 
         # Preserve the audience (browser vs native — inferred from the original
-        # span, since it isn't stored in the cert) but never exceed the CURRENT
-        # policy for it: capping against LEAF_DAYS_* means lowering a lifetime
-        # propagates to renewals instead of every legacy identity renewing at its
-        # original span forever.
+        # span, since it isn't stored in the cert) and renew at the CURRENT policy
+        # for it, not at the old span: sign_leaf cuts a leaf short before its
+        # intermediate's end, and that cut must not pass to every successor; a
+        # lowered LEAF_DAYS_* likewise reaches renewals instead of every legacy
+        # identity renewing at its original span forever.
         span_days = max(1, (current.not_valid_after_utc - current.not_valid_before_utc).days)
         audience_max = (
             pki.LEAF_DAYS_BROWSER if span_days > pki.LEAF_DAYS_NATIVE else pki.LEAF_DAYS_NATIVE
         )
         spec = pki.LeafSpec(
-            lifetime_days=min(span_days, audience_max),
+            lifetime_days=audience_max,
             client_auth=True,
             server_auth=False,
             subject_cn=cn,

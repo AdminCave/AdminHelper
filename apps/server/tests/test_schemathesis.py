@@ -50,6 +50,7 @@ from app.core.auth import hash_api_key
 from app.core.database import get_db
 from app.main import app
 from app.modules.api_keys.models import ApiKey
+from tests.token_claims import claims_for
 
 _EXCLUDE_FILE = Path(__file__).parent / "schemathesis_exclude.toml"
 
@@ -243,7 +244,7 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
     """
     from app.core.auth import create_access_token
 
-    token = create_access_token({"sub": admin_user.username})
+    token = create_access_token(claims_for(admin_user.username))
 
     # The internal key is read once at import into the router's own namespace, so
     # the value has to be patched there, not in the config module.

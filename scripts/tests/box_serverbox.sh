@@ -10,6 +10,8 @@
 # --tunnel stage of R-0411 watches frps under its supervisor, one mode per step:
 #   box_serverbox.sh frps-mark                      the supervisor before a config change
 #   box_serverbox.sh frps-restart <mark> <tunnel…>  after it: one restart, the tunnels back
+# and, once the tunnel box is up, that frps has no way out of its network:
+#   box_serverbox.sh frps-egress <ip> <port>        frps cannot reach it, the server can
 set -uo pipefail
 
 # ── frps under its supervisor (R-0411) ──────────────────────────────────────────
@@ -178,9 +180,57 @@ step_frps_restart() {
   fi
 }
 
+# ── frps without a way out (frpedge) ───────────────────────────────────────────
+# frpedge runs without IP masquerading (docker-compose.yml): a connection frps opens leaves
+# the box with the container's own address, and no other host answers it. The same
+# connection from the server container, whose network masquerades, shows the target is up.
+
+# egress_frps <ip> <port> — open, blocked or error: nc -z in the frps container. The image's
+# nc (OpenBSD) says nothing on a failed connect without -v, so blocked is exit 1 without a
+# word; no nc, a usage line or a failed exec is an error, so that blocked never rests on one.
+egress_frps() {
+  local out
+  # shellcheck disable=SC2016 # expanded by the container's sh
+  out="$(mb-dc exec -T frps sh -c 'err=$(nc -z -w3 "$1" "$2" 2>&1); echo "rc=$? $err"' sh "$1" "$2" 2>/dev/null)" \
+    || { echo error; return; }
+  case "$out" in
+    "rc=0 "*) echo open ;;
+    "rc=1 ") echo blocked ;;
+    *) echo error ;;
+  esac
+}
+
+# egress_server <ip> <port> — open, closed or error: the same connection from the server
+# container; no answer from its python is an error.
+egress_server() {
+  local out
+  out="$(mb-dc exec -T server python -c '
+import socket, sys
+try:
+    socket.create_connection((sys.argv[1], int(sys.argv[2])), 3).close()
+except OSError:
+    print("closed")
+else:
+    print("open")' "$1" "$2" 2>/dev/null)"
+  case "$out" in
+    open|closed) echo "$out" ;;
+    *) echo error ;;
+  esac
+}
+
+# step_frps_egress <ip> <port> — MB_FRPS_EGRESS=frps:<…>,server:<…>, both results in one
+# line; exit 0 only for frps:blocked,server:open.
+step_frps_egress() {
+  local frps server
+  frps="$(egress_frps "$1" "$2")"; server="$(egress_server "$1" "$2")"
+  echo "MB_FRPS_EGRESS=frps:$frps,server:$server"
+  [ "$frps" = blocked ] && [ "$server" = open ]
+}
+
 case "${1:-}" in
   frps-mark)    cd "$(dirname "$0")/../.." || exit 1; step_frps_mark; exit 0 ;;
   frps-restart) cd "$(dirname "$0")/../.." || exit 1; step_frps_restart "${2:?}" "${3:?}" "${@:4}"; exit 0 ;;
+  frps-egress)  cd "$(dirname "$0")/../.." || exit 1; step_frps_egress "${2:?}" "${3:?}"; exit $? ;;
 esac
 
 SRV_IP="${1:?usage: box_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP>]}"; shift || true

@@ -35,8 +35,8 @@
 
           <h2>Tech Stack</h2>
           <div class="card-grid">
-            <div class="card"><h3>Server</h3><p>FastAPI 0.11, SQLAlchemy 2 + Alembic, APScheduler, Redis. 100+ pytest tests.</p></div>
-            <div class="card"><h3>Frontend</h3><p>Svelte 5 Runes, TypeScript strict, Vite 5, Playwright E2E.</p></div>
+            <div class="card"><h3>Server</h3><p>FastAPI, SQLAlchemy 2 + Alembic, APScheduler, Redis. 100+ pytest tests.</p></div>
+            <div class="card"><h3>Frontend</h3><p>Svelte 5 Runes, TypeScript strict, Vite, Playwright E2E.</p></div>
             <div class="card"><h3>Desktop</h3><p>Tauri 2, Rust (stable), Svelte 5, ~250 Vitest unit tests.</p></div>
             <div class="card"><h3>Agent</h3><p>Go 1.27, Cobra CLI, gopsutil, cross-compiled Linux + Windows DEB/RPM.</p></div>
           </div>
@@ -49,6 +49,7 @@
 │   ├── monitoring/   Check-execution service (own DB)
 │   ├── ca-issuer/    PKI enrollment plane (FastAPI, own mTLS)
 │   ├── gateway/      nginx reverse proxy (TLS/mTLS/headers, rate limit)
+│   ├── frps/         frps image (FRP server under a supervisor)
 │   ├── agent/        Unified Go agent (Linux + Windows)
 │   ├── web/          Svelte 5 web admin panel
 │   └── desktop/      Tauri client (Rust backend + Svelte UI)
@@ -58,30 +59,32 @@
 
           <h2>Local Development</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Server
-cd apps/server
-uv sync
-uv run uvicorn app.main:app --reload
+<pre><code># Server (needs Postgres; DATABASE_URL and first login: see DEVELOPMENT.md)
+cd apps/server &amp;&amp; python3 -m venv .venv &amp;&amp; . .venv/bin/activate
+pip install -r requirements-dev.txt
+DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
-# Web panel
-cd apps/web
-npm install
-npm run dev
+# Web panel (with a proxy to the running server)
+cd apps/web &amp;&amp; npm ci &amp;&amp; npm run dev
 
-# Desktop
-cd apps/desktop/ui &amp;&amp; npm install
-cd ../desktop  &amp;&amp; cargo tauri dev
+# Desktop client (starts Tauri dev with auto-reload)
+# The first build needs a placeholder file for the frpc sidecar (externalBin
+# binaries/frpc); CI/CD replaces it with the real frpc (DEVELOPMENT.md)
+cd apps/desktop/ui &amp;&amp; npm ci
+cd ../src-tauri
+mkdir -p binaries
+touch binaries/frpc-x86_64-unknown-linux-gnu
+cargo tauri dev
 
 # Go agent
-cd apps/agent
-go run ./cmd/adminhelper-agent run</code></pre>
+cd apps/agent &amp;&amp; go run ./cmd/adminhelper-agent version</code></pre>
 
           <h2>Unified PKI &amp; mTLS</h2>
           <p>AdminHelper runs its <strong>own internal PKI</strong> as the foundation for mTLS across all entrances. The full, canonical model (decisions D1–D11, trust, lifecycle, backup) is in <a href="../../adr/0001-unified-pki-and-secure-deployment.md">ADR 0001</a>; the implementation status in <a href="../../adr/0002-phase-a-task-plan.md">ADR 0002</a>. In brief:</p>
           <ul>
             <li><strong>Trust chain:</strong> one Root → scoped intermediates <code>tunnel</code> (frps + agents), <code>access</code> (humans: desktop/browser), <code>internal</code> (phase B). Clients pin the <em>Root/CA</em>, not a leaf — server certs rotate freely (D2).</li>
             <li><strong><code>ca-issuer</code></strong> (own container) is the <em>only</em> signing capability (D6): creates the hierarchy on first boot, holds the online intermediates, signs via <code>/enroll</code> (one-time token) and <code>/renew</code> (presented cert). The Root key stays cold + passphrase-encrypted (D7).</li>
-            <li><strong><code>gateway</code></strong> (nginx) is the single public TLS edge (`:443` data, `:8444` enroll). It terminates TLS/mTLS and forwards the verified identity as <code>X-Client-*</code> headers to the internal services — uvicorn can't see the cert itself (V1). <code>server</code>/<code>ca-issuer</code> have no host port; the <code>ca-issuer</code> further sits on the internal <code>pki</code> compose network (only the gateway reaches it — not the internet-facing <code>frps</code>), so the header is unforgeable. <code>frps</code> itself sits on its own <code>frpedge</code> network, fenced off the internal default net, so a compromised frps can't reach the auth-less <code>redis</code> or <code>victoria</code> (3.28).</li>
+            <li><strong><code>gateway</code></strong> (nginx) is the single public TLS edge (`:443` data, `:8444` enroll). It terminates TLS/mTLS and forwards the verified identity as <code>X-Client-*</code> headers to the internal services — uvicorn can't see the cert itself (V1). <code>server</code>/<code>ca-issuer</code> have no host port; the <code>ca-issuer</code> sits only on the internal <code>pki</code> compose network, together with the gateway and Postgres: those two reach it, not the internet-facing <code>frps</code> and not the other services of the default net, which therefore can't forge the header. The <code>server</code>, by contrast, is reachable by every service of the default net, so it evaluates the <code>X-Client-*</code> headers only when the request comes directly from the <code>gateway</code> service (a current address of the compose name <code>gateway</code>; after the gateway is recreated it looks the name up again at once). From any other peer the request counts as one without a certificate. <code>frps</code> itself sits alone on its own <code>frpedge</code> network, fenced off the internal default net, so a compromised frps can't reach the auth-less <code>redis</code> or <code>victoria</code> (3.28). <code>frpedge</code> has no IP masquerading: frps opens no connections beyond the host, its published ports stay reachable (remaining risk and an optional firewall rule: <a href="../admin/operations.html#frpedge">Operations</a>).</li>
             <li><strong>Enrollment (one pattern, three clients):</strong> one-time token → on-device ECDSA key + CSR → issuer signs (identity issuer-dictated, the CSR subject cosmetic). Go agent (at provisioning), desktop (with a one-time token an admin issues and hands over — no prior login, <a href="../../adr/0003-decoupled-enrollment-door.md">ADR 0003</a>), frps/tunnel certs. Native clients auto-renew at ~50% lifetime; the browser gets a long-lived cert as a <strong>PKCS12 export</strong> from the desktop after login (D5).</li>
             <li><strong>Certificate register (R-0224):</strong> the issuer records every issuance (SHA-256 fingerprint over DER, serial, validity) on a device line; a renewal stays on the line. The server (the scope guard and wherever a user comes from a JWT or credentials) and <code>/renew</code> check the certificate: line revoked, the user's revocation as a point in time (<code>revoked_identities.revoked_at</code> &ge; notBefore), or not recorded after the transition &rarr; <code>403 ERR_CERT_REVOKED</code>, permissive mode included. Re-enrolling names the previous certificate (<code>replaces</code>), a reset revokes via <code>POST /api/enrollment/self/revoke</code>, an admin via <code>/api/users/{id}/devices</code>. Details and limits: ADR 0001 &sect;3.4.</li>
             <li><strong>Per-route scope:</strong> <code>access</code> = human, <code>tunnel</code> = agent (D8). <strong>Enforced by default</strong> (<code>MTLS_ENFORCE=true</code>, since 0.29.0): a scope mismatch is a <code>403</code>. Set <code>MTLS_ENFORCE=false</code> for a permissive rollout where a mismatch is only logged (needed only for a manual first bootstrap) — a deliberate operator decision (A8, end-to-end verified).</li>

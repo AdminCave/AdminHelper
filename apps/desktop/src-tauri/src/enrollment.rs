@@ -176,6 +176,112 @@ fn read(entry: &str) -> Option<String> {
     keyring_store::get(&keyring_key(entry).ok()?)
 }
 
+// ── The identity as read once (R-0644) ────────────────────────────────────
+//
+// Every request built a client and read key, cert and CA chain from the system keyring
+// for it; a keyring that answered slowly slowed every request, and one that failed once
+// made requests go out without the device certificate. The entries are read once per
+// process (per thread in test builds, like keyring_store::memory) and again only after
+// enrolling, renewing or resetting the identity, through `reload_identity`.
+
+/// Key, fullchain and CA chain of the workspace behind `prefix`, as read.
+#[derive(Clone)]
+struct HeldIdentity {
+    prefix: String,
+    key: Option<String>,
+    cert: Option<String>,
+    ca: Option<String>,
+}
+
+/// The held identity with the generation it was read in; a reload bumps the generation,
+/// so a read that a reload overlapped does not keep its result.
+#[derive(Default)]
+struct IdentityCell {
+    generation: u64,
+    held: Option<HeldIdentity>,
+}
+
+#[cfg(not(test))]
+fn with_cell<T>(f: impl FnOnce(&mut IdentityCell) -> T) -> T {
+    static CELL: std::sync::Mutex<IdentityCell> = std::sync::Mutex::new(IdentityCell {
+        generation: 0,
+        held: None,
+    });
+    f(&mut CELL.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// Per thread and per in-memory keyring: a test thread runs many tests, each with a keyring
+// of its own, and what one held must not reach the next.
+#[cfg(test)]
+fn with_cell<T>(f: impl FnOnce(&mut IdentityCell) -> T) -> T {
+    thread_local! {
+        static CELL: std::cell::RefCell<(u64, IdentityCell)> =
+            std::cell::RefCell::new((0, IdentityCell::default()));
+    }
+    CELL.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        let epoch = keyring_store::memory_epoch();
+        if cell.0 != epoch {
+            *cell = (epoch, IdentityCell::default());
+        }
+        f(&mut cell.1)
+    })
+}
+
+/// The identity of the workspace of this process, read once; none in the launcher and
+/// none for a call whose keyring read failed (warned once, not held, read again next time).
+fn held_identity() -> Option<HeldIdentity> {
+    held_identity_with(keyring_store::try_get)
+}
+
+fn held_identity_with(
+    read: impl Fn(&str) -> Result<Option<String>, AppError>,
+) -> Option<HeldIdentity> {
+    let prefix = keyring_prefix().ok()?;
+    let (generation, held) = with_cell(|cell| (cell.generation, cell.held.clone()));
+    if let Some(held) = held.filter(|held| held.prefix == prefix) {
+        return Some(held);
+    }
+    // No lock across the keyring: it may take its time, and the cell only guards itself.
+    let entry = |name: &str| read(&format!("{prefix}{name}"));
+    let read_all = || -> Result<HeldIdentity, AppError> {
+        Ok(HeldIdentity {
+            prefix: prefix.clone(),
+            key: entry(KEYRING_KEY)?,
+            cert: entry(KEYRING_CERT)?,
+            ca: entry(KEYRING_CA)?,
+        })
+    };
+    match read_all() {
+        Ok(held) => {
+            with_cell(|cell| {
+                if cell.generation == generation {
+                    cell.held = Some(held.clone());
+                }
+            });
+            Some(held)
+        }
+        Err(e) => {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                log::warn!("reading the device identity from the keyring failed, requests go without it for now: {e}");
+            }
+            None
+        }
+    }
+}
+
+/// Drop the held identity and the cached http client (it bakes in the trust anchor), so the
+/// next use reads what the keyring holds now: after enrolling, renewing and resetting.
+pub(crate) fn reload_identity() {
+    with_cell(|cell| {
+        cell.generation += 1;
+        cell.held = None;
+    });
+    crate::http_client::invalidate_client_cache();
+}
+
 /// Delete the identity entry `entry` of the workspace of this process, best effort;
 /// the launcher has none to delete.
 fn forget(entry: &str) {
@@ -194,9 +300,9 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
     keyring_store::set(&format!("{prefix}{KEYRING_KEY}"), key_pem)?;
     keyring_store::set(&format!("{prefix}{KEYRING_CERT}"), &issued.fullchain)?;
     keyring_store::set(&format!("{prefix}{KEYRING_CA}"), &issued.chain)?;
-    // The cached http client bakes in the previous trust anchor — drop it so the next build_client
-    // picks up the newly enrolled identity (5.1).
-    crate::http_client::invalidate_client_cache();
+    // The held identity and the cached http client (it bakes in the previous trust anchor) go,
+    // so the next build_client picks up the newly enrolled identity (5.1).
+    reload_identity();
     Ok(())
 }
 
@@ -230,13 +336,14 @@ fn replace_identity(
 /// internally and by the frpc visitor (F2) to present the desktop's access cert
 /// on the frp plane (frps trusts the access intermediate).
 pub(crate) fn load_identity() -> Option<(String, String, String)> {
-    Some((read(KEYRING_KEY)?, read(KEYRING_CERT)?, read(KEYRING_CA)?))
+    let held = held_identity()?;
+    Some((held.key?, held.cert?, held.ca?))
 }
 
 /// Whether the workspace of this process has an enrolled mTLS identity (key +
 /// cert present); the launcher never has one.
 pub fn is_enrolled() -> bool {
-    read(KEYRING_KEY).is_some() && read(KEYRING_CERT).is_some()
+    held_identity().is_some_and(|held| held.key.is_some() && held.cert.is_some())
 }
 
 /// Whether the keyring holds an entry of the identity behind `prefix`, the keyring
@@ -260,7 +367,7 @@ pub fn holds_identity(prefix: &str) -> Result<bool, AppError> {
 /// presents exactly this intermediate in its TLS chain (fullchain = leaf +
 /// intermediate), so the value survives leaf rotation. `None` until enrolled.
 pub fn pinned_ca_fingerprint() -> Option<String> {
-    ca_fingerprint_of_chain(&read(KEYRING_CA)?)
+    ca_fingerprint_of_chain(&held_identity()?.ca?)
 }
 
 /// The fingerprint of the first PEM certificate in `chain_pem`. Split out so it
@@ -274,7 +381,7 @@ fn ca_fingerprint_of_chain(chain_pem: &str) -> Option<String> {
 
 /// SHA-256 (lowercase hex) of the stored leaf: the fullchain begins with it.
 fn leaf_fingerprint() -> Option<String> {
-    ca_fingerprint_of_chain(&read(KEYRING_CERT)?)
+    ca_fingerprint_of_chain(&held_identity()?.cert?)
 }
 
 /// What the settings and the renewal read from a leaf: its common name, if it
@@ -323,7 +430,10 @@ fn identity_of(cert_pem: &str) -> Result<DeviceIdentity, AppError> {
 /// `None` without key or cert (the rule of `is_enrolled`); an error when the
 /// stored cert does not parse or has no CN.
 pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
-    let (Some(_), Some(cert_pem)) = (read(KEYRING_KEY), read(KEYRING_CERT)) else {
+    let Some(held) = held_identity() else {
+        return Ok(None);
+    };
+    let (Some(_), Some(cert_pem)) = (held.key, held.cert) else {
         return Ok(None);
     };
     identity_of(&cert_pem).map(Some)
@@ -440,9 +550,10 @@ async fn revoke_on_server(server_url: &str) -> Result<bool, AppError> {
 }
 
 /// Whether the server's answer means the device is revoked: done now (2xx), or
-/// refused already as revoked (403 with ERR_CERT_REVOKED).
+/// refused already as revoked (403 whose `code` is ERR_CERT_REVOKED).
 fn revoked_by(status: u16, body: &str) -> bool {
-    (200..300).contains(&status) || (status == 403 && body.contains("ERR_CERT_REVOKED"))
+    (200..300).contains(&status)
+        || (status == 403 && AppError::http(status, body).code() == "ERR_CERT_REVOKED")
 }
 
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
@@ -453,8 +564,9 @@ pub fn clear_identity() {
     forget(KEYRING_KEY);
     forget(KEYRING_CERT);
     forget(KEYRING_CA);
-    // Drop the cached mTLS client so the next build_client falls back to the non-enrolled path (5.1).
-    crate::http_client::invalidate_client_cache();
+    // Drop the held identity and the cached mTLS client so the next build_client falls back to
+    // the non-enrolled path (5.1).
+    reload_identity();
 }
 
 /// Forget every identity entry of the workspace of this process, the leaf it
@@ -466,7 +578,7 @@ pub fn purge_identity() -> Result<(), AppError> {
     for entry in [KEYRING_CERT, KEYRING_KEY, KEYRING_CA, KEYRING_REPLACES] {
         keyring_store::delete(&keyring_key(entry)?)?;
     }
-    crate::http_client::invalidate_client_cache();
+    reload_identity();
     Ok(())
 }
 
@@ -511,9 +623,9 @@ pub async fn enroll_with_token(
         |entry| keyring_store::delete(&format!("{prefix}{entry}")),
         |entry, value| keyring_store::set(&format!("{prefix}{entry}"), value),
     );
-    // Even a failed replace may have deleted the old entries: drop the cached
-    // client either way, so the next build_client sees what is there (5.1).
-    crate::http_client::invalidate_client_cache();
+    // Even a failed replace may have deleted the old entries: drop the held identity and the
+    // cached client either way, so the next build_client sees what is there (5.1).
+    reload_identity();
     settle_replaces(&stored);
     stored
 }
@@ -1114,6 +1226,16 @@ mod tests {
     #[test]
     fn the_server_answer_counts_as_revoked_when_done_or_already_refused() {
         assert!(revoked_by(204, ""));
+        assert!(revoked_by(
+            403,
+            r#"{"detail":"ERR_CERT_REVOKED: no longer valid","code":"ERR_CERT_REVOKED"}"#
+        ));
+        // Only the field `code` counts, not the code somewhere in the text.
+        assert!(!revoked_by(
+            403,
+            r#"{"detail":"server ERR_CERT_REVOKED","code":"ERR_CERT_USER_MISMATCH"}"#
+        ));
+        // A server without `code` (before R-0664) names it as prefix of `detail`.
         assert!(revoked_by(
             403,
             r#"{"detail":"ERR_CERT_REVOKED: no longer valid"}"#
@@ -1770,6 +1892,86 @@ mod tests {
             fullchain: cert.to_string(),
             chain: cert.to_string(),
         }
+    }
+
+    // R-0644: the identity is read once, and again after enrolling, renewing and resetting.
+
+    #[test]
+    fn the_identity_is_read_once_not_on_every_call() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_before_workspaces();
+        assert!(is_enrolled());
+        let identity = device_identity().unwrap();
+        // Gone from the keyring behind enrollment's back: the calls keep what they read.
+        for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+            keyring_store::delete(entry).unwrap();
+        }
+        assert!(is_enrolled());
+        assert_eq!(load_identity(), Some((key, cert.clone(), cert)));
+        assert_eq!(
+            device_identity().unwrap().map(|i| i.name),
+            identity.map(|i| i.name)
+        );
+    }
+
+    #[test]
+    fn resetting_and_storing_read_the_identity_again() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        enrolled_before_workspaces();
+        assert!(is_enrolled());
+
+        clear_identity();
+        assert!(!is_enrolled());
+
+        let (cert, key, _) = leaf();
+        store_identity(&key, &issued(&cert)).unwrap();
+        assert_eq!(load_identity(), Some((key, cert.clone(), cert)));
+
+        purge_identity().unwrap();
+        assert!(load_identity().is_none());
+    }
+
+    #[test]
+    fn a_failed_read_is_not_held_and_the_next_call_reads_again() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        enrolled_before_workspaces();
+        let failing = |_: &str| Err(AppError::Keyring("locked".to_string()));
+        assert!(held_identity_with(failing).is_none());
+
+        let reads = std::cell::Cell::new(0);
+        let counting = |key: &str| {
+            reads.set(reads.get() + 1);
+            keyring_store::try_get(key)
+        };
+        assert!(held_identity_with(counting).is_some());
+        assert_eq!(reads.get(), 3, "the failed read was held");
+        assert!(held_identity_with(counting).is_some());
+        assert_eq!(reads.get(), 3, "the second call read the keyring again");
+    }
+
+    #[test]
+    fn a_read_that_a_reload_overlaps_is_not_held() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        enrolled_before_workspaces();
+        let reads = std::cell::Cell::new(0);
+        let reloading = |key: &str| {
+            reads.set(reads.get() + 1);
+            if reads.get() == 1 {
+                reload_identity();
+            }
+            keyring_store::try_get(key)
+        };
+        assert!(held_identity_with(reloading).is_some());
+        let counting = |key: &str| {
+            reads.set(reads.get() + 1);
+            keyring_store::try_get(key)
+        };
+        assert!(held_identity_with(counting).is_some());
+        assert_eq!(reads.get(), 6, "the overlapped read was held");
     }
 
     #[test]

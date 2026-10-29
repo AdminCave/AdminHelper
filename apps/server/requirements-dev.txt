@@ -10,7 +10,10 @@
 
 -r requirements.in
 
-pytest>=9.0.3
+# <9.2: pytest-alembic 0.13.1 bricht unter pytest 9.2.0 beim Sammeln ab
+# (AttributeError TestCollector._nodeid, R-0916). Zuruecknehmen, sobald
+# pytest-alembic eine mit pytest 9.2 vertraegliche Version hat.
+pytest>=9.0.3,<9.2
 pytest-asyncio>=1.4.0
 testcontainers[postgres]>=4.14.2
 pytest-httpx>=0.36.2

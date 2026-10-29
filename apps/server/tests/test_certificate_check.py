@@ -38,6 +38,7 @@ from app.modules.enrollment.models import (
     IssuedCertificate,
 )
 from tests.test_mtls_scope import _client_cert_pem, _req
+from tests.token_claims import claims_for
 
 REVOKED = "ERR_CERT_REVOKED"
 
@@ -88,12 +89,13 @@ def _installed(db, at: datetime) -> None:
 
 
 def _bearer(username: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token({'sub': username})}"}
+    return {"Authorization": f"Bearer {create_access_token(claims_for(username))}"}
 
 
 def _assert_revoked(resp) -> None:
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"].startswith(f"{REVOKED}: "), resp.text
+    assert resp.json()["code"] == REVOKED, resp.text
 
 
 def _me(client, headers):
@@ -120,6 +122,19 @@ def test_the_refusal_holds_in_permissive_mode_too(test_client, db_session, admin
     headers, cert = _leaf("admin")
     _record(db_session, cert, "admin", revoked=True)
     _assert_revoked(_me(test_client, {**_bearer("admin"), **headers}))
+
+
+def test_the_refusal_body_is_the_text_and_its_code(test_client, db_session, admin_user):
+    # The contract (R-0664): the detail word for word as before the code, the code next to it.
+    headers, cert = _leaf("admin")
+    _record(db_session, cert, "admin", revoked=True)
+    resp = _me(test_client, {**_bearer("admin"), **headers})
+    assert resp.status_code == 403, resp.text
+    assert resp.json() == {
+        "detail": "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the "
+        "device identity and register the device again.",
+        "code": "ERR_CERT_REVOKED",
+    }
 
 
 def test_a_line_of_another_subject_does_not_admit_the_certificate(
@@ -261,7 +276,7 @@ def test_refresh_with_a_revoked_certificate_is_refused(test_client, db_session, 
     _record(db_session, cert, "admin", revoked=True)
     resp = test_client.post(
         "/api/auth/refresh",
-        json={"refresh_token": create_refresh_token({"sub": "admin"})},
+        json={"refresh_token": create_refresh_token(claims_for("admin"))},
         headers=headers,
     )
     _assert_revoked(resp)
@@ -312,6 +327,7 @@ def test_opening_the_stream_with_a_revoked_certificate_is_refused(
         authenticate_stream_user(_req(request_headers))
     assert exc.value.status_code == 403
     assert exc.value.detail.startswith(f"{REVOKED}: ")
+    assert exc.value.code == REVOKED
 
 
 def test_the_reauth_ends_a_stream_whose_line_was_revoked(db_session, admin_user, monkeypatch):
@@ -323,7 +339,7 @@ def test_the_reauth_ends_a_stream_whose_line_was_revoked(db_session, admin_user,
     headers, cert = _leaf("admin")
     line = _record(db_session, cert, "admin")
     identity = get_client_identity(_req(headers))
-    token = create_access_token({"sub": "admin"})
+    token = create_access_token(claims_for("admin"))
 
     def reauth() -> bool:
         return _stream_reauth_ok(

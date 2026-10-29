@@ -39,13 +39,17 @@ from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import _TOML_BREAKERS, FrpServerConfigCreate
 from app.modules.users.schemas import UserCreate
 
+# U+0080 to U+009F: TOML allows them in a basic string, but the agent refuses every
+# frpc.toml line with a control character (unicode.IsControl), so the schema rejects
+# them like the other control characters (R-0786).
+C1_CONTROLS = [chr(c) for c in range(0x80, 0xA0)]
 # What the validator lets through: no quote, no backslash, no control character
 # (U+007F included — TOML forbids it in a basic string, so the schema rejects it,
-# see test_del_character_is_rejected_by_the_schema). Everything else — spaces, '=',
-# '[', '#', unicode — is fair game and must survive.
+# see test_del_character_is_rejected_by_the_schema; C1_CONTROLS as well). Everything
+# else — spaces, '=', '[', '#', unicode — is fair game and must survive.
 SAFE_TEXT = st.text(
     alphabet=st.characters(
-        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20
+        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"] + C1_CONTROLS, min_codepoint=0x20
     ),
     min_size=1,
     max_size=40,
@@ -57,13 +61,15 @@ SAFE_TEXT = st.text(
 # extra_config) no brace either: check_config refuses one anywhere in a line.
 FRPS_ADDR = st.text(
     alphabet=st.characters(
-        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20, codec="utf-8"
+        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"] + C1_CONTROLS,
+        min_codepoint=0x20,
+        codec="utf-8",
     ),
     min_size=1,
     max_size=40,
 ).filter(lambda s: "{{" not in s)
 _FRPS_CHAR = st.characters(
-    blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f", "{", "}"],
+    blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f", "{", "}"] + C1_CONTROLS,
     min_codepoint=0x20,
     codec="utf-8",
 )
@@ -80,9 +86,9 @@ EXTRA_VALUE = st.one_of(
 )
 PORT = st.integers(min_value=1, max_value=65535)
 SECRET = st.text(
-    # U+007F excluded for the same reason as in SAFE_TEXT.
+    # U+007F and C1_CONTROLS excluded for the same reason as in SAFE_TEXT.
     alphabet=st.characters(
-        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20
+        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"] + C1_CONTROLS, min_codepoint=0x20
     ),
     min_size=16,
     max_size=40,
@@ -302,7 +308,9 @@ def test_allow_users_is_only_safe_because_usernames_are_validated():
 
 @given(
     text=st.text(min_size=1, max_size=30),
-    breaker=st.sampled_from(sorted(_TOML_BREAKERS) + ["\x00", "\x1f", "\t", "\x7f"]),
+    breaker=st.sampled_from(
+        sorted(_TOML_BREAKERS) + ["\x00", "\x1f", "\t", "\x7f", "\x80", "\x85", "\x9f"]
+    ),
     position=st.integers(min_value=0, max_value=30),
 )
 @example(text="host", breaker='"', position=0)

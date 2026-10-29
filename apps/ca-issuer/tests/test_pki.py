@@ -5,6 +5,7 @@
 """PKI engine: the two-tier hierarchy, leaf signing from CSRs, and key
 serialization (incl. the encrypted cold root)."""
 
+import datetime
 import ipaddress
 
 import pytest
@@ -139,6 +140,102 @@ def test_leaf_requires_an_eku():
             inter_key,
             pki.LeafSpec(lifetime_days=30, server_auth=False, client_auth=False),
         )
+
+
+# --- No certificate outlives its issuer -------------------------------------
+
+
+def _minted_at(monkeypatch, shift_days: float, build):
+    """Run `build` with the PKI clock shifted by `shift_days` (negative = past),
+    so what it mints is that much older or younger than the real clock."""
+    then = pki._now() + datetime.timedelta(days=shift_days)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: then)
+        return build()
+
+
+def _intermediate_with_days_left(monkeypatch, days_left: float, scope: str = "tunnel"):
+    """Root + intermediate of `scope`, minted in the past so the intermediate has
+    `days_left` left on the real clock (negative = already expired)."""
+
+    def build():
+        root_cert, root_key = pki.build_root_ca()
+        return pki.build_intermediate_ca(scope, root_cert, root_key)
+
+    return _minted_at(monkeypatch, days_left - pki.VALIDITY_DAYS_INTERMEDIATE, build)
+
+
+def test_leaf_is_cut_to_the_end_of_its_intermediate(monkeypatch):
+    inter_cert, inter_key = _intermediate_with_days_left(monkeypatch, 5)
+    csr, _ = _csr("agent-srv-01")
+
+    leaf = pki.sign_leaf(
+        csr, inter_cert, inter_key, pki.LeafSpec(lifetime_days=pki.LEAF_DAYS_NATIVE)
+    )
+
+    assert leaf.not_valid_after_utc == inter_cert.not_valid_after_utc
+    leaf.verify_directly_issued_by(inter_cert)
+
+
+def test_server_leaf_is_cut_to_the_end_of_its_intermediate(monkeypatch):
+    inter_cert, inter_key = _intermediate_with_days_left(monkeypatch, 5, scope="access")
+
+    leaf, _ = pki.build_server_leaf(
+        inter_cert, inter_key, "gw.example", lifetime_days=pki.LEAF_DAYS_GATEWAY
+    )
+
+    assert leaf.not_valid_after_utc == inter_cert.not_valid_after_utc
+
+
+def test_intermediate_is_cut_to_the_end_of_its_root(monkeypatch):
+    root_cert, root_key = _minted_at(monkeypatch, 100 - pki.VALIDITY_DAYS_ROOT, pki.build_root_ca)
+
+    inter_cert, _ = pki.build_intermediate_ca("tunnel", root_cert, root_key)
+
+    assert inter_cert.not_valid_after_utc == root_cert.not_valid_after_utc
+    inter_cert.verify_directly_issued_by(root_cert)
+
+
+def test_expired_intermediate_does_not_sign(monkeypatch):
+    inter_cert, inter_key = _intermediate_with_days_left(monkeypatch, -1)
+    csr, _ = _csr("agent-srv-01")
+
+    with pytest.raises(pki.IssuerNotValid, match=r"Tunnel Intermediate.*expired"):
+        pki.sign_leaf(csr, inter_cert, inter_key, pki.LeafSpec(lifetime_days=30))
+
+
+def test_expired_root_does_not_sign_an_intermediate(monkeypatch):
+    root_cert, root_key = _minted_at(monkeypatch, -pki.VALIDITY_DAYS_ROOT - 1, pki.build_root_ca)
+
+    with pytest.raises(pki.IssuerNotValid, match=r"Root CA.*expired"):
+        pki.build_intermediate_ca("tunnel", root_cert, root_key)
+
+
+def test_not_yet_valid_intermediate_does_not_sign(monkeypatch):
+    def build():
+        root_cert, root_key = pki.build_root_ca()
+        return pki.build_intermediate_ca("access", root_cert, root_key)
+
+    inter_cert, inter_key = _minted_at(monkeypatch, 10, build)
+    csr, _ = _csr("agent-srv-01")
+
+    with pytest.raises(pki.IssuerNotValid, match=r"Access Intermediate.*not yet valid"):
+        pki.sign_leaf(csr, inter_cert, inter_key, pki.LeafSpec(lifetime_days=30))
+
+
+def test_days_left_rounds_down_and_goes_negative_after_expiry(monkeypatch):
+    cert, _ = pki.build_root_ca()
+    end = cert.not_valid_after_utc
+    ten_days = datetime.timedelta(days=10)
+    one_second = datetime.timedelta(seconds=1)
+
+    # The boundary: exactly ten days before the end counts 10, one second less 9.
+    assert pki.days_left(cert, now=end - ten_days) == 10
+    assert pki.days_left(cert, now=end - ten_days + one_second) == 9
+    assert pki.days_left(cert, now=end + one_second) == -1
+    # Without `now` it reads the PKI clock.
+    monkeypatch.setattr(pki, "_now", lambda: end + datetime.timedelta(days=3))
+    assert pki.days_left(cert) == -3
 
 
 # --- Key serialization (cold encrypted root, D7) ----------------------------

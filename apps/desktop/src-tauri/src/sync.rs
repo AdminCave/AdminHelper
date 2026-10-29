@@ -6,41 +6,70 @@ use crate::error::AppError;
 use crate::models::Connection;
 use crate::session::SessionState;
 use crate::storage::write_connections;
-use crate::validation::{same_server_destination, sanitize_synced_connections, validate_https_url};
+use crate::validation::{sanitize_synced_connections, validate_https_url};
 
 pub async fn sync_connections(
     app: tauri::AppHandle,
     url: String,
     allow_self_signed: bool,
-    server_url: Option<String>,
 ) -> Result<Vec<Connection>, AppError> {
-    validate_https_url(&url)?;
-    // https-only is enforced above. On an enrolled device the client with the
-    // identity pins the enrollment CA; a client without it (or on a device that
-    // isn't enrolled) pins on first use (TOFU) when self-signed certificates are
-    // allowed and checks the public CA otherwise. The device identity is for the
-    // user's own server only: with it, any other host fails the enrollment CA pin
-    // (ERR_CA_PIN_MISMATCH).
-    let client = if sync_uses_identity(&url, server_url.as_deref()) {
-        crate::http_client::build_client(&url, allow_self_signed)?
-    } else {
-        crate::http_client::build_client_without_identity(&url, allow_self_signed)?
-    };
-    let response = client.get(&url).send().await?.error_for_status()?;
-    // Parse leniently like fetch_connections_jwt: the server list may hold kinds
-    // the launcher can't open (or malformed rows) — skip those instead of failing
-    // the whole sync by strict-decoding the batch into Vec<Connection>.
-    let raw: Vec<serde_json::Value> = response.json().await?;
-    let connections = sanitize_synced_connections(parse_launchable_connections(raw));
+    let connections = fetch(&url, allow_self_signed).await?;
     write_connections(&app, &connections)?;
     Ok(connections)
 }
 
-/// Whether a sync from `sync_url` presents the device identity: only when it has
-/// the origin (scheme, host, port) of the stored `serverUrl`, the same comparison
-/// that pins the JWT to the logged-in server. No `serverUrl`, no identity.
-fn sync_uses_identity(sync_url: &str, server_url: Option<&str>) -> bool {
-    server_url.is_some_and(|server| same_server_destination(sync_url, server))
+/// The launchable connections at the sync source `url`.
+async fn fetch(url: &str, allow_self_signed: bool) -> Result<Vec<Connection>, AppError> {
+    validate_https_url(url)?;
+    // https-only is enforced above. A sync runs only in a sync workspace, from the
+    // source it keeps (`workspace::sync_url`); such a workspace has no server, and
+    // the device identity is for the server of a workspace only. The fetch never
+    // presents it: it goes like a device that isn't enrolled, pinning on first use
+    // (TOFU) when self-signed certificates are allowed and checking the public CA
+    // otherwise.
+    let client = crate::http_client::build_client_without_identity(url, allow_self_signed)?;
+    let response = client.get(url).send().await?.error_for_status()?;
+    // Parse leniently like fetch_connections_jwt: the server list may hold kinds
+    // the launcher can't open (or malformed rows) — skip those instead of failing
+    // the whole sync by strict-decoding the batch into Vec<Connection>.
+    let raw = read_list(response).await?;
+    Ok(sanitize_synced_connections(parse_launchable_connections(
+        raw,
+    )))
+}
+
+/// The most of a connection list a fetch reads, the same bound as a playbook answer
+/// (`ansible.rs`).
+const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
+
+/// The JSON list in `response`. An answer over [`MAX_LIST_BYTES`] is refused by its declared
+/// length before any of the body is read, else as soon as more has arrived; no error quotes
+/// the answer.
+async fn read_list(mut response: reqwest::Response) -> Result<Vec<serde_json::Value>, AppError> {
+    let too_large = || {
+        AppError::Validation(format!(
+            "the connection list could not be loaded (answer larger than {} MiB)",
+            MAX_LIST_BYTES / (1024 * 1024)
+        ))
+    };
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_LIST_BYTES as u64)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_LIST_BYTES {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).map_err(|_| {
+        AppError::Validation(
+            "the connection list could not be loaded (unexpected answer)".to_string(),
+        )
+    })
 }
 
 /// The desktop launcher only understands ssh/rdp/web connections, the only kinds
@@ -83,7 +112,7 @@ async fn fetch_server_connections(session: &SessionState) -> Result<Vec<Connecti
         // None of the last ones count any more. A session gone meanwhile has none left to drop.
         let _ = session.keep_connections(&user, Vec::new()).await;
     }
-    let raw: Vec<serde_json::Value> = response.error_for_status()?.json().await?;
+    let raw = read_list(response.error_for_status()?).await?;
     let connections = sanitize_synced_connections(parse_launchable_connections(raw));
     session.keep_connections(&user, connections.clone()).await?;
     Ok(connections)
@@ -125,59 +154,31 @@ mod tests {
         assert_eq!(parse_launchable_connections(raw).len(), 1);
     }
 
-    #[test]
-    fn sync_identity_same_origin_as_the_server_url() {
-        // Default port, host case and a trailing slash don't change the origin; path and query
-        // never count.
-        let server = Some("https://ah.example");
-        for sync_url in [
-            "https://ah.example/api/connections?api_key=k",
-            "https://ah.example:443/api/connections",
-            "https://AH.Example/api/connections",
-            "https://ah.example/",
-        ] {
+    #[tokio::test]
+    async fn sync_fetch_goes_without_the_device_identity() {
+        // An enrolled identity that can't build an mTLS client: a fetch that wanted it would
+        // fail on loading it before any connection; one without it reaches the network.
+        let _keyring = crate::keyring_store::memory();
+        let _standard = crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        });
+        for key in ["enroll|key", "enroll|cert", "enroll|ca"] {
+            crate::keyring_store::set(key, "not a pem").unwrap();
+        }
+        assert!(crate::enrollment::is_enrolled());
+        // Held, not freed: nobody answers at the sync source.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let url = format!("https://127.0.0.1:{port}/c.json");
+
+        for allow_self_signed in [false, true] {
+            let fetched = fetch(&url, allow_self_signed).await;
             assert!(
-                sync_uses_identity(sync_url, server),
-                "{sync_url} must use the identity"
+                matches!(fetched, Err(AppError::Network(_))),
+                "allow_self_signed={allow_self_signed}: {fetched:?}"
             );
         }
-        assert!(sync_uses_identity(
-            "https://ah.example:8443/api/connections",
-            Some("https://AH.example:8443/")
-        ));
-    }
-
-    #[test]
-    fn sync_identity_foreign_origin_goes_without() {
-        let server = Some("https://ah.example:8443");
-        for sync_url in [
-            "https://other.example:8443/connections.json", // host
-            "https://ah.example/connections.json",         // port (443)
-            "https://ah.example:9443/connections.json",    // port
-            "https://ah.example.other.test:8443/x",        // suffix trick
-        ] {
-            assert!(
-                !sync_uses_identity(sync_url, server),
-                "{sync_url} must go without the identity"
-            );
-        }
-        // Scheme: a loopback server URL may be http, the sync URL is always https.
-        assert!(!sync_uses_identity(
-            "https://localhost:8443/connections.json",
-            Some("http://localhost:8443")
-        ));
-    }
-
-    #[test]
-    fn sync_identity_without_server_url_goes_without() {
-        assert!(!sync_uses_identity(
-            "https://ah.example/api/connections",
-            None
-        ));
-        assert!(!sync_uses_identity(
-            "https://ah.example/api/connections",
-            Some("")
-        ));
     }
 
     #[tokio::test]
@@ -347,6 +348,91 @@ mod tests {
             assert_eq!(held(&session).await, ["1"], "{case}");
             assert_eq!(*log.lock().unwrap(), [FETCH, FETCH], "{case}");
         }
+    }
+
+    #[tokio::test]
+    async fn server_connections_over_the_bound_are_refused_and_keep_the_last_ones() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // A list one byte over the bound: a JSON array of one string.
+        let oversized = format!("[\"{}\"]", "x".repeat(MAX_LIST_BYTES - 3));
+        assert_eq!(oversized.len(), MAX_LIST_BYTES + 1);
+
+        // Declared by its length: refused before the body is read.
+        let (server, _log) = serve(vec![
+            Some(("200 OK", LISTED.to_string())),
+            Some(("200 OK", oversized.clone())),
+        ])
+        .await;
+        let session = signed_in(server).await;
+        fetch_server_connections(&session).await.unwrap();
+        let refused = fetch_server_connections(&session).await.unwrap_err();
+        assert!(
+            refused.to_string().contains("larger than 16 MiB"),
+            "{refused}"
+        );
+        assert!(!refused.to_string().contains("xxxx"), "{refused}");
+        assert_eq!(held(&session).await, ["1"]);
+
+        // Without a declared length (read until the connection closes): refused while reading.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let session = signed_in(server).await;
+        let serve_list_then_unsized = async {
+            for without_length in [false, true] {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                let reply = if without_length {
+                    format!("HTTP/1.1 200 OK\r\nconnection: close\r\n\r\n{oversized}")
+                } else {
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{LISTED}",
+                        LISTED.len()
+                    )
+                };
+                // The client may stop reading and close first.
+                let _ = tcp.write_all(reply.as_bytes()).await;
+                let _ = tcp.shutdown().await;
+            }
+        };
+        let fetch_twice = async {
+            fetch_server_connections(&session).await.unwrap();
+            fetch_server_connections(&session).await
+        };
+        let (fetched, ()) = tokio::join!(fetch_twice, serve_list_then_unsized);
+        let refused = fetched.unwrap_err();
+        assert!(
+            refused.to_string().contains("larger than 16 MiB"),
+            "{refused}"
+        );
+        assert_eq!(held(&session).await, ["1"]);
+    }
+
+    #[tokio::test]
+    async fn server_connections_that_are_no_list_are_refused_without_quoting_the_answer() {
+        let (server, _log) = serve(vec![
+            Some(("200 OK", LISTED.to_string())),
+            Some(("200 OK", r#""answer-text-of-the-server""#.to_string())),
+        ])
+        .await;
+        let session = signed_in(server).await;
+        fetch_server_connections(&session).await.unwrap();
+
+        let refused = fetch_server_connections(&session).await.unwrap_err();
+        assert!(
+            refused.to_string().contains("unexpected answer"),
+            "{refused}"
+        );
+        assert!(!refused.to_string().contains("answer-text"), "{refused}");
+        assert_eq!(held(&session).await, ["1"]);
     }
 
     #[tokio::test]

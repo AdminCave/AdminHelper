@@ -2618,6 +2618,30 @@
         "title": "ServerCreate",
         "type": "object"
       },
+      "ServerSummary": {
+        "description": "One server as GET /api/servers/summary lists it.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname"
+        ],
+        "title": "ServerSummary",
+        "type": "object"
+      },
       "ServerUpdate": {
         "properties": {
           "hostname": {
@@ -2815,6 +2839,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "idle_timeout_minutes": {
+            "title": "Idle Timeout Minutes",
+            "type": "integer"
+          },
           "is_admin": {
             "title": "Is Admin",
             "type": "boolean"
@@ -2827,7 +2855,8 @@
         "required": [
           "id",
           "username",
-          "is_admin"
+          "is_admin",
+          "idle_timeout_minutes"
         ],
         "title": "UserMe",
         "type": "object"
@@ -5182,6 +5211,18 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "X-Hook-Token header missing"
+          },
+          "403": {
+            "description": "Hook is disabled"
+          },
+          "404": {
+            "description": "No webhook hook with this token"
+          },
+          "429": {
+            "description": "Rate limit exceeded for this client IP"
           }
         },
         "summary": "Trigger Webhook Header",
@@ -5213,6 +5254,12 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "Hook is disabled"
+          },
+          "404": {
+            "description": "No webhook hook with this token"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5222,6 +5269,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Rate limit exceeded for this client IP"
           }
         },
         "summary": "Trigger Webhook",
@@ -6072,6 +6122,36 @@
           }
         ],
         "summary": "Create Server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/summary": {
+      "get": {
+        "operationId": "list_server_summaries_api_servers_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerSummary"
+                  },
+                  "title": "Response List Server Summaries Api Servers Summary Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Server Summaries",
         "tags": [
           "servers"
         ]

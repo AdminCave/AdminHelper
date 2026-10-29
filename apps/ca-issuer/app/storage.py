@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -87,7 +88,12 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     otherwise load the existing intermediates. Returns {scope: Intermediate}.
 
     The root key is required (to encrypt it) only when creating the hierarchy;
-    on later boots only the intermediates are loaded — the root stays cold."""
+    on later boots only the intermediates are loaded — the root stays cold.
+
+    Every boot then checks what it loaded and raises RuntimeError (file, scope,
+    reason) unless root.crt is self-signed and valid now and each intermediate is
+    signed by it, valid now, matches its key and has the chain [intermediate, root].
+    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     try:
         pki_dir.chmod(0o700)
@@ -129,13 +135,95 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             (pki_dir / f"{scope}-chain.pem").write_bytes(pki.chain_pem(inter_cert, root_cert))
         logger.info("PKI erzeugt: Root + %s", ", ".join(pki.SCOPES))
 
+    # Checked on every boot, the first included: an intermediate past its end, from another
+    # root or beside a foreign key or chain would otherwise sign leaves no client accepts.
+    now = pki._now()
+    root = pki.cert_from_pem(root_crt.read_bytes())
+    if problem := _signature_problem(root, root):
+        raise _invalid_hierarchy(f"{root_crt}: the root certificate is not self-signed ({problem})")
+    if problem := _validity_problem(root, now):
+        raise _invalid_hierarchy(f"{root_crt}: the root certificate is {problem}")
+
     out: dict[str, Intermediate] = {}
     for scope in pki.SCOPES:
-        cert = pki.cert_from_pem((pki_dir / f"{scope}.crt").read_bytes())
-        key = pki.key_from_pem((pki_dir / f"{scope}.key").read_bytes())
-        chain = (pki_dir / f"{scope}-chain.pem").read_bytes()
-        out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=chain)
+        cert_path = pki_dir / f"{scope}.crt"
+        key_path = pki_dir / f"{scope}.key"
+        chain_path = pki_dir / f"{scope}-chain.pem"
+        cert = pki.cert_from_pem(cert_path.read_bytes())
+        key = pki.key_from_pem(key_path.read_bytes())
+        chain = chain_path.read_bytes()
+        if problem := _signature_problem(cert, root):
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {cert_path}: not signed by {root_crt.name} ({problem})"
+            )
+        if problem := _validity_problem(cert, now):
+            raise _invalid_hierarchy(f"scope {scope!r}, {cert_path}: the intermediate is {problem}")
+        if not _holds_key(cert, key):
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {key_path}: not the private key of {cert_path.name}"
+            )
+        if not _chain_is(chain, [cert, root]):
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {chain_path}: not {cert_path.name} followed by {root_crt.name}"
+            )
+        # The check above compares only the certificates in the file; what goes out
+        # (enroll responses, trust bundles) is rebuilt from the two checked ones.
+        out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root))
+
+    _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
+    for scope, inter in out.items():
+        _warn_if_ending(f"intermediate {scope!r}", inter.cert, now)
     return out
+
+
+def _invalid_hierarchy(detail: str) -> RuntimeError:
+    return RuntimeError(f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it.")
+
+
+def _signature_problem(cert: x509.Certificate, issuer: x509.Certificate) -> str | None:
+    """Why `issuer` did not sign `cert` (names or signature), or None if it did."""
+    try:
+        cert.verify_directly_issued_by(issuer)
+    except InvalidSignature:
+        return "the signature does not verify"
+    except (ValueError, TypeError) as exc:
+        return str(exc)
+    return None
+
+
+def _validity_problem(cert: x509.Certificate, now: datetime.datetime) -> str | None:
+    """'expired …' or 'not yet valid …' if `now` is outside `cert`'s validity, else None
+    (the same window pki signs in: notBefore <= now < notAfter)."""
+    if now < cert.not_valid_before_utc:
+        return f"not yet valid (notBefore {cert.not_valid_before_utc.isoformat()})"
+    if now >= cert.not_valid_after_utc:
+        return f"expired (notAfter {cert.not_valid_after_utc.isoformat()})"
+    return None
+
+
+def _chain_is(chain_pem: bytes, certs: list[x509.Certificate]) -> bool:
+    """Whether the PEM chain holds exactly `certs` in order — compared as DER, so a
+    restore that rewrote line endings or PEM wrapping still passes."""
+    try:
+        parsed = x509.load_pem_x509_certificates(chain_pem)
+    except ValueError:
+        return False
+    der = serialization.Encoding.DER
+    return [c.public_bytes(der) for c in parsed] == [c.public_bytes(der) for c in certs]
+
+
+def _warn_if_ending(
+    name: str, cert: x509.Certificate, now: datetime.datetime, note: str = ""
+) -> None:
+    left = pki.days_left(cert, now)
+    if left < pki.EXPIRY_WARN_DAYS:
+        logger.warning(
+            "%s expires on %s (%d days left)%s",
+            name,
+            cert.not_valid_after_utc.isoformat(),
+            left,
+            note,
+        )
 
 
 def _classify_sans(primary: str, extra_sans: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -174,9 +262,14 @@ def _pair_matches(cert_path: Path, key_path: Path) -> bool:
         key = pki.key_from_pem(key_path.read_bytes())
     except (OSError, ValueError):
         return False
+    return _holds_key(leaf, key)
+
+
+def _holds_key(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> bool:
+    """Whether `key` is the private half of `cert`'s public key."""
     spki = serialization.PublicFormat.SubjectPublicKeyInfo
     pem = serialization.Encoding.PEM
-    return leaf.public_key().public_bytes(pem, spki) == key.public_key().public_bytes(pem, spki)
+    return cert.public_key().public_bytes(pem, spki) == key.public_key().public_bytes(pem, spki)
 
 
 def _provision_server_material(

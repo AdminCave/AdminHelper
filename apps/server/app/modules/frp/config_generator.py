@@ -10,7 +10,12 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from app.modules.frp.schemas import PORT_MAX, PORT_MIN
+from app.modules.frp.schemas import (
+    PORT_MAX,
+    PORT_MIN,
+    _check_tunnel_extra_config,
+    is_plugin_key,
+)
 
 if TYPE_CHECKING:
     from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -109,6 +114,85 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     return kept
 
 
+def _stored_extra_config(tunnel: FrpTunnel) -> dict | None:
+    """The extra_config generate_frpc_toml reads: the column holds JSON text, a caller
+    may pass a dict, and an unset one is {}. None for text that is no JSON object."""
+    extra = tunnel.extra_config
+    if not extra:
+        return {}
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except ValueError:
+            return None
+    return extra if isinstance(extra, dict) else None
+
+
+def _api_takes(extra: dict) -> bool:
+    try:
+        _check_tunnel_extra_config(extra)
+    except ValueError:
+        return False
+    return True
+
+
+# The sync and the hash poll both run this for every host, every few seconds; a row that stays
+# refused would warn each time. One warning per (tunnel name, refused keys), forgotten when the
+# set grows past the bound (the next poll then warns once more, which is harmless).
+_refused_warned: set[tuple[str, tuple[str, ...] | None]] = set()
+_REFUSED_WARNED_MAX = 1024
+
+
+def _first_warning(name: str, refused: tuple[str, ...] | None) -> bool:
+    if len(_refused_warned) >= _REFUSED_WARNED_MAX:
+        _refused_warned.clear()
+    if (name, refused) in _refused_warned:
+        return False
+    _refused_warned.add((name, refused))
+    return True
+
+
+def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out tunnels whose stored extra_config the API would refuse today.
+
+    The API holds a tunnel's extra_config to _check_tunnel_extra_config (bare keys, none
+    of the plugin family, scalar values without TOML breakers, 64-bit integers, no key that
+    clashes with a proxy field or another key); rows stored before those
+    checks stay as they are, and text that is no JSON object counts as refused. The
+    generator writes each entry verbatim into the proxy, so such a row would make a
+    frpc.toml that does not hold for the whole host; skipping the tunnel keeps the other
+    tunnels of the host. The warning names the keys (repr, so it stays one line), never
+    their values, and says it once per tunnel and key set, not at every poll."""
+    kept = []
+    for tunnel in tunnels:
+        extra = _stored_extra_config(tunnel)
+        if extra is None:
+            if _first_warning(tunnel.name, None):
+                logger.warning(
+                    "FRP tunnel %r has an extra_config that is no JSON object, "
+                    "left out of the config",
+                    tunnel.name,
+                )
+            continue
+        refused = sorted(key for key, value in extra.items() if not _api_takes({key: value}))
+        if not refused and not _api_takes(extra):
+            # Each key passes alone, the keys together clash.
+            refused = sorted(extra)
+        if refused:
+            if _first_warning(tunnel.name, tuple(refused)):
+                logger.warning(
+                    "FRP tunnel %r has %s in extra_config, left out of the config: %s",
+                    tunnel.name,
+                    "plugin keys"
+                    if all(is_plugin_key(key) for key in refused)
+                    else "entries the API refuses",
+                    ", ".join(repr(key) for key in refused),
+                )
+            continue
+        kept.append(tunnel)
+    return kept
+
+
 def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """Leave out stcp tunnels whose visitor_port is no port from 1 to 65535.
 
@@ -131,15 +215,44 @@ def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     return kept
 
 
+def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out tunnels whose local_port is no port from 1 to 65535.
+
+    frpc refuses the whole config for a localPort outside 0..65535 (ValidatePort,
+    v0.69.1), which took down every tunnel of the host, and 0 is no target. The API
+    holds new values in range (R-0560); rows from before stay as they are. Only the
+    proxy is left out, the visitor config is untouched."""
+    kept = []
+    for tunnel in tunnels:
+        if not _is_port(tunnel.local_port):
+            logger.warning(
+                "FRP tunnel %s: local_port %r is outside %d-%d, left out of the frpc config",
+                tunnel.name,
+                tunnel.local_port,
+                PORT_MIN,
+                PORT_MAX,
+            )
+            continue
+        kept.append(tunnel)
+    return kept
+
+
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
-    """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, and stcp only
-    with a secret. Without one, the text carries no frps token; config-hash, config
-    download and provisioning bundle all come from that text, so they can't drift.
+    """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, stcp only with
+    a secret, a local_port from 1 to 65535 (without_unreachable_local), and none whose
+    stored extra_config the API would refuse (without_refused_extra_config). Without an active tunnel, the text carries no frps
+    token; config-hash, config download and provisioning bundle all come from that
+    text, so they can't drift.
 
     Sorted by name (unique): the callers query without ORDER BY, and Postgres
     returns rows in physical order, which an UPDATE of a column outside the config
     (connection_id) changes. Unsorted, the hash would change with the same config."""
-    return sorted(without_secretless_stcp([t for t in tunnels if t.enabled]), key=lambda t: t.name)
+    return sorted(
+        without_refused_extra_config(
+            without_unreachable_local(without_secretless_stcp([t for t in tunnels if t.enabled]))
+        ),
+        key=lambda t: t.name,
+    )
 
 
 def _tls_server_block(

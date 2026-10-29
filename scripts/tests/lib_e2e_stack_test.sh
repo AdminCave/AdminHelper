@@ -883,4 +883,6 @@ LINT_OUT=$(kr_require "$LINT")
 
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed, $SKIP skipped"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+# Keyring cases that did not run are not verified: 75, so --strict sees a SKIP, not a green test.
+[ -z "$KR_MISSING" ] || { echo "SKIP: the keyring cases need:$KR_MISSING"; exit 75; }

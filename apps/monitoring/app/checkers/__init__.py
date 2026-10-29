@@ -26,6 +26,18 @@ class Checker(Protocol):
         ...
 
 
+class PushChecker(Checker, Protocol):
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
+        """Evaluates a check against the agent's push report.
+
+        `prev_details` is the check's previous `_details` or None; a checker that
+        does not need it does not read it.
+        """
+        ...
+
+
 # Instantiated once at import. get_checker runs on every scheduled check (hundreds
 # per minute at target scale), so the registry must not be rebuilt per call.
 _REGISTRY: dict[str, Checker] = {

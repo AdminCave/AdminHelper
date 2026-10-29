@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import MonitorAgentKey
-from app.template_sync import cleanup_server
+from app.server_cleanup import cleanup_server
 
 router = APIRouter()
 

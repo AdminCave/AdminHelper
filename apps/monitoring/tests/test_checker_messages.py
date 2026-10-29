@@ -434,7 +434,11 @@ def _reply(status_code, text="", location=None):
     headers = {"location": location} if location else {}
 
     def respond(_transport, request):
-        return httpx.Response(status_code, text=text, headers=headers, request=request)
+        # Streamed, as a real transport hands a body over: the HTTP checker reads the raw
+        # stream, and a body given whole has been read from it already.
+        return httpx.Response(
+            status_code, content=iter([text.encode()]), headers=headers, request=request
+        )
 
     return respond
 

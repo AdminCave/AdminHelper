@@ -7,6 +7,7 @@ VictoriaMetrics history per mount — deterministic synthetic series drive the
 grading (rising -> time-to-full warn/crit, flat -> stable ok, short span ->
 unknown), worst mount wins, and the query carries the escaped server_id."""
 
+import httpx
 import pytest
 
 from app.checkers import get_checker
@@ -118,3 +119,37 @@ def test_query_escapes_server_id(monkeypatch):
     assert '\\"' in captured["query"]  # quote escaped, matcher not breakable
     assert captured["start"] == "now-24h"
     assert captured["step"] == "10m"
+
+
+def run_against_store(monkeypatch, handler) -> tuple[str, str, dict | None]:
+    """The checker with the real query_range, VictoriaMetrics answered by `handler`."""
+    import app.checkers.forecast as forecast_mod
+
+    transport_client = httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(forecast_mod.victoria, "_client", transport_client)
+    try:
+        return DiskForecastChecker().run(CFG)
+    finally:
+        transport_client.close()
+
+
+def test_unreachable_store_is_unknown_with_its_own_text(monkeypatch):
+    # R-0636: query_range's error fallback carries an empty result; before, that read as
+    # "No disk history yet".
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    assert run_against_store(monkeypatch, refuse) == (
+        "unknown",
+        "Metrics store unavailable",
+        None,
+    )
+
+
+def test_empty_history_from_a_reachable_store_stays_no_disk_history(monkeypatch):
+    def empty(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"status": "success", "data": {"resultType": "matrix", "result": []}}
+        )
+
+    assert run_against_store(monkeypatch, empty) == ("unknown", "No disk history yet", None)

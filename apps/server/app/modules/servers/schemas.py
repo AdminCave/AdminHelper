@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 
 from app.core.bounds import RequestModel
 from app.modules.frp.schemas import _reject_toml_breakers, _validate_tags
@@ -48,3 +48,11 @@ class ServerUpdate(RequestModel):
 
     _clean_name = field_validator("name")(_validate_server_name)
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
+
+
+class ServerSummary(BaseModel):
+    """One server as GET /api/servers/summary lists it."""
+
+    id: str
+    name: str
+    hostname: str

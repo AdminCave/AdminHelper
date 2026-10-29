@@ -20,7 +20,7 @@ about the suites.
 
 | `/test …`  | What happens |
 |---|---|
-| `quick`    | run it here and now: `bash scripts/dev/verify.sh all --strict` |
+| `quick`    | run it here and now: `bash scripts/dev/verify.sh all --strict` (a digest on stdout, the whole output in the log it names) |
 | `all`      | START `heavy.sh all` supervised (below), watch it to the report, quote the verdict |
 | `capstone` | same for `heavy.sh capstone` |
 | `weekly`   | same for `heavy.sh weekly` |

@@ -54,6 +54,14 @@ ignored "$G" dir .vm; rc=$?
 [ "$rc" = 0 ] && ok ".vm as a directory is ignored" || bad ".vm as a directory: check-ignore rc=$rc"
 ignored "$G" dir .vm/lane; rc=$?
 [ "$rc" = 0 ] && ok "and what lies in it (.vm/lane)" || bad ".vm/lane: check-ignore rc=$rc"
+# A dev server started from apps/server with DATA_DIR=../data (DEVELOPMENT.md) writes its
+# secrets there.
+for f in .secret_key .bootstrap_token; do
+  ignored "$G" none "apps/data/$f"; rc=$?
+  [ "$rc" = 0 ] && ok "apps/data/$f is ignored" || bad "apps/data/$f: check-ignore rc=$rc"
+done
+ignored "$G" none apps/server/app/main.py; rc=$?
+[ "$rc" = 1 ] && ok "while apps/server/app/main.py is not" || bad "apps/server/app/main.py: check-ignore rc=$rc"
 
 echo "── .gitattributes"
 # Every branch appends to the same CHANGELOG section; union merge is what keeps

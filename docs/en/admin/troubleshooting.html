@@ -46,7 +46,7 @@ docker compose down -v
           <h2>Login fails</h2>
           <ol>
             <li>Rate-limited? Check <code>docker compose logs server | grep ratelimit</code> – 5 bad attempts / 15 min blocks the IP.</li>
-            <li>Password forgotten? Changing <code>ADMIN_PASSWORD</code> and restarting does NOT help — startup only creates an admin when none exists (idempotent). Reset it directly, no login needed: <code>docker compose exec server python -m app.cli reset-admin --username admin --password NEW-PASSWORD</code> (or <code>--password-stdin</code> to keep it out of the process argv). The reset also signs out all of the user's existing sessions; log in again with the new password.</li>
+            <li>Password forgotten? Changing <code>ADMIN_PASSWORD</code> and restarting does NOT help — startup only creates an admin when none exists (idempotent). Reset it directly, no login needed: <code>docker compose exec server python -m app.cli reset-admin --username admin --password NEW-PASSWORD</code> (or <code>--password-stdin</code> to keep it out of the process argv). The password must be 8&ndash;128 characters, as at login; the command refuses a longer one with exit 1. The reset also signs out all of the user's existing sessions; log in again with the new password.</li>
             <li>Refresh cookie rejected? Check the clock skew between the browser and server (TOTP also relies on this).</li>
           </ol>
 
@@ -55,12 +55,15 @@ docker compose down -v
 <pre><code># Cert valid?
 openssl s_client -connect srm.example.com:443 -servername srm.example.com &lt; /dev/null 2&gt;/dev/null | openssl x509 -noout -dates
 
-# X-Forwarded-For trusted?
-docker compose logs server | grep 'untrusted proxy'</code></pre>
+# Does the server ignore certificate headers from a peer that is not the gateway?
+docker compose logs server | grep 'does not come from the gateway'
+
+# Did the server fail to resolve the gateway (its forwarded headers are then ignored)?
+docker compose logs server | grep 'cannot resolve'</code></pre>
 
           <h2>Agent doesn't check in</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>adminhelper-agent run --verbose   # one-shot debug run
+<pre><code>sudo adminhelper-agent run --once --log-level debug   # one run by hand, with debug output
 systemctl status adminhelper-agent.timer
 journalctl -u adminhelper-agent.service -n 100 --no-pager
 openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate   # client cert expired?</code></pre>
@@ -70,7 +73,7 @@ openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate   # client 
 
           <p><strong>Desktop client, first contact: “Server certificate is not publicly trusted”:</strong> with a standard installation the gateway presents a leaf of the internal CA on all ports (<code>443</code>, <code>8444</code>), so the very first sign-in or enrollment attempt with default settings opens a dialog asking whether to trust the server anyway. <em>Trust &amp; continue</em> permanently enables <em>“Allow self-signed certificates”</em> for this workspace (TOFU pin, see the next paragraph) and automatically retries the interrupted action. After <em>Cancel</em> the message <code>Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA …</code> is shown — remedy: repeat the action and confirm the dialog, tick the checkbox in the desktop settings under <em>This workspace</em> (visible in sync <em>and</em> server workspaces), or install a publicly trusted certificate on the gateway.</p>
 
-          <p><strong>Desktop client, “Allow self-signed certificates”:</strong> the first connection <em>pins</em> the server certificate's SHA-256 fingerprint (trust-on-first-use, like SSH <code>known_hosts</code>) in the OS keyring; afterwards only that exact certificate is accepted and any change is rejected as a possible MITM. If a <em>legitimate</em> certificate rotation triggers <code>AdminHelper TOFU: … changed</code>, click <em>Reset pinned certificate</em> in the desktop settings under <em>This workspace</em>, confirm the question and reconnect (re-pins on next connect). If the client instead reports that the pin could not be read from or stored in the keyring (<code>AdminHelper TOFU: The certificate pin for … could not be read from or stored in the system keyring …</code>), unlock the system keyring and reconnect; <em>Reset pinned certificate</em> does not help here.</p>
+          <p><strong>Desktop client, “Allow self-signed certificates”:</strong> the first connection <em>pins</em> the server certificate's SHA-256 fingerprint (trust-on-first-use, like SSH <code>known_hosts</code>) in the OS keyring; afterwards only that exact certificate is accepted and any change is rejected as a possible MITM. If a <em>legitimate</em> certificate rotation triggers <code>ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für … hat sich seit dem ersten Verbinden geändert …</code> (the message is in German), click <em>Reset pinned certificate</em> in the desktop settings under <em>This workspace</em>, confirm the question and reconnect (re-pins on next connect). If the client instead reports that the pin could not be read from or stored in the keyring (<code>AdminHelper TOFU: The certificate pin for … could not be read from or stored in the system keyring …</code>), unlock the system keyring and reconnect; <em>Reset pinned certificate</em> does not help here. If the reset itself reports <code>… the pinned certificate could not be removed from the keyring: …</code> (from <em>Reset pinned certificate</em> as from <em>Reset device identity</em>), the old pin stayed in the keyring: unlock the system keyring and repeat the same reset.</p>
 
           <p><strong>Desktop client, already-enrolled device (mTLS):</strong> once the device is enrolled, the client verifies the server certificate against the CA <em>pinned at enrollment</em> (no longer the leaf pin). After a <em>server reinstall</em> or re-created PKI the old CA no longer matches and the connection fails with <code>AdminHelper: Das Server-Zertifikat wird nicht mehr von der … gepinnten CA gedeckt (mögliche MITM-Attacke)</code>. If the change is expected, click the <em>Reset device identity</em> button below the error message on the login screen (when signed in, it is also in the desktop settings under <em>This workspace</em>) — this clears the mTLS device certificate of this workspace <em>and</em> the certificate pin — then enroll the device again with a new one-time token from your administrator, on the login screen via <em>"Enroll this device with a token"</em> or, when signed in, in the settings.</p>
 
@@ -115,12 +118,15 @@ docker compose logs monitoring | grep 'invalid api key'
 docker compose exec monitoring curl -s http://victoria:8428/health
 
 # Disk full?
-docker compose exec monitoring df -h /data/victoria</code></pre>
+docker compose exec monitoring df -h /data/victoria
+
+# Agent side, on the target host: one run by hand, with debug output
+sudo adminhelper-agent run --once --log-level debug</code></pre>
 
           <h2>FRP visitor connect hangs</h2>
           <ul>
             <li>Visitor-port pool exhausted? Scale <code>VISITOR_PORT_END</code>.</li>
-            <li>Client cert expired? Check <code>adminhelper-agent frpc rotate</code>.</li>
+            <li>Client cert of the agent expired? Check it on the agent host: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. The agent renews it itself on every run once half of its lifetime is over; if that fails, <code>Cert-Renew Fehler</code> shows in the journal of <code>adminhelper-agent.service</code>.</li>
             <li>Wrong <code>sk</code> on STCP tunnels – both sides must match.</li>
           </ul>
 
@@ -129,11 +135,13 @@ docker compose exec monitoring df -h /data/victoria</code></pre>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/diagnostics.sh               # writes adminhelper-diagnostics-&lt;ts&gt;.tar.gz
-./scripts/diagnostics.sh --tail 1000   # more log lines per service</code></pre>
-          <p>The bundle contains <code>report.txt</code> (versions, OS, docker, service status), <code>compose.yml</code>, an <code>env.sanitized</code> (secret values masked) and the last log lines per service. Then attach it to a <a href="https://github.com/AdminCave/AdminHelper/issues/new/choose">GitHub issue</a>.</p>
+./scripts/diagnostics.sh --tail 1000   # more log lines per service
+./scripts/diagnostics.sh --mask-hosts  # also mask IP addresses, the .env host names and the machine name</code></pre>
+          <p>The bundle contains <code>report.txt</code> (versions, OS, docker, service status), <code>compose.yml</code>, an <code>env.sanitized</code> (secret values masked) and the last log lines per service. Only the user who runs the script can read it (<code>0600</code>); started with <code>sudo</code>, it belongs to root. Then attach it to a <a href="https://github.com/AdminCave/AdminHelper/issues/new/choose">GitHub issue</a>.</p>
+          <p>Masked are the secrets of the <code>.env</code>, API keys and tokens (in the access logs too: <code>api_key</code>, <code>token</code> and <code>access_token</code> as query parameters, the token in <code>/hooks/trigger/&lt;token&gt;</code>, provisioning tokens <code>adminhelper_prov_…</code>) as well as JWT and Bearer tokens. Without a switch, host names and IP addresses stay: the domain and the SANs, the client addresses in the access logs and the machine name in <code>report.txt</code>, so domain and certificate errors show in the bundle. With <code>--mask-hosts</code>, IPv4 and IPv6 addresses become <code>&lt;ip&gt;</code> by their form, and the names and addresses from <code>DOMAIN</code>, <code>EXTRA_SANS</code>, <code>CA_FRPS_EXTRA_SANS</code>, <code>ALLOWED_IPS</code>, <code>FRP_SERVER_ADDR</code>, <code>TRUSTED_PROXIES</code>, <code>SMTP_HOST</code> and <code>SMTP_FROM</code> (of <code>SMTP_FROM</code> with a display name only the address in angle brackets, not the name) as well as the machine name become <code>&lt;host&gt;</code>, in <code>report.txt</code>, the logs and <code>env.sanitized</code>, which shows those keys as <code>&lt;masked&gt;</code>. <code>compose.yml</code> stays an unchanged copy.</p>
           <p>For the <strong>desktop client</strong>: in the window of the workspace concerned, Settings → <em>All workspaces on this device</em> → Diagnostics → "Create diagnostics report". Each workspace writes a log of its own (<code>adminhelper-&lt;id&gt;.log</code>, the launcher <code>adminhelper.log</code>); the report carries the last lines from the log of its workspace and names its id. For an <strong>agent</strong> on a managed server: <code>adminhelper-agent diagnostics</code>.</p>
 
-          <div class="callout"><div class="callout-title">Skim before sending</div><p>Secrets (SECRET_KEY, passwords, API keys, JWT/Bearer tokens) are masked automatically, but redaction is best-effort — please glance over the bundle before uploading.</p></div>
+          <div class="callout"><div class="callout-title">Skim before sending</div><p>The secrets of the <code>.env</code> (SECRET_KEY, passwords, SMTP user), API keys and tokens (in the access logs too), JWT and Bearer tokens are masked automatically. <code>--mask-hosts</code> adds IP addresses, the names and addresses from the host keys of the <code>.env</code> and the machine name; other names, such as those of managed servers or webhook targets, stay even then. Redaction is best-effort: please look over the bundle before uploading.</p></div>
 
           <div class="page-nav">
             <a class="prev" href="./frp-tunnel.html"><span class="label">← Previous chapter</span><span class="title">FRP Tunnel</span></a>

@@ -48,10 +48,10 @@ try:
     with psycopg.connect(dbname=os.environ["ADMIN_DB"], autocommit=True) as conn:
         found = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone()
         if found is None:
-            print(f"[entrypoint] Lege Datenbank {name} an...", flush=True)
+            print(f"[entrypoint] Creating database {name}...", flush=True)
             conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
 except psycopg.Error as exc:
-    sys.exit(f"[entrypoint] FEHLER: Datenbank {name}: {exc}")
+    sys.exit(f"[entrypoint] ERROR: database {name}: {exc}")
 PY
 
 echo "[entrypoint] Postgres ready, fuehre Alembic-Migration aus..."

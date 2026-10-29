@@ -545,8 +545,7 @@ impl AppSpawner {
 }
 
 /// The process creation flags `DETACHED_PROCESS` and `CREATE_NEW_PROCESS_GROUP`
-/// (`Win32::System::Threading`), spelled out: the `windows` crate of this app leaves that module
-/// out.
+/// (`Win32::System::Threading`), spelled out as plain `u32`s for `CommandExt::creation_flags`.
 #[cfg(windows)]
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 #[cfg(windows)]
@@ -2260,7 +2259,9 @@ mod tests {
         let base = &scratch.0;
         install_two(base);
         let spawner = FakeSpawner::new(base, Some(Course::EndsAt(1)));
-        let timeout = Duration::from_millis(900);
+        // Far above the scheduling jitter of a CI runner (1.4 s was seen against 900 ms), still
+        // red when the wait runs into the deadline.
+        let timeout = Duration::from_secs(10);
         let started = Instant::now();
 
         let result = open_within(base, &id("w-0a1b2c3d"), &spawner, timeout, PROBE);

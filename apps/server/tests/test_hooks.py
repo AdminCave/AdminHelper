@@ -506,6 +506,16 @@ def test_webhook_trigger_via_header_token(test_client, db_session, admin_user):
     assert wrong.status_code == 404
 
 
+def test_trigger_routes_declare_their_error_codes(test_client):
+    # R-0838: the OpenAPI document lists the errors the trigger routes raise.
+    paths = test_client.get("/openapi.json").json()["paths"]
+    header = paths["/api/hooks/trigger"]["post"]["responses"]
+    by_token = paths["/api/hooks/trigger/{token}"]["post"]["responses"]
+    assert {"401", "403", "404", "429"} <= set(header)
+    assert {"403", "404", "429"} <= set(by_token)
+    assert "401" not in by_token
+
+
 class TestHookWorkerRobustness:
     """4.69/4.70/4.71: the hook worker's timeout, response-size and result-return handling."""
 
@@ -562,3 +572,34 @@ class TestHookWorkerRobustness:
         assert out["success"] is False
         time.sleep(5)  # past the grandchild's 4s write
         assert not marker.exists(), "grandchild survived the timeout kill (orphaned process)"
+
+
+class TestHookDescription:
+    # R-0651: the web dialog sends a cleared description as null; the route read None
+    # as "not sent", answered 200 and kept the old text.
+    def _created(self, client, h) -> str:
+        r = client.post("/api/hooks", json={**WEBHOOK, "description": "alt"}, headers=h)
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    def test_a_null_description_clears_it(self, test_client, db_session, admin_user):
+        h = _login(test_client, "admin", "adminpass")
+        hid = self._created(test_client, h)
+        r = test_client.put(f"/api/hooks/{hid}", json={"description": None}, headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json()["description"] is None
+        assert test_client.get(f"/api/hooks/{hid}", headers=h).json()["description"] is None
+
+    def test_a_missing_description_leaves_it(self, test_client, db_session, admin_user):
+        h = _login(test_client, "admin", "adminpass")
+        hid = self._created(test_client, h)
+        r = test_client.put(f"/api/hooks/{hid}", json={"name": "wh-neu"}, headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json()["description"] == "alt"
+
+    def test_a_new_description_replaces_it(self, test_client, db_session, admin_user):
+        h = _login(test_client, "admin", "adminpass")
+        hid = self._created(test_client, h)
+        r = test_client.put(f"/api/hooks/{hid}", json={"description": "neu"}, headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json()["description"] == "neu"

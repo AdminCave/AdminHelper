@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import math
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
@@ -13,10 +14,12 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
-from app.core.bounds import Offset
+from app.core.bounds import Offset, _find_unstorable
 from app.core.database import get_db
 from app.core.pagination import paginate
+from app.core.request_context import actor_from_request
 from app.core.time import iso_utc
+from app.modules.audit import service as audit
 from app.modules.hooks.models import Hook
 
 # Scheduled-hook jobs are owned by the dedicated scheduler process; the web
@@ -142,6 +145,7 @@ def list_hooks(
 @router.post("", response_model=HookCreatedResponse, status_code=status.HTTP_201_CREATED)
 def create_hook(
     data: HookCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
@@ -167,6 +171,15 @@ def create_hook(
     db.add(hook)
     db.commit()
     db.refresh(hook)
+    audit.record(
+        db,
+        "hook.created",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        detail=f"type={hook.hook_type}",
+    )
 
     # next_run is filled in by the scheduler process's reconcile (within seconds);
     # no direct add_job here — the web worker has no running scheduler.
@@ -180,6 +193,24 @@ def create_hook(
 # exec namespace: a naive hook doing http_post(url, headers=headers) to a payload-chosen
 # URL would forward AdminHelper credentials to an attacker-picked target (3.36).
 _SAFE_WEBHOOK_HEADERS = {"content-type", "user-agent", "x-hook-source"}
+
+
+def _find_non_finite(payload) -> tuple | None:
+    """Location of a NaN or an infinity in the payload, if any.
+
+    Python's json reads NaN, Infinity and -Infinity although JSON has none of them, and the
+    answer cannot carry them back (JSONResponse writes with allow_nan=False): a script that
+    returned the payload made the answer a 500. Stack, not recursion, like _find_unstorable."""
+    stack: list[tuple[tuple, object]] = [((), payload)]
+    while stack:
+        loc, value = stack.pop()
+        if isinstance(value, float) and not math.isfinite(value):
+            return loc
+        if isinstance(value, dict):
+            stack.extend(((*loc, key), item) for key, item in value.items())
+        elif isinstance(value, list):
+            stack.extend(((*loc, i), item) for i, item in enumerate(value))
+    return None
 
 
 async def _do_trigger(token: str, request: Request, db: Session):
@@ -202,6 +233,31 @@ async def _do_trigger(token: str, request: Request, db: Session):
         payload = await request.json()
     except Exception:
         payload = {}
+    # The payload has no schema, so RequestModel's rule is applied here by hand: a NUL
+    # byte or a lone surrogate (JSON spells them \u0000 and \ud800) would reach the
+    # script, and the response or the database fails once the script returns or stores it.
+    if found := _find_unstorable(payload):
+        loc, value, reason = found
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", *loc),
+                    "msg": f"Value error, {reason}",
+                    "input": value,
+                }
+            ]
+        )
+    if (loc := _find_non_finite(payload)) is not None:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", *loc),
+                    "msg": "Value error, must be a finite number",
+                }
+            ]
+        )
 
     try:
         # Offload the blocking subprocess off the event loop — otherwise a single
@@ -225,7 +281,15 @@ async def _do_trigger(token: str, request: Request, db: Session):
     return result
 
 
-@trigger_router.post("/trigger")
+@trigger_router.post(
+    "/trigger",
+    responses={
+        401: {"description": "X-Hook-Token header missing"},
+        403: {"description": "Hook is disabled"},
+        404: {"description": "No webhook hook with this token"},
+        429: {"description": "Rate limit exceeded for this client IP"},
+    },
+)
 async def trigger_webhook_header(request: Request, db: Session = Depends(get_db)):
     # Token via X-Hook-Token header instead of the URL path: a token in the path leaks
     # into nginx/proxy access logs, browser history and referrers. Both variants work;
@@ -240,7 +304,14 @@ async def trigger_webhook_header(request: Request, db: Session = Depends(get_db)
 
 # Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
 # admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
-@trigger_router.post("/trigger/{token}")
+@trigger_router.post(
+    "/trigger/{token}",
+    responses={
+        403: {"description": "Hook is disabled"},
+        404: {"description": "No webhook hook with this token"},
+        429: {"description": "Rate limit exceeded for this client IP"},
+    },
+)
 async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
     return await _do_trigger(token, request, db)
 
@@ -253,20 +324,27 @@ def get_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_cur
     return _to_dict(hook)
 
 
+# Columns an update can change, in the order the audit detail names them.
+_UPDATE_FIELDS = ("name", "description", "script", "event_triggers", "schedule_interval", "enabled")
+
+
 @router.put("/{hook_id}", response_model=HookDetailResponse)
 def update_hook(
     hook_id: str,
     data: HookUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
+    before = {field: getattr(hook, field) for field in _UPDATE_FIELDS}
 
     if data.name is not None:
         hook.name = data.name
-    if data.description is not None:
+    # A sent null clears the description; only a missing field leaves it as it is.
+    if "description" in data.model_fields_set:
         hook.description = data.description
     if data.script is not None:
         hook.script = data.script
@@ -285,22 +363,56 @@ def update_hook(
     # DB; no direct add/remove_job here (and next_run is refreshed there too).
     db.commit()
     db.refresh(hook)
+    # detail names the changed columns and carries no value but the new enabled flag.
+    changed = [
+        f"enabled={str(hook.enabled).lower()}" if field == "enabled" else field
+        for field in _UPDATE_FIELDS
+        if getattr(hook, field) != before[field]
+    ]
+    audit.record(
+        db,
+        "hook.updated",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        detail=", ".join(changed) or None,
+    )
     return _to_dict(hook)
 
 
 @router.delete("/{hook_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+def delete_hook(
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
+    hook_name = hook.name
     # The scheduler process drops the job on its next reconcile (the hook row is
     # gone); no direct remove_job here.
     db.delete(hook)
     db.commit()
+    audit.record(
+        db,
+        "hook.deleted",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook_id,
+        object_label=hook_name,
+    )
 
 
 @router.post("/{hook_id}/toggle", response_model=HookResponse)
-def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+def toggle_hook(
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
@@ -313,12 +425,24 @@ def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_
 
     db.commit()
     db.refresh(hook)
+    audit.record(
+        db,
+        "hook.updated",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        detail=f"enabled={str(hook.enabled).lower()}",
+    )
     return _to_dict(hook)
 
 
 @router.post("/{hook_id}/rotate")
 def rotate_hook_token(
-    hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
 ):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
@@ -330,12 +454,23 @@ def rotate_hook_token(
     raw_token = generate_api_key()
     hook.hashed_token = hash_api_key(raw_token)
     db.commit()
+    audit.record(
+        db,
+        "hook.token_rotated",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+    )
     return {"token": raw_token}
 
 
 @router.post("/{hook_id}/run")
 def run_hook_manually(
-    hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
+    hook_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
 ):
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
@@ -358,6 +493,16 @@ def run_hook_manually(
     try:
         result = run_hook_script(script=hook.script, hook_type=hook.hook_type, context=context)
     except Exception as exc:
-        return {"success": False, "error": str(exc), "result": {}, "logs": []}
+        result = {"success": False, "error": str(exc), "result": {}, "logs": []}
 
+    # No detail: the error of a run is the script's own exception text or stderr.
+    audit.record(
+        db,
+        "hook.run",
+        actor=actor_from_request(request),
+        object_type="hook",
+        object_id=hook.id,
+        object_label=hook.name,
+        status="success" if result.get("success") is True else "failure",
+    )
     return result

@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { currentSession } from '$lib/stores/session';
   import { loadTemplates } from '$lib/stores/monitoring';
   import { reportError, showStatus } from '$lib/stores/statusBar';
-  import { errMsg } from '$lib/utils/errors';
+  import { errMsg, errStatus } from '$lib/utils/errors';
   import { t } from '$lib/i18n';
   import Modal from '../ui/Modal.svelte';
 
@@ -129,15 +129,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       await loadTemplates();
       onClose();
     } catch (err) {
-      const msg = errMsg(err);
       // 409: no newer version any more, e.g. another admin took it meanwhile. The
       // list still shows the badge until it is loaded again.
-      if (msg.startsWith('HTTP 409')) {
+      if (errStatus(err) === 409) {
         showStatus($t('monitoring.builtinUpdate.gone'));
         await loadTemplates();
         onClose();
       } else {
-        reportError(msg);
+        reportError(errMsg(err));
       }
     } finally {
       applying = false;

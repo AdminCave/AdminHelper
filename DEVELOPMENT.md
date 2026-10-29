@@ -21,6 +21,15 @@ sudo apt install -y \
   patchelf
 ```
 
+SPDX-Header neuer Quelldateien schreibt `reuse annotate` (CLAUDE.md §10). Ohne sudo (das Debian-Paket
+`reuse` braeuchte es) ein eigenes venv mit Link in den `PATH`, wie bei `pip-audit` unten:
+
+```bash
+python3 -m venv ~/.local/share/ah-tools/reuse-venv
+~/.local/share/ah-tools/reuse-venv/bin/pip install -q reuse==6.2.0
+mkdir -p ~/.local/bin && ln -sfn ~/.local/share/ah-tools/reuse-venv/bin/reuse ~/.local/bin/reuse
+```
+
 ### Rust Toolchain
 
 ```bash
@@ -168,7 +177,13 @@ ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf dies
 Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
 andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —
 auch im Format-Hook `scripts/dev/format-file.sh`, der dann still gar nicht formatiert
-(sein Exit bleibt 0).
+(sein Exit bleibt 0). Ohne ruff im `PATH` formatiert er ebenfalls nichts, und ein nacktes
+`ruff check` scheitert auch nach `source .devenv.sh`, das nur cargo und go in den `PATH` legt.
+Ein Link auf das ruff im `AH_VENV` folgt dem Pin, denn `server-pytest` zieht es auf ihn:
+
+```bash
+mkdir -p ~/.local/bin && ln -s ~/.cache/ah-venv/bin/ruff ~/.local/bin/ruff
+```
 
 ### Python-Tests lokal (ohne Docker)
 
@@ -265,7 +280,7 @@ Komponenten-Suite startet. Es sourct `.devenv.sh` (bzw. `$AH_DEVENV`), loest
 `AH_TEST_DB` auf und delegiert an `scripts/tests/run.sh`:
 
 ```bash
-bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--tree <pfad>] [-- <args>]
+bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--full] [--tree <pfad>] [-- <args>]
 
 bash scripts/dev/verify.sh monitoring --strict           # eine Komponente
 bash scripts/dev/verify.sh web desktop-e2e --strict      # mehrere, in einem Lauf
@@ -297,6 +312,20 @@ vorerst im `TMPDIR` des Aufrufers (meist `/tmp`).
 Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
 ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
 nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
+
+**Log und Digest.** Die volle Ausgabe der Suite landet in
+`.ah-out/logs/verify-<zeit>-<pid>.log` (die neuesten 30 bleiben; `last-verify.json` nennt
+den Pfad unter `log`). Auf stdout steht der Digest von `scripts/dev/log-digest.sh`: eine Zeile je
+Schritt (die per `--only` oder `--` ausgelassenen nur als Zahl), je rotem oder selbst
+uebersprungenem Schritt seine Fehlerzeilen (hoechstens 60) und die letzten 20 Zeilen seines
+Abschnitts mit Zeilennummern, dann der Schlussblock von `run.sh` (Summary, `strict-failed`- und
+`failed`-Liste), Exit-Code und Logpfad; steht kein Schlussblock am Ende des Logs, die letzten 40
+Zeilen. Gibt ein roter Test eingefangene `run.sh`-Ausgabe aus, setzt sie keine Grenzen: je Schritt
+gilt das schlechteste Ergebnis, widerspruechliche Zeilen werden genannt, und ein Auszug zeigt im
+Zweifel mehr. Keine Schritt-Zeile wird gekuerzt. Mehr liest man
+gezielt (`sed -n <a>,<b>p <log>`). Auf einem Terminal oder mit `--full` laeuft die volle Ausgabe
+zusaetzlich mit. Jedes andere `run.sh`-Log fasst `bash scripts/dev/log-digest.sh <log> [<exit>]`
+genauso zusammen.
 
 ### OpenAPI-Snapshot aktualisieren
 
@@ -357,12 +386,19 @@ bash scripts/dev/openapi-breaking.sh server --base origin/main
 bash scripts/dev/openapi-breaking.sh monitoring --base origin/main
 ```
 
+Auch `gnome-keyring` braucht der Pflicht-Schritt `scripts`: `scripts/tests/lib_e2e_stack_test.sh`
+startet fuer seine Keyring-Faelle einen echten `gnome-keyring-daemon` in einer eigenen
+D-Bus-Session und endet ohne `gnome-keyring-daemon`, `dbus-run-session` oder `dbus-send` mit
+Exit 75 — unter `--strict` also rot. CI (Job `ops-scripts`) und die Test-Boxen
+(`scripts/vm/bootstrap_linux.sh`) installieren es; auf der Dev-Box (Debian/Ubuntu):
+`sudo apt-get install --no-install-recommends gnome-keyring dbus`.
+
 ### Geteilte API-Typen (sync-from-web.sh --check)
 
 `apps/web/src/lib/api/types.ts` und `apps/desktop/ui/src/lib/api/types.ts` sind
 **keine** gemeinsame Datei mehr: das Web beschreibt die Admin-Panel-API (25
-Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole —
-`FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server`.
+Exporte), das Desktop die Client-API (58). Gemeinsam sind drei Symbole —
+`FrpConfig`, `FrpStatus`, `FrpStatusProxy`.
 
 ```bash
 bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
@@ -370,13 +406,13 @@ bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
 
 Geprueft wird die Schnittmenge, und zwar als **Teilmenge**: jede Zeile des
 Web-Blocks muss im Desktop-Block stehen, das Desktop darf mehr fuehren. Das ist
-kein Kompromiss, sondern die richtige Invariante — `Server` traegt im Desktop
-zusaetzlich `connections?: Connection[]`, weil `to_dict()` das Feld liefert und
-nur das Admin-Panel es ignoriert. Der reale Drift, den die Regel faengt: das Web
-zieht ein neues Server-Feld nach, das Desktop nicht.
+kein Kompromiss, sondern die richtige Invariante — bis R-0723 trug das gemeinsame
+`Server` im Desktop zusaetzlich `connections?: Connection[]`, das nur das
+Admin-Panel ignorierte (seitdem kennt das Web nur `ServerSummary`). Der reale
+Drift, den die Regel faengt: das Web zieht ein neues Feld nach, das Desktop nicht.
 
 Quell-Exporte ohne Gegenstueck im Ziel werden nur berichtet, nicht bemaengelt.
-Die vier erwarteten gemeinsamen Symbole stehen namentlich im Skript
+Die drei erwarteten gemeinsamen Symbole stehen namentlich im Skript
 (`CHECK_SHARED`): verschwindet eines von einer Seite, ist das ein Fehler, keine
 kleinere gruene Menge. Ein blosser Zaehl-Boden haette erst bei zwei gleichzeitigen
 Verlusten gegriffen — der realistische Fall ist der einzelne Refactor.
@@ -468,11 +504,11 @@ veralteten geplanten Workflow — kein Trigger, keine `WARN:`-Zeile. Manuell:
 ### Task schliessen: `ledger.sh` und `task-close.sh`
 
 Kein Modell setzt selbst einen Haken oder macht einen Task-Commit. Der Weg einer Task, im Worktree des
-Vorhabens:
+Vorhabens (Ablauf: `.claude/skills/feature-build/SKILL.md`):
 
 ```bash
 bash scripts/dev/ledger.sh start tasks/<slug>.md T7      # .vm/active-task: Komponente + Dateien
-# ... builder baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
+# ... die Session baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
 bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 ```
 
@@ -504,11 +540,22 @@ ohne Ankuendigung · `4` private Datei oder Token im Diff, geaenderte Ankuendigu
 lauffaehig oder Handarbeits-Task. Nach einem Fehler in Schritt 9 oder 10 setzt ein zweiter Lauf
 dieselbe Zeile neu.
 
-`ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`, `mark-skip`,
-`mark-question`, `set-files`, `status`, `lint`); Details in [`tasks/README.md`](tasks/README.md).
+`ledger.sh` ist die einzige Stelle, die Task-Status, Haken und Kopf eines Ledgers schreibt (`start`,
+`mark-done`, `mark-skip`, `mark-question`, `set-files`, `status`, `lint`); Plan und `## Entscheidungen` schreibt
+die Session von Hand. Details in [`tasks/README.md`](tasks/README.md).
 **`--evidence` ist ein Feld, kein Beweis:** `mark-done` nimmt jede Zeichenkette; wahr macht die Zeile
 nur, dass `task-close.sh` sie aus dem eigenen Lauf erzeugt. Deshalb steht `ledger.sh mark-done` in
 `.claude/settings.json` unter `ask`.
+
+**Abschluss eines Vorhabens: `review.sh final`.** Vor dem PR prueft
+`bash scripts/dev/review.sh final tasks/<slug>.md` das Branch-Urteil des `reviewer`
+(`.ah-out/review/<slug>/branch.verdict.json` des Worktrees, in dem das Ledger liegt): keine Task mehr `[ ]`
+oder `[?]`, `approve` gesamt, fuer den Code- und fuer den Testteil, beide mit Evidenz, eine Abdeckungsliste,
+hoechstens drei Gegenproben (`red`, `green`, `not-runnable`), kein `blocker` neben einem `approve`, und seit
+dem geprueften Commit (`head`) auf der eigenen Linie des Branches nur Commits, die allein das Ledger aendern, und
+Merges ohne eigene Aenderungen (ein aufgeloester Konflikt zaehlt als neue Aenderung; `CHANGELOG.md` mit seinem
+`merge=union` ausgenommen). Exit 0 druckt den PR-Abschnitt (Adressen und Hostnamen entfernt wie bei `pr-body`), Exit 3 jeden
+Grund, Exit 2 einen Aufruffehler.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
@@ -518,17 +565,22 @@ den `Unreleased`-Block (`.claude/rules/release.md`).
 
 ### Entwicklung mit Claude Code
 
-Gearbeitet wird in **einer** interaktiven Claude-Code-Session in tmux (Opus), die Kevin im
-Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebenslauf eines Vorhabens,
-§5 Tests, §6 Pruefer, §7 Commit, §8 Roadmap und Worktrees); hier steht, welche Teile es dafuer gibt.
+Gearbeitet wird in einer interaktiven Claude-Code-Session in tmux, die Kevin im Haupt-Checkout auf
+`main` startet. Die Regeln stehen in `CLAUDE.md` (§2 wer entscheidet und baut, §4 Lebenslauf eines
+Vorhabens, §5 Tests, §6 Rollen, Pruefer und Modelle, §7 Commit, §8 Roadmap und Worktrees, §13
+Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welche Teile es dafuer gibt.
 
-- **Sub-Agenten** in `.claude/agents/`: `builder` baut eine Task, `reviewer` prueft einen Task- oder
-  Branch-Diff gegen sieben Kriterien, `tester` prueft vor dem Abschluss, ob die Tests da und echt
-  sind, `security` prueft Risikopfade. Die Session ruft sie ueber das Agent-Werkzeug mit
-  `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
+- **Modelle:** `.claude/settings.json` startet die Session mit `model: opus` und `effortLevel: high`
+  (vor den Benutzer-Settings); `claude --model sonnet` fuer klar begrenzte Arbeit, `claude --effort xhigh`
+  fuer ein Architektur-Vorhaben oder `/model` und `/effort` ueberschreiben das fuer eine Session. Die
+  Sub-Agenten tragen Modell und Effort im Frontmatter.
+- **Sub-Agenten** in `.claude/agents/`: `reviewer` (eine Task vor dem Commit, oder der Branch vor dem PR
+  ueber Code und Tests), `security` (Risikopfade), `advisor` (nur lesend, gezielte Hilfe bei
+  schwierigen Fragen). Gebaut wird in der Session selbst. Die Session ruft sie ueber das Agent-Werkzeug
+  mit `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
   jeder Aufruf nennt den absoluten Worktree-Pfad, die Agenten arbeiten mit `git -C <wt>` und
   `bash <wt>/scripts/…`. Eine neue Agent-Datei sieht eine laufende Session nur, wenn
-  `.claude/agents/` bei ihrem Start schon existierte.
+  `.claude/agents/` bei ihrem Start schon existierte und der Haupt-Checkout sie traegt.
 - **Worktrees:** Jedes Vorhaben baut in `../AdminHelper-<slug>` auf `feature/<slug>`.
   `bash scripts/dev/worktree-setup.sh <pfad> <slug>` richtet ihn ein (eigene Test-DB, eigenes Venv,
   `node_modules` als Hardlink-Kopie, frpc-Sidecar, Venv-Links, `.vm/lane`);
@@ -548,10 +600,18 @@ Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebensl
 - **Lange Laeufe** (Suiten ueber zehn Minuten, `/test`, Wochenlauf) laufen in einem tmux-Fenster ohne
   Modell, Ausgabe und Exit-Code in Dateien:
   `tmux new-window -d -n ah-quick "( . ./.devenv.sh; bash scripts/tests/run.sh quick --strict ) > <log> 2>&1; echo \$? > <rc>"`.
-  Die Session wartet auf die `rc`-Datei und liest danach das Log.
+  Die Session wartet auf die `rc`-Datei und liest danach `bash scripts/dev/log-digest.sh <log> <rc>`.
 - **Python-Sperre:** `server-pytest` und `schemathesis` warten ueber `/var/lib/adminhelper-dev/py.lock`
   (ohne das Verzeichnis `~/.cache/adminhelper-py.lock`) aufeinander, ueber alle Worktrees (Abschnitt
   „Python-Tests lokal“).
+- **Sessions und Zuege (2026-10-29, CLAUDE.md §2):** `bash scripts/dev/start-session.sh kern|klein`
+  startet die Kern-Session (Opus, medium) bzw. die Klein-Session (Sonnet, medium) mit
+  `--autocompact 200k` und einem `/goal`, `start-session.sh arch R-nnnn` eine Architektur-Session
+  (Opus, xhigh); `--dry-run` zeigt nur den Befehl. Welche Zeilen zusammen fahren, zeigt
+  `roadmap.py zuege`; `bash scripts/dev/overlap.sh [--except <branch>] <pfad>...` nennt die offenen
+  `feature/*`-Branches, die dieselben Dateien aendern (Exit 1 bei Ueberschneidung). CHANGELOG-Eintraege
+  schreibt jeder Branch nach `changelog.d/<slug>.md`; der Release faltet sie mit
+  `python3 scripts/release/changelog-assemble.py` in `CHANGELOG.md` (`changelog.d/README.md`).
 - **Was es bewusst nicht gibt (2026-10-14):** keinen Worker-Loop, keinen Runner-Nutzer, kein
   Builder-Profil, keine Sandbox und keinen unbeaufsichtigten Betrieb. Jede Session startet Kevin.
 
@@ -568,7 +628,8 @@ zeigt und triagiert sie (`.claude/skills/roadmap/SKILL.md`).
 python3 scripts/dev/roadmap.py lint                      # tasks/private/ROADMAP.md
 python3 scripts/dev/roadmap.py --file /tmp/x.md lint     # eine andere Datei
 python3 scripts/dev/roadmap.py show [R-nnnn] [--wip]
-python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web]
+python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web] [--stufe klein|kern]
+python3 scripts/dev/roadmap.py zuege [--stufe klein|kern]
 python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
     [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
 python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md] [--pr "#<n>"]
@@ -600,7 +661,13 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   (`next: R-nnnn skipped — ledger <pfad> not found in the tree or on any branch (git fetch?)`).
   Ohne Ausschlussliste, bei `—`, einem Slug oder einem Pfad ausserhalb des Repos bleibt die
   Zeile im Rennen.
-  Nichts bereit: Exit 1.
+  Nichts bereit: Exit 1. `--stufe klein` nimmt nur Zeilen eines `klein-`-Ledgers, `--stufe arch`
+  die eines `arch-`-Ledgers, `--stufe kern` alle anderen (auch Zeilen ohne Ledger).
+- `zuege` zeigt die Zuege (CLAUDE.md §2): die offenen Zeilen (`geplant` bis `pr`), gruppiert nach
+  ihrer Spalte `Ledger`, je Zug eine Zeile mit Stufe (`klein` fuer `klein-…`, `arch` fuer `arch-…`,
+  sonst `kern`),
+  `wartet` oder `unterwegs` und den IDs. Wartende zuerst, nach der hoechsten Klasse, dann nach
+  Groesse; ein Zug unterwegs nimmt keine Zeile mehr auf. Kein Zug: Exit 1.
 - `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
   eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
   eine ID, die ein Hand-Edit wieder entfernt hat, nicht ein zweites Mal. `--proof` und
@@ -662,6 +729,13 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 # einsetzen):
 # wget https://go.dev/dl/go1.27.x.linux-amd64.tar.gz
 # sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.27.x.linux-amd64.tar.gz
+```
+
+Liegt Go ohne sudo unter `~/sdk/go`, legt `.devenv.sh` es in den `PATH`; damit ein nacktes `go` oder
+`gofmt` (auch im Format-Hook) es ohne gesourctes `.devenv.sh` findet, zusaetzlich Links:
+
+```bash
+mkdir -p ~/.local/bin && ln -s ~/sdk/go/bin/go ~/sdk/go/bin/gofmt ~/.local/bin/
 ```
 
 ### Node.js + npm (Desktop-UI und Web-Frontend)
@@ -902,6 +976,8 @@ pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
+
+**Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut nur der Entrypoint des Containers (`apps/monitoring/docker-entrypoint.sh`).
 
 **Hinweis:** Fuer den vollen Monitoring-Stack wird VictoriaMetrics benoetigt, die per `docker compose up` automatisch mitgestartet wird.
 

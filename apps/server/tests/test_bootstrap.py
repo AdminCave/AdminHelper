@@ -10,7 +10,12 @@ start. The endpoint POST /api/auth/bootstrap accepts this token and uses it to
 create the first admin.
 """
 
+import errno
+import logging
+import os
+import pathlib
 import secrets
+import stat
 
 import pytest
 
@@ -58,6 +63,20 @@ class TestBootstrapEndpoint:
 
         # Token consumed
         assert not BOOTSTRAP_TOKEN_FILE.exists()
+
+    def test_browser_bootstrap_gets_the_refresh_token_only_as_cookie(
+        self, test_client, fresh_token
+    ):
+        res = test_client.post(
+            "/api/auth/bootstrap",
+            json={"token": fresh_token, "username": "first", "password": "abcdefgh"},
+            headers={"Sec-Fetch-Site": "same-origin"},
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["refresh_token"] == ""
+        assert res.json()["access_token"]
+        assert test_client.cookies.get("refresh_token")
+        assert "httponly" in res.headers.get("set-cookie", "").lower()
 
     def test_wrong_token_fails_and_does_not_consume_file(self, test_client, fresh_token):
         res = test_client.post(
@@ -131,6 +150,94 @@ def test_bootstrap_token_written_to_file_not_log(caplog):
     finally:
         BOOTSTRAP_SETUP_FILE.unlink(missing_ok=True)
         BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+
+
+@pytest.fixture()
+def bootstrap_files(tmp_path, monkeypatch):
+    """The bootstrap files of app.main in tmp_path instead of the shared test DATA_DIR."""
+    import app.main as m
+
+    token_file = tmp_path / ".bootstrap_token"
+    setup_file = tmp_path / ".bootstrap_setup"
+    monkeypatch.setattr(m, "BOOTSTRAP_TOKEN_FILE", token_file)
+    monkeypatch.setattr(m, "BOOTSTRAP_SETUP_FILE", setup_file)
+    return token_file, setup_file
+
+
+@pytest.fixture()
+def umask_zero():
+    # Under umask 0 a file created with the default mode is 0666: only a mode set at creation
+    # keeps it private.
+    previous = os.umask(0)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
+@pytest.fixture()
+def no_chmod(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(pathlib.Path, "chmod", refuse)
+    monkeypatch.setattr(os, "chmod", refuse)
+
+
+def test_bootstrap_files_are_0600_from_the_start(bootstrap_files, umask_zero, no_chmod, caplog):
+    """Both bootstrap files are private from their creation on, whatever the umask, with no
+    chmod afterwards whose error could get lost: here every chmod fails."""
+    from app.main import _emit_bootstrap_token
+
+    token_file, setup_file = bootstrap_files
+    with caplog.at_level(logging.WARNING):
+        _emit_bootstrap_token()
+
+    raw = setup_file.read_text(encoding="utf-8")
+    assert raw
+    assert stat.S_IMODE(setup_file.lstat().st_mode) == 0o600
+    assert stat.S_IMODE(token_file.lstat().st_mode) == 0o600
+    assert token_file.read_text(encoding="utf-8") == hash_api_key(raw)
+    assert raw not in token_file.read_text(encoding="utf-8")
+    assert raw not in caplog.text  # the raw token is never logged (3.91)
+    assert sorted(p.name for p in token_file.parent.iterdir()) == [
+        ".bootstrap_setup",
+        ".bootstrap_token",
+    ], "no temp file may stay behind"
+
+
+@pytest.mark.parametrize("failing", [".bootstrap_setup", ".bootstrap_token"])
+def test_a_failed_bootstrap_file_removal_is_logged(bootstrap_files, monkeypatch, caplog, failing):
+    """A bootstrap file that cannot be removed is named in the log with the type of the error,
+    and the other one is removed all the same."""
+    import app.main as m
+
+    token_file, setup_file = bootstrap_files
+    token_file.write_text("hash")
+    setup_file.write_text("raw")
+    stuck = token_file.parent / failing
+    other = setup_file if stuck == token_file else token_file
+    real_unlink = pathlib.Path.unlink
+
+    def unlink(self, missing_ok=False):
+        if self == stuck:
+            raise PermissionError(errno.EACCES, "Permission denied", str(self))
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    with caplog.at_level(logging.INFO, logger=m.logger.name):
+        m._purge_bootstrap_files()
+
+    assert not other.exists()
+    warnings = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == m.logger.name and r.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 1
+    assert failing in warnings[0] and "PermissionError" in warnings[0]
+    assert "Permission denied" not in caplog.text
+    assert not [r for r in caplog.records if r.exc_info]
 
 
 def test_short_env_admin_password_falls_back_to_bootstrap(db_session, monkeypatch):
@@ -220,3 +327,83 @@ def test_env_admin_gets_default_subscription(db_session, monkeypatch):
         .one()
     )
     assert (sub.scope_type, sub.min_severity) == ("all", "warning")
+
+
+def test_two_concurrent_bootstraps_with_the_token_create_one_admin(pg_engine, monkeypatch):
+    # Two workers, each with its own session that really commits. The barrier inside
+    # hash_password holds the first call until the second has checked "no user" too, so
+    # without a lock both create an admin; with it the second waits before its check,
+    # the barrier times out and the first goes on alone.
+    import threading
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    import app.modules.users.auth_router as auth_router
+    from app.core.database import get_db
+    from app.main import app
+
+    raw = secrets.token_urlsafe(32)
+    BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(raw))
+    new_session = sessionmaker(bind=pg_engine)
+
+    def _own_session():
+        session = new_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    barrier = threading.Barrier(2)
+    real_hash = auth_router.hash_password
+
+    def _hash_after_both_checked(password):
+        try:
+            barrier.wait(timeout=3)
+        except threading.BrokenBarrierError:
+            pass
+        return real_hash(password)
+
+    monkeypatch.setattr(auth_router, "hash_password", _hash_after_both_checked)
+    app.dependency_overrides[get_db] = _own_session
+    names = ("first-a", "first-b")
+    statuses: dict[str, int] = {}
+
+    def _bootstrap(name):
+        res = TestClient(app).post(
+            "/api/auth/bootstrap",
+            json={"token": raw, "username": name, "password": "abcdefgh"},
+        )
+        statuses[name] = res.status_code
+
+    try:
+        threads = [threading.Thread(target=_bootstrap, args=(n,)) for n in names]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        with pg_engine.connect() as conn:
+            admins = (
+                conn.execute(
+                    text("SELECT username FROM users WHERE username = ANY(:names)").bindparams(
+                        names=list(names)
+                    ),
+                )
+                .scalars()
+                .all()
+            )
+    finally:
+        app.dependency_overrides.clear()
+        with pg_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM audit_log WHERE object_label = ANY(:names)").bindparams(
+                    names=list(names)
+                )
+            )
+            conn.execute(
+                text("DELETE FROM users WHERE username = ANY(:names)").bindparams(names=list(names))
+            )
+        BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+    assert len(admins) == 1, (admins, statuses)
+    assert sorted(statuses.values()) == [201, 409], statuses

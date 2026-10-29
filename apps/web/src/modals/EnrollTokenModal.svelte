@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { mintEnrollToken } from '$lib/api/users';
   import { formatDateTime } from '$lib/utils/datetime';
-  import { showToast } from '$lib/stores/notifications';
+  import { copyToClipboard } from '$lib/utils/clipboard';
   import type { EnrollmentGrant } from '$lib/api/types';
 
   interface Props {
@@ -63,14 +63,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  async function copy() {
+  function copy() {
     if (!grant) return;
-    try {
-      await navigator.clipboard.writeText(grant.token);
-      showToast($t('toast.apikey.copied'));
-    } catch {
-      showToast('Clipboard error', 'error');
-    }
+    void copyToClipboard(grant.token, 'toast.copied');
   }
 </script>
 

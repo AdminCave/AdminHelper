@@ -24,6 +24,6 @@ test.describe('Authorization', () => {
     await expect(page.locator('.sidebar nav a')).toHaveCount(0);
     // The routeGuard falls a deep-linked admin path back to the catch-all Placeholder,
     // so the full Users page (with its "+ create" button and 403-prone data) never mounts.
-    await expect(page.locator('.page-title')).toHaveText('Nicht verfuegbar');
+    await expect(page.locator('.page-title')).toHaveText('Web-Panel nur für Admins');
   });
 });

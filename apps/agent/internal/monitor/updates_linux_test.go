@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -36,7 +37,7 @@ func stubUpdates(t *testing.T, now time.Time, reply dockerReply) *[]updatesCall 
 	t.Cleanup(func() { updatesCalls = old })
 	var calls []updatesCall
 	updatesCalls.now = func() time.Time { return now }
-	updatesCalls.run = func(timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
+	updatesCalls.run = func(_ context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
 		calls = append(calls, updatesCall{timeout, env, append([]string{name}, args...)})
 		return []byte(reply.out), reply.err
 	}
@@ -173,10 +174,10 @@ func TestSystemStateUpdatesTools(t *testing.T) {
 			stubSystemCLI(t, c.tools)
 			calls := stubUpdates(t, updatesNow, dockerReply{out: c.reply})
 			logs := captureWarnings(t)
-			check := securityUpdates(nil)
+			check := securityUpdates(context.Background(), nil)
 			if check == nil || check.Security == nil || *check.Security != c.count ||
 				check.CheckedUnix != updatesNow.Unix() {
-				t.Errorf("securityUpdates(nil) = %+v, want %d counted at %d", check, c.count, updatesNow.Unix())
+				t.Errorf("securityUpdates(context.Background(), nil) = %+v, want %d counted at %d", check, c.count, updatesNow.Unix())
 			}
 			if want := []updatesCall{c.want}; !reflect.DeepEqual(*calls, want) {
 				t.Errorf("calls = %+v, want %+v", *calls, want)
@@ -191,8 +192,8 @@ func TestSystemStateUpdatesNoTool(t *testing.T) {
 	stubSystemCLI(t, map[string]dockerReply{"needs-restarting": {}})
 	calls := stubUpdates(t, updatesNow, dockerReply{})
 	logs := captureWarnings(t)
-	if check := securityUpdates(nil); check != nil {
-		t.Errorf("securityUpdates(nil) = %+v, want nil", check)
+	if check := securityUpdates(context.Background(), nil); check != nil {
+		t.Errorf("securityUpdates(context.Background(), nil) = %+v, want nil", check)
 	}
 	if len(*calls) != 0 {
 		t.Errorf("calls = %+v, want none", *calls)
@@ -221,7 +222,7 @@ func TestSystemStateUpdatesHourly(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			stubSystemCLI(t, map[string]dockerReply{"apt-get": {}})
 			calls := stubUpdates(t, updatesNow, dockerReply{out: aptDebianFixture})
-			check := securityUpdates(c.saved)
+			check := securityUpdates(context.Background(), c.saved)
 			if !c.call {
 				if check != c.saved || len(*calls) != 0 {
 					t.Errorf("securityUpdates = %+v after %d call(s), want the saved %+v without one",
@@ -264,7 +265,7 @@ func TestSystemStateUpdatesFailure(t *testing.T) {
 			stubVMStat(t, "pgmajfault 1042\n")
 			calls := stubUpdates(t, updatesNow, c.reply)
 			logs := captureWarnings(t)
-			block, next := collectSystemState(reportState{})
+			block, next := collectSystemState(context.Background(), reportState{})
 			if _, ok := block["security_updates"]; ok {
 				t.Errorf("block = %v, want no security_updates", block)
 			}
@@ -285,7 +286,7 @@ func TestSystemStateUpdatesFailure(t *testing.T) {
 				t.Errorf("state file = %s, want it to hold %s", raw, want)
 			}
 			updatesCalls.now = func() time.Time { return updatesNow.Add(55 * time.Minute) }
-			block, next = collectSystemState(loadReportState(path))
+			block, next = collectSystemState(context.Background(), loadReportState(path))
 			if _, ok := block["security_updates"]; ok || len(*calls) != 1 {
 				t.Errorf("next report: block = %v after %d call(s), want no security_updates and no new call",
 					block, len(*calls))
@@ -319,7 +320,7 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 	t.Run("environment", func(t *testing.T) {
 		t.Setenv(updatesHelperEnv, "env")
 		t.Setenv("LC_ALL", "de_DE.UTF-8")
-		out, err := updatesCalls.run(time.Minute, []string{"LC_ALL=C"}, os.Args[0],
+		out, err := updatesCalls.run(context.Background(), time.Minute, []string{"LC_ALL=C"}, os.Args[0],
 			"-test.run=^TestHelperSystemStateUpdatesProcess$")
 		if err != nil || !strings.Contains(string(out), "LC_ALL=C\n") {
 			t.Errorf("child = %q, %v; want it to see LC_ALL=C", out, err)
@@ -328,7 +329,7 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 	t.Run("hangs", func(t *testing.T) {
 		t.Setenv(updatesHelperEnv, "hang")
 		start := time.Now()
-		_, err := updatesCalls.run(100*time.Millisecond, nil, os.Args[0],
+		_, err := updatesCalls.run(context.Background(), 100*time.Millisecond, nil, os.Args[0],
 			"-test.run=^TestHelperSystemStateUpdatesProcess$")
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("err = %v, want context.DeadlineExceeded", err)
@@ -337,4 +338,64 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 			t.Errorf("run returned after %s, the timeout did not stop the hung call", elapsed)
 		}
 	})
+	// R-0638: the caller's context ends the call long before updatesTimeout, and the call says why.
+	t.Run("ends with the context", func(t *testing.T) {
+		t.Setenv(updatesHelperEnv, "hang")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		time.AfterFunc(100*time.Millisecond, cancel)
+		start := time.Now()
+		_, err := updatesCalls.run(ctx, time.Minute, nil, os.Args[0],
+			"-test.run=^TestHelperSystemStateUpdatesProcess$")
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want context.Canceled", err)
+		}
+		if elapsed := time.Since(start); elapsed > 5*time.Second {
+			t.Errorf("run returned after %s, the context did not end the call", elapsed)
+		}
+	})
+	// As with runTimed: the timeout kills the tool, not the grandchild that holds its stdout, and
+	// WaitDelay ends the wait for the pipe. The "orphan" mode of TestHelperDockerProcess, chosen through
+	// env, is that tool.
+	t.Run("a grandchild holds stdout", func(t *testing.T) {
+		start := time.Now()
+		out, err := updatesCalls.run(context.Background(), time.Second, []string{dockerHelperEnv + "=orphan"}, os.Args[0],
+			"-test.run=^TestHelperDockerProcess$")
+		elapsed := time.Since(start)
+		if !strings.Contains(string(out), orphanStarted) {
+			t.Fatalf("output = %q, the grandchild did not start before the timeout", out)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("err = %v, want context.DeadlineExceeded", err)
+		}
+		if elapsed > 10*time.Second {
+			t.Errorf("run returned after %s, the grandchild held it past the timeout", elapsed)
+		}
+	})
+}
+
+// A command that exits 0 while a child it started still holds its stdout ends after
+// commandWaitDelay with exec.ErrWaitDelay; its output is complete, so runTimed and runTimedEnv
+// return it without an error.
+func TestRunTimedTakesErrWaitDelayAsSuccess(t *testing.T) {
+	const script = "sleep 5 & echo ok"
+	for name, run := range map[string]func() ([]byte, error){
+		"runTimed": func() ([]byte, error) {
+			return runTimed(context.Background(), time.Minute, "sh", "-c", script)
+		},
+		"runTimedEnv": func() ([]byte, error) {
+			return runTimedEnv(context.Background(), time.Minute, []string{"LC_ALL=C"}, "sh", "-c", script)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := exec.LookPath("sh"); err != nil {
+				t.Fatal(err)
+			}
+			out, err := run()
+			if err != nil || string(out) != "ok\n" {
+				t.Errorf("%s = %q, %v; want \"ok\\n\", nil", name, out, err)
+			}
+		})
+	}
 }

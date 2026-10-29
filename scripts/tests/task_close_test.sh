@@ -83,6 +83,26 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 ### T7 — fasst ein anderes Ledger an  [ ]
 Komponente: scripts · Dateien: tasks/other.md
 Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T11 — nur Doku  [ ]
+Komponente: scripts · Dateien: docs/guide.html, README.md, docs/admin/note.md
+Task-Review: am Ende
+Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T12 — als Doku markiert, aber Code  [ ]
+Komponente: scripts · Dateien: docs/guide.html, scripts/dev/tool.sh
+Task-Review: am Ende
+Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T13 — als Doku markiert, aber Harness-Text  [ ]
+Komponente: scripts · Dateien: .claude/rules/x.md
+Task-Review: am Ende
+Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T14 — als Doku markiert, aber Laufzeit, Code unter docs/ oder ein verschachtelter Harness-Text  [ ]
+Komponente: scripts · Dateien: .env.example, docs/app.js, apps/x/CLAUDE.md, docs/moved.md, CLAUDE.md, docs/link.md
+Task-Review: am Ende
+Verify: bash scripts/dev/verify.sh scripts --strict
 MD
 sed 's/^Status: aktiv · Branch: feature\/fixture · Review: pro Task$/Status: aktiv · Review: am Ende/' "$FIX/tasks/fix.md" \
   | sed -n '1,7p' > "$FIX/tasks/late.md"
@@ -93,6 +113,10 @@ printf 'echo old\n' > "$FIX/scripts/tests/old_test.sh"
 printf 'echo keep\n' > "$FIX/scripts/tests/keep_test.sh"
 mkdir -p "$FIX/apps/desktop/e2e/test/specs"; printf 'it("x")\n' > "$FIX/apps/desktop/e2e/test/specs/login.live.js"
 printf 'echo other\n' > "$FIX/scripts/dev/other.sh"
+mkdir -p "$FIX/docs" "$FIX/.claude/rules"; printf '<p>a</p>\n' > "$FIX/docs/guide.html"
+printf '# R\n' > "$FIX/README.md"; printf 'A=1\n' > "$FIX/.env.example"; printf '# x\n' > "$FIX/.claude/rules/x.md"
+mkdir -p "$FIX/docs/admin" "$FIX/apps/x"; printf '# n\n' > "$FIX/docs/admin/note.md"; printf 'x()\n' > "$FIX/docs/app.js"
+printf '# h\n' > "$FIX/apps/x/CLAUDE.md"; printf '# Regeln\n' > "$FIX/CLAUDE.md"
 printf '#!/bin/sh\nexit 1\n' > "$WORK/redhook/pre-commit"; chmod +x "$WORK/redhook/pre-commit"
 git -C "$FIX" init -q -b feature/fixture
 git -C "$FIX" config user.email test@example.invalid
@@ -183,6 +207,28 @@ verdict fix T1 request_changes; c fix T1 --stage -m x
 [ $rc -eq 3 ] && grep -q "is 'request_changes', not approve" <<<"$OUT" && [ "$(heads)" = 1 ] && ok "request_changes -> 3" || bad "rc: rc=$rc $OUT"
 reset_repo; edit scripts/dev/tool.sh; c late T1 --stage -m "feat: late"
 [ $rc -eq 0 ] && grep -q '^Review: am Ende' "$FIX/tasks/late.md" && ok "Review: am Ende commits without a verdict file" || bad "late: rc=$rc $OUT"
+reset_repo; edit docs/guide.html; edit README.md; edit docs/admin/note.md; c fix T11 --stage -m "docs: guide"
+[ $rc -eq 0 ] && grep -qF 'Review: am Ende (nur Doku, Branch-Review)' "$FIX/tasks/fix.md" \
+  && ok "Task-Review: am Ende commits a docs-only task without a verdict file" || bad "T11: rc=$rc $OUT"
+reset_repo; edit docs/guide.html; edit scripts/dev/tool.sh; c fix T12 --stage -m x
+[ $rc -eq 3 ] && grep -q 'and scripts/dev/tool.sh is not' <<<"$OUT" && grep -q 'no verdict at' <<<"$OUT" \
+  && [ "$(heads)" = 1 ] && ok "Task-Review: am Ende on a task that stages code still needs a verdict -> 3" || bad "T12: rc=$rc $OUT"
+verdict fix T12 approve; c fix T12 --stage -m "fix: with code"
+[ $rc -eq 0 ] && ok "the same task commits with the reviewer's approve" || bad "T12 verdict: rc=$rc $OUT"
+reset_repo; edit .claude/rules/x.md; c fix T13 --stage -m x
+[ $rc -eq 3 ] && grep -q 'and .claude/rules/x.md is not' <<<"$OUT" && grep -q 'no verdict at' <<<"$OUT" \
+  && ok "Task-Review: am Ende on a harness text -> 3" || bad "T13: rc=$rc $OUT"
+# Each of these alone, staged by hand: the mark must not carry any of them.
+t14() {  # t14 <label> <expected path in the message> — after the caller staged one change
+  c fix T14 -m x
+  [ $rc -eq 3 ] && grep -q "and $2 is not" <<<"$OUT" && grep -q 'no verdict at' <<<"$OUT" && [ "$(heads)" = 1 ] \
+    && ok "Task-Review: am Ende on $1 still needs a verdict -> 3" || bad "T14 $1: rc=$rc $OUT"
+}
+reset_repo; edit .env.example; git -C "$FIX" add .env.example; t14 ".env.example (runtime defaults)" .env.example
+reset_repo; edit docs/app.js; git -C "$FIX" add docs/app.js; t14 "code under docs/" docs/app.js
+reset_repo; edit apps/x/CLAUDE.md; git -C "$FIX" add apps/x/CLAUDE.md; t14 "a nested CLAUDE.md" apps/x/CLAUDE.md
+reset_repo; git -C "$FIX" mv CLAUDE.md docs/moved.md; t14 "a CLAUDE.md moved under docs/" CLAUDE.md
+reset_repo; ln -s ../scripts/dev/tool.sh "$FIX/docs/link.md"; git -C "$FIX" add docs/link.md; t14 "a symlink named .md" docs/link.md
 
 echo "── the commit ──"
 reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T1 approve

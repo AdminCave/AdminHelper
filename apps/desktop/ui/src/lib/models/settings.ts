@@ -5,24 +5,19 @@
 // Settings model: pure functions + constants, no side effects.
 
 import type { Settings } from '$lib/bridge/types';
-import { tNow } from '$lib/i18n';
+import { systemLanguage, tNow } from '$lib/i18n';
 
 export const RDP_WINDOW_MODES = ['fit', 'fullscreen', 'multimon', 'custom'] as const;
 export const RDP_PERFORMANCE_PROFILES = ['auto', 'lan', 'broadband', 'low'] as const;
 export const RDP_SCALING_MODES = ['auto', 'normal', 'hdpi'] as const;
 export const RDP_CUSTOM_SIZE_PATTERN = /^\d{3,5}x\d{3,5}$/;
 
-export function detectSystemLanguage(): 'de' | 'en' {
-  const language = typeof navigator !== 'undefined' ? (navigator.language ?? '') : '';
-  return language.toLowerCase().startsWith('de') ? 'de' : 'en';
-}
-
 export function getSettingsDefaults(): Settings {
   return {
     mode: 'local',
     url: '',
     intervalMinutes: 1,
-    language: detectSystemLanguage(),
+    language: systemLanguage(),
     storePasswords: false,
     rdpScalingMode: 'auto',
     rdpWindowMode: 'fit',

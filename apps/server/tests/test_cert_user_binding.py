@@ -23,6 +23,7 @@ from app.modules.api_keys.models import ApiKey
 from app.modules.audit.models import AuditLog
 from app.modules.users.models import User
 from tests.test_mtls_scope import _gateway_headers, _req
+from tests.token_claims import claims_for
 
 MISMATCH = "ERR_CERT_USER_MISMATCH"
 
@@ -33,12 +34,13 @@ def _enforced(monkeypatch):
 
 
 def _bearer(username: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token({'sub': username})}"}
+    return {"Authorization": f"Bearer {create_access_token(claims_for(username))}"}
 
 
 def _assert_mismatch(resp) -> None:
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"].startswith(f"{MISMATCH}: "), resp.text
+    assert resp.json()["code"] == MISMATCH, resp.text
 
 
 # --- API routes -------------------------------------------------------------
@@ -56,6 +58,19 @@ def test_another_users_certificate_is_refused_on_an_api_route(test_client, admin
         "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
     )
     _assert_mismatch(resp)
+
+
+def test_the_mismatch_body_is_the_text_and_its_code(test_client, admin_user, normal_user):
+    # The contract (R-0664): the detail word for word as before the code, the code next to it.
+    resp = test_client.get(
+        "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json() == {
+        "detail": "ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. "
+        "Sign in as that user, or register this device for yourself.",
+        "code": "ERR_CERT_USER_MISMATCH",
+    }
 
 
 def test_an_api_key_is_bound_to_no_user(test_client, db_session, normal_user):
@@ -131,7 +146,7 @@ def test_login_with_the_users_own_certificate_passes(test_client, admin_user):
 
 
 def test_refresh_with_another_users_certificate_is_refused(test_client, admin_user, normal_user):
-    refresh = create_refresh_token({"sub": "admin"})
+    refresh = create_refresh_token(claims_for("admin"))
     resp = test_client.post(
         "/api/auth/refresh",
         json={"refresh_token": refresh},
@@ -165,6 +180,7 @@ def test_opening_the_stream_with_another_users_certificate_is_refused(monkeypatc
         authenticate_stream_user(_req(headers))
     assert exc.value.status_code == 403
     assert exc.value.detail.startswith(f"{MISMATCH}: ")
+    assert exc.value.code == MISMATCH
 
     own = {"Authorization": "Bearer tok", **_gateway_headers(cn="admin")}
     assert authenticate_stream_user(_req(own)) == 1
@@ -217,7 +233,7 @@ def test_a_refused_login_is_audited(test_client, db_session, admin_user, normal_
 
 
 def test_a_refused_refresh_does_not_use_up_the_token(test_client, admin_user, normal_user):
-    refresh = create_refresh_token({"sub": "admin"})
+    refresh = create_refresh_token(claims_for("admin"))
     refused = test_client.post(
         "/api/auth/refresh", json={"refresh_token": refresh}, headers=_gateway_headers(cn="viewer")
     )

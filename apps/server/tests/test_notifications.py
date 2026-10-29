@@ -840,6 +840,71 @@ class TestIngress:
             assert res.status_code == 422, f"{error}: {res.status_code} {res.text}"
             assert [d["type"] for d in res.json()["detail"]] == [error], res.text
 
+    def _assert_reserved(self, res, label):
+        assert res.status_code == 422, f"{label}: {res.status_code} {res.text}"
+        assert [(d["loc"], d["msg"]) for d in res.json()["detail"]] == [
+            (["body", "source_type"], "reserved for notices of the server itself")
+        ], res.text
+
+    def test_a_source_type_of_the_server_is_refused(self, test_client, db_session, monkeypatch):
+        # Under frp_config and frps the server keeps notices of its own and finds them
+        # again by source_type: a row from the ingress would count as one of them.
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        for source_type in ("frp_config", "frps"):
+            for source_id in ("cfg-1:auth_token", None):
+                payload = {**self._payload(), "source_type": source_type, "source_id": source_id}
+                if source_id is None:
+                    del payload["source_id"]
+                res = test_client.post(
+                    self._PATH, headers={"X-Internal-Key": "secret"}, json=payload
+                )
+                self._assert_reserved(res, f"{source_type} {source_id}")
+        assert db_session.query(Notification).count() == 0
+
+        # Counter-probe: the same admin gets the row of a source type of the ingress.
+        res = test_client.post(
+            self._PATH, headers={"X-Internal-Key": "secret"}, json=self._payload()
+        )
+        assert res.status_code == 202, res.text
+        assert res.json() == {"notified": 1}
+        assert _count(db_session, admin) == 1
+
+    def test_the_refused_source_types_are_those_the_server_writes(
+        self, test_client, db_session, monkeypatch
+    ):
+        # Taken from the writers, not spelled out: a renamed source type on the
+        # server's side turns this red instead of reopening the ingress for it.
+        import app.main as m
+        from app.modules.frp import supervisor_watch
+        from app.modules.frp.models import FrpServerConfig
+
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        config = FrpServerConfig(
+            id="cfg-short",
+            name="frps",
+            server_addr="frps.example",
+            bind_port=7000,
+            auth_token="s" * 15,
+        )
+        db_session.add(config)
+        db_session.commit()
+        m._report_rejected_fields(db_session, config)
+        [told] = db_session.query(Notification).all()
+        assert told.source_id == "cfg-short:auth_token"
+
+        for source_type, source_id in (
+            (told.source_type, told.source_id),
+            (supervisor_watch.SOURCE_TYPE, "boot-1:1"),
+        ):
+            payload = {**self._payload(), "source_type": source_type, "source_id": source_id}
+            res = test_client.post(self._PATH, headers={"X-Internal-Key": "secret"}, json=payload)
+            self._assert_reserved(res, source_type)
+        assert db_session.query(Notification).count() == 1
+
 
 class TestAlertTriggeredHook:
     """T31: a critical monitoring.check.transition additionally fires the

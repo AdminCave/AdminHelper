@@ -34,16 +34,17 @@ const ADMIN_USER = {
   server_ids: [],
 };
 
-// GET /api/auth/me answers UserMe — three fields, not the full user row. The
+// GET /api/auth/me answers UserMe — four fields, not the full user row. The
 // mock used to hand back ADMIN_USER here, so the suite could not have caught a
 // UI that reads created_at/server_ids from a place that never sends them.
-/** A UserMe body — three fields, the shape GET /api/auth/me declares. Exported so
+/** A UserMe body — four fields, the shape GET /api/auth/me declares. Exported so
  * a spec that overrides the route describes it once, here, and not a second time
  * beyond the reach of mocks.contract.test.ts. */
 export const userMe = (id: number, username: string, isAdmin: boolean) => ({
   id,
   username,
   is_admin: isAdmin,
+  idle_timeout_minutes: 30,
 });
 
 const ADMIN_ME = userMe(ADMIN_USER.id, ADMIN_USER.username, ADMIN_USER.is_admin);
@@ -258,6 +259,12 @@ export const MOCK_FIXTURES: MockFixture[] = [
     status: 200,
     body: makeEnrollmentGrant({ username: 'bob', ttl_minutes: 10 }),
   },
+  {
+    method: 'GET',
+    path: 'servers/summary',
+    status: 200,
+    body: [{ id: 's1', name: 'web-01', hostname: 'web-01.example' }],
+  },
 ];
 
 export async function mockApi(page: Page): Promise<void> {
@@ -294,9 +301,9 @@ export async function mockApi(page: Page): Promise<void> {
   await page.route(api('auth/me'), async (route) => route.fulfill(json({ body: ADMIN_ME })));
   await page.route(api('auth/logout'), async (route) => route.fulfill({ status: 204, body: '' }));
 
-  // The user modal fetches the servers list; empty is fine for the current suites.
+  // The user modal fetches the server summary; empty is fine for the current suites.
   // Any other unmocked /api call now 500s loudly instead of silently returning [] (6.93).
-  await page.route(api('servers'), async (route) => route.fulfill(json({ body: [] })));
+  await page.route(api('servers/summary'), async (route) => route.fulfill(json({ body: [] })));
 
   await page.route(api('users'), async (route) => {
     if (route.request().method() === 'POST') {
