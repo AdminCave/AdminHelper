@@ -17,6 +17,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   koennen es abonnieren (Auswahl im Web mit Beschriftung DE+EN). Die Glocke meldet die Hochstufung unter
   „Sicherheit“ wie einen neu angelegten Admin („User promoted to admin: <Name>“, Schweregrad `warning`). Eine
   Herabstufung feuert kein Event. Doku: Monitoring (DE+EN), Hooks, Server und API-Referenz fuer Entwickler (DE+EN).
+- **Agent: `provision --token-stdin` liest den Provisionierungs-Token von stdin:** Bisher nahm `adminhelper-agent
+  provision` den Token nur als `--token`, also als Programmargument, das fuer die Dauer des Aufrufs in der
+  Prozessliste steht. Mit `--token-stdin` liest es die erste Zeile von stdin (hoechstens 4 KiB, Leerraum an den Enden
+  entfaellt) als Token. `--token` und `--token-stdin` schliessen einander aus, einer von beiden ist Pflicht; Aufrufe
+  mit `--token` bleiben gueltig. Bleibt auf stdin kein Token, bricht `provision` mit „no provision token on stdin“ ab,
+  bevor es den Server anspricht.
+- **`install.sh --admin-password-file` liest das Admin-Passwort aus einer Datei:** Fuer eine nicht-interaktive
+  Installation nahm `install.sh` das Passwort des Erst-Admins bisher nur als `--admin-password`, also als
+  Programmargument, das fuer den ganzen Lauf in der Prozessliste und in der Shell-History steht. `--admin-password-file
+  DATEI` nimmt die erste Zeile der Datei als Passwort (ein `\r` am Zeilenende entfaellt); ein relativer Pfad gilt ab
+  dem Verzeichnis, in dem `install.sh` gestartet wurde, auch wenn es die Laufzeit-Dateien nach `--dir` laedt. Ist die
+  Datei nicht lesbar oder ihre erste Zeile leer, bricht `install.sh` ab, bevor es etwas anlegt, und nennt nur den Pfad.
+  `--admin-password` funktioniert weiter und weist auf stderr auf `--admin-password-file` hin; beide zusammen sind ein
+  Fehler. README und Installations-Doku (DE+EN) nennen fuer den nicht-interaktiven Lauf nur noch
+  `--admin-password-file`.
 - **`SMTP_CA_FILE` fuer Relays mit eigener CA, im Notification-Hub und im Monitoring:** Die optionale Variable nennt
   eine PEM-Datei im Container mit der CA des Relays (selbstsigniertes Zertifikat oder Firmen-CA). Hub und E-Mail-Kanal
   der Alert-Regeln laden sie zusaetzlich zu den System-CAs, im Monitoring fuer jeden Relay, auch den einer Regel;
@@ -50,6 +65,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
+  der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
+  gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).
+- **Agent: nach einem Update prueft der Agent die frpc-Konfiguration einmal neu:** Der erste Lauf nach einem
+  Agent-Update holt die Konfiguration des Servers auch bei gleichem Hash und prueft sie; besteht sie, bleibt frpc
+  unberuehrt, sonst stoppt der Agent frpc wie bei jeder abgelehnten Konfiguration. Neue Datei `/etc/frp/.checked-by`.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Agent: ein abgelehnter frpc-Text stoppt frpc:** Weicht die frpc-Konfiguration des Servers von der Form ab, die
+  der Generator schreibt, stoppt und deaktiviert der Agent frpc und loescht `frpc.toml` und Hash, statt frpc auf der
+  alten Datei weiterlaufen zu lassen; der naechste Lauf holt und prueft erneut. Gilt fuer Abgleich und
+  Provisionierung. Doku: Agent-Entwicklerseite, Agent-Verteilung (DE+EN).
 - **Web-Panel: das Audit-Log zeigt die Spalte Detail:** Je Eintrag steht das Detail mit in der Tabelle, etwa die
   geaenderten Felder eines `user.updated`; bisher war es nur ueber `GET /api/audit` zu sehen. Doku: Betrieb (DE+EN).
 - **Web-Panel: ein gescheitertes Kopieren meldet sich ueberall gleich:** Scheitert das Kopieren in die Zwischenablage,
@@ -193,6 +219,27 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bisherigen Serien des Pushs mit nur `server_id` und `device` las keine Ansicht; sie bleiben bis zum Ende der
   Retention in VictoriaMetrics. `metricsWritten` in der Antwort des Pushs zaehlt sie nicht mehr. Doku: Monitoring fuer
   Entwickler (DE+EN).
+- **`agent-install.sh` installiert nur den gepinnten Repo-Schluessel:** Das Skript importiert die vom Server geladene
+  Keyring-Datei in ein eigenes, temporaeres GnuPG-Verzeichnis, exportiert daraus nur den Schluessel, dessen
+  Primaer-Fingerprint der Pin ist, und installiert diesen Export als `Signed-By` (apt) bzw. `gpgkey` (dnf), egal an
+  welcher Stelle der Schluessel in der Datei steht; bisher brach die Installation ab, wenn er nicht an erster Stelle
+  stand. Fehlt er, bricht es ab, bevor
+  eine Paketquelle geschrieben wird, und nennt den erwarteten und die gefundenen Fingerprints; der Fingerprint eines
+  Unterschluessels gilt nicht als Pin. `--gpg-fp` muss aus 40 Hex-Zeichen bestehen. Bestehende Agent-Hosts behalten
+  ihren Keyring, bis `agent-install.sh` dort wieder laeuft.
+- **`agent-install.sh` gibt den Provisionierungs-Token ueber stdin an den Agent:** Bisher las das Skript den Token
+  zwar auf Wunsch von `/dev/tty`, reichte ihn dann aber als `--token` an `adminhelper-agent provision` weiter, wo er
+  fuer die Dauer des Aufrufs in der Prozessliste stand. Kennt der installierte Agent `--token-stdin`, schreibt das
+  Skript den Token jetzt in dessen stdin. Ein aelterer Agent (aus dem Repo eines noch nicht aktualisierten Servers)
+  bekommt ihn wie bisher als `--token`, und das Skript warnt, dass der Token dabei als Programmargument uebergeben wird.
+- **`update.sh` prueft in der `.env` auch Anfuehrungszeichen und Schluessel:** Die Pruefung vor dem ersten
+  `docker compose`-Aufruf erkannte nur ein `${` ohne gueltigen Platzhalter. Ein nie geschlossenes Anfuehrungszeichen
+  und ein Schluessel, den Compose nicht annimmt (auch Text direkt hinter einem schliessenden Anfuehrungszeichen, den
+  Compose als naechsten Schluessel liest, oder ein Schluessel mit Leerzeichen), liess sie durch; Compose brach dann
+  jeden Aufruf ab, erst nach Backup und Tausch. Jetzt endet `update.sh` in
+  diesen Faellen vorher, ohne etwas zu aendern, auch bei `--check` und `--redeploy`, und nennt den Schluessel des
+  Werts oder die Zeilennummer, nie Wert oder Zeile. Ein BOM am Anfang der `.env` nimmt die Pruefung wie Compose an.
+  Doku: Installation (DE+EN).
 - **Server: das `extra_config` eines FRP-Tunnels nimmt keinen Schluessel der plugin-Familie an:** Ein Schluessel im
   `extra_config` eines FRP-Tunnels, dessen erstes Segment `plugin` ist, gleich ob gross oder klein geschrieben (etwa
   `plugin.type` oder `PLUGIN.type`), ergibt bei `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` jetzt `422`;

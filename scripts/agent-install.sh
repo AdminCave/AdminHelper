@@ -14,9 +14,9 @@
 #   * Packages: the server's repo plane (:8445) is served over an UNVERIFIED
 #     transport by design (a fresh host cannot know the internal CA yet) —
 #     authenticity hangs on the repo's OpenPGP signature, like any distro
-#     mirror. The keyring fetched from the server is therefore HARD-compared
-#     against the pinned project key fingerprint below (self-built repos
-#     override with --gpg-fp) before anything trusts it.
+#     mirror. Of the keyring fetched from the server ONLY the key whose primary
+#     fingerprint HARD-matches the pinned project key below (self-built repos
+#     override with --gpg-fp) is installed; any other key in it is dropped.
 #   * Server identity: with --ca-fp (value shown in the desktop's provisioning
 #     tab) the agent verifies the internal CA IN the TLS handshake — the
 #     one-time token never leaves this host unverified. Without it the agent
@@ -169,18 +169,42 @@ ensure_gpg() {
     command -v gpg >/dev/null 2>&1 || die "gpg is required for the keyring fingerprint check"
 }
 
-# verify_keyring FILE — hard-compare the primary key fingerprint against GPG_FP.
-# This IS the trust root for package authenticity; a mismatch means a wrong
+# primary_fprs HOME FILE — one line per primary key in FILE: the fingerprint of
+# the fpr record right after its pub record, "?" if none follows.
+primary_fprs() {
+    local listing
+    listing=$(gpg --homedir "$1" --batch --no-autostart --show-keys --with-colons "$2" 2>/dev/null) || true
+    awk -F: 'p {print ($1 == "fpr" ? toupper($10) : "?"); p = 0} $1 == "pub" {p = 1} END {if (p) print "?"}' <<<"$listing"
+}
+
+# pinned_keyring IN OUT [GPG_OPTION...] — write to OUT only the key of IN whose
+# PRIMARY fingerprint is GPG_FP, as gpg exports it from a throwaway keyring
+# (options such as --armor go to that export). Only OUT is installed, so another
+# key in the downloaded file is never trusted, wherever the pinned one stands.
+# This IS the trust root for package authenticity; no such key means a wrong
 # --gpg-fp, a stale doc value, or an active MITM — abort either way.
-verify_keyring() {
-    local got want
-    got=$(gpg --show-keys --with-colons "$1" 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')
-    [ -n "$got" ] || die "downloaded keyring is not a readable OpenPGP key"
+pinned_keyring() {
+    local in="$1" out="$2" home="$_TMPROOT/gnupg" want got
+    shift 2
     want=$(printf '%s' "$GPG_FP" | tr -d ': ' | tr 'a-f' 'A-F')
-    got=$(printf '%s' "$got" | tr 'a-f' 'A-F')
+    # Hex only: the pin becomes a gpg argument below.
+    case "$want" in *[!0123456789ABCDEF]*) want="" ;; esac
     [ ${#want} -eq 40 ] || die "--gpg-fp must be a 40-hex OpenPGP fingerprint"
-    [ "$got" = "$want" ] || die "repo keyring fingerprint mismatch — got ${got}, expected ${want}. Refusing (possible MITM or wrong --gpg-fp)."
-    log "repo signing key verified: $got"
+    # --no-autostart: gpg would otherwise start a gpg-agent for this homedir.
+    install -d -m 0700 "$home"
+    gpg --homedir "$home" --batch --no-autostart --import "$in" >/dev/null 2>&1 \
+        || die "downloaded keyring is not a readable OpenPGP key"
+    # gpg --export with a subkey fingerprint hands out the whole primary key;
+    # the check of the primary fingerprint below is what refuses it.
+    gpg --homedir "$home" --batch --no-autostart "$@" --export "$want" > "$out" 2>/dev/null \
+        || die "could not export the pinned repo key"
+    got=$(primary_fprs "$home" "$out")
+    if [ "$got" != "$want" ]; then
+        got=$(primary_fprs "$home" "$in" | tr '\n' ' ')
+        got="${got% }"
+        die "repo keyring fingerprint mismatch — got ${got:-no key}, expected ${want}. Refusing (possible MITM or wrong --gpg-fp)."
+    fi
+    log "repo signing key verified: $want"
 }
 
 setup_repo_apt() {
@@ -189,8 +213,8 @@ setup_repo_apt() {
     # bootstrap; the fingerprint check right below carries the authenticity.
     curl -fsSk --connect-timeout 10 "${REPO_BASE}/apt/adminhelper-archive-keyring.gpg" -o "$_TMPROOT/keyring.gpg" \
         || die "could not fetch the repo keyring from ${REPO_BASE}/apt/ (server without a signed repo? use --from-github or the release .deb)"
-    verify_keyring "$_TMPROOT/keyring.gpg"
-    install -D -m 0644 "$_TMPROOT/keyring.gpg" "${KEYRING_DIR}/adminhelper-archive-keyring.gpg"
+    pinned_keyring "$_TMPROOT/keyring.gpg" "$_TMPROOT/pinned.gpg"
+    install -D -m 0644 "$_TMPROOT/pinned.gpg" "${KEYRING_DIR}/adminhelper-archive-keyring.gpg"
 
     install -d -m 0755 "$APT_SOURCES_DIR" "$APT_CONF_DIR"
     cat > "${APT_SOURCES_DIR}/adminhelper.sources" <<EOF
@@ -234,10 +258,10 @@ setup_repo_dnf() {
     ensure_gpg
     curl -fsSk --connect-timeout 10 "${REPO_BASE}/rpm/RPM-GPG-KEY-adminhelper" -o "$_TMPROOT/rpmkey.asc" \
         || die "could not fetch the repo key from ${REPO_BASE}/rpm/ (server without a signed repo?)"
-    verify_keyring "$_TMPROOT/rpmkey.asc"
+    pinned_keyring "$_TMPROOT/rpmkey.asc" "$_TMPROOT/pinned.asc" --armor
     # gpgkey points at the LOCAL, fingerprint-verified file — never back at the
     # unverified transport.
-    install -D -m 0644 "$_TMPROOT/rpmkey.asc" "${RPM_KEY_DIR}/RPM-GPG-KEY-adminhelper"
+    install -D -m 0644 "$_TMPROOT/pinned.asc" "${RPM_KEY_DIR}/RPM-GPG-KEY-adminhelper"
 
     install -d -m 0755 "$YUM_REPO_DIR"
     write_dnf_repo "sslverify=0"
@@ -315,14 +339,26 @@ if [ -z "$TOKEN" ]; then
     [ -n "$TOKEN" ] || die "--token missing and no interactive terminal to ask on"
 fi
 
-PROV_ARGS=(--url "$SERVER_URL" --token "$TOKEN" --server-id "$SERVER_ID")
+# Version skew: the server repo ships the server's agent version, which may
+# predate a flag this script knows — ask its help once. Into a variable, not
+# `| grep -q`: under pipefail an early-exiting grep can fail the probe via SIGPIPE.
+PROV_HELP=$(adminhelper-agent provision --help 2>&1 || true)
+
+if grep -q -- '--token-stdin' <<<"$PROV_HELP"; then
+    TOKEN_STDIN=1
+    PROV_ARGS=(--url "$SERVER_URL" --token-stdin --server-id "$SERVER_ID")
+else
+    TOKEN_STDIN=0
+    warn "installed agent predates --token-stdin — the provision token is passed as a program argument (visible in the process list while it runs)."
+    PROV_ARGS=(--url "$SERVER_URL" --token "$TOKEN" --server-id "$SERVER_ID")
+fi
 if [ -n "$CA_FP" ]; then
-    if adminhelper-agent provision --help 2>&1 | grep -q -- '--ca-fp'; then
+    if grep -q -- '--ca-fp' <<<"$PROV_HELP"; then
         PROV_ARGS+=(--ca-fp "$CA_FP")
         log "first contact will be VERIFIED against the CA fingerprint."
     else
-        # Version skew: the server repo ships the server's agent version, which
-        # may predate --ca-fp. Fall back to TOFU rather than failing the rollout.
+        # An agent that predates --ca-fp: fall back to TOFU rather than failing
+        # the rollout.
         warn "installed agent predates --ca-fp — falling back to trust-on-first-use."
         warn "compare the fingerprint the agent prints against the desktop's provisioning tab!"
         PROV_ARGS+=(--insecure)
@@ -331,7 +367,12 @@ else
     warn "no --ca-fp given — first contact is trust-on-first-use; compare the printed fingerprint out-of-band."
     PROV_ARGS+=(--insecure)
 fi
-adminhelper-agent provision "${PROV_ARGS[@]}" || die "provisioning failed"
+if [ "$TOKEN_STDIN" = 1 ]; then
+    # printf is a builtin: no child process carries the token in its argv.
+    printf '%s\n' "$TOKEN" | adminhelper-agent provision "${PROV_ARGS[@]}" || die "provisioning failed"
+else
+    adminhelper-agent provision "${PROV_ARGS[@]}" || die "provisioning failed"
+fi
 
 # ── 3) post-enroll hardening: pin the internal CA for future repo pulls ──────
 if [ -f "$IDENTITY_CA" ]; then
