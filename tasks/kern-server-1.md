@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-server-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-server-1 · Review: pro Task
 Spec: docs/features/kern-server-1.md (Roadmap R-0827, R-0832, R-0836, R-0837, R-0839, R-0845, R-0846, R-0897, R-0901, R-0942)
 Heavy: linux-full — T8 ändert die Namensauflösung für Gateway und TRUSTED_PROXIES (Gateway-Pfad), T7 den Bootstrap auf Postgres mit mehreren Workern
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
