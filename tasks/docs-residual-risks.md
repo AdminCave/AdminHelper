@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Nachzüge: hingenommene Restrisiken, Drift zwischen Doku und Code, CHANGELOG-Glättung — Task-Ledger
-Status: geplant · Branch: feature/docs-residual-risks · Review: pro Task
+Status: aktiv · Branch: feature/docs-residual-risks · Review: pro Task
 Spec: docs/features/docs-residual-risks.md (Roadmap R-0798, R-0453, R-0754, R-0758, R-0769, R-0770, R-0791, R-0794, R-0595, R-0782, R-0602, R-0609, R-0732, R-0792, R-0601)
 Heavy: linux-full — `docker-compose.yml` (nur ein Kommentar) und das Monitoring-Image (`apps/monitoring/docker-entrypoint.sh`, zwei Meldungstexte) in T10, bei Kevins Ja zu T15 `apps/desktop/src-tauri/src/frpc.rs` (Desktop-Tunnel); läuft im Sammellauf über `main`. Kein scenario: weder FRP-Konfiguration noch Visitor-TOML noch Datenpfad ändern sich, T15 ändert nur, wann der Desktop seinen frpc stoppt (Unit-Test). Kein windows über die PR-CI hinaus: kein plattformspezifischer Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
