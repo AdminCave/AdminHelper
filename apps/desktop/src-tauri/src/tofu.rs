@@ -212,6 +212,13 @@ impl PinStore for KeyringPinStore {
         if let Some(hit) = self.cached(identity) {
             return Ok(Some(hit));
         }
+        // Under the lock of the identity, like `forget`: a pin read before a forget must not
+        // land in the cache after it.
+        let lock = self.identity_lock(identity);
+        let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(hit) = self.cached(identity) {
+            return Ok(Some(hit));
+        }
         let stored = (self.read)(identity)?;
         if let Some(ref fingerprint) = stored {
             self.remember(identity, fingerprint);
@@ -668,6 +675,41 @@ mod tests {
         );
         open.send(()).unwrap();
         assert_eq!(first.recv_timeout(ANSWER).unwrap(), PinDecision::Capture);
+        done.recv_timeout(ANSWER).unwrap();
+        assert_eq!(p.store.cached("x.example"), None);
+        assert!(p.keyring.lock().unwrap().get("x.example").is_none());
+    }
+
+    #[test]
+    fn forgetting_waits_for_a_load_that_is_reading() {
+        let (gate, open, entered) = Gate::new();
+        let p = probe(Some(("x.example".into(), gate)), None, false, no_failure());
+        p.keyring
+            .lock()
+            .unwrap()
+            .insert("x.example".into(), FP_A.into());
+        let (loaded_tx, loaded) = mpsc::channel();
+        let store = Arc::clone(&p.store);
+        std::thread::spawn(move || {
+            let _ = loaded_tx.send(store.load("x.example"));
+        });
+        entered.recv_timeout(ANSWER).unwrap();
+
+        let (done_tx, done) = mpsc::channel();
+        let store = Arc::clone(&p.store);
+        std::thread::spawn(move || {
+            store.forget("x.example").unwrap();
+            let _ = done_tx.send(());
+        });
+        assert!(
+            done.recv_timeout(Duration::from_millis(300)).is_err(),
+            "forget returned while a load was reading"
+        );
+        open.send(()).unwrap();
+        assert_eq!(
+            loaded.recv_timeout(ANSWER).unwrap().unwrap().as_deref(),
+            Some(FP_A)
+        );
         done.recv_timeout(ANSWER).unwrap();
         assert_eq!(p.store.cached("x.example"), None);
         assert!(p.keyring.lock().unwrap().get("x.example").is_none());

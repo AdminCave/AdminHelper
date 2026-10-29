@@ -31,8 +31,10 @@ Review: approve (.ah-out/review/kern-desktop-1/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- http_client
 Doku: changelog.d/kern-desktop-1.md
 
-### T3 — RDP-Start nach Fristende, Pin-Laden unter der Sperre (R-0932)  [ ]
+### T3 — RDP-Start nach Fristende, Pin-Laden unter der Sperre (R-0932)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp.rs, apps/desktop/src-tauri/src/tofu.rs, changelog.d/kern-desktop-1.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8e42d009 2026-10-29T18:49:54+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T3.verdict.json)
 Änderung: `open_rdp` (`connection/rdp.rs:127-136`) prüft vor `check_rdp_auth`, ob die Frist schon abgelaufen ist, und endet dann mit `TIMEOUT_MESSAGE`, ohne einen Prozess zu starten; `KeyringPinStore::load` (`tofu.rs:211`) liest nach einem Cache-Fehltreffer unter der Sperre je Identität. Einzelheiten privat. Tests je Regel, zuerst rot.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: changelog.d/kern-desktop-1.md
@@ -67,3 +69,4 @@ Doku: docs/admin/frp-tunnel.html + EN (Hinweis bei verweigertem Zugriff) · chan
 Abhängt von: T6
 
 ## Entscheidungen
+- T3: Die Fristprüfung steht am Anfang von `check_rdp_auth` (einziger Aufrufer `open_rdp`), nicht in `open_rdp`: dort ist sie ohne AppHandle testbar; Wirkung gleich (kein xfreerdp, `TIMEOUT_MESSAGE`).

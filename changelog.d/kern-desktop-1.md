@@ -6,3 +6,5 @@
 - **Desktop: Client-Cache nach einem Identitaetswechsel:** Wechselt die Geraete-Identitaet oder ein gepinntes
   Zertifikat, waehrend ein HTTP-Client entsteht, behaelt der Desktop diesen Client nicht im Cache; die naechste
   Anfrage baut ihn neu.
+- **Desktop: RDP-Start nach Ablauf der Frist:** Ist die Zeit fuer den Verbindungsaufbau schon abgelaufen, startet
+  der Desktop keine Anmeldepruefung mehr und meldet die Zeitueberschreitung.
