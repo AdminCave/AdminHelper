@@ -141,8 +141,10 @@ Orakel: contract — Kommentar gegen den Code, den er beschreibt
 Dedup-Key: bug:docs:desktop.html:tofu-err-codes
 HEAD: b25c65a6
 
-### T9 — Dev-Setup: `apps/data/` ignoriert, Monitoring-DB-Fallback in DEVELOPMENT.md (R-0791, R-0602)  [ ]
+### T9 — Dev-Setup: `apps/data/` ignoriert, Monitoring-DB-Fallback in DEVELOPMENT.md (R-0791, R-0602)  [x]
 Komponente: scripts · Dateien: .gitignore, scripts/tests/gitignore_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @da22960f 2026-10-29T11:06:35+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T9.verdict.json)
 Änderung: (1) `.gitignore` neben `/data/` (`:115`): `/apps/data/` mit einem Kommentar (Dev-Server aus `apps/server` mit `DATA_DIR=../data`, `DEVELOPMENT.md:762`, `:1435`, schreibt `.secret_key` und `.bootstrap_token` dorthin). (2) `scripts/tests/gitignore_test.sh`, Block „the real .gitignore“: `apps/data/.secret_key` und `apps/data/.bootstrap_token` sind ignoriert (Helfer `ignored "$G" <layout> <pfad>`; ein Layout-Wert außer `dir`/`symlink` legt nichts an, der Pfad muss für `check-ignore` nicht existieren), dazu `apps/server/app/main.py` nicht ignoriert (Gegenprobe, dass die neue Zeile nicht zu weit greift). Zuerst rot: die zwei neuen Assertions auf HEAD (rc=1). (3) `DEVELOPMENT.md`, Abschnitt „### Monitoring (lokal ohne Docker)“ (`:894-907`): ein Absatz wie der zum Server (`:771`): Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py:57-66`); hat die Rolle ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“, `:173`), scheitert das, dann `DATABASE_URL` mit Passwort setzen; die Datenbank `adminhelper_monitor` legt lokal niemand an (das tut nur der Container-Entrypoint). Stil des Abschnitts (ae/oe/ue wie dort).
 Verify: bash scripts/dev/verify.sh scripts --strict -- gitignore_test
 Doku: DEVELOPMENT.md (in dieser Task); kein CHANGELOG
