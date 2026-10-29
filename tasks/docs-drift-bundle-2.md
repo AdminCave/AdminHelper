@@ -14,8 +14,10 @@ Für alle Tasks: die Zeilenangaben der Roadmap sind verrutscht; jede Aussage vor
 greppen und die Codestelle lesen. Ist eine Stelle schon richtig, die Task mit `mark-skip` und Beleg schließen.
 Verhaltensänderung oder Fund außerhalb der Zeile: melden, nicht bauen. Doku DE+EN gemeinsam.
 
-### T1 — Compose- und Entrypoint-Kommentare zur mTLS-Phase und zum Identitäts-Header (R-0848, R-0904)  [ ]
+### T1 — Compose- und Entrypoint-Kommentare zur mTLS-Phase und zum Identitäts-Header (R-0848, R-0904)  [x]
 Komponente: scripts · Dateien: docker-compose.yml, apps/server/docker-entrypoint.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @64ff21ee 2026-10-29T12:47:58+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T1.verdict.json)
 Änderung: `docker-compose.yml` (`:211` „permissive mTLS this phase; CERT_REQUIRED in A8“, `:227-229` „permissive window … before arming“) auf den Stand „mTLS ab Installation scharf, `MTLS_ENFORCE=false` nur für manuellen Erst-Bootstrap“ (`scripts/install.sh:11-12`). `docker-compose.yml:46-49` und `docker-entrypoint.sh:48-51`: nicht „nobody can reach this socket“, sondern: andere Compose-Dienste erreichen `server:8080`; der Schutz ist die Prüfung der Gegenstelle in `apps/server/app/identity.py` (`_peer_is_gateway`). Nur Kommentare.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: keine (nur Kommentare)

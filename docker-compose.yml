@@ -44,9 +44,11 @@ services:
   server:
     image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
     # No host port: the server listens plain-HTTP on the compose network only.
-    # The gateway is the single public TLS edge and proxies to server:8080. This
-    # is what makes the gateway's X-Client-* identity header unforgeable — there
-    # is no direct path to this socket from the host (ADR 0001 §3.2).
+    # The gateway is the single public TLS edge and proxies to server:8080. The
+    # missing host port keeps out only the outside; the other services of this
+    # network reach server:8080 too. What makes the gateway's X-Client-* identity
+    # header trustworthy is the server checking the request's direct peer
+    # (app/core/identity.py, _peer_is_gateway), not the socket (ADR 0001 §3.2).
     expose:
       - "8080"
     volumes:
@@ -208,7 +210,7 @@ services:
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/admincave/adminhelper/gateway:latest}
     # The single public TLS/mTLS edge for the HTTP planes (ADR 0001 D11).
-    #   :443   data plane  -> server  (permissive mTLS this phase; CERT_REQUIRED in A8)
+    #   :443   data plane  -> server  (mTLS enforced by default: CERT_REQUIRED)
     #   :8444  enroll plane -> ca-issuer (certless, token-gated)
     #   :8445  repo plane   -> static GPG-signed apt/rpm repo (certless, ./repo)
     # TLS material (access-signed leaf + CA bundle) is provisioned by the
@@ -224,9 +226,10 @@ services:
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Default true → data plane :443 is CERT_REQUIRED (ssl_verify_client on);
-      # set false for a permissive window (optional). Flip together with the
-      # server's MTLS_ENFORCE. scripts/install.sh sets up the first admin's cert
-      # before arming, so a fresh install is usable enforced (see docs/Betrieb).
+      # false is permissive, only for a manual first-admin bootstrap. Flip
+      # together with the server's MTLS_ENFORCE. scripts/install.sh sets up the
+      # first admin's cert out-of-band, so a fresh install is enforced from the
+      # start (see docs/Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
     logging: *default-logging
     restart: unless-stopped
