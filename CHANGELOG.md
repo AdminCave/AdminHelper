@@ -66,7 +66,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Changed
 
 - **Server-Log nennt bei weiteren Fehlern nur den Fehlertyp:** Scheitert das Entfernen der `frps.toml`, steht im
-  Log der Fehlertyp ohne Traceback und ohne Fehlertext (R-0766).
+  Log der Fehlertyp ohne Traceback und ohne Fehlertext (R-0766). Die Warnungen des Redis-Rate-Limits nennen nur den
+  Fehlertyp, und ein IPv6-Host steht im Log in eckigen Klammern (R-0776).
 - **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
   der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
   gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).

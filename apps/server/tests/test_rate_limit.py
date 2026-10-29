@@ -182,7 +182,39 @@ def test_reachable_redis_logs_only_its_target(fake_redis, caplog):
         ("redis://u:p@[::1/0", "?"),
         # No host.
         ("redis://u:p@/0", "?"),
+        ("redis://:s3cr3t-pw@[2001:db8::1]:6379/0", "redis://[2001:db8::1]:6379"),
+        ("rediss://[2001:db8::1]", "rediss://[2001:db8::1]"),
     ],
 )
 def test_redis_target_keeps_only_scheme_host_and_port(url, target):
     assert rl._redis_target(url) == target
+
+
+class _FailingRedis:
+    def _fail(self, *args, **kwargs):
+        raise ConnectionError("Error 111 connecting to redis.example:6379 password=s3cr3t-pw")
+
+    get = delete = execute = _fail
+
+    def pipeline(self):
+        return types.SimpleNamespace(
+            incr=lambda *a, **k: None, expire=lambda *a, **k: None, execute=self._fail
+        )
+
+
+def test_a_failing_redis_logs_only_the_error_type(caplog):
+    backend = rl.RedisBackend(_FailingRedis())
+    with caplog.at_level(logging.WARNING, logger="adminhelper.rate_limit"):
+        assert backend.get_count("k") == 0
+        assert backend.increment("k", 60) == 1
+        backend.reset("k")
+    warnings = [
+        r
+        for r in caplog.records
+        if r.name == "adminhelper.rate_limit" and r.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 3
+    assert all("ConnectionError" in r.getMessage() for r in warnings)
+    assert all(r.exc_info is None for r in caplog.records)
+    assert "s3cr3t-pw" not in caplog.text
+    assert "Error 111" not in caplog.text

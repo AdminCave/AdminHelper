@@ -102,8 +102,10 @@ Orakel: contract — vom Fehler steht im Log nur sein Typ
 Dedup-Key: ref:server:docker_manager.py:remove-logs-traceback
 HEAD: 53a7dbc5
 
-### T6 — Rate-Limit: Redis-Warnungen nur mit Typ, IPv6-Ziel in Klammern  [ ]
+### T6 — Rate-Limit: Redis-Warnungen nur mit Typ, IPv6-Ziel in Klammern  [x]
 Komponente: server · Dateien: apps/server/app/core/rate_limit.py, apps/server/tests/test_rate_limit.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7267d0bc 2026-10-29T10:16:21+01:00
+Review: approve (.ah-out/review/server-multiworker/T6.verdict.json)
 Änderung: In `RedisBackend` (SH `apps/server/app/core/rate_limit.py:80-114`) loggen `get_count`, `increment` und `reset` statt `e` nur `type(e).__name__`, englisch: `"Redis get failed (%s), falling back to in-memory: %s"`, `"Redis incr failed (%s), falling back to in-memory: %s"`, `"Redis del failed (%s): %s"` mit `key` und Typ (SH `:95`, `:106`, `:113`); der Rückfall bleibt. `_redis_target` (SH `:125-142`) setzt einen Host mit `:` in eckige Klammern (SH `:141`): `redis://[2001:db8::1]:6379`. Tests in `test_rate_limit.py`: (a) ein Client-Stand-in, dessen `get`, `pipeline().execute()` und `delete` `ConnectionError("Error 111 connecting to redis.example:6379 password=s3cr3t-pw")` werfen → `get_count` liefert 0, `increment` 1, `reset` wirft nicht; je Aufruf genau eine WARNING von `adminhelper.rate_limit`, die `ConnectionError` nennt; `s3cr3t-pw` und `Error 111` stehen nicht in `caplog.text`; kein `exc_info`. (b) Die Parametrisierung von `test_redis_target_keeps_only_scheme_host_and_port` (SH `tests/test_rate_limit.py:172-188`) bekommt `("redis://:s3cr3t-pw@[2001:db8::1]:6379/0", "redis://[2001:db8::1]:6379")` und `("rediss://[2001:db8::1]", "rediss://[2001:db8::1]")`. Zuerst rot: (a) und (b) auf dem Stand vor dem Fix (Fehlertext im Log; Ziel ohne Klammern).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_rate_limit.py
 Doku: CHANGELOG.md (Changed, umlautfrei: den Eintrag aus T5 ergaenzen — die Warnungen des Redis-Rate-Limits nennen nur den Fehlertyp; ein IPv6-Host steht im Log in Klammern)
