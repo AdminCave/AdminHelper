@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung 3: Ansible-Laufverzeichnis, Playbook-Name, Sync-Doku, Pin-Reset, Provisionierungsbefehl — Task-Ledger
-Status: bereit · Branch: feature/desktop-hardening-3 · Review: pro Task
+Status: erledigt · Branch: feature/desktop-hardening-3 · Review: pro Task
 Spec: docs/features/desktop-hardening-3.md (Roadmap R-0748, R-0771, R-0817; Härtung, Kevin 2026-10-22)
 Heavy: linux-full + windows — linux-full: T7 und T9 ändern den Provisionierungs-Tab, den `provisioning.live.js` zeigt, T5 den Pin-Reset in Login und Einstellungen, T1 den Ansible-Lauf (GUI-E2E im Sammellauf über `main`); windows = der Job `rust-windows` der PR-CI (keine Windows-VM im Pool): T1 legt das Laufverzeichnis unter `%TEMP%` an, T2 ändert den Namen, der an `wt`/`cmd` geht, T5 und T6 ändern `tofu.rs`; kein `scenario` (kein FRP-Datenpfad, keine PKI, `enrollment.rs` unverändert, kein Install-Skript)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
