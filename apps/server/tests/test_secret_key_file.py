@@ -181,6 +181,38 @@ def test_an_existing_key_file_is_read_unchanged(key_env, umask_zero, no_chmod):
     )
 
 
+@pytest.mark.parametrize("key_env", [None], ids=["unset"], indirect=True)
+@pytest.mark.parametrize("mode", [0o644, 0o640, 0o604])
+def test_a_key_file_others_may_read_is_used_with_a_warning(key_env, mode, caplog):
+    key_file = key_env / ".secret_key"
+    key_file.write_text("stored-key\n")
+    key_file.chmod(mode)
+
+    with caplog.at_level("WARNING", logger="adminhelper.config"):
+        assert config._resolve_secret_key() == "stored-key"
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    text = warnings[0].getMessage()
+    assert str(key_file) in text
+    assert oct(mode)[2:] in text
+    assert "stored-key" not in caplog.text
+    assert _mode(key_file) == mode, "the server only warns, it does not change the file"
+
+
+@pytest.mark.parametrize("key_env", [None], ids=["unset"], indirect=True)
+@pytest.mark.parametrize("mode", [0o600, 0o400])
+def test_a_private_key_file_is_used_without_a_warning(key_env, mode, caplog):
+    key_file = key_env / ".secret_key"
+    key_file.write_text("stored-key\n")
+    key_file.chmod(mode)
+
+    with caplog.at_level("WARNING", logger="adminhelper.config"):
+        assert config._resolve_secret_key() == "stored-key"
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
 def _token_stand_in(monkeypatch, token_urlsafe):
     monkeypatch.setattr(config, "secrets", types.SimpleNamespace(token_urlsafe=token_urlsafe))
 

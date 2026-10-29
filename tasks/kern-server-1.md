@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-server-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
 Doku: changelog.d/kern-server-1.md
 
-### T2 — Warnung bei zu weiten Rechten der Schlüsseldatei (R-0832)  [ ]
+### T2 — Warnung bei zu weiten Rechten der Schlüsseldatei (R-0832)  [x]
 Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/tests/test_secret_key_file.py, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d2d1a44c 2026-10-29T17:40:02+01:00
+Review: approve (.ah-out/review/kern-server-1/T2.verdict.json)
 Änderung: `_resolve_secret_key` (`app/core/config.py:86-109`) loggt beim Lesen einer vorhandenen `DATA_DIR/.secret_key` eine Warnung (englisch, Pfad und Modus, nie der Inhalt), wenn `mode & 0o077`; der Schlüssel wird weiter genutzt. Tests: 0644 → Warnung, 0600 → keine.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_secret_key_file.py
 Doku: docs/admin/installation.html + EN (Datei `.secret_key` 0600, Warnung beim Start) · changelog.d/kern-server-1.md
