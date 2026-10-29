@@ -10,3 +10,6 @@
 - **Server: Mail-Betreff einzeilig wie im Monitoring:** Der Benachrichtigungs-Hub ersetzt Steuerzeichen und
   Zeilentrenner im Betreff durch Leerzeichen, wie es das Monitoring seit monitoring-hardening-2 tut; der Text der
   Mail bleibt unveraendert.
+- **Server-Hooks: NaN/Infinity im Webhook-Body ergibt 422:** Ein JSON-Body mit `NaN`, `Infinity` oder `-Infinity`
+  fuehrte zu 500, sobald die Antwort ihn zurueckgab; der Trigger lehnt nicht-endliche Zahlen jetzt mit 422 an
+  ihrer Stelle ab.

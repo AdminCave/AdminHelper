@@ -47,8 +47,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_webhook_d
 Doku: docs/developer/hooks.html + EN (Ausgabe bei offenem stdout) · changelog.d/kern-server-1.md
 Abhängt von: T3
 
-### T5 — Webhook-Body mit NaN/Infinity → 422 (R-0837)  [ ]
+### T5 — Webhook-Body mit NaN/Infinity → 422 (R-0837)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/tests/test_hooks_webhook_payload.py, changelog.d/kern-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @47d87394 2026-10-29T17:56:05+01:00
+Review: approve (.ah-out/review/kern-server-1/T5.verdict.json)
 Änderung: Erst den Fund mit einem Test belegen (Body `{"x": NaN}` an den Webhook-Trigger). Ist er rot (500), lehnt der Router nicht-endliche Zahlen wie die übrigen unspeicherbaren Werte mit 422 ab; ist er grün, bleibt der Test als Beleg und der Code unverändert (Entscheidungszeile).
 Beweis: Code-Lesung `app/modules/hooks/router.py:213-216` (nicht verifiziert)
 Dedup-Key: bug:server:hooks/router.py:nan-body
