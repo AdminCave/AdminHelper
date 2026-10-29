@@ -251,4 +251,55 @@ describe('logout across tabs', () => {
     await expect(loggedOut).resolves.toBeUndefined();
     expect(tab.client.getAccessToken()).toBeNull();
   });
+
+  it('clears the token and frees the lock when the logout fails', async () => {
+    installLockManager();
+    const server = stubAuthServer();
+    const tabA = await openAuthTab();
+    const tabB = await openAuthTab();
+    tabA.client.setAccessToken('access-a');
+
+    const loggedOutA = tabA.auth.logout();
+    const restoredB = tabB.client.restoreSession();
+    await vi.waitFor(() => expect(server.sent()).toEqual([LOGOUT]));
+    server.answer(LOGOUT, { detail: 'boom' }, 500);
+
+    await expect(loggedOutA).resolves.toBeUndefined();
+    expect(tabA.client.getAccessToken()).toBeNull();
+    // The lock is free again: the refresh waiting behind the failed logout goes out.
+    await vi.waitFor(() => expect(server.sent()).toEqual([LOGOUT, REFRESH]));
+    server.answer(REFRESH, { access_token: 'access-b' });
+    await expect(restoredB).resolves.toBe(true);
+  });
+
+  it('never refreshes for an /auth/ path, so the logout under the lock cannot wait for itself', async () => {
+    installLockManager();
+    const server = stubAuthServer();
+    const tab = await openAuthTab();
+    tab.client.setAccessToken('access-a');
+
+    const loggedOut = tab.auth.logout();
+    await vi.waitFor(() => expect(server.sent()).toEqual([LOGOUT]));
+    // 401 would start a refresh for any other path, which waits for the lock the logout holds.
+    server.answer(LOGOUT, { detail: 'Not authenticated' }, 401);
+
+    await expect(loggedOut).resolves.toBeUndefined();
+    expect(server.sent()).toEqual([LOGOUT]);
+  });
+
+  it('does not refresh after a 401 from an /auth/ path outside the lock either', async () => {
+    const server = stubAuthServer();
+    const tab = await openAuthTab();
+    tab.client.setAccessToken('access-a');
+
+    const me = tab.auth.me();
+    const failed = expect(me).rejects.toBeDefined();
+    await vi.waitFor(() => expect(server.sent()).toEqual(['/api/auth/me']));
+    server.answer('/api/auth/me', { detail: 'Not authenticated' }, 401);
+
+    await failed;
+    // Give a refresh every chance to start.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.sent()).toEqual(['/api/auth/me']);
+  });
 });

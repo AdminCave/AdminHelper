@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-web-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-web-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-tests-web-1 · Review: pro Task
 Spec: docs/features/klein-tests-web-1.md (Roadmap R-0888, R-0891)
 Heavy: none — Unit-Tests im Web-Frontend, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -20,8 +20,10 @@ Dedup-Key: ref:web:App.idle.test.ts:zero-off-window
 Verify: bash scripts/dev/verify.sh web --strict -- src/App.idle.test.ts
 Doku: keine (Test)
 
-### T2 — client.crosstab.test: scheiternder Logout und /auth/-Pfade ohne Refresh (R-0891)  [ ]
+### T2 — client.crosstab.test: scheiternder Logout und /auth/-Pfade ohne Refresh (R-0891)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/client.crosstab.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @a915488e 2026-10-29T22:23:00+01:00
+Review: approve (.ah-out/review/klein-tests-web-1/T2.verdict.json)
 Änderung: Zwei Fälle in `logout across tabs`: (1) der Logout wird mit 500 beantwortet, endet ohne Fehler, löscht das Token und gibt die Sperre frei (ein Refresh eines anderen Tabs läuft danach); (2) eine 401-Antwort auf einen `/auth/`-Pfad (Logout unter der Sperre und `me`) löst nie einen Refresh aus. Gegenprobe: `!path.includes('/auth/')` in `client.ts` entfernt färbt (2) rot.
 Beweis: R-0891 Code-Lesung client.crosstab.test.ts:217, lib/api/auth.ts:21
 Dedup-Key: ref:web:auth.ts:lock-tests-missing
