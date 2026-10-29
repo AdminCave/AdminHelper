@@ -2461,6 +2461,38 @@
         "title": "IncomingEvent",
         "type": "object"
       },
+      "InternalServerOut": {
+        "description": "One server as the monitoring service's tag-sync reads it.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "hostname",
+          "name",
+          "tags"
+        ],
+        "title": "InternalServerOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "password": {
@@ -2733,6 +2765,82 @@
           "hostname"
         ],
         "title": "ServerCreate",
+        "type": "object"
+      },
+      "ServerOut": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOut"
+            },
+            "title": "Connections",
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "frpTunnels": {
+            "items": {
+              "$ref": "#/components/schemas/FrpTunnelOut"
+            },
+            "title": "Frptunnels",
+            "type": "array"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "osType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ostype"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname",
+          "osType",
+          "tags",
+          "notes",
+          "createdAt",
+          "connections",
+          "frpTunnels"
+        ],
+        "title": "ServerOut",
         "type": "object"
       },
       "ServerSummary": {
@@ -5722,7 +5830,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InternalServerOut"
+                  },
+                  "title": "Response List Servers Internal Api Internal Servers Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -6170,7 +6284,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerOut"
+                  },
+                  "title": "Response List Servers Api Servers Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -6212,7 +6332,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6325,7 +6447,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6378,7 +6502,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOut"
+                }
               }
             },
             "description": "Successful Response"

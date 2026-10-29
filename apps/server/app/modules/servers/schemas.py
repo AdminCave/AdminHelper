@@ -7,7 +7,8 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.core.bounds import RequestModel
-from app.modules.frp.schemas import _reject_toml_breakers, _validate_tags
+from app.modules.connections.schemas import ConnectionOut
+from app.modules.frp.schemas import FrpTunnelOut, _reject_toml_breakers, _validate_tags
 
 
 def _validate_server_name(v: Optional[str]) -> Optional[str]:
@@ -56,3 +57,24 @@ class ServerSummary(BaseModel):
     id: str
     name: str
     hostname: str
+
+
+class ServerOut(BaseModel):
+    id: str
+    name: str
+    hostname: str
+    osType: Optional[str]
+    tags: list[str]
+    notes: str
+    createdAt: Optional[str]
+    connections: list[ConnectionOut]
+    frpTunnels: list[FrpTunnelOut]
+
+
+class InternalServerOut(BaseModel):
+    """One server as the monitoring service's tag-sync reads it."""
+
+    id: str
+    hostname: str
+    name: str
+    tags: list[str]

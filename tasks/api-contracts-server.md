@@ -59,8 +59,10 @@ Orakel: contract — das Modell gegen `Connection.to_dict` über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T2 — servers: `ServerOut` und `InternalServerOut` (R-0684)  [ ]
+### T2 — servers: `ServerOut` und `InternalServerOut` (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/servers/schemas.py, apps/server/app/modules/servers/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @775ed939 2026-10-29T22:06:21+01:00
+Review: approve (.ah-out/review/api-contracts-server/T2.verdict.json)
 Änderung: `ServerOut` wie `Server.to_dict` (`apps/server/app/modules/servers/models.py:41-55`): `id`, `name`, `hostname: str`, `osType: Optional[str]`, `tags` (Regel 3, Validierung `servers/schemas.py:39`, `:50`), `notes: str`, `createdAt: Optional[str]`, `connections: list[ConnectionOut]` (`include_connections` ist überall `True`, kein Aufrufer setzt es), `frpTunnels: list[FrpTunnelOut]` (`apps/server/app/modules/frp/schemas.py:312`). `InternalServerOut` `{id, hostname, name, tags}` (`servers/router.py:78-86`). Routen `GET ''` (`:90`), `POST ''` (`:103`), `GET /{server_id}` (`:136`), `PUT /{server_id}` (`:144`) mit `response_model_exclude_unset=True` (verschachtelt `serverId` der Verbindungen); intern `GET /servers` (`:70`, `list[InternalServerOut]`). Tests nach Muster; (b) Server mit einer Verbindung und einem Tunnel, Server ohne beides und ohne `os_type`, `tags`, `notes`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_internal_servers.py tests/test_servers_authz.py
 Doku: keine

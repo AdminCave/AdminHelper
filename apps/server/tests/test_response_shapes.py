@@ -14,6 +14,7 @@ import pytest
 from fastapi.encoders import jsonable_encoder
 
 from app.modules.connections.models import Connection
+from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
 
 
@@ -45,9 +46,14 @@ def _ref_name(schema: dict) -> str:
         ("/api/connections/{conn_id}", "put", "ConnectionOut"),
         ("/api/connections/{conn_id}/touch", "post", "ConnectionOut"),
         ("/api/connections/import", "post", "ConnectionImportResult"),
+        ("/api/servers", "get", "ServerOut"),
+        ("/api/servers", "post", "ServerOut"),
+        ("/api/servers/{server_id}", "get", "ServerOut"),
+        ("/api/servers/{server_id}", "put", "ServerOut"),
+        ("/api/internal/servers", "get", "InternalServerOut"),
     ],
 )
-def test_connections_declare_their_response_model(path, method, model):
+def test_routes_declare_their_response_model(path, method, model):
     assert _ref_name(_response_ref(path, method)) == model
 
 
@@ -164,3 +170,93 @@ class TestConnectionShape:
         )
         assert r.status_code == 200, r.text
         assert r.json() == {"imported": 1, "mode": "merge"}
+
+
+class TestServerShape:
+    def _expected(self, db, server_id):
+        server = db.get(Server, server_id)
+        db.refresh(server)
+        return jsonable_encoder(server.to_dict())
+
+    def _full(self, db):
+        db.add(
+            FrpServerConfig(
+                id="cfg-shape",
+                name="shape",
+                server_addr="frps.example",
+                bind_port=7000,
+                auth_token="frps-auth-token-value",
+            )
+        )
+        db.add(
+            Server(
+                id="srv-full",
+                name="full",
+                hostname="full.example",
+                os_type="linux",
+                tags='["prod"]',
+                notes="note",
+            )
+        )
+        db.add(Connection(id="conn-of-full", name="ssh", kind="ssh", server_id="srv-full"))
+        db.add(
+            FrpTunnel(
+                id="t-shape",
+                server_id="srv-full",
+                frp_config_id="cfg-shape",
+                name="full-ssh",
+                tunnel_type="stcp",
+                protocol="ssh",
+                local_port=22,
+                secret_key="tunnel-secret-value",
+                visitor_port=6001,
+                extra_config=json.dumps({"transport.useEncryption": True}),
+                tags='["edge"]',
+                enabled=True,
+            )
+        )
+        db.commit()
+        return "srv-full"
+
+    def _sparse(self, db):
+        db.add(Server(id="srv-sparse", name="sparse", hostname="sparse.example"))
+        db.commit()
+        return "srv-sparse"
+
+    def test_list_and_get_equal_to_dict(self, test_client, db_session, admin_user):
+        full, sparse = self._full(db_session), self._sparse(db_session)
+        h = _login(test_client)
+        r = test_client.get("/api/servers", headers=h)
+        assert r.status_code == 200, r.text
+        by_id = {s["id"]: s for s in r.json()}
+        for sid in (full, sparse):
+            assert by_id[sid] == self._expected(db_session, sid)
+            assert test_client.get(f"/api/servers/{sid}", headers=h).json() == self._expected(
+                db_session, sid
+            )
+        # The nested connection keeps its serverId, the tunnel its masked secret.
+        assert by_id[full]["connections"][0]["serverId"] == full
+        assert by_id[full]["frpTunnels"][0]["secretKey"] is None
+        assert by_id[sparse]["osType"] is None
+        assert by_id[sparse]["connections"] == [] and by_id[sparse]["frpTunnels"] == []
+
+    def test_post_put_equal_to_dict(self, test_client, db_session, admin_user):
+        h = _login(test_client)
+        created = test_client.post(
+            "/api/servers", json={"name": "made", "hostname": "made.example"}, headers=h
+        )
+        assert created.status_code == 201, created.text
+        sid = created.json()["id"]
+        assert created.json() == self._expected(db_session, sid)
+        updated = test_client.put(f"/api/servers/{sid}", json={"tags": ["a"]}, headers=h)
+        assert updated.status_code == 200, updated.text
+        assert updated.json() == self._expected(db_session, sid)
+
+    def test_internal_listing(self, test_client, db_session, monkeypatch):
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "right")
+        self._full(db_session)
+        r = test_client.get("/api/internal/servers", headers={"X-Internal-Key": "right"})
+        assert r.status_code == 200, r.text
+        assert r.json() == [
+            {"id": "srv-full", "hostname": "full.example", "name": "full", "tags": ["prod"]}
+        ]
