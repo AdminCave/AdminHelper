@@ -6,7 +6,7 @@
 deliberately no write/delete endpoints here; rows are written by
 app.modules.audit.service.record() and pruned only by the retention job."""
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import or_
@@ -17,11 +17,12 @@ from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.modules.audit.models import AuditLog
+from app.modules.audit.schemas import AuditLogOut
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
 
-@router.get("", response_model=list[dict[str, Any]])
+@router.get("", response_model=list[AuditLogOut])
 def list_audit(
     response: Response,
     db: Session = Depends(get_db),

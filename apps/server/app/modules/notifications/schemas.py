@@ -4,7 +4,7 @@
 
 from typing import Annotated, Literal, Optional
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.bounds import BigIntPk, RequestModel
 
@@ -96,3 +96,54 @@ class NotificationPrefsUpdate(RequestModel):
         if not re.match(_EMAIL_PATTERN, v):
             raise ValueError("Ungültige E-Mail-Adresse")
         return v
+
+
+class NotificationOut(BaseModel):
+    """A feed row as Notification.to_dict hands it out."""
+
+    id: int
+    createdAt: Optional[str]
+    severity: str
+    category: str
+    eventType: str
+    title: str
+    body: Optional[str]
+    sourceType: Optional[str]
+    sourceId: Optional[str]
+    read: bool
+    readAt: Optional[str]
+
+
+class NotificationSubscriptionOut(BaseModel):
+    """A rule as NotificationSubscription.to_dict hands it out."""
+
+    id: int
+    userId: int
+    scopeType: str
+    scopeRef: Optional[str]
+    minSeverity: str
+    # The stored JSON text of the category list, as written, not parsed.
+    categories: Optional[str]
+    channelEmail: bool
+    channelTelegram: bool
+    enabled: bool
+
+
+class NotificationPrefsOut(BaseModel):
+    email: Optional[str]
+    telegramChatId: Optional[str]
+    subscriptions: list[NotificationSubscriptionOut]
+
+
+class UnreadCountOut(BaseModel):
+    count: int
+
+
+class MarkReadOut(BaseModel):
+    updated: int
+
+
+class EventsAcceptedOut(BaseModel):
+    """How many recipients the event reached."""
+
+    notified: int

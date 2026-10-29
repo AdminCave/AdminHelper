@@ -45,8 +45,10 @@ Für alle Tasks:
 - `security` zusätzlich (`scripts/dev/review-risk.txt`): T1–T10, T12–T17, T19–T22.
 - Platzhalter in Tests: Hosts unter `.example`, Adressen aus RFC 5737.
 
-### T1 — connections: `ConnectionOut` und `ConnectionImportResult` (R-0684)  [ ]
+### T1 — connections: `ConnectionOut` und `ConnectionImportResult` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d03d3794 2026-10-29T22:00:37+01:00
+Review: approve (.ah-out/review/api-contracts-server/T1.verdict.json im Teil-Worktree)
 Änderung: Vorher die offizielle FastAPI-Doku zu Response Model und `response_model_exclude_unset` lesen (WebFetch), Ergebnis in den Commit-Body. Neu in `connections/schemas.py`: `ConnectionOut` mit `model_config = ConfigDict(extra="allow")` und den Schlüsseln von `Connection.to_dict` (`apps/server/app/modules/connections/models.py:66-90`): `id`, `name`, `kind` als `str` (Spalte `:49` nicht eingeschränkt, die Import-Validierung gibt es erst seit v0.36.0, Commit `84d4eaa8`), `host`, `username`, `domain`, `keyPath`, `url`, `notes` als `str` (`or ""`), `port: Optional[int]`, `tags: list[Any]`, `trustCert: bool`, `lastUsed: Optional[str]`, `serverId: Optional[str] = None` (nur gesetzt, wenn es einen Server gibt). `ConnectionImportResult` `{imported: int, mode: str}` (`router.py:306`). Routen `GET ''` (`router.py:95`, `list[ConnectionOut]`), `POST ''` (`:110`), `PUT /{conn_id}` (`:138`), `POST /{conn_id}/touch` (`:173`) mit `response_model_exclude_unset=True`; `POST /import` (`:237`). Neue Datei `tests/test_response_shapes.py` mit dem Testmuster; (c) Verbindung ohne Server → kein `serverId`; Verbindung mit `extra_data` `{"proxyJump": "jump.example"}` → der Schlüssel steht in der Antwort (prüft, dass `extra="allow"` mit `exclude_unset` Extras behält); Altzeile direkt per ORM mit `kind="vnc"` und `tags='[1, "a"]'` → 200 und gleich `to_dict()`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_connections_isolation.py tests/test_connections_import.py
 Doku: keine (das Schema steht unter `/api/docs`; CHANGELOG sammelt T12)
@@ -55,8 +57,10 @@ Orakel: contract — das Modell gegen `Connection.to_dict` über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T2 — servers: `ServerOut` und `InternalServerOut` (R-0684)  [ ]
+### T2 — servers: `ServerOut` und `InternalServerOut` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/servers/schemas.py, apps/server/app/modules/servers/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @775ed939 2026-10-29T22:06:21+01:00
+Review: approve (.ah-out/review/api-contracts-server/T2.verdict.json im Teil-Worktree)
 Änderung: `ServerOut` wie `Server.to_dict` (`apps/server/app/modules/servers/models.py:41-55`): `id`, `name`, `hostname: str`, `osType: Optional[str]`, `tags` (Regel 3, Validierung `servers/schemas.py:39`, `:50`), `notes: str`, `createdAt: Optional[str]`, `connections: list[ConnectionOut]` (`include_connections` ist überall `True`, kein Aufrufer setzt es), `frpTunnels: list[FrpTunnelOut]` (`apps/server/app/modules/frp/schemas.py:312`). `InternalServerOut` `{id, hostname, name, tags}` (`servers/router.py:78-86`). Routen `GET ''` (`:90`), `POST ''` (`:103`), `GET /{server_id}` (`:136`), `PUT /{server_id}` (`:144`) mit `response_model_exclude_unset=True` (verschachtelt `serverId` der Verbindungen); intern `GET /servers` (`:70`, `list[InternalServerOut]`). Tests nach Muster; (b) Server mit einer Verbindung und einem Tunnel, Server ohne beides und ohne `os_type`, `tags`, `notes`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_internal_servers.py tests/test_servers_authz.py
 Doku: keine
@@ -66,8 +70,10 @@ Orakel: contract — das Modell gegen `Server.to_dict` über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T3 — frp: Tunnel-Routen mit dem vorhandenen `FrpTunnelOut` (R-0684)  [ ]
+### T3 — frp: Tunnel-Routen mit dem vorhandenen `FrpTunnelOut` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @6cf32628 2026-10-29T22:16:45+01:00
+Review: approve (.ah-out/review/api-contracts-server/T3.verdict.json im Teil-Worktree)
 Änderung: `response_model=list[FrpTunnelOut]` an `GET /tunnels` (`apps/server/app/modules/frp/tunnel_router.py:26`), `FrpTunnelOut` an `POST /tunnels` (`:67`), `GET /tunnels/{tunnel_id}` (`:153`), `PUT /tunnels/{tunnel_id}` (`:161`). Das Modell (`frp/schemas.py:312-328`) bildet `FrpTunnel.to_dict(mask_secrets=True)` (`frp/models.py:111-131`) schon ab und bleibt unverändert (es steht seit R-0043 im Snapshot unter `FrpServerConfigDetail`); `tags: list[str]` vorher nach Regel 3 an den Schreibern prüfen, bei einem Widerspruch `[?]` statt das Modell zu ändern. Tests nach Muster, `secretKey` ist in jeder Antwort `null`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_frp_tunnels.py
 Doku: keine
@@ -76,8 +82,10 @@ Orakel: contract — `FrpTunnelOut` gegen `FrpTunnel.to_dict(mask_secrets=True)`
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T4 — frp: `VisitorBundleOut` und `ConfigHashOut` (R-0684)  [ ]
+### T4 — frp: `VisitorBundleOut` und `ConfigHashOut` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/generate_router.py, apps/server/app/modules/frp/provision_router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @13295a7d 2026-10-29T23:22:22+01:00
+Review: approve (.ah-out/review/api-contracts-server/T4.verdict.json im Teil-Worktree)
 Änderung: In `frp/schemas.py` unter „Responses“: `VisitorBundleOut` `{toml: str, pki: dict[str, Any]}` (`apps/server/app/modules/frp/generate_router.py:159`, `pki` ist heute `{}`), `ConfigHashOut` `{hash: Optional[str]}` (`apps/server/app/modules/frp/provision_router.py:89`, `:92`). Routen `GET /generate/visitor-bundle` (`generate_router.py:137`) und `GET /provision/{server_id}/config-hash` (`provision_router.py:76`). Tests nach Muster; (c) `config-hash` mit und ohne Tunnel (`hash` null bzw. String). Die Nicht-JSON-Routen derselben Dateien bleiben (Spec, Nicht-Ziele).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_frp_tunnels.py tests/test_frp_provision_authz.py
 Doku: keine
@@ -86,8 +94,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T5 — ansible: `PlaybookOut` und `PlaybookContentOut` (R-0684)  [ ]
+### T5 — ansible: `PlaybookOut` und `PlaybookContentOut` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/ansible/schemas.py, apps/server/app/modules/ansible/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @07695b0c 2026-10-29T22:23:38+01:00
+Review: approve (.ah-out/review/api-contracts-server/T5.verdict.json im Teil-Worktree)
 Änderung: `PlaybookOut` wie `Playbook.to_dict` (`apps/server/app/modules/ansible/models.py:25-34`): `id`, `name`, `filename: str`, `description: str` (`or ""`), `tags` (Regel 3), `createdAt`, `updatedAt: Optional[str]`. `PlaybookContentOut` `{content: str}` (`apps/server/app/modules/ansible/router.py:118`). Routen `GET ''` (`:40`), `POST ''` (`:46`), `GET /{playbook_id}` (`:94`), `GET /{playbook_id}/content` (`:104`), `PUT /{playbook_id}` (`:122`). Tests nach Muster.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_ansible.py
 Doku: keine
@@ -96,8 +106,10 @@ Orakel: contract — das Modell gegen `Playbook.to_dict` über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T6 — provisioning: Token- und Activate-Antworten (R-0684)  [ ]
+### T6 — provisioning: Token- und Activate-Antworten (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/provisioning/schemas.py, apps/server/app/modules/provisioning/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a8dcceaf 2026-10-29T22:29:01+01:00
+Review: approve (.ah-out/review/api-contracts-server/T6.verdict.json im Teil-Worktree)
 Änderung: Neue Datei `provisioning/schemas.py` (SPDX) mit `ProvisionTokenCreatedOut` `{token, expiresAt, serverId, serverName}` (`apps/server/app/modules/provisioning/router.py:83-88`), `ProvisionTokenOut` wie `ProvisionToken.to_dict` (`provisioning/models.py:49-57`: `id`, `serverId`, `expiresAt`, `usedAt: Optional[str]`, `isValid: bool`, `createdAt`), `ActivateOut` (`router.py:209-226`): `serverName`, `apiKey: str`, `monitorApiKey: Optional[str]`, `monitorUrl: Optional[str]`, `frp: Optional[FrpBundleOut]` (`provisioning/helpers.py:77-110`: `None` oder `{config: str, pkiBundle: str}`), `enrollment: ActivateEnrollmentOut` `{token, subjectId, scope: str, enrollPort: int}`. Routen `POST /{server_id}/provision/token` (`router.py:59`), `GET /{server_id}/provision/tokens` (`:92`), `POST /{server_id}/provision/activate` (`:109`). Tests nach Muster; (c) Activate mit und ohne FRP-Konfiguration, mit und ohne erreichbaren Monitoring-Dienst (`monitorApiKey`/`monitorUrl` null). Der Go-Spiegel im Agent bleibt (R-0688).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_provisioning.py
 Doku: keine
@@ -106,8 +118,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale und `ProvisionToken.to_
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T7 — notifications: Feed, Zähler, Prefs, Ingest (R-0684)  [ ]
+### T7 — notifications: Feed, Zähler, Prefs, Ingest (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @da026cb8 2026-10-29T22:39:33+01:00
+Review: approve (.ah-out/review/api-contracts-server/T7.verdict.json im Teil-Worktree)
 Änderung: In `notifications/schemas.py`: `NotificationOut` wie `Notification.to_dict` (`apps/server/app/modules/notifications/models.py:104-117`), `NotificationSubscriptionOut` wie `NotificationSubscription.to_dict` (`:68-79`; `categories: Optional[str]`, roher JSON-Text), `NotificationPrefsOut` `{email, telegramChatId: Optional[str], subscriptions: list[NotificationSubscriptionOut]}` (`apps/server/app/modules/notifications/router.py:103-114`), `UnreadCountOut` `{count: int}` (`:76`), `MarkReadOut` `{updated: int}` (`:91`, `:97`), `EventsAcceptedOut` `{notified: int}` (`:217`). Routen `GET ''` (`:48`, heute `list[dict[str, Any]]`), `GET /unread-count` (`:66`), `POST /read` (`:80`), `GET`/`PUT /notification-prefs` (`:118`, `:126`), `POST /events` (`:183`, 202). Nullbarkeit je Spalte aus `models.py`. Tests nach Muster; der SSE-Stream bleibt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_notifications.py
 Doku: keine
@@ -116,8 +130,10 @@ Orakel: contract — die Modelle gegen die `to_dict`-Methoden und Dict-Literale 
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T8 — users: `LogoutOut` und `MyServerOut` (R-0684)  [ ]
+### T8 — users: `LogoutOut` und `MyServerOut` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/users/schemas.py, apps/server/app/modules/users/auth_router.py, apps/server/app/modules/users/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3ab1b6dc 2026-10-29T22:44:41+01:00
+Review: approve (.ah-out/review/api-contracts-server/T8.verdict.json im Teil-Worktree)
 Änderung: `LogoutOut` `{detail: str}` (`apps/server/app/modules/users/auth_router.py:275`) an `POST /logout` (`:243`); `MyServerOut` `{id, name, hostname: str}` (`apps/server/app/modules/users/router.py:243-245`) an `GET /me/servers` (`:243`, `list[MyServerOut]`). Tests nach Muster; für `/me/servers` gibt es heute keinen Test, (b) mit einem Nutzer mit und einem ohne zugeordneten Server.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_auth.py
 Doku: keine
@@ -126,8 +142,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T9 — hooks: `HookTokenOut` für rotate (R-0684)  [ ]
+### T9 — hooks: `HookTokenOut` für rotate (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/hooks/schemas.py, apps/server/app/modules/hooks/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @199d8cb6 2026-10-29T22:54:18+01:00
+Review: approve (.ah-out/review/api-contracts-server/T9.verdict.json im Teil-Worktree)
 Änderung: `HookTokenOut` `{token: str}` (`apps/server/app/modules/hooks/router.py:334`) an `POST /{hook_id}/rotate` (`:320`). Trigger und `/run` bleiben (Spec, Nicht-Ziele). Tests nach Muster; für rotate gibt es heute keinen Test der Antwortform.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_hooks.py
 Doku: keine
@@ -136,8 +154,10 @@ Orakel: contract — das Modell gegen das Dict-Literal über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T10 — enrollment: `EnrollmentGrantOut` (R-0684, R-0407)  [ ]
+### T10 — enrollment: `EnrollmentGrantOut` (R-0684, R-0407)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/enrollment/schemas.py, apps/server/app/modules/enrollment/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4c0f800a 2026-10-29T23:01:23+01:00
+Review: approve (.ah-out/review/api-contracts-server/T10.verdict.json im Teil-Worktree)
 Änderung: Neue Datei `enrollment/schemas.py` (SPDX) mit `EnrollmentGrantOut` `{token: str, subjectId: str, scope: str, browser: bool, enrollPort: int, expiresAt: Optional[str]}` wie `_mint_token` (`apps/server/app/modules/enrollment/router.py:44-65`) an `POST /token` (`:79`) und `POST /token/for` (`:108`). Tests nach Muster (Browser- und Nicht-Browser-Grant). Der Web-Mock `makeEnrollmentGrant` (`apps/web/tests/e2e/mocks.ts:123-133`) hat genau diese Schlüssel; damit prüft `apps/web/src/lib/api/mocks.contract.test.ts` die Fixture `enrollment/token/for`: Pin `:146` von 16 auf 17, Kommentar `:142-145` nennt nur noch `audit` als offen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_enrollment_mint.py  und bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine
@@ -146,8 +166,10 @@ Orakel: contract — das Modell gegen `_mint_token` über die echte Route; der W
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T11 — web: Audit-Mock in der vollen Antwortform  [ ]
+### T11 — web: Audit-Mock in der vollen Antwortform  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: web · Dateien: apps/web/tests/e2e/mocks.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @18902239 2026-10-29T23:08:20+01:00
+Review: approve (.ah-out/review/api-contracts-server/T11.verdict.json im Teil-Worktree)
 Änderung: Die zwei Zeilen von `AUDIT_ROWS` (`apps/web/tests/e2e/mocks.ts:57-76`) bekommen die fehlenden Schlüssel von `AuditLog.to_dict` (`apps/server/app/modules/audit/models.py:39-53`): `actorId: null`, `objectId: null`, `sourceIp: null`, `status: 'success'`, `detail: null`. Vorbereitung für T12: danach prüft `mocks.contract.test.ts` die Audit-Fixture gegen die required-Liste. `status` ändert die Statuszelle der Audit-Seite (`apps/web/src/pages/Audit.svelte:137`) im Bildvergleich `tests/e2e/smoke.spec.ts-snapshots/audit-chromium-linux.png` (Toleranz 2 %); `smoke.spec.ts` headless fahren, Summary in den Commit-Body. Liegt die Abweichung über der Toleranz: `[?]` (ein neues Referenzbild ist eine sichtbare Teständerung).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine
@@ -156,8 +178,10 @@ Orakel: contract — der Mock gegen die Antwortform von `GET /api/audit`
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T12 — audit: `AuditLogOut` (R-0684)  [ ]
+### T12 — audit: `AuditLogOut` (R-0684)  [x] (gebaut im Teil-Ledger tasks/api-contracts-server.md, gemergt in 04308dc5)
 Komponente: server · Dateien: apps/server/app/modules/audit/schemas.py, apps/server/app/modules/audit/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3f8ff406 2026-10-29T23:17:06+01:00
+Review: approve (.ah-out/review/api-contracts-server/T12.verdict.json im Teil-Worktree)
 Änderung: Neue Datei `audit/schemas.py` (SPDX) mit `AuditLogOut` wie `AuditLog.to_dict` (`apps/server/app/modules/audit/models.py:39-53`): `id: int`, `timestamp: Optional[str]`, `actorType`, `action`, `status: str`, die übrigen `Optional[str]`. `GET ''` (`apps/server/app/modules/audit/router.py:25`) von `list[dict[str, Any]]` auf `list[AuditLogOut]`. Tests nach Muster. `mocks.contract.test.ts:146` von 17 auf 18, der Kommentar `:142-145` sagt, dass alle 18 Fixtures geprüft werden.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_audit_api.py  und bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: CHANGELOG.md (Changed, umlautfrei: die OpenAPI-Beschreibung des Servers nennt die Felder aller JSON-Antworten; die Antworten selbst bleiben gleich)

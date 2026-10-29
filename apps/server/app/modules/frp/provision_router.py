@@ -21,6 +21,7 @@ from app.core.identity import require_cert_server
 from app.modules.frp import provisioner
 from app.modules.frp._helpers import frpc_sync_inputs
 from app.modules.frp.config_generator import generate_frpc_toml
+from app.modules.frp.schemas import ConfigHashOut
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
@@ -72,7 +73,11 @@ def get_provision_config(
     return PlainTextResponse(toml_content, media_type="application/toml")
 
 
-@router.get("/provision/{server_id}/config-hash", dependencies=[Depends(require_cert_server)])
+@router.get(
+    "/provision/{server_id}/config-hash",
+    response_model=ConfigHashOut,
+    dependencies=[Depends(require_cert_server)],
+)
 def get_provision_config_hash(
     server_id: str,
     db: Session = Depends(get_db),
