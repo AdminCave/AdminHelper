@@ -724,4 +724,53 @@ describe('http client: a 401 of a request from an ended session', () => {
     expect(refreshes).toBe(2);
     expect(getAccessToken()).toBe('renewed-token');
   });
+
+  // The refresh of the old session ends while the new one's is still open: the new session's
+  // refresh stays shared, a further 401 of the new session must not start a third one (R-0923).
+  it('the end of the old refresh keeps the new session sharing its own', async () => {
+    const oldRefresh = deferredResponse();
+    const newRefresh = deferredResponse();
+    let refreshes = 0;
+    let servers = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') {
+          refreshes++;
+          if (refreshes === 1) return oldRefresh.promise;
+          if (refreshes === 2) return newRefresh.promise;
+          return Promise.resolve(jsonResponse({ access_token: 'third-token' }));
+        }
+        servers++;
+        // The old request and both first requests of the new session get 401, the retries pass.
+        return Promise.resolve(
+          servers <= 3 ? jsonResponse({ detail: 'expired' }, 401) : jsonResponse({ ok: true }),
+        );
+      }),
+    );
+    const { http, setAccessToken, clearTokens, getAccessToken } = await importClient();
+    setAccessToken('old-token');
+
+    const oldPending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(refreshes).toBe(1));
+    clearTokens();
+    setAccessToken('new-token');
+    const firstNew = http.get('/api/servers');
+    await vi.waitFor(() => expect(refreshes).toBe(2));
+    oldRefresh.resolve(jsonResponse({ detail: 'no' }, 401));
+    expectSessionExpired(await oldPending);
+
+    const secondNew = http.get('/api/servers');
+    await vi.waitFor(() => expect(servers).toBe(3));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(refreshes).toBe(2);
+
+    newRefresh.resolve(jsonResponse({ access_token: 'renewed-token' }));
+    await expect(firstNew).resolves.toEqual({ ok: true });
+    await expect(secondNew).resolves.toEqual({ ok: true });
+    expect(refreshes).toBe(2);
+    expect(getAccessToken()).toBe('renewed-token');
+  });
 });

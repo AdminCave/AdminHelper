@@ -28,7 +28,7 @@ Nicht-Ziele: Server, Desktop, Idle-Abmeldung (R-0890 fährt im nächsten Zug, Fr
 
 ## Betroffene Komponenten & Dateien
 
-`web`: `api/client.ts`, `api/auth.ts`, Test `api/client.test.ts`.
+`web`: `api/client.ts`, Test `api/client.test.ts`.
 
 ## Datenmodell / API / Migrationen
 
@@ -43,9 +43,10 @@ Keine.
 - R-0923: `refreshInFlight` merkt sich die Sitzung, in der er startete; ein 401 einer anderen Sitzung startet einen
   eigenen Refresh. Alternative: das gebündelte Ergebnis im 401-Pfad gegen die Sitzung prüfen — verworfen, ein
   `false` der alten Sitzung sagt über die neue nichts, der eigene Refresh schon.
-- R-0924: `login()` (`api/auth.ts:8`) beginnt die Sitzung ausdrücklich (`startSession`), statt sich auf „kein Token
-  gehalten“ zu verlassen; `setAccessToken` behält seine Form für die übrigen Aufrufer. Alternative:
-  `hydrate()` ruft im Fehlerzweig `clearTokens()` — verworfen, es deckte nur diesen einen Weg ab.
+- R-0924: jedes `setAccessToken` (`api/client.ts:56`) beginnt eine neue Sitzung, statt sich auf „kein Token
+  gehalten“ zu verlassen; `login()` (`api/auth.ts`) ist sein einziger Aufrufer und bleibt unverändert, ein Refresh
+  setzt das Token ohne neue Sitzung. Alternative: `hydrate()` ruft im Fehlerzweig `clearTokens()` — verworfen, es
+  deckte nur diesen einen Weg ab.
 
 ## Risiken & Rollback
 

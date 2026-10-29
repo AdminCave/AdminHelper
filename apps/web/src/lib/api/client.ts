@@ -48,9 +48,9 @@ export function getAccessToken(): string | null {
 }
 
 // A session starts with every setAccessToken() (a login, also one while a token is still held) and
-// ends with clearTokens(); a refresh keeps it. A request answered 401 after its session ended must not refresh,
-// retry or run the auth-failure handler: the handler ends the session that is current by then,
-// refresh cookie included (stores/auth.ts).
+// ends with clearTokens(); a refresh keeps it. A request answered 401 after its session ended must
+// not refresh, retry or run the auth-failure handler: the handler ends the session that is current
+// by then, refresh cookie included (stores/auth.ts).
 let session = 0;
 
 export function setAccessToken(access: string): void {
@@ -122,7 +122,8 @@ async function tryRefresh(): Promise<boolean> {
     } catch {
       return false;
     } finally {
-      // session only grows, so at most one refresh per session is in flight: a later session's stays.
+      // session only grows, so at most one refresh per session is in flight: a later session's
+      // stays.
       if (refreshInFlight?.session === started) refreshInFlight = null;
     }
   })();

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-web-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-web-1 · Review: am Ende
+Status: bereit · Branch: feature/kern-web-1 · Review: am Ende
 Spec: docs/features/kern-web-1.md (Roadmap R-0923, R-0924)
 Heavy: none — nur apps/web (API-Client), hermetische vitest-Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -23,8 +23,10 @@ Dedup-Key: bug:web:api/client.ts:refresh-in-flight-across-sessions, bug:web:api/
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
 Doku: changelog.d/kern-web-1.md
 
-### T2 — Abschlussprüfung: Test der finally-Bedingung, Spec nachgezogen (R-0923)  [ ]
+### T2 — Abschlussprüfung: Test der finally-Bedingung, Spec nachgezogen (R-0923)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts, docs/features/kern-web-1.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @57b30aba 2026-10-29T21:57:50+01:00
+Review: am Ende (Branch-Review)
 Änderung: Test „the end of the old refresh keeps the new session sharing its own“: endet der Refresh der alten Sitzung, während der der neuen offen ist, teilt ein weiterer 401 der neuen Sitzung deren Refresh (`api/client.ts:126`, Gegenprobe mit unbedingtem `refreshInFlight = null`: 1 failed). Kommentare auf 100 Zeichen umbrochen; Spec nennt `setAccessToken` statt `startSession` in `login()`.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
 Doku: docs/features/kern-web-1.md
