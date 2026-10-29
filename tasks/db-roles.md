@@ -41,14 +41,22 @@ Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/ind
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task
 
-### T5 — Restore-Skripte: Superuser-Sitzungen in den DBs der Dienst-Rollen  [ ]
-Komponente: scripts · Dateien: scripts/restore.sh, scripts/pg-restore.sh, scripts/tests/restore_guard_test.sh
-Änderung: `scripts/restore.sh` (`:131`, `:147`) und `scripts/pg-restore.sh` (`:38`) fahren psql als Superuser in Datenbanken, deren Schema `public` nach diesem Vorhaben einer Dienst-Rolle gehört (Abschluss-Prüfung T1). Beide setzen `PGOPTIONS='-c search_path=pg_catalog'` und qualifizieren Katalog- und Funktionsnamen; das UPDATE auf `certificate_register_state` läuft als Eigentümer (`SET ROLE ah_server`), damit ein Trigger des Eigentümers nicht als Superuser läuft. Zeilen vor dem Bau neu greppen. Test in `restore_guard_test.sh` (psql-Stub): die psql-Aufrufe tragen `PGOPTIONS` mit `search_path=pg_catalog`, das UPDATE steht hinter `SET ROLE`.
+### T5 — restore.sh: Restore mit den Dienst-Rollen  [ ]
+Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, docs/features/db-roles.md
+Änderung: `restore.sh` lässt nach `up -d postgres` einmal `db-init` laufen (Rollen, Monitoring-DB, Eigentum) und spielt dann `adminhelper` als `ah_server` und `adminhelper_monitor` als `ah_monitor` ein (`pg_restore --clean --if-exists --no-owner --no-privileges`, Passwort aus `.env` per Umgebung in den Container, nicht über argv); das Übergangs-UPDATE des Zertifikats-Registers läuft ebenso als `ah_server`. Der `createdb`-Block als Superuser entfällt. Fehlt in `.env` ein Passwort der Rollen, bricht `restore.sh` vor dem Stopp des Stacks mit dem Hinweis auf `scripts/init-secrets.sh` ab. Spec: Abschnitt Backup/Restore und Risiken nachziehen. Test in `restore_guard_test.sh` (docker-Stub): `db-init` läuft vor dem ersten `pg_restore`, kein Restore-Aufruf als `adminhelper`, die Rollen-Passwörter stehen in keinem argv.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: → T4
 Abhängt von: T2
 
+### T6 — pg-restore.sh: Restore mit der Dienst-Rolle  [?] (pg-restore.sh meldet sich mit der Dienst-Rolle statt des Superusers an und lehnt eine Superuser-Sitzung ab — einverstanden?)
+Komponente: scripts · Dateien: scripts/pg-restore.sh, scripts/tests/restore_guard_test.sh, docker-compose.yml
+Änderung: `pg-restore.sh` (im auskommentierten `pg-backup`-Dienst) nimmt `PGUSER`/`PGPASSWORD` der Dienst-Rolle der Ziel-DB und bricht ab, wenn die Sitzung Superuser ist (Katalogabfrage mit `search_path=pg_catalog`); Aufrufbeispiel und Kommentar in `docker-compose.yml` nachziehen. Test: Abbruch bei Superuser-Sitzung (psql-Stub), Restore-Aufruf ohne Superuser.
+Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
+Doku: → T4
+Abhängt von: T5
+
 ## Entscheidungen
+- 2026-10-29 T5 (advisor): Restore meldet sich mit den Dienst-Rollen an statt als Superuser mit `SET ROLE`; `db-init` läuft vorher. `pg-restore.sh` ändert dabei seine Zugangsdaten (sichtbares Verhalten) → eigene Task T6 mit Frage an Kevin. Begründung privat.
 - 2026-10-29 T3: Schritt 14 (Grenzen je Dienst) prüfte jeden Dienst als laufend; der Einmal-Dienst `db-init` aus T2 ist beendet und machte den Stack-Test rot. T3 prüft ihn am beendeten Container (Exit 0, `no-new-privileges`, pids-Limit aus der Compose-Konfiguration). Lokaler Stack-Lauf: `integration_stack_test: 83 passed, 0 failed` (ein früherer Lauf scheiterte flaky am Enroll mit 502, eigene Zeile).
 - 2026-10-29 T2 (Prüfung): gekoppelte Dateien kamen dazu — Test-Overlay (`db-init` auf dem lokal gebauten Server-Image), die `.env` der Test-Stacks (`lib_e2e_stack.sh`), die Maskierung im Diagnose-Bundle (`scripts/diagnostics.sh`) und drei Dockerfile-Kommentare; darum mehr als acht Dateien.
 - 2026-10-29 T1 (Prüfung): die Datenbanken bleiben beim Superuser, die Rollen besitzen nur das Schema `public`; `db-init` verbindet mit `search_path=pg_catalog`; `ah_ca` bekommt Rechte je Tabelle; Passwörter gehen als SCRAM-Verifier; neue Task T5 für die Restore-Skripte.
