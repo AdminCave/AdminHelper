@@ -49,6 +49,23 @@ describe('apikeys store', () => {
     expect(JSON.stringify(get(apikeys))).not.toContain('ah_SECRET_TOKEN');
   });
 
+  it('create keeps the creation date of the new key in the list', async () => {
+    await seed([]);
+    vi.mocked(api.create).mockResolvedValue({
+      key: 'ah_SECRET_TOKEN',
+      id: 3,
+      name: 'ci',
+      permission: 'read',
+      created_at: '2026-01-02T03:04:05Z',
+    });
+
+    await apikeys.create({ name: 'ci', permission: 'read' });
+
+    const [entry] = get(apikeys);
+    expect(entry.created_at).toBe('2026-01-02T03:04:05Z');
+    expect(entry).not.toHaveProperty('key');
+  });
+
   it('remove drops the entry by id', async () => {
     await seed([
       { id: 1, name: 'a', permission: 'read' },

@@ -52,7 +52,7 @@ export interface ApiKey {
   id: number;
   name: string;
   permission: ApiKeyPermission;
-  created_at?: string;
+  created_at?: string | null;
 }
 
 export interface ApiKeyCreate {
@@ -65,6 +65,7 @@ export interface ApiKeyCreateResult {
   id: number;
   name: string;
   permission: ApiKeyPermission;
+  created_at?: string | null;
 }
 
 export class ApiError extends Error {

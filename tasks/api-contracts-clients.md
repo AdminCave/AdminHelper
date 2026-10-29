@@ -47,8 +47,10 @@ Für alle Tasks:
 
 Teil-Ledger (Kevin 2026-10-23, Spec Trade-off 8): T18–T25 aus `tasks/api-contracts.md`, gemergt in `feature/api-contracts`. CHANGELOG-Einträge in `changelog.d/api-contracts-clients.md` statt `CHANGELOG.md` (Konvention seit dem Plan). Abhängigkeiten auf T1–T17: der Server- und der Monitoring-Teil werden vor T19/T20/T21 in `feature/api-contracts` gemergt und von dort hineingezogen.
 
-### T18 — web: neuer API-Schlüssel zeigt sein Erstelldatum (R-0686)  [ ]
+### T18 — web: neuer API-Schlüssel zeigt sein Erstelldatum (R-0686)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/types.ts, apps/web/src/lib/stores/apikeys.ts, apps/web/src/lib/stores/apikeys.test.ts, changelog.d/api-contracts-clients.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @c7a3908b 2026-10-29T22:49:44+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T18.verdict.json)
 Änderung: Zuerst der rote Test in `apikeys.test.ts` (neben `create returns the secret but never stores it in the list`, `:35`): `api.create` liefert `{ key, id, name, permission, created_at: '2026-01-02T03:04:05Z' }`; nach `apikeys.create(...)` trägt der neue Listeneintrag `created_at` mit genau diesem Wert und weiterhin kein `key`. Dann `ApiKeyCreateResult` (`apps/web/src/lib/api/types.ts:61-66`) um `created_at?: string | null` ergänzen (`ApiKeyCreatedResponse`, `apps/server/app/modules/api_keys/schemas.py:18-28`: nicht required, nullbar) und `ApiKey.created_at` (`:53`) ebenso auf `string | null`; der Store übernimmt es (`apps/web/src/lib/stores/apikeys.ts:33-36`). `formatDate` nimmt `null` schon (`src/lib/utils/datetime.ts:24`).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/apikeys.test.ts
 Doku: changelog.d/api-contracts-clients.md (Fixed, umlautfrei: ein neu angelegter API-Schluessel zeigt sein Erstelldatum sofort, nicht erst nach dem Neuladen)
