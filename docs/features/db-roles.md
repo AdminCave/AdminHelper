@@ -1,0 +1,100 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Postgres: eine Rolle je Dienst statt des gemeinsamen Superusers
+
+## Problem / Motivation
+
+Alle Dienste verbinden sich mit dem Konto, das das Postgres-Image beim ersten Start als Superuser anlegt
+(`POSTGRES_USER=adminhelper`, `docker-compose.yml:15`): `server` und `scheduler` (`:91`, `:169`), `ca-issuer`
+(`:302`) mit der DB `adminhelper`, `monitoring` (`:476`) mit `adminhelper_monitor`, und `monitoring` legt seine DB
+beim Start selbst an (`apps/monitoring/docker-entrypoint.sh:28-45`). Jeder Dienst hat damit alle Rechte auf beide
+Datenbanken und auf den Cluster, obwohl er weit weniger braucht: `ca-issuer` liest und schreibt fünf Tabellen der
+Server-DB (`apps/ca-issuer/app/db.py:54-120`), `monitoring` nur seine eigene DB. Least Privilege ist hier ein
+Betriebs- und Architekturziel (Komponenten-Grenzen, `docs/developer/index.html`).
+
+## Ziel & Nicht-Ziele
+
+Ziel:
+- Je Dienst eine Login-Rolle ohne `SUPERUSER`, `CREATEDB`, `CREATEROLE`, mit eigenem Passwort aus `.env`:
+  - `ah_server`: besitzt das Schema `public` der DB `adminhelper` und alle Objekte darin (Alembic braucht DDL).
+  - `ah_scheduler`: nur DML auf den Server-Tabellen, per `ALTER DEFAULT PRIVILEGES FOR ROLE ah_server` auch auf
+    künftige (Offene Frage 1).
+  - `ah_monitor`: besitzt die DB `adminhelper_monitor` und alles darin.
+  - `ah_ca`: `CONNECT` auf `adminhelper`, nur die Rechte, die `ca-issuer` auf seine fünf Tabellen braucht, und die
+    Sequenzen dazu.
+  - `CONNECT` beider DBs für `PUBLIC` entzogen; jede Rolle kommt nur in ihre DB.
+- Ein Einmal-Dienst `db-init` (Server-Image, `python -m app.db_roles setup`) richtet Rollen, Passwörter, die
+  Monitoring-DB, Eigentümer und `CONNECT` bei jedem `up` idempotent ein und endet; die Dienste warten auf ihn
+  (`depends_on: condition: service_completed_successfully`). Nur `postgres` und `db-init` sehen das
+  Superuser-Passwort.
+- Die Rechte von `ah_ca` auf die fünf Tabellen setzt der Server nach `alembic upgrade head` (als Eigentümer), damit
+  eine Migration, die eine dieser Tabellen neu anlegt, sie nicht verliert.
+- Bestand: Ein Update übernimmt eine bestehende Installation ohne Datenverlust: `init-secrets.sh` ergänzt die drei
+  neuen Passwörter (läuft schon in `update.sh:563`), `db-init` überträgt die Objekte vom Superuser an die neuen
+  Rollen. Belegt durch `upgrade_path_test.sh` (letztes Release → dieser Stand) im Sammellauf.
+
+Nicht-Ziele:
+- Kein Wechsel des Postgres-Images oder seiner UID (host-uid-guard), keine zweite Postgres-Instanz.
+- Keine Netzwerk-Trennung `postgres` ↔ `pki` (eigene Zeile, falls gewünscht); die Doku wird korrigiert.
+- Backup/Restore bleiben beim Superuser (`docker compose exec postgres`); ein alter Dump mit Eigentümer `adminhelper`
+  ordnet `db-init` beim nächsten Start neu zu.
+
+## Betroffene Komponenten & Dateien
+
+| Task | Komponente | Dateien |
+|---|---|---|
+| T1 | server | `apps/server/app/db_roles.py` (neu), `apps/server/docker-entrypoint.sh`, `scripts/tests/db_roles_test.sh` (neu), `apps/server/tests/test_db_roles_sql.py` (neu) |
+| T2 | scripts | `docker-compose.yml`, `scripts/init-secrets.sh`, `apps/monitoring/docker-entrypoint.sh`, `.env.example`, `scripts/tests/init-secrets_test.sh`, `apps/server/tests/test_env_parity.py` |
+| T3 | scripts | `scripts/tests/integration_stack_test.sh` |
+| T4 | — (Doku) | `docs/developer/index.html`, `docs/en/developer/index.html`, `docs/admin/installation.html`, `docs/en/admin/installation.html`, `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `DEVELOPMENT.md`, `CHANGELOG.md` |
+
+## Datenmodell / API / Migrationen
+
+Keine Alembic-Migration und keine API-Änderung. Die Datenmigration ist eine Eigentümer- und Rechte-Übertragung im
+Cluster, idempotent bei jedem Start (`db-init`). Neue `.env`-Variablen: `SERVER_DB_PASSWORD`, `SCHEDULER_DB_PASSWORD`,
+`MONITOR_DB_PASSWORD`, `CA_DB_PASSWORD` (je 32 Bytes hex). Rollennamen fest, im Test per Umgebung überschreibbar
+(geteilter Cluster zwischen Worktrees).
+
+## Externe Integrationen
+
+PostgreSQL 17: `ALTER … OWNER TO`, `REASSIGN OWNED` (für den Bootstrap-Superuser nicht nutzbar, er besitzt
+Systemobjekte; deshalb Objekt für Objekt im Schema `public`), `ALTER DEFAULT PRIVILEGES`, `GRANT CONNECT`. Doku vor
+dem Bau nachlesen: https://www.postgresql.org/docs/17/sql-alterdefaultprivileges.html,
+https://www.postgresql.org/docs/17/sql-reassign-owned.html. Docker Compose `service_completed_successfully`.
+
+## Trade-offs & Alternativen
+
+1. **Einmal-Dienst `db-init`** statt `docker-entrypoint-initdb.d`: die Init-Skripte des Images laufen nur auf einem
+   leeren Volume, also nie für den Bestand; und `docker-compose.yml` bleibt ohne Bind-Mounts aus dem Repo.
+2. **Eigentum statt reiner GRANTs für `ah_server`**: Alembic legt Tabellen an und ändert sie; ein Nicht-Eigentümer
+   könnte das nicht.
+3. **Rechte von `ah_ca` im Server-Entrypoint** statt in `db-init`: `db-init` läuft vor den Migrationen; eine
+   Migration, die eine ca-Tabelle neu anlegt, entzöge sonst bis zum nächsten Start die Rechte.
+4. **Rollen-Test mit eigenem Postgres-Container** (`scripts/tests/db_roles_test.sh`): die Test-DB der Entwickler hat
+   keine `CREATEROLE`-Rechte; ein Wegwerf-Container läuft lokal (Docker) und in der CI.
+
+## Risiken & Rollback
+
+- Ein Update, dessen `db-init` scheitert, startet keinen Dienst (Abhängigkeit); der Log nennt den Schritt. Die Daten
+  bleiben unberührt (nur Eigentümer/Rechte).
+- Rollback: ein älterer Compose-Stand verbindet sich wieder als Superuser; der umgeht alle Rechte, der Bestand
+  bleibt nutzbar. Die neuen Rollen bleiben ohne Wirkung im Cluster.
+- `restore.sh` spielt einen Dump als Superuser ein; Eigentümer aus einem alten Dump korrigiert der nächste Start.
+
+## Doku-Impact
+
+`docs/developer/index.html` (Komponenten: Datenbank-Rollen; Korrektur: `postgres` hängt auch im pki-Netz, nicht nur
+das Gateway erreicht den ca-issuer), `docs/admin/installation.html` und `betrieb.html` (neue `.env`-Passwörter,
+`db-init`, Backup/Restore), DE+EN; `DEVELOPMENT.md` (`db_roles_test.sh` braucht Docker); CHANGELOG (Changed, Security
+neutral: „eine Rolle je Dienst“).
+
+## Offene Fragen
+
+1. **Scheduler: eigene Rolle mit DML oder die Rolle des Servers?** Empfehlung: eigene Rolle `ah_scheduler` mit DML
+   über Default-Privilegien — der Scheduler legt keine Tabellen an. Trade-off: eine Variable und ein Default-Privileg
+   mehr; eine Migration, die nur Rechte anderer Rollen ändert, muss den Scheduler mitdenken.
+2. **Plan-Freigabe (Kevin 2026-10-22/29):** gebaut wird erst nach Kevins Ja zu diesem Plan; die PR merged Kevin
+   (`update.sh`-Pfad, Datenmigration).
