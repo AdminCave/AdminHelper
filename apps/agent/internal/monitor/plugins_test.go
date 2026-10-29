@@ -125,7 +125,7 @@ func stubDocker(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Cleanup(func() { dockerCLI = old })
 	var calls [][]string
 	dockerCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
-	dockerCLI.run = func(args ...string) ([]byte, error) {
+	dockerCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		reply, ok := replies[args[0]]
 		if !ok {
@@ -180,7 +180,7 @@ func assertDockerUnavailable(t *testing.T, wire map[string]any, code string) {
 func TestCollectDockerCLIMissing(t *testing.T) {
 	calls := stubDocker(t, nil)
 	dockerCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
-	if got := collectDocker(); got != nil {
+	if got := collectDocker(context.Background()); got != nil {
 		t.Errorf("collectDocker() = %v, want nil (docker not installed is not an outage)", got)
 	}
 	if len(*calls) != 0 {
@@ -190,7 +190,7 @@ func TestCollectDockerCLIMissing(t *testing.T) {
 
 func TestCollectDockerDaemonUnreachable(t *testing.T) {
 	calls := stubDocker(t, map[string]dockerReply{"info": {err: errDockerExec}})
-	block := collectDocker()
+	block := collectDocker(context.Background())
 	if block == nil {
 		t.Fatal("collectDocker() = nil, want an unavailable block")
 	}
@@ -210,13 +210,21 @@ func TestCollectDockerTimeout(t *testing.T) {
 			}
 			replies[hung] = dockerReply{err: context.DeadlineExceeded}
 			stubDocker(t, replies)
-			assertDockerUnavailable(t, dockerWire(t, collectDocker()), "timeout")
+			assertDockerUnavailable(t, dockerWire(t, collectDocker(context.Background())), "timeout")
 		})
 	}
 }
 
 // dockerHelperEnv tells TestHelperDockerProcess, run as a child process, how to behave.
 const dockerHelperEnv = "AH_DOCKER_HELPER"
+
+// grandchildLifetime bounds the "chatter" grandchild of "orphan". It ends at its first failed write,
+// once runTimed has closed the pipe; without a WaitDelay that never happens, and the call lasts this
+// long. A grandchild that outlived the test would keep go test from deleting the test binary on Windows.
+const grandchildLifetime = 20 * time.Second
+
+// orphanStarted is what the "orphan" helper prints once its grandchild runs.
+const orphanStarted = "grandchild started"
 
 // TestHelperDockerProcess is no test of its own: the runTimed tests start the test binary as their
 // child process, which then hangs or fails as dockerHelperEnv says. Without it, it returns at once.
@@ -226,6 +234,23 @@ func TestHelperDockerProcess(t *testing.T) {
 		time.Sleep(time.Minute)
 	case "fail":
 		os.Exit(3)
+	case "orphan":
+		// A tool that starts a grandchild with its own stdout (a daemon, a pager) and then hangs.
+		grandchild := exec.Command(os.Args[0], "-test.run=^TestHelperDockerProcess$")
+		grandchild.Env = append(os.Environ(), dockerHelperEnv+"=chatter")
+		grandchild.Stdout = os.Stdout
+		if err := grandchild.Start(); err != nil {
+			os.Exit(4)
+		}
+		fmt.Println(orphanStarted)
+		time.Sleep(time.Minute)
+	case "chatter":
+		for end := time.Now().Add(grandchildLifetime); time.Now().Before(end); {
+			if _, err := fmt.Println("chatter"); err != nil {
+				os.Exit(0)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 }
 
@@ -233,7 +258,7 @@ func TestHelperDockerProcess(t *testing.T) {
 func runHelperDocker(t *testing.T, mode string, timeout time.Duration) error {
 	t.Helper()
 	t.Setenv(dockerHelperEnv, mode)
-	_, err := runTimed(timeout, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	_, err := runTimed(context.Background(), timeout, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	return err
 }
 
@@ -247,6 +272,65 @@ func TestDockerRunTimedHungCall(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
 		t.Errorf("runTimed returned after %s, the timeout did not stop the hung call", elapsed)
+	}
+}
+
+func TestRunTimedEndsWhenAGrandchildHoldsStdout(t *testing.T) {
+	// The timeout kills the tool, not the grandchild that holds its stdout; without a WaitDelay,
+	// Output read the pipe until the grandchild ended (here after grandchildLifetime). The timeout
+	// leaves the helper time to start its grandchild; the marker in the output proves it did.
+	t.Setenv(dockerHelperEnv, "orphan")
+	start := time.Now()
+	out, err := runTimed(context.Background(), time.Second, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	elapsed := time.Since(start)
+	if !strings.Contains(string(out), orphanStarted) {
+		t.Fatalf("output = %q, the grandchild did not start before the timeout", out)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed > 10*time.Second {
+		t.Errorf("runTimed returned after %s, the grandchild held it past the timeout", elapsed)
+	}
+}
+
+func TestRunTimedEndsWithTheContext(t *testing.T) {
+	// The caller's context ends a call long before its own timeout, and the call says why: Canceled,
+	// neither the ExitError of the kill nor a timeout.
+	t.Setenv(dockerHelperEnv, "hang")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(100*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := runTimed(ctx, time.Minute, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("runTimed returned after %s, the context did not end the call", elapsed)
+	}
+}
+
+func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
+	type ctxKey struct{}
+	stubReportHost(t)
+	got := map[string]context.Context{}
+	record := func(name string) func(context.Context) map[string]any {
+		return func(ctx context.Context) map[string]any {
+			got[name] = ctx
+			return nil
+		}
+	}
+	pluginCollectors.docker = record("docker")
+	pluginCollectors.proxmox = record("proxmox")
+	pluginCollectors.zfs = record("zfs")
+
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	for _, name := range []string{"docker", "proxmox", "zfs"} {
+		if c := got[name]; c == nil || c.Value(ctxKey{}) != t.Name() {
+			t.Errorf("%s collector got context %v, want the report's", name, c)
+		}
 	}
 }
 
@@ -276,14 +360,14 @@ func TestCollectDockerCLIOrParseFailed(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stubDocker(t, c.replies)
-			assertDockerUnavailable(t, dockerWire(t, collectDocker()), c.want)
+			assertDockerUnavailable(t, dockerWire(t, collectDocker(context.Background())), c.want)
 		})
 	}
 }
 
 func TestCollectDockerNoContainers(t *testing.T) {
 	calls := stubDocker(t, map[string]dockerReply{"info": {}, "ps": {out: "\n"}})
-	got := dockerWire(t, collectDocker())
+	got := dockerWire(t, collectDocker(context.Background()))
 	want := wantDockerWire(t, `{"available": true, "error": null, "containers": []}`)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("block = %v, want %v", got, want)
@@ -297,7 +381,7 @@ func TestCollectDockerInspectFields(t *testing.T) {
 	calls := stubDocker(t, map[string]dockerReply{
 		"info": {}, "ps": {out: dockerPSFixture}, "inspect": {out: dockerInspectFixture},
 	})
-	got := dockerWire(t, collectDocker())
+	got := dockerWire(t, collectDocker(context.Background()))
 	want := wantDockerWire(t, `{"available": true, "error": null, "containers": [
 		{"id": "611889c0d0d7", "name": "ah-t1-restart3", "image": "alpine:3.22", "state": "exited",
 		 "status": "Exited (1) 7 seconds ago", "restart_policy": "on-failure",
@@ -332,7 +416,7 @@ func TestCollectDockerInspectFields(t *testing.T) {
 					"Health":{"Status":"healthy","FailingStreak":0,"FutureHealth":{"a":1}}},
 				"HostConfig":{"RestartPolicy":{"Name":"always","MaximumRetryCount":0,"Future":[]},"Future":"x"}}]`},
 		})
-		got := dockerWire(t, collectDocker())
+		got := dockerWire(t, collectDocker(context.Background()))
 		want := wantDockerWire(t, `{"available": true, "error": null, "containers": [
 			{"id": "0123456789ab", "name": "app", "image": "app:1", "state": "running", "status": "Up 1 hour",
 			 "restart_policy": "always", "exit_code": 0, "oom_killed": false, "restart_count": 2,
@@ -353,7 +437,7 @@ func TestCollectDockerInspectPartial(t *testing.T) {
 	stubDocker(t, map[string]dockerReply{
 		"info": {}, "ps": {out: dockerPSFixture}, "inspect": {out: string(partial), err: errDockerExec},
 	})
-	wire := dockerWire(t, collectDocker())
+	wire := dockerWire(t, collectDocker(context.Background()))
 	if wire["available"] != true || wire["error"] != nil {
 		t.Fatalf("available/error = %v/%v, want true/null (a vanished container is no outage)",
 			wire["available"], wire["error"])
@@ -376,7 +460,7 @@ func TestCollectDockerStateFromInspect(t *testing.T) {
 		"inspect": {out: `[{"Id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","RestartCount":0,
 			"State":{"Status":"exited","ExitCode":2,"OOMKilled":false},"HostConfig":{"RestartPolicy":{"Name":""}}}]`},
 	})
-	c := dockerWire(t, collectDocker())["containers"].([]any)[0].(map[string]any)
+	c := dockerWire(t, collectDocker(context.Background()))["containers"].([]any)[0].(map[string]any)
 	if c["state"] != "exited" || c["exit_code"] != float64(2) || c["restart_policy"] != "" {
 		t.Errorf("container = %v, want state exited, exit_code 2, restart_policy \"\"", c)
 	}
@@ -408,7 +492,7 @@ func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Cleanup(func() { zpoolCLI = old })
 	var calls [][]string
 	zpoolCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
-	zpoolCLI.run = func(args ...string) ([]byte, error) {
+	zpoolCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		reply, ok := replies[args[0]]
 		if !ok {
@@ -438,7 +522,7 @@ func assertZFSUnavailable(t *testing.T, wire map[string]any, code string) {
 func TestCollectZFSCLIMissing(t *testing.T) {
 	calls := stubZpool(t, nil)
 	zpoolCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
-	if got := collectZFS(); got != nil {
+	if got := collectZFS(context.Background()); got != nil {
 		t.Errorf("collectZFS() = %v, want nil (zpool not installed is not an outage)", got)
 	}
 	if len(*calls) != 0 {
@@ -450,7 +534,7 @@ func TestCollectZFSListFailed(t *testing.T) {
 	calls := stubZpool(t, map[string]dockerReply{
 		"list": {err: &exec.Error{Name: "/opt/some-path/zpool", Err: exec.ErrNotFound}},
 	})
-	block := collectZFS()
+	block := collectZFS(context.Background())
 	if block == nil {
 		t.Fatal("collectZFS() = nil, want an unavailable block")
 	}
@@ -462,7 +546,7 @@ func TestCollectZFSListFailed(t *testing.T) {
 
 func TestCollectZFSTimeout(t *testing.T) {
 	stubZpool(t, map[string]dockerReply{"list": {err: context.DeadlineExceeded}})
-	wire := dockerWire(t, collectZFS())
+	wire := dockerWire(t, collectZFS(context.Background()))
 	assertZFSUnavailable(t, wire, "timeout")
 	if msg, _ := wire["error_message"].(string); !strings.Contains(msg, "timed out") {
 		t.Errorf("error_message = %q, want it to say the call timed out", msg)
@@ -474,13 +558,13 @@ func TestCollectZFSRealZpoolCall(t *testing.T) {
 	// the runner runZpool uses, with only the binary and the timeout swapped: a hung zpool the timeout
 	// killed (exec: "signal: killed") must be timeout, one that fails on its own cli_failed.
 	stubZpool(t, nil)
-	zpoolCLI.run = func(...string) ([]byte, error) {
+	zpoolCLI.run = func(context.Context, ...string) ([]byte, error) {
 		return nil, runHelperDocker(t, "hang", 100*time.Millisecond)
 	}
-	assertZFSUnavailable(t, dockerWire(t, collectZFS()), "timeout")
+	assertZFSUnavailable(t, dockerWire(t, collectZFS(context.Background())), "timeout")
 
-	zpoolCLI.run = func(...string) ([]byte, error) { return nil, runHelperDocker(t, "fail", time.Minute) }
-	wire := dockerWire(t, collectZFS())
+	zpoolCLI.run = func(context.Context, ...string) ([]byte, error) { return nil, runHelperDocker(t, "fail", time.Minute) }
+	wire := dockerWire(t, collectZFS(context.Background()))
 	assertZFSUnavailable(t, wire, "cli_failed")
 	if wire["error_message"] != "zpool list failed: exit status 3" {
 		t.Errorf("error_message = %q, want the exit status", wire["error_message"])
@@ -489,7 +573,7 @@ func TestCollectZFSRealZpoolCall(t *testing.T) {
 
 func TestCollectZFSNoPools(t *testing.T) {
 	calls := stubZpool(t, map[string]dockerReply{"list": {out: ""}})
-	got := dockerWire(t, collectZFS())
+	got := dockerWire(t, collectZFS(context.Background()))
 	want := wantDockerWire(t, `{"available": true, "error": null, "pools": []}`)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("block = %v, want %v", got, want)
@@ -503,7 +587,7 @@ func TestCollectZFSPools(t *testing.T) {
 	const list = "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\nbackup\t1T\t900G\t100G\t90%\tDEGRADED\n"
 	const status = "  pool: backup\n state: DEGRADED\n"
 	calls := stubZpool(t, map[string]dockerReply{"list": {out: list}, "status": {out: status}})
-	got := dockerWire(t, collectZFS())
+	got := dockerWire(t, collectZFS(context.Background()))
 	want := wantDockerWire(t, `{"available": true, "error": null, "pools": [
 		{"name": "tank", "size": "3.62T", "allocated": "1.2T", "free": "2.4T", "capacity_percent": 33,
 		 "health": "ONLINE"},
@@ -519,7 +603,7 @@ func TestCollectZFSPools(t *testing.T) {
 
 	t.Run("all online", func(t *testing.T) {
 		calls := stubZpool(t, map[string]dockerReply{"list": {out: "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\n"}})
-		got := dockerWire(t, collectZFS())
+		got := dockerWire(t, collectZFS(context.Background()))
 		if got["available"] != true || got["error"] != nil || len(got["pools"].([]any)) != 1 {
 			t.Errorf("block = %v, want one available pool", got)
 		}
@@ -531,7 +615,7 @@ func TestCollectZFSPools(t *testing.T) {
 	t.Run("status fails", func(t *testing.T) {
 		// As before: without zpool status -x the pools still go out, only the error details are missing.
 		stubZpool(t, map[string]dockerReply{"list": {out: list}, "status": {err: context.DeadlineExceeded}})
-		got := dockerWire(t, collectZFS())
+		got := dockerWire(t, collectZFS(context.Background()))
 		if got["available"] != true || got["error"] != nil || len(got["pools"].([]any)) != 2 {
 			t.Errorf("block = %v, want both pools available", got)
 		}
@@ -550,7 +634,7 @@ func stubPvesh(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Cleanup(func() { pveshCLI = old })
 	var calls [][]string
 	pveshCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
-	pveshCLI.run = func(args ...string) ([]byte, error) {
+	pveshCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		var reply dockerReply
 		ok := len(args) > 1 && args[0] == "get"
@@ -628,7 +712,7 @@ func assertProxmoxUnavailable(t *testing.T, block map[string]any, logs *bytes.Bu
 func TestCollectProxmoxCLIMissing(t *testing.T) {
 	calls := stubPvesh(t, nil)
 	pveshCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
-	if got := collectProxmox(); got != nil {
+	if got := collectProxmox(context.Background()); got != nil {
 		t.Errorf("collectProxmox() = %v, want nil (pvesh not installed is not an outage)", got)
 	}
 	if len(*calls) != 0 {
@@ -644,7 +728,7 @@ func TestCollectProxmoxHostnameUnreadable(t *testing.T) {
 		return "", &os.PathError{Op: "open", Path: "/proc/sys/kernel/hostname", Err: os.ErrPermission}
 	}
 	logs := captureWarnings(t)
-	assertProxmoxUnavailable(t, collectProxmox(), logs, "cli_failed", "local hostname unreadable")
+	assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, "cli_failed", "local hostname unreadable")
 	if len(*calls) != 0 {
 		t.Errorf("pvesh was called without a node name: %v", *calls)
 	}
@@ -669,7 +753,7 @@ func TestCollectProxmoxNodeStatusFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			calls := stubPvesh(t, map[string]dockerReply{pveshNodeStatus(t): tc.reply})
 			logs := captureWarnings(t)
-			assertProxmoxUnavailable(t, collectProxmox(), logs, tc.code, tc.text)
+			assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, tc.code, tc.text)
 			if len(*calls) != 1 {
 				t.Errorf("calls = %v, want only the node status", *calls)
 			}
@@ -701,7 +785,7 @@ func TestCollectProxmoxVMCallFails(t *testing.T) {
 				"/cluster/resources":   tc.reply,
 			})
 			logs := captureWarnings(t)
-			assertProxmoxUnavailable(t, collectProxmox(), logs, tc.code, tc.text)
+			assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, tc.code, tc.text)
 		})
 	}
 }
@@ -714,7 +798,7 @@ func TestCollectProxmoxNoVMs(t *testing.T) {
 		pveshBackupStorages(t): {out: "[]"},
 		"/cluster/resources":   {out: "[]"},
 	})
-	got := dockerWire(t, collectProxmox())
+	got := dockerWire(t, collectProxmox(context.Background()))
 	want := wantDockerWire(t, `{"available": true, "error": null, "vms": [],
 		"node": {"name": "`+strings.TrimPrefix(pveshNode(t), "/nodes/")+`", "cpu": 5, "memory_percent": 25}}`)
 	if !reflect.DeepEqual(got, want) {
@@ -808,7 +892,7 @@ func TestCollectProxmoxBackupIndexIncomplete(t *testing.T) {
 			}
 			stubPvesh(t, replies)
 			logs := captureWarnings(t)
-			assertProxmoxUnavailable(t, collectProxmox(), logs, tc.code, tc.text)
+			assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, tc.code, tc.text)
 		})
 	}
 }
@@ -828,7 +912,7 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 		pveshBackupContent(t, "pbs"): {out: "[]"},
 		"/cluster/resources":         {out: pveshVMsFixture},
 	})
-	wire := dockerWire(t, collectProxmox())
+	wire := dockerWire(t, collectProxmox(context.Background()))
 	want := wantDockerWire(t, `{"vms": [
 		{"vmid": 100, "name": "web", "status": "running", "type": "qemu", "last_backup_ts": 1760086400},
 		{"vmid": 101, "name": "dns", "status": "running", "type": "lxc", "last_backup_ts": null}

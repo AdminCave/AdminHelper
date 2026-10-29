@@ -6,12 +6,22 @@
 
 import json
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
+)
+
+AGENT_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "agent"
+    / "internal"
+    / "frpc"
+    / "testdata"
+    / "server_frpc.toml"
 )
 
 
@@ -194,6 +204,45 @@ class TestGenerateFrpcToml:
         toml = generate_frpc_toml(config, tunnels, "srv1")
         assert toml.count("[[proxies]]") == 2
 
+    def test_agent_fixture_is_the_generator_output(self):
+        """The agent applies a server frpc.toml only in the form this generator writes
+        (checkServerConfig, apps/agent/internal/frpc/servertoml.go), and its tests check that
+        against this fixture. When the generator's output changes, this test fails until the
+        fixture and the agent's check follow; otherwise agents would refuse the new text and
+        keep their old tunnels."""
+        config = _make_config(
+            server_addr="203.0.113.10",
+            bind_port=7000,
+            auth_token="frps-token-placeholder",
+        )
+        # Not in name order: the order in the fixture is the one active_tunnels sorts to.
+        tunnels = [
+            _make_tunnel(
+                name="host-01-web",
+                tunnel_type="https",
+                protocol="web",
+                local_port=443,
+                secret_key=None,
+                custom_domains="web.example, www.web.example",
+            ),
+            _make_tunnel(
+                name="host-01-ssh",
+                local_port=22,
+                secret_key="stcp-secret-placeholder",
+                extra_config=json.dumps(
+                    {
+                        "transport.bandwidthLimit": "1MB",
+                        "transport.useEncryption": True,
+                        "healthCheck.intervalSeconds": 10,
+                    }
+                ),
+            ),
+        ]
+        toml = generate_frpc_toml(config, tunnels, "host-01", ["ops-admin", "ops-backup"])
+        # Bytes, not read_text: universal newlines would turn \r\n into \n, and the agent
+        # refuses a \r.
+        assert toml == AGENT_FIXTURE.read_bytes().decode("utf-8")
+
 
 class TestGenerateVisitorToml:
     def test_basic_visitor(self):
@@ -238,6 +287,44 @@ class TestGenerateVisitorToml:
         assert 'certFile = "{{IDENTITY_DIR}}/cert.pem"' in toml
         assert 'keyFile = "{{IDENTITY_DIR}}/key.pem"' in toml
         assert "/etc/frp/pki" not in toml
+
+
+class TestLocalPortOutsideRange:
+    # R-0560: frpc refuses the whole config for a localPort outside 0..65535, so one stored
+    # row cost every tunnel of the host. Only that proxy is left out, with a warning.
+    def test_frpc_skips_local_port_outside_range(self, caplog):
+        import logging
+
+        bad = [
+            _make_tunnel(name=f"bad-{i}", local_port=port)
+            for i, port in enumerate((0, -1, 65536, 70000))
+        ]
+        ok = _make_tunnel(name="ok", local_port=22)
+        with caplog.at_level(logging.WARNING):
+            toml = generate_frpc_toml(_make_config(), [*bad, ok], "srv1")
+        assert toml.count("[[proxies]]") == 1
+        assert toml == generate_frpc_toml(_make_config(), [ok], "srv1")
+        warned = [r.getMessage() for r in caplog.records if "local_port" in r.getMessage()]
+        for tunnel in bad:
+            assert any(
+                tunnel.name in m and repr(tunnel.local_port) in m and "left out" in m
+                for m in warned
+            ), (tunnel.name, warned)
+
+    def test_frpc_keeps_the_edges(self):
+        tunnels = [
+            _make_tunnel(name="low", local_port=1),
+            _make_tunnel(name="high", local_port=65535),
+        ]
+        toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+        assert toml.count("[[proxies]]") == 2
+        assert "localPort = 1\n" in toml and "localPort = 65535\n" in toml
+
+    def test_frpc_with_only_bad_local_ports_is_the_empty_config(self):
+        tunnels = [_make_tunnel(name="bad", local_port=70000)]
+        assert generate_frpc_toml(_make_config(), tunnels, "srv1") == generate_frpc_toml(
+            _make_config(), [], "srv1"
+        )
 
 
 class TestStcpWithoutSecret:

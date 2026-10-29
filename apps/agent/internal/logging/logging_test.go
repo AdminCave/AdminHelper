@@ -7,6 +7,7 @@ package logging
 import (
 	"bytes"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -64,6 +65,41 @@ func TestLoggerInfofRespectsLevelFilter(t *testing.T) {
 
 	if buf.Len() != 0 {
 		t.Errorf("INFO must be suppressed at WARN level, got: %q", buf.String())
+	}
+}
+
+// failingWriter refuses every write, like the stdout of a Windows service.
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+// shortWriter takes one byte less than it is given and reports no error.
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
+// The fan-out gives every write to each target, also to one after a target that
+// failed, and the write counts as done once one target took it in full. Only when
+// no target took it does the first error come back.
+func TestFanOutWriterKeepsWritingAfterAFailingTarget(t *testing.T) {
+	stdoutErr := errors.New("stdout cannot be written")
+	line := []byte("level=INFO msg=\"a line\"\n")
+
+	var file bytes.Buffer
+	n, err := fanOut{failingWriter{stdoutErr}, &file}.Write(line)
+	if n != len(line) || err != nil {
+		t.Fatalf("Write with the first target failing = (%d, %v), want (%d, nil)", n, err, len(line))
+	}
+	if file.String() != string(line) {
+		t.Fatalf("the target after the failing one got %q, want %q", file.String(), line)
+	}
+
+	n, err = fanOut{failingWriter{stdoutErr}, failingWriter{errors.New("disk full")}}.Write(line)
+	if n != 0 || !errors.Is(err, stdoutErr) {
+		t.Fatalf("Write with every target failing = (%d, %v), want (0, %v)", n, err, stdoutErr)
+	}
+	if _, err := (fanOut{shortWriter{}}).Write(line); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("Write with the only target taking less = %v, want %v", err, io.ErrShortWrite)
 	}
 }
 

@@ -8,9 +8,9 @@
 // selected by their variant class (.danger / .ghost) to stay independent of the
 // active i18n language.
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { get } from 'svelte/store';
 
 // A session without a server, as in auth.test.ts: hydrate restores one, logout and the
@@ -33,6 +33,11 @@ import { auth } from '$lib/stores/auth';
 afterEach(cleanup);
 
 describe('ConfirmDialog', () => {
+  // Every question is asked inside a session, as in the app.
+  beforeEach(async () => {
+    await auth.hydrate();
+  });
+
   it('opens with the requested message and resolves true on confirm', async () => {
     const { container, getByText } = render(ConfirmDialog);
     expect(container.querySelector('.btn.danger')).toBeNull(); // closed initially
@@ -114,7 +119,6 @@ describe('ConfirmDialog', () => {
     ['a logout', () => auth.logout()],
     ['an expiry', () => vi.mocked(registerAuthFailureHandler).mock.calls[0][0]()],
   ])('cancels the open question on %s', async (_name, endSession) => {
-    await auth.hydrate();
     expect(get(auth).user).not.toBeNull();
     const { container } = render(ConfirmDialog);
     let result: boolean | undefined;
@@ -126,5 +130,18 @@ describe('ConfirmDialog', () => {
     expect(get(auth).user).toBeNull();
     await waitFor(() => expect(result).toBe(false));
     await waitFor(() => expect(container.querySelector('.btn.danger')).toBeNull());
+  });
+
+  // The same rule for a question asked only after the session ended: it is not asked at all.
+  it('answers false at once and opens nothing without a session', async () => {
+    const { container } = render(ConfirmDialog);
+    vi.mocked(registerAuthFailureHandler).mock.calls[0][0]();
+    expect(get(auth).user).toBeNull();
+    // Let the dialog see the session end first; else that effect would cancel the question.
+    await tick();
+
+    await expect(confirmDialog('x')).resolves.toBe(false);
+    await tick();
+    expect(container.querySelector('.btn.danger')).toBeNull();
   });
 });

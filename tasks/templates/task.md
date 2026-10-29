@@ -23,4 +23,4 @@ Semantik: <docs/…> — „<zitat>" (Pflicht bei /feature-plan --kurz)
 Komponente: <komponente> · Dateien: <pfad…>
 Änderung: <was genau geändert wird — eine fokussierte Änderung, keine Design-Entscheidung>
 Verify: bash scripts/dev/verify.sh <komponente> --strict
-Doku: <Datei(en), oder „keine (Grund)">
+Doku: <Datei(en) DE+EN | → T<n> (die Doku-Task) | keine (Grund)>

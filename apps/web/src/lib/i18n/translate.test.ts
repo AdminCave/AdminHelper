@@ -8,7 +8,7 @@ import { tNow, language } from './index';
 // The existing i18n.test only checks dictionary key parity; the actual translate logic — {var}
 // interpolation (incl. null/undefined -> '') and the fallback to the key itself — was untested. A regex
 // slip in the interpolation would render broken text app-wide with nothing to catch it (6.153).
-// detect()/subscribe are typeof-guarded, so this runs in the node env without a localStorage stub.
+// detect()/subscribe use the storage helpers, which never throw, so no localStorage stub is needed.
 describe('i18n tNow', () => {
   it('interpolates a {var} into the translated text', () => {
     language.set('de');

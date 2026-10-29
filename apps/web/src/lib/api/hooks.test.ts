@@ -18,7 +18,7 @@ describe('hooks api', () => {
     vi.mocked(http.post).mockResolvedValueOnce(response);
     await expect(run('a/b')).resolves.toBe(response);
     expect(http.post).toHaveBeenCalledTimes(1);
-    expect(http.post).toHaveBeenCalledWith('/api/hooks/a%2Fb/run', {});
+    expect(http.post).toHaveBeenCalledWith('/api/hooks/a%2Fb/run', {}, { timeoutMs: 75_000 });
   });
 
   // `npm run check` (svelte-check) type-checks this file: each directive below fails the check

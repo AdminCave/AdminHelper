@@ -95,10 +95,20 @@ def _parse_trigger(interval: str):
     parts = interval.split()
     if len(parts) == 5:
         parts[4] = _cron_weekdays(parts[4])
-        return CronTrigger.from_crontab(" ".join(parts))
+        # Cron expressions are documented as UTC. A trigger built without a timezone takes
+        # tzlocal.get_localzone(), i.e. TZ (Europe/Berlin in Compose), not the scheduler's
+        # timezone="UTC": that one only applies to triggers the scheduler builds from an alias.
+        return CronTrigger.from_crontab(" ".join(parts), timezone=timezone.utc)
     raise ValueError(
         f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(INTERVAL_MAP)} oder Cron (5 Felder)"
     )
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """A job's next_run_time as naive UTC, the storage convention of hooks.next_run
+    (app.core.time). It carries the trigger's zone, which for an interval is still TZ:
+    dropping the tzinfo without converting stored the local wall time as UTC."""
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _execute_scheduled_hook(hook_id: str) -> None:
@@ -123,7 +133,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
         hook.last_run = now.replace(tzinfo=None)
         job = scheduler.get_job(hook_id)
         if job and job.next_run_time:
-            hook.next_run = job.next_run_time.replace(tzinfo=None)
+            hook.next_run = _naive_utc(job.next_run_time)
         db.commit()
 
         try:
@@ -142,8 +152,14 @@ def _execute_scheduled_hook(hook_id: str) -> None:
 
 
 def add_hook(hook_id: str, interval: str) -> None:
-    """Register or update a scheduled hook (replace_existing=True)."""
+    """Register a scheduled hook, or register it again if its trigger changed; a job
+    whose trigger is unchanged keeps its next run."""
     trigger = _parse_trigger(interval)
+    # A new IntervalTrigger starts at now + interval, and the reconcile calls this every
+    # 30 s: replacing an unchanged job would push its next run out forever.
+    job = scheduler.get_job(hook_id)
+    if job is not None and str(job.trigger) == str(trigger):
+        return
     scheduler.add_job(
         _execute_scheduled_hook,
         trigger=trigger,
@@ -163,7 +179,7 @@ def get_next_run(hook_id: str) -> datetime | None:
     """Get the next_run_time of a registered job."""
     job = scheduler.get_job(hook_id)
     if job and job.next_run_time:
-        return job.next_run_time.replace(tzinfo=None)
+        return _naive_utc(job.next_run_time)
     return None
 
 
@@ -179,7 +195,8 @@ def reconcile_scheduled_hooks(db=None) -> None:
     Runs in the dedicated scheduler process: the web workers no longer register
     jobs directly (they have no running scheduler), so this reconcile is how a
     newly created / changed / deleted scheduled hook reaches the scheduler. It
-    is idempotent — add_hook uses replace_existing, and stale jobs are removed.
+    is idempotent — add_hook leaves an unchanged job alone and replaces a changed one,
+    and stale jobs are removed.
     Also persists next_run back to the DB so the API can show it. ``db`` is an
     optional session (the periodic job opens its own; tests inject one).
     """
@@ -201,7 +218,7 @@ def reconcile_scheduled_hooks(db=None) -> None:
             if not hook.schedule_interval:
                 continue
             try:
-                add_hook(hook.id, hook.schedule_interval)  # replace_existing -> idempotent
+                add_hook(hook.id, hook.schedule_interval)  # unchanged job stays -> idempotent
                 active_ids.add(hook.id)
             except ValueError:
                 key = (hook.id, hook.schedule_interval)

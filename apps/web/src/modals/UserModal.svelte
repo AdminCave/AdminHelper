@@ -9,9 +9,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
   import { users } from '$lib/stores/users';
+  import { auth, currentUser } from '$lib/stores/auth';
   import * as serversApi from '$lib/api/servers';
   import { showToast, showError } from '$lib/stores/notifications';
-  import type { Server, User, UserUpdate } from '$lib/api/types';
+  import type { ServerSummary, User } from '$lib/api/types';
+  import {
+    endsOwnSession,
+    userCreatePayload,
+    userUpdatePayload,
+    validateUserForm,
+    type UserForm,
+  } from '$lib/utils/userForm';
 
   interface Props {
     open: boolean;
@@ -24,7 +32,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let username = $state('');
   let password = $state('');
   let isAdmin = $state(false);
-  let serverList = $state<Server[]>([]);
+  let serverList = $state<ServerSummary[]>([]);
   let serverLoadFailed = $state(false);
   let selectedServerIds = $state<Set<string>>(new Set());
   let submitting = $state(false);
@@ -44,7 +52,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   async function loadServers() {
     serverLoadFailed = false;
     try {
-      serverList = await serversApi.list();
+      serverList = await serversApi.listSummaries();
     } catch (err) {
       // Surface the failure instead of showing the empty "no servers" state — otherwise an admin
       // thinks there are no servers, saves the user with no assignments, and (when editing) can't
@@ -65,29 +73,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
+    const form: UserForm = { username, password, isAdmin, serverIds: [...selectedServerIds] };
+    const missing = validateUserForm(form, editing);
+    if (missing) {
+      showToast($t(missing), 'error');
+      return;
+    }
     submitting = true;
     try {
-      const server_ids = [...selectedServerIds];
       if (editing) {
-        const payload: UserUpdate = {
-          is_admin: isAdmin,
-          server_ids,
-        };
-        if (password) payload.password = password;
-        await users.update(editing.id, payload);
-        showToast($t('toast.user.saved'));
-      } else {
-        if (!password) {
-          showToast($t('modal.user.passwordRequired'), 'error');
-          submitting = false;
+        const ownPassword = endsOwnSession(form, editing, $currentUser?.id);
+        const updated = await users.update(editing.id, userUpdatePayload(form));
+        if (ownPassword) {
+          // A new password ends every session of the account on the server (tokens_valid_after);
+          // logging out now says so, instead of a "Session expired" at the next click.
+          onClose();
+          await auth.logout();
+          showToast($t('toast.user.ownPasswordChanged'), 'info', 8000);
           return;
         }
-        await users.create({
-          username: username.trim(),
-          password,
-          is_admin: isAdmin,
-          server_ids,
-        });
+        auth.applySelfUpdate(updated);
+        showToast($t('toast.user.saved'));
+      } else {
+        await users.create(userCreatePayload(form));
         showToast($t('toast.user.created'));
       }
       onClose();

@@ -14,11 +14,20 @@ push built, once the signature that push made checks out.
 
 The frps image builds on the frps image of the FRP release that ci.yml and release.yml pin as
 FRP_VERSION; the lockstep job frp-consistency compares that base with the other pins. The server
-job of ci.yml pulls that base, so the tests that run the frps image run there instead of
-skipping. The ops-scripts job shellchecks the supervisor as the POSIX sh the image runs it with.
+job of ci.yml pulls that base along with those of the gateway and of the Python images, so the
+tests that run an image run there instead of skipping, and in that leg a step reads the JUnit XML
+of pytest and fails on any test that skipped. The ops-scripts job shellchecks the supervisor as
+the POSIX sh the image runs it with.
+
+The Playwright job of ci.yml installs Chromium alone, the one browser its suite runs, and gives
+the install a deadline of its own below that of the job.
+
+The CA-Issuer jobs of ci.yml hand the database of a Postgres service to the issuer's Postgres
+tests, which skip without one.
 
 The steps are run, where they can be, as Actions runs a step without a shell of its own
-(`bash -e`), on copies of the files they read or with stubs for docker, cosign and gh.
+(`bash -e`), on copies of the files they read or with stubs for docker, cosign, gh, npx and
+pytest.
 """
 
 import hashlib
@@ -26,16 +35,19 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 from .test_frps_supervisor import _image
+from .test_images_exec_only import _base
 
 _ROOT = Path(__file__).resolve().parents[3]
 _WORKFLOWS = _ROOT / ".github" / "workflows"
 _FRPS_DOCKERFILE = "apps/frps/Dockerfile"
+_GATEWAY_DOCKERFILE = "apps/gateway/Dockerfile"
 _SUPERVISOR = "apps/frps/frps-supervisor.sh"
 _GHCR = re.compile(r"ghcr\.io/admincave/adminhelper/([a-z-]+):")
 _FRPS_BASE = re.compile(r"^FROM (snowdreamtech/frps:(\d+\.\d+\.\d+)@sha256:[0-9a-f]{64})$", re.M)
@@ -46,7 +58,9 @@ _PINNED = (
     _FRPS_DOCKERFILE,
     "scripts/vm/bootstrap_linux.sh",
 )
-_PULL_STEP = "Pull the base of the frps image"
+_PULL_STEP = "Pull the base images of the image tests"
+_SKIP_STEP = "No test skipped"
+_PLAYWRIGHT_STEP = "Install Playwright browsers"
 _LATEST_STEP = "Point latest at the signed images of the release"
 _REPO = "ghcr.io/admincave/adminhelper"
 _ISSUER = "https://token.actions.githubusercontent.com"
@@ -359,21 +373,182 @@ def test_the_lockstep_job_fails_when_the_frps_image_moves_alone(tmp_path):
     assert "FRP_VERSION drift" in result.stdout, result.stdout + result.stderr
 
 
-def test_the_server_job_pulls_the_base_of_the_frps_image_before_its_tests(tmp_path):
-    steps = [step.get("name") for step in _workflow("ci.yml")["jobs"]["server"]["steps"]]
+def _gateway_base() -> str:
+    """The base image of the gateway, the first FROM of its Dockerfile, as the tests that run
+    the gateway image look it up."""
+    dockerfile = (_ROOT / _GATEWAY_DOCKERFILE).read_text(encoding="utf-8")
+    base = re.search(r"^FROM (\S+)$", dockerfile, re.M)
+    assert base, f"{_GATEWAY_DOCKERFILE}: FROM <image>"
+    return base[1]
+
+
+def test_the_server_job_pulls_the_base_of_every_image_test_before_the_tests(tmp_path):
+    job = _workflow("ci.yml")["jobs"]["server"]
+    steps = [step.get("name") for step in job["steps"]]
     assert steps.index(_PULL_STEP) < steps.index("Run pytest"), steps
-    # docker as a stub that prints what it was asked to do.
+    step = _step("ci.yml", "server", _PULL_STEP)
+    # One leg pulls, and that leg is in the matrix.
+    assert step.get("if") == "matrix.python-version == '3.13'", step
+    assert "3.13" in job["strategy"]["matrix"]["python-version"], job["strategy"]
+    # docker as a stub that prints what it was asked to do, one line a call.
     stub = tmp_path / "bin" / "docker"
     stub.parent.mkdir()
     stub.write_text('#!/bin/sh\necho "$@"\n', encoding="utf-8")
     stub.chmod(0o755)
 
     path = f"{stub.parent}:{os.environ['PATH']}"
-    pull = _run_step(_step("ci.yml", "server", _PULL_STEP), tmp_path, _ROOT, path)
+    pull = _run_step(step, tmp_path, _ROOT, path)
     assert pull.returncode == 0, pull.stdout + pull.stderr
-    # The reference the image tests look up before they build the image.
-    base, _, _ = _image()
-    assert pull.stdout.split() == ["pull", base]
+    # The references the image tests look up before they build or start a container, each
+    # pulled once: frps, the last stage of the Python images and the gateway.
+    bases = [_image()[0], _base(), _gateway_base()]
+    assert sorted(pull.stdout.splitlines()) == sorted(f"pull {base}" for base in bases)
+
+
+def _junit(tmp_path: Path, tests: str) -> Path:
+    """The JUnit XML pytest itself writes for tests, a test module named test_case."""
+    module = tmp_path / "junit-case" / "test_case.py"
+    module.parent.mkdir()
+    module.write_text(tests, encoding="utf-8")
+    xml = tmp_path / "junit-case.xml"
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={xml}"],
+        cwd=module.parent,
+        # The XML comes from pytest's own junitxml; the plugins of this venv add nothing to it.
+        env={"PATH": os.environ["PATH"], "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    return xml
+
+
+# pytest logs its arguments, one a line, and copies STUB_JUNIT, if set, where --junitxml= asks.
+_PYTEST_STUB = """#!/bin/sh
+printf '%s\\n' "$@" > "$STUB_LOG"
+for arg in "$@"; do
+  case "$arg" in
+    --junitxml=*) [ -z "${STUB_JUNIT:-}" ] || cp "$STUB_JUNIT" "${arg#*=}" ;;
+  esac
+done
+"""
+
+
+def _skip_gate(tmp_path: Path, junit: Path | None) -> tuple[list[str], subprocess.CompletedProcess]:
+    """Run pytest of the server job with pytest as a stub that hands over junit, then the step
+    that reads the JUnit XML, both on one runner; the arguments pytest got and the run of the
+    step."""
+    stub = tmp_path / "bin" / "pytest"
+    stub.parent.mkdir()
+    stub.write_text(_PYTEST_STUB, encoding="utf-8")
+    stub.chmod(0o755)
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    log = tmp_path / "pytest.args"
+    env = {"RUNNER_TEMP": str(runner_temp), "STUB_LOG": str(log)}
+    if junit is not None:
+        env["STUB_JUNIT"] = str(junit)
+    path = f"{stub.parent}:{os.environ['PATH']}"
+
+    tests = _run_step(_step("ci.yml", "server", "Run pytest"), tmp_path, tmp_path, path, env)
+    assert tests.returncode == 0, tests.stdout + tests.stderr
+    gate = _run_step(_step("ci.yml", "server", _SKIP_STEP), tmp_path, tmp_path, path, env)
+    return log.read_text(encoding="utf-8").splitlines(), gate
+
+
+def test_the_skip_step_follows_pytest_in_the_leg_with_every_base_image():
+    steps = [step.get("name") for step in _workflow("ci.yml")["jobs"]["server"]["steps"]]
+    assert steps.index(_SKIP_STEP) == steps.index("Run pytest") + 1, steps
+    step = _step("ci.yml", "server", _SKIP_STEP)
+    # The leg that pulls the base images; the 3.12 leg skips the image tests on purpose.
+    assert step.get("if") == _step("ci.yml", "server", _PULL_STEP).get("if"), step
+    assert "continue-on-error" not in step, step
+
+
+def test_the_skip_step_passes_a_run_that_skipped_nothing(tmp_path):
+    junit = _junit(tmp_path, "def test_one():\n    pass\n\n\ndef test_two():\n    pass\n")
+    args, gate = _skip_gate(tmp_path, junit)
+    assert gate.returncode == 0, gate.stdout + gate.stderr
+    # The step found the XML, so it reads the path pytest writes, and that path is the
+    # runner's temp directory, not the checkout. -rs names each skip in the log of pytest too.
+    (xml,) = (arg.removeprefix("--junitxml=") for arg in args if arg.startswith("--junitxml="))
+    assert Path(xml).parent == tmp_path / "runner-temp", args
+    assert "-rs" in args, args
+
+
+def test_the_skip_step_fails_on_a_skip_and_names_each_with_its_reason(tmp_path):
+    junit = _junit(
+        tmp_path,
+        "import pytest\n\n\n"
+        "@pytest.fixture\ndef box():\n    pytest.skip('no base image')\n\n\n"
+        "def test_runs():\n    pass\n\n\n"
+        "def test_in_a_box(box):\n    pass\n\n\n"
+        "class TestGateway:\n"
+        "    @pytest.mark.skip(reason='no nginx')\n"
+        "    def test_starts(self):\n        pass\n",
+    )
+    _, gate = _skip_gate(tmp_path, junit)
+    assert gate.returncode != 0, gate.stdout + gate.stderr
+    lines = (gate.stdout + gate.stderr).splitlines()
+    assert "test_case::test_in_a_box: no base image" in lines, lines
+    assert "test_case.TestGateway::test_starts: no nginx" in lines, lines
+    assert not [line for line in lines if "test_runs" in line], lines
+
+
+@pytest.mark.parametrize(
+    "xml", [None, "", '<testsuites name="pytest tests"><testsuite'], ids=["none", "empty", "cut"]
+)
+def test_the_skip_step_fails_without_a_readable_junit_xml(tmp_path, xml):
+    junit = None
+    if xml is not None:
+        junit = tmp_path / "broken.xml"
+        junit.write_text(xml, encoding="utf-8")
+    _, gate = _skip_gate(tmp_path, junit)
+    assert gate.returncode != 0, gate.stdout + gate.stderr
+    assert "no readable JUnit XML" in gate.stdout + gate.stderr, gate.stdout + gate.stderr
+
+
+def test_the_playwright_install_step_gives_up_before_the_job():
+    job = _workflow("ci.yml")["jobs"]["frontend-e2e"]["timeout-minutes"]
+    step = _step("ci.yml", "frontend-e2e", _PLAYWRIGHT_STEP).get("timeout-minutes")
+    # Actions takes a positive whole number; a YAML bool would pass isinstance(int).
+    assert type(step) is int and 0 < step < job, (step, job)
+
+
+def test_the_playwright_job_installs_chromium_alone(tmp_path):
+    # npx as a stub that prints what it was asked to do.
+    stub = tmp_path / "bin" / "npx"
+    stub.parent.mkdir()
+    stub.write_text('#!/bin/sh\necho "$@"\n', encoding="utf-8")
+    stub.chmod(0o755)
+
+    step = _step("ci.yml", "frontend-e2e", _PLAYWRIGHT_STEP)
+    path = f"{stub.parent}:{os.environ['PATH']}"
+    install = _run_step(step, tmp_path, _ROOT / step["working-directory"], path)
+    assert install.returncode == 0, install.stdout + install.stderr
+    # Without a browser it installs the system packages of every browser Playwright knows;
+    # the projects of apps/web/playwright.config.ts all run Desktop Chrome.
+    assert install.stdout.split() == ["playwright", "install", "--with-deps", "chromium"]
+
+
+@pytest.mark.parametrize("job", ["ca-issuer", "python-lock-ca-issuer"])
+def test_the_ca_issuer_jobs_run_the_postgres_tests_against_a_service(job):
+    spec = _workflow("ci.yml")["jobs"][job]
+    env = spec.get("env", {})
+    postgres = spec.get("services", {}).get("postgres")
+    assert postgres and postgres["image"].startswith("postgres:"), spec.get("services")
+    db = postgres["env"]
+    (port,) = (mapping.split(":")[0] for mapping in postgres["ports"])
+    # The fixture pg_engine of apps/ca-issuer/tests/test_db_token_store.py skips unless
+    # AH_TEST_DB names a Postgres; this one is the database of the service.
+    assert env.get("AH_TEST_DB") == (
+        f"postgresql+psycopg://{db['POSTGRES_USER']}:{db['POSTGRES_PASSWORD']}"
+        f"@localhost:{port}/{db['POSTGRES_DB']}"
+    ), env
+    # The rest of the suite stays on the in-memory token store: with a DATABASE_URL the
+    # issuer would read its tokens from tables only the server's migrations create.
+    assert "DATABASE_URL" not in env, env
 
 
 def test_ci_shellchecks_the_frps_supervisor_as_posix_sh():

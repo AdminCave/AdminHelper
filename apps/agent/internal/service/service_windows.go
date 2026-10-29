@@ -85,6 +85,17 @@ func Install() error {
 	return nil
 }
 
+// logger tags the hint of EnableTimer, so that it lands in agent.log and the diagnostics, not
+// only on stdout.
+var logger = logging.For("service")
+
+// EnableTimer has no timer to enable on Windows: the agent's Windows service (service install)
+// runs the cycles. It only gives that hint.
+func EnableTimer() error {
+	logger.Infof("Windows: Monitor-Push laeuft ueber den Agent-Dienst — bitte 'adminhelper-agent service install' ausfuehren.")
+	return nil
+}
+
 // Uninstall deregisters the Windows service.
 func Uninstall() error {
 	// Stop the service

@@ -14,6 +14,7 @@ package enroll
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -95,13 +96,14 @@ func encodeKeyPEM(key *ecdsa.PrivateKey) ([]byte, error) {
 // Submit POSTs a JSON body (a Request, or a {csr} renewal) to the issuer
 // endpoint via the given client and decodes the issued materials. The client
 // carries the TLS trust: a TOFU-pinned gateway cert on enroll, the persisted
-// pinned CA on renew.
-func Submit(client *http.Client, endpoint string, body any) (*IssueResponse, error) {
+// pinned CA on renew. The request ends with ctx or at the client's timeout,
+// whichever comes first.
+func Submit(ctx context.Context, client *http.Client, endpoint string, body any) (*IssueResponse, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
