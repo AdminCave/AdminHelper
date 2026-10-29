@@ -10,8 +10,10 @@ Heavy: none — Log-Formatierung, OpenAPI-Beschreibung und Doku im Server, kein 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Request-Pfad in Warn-Logs escapen (R-0906)  [ ]
+### T1 — Request-Pfad in Warn-Logs escapen (R-0906)  [x]
 Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/app/core/identity.py, apps/server/tests/test_log_request_path.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a49c3de5 2026-10-29T18:19:57+01:00
+Review: approve (.ah-out/review/klein-ref-server-1/T1.verdict.json)
 Änderung: Alle `logger.*`-Aufrufe mit `request.url.path` (`middleware.py` IPFilter, `identity.py` fünf Warnungen und eine Debug-Zeile) schreiben den Pfad mit `%r`. Neue Testdatei (SPDX-Header): ein Pfad mit `%0A` und ESC-Zeichen erzeugt eine einzeilige Logmeldung ohne rohes Steuerzeichen, für den IP-Filter und `_deny_refused`.
 Beweis: Code-Lesung origin/main apps/server/app/core/middleware.py:238, identity.py:134,220,240,295,327,336
 Dedup-Key: ref:server:logs:decoded-request-path
