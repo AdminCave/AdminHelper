@@ -345,7 +345,7 @@ err=$(cat "$WORK/err8g")
   && ok "--admin-password warns on stderr and points to --admin-password-file, no value named" \
   || bad "--admin-password warning missing or names the value: $(tr '\n' ' ' <<<"$err")"
 
-# ── 9. the install directory is 0750, and a host account with a container UID is named ─
+# ── 9. the install directory is at most 0750, and a host account with a container UID is named ─
 INST="$WORK/inst9"; mkdir -p "$INST/scripts"; chmod 0755 "$INST"
 cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
 cp "$SRC"/scripts/*.sh "$INST/scripts/"
@@ -377,6 +377,21 @@ out=$(cd "$INST" && PATH="$NOGETENT" STUB_PASSWD="$WORK/passwd9" bash "$INSTALL"
 { [ $rc -eq 0 ] && ! grep -q 'WARNING: host account' <<<"$out" && [ "$(stat -c %a "$INST")" = 750 ]; } \
   && ok "without getent: no warning, exit 0, directory still 0750" \
   || bad "without getent: exit $rc, mode $(stat -c %a "$INST"), $(grep -i warn <<<"$out")"
+chmod 0700 "$INST"
+out=$(cd "$INST" && bash "$INSTALL" --domain t9.example --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(stat -c %a "$INST")" = 700 ]; } && ok "a stricter 0700 stays 0700" \
+  || bad "0700 after install: exit $rc, mode $(stat -c %a "$INST")"
+# a chmod that refuses to close the directory (the caller is not its owner)
+FAILCHMOD="$WORK/failchmod"; mkdir -p "$FAILCHMOD"
+# shellcheck disable=SC2016 # the stub expands its own arguments
+printf '#!/bin/sh\n[ "$1" = g-w,o-rwx ] && [ "$2" = . ] && exit 1\nexec %s "$@"\n' "$(command -v chmod)" > "$FAILCHMOD/chmod"
+chmod +x "$FAILCHMOD/chmod"
+chmod 0755 "$INST"
+out=$(cd "$INST" && PATH="$FAILCHMOD:$PATH" bash "$INSTALL" --domain t9.example \
+  --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q "WARNING: could not close" <<<"$out"; } \
+  && ok "a chmod that fails is a warning, the install goes on" \
+  || bad "failing chmod: exit $rc, $(grep -i warn <<<"$out")"
 
 echo
 echo "──────────────────────────────────────────"

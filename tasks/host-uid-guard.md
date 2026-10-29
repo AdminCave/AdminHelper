@@ -18,8 +18,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: docs/admin/installation.html + docs/en/admin/installation.html (Installationsverzeichnis `0750`, Warnung bei UID 10001/70) · docs/admin/betrieb.html:85 + docs/en/admin/operations.html:52 (UID 70 neben 10001; install und update warnen) · CHANGELOG.md (Changed, umlautfrei)
 
-### T2 — Branch-Prüfung: Modus nur verschärfen, Fehlerpfad chmod, Doku zu fremden Werkzeugen  [ ]
+### T2 — Branch-Prüfung: Modus nur verschärfen, Fehlerpfad chmod, Doku zu fremden Werkzeugen  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/update.sh, scripts/tests/install_test.sh, scripts/tests/update_test.sh, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4af31909 2026-10-29T08:01:48+01:00
+Review: am Ende (Branch-Review)
 Änderung: `chmod g-w,o-rwx .` statt `chmod 0750 .` (aus 0755/0775 wird 0750, ein strengeres 0700 bleibt); `update.sh` schließt das Verzeichnis erst nach den Prüfungen, die mit „nichts veraendert“ abbrechen, und warnt auch unter `--check` (ohne den Modus zu ändern). Tests: 0700 bleibt 0700, ein scheiterndes `chmod` (PATH-Stub) ist eine Warnung mit Exit 0, `--check` nennt das Konto. Doku: Werkzeuge unter anderen Konten brauchen Gruppe oder root, bestehende Installationen bekommen den Modus beim Update, `--dir` nennt ein eigenes Verzeichnis, ein vorher erreichbares Konto entfernen oder umnummerieren.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: die Dateien dieser Task

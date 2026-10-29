@@ -66,8 +66,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Changed
 
 - **Install/Update: Installationsverzeichnis 0750, Warnung bei belegter Container-UID:** `install.sh` und `update.sh`
-  setzen das Installationsverzeichnis auf `0750` (Eigentuemer bleibt, wer installiert) und warnen, wenn ein Host-Konto
-  die UID 10001 oder 70 traegt, die die Container nutzen; `update.sh --check` aendert nichts. Doku: Installation und
+  schliessen das Installationsverzeichnis fuer andere Konten (hoechstens `0750`, ein strengeres `0700` bleibt, Eigentuemer
+  bleibt, wer installiert) und warnen, wenn ein Host-Konto die UID 10001 oder 70 traegt, die die Container nutzen;
+  `update.sh --check` warnt, aendert aber nichts. Werkzeuge unter anderen Konten brauchen danach Gruppe oder root. Doku: Installation und
   Betrieb (DE+EN).
 - **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
   der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
