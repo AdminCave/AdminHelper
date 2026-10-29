@@ -15,7 +15,7 @@ const BARE = [
   'adminhelper_prov_AbC-_9z',
   '3f2b8c1e-5d4a-4b6f-9e2d-7a1c0b9e8f42',
   'ab'.repeat(32),
-  'user@host%2B+a=b:c,d./e_f-g',
+  'user@host+a=b:c,d./e_f-g',
 ];
 
 const QUOTED: [string, string][] = [
@@ -28,6 +28,8 @@ const QUOTED: [string, string][] = [
   ["a'b", "'a'\\''b'"],
   ["''", "''\\'''\\'''"],
   ['a\nb', "'a\nb'"],
+  ['%self', "'%self'"],
+  ['a%2Bb', "'a%2Bb'"],
   ['~root', "'~root'"],
   ['*', "'*'"],
   [String.raw`a\b`, String.raw`'a'\\'b'`],
@@ -57,7 +59,7 @@ function fishReads(word: string): string {
     } else if (c === '\\' && (word[i + 1] === '\\' || word[i + 1] === "'")) {
       out += word[i + 1];
       i += 2;
-    } else if (/^[A-Za-z0-9@%+=:,./_-]$/.test(c)) {
+    } else if (/^[A-Za-z0-9@+=:,./_-]$/.test(c)) {
       out += c;
       i++;
     } else {
