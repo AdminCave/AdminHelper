@@ -443,7 +443,7 @@ def _series_or_502(response: dict) -> list:
 @router.get("/checks/{check_id}/metrics", dependencies=[Depends(require_internal)])
 def get_check_metrics(
     check_id: str,
-    period: str = Query("1h", regex="^(1h|6h|24h|7d)$"),
+    period: str = Query("1h", pattern="^(1h|6h|24h|7d)$"),
     db: Session = Depends(get_db),
 ):
     """Type-specific time-series metrics + status timeline from VictoriaMetrics."""

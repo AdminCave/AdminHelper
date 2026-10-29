@@ -44,8 +44,10 @@ Für alle Tasks:
 - Doku-Tasks fahren zusätzlich `python3 scripts/dev/doc-smoke.py --paths --env --strict` (Exit 0, Ergebnis in den
   Commit-Body). CHANGELOG: unter `## [Unreleased]`, umlautfrei.
 
-### T1 — Metrik-Endpunkt: Query(pattern=) statt regex= (R-0697)  [ ]
+### T1 — Metrik-Endpunkt: Query(pattern=) statt regex= (R-0697)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_checks_metrics.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2bcb4c0c 2026-10-29T11:43:53+01:00
+Review: approve (.ah-out/review/monitoring-ref-3/T1.verdict.json)
 Änderung: In `get_check_metrics` (`apps/monitoring/app/routers/checks.py:427-…`) wird der Parameter `period` (`:429`) `Query("1h", pattern="^(1h|6h|24h|7d)$")`; sonst nichts. Tests in `tests/test_checks_metrics.py`: (a) ein `ast`-Scan über `apps/monitoring/app/**/*.py` (Pfad wie `tests/test_architecture_transitions.py:20`): kein Aufruf trägt das Schlüsselwort `regex`; Nicht-leer-Wächter: der Scan liest mindestens 30 Module und findet mindestens einen Aufruf mit `pattern=`; (b) `GET /checks/{id}/metrics?period=2h` → 422 mit `string_pattern_mismatch` im `detail`, `period=7d` → 200 (Fake-`query_range` wie in der Datei). Zuerst rot: (a) auf HEAD. `tests/test_openapi_snapshot.py` bleibt ohne Neuaufnahme grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_metrics.py tests/test_openapi_snapshot.py
 Doku: keine (intern; Schema unverändert)
