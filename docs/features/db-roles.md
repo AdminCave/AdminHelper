@@ -44,8 +44,11 @@ Ziel:
 Nicht-Ziele:
 - Kein Wechsel des Postgres-Images oder seiner UID (host-uid-guard), keine zweite Postgres-Instanz.
 - Keine Netzwerk-Trennung `postgres` ↔ `pki` (eigene Zeile, falls gewünscht); die Doku wird korrigiert.
-- Backup/Restore bleiben beim Superuser (`docker compose exec postgres`); ein alter Dump mit Eigentümer `adminhelper`
-  ordnet `db-init` beim nächsten Start neu zu.
+- Das Backup bleibt beim Superuser (`docker compose exec postgres`). Der Restore (`restore.sh`) lässt erst `db-init`
+  laufen und spielt dann jede Datenbank als ihre Rolle ein (`ah_server`, `ah_monitor`; `--no-owner --no-privileges`);
+  auch ein alter Dump mit Eigentümer `adminhelper` gehört danach der Rolle. Die Passwörter gehen über die Umgebung in
+  den Container, nie über argv; fehlt eines in `.env`, bricht `restore.sh` vor dem Stopp des Stacks ab und nennt
+  `scripts/init-secrets.sh`.
 
 ## Betroffene Komponenten & Dateien
 
@@ -55,6 +58,8 @@ Nicht-Ziele:
 | T2 | scripts | `docker-compose.yml`, `scripts/init-secrets.sh`, `apps/monitoring/docker-entrypoint.sh`, `.env.example`, `scripts/tests/init-secrets_test.sh`, `apps/server/tests/test_env_parity.py` |
 | T3 | scripts | `scripts/tests/integration_stack_test.sh` |
 | T4 | — (Doku) | `docs/developer/index.html`, `docs/en/developer/index.html`, `docs/admin/installation.html`, `docs/en/admin/installation.html`, `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `DEVELOPMENT.md`, `CHANGELOG.md` |
+| T5 | scripts | `scripts/restore.sh`, `scripts/tests/restore_guard_test.sh`, `docs/features/db-roles.md` |
+| T6 | scripts | `scripts/pg-restore.sh` (Frage an Kevin) |
 
 ## Datenmodell / API / Migrationen
 
@@ -86,7 +91,9 @@ https://www.postgresql.org/docs/17/sql-reassign-owned.html. Docker Compose `serv
   bleiben unberührt (nur Eigentümer/Rechte).
 - Rollback: ein älterer Compose-Stand verbindet sich wieder als Superuser; der umgeht alle Rechte, der Bestand
   bleibt nutzbar. Die neuen Rollen bleiben ohne Wirkung im Cluster.
-- `restore.sh` spielt einen Dump als Superuser ein; Eigentümer aus einem alten Dump korrigiert der nächste Start.
+- `restore.sh` spielt als Dienst-Rolle ein: was die Rolle nicht anlegen darf (etwa eine Erweiterung), scheitert dort
+  laut statt still. Heute legen weder Server noch Monitoring eine Erweiterung an. Die Rechte des `ca-issuer` setzt
+  `grant-ca` beim nächsten Start des Servers, die des Schedulers die Default-Privilegien von `ah_server`.
 
 ## Doku-Impact
 

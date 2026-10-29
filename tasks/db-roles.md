@@ -43,8 +43,10 @@ Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/ind
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task
 
-### T5 — restore.sh: Restore mit den Dienst-Rollen  [ ]
+### T5 — restore.sh: Restore mit den Dienst-Rollen  [x]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, docs/features/db-roles.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dc20c7af 2026-10-29T09:07:53+01:00
+Review: approve (.ah-out/review/db-roles/T5.verdict.json)
 Änderung: `restore.sh` lässt nach `up -d postgres` einmal `db-init` laufen (Rollen, Monitoring-DB, Eigentum) und spielt dann `adminhelper` als `ah_server` und `adminhelper_monitor` als `ah_monitor` ein (`pg_restore --clean --if-exists --no-owner --no-privileges`, Passwort aus `.env` per Umgebung in den Container, nicht über argv); das Übergangs-UPDATE des Zertifikats-Registers läuft ebenso als `ah_server`. Der `createdb`-Block als Superuser entfällt. Fehlt in `.env` ein Passwort der Rollen, bricht `restore.sh` vor dem Stopp des Stacks mit dem Hinweis auf `scripts/init-secrets.sh` ab. Spec: Abschnitt Backup/Restore und Risiken nachziehen. Test in `restore_guard_test.sh` (docker-Stub): `db-init` läuft vor dem ersten `pg_restore`, kein Restore-Aufruf als `adminhelper`, die Rollen-Passwörter stehen in keinem argv.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: → T4
