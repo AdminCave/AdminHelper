@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server mit mehreren Prozessen: ein Schlüssel, ein Bootstrap-Token, gesperrte Hochstufung, Haltbarkeit, Log-Hygiene — Task-Ledger
-Status: bereit · Branch: feature/server-multiworker · Review: pro Task
+Status: erledigt · Branch: feature/server-multiworker · Review: pro Task
 Spec: docs/features/server-multiworker.md (Roadmap R-0761, R-0762, R-0768, R-0767, R-0766, R-0776)
 Heavy: linux-full — der Server-Start erzeugt `.secret_key` und die Bootstrap-Dateien neu abgestimmt (T2, T3), `PUT /api/users/{id}` sperrt bei einer Hochstufung die Zielzeile (T8), Server-API und Startpfad also; der Stack-Lauf fährt einen frischen Server-Start neben dem Scheduler-Container und die Web-E2E. T4/T5 ändern an `frps.toml` nur Haltbarkeit und eine Log-Zeile, nicht Inhalt oder Tunnel-Datenpfad; keine PKI, kein Install-/Compose-Pfad: kein `scenario`, kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
