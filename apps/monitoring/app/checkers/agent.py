@@ -25,9 +25,10 @@ logger = logging.getLogger("monitor.agent")
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
 # Name of a disk reported without a mount. Grading (disk:<mount>), ignore_mounts and
-# _details must share it, or the desktop rates the disk under another key; no path,
-# so it never collides with "/".
-_NO_MOUNT = "?"
+# _details must share it, or the desktop rates the disk under another key; the push
+# handler (routers/agent.py) writes it as the mount tag, so disk_forecast keeps the disk's
+# series apart (R-0753). No path, so it never collides with "/".
+NO_MOUNT = "?"
 
 # The virtualization systems the host facts report with the role guest for a container:
 # the agent's containerSystems (system_linux.go, gopsutil v4.26.5, no Podman), kept equal
@@ -122,8 +123,9 @@ def agent_number(value: object) -> int | float | None:
 
 
 # The one cap on a report list for the checkers and the push handler (routers/agent.py),
-# both through capped_objects: a compromised or misconfigured agent must not flood the
-# service with a huge list (3.76, R-0632).
+# applied in two places: capped_objects for lists of objects, ServiceProcessChecker._capped
+# for the unit lists. A compromised or misconfigured agent must not flood the service with
+# a huge list (3.76, R-0632).
 _MAX_REPORT_ENTRIES = 500
 
 
@@ -423,7 +425,7 @@ class AgentResourcesChecker:
         inode_warn = config.get("inode_warn", 80)
         for disk in disks:
             pct = entry_number(disk, "percent", 0)
-            mount = entry_text(disk, "mount", _NO_MOUNT)
+            mount = entry_text(disk, "mount", NO_MOUNT)
             if mount in ignore_mounts:
                 continue
             # The schema takes null for an override key; it counts as unset, like a missing one.
@@ -501,14 +503,14 @@ class AgentResourcesChecker:
             "load_per_cpu": load_per_cpu,
             "disks": [
                 {
-                    "mount": entry_text(d, "mount", _NO_MOUNT),
+                    "mount": entry_text(d, "mount", NO_MOUNT),
                     "percent": entry_number(d, "percent", 0),
                     "total_gb": agent_number(d.get("total_gb")),
                     "used_gb": agent_number(d.get("used_gb")),
                     "free_gb": agent_number(d.get("free_gb")),
                     "inodes_percent": agent_number(d.get("inodes_percent")),
                     # Still listed, so the desktop shows the usage without a rating.
-                    "ignored": entry_text(d, "mount", _NO_MOUNT) in ignore_mounts,
+                    "ignored": entry_text(d, "mount", NO_MOUNT) in ignore_mounts,
                 }
                 for d in disks
             ],
@@ -626,7 +628,7 @@ class ServiceProcessChecker:
     def _capped(raw) -> list:
         """Caps a unit list from the report so a huge/hostile array can't drive a DoS through
         the glob matching (3.76); a non-list value is treated as empty."""
-        return raw[:500] if isinstance(raw, list) else []
+        return raw[:_MAX_REPORT_ENTRIES] if isinstance(raw, list) else []
 
     @staticmethod
     def _parse_counts(raw) -> tuple[int, int] | None:

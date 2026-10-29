@@ -440,12 +440,12 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
 
           <p><strong>Shared API types</strong> (<code>sync-from-web.sh --check</code>): the two
           <code>api/types.ts</code> files stopped being one shared file long ago &ndash; the web one describes the
-          admin panel API (25 exports), the desktop one the client API (58). Four symbols are common to both, and
+          admin panel API (25 exports), the desktop one the client API (58). Three symbols are common to both, and
           only those can drift. The check therefore covers the intersection, and as a subset rather than equality:
-          every line the web file declares must exist in the desktop one, which may carry more. <code>Server</code>
-          legitimately does &ndash; <code>to_dict()</code> returns <code>connections</code>, the admin panel just
-          ignores it. The rule is blind in one direction: if the web file drops a field, the subset still holds and
-          the desktop keeps the corpse. The four expected shared symbols are named in the script, so a single one
+          every line the web file declares must exist in the desktop one, which may carry more (until R-0723 the shared
+          <code>Server</code> did, with <code>connections</code> the admin panel just ignored; since then the web
+          knows only <code>ServerSummary</code>). The rule is blind in one direction: if the web file drops a field, the subset still holds and
+          the desktop keeps the corpse. The three expected shared symbols are named in the script, so a single one
           going missing is a failure rather than a smaller green set.</p>
 
           <h2>Container Images (ghcr.io)</h2>

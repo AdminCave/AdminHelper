@@ -47,11 +47,19 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+// A session starts when setAccessToken() (a login) sets a token while none is held and ends with
+// clearTokens(); a refresh keeps it. A request answered 401 after its session ended must not refresh,
+// retry or run the auth-failure handler: the handler ends the session that is current by then,
+// refresh cookie included (stores/auth.ts).
+let session = 0;
+
 export function setAccessToken(access: string): void {
+  if (accessToken === null) session++;
   accessToken = access;
 }
 
 export function clearTokens(): void {
+  session++;
   accessToken = null;
   // The refresh token lives in an HttpOnly cookie, cleared server-side by
   // POST /api/auth/logout.
@@ -88,6 +96,7 @@ async function tryRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
   const refresh = async (): Promise<boolean> => {
+    const started = session;
     // The refresh token rides along as the HttpOnly cookie (same-origin
     // request → sent automatically); the body is intentionally empty.
     const res = await fetchWithTimeout('/api/auth/refresh', {
@@ -97,7 +106,10 @@ async function tryRefresh(): Promise<boolean> {
     });
     if (!res.ok) return false;
     const data = (await res.json()) as RefreshResponse;
-    setAccessToken(data.access_token);
+    // A refresh renews the session it runs in, also one without a token yet: no new session. One
+    // answered after that session ended sets no token, else the next login would find one held.
+    if (started !== session) return false;
+    accessToken = data.access_token;
     return true;
   };
 
@@ -124,10 +136,12 @@ async function request<T>(
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const jsonBody = body !== undefined ? JSON.stringify(body) : undefined;
 
+  const started = session;
   let res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
 
   if (res.status === 401 && !path.includes('/auth/')) {
-    const refreshed = await tryRefresh();
+    const refreshed = started === session && (await tryRefresh());
+    if (started !== session) throw new ApiError(401, 'Session expired');
     if (refreshed && accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
       res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
@@ -186,9 +200,11 @@ export async function requestRaw(path: string): Promise<Response> {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
 
+  const started = session;
   let res = await doFetch();
   if (res.status === 401 && !path.includes('/auth/')) {
-    const refreshed = await tryRefresh();
+    const refreshed = started === session && (await tryRefresh());
+    if (started !== session) throw new ApiError(401, 'Session expired');
     if (refreshed && accessToken) {
       res = await doFetch();
     } else {

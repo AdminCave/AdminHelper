@@ -289,6 +289,44 @@ class TestGenerateVisitorToml:
         assert "/etc/frp/pki" not in toml
 
 
+class TestLocalPortOutsideRange:
+    # R-0560: frpc refuses the whole config for a localPort outside 0..65535, so one stored
+    # row cost every tunnel of the host. Only that proxy is left out, with a warning.
+    def test_frpc_skips_local_port_outside_range(self, caplog):
+        import logging
+
+        bad = [
+            _make_tunnel(name=f"bad-{i}", local_port=port)
+            for i, port in enumerate((0, -1, 65536, 70000))
+        ]
+        ok = _make_tunnel(name="ok", local_port=22)
+        with caplog.at_level(logging.WARNING):
+            toml = generate_frpc_toml(_make_config(), [*bad, ok], "srv1")
+        assert toml.count("[[proxies]]") == 1
+        assert toml == generate_frpc_toml(_make_config(), [ok], "srv1")
+        warned = [r.getMessage() for r in caplog.records if "local_port" in r.getMessage()]
+        for tunnel in bad:
+            assert any(
+                tunnel.name in m and repr(tunnel.local_port) in m and "left out" in m
+                for m in warned
+            ), (tunnel.name, warned)
+
+    def test_frpc_keeps_the_edges(self):
+        tunnels = [
+            _make_tunnel(name="low", local_port=1),
+            _make_tunnel(name="high", local_port=65535),
+        ]
+        toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+        assert toml.count("[[proxies]]") == 2
+        assert "localPort = 1\n" in toml and "localPort = 65535\n" in toml
+
+    def test_frpc_with_only_bad_local_ports_is_the_empty_config(self):
+        tunnels = [_make_tunnel(name="bad", local_port=70000)]
+        assert generate_frpc_toml(_make_config(), tunnels, "srv1") == generate_frpc_toml(
+            _make_config(), [], "srv1"
+        )
+
+
 class TestStcpWithoutSecret:
     # An stcp tunnel without a secret is left out of the frpc and visitor TOML (and logged)
     # instead of being written with secretKey "None" or ""; the tunnels next to it are untouched.

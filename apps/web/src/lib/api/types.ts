@@ -81,13 +81,11 @@ export class ApiError extends Error {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-export interface Server {
+// One server as GET /api/servers/summary lists it.
+export interface ServerSummary {
   id: string;
   name: string;
   hostname: string;
-  osType?: string | null;
-  tags?: string[];
-  notes?: string | null;
 }
 
 export type HookType = 'webhook' | 'event' | 'schedule';

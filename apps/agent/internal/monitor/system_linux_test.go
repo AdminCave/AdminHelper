@@ -87,7 +87,7 @@ func stubSystemCLI(t *testing.T, replies map[string]dockerReply) *[][]string {
 		}
 		return "", exec.ErrNotFound
 	}
-	systemCLI.run = func(name string, args ...string) ([]byte, error) {
+	systemCLI.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{name}, args...))
 		reply, ok := replies[name]
 		if !ok {
@@ -138,7 +138,7 @@ func TestHelperSystemStateProcess(t *testing.T) {
 func exitStatus(t *testing.T, code int) error {
 	t.Helper()
 	t.Setenv(systemStateHelperEnv, strconv.Itoa(code))
-	_, err := runTimed(time.Minute, os.Args[0], "-test.run=^TestHelperSystemStateProcess$")
+	_, err := runTimed(context.Background(), time.Minute, os.Args[0], "-test.run=^TestHelperSystemStateProcess$")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code ||
 		!strings.Contains(string(exitErr.Stderr), helperStderr) {
@@ -201,7 +201,7 @@ func TestSystemStateOOMFirstRun(t *testing.T) {
 	// 0 through the state file, so the second run reports the kills since the first.
 	stubSystemCLI(t, nil)
 	stubVMStat(t, vmstatWithOOMKill(0))
-	block, next := collectSystemState(reportState{})
+	block, next := collectSystemState(context.Background(), reportState{})
 	if len(block) != 0 {
 		t.Errorf("first run block = %v, want no field", block)
 	}
@@ -214,7 +214,7 @@ func TestSystemStateOOMFirstRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	stubVMStat(t, vmstatWithOOMKill(2))
-	block, next = collectSystemState(loadReportState(path))
+	block, next = collectSystemState(context.Background(), loadReportState(path))
 	if got, want := dockerWire(t, block), map[string]any{"oom_kills": 2.0}; !reflect.DeepEqual(got, want) {
 		t.Errorf("second run block = %v, want %v", got, want)
 	}
@@ -239,7 +239,7 @@ func TestSystemStateOOMKills(t *testing.T) {
 			stubVMStat(t, vmstatWithOOMKill(c.count))
 			cpu := &cpuSample{Unix: 1_700_000_000, Total: 1000, Busy: 200}
 			saved := c.saved
-			block, next := collectSystemState(reportState{CPU: cpu, OOMKill: &saved})
+			block, next := collectSystemState(context.Background(), reportState{CPU: cpu, OOMKill: &saved})
 			if want := map[string]any{"oom_kills": c.want}; !reflect.DeepEqual(block, want) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
@@ -278,7 +278,7 @@ func TestSystemStateOOMUnreadable(t *testing.T) {
 			c.stub(t)
 			logs := captureWarnings(t)
 			saved := uint64(4)
-			block, next := collectSystemState(reportState{OOMKill: &saved})
+			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
 			if len(block) != 0 {
 				t.Errorf("block = %v, want no field", block)
 			}
@@ -311,7 +311,7 @@ func TestSystemStateOOMContainer(t *testing.T) {
 			stubMemoryEvents(t, memoryEventsWithOOMKill(3))
 			logs := captureWarnings(t)
 			saved := uint64(1)
-			block, next := collectSystemState(reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
+			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
 			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
@@ -345,7 +345,7 @@ func TestSystemStateOOMNotContainer(t *testing.T) {
 			hostFactsCalls.virtualization = c.virt // stubVMStat restores it
 			stubMemoryEvents(t, memoryEventsWithOOMKill(100))
 			saved := uint64(5)
-			block, next := collectSystemState(reportState{OOMKill: &saved, OOMKillSource: oomSourceVMStat})
+			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved, OOMKillSource: oomSourceVMStat})
 			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
@@ -378,7 +378,7 @@ func TestSystemStateOOMContainerUnreadable(t *testing.T) {
 			c.stub(t)
 			logs := captureWarnings(t)
 			saved := uint64(4)
-			block, next := collectSystemState(reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
+			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
 			if len(block) != 0 {
 				t.Errorf("block = %v, want no field", block)
 			}
@@ -416,7 +416,7 @@ func TestSystemStateOOMSourceChange(t *testing.T) {
 			if err := os.WriteFile(path, []byte(c.file), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			block, next := collectSystemState(loadReportState(path))
+			block, next := collectSystemState(context.Background(), loadReportState(path))
 			if len(block) != 0 {
 				t.Errorf("first run on the new source: block = %v, want no field", block)
 			}
@@ -430,7 +430,7 @@ func TestSystemStateOOMSourceChange(t *testing.T) {
 			if c.container {
 				stubVirtualization(t, "lxc", "guest")
 			}
-			block, _ = collectSystemState(loadReportState(path))
+			block, _ = collectSystemState(context.Background(), loadReportState(path))
 			if got, want := dockerWire(t, block), map[string]any{"oom_kills": 2.0}; !reflect.DeepEqual(got, want) {
 				t.Errorf("next run: block = %v, want %v", got, want)
 			}
@@ -447,7 +447,7 @@ func TestSystemStateOOMStateWithoutSource(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"oom_kill":5}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	block, next := collectSystemState(loadReportState(path))
+	block, next := collectSystemState(context.Background(), loadReportState(path))
 	if got, want := dockerWire(t, block), map[string]any{"oom_kills": 2.0}; !reflect.DeepEqual(got, want) {
 		t.Errorf("block = %v, want %v", got, want)
 	}
@@ -470,7 +470,7 @@ func TestSystemStateRebootDebian(t *testing.T) {
 			calls := stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "needs-restarting": {}})
 			stubRebootFlag(t, present)
 			logs := captureWarnings(t)
-			if required, ok := rebootRequired(); required != present || !ok {
+			if required, ok := rebootRequired(context.Background()); required != present || !ok {
 				t.Errorf("rebootRequired() = %v, %v; want %v, true", required, ok, present)
 			}
 			if len(*calls) != 0 {
@@ -492,7 +492,7 @@ func TestSystemStateRebootFlagUnreadable(t *testing.T) {
 	rebootRequiredPath = filepath.Join(file, "reboot-required")
 	t.Cleanup(func() { rebootRequiredPath = old })
 	logs := captureWarnings(t)
-	if required, ok := rebootRequired(); ok {
+	if required, ok := rebootRequired(context.Background()); ok {
 		t.Errorf("rebootRequired() = %v, true; want no answer", required)
 	}
 	if !strings.Contains(logs.String(), "not a directory, reboot_required left out") {
@@ -524,7 +524,7 @@ func TestSystemStateRebootRPM(t *testing.T) {
 			calls := stubSystemCLI(t, map[string]dockerReply{"needs-restarting": {err: c.err}})
 			stubRebootFlag(t, true) // without apt-get the flag file does not count
 			logs := captureWarnings(t)
-			if required, ok := rebootRequired(); required != c.required || ok != c.ok {
+			if required, ok := rebootRequired(context.Background()); required != c.required || ok != c.ok {
 				t.Errorf("rebootRequired() = %v, %v; want %v, %v", required, ok, c.required, c.ok)
 			}
 			if want := [][]string{{"needs-restarting", "-r"}}; !reflect.DeepEqual(*calls, want) {
@@ -541,7 +541,7 @@ func TestSystemStateRebootNoTool(t *testing.T) {
 	calls := stubSystemCLI(t, nil)
 	stubRebootFlag(t, true)
 	logs := captureWarnings(t)
-	if required, ok := rebootRequired(); ok {
+	if required, ok := rebootRequired(context.Background()); ok {
 		t.Errorf("rebootRequired() = %v, true; want no answer", required)
 	}
 	if len(*calls) != 0 {
@@ -578,7 +578,7 @@ func TestSystemStateTimeSync(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			calls := stubSystemCLI(t, c.tools)
 			logs := captureWarnings(t)
-			if synced, ok := timeSynchronized(); synced != c.synced || ok != c.ok {
+			if synced, ok := timeSynchronized(context.Background()); synced != c.synced || ok != c.ok {
 				t.Errorf("timeSynchronized() = %v, %v; want %v, %v", synced, ok, c.synced, c.ok)
 			}
 			want := [][]string{{"timedatectl", "show"}}
@@ -603,7 +603,7 @@ func TestSystemStateBlock(t *testing.T) {
 		stubVMStat(t, vmstatWithOOMKill(5))
 		stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		saved := uint64(3)
-		block, next := collectSystemState(reportState{OOMKill: &saved})
+		block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
 		want := map[string]any{"oom_kills": 2.0, "reboot_required": true, "time_synchronized": true,
 			"security_updates": 2.0}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) {
@@ -620,7 +620,7 @@ func TestSystemStateBlock(t *testing.T) {
 		calls := stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		five := 5
 		saved := &updatesCheck{CheckedUnix: updatesNow.Add(-10 * time.Minute).Unix(), Security: &five}
-		block, next := collectSystemState(reportState{Updates: saved})
+		block, next := collectSystemState(context.Background(), reportState{Updates: saved})
 		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) || len(*calls) != 0 {
 			t.Errorf("block = %v after %d call(s), want %v without one", got, len(*calls), want)
@@ -632,8 +632,83 @@ func TestSystemStateBlock(t *testing.T) {
 	t.Run("nothing measured", func(t *testing.T) {
 		stubSystemCLI(t, map[string]dockerReply{"timedatectl": {err: context.DeadlineExceeded}})
 		stubVMStat(t, "pgmajfault 1042\n")
-		if block, _ := collectSystemState(reportState{}); len(block) != 0 {
+		if block, _ := collectSystemState(context.Background(), reportState{}); len(block) != 0 {
 			t.Errorf("block = %v, want no field", block)
 		}
 	})
+}
+
+// fakeTools puts each tool of names on the PATH as a script that runs script, and nothing else there:
+// no test reaches the host's tools. script calls other programs by absolute path.
+func fakeTools(t *testing.T, script string, names ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir)
+}
+
+// R-0638: a system state tool that does not answer costs the collector the rest of the run's context,
+// not its timeout per call (15 s, apt-get and dnf 30 s): the call the deadline ended reports like the
+// timeout it is, and no further call starts. lookPath picks the package family; the calls run for real
+// against the hanging tools on the PATH. A field whose call the context ended stays out, and the
+// update count is saved as failed, so the next hourly count is the next try.
+func TestSystemStateEndsAtTheEndOfTheContext(t *testing.T) {
+	for name, tc := range map[string]struct {
+		family []string
+		want   map[string]any
+		logs   []string
+	}{
+		"Debian": {[]string{"apt-get", "timedatectl"}, map[string]any{"reboot_required": true}, []string{
+			"timedatectl show failed: timed out after 15s",
+			"apt-get -s dist-upgrade failed: timed out after 30s",
+		}},
+		// Without timedatectl the update count is the first call, the one the deadline ends.
+		"Debian, apt-get first": {[]string{"apt-get"}, map[string]any{"reboot_required": true}, []string{
+			"apt-get -s dist-upgrade failed: timed out after 30s",
+		}},
+		"RPM": {[]string{"needs-restarting", "timedatectl", "dnf"}, map[string]any{}, []string{
+			"needs-restarting -r failed: timed out after 15s",
+			"timedatectl show failed: timed out after 15s",
+			"dnf updateinfo list --security failed: timed out after 30s",
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fakeTools(t, "exec /bin/sleep 30", "timedatectl", "needs-restarting", "apt-get", "dnf")
+			onPath := map[string]bool{}
+			for _, tool := range tc.family {
+				onPath[tool] = true
+			}
+			old := systemCLI.lookPath
+			t.Cleanup(func() { systemCLI.lookPath = old })
+			systemCLI.lookPath = func(file string) (string, error) {
+				if onPath[file] {
+					return "/usr/bin/" + file, nil
+				}
+				return "", exec.ErrNotFound
+			}
+			stubRebootFlag(t, true)
+			stubVMStat(t, "pgmajfault 1042\n")
+			logs := captureWarnings(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			var block map[string]any
+			var next reportState
+			endsWithin(t, 3*time.Second, func() { block, next = collectSystemState(ctx, reportState{}) })
+			if !reflect.DeepEqual(block, tc.want) {
+				t.Errorf("block = %v, want %v", block, tc.want)
+			}
+			if next.Updates == nil || next.Updates.Security != nil {
+				t.Errorf("state updates = %+v, want the count saved as failed", next.Updates)
+			}
+			for _, want := range tc.logs {
+				if !strings.Contains(logs.String(), want) {
+					t.Errorf("log = %q, want it to name %q", logs.String(), want)
+				}
+			}
+		})
+	}
 }

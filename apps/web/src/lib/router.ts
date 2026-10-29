@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { writable, derived, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 
 function readHash(): string {
   const h = location.hash || '';
@@ -17,23 +17,8 @@ if (typeof window !== 'undefined') {
 
 export const path = { subscribe: _path.subscribe };
 
-export function navigate(to: string): void {
-  const target = to.startsWith('/') ? to : `/${to}`;
-  if (location.hash !== `#${target}`) {
-    location.hash = target;
-  } else {
-    _path.set(target);
-  }
-}
-
 export function replace(to: string): void {
   const target = to.startsWith('/') ? to : `/${to}`;
   history.replaceState(null, '', `#${target}`);
   _path.set(target);
 }
-
-export function currentPath(): string {
-  return get(_path);
-}
-
-export const segments = derived(_path, ($p) => $p.split('/').filter(Boolean));

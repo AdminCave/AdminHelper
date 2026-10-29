@@ -6,6 +6,7 @@ package frpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"log"
@@ -163,7 +164,7 @@ func TestReprovisionRestartsRunningFrpcOnTheNewConfig(t *testing.T) {
 func TestReprovisionRestartsRatherThanReload(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, bundleToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the tunnel: %v", err)
 	}
 
@@ -194,11 +195,37 @@ func TestReprovisionStoresTheHashOfTheBundleText(t *testing.T) {
 
 	srv, fetches := hashServer(t, `{"hash":"`+hash+`"}`, bundleToml)
 	pointSyncAt(t, srv.URL)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync after the provisioning: %v", err)
 	}
 	if *fetches != 0 || calls.enables != 1 || calls.restarts != 0 {
 		t.Errorf("config fetches = %d, enables = %d, restarts = %d, want 0, 1 and 0", *fetches, calls.enables, calls.restarts)
+	}
+}
+
+// R-0638: a systemctl that does not answer whether frpc runs fails like a start: the provisioning
+// warns and removes the hash, so the next run applies the config again. It starts nothing, since
+// frpc may run.
+func TestReprovisionWarnsWhenSystemctlDoesNotAnswer(t *testing.T) {
+	calls := setupSyncTest(t, "https://srv.example")
+	isActive = func(context.Context) (bool, error) {
+		return false, errors.New("systemctl is-active frpc.service: context deadline exceeded")
+	}
+	out := captureLog(t)
+
+	if err := applyBundle(bundleToml); err != nil {
+		t.Fatalf("Apply without an answer from systemctl: %v, want only a warning", err)
+	}
+	for _, want := range []string{"level=WARN", "context deadline exceeded", "next agent run tries again"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("log %q is missing %q", out.String(), want)
+		}
+	}
+	if calls.enables != 0 || calls.restarts != 0 || calls.reloads != 0 {
+		t.Errorf("enables = %d, restarts = %d, reloads = %d, want 0, 0 and 0", calls.enables, calls.restarts, calls.reloads)
+	}
+	if _, err := os.Stat(config.FrpHashFile()); !os.IsNotExist(err) {
+		t.Errorf("hash file is there (stat: %v), want none", err)
 	}
 }
 
@@ -226,7 +253,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			calls.active = tc.running
 			tc.prepare(t)
 			restart, enable := restartService, enableService
-			restartService = func() error { return errors.New("systemctl failed") }
+			restartService = func(context.Context) error { return errors.New("systemctl failed") }
 			enableService = restartService
 			out := captureLog(t)
 
@@ -249,7 +276,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			restartService, enableService = restart, enable
 			srv, fetches := hashServer(t, `{"hash":"`+hashConfig(bundleToml)+`"}`, bundleToml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
 			if *fetches != 1 || calls.restarts+calls.enables != 1 {
@@ -325,7 +352,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			writeFrpcState(t)
 			calls.active = true
 			disable := disableService
-			disableService = func() error { return errors.New("systemctl failed") }
+			disableService = func(context.Context) error { return errors.New("systemctl failed") }
 			out := captureLog(t)
 
 			if err := tc.provision(); err != nil {
@@ -346,7 +373,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			disableService = disable
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
 			if _, err := os.Stat(config.FrpConfigFile()); calls.disables != 1 || !os.IsNotExist(err) {

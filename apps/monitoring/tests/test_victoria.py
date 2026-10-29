@@ -6,6 +6,7 @@
 format_line) and the client (buffered writer, query fallback)."""
 
 import logging
+import sys
 import threading
 
 import httpx
@@ -41,12 +42,12 @@ class TestEscTag:
 
 
 class TestSafeMetricPart:
-    """2.33: one allowlist sanitiser shared by the SMART push path (agent router)
-    and the checker path, so a disk yields ONE series name, not two divergent ones."""
+    """2.33: the allowlist sanitiser for the device part of a per-disk series name. Its one
+    user is the smart_health checker (app/checkers/smart.py); the agent push writes no
+    SMART lines."""
 
     def test_non_allowlisted_chars_collapse_to_underscore(self):
-        # A dash is not allowlisted — the old checker's replace("/","_") left it in,
-        # diverging from the agent push path. Both now yield "sda_1".
+        # A dash is not allowlisted — the old checker's replace("/","_") left it in.
         assert safe_metric_part("sda-1") == "sda_1"
 
     def test_leading_trailing_separators_stripped(self):
@@ -269,6 +270,98 @@ class TestVictoriaWriter:
         assert len(warnings) == 2, warnings
         assert "dropped 3 lines" in warnings[0]
         assert "dropped 4 lines" in warnings[1]
+
+    def test_lines_dropped_after_a_warning_are_reported_once_the_buffer_is_empty(
+        self, monkeypatch, caplog
+    ):
+        monkeypatch.setattr(victoria_mod, "_MAX_PENDING_LINES", 2)
+        clock = [1000.0]
+        monkeypatch.setattr(victoria_mod, "_now", lambda: clock[0])
+        caplog.set_level(logging.WARNING, logger="monitor.victoria")
+        entered, release = threading.Event(), threading.Event()
+        bodies = []
+
+        def handler(request):
+            entered.set()
+            release.wait(10)
+            bodies.append(request.content.decode())
+            return httpx.Response(204)
+
+        client = _client_with(handler)
+        try:
+            client.write(["a"])
+            assert entered.wait(5)  # "a" hangs in the POST, the buffer is empty
+            client.write(["b1", "b2"])  # the buffer is full
+            client.write(["c1"])  # dropped and reported
+            clock[0] += 10
+            client.write(["d1", "d2", "d3"])  # dropped within the minute: counted only
+            assert _warnings(caplog) == [
+                "VictoriaMetrics write buffer full (2 lines or 67108864 bytes): "
+                "dropped 1 lines since the last report"
+            ]
+        finally:
+            release.set()
+        client.close()  # the writer takes b1, b2 off the buffer, which is then empty
+        assert bodies == ["a", "b1\nb2"]
+        assert _warnings(caplog)[1:] == [
+            "VictoriaMetrics write buffer full (2 lines or 67108864 bytes): "
+            "dropped 3 lines since the last report"
+        ]
+        assert client._dropped == 0
+
+    def test_a_write_beyond_the_byte_cap_is_dropped_and_counted(self, monkeypatch, caplog):
+        assert victoria_mod._MAX_PENDING_BYTES == 64 * 1024 * 1024
+        monkeypatch.setattr(victoria_mod, "_now", lambda: 1000.0)
+        caplog.set_level(logging.WARNING, logger="monitor.victoria")
+        # One string object queued 100 times: the buffer counts it 100 times, the test holds 1 MiB.
+        line = "x" * (1024 * 1024)
+        size = sys.getsizeof(line)
+        fits = victoria_mod._MAX_PENDING_BYTES // size
+        assert fits == 63  # 1 MiB plus the str header, 64 of them exceed 64 MiB
+        entered, release = threading.Event(), threading.Event()
+        batches = []
+
+        def send(lines):
+            # Stands in for the POST, which would join the 63 MiB into one real string.
+            batches.append(len(lines))
+            entered.set()
+            release.wait(10)
+
+        client = VictoriaClient(_BASE_URL)
+        client._send = send
+        try:
+            client.write(["a"])
+            assert entered.wait(5)  # "a" hangs in the send, the buffer is empty
+            for _ in range(100):
+                client.write([line])
+            assert len(client._pending) == fits
+            assert client._pending_bytes == fits * size
+            # The first drop is reported, the later ones within the minute are counted.
+            assert client._dropped == 100 - fits - 1
+            assert _warnings(caplog) == [
+                "VictoriaMetrics write buffer full (100000 lines or 67108864 bytes): "
+                "dropped 1 lines since the last report"
+            ]
+        finally:
+            release.set()
+        client.close()
+        assert batches == [1, fits]
+
+    def test_emptying_the_buffer_frees_its_bytes(self):
+        line = "x" * (1024 * 1024)
+        fits = victoria_mod._MAX_PENDING_BYTES // sys.getsizeof(line)
+        batches = []
+        client = VictoriaClient(_BASE_URL)
+        client._send = lambda lines: batches.append(len(lines))
+        for _ in range(fits):
+            client.write([line])
+        client.close()
+        assert sum(batches) == fits
+        assert client._pending_bytes == 0
+        client.write([line])  # would not fit had the writer kept the bytes of the sent lines
+        client.close()
+        assert sum(batches) == fits + 1
+        assert client._dropped == 0
 
     @pytest.mark.parametrize(
         ("outcome", "attempts"),

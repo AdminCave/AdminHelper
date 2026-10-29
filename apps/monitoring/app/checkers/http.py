@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import time
+import zlib
+from collections.abc import Callable, Iterator
 
 import httpx
 
@@ -148,7 +150,7 @@ def _read_head(resp: httpx.Response, deadline: float) -> tuple[str, bool] | None
     """The first _MAX_BODY_BYTES of the body as text and whether the body went on;
     None once the deadline passed while reading."""
     data = bytearray()
-    for chunk in resp.iter_bytes():
+    for chunk in _decoded(resp, lambda: _MAX_BODY_BYTES + 1 - len(data)):
         data += chunk
         if deadline - _now() <= 0:
             return None
@@ -160,3 +162,78 @@ def _read_head(resp: httpx.Response, deadline: float) -> tuple[str, bool] | None
     # the limit) replaced.
     text = bytes(data[:_MAX_BODY_BYTES]).decode(resp.encoding or "utf-8", errors="replace")
     return text, len(data) > _MAX_BODY_BYTES
+
+
+def _decoded(resp: httpx.Response, room: Callable[[], int]) -> Iterator[bytes]:
+    """The body as resp.iter_bytes() hands it out, but inflated in bounded steps:
+    iter_bytes() inflates each raw piece whole, however large that grows. A step of the
+    last layer makes at most room() bytes. A step of a layer before it makes at most
+    _MAX_BODY_BYTES + 1: its output is input of the next layer, which may have ended
+    long before it, and room() falls to 1 once the text is read in full. An empty
+    chunk follows every raw piece and every step before the last layer, so the reader
+    looks at its deadline also while nothing comes out. room() is at least 1 whenever
+    this runs, as the reader stops at its limit; zlib would take 0 for no limit at all."""
+    # The decoders httpx 0.28.1 picks (Response._get_content_decoder): the codings in
+    # the order they were applied, undone from the last one; identity and a coding it
+    # cannot decode (br and zstd lack their packages in the image) leave the bytes as
+    # they are.
+    codings = [
+        coding.strip().lower()
+        for coding in resp.headers.get_list("content-encoding", split_commas=True)
+    ]
+    layers = [_Inflater(coding) for coding in reversed(codings) if coding in ("gzip", "deflate")]
+    for piece in resp.iter_raw():
+        if not layers:
+            yield piece
+        else:
+            layers[0].pending = piece
+            # Depth first: what a layer inflates goes through the layers after it before
+            # it takes its next step, so no layer holds more than one step's output.
+            i = 0
+            while i >= 0:
+                if not layers[i].busy:
+                    i -= 1
+                elif i + 1 < len(layers):
+                    out = layers[i].step(_MAX_BODY_BYTES + 1)
+                    if out:
+                        layers[i + 1].pending = out
+                        i += 1
+                    yield b""
+                else:
+                    yield layers[i].step(room())
+        yield b""
+
+
+class _Inflater:
+    """One gzip or deflate layer of a body, undone as httpx 0.28.1 undoes it
+    (httpx/_decoders.py: GZipDecoder, DeflateDecoder), a bounded step at a time."""
+
+    def __init__(self, coding: str) -> None:
+        self._zlib = zlib.decompressobj(zlib.MAX_WBITS | 16 if coding == "gzip" else zlib.MAX_WBITS)
+        # Deflate is read with the zlib header; if its first piece fails, httpx starts
+        # over without the header, and only then.
+        self._may_go_raw = coding == "deflate"
+        self.pending = b""
+        # The last step stopped at its limit: zlib may hold more output.
+        self._full = False
+
+    @property
+    def busy(self) -> bool:
+        # Input after the end of the stream counts for nothing, as in httpx; handed to
+        # zlib it would only pile up in unused_data.
+        return not self._zlib.eof and (bool(self.pending) or self._full)
+
+    def step(self, limit: int) -> bytes:
+        """At most limit bytes inflated from the pending input; the rest stays pending."""
+        try:
+            out = self._zlib.decompress(self.pending, limit)
+        except zlib.error as exc:
+            if not self._may_go_raw:
+                raise httpx.DecodingError(str(exc)) from exc
+            self._zlib = zlib.decompressobj(-zlib.MAX_WBITS)
+            self._may_go_raw = False
+            return self.step(limit)
+        self._may_go_raw = False
+        self.pending = self._zlib.unconsumed_tail
+        self._full = len(out) == limit
+        return out
