@@ -49,6 +49,7 @@ Doku: → T4
 Abhängt von: T2
 
 ## Entscheidungen
+- 2026-10-29 T3: Schritt 14 (Grenzen je Dienst) prüfte jeden Dienst als laufend; der Einmal-Dienst `db-init` aus T2 ist beendet und machte den Stack-Test rot. T3 prüft ihn am beendeten Container (Exit 0, `no-new-privileges`, pids-Limit aus der Compose-Konfiguration). Lokaler Stack-Lauf: `integration_stack_test: 83 passed, 0 failed` (ein früherer Lauf scheiterte flaky am Enroll mit 502, eigene Zeile).
 - 2026-10-29 T2 (Prüfung): gekoppelte Dateien kamen dazu — Test-Overlay (`db-init` auf dem lokal gebauten Server-Image), die `.env` der Test-Stacks (`lib_e2e_stack.sh`), die Maskierung im Diagnose-Bundle (`scripts/diagnostics.sh`) und drei Dockerfile-Kommentare; darum mehr als acht Dateien.
 - 2026-10-29 T1 (Prüfung): die Datenbanken bleiben beim Superuser, die Rollen besitzen nur das Schema `public`; `db-init` verbindet mit `search_path=pg_catalog`; `ah_ca` bekommt Rechte je Tabelle; Passwörter gehen als SCRAM-Verifier; neue Task T5 für die Restore-Skripte.
 - 2026-10-29 T1: der Rollen-Test ist ein pytest der Server-Suite mit eigenem Postgres-Container statt `scripts/tests/db_roles_test.sh`: der CI-Job der Skript-Tests hat kein psycopg (nachrüsten wäre eine Workflow-Änderung), die Server-Jobs haben Docker und psycopg.
