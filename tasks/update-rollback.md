@@ -43,8 +43,10 @@ Beweis: Code-Lesung docker-compose.yml:178-210 (kein `healthcheck:`); Probe ngin
 Dedup-Key: bug:ops:update.sh:no-compose-wait-gateway-healthcheck
 HEAD: 237b450a
 
-### T2 — Compose: Healthchecks für victoria und monitoring über HTTP  [ ]
-Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_healthchecks.py, CHANGELOG.md
+### T2 — Compose: Healthchecks für victoria und monitoring über HTTP  [x]
+Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_healthchecks.py, CHANGELOG.md, changelog.d/update-rollback.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7e205e2b 2026-10-29T16:18:52+01:00
+Review: approve (.ah-out/review/update-rollback/T2.verdict.json)
 Änderung: victoria (`docker-compose.yml:406-421`) bekommt `healthcheck:` mit `test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8428/health"]`, `interval: 10s`, `timeout: 3s`, `retries: 6`, `start_period: 60s` (Kommentar: ein großer Datenbestand lädt länger; VictoriaMetrics-Doku zu `/health`, Spec). monitoring (`:392-399`): `test` wird ein HTTP-GET wie beim ca-issuer (`:246-251`): `python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()"` auf die Route `apps/monitoring/app/main.py:157-159`; der Kommentar sagt richtig, warum HTTP: ein Connect gelingt aus dem Backlog des Kernels auch bei einem hängenden Prozess, eine Antwort nicht (Beleg im Stack: T3). Neue Testdatei `apps/server/tests/test_compose_healthchecks.py` mit SPDX-Header (`reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later`), Compose-Datei mit `yaml.safe_load` wie `apps/server/tests/test_compose_frps.py:88-89`: (a) jeder Dienst außer `scheduler` hat einen `healthcheck` mit `test` (Ausnahmeliste im Test mit Grund: kein Port); (b) victoria ruft `http://127.0.0.1:8428/health`; monitoring ruft `/health` und enthält kein `create_connection`; (c) mit Docker: das gepinnte victoria-Image aus `docker-compose.yml` starten (`-storageDataPath` auf einem tmpfs), den Healthcheck-Befehl aus der Compose-Datei per `docker exec` bis zu 30 s wiederholen → Exit 0; Gegenprobe Port 8429 → Exit ≠ 0; Container per Fixture entfernt. Zuerst rot: (a), (b) auf HEAD.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_healthchecks.py
 Doku: CHANGELOG.md (Fixed, umlautfrei: victoria mit Healthcheck; monitoring prueft `/health` per HTTP statt eines TCP-Connects)
@@ -88,3 +90,6 @@ Abhängt von: T4, T5
 Beweis: Code-Lesung scripts/update.sh:588-618, apps/server/docker-entrypoint.sh:43-45, apps/monitoring/docker-entrypoint.sh:57-59, apps/server/alembic/env.py:68, :99 (eine Transaktion für alle Migrationen); das Abbrechen der alten Images ist nicht gefahren
 Dedup-Key: bug:ops:update.sh:rollback_after_deploy-migrated-db
 HEAD: 237b450a
+
+## Entscheidungen
+- 2026-10-29 T2: der Docker-Test zieht das gepinnte victoria-Image, wenn es lokal fehlt (sonst SKIP): so läuft er auch in der Server-CI, statt dort immer zu überspringen. Die Ausnahmeliste kennt nur `scheduler`; kommt mit db-roles der Einmal-Dienst `db-init` auf main, nimmt der Basis-Merge ihn mit Grund auf.
