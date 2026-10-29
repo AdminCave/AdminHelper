@@ -86,6 +86,8 @@ export type RefreshOutcome = 'started' | 'restarted' | 'reloaded' | 'unchanged' 
 export interface TunnelRefresh {
   status: TunnelStatus;
   outcome: RefreshOutcome;
+  /** The HTTP code with which the server refused the tunnels (403); frpc is stopped then. */
+  refused: number | null;
 }
 
 export interface ClientInfo {

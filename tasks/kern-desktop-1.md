@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-1 · Review: pro Task
 Spec: docs/features/kern-desktop-1.md (Roadmap R-0876, R-0930, R-0932, R-0931, R-0870, R-0948)
 Heavy: linux-full — Desktop-Journeys: Sync, Client-Cache mit Geräte-Identität, RDP-Start, Geräte-Reset und Tunnel-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -67,8 +67,10 @@ Review: approve (.ah-out/review/kern-desktop-1/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: → T7
 
-### T7 — Tunnel-Hinweis mit Code in der UI (R-0948, UI)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/i18n/de.json, apps/desktop/ui/src/lib/i18n/en.json, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-desktop-1.md
+### T7 — Tunnel-Hinweis mit Code in der UI (R-0948, UI)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/i18n/de.json, apps/desktop/ui/src/lib/i18n/en.json, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-desktop-1.md, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @aee29e0b 2026-10-29T19:06:43+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T7.verdict.json)
 Änderung: `TunnelRefresh` in `types.ts` bekommt das Feld aus T6; `tunnel.ts` (`:216`) zeigt bei einem Stopp mit Grund einen Hinweis mit dem Code (DE+EN), statt still auf `stopped` zu gehen. Test: Stopp mit Grund → Hinweis mit Code; Stopp ohne Grund → kein Hinweis.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts src/lib/i18n/i18n.test.ts
 Doku: docs/admin/frp-tunnel.html + EN (Hinweis bei verweigertem Zugriff) · changelog.d/kern-desktop-1.md
@@ -76,3 +78,5 @@ Abhängt von: T6
 
 ## Entscheidungen
 - T3: Die Fristprüfung steht am Anfang von `check_rdp_auth` (einziger Aufrufer `open_rdp`), nicht in `open_rdp`: dort ist sie ohne AppHandle testbar; Wirkung gleich (kein xfreerdp, `TIMEOUT_MESSAGE`).
+- T6: `TunnelRefresh` liegt in `models.rs`, nicht in `frpc.rs` (Datei nachgetragen); `refused` als `Option<u16>` (HTTP-Code), Weg über ein kleines `BundleReply`. Changelog-Eintrag für beide mit T7.
+- T7: Die Übersetzungen stehen in `i18n/dictionaries.ts` (die im Plan genannten `de.json`/`en.json` gibt es nicht); der Hinweis geht über `reportError` und kommt je Verweigerung einmal (Ticks danach still, neu nach einem Lauf ohne Verweigerung oder einer neuen Aktivierung), damit die Statusleiste nicht jede Minute dieselbe Meldung zeigt.

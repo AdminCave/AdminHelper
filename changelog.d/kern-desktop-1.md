@@ -14,3 +14,6 @@
 - **Desktop: Anzeige nach einem gescheiterten Zuruecksetzen:** Scheitert das Zuruecksetzen der Geraete-Identitaet,
   nachdem sie schon geloescht ist, zeigt der Einstellungsdialog das Geraet als nicht registriert statt der alten
   Identitaet.
+- **Desktop: verweigerter Tunnel-Zugriff:** Verweigert der Server dem Geraet oder dem Benutzer die Tunnel
+  (HTTP 403), stoppt der Desktop frpc wie bisher und meldet das jetzt einmal mit dem Code in der
+  Statusleiste, statt still auf "keine Tunnel" zu gehen.
