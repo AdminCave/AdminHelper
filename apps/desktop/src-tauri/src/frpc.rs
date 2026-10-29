@@ -1121,6 +1121,16 @@ fn local_head_in(config: &str) -> Result<LocalHead, AppError> {
 /// The local head in the `visitor.toml` an earlier process of this workspace left in `run_dir`;
 /// `None`, logged without the password, if there is none or it is not the desktop's.
 fn head_left_behind(run_dir: &Path) -> Option<LocalHead> {
+    // Like `empty_run_dir`, before anything is read: a symlink or a junction is no run dir of ours.
+    if let Ok(meta) = std::fs::symlink_metadata(run_dir) {
+        if !meta.is_dir() {
+            log::warn!(
+                "[frpc] {} is a symlink, a junction or a file, not a run dir: no frpc left behind to stop",
+                run_dir.display()
+            );
+            return None;
+        }
+    }
     let path = run_dir.join(VISITOR_CONFIG);
     let head = match std::fs::read_to_string(&path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -3508,7 +3518,8 @@ method = "token"
 
     #[tokio::test]
     async fn the_first_reconciliation_stops_nothing_behind_a_head_that_is_not_the_desktops() {
-        let cases: [(&str, fn(&mut toml::Table)); 3] = [
+        type Edit = fn(&mut toml::Table);
+        let cases: [(&str, Edit); 3] = [
             ("webServer.addr 0.0.0.0", |config| {
                 web_server(config).insert("addr".to_string(), "0.0.0.0".into());
             }),
@@ -3544,6 +3555,19 @@ method = "token"
                 "{case}: a stop went out"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn no_head_is_read_from_a_run_dir_that_is_a_symlink() {
+        let ports = TempPorts::new();
+        let sidecar = DiskSidecar::new(&ports.dir);
+        left_behind(&sidecar, 4000, |_| {});
+        assert!(super::head_left_behind(sidecar.run_dir()).is_some());
+
+        let link = ports.dir.join("linked-run");
+        std::os::unix::fs::symlink(sidecar.run_dir(), &link).unwrap();
+        assert!(super::head_left_behind(&link).is_none());
     }
 
     #[tokio::test]
