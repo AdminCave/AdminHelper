@@ -23,8 +23,10 @@ Review: approve (.ah-out/review/kern-desktop-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sync
 Doku: changelog.d/kern-desktop-1.md
 
-### T2 — Client-Cache: kein Ablegen nach einem Invalidate (R-0930)  [ ]
+### T2 — Client-Cache: kein Ablegen nach einem Invalidate (R-0930)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/http_client.rs, changelog.d/kern-desktop-1.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @fd7e085c 2026-10-29T18:46:34+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T2.verdict.json)
 Änderung: `invalidate_client_cache` (`http_client.rs:108`) erhöht eine Generation; `client_for` (`:60-102`) merkt sie vor dem Bauen und legt den Client (`:101`) nur ab, wenn sie unverändert ist. Einzelheiten privat (tasks/private). Test zuerst rot: ein Invalidate zwischen Bauen und Ablegen → der nächste Aufruf baut neu.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- http_client
 Doku: changelog.d/kern-desktop-1.md
