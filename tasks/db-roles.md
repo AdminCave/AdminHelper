@@ -28,8 +28,10 @@ Doku: → T4
 Abhängt von: T1
 Test-Löschung: apps/server/tests/test_images_exec_only.py::test_the_entrypoint_of_monitoring_creates_its_database_once — das geprüfte Programm im Monitoring-Entrypoint entfällt (die Monitoring-DB legt `db-init` an); Ersatz: `test_db_roles.py::test_monitoring_owns_its_database_and_nothing_else` (Anlage) und `test_db_roles.py::test_a_failed_setup_names_no_password` (kein Passwort in der Ausgabe)
 
-### T3 — Stack-Test: die Rollen im echten Stack  [ ]
+### T3 — Stack-Test: die Rollen im echten Stack  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @cb174de2 2026-10-29T08:29:51+01:00
+Review: approve (.ah-out/review/db-roles/T3.verdict.json)
 Änderung: Nach dem Hochfahren prüft der Stack-Test über `docker compose exec postgres`: keine Login-Rolle außer dem Bootstrap-Konto ist Superuser; `server` und `ca-issuer` verbinden sich mit `ah_server` bzw. `ah_ca` (`pg_stat_activity`); `ah_ca` bekommt auf `SELECT … FROM users` einen Rechtefehler. Läuft im Stack-Job (main/Dispatch) und im Sammellauf; den echten Lauf fährt die Session per Dispatch des Stack-Jobs auf dem Branch (wie compose-hardening T13), seine Summary-Zeile kommt in den PR-Text.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T4
