@@ -231,6 +231,15 @@ services:
       # first admin's cert out-of-band, so a fresh install is enforced from the
       # start (see docs/Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+    # A listener on 127.0.0.1 that only nginx.conf knows: healthy once nginx has loaded its
+    # whole configuration. start_period covers the entrypoint's wait of up to 120 s for the
+    # TLS material from the ca-issuer.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 150s
     logging: *default-logging
     restart: unless-stopped
     # The nginx master runs as root and starts its workers as the image's user nginx, which
