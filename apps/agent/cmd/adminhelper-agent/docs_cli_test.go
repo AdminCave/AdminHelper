@@ -21,9 +21,9 @@ import (
 // and the helper process of the box scripts (box_cli_test.go).
 
 // docsCallFloor is a non-empty guard, not a quota: a reader that quietly loses most
-// of the calls has to fail too, so it sits just below the real number (22 today).
+// of the calls has to fail too, so it sits just below the real number (26 today).
 // Lower it only after confirming the documentation, not the reader, is what changed.
-const docsCallFloor = 20
+const docsCallFloor = 25
 
 var (
 	// codeRE is a <code> element, with attributes too, as in scripts/dev/doc-smoke.py.
@@ -33,8 +33,12 @@ var (
 	commentRE = regexp.MustCompile(`(^|\s)#.*$`)
 	// docCallRE is the name as a word of its own, followed by a subcommand or a flag:
 	// not `apt install adminhelper-agent`, adminhelper-agent.timer or the bare name.
-	// Calls through a path or the .exe are not read either.
 	docCallRE = regexp.MustCompile(`(^|[\s"'(;|&{!])adminhelper-agent[ \t]+[a-z-]`)
+	// pathCallRE is a call through a path (./, .\, /usr/bin/) or as the Windows binary
+	// (adminhelper-agent-windows-x86_64.exe), with a subcommand or flag after it. It is
+	// read as the bare name; `apt install ./adminhelper-agent_1_amd64.deb` and the
+	// build path ./cmd/adminhelper-agent are no calls.
+	pathCallRE = regexp.MustCompile(`(^|[\s"'(;|&{!])(?:\.{0,2}[\\/]|(?:[A-Za-z]:)?[\\/](?:[\w.-]+[\\/])*)?adminhelper-agent(?:-windows-x86_64)?(?:\.exe)?([ \t]+[a-z-])`)
 	// placeholderRE is a value the reader fills in, <provision-token>. parseCalls takes
 	// its < for a redirect and would end the call there, before the flags after it.
 	placeholderRE = regexp.MustCompile(`<[A-Za-z0-9_.-]+>`)
@@ -51,7 +55,7 @@ func docCalls(name, page string) (calls []agentCall, unknown []string) {
 		body = placeholderRE.ReplaceAllString(body, "VALUE")
 		lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
 		for i, l := range lines {
-			lines[i] = commentRE.ReplaceAllString(l, "")
+			lines[i] = pathCallRE.ReplaceAllString(commentRE.ReplaceAllString(l, ""), "${1}adminhelper-agent${2}")
 		}
 		joined, numbers := logicalLines(lines)
 		keep, kept := make([]string, len(lines)), false
@@ -126,8 +130,13 @@ sudo adminhelper-agent provision \
 cd a &amp;&amp; sudo adminhelper-agent diagnostics
 sudo apt install adminhelper-agent     # later
 adminhelper-agent version   # prints the version
-sudo adminhelper-agent provision --token &lt;t&gt; --server-idd x</code></pre>`
-	// Where a call is, and whether its check passes. Line 10, apt install, is none.
+sudo adminhelper-agent provision --token &lt;t&gt; --server-idd x</code></pre>
+<pre><code>.\adminhelper-agent-windows-x86_64.exe service install
+/usr/bin/adminhelper-agent run --verbose
+./adminhelper-agent run --once
+adminhelper-agent-windows-x86_64.exe frpc rotate
+sudo apt install ./adminhelper-agent_1_amd64.deb</code></pre>`
+	// Where a call is, and whether its check passes. Line 10, apt install, is none, and neither is the .deb on line 17.
 	want := map[string]bool{
 		"fixture.html:2":  false, // run has no --verbose
 		"fixture.html:3":  false, // monitor has no run
@@ -137,6 +146,10 @@ sudo adminhelper-agent provision --token &lt;t&gt; --server-idd x</code></pre>`
 		"fixture.html:9":  true,
 		"fixture.html:11": true,  // the words of the comment are no subcommands
 		"fixture.html:12": false, // the flag after the placeholder is checked too
+		"fixture.html:13": true,  // the .exe through a path
+		"fixture.html:14": false, // through /usr/bin, run has no --verbose
+		"fixture.html:15": true,
+		"fixture.html:16": false, // the .exe, frpc has no rotate
 	}
 	calls, unknown := docCalls("fixture.html", page)
 	for _, u := range unknown {

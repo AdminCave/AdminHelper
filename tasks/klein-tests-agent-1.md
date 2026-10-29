@@ -10,8 +10,10 @@ Heavy: none — Unit-Tests im Agent, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — docs_cli_test: Aufrufe über Pfad und .exe lesen (R-0851)  [ ]
+### T1 — docs_cli_test: Aufrufe über Pfad und .exe lesen (R-0851)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/docs_cli_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @9b78a99a 2026-10-29T21:54:10+01:00
+Review: approve (.ah-out/review/klein-tests-agent-1/T1.verdict.json)
 Änderung: `docCalls` führt vor dem Abgleich einen Aufruf über einen Pfad (`./`, `.\`, `/usr/bin/`) oder die Windows-Binary (`adminhelper-agent-windows-x86_64.exe`, `adminhelper-agent.exe`) auf den Namen `adminhelper-agent` zurück, wenn ein Unterbefehl oder ein Flag folgt; `parseCalls` und `checkCall` bleiben. `TestDocsCLICheckCanFail` bekommt Fälle für beide Formen (ein gültiger, ein ungültiger) und für Nicht-Aufrufe (`apt install ./adminhelper-agent_1_amd64.deb`); `docsCallFloor` steigt auf die neue Zahl abzüglich eins. Findet der Leser eine echte Abweichung in der Doku, wird sie korrigiert (DE+EN).
 Beweis: R-0851 Code-Lesung docs_cli_test.go docCallRE; docs/admin/agent-deployment.html:138, docs/developer/cicd.html:508
 Dedup-Key: ref:agent:docs_cli_test.go:path-exe-calls
