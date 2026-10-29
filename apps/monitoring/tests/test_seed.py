@@ -455,13 +455,13 @@ def test_seed_records_version_and_hash(db):
         assert row.builtin_hash == definitions_hash(
             tpl["check_definitions"], tpl["alert_definitions"]
         )
-        d = row.to_dict()
+        d = templates_router._template_dict(row)
         assert (d["builtinVersion"], d["builtinEdited"], d["builtinUpdateAvailable"]) == (
             tpl["version"],
             False,
             False,
         )
-    d = db.get(MonitorTemplate, "own").to_dict()
+    d = templates_router._template_dict(db.get(MonitorTemplate, "own"))
     assert (d["builtinVersion"], d["builtinEdited"], d["builtinUpdateAvailable"]) == (
         None,
         False,
@@ -491,7 +491,7 @@ def test_unchanged_builtin_follows_a_new_version_and_keeps_check_overrides(
     assert linux.name == "Our Linux"
     assert linux.builtin_version == v2["version"]
     assert linux.builtin_hash == definitions_hash(v2["check_definitions"], [])
-    d = linux.to_dict()
+    d = templates_router._template_dict(linux)
     assert (d["builtinVersion"], d["builtinEdited"], d["builtinUpdateAvailable"]) == (
         v2["version"],
         False,
@@ -518,7 +518,7 @@ def test_edited_builtin_stays_as_it_is_and_offers_the_update(db, monkeypatch, sc
     linux = _row(db, "linux-base")
     assert json.loads(linux.check_definitions) == edited
     assert linux.builtin_version == v2["version"] - 1
-    d = linux.to_dict()
+    d = templates_router._template_dict(linux)
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, True)
     assert scheduled == []
 
@@ -541,7 +541,7 @@ def test_builtin_saved_unchanged_in_the_editor_still_follows_a_new_version(
         db,
     )
     assert json.loads(_row(db, "linux-base").check_definitions) != shipped["check_definitions"]
-    assert _row(db, "linux-base").to_dict()["builtinEdited"] is False
+    assert templates_router._template_dict(_row(db, "linux-base"))["builtinEdited"] is False
     v2 = _ship_version_2(monkeypatch)
 
     assert reconcile_builtin_templates(db) == 1
@@ -562,14 +562,16 @@ def test_a_new_optional_schema_field_leaves_the_builtins_unedited(db, monkeypatc
     monkeypatch.setattr(builtin_templates, "TemplateCheckDef", GrownCheckDef)
 
     for tpl in BUILTIN_TEMPLATES:
-        assert _row(db, tpl["slug"]).to_dict()["builtinEdited"] is False, tpl["slug"]
+        assert templates_router._template_dict(_row(db, tpl["slug"]))["builtinEdited"] is False, (
+            tpl["slug"]
+        )
     # Saved again by the editor, now with the new field at its default.
     linux = _row(db, "linux-base")
     linux.check_definitions = json.dumps(
         [GrownCheckDef(**d).model_dump() for d in _shipped("linux-base")["check_definitions"]]
     )
     db.commit()
-    assert _row(db, "linux-base").to_dict()["builtinEdited"] is False
+    assert templates_router._template_dict(_row(db, "linux-base"))["builtinEdited"] is False
 
 
 def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
@@ -606,8 +608,8 @@ def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
     # Edited by hand: windows-base offers its newer version, docker-host ships none.
     assert {
         tpl["slug"]: (
-            _row(db, tpl["slug"]).to_dict()["builtinEdited"],
-            _row(db, tpl["slug"]).to_dict()["builtinUpdateAvailable"],
+            templates_router._template_dict(_row(db, tpl["slug"]))["builtinEdited"],
+            templates_router._template_dict(_row(db, tpl["slug"]))["builtinUpdateAvailable"],
         )
         for tpl in BUILTIN_TEMPLATES
     } == {
@@ -696,7 +698,7 @@ def test_unchanged_builtin_seeded_before_versions_follows_a_new_version(
         v2["version"],
         definitions_hash(v2["check_definitions"], []),
     )
-    d = row.to_dict()
+    d = templates_router._template_dict(row)
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (False, False)
     check = (
         db.query(MonitorCheck)
@@ -717,7 +719,7 @@ def test_unchanged_builtin_seeded_before_versions_follows_a_new_version(
             else:
                 expected = (tpl["version"], shipped_hash)
             assert (other.builtin_version, other.builtin_hash) == expected, tpl["slug"]
-            assert other.to_dict()["builtinEdited"] is False, tpl["slug"]
+            assert templates_router._template_dict(other)["builtinEdited"] is False, tpl["slug"]
 
 
 def _proxmox_check(db):
@@ -751,7 +753,7 @@ def test_unchanged_proxmox_host_of_version_1_takes_two_consecutive_fails(
         shipped["version"],
         definitions_hash(shipped["check_definitions"], []),
     )
-    d = row.to_dict()
+    d = templates_router._template_dict(row)
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (False, False)
     check = _proxmox_check(db)
     assert check.consecutive_fails == 2
@@ -799,7 +801,7 @@ def test_unchanged_linux_base_of_version_1_takes_the_system_state_and_the_new_th
         shipped["version"],
         definitions_hash(shipped["check_definitions"], []),
     )
-    d = row.to_dict()
+    d = templates_router._template_dict(row)
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (False, False)
     shipped_defs = {definition["def_id"]: definition for definition in shipped["check_definitions"]}
     for server_id in ("srv-1", "srv-2"):
@@ -860,7 +862,7 @@ def test_edited_builtin_seeded_before_versions_stays_edited_and_offers_the_updat
     linux = _row(db, "linux-base")
     assert json.loads(linux.check_definitions) == edited
     assert (linux.builtin_version, linux.builtin_hash) == (1, BUILTIN_V1_HASHES["linux-base"])
-    d = linux.to_dict()
+    d = templates_router._template_dict(linux)
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, True)
     assert scheduled == []
 
@@ -882,7 +884,7 @@ def test_builtin_without_a_frozen_hash_gets_the_shipped_one(db, monkeypatch, sch
         1,
         definitions_hash(zfs["check_definitions"], zfs["alert_definitions"]),
     )
-    assert row.to_dict()["builtinEdited"] is False
+    assert templates_router._template_dict(row)["builtinEdited"] is False
 
 
 def test_deleted_builtin_stays_deleted_on_a_new_version(db, monkeypatch, scheduled):
