@@ -257,7 +257,7 @@ class IPFilterMiddleware(BaseHTTPMiddleware):
 
         ip = resolve_client_ip(request)
         if not _in_networks(ip, _ALLOWED_NETWORKS):
-            logger.warning("Zugriff verweigert für IP: %s %s", ip, request.url.path)
+            logger.warning("Zugriff verweigert für IP: %s %r", ip, request.url.path)
             return JSONResponse(
                 status_code=403,
                 content={"detail": f"Zugriff verweigert: {ip}"},
