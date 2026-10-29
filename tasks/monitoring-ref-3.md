@@ -69,8 +69,10 @@ Dedup-Key: ref:monitoring:routers/checks.py:job-removed-before-commit
 HEAD: 237b450a
 Semantik: keine Stelle in docs/ (gesucht: „Scheduler“, „APScheduler“, „remove_check“, „DELETE /checks“ in `docs/developer/monitoring.html` und `docs/admin/monitoring.html`); Vorbild im Code `apps/monitoring/app/template_sync.py:52-60` — „Apply collected scheduler mutations AFTER the DB commit succeeded. Mutating the running APScheduler before the rows are persisted (the old behaviour) meant a failed/rolled-back commit left ghost jobs firing execute_check for checks that never existed, or silently unscheduled checks.“; die Roadmap-Zeile R-0695 (Kevin angenommen) legt das Verhalten fest
 
-### T3 — Paritätstest der Typ-Tabellen gegen CHECK_TYPES (R-0694)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/check_types.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_check_type_parity.py
+### T3 — Paritätstest der Typ-Tabellen gegen CHECK_TYPES (R-0694)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_types.py, apps/monitoring/tests/test_check_type_parity.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3b901d9a 2026-10-29T11:48:25+01:00
+Review: approve (.ah-out/review/monitoring-ref-3/T3.verdict.json)
 Änderung: Die funktionslokale Menge `agent_types` in `get_check_metrics` (`apps/monitoring/app/routers/checks.py:444-451`) wird die Modulkonstante `SERVER_METRIC_TYPES: frozenset[str]` neben `CHECK_TYPE_METRICS` (`:72`), mit dem bisherigen Kommentar; Inhalt und Abfragen bleiben (nicht aus `PUSH_ONLY_TYPES` abgeleitet: `agent_ping` gehört hinein, `smart_health` nicht — Spec, Nicht-Ziele). Der Modul-Docstring von `apps/monitoring/app/check_types.py` (`:5-14`) sagt danach, was stimmt: Typen und `push_only` leben hier, die Tabellen je Typ bei ihren Verwendern, `tests/test_check_type_parity.py` hält sie gleich. Neue Testdatei `tests/test_check_type_parity.py` (SPDX-Header, Modul-Docstring mit dem Warum: ein Typ, der in einer Tabelle fehlt, fällt sonst erst zur Laufzeit auf — `ValueError` in `get_checker`, eine ungeprüfte Config, eine Abfrage nach `monitor_check_duration_ms`): (a) `set(_REGISTRY)` (`app.checkers`), `set(CONFIG_MODELS)` (`app.check_configs`) und `set(CHECK_TYPE_METRICS)` (`app.routers.checks`) je gleich `VALID_CHECK_TYPES`; die Meldung nennt je Tabelle die fehlenden und die überzähligen Typen; (b) `_DYNAMIC_METRIC_PATTERNS` und `SERVER_METRIC_TYPES` sind Teilmengen von `VALID_CHECK_TYPES`; (c) Nicht-leer-Wächter: `VALID_CHECK_TYPES` hat mindestens 12 Einträge, `PUSH_ONLY_TYPES` ist eine nicht leere echte Teilmenge. Der Test ist auf HEAD grün (die Tabellen stimmen heute); was er kann, zeigt die Mutations-Stichprobe.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_type_parity.py tests/test_checks_metrics.py tests/test_push_only_ui_sync.py tests/test_check_configs.py
 Doku: keine (intern; der Docstring von `check_types.py` wird richtig)
@@ -202,3 +204,7 @@ Orakel: mutation-sample — Kürzung nach statt vor dem Suffix bzw. `held` ohne 
 Metrik: `apply_result` 106 → ≤ 70 Zeilen, längste neue Funktion ≤ 60 (AST, Python 3.13.5)
 Dedup-Key: ref:cross:python:long-functions
 HEAD: 237b450a
+
+## Entscheidungen
+- 2026-10-29 T3: kein `SERVER_METRIC_TYPES`, `routers/checks.py` bleibt unverändert — seit R-0749 gibt es die Menge `agent_types` in `get_check_metrics` nicht mehr, nur `agent_resources` liest nach Server; der Paritätstest prüft deshalb nur `_DYNAMIC_METRIC_PATTERNS` als Teilmenge
+- 2026-10-29 T2: Test (c) prüft `commit` zuerst und die `remove` sortiert — die Reihenfolge von `.all()` ist nicht festgelegt
