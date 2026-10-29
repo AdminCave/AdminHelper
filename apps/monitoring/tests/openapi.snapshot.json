@@ -360,6 +360,31 @@
         "title": "AlertRuleUpdate",
         "type": "object"
       },
+      "ApplyResultOut": {
+        "description": "The IDs of the checks and alert rules an assignment created.",
+        "properties": {
+          "alertsCreated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alertscreated",
+            "type": "array"
+          },
+          "checksCreated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checkscreated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "checksCreated",
+          "alertsCreated"
+        ],
+        "title": "ApplyResultOut",
+        "type": "object"
+      },
       "BuiltinUpdateOut": {
         "properties": {
           "current": {
@@ -1100,6 +1125,75 @@
         "title": "MonitorStateOut",
         "type": "object"
       },
+      "RestoreOut": {
+        "properties": {
+          "restored": {
+            "title": "Restored",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "restored"
+        ],
+        "title": "RestoreOut",
+        "type": "object"
+      },
+      "ServerAssignmentOut": {
+        "description": "An assignment of a server; templateName None when its template is gone.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "removedChecks": {
+            "title": "Removedchecks",
+            "type": "integer"
+          },
+          "serverHostname": {
+            "title": "Serverhostname",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          },
+          "templateName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templatename"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "serverId",
+          "serverHostname",
+          "serverName",
+          "source",
+          "templateName",
+          "removedChecks"
+        ],
+        "title": "ServerAssignmentOut",
+        "type": "object"
+      },
       "ServerCleanupOut": {
         "properties": {
           "alertsDeleted": {
@@ -1218,6 +1312,29 @@
           "tag"
         ],
         "title": "TagAssignmentOut",
+        "type": "object"
+      },
+      "TagSyncOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "refreshed": {
+            "title": "Refreshed",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "removed",
+          "refreshed"
+        ],
+        "title": "TagSyncOut",
         "type": "object"
       },
       "TemplateAlertDef": {
@@ -1623,6 +1740,34 @@
           "updatedAt"
         ],
         "title": "TemplateOut",
+        "type": "object"
+      },
+      "TemplateSuggestionOut": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          },
+          "templateName": {
+            "title": "Templatename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "templateId",
+          "templateName",
+          "reason"
+        ],
+        "title": "TemplateSuggestionOut",
         "type": "object"
       },
       "TemplateTagAssign": {
@@ -2990,7 +3135,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerAssignmentOut"
+                  },
+                  "title": "Response Get Server Assignments Templates Assignments  Server Id  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -3030,7 +3181,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateSuggestionOut"
+                  },
+                  "title": "Response Get Template Suggestions Templates Suggestions  Server Id  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -3102,7 +3259,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TagSyncOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3259,7 +3418,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResultOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3307,7 +3468,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3438,7 +3601,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreOut"
+                }
               }
             },
             "description": "Successful Response"

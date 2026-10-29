@@ -421,6 +421,37 @@ class TagAssignmentOut(BaseModel):
     tag: str
 
 
+class ServerAssignmentOut(TemplateAssignmentOut):
+    """An assignment of a server; templateName None when its template is gone."""
+
+    templateName: str | None
+    removedChecks: int
+
+
+class TemplateSuggestionOut(BaseModel):
+    slug: str
+    templateId: str
+    templateName: str
+    reason: str
+
+
+class ApplyResultOut(BaseModel):
+    """The IDs of the checks and alert rules an assignment created."""
+
+    checksCreated: list[str]
+    alertsCreated: list[str]
+
+
+class RestoreOut(BaseModel):
+    restored: int
+
+
+class TagSyncOut(BaseModel):
+    created: int
+    removed: int
+    refreshed: int
+
+
 class SyncResultOut(BaseModel):
     created: int
     updated: int

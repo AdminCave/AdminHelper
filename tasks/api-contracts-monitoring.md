@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # API-Verträge: Antwortmodelle für Server und Monitoring, Client-Typen gegen den Snapshot (Teil monitoring) — Task-Ledger
-Status: aktiv · Branch: feature/api-contracts-monitoring · Review: pro Task
+Status: bereit · Branch: feature/api-contracts-monitoring · Review: pro Task
 Spec: docs/features/api-contracts.md (Roadmap R-0685)
 Heavy: none — Teil-Ledger von tasks/api-contracts.md (T13–T17); die schwere Prüfung (linux-full + scenario + windows) fährt das Vorhabens-Ledger vor dem Merge
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -98,8 +98,10 @@ Orakel: contract — die Modelle gegen `to_dict` und die Ergänzungen der Routen
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T17 — Monitoring: Zuordnungen, Vorschläge, Tag-Sync (R-0685)  [ ]
+### T17 — Monitoring: Zuordnungen, Vorschläge, Tag-Sync (R-0685)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_templates_router.py, changelog.d/api-contracts-monitoring.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0e23fb01 2026-10-29T22:41:12+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T17.verdict.json)
 Änderung: `ServerAssignmentOut` (`TemplateAssignmentOut` plus `templateName: Optional[str]`, `removedChecks: int`, `apps/monitoring/app/routers/templates.py:97`), `TemplateSuggestionOut` `{slug, templateId, templateName, reason}` (`:255`), `ApplyResultOut` `{checksCreated: list[str], alertsCreated: list[str]}` (die IDs, nicht Zahlen: `apps/monitoring/app/template_sync.py:583-612`) für `assign`, `RestoreOut` `{restored: int}` (`templates.py:399`, `template_sync.py:672-674`), `TagSyncOut` `{created, removed, refreshed: int}` (`apps/monitoring/app/tag_sync.py:142`); `assign-tag` (`templates.py:412`, 201) mit `TagAssignmentOut` aus T16 (`:427`). Routen `templates.py:97`, `:255`, `:332`, `:385`, `:412`, `:453`. Der Stand-in in `tests/test_templates_router.py:195-205` liefert heute `{"created": 2, "removed": 1}` ohne `refreshed` und würde mit dem Modell zur 500: er liefert und erwartet künftig `{"created": 2, "removed": 1, "refreshed": 0}`, die echte Form (keine Test-Löschung, die Assertion prüft weiter die Durchreiche). Tests nach Muster.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_templates_router.py tests/test_template_suggestions.py tests/test_tag_sync.py
 Doku: changelog.d/api-contracts-monitoring.md (Changed, umlautfrei: die OpenAPI-Beschreibung des Monitoring-Dienstes nennt die Felder seiner JSON-Antworten; die Antworten bleiben gleich)

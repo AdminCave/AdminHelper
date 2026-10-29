@@ -197,11 +197,13 @@ class TestTagAssignments:
         import app.routers.templates as templates_mod
 
         monkeypatch.setattr(
-            templates_mod, "sync_tag_assignments", lambda db: {"created": 2, "removed": 1}
+            templates_mod,
+            "sync_tag_assignments",
+            lambda db: {"created": 2, "removed": 1, "refreshed": 0},
         )
         r = client.post("/templates/tag-sync")
         assert r.status_code == 200
-        assert r.json() == {"created": 2, "removed": 1}
+        assert r.json() == {"created": 2, "removed": 1, "refreshed": 0}
 
     def test_assign_tag_triggers_sync(self, client, monkeypatch):
         client, _factory = client

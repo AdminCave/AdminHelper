@@ -37,10 +37,16 @@ from app.models import (
 )
 from app.scheduler import remove_check
 from app.schemas import (
+    ApplyResultOut,
     BuiltinUpdateOut,
+    RestoreOut,
+    ServerAssignmentOut,
+    TagAssignmentOut,
+    TagSyncOut,
     TemplateAssign,
     TemplateCreate,
     TemplateOut,
+    TemplateSuggestionOut,
     TemplateTagAssign,
     TemplateUpdate,
 )
@@ -143,7 +149,11 @@ def list_templates(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/templates/assignments/{server_id}", dependencies=[Depends(require_internal)])
+@router.get(
+    "/templates/assignments/{server_id}",
+    response_model=list[ServerAssignmentOut],
+    dependencies=[Depends(require_internal)],
+)
 def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
     """Returns all template assignments of a server, each with the number of its
     template checks deleted on the server (removedChecks)."""
@@ -321,7 +331,11 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 # segments: after it, that route would answer for a server named "builtin-update".
 
 
-@router.get("/templates/suggestions/{server_id}", dependencies=[Depends(require_internal)])
+@router.get(
+    "/templates/suggestions/{server_id}",
+    response_model=list[TemplateSuggestionOut],
+    dependencies=[Depends(require_internal)],
+)
 def get_template_suggestions(server_id: ServerIdPath, db: Session = Depends(get_db)):
     """Lists the standard templates the server's host facts suggest; empty for a
     server whose agent has not reported them (yet)."""
@@ -411,7 +425,11 @@ def take_builtin_update(template_id: str, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/templates/{template_id}/assign", dependencies=[Depends(require_internal)])
+@router.post(
+    "/templates/{template_id}/assign",
+    response_model=ApplyResultOut,
+    dependencies=[Depends(require_internal)],
+)
 def assign_template(template_id: str, data: TemplateAssign, db: Session = Depends(get_db)):
     """Assigns a template to a server — creates all checks/alerts."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
@@ -463,6 +481,7 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
 
 @router.post(
     "/templates/{template_id}/assign/{server_id}/restore",
+    response_model=RestoreOut,
     dependencies=[Depends(require_internal)],
 )
 def restore_template_checks(template_id: str, server_id: str, db: Session = Depends(get_db)):
@@ -490,6 +509,7 @@ def restore_template_checks(template_id: str, server_id: str, db: Session = Depe
 @router.post(
     "/templates/{template_id}/assign-tag",
     status_code=status.HTTP_201_CREATED,
+    response_model=TagAssignmentOut,
     dependencies=[Depends(require_internal)],
 )
 def assign_template_tag(template_id: str, data: TemplateTagAssign, db: Session = Depends(get_db)):
@@ -532,7 +552,9 @@ def unassign_template_tag(template_id: str, tag: str, db: Session = Depends(get_
     _tag_sync_best_effort(db)
 
 
-@router.post("/templates/tag-sync", dependencies=[Depends(require_internal)])
+@router.post(
+    "/templates/tag-sync", response_model=TagSyncOut, dependencies=[Depends(require_internal)]
+)
 def trigger_tag_sync(db: Session = Depends(get_db)):
     """Reconcile materialized tag assignments now. Called by the server after
     inventory changes (create/update/delete); the scheduler runs the same

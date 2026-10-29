@@ -22,6 +22,7 @@ from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorHostFacts,
     MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
@@ -77,6 +78,12 @@ def _ref_name(schema: dict) -> str:
         ("/templates/{template_id}", "put", "TemplateOut"),
         ("/templates/{template_id}/builtin-update", "get", "BuiltinUpdateOut"),
         ("/templates/{template_id}/builtin-update", "post", "TemplateOut"),
+        ("/templates/assignments/{server_id}", "get", "ServerAssignmentOut"),
+        ("/templates/suggestions/{server_id}", "get", "TemplateSuggestionOut"),
+        ("/templates/{template_id}/assign", "post", "ApplyResultOut"),
+        ("/templates/{template_id}/assign/{server_id}/restore", "post", "RestoreOut"),
+        ("/templates/{template_id}/assign-tag", "post", "TagAssignmentOut"),
+        ("/templates/tag-sync", "post", "TagSyncOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -587,3 +594,55 @@ class TestTemplateShape:
         body = r.json()
         assert set(body["syncResult"]) == {"created", "updated", "deleted", "servers"}
         assert body == {**_template(factory, tid, listed=False), "syncResult": body["syncResult"]}
+
+
+class TestTemplateLinkShape:
+    def test_assign_listing_and_restore_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        ping = {"def_id": "def-ping", "name": "Ping", "check_type": "ping"}
+        ping["config"] = {"target": "{{hostname}}"}
+        r = client.post("/templates", json={"name": "T", "check_definitions": [ping]})
+        assert r.status_code == 201, r.text
+        tid = r.json()["id"]
+        body = {"server_id": "srv-1", "hostname": "srv-1.example", "server_name": "srv-1"}
+        r = client.post(f"/templates/{tid}/assign", json=body)
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            check_ids = [c.id for c in db.query(MonitorCheck).filter_by(template_id=tid)]
+        assert r.json() == {"checksCreated": check_ids, "alertsCreated": []}
+
+        assert client.delete(f"/checks/{check_ids[0]}").status_code == 204
+        r = client.get("/templates/assignments/srv-1")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = jsonable_encoder(templates_router.get_server_assignments("srv-1", db))
+        assert r.json() == want
+        assert r.json()[0]["templateName"] == "T" and r.json()[0]["removedChecks"] == 1
+
+        r = client.post(f"/templates/{tid}/assign/srv-1/restore")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"restored": 1}
+
+    def test_suggestions_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_builtin(factory)
+        with factory() as db:
+            db.add(MonitorHostFacts(server_id="srv-1", os="linux", subsystems='["docker"]'))
+            db.commit()
+        r = client.get("/templates/suggestions/srv-1")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = jsonable_encoder(templates_router.suggest_templates(db, "srv-1"))
+        assert r.json() == want
+        assert {s["slug"] for s in r.json()} == {"linux-base", "docker-host"}
+
+    def test_assign_tag_answers_with_the_row(self, client_db, monkeypatch):
+        client, factory = client_db
+        monkeypatch.setattr(templates_router, "_tag_sync_best_effort", lambda db: None)
+        tid = client.post("/templates", json={"name": "T"}).json()["id"]
+        r = client.post(f"/templates/{tid}/assign-tag", json={"tag": "web"})
+        assert r.status_code == 201, r.text
+        with factory() as db:
+            row = db.query(MonitorTemplateTagAssignment).filter_by(template_id=tid).one()
+            assert r.json() == jsonable_encoder(row.to_dict())
+        assert r.json()["tag"] == "web"
