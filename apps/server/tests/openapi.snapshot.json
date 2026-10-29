@@ -183,6 +183,131 @@
         "title": "ApiKeyResponse",
         "type": "object"
       },
+      "AuditLogOut": {
+        "description": "One audit entry, as AuditLog.to_dict writes it.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actorid"
+          },
+          "actorLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actorlabel"
+          },
+          "actorType": {
+            "title": "Actortype",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "objectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectid"
+          },
+          "objectLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectlabel"
+          },
+          "objectType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objecttype"
+          },
+          "sourceIp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceip"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "actorType",
+          "actorId",
+          "actorLabel",
+          "action",
+          "objectType",
+          "objectId",
+          "objectLabel",
+          "sourceIp",
+          "status",
+          "detail"
+        ],
+        "title": "AuditLogOut",
+        "type": "object"
+      },
       "BootstrapRequest": {
         "description": "Creates the first admin user using the bootstrap token from the server logs.",
         "properties": {
@@ -4451,8 +4576,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/AuditLogOut"
                   },
                   "title": "Response List Audit Api Audit Get",
                   "type": "array"

@@ -178,8 +178,10 @@ Orakel: contract — der Mock gegen die Antwortform von `GET /api/audit`
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T12 — audit: `AuditLogOut` (R-0684)  [ ]
+### T12 — audit: `AuditLogOut` (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/audit/schemas.py, apps/server/app/modules/audit/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts, changelog.d/api-contracts-server.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3f8ff406 2026-10-29T23:17:06+01:00
+Review: approve (.ah-out/review/api-contracts-server/T12.verdict.json)
 Änderung: Neue Datei `audit/schemas.py` (SPDX) mit `AuditLogOut` wie `AuditLog.to_dict` (`apps/server/app/modules/audit/models.py:39-53`): `id: int`, `timestamp: Optional[str]`, `actorType`, `action`, `status: str`, die übrigen `Optional[str]`. `GET ''` (`apps/server/app/modules/audit/router.py:25`) von `list[dict[str, Any]]` auf `list[AuditLogOut]`. Tests nach Muster. `mocks.contract.test.ts:146` von 17 auf 18, der Kommentar `:142-145` sagt, dass alle 18 Fixtures geprüft werden.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_audit_api.py  und bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: changelog.d/api-contracts-server.md (Changed, umlautfrei: die OpenAPI-Beschreibung des Servers nennt die Felder aller JSON-Antworten; die Antworten selbst bleiben gleich)
@@ -198,3 +200,5 @@ HEAD: b25c65a6
   mit `union_mode="left_to_right"` (die volle Zeile zuerst; die Gegenprobe mit umgedrehter Reihenfolge: 2 failed).
 - T10: Der Pin in `mocks.contract.test.ts` stand schon auf 17 (nicht 16 wie im Plan, ein früherer Merge hob ihn);
   mit der Enrollment-Fixture geht er auf 18, offen bleibt nur `audit` (T12).
+- T12: Der Pin geht von 18 auf 19 (Plan: 17 → 18, Folge der Verschiebung aus T10); damit erreichen alle Fixtures die
+  Schlüsselprüfung. Der CHANGELOG-Eintrag folgt der Form von `api-contracts-monitoring` (Server-API statt Monitoring-API).

@@ -19,6 +19,7 @@ from sqlalchemy import update
 
 from app.core.auth import hash_api_key
 from app.modules.ansible.models import Playbook
+from app.modules.audit.models import AuditLog
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -83,6 +84,7 @@ def _ref_name(schema: dict) -> str:
         ("/api/hooks/{hook_id}/rotate", "post", "HookTokenOut"),
         ("/api/enrollment/token", "post", "EnrollmentGrantOut"),
         ("/api/enrollment/token/for", "post", "EnrollmentGrantOut"),
+        ("/api/audit", "get", "AuditLogOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -667,3 +669,44 @@ class TestEnrollmentShape:
         body = r.json()
         assert list(body) == GRANT_KEYS
         assert body["subjectId"] == normal_user.username and body["browser"] is True
+
+
+class TestAuditShape:
+    def test_entry_answers_with_every_key_as_written(self, test_client, db_session, admin_user):
+        h = _login(test_client)
+        row = AuditLog(
+            actor_type="user",
+            actor_id="u-1",
+            actor_label="admin",
+            action="shape.probe",
+            object_type="server",
+            object_id="srv-1",
+            object_label="web",
+            source_ip="192.0.2.7",
+            status="denied",
+            detail="probe",
+        )
+        db_session.add(row)
+        db_session.commit()
+        r = test_client.get("/api/audit", params={"action": "shape.probe"}, headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json() == [row.to_dict()]
+        assert list(r.json()[0]) == list(row.to_dict())
+
+    def test_entry_without_optional_fields(self, test_client, db_session, admin_user):
+        h = _login(test_client)
+        db_session.add(AuditLog(actor_type="system", action="shape.bare", status="success"))
+        db_session.commit()
+        r = test_client.get("/api/audit", params={"action": "shape.bare"}, headers=h)
+        assert r.status_code == 200, r.text
+        (entry,) = r.json()
+        assert isinstance(entry["id"], int) and isinstance(entry["timestamp"], str)
+        assert {k for k, v in entry.items() if v is None} == {
+            "actorId",
+            "actorLabel",
+            "objectType",
+            "objectId",
+            "objectLabel",
+            "sourceIp",
+            "detail",
+        }
