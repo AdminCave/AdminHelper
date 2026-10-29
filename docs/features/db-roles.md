@@ -18,21 +18,26 @@ Betriebs- und Architekturziel (Komponenten-Grenzen, `docs/developer/index.html`)
 ## Ziel & Nicht-Ziele
 
 Ziel:
-- Je Dienst eine Login-Rolle ohne `SUPERUSER`, `CREATEDB`, `CREATEROLE`, mit eigenem Passwort aus `.env`:
+- Je Dienst eine Login-Rolle ohne `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION`, `BYPASSRLS`, mit eigenem
+  Passwort aus `.env` (an Postgres geht nur der SCRAM-Verifier):
   - `ah_server`: besitzt das Schema `public` der DB `adminhelper` und alle Objekte darin (Alembic braucht DDL).
   - `ah_scheduler`: nur DML auf den Server-Tabellen, per `ALTER DEFAULT PRIVILEGES FOR ROLE ah_server` auch auf
     künftige (Offene Frage 1).
-  - `ah_monitor`: besitzt die DB `adminhelper_monitor` und alles darin.
-  - `ah_ca`: `CONNECT` auf `adminhelper`, nur die Rechte, die `ca-issuer` auf seine fünf Tabellen braucht, und die
-    Sequenzen dazu.
-  - `CONNECT` beider DBs für `PUBLIC` entzogen; jede Rolle kommt nur in ihre DB.
+  - `ah_monitor`: besitzt das Schema `public` der DB `adminhelper_monitor` und alles darin.
+  - `ah_ca`: `CONNECT` auf `adminhelper` und je Tabelle nur, was `ca-issuer` dort tut: `enrollment_tokens` lesen und
+    ändern, `device_lines` lesen, anlegen, ändern, `issued_certificates` lesen und anlegen, `revoked_identities` und
+    `certificate_register_state` nur lesen; dazu die Sequenzen dieser Tabellen.
+  - Die Datenbanken selbst (auch `postgres`) bleiben beim Superuser: ein Eigentümer könnte seiner Datenbank
+    Einstellungen anhängen (`ALTER DATABASE … SET`), unter denen jede spätere Superuser-Sitzung läuft. `db-init`
+    verbindet sich zusätzlich nur mit `search_path=pg_catalog`.
+  - `CONNECT` und `TEMPORARY` aller drei DBs für `PUBLIC` entzogen; jede Rolle kommt nur in ihre DB.
 - Ein Einmal-Dienst `db-init` (Server-Image, `python -m app.db_roles setup`) richtet Rollen, Passwörter, die
   Monitoring-DB, Eigentümer und `CONNECT` bei jedem `up` idempotent ein und endet; die Dienste warten auf ihn
   (`depends_on: condition: service_completed_successfully`). Nur `postgres` und `db-init` sehen das
   Superuser-Passwort.
 - Die Rechte von `ah_ca` auf die fünf Tabellen setzt der Server nach `alembic upgrade head` (als Eigentümer), damit
   eine Migration, die eine dieser Tabellen neu anlegt, sie nicht verliert.
-- Bestand: Ein Update übernimmt eine bestehende Installation ohne Datenverlust: `init-secrets.sh` ergänzt die drei
+- Bestand: Ein Update übernimmt eine bestehende Installation ohne Datenverlust: `init-secrets.sh` ergänzt die vier
   neuen Passwörter (läuft schon in `update.sh:563`), `db-init` überträgt die Objekte vom Superuser an die neuen
   Rollen. Belegt durch `upgrade_path_test.sh` (letztes Release → dieser Stand) im Sammellauf.
 
@@ -46,7 +51,7 @@ Nicht-Ziele:
 
 | Task | Komponente | Dateien |
 |---|---|---|
-| T1 | server | `apps/server/app/db_roles.py` (neu), `apps/server/docker-entrypoint.sh`, `scripts/tests/db_roles_test.sh` (neu), `apps/server/tests/test_db_roles_sql.py` (neu) |
+| T1 | server | `apps/server/app/db_roles.py` (neu), `apps/server/docker-entrypoint.sh`, `apps/server/tests/test_db_roles.py` (neu) |
 | T2 | scripts | `docker-compose.yml`, `scripts/init-secrets.sh`, `apps/monitoring/docker-entrypoint.sh`, `.env.example`, `scripts/tests/init-secrets_test.sh`, `apps/server/tests/test_env_parity.py` |
 | T3 | scripts | `scripts/tests/integration_stack_test.sh` |
 | T4 | — (Doku) | `docs/developer/index.html`, `docs/en/developer/index.html`, `docs/admin/installation.html`, `docs/en/admin/installation.html`, `docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `DEVELOPMENT.md`, `CHANGELOG.md` |
@@ -55,8 +60,7 @@ Nicht-Ziele:
 
 Keine Alembic-Migration und keine API-Änderung. Die Datenmigration ist eine Eigentümer- und Rechte-Übertragung im
 Cluster, idempotent bei jedem Start (`db-init`). Neue `.env`-Variablen: `SERVER_DB_PASSWORD`, `SCHEDULER_DB_PASSWORD`,
-`MONITOR_DB_PASSWORD`, `CA_DB_PASSWORD` (je 32 Bytes hex). Rollennamen fest, im Test per Umgebung überschreibbar
-(geteilter Cluster zwischen Worktrees).
+`MONITOR_DB_PASSWORD`, `CA_DB_PASSWORD` (je 32 Bytes hex). Rollennamen fest, per Umgebung überschreibbar.
 
 ## Externe Integrationen
 
@@ -69,12 +73,12 @@ https://www.postgresql.org/docs/17/sql-reassign-owned.html. Docker Compose `serv
 
 1. **Einmal-Dienst `db-init`** statt `docker-entrypoint-initdb.d`: die Init-Skripte des Images laufen nur auf einem
    leeren Volume, also nie für den Bestand; und `docker-compose.yml` bleibt ohne Bind-Mounts aus dem Repo.
-2. **Eigentum statt reiner GRANTs für `ah_server`**: Alembic legt Tabellen an und ändert sie; ein Nicht-Eigentümer
+2. **Schema-Eigentum statt reiner GRANTs für `ah_server`, aber nicht das der Datenbank**: Alembic legt Tabellen an und ändert sie; ein Nicht-Eigentümer
    könnte das nicht.
 3. **Rechte von `ah_ca` im Server-Entrypoint** statt in `db-init`: `db-init` läuft vor den Migrationen; eine
    Migration, die eine ca-Tabelle neu anlegt, entzöge sonst bis zum nächsten Start die Rechte.
-4. **Rollen-Test mit eigenem Postgres-Container** (`scripts/tests/db_roles_test.sh`): die Test-DB der Entwickler hat
-   keine `CREATEROLE`-Rechte; ein Wegwerf-Container läuft lokal (Docker) und in der CI.
+4. **Rollen-Test mit eigenem Postgres-Container** (`apps/server/tests/test_db_roles.py`): die Test-DB der Entwickler
+   hat keine `CREATEROLE`-Rechte; ein Wegwerf-Container läuft lokal (Docker) und in den Server-Jobs der CI.
 
 ## Risiken & Rollback
 
@@ -88,7 +92,7 @@ https://www.postgresql.org/docs/17/sql-reassign-owned.html. Docker Compose `serv
 
 `docs/developer/index.html` (Komponenten: Datenbank-Rollen; Korrektur: `postgres` hängt auch im pki-Netz, nicht nur
 das Gateway erreicht den ca-issuer), `docs/admin/installation.html` und `betrieb.html` (neue `.env`-Passwörter,
-`db-init`, Backup/Restore), DE+EN; `DEVELOPMENT.md` (`db_roles_test.sh` braucht Docker); CHANGELOG (Changed, Security
+`db-init`, Backup/Restore), DE+EN; `DEVELOPMENT.md` (`tests/test_db_roles.py` braucht Docker); CHANGELOG (Changed, Security
 neutral: „eine Rolle je Dienst“).
 
 ## Offene Fragen

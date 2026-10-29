@@ -43,6 +43,9 @@ fi
 echo "[entrypoint] Postgres ready, fuehre Alembic-Migration aus..."
 alembic upgrade head
 echo "[entrypoint] Alembic-Migration abgeschlossen."
+# The ca-issuer's rights on its tables, granted by their owner after the migrations, so a
+# migration that recreates one of them does not leave the ca-issuer without them.
+python -m app.db_roles grant-ca
 
 # --- Plain-HTTP, intern -----------------------------------------------------
 # TLS is terminated by the gateway (nginx), not here (ADR 0001 D11). The server
