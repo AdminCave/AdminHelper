@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: frpc-Config nach einer Ablehnung und nach einem Update — Task-Ledger
-Status: geplant · Branch: feature/agent-frpc-recheck · Review: am Ende
+Status: aktiv · Branch: feature/agent-frpc-recheck · Review: am Ende
 Spec: docs/features/agent-frpc-recheck.md
 Heavy: linux-full — `apps/agent` (Abgleich und Provisionierung von frpc); Windows über den CI-Job `agent-windows` (`go test ./...` nativ, `sync.go` ist plattformgemeinsam), keine Windows-VM. Kein `scenario`: ein angenommener Server-Text nimmt denselben Weg wie heute, der FRP-Datenpfad ändert sich nicht
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
