@@ -56,7 +56,23 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
 # The generator emits extra_config keys unquoted (`{key} = ...`), so they must
 # be TOML bare keys (dotted keys allowed). Anything else would break — or worse,
 # extend — the generated config.
-_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_.-]+")
+# A bare or dotted key of segments [A-Za-z0-9_-]+, as the agent takes them (serverKey in
+# apps/agent/internal/frpc/servertoml.go); an empty segment (".a", "a.", "a..b") is no TOML key.
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*")
+
+# TOML integers are 64 bits; a Python int has no limit.
+_TOML_INT_MIN, _TOML_INT_MAX = -(2**63), 2**63 - 1
+
+# The keys the generator writes into each [[proxies]] table (generate_frpc_toml).
+_GENERATOR_PROXY_KEYS = (
+    "name",
+    "type",
+    "localIP",
+    "localPort",
+    "secretKey",
+    "allowUsers",
+    "customDomains",
+)
 
 
 def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
@@ -72,12 +88,15 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
         if not _TOML_BARE_KEY.fullmatch(str(key)):
             raise ValueError(
                 f"extra_config-Schlüssel '{key}' ist kein gültiger TOML-Key "
-                "(erlaubt: A-Z a-z 0-9 _ . -)"
+                "(erlaubt: Segmente aus A-Z a-z 0-9 _ -, getrennt durch je einen .)"
             )
         if isinstance(value, str):
             _reject_toml_breakers(value)
         elif not isinstance(value, (bool, int, float)):
             raise ValueError(f"extra_config-Wert für '{key}' muss str, bool, int oder float sein")
+        elif isinstance(value, int) and not isinstance(value, bool):
+            if not _TOML_INT_MIN <= value <= _TOML_INT_MAX:
+                raise ValueError(f"extra_config value for '{key}' is no 64-bit integer")
     return v
 
 
@@ -91,6 +110,25 @@ def is_plugin_key(key: str) -> bool:
     return key.split(".", 1)[0].lower() == "plugin"
 
 
+def _take_key_path(root: dict, key: str) -> Optional[str]:
+    """Enter key into the trie of a proxy's key paths; return the key it clashes with, if any."""
+    node = root
+    segments = key.lower().split(".")
+    for segment in segments[:-1]:
+        child = node.setdefault(segment, {})
+        if isinstance(child, str):
+            return child
+        node = child
+    last = segments[-1]
+    if last not in node:
+        node[last] = key
+        return None
+    taken = node[last]
+    while isinstance(taken, dict):
+        taken = next(iter(taken.values()))
+    return taken
+
+
 def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
     v = _check_extra_config(v)
     for key in v or {}:
@@ -98,6 +136,19 @@ def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
             raise ValueError(
                 f"extra_config key '{key}' belongs to the plugin family; "
                 "a tunnel sets up no proxy plugin"
+            )
+    # The agent refuses a proxy whose key paths repeat or nest, compared in lower case (frp
+    # maps fields without regard to case): with the generator's keys and with each other.
+    # Like keyTable.add, as a trie of the key paths by segment: a node is a key (its name) or
+    # a table longer keys opened. Each key walks its segments once, so the check stays linear
+    # in the size of the extra_config, however many or long its keys are.
+    root: dict = {}
+    for key in (*_GENERATOR_PROXY_KEYS, *(v or {})):
+        clash = _take_key_path(root, key)
+        if clash is not None:
+            raise ValueError(
+                f"extra_config key '{key}' clashes with '{clash}' (keys of a proxy are compared "
+                "without regard to case, and none may be a prefix of another)"
             )
     return v
 

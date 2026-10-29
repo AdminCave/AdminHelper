@@ -128,9 +128,9 @@ def _stored_extra_config(tunnel: FrpTunnel) -> dict | None:
     return extra if isinstance(extra, dict) else None
 
 
-def _api_takes(key: str, value: object) -> bool:
+def _api_takes(extra: dict) -> bool:
     try:
-        _check_tunnel_extra_config({key: value})
+        _check_tunnel_extra_config(extra)
     except ValueError:
         return False
     return True
@@ -140,7 +140,8 @@ def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """Leave out tunnels whose stored extra_config the API would refuse today.
 
     The API holds a tunnel's extra_config to _check_tunnel_extra_config (bare keys, none
-    of the plugin family, scalar values without TOML breakers); rows stored before those
+    of the plugin family, scalar values without TOML breakers, 64-bit integers, no key that
+    clashes with a proxy field or another key); rows stored before those
     checks stay as they are, and text that is no JSON object counts as refused. The
     generator writes each entry verbatim into the proxy, so such a row would make a
     frpc.toml that does not hold for the whole host; skipping the tunnel keeps the other
@@ -155,7 +156,10 @@ def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
                 tunnel.name,
             )
             continue
-        refused = sorted(key for key, value in extra.items() if not _api_takes(key, value))
+        refused = sorted(key for key, value in extra.items() if not _api_takes({key: value}))
+        if not refused and not _api_takes(extra):
+            # Each key passes alone, the keys together clash.
+            refused = sorted(extra)
         if refused:
             logger.warning(
                 "FRP tunnel %r has %s in extra_config, left out of the config: %s",

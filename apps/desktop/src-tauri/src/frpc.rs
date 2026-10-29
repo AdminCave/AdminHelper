@@ -1929,6 +1929,8 @@ bindPort = 6000
 
         // Without an enrolled identity a TLS table in dotted keys stops the start with the hint.
         keyring_store::delete("enroll|key").unwrap();
+        // Deleted past enrollment, which holds what it read: read the keyring again.
+        crate::enrollment::reload_identity();
         let dir = scratch_dir("identity-missing");
         let error = write_visitor_config(&dir, &dotted, &head(7400, "c0ffee")).unwrap_err();
         assert!(

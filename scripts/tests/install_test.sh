@@ -9,7 +9,8 @@
 # real stack is touched. Covers: signed-bundle bootstrap + .env pinning, the
 # fail-closed abort when a release tag has no bundle (audit 3.29), tamper detection,
 # an .env write that hits a full disk (R-0496), an .env with bytes outside UTF-8
-# or a NUL byte (R-0530), and a read-only .env with a terminal on stdin (R-0538).
+# or a NUL byte (R-0530), a read-only .env with a terminal on stdin (R-0538), and
+# the admin password from --admin-password-file.
 #
 # Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign,
 #      the locale C.UTF-8: without it test 6 cannot run, and the test ends with 75;
@@ -253,6 +254,89 @@ else
   [ "$(cat "$INST/.env")" = DOMAIN=new.example ] && ok "read-only .env on a terminal rewritten to the new DOMAIN" \
     || bad "read-only .env on a terminal: $(tr '\n' ' ' < "$INST/.env")"
 fi
+
+# ── 8. --admin-password-file: the password from a file, never an argument ───
+# A relative path names a file where install.sh was started, in bootstrap mode
+# too, which changes into --dir before the password is needed. Every password
+# carries the marker zz9, so a leak into the output or the docker call log shows.
+# new_inst <name> — an existing install in checkout mode, like test 5.
+new_inst() {
+  INST="$WORK/$1"; mkdir -p "$INST/scripts"
+  cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+  cp "$SRC"/scripts/*.sh "$INST/scripts/"
+  printf 'DOMAIN=old.example\n' > "$INST/.env"
+}
+# (a) relative file in checkout mode
+new_inst inst8a; DLOG="$WORK/docker8a.log"; rm -f "$WORK/admin.stdin"
+printf 'zz9pw-file1\n' > "$INST/pw"
+out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-password-file pw --yes 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "--admin-password-file (relative) exit 0" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "--admin-password-file (relative): exit $rc"; }
+[ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = zz9pw-file1 ] \
+  && ok "password from the file reached create-admin on stdin" || bad "create-admin got: '$(cat "$WORK/admin.stdin" 2>/dev/null)'"
+dlog=$(cat "$DLOG" 2>/dev/null)
+{ grep -q 'create-admin' <<<"$dlog" && ! grep -q zz9 <<<"$dlog"; } \
+  && ok "password from the file not in the docker call log" || bad "docker call log: $(tr '\n' ' ' <<<"$dlog")"
+{ grep -q 'TESTENROLLTOKEN' <<<"$out" && ! grep -q zz9 <<<"$out"; } \
+  && ok "password from the file not in the output" || bad "output names the password or has no summary"
+[[ $out != *"WARNING: --admin-password"* ]] && ok "no --admin-password warning with the file" \
+  || bad "--admin-password-file run warns about --admin-password"
+# (b) relative file in bootstrap mode: read before the cd into --dir
+INST="$WORK/inst8b"; rm -f "$WORK/admin.stdin"
+printf 'zz9pw-boot\n' > "$WORK/pw8b"
+out=$(run_install --ref v0.34.0 --dir "$INST" --domain test.example --admin-password-file pw8b --yes 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "--admin-password-file (relative) in bootstrap mode exit 0" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "--admin-password-file in bootstrap mode: exit $rc"; }
+[ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = zz9pw-boot ] \
+  && ok "bootstrap mode: password from the caller's directory reached create-admin" \
+  || bad "bootstrap mode: create-admin got: '$(cat "$WORK/admin.stdin" 2>/dev/null)'"
+# (c) CRLF line end, and only the first line counts
+new_inst inst8c; rm -f "$WORK/admin.stdin"
+printf 'zz9pw-crlf\r\nzz9pw-line2\r\n' > "$INST/pw"
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password-file pw --yes 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "--admin-password-file with CRLF exit 0" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "--admin-password-file with CRLF: exit $rc"; }
+[ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = zz9pw-crlf ] \
+  && ok "first line without its \\r reached create-admin" \
+  || bad "CRLF file: create-admin got: '$(cat -v "$WORK/admin.stdin" 2>/dev/null)'"
+# (d) missing file: abort before anything changes, the message names the path
+new_inst inst8d; DLOG="$WORK/docker8d.log"
+out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-password-file missing-pw8d --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'missing-pw8d' <<<"$out"; } \
+  && ok "missing password file aborts and names the path" || { echo "$out" | sed 's/^/    │ /'; bad "missing password file: rc=$rc"; }
+dlog=$(cat "$DLOG" 2>/dev/null)
+! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up after a missing password file" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+[ "$(cat "$INST/.env")" = DOMAIN=old.example ] && ok ".env untouched after a missing password file" \
+  || bad ".env after a missing password file: $(tr '\n' ' ' < "$INST/.env")"
+# (e) empty file
+new_inst inst8e; : > "$INST/empty-pw8e"
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password-file empty-pw8e --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'empty-pw8e' <<<"$out"; } && ok "empty password file aborts and names the path" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "empty password file: rc=$rc"; }
+# (f) both flags
+new_inst inst8f; DLOG="$WORK/docker8f.log"
+printf 'zz9pw-file1\n' > "$INST/pw"
+out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-password zz9pw-arg \
+  --admin-password-file pw --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q -- '--admin-password-file' <<<"$out" && ! grep -q 'Unbekannte Option' <<<"$out" \
+    && ! grep -q zz9 <<<"$out"; } \
+  && ok "--admin-password with --admin-password-file aborts, no value named" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "both password flags: rc=$rc"; }
+dlog=$(cat "$DLOG" 2>/dev/null)
+! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up with both password flags" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+# (g) --admin-password still works and points to the file on stderr
+new_inst inst8g; rm -f "$WORK/admin.stdin"
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password zz9pw-arg --yes 2>"$WORK/err8g"); rc=$?
+err=$(cat "$WORK/err8g")
+[ $rc -eq 0 ] && ok "--admin-password still works, exit 0" \
+  || { printf '%s\n%s\n' "$out" "$err" | sed 's/^/    │ /'; bad "--admin-password: exit $rc"; }
+[ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = zz9pw-arg ] \
+  && ok "--admin-password reached create-admin on stdin" || bad "--admin-password: create-admin got no password"
+{ grep -q 'process list' <<<"$err" && grep -q -- '--admin-password-file' <<<"$err" && ! grep -q zz9 <<<"$err$out"; } \
+  && ok "--admin-password warns on stderr and points to --admin-password-file, no value named" \
+  || bad "--admin-password warning missing or names the value: $(tr '\n' ' ' <<<"$err")"
 
 echo
 echo "──────────────────────────────────────────"

@@ -109,8 +109,12 @@ func Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// After an agent update the text in place has not been through this agent's check yet: fetch
+	// and check it once, even with the same hash.
+	recheck := localHash != "" && checkedBy() != checkedByLine(localHash)
+	unchanged := remoteHash == localHash && !stuck && !configWithoutTunnel()
 	if remoteHash == localHash {
-		if !stuck && !configWithoutTunnel() {
+		if unchanged && !recheck {
 			return nil
 		}
 	} else {
@@ -143,6 +147,16 @@ func Sync(ctx context.Context) error {
 		return err
 	}
 	defer unlock()
+	if unchanged {
+		// The check passes the text frpc runs on: nothing to write, reload or restart. A text
+		// without a tunnel runs nothing, and applyConfig never checks one either.
+		if hasProxies(newConfig) {
+			if err := checkServerConfig(newConfig); err != nil {
+				return refuseServerConfig(ctx, err)
+			}
+		}
+		return writeCheckedBy(remoteHash)
+	}
 	// Without a tunnel applyConfig stops frpc, which needs no admin API.
 	if stuck && hasProxies(newConfig) {
 		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
@@ -224,12 +238,15 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 		if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 			return fmt.Errorf("write the config hash: %w", err)
 		}
+		if err := writeCheckedBy(remoteHash); err != nil {
+			return err
+		}
 		logger.Infof("No tunnel for this host, frpc stopped and disabled.")
 		return nil
 	}
 
 	if err := checkServerConfig(serverToml); err != nil {
-		return err
+		return refuseServerConfig(ctx, err)
 	}
 	api, err := loadAdminAPI()
 	if err != nil {
@@ -263,8 +280,71 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 		return fmt.Errorf("Hash schreiben: %w", err)
 	}
+	if err := writeCheckedBy(remoteHash); err != nil {
+		return err
+	}
 	logger.Infof("frpc.toml updated, frpc %s.", started)
 	return nil
+}
+
+// agentVersion is the version of this agent, set by main. A text stored under another version
+// (or none: every agent before this file existed) is checked once more by the next sync.
+var agentVersion = "dev"
+
+// SetAgentVersion records the agent's version for the check after an update.
+func SetAgentVersion(v string) { agentVersion = v }
+
+// checkedByFile holds the agent version that last checked the stored text, with that text's
+// hash: a text another agent wrote under the same version's marker (a downgrade in between)
+// does not count as checked.
+func checkedByFile() string { return filepath.Join(config.FrpDir(), ".checked-by") }
+
+// checkedByLine is what checkedByFile holds once this agent checked the text with hash.
+func checkedByLine(hash string) string { return agentVersion + " " + hash }
+
+// checkedBy is what checkedByFile records, "" without one.
+func checkedBy() string {
+	data, err := os.ReadFile(checkedByFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeCheckedBy(hash string) error {
+	if err := config.WriteFile(checkedByFile(), []byte(checkedByLine(hash)), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", checkedByFile(), err)
+	}
+	return nil
+}
+
+func removeCheckedBy() error {
+	if err := os.Remove(checkedByFile()); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", checkedByFile(), err)
+	}
+	return nil
+}
+
+// refuseServerConfig stops frpc on a server text the check refuses: what frpc runs on must be a
+// text the check accepted, and the frpc.toml in place may predate the check or this server's
+// text. Without the hash the next run fetches and checks again; with nothing left (frpcGone) a
+// former run already stopped frpc, which keeps systemctl out of every timer run.
+func refuseServerConfig(ctx context.Context, refusal error) error {
+	if frpcGone() {
+		return refusal
+	}
+	// Not wrapped: the provisioning turns an errFrpcService failure into a warning, and a
+	// refusal must stay an error even when stopping frpc failed as well.
+	if err := stopFrpc(ctx); err != nil {
+		return fmt.Errorf("%w; stopping frpc failed as well: %v", refusal, err)
+	}
+	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
+		return errors.Join(refusal, fmt.Errorf("remove the config hash: %w", err))
+	}
+	if err := removeCheckedBy(); err != nil {
+		return errors.Join(refusal, err)
+	}
+	return fmt.Errorf("frpc stopped until the server sends a config that passes: %w", refusal)
 }
 
 // startFrpc puts frpc onto the frpc.toml just written and says how. frpc is stopped on the first
@@ -356,6 +436,9 @@ func syncWithoutFrpConfig(ctx context.Context) error {
 	}
 	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove the config hash: %w", err)
+	}
+	if err := removeCheckedBy(); err != nil {
+		return err
 	}
 	logger.Infof("No FRP config or tunnel for this host on the server, frpc stopped and disabled.")
 	return nil

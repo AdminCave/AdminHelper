@@ -38,6 +38,7 @@ from app.modules.enrollment.models import (
     IssuedCertificate,
 )
 from tests.test_mtls_scope import _client_cert_pem, _req
+from tests.token_claims import claims_for
 
 REVOKED = "ERR_CERT_REVOKED"
 
@@ -88,7 +89,7 @@ def _installed(db, at: datetime) -> None:
 
 
 def _bearer(username: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token({'sub': username})}"}
+    return {"Authorization": f"Bearer {create_access_token(claims_for(username))}"}
 
 
 def _assert_revoked(resp) -> None:
@@ -261,7 +262,7 @@ def test_refresh_with_a_revoked_certificate_is_refused(test_client, db_session, 
     _record(db_session, cert, "admin", revoked=True)
     resp = test_client.post(
         "/api/auth/refresh",
-        json={"refresh_token": create_refresh_token({"sub": "admin"})},
+        json={"refresh_token": create_refresh_token(claims_for("admin"))},
         headers=headers,
     )
     _assert_revoked(resp)
@@ -323,7 +324,7 @@ def test_the_reauth_ends_a_stream_whose_line_was_revoked(db_session, admin_user,
     headers, cert = _leaf("admin")
     line = _record(db_session, cert, "admin")
     identity = get_client_identity(_req(headers))
-    token = create_access_token({"sub": "admin"})
+    token = create_access_token(claims_for("admin"))
 
     def reauth() -> bool:
         return _stream_reauth_ok(
