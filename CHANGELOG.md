@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Server: Fehlerantworten tragen ein optionales Feld `code` neben `detail`:** ein stabiler Maschinencode der
+  Form `ERR_...`, an dem ein Client verzweigt statt am Text. Heute tragen ihn die 403 der Zertifikatspruefung
+  (`ERR_CERT_REVOKED`, `ERR_CERT_USER_MISMATCH`, `ERR_CERT_SERVER_MISMATCH`); `detail` bleibt unveraendert,
+  alle anderen Fehler bleiben ohne `code`. Doku: API-Referenz fuer Entwickler (DE+EN).
 - **Server: `GET /api/servers/summary`:** liefert je Server nur `id`, `name` und `hostname`, nach Name sortiert
   (admin), fuer die Server-Zuweisung im Benutzerdialog des Web-Panels, das dafuer bisher das ganze Inventar samt
   Verbindungen und Tunneln lud. Doku: API-Referenz fuer Entwickler (DE+EN).
