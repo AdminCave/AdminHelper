@@ -130,8 +130,10 @@ Orakel: contract — die Modelle gegen die `to_dict`-Methoden und Dict-Literale 
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T8 — users: `LogoutOut` und `MyServerOut` (R-0684)  [ ]
+### T8 — users: `LogoutOut` und `MyServerOut` (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/schemas.py, apps/server/app/modules/users/auth_router.py, apps/server/app/modules/users/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3ab1b6dc 2026-10-29T22:44:41+01:00
+Review: approve (.ah-out/review/api-contracts-server/T8.verdict.json)
 Änderung: `LogoutOut` `{detail: str}` (`apps/server/app/modules/users/auth_router.py:275`) an `POST /logout` (`:243`); `MyServerOut` `{id, name, hostname: str}` (`apps/server/app/modules/users/router.py:243-245`) an `GET /me/servers` (`:243`, `list[MyServerOut]`). Tests nach Muster; für `/me/servers` gibt es heute keinen Test, (b) mit einem Nutzer mit und einem ohne zugeordneten Server.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_auth.py
 Doku: keine

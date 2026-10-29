@@ -78,6 +78,8 @@ def _ref_name(schema: dict) -> str:
         ("/api/users/me/notification-prefs", "get", "NotificationPrefsOut"),
         ("/api/users/me/notification-prefs", "put", "NotificationPrefsOut"),
         ("/api/internal/events", "post", "EventsAcceptedOut"),
+        ("/api/auth/logout", "post", "LogoutOut"),
+        ("/api/users/me/servers", "get", "MyServerOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -600,3 +602,23 @@ class TestNotificationShape:
         tagged, every = got.json()["subscriptions"]
         assert tagged["categories"] == '["pki"]'
         assert every["scopeRef"] is None and every["categories"] is None
+
+
+class TestUserShape:
+    def test_logout_answers_with_its_detail(self, test_client, admin_user):
+        r = test_client.post("/api/auth/logout", headers=_login(test_client), json={})
+        assert r.status_code == 200, r.text
+        assert r.json() == {"detail": "Abgemeldet"}
+
+    def test_my_servers_list_the_assigned_ones(self, test_client, db_session, admin_user):
+        h = _login(test_client)
+        assert test_client.get("/api/users/me/servers", headers=h).json() == []
+
+        db_session.add(Server(id="srv-mine", name="mine", hostname="mine.example"))
+        db_session.add(Server(id="srv-other", name="other", hostname="other.example"))
+        db_session.commit()
+        admin_user.servers.append(db_session.get(Server, "srv-mine"))
+        db_session.commit()
+        r = test_client.get("/api/users/me/servers", headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json() == [{"id": "srv-mine", "name": "mine", "hostname": "mine.example"}]

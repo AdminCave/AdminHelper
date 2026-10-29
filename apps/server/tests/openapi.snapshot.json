@@ -2632,6 +2632,19 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "LogoutOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "LogoutOut",
+        "type": "object"
+      },
       "LogoutRequest": {
         "properties": {
           "refresh_token": {
@@ -2683,6 +2696,30 @@
           }
         },
         "title": "MarkReadRequest",
+        "type": "object"
+      },
+      "MyServerOut": {
+        "description": "A server assigned to the caller.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname"
+        ],
+        "title": "MyServerOut",
         "type": "object"
       },
       "NotificationOut": {
@@ -4495,7 +4532,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -7471,7 +7510,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyServerOut"
+                  },
+                  "title": "Response My Servers Api Users Me Servers Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
