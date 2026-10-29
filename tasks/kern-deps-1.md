@@ -23,8 +23,10 @@ Dedup-Key: rel:deps-audit
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (Lockfile eines Testwerkzeugs)
 
-### T2 — desktop-ui: undici und vitest im Lockfile anheben (R-0922)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/package-lock.json
+### T2 — desktop-ui: undici und vitest im Lockfile anheben (R-0922)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/package-lock.json, apps/desktop/ui/package.json
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @44d15566 2026-10-29T21:34:19+01:00
+Review: am Ende (Branch-Review)
 Änderung: wie T1 für `apps/desktop/ui`.
 Beweis: lokal `npm audit` in apps/desktop/ui: undici 7.0.0 - 7.30.0 high
 Dedup-Key: rel:deps-audit
