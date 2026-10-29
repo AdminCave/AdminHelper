@@ -9,6 +9,7 @@ allow-list default."""
 import io
 import json
 import logging
+import time
 import tomllib
 import zipfile
 
@@ -25,6 +26,7 @@ from app.modules.frp.config_generator import (
 from app.modules.frp.extra_config import ALLOWED_KEYS
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import (
+    _GENERATOR_PROXY_KEYS,
     FrpServerConfigCreate,
     FrpServerConfigUpdate,
     FrpTunnelCreate,
@@ -759,6 +761,36 @@ def test_tunnel_extra_config_holds_the_agents_form(model, extra):
 @pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
 def test_tunnel_extra_config_takes_what_the_agent_takes(model, extra):
     assert _build(model, extra_config=extra).extra_config == extra
+
+
+def test_tunnel_extra_config_check_stays_linear():
+    # The body validation runs on the event loop; a check quadratic in the keys took about
+    # 10 s for 8000 of them, and nginx lets 10 MB through.
+    extra = {f"k{i}.v": i for i in range(20000)}
+    start = time.monotonic()
+    assert _tunnel(extra_config=extra).extra_config == extra
+    assert time.monotonic() - start < 1.0
+
+
+def test_the_clash_rule_knows_every_key_the_generator_writes_into_a_proxy():
+    # A key the generator starts to write and _GENERATOR_PROXY_KEYS misses would let an
+    # extra_config clash with it again, and the agent refuse the whole host.
+    tunnels = [
+        _stored_tunnel(),
+        _stored_tunnel(
+            id="t-h",
+            name="h-web",
+            tunnel_type="https",
+            protocol="https",
+            custom_domains="a.example.net",
+            secret_key=None,
+            visitor_port=None,
+        ),
+    ]
+    written = set()
+    for proxy in tomllib.loads(generate_frpc_toml(_legacy_row(), tunnels, "srv1"))["proxies"]:
+        written |= set(proxy)
+    assert written == set(_GENERATOR_PROXY_KEYS)
 
 
 def test_server_extra_config_keeps_its_allowed_keys():

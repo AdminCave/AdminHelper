@@ -88,7 +88,7 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
         if not _TOML_BARE_KEY.fullmatch(str(key)):
             raise ValueError(
                 f"extra_config-Schlüssel '{key}' ist kein gültiger TOML-Key "
-                "(erlaubt: A-Z a-z 0-9 _ . -)"
+                "(erlaubt: Segmente aus A-Z a-z 0-9 _ -, getrennt durch je einen .)"
             )
         if isinstance(value, str):
             _reject_toml_breakers(value)
@@ -120,22 +120,24 @@ def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
             )
     # The agent refuses a proxy whose key paths repeat or nest, compared in lower case (frp
     # maps fields without regard to case): with the generator's keys and with each other.
-    taken: dict[str, str] = {k.lower(): k for k in _GENERATOR_PROXY_KEYS}
+    # Like keyTable.add: a path maps to the key that took it (a key) or to None (a table a
+    # longer key opened); each key looks up only itself and its segment prefixes, so the
+    # check stays linear in the number of keys.
+    taken: dict[str, Optional[str]] = {k.lower(): k for k in _GENERATOR_PROXY_KEYS}
     for key in v or {}:
         path = key.lower()
-        clash = taken.get(path) or next(
-            (
-                other
-                for seen, other in taken.items()
-                if path.startswith(seen + ".") or seen.startswith(path + ".")
-            ),
-            None,
-        )
+        segments = path.split(".")
+        prefixes = [".".join(segments[:i]) for i in range(1, len(segments))]
+        clash = taken[path] or "a table of other keys" if path in taken else None
+        if clash is None:
+            clash = next((taken[p] for p in prefixes if taken.get(p)), None)
         if clash is not None:
             raise ValueError(
                 f"extra_config key '{key}' clashes with '{clash}' (keys of a proxy are compared "
                 "without regard to case, and none may be a prefix of another)"
             )
+        for p in prefixes:
+            taken.setdefault(p, None)
         taken[path] = key
     return v
 
