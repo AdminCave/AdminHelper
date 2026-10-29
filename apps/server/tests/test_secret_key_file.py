@@ -11,6 +11,8 @@ import errno
 import os
 import pathlib
 import stat
+import threading
+import types
 
 import pytest
 
@@ -99,6 +101,47 @@ def test_a_failed_swap_raises_and_leaves_no_temp_file(tmp_path, monkeypatch):
     assert _names(tmp_path) == [".secret_key"]
 
 
+def _spy_fsync_and_replace(monkeypatch, calls, fail_on_dirs=False):
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd):
+        st = os.fstat(fd)
+        calls.append(("fsync", stat.S_ISDIR(st.st_mode), st.st_ino))
+        if fail_on_dirs and stat.S_ISDIR(st.st_mode):
+            raise OSError(errno.EINVAL, "Invalid argument")
+        real_fsync(fd)
+
+    def replace(src, dst):
+        calls.append(("replace",))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "replace", replace)
+
+
+def test_the_directory_is_synced_after_the_swap(tmp_path, monkeypatch):
+    calls = []
+    _spy_fsync_and_replace(monkeypatch, calls)
+    config.write_private_file(tmp_path / "f", "x")
+    assert [c[:2] for c in calls] == [("fsync", False), ("replace",), ("fsync", True)]
+    assert calls[2][2] == tmp_path.stat().st_ino
+
+
+def test_a_failed_directory_sync_is_logged_by_type_and_not_raised(tmp_path, monkeypatch, caplog):
+    calls = []
+    _spy_fsync_and_replace(monkeypatch, calls, fail_on_dirs=True)
+    caplog.set_level("WARNING", logger="adminhelper.config")
+    config.write_private_file(tmp_path / "f", "x")
+    assert (tmp_path / "f").read_text() == "x"
+    warnings = [
+        r for r in caplog.records if r.name == "adminhelper.config" and r.levelname == "WARNING"
+    ]
+    assert len(warnings) == 1
+    assert "OSError" in warnings[0].getMessage()
+    assert "Invalid argument" not in caplog.text
+    assert not any(r.exc_info for r in caplog.records)
+
+
 @pytest.fixture()
 def key_env(request, monkeypatch, tmp_path):
     if request.param is None:
@@ -136,3 +179,80 @@ def test_an_existing_key_file_is_read_unchanged(key_env, umask_zero, no_chmod):
         before.st_mtime_ns,
         before.st_mode,
     )
+
+
+def _token_stand_in(monkeypatch, token_urlsafe):
+    monkeypatch.setattr(config, "secrets", types.SimpleNamespace(token_urlsafe=token_urlsafe))
+
+
+@pytest.fixture()
+def empty_key_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("SECRET_KEY", "")
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    return tmp_path
+
+
+def test_two_concurrent_starts_end_up_with_one_key(empty_key_env, monkeypatch):
+    barrier = threading.Barrier(2, timeout=10)
+    counter = iter(range(2))
+    lock = threading.Lock()
+
+    def token_urlsafe(n):
+        with lock:
+            value = f"key-{next(counter)}"
+        barrier.wait()
+        return value
+
+    _token_stand_in(monkeypatch, token_urlsafe)
+    results = [None, None]
+
+    def run(i):
+        results[i] = config._resolve_secret_key()
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=20)
+    assert results[0] == results[1], results
+    assert (empty_key_env / ".secret_key").read_text() == results[0]
+    assert _names(empty_key_env) == [".secret_key"]
+
+
+def test_a_key_another_process_published_first_is_adopted(empty_key_env, monkeypatch):
+    def token_urlsafe(n):
+        (empty_key_env / ".secret_key").write_text("competitor-key")
+        return "own-key"
+
+    _token_stand_in(monkeypatch, token_urlsafe)
+    assert config._resolve_secret_key() == "competitor-key"
+    assert (empty_key_env / ".secret_key").read_text() == "competitor-key"
+    assert _names(empty_key_env) == [".secret_key"]
+
+
+def test_an_empty_key_file_is_replaced(empty_key_env, monkeypatch, umask_zero):
+    (empty_key_env / ".secret_key").write_text("")
+    _token_stand_in(monkeypatch, lambda n: "fresh-key")
+    assert config._resolve_secret_key() == "fresh-key"
+    assert (empty_key_env / ".secret_key").read_text() == "fresh-key"
+    assert _mode(empty_key_env / ".secret_key") == 0o600
+    assert _names(empty_key_env) == [".secret_key"]
+
+
+def test_a_filesystem_without_hardlinks_falls_back_to_a_plain_write(
+    empty_key_env, monkeypatch, caplog
+):
+    def no_link(src, dst):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", no_link)
+    _token_stand_in(monkeypatch, lambda n: "fresh-key")
+    caplog.set_level("WARNING", logger="adminhelper.config")
+    assert config._resolve_secret_key() == "fresh-key"
+    assert (empty_key_env / ".secret_key").read_text() == "fresh-key"
+    warnings = [
+        r for r in caplog.records if r.name == "adminhelper.config" and r.levelname == "WARNING"
+    ]
+    assert len(warnings) == 1
+    assert "PermissionError" in warnings[0].getMessage()
+    assert _names(empty_key_env) == [".secret_key"]

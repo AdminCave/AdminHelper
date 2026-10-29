@@ -65,6 +65,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server-Log nennt bei weiteren Fehlern nur den Fehlertyp:** Scheitert das Entfernen der `frps.toml`, steht im
+  Log der Fehlertyp ohne Traceback und ohne Fehlertext (R-0766). Die Warnungen des Redis-Rate-Limits nennen nur den
+  Fehlertyp, und ein IPv6-Host steht im Log in eckigen Klammern (R-0776). Ein gescheiterter Start des SSE-Push und
+  ein Loeschfehler der Bootstrap-Dateien nach dem ersten Admin stehen mit Fehlertyp, ohne Traceback, im Log (R-0776).
 - **Desktop, Provisionierungs-Tab: der Einzeiler enthaelt den Token nicht mehr:** `agent-install.sh` fragt ihn beim
   Ausfuehren verdeckt ueber `/dev/tty` ab, der Tab zeigt ihn zum Kopieren daneben; so steht er weder in der
   Shell-History noch in der Prozessliste noch im sudo-Log (mit einem Agent, der `--token-stdin` kennt; aeltere bekommen
@@ -453,6 +457,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin (R-0768):** Sie legen nur noch eine
+  Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus.
+- **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
+  gemeinsamen Schluessel (R-0761):** Wer ihn nicht zuerst schreibt, uebernimmt den des anderen Prozesses. Vorher konnte
+  jeder Prozess einen eigenen erzeugen, und JWTs galten nicht prozessuebergreifend.
+- **Server: mit `WEB_CONCURRENCY` > 1 erzeugt nur noch ein Worker das einmalige Setup-Token (R-0762):** Bisher
+  schrieb jeder Worker ein eigenes Token und einen eigenen Hash; danach passten `.bootstrap_setup` und
+  `.bootstrap_token` oft nicht zusammen, und das Token aus der Datei wurde abgewiesen. Jetzt passen beide immer
+  zusammen, und der Hinweis steht einmal im Log. Neu ist die leere Datei `data/.bootstrap.lock`.
 - **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
   System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
   ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
