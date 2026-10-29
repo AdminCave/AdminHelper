@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-web-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-web-1 · Review: pro Task
+Status: erledigt · Branch: feature/klein-tests-web-1 · Review: pro Task
 Spec: docs/features/klein-tests-web-1.md (Roadmap R-0888, R-0891)
 Heavy: none — Unit-Tests im Web-Frontend, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
