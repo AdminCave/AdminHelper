@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fehlervertrag Server → Clients: `code` neben `detail`, strukturierte Fehler über die Desktop-IPC — Task-Ledger
-Status: bereit · Branch: feature/fehlervertrag · Review: pro Task
+Status: erledigt · Branch: feature/fehlervertrag · Review: pro Task
 Spec: docs/features/fehlervertrag.md (Roadmap R-0664, R-0662, R-0709; Kevin 2026-10-22: optionales Feld `code` ja)
 Heavy: linux-full + scenario --agents 0 --desktop --enforce + windows — linux-full: Server-API (die 403 der Zertifikatsprüfung tragen `code`; `scripts/tests/integration_stack_test.sh:218` prüft 403 `ERR_CERT_REVOKED` am Stack) und jede Desktop-Journey (jeder Command-Fehler kommt als `{code, message, status?}` über die IPC; Login-, Trust- und Proxy-Fehler, `enroll-trust-dialog.live.js`, `logout.live.js:69`); scenario `--desktop --enforce`: Anmeldung und Registrierung des echten Desktops gegen erzwungenes mTLS mit den Zertifikatscodes und `ERR_MTLS_CERT_REQUIRED`, dazu Desktop-Enrollment (`revoked_by`, CLAUDE.md §5), bleibt ask-first; windows: die CI-Jobs (der Pool hat keine Windows-Vorlage), der Fehlertyp ist plattformunabhängig, kein `cfg(windows)`-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
