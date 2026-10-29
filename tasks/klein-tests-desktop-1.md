@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-desktop-1 — Task-Ledger
-Status: geplant · Branch: feature/klein-tests-desktop-1 · Review: am Ende
+Status: aktiv · Branch: feature/klein-tests-desktop-1 · Review: am Ende
 Spec: docs/features/klein-tests-desktop-1.md (Roadmap R-0903, R-0886)
 Heavy: none — nur Unit-Tests in Desktop-Backend und Desktop-UI, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
