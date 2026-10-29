@@ -194,8 +194,29 @@ if [ ! -f docker-compose.yml ]; then
 fi
 
 # --- Preflight --------------------------------------------------------------
+# The services run as UID 10001 (app) and Postgres as UID/GID 70: a host account that has
+# one of these IDs reaches the data of the containers. The install directory is closed to
+# others (at most 0750, the owner stays who installs), and such an account is named, not refused.
+# Tighten only: g-w,o-rwx turns 0755/0775 into 0750 and leaves a stricter 0700 alone.
+close_install_dir() {
+    chmod g-w,o-rwx . 2>/dev/null \
+        || echo "WARNING: could not close $(pwd) to other accounts; they may read the install directory." >&2
+    return 0
+}
+warn_host_uids() {
+    command -v getent >/dev/null 2>&1 || return 0
+    local uid name
+    for uid in 10001 70; do
+        # getent ends with 2 for no such account; under pipefail that must not end the run.
+        name=$(getent passwd "$uid" 2>/dev/null | cut -d: -f1) || name=""
+        [ -z "$name" ] || echo "WARNING: host account '$name' has UID $uid, which a container uses; it can read the data of the services (see docs/admin/betrieb.html)." >&2
+    done
+    return 0
+}
+warn_host_uids
 command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
+close_install_dir
 
 upsert_env() {
     local key="$1" value="$2"

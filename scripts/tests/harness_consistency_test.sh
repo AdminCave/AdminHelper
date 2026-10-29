@@ -105,10 +105,16 @@ grep '^BAD ' <<<"$OUT" | sed 's/^BAD /  /'
 [ -z "$(grep '^BAD ' <<<"$OUT")" ] && ok "settings.json: model, effortLevel and the scripts its rules name" || bad "settings.json"
 [ "$(sed -n 's/^RULES //p' <<<"$OUT")" -ge 10 ] 2>/dev/null && ok "settings.json: $(sed -n 's/^RULES //p' <<<"$OUT") permission rules read" \
   || bad "too few permission rules read — the scan is broken"
-# The rules name the session's model and effort; settings.json must start it that way.
-grep -q '"model": "opus"' "$ROOT/.claude/settings.json" && grep -q '"effortLevel": "high"' "$ROOT/.claude/settings.json" \
-  && grep -q '^| Session | Opus, high' "$ROOT/CLAUDE.md" \
+# The rules name the sessions' model and effort; settings.json (a plain `claude`) and
+# start-session.sh must start them that way.
+grep -q '"model": "opus"' "$ROOT/.claude/settings.json" && grep -q '"effortLevel": "medium"' "$ROOT/.claude/settings.json" \
+  && grep -q '^| Kern-Session | Opus, medium' "$ROOT/CLAUDE.md" \
   && ok "the session model in settings.json is the one CLAUDE.md §6 names" || bad "session model: settings vs CLAUDE.md §6"
+KERN="$(bash "$ROOT/scripts/dev/start-session.sh" kern --dry-run 2>&1)"
+KLEIN="$(bash "$ROOT/scripts/dev/start-session.sh" klein --dry-run 2>&1)"
+grep -q -- '--model opus --effort medium' <<<"$KERN" && grep -q -- '--model sonnet --effort medium' <<<"$KLEIN" \
+  && grep -q '^| Klein-Session | Sonnet, medium' "$ROOT/CLAUDE.md" \
+  && ok "start-session.sh starts kern and klein as CLAUDE.md §6 names them" || bad "start-session.sh vs CLAUDE.md §6"
 for a in reviewer security advisor; do
   grep -q "^model: opus" "$ROOT/.claude/agents/$a.md" && grep -q "^effort: high" "$ROOT/.claude/agents/$a.md" \
     && grep -q "^| \`$a\` | Opus, high" "$ROOT/CLAUDE.md" \

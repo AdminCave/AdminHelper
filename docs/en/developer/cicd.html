@@ -576,7 +576,7 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
           <ol>
             <li>Bump the versions in the files listed above to the target value.</li>
             <li>Update the footer versions in <code>docs/**/*.html</code> (footer span + landing &ldquo;What's new&rdquo; + code samples). Filter on the <em>class</em> (<code>grep -rl 'class="sidebar-footer"'</code>), not on the one-line markup: the two landing pages write the footer across two lines and therefore hung from 0.43.2 through 0.45.0.</li>
-            <li>Update <code>CHANGELOG.md</code> (Keep a Changelog: new section + link ref).</li>
+            <li>Update <code>CHANGELOG.md</code>: first <code>python3 scripts/release/changelog-assemble.py</code> &ndash; every branch writes its entries to <code>changelog.d/&lt;slug&gt;.md</code>, the script folds them into <code>## [Unreleased]</code> and deletes them; then Keep a Changelog: new section + link ref. <code>check-versions.sh</code> reports a fragment left unfolded.</li>
             <li><code>bash scripts/release/check-versions.sh X.Y.Z</code> &ndash; must report <code>0 missing</code>. The same call runs in the release workflow on the tag.</li>
             <li>Commit &amp; tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>

@@ -50,7 +50,7 @@
               <tr><td><code>victoria-data</code> (volume)</td><td>VictoriaMetrics storage – 90 d retention (separate, not in this scope).</td></tr>
             </tbody>
           </table>
-          <p><code>server</code>, <code>scheduler</code>, <code>ca-issuer</code> and <code>monitoring</code> run as the user <code>app</code> (UID 10001) from programs this user can execute but not read. The UID 10001 should not belong to any other account or service on the host.</p>
+          <p><code>server</code>, <code>scheduler</code>, <code>ca-issuer</code> and <code>monitoring</code> run as the user <code>app</code> (UID 10001) from programs this user can execute but not read. The UID 10001 should not belong to any other account or service on the host, nor should UID 70 (Postgres in its container). <code>install.sh</code> and <code>update.sh</code> name such an account with a warning (they do not stop) and close the install directory to other accounts (at most <code>0750</code>, a stricter <code>0700</code> stays); the owner stays whoever installs. Existing installations get this with their next update. A tool that looks into the install directory under another account (a backup agent, say) then needs the directory's group or root. An account that could reach <code>data/</code> before may have read keys there; whoever sees such a warning removes the account or changes its UID.</p>
 
           <h2>Backups</h2>
           <p><code>scripts/backup.sh</code> bundles the whole state — including the <strong>CA crown jewel</strong> — into one tarball, with the stack running:</p>

@@ -65,6 +65,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Install/Update: Installationsverzeichnis 0750, Warnung bei belegter Container-UID:** `install.sh` und `update.sh`
+  schliessen das Installationsverzeichnis fuer andere Konten (hoechstens `0750`, ein strengeres `0700` bleibt, Eigentuemer
+  bleibt, wer installiert) und warnen, wenn ein Host-Konto die UID 10001 oder 70 traegt, die die Container nutzen;
+  `update.sh --check` warnt, aendert aber nichts. Werkzeuge unter anderen Konten brauchen danach Gruppe oder root. Doku: Installation und
+  Betrieb (DE+EN).
 - **Web: der Cron-Hinweis im Hook-Dialog nennt UTC (R-0853):** Der Format-Hilfetext des Cron-Ausdrucks sagt jetzt
   „Zeiten in UTC“ (DE) bzw. „times in UTC“ (EN); der Scheduler rechnet Cron-Hooks in UTC (R-0756).
 - **Desktop: verweigert der Server das Visitor-Bundle, stoppt der Tunnel (R-0453):** Antwortet der Server beim
