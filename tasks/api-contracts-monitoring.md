@@ -47,8 +47,10 @@ Für alle Tasks:
 
 Teil-Ledger (Kevin 2026-10-23, Spec Trade-off 8): T13–T17 aus `tasks/api-contracts.md`, gemergt in `feature/api-contracts`. CHANGELOG-Einträge in `changelog.d/api-contracts-monitoring.md` statt `CHANGELOG.md` (Konvention seit dem Plan).
 
-### T13 — Monitoring: Checks, Status, Summary, Metriken (R-0685)  [ ]
+### T13 — Monitoring: Checks, Status, Summary, Metriken (R-0685)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4256d779 2026-10-29T22:12:10+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T13.verdict.json)
 Änderung: In `app/schemas.py`: `MonitorStateOut` wie `MonitorState.to_dict` (`apps/monitoring/app/models.py:125-135`; `details: Any`), `MonitorCheckOut` wie `MonitorCheck.to_dict` (`:77-100`; `config: Any`, nullbare Spalten `Optional`, `state: Optional[MonitorStateOut] = None` nur mit Zustandszeile `:98-99`), `StatusSummaryOut` (sechs `int`, `apps/monitoring/app/routers/checks.py:406-418`), `CheckMetricsOut` `{checkId, checkType, period, data: Any, statusHistory: Any}` (VictoriaMetrics-Durchreiche). Routen in `checks.py`: `127` (list), `146` (201), `187`, `197`, `291` (toggle), `311` (reset), `341` (run), `374` (status), `387` (status/server), `399` (summary), `427` (metrics); alle mit `MonitorCheckOut` mit `response_model_exclude_unset=True`. Neue Datei `tests/test_response_shapes.py` (SPDX) mit dem Testmuster; (c) Check mit und ohne Zustandszeile; Gegenprobe zu `test_stored_json_numbers.py`: Zahlen in `config`/`details` bleiben Zahlen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_checks_crud.py tests/test_checks_metrics.py tests/test_pagination.py tests/test_stored_json_numbers.py
 Doku: keine

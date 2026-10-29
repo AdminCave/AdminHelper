@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
@@ -290,3 +290,58 @@ VALID_CHANNELS = {"webhook", "email"}
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"}
 
 VALID_SEVERITIES = {"info", "warning", "critical"}
+
+
+# Response models (R-0685): key for key what the to_dict methods and dict literals of the
+# routes hand out. A stored JSON column (config, details) passes through as Any: older rows
+# hold shapes no schema of today describes, and one of them must not turn a listing into a 500.
+
+
+class MonitorStateOut(BaseModel):
+    checkId: str
+    status: str
+    since: str | None
+    lastCheck: str | None
+    failCount: int | None
+    message: str | None
+    details: Any
+    notifiedStatus: str | None
+
+
+class MonitorCheckOut(BaseModel):
+    id: str
+    serverId: str | None
+    name: str
+    description: str | None
+    checkType: str
+    config: Any
+    enabled: bool | None
+    interval: str
+    severity: str
+    consecutiveFails: int | None
+    consecutiveOks: int
+    templateId: str | None
+    templateDefId: str | None
+    overriddenFields: list[str]
+    createdAt: str | None
+    updatedAt: str | None
+    # Only with a state row; the routes drop it unset (response_model_exclude_unset).
+    state: MonitorStateOut | None = None
+
+
+class StatusSummaryOut(BaseModel):
+    total: int
+    ok: int
+    warning: int
+    critical: int
+    unknown: int
+    pending: int
+
+
+class CheckMetricsOut(BaseModel):
+    checkId: str
+    checkType: str
+    period: str
+    # VictoriaMetrics query_range series, passed through as they come.
+    data: Any
+    statusHistory: Any
