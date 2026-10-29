@@ -40,6 +40,16 @@ Dedup-Key: ref:desktop-ui:shell.ts:safe-percent
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/utils/shell.test.ts
 Doku: keine (nicht sichtbar, Wert nie mit %)
 
+### T4 — ansible: Dateien nur unter Unix in den kanonischen Ordner legen (R-0873, Befund der Abschlussprüfung)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5340bb8f 2026-10-29T21:03:32+01:00
+Review: approve (.ah-out/review/klein-ref-desktop-1/T4.verdict.json)
+Änderung: `launch_ansible_with` reicht `start` die kanonischen Pfade nur unter `cfg(unix)` (dort liest sie das Aufräumskript); unter Windows bleiben die übergebenen Pfade, damit `canonicalize` kein `\\?\`-Präfix an Terminal und ansible-playbook gibt. Der Test `launch_ansible_removes_both_files_when_the_start_fails` erwartet unter Windows die übergebenen Pfade.
+Beweis: Abschlussprüfung (reviewer, security) klein-ref-desktop-1, ansible.rs:318-324
+Dedup-Key: ref:desktop:ansible.rs:run-dir-hygiene
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible
+Doku: keine (interner Aufräumpfad)
+
 ## Entscheidungen
 - 2026-10-29 R-0873: keine Eigentümerprüfung in `confined_run_dir` (bräuchte `libc`; ein fremder 0700-Ordner ist nicht traversierbar, nur root käme hinein).
 - 2026-10-29 R-0872: nicht in diesem Zug, schon durch `dd1f9b01` behoben; Zeile wartet auf Kevins Wort.

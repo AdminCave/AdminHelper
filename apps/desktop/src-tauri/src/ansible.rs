@@ -313,14 +313,18 @@ fn launch_ansible_with(
             "Ansible-Pfad ausserhalb des erlaubten Temp-Verzeichnisses".to_string(),
         ));
     };
-    // The start gets the files under the checked directory, not the paths as given: the script
-    // that ends the run removes the directory they name.
+    // On Unix the start gets the files under the checked directory, not the paths as given: the
+    // script that ends the run removes the directory they name. Windows keeps the given paths:
+    // `canonicalize` there adds a `\\?\` prefix, and no script of ours removes by them.
+    #[cfg(unix)]
     let in_run_dir = |path: &str| {
         Path::new(path)
             .file_name()
             .map(|name| run_dir.join(name).to_string_lossy().into_owned())
             .unwrap_or_default()
     };
+    #[cfg(not(unix))]
+    let in_run_dir = |path: &str| path.to_string();
     let started = start(&in_run_dir(inventory_path), &in_run_dir(playbook_path));
     if started.is_err() {
         let _ = std::fs::remove_dir_all(&run_dir);
@@ -990,13 +994,17 @@ mod tests {
         let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
         let playbook = write_playbook_temp(&dir.0, "failed_start.yml", "- hosts: all\n").unwrap();
 
+        #[cfg(unix)]
         let canonical = |path: &str| {
             fs::canonicalize(path)
                 .unwrap()
                 .to_string_lossy()
                 .into_owned()
         };
+        #[cfg(unix)]
         let expected = (canonical(&inventory), canonical(&playbook));
+        #[cfg(not(unix))]
+        let expected = (inventory.clone(), playbook.clone());
         let mut seen = None;
         let result = launch_ansible_with(&inventory, &playbook, |inv, pb| {
             seen = Some((inv.to_string(), pb.to_string()));
