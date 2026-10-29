@@ -19,11 +19,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py
 Doku: → T4
 
 ### T2 — Compose, Secrets und Monitoring auf die neuen Rollen  [ ]
-Komponente: scripts · Dateien: docker-compose.yml, scripts/init-secrets.sh, apps/monitoring/docker-entrypoint.sh, .env.example, scripts/tests/init-secrets_test.sh, apps/server/tests/test_env_parity.py
+Komponente: scripts · Dateien: docker-compose.yml, scripts/init-secrets.sh, apps/monitoring/docker-entrypoint.sh, .env.example, scripts/tests/init-secrets_test.sh, apps/server/tests/test_env_parity.py, apps/server/tests/test_images_exec_only.py, apps/server/tests/test_db_roles.py, docker-compose.test.yml, scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, Dockerfile, apps/ca-issuer/Dockerfile, apps/monitoring/Dockerfile
 Änderung: Neuer Dienst `db-init` (Server-Image, `command: python -m app.db_roles setup`, `restart: "no"`, Superuser-Variablen nur hier und in `postgres`); `server`, `scheduler`, `ca-issuer`, `monitoring` hängen mit `service_completed_successfully` an ihm und verbinden sich mit ihrer Rolle (`DATABASE_URL`, `PGUSER`); `monitoring` legt seine DB nicht mehr selbst an (Block `apps/monitoring/docker-entrypoint.sh:28-45` entfällt, `PGPASSWORD` des Superusers fällt weg). `init-secrets.sh` erzeugt die vier Passwörter, auch für eine bestehende `.env` (fehlt eins → ergänzen, gesetzt → bleibt). Tests: `init-secrets_test.sh` (frisch und Bestand: vier neue Werte, vorhandene unverändert); `test_env_parity.py` (jede neue Variable gesetzt, kein Dienst außer `postgres`/`db-init` bekommt `POSTGRES_PASSWORD`).
 Verify: bash scripts/dev/verify.sh server scripts --strict
 Doku: → T4
 Abhängt von: T1
+Test-Löschung: apps/server/tests/test_images_exec_only.py::test_the_entrypoint_of_monitoring_creates_its_database_once — das geprüfte Programm im Monitoring-Entrypoint entfällt (die Monitoring-DB legt `db-init` an); Ersatz: `test_db_roles.py::test_monitoring_owns_its_database_and_nothing_else` (Anlage) und `test_db_roles.py::test_a_failed_setup_names_no_password` (kein Passwort in der Ausgabe)
 
 ### T3 — Stack-Test: die Rollen im echten Stack  [ ]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
@@ -34,7 +35,7 @@ Abhängt von: T2
 
 ### T4 — Doku: Datenbank-Rollen, neue Passwörter, Korrektur pki-Netz  [ ]
 Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, DEVELOPMENT.md, CHANGELOG.md
-Änderung: Entwickler-Index (Komponenten): Rollen je Dienst, `db-init`; Korrektur der Aussage, nur das Gateway erreiche den `ca-issuer` (auch `postgres` hängt im pki-Netz). Installation/Betrieb: die vier `.env`-Passwörter, `db-init` beim Start, Backup/Restore als Superuser, Rollback-Hinweis. `DEVELOPMENT.md`: `tests/test_db_roles.py` braucht Docker. CHANGELOG (Changed, umlautfrei).
+Änderung: Entwickler-Index (Komponenten): Rollen je Dienst, `db-init`; Korrektur der Aussage, nur das Gateway erreiche den `ca-issuer` (auch `postgres` hängt im pki-Netz). Installation/Betrieb: die vier `.env`-Passwörter, `db-init` beim Start, Backup/Restore als Superuser, Rollback-Hinweis; `update.sh --redeploy` und ein Restore aus einem Backup von vor diesem Stand brauchen vorher `scripts/init-secrets.sh` (die `.env` hat die vier Schlüssel sonst nicht, und kein Dienst startet). `DEVELOPMENT.md`: `tests/test_db_roles.py` braucht Docker. CHANGELOG (Changed, umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task
 
@@ -46,6 +47,7 @@ Doku: → T4
 Abhängt von: T2
 
 ## Entscheidungen
+- 2026-10-29 T2 (Prüfung): gekoppelte Dateien kamen dazu — Test-Overlay (`db-init` auf dem lokal gebauten Server-Image), die `.env` der Test-Stacks (`lib_e2e_stack.sh`), die Maskierung im Diagnose-Bundle (`scripts/diagnostics.sh`) und drei Dockerfile-Kommentare; darum mehr als acht Dateien.
 - 2026-10-29 T1 (Prüfung): die Datenbanken bleiben beim Superuser, die Rollen besitzen nur das Schema `public`; `db-init` verbindet mit `search_path=pg_catalog`; `ah_ca` bekommt Rechte je Tabelle; Passwörter gehen als SCRAM-Verifier; neue Task T5 für die Restore-Skripte.
 - 2026-10-29 T1: der Rollen-Test ist ein pytest der Server-Suite mit eigenem Postgres-Container statt `scripts/tests/db_roles_test.sh`: der CI-Job der Skript-Tests hat kein psycopg (nachrüsten wäre eine Workflow-Änderung), die Server-Jobs haben Docker und psycopg.
 - 2026-10-29 Kevin: Plan freigegeben; der Scheduler bekommt eine eigene Rolle mit nur DML (Offene Frage 1).
