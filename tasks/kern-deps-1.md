@@ -44,3 +44,6 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Lockfile eines Testwerkzeugs)
 
 ## Entscheidungen
+- 2026-10-29: `npm audit fix` mit npm 11 (`npx npm@11`): npm 10.9.8 bricht in web und desktop-ui mit „Cannot read properties of null (reading 'edgesOut')“ (Arborist `#loadPeerSet`) ab. Das Lockfile bleibt `lockfileVersion` 3.
+- 2026-10-29: `vitest`/`@vitest/coverage-v8` ziehen weder `audit fix` noch `update` auf 4.1.12; deshalb steht die Untergrenze in `package.json` (web, desktop-ui) jetzt auf `^4.1.12` (`set-files` T1, T2). `deepmerge` (über `@sveltejs/vite-plugin-svelte`, moderat) hat keinen Fix und bleibt.
+- 2026-10-29: In desktop-e2e hebt `audit fix` innerhalb der Semver-Bereiche auch die `@wdio/*`-Kette; danach meldet `npm audit` dort nichts mehr, `serialize-javascript` eingeschlossen.
