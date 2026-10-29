@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Zeilenangaben `origin/main@5cd3f8f3`, vor dem Schreiben neu greppen. CHANGELOG umlautfrei in `changelog.d/ops-1.md`.
 `security` zusätzlich bei T1. Einzelheiten der SEC-Zeile privat.
 
-### T1 — install.sh: Admin-Passwort ohne Export-Attribut (R-0858)  [ ]
+### T1 — install.sh: Admin-Passwort ohne Export-Attribut (R-0858)  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/ops-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3f3c665d 2026-10-29T20:30:37+01:00
+Review: am Ende (Branch-Review)
 Änderung: Nach `ADMIN_PASSWORD=""` (`scripts/install.sh:53`) `export -n ADMIN_PASSWORD`. Test zuerst rot: der docker-Stub hält fest, ob er `ADMIN_PASSWORD` im Environment sieht; ein Lauf mit exportiertem `ADMIN_PASSWORD` und `--admin-password-file` → der Stub sieht es nicht.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: changelog.d/ops-1.md
