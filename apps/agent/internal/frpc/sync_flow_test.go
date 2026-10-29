@@ -243,7 +243,7 @@ func TestSyncNoOpOnIdenticalHash(t *testing.T) {
 	if err := os.WriteFile(config.FrpHashFile(), []byte(hash), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCheckedBy(); err != nil {
+	if err := writeCheckedBy(hash); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1113,7 +1113,13 @@ func useAgentVersion(t *testing.T, v string) {
 // When it passes, frpc and its files stay as they are and only the marker is written; the next
 // run is a no-op again. Without a marker (an agent from before it) it is the same.
 func TestSyncRechecksTheConfigAfterAnUpdate(t *testing.T) {
-	for name, before := range map[string]string{"no marker": "", "older agent": "0.45.0"} {
+	for name, before := range map[string]string{
+		"no marker":                 "",
+		"older agent":               "0.45.0",
+		"older agent, with hash":    "0.45.0 " + hashConfig(tunnelToml),
+		"this agent, another text":  "0.47.0 " + hashConfig([]byte("another text")),
+		"this agent, version alone": "0.47.0",
+	} {
 		t.Run(name, func(t *testing.T) {
 			calls := setupSyncTest(t, "https://unused.example")
 			useAgentVersion(t, "0.47.0")
@@ -1133,8 +1139,8 @@ func TestSyncRechecksTheConfigAfterAnUpdate(t *testing.T) {
 			if got := readFile(t, config.FrpConfigFile()); got != files["frpc.toml"] {
 				t.Errorf("frpc.toml = %q, want it unchanged %q", got, files["frpc.toml"])
 			}
-			if got := checkedBy(); got != "0.47.0" {
-				t.Errorf("checked by %q, want 0.47.0", got)
+			if got, want := checkedBy(), "0.47.0 "+hashConfig(tunnelToml); got != want {
+				t.Errorf("checked by %q, want %q", got, want)
 			}
 
 			if err := Sync(context.Background()); err != nil {
@@ -1179,8 +1185,8 @@ func TestSyncKeepsTheMarkerWithTheConfig(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if got := checkedBy(); got != "0.47.0" {
-		t.Errorf("checked by %q after writing the config, want 0.47.0", got)
+	if got, want := checkedBy(), "0.47.0 "+hashConfig(tunnelToml); got != want {
+		t.Errorf("checked by %q after writing the config, want %q", got, want)
 	}
 
 	srv, _ := hashServer(t, `{"hash": null}`, nil)
@@ -1193,5 +1199,48 @@ func TestSyncKeepsTheMarkerWithTheConfig(t *testing.T) {
 	}
 	if calls.disables != 1 {
 		t.Errorf("disables = %d, want 1", calls.disables)
+	}
+}
+
+// Without a stored hash there is no stored text to check again: an answer without a hash and
+// no hash on disk compare equal, and the marker of another agent alone fetches nothing.
+func TestSyncRechecksNothingWithoutAStoredHash(t *testing.T) {
+	srv, fetches := hashServer(t, `{}`, tunnelToml)
+	setupSyncTest(t, srv.URL)
+	useAgentVersion(t, "0.47.0")
+	if err := os.WriteFile(checkedByFile(), []byte("0.45.0"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if *fetches != 0 {
+		t.Errorf("config fetches = %d, want 0", *fetches)
+	}
+}
+
+// A refused text stays an error when stopping frpc fails as well, for the sync and for the
+// provisioning, which turns a plain failed stop into a warning.
+func TestRefusalStaysAnErrorWhenStoppingFrpcFails(t *testing.T) {
+	refused := []byte(refusedOverTheFlows["proxy plugin"])
+	for name, run := range map[string]func() error{
+		"sync":            func() error { return Sync(context.Background()) },
+		"re-provisioning": func() error { return applyBundle(refused) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://srv.example")
+			serveToml(t, refused)
+			writeFrpcState(t)
+			calls.active = true
+			disableService = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
+
+			err := run()
+			if err == nil {
+				t.Fatal("a refused text must stay an error when stopping frpc fails")
+			}
+			if errors.Is(err, errFrpcService) {
+				t.Errorf("error %v carries errFrpcService, which the provisioning turns into a warning", err)
+			}
+		})
 	}
 }
