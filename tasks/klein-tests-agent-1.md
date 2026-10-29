@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-agent-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-agent-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-tests-agent-1 · Review: pro Task
 Spec: docs/features/klein-tests-agent-1.md (Roadmap R-0851, R-0883)
 Heavy: none — Unit-Tests im Agent, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Dedup-Key: ref:agent:smart.go:ctx-untested
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: keine (Test)
 
-### T3 — Funde der Abschlussprüfung: Service-Test über den Kollektor, PowerShell-Aufruf lesen (R-0851, R-0883)  [ ]
+### T3 — Funde der Abschlussprüfung: Service-Test über den Kollektor, PowerShell-Aufruf lesen (R-0851, R-0883)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/docs_cli_test.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b5235af2 2026-10-29T22:11:22+01:00
+Review: approve (.ah-out/review/klein-tests-agent-1/T3.verdict.json)
 Änderung: Der Service-Test stubbt list-units und list-unit-files so, dass `collectServiceHealth` selbst einen Kandidaten und einen Alias findet und beide show-Aufrufe mit dem Marker-`ctx` stellt (Gegenprobe `context.Background()` an `filterEnabledInactive`/`resolveAliases` färbt ihn rot). Der Doku-Leser liest den PowerShell-Aufruf `& 'C:\Program Files\…\adminhelper-agent.exe' provision` mit Backtick-Fortsetzung (agent-deployment.html:155 DE, :154 EN); Fixture-Fälle und `docsCallFloor` (28 echte Aufrufe) angepasst.
 Beweis: Abschlussprüfung branch.verdict.json, zwei Funde „wichtig“
 Dedup-Key: ref:agent:docs_cli_test.go:path-exe-calls

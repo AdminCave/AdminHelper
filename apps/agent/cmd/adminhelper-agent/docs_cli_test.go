@@ -21,9 +21,9 @@ import (
 // and the helper process of the box scripts (box_cli_test.go).
 
 // docsCallFloor is a non-empty guard, not a quota: a reader that quietly loses most
-// of the calls has to fail too, so it sits just below the real number (26 today).
+// of the calls has to fail too, so it sits just below the real number (28 today).
 // Lower it only after confirming the documentation, not the reader, is what changed.
-const docsCallFloor = 25
+const docsCallFloor = 27
 
 var (
 	// codeRE is a <code> element, with attributes too, as in scripts/dev/doc-smoke.py.
@@ -39,6 +39,11 @@ var (
 	// read as the bare name; `apt install ./adminhelper-agent_1_amd64.deb` and the
 	// build path ./cmd/adminhelper-agent are no calls.
 	pathCallRE = regexp.MustCompile(`(^|[\s"'(;|&{!])(?:\.{0,2}[\\/]|(?:[A-Za-z]:)?[\\/](?:[\w.-]+[\\/])*)?adminhelper-agent(?:-windows-x86_64)?(?:\.exe)?([ \t]+[a-z-])`)
+	// quotedExeRE is the PowerShell call of an installed binary with a path that holds
+	// blanks: & 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision
+	quotedExeRE = regexp.MustCompile(`(?:^[ \t]*&[ \t]*)?['"][^'"]*[\\/]adminhelper-agent(?:-windows-x86_64)?(?:\.exe)?['"]([ \t]+[a-z-])`)
+	// psContinuedRE is a PowerShell line continuation, a backtick at the end of the line.
+	psContinuedRE = regexp.MustCompile("`[ \t]*$")
 	// placeholderRE is a value the reader fills in, <provision-token>. parseCalls takes
 	// its < for a redirect and would end the call there, before the flags after it.
 	placeholderRE = regexp.MustCompile(`<[A-Za-z0-9_.-]+>`)
@@ -55,7 +60,9 @@ func docCalls(name, page string) (calls []agentCall, unknown []string) {
 		body = placeholderRE.ReplaceAllString(body, "VALUE")
 		lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
 		for i, l := range lines {
-			lines[i] = pathCallRE.ReplaceAllString(commentRE.ReplaceAllString(l, ""), "${1}adminhelper-agent${2}")
+			l = psContinuedRE.ReplaceAllString(commentRE.ReplaceAllString(l, ""), " \\")
+			l = quotedExeRE.ReplaceAllString(l, "adminhelper-agent${1}")
+			lines[i] = pathCallRE.ReplaceAllString(l, "${1}adminhelper-agent${2}")
 		}
 		joined, numbers := logicalLines(lines)
 		keep, kept := make([]string, len(lines)), false
@@ -135,7 +142,12 @@ sudo adminhelper-agent provision --token &lt;t&gt; --server-idd x</code></pre>
 /usr/bin/adminhelper-agent run --verbose
 ./adminhelper-agent run --once
 adminhelper-agent-windows-x86_64.exe frpc rotate
-sudo apt install ./adminhelper-agent_1_amd64.deb</code></pre>`
+sudo apt install ./adminhelper-agent_1_amd64.deb
+cd apps/agent &amp;&amp; go run ./cmd/adminhelper-agent version
+&amp; 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision ` + "`" + `
+    --token-stdin ` + "`" + `
+    --server-idd x
+adminhelper-agent.exe version</code></pre>`
 	// Where a call is, and whether its check passes. Line 10, apt install, is none, and neither is the .deb on line 17.
 	want := map[string]bool{
 		"fixture.html:2":  false, // run has no --verbose
@@ -150,6 +162,8 @@ sudo apt install ./adminhelper-agent_1_amd64.deb</code></pre>`
 		"fixture.html:14": false, // through /usr/bin, run has no --verbose
 		"fixture.html:15": true,
 		"fixture.html:16": false, // the .exe, frpc has no rotate
+		"fixture.html:19": false, // PowerShell, quoted path, the flag after the backticks is checked
+		"fixture.html:22": true,  // adminhelper-agent.exe
 	}
 	calls, unknown := docCalls("fixture.html", page)
 	for _, u := range unknown {

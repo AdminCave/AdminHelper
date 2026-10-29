@@ -1059,17 +1059,23 @@ func TestServiceCollectorPassesItsContextToEverySystemctlCall(t *testing.T) {
 				t.Errorf("systemctl %v ran without the collector's context", args)
 			}
 			calls = append(calls, strings.Join(args, " "))
-			if len(args) > 0 && args[0] == "show" {
+			switch args[0] {
+			case "list-units":
+				return []byte("cron.service loaded inactive dead Cron\n"), nil
+			case "list-unit-files":
+				return []byte("cron.service enabled enabled\nsshd.service alias enabled\n"), nil
+			case "show":
 				return nil, fail
 			}
 			return nil, nil
 		}
 	}
 
+	// An enabled-inactive candidate and an alias make the collector itself ask for both show calls.
 	setup(nil)
 	collectServiceHealth(ctx)
-	if len(calls) < 3 {
-		t.Errorf("collectServiceHealth ran %d systemctl calls (%v), want at least the three lists", len(calls), calls)
+	if len(calls) != 5 {
+		t.Errorf("collectServiceHealth ran %v, want the three lists, the candidate batch and the alias lookup", calls)
 	}
 
 	setup(exec.Command("false").Run()) // a batch that answers with exit 1 gets the per-unit fallback
