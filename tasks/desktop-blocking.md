@@ -35,8 +35,10 @@ Für alle Tasks:
 - Test-Keyring und Workspace gelten je Thread (`keyring_store.rs:92-96`, `workspace.rs:656-663`): was in
   `blocking()`/`spawn_blocking` läuft, sieht sie nicht. Getestet werden die synchronen Teile auf dem Test-Thread.
 
-### T1 — Temp-Test ohne Namen, die eine PID sein können (R-0572)  [ ]
+### T1 — Temp-Test ohne Namen, die eine PID sein können (R-0572)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @73a538b4 2026-10-29T06:10:48+01:00
+Review: approve (.ah-out/review/desktop-blocking/T1.verdict.json)
 Änderung: In `write_json_atomic_removes_only_the_stale_temps_of_the_same_file` (`storage.rs:1560-1596`) tragen die Fixtures statt `4242`, `4243`, `4244` Ziffernfolgen über `u32::MAX`, also nie eine PID, aber für `remove_stale_temps` (`:142-173`, nur ASCII-Ziffern) weiter Temps: `prefs.json.4294967296.tmp` (alt), `prefs.json.4294967297.tmp` (jung), `prefs.json.4294967298.tmp` (Zukunft), `other.json.4294967296.tmp`, `prefs.json.x4294967296.tmp`; die erwartete Namensliste (`:1585-1595`) zieht mit, ihre Reihenfolge bleibt sortiert. Ein Kommentar sagt das Warum: eine Fixture mit der PID des Testprozesses wäre die eigene Temp-Datei des Schreibens (`:120-125`). Kein Produktcode.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- write_json_atomic
 Doku: keine (nur Test)
