@@ -22,6 +22,7 @@ from app.modules.ansible.models import Playbook
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.notifications.models import Notification, NotificationSubscription
 from app.modules.provisioning import router as provisioning_router
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
@@ -71,6 +72,12 @@ def _ref_name(schema: dict) -> str:
         ("/api/servers/{server_id}/provision/token", "post", "ProvisionTokenCreatedOut"),
         ("/api/servers/{server_id}/provision/tokens", "get", "ProvisionTokenOut"),
         ("/api/servers/{server_id}/provision/activate", "post", "ActivateOut"),
+        ("/api/notifications", "get", "NotificationOut"),
+        ("/api/notifications/unread-count", "get", "UnreadCountOut"),
+        ("/api/notifications/read", "post", "MarkReadOut"),
+        ("/api/users/me/notification-prefs", "get", "NotificationPrefsOut"),
+        ("/api/users/me/notification-prefs", "put", "NotificationPrefsOut"),
+        ("/api/internal/events", "post", "EventsAcceptedOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -530,3 +537,66 @@ class TestProvisioningShape:
         assert body["monitorUrl"] == "/api/monitoring"
         assert set(body["frp"]) == {"config", "pkiBundle"}
         assert body["frp"]["config"] and body["frp"]["pkiBundle"] == ""
+
+
+class TestNotificationShape:
+    def test_feed_rows_equal_to_dict(self, test_client, db_session, admin_user):
+        full = Notification(
+            user_id=admin_user.id,
+            severity="critical",
+            category="monitoring",
+            event_type="monitoring.check.transition",
+            title="full",
+            body="CPU critical",
+            source_type="server",
+            source_id="srv-1",
+            read_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        )
+        sparse = Notification(
+            user_id=admin_user.id,
+            severity="info",
+            category="lifecycle",
+            event_type="probe",
+            title="sparse",
+        )
+        db_session.add_all([full, sparse])
+        db_session.commit()
+        res = test_client.get("/api/notifications", headers=_login(test_client))
+        assert res.status_code == 200, res.text
+        rows = {n["id"]: n for n in res.json()}
+        assert len(rows) == 2
+        for row in (full, sparse):
+            db_session.refresh(row)
+            assert rows[row.id] == jsonable_encoder(row.to_dict())
+        assert rows[sparse.id]["body"] is None and rows[sparse.id]["readAt"] is None
+        assert rows[full.id]["read"] is True
+
+    def test_prefs_equal_to_dict(self, test_client, db_session, admin_user):
+        h = _login(test_client)
+        put = test_client.put(
+            "/api/users/me/notification-prefs",
+            headers=h,
+            json={
+                "email": "admin@example.com",
+                "telegram_chat_id": "12345",
+                "subscriptions": [
+                    {"scope_type": "tag", "scope_ref": "prod", "categories": ["pki"]},
+                    {"scope_type": "all"},
+                ],
+            },
+        )
+        assert put.status_code == 200, put.text
+        got = test_client.get("/api/users/me/notification-prefs", headers=h)
+        assert got.status_code == 200, got.text
+        assert got.json() == put.json()
+        subs = (
+            db_session.query(NotificationSubscription).order_by(NotificationSubscription.id).all()
+        )
+        assert got.json() == {
+            "email": "admin@example.com",
+            "telegramChatId": "12345",
+            "subscriptions": [jsonable_encoder(s.to_dict()) for s in subs],
+        }
+        tagged, every = got.json()["subscriptions"]
+        assert tagged["categories"] == '["pki"]'
+        assert every["scopeRef"] is None and every["categories"] is None

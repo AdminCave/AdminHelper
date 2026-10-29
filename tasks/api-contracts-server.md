@@ -118,8 +118,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale und `ProvisionToken.to_
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T7 — notifications: Feed, Zähler, Prefs, Ingest (R-0684)  [ ]
+### T7 — notifications: Feed, Zähler, Prefs, Ingest (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @da026cb8 2026-10-29T22:39:33+01:00
+Review: approve (.ah-out/review/api-contracts-server/T7.verdict.json)
 Änderung: In `notifications/schemas.py`: `NotificationOut` wie `Notification.to_dict` (`apps/server/app/modules/notifications/models.py:104-117`), `NotificationSubscriptionOut` wie `NotificationSubscription.to_dict` (`:68-79`; `categories: Optional[str]`, roher JSON-Text), `NotificationPrefsOut` `{email, telegramChatId: Optional[str], subscriptions: list[NotificationSubscriptionOut]}` (`apps/server/app/modules/notifications/router.py:103-114`), `UnreadCountOut` `{count: int}` (`:76`), `MarkReadOut` `{updated: int}` (`:91`, `:97`), `EventsAcceptedOut` `{notified: int}` (`:217`). Routen `GET ''` (`:48`, heute `list[dict[str, Any]]`), `GET /unread-count` (`:66`), `POST /read` (`:80`), `GET`/`PUT /notification-prefs` (`:118`, `:126`), `POST /events` (`:183`, 202). Nullbarkeit je Spalte aus `models.py`. Tests nach Muster; der SSE-Stream bleibt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_notifications.py
 Doku: keine

@@ -752,6 +752,20 @@
         "title": "EnrollmentTokenForRequest",
         "type": "object"
       },
+      "EventsAcceptedOut": {
+        "description": "How many recipients the event reached.",
+        "properties": {
+          "notified": {
+            "title": "Notified",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notified"
+        ],
+        "title": "EventsAcceptedOut",
+        "type": "object"
+      },
       "FrpBundleOut": {
         "properties": {
           "config": {
@@ -2635,6 +2649,19 @@
         "title": "LogoutRequest",
         "type": "object"
       },
+      "MarkReadOut": {
+        "properties": {
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated"
+        ],
+        "title": "MarkReadOut",
+        "type": "object"
+      },
       "MarkReadRequest": {
         "description": "Mark feed rows as read. ids = None means \"all of the caller's unread\".",
         "properties": {
@@ -2656,6 +2683,145 @@
           }
         },
         "title": "MarkReadRequest",
+        "type": "object"
+      },
+      "NotificationOut": {
+        "description": "A feed row as Notification.to_dict hands it out.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "eventType": {
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "readAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readat"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceid"
+          },
+          "sourceType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetype"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "severity",
+          "category",
+          "eventType",
+          "title",
+          "body",
+          "sourceType",
+          "sourceId",
+          "read",
+          "readAt"
+        ],
+        "title": "NotificationOut",
+        "type": "object"
+      },
+      "NotificationPrefsOut": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "subscriptions": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationSubscriptionOut"
+            },
+            "title": "Subscriptions",
+            "type": "array"
+          },
+          "telegramChatId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegramchatid"
+          }
+        },
+        "required": [
+          "email",
+          "telegramChatId",
+          "subscriptions"
+        ],
+        "title": "NotificationPrefsOut",
         "type": "object"
       },
       "NotificationPrefsUpdate": {
@@ -2695,6 +2861,74 @@
           "subscriptions"
         ],
         "title": "NotificationPrefsUpdate",
+        "type": "object"
+      },
+      "NotificationSubscriptionOut": {
+        "description": "A rule as NotificationSubscription.to_dict hands it out.",
+        "properties": {
+          "categories": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
+          "channelEmail": {
+            "title": "Channelemail",
+            "type": "boolean"
+          },
+          "channelTelegram": {
+            "title": "Channeltelegram",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "minSeverity": {
+            "title": "Minseverity",
+            "type": "string"
+          },
+          "scopeRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoperef"
+          },
+          "scopeType": {
+            "title": "Scopetype",
+            "type": "string"
+          },
+          "userId": {
+            "title": "Userid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "scopeType",
+          "scopeRef",
+          "minSeverity",
+          "categories",
+          "channelEmail",
+          "channelTelegram",
+          "enabled"
+        ],
+        "title": "NotificationSubscriptionOut",
         "type": "object"
       },
       "PlaybookContentOut": {
@@ -3380,6 +3614,19 @@
           "name"
         ],
         "title": "TunnelMappingOut",
+        "type": "object"
+      },
+      "UnreadCountOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "UnreadCountOut",
         "type": "object"
       },
       "UserCreate": {
@@ -6188,7 +6435,9 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EventsAcceptedOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6517,8 +6766,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/NotificationOut"
                   },
                   "title": "Response List Notifications Api Notifications Get",
                   "type": "array"
@@ -6567,7 +6815,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6621,7 +6871,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -7148,7 +7400,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -7181,7 +7435,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
               }
             },
             "description": "Successful Response"
