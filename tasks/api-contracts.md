@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # API-Verträge: Antwortmodelle für Server und Monitoring, Client-Typen gegen den Snapshot — Task-Ledger
-Status: bereit · Branch: feature/api-contracts · Review: pro Task
+Status: erledigt · Branch: feature/api-contracts · Review: pro Task
 Spec: docs/features/api-contracts.md (Roadmap R-0684, R-0685, R-0686, R-0687; R-0407 erledigt T10 mit)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop --moncheck + windows — Server-API: 33 Routen bekommen ein `response_model`, darunter die Antworten, die nur echte Clients lesen: Activate und `config-hash` (Agent), Tunnels und `visitor-bundle` (Desktop, S4), Enrollment-Grant (Desktop, S3), dazu die Monitoring-Antworten hinter dem Proxy (S5). Laut Gleichheitstests bleiben die Antworten byte-gleich; ein zu strenges Modell wäre eine 500, die nur der echte Datenpfad mit Altdaten zeigt. `linux-full` im Sammellauf über `main` (`/feature-build` §5); `scenario` vor dem Merge (ask-first, Kevins Ja); `windows` sind die Windows-Jobs der PR-CI (keine Windows-Box im Pool). Kein Agent- und kein Rust-Code im Diff
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
