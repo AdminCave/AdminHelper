@@ -30,8 +30,10 @@ Dedup-Key: ref:server:stream_hub.py:log-exc-info
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_stream_reconnect.py tests/test_rate_limit.py
 Doku: keine (nur Log-Text)
 
-### T3 — FRP: abgelehnter Tunnel warnt einmal, Wortlaut getestet, Servername-strip dokumentiert (R-0895)  [ ]
+### T3 — FRP: abgelehnter Tunnel warnt einmal, Wortlaut getestet, Servername-strip dokumentiert (R-0895)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_config_generator.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @6a3ba9ad 2026-10-29T18:27:16+01:00
+Review: approve (.ah-out/review/klein-ref-server-1/T3.verdict.json)
 Änderung: `without_refused_extra_config` loggt die Warnung einmal je `(tunnel.id, abgelehnte Schlüssel)` (Cache begrenzt); Tests: zweiter Aufruf loggt nicht, geänderte Schlüssel loggen erneut, `plugin keys` erscheint für reine Plugin-Schlüssel, sonst `entries the API refuses`. api-reference DE+EN: ein Satz, dass `name` am Server vor der Prüfung mit `strip()` gekürzt wird.
 Beweis: Code-Lesung origin/main config_generator.py:139-163, docs/developer/api-reference.html:101
 Dedup-Key: ref:server:config_generator.py:refused-warning-per-poll
