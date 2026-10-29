@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-server-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-server-1 · Review: pro Task
+Status: aktiv · Branch: feature/klein-tests-server-1 · Review: pro Task
 Spec: docs/features/klein-tests-server-1.md (Roadmap R-0925, R-0889, R-0892)
 Heavy: none — nur Server-Unit-Tests und eine CLI-Argumentprüfung, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,5 +37,11 @@ Review: approve (.ah-out/review/klein-tests-server-1/T3.verdict.json)
 Dedup-Key: ref:server:cli.py:password-flag-combo
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py tests/test_cli.py
 Doku: changelog.d/klein-tests-server-1.md; README.md und docs/admin/troubleshooting.html (DE+EN) nur, wenn sie die Kombination beschreiben
+
+### T4 — Include-Walk ordnet Guards der Route zu, nicht dem Pfad (Abschlussprüfung)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_route_auth_gate.py
+Änderung: `_dependency_qualnames` sucht den Include, dessen Router genau diese Route enthält (`is`), statt über den Pfad; Probe-Test mit Pfad-Kollision (GET mit Include-Guard, POST ohne Guard am selben Pfad) muss rot werden, wenn der Walk wieder über den Pfad geht. Modul-Docstring (FastAPI >= 0.138) nachziehen.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_route_auth_gate.py tests/test_stream.py
+Doku: keine (nur Tests)
 
 ## Entscheidungen
