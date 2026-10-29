@@ -1,6 +1,6 @@
 {
   "model": "opus",
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "permissions": {
     "allow": [
       "Bash(python3 scripts/vm/vm.py:*)",

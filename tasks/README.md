@@ -41,10 +41,18 @@ Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.
 
 **Task-Felder:** `Komponente:` (der Name aus `verify.sh`, etwa `server`, kein Pfad), `Dateien:` (die
 Pfade, die `task-close.sh --stage` stagt, durch Komma getrennt), `Verify:` (Flag-Form ohne Env-Präfix:
-`bash scripts/dev/verify.sh <komp> --strict [-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten).
+`bash scripts/dev/verify.sh <komp> --strict [-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten) und
+`Task-Review: am Ende` (eine reine Doku-Task: `task-close.sh` verlangt dann kein Task-Urteil, solange sie nur
+Markdown oder HTML unter `docs/` stagt, keinen Symlink und keinen Harness-Text — `CLAUDE.md`, `.claude/` in jeder
+Tiefe, `tasks/`; der Inhalt geht in die Abschlussprüfung).
+
+**Züge:** Ein Ledger `tasks/<zug>.md` nimmt alle Roadmap-Zeilen auf, deren Spalte `Ledger` ihn nennt
+(`roadmap.py zuege`, CLAUDE.md §2); `klein-<…>` baut die Klein-Session, jedes andere die Kern-Session. Eine Zeile,
+die nicht mitfahren kann, wird `[~] verschoben in <nächster-zug>: <Grund>` und wechselt dort hin
+(`/feature-build` §3).
 
 **`Doku:`** hat drei Formen: die Dateien, die diese Task selbst nachzieht (`docs/… DE+EN`, `README`,
-`CHANGELOG`); `→ T<n>`, wenn die Doku-Task `T<n>` desselben Ledgers sie gebündelt nachzieht (offen, bis
+`changelog.d/<slug>.md`); `→ T<n>`, wenn die Doku-Task `T<n>` desselben Ledgers sie gebündelt nachzieht (offen, bis
 `T<n>` `[x]` ist; `ledger.sh lint` prüft, dass es `T<n>` gibt); oder `keine (<Grund>)` für Änderungen
 ohne dokumentierten Einfluss. Wann Doku fällig ist, regelt `.claude/rules/docs.md`.
 

@@ -1,6 +1,6 @@
 ---
 name: feature-plan
-description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus fachlich zusammenhängenden, gemeinsam testbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate mit Bericht an Kevin; danach gibt die Session die Zeile selbst frei — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --bundle <komponente> die REF-Zeilen einer Komponente als Sammel-Ledger.
+description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus fachlich zusammenhängenden, gemeinsam testbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate mit Bericht an Kevin; danach gibt die Session die Zeile selbst frei — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --zug tasks/<zug>.md alle Zeilen eines Zugs als ein Ledger.
 ---
 
 # Feature planen & in autonome Tasks zerlegen
@@ -13,11 +13,12 @@ Commit auf dem Feature-Branch (R-0065).
 
 **Drei Aufrufe:** `/feature-plan <idee>` — der volle Weg mit Spec (Abschnitte 1–4);
 `/feature-plan --kurz R-nnnn` — ein Kurz-Ledger aus einer Roadmap-Zeile, ohne Spec (3a);
-`/feature-plan --bundle <komponente>` — REF-Zeilen einer Komponente in einem Sammel-Ledger
-(3a). Alle drei enden am selben Design-Gate (4). Eine SEC-Zeile plant keiner der drei Wege: das
-Gate committet in dieses öffentliche Repo, SEC-Funde bleiben unter `tasks/private/` (3a).
+`/feature-plan --zug tasks/<zug>.md` — alle wartenden Zeilen eines Zugs (`roadmap.py zuege`) in
+einem Ledger (3a). Alle drei enden am selben Design-Gate (4). Das Gate committet in dieses öffentliche
+Repo, SEC-Funde bleiben unter `tasks/private/`: eine SEC-Zeile plant nur die Kern-Session, und nur
+neutral — im vollen Weg oder in einem Zug mit neutralem Namen, nie mit `--kurz` (3a).
 
-Modell: die Session plant selbst (Opus, high; CLAUDE.md §6) und liest Code und Doku direkt, ohne
+Modell: die Session plant selbst (CLAUDE.md §6) und liest Code und Doku direkt, ohne
 Explorer-Sub-Agenten. Schwierige Architektur oder Sicherheitsfragen: gezielt `advisor` fragen (per Aufruf `xhigh`),
 oder Kevin fährt die Planung mit `claude --effort xhigh` (CLAUDE.md §6). Vor dem Schreiben `.claude/rules/docs.md` und `.claude/rules/testing.md` lesen. Sprache: Deutsch,
 Bezeichner im Original (CLAUDE.md).
@@ -56,7 +57,10 @@ Heavy: none — <warum keine schwere Suite>
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 ```
-`Review: am Ende` für ein **Kurz-Ledger** mit ≤ 3 Tasks (ein Review über den Branch-Diff).
+`Review: am Ende` für ein **Kurz-Ledger** mit ≤ 3 Tasks (ein Review über den Branch-Diff). Eine einzelne Task, die
+nur Doku ändert (Markdown, HTML unter `docs/`), trägt `Task-Review: am Ende`: ihr Inhalt geht in die
+Abschlussprüfung, `task-close.sh` verlangt dann kein Task-Urteil (und doch eines, sobald sie anderes stagt:
+`.env.example`, Code unter `docs/`, einen Harness-Text, einen Symlink).
 `Heavy:` aus „Betroffene Komponenten“ der Spec, nach ` — ` die Begründung: `none` (kein Stack-,
 Gateway-, PKI- oder Install-Pfad); `linux-full` (Server-API/Gateway, `apps/ca-issuer`, `apps/agent`,
 Desktop-Journeys, `docker-compose*.yml`); `scenario <flags>` (Cross-Host: FRP-Tunnel-Datenpfad,
@@ -90,14 +94,15 @@ Task-Schema:
 Komponente: <komponente> · Dateien: …
 Änderung: <was genau, 1–3 Sätze>
 Verify: bash scripts/dev/verify.sh <komponente> --strict
-Doku: <docs/… DE+EN · README · CHANGELOG  |  → T<n>  |  keine (Grund)>
+Doku: <docs/… DE+EN · README · changelog.d/<slug>.md  |  → T<n>  |  keine (Grund)>
+Task-Review: am Ende   (nur bei einer reinen Doku-Task)
 Abhängt von: T<k>   (nur falls nötig)
 Test-Löschung: <datei>::<test> — <Grund>   (nur falls nötig; ganze Datei: <datei>::*)
 ```
 Löscht eine Task einen Test oder eine Testdatei, kündigt der Plan das an (`tasks/README.md`): die
 Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorthin.
 
-## 3a. Die kurzen Wege: `--kurz` und `--bundle`
+## 3a. Die kurzen Wege: `--kurz` und `--zug`
 
 **`--kurz R-nnnn`** — für einen belegten Fund, vor allem REG und BUG:
 - **Nicht für SEC** (verweigern, mit Grund): das Gate committet ins öffentliche Repo.
@@ -115,14 +120,31 @@ Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorth
   Semantik-Frage: …"`). Findet sich keine Stelle: `Semantik: keine Stelle in docs/ — <was gesucht
   wurde>`, und die Lücke gehört in die offenen Fragen am Gate.
 
-**`--bundle <komponente>`** — Aufräumarbeit einer Komponente in einem Rutsch:
-- Nur Klasse **REF**: die `neu`- und `geplant`-REF-Zeilen dieser Komponente aus `roadmap.py show`.
-  Andere Klassen verweigern, mit Grund.
-- Höchstens 15 Tasks, eine je Zeile; der Rest bleibt `neu` und wird am Gate genannt. Kopf wie in 3,
-  `Spec: Roadmap R-a, R-b, …`; `Review: pro Task`, bei höchstens drei Tasks `am Ende`.
-- Jede Task nennt ihre Roadmap-ID und trägt, was die Beweis-Konvention für ihre Klasse verlangt.
+**`--zug tasks/<zug>.md`** — ein Zug (CLAUDE.md §2): die wartenden Zeilen, deren Spalte `Ledger` diesen Pfad nennt
+(`roadmap.py zuege`), jede Klasse:
+- Der Slug ist der des Zugs (`klein-doku-3` → `feature/klein-doku-3`); `klein-` plant nur die Klein-Session, alle
+  anderen die Kern-Session (`--stufe`).
+- **Überlappung zuerst:** `bash scripts/dev/overlap.sh --except feature/<slug> <Dateien der Zeilen>`. Ändert ein
+  offener Branch dieselben Dateien, fährt die Zeile nicht mit: `roadmap.py status R-nnnn geplant --ledger
+  tasks/<nächster-zug>.md --note "<bisherige Notiz>; überlappt feature/<x>"`.
+- Eine Zeile je Task, zusammengehörige Zeilen (dieselben Dateien) in einer Task; höchstens 15 Tasks und eine
+  schwere Prüfstufe. Was nicht passt, wandert in den nächsten Zug (wie oben) und wird am Gate genannt.
+- Eine Zeile mit offener Frage aus Kevins Bereich fährt nicht mit (nächster Zug, die Frage am Gate); der Zug wartet
+  nie auf eine einzelne Zeile.
+- Kopf wie in 3, `Spec: docs/features/<slug>.md (Roadmap R-a, R-b, …)` mit einer kurzen Spec (Problem je Zeile,
+  Doku-Impact, Risiken); `Review: pro Task`, bei höchstens drei Tasks `am Ende`; reine Doku-Tasks
+  `Task-Review: am Ende` (3).
+- Jede Task nennt ihre Roadmap-ID und trägt, was die Beweis-Konvention für ihre Klasse verlangt (BUG/REG:
+  `Beweis:` und der Test, der den Fund zeigt).
+- SEC-Zeilen fahren nur in einem Kern-Zug mit neutralem Namen (`kern-<bereich>-<n>`, nie `sec-`: Branch, Ledger und
+  `changelog.d/<slug>.md` sind öffentlich, bevor der Fix released ist); Titel, Spec und CHANGELOG-Eintrag ohne
+  Angriffspfad, Details nur in `tasks/private/`, `security` je Task.
 
-Beim Bündel gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
+**Mitnehmen** (voller Weg und `--kurz`): wartende `klein-`- oder Kern-Zeilen, die genau die Dateien dieses Vorhabens
+ändern (`roadmap.py zuege`, ihre Quelle), nimmt das Vorhaben als eigene Tasks mit, höchstens drei, wenn sie keine
+schwerere Prüfstufe und keinen anderen Merger brauchen; ihre Spalte `Ledger` wechselt auf dieses Ledger.
+
+Bei Zug und Mitnehmen gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
 
 ## 4. Design-Gate — STOPP
 - **Zeilenangaben frisch:** jede `datei:zeile` in Spec und Ledger unmittelbar vor dem Schreiben neu
