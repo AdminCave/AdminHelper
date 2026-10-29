@@ -69,6 +69,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Web: Fehlertext ohne Maschinencode:** Schickt der Server zu einem Fehler ein `code` (`ERR_...`), zeigt das
+  Web den Text ohne das Praefix `ERR_...:` und haelt den Code in `ApiError.code` fest. Doku: Web-UI fuer
+  Entwickler (DE+EN).
 - **Desktop: verweigert der Server das Visitor-Bundle, stoppt der Tunnel (R-0453):** Antwortet der Server beim
   Abgleich mit 403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers, stoppt der Desktop seinen Tunnel
   beim naechsten Abgleich wie bei 404, statt frpc mit der alten Konfiguration weiterlaufen zu lassen. Doku: Desktop

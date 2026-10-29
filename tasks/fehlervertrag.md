@@ -65,8 +65,10 @@ Orakel: contract — der ganze Body je Code, `detail` byte-gleich zu HEAD
 Dedup-Key: ref:server:identity.py:no-structured-error-code
 HEAD: 237b450a
 
-### T3 — Web: `ApiError.code`, Meldung ohne `ERR_…: ` (R-0664)  [ ]
+### T3 — Web: `ApiError.code`, Meldung ohne `ERR_…: ` (R-0664)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/api/client.test.ts, docs/developer/webui.html, docs/en/developer/webui.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @cceb4d6a 2026-10-29T13:10:35+01:00
+Review: approve (.ah-out/review/fehlervertrag/T3.verdict.json)
 Änderung: `ApiError` (`apps/web/src/lib/api/types.ts:68-78`) bekommt `readonly code: string | undefined` und den vierten Konstruktor-Parameter `code?: string`. In `request` (`apps/web/src/lib/api/client.ts:116-119`): `code` nur, wenn der Body ein `code` als String der Form `^ERR_[A-Z0-9_]{1,64}$` trägt; die Meldung ist `errorDetail(data)` (`:126-140`), bei gesetztem `code` ohne das führende `${code}: `, sonst wie heute; `throw new ApiError(res.status, <Meldung> ?? `HTTP ${res.status}`, data, code)`. Tests im Block `http client error messages` (`client.test.ts:351-394`), `messageOf` liefert dafür den ganzen Fehler: (a) 403 `{detail: 'ERR_CERT_REVOKED: This device certificate is no longer valid.', code: 'ERR_CERT_REVOKED'}` → Meldung ohne Präfix, `code` `'ERR_CERT_REVOKED'`, `status` 403; (b) derselbe Body ohne `code` (Server vor T2) → Meldung mit Präfix wie heute, `code` undefined; (c) `code` `'err_x'`, `42` und ein Code mit 65 Zeichen nach `ERR_` → `code` undefined, Meldung unverändert; (d) `code` gesetzt, `detail` ohne den Präfix → `detail` unverändert; (e) eine 422-Liste mit `code` → die `msg`-Texte wie heute (`:368-385`). Zuerst rot: (a) auf HEAD.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
 Doku: docs/developer/webui.html + docs/en/developer/webui.html (`:79`, ein Satz: ein Nicht-2xx wirft `ApiError(status, message, detail, code)`; `message` ist `detail`, bei 422 die `msg`-Texte, ohne `<code>: `, wenn der Server `code` schickt; `code` ist für den Code, nicht für den Text) · CHANGELOG.md (Changed, umlautfrei: das Web zeigt bei einem Fehler mit Maschinencode den Text ohne das Praefix `ERR_…:`)

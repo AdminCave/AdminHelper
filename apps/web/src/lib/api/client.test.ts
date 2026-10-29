@@ -406,7 +406,7 @@ describe('http client error messages', () => {
     vi.unstubAllGlobals();
   });
 
-  async function messageOf(body: unknown, status = 422): Promise<string> {
+  async function errorOf(body: unknown, status = 422): Promise<ApiError> {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(jsonResponse(body, status))),
@@ -414,7 +414,11 @@ describe('http client error messages', () => {
     const { http } = await importClient();
     const err = await http.get('/api/hooks').catch((e: unknown) => e);
     expect((err as ApiError).name).toBe('ApiError');
-    return (err as ApiError).message;
+    return err as ApiError;
+  }
+
+  async function messageOf(body: unknown, status = 422): Promise<string> {
+    return (await errorOf(body, status)).message;
   }
 
   // The OpenAPI promises HTTPValidationError for a 422 (R-0207): a list of
@@ -444,6 +448,53 @@ describe('http client error messages', () => {
 
   it('falls back to the status when the list carries no msg', async () => {
     expect(await messageOf({ detail: [{ loc: ['body'] }] })).toBe('HTTP 422');
+  });
+
+  // R-0664: an error a client reacts to carries a stable code next to the text; the
+  // detail keeps the code as prefix for older clients, the message drops it.
+  const REVOKED_TEXT = 'This device certificate is no longer valid.';
+
+  it('takes the code and shows the detail without its prefix', async () => {
+    const err = await errorOf(
+      { detail: `ERR_CERT_REVOKED: ${REVOKED_TEXT}`, code: 'ERR_CERT_REVOKED' },
+      403,
+    );
+    expect(err.message).toBe(REVOKED_TEXT);
+    expect(err.code).toBe('ERR_CERT_REVOKED');
+    expect(err.status).toBe(403);
+  });
+
+  it('keeps the prefix when the server sends no code', async () => {
+    const err = await errorOf({ detail: `ERR_CERT_REVOKED: ${REVOKED_TEXT}` }, 403);
+    expect(err.message).toBe(`ERR_CERT_REVOKED: ${REVOKED_TEXT}`);
+    expect(err.code).toBeUndefined();
+  });
+
+  it.each([['err_x'], [42], [`ERR_${'A'.repeat(65)}`]])(
+    'ignores a code that is not of the form ERR_… (%s)',
+    async (code) => {
+      const detail = `${String(code)}: ${REVOKED_TEXT}`;
+      const err = await errorOf({ detail, code }, 403);
+      expect(err.code).toBeUndefined();
+      expect(err.message).toBe(detail);
+    },
+  );
+
+  it('leaves a detail without the prefix as it is', async () => {
+    const err = await errorOf({ detail: REVOKED_TEXT, code: 'ERR_CERT_REVOKED' }, 403);
+    expect(err.message).toBe(REVOKED_TEXT);
+    expect(err.code).toBe('ERR_CERT_REVOKED');
+  });
+
+  it('shows the msg texts of a 422 list that carries a code', async () => {
+    const body = {
+      detail: [
+        { loc: ['body', 'a'], msg: 'first', type: 'value_error' },
+        { loc: ['body', 'b'], msg: 'second', type: 'missing' },
+      ],
+      code: 'ERR_PROBE',
+    };
+    expect(await messageOf(body)).toBe('first; second');
   });
 });
 
