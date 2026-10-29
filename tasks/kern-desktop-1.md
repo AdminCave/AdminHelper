@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-1 · Review: pro Task
 Spec: docs/features/kern-desktop-1.md (Roadmap R-0876, R-0930, R-0932, R-0931, R-0870, R-0948)
 Heavy: linux-full — Desktop-Journeys: Sync, Client-Cache mit Geräte-Identität, RDP-Start, Geräte-Reset und Tunnel-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -76,8 +76,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.
 Doku: docs/admin/frp-tunnel.html + EN (Hinweis bei verweigertem Zugriff) · changelog.d/kern-desktop-1.md
 Abhängt von: T6
 
-### T8 — Entwickler-Doku: verweigerter Tunnel-Zugriff und `refused` (R-0948, Abschlussprüfung)  [ ]
+### T8 — Entwickler-Doku: verweigerter Tunnel-Zugriff und `refused` (R-0948, Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b92510bc 2026-10-29T19:26:17+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `docs/developer/desktop.html` (`:181` IPC-Tabelle, `:261` Abgleich) + EN: `refresh_tunnel` liefert auch `refused`; bei 403 stoppt der Abgleich frpc und meldet die Verweigerung einmal in der Statusleiste, bei 404 still wie bisher.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/desktop.html + EN
