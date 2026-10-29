@@ -57,13 +57,17 @@ const commandWaitDelay = 2 * time.Second
 // runTimed runs a command under timeout and ctx, whichever ends first. A call either ended returns the
 // context's error (context.DeadlineExceeded at the timeout or the deadline of ctx, context.Canceled
 // when ctx was canceled): exec itself reports it as the ExitError "signal: killed", which would pass a
-// hanging tool off as a failing one.
+// hanging tool off as a failing one. exec.ErrWaitDelay means the command exited 0 and only a child of
+// it held the pipe past commandWaitDelay: the command's output is complete, so it is no error.
 func runTimed(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = commandWaitDelay
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return out, nil
+	}
 	if err != nil && ctx.Err() != nil {
 		return out, ctx.Err()
 	}
