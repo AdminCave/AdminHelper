@@ -399,6 +399,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: das Fenster friert nicht mehr ein, solange der System-Schluesselbund oder die Sperre der Einstellungen
+  antwortet (R-0643):** Einstellungen laden und speichern, Passwort-Status, Passwort speichern und loeschen,
+  Geraete-Identitaet, CA-Fingerprint und das Zuruecksetzen des Zertifikat-Pins laufen nicht mehr auf dem Haupt-Thread.
 - **Desktop: eine halb geschriebene Ansible-Datei bleibt nicht im Temp-Verzeichnis (R-0574):** Scheitert das
   Schreiben von Inventory oder Playbook, nachdem die Datei angelegt ist, loescht der Client sie sofort.
 - **Desktop: eine Tunnel-Zuordnung mit einem Port ausserhalb von 1-65535 laesst die Tunnel-Liste nicht mehr

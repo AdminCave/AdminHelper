@@ -86,8 +86,10 @@ Dedup-Key: bug:desktop:ansible-temp-cleanup-order-test
 HEAD: b1432223
 Semantik: `docs/admin/ansible.html:67` — „Scheitert der Start (kein <code>ansible-playbook</code>, kein Terminal), löscht der Client beide sofort.“ Das Schreiben davor beschreibt die Doku nicht; Maßstab ist dieselbe Regel: was ein Lauf, der nicht startet, angelegt hat, geht.
 
-### T5 — Keyring- und Sperr-Commands auf einem Blocking-Thread (R-0643)  [ ]
+### T5 — Keyring- und Sperr-Commands auf einem Blocking-Thread (R-0643)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @08f8ac26 2026-10-29T06:36:24+01:00
+Review: approve (.ah-out/review/desktop-blocking/T5.verdict.json)
 Änderung: Neun Commands werden `pub async fn` und führen ihre Arbeit über `blocking(move || …)` (`commands.rs:541-553`) aus: `reset_server_cert_pin` (`:85-88`, `reset_server_cert_pin_in` bleibt synchron), `pinned_ca_fingerprint` (`:100-103`), `device_identity` (`:108-111`), `is_device_enrolled` (`:115-118`), `load_settings` (`:252-256`), `save_settings` (`:258-261`), `password_state` (`:397-400`), `save_password` (`:402-409`), `delete_password` (`:411-414`). `AppHandle` und Argumente wandern in die Closure (`storage::app_data_dir(&app)` dort oder davor). Name, Argumente und Erfolgsantwort bleiben; `pinned_ca_fingerprint` und `is_device_enrolled` geben `Result<…, AppError>` zurück (Spec, Datenmodell). Nicht `#[tauri::command(async)]` (Spec, Trade-off 1). Neuer Test in `commands.rs`, `commands_that_wait_run_on_a_blocking_thread`: liest `include_str!("commands.rs")` und prüft für jeden der neun, dass `#[tauri::command]\npub async fn <name>(` vorkommt und der Körper bis zum nächsten `\n}\n` `blocking(` enthält; ein Kommentar sagt das Warum (synchron = Main-Thread, das Fenster steht, solange Keyring oder Sperre warten). Zuerst rot auf HEAD (alle neun synchron).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- commands::
 Doku: CHANGELOG.md (Fixed: Desktop: das Fenster friert nicht mehr ein, solange der System-Schluesselbund oder die Sperre der Einstellungen antwortet (R-0643) — Einstellungen laden und speichern, Passwort-Status, Passwort speichern und loeschen, Geraete-Identitaet, CA-Fingerprint und das Zuruecksetzen des Zertifikat-Pins laufen nicht mehr auf dem Haupt-Thread)

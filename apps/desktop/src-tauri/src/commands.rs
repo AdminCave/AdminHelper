@@ -83,8 +83,12 @@ pub fn generate_diagnostics(app: tauri::AppHandle) -> Result<String, AppError> {
 /// workspace: only the server or sync source of this workspace
 /// ([`workspace::own_url`]), never that of another one.
 #[tauri::command]
-pub fn reset_server_cert_pin(app: tauri::AppHandle, server_url: String) -> Result<(), AppError> {
-    reset_server_cert_pin_in(&storage::app_data_dir(&app)?, &server_url)
+pub async fn reset_server_cert_pin(
+    app: tauri::AppHandle,
+    server_url: String,
+) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || reset_server_cert_pin_in(&base, &server_url)).await
 }
 
 /// [`reset_server_cert_pin`] in the app data dir `base`.
@@ -98,23 +102,23 @@ fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
 /// intermediate). The provisioning tab embeds it as the agent's `--ca-fp`, so
 /// the agent's first contact is verified instead of TOFU. None until enrolled.
 #[tauri::command]
-pub fn pinned_ca_fingerprint() -> Option<String> {
-    enrollment::pinned_ca_fingerprint()
+pub async fn pinned_ca_fingerprint() -> Result<Option<String>, AppError> {
+    blocking(|| Ok(enrollment::pinned_ca_fingerprint())).await
 }
 
 /// Name (CN) and expiry of this device's enrolled certificate, for the identity
 /// line in the settings. None until enrolled; an error when the stored
 /// certificate is unreadable — the UI then shows a fixed text, never the error.
 #[tauri::command]
-pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
-    enrollment::device_identity()
+pub async fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
+    blocking(enrollment::device_identity).await
 }
 
 /// Whether this device currently holds an enrolled mTLS identity. Drives the
 /// visibility of the "reset device identity" action in the settings UI.
 #[tauri::command]
-pub fn is_device_enrolled() -> bool {
-    enrollment::is_enrolled()
+pub async fn is_device_enrolled() -> Result<bool, AppError> {
+    blocking(|| Ok(enrollment::is_enrolled())).await
 }
 
 /// Reset this device's enrolled mTLS identity AND forget the TOFU pin for the
@@ -251,13 +255,13 @@ pub fn load_connections(app: tauri::AppHandle) -> Result<Vec<Connection>, AppErr
 
 /// What the webview reads is the base against which `save_settings` tells what it changed.
 #[tauri::command]
-pub fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
-    storage::load_settings_for_webview(&app)
+pub async fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
+    blocking(move || storage::load_settings_for_webview(&app)).await
 }
 
 #[tauri::command]
-pub fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), AppError> {
-    storage::save_settings(&app, &settings)
+pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), AppError> {
+    blocking(move || storage::save_settings(&app, &settings)).await
 }
 
 /// Loads the connections of the sync workspace of this process from the source it keeps
@@ -405,22 +409,27 @@ pub async fn open_connection_stored(
 }
 
 #[tauri::command]
-pub fn password_state(connection: Connection) -> Result<PasswordState, AppError> {
-    password::password_state(&connection)
+pub async fn password_state(connection: Connection) -> Result<PasswordState, AppError> {
+    blocking(move || password::password_state(&connection)).await
 }
 
 #[tauri::command]
-pub fn save_password(
+pub async fn save_password(
     app: tauri::AppHandle,
     connection: Connection,
     password: String,
 ) -> Result<(), AppError> {
-    password::save_password(&storage::app_data_dir(&app)?, &connection, &password)
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || password::save_password(&base, &connection, &password)).await
 }
 
 #[tauri::command]
-pub fn delete_password(app: tauri::AppHandle, connection: Connection) -> Result<(), AppError> {
-    password::delete_password(&storage::app_data_dir(&app)?, &connection)
+pub async fn delete_password(
+    app: tauri::AppHandle,
+    connection: Connection,
+) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || password::delete_password(&base, &connection)).await
 }
 
 /// Signs in at the server of this workspace, as a user no other workspace signs in to it as
@@ -1768,6 +1777,33 @@ mod tests {
                 "this sync workspace has no sync URL yet",
                 "no source",
             );
+        }
+    }
+
+    /// A synchronous command runs on the main thread: the window stands still while the
+    /// keyring or the settings lock keeps it waiting. These wait on either, so each is async
+    /// and does its work through `blocking`.
+    #[test]
+    fn commands_that_wait_run_on_a_blocking_thread() {
+        let source = include_str!("commands.rs");
+        for name in [
+            "reset_server_cert_pin",
+            "pinned_ca_fingerprint",
+            "device_identity",
+            "is_device_enrolled",
+            "load_settings",
+            "save_settings",
+            "password_state",
+            "save_password",
+            "delete_password",
+        ] {
+            let head = format!("#[tauri::command]\npub async fn {name}(");
+            let start = source
+                .find(&head)
+                .unwrap_or_else(|| panic!("{name} is not an async command"));
+            let body = &source[start..];
+            let body = &body[..body.find("\n}\n").expect("end of the command")];
+            assert!(body.contains("blocking("), "{name} does not use blocking");
         }
     }
 }
