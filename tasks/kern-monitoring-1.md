@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-1 · Review: pro Task
 Spec: docs/features/kern-monitoring-1.md (Roadmap R-0921, R-0826, R-0828, R-0917)
 Heavy: none — nur apps/monitoring (HTTP-Check, interne Alert-Route, Template-Abgleich), hermetische pytest-Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,5 +51,12 @@ Beweis: security-Review monitoring-hardening-2 T9 2026-10-28 · template_sync.py
 Dedup-Key: bug:monitoring:template_sync:substitute_variables
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py
 Doku: changelog.d/kern-monitoring-1.md
+
+### T5 — Admin-Doku: Maske beim Anlegen einer Regel (R-0828, Fund der Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-monitoring-1.md
+Änderung: Die Zeile zum Kanal `email` (`docs/admin/monitoring.html:340` + EN) nennt, dass `POST /alerts` ein `smtp_password` `***` beim Anlegen mit 422 ablehnt; der Doku-Impact der Spec (`docs/features/kern-monitoring-1.md:69-71`) wird richtiggestellt.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/admin/monitoring.html:340 + EN
+Task-Review: am Ende
 
 ## Entscheidungen
