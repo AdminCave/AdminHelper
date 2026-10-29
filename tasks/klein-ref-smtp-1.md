@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-smtp-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-ref-smtp-1 · Review: am Ende
+Status: erledigt · Branch: feature/klein-ref-smtp-1 · Review: am Ende
 Spec: docs/features/klein-ref-smtp-1.md (Roadmap R-0831)
 Heavy: none — Unit-Tests in Server und Monitoring, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
