@@ -68,8 +68,10 @@ Verify: bash scripts/dev/verify.sh web --strict
 Doku: CHANGELOG.md (Unreleased, umlautfrei)
 Dedup-Key: ref:web:dictionaries.ts:cron-hint-utc
 
-### T7 — Desktop-UI: `shell.ts`-Kommentar zu fish und `%` (R-0874)  [ ]
+### T7 — Desktop-UI: `shell.ts`-Kommentar zu fish und `%` (R-0874)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/shell.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @43fa209c 2026-10-29T13:25:32+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T7.verdict.json)
 Änderung: Der Kopfkommentar (`:10-13`) verspricht, fish lese jeden Wert unverändert; `%` gilt aber als sicher und `%self` wird in fish zur PID (kein Aufrufer erzeugt so einen Wert). Kommentar an den Stand, fish-Doku zu Variablen und `%self` vorher lesen. Nur Kommentar.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (nur Kommentar)
