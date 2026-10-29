@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung 3: Ansible-Laufverzeichnis, Playbook-Name, Sync-Doku, Pin-Reset, Provisionierungsbefehl — Task-Ledger
-Status: aktiv · Branch: feature/desktop-hardening-3 · Review: pro Task
+Status: bereit · Branch: feature/desktop-hardening-3 · Review: pro Task
 Spec: docs/features/desktop-hardening-3.md (Roadmap R-0748, R-0771, R-0817; Härtung, Kevin 2026-10-22)
 Heavy: linux-full + windows — linux-full: T7 und T9 ändern den Provisionierungs-Tab, den `provisioning.live.js` zeigt, T5 den Pin-Reset in Login und Einstellungen, T1 den Ansible-Lauf (GUI-E2E im Sammellauf über `main`); windows = der Job `rust-windows` der PR-CI (keine Windows-VM im Pool): T1 legt das Laufverzeichnis unter `%TEMP%` an, T2 ändert den Namen, der an `wt`/`cmd` geht, T5 und T6 ändern `tofu.rs`; kein `scenario` (kein FRP-Datenpfad, keine PKI, `enrollment.rs` unverändert, kein Install-Skript)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -127,7 +127,9 @@ Doku: CHANGELOG.md (Fixed, umlautfrei: Desktop, Provisionierungs-Tab: ein Backsl
 Beweis: Code-Lesung apps/desktop/ui/src/lib/utils/shell.ts (`value.replace(/'/g, …)`, kein Fall für `\`) gegen die fish-Doku (Escapes `\\` und `\'` in einfachen Quotes)
 HEAD: cea7fb9b
 
-### T9 — Provisionierung: Einzeiler ohne Token, das Skript fragt ihn ab  [ ]
+### T9 — Provisionierung: Einzeiler ohne Token, das Skript fragt ihn ab  [x]
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @831e2a30 2026-10-29T08:55:53+01:00
+Review: approve (.ah-out/review/desktop-hardening-3/T9.verdict.json)
 Entscheidung: Kevin 2026-10-23: Variante A, Einzeiler ohne Token, agent-install.sh fragt verdeckt über /dev/tty ab; „Nur provisionieren“ bleibt vorerst mit --token (eigene Roadmap-Zeile).
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, CHANGELOG.md
 Änderung: Variante A der Spec (Trade-off 6). `scriptCommand` (`ProvisioningTab.svelte:94-99`) ohne die Zeile `--token` (`:98`); `scripts/agent-install.sh` fragt den Token ohne `--token` verdeckt über `/dev/tty` ab (`:32-33`, `:306-316`), unverändert. Unter dem Einzeiler zeigt ein neuer Kasten (`data-testid="prov-token"`) den Token mit Kopierknopf (`copyText`, `:117`) und dem Hinweis `infra.prov.tokenPrompt` (neu, DE+EN: das Skript fragt beim Ausführen nach dem Token, Eingabe verdeckt); er verschwindet mit den Befehlen (`scheduleHide`, `:42-49`). Der Befehl „Nur provisionieren“ (`:104-108`) bleibt mit `--token`. Tests, zuerst rot: (a) `script-command` enthält den Token nicht und kein `--token`; (b) `prov-token` zeigt genau den Token, der Knopf kopiert genau ihn; (c) ein Token ohne gültige Form (T7) zeigt auch keinen Token-Kasten; (d) nach dem Ausblenden (Fake-Timer, 60 s) ist der Kasten weg. Die Prüfung `:73` (`toContain('--token tok-123')`) kehrt sich um; `:151` (Nur-provisionieren-Befehl) bleibt.
@@ -136,3 +138,6 @@ Doku: docs/admin/agent-deployment.html + docs/en/admin/agent-deployment.html (`:
 Abhängt von: T7; ops-install-hardening gemergt
 Beweis: Code-Lesung apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte:94-99 (Token im Einzeiler) gegen scripts/agent-install.sh:32-33 und :306-316 (Abfrage ohne `--token`)
 HEAD: cea7fb9b
+
+## Entscheidungen
+- 2026-10-29 T9: der Kopierknopf des Token-Kastens meldet `infra.prov.tokenCopied` (neu, DE+EN) statt "Befehl kopiert"; `copyText` nimmt den Meldungsschlüssel als zweiten Parameter. Merge origin/main (831e2a30): `ansible.rs` behält das Laufverzeichnis aus T1, `write_new_temp` und seine zwei Tests aus desktop-blocking T4 entfallen (das Laufverzeichnis samt halber Datei geht bei jedem Fehler, Test `run_removes_its_directory_when_the_playbook_cannot_be_written`); `tofu.rs`: `KeyringPinStore::forget` gibt den Löschfehler zurück, `forget_pin_with` setzt den Lösch-Hook in den Store, R-0748 bleibt unter der Identitätssperre aus desktop-blocking T9.

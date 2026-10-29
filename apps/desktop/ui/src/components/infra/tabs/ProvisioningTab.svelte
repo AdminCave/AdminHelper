@@ -30,6 +30,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let loading = $state(false);
   let scriptCommand = $state('');
   let command = $state('');
+  // Shown beside the one-liner, which carries no token: agent-install.sh asks
+  // for it on /dev/tty, so it stays out of shell history and the process list.
+  let token = $state('');
   // The desktop's pinned CA fingerprint (access intermediate): handed to the
   // agent as --ca-fp so its first contact is VERIFIED instead of TOFU. The
   // desktop is the trusted courier here — it talks to the server over its own
@@ -37,14 +40,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // trust-on-first-use gap. Null while this device is not enrolled.
   let caFp = $state<string | null>(null);
 
-  // The commands embed a one-time token that's redeemable until it expires, so
-  // don't leave them on screen indefinitely — auto-hide (3.64).
+  // The token (and the provision-only command that embeds it) is redeemable until
+  // it expires, so don't leave it on screen indefinitely — auto-hide (3.64).
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleHide(ms: number): void {
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
       scriptCommand = '';
       command = '';
+      token = '';
       hideTimer = null;
     }, ms);
   }
@@ -83,6 +87,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       ) {
         scriptCommand = '';
         command = '';
+        token = '';
         reportError($t('infra.prov.badResponse'));
         await loadTokens();
         return;
@@ -96,8 +101,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
         `curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \\\n` +
         `  | sudo bash -s -- \\\n` +
         `  --server ${shellQuote(s.serverUrl)} \\\n` +
-        `  --token ${shellQuote(result.token)} \\\n` +
         `  --server-id ${shellQuote(server.id)}${fpArg}`;
+      token = result.token;
       // Provision-only variant for hosts that already carry the package.
       // --ca-fp supersedes --insecure; without an enrolled identity fall back
       // to the previous TOFU behaviour (only when the user opted in).
@@ -115,12 +120,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  async function copyText(text: string): Promise<void> {
+  async function copyText(
+    text: string,
+    copied = 'infra.prov.commandCopied',
+    secret = true,
+  ): Promise<void> {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      showStatus($t('infra.prov.commandCopied'));
-      scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
+      showStatus($t(copied));
+      // The one-liner carries no secret, and the script asks for the token only
+      // after the package install: copying it must leave the token on screen.
+      if (secret) scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
     } catch {
       reportError($t('infra.prov.copyError'));
     }
@@ -169,11 +180,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div class="cmd-box" data-testid="script-command">
       <div class="cmd-head">
         <strong>{$t('infra.prov.installScript')}</strong>
-        <button class="btn small" onclick={() => copyText(scriptCommand)}>
+        <button
+          class="btn small"
+          onclick={() => copyText(scriptCommand, 'infra.prov.commandCopied', false)}
+        >
           {$t('action.copy')}
         </button>
       </div>
       <pre>{scriptCommand}</pre>
+    </div>
+  {/if}
+
+  {#if token}
+    <div class="cmd-box" data-testid="prov-token">
+      <div class="cmd-head">
+        <span class="prov-token-hint">{$t('infra.prov.tokenPrompt')}</span>
+        <button class="btn small" onclick={() => copyText(token, 'infra.prov.tokenCopied')}>
+          {$t('action.copy')}
+        </button>
+      </div>
+      <code>{token}</code>
     </div>
   {/if}
 
@@ -258,6 +284,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--sp-2);
+  }
+  .prov-token-hint {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .cmd-box code {
+    font-size: var(--text-xs);
+    word-break: break-all;
   }
   .cmd-box pre {
     margin: 0;
