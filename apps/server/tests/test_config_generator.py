@@ -10,8 +10,6 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
@@ -424,14 +422,6 @@ class TestStcpWithoutVisitorPort:
 class TestRefusedExtraConfigWarning:
     # R-0895: the sync and the hash poll run the filter every few seconds, so a stored row the
     # API would refuse warned at each run. It warns once per tunnel and key set.
-    @pytest.fixture(autouse=True)
-    def _fresh_warnings(self):
-        from app.modules.frp import config_generator
-
-        config_generator._refused_warned.clear()
-        yield
-        config_generator._refused_warned.clear()
-
     @staticmethod
     def _warnings(caplog):
         return [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]

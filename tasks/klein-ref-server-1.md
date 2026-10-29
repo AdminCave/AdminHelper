@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-server-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-server-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-ref-server-1 · Review: pro Task
 Spec: docs/features/klein-ref-server-1.md (Roadmap R-0838, R-0895, R-0906, R-0940, R-0941)
 Heavy: none — Log-Formatierung, OpenAPI-Beschreibung und Doku im Server, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -50,8 +50,10 @@ Dedup-Key: ref:server:hooks:trigger-openapi-errors
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py tests/test_hooks.py
 Doku: changelog.d/klein-ref-server-1.md
 
-### T5 — Test-Isolation der FRP-Warnung (Folge aus T3, R-0895)  [ ]
+### T5 — Test-Isolation der FRP-Warnung (Folge aus T3, R-0895)  [x]
 Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_config_generator.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9779b25a 2026-10-29T19:03:06+01:00
+Review: approve (.ah-out/review/klein-ref-server-1/T5.verdict.json)
 Änderung: Die PR-CI zeigte vier rote Tests in `test_frp_input_hardening.py`: die Warnung kommt jetzt einmal je Prozess, die Tests erwarten sie je Test. Der Reset von `_refused_warned` wandert als autouse-Fixture in die `conftest.py` (wie das Rate-Limit-Backend) und gilt für alle Tests; der lokale Fixture in `test_config_generator.py` entfällt.
 Beweis: PR #312, Lauf 40923264643, Job "Server (pytest, image lock)": 4 failed in tests/test_frp_input_hardening.py
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_input_hardening.py tests/test_frp_config.py
