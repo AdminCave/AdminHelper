@@ -304,8 +304,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   postgres und victoria 8 GiB, server 6 GiB, monitoring 4 GiB, scheduler und frps 2 GiB, gateway 1 GiB, ca-issuer und
   redis 512 MiB. Die Grenzen liegen weit ueber dem Bedarf im Leerlauf und reservieren keinen Speicher; ist eine
   erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in
-  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics richtet seine Caches nach
-  seiner Grenze aus (60 Prozent davon) statt nach dem Arbeitsspeicher des Hosts. Eine Grenze hebt man per
+  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics legt seine Caches auf 60
+  Prozent des Speichers aus, den es sieht: liegt die Grenze unter dem Arbeitsspeicher des Hosts, sind es 60 Prozent
+  der Grenze, sonst 60 Prozent des Arbeitsspeichers. Eine Grenze hebt man per
   `docker-compose.override.yml` an. Doku: Betrieb (DE+EN).
 - **Compose: Gateway nur mit den Capabilities, die nginx braucht:** Der Dienst gateway laeuft mit `cap_drop: [ALL]`
   und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker

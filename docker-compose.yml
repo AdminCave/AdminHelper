@@ -104,8 +104,8 @@ services:
       # IP-Zugangsbeschränkung (leer = kein Filter)
       # Beispiel: ALLOWED_IPS=192.168.1.0/24,10.0.0.5
       - ALLOWED_IPS=${ALLOWED_IPS:-}
-      # Auf true setzen wenn hinter Reverse-Proxy (X-Forwarded-For auswerten)
-      # Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
+      # Wirkt in Compose nicht: TRUSTED_PROXIES ist hier immer gesetzt (siehe unten) und
+      # hat Vorrang. Ausserhalb von Compose: true = X-Forwarded-For von jeder Gegenstelle.
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
       # The gateway service is always trusted, by its name (the server resolves it every 30 s):
       # the server takes the client address from the X-Forwarded-For the gateway sets.
@@ -533,7 +533,8 @@ services:
       - no-new-privileges:true
     # Threads: one Go process whose threads grow with the cores and the queries under way.
     pids_limit: 1024
-    # Memory: VictoriaMetrics sizes its caches to 60% of this limit, not of the host's memory.
+    # Memory: VictoriaMetrics sizes its caches to 60% of the memory it sees: of this limit when it is
+    # below the host's RAM, otherwise of the RAM.
     mem_limit: 8g
 
   # Optionaler Postgres-Backup-Container.

@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/installation.html, docs/en/admin/installation.html, README.md
 Dedup-Key: bug:docs:installation.html:permissive
 
-### T3 — Betrieb und Troubleshooting zu Compose-Härtung (R-0898)  [ ]
-Komponente: scripts · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docker-compose.yml
+### T3 — Betrieb und Troubleshooting zu Compose-Härtung (R-0898)  [x]
+Komponente: scripts · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docker-compose.yml, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @84b49de4 2026-10-29T13:01:58+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T3.verdict.json)
 Änderung: (1) `troubleshooting.html` (EN `:58-59`, DE gegenlesen): die Logzeile „untrusted proxy“ gibt es nicht; die tatsächliche Warnung aus `identity.py` bzw. der Proxy-Auswertung nennen. (2) `docker-compose.yml:104-105` alter `TRUST_PROXY_HEADERS`-Kommentar an `.env.example` angleichen. (3) `benutzer.html:137` / `users.html:131`: das Docker-Netz gehört nicht in `ALLOWED_IPS`. (4) `betrieb.html` (Override-Beispiel um `:186-195`): `deploy.resources.limits.memory` bricht Compose ab, richtig `mem_limit`. (5) VictoriaMetrics „60 % der Grenze“ (`docker-compose.yml:533`, `betrieb.html`, `operations.html`, CHANGELOG): nur wenn die Grenze unter dem Host-RAM liegt. (6) „Compose v2.6+“ (`installation.html:84`) in der offiziellen Compose-Doku verifizieren (WebFetch), sonst „nicht verifiziert“ in der Zeile melden.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien DE+EN, CHANGELOG
@@ -73,3 +75,8 @@ Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs, apps/
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: CHANGELOG.md
 Dedup-Key: ref:desktop:launcher.rs:stale-threading-comment
+
+## Entscheidungen
+- 2026-10-29 T3: `benutzer.html`/`users.html` (Docker-Netz nicht in `ALLOWED_IPS`) und das `mem_limit`-Override in `betrieb.html`/`operations.html` waren schon richtig, nichts geändert — Beleg: `benutzer.html` „nicht das Docker-Netz des Gateways“, Override-Beispiel mit `mem_limit: 8g`.
+- 2026-10-29 T3: „Compose v2.6+“ (`installation.html:84`) bleibt unverändert und **nicht verifiziert**: die v2.6.0-Release-Notes nennen keines der genutzten Felder (`sysctls`, `pids_limit`, `mem_limit`, `cap_drop`, `depends_on`-`condition`); welches Feature die Untergrenze trägt, ist offen. Melden an Kevin.
+- 2026-10-29 T3: VictoriaMetrics „60 % der Grenze nur bei Grenze < Host-RAM“: die Flag-Doku (`-memory.allowedPercent`, Default 60) sagt nur „system memory“; dass VictoriaMetrics die cgroup-Grenze erkennt, steht dort nicht — die Formulierung folgt der Roadmap-Zeile, in der Doku des Projekts nicht belegt.
