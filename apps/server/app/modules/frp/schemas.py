@@ -56,7 +56,23 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
 # The generator emits extra_config keys unquoted (`{key} = ...`), so they must
 # be TOML bare keys (dotted keys allowed). Anything else would break — or worse,
 # extend — the generated config.
-_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_.-]+")
+# A bare or dotted key of segments [A-Za-z0-9_-]+, as the agent takes them (serverKey in
+# apps/agent/internal/frpc/servertoml.go); an empty segment (".a", "a.", "a..b") is no TOML key.
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*")
+
+# TOML integers are 64 bits; a Python int has no limit.
+_TOML_INT_MIN, _TOML_INT_MAX = -(2**63), 2**63 - 1
+
+# The keys the generator writes into each [[proxies]] table (generate_frpc_toml).
+_GENERATOR_PROXY_KEYS = (
+    "name",
+    "type",
+    "localIP",
+    "localPort",
+    "secretKey",
+    "allowUsers",
+    "customDomains",
+)
 
 
 def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
@@ -78,6 +94,9 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
             _reject_toml_breakers(value)
         elif not isinstance(value, (bool, int, float)):
             raise ValueError(f"extra_config-Wert für '{key}' muss str, bool, int oder float sein")
+        elif isinstance(value, int) and not isinstance(value, bool):
+            if not _TOML_INT_MIN <= value <= _TOML_INT_MAX:
+                raise ValueError(f"extra_config value for '{key}' is no 64-bit integer")
     return v
 
 
@@ -99,6 +118,25 @@ def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
                 f"extra_config key '{key}' belongs to the plugin family; "
                 "a tunnel sets up no proxy plugin"
             )
+    # The agent refuses a proxy whose key paths repeat or nest, compared in lower case (frp
+    # maps fields without regard to case): with the generator's keys and with each other.
+    taken: dict[str, str] = {k.lower(): k for k in _GENERATOR_PROXY_KEYS}
+    for key in v or {}:
+        path = key.lower()
+        clash = taken.get(path) or next(
+            (
+                other
+                for seen, other in taken.items()
+                if path.startswith(seen + ".") or seen.startswith(path + ".")
+            ),
+            None,
+        )
+        if clash is not None:
+            raise ValueError(
+                f"extra_config key '{key}' clashes with '{clash}' (keys of a proxy are compared "
+                "without regard to case, and none may be a prefix of another)"
+            )
+        taken[path] = key
     return v
 
 
