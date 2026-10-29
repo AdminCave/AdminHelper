@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Postgres: eine Rolle je Dienst statt des gemeinsamen Superusers — Task-Ledger
-Status: bereit · Branch: feature/db-roles · Review: pro Task
+Status: aktiv · Branch: feature/db-roles · Review: pro Task
 Spec: docs/features/db-roles.md
 Heavy: linux-full — `docker-compose.yml`, Server-Entrypoint, alle Dienste mit Postgres; der Sammellauf fährt `integration_stack` und `upgrade_path_test.sh` (letztes Release mit Bestandsdaten → dieser Stand). `scenario --agents 1` vor dem Merge (Agent-Report über monitoring mit neuer Rolle; Kevin fragen). Kein `windows`. PR merged Kevin (Datenmigration, `update.sh`-Pfad über `init-secrets.sh`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -68,6 +68,12 @@ Review: approve (.ah-out/review/db-roles/T7.verdict.json)
 Änderung: Fund der Abschlussprüfung (blocker): Phase 2 startete das Release mit der `docker-compose.yml` dieses Stands; deren `db-init` braucht `app.db_roles`, das die Release-Images nicht haben, und die Dienste meldeten sich mit Rollen an, die das Release nie anlegt. Phase 2 lädt jetzt die `docker-compose.yml` des Release-Tags (raw.githubusercontent, sonst `git show <tag>:docker-compose.yml`, sonst SKIP 75) und startet sie mit `--project-directory` des Checkouts und dem bisherigen Overlay; erst Phase 3 (`e2e_up` auf HEAD) fährt `db-init` und die Rollen über den Daten des Releases. Beweis: echter Lauf von `upgrade_path_test.sh` lokal (Docker), Summary ins Commit.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testdatei)
+
+### T8 — Doku: die Monitoring-Datenbank legt `db-init` an, CHANGELOG-Eintrag als Fragment  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md, CHANGELOG.md, changelog.d/db-roles.md
+Änderung: Funde der Abschlussprüfung (wichtig): `DEVELOPMENT.md` sagt noch, nur der Entrypoint des Monitoring-Containers lege `adminhelper_monitor` an; das tut jetzt `db-init` (`python -m app.db_roles setup`). Der Eintrag „Compose: eine Postgres-Rolle je Dienst“ wandert unverändert aus `CHANGELOG.md` nach `changelog.d/db-roles.md` (`### Changed`), wie seit dem Basis-Merge vorgeschrieben.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die Dateien dieser Task
 
 ## Entscheidungen
 - 2026-10-29 Übergabe: Entwurf der T4-Doku liegt als `.ah-out/t4-draft.patch` im Worktree (vor T5 geschrieben; die Sätze zu Backup/Restore „als Superuser“ nach T5 auf die Dienst-Rollen umstellen). Nächste Task: T5.
