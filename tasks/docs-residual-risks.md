@@ -38,8 +38,10 @@ Für alle Tasks:
 - Öffentliches Repo: keine Homelab-Namen, keine echten Adressen (nur RFC 5737), keine Sicherheitsfunde über das
   hinaus, was die Spec nennt.
 
-### T1 — Monitoring-Entwicklerseite: Stapelverlust bei Antworten unter 500 als hingenommenes Restrisiko (R-0798)  [ ]
+### T1 — Monitoring-Entwicklerseite: Stapelverlust bei Antworten unter 500 als hingenommenes Restrisiko (R-0798)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ec21fca9 2026-10-29T09:42:08+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T1.verdict.json)
 Änderung: Im Absatz zum Schreibweg (nach #265 `docs/developer/monitoring.html:263`, EN `:263`) hinter dem Satz zur 4xx-Antwort ein Satz, DE und EN gleich: Ein Stapel trägt die Zeilen aller Checks und Agent-Reports, die seit dem letzten POST anfielen, also auch die anderer Server; lehnt VictoriaMetrics ihn wegen einer einzigen ungültigen Zeile ab, sind bis zu 10&nbsp;000 Zeilen verloren, darunter fremde. Dasselbe gilt für jede andere Antwort unter 500, die nicht 2xx ist, auch eine Weiterleitung (3xx; der Client folgt ihr nicht). Das ist ein hingenommenes Restrisiko (Kevin 2026-10-22); die WARNING-Zeile von `monitor.victoria` nennt Status und Zahl der verlorenen Zeilen. Kein Satz zu einem Verhalten von VictoriaMetrics, das die Spec nicht belegt (Spec, Externe Integrationen: der Normalmodus verwirft den ganzen Body laut Probe, die Doku schweigt; ob VictoriaMetrics selbst 3xx sendet, ist nicht verifiziert). Werte am Code nach #265 neu greppen: `_MAX_BATCH_LINES` (`apps/monitoring/app/core/victoria.py:22`), `batch = self._pending[:_MAX_BATCH_LINES]` (`:181`), `resp.is_success` (`:203`), `if resp.status_code < 500:` (`:205`), Log-Text (`:207`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG (Kevin: hinnehmen, kein Code)
