@@ -290,3 +290,32 @@ def test_setup_stops_before_any_change_without_every_password(as_superuser, monk
     monkeypatch.delenv("CA_DB_PASSWORD")
     with pytest.raises(SystemExit, match="CA_DB_PASSWORD"):
         db_roles.setup()
+
+
+def test_a_failed_setup_names_no_password():
+    # libpq quotes parts of the conninfo in its errors; the command prints the type only.
+    # A password of its own as the probe, checked without printing the values.
+    import os
+    import secrets
+    import sys
+
+    sentinel = secrets.token_hex(16)
+    env = {
+        **os.environ,
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "1",
+        "PGUSER": SUPERUSER,
+        "PGPASSWORD": sentinel,
+        **{var: sentinel for var in PASSWORDS},
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "app.db_roles", "setup"],
+        env=env,
+        capture_output=True,
+        text=True,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
+    leaked = sentinel in result.stdout + result.stderr
+    assert not leaked, "the output of the failed setup names a password"
+    assert result.returncode == 1, result.stderr
+    assert "OperationalError" in result.stderr

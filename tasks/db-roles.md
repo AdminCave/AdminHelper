@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/db-roles/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py
 Doku: → T4
 
-### T2 — Compose, Secrets und Monitoring auf die neuen Rollen  [ ]
+### T2 — Compose, Secrets und Monitoring auf die neuen Rollen  [x]
 Komponente: scripts · Dateien: docker-compose.yml, scripts/init-secrets.sh, apps/monitoring/docker-entrypoint.sh, .env.example, scripts/tests/init-secrets_test.sh, apps/server/tests/test_env_parity.py, apps/server/tests/test_images_exec_only.py, apps/server/tests/test_db_roles.py, docker-compose.test.yml, scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, Dockerfile, apps/ca-issuer/Dockerfile, apps/monitoring/Dockerfile
+Evidenz: run.sh[quick] server scripts: 10 passed, 0 failed, 8 skipped @89f99088 2026-10-29T07:56:28+01:00
+Review: approve (.ah-out/review/db-roles/T2.verdict.json)
 Änderung: Neuer Dienst `db-init` (Server-Image, `command: python -m app.db_roles setup`, `restart: "no"`, Superuser-Variablen nur hier und in `postgres`); `server`, `scheduler`, `ca-issuer`, `monitoring` hängen mit `service_completed_successfully` an ihm und verbinden sich mit ihrer Rolle (`DATABASE_URL`, `PGUSER`); `monitoring` legt seine DB nicht mehr selbst an (Block `apps/monitoring/docker-entrypoint.sh:28-45` entfällt, `PGPASSWORD` des Superusers fällt weg). `init-secrets.sh` erzeugt die vier Passwörter, auch für eine bestehende `.env` (fehlt eins → ergänzen, gesetzt → bleibt). Tests: `init-secrets_test.sh` (frisch und Bestand: vier neue Werte, vorhandene unverändert); `test_env_parity.py` (jede neue Variable gesetzt, kein Dienst außer `postgres`/`db-init` bekommt `POSTGRES_PASSWORD`).
 Verify: bash scripts/dev/verify.sh server scripts --strict
 Doku: → T4

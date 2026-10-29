@@ -90,6 +90,10 @@ same() {
 cat > "$tmp/.env" <<'EOF'
 SECRET_KEY=topsecret123value
 POSTGRES_PASSWORD=pgpw456word
+SERVER_DB_PASSWORD=srvrole111pw
+SCHEDULER_DB_PASSWORD=schedrole222pw
+MONITOR_DB_PASSWORD=monrole333pw
+CA_DB_PASSWORD=carole444pw
 MONITOR_API_KEY=mon789key
 SMTP_PASSWORD=smtprelay999pw
 ADMIN_PASSWORD=
@@ -100,6 +104,7 @@ sedfile="$tmp/redact.sed"
 build_redaction_sedfile "$tmp/.env" "$sedfile"
 
 input='SECRET_KEY=topsecret123value pw=pgpw456word mon=mon789key smtp=smtprelay999pw host=example.com'
+input="$input roles=srvrole111pw,schedrole222pw,monrole333pw,carole444pw"
 input="$input Authorization: Bearer abcdefgh12345"
 input="$input jwt eyJhbGciOi.eyJzdWIiOiJ.sigpart"
 out="$(printf '%s\n' "$input" | redact "$sedfile")"
@@ -112,7 +117,7 @@ big="$(printf 'first\n'; head -c 300000 /dev/zero | tr '\0' x)"
 has '^first$' "$big" || { echo "has() missed a match in front of a large text" >&2; fail=1; }
 
 # Secret values must be gone.
-for leak in topsecret123value pgpw456word mon789key smtprelay999pw; do
+for leak in topsecret123value pgpw456word mon789key smtprelay999pw srvrole111pw schedrole222pw monrole333pw carole444pw; do
     if has "$leak" "$out"; then
         echo "LEAK: secret '$leak' survived redaction" >&2
         fail=1

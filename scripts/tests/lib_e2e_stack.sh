@@ -230,6 +230,10 @@ e2e_init() {
 DOMAIN=localhost
 SECRET_KEY=$(e2e_rand)$(e2e_rand)
 POSTGRES_PASSWORD=$pg_pw
+SERVER_DB_PASSWORD=$(e2e_rand)
+SCHEDULER_DB_PASSWORD=$(e2e_rand)
+MONITOR_DB_PASSWORD=$(e2e_rand)
+CA_DB_PASSWORD=$(e2e_rand)
 CA_ROOT_PASSPHRASE=$(e2e_rand)
 MONITOR_API_KEY=$(e2e_rand)
 ADMIN_PASSWORD=$E2E_ADMIN_PW

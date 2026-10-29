@@ -155,8 +155,8 @@ else
   for how in latin1 nul; do
     ENV="$WORK/env-$how"
     case $how in
-      latin1) printf 'MONITOR_API_KEY=m\nPOSTGRES_PASSWORD=gr\374n\n# Zug\344nge\nCA_ROOT_PASSPHRASE=c\n' > "$ENV.keep" ;;
-      nul)    printf 'MONITOR_API_KEY=m\nX=a\0b\nPOSTGRES_PASSWORD=p\nCA_ROOT_PASSPHRASE=c\n' > "$ENV.keep" ;;
+      latin1) printf 'MONITOR_API_KEY=m\nPOSTGRES_PASSWORD=gr\374n\n# Zug\344nge\nCA_ROOT_PASSPHRASE=c\nSERVER_DB_PASSWORD=s\nSCHEDULER_DB_PASSWORD=s\nMONITOR_DB_PASSWORD=s\nCA_DB_PASSWORD=s\n' > "$ENV.keep" ;;
+      nul)    printf 'MONITOR_API_KEY=m\nX=a\0b\nPOSTGRES_PASSWORD=p\nCA_ROOT_PASSPHRASE=c\nSERVER_DB_PASSWORD=s\nSCHEDULER_DB_PASSWORD=s\nMONITOR_DB_PASSWORD=s\nCA_DB_PASSWORD=s\n' > "$ENV.keep" ;;
     esac
     { printf 'SECRET_KEY=\n'; cat "$ENV.keep"; } > "$ENV"
     out=$(LC_ALL=C.UTF-8 bash "$INIT" "$ENV" 2>&1); rc=$?
@@ -199,7 +199,8 @@ else
     return "${PIPESTATUS[0]}"
   }
   ENV="$WORK/env-ro"
-  printf '%s\n' MONITOR_API_KEY=m POSTGRES_PASSWORD=p CA_ROOT_PASSPHRASE=c > "$ENV.keep"
+  printf '%s\n' MONITOR_API_KEY=m POSTGRES_PASSWORD=p CA_ROOT_PASSPHRASE=c SERVER_DB_PASSWORD=s \
+    SCHEDULER_DB_PASSWORD=s MONITOR_DB_PASSWORD=s CA_DB_PASSWORD=s > "$ENV.keep"
   { printf 'SECRET_KEY=\n'; cat "$ENV.keep"; } > "$ENV"; chmod 444 "$ENV"
   out=$(on_tty "$WORK" bash "$INIT" "$ENV" 2>&1); rc=$?
   [ $rc -eq 0 ] && ok "read-only .env on a terminal: exit 0, no question" \
@@ -212,6 +213,28 @@ else
   [ "$(stat -c %a "$ENV")" = 600 ] && ok "read-only .env on a terminal: mode 600 afterwards" \
     || bad "read-only .env on a terminal: mode $(stat -c %a "$ENV")"
 fi
+
+# ── 9. the Postgres role passwords: fresh, and added to an existing .env ─────
+# db-init sets each service role's password from these on every start, so an update
+# fills in the missing ones and leaves every set secret as it was.
+ROLE_KEYS="SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD"
+ENV="$WORK/env9"
+printf 'SECRET_KEY=\nMONITOR_API_KEY=\nPOSTGRES_PASSWORD=\nCA_ROOT_PASSPHRASE=\n' > "$ENV"
+bash "$INIT" "$ENV" >/dev/null 2>&1
+rolegen=1
+for k in $ROLE_KEYS; do v=$(val "$k" "$ENV"); [ "${#v}" -eq 64 ] || rolegen=0; done
+[ "$rolegen" = 1 ] && ok "fresh: the four role passwords generated (64-hex)" || bad "fresh: role passwords missing"
+ENV="$WORK/env9b"
+printf '%s\n' SECRET_KEY=s1 MONITOR_API_KEY=m1 POSTGRES_PASSWORD=p1 CA_ROOT_PASSPHRASE= SERVER_DB_PASSWORD=keep > "$ENV"
+bash "$INIT" "$ENV" >/dev/null 2>&1
+{ [ "$(val POSTGRES_PASSWORD "$ENV")" = p1 ] && [ "$(val SERVER_DB_PASSWORD "$ENV")" = keep ] \
+  && [ -z "$(val CA_ROOT_PASSPHRASE "$ENV")" ]; } \
+  && ok "existing .env: set secrets and an existing role password unchanged" || bad "existing .env: $(tr '\n' ' ' < "$ENV")"
+added=1
+for k in SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
+  v=$(val "$k" "$ENV"); [ "${#v}" -eq 64 ] || added=0
+done
+[ "$added" = 1 ] && ok "existing .env: the missing role passwords added" || bad "existing .env: role passwords not added"
 
 echo
 echo "──────────────────────────────────────────"

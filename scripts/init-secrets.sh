@@ -8,6 +8,8 @@
 #   - SECRET_KEY         (JWT-Signierung; Default 'change-me-in-production')
 #   - MONITOR_API_KEY    (Shared Secret AdminHelper <-> Monitoring; Default leer)
 #   - POSTGRES_PASSWORD  (Postgres-Cluster Server + Monitoring; Default leer)
+#   - SERVER_DB_PASSWORD, SCHEDULER_DB_PASSWORD, MONITOR_DB_PASSWORD, CA_DB_PASSWORD
+#                        (je eine Postgres-Rolle eines Dienstes, db-init setzt sie; Default leer)
 #   - CA_ROOT_PASSPHRASE (verschluesselt den kalten PKI-Root-Key; Default leer)
 #     Only generated in the run that generates POSTGRES_PASSWORD too (a fresh
 #     install); with POSTGRES_PASSWORD set, an empty value stays empty.
@@ -103,6 +105,18 @@ else
     generated+=("POSTGRES_PASSWORD")
     pg_generated=1
 fi
+
+# One Postgres role per service (db-init, apps/server/app/db_roles.py) — 32 Bytes hex each.
+# Generated whenever missing, also for an existing .env on update: db-init sets the
+# role's password from it on every start, so a new value is never out of step.
+for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
+    if is_set_safely "$key"; then
+        left_alone+=("$key")
+    else
+        upsert "$key" "$(openssl rand -hex 32)"
+        generated+=("$key")
+    fi
+done
 
 # CA_ROOT_PASSPHRASE (verschluesselt den kalten PKI-Root-Key, ADR 0001 D7) —
 # 32 Bytes hex. Nur beim ersten Start des ca-issuer noetig (Hierarchie-Erzeugung).
