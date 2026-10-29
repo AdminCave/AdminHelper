@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: blockierende Keyring- und Sperr-Zugriffe, Frist beim Verbindungsaufbau, Tunnel-Ports, Ansible-Temp-Dateien — Task-Ledger
-Status: bereit · Branch: feature/desktop-blocking · Review: pro Task
+Status: aktiv · Branch: feature/desktop-blocking · Review: pro Task
 Spec: docs/features/desktop-blocking.md (Roadmap R-0643, R-0644, R-0642, R-0569, R-0572, R-0574)
 Heavy: linux-full + scenario --agents 0 --desktop --enforce + windows — T5 und T8 ändern, wie jede Desktop-Journey Einstellungen, Passwort-Status und Geräte-Identität liest (GUI-E2E im Sammellauf, `run.sh e2e`, u. a. `desktop_e2e_connect.sh`, `desktop_e2e_tunnel.sh`, `desktop_e2e_workspaces.sh`); T8 und T9 ändern Desktop-Enrollment und TOFU (CLAUDE.md §5), die nur die Desktop-Journeys gegen einen entfernten Server unter `MTLS_ENFORCE` über Hosts hinweg zeigen (`multibox.sh --desktop --enforce`, S3; ask-first, Spec offene Frage 1); `windows` ist der CI-Job `rust-windows` (`cargo test`, kein Windows im Pool): T7 ändert den mstsc-Start (`rdp.rs`, `cfg(windows)`), T5 und T8 laufen dort mit allen Tests. Kein `--tunnel`: der FRP-Datenpfad bleibt, `frpc.rs` ändert sich nicht.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -147,6 +147,13 @@ Beweis: origin/main@b1432223 · Code-Lesung: `load_or_store` nimmt die globale S
 Orakel: property — unter der globalen Pin-Sperre kein Keyring-Zugriff; je Identität bleibt Lesen→Entscheiden→Speichern atomar, und ein erster Kontakt gilt erst nach gelungenem Speichern
 Dedup-Key: bug:desktop:http_client.rs:keyring-read-per-request
 HEAD: b1432223
+
+### T10 — Quelltext-Test der Blocking-Commands auch mit CRLF-Checkout (rust-windows rot)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs
+Änderung: `commands_that_wait_run_on_a_blocking_thread` (T5) liest `commands.rs` per `include_str!` und sucht `#[tauri::command]\npub async fn …` und `\n}\n`; der Windows-Runner checkt mit CRLF aus, der Test fiel dort für jeden Command (`reset_server_cert_pin is not an async command`, PR #295, Job rust-windows). Der Test normalisiert `\r\n` zu `\n`, bevor er sucht.
+Beweis: PR #295 Desktop-Backend (cargo test, Windows), run 40833303189: 605 passed, 1 failed, commands.rs:1849
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- commands::tests::commands_that_wait_run_on_a_blocking_thread
+Doku: keine (nur ein Test)
 
 ## Entscheidungen
 - 2026-10-29 T4: seit dem Plan hat `main` `ansible::run` (fa7d2c4f), das bei einem gescheiterten Playbook-Schreiben das Inventory löscht, und `docs/admin/ansible.html:67` beschreibt das; die Merkliste, die Naht `write_playbook_with` und die HTML-Doku entfallen. Gebaut: `write_new_temp` (eine halb geschriebene Datei geht) und ein Test, der die Aufräumung in `run` belegt.
