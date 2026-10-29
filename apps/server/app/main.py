@@ -401,12 +401,14 @@ async def lifespan(app: FastAPI):
     # The SSE fan-out subscription IS per web worker (each holds its own streams).
     try:
         await stream_hub.start(REDIS_URL)
-    except Exception:
+    except Exception as exc:
         # Redis carries only the optional SSE push fan-out — rate-limit already degrades to
         # in-memory and SSE has a polling fallback. A brief Redis outage at boot (compose race,
         # a Redis restart during a server redeploy) must not crash-loop the whole API; start
         # best-effort and let push stay disabled until the next boot (4.68).
-        logger.exception("SSE-Fan-out-Start fehlgeschlagen — Push deaktiviert (Polling-Fallback)")
+        logger.warning(
+            "SSE fan-out not started (%s); push disabled, clients poll", type(exc).__name__
+        )
     fire_event("server.startup", {})
     yield
     await stream_hub.stop()
