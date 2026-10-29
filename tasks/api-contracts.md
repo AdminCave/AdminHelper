@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # API-Verträge: Antwortmodelle für Server und Monitoring, Client-Typen gegen den Snapshot — Task-Ledger
-Status: aktiv · Branch: feature/api-contracts · Review: pro Task
+Status: bereit · Branch: feature/api-contracts · Review: pro Task
 Spec: docs/features/api-contracts.md (Roadmap R-0684, R-0685, R-0686, R-0687; R-0407 erledigt T10 mit)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop --moncheck + windows — Server-API: 33 Routen bekommen ein `response_model`, darunter die Antworten, die nur echte Clients lesen: Activate und `config-hash` (Agent), Tunnels und `visitor-bundle` (Desktop, S4), Enrollment-Grant (Desktop, S3), dazu die Monitoring-Antworten hinter dem Proxy (S5). Laut Gleichheitstests bleiben die Antworten byte-gleich; ein zu strenges Modell wäre eine 500, die nur der echte Datenpfad mit Altdaten zeigt. `linux-full` im Sammellauf über `main` (`/feature-build` §5); `scenario` vor dem Merge (ask-first, Kevins Ja); `windows` sind die Windows-Jobs der PR-CI (keine Windows-Box im Pool). Kein Agent- und kein Rust-Code im Diff
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -255,8 +255,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale über die echte Route
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T18 — web: neuer API-Schlüssel zeigt sein Erstelldatum (R-0686)  [ ]
+### T18 — web: neuer API-Schlüssel zeigt sein Erstelldatum (R-0686)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: web · Dateien: apps/web/src/lib/api/types.ts, apps/web/src/lib/stores/apikeys.ts, apps/web/src/lib/stores/apikeys.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @c7a3908b 2026-10-29T22:49:44+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T18.verdict.json im Teil-Worktree)
 Änderung: Zuerst der rote Test in `apikeys.test.ts` (neben `create returns the secret but never stores it in the list`, `:35`): `api.create` liefert `{ key, id, name, permission, created_at: '2026-01-02T03:04:05Z' }`; nach `apikeys.create(...)` trägt der neue Listeneintrag `created_at` mit genau diesem Wert und weiterhin kein `key`. Dann `ApiKeyCreateResult` (`apps/web/src/lib/api/types.ts:61-66`) um `created_at?: string | null` ergänzen (`ApiKeyCreatedResponse`, `apps/server/app/modules/api_keys/schemas.py:18-28`: nicht required, nullbar) und `ApiKey.created_at` (`:53`) ebenso auf `string | null`; der Store übernimmt es (`apps/web/src/lib/stores/apikeys.ts:33-36`). `formatDate` nimmt `null` schon (`src/lib/utils/datetime.ts:24`).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/stores/apikeys.test.ts
 Doku: CHANGELOG.md (Fixed, umlautfrei: ein neu angelegter API-Schluessel zeigt sein Erstelldatum sofort, nicht erst nach dem Neuladen)
@@ -265,8 +267,10 @@ Orakel: contract — der Listeneintrag gegen die Antwort von `POST /api/api-keys
 Dedup-Key: ref:web:types.ts:handwritten-api-types
 HEAD: b25c65a6
 
-### T19 — web: Vertragstest `types.contract.test.ts` und Typ-Korrekturen (R-0686)  [ ]
+### T19 — web: Vertragstest `types.contract.test.ts` und Typ-Korrekturen (R-0686)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: web · Dateien: apps/web/src/lib/api/types.contract.test.ts, apps/web/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/types.ts, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @56ed10db 2026-10-29T23:31:20+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T19.verdict.json im Teil-Worktree)
 Änderung: Neue Testdatei (SPDX) nach den Regeln der Spec („Client-Vertragstest“): `typescript` (devDependency) liest `types.ts` per `ts.createSourceFile`, der Test liest `apps/server/tests/openapi.snapshot.json` wie `mocks.contract.test.ts` (`deref`, `shapeOf`). Zuordnungstabelle für die Antwort-Interfaces (`LoginResponse`, `RefreshResponse`, `User`, `EnrollmentGrant`, `ApiKey`, `ApiKeyCreateResult`, `Server`, `Hook`, `HookDetail`, `HookCreateResult`, `HookTokenResult`, `FrpConfig`, `FrpStatusProxy`, `FrpStatus`, `AuditEntry`) und die Anfrage-Interfaces (`UserCreate`, `UserUpdate`, `ApiKeyCreate`, `HookCreate`, `HookUpdate`, `FrpConfigInput`), je mit `omit` und Grund; `HookRunResult` und `ApiError` sind ausgenommen (Nicht-Ziel bzw. kein Schema). Wächter: Paare existieren, Zahl gepinnt, Gegenprobe je Regel an einem synthetischen Paar. Korrekturen, die der Test verlangt, mindestens: `User.created_at` (`types.ts:21`) bekommt `| null` (Schema: required und nullbar, `apps/server/app/modules/users/schemas.py:80`), `FrpConfig.bindPort` (`:147`) `number | null` (`apps/server/app/modules/frp/schemas.py:299`; Leser `FrpConfigModal.svelte:47` hat schon `?? 7000`), `FrpStatusProxy` (`:172-182`) `tunnel` aufnehmen oder in `omit`. Die geteilten Symbole `FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server` (`apps/desktop/ui/scripts/sync-from-web.sh:107`) im selben Commit gleich in der Desktop-`types.ts`; `svelte-check` beider Frontends muss grün bleiben.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/types.contract.test.ts  und bash apps/desktop/ui/scripts/sync-from-web.sh --check
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (Abschnitt „Paritäts- und Contract-Gates“ / „Parity and contract gates“: Zeile „Web-Typen gegen den Server-Snapshot“ mit Datei und Regeln)
@@ -276,8 +280,10 @@ Orakel: contract — jedes zugeordnete Interface gegen sein Komponenten-Schema; 
 Dedup-Key: ref:web:types.ts:handwritten-api-types
 HEAD: b25c65a6
 
-### T20 — desktop-ui: Vertragstest gegen den Server-Snapshot (R-0687)  [ ]
+### T20 — desktop-ui: Vertragstest gegen den Server-Snapshot (R-0687)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @b9cf931c 2026-10-29T23:41:45+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T20.verdict.json im Teil-Worktree)
 Änderung: Neue Testdatei (SPDX), Helfer wie in T19 (Spec, Trade-off 3), liest `apps/server/tests/openapi.snapshot.json`. Zuordnung der Server-Interfaces in `apps/desktop/ui/src/lib/api/types.ts`: Antwort `Connection` (`:7-22`), `Server` (`:24-32`), `Playbook` (`:63-71`), `FrpConfig` (`:85-99`), `FrpTunnel` (`:104-120`), `FrpStatus` (`:150-154`), `FrpStatusProxy`, `FrpProvisionToken` (`:156-163`), `FrpProvisionTokenCreateResult` (`:165-170`), `NotificationItem` (`:557-569`), `NotificationSubscription` (`:572-582`), `NotificationPrefs` (`:584-588`); Anfrage `ServerInput` (`:34-40`) und die übrigen `…Input`-Typen mit Schema. Korrekturen, die der Test verlangt (u. a. `createdAt`, `frpTunnels` an `Server`, `extraConfig` an `FrpConfig`/`FrpTunnel`: aufnehmen oder `omit` mit Grund); die geteilten Symbole bleiben mit Web gleich (`sync-from-web.sh --check`). Aufrufer, die eine Korrektur bricht, per `ledger.sh set-files` aufnehmen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts  und bash apps/desktop/ui/scripts/sync-from-web.sh --check
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (Zeile „Desktop-Typen gegen beide Snapshots“; der Satz `:334-336` / EN entsprechend sagt künftig, dass Web- und Desktop-Typen gegen den Snapshot geprüft werden, der Agent nicht) · DEVELOPMENT.md (bei `sync-from-web.sh`, `:360-368`: eine geänderte Antwort zieht Modell, Snapshot und beide `types.ts` im selben Commit nach)
@@ -287,8 +293,10 @@ Orakel: contract — jedes zugeordnete Interface gegen sein Komponenten-Schema; 
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T21 — desktop-ui: Monitoring-Typen für Checks, Status, Alerts, Wartung (R-0685, R-0687)  [ ]
+### T21 — desktop-ui: Monitoring-Typen für Checks, Status, Alerts, Wartung (R-0685, R-0687)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/monitoring.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a2681fd6 2026-10-29T23:52:38+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T21.verdict.json im Teil-Worktree)
 Änderung: Die Zuordnung liest zusätzlich `apps/monitoring/tests/openapi.snapshot.json`: `MonitorCheck` (`types.ts:442-460`), `MonitorCheckState` (`:435-440`), `MonitoringMetricsResponse` (`:507-510`), `AlertRule` (`:521-530`), `AlertLogEntry` (`:541-549`), `MaintenanceWindow` (`:479-492`) und die Anfrage-Typen mit Schema. Korrekturen: `AlertLogEntry.id` `string` → `number` (Spalte `Integer`, `apps/monitoring/app/models.py:188`; `MonitoringLog.svelte:17` nutzt sie nur als each-Key) und `alertRuleId`; `MonitorCheckState` mit `checkId`, `since`, `failCount`, `notifiedStatus` und `| null` an `message`, `lastCheck`, `details`; nullbares `enabled`. Aufrufer: `apps/desktop/ui/src/lib/models/monitoring.ts:196` (`return check.enabled && …` gibt bei `null` `null` zurück) wird `check.enabled === true && …` oder liefert explizit `boolean`; weitere Treffer von `svelte-check` per `ledger.sh set-files` (erwartet u. a. `MonitoringAlerts.svelte:41`, `AlertRuleModal.svelte:47`, `MaintenanceModal.svelte:76`). Die Darstellung gültiger Daten bleibt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts src/lib/models/monitoring.test.ts
 Doku: keine
@@ -298,8 +306,10 @@ Orakel: contract — die Monitoring-Interfaces gegen den Monitoring-Snapshot
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T22 — desktop-ui: Monitoring-Typen für Templates (R-0685, R-0687)  [ ]
+### T22 — desktop-ui: Monitoring-Typen für Templates (R-0685, R-0687)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2064d835 2026-10-30T00:04:06+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T22.verdict.json im Teil-Worktree)
 Änderung: Zuordnung für `MonitoringTemplateFull` (`types.ts:642-658`), `MonitoringTemplateAssignment` (`:629-634`), `MonitoringBuiltinUpdate` (`:674-679`), `TemplateSuggestion` (inline in `apps/desktop/ui/src/lib/api/monitoring.ts:31-36`, nach `types.ts` verschoben, damit der Test es findet) und `TemplateCheckDef`/`TemplateAlertDef` (`:608-627`) in Richtung Anfrage. Korrekturen: `createdAt`, `updatedAt`, `syncResult` an `MonitoringTemplateFull`, `id`, `templateId` an `MonitoringTemplateAssignment` (aufnehmen oder `omit` mit Grund). Aufrufer wie T21.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts src/lib/api/monitoring.test.ts
 Doku: keine
@@ -309,8 +319,10 @@ Orakel: contract — die Template-Interfaces gegen den Monitoring-Snapshot
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T23 — desktop-ui: Narrowing-Funktionen für `state.details` (R-0687)  [ ]
+### T23 — desktop-ui: Narrowing-Funktionen für `state.details` (R-0687)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/checkDetails.ts, apps/desktop/ui/src/lib/models/checkDetails.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0da44c2f 2026-10-29T22:58:39+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T23.verdict.json im Teil-Worktree)
 Änderung: Neue Dateien (SPDX). Je Checker-Form eine Funktion `unknown → <Typ> | null` (bzw. Liste leer) für `MonitorZfsDetails`, `MonitorSmartDetails` (kennt auch `{absent: <Grund>}`, `apps/monitoring/app/checkers/smart.py:97`), `MonitorResourceDetails`, `MonitorForecastDetails`, `MonitorServiceDetails`, `MonitorContainerDetails` (`apps/desktop/ui/src/lib/api/types.ts:424-433`). Ein Feld mit falschem Typ gilt als fehlend, gültige Daten kommen unverändert zurück; Vorbild für das Prüfen `SecSystem.svelte:67-97` (`LooseDetails`, `asFlag`, `asCount`). Tests je Funktion: gültige Form, `null`/`undefined`, Feld mit falschem Typ, SMART `absent`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/checkDetails.test.ts
 Doku: keine
@@ -319,8 +331,10 @@ Orakel: contract — die Narrower gegen die Formen der Checker
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T24 — desktop-ui: SecZfs, SecSmart, SecForecast ohne Cast (R-0687)  [ ]
+### T24 — desktop-ui: SecZfs, SecSmart, SecForecast ohne Cast (R-0687)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecForecast.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts, apps/desktop/ui/src/components/monitoring/section/SecForecast.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6295523f 2026-10-29T23:07:34+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T24.verdict.json im Teil-Worktree)
 Änderung: Die Casts `SecZfs.svelte:34`, `:38`, `SecSmart.svelte:28`, `SecForecast.svelte:22` werden Aufrufe der Narrower aus T23. Die Darstellung gültiger Daten bleibt; SMART `absent` wird typisiert, nicht angezeigt (eine Anzeige wäre sichtbares Verhalten). Neue Tests (SPDX) für SecSmart und SecForecast wie `SecZfs.test.ts`: gültige Daten rendern wie heute, `details` mit falschem Feldtyp rendert die leere Sektion statt zu werfen. Suite vor und nach dem Diff grün, beide Summary-Zeilen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecZfs.test.ts src/components/monitoring/section/SecSmart.test.ts src/components/monitoring/section/SecForecast.test.ts
 Doku: keine
@@ -331,8 +345,10 @@ Metrik: `grep -c ' as Monitor[A-Za-z]*Details'` (GNU grep) über SecZfs, SecSmar
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T25 — desktop-ui: SecLive, SecServices, SecDocker ohne Cast (R-0687)  [ ]
+### T25 — desktop-ui: SecLive, SecServices, SecDocker ohne Cast (R-0687)  [x] (gebaut im Teil-Ledger tasks/api-contracts-clients.md, gemergt in 383ad5ff)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts, apps/desktop/ui/src/components/monitoring/section/SecDocker.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7778b35d 2026-10-29T23:15:42+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T25.verdict.json im Teil-Worktree)
 Änderung: Die Casts `SecLive.svelte:79`, `:118`, `:129`, `SecServices.svelte:77`, `SecDocker.svelte:89` werden Aufrufe der Narrower aus T23. Je vorhandene Testdatei ein Fall mit falschem Feldtyp in `details` (leere bzw. Rückfall-Darstellung statt Wurf); die bestehenden Fälle bleiben unverändert grün. Suite vor und nach dem Diff grün, beide Summary-Zeilen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecLive.test.ts src/components/monitoring/section/SecServices.test.ts src/components/monitoring/section/SecDocker.test.ts
 Doku: keine
