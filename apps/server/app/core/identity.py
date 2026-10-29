@@ -128,7 +128,7 @@ def _peer_is_gateway(request: Request) -> bool:
                 del _ignored_logged[seen]
         _ignored_logged[peer] = now
     logger.warning(
-        "mTLS: %s %s from %s carries client certificate headers but does not come "
+        "mTLS: %s %r from %s carries client certificate headers but does not come "
         "from the gateway; they are ignored",
         request.method,
         request.url.path,
@@ -215,7 +215,7 @@ def require_cert_user(request: Request, username: str, db: Session) -> None:
     if identity.scope == SCOPE_ACCESS and identity.cn == username:
         return
     logger.warning(
-        "mTLS: %s %s — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
+        "mTLS: %s %r — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
         request.method,
         request.url.path,
         identity.cn,
@@ -235,7 +235,7 @@ def require_cert_server(server_id: str, request: Request) -> None:
     if not identity.verified or identity.scope != SCOPE_AGENT or identity.cn == server_id:
         return
     logger.warning(
-        "mTLS: %s %s — agent certificate CN=%s is not for server %s",
+        "mTLS: %s %r — agent certificate CN=%s is not for server %s",
         request.method,
         request.url.path,
         identity.cn,
@@ -290,7 +290,7 @@ def _refused(request: Request, db: Session, identity: ClientIdentity) -> bool:
 
 def _deny_refused(request: Request, identity: ClientIdentity) -> None:
     logger.warning(
-        "mTLS: %s %s — client certificate CN=%s (scope=%s) is revoked or not recorded",
+        "mTLS: %s %r — client certificate CN=%s (scope=%s) is revoked or not recorded",
         request.method,
         request.url.path,
         identity.cn,
@@ -322,7 +322,7 @@ def check_scope(
     wanted = "/".join(sorted(allowed))
     if identity.verified:
         logger.warning(
-            "mTLS permissiv: %s %s erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
+            "mTLS permissiv: %s %r erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
             request.method,
             request.url.path,
             wanted,
@@ -331,7 +331,7 @@ def check_scope(
         )
     else:
         logger.debug(
-            "mTLS permissiv: %s %s ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
+            "mTLS permissiv: %s %r ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
             request.method,
             request.url.path,
             wanted,

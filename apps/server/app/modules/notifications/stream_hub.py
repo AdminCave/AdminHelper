@@ -93,8 +93,11 @@ def publish(user_ids, max_id: int) -> None:
         _get_pub_client().publish(
             CHANNEL, json.dumps({"user_ids": list(user_ids), "maxId": max_id})
         )
-    except Exception:
-        logger.warning("SSE fan-out publish failed — clients fall back to polling", exc_info=True)
+    except Exception as e:
+        # The type only: redis-py's message and traceback quote the connection details.
+        logger.warning(
+            "SSE fan-out publish failed (%s) — clients fall back to polling", type(e).__name__
+        )
 
 
 async def _await_subscribed(pubsub) -> bool:
@@ -109,8 +112,10 @@ async def _await_subscribed(pubsub) -> bool:
             msg = await pubsub.get_message(ignore_subscribe_messages=False, timeout=left)
             if msg and msg.get("type") == "subscribe":
                 return True
-    except Exception:
-        logger.warning("SSE fan-out: reading the subscribe confirmation failed", exc_info=True)
+    except Exception as e:
+        logger.warning(
+            "SSE fan-out: reading the subscribe confirmation failed (%s)", type(e).__name__
+        )
         return False
 
 
@@ -148,16 +153,16 @@ async def _reader(pubsub) -> None:
             msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as e:
             # A Redis restart / brief network hiccup / failover makes get_message raise. The
             # except used to sit OUTSIDE the loop, so the reader ended for good and this worker's
             # SSE push fan-out went silently dead until a process restart — open SSE streams kept
             # their heartbeats but never saw a refresh nudge again. Reconnect and keep going: the
             # next get_message re-raises if Redis is still down, so we back off and retry (4.72).
             logger.warning(
-                "SSE Redis reader: Verbindung verloren — Reconnect in %ss",
+                "SSE Redis reader: connection lost (%s) — reconnecting in %ss",
+                type(e).__name__,
                 _RECONNECT_DELAY,
-                exc_info=True,
             )
             await asyncio.sleep(_RECONNECT_DELAY)
             try:

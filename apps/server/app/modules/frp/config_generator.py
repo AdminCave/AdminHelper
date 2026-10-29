@@ -136,6 +136,22 @@ def _api_takes(extra: dict) -> bool:
     return True
 
 
+# The sync and the hash poll both run this for every host, every few seconds; a row that stays
+# refused would warn each time. One warning per (tunnel name, refused keys), forgotten when the
+# set grows past the bound (the next poll then warns once more, which is harmless).
+_refused_warned: set[tuple[str, tuple[str, ...] | None]] = set()
+_REFUSED_WARNED_MAX = 1024
+
+
+def _first_warning(name: str, refused: tuple[str, ...] | None) -> bool:
+    if len(_refused_warned) >= _REFUSED_WARNED_MAX:
+        _refused_warned.clear()
+    if (name, refused) in _refused_warned:
+        return False
+    _refused_warned.add((name, refused))
+    return True
+
+
 def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """Leave out tunnels whose stored extra_config the API would refuse today.
 
@@ -146,29 +162,32 @@ def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     generator writes each entry verbatim into the proxy, so such a row would make a
     frpc.toml that does not hold for the whole host; skipping the tunnel keeps the other
     tunnels of the host. The warning names the keys (repr, so it stays one line), never
-    their values."""
+    their values, and says it once per tunnel and key set, not at every poll."""
     kept = []
     for tunnel in tunnels:
         extra = _stored_extra_config(tunnel)
         if extra is None:
-            logger.warning(
-                "FRP tunnel %r has an extra_config that is no JSON object, left out of the config",
-                tunnel.name,
-            )
+            if _first_warning(tunnel.name, None):
+                logger.warning(
+                    "FRP tunnel %r has an extra_config that is no JSON object, "
+                    "left out of the config",
+                    tunnel.name,
+                )
             continue
         refused = sorted(key for key, value in extra.items() if not _api_takes({key: value}))
         if not refused and not _api_takes(extra):
             # Each key passes alone, the keys together clash.
             refused = sorted(extra)
         if refused:
-            logger.warning(
-                "FRP tunnel %r has %s in extra_config, left out of the config: %s",
-                tunnel.name,
-                "plugin keys"
-                if all(is_plugin_key(key) for key in refused)
-                else "entries the API refuses",
-                ", ".join(repr(key) for key in refused),
-            )
+            if _first_warning(tunnel.name, tuple(refused)):
+                logger.warning(
+                    "FRP tunnel %r has %s in extra_config, left out of the config: %s",
+                    tunnel.name,
+                    "plugin keys"
+                    if all(is_plugin_key(key) for key in refused)
+                    else "entries the API refuses",
+                    ", ".join(repr(key) for key in refused),
+                )
             continue
         kept.append(tunnel)
     return kept
