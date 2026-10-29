@@ -9,6 +9,7 @@ directions when the server starts, which also removes the temp files a killed wr
 import errno
 import logging
 import os
+import stat
 import time
 from datetime import datetime
 from pathlib import Path
@@ -64,7 +65,7 @@ def test_a_reader_never_sees_a_half_written_file(frp_dir, monkeypatch):
     real_fsync, real_replace = os.fsync, os.replace
 
     def spy_fsync(fd):
-        events.append("fsync")
+        events.append("fsync dir" if stat.S_ISDIR(os.fstat(fd).st_mode) else "fsync")
         return real_fsync(fd)
 
     def spy_replace(src, dst):
@@ -85,12 +86,34 @@ def test_a_reader_never_sees_a_half_written_file(frp_dir, monkeypatch):
 
     assert path == old
     assert path.read_text() == expected
-    assert events == ["fsync", "replace"], "the temp file must be synced before the swap"
+    # The temp file is synced before the swap, the directory after it: only then is the new
+    # directory entry durable.
+    assert events == ["fsync", "replace", "fsync dir"]
     assert seen["src_dir"] == frp_dir, "temp file must live in the same directory (same fs)"
     assert seen["src_text"] == expected, "only a complete file is swapped in"
     assert seen["src_mode"] == 0o600, "the temp file holds the token: 0600 before it is visible"
     assert seen["dst_text"] == "# previous config\n# old, complete\n", "target untouched until swap"
     assert sorted(p.name for p in frp_dir.iterdir()) == ["frps.toml"]
+
+
+def test_a_directory_that_cannot_be_synced_still_keeps_the_new_config(frp_dir, monkeypatch, caplog):
+    config = _cfg(auth_token="n" * 32)
+    real_fsync = os.fsync
+
+    def no_dir_fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", no_dir_fsync)
+    with caplog.at_level(logging.WARNING):
+        path = docker_manager.write_frps_config(config)
+    assert path == frp_dir / "frps.toml"
+    assert path.read_text() == generate_frps_toml(config)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "OSError" in warnings[0].getMessage()
+    assert warnings[0].exc_info is None
 
 
 def test_a_failed_swap_keeps_the_old_file_and_leaves_no_temp_file(frp_dir, monkeypatch):

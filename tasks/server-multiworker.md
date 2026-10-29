@@ -76,8 +76,10 @@ Orakel: contract — ohne die Sperre schreibt ein Worker nichts; der Inhaber sch
 Dedup-Key: bug:server:main.py:bootstrap-multi-worker
 HEAD: 53a7dbc5
 
-### T4 — `write_frps_config` synct nach dem Tausch das Verzeichnis  [ ]
+### T4 — `write_frps_config` synct nach dem Tausch das Verzeichnis  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/docker_manager.py, apps/server/tests/test_frp_docker_manager.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @12822668 2026-10-29T09:44:03+01:00
+Review: approve (.ah-out/review/server-multiworker/T4.verdict.json)
 Änderung: `write_frps_config` (`apps/server/app/modules/frp/docker_manager.py:26-54`) ruft nach `os.replace(tmp, path)` (`:47`) `fsync_dir(FRP_CONFIG_DIR)` aus `app.core.config` (Import neben `FRP_CONFIG_DIR`, `:14`), außerhalb des `except`, das die Temp-Datei entfernt; der Docstring (`:29-34`) nennt den Verzeichnis-`fsync`. Der bestehende Test `test_a_reader_never_sees_a_half_written_file` (`tests/test_frp_docker_manager.py:53-93`) erwartet heute `events == ["fsync", "replace"]` (`:88`); er wird auf den neuen Vertrag erweitert, nicht abgeschwächt: der Spion hält je `fsync` fest, ob der Deskriptor ein Verzeichnis ist, und die Assertion verlangt `fsync` (Datei), `replace`, `fsync` (Verzeichnis `frp_dir`). Neuer Test daneben: `os.fsync` wirft für Verzeichnis-Deskriptoren `OSError(errno.EINVAL, "Invalid argument")` → `write_frps_config` gibt den Pfad zurück, die Datei hält die neue Config, genau eine WARNING nennt `OSError`, kein `exc_info`. Zuerst rot: die erweiterte Assertion und der neue Test auf dem Stand vor dem Fix.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_docker_manager.py
 Doku: keine (intern)
