@@ -23,8 +23,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: keine (nur Kommentare)
 Dedup-Key: bug:docs:docker-compose.yml:permissive-window-comment
 
-### T2 — Installation und Umgebung: „permissiv“ und SMTP für Monitoring (R-0841, R-0829)  [ ]
+### T2 — Installation und Umgebung: „permissiv“ und SMTP für Monitoring (R-0841, R-0829)  [x]
 Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, .env.example, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @06a8f019 2026-10-29T12:53:50+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T2.verdict.json)
 Änderung: `installation.html:161` (EN `:113`) „Aktuell läuft die Datenebene permissiv“ auf „scharf seit 0.29.0, `MTLS_ENFORCE=true`“ (Stand `betrieb.html:333`). `.env.example` (SMTP-Block ab `:146`, dazu `MTLS_ENFORCE` `:116-127` gegenlesen): SMTP gilt für Hub **und** Monitoring, Ports nicht nur 587/465 (jeder andere STARTTLS), `SMTP_CA_FILE` nennen. README-Env-Tabelle (`Configuration (env)` im Monitoring-Abschnitt): SMTP_* und `SMTP_CA_FILE` aufnehmen, Verweis auf `operations.html` statt Kopie.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/installation.html, docs/en/admin/installation.html, README.md
