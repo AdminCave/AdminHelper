@@ -53,7 +53,7 @@ def _unstorable(text: str) -> str | None:
     return None
 
 
-def _find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
+def find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
     """Location, value and reason of a string in `data` that _unstorable refuses,
     if any.
 
@@ -83,7 +83,7 @@ def _refuse_unstorable(data: Any, title: str) -> Any:
     # would only say ["body"].
     if not isinstance(data, dict):
         return data
-    found = _find_unstorable(data)
+    found = find_unstorable(data)
     if found is None:
         return data
     loc, value, reason = found

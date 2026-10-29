@@ -159,8 +159,10 @@ Metrik: Zugriffe auf private Namen über Modulgrenzen in `app/` (AST, Python 3.1
 Dedup-Key: ref:monitoring:models.py:model-imports-domain
 HEAD: 237b450a
 
-### T10 — find_nul öffentlich, Wächter gegen private Namen über Modulgrenzen (R-0696)  [ ]
+### T10 — find_nul öffentlich, Wächter gegen private Namen über Modulgrenzen (R-0696)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/bounds.py, apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_module_boundaries.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fb44af33 2026-10-29T12:35:42+01:00
+Review: approve (.ah-out/review/monitoring-ref-3/T10.verdict.json)
 Änderung: `_find_nul` (`apps/monitoring/app/core/bounds.py:43`, Aufrufer `:73`, `apps/monitoring/app/routers/agent.py:23`, `:101`) heißt `find_nul`. In `tests/test_module_boundaries.py` (aus T7) ein zweiter Wächter: (b) kein Modul unter `app/` importiert aus einem anderen Modul unter `app` einen Namen, der mit `_` beginnt (ohne `__…__`; `from app.x import _y`, auch relativ), und keins greift über einen importierten App-Modulnamen auf einen solchen Namen zu (`alerter._y`, `check_engine._y`); Tests bleiben außen vor (sie dürfen private Namen patchen). Die Meldung nennt Datei, Zeile und Namen. Nicht-leer: der Scan liest mindestens 30 Module und findet mindestens 50 Importe aus `app`. Zuerst rot: (b) auf HEAD nach T5, T6, T9 (`_find_nul` in `routers/agent.py`).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_boundaries.py tests/test_nul.py tests/test_agent_report.py tests/test_architecture_transitions.py
 Doku: keine (intern; die Doku nennt `_find_nul` nicht)
@@ -224,3 +226,4 @@ HEAD: 237b450a
 - 2026-10-29 T7: `tests/test_seed.py` (14 Aufrufe) liest die Flags über den Router-Helfer `templates_router._template_dict` statt `to_dict()` — prüft so weiter die Antwortform; `tests/test_models_timestamps.py` ruft `to_dict` für jedes Modell und gibt `MonitorTemplate` die beiden Pflicht-Flags mit (`_TO_DICT_KWARGS`). Der Wächter wertet auch relative Imports als `app.<modul>`
 - 2026-10-29 T8: `server_cleanup` loggt unter `monitor.server_cleanup` (eigener Logger je Modul, Text unverändert); die Modulübersicht hat `alert_bundle.py` und `check_types.py` schon, nur `server_cleanup.py` kommt dazu; `tests/test_scheduler_after_commit.py` nennt im Docstring den neuen Namen `apply_scheduler_actions`
 - 2026-10-29 T9: vier Testdateien mehr folgen dem Namen (`tests/_helpers.py`, `test_alerter_hub.py`, `test_alerter_sent_state.py`, `test_agent_report.py` — dort ist es das monkeypatch-Ziel am Router-Modul); `docs/features/*.md` (Pläne, auch dieser) behalten den alten Namen als Befund, die grep-Leere gilt für `apps/monitoring` und `docs/developer`, `docs/en/developer`
+- 2026-10-29 T10: `_find_nul` heißt auf main inzwischen `_find_unstorable` (NUL und einsame Surrogate) — umbenannt wird dieser zu `find_unstorable`, nur im Monitoring (`apps/server` hat eine eigene Kopie, nicht im Auftrag). Der Wächter (b) wertet `from app import <modul>` als Modulnamen (Pfad unter `app/` existiert) und zählt nur Zugriffe `<alias>._y` über solche Namen; Selbstimporte bleiben erlaubt

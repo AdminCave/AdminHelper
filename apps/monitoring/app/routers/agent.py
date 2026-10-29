@@ -26,7 +26,7 @@ from app.checkers.agent import (
     record_agent_report,
 )
 from app.core.auth import require_agent
-from app.core.bounds import _find_unstorable
+from app.core.bounds import find_unstorable
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, victoria
@@ -68,7 +68,7 @@ def agent_report(
     # the whole batch with it, lines of other servers included. Refused here, AFTER
     # the liveness above and not on the parameter: liveness is not report content,
     # and a refused report must not turn into a "server down" alarm.
-    found = _find_unstorable(report)
+    found = find_unstorable(report)
     if found is not None:
         loc, value, reason = found
         logger.warning("Agent report from %s refused: %s at %s", server_id, reason, list(loc))
