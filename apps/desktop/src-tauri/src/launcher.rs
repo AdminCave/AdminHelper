@@ -545,8 +545,7 @@ impl AppSpawner {
 }
 
 /// The process creation flags `DETACHED_PROCESS` and `CREATE_NEW_PROCESS_GROUP`
-/// (`Win32::System::Threading`), spelled out: the `windows` crate of this app leaves that module
-/// out.
+/// (`Win32::System::Threading`), spelled out as plain `u32`s for `CommandExt::creation_flags`.
 #[cfg(windows)]
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 #[cfg(windows)]

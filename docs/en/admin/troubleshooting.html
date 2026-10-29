@@ -55,8 +55,11 @@ docker compose down -v
 <pre><code># Cert valid?
 openssl s_client -connect srm.example.com:443 -servername srm.example.com &lt; /dev/null 2&gt;/dev/null | openssl x509 -noout -dates
 
-# X-Forwarded-For trusted?
-docker compose logs server | grep 'untrusted proxy'</code></pre>
+# Does the server ignore certificate headers from a peer that is not the gateway?
+docker compose logs server | grep 'does not come from the gateway'
+
+# Did the server fail to resolve the gateway (its forwarded headers are then ignored)?
+docker compose logs server | grep 'cannot resolve'</code></pre>
 
           <h2>Agent doesn't check in</h2>
           <div class="code-header"><span>bash</span></div>
