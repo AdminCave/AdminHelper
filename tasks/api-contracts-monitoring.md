@@ -85,8 +85,10 @@ Orakel: contract — die Modelle gegen `to_dict` und die Dict-Literale über die
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T16 — Monitoring: Templates und Builtin-Update (R-0685)  [ ]
+### T16 — Monitoring: Templates und Builtin-Update (R-0685)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c935cd01 2026-10-29T22:34:15+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T16.verdict.json)
 Änderung: `TemplateOut` wie `MonitorTemplate.to_dict` (`apps/monitoring/app/models.py:232-257`; Check- und Alert-Definitionen `list[dict[str, Any]]`, weil ihre Schlüssel je Definition wechseln), dazu `assignments`, `tagAssignments` (`TemplateAssignmentOut` wie `MonitorTemplateAssignment.to_dict` `:281-289`, `TagAssignmentOut` wie `MonitorTemplateTagAssignment.to_dict` `:329-334`) und `syncResult` (`SyncResultOut` `{created, updated, deleted, servers}`, `apps/monitoring/app/template_sync.py:388-393`) je `Optional[...] = None`; `BuiltinUpdateOut` `{currentVersion, shippedVersion, current, shipped}` (`apps/monitoring/app/routers/templates.py:301-306`). Routen `templates.py:68` (list), `136` (201), `166`, `185` (PUT, mit `syncResult`), `281` (builtin-update GET), `310` (builtin-update POST, mit `syncResult`); alle mit `response_model_exclude_unset=True`. Tests nach Muster; (c) GET ohne, PUT mit `syncResult`, ein Template mit Zuordnungen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_templates_router.py tests/test_template_overrides.py tests/test_stored_json_numbers.py
 Doku: keine

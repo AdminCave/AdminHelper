@@ -404,3 +404,58 @@ class AgentKeyDeletedOut(BaseModel):
 class ServerCleanupOut(BaseModel):
     checksDeleted: int
     alertsDeleted: int
+
+
+class TemplateAssignmentOut(BaseModel):
+    id: str
+    templateId: str
+    serverId: str
+    serverHostname: str
+    serverName: str
+    source: str
+
+
+class TagAssignmentOut(BaseModel):
+    id: str
+    templateId: str
+    tag: str
+
+
+class SyncResultOut(BaseModel):
+    created: int
+    updated: int
+    deleted: int
+    servers: int
+
+
+class TemplateOut(BaseModel):
+    """assignments and tagAssignments come with the list and a single template,
+    syncResult with a change that rolled the template out."""
+
+    id: str
+    name: str
+    description: str | None
+    builtinSlug: str | None
+    builtinVersion: int | None
+    builtinEdited: bool
+    builtinUpdateAvailable: bool
+    # Their keys vary per definition and check type.
+    checkDefinitions: list[dict[str, Any]]
+    alertDefinitions: list[dict[str, Any]]
+    createdAt: str | None
+    updatedAt: str | None
+    assignments: list[TemplateAssignmentOut] | None = None
+    tagAssignments: list[TagAssignmentOut] | None = None
+    syncResult: SyncResultOut | None = None
+
+
+class TemplateDefinitionsOut(BaseModel):
+    checkDefinitions: list[dict[str, Any]]
+    alertDefinitions: list[dict[str, Any]]
+
+
+class BuiltinUpdateOut(BaseModel):
+    currentVersion: int | None
+    shippedVersion: int
+    current: TemplateDefinitionsOut
+    shipped: TemplateDefinitionsOut

@@ -360,6 +360,39 @@
         "title": "AlertRuleUpdate",
         "type": "object"
       },
+      "BuiltinUpdateOut": {
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/TemplateDefinitionsOut"
+          },
+          "currentVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentversion"
+          },
+          "shipped": {
+            "$ref": "#/components/schemas/TemplateDefinitionsOut"
+          },
+          "shippedVersion": {
+            "title": "Shippedversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currentVersion",
+          "shippedVersion",
+          "current",
+          "shipped"
+        ],
+        "title": "BuiltinUpdateOut",
+        "type": "object"
+      },
       "CheckCreate": {
         "properties": {
           "check_type": {
@@ -1136,6 +1169,57 @@
         "title": "SuggestionDismiss",
         "type": "object"
       },
+      "SyncResultOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "servers": {
+            "title": "Servers",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "updated",
+          "deleted",
+          "servers"
+        ],
+        "title": "SyncResultOut",
+        "type": "object"
+      },
+      "TagAssignmentOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "tag"
+        ],
+        "title": "TagAssignmentOut",
+        "type": "object"
+      },
       "TemplateAlertDef": {
         "properties": {
           "channel": {
@@ -1215,6 +1299,44 @@
           "server_name"
         ],
         "title": "TemplateAssign",
+        "type": "object"
+      },
+      "TemplateAssignmentOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "serverHostname": {
+            "title": "Serverhostname",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "serverId",
+          "serverHostname",
+          "serverName",
+          "source"
+        ],
+        "title": "TemplateAssignmentOut",
         "type": "object"
       },
       "TemplateCheckDef": {
@@ -1330,6 +1452,177 @@
           "name"
         ],
         "title": "TemplateCreate",
+        "type": "object"
+      },
+      "TemplateDefinitionsOut": {
+        "properties": {
+          "alertDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alertdefinitions",
+            "type": "array"
+          },
+          "checkDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checkdefinitions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkDefinitions",
+          "alertDefinitions"
+        ],
+        "title": "TemplateDefinitionsOut",
+        "type": "object"
+      },
+      "TemplateOut": {
+        "description": "assignments and tagAssignments come with the list and a single template,\nsyncResult with a change that rolled the template out.",
+        "properties": {
+          "alertDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alertdefinitions",
+            "type": "array"
+          },
+          "assignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TemplateAssignmentOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignments"
+          },
+          "builtinEdited": {
+            "title": "Builtinedited",
+            "type": "boolean"
+          },
+          "builtinSlug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtinslug"
+          },
+          "builtinUpdateAvailable": {
+            "title": "Builtinupdateavailable",
+            "type": "boolean"
+          },
+          "builtinVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtinversion"
+          },
+          "checkDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checkdefinitions",
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "syncResult": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncResultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tagAssignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TagAssignmentOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagassignments"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "builtinSlug",
+          "builtinVersion",
+          "builtinEdited",
+          "builtinUpdateAvailable",
+          "checkDefinitions",
+          "alertDefinitions",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "TemplateOut",
         "type": "object"
       },
       "TemplateTagAssign": {
@@ -2626,7 +2919,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateOut"
+                  },
+                  "title": "Response List Templates Templates Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -2651,7 +2950,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2860,7 +3161,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2906,7 +3209,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3171,7 +3476,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BuiltinUpdateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3207,7 +3514,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"

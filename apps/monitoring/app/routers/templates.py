@@ -36,7 +36,14 @@ from app.models import (
     masked_alert_definitions,
 )
 from app.scheduler import remove_check
-from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
+from app.schemas import (
+    BuiltinUpdateOut,
+    TemplateAssign,
+    TemplateCreate,
+    TemplateOut,
+    TemplateTagAssign,
+    TemplateUpdate,
+)
 from app.tag_sync import sync_tag_assignments
 from app.template_suggestions import SuggestionDismiss, dismiss_suggestion, suggest_templates
 from app.template_sync import (
@@ -101,7 +108,12 @@ def _keep_smtp_password(channel_config: dict, stored: dict | None) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/templates", dependencies=[Depends(require_internal)])
+@router.get(
+    "/templates",
+    response_model=list[TemplateOut],
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def list_templates(db: Session = Depends(get_db)):
     """Lists all templates with their server and tag assignments."""
     templates = db.query(MonitorTemplate).order_by(MonitorTemplate.name).all()
@@ -169,7 +181,11 @@ def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
 
 
 @router.post(
-    "/templates", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)]
+    "/templates",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TemplateOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
 )
 def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
     """Creates a new template."""
@@ -201,7 +217,12 @@ def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
     return _template_dict(template)
 
 
-@router.get("/templates/{template_id}", dependencies=[Depends(require_internal)])
+@router.get(
+    "/templates/{template_id}",
+    response_model=TemplateOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def get_template(template_id: str, db: Session = Depends(get_db)):
     """Returns a single template with its assignments."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
@@ -220,7 +241,12 @@ def get_template(template_id: str, db: Session = Depends(get_db)):
     return _template_dict(template, assignments=assignments, tag_assignments=tag_assignments)
 
 
-@router.put("/templates/{template_id}", dependencies=[Depends(require_internal)])
+@router.put(
+    "/templates/{template_id}",
+    response_model=TemplateOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def update_template(template_id: str, data: TemplateUpdate, db: Session = Depends(get_db)):
     """Updates a template — triggers a live sync to all assigned servers."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
@@ -321,7 +347,12 @@ def dismiss_template_suggestion(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/templates/{template_id}/builtin-update", dependencies=[Depends(require_internal)])
+@router.get(
+    "/templates/{template_id}/builtin-update",
+    response_model=BuiltinUpdateOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
     """Compares a standard template's definitions with those of its shipped version.
 
@@ -353,7 +384,12 @@ def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/templates/{template_id}/builtin-update", dependencies=[Depends(require_internal)])
+@router.post(
+    "/templates/{template_id}/builtin-update",
+    response_model=TemplateOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def take_builtin_update(template_id: str, db: Session = Depends(get_db)):
     """Takes the shipped version of a standard template, edited or not — triggers a
     live sync to all assigned servers; the fields a user changed on a check stay."""

@@ -8,12 +8,15 @@ Pydantic drops a key the model does not declare without a word, so (a) the opera
 schema in the live OpenAPI names the model, and (b) the body over the real route equals what
 the producer hands out, for a full row and a sparse one; (c) covers each conditional key."""
 
+import copy
+import json
 from datetime import datetime
 
 import pytest
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import update
 
+from app import builtin_templates
 from app.models import (
     MonitorAgentKey,
     MonitorAlertLog,
@@ -21,7 +24,11 @@ from app.models import (
     MonitorCheck,
     MonitorMaintenance,
     MonitorState,
+    MonitorTemplate,
+    MonitorTemplateAssignment,
+    MonitorTemplateTagAssignment,
 )
+from app.routers import templates as templates_router
 
 
 def _response_schema(path: str, method: str) -> dict:
@@ -64,6 +71,12 @@ def _ref_name(schema: dict) -> str:
         ("/agent-keys/{server_id}", "post", "AgentKeyOut"),
         ("/agent-keys/{server_id}", "delete", "AgentKeyDeletedOut"),
         ("/servers/{server_id}/cleanup", "delete", "ServerCleanupOut"),
+        ("/templates", "get", "TemplateOut"),
+        ("/templates", "post", "TemplateOut"),
+        ("/templates/{template_id}", "get", "TemplateOut"),
+        ("/templates/{template_id}", "put", "TemplateOut"),
+        ("/templates/{template_id}/builtin-update", "get", "BuiltinUpdateOut"),
+        ("/templates/{template_id}/builtin-update", "post", "TemplateOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -466,3 +479,111 @@ class TestAdminShape:
         r = client.delete("/servers/srv-1/cleanup")
         assert r.status_code == 200, r.text
         assert r.json() == {"checksDeleted": 1, "alertsDeleted": 1}
+
+
+def _template(factory, template_id: str, *, listed: bool = True) -> dict:
+    """What the router hands out for a template; with listed, with its assignments."""
+    with factory() as db:
+        template = db.get(MonitorTemplate, template_id)
+        if not listed:
+            return jsonable_encoder(templates_router._template_dict(template))
+        assignments = db.query(MonitorTemplateAssignment).filter_by(template_id=template_id).all()
+        tags = db.query(MonitorTemplateTagAssignment).filter_by(template_id=template_id).all()
+        return jsonable_encoder(
+            templates_router._template_dict(template, assignments=assignments, tag_assignments=tags)
+        )
+
+
+def _seed_builtin(factory, slug: str = "linux-base") -> str:
+    with factory() as db:
+        builtin_templates.seed_builtin_templates(db)
+        return db.query(MonitorTemplate).filter_by(builtin_slug=slug).one().id
+
+
+class TestTemplateShape:
+    def test_list_and_get_equal_the_producer(self, client_db):
+        # tpl-full: definitions, a server and a tag assignment; tpl-sparse: the nullable
+        # columns NULL, no assignments; a standard template carries the builtin columns.
+        client, factory = client_db
+        builtin_id = _seed_builtin(factory)
+        ping = {"def_id": "def-ping", "name": "Ping", "check_type": "ping"}
+        alert = {"def_id": "def-mail", "name": "Mail", "channel": "email"}
+        alert["channel_config"] = {"smtp_host": "mail.example", "smtp_password": "secret"}
+        with factory() as db:
+            db.add(
+                MonitorTemplate(
+                    id="tpl-full",
+                    name="Full",
+                    description="all set",
+                    check_definitions=json.dumps([ping]),
+                    alert_definitions=json.dumps([alert]),
+                )
+            )
+            db.add(MonitorTemplate(id="tpl-sparse", name="Sparse"))
+            db.add(
+                MonitorTemplateAssignment(
+                    id="as-1",
+                    template_id="tpl-full",
+                    server_id="srv-1",
+                    server_hostname="srv-1.example",
+                    server_name="srv-1",
+                )
+            )
+            db.add(MonitorTemplateTagAssignment(id="ta-1", template_id="tpl-full", tag="web"))
+            db.commit()
+        r = client.get("/templates")
+        assert r.status_code == 200, r.text
+        by_id = {t["id"]: t for t in r.json()}
+        for tid in ("tpl-full", "tpl-sparse", builtin_id):
+            assert by_id[tid] == _template(factory, tid)
+            got = client.get(f"/templates/{tid}")
+            assert got.status_code == 200, got.text
+            assert got.json() == _template(factory, tid)
+            assert "syncResult" not in got.json()
+        full = by_id["tpl-full"]
+        assert full["assignments"][0]["source"] == "manual"
+        assert full["tagAssignments"] == [{"id": "ta-1", "templateId": "tpl-full", "tag": "web"}]
+        assert full["alertDefinitions"][0]["channel_config"]["smtp_password"] == "***"
+        sparse = by_id["tpl-sparse"]
+        assert sparse["description"] is None and sparse["builtinSlug"] is None
+        assert sparse["checkDefinitions"] == [] and sparse["assignments"] == []
+        assert by_id[builtin_id]["builtinVersion"] is not None
+
+    def test_create_and_update_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        r = client.post("/templates", json={"name": "Made"})
+        assert r.status_code == 201, r.text
+        tid = r.json()["id"]
+        # A new template answers without assignments and without a sync result.
+        assert r.json() == _template(factory, tid, listed=False)
+
+        r = client.put(f"/templates/{tid}", json={"description": "changed"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body["syncResult"]) == {"created", "updated", "deleted", "servers"}
+        assert body == {**_template(factory, tid, listed=False), "syncResult": body["syncResult"]}
+
+    def test_builtin_update_answers_as_the_producer(self, client_db, monkeypatch):
+        client, factory = client_db
+        tid = _seed_builtin(factory)
+        shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
+        tpl = next(t for t in shipped if t["slug"] == "linux-base")
+        tpl["version"] += 1
+        tpl["check_definitions"] = [
+            {**d, "interval": "1m"} if d["def_id"] == "system-resources" else d
+            for d in tpl["check_definitions"]
+        ]
+        monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
+
+        r = client.get(f"/templates/{tid}/builtin-update")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = jsonable_encoder(templates_router.get_builtin_update(tid, db))
+        assert r.json() == want
+        assert set(r.json()["current"]) == {"checkDefinitions", "alertDefinitions"}
+
+        r = client.post(f"/templates/{tid}/builtin-update")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body["syncResult"]) == {"created", "updated", "deleted", "servers"}
+        assert body == {**_template(factory, tid, listed=False), "syncResult": body["syncResult"]}
