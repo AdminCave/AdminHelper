@@ -52,8 +52,10 @@ Dedup-Key: bug:monitoring:victoria-4xx-batch-loss
 HEAD: b25c65a6
 Semantik: Kevin 2026-10-22: „Den Verlust bei 4xx-Antworten von VictoriaMetrics hinnehmen und in einem Satz dokumentieren (DE + EN).“
 
-### T2 — Monitoring-Admin-Seite: Labels und Beispielabfrage wie im Code (R-0754)  [ ]
+### T2 — Monitoring-Admin-Seite: Labels und Beispielabfrage wie im Code (R-0754)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e2d31bbf 2026-10-29T09:48:36+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T2.verdict.json)
 Änderung: `docs/admin/monitoring.html:230` (EN `:230`), die zwei Sätze zu Labels und Debug-Zugriff: Check-Ergebnisse tragen `check_id`, `check_type`, `name` und bei Server-Checks `server_id` (`apps/monitoring/app/core/victoria.py:155-157`); die Agent-Metriken `monitor_agent_*` tragen `server_id`, Platten dazu `mount`, Temperaturen `sensor` (`apps/monitoring/app/routers/agent.py:124`, `:139`, `:147`). `device` nur, wenn #265 es nicht entfernt hat (nach #265 schreibt der Agent-Report keine SMART-Zeilen mehr, `agent.py:126-128` auf dem Branch). VictoriaMetrics speichert das Feld `value` als `<measurement>_value`; die Beispielabfrage wird `…/api/v1/query?query=monitor_check_status_value` statt `up` (ohne Self-Scrape gibt es `up` nicht, `docker-compose.yml:416`; Reihenname `apps/monitoring/app/routers/checks.py:481`). Nach #265 alle Label-Stellen neu greppen (`git grep -n 'tags = \|_tags = ' apps/monitoring/app`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG
