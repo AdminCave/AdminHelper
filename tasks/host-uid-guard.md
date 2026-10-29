@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Install: Installationsverzeichnis nur für den Installierenden, Warnung bei Container-UIDs auf dem Host — Task-Ledger
-Status: geplant · Branch: feature/host-uid-guard · Review: am Ende
+Status: aktiv · Branch: feature/host-uid-guard · Review: am Ende
 Spec: docs/features/host-uid-guard.md
 Heavy: linux-full — `scripts/install.sh` und `scripts/update.sh` (Upgrade-Pfad `upgrade_path_test.sh` im Sammellauf). Kein `scenario`: kein Cross-Host-, Agent- oder PKI-Pfad. Kein `windows`. Hängt ab von: #275 (ops-install-hardening, gleiche Skripte); PR merged Kevin
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
