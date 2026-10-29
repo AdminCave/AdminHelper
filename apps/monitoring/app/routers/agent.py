@@ -14,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from app.check_engine import _dispatch_alert_bg, apply_result, log_transition
+from app.check_engine import apply_result, dispatch_alert_bg, log_transition
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import (
@@ -278,6 +278,6 @@ def agent_report(
 
     # Only after the state is durably committed: dispatch alerts off-request.
     for check_id, old_s, new_s in pending_alerts:
-        background_tasks.add_task(_dispatch_alert_bg, check_id, old_s, new_s)
+        background_tasks.add_task(dispatch_alert_bg, check_id, old_s, new_s)
 
     return {"status": "ok", "metricsWritten": len(lines), "checksUpdated": checks_updated}

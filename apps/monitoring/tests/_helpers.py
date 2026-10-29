@@ -204,12 +204,12 @@ def bell_record(factory, check_id):
 def overlap_first_hub_post(monkeypatch, factory, check_id, second_status, first_code=202):
     """Arm a hub whose FIRST POST runs a second dispatch of the check to its end
     before it answers with first_code: the check moves to second_status and
-    _dispatch_alert_bg runs again — the second dispatch of one check while the
+    dispatch_alert_bg runs again — the second dispatch of one check while the
     first is still in its hub POST (R-0424 T6 review). A tuple of statuses moves
     the check to each in turn, with one dispatch per move. Every later POST
     answers 202. Returns the list that gets the new_status of every POST."""
     from app import alerter
-    from app.check_engine import _dispatch_alert_bg
+    from app.check_engine import dispatch_alert_bg
     from app.models import MonitorState
 
     monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
@@ -226,7 +226,7 @@ def overlap_first_hub_post(monkeypatch, factory, check_id, second_status, first_
                 row = db.query(MonitorState).filter_by(check_id=check_id).one()
                 old_status, row.status = row.status, status
                 db.commit()
-            _dispatch_alert_bg(check_id, old_status, status)
+            dispatch_alert_bg(check_id, old_status, status)
         return SimpleNamespace(status_code=first_code)
 
     monkeypatch.setattr(alerter.httpx, "post", fake_post)

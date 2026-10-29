@@ -29,7 +29,7 @@ from app.alerter import (
     hub_decision,
     process_alert,
 )
-from app.check_engine import _dispatch_alert_bg
+from app.check_engine import dispatch_alert_bg
 
 from ._helpers import (
     _CapturingDb,
@@ -617,7 +617,7 @@ class TestBellCooldownThroughProcessAlert:
 
 @pytest.fixture()
 def bell_db(tmp_path, monkeypatch):
-    """A file SQLite with the model schema, wired into _dispatch_alert_bg: each
+    """A file SQLite with the model schema, wired into dispatch_alert_bg: each
     dispatch runs in a session and on a connection of its own, as in production."""
     import app.core.database as database_mod
     from app.models import Base
@@ -642,7 +642,7 @@ class TestBellSlotAcrossDispatches:
         cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "critical")
 
-        _dispatch_alert_bg(cid, "ok", "critical")
+        dispatch_alert_bg(cid, "ok", "critical")
 
         # second_status critical: no transition, so the nested dispatch skips.
         assert posted == ["critical"]
@@ -654,7 +654,7 @@ class TestBellSlotAcrossDispatches:
         cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "ok")
 
-        _dispatch_alert_bg(cid, "ok", "critical")
+        dispatch_alert_bg(cid, "ok", "critical")
 
         assert posted == ["critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)
@@ -674,7 +674,7 @@ class TestBellSlotAcrossDispatches:
         )
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "critical", first_code)
 
-        _dispatch_alert_bg(cid, "critical", "ok")
+        dispatch_alert_bg(cid, "critical", "ok")
 
         assert posted == ["ok", "critical"]
         assert bell_record(bell_db, cid) == ("critical", _NOW)
@@ -704,7 +704,7 @@ class TestBellSlotAcrossDispatches:
         )
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, status, first_code=403)
 
-        _dispatch_alert_bg(cid, notified, status)
+        dispatch_alert_bg(cid, notified, status)
 
         assert posted == [status]
         assert bell_record(bell_db, cid) == hub_before
@@ -728,7 +728,7 @@ class TestBellSlotAcrossDispatches:
             monkeypatch, bell_db, cid, ("critical", "ok"), first_code=403
         )
 
-        _dispatch_alert_bg(cid, "critical", "ok")
+        dispatch_alert_bg(cid, "critical", "ok")
 
         assert posted == ["ok", "critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)
@@ -740,7 +740,7 @@ class TestBellSlotAcrossDispatches:
         cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "ok", first_code=403)
 
-        _dispatch_alert_bg(cid, "ok", "critical")
+        dispatch_alert_bg(cid, "ok", "critical")
 
         assert posted == ["critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)

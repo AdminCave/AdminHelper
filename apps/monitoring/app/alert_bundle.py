@@ -120,13 +120,13 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
     of its own and a restart loses nothing. Per kind, BUNDLE_MIN or more open
     heartbeats are claimed and bundled, whatever their age; fewer wait until they
     are _alone_wait old and then go out one by one on the single path
-    (_dispatch_alert_bg, which claims each itself). A heartbeat muted by a
+    (dispatch_alert_bg, which claims each itself). A heartbeat muted by a
     maintenance window or a Host Ping does not count and stays open, as in
     process_alert, and once the muting is over only after its next evaluation
     (_awaits_check).
 
     The session is reached as ``database.SessionLocal``, the one patch point it
-    shares with _dispatch_alert_bg. Errors are logged and rolled back; a claim
+    shares with dispatch_alert_bg. Errors are logged and rolled back; a claim
     committed before them stands (at most once, as in process_alert)."""
     now = now if now is not None else utcnow_naive()
     db = database.SessionLocal()
@@ -144,7 +144,7 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
                 continue
             for c in found:
                 if c.since <= now - _alone_wait(c.interval):
-                    check_engine._dispatch_alert_bg(c.check_id, c.notified_status, c.status)
+                    check_engine.dispatch_alert_bg(c.check_id, c.notified_status, c.status)
     except Exception:
         db.rollback()
         logger.exception("Agent alert bundle failed")

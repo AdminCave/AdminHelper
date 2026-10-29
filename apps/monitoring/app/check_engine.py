@@ -30,7 +30,7 @@ logger = logging.getLogger("monitor.engine")
 # webhook or SMTP server (up to 10s each, serial) would otherwise tie up the check workers and
 # misfire the next checks — exactly during an incident when many checks transition at once. Same
 # isolation the agent push path needs too — since harness 8a T4 both paths share
-# the one _dispatch_alert_bg below, each scheduling it its own way (5.3).
+# the one dispatch_alert_bg below, each scheduling it its own way (5.3).
 _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 
 # Longest message apply_result stores, the "…" included. The checkers cap what they copy
@@ -41,7 +41,7 @@ _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 MAX_MESSAGE = 2000
 
 
-def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
+def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
     """Dispatch one alert (webhook/SMTP) with its own session.
 
     The single dispatcher for both paths: the scheduler submits it to
@@ -375,14 +375,14 @@ def execute_check(check_id: str) -> None:
             log_transition(check_name, old_status, eff_status, stored_message)
 
         # Dispatch OFF the check-worker thread (see _alert_pool /
-        # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
+        # dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
         # scheduler pool and misfire following checks. Pass the id, not the
         # session-bound check — the pool thread reloads it in its own session (5.3).
         # A heartbeat's discrepancy stays open for the agent alert bundle
         # (alert_bundle.flush_agent_alerts), which reports agents that go silent
         # or come back together in one message.
         if decision == "notify" and check_type != "agent_ping":
-            _alert_pool.submit(_dispatch_alert_bg, check_id, old_status, eff_status)
+            _alert_pool.submit(dispatch_alert_bg, check_id, old_status, eff_status)
 
     except Exception:
         logger.exception("execute_check(%s) fehlgeschlagen", check_id)
