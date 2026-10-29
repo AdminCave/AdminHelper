@@ -438,6 +438,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
+  gemeinsamen Schluessel (R-0761):** Wer ihn nicht zuerst schreibt, uebernimmt den des anderen Prozesses. Vorher konnte
+  jeder Prozess einen eigenen erzeugen, und JWTs galten nicht prozessuebergreifend.
 - **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
   System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
   ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
