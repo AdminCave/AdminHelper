@@ -68,8 +68,13 @@ DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 cd apps/web &amp;&amp; npm ci &amp;&amp; npm run dev
 
 # Desktop client (starts Tauri dev with auto-reload)
+# The first build needs a placeholder file for the frpc sidecar (externalBin
+# binaries/frpc); CI/CD replaces it with the real frpc (DEVELOPMENT.md)
 cd apps/desktop/ui &amp;&amp; npm ci
-cd ../src-tauri &amp;&amp; cargo tauri dev
+cd ../src-tauri
+mkdir -p binaries
+touch binaries/frpc-x86_64-unknown-linux-gnu
+cargo tauri dev
 
 # Go agent
 cd apps/agent &amp;&amp; go run ./cmd/adminhelper-agent version</code></pre>
