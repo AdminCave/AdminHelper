@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Für alle Tasks: `npm audit fix` ohne `--force` im Verzeichnis, danach `npm audit --audit-level=high` mit Exit 0
 (wie `.github/workflows/audit.yml:99-109`); nur das Lockfile ändert sich.
 
-### T1 — web: undici und vitest im Lockfile anheben (R-0922)  [ ]
-Komponente: web · Dateien: apps/web/package-lock.json
+### T1 — web: undici und vitest im Lockfile anheben (R-0922)  [x]
+Komponente: web · Dateien: apps/web/package-lock.json, apps/web/package.json
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @51182b6d 2026-10-29T21:28:28+01:00
+Review: am Ende (Branch-Review)
 Änderung: `undici` ≥ 7.30.1 (über jsdom) und `vitest`/`@vitest/*` ≥ 4.1.12 im Lockfile; `npm audit --audit-level=high` grün.
 Beweis: audit.yml 2026-10-26 (Lauf 40326284489, Job „npm audit“ rot); lokal `npm audit` in apps/web: undici 7.0.0 - 7.30.0 high
 Dedup-Key: rel:deps-audit
