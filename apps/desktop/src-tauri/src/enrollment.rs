@@ -550,9 +550,10 @@ async fn revoke_on_server(server_url: &str) -> Result<bool, AppError> {
 }
 
 /// Whether the server's answer means the device is revoked: done now (2xx), or
-/// refused already as revoked (403 with ERR_CERT_REVOKED).
+/// refused already as revoked (403 whose `code` is ERR_CERT_REVOKED).
 fn revoked_by(status: u16, body: &str) -> bool {
-    (200..300).contains(&status) || (status == 403 && body.contains("ERR_CERT_REVOKED"))
+    (200..300).contains(&status)
+        || (status == 403 && AppError::http(status, body).code() == "ERR_CERT_REVOKED")
 }
 
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
@@ -1226,6 +1227,15 @@ mod tests {
     fn the_server_answer_counts_as_revoked_when_done_or_already_refused() {
         assert!(revoked_by(204, ""));
         assert!(revoked_by(
+            403,
+            r#"{"detail":"ERR_CERT_REVOKED: no longer valid","code":"ERR_CERT_REVOKED"}"#
+        ));
+        // Only the field `code` counts, not the code somewhere in the text.
+        assert!(!revoked_by(
+            403,
+            r#"{"detail":"server ERR_CERT_REVOKED","code":"ERR_CERT_USER_MISMATCH"}"#
+        ));
+        assert!(!revoked_by(
             403,
             r#"{"detail":"ERR_CERT_REVOKED: no longer valid"}"#
         ));

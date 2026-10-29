@@ -128,8 +128,10 @@ Orakel: contract — die Ablehnung der Anmeldung gegen die Spec-Tabelle „Deskt
 Dedup-Key: ref:desktop:error.rs:string-errors-at-ipc
 HEAD: 237b450a
 
-### T8 — Desktop-Rust: `revoked_by` liest `code`, nicht den Body-Text (R-0709)  [ ]
+### T8 — Desktop-Rust: `revoked_by` liest `code`, nicht den Body-Text (R-0709)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @b5480ded 2026-10-29T13:46:21+01:00
+Review: approve (.ah-out/review/fehlervertrag/T8.verdict.json)
 Änderung: `revoked_by` (`apps/desktop/src-tauri/src/enrollment.rs:443-446`): ein 403 zählt als „schon widerrufen“ nur, wenn `AppError::http(403, body).code() == "ERR_CERT_REVOKED"`, also das Feld `code` des Bodys, nicht mehr ein `ERR_CERT_REVOKED` irgendwo im Text. Test `the_server_answer_counts_as_revoked_when_done_or_already_refused` (`:1115-1127`): es bleiben 204 → wahr, 403 `{"detail":"Kein gültiges Client-Zertifikat"}` → falsch, 409 und 502 → falsch; neu 403 `{"detail":"ERR_CERT_REVOKED: no longer valid","code":"ERR_CERT_REVOKED"}` → wahr und 403 `{"detail":"server ERR_CERT_REVOKED","code":"ERR_CERT_USER_MISMATCH"}` → falsch; der Fall 403 `{"detail":"ERR_CERT_REVOKED: no longer valid"}` ohne `code` (`:1117-1120`) wird falsch (gewollt: nur `code` zählt, Kevin 2026-10-22; den Rückfall für Server ohne `code` entscheidet T9). Zuerst rot: der Fall mit `code` `ERR_CERT_USER_MISMATCH` auf HEAD (wahr).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment::
 Doku: keine (gegen einen Server mit T2 unverändert)
