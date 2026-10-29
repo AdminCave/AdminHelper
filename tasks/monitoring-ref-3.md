@@ -200,8 +200,10 @@ Metrik: `evaluate` 216 → ≤ 60 Zeilen, längste neue Funktion ≤ 60 (AST, Py
 Dedup-Key: ref:cross:python:long-functions
 HEAD: 237b450a
 
-### T13 — SmartHealthChecker.evaluate in benannte Schritte (R-0728)  [ ]
+### T13 — SmartHealthChecker.evaluate in benannte Schritte (R-0728)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @eac2a46e 2026-10-29T12:48:57+01:00
+Review: approve (.ah-out/review/monitoring-ref-3/T13.verdict.json)
 Änderung: `SmartHealthChecker.evaluate` (`apps/monitoring/app/checkers/smart.py:87-257`, 171 Zeilen) ruft private Schritte: kein Gerät (`smart_absent`), Schwellen aus der Config (`:101-117`), Bewertung je Platte (allgemeine Prüfungen, Exit-Code-Bits, Temperatur je Klasse, dann `_check_ata`/`_check_nvme`, `:260`, `:301`), Metriken je Platte (`:234-…`), Ergebnis (`:248-257`). Meldungen, Reihenfolge der Probleme, Metrik-Namen (`safe_metric_part`), `_details` und die Kommentare zum Warum bleiben. `evaluate` höchstens 60 Zeilen samt Docstring, keine neue Funktion über 60.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py tests/test_checker_messages.py tests/test_agent_report.py
 Doku: keine (intern)
@@ -233,3 +235,4 @@ HEAD: 237b450a
 - 2026-10-29 T10: `_find_nul` heißt auf main inzwischen `_find_unstorable` (NUL und einsame Surrogate) — umbenannt wird dieser zu `find_unstorable`, nur im Monitoring (`apps/server` hat eine eigene Kopie, nicht im Auftrag). Der Wächter (b) wertet `from app import <modul>` als Modulnamen (Pfad unter `app/` existiert) und zählt nur Zugriffe `<alias>._y` über solche Namen; Selbstimporte bleiben erlaubt
 - 2026-10-29 T11: Schritte heißen `_record_liveness`, `_refuse_unstorable_report` (der Name `_find_nul` ist auf main `find_unstorable`, T10), `_store_host_facts`, `_report_lines`, `_push_checks`, `_evaluate_push_check` (Savepoint; gibt Zeilen, Übergang und Alert erst nach dem Block zurück, `try`/`continue` bleibt im Rumpf), `_result_lines`, `_locked_state`, `_prev_details`, `_commit_evaluation`; Kommentare zum Warum ziehen wörtlich zu ihrem Schritt
 - 2026-10-29 T12: Die Hysterese-Buchführung (problems, status, problem_levels, prev_problems) trägt eine kleine Klasse `_Grader` statt einer Closure, damit die Schritte `_grade_usage`, `_grade_load`, `_grade_disks`, `_grade_temperatures` Modulfunktionen bleiben; `_resources_message`/`_resources_details` bauen Meldung und Details. Der Zweig „prev_problems ist kein dict“ ist jetzt ein Ausdruck in `_Grader.__init__` (Coverage zählt ihn nicht mehr als eigene Zeile: 46 → 45 fehlende Zeilen, kein Test entfiel).
+- 2026-10-29 T13: `evaluate` ruft `_absent_result`, `_smart_thresholds`, je Platte `_grade_disk` (Methode, weil sie wie zuvor `self._check_ata`/`self._check_nvme` ruft; darin `_check_common` für SMART-Urteil, Uncorrectables, Exit-Code-Bits und Temperatur mit eigener Liste wie `_check_ata`, 2.32), `_disk_metrics` und `_smart_result`. `if category != "critical": category = "warning"` steht als `_worse(category, "warning")` (gleichwertig bei Kategorie ok/warning/critical); Reihenfolge der Probleme bleibt, weil die Listen in derselben Folge verlängert werden.
