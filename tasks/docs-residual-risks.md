@@ -166,8 +166,10 @@ Beweis: origin/main@b25c65a6 · `sed -n 87p docker-compose.yml` → „Only the 
 Orakel: contract — Kommentar gegen den Entrypoint; Meldungstexte gegen die Test-Assertions
 HEAD: b25c65a6
 
-### T11 — Entwickler-Übersicht EN und Vite-Kommentare: Versionen und Build-Weg wie heute (R-0792)  [ ]
+### T11 — Entwickler-Übersicht EN und Vite-Kommentare: Versionen und Build-Weg wie heute (R-0792)  [x]
 Komponente: web · Dateien: docs/en/developer/index.html, apps/web/vite.config.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @aba4087b 2026-10-29T11:11:32+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T11.verdict.json)
 Änderung: (1) `docs/en/developer/index.html:38-39` (Tech-Stack-Karten): „FastAPI 0.11“ → „FastAPI“, „Vite 5“ → „Vite“, wie die DE-Seite, die keine Versionen nennt (nach docs-drift `docs/developer/index.html`, Tech-Stack-Karten); die Lockdateien sind die Quelle (`apps/server/requirements.txt:239` `fastapi==0.138.0`, `apps/web/package-lock.json` Vite 8.1.6). Testzahlen bleiben (keine Zeile). (2) `apps/web/vite.config.ts:48-49`: statt „Waehrend der Migration … Erst in Phase 11 auf '../server/frontend' umstellen“ englisch: Vite baut nach `dist/`; das Root-`Dockerfile` (Stage `frontend-build`) kopiert `dist/` ins Server-Image, das es unter `frontend/` ausliefert (`Dockerfile:4`, `:40`). `:52`: „after the cutover to ../server/frontend they'd be served publicly“ → „the server image serves the build publicly“. Kein Wert der Konfiguration ändert sich.
 Verify: bash scripts/dev/verify.sh web --strict -- src/vite-config.test.ts
 Doku: die Task ist die Doku (EN); kein CHANGELOG
