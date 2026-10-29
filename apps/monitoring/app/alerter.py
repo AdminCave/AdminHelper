@@ -16,6 +16,7 @@ import json
 import logging
 import smtplib
 import ssl
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -101,6 +102,65 @@ def resolve_notification(notified_status: str | None, new_status: str) -> str:
     return "notify"
 
 
+def enabled_rules(db: Session) -> list[MonitorAlertRule]:
+    return db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
+
+
+def reported_status(notified: str | None) -> str:
+    """The receiver-facing "old" status: the last REPORTED one. None/pending/unknown
+    mean "nothing was ever reported" (unknown only via the migration backfill) and
+    read as ok."""
+    return notified if notified not in (None, "pending", "unknown") else "ok"
+
+
+def rule_applies(
+    db: Session, rule: MonitorAlertRule, check: MonitorCheck, *, is_recovery: bool
+) -> bool:
+    if not _rule_matches(rule, check):
+        return False
+    # Never block recovery alerts via cooldown
+    if not is_recovery and _is_in_cooldown(db, rule, check):
+        logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
+        return False
+    return True
+
+
+def send_to_rule(
+    db: Session,
+    rule: MonitorAlertRule,
+    members: Sequence[tuple[MonitorCheck, str]],
+    msg: dict,
+    new_status: str,
+    sent_at: datetime | None = None,
+) -> None:
+    """Sends one message over the rule's channel and adds an alert-log row per
+    member (check, reported old status), so the rule's cooldown per check holds.
+    The first member stands in as the check the channel names in its service log.
+    Without ``sent_at`` the rows carry the time after the send."""
+    try:
+        success, error = _dispatch(rule, members[0][0], msg)
+    except Exception as exc:
+        # Isolate each rule's dispatch: a misconfigured rule (e.g. smtp_port "abc" or
+        # non-string recipients, which parse in _send_email BEFORE its own try) would
+        # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
+        # other rule's already-created alert log, silently suppressing all their alerts (4.45).
+        logger.exception("Alert dispatch failed for rule %s", rule.id)
+        success, error = False, f"Dispatch failed ({type(exc).__name__})"
+    stamp = sent_at if sent_at is not None else utcnow_naive()
+    for check, old_status in members:
+        db.add(
+            MonitorAlertLog(
+                alert_rule_id=rule.id,
+                check_id=check.id,
+                old_status=old_status,
+                new_status=new_status,
+                sent_at=stamp,
+                success=success,
+                error=error,
+            )
+        )
+
+
 def process_alert(
     db: Session,
     check: MonitorCheck,
@@ -160,15 +220,13 @@ def process_alert(
         logger.debug("Alert for check %s suppressed (%s)", check.id, reason)
         return
 
-    rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
+    rules = enabled_rules(db)
 
     is_recovery = new_status == "ok"
     # The receiver-facing "old" is the last REPORTED status, not the raw
     # transition: a catch-up after host-down reads ok -> critical, a
-    # post-maintenance recovery critical -> ok. None/pending/unknown mean
-    # "nothing was ever reported" (unknown only via the migration backfill)
-    # and read as ok.
-    reported_old = notified if notified not in (None, "pending", "unknown") else "ok"
+    # post-maintenance recovery critical -> ok.
+    reported_old = reported_status(notified)
 
     # The bell (notification hub) has its own cooldown (hub_decision). It
     # decides under the same lock and its slot is reserved with the claim, so a
@@ -207,33 +265,8 @@ def process_alert(
     msg = _build_message(db, check, reported_old, new_status)
 
     for rule in rules:
-        if not _rule_matches(rule, check):
-            continue
-        # Never block recovery alerts via cooldown
-        if not is_recovery and _is_in_cooldown(db, rule, check):
-            logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
-            continue
-
-        try:
-            success, error = _dispatch(rule, check, msg)
-        except Exception as exc:
-            # Isolate each rule's dispatch: a misconfigured rule (e.g. smtp_port "abc" or
-            # non-string recipients, which parse in _send_email BEFORE its own try) would
-            # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
-            # other rule's already-created alert log, silently suppressing all their alerts (4.45).
-            logger.exception("Alert-Dispatch fuer Rule %s fehlgeschlagen", rule.id)
-            success, error = False, f"Dispatch failed ({type(exc).__name__})"
-
-        log_entry = MonitorAlertLog(
-            alert_rule_id=rule.id,
-            check_id=check.id,
-            old_status=reported_old,
-            new_status=new_status,
-            sent_at=utcnow_naive(),
-            success=success,
-            error=error,
-        )
-        db.add(log_entry)
+        if rule_applies(db, rule, check, is_recovery=is_recovery):
+            send_to_rule(db, rule, [(check, reported_old)], msg, new_status)
 
     # The claim was committed before the I/O above; only the alert-log rows
     # remain for the caller's commit.

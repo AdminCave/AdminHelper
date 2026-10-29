@@ -31,8 +31,6 @@ from app.core import database
 from app.core.time import utcnow_naive
 from app.maintenance import is_in_maintenance
 from app.models import (
-    MonitorAlertLog,
-    MonitorAlertRule,
     MonitorCheck,
     MonitorMaintenance,
     MonitorState,
@@ -302,7 +300,7 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
     (hub_status, hub_sent_at) follows each event the hub accepted. Log rows and
     records are flushed; the caller commits them."""
     spec = _KINDS[kind]
-    members = [Entry(check, state, _reported(old)) for check, state, old in entries]
+    members = [Entry(check, state, alerter.reported_status(old)) for check, state, old in entries]
     names = _server_names(db, members)
     singles: dict[str, dict] = {}
 
@@ -318,12 +316,6 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
     _send_rules(db, spec, members, names, single, now)
     _send_bell(spec, members, single, now)
     db.flush()
-
-
-def _reported(old_status: str | None) -> str:
-    # As process_alert: nothing reported before (None, pending; unknown only via
-    # the migration backfill) reads as ok.
-    return old_status if old_status not in (None, "pending", "unknown") else "ok"
 
 
 def _server_names(db: Session, members: list[Entry]) -> dict[str, str]:
@@ -353,13 +345,9 @@ def _send_rules(
     now: datetime,
 ) -> None:
     is_recovery = kind.status == "ok"
-    rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
-    for rule in rules:
+    for rule in alerter.enabled_rules(db):
         matched = [
-            m
-            for m in members
-            if alerter._rule_matches(rule, m.check)
-            and (is_recovery or not alerter._is_in_cooldown(db, rule, m.check))
+            m for m in members if alerter.rule_applies(db, rule, m.check, is_recovery=is_recovery)
         ]
         # The messages are built before the rule's first send.
         if len(matched) >= BUNDLE_MIN:
@@ -367,33 +355,9 @@ def _send_rules(
         else:
             sends = [([m], single(m)) for m in matched]
         for group, msg in sends:
-            # The first member stands in as the check the channel names in its
-            # service log; _send_webhook and _send_email stay as they are.
-            success, error = _dispatch_isolated(rule, group[0].check, msg)
-            # One row per member, so the rule's cooldown per check holds.
-            for m in group:
-                db.add(
-                    MonitorAlertLog(
-                        alert_rule_id=rule.id,
-                        check_id=m.check.id,
-                        old_status=m.old_status,
-                        new_status=kind.status,
-                        sent_at=now,
-                        success=success,
-                        error=error,
-                    )
-                )
-
-
-def _dispatch_isolated(
-    rule: MonitorAlertRule, check: MonitorCheck, msg: dict
-) -> tuple[bool, str | None]:
-    # Isolated as in process_alert: a misconfigured rule must not stop the others.
-    try:
-        return alerter._dispatch(rule, check, msg)
-    except Exception as exc:
-        logger.exception("Bundled alert dispatch failed for rule %s", rule.id)
-        return False, f"Dispatch failed ({type(exc).__name__})"
+            alerter.send_to_rule(
+                db, rule, [(m.check, m.old_status) for m in group], msg, kind.status, now
+            )
 
 
 def _bundle_message(kind: _Kind, members: list[Entry], names: dict[str, str]) -> dict:
