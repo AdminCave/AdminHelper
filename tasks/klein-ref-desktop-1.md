@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-desktop-1 — Task-Ledger
-Status: geplant · Branch: feature/klein-ref-desktop-1 · Review: pro Task
+Status: aktiv · Branch: feature/klein-ref-desktop-1 · Review: pro Task
 Spec: docs/features/klein-ref-desktop-1.md (Roadmap R-0856, R-0873, R-0875, R-0937)
 Heavy: none — interne Prüfungen, Aufräumpfad und Tests im Desktop, keine Journey, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
