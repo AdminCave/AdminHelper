@@ -5,9 +5,8 @@
 package frpc
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"errors"
 	"log"
@@ -21,123 +20,6 @@ import (
 
 	"adminhelper-agent/internal/config"
 )
-
-// makeBundle builds a base64-encoded tar.gz from the given (name -> content)
-// entries, as extractPkiBundle expects it.
-func makeBundle(t *testing.T, entries map[string]string) string {
-	t.Helper()
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	for name, content := range entries {
-		if err := tw.WriteHeader(&tar.Header{
-			Name:     name,
-			Typeflag: tar.TypeReg,
-			Mode:     0o644,
-			Size:     int64(len(content)),
-		}); err != nil {
-			t.Fatalf("WriteHeader: %v", err)
-		}
-		if _, err := tw.Write([]byte(content)); err != nil {
-			t.Fatalf("Write: %v", err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("tar Close: %v", err)
-	}
-	if err := gz.Close(); err != nil {
-		t.Fatalf("gzip Close: %v", err)
-	}
-	return base64.StdEncoding.EncodeToString(buf.Bytes())
-}
-
-func TestExtractPkiBundleWritesFilesWithPermissions(t *testing.T) {
-	dest := t.TempDir()
-	bundle := makeBundle(t, map[string]string{
-		"client.key": "PRIVATE-KEY-MATERIAL",
-		"client.crt": "CERT-MATERIAL",
-	})
-
-	if err := extractPkiBundle(bundle, dest); err != nil {
-		t.Fatalf("extractPkiBundle: %v", err)
-	}
-
-	for name, want := range map[string]string{
-		"client.key": "PRIVATE-KEY-MATERIAL",
-		"client.crt": "CERT-MATERIAL",
-	} {
-		got, err := os.ReadFile(filepath.Join(dest, name))
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		if string(got) != want {
-			t.Errorf("%s content = %q, erwartet %q", name, got, want)
-		}
-	}
-
-	// Permission contract: keys stay 0600, certs widen to 0644. File modes are
-	// not meaningful on Windows, so only assert on POSIX.
-	if runtime.GOOS != "windows" {
-		keyInfo, _ := os.Stat(filepath.Join(dest, "client.key"))
-		if perm := keyInfo.Mode().Perm(); perm != 0o600 {
-			t.Errorf("client.key mode = %o, erwartet 600", perm)
-		}
-		crtInfo, _ := os.Stat(filepath.Join(dest, "client.crt"))
-		if perm := crtInfo.Mode().Perm(); perm != 0o644 {
-			t.Errorf("client.crt mode = %o, erwartet 644", perm)
-		}
-	}
-}
-
-func TestExtractPkiBundleRejectsZipSlip(t *testing.T) {
-	dest := t.TempDir()
-	// A path-traversal member that would escape destDir.
-	bundle := makeBundle(t, map[string]string{
-		"../escaped.key": "OWNED",
-	})
-
-	if err := extractPkiBundle(bundle, dest); err == nil {
-		t.Fatal("extractPkiBundle akzeptierte einen ../-Member (zip slip)")
-	}
-
-	// Nothing must have been written outside destDir.
-	if _, err := os.Stat(filepath.Join(filepath.Dir(dest), "escaped.key")); !os.IsNotExist(err) {
-		t.Error("Datei wurde ausserhalb des Zielverzeichnisses geschrieben")
-	}
-}
-
-func TestExtractPkiBundleRejectsGarbageBase64(t *testing.T) {
-	if err := extractPkiBundle("not-valid-base64!!!", t.TempDir()); err == nil {
-		t.Fatal("extractPkiBundle akzeptierte ungueltiges Base64")
-	}
-}
-
-func TestExtractPkiBundleRejectsZipBomb(t *testing.T) {
-	// A single file over the 10-MiB limit must be rejected AND removed from disk. Highly
-	// compressible, so the base64 bundle stays tiny while the extracted size trips the guard (6.14).
-	big := strings.Repeat("A", int(maxBundleBytes)+1)
-	bundle := makeBundle(t, map[string]string{"huge.crt": big})
-	dest := t.TempDir()
-
-	if err := extractPkiBundle(bundle, dest); err == nil {
-		t.Fatal("Bundle > maxBundleBytes haette abgelehnt werden muessen")
-	}
-	if _, err := os.Stat(filepath.Join(dest, "huge.crt")); !os.IsNotExist(err) {
-		t.Error("abgelehnte Datei blieb auf der Platte liegen")
-	}
-}
-
-func TestExtractPkiBundleRejectsCumulativeOverLimit(t *testing.T) {
-	// Two files, each under the limit, whose sum exceeds it — exercises the cumulative totalBytes
-	// check, not just the single-file guard (6.14).
-	half := strings.Repeat("A", int(maxBundleBytes/2)+1)
-	bundle := makeBundle(t, map[string]string{"a.crt": half, "b.crt": half})
-	dest := t.TempDir()
-
-	if err := extractPkiBundle(bundle, dest); err == nil {
-		t.Fatal("kumulative Summe > maxBundleBytes haette abgelehnt werden muessen")
-	}
-}
 
 // R-0398: the sync config is what every later sync runs on (URL, API key, server ID,
 // trust). It carries the server API key, so it and its directory are root's alone.
@@ -188,7 +70,9 @@ func TestWriteSyncConfigStoresKeyAndPinnedCA(t *testing.T) {
 	}
 }
 
-func TestWriteSyncConfigStoresInsecureWithoutCA(t *testing.T) {
+// --insecure holds for the provisioning call only: the sync config never stores INSECURE, and
+// without a CA a later sync verifies the server against the system CAs.
+func TestWriteSyncConfigNeverStoresInsecure(t *testing.T) {
 	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
 
 	if err := WriteSyncConfig(SyncConfigParams{
@@ -208,13 +92,33 @@ func TestWriteSyncConfigStoresInsecureWithoutCA(t *testing.T) {
 		"ADMINHELPER_URL": "https://srv.example",
 		"API_KEY":         "key-1",
 		"SERVER_ID":       "srv-1",
-		"INSECURE":        "1",
 	}
 	if !reflect.DeepEqual(kv, want) {
 		t.Fatalf("sync config = %v, want %v", kv, want)
 	}
 	if _, err := os.Stat(config.FrpCACert()); !os.IsNotExist(err) {
 		t.Fatalf("ca.crt written without a CA to copy (%v)", err)
+	}
+}
+
+// Nothing is ever written to frp/pki anymore, so the sync config does not create it.
+func TestWriteSyncConfigCreatesNoPkiDir(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", filepath.Join(t.TempDir(), "frp"))
+
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: "https://srv.example",
+		ServerID:       "srv-1",
+		APIKey:         "key-1",
+	}); err != nil {
+		t.Fatalf("WriteSyncConfig: %v", err)
+	}
+
+	if _, err := os.Stat(config.FrpAdminHelperConf()); err != nil {
+		t.Fatalf("sync config: %v", err)
+	}
+	pki := filepath.Join(config.FrpDir(), "pki")
+	if _, err := os.Lstat(pki); !os.IsNotExist(err) {
+		t.Fatalf("%s exists after WriteSyncConfig (%v), want no pki dir", pki, err)
 	}
 }
 
@@ -260,7 +164,7 @@ func TestReprovisionRestartsRunningFrpcOnTheNewConfig(t *testing.T) {
 func TestReprovisionRestartsRatherThanReload(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, bundleToml)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the tunnel: %v", err)
 	}
 
@@ -291,11 +195,37 @@ func TestReprovisionStoresTheHashOfTheBundleText(t *testing.T) {
 
 	srv, fetches := hashServer(t, `{"hash":"`+hash+`"}`, bundleToml)
 	pointSyncAt(t, srv.URL)
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync after the provisioning: %v", err)
 	}
 	if *fetches != 0 || calls.enables != 1 || calls.restarts != 0 {
 		t.Errorf("config fetches = %d, enables = %d, restarts = %d, want 0, 1 and 0", *fetches, calls.enables, calls.restarts)
+	}
+}
+
+// R-0638: a systemctl that does not answer whether frpc runs fails like a start: the provisioning
+// warns and removes the hash, so the next run applies the config again. It starts nothing, since
+// frpc may run.
+func TestReprovisionWarnsWhenSystemctlDoesNotAnswer(t *testing.T) {
+	calls := setupSyncTest(t, "https://srv.example")
+	isActive = func(context.Context) (bool, error) {
+		return false, errors.New("systemctl is-active frpc.service: context deadline exceeded")
+	}
+	out := captureLog(t)
+
+	if err := applyBundle(bundleToml); err != nil {
+		t.Fatalf("Apply without an answer from systemctl: %v, want only a warning", err)
+	}
+	for _, want := range []string{"level=WARN", "context deadline exceeded", "next agent run tries again"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("log %q is missing %q", out.String(), want)
+		}
+	}
+	if calls.enables != 0 || calls.restarts != 0 || calls.reloads != 0 {
+		t.Errorf("enables = %d, restarts = %d, reloads = %d, want 0, 0 and 0", calls.enables, calls.restarts, calls.reloads)
+	}
+	if _, err := os.Stat(config.FrpHashFile()); !os.IsNotExist(err) {
+		t.Errorf("hash file is there (stat: %v), want none", err)
 	}
 }
 
@@ -323,7 +253,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			calls.active = tc.running
 			tc.prepare(t)
 			restart, enable := restartService, enableService
-			restartService = func() error { return errors.New("systemctl failed") }
+			restartService = func(context.Context) error { return errors.New("systemctl failed") }
 			enableService = restartService
 			out := captureLog(t)
 
@@ -346,7 +276,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			restartService, enableService = restart, enable
 			srv, fetches := hashServer(t, `{"hash":"`+hashConfig(bundleToml)+`"}`, bundleToml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
 			if *fetches != 1 || calls.restarts+calls.enables != 1 {
@@ -422,7 +352,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			writeFrpcState(t)
 			calls.active = true
 			disable := disableService
-			disableService = func() error { return errors.New("systemctl failed") }
+			disableService = func(context.Context) error { return errors.New("systemctl failed") }
 			out := captureLog(t)
 
 			if err := tc.provision(); err != nil {
@@ -443,7 +373,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			disableService = disable
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			pointSyncAt(t, srv.URL)
-			if err := Sync(); err != nil {
+			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
 			if _, err := os.Stat(config.FrpConfigFile()); calls.disables != 1 || !os.IsNotExist(err) {

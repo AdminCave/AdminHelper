@@ -11,7 +11,9 @@ R-0424 adds the bell cooldown (hub_decision) and real-session tests of the bell'
 slot across two dispatches of one check (SQLite here, Postgres in
 test_check_engine_concurrency)."""
 
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -21,13 +23,13 @@ from sqlalchemy.orm import sessionmaker
 from app import alerter
 from app.alerter import (
     HUB_COOLDOWN,
-    _emit_to_hub,
     _hub_severity,
     _severity_level,
+    emit_to_hub,
     hub_decision,
     process_alert,
 )
-from app.check_engine import _dispatch_alert_bg
+from app.check_engine import dispatch_alert_bg
 
 from ._helpers import (
     _CapturingDb,
@@ -142,9 +144,7 @@ class TestEmitToHub:
     def _patch(self, monkeypatch, url="http://hub:8080", key="secret"):
         monkeypatch.setattr(alerter, "SERVER_HUB_URL", url)
         monkeypatch.setattr(alerter, "INTERNAL_API_KEY", key)
-        monkeypatch.setattr(
-            alerter, "_build_message", lambda *a, **k: {"subject": "S", "text": "T"}
-        )
+        monkeypatch.setattr(alerter, "build_message", lambda *a, **k: {"subject": "S", "text": "T"})
 
     def test_no_request_when_unconfigured(self, monkeypatch):
         calls = {"n": 0}
@@ -153,7 +153,7 @@ class TestEmitToHub:
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
-        _emit_to_hub(make_check(), "ok", "critical", make_msg())
+        emit_to_hub(make_check(), "ok", "critical", make_msg())
         assert calls["n"] == 0
 
     def test_posts_event_with_internal_key(self, monkeypatch):
@@ -167,7 +167,7 @@ class TestEmitToHub:
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", fake_post)
 
-        _emit_to_hub(make_check(server_id="srv-1"), "ok", "critical", make_msg())
+        emit_to_hub(make_check(server_id="srv-1"), "ok", "critical", make_msg())
 
         assert captured["url"] == "http://hub:8080/api/internal/events"
         assert captured["headers"]["X-Internal-Key"] == "secret"
@@ -190,7 +190,7 @@ class TestEmitToHub:
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", fake_post)
 
-        _emit_to_hub(make_check(), "critical", "ok", make_msg())
+        emit_to_hub(make_check(), "critical", "ok", make_msg())
         # worse-of-both severity stays critical, but new_status exposes the leg.
         assert captured["json"]["severity"] == "critical"
         assert captured["json"]["new_status"] == "ok"
@@ -203,7 +203,7 @@ class TestEmitToHub:
 
         monkeypatch.setattr(alerter.httpx, "post", boom)
         # Must not raise — a failed push cannot break the alert path.
-        _emit_to_hub(make_check(), "ok", "critical", make_msg())
+        emit_to_hub(make_check(), "ok", "critical", make_msg())
 
     def test_info_transition_is_not_pushed(self, monkeypatch):
         calls = {"n": 0}
@@ -211,14 +211,14 @@ class TestEmitToHub:
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
-        _emit_to_hub(make_check(), "pending", "ok", make_msg())  # info-level → skip, no spam
+        emit_to_hub(make_check(), "pending", "ok", make_msg())  # info-level → skip, no spam
         assert calls["n"] == 0
 
     def test_non_2xx_response_does_not_raise(self, monkeypatch):
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
         # A rejected push (e.g. key mismatch) is logged, not raised.
-        _emit_to_hub(make_check(), "ok", "critical", make_msg())
+        emit_to_hub(make_check(), "ok", "critical", make_msg())
 
     def _capture_posts(self, monkeypatch):
         posted = []
@@ -238,8 +238,8 @@ class TestEmitToHub:
         posted = self._capture_posts(monkeypatch)
         check = make_check(severity="warning")
 
-        _emit_to_hub(check, "ok", "critical", make_msg())
-        _emit_to_hub(check, "critical", "ok", make_msg())
+        emit_to_hub(check, "ok", "critical", make_msg())
+        emit_to_hub(check, "critical", "ok", make_msg())
 
         assert [(p["severity"], p["new_status"]) for p in posted] == [
             ("warning", "critical"),
@@ -250,8 +250,8 @@ class TestEmitToHub:
         posted = self._capture_posts(monkeypatch)
         check = make_check(severity="info")
 
-        _emit_to_hub(check, "ok", "critical", make_msg())
-        _emit_to_hub(check, "critical", "ok", make_msg())
+        emit_to_hub(check, "ok", "critical", make_msg())
+        emit_to_hub(check, "critical", "ok", make_msg())
 
         assert posted == []
 
@@ -259,34 +259,34 @@ class TestEmitToHub:
         # R-0424: the bell's record (hub_status, hub_sent_at) follows only an
         # accepted event.
         self._capture_posts(monkeypatch)
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is True
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is True
         # info-level: nothing sent
-        assert _emit_to_hub(make_check(), "pending", "ok", make_msg()) is False
+        assert emit_to_hub(make_check(), "pending", "ok", make_msg()) is False
 
         monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
 
         def boom(*a, **k):
             raise RuntimeError("network down")
 
         monkeypatch.setattr(alerter.httpx, "post", boom)
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
 
         monkeypatch.setattr(alerter, "SERVER_HUB_URL", "")
-        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+        assert emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
 
     def test_severity_given_replaces_the_computed_one(self, monkeypatch):
         posted = self._capture_posts(monkeypatch)
         check = make_check(severity="warning")
 
-        assert _emit_to_hub(check, "warning", "ok", make_msg(), severity="critical") is True
+        assert emit_to_hub(check, "warning", "ok", make_msg(), severity="critical") is True
 
         assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "ok")]
 
 
 class TestSeverityCapThroughProcessAlert:
-    """R-0424: one transition through process_alert with the real _build_message
-    and _emit_to_hub. Rule channels and hub carry the capped label and severity;
+    """R-0424: one transition through process_alert with the real build_message
+    and emit_to_hub. Rule channels and hub carry the capped label and severity;
     the text keeps the real transition and the check's severity."""
 
     def _run(self, monkeypatch, severity, old_status, new_status):
@@ -346,6 +346,90 @@ class TestSeverityCapThroughProcessAlert:
         assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "ok")]
 
 
+class TestHubTitleLimit:
+    """R-0637: the bell's title is the message subject, cut to the hub's limit;
+    a longer title made the push a 422 and the bell got nothing. Mail and
+    webhook keep the full subject. Real build_message and emit_to_hub."""
+
+    def _run(self, monkeypatch, name, old_status, new_status):
+        monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
+        monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
+        sent, posted = [], []
+
+        def fake_dispatch(rule, check, msg):
+            sent.append(msg["subject"])
+            return True, None
+
+        def fake_post(url, **kwargs):
+            posted.append(kwargs["json"]["title"])
+            return SimpleNamespace(status_code=202)
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter.httpx, "post", fake_post)
+        check = make_check(name=name, severity="critical")
+        process_alert(_CapturingDb([make_rule()]), check, old_status, new_status)
+        return sent, posted
+
+    def test_long_problem_title_is_cut(self, monkeypatch):
+        name = "n" * 600
+        sent, posted = self._run(monkeypatch, name, "ok", "critical")
+
+        subject = "[AdminHelper Monitor] CRITICAL: " + name
+        assert sent == [subject]
+        assert len(posted) == 1
+        title = posted[0]
+        assert len(title) == 512
+        assert title.startswith("[AdminHelper Monitor] CRITICAL: ")
+        assert title.endswith("…")
+        assert title == subject[:511] + "…"
+
+    def test_title_at_the_limit_is_unchanged(self, monkeypatch):
+        name = "n" * 480
+        sent, posted = self._run(monkeypatch, name, "ok", "critical")
+
+        subject = "[AdminHelper Monitor] CRITICAL: " + name
+        assert len(subject) == 512
+        assert sent == [subject]
+        assert posted == [subject]
+
+    def test_long_recovery_title_is_cut(self, monkeypatch):
+        name = "n" * 600
+        sent, posted = self._run(monkeypatch, name, "critical", "ok")
+
+        subject = "[AdminHelper Monitor] RECOVERY: " + name
+        assert sent == [subject]
+        assert len(posted) == 1
+        title = posted[0]
+        assert len(title) == 512
+        assert title.startswith("[AdminHelper Monitor] RECOVERY: ")
+        assert title.endswith("…")
+        assert title == subject[:511] + "…"
+
+
+_SERVER_SCHEMAS = (
+    Path(__file__).resolve().parents[3]
+    / "apps"
+    / "server"
+    / "app"
+    / "modules"
+    / "notifications"
+    / "schemas.py"
+)
+
+
+def test_hub_title_max_matches_the_server_schema():
+    # R-0637: HUB_TITLE_MAX mirrors IncomingEvent.title on the server; a drift
+    # would bring the 422 for long titles back without anything turning red.
+    src = _SERVER_SCHEMAS.read_text(encoding="utf-8")
+    cls = re.search(r"^class IncomingEvent\(.*?(?=^class |\Z)", src, re.M | re.S)
+    assert cls, f"class IncomingEvent not found in {_SERVER_SCHEMAS}"
+    field = re.search(
+        r"^\s+title: str = Field\(min_length=1, max_length=(\d+)\)$", cls.group(0), re.M
+    )
+    assert field, f"IncomingEvent.title with max_length not found in {_SERVER_SCHEMAS}"
+    assert int(field.group(1)) == alerter.HUB_TITLE_MAX
+
+
 class TestProcessAlertEmits:
     def test_emit_fires_on_transition(self, monkeypatch):
         seen = {}
@@ -353,7 +437,7 @@ class TestProcessAlertEmits:
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
         monkeypatch.setattr(
             alerter,
-            "_emit_to_hub",
+            "emit_to_hub",
             lambda check, old, new, msg, severity=None: seen.update(old=old, new=new),
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "critical")
@@ -362,7 +446,7 @@ class TestProcessAlertEmits:
     def test_no_emit_when_status_unchanged(self, monkeypatch):
         calls = {"n": 0}
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "ok")
         assert calls["n"] == 0
@@ -371,7 +455,7 @@ class TestProcessAlertEmits:
         # unknown-Policy: the hub is suppressed together with the rule dispatch.
         calls = {"n": 0}
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "warning", "unknown")
         assert calls["n"] == 0
@@ -533,7 +617,7 @@ class TestBellCooldownThroughProcessAlert:
 
 @pytest.fixture()
 def bell_db(tmp_path, monkeypatch):
-    """A file SQLite with the model schema, wired into _dispatch_alert_bg: each
+    """A file SQLite with the model schema, wired into dispatch_alert_bg: each
     dispatch runs in a session and on a connection of its own, as in production."""
     import app.core.database as database_mod
     from app.models import Base
@@ -558,7 +642,7 @@ class TestBellSlotAcrossDispatches:
         cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "critical")
 
-        _dispatch_alert_bg(cid, "ok", "critical")
+        dispatch_alert_bg(cid, "ok", "critical")
 
         # second_status critical: no transition, so the nested dispatch skips.
         assert posted == ["critical"]
@@ -570,7 +654,7 @@ class TestBellSlotAcrossDispatches:
         cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "ok")
 
-        _dispatch_alert_bg(cid, "ok", "critical")
+        dispatch_alert_bg(cid, "ok", "critical")
 
         assert posted == ["critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)
@@ -590,7 +674,7 @@ class TestBellSlotAcrossDispatches:
         )
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "critical", first_code)
 
-        _dispatch_alert_bg(cid, "critical", "ok")
+        dispatch_alert_bg(cid, "critical", "ok")
 
         assert posted == ["ok", "critical"]
         assert bell_record(bell_db, cid) == ("critical", _NOW)
@@ -620,7 +704,7 @@ class TestBellSlotAcrossDispatches:
         )
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, status, first_code=403)
 
-        _dispatch_alert_bg(cid, notified, status)
+        dispatch_alert_bg(cid, notified, status)
 
         assert posted == [status]
         assert bell_record(bell_db, cid) == hub_before
@@ -644,7 +728,7 @@ class TestBellSlotAcrossDispatches:
             monkeypatch, bell_db, cid, ("critical", "ok"), first_code=403
         )
 
-        _dispatch_alert_bg(cid, "critical", "ok")
+        dispatch_alert_bg(cid, "critical", "ok")
 
         assert posted == ["ok", "critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)
@@ -656,7 +740,7 @@ class TestBellSlotAcrossDispatches:
         cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
         posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "ok", first_code=403)
 
-        _dispatch_alert_bg(cid, "ok", "critical")
+        dispatch_alert_bg(cid, "ok", "critical")
 
         assert posted == ["critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)

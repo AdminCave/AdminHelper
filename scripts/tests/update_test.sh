@@ -10,9 +10,9 @@
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
 # what --no-rollback names as the way on, a restore that fails, a missing .env, a
 # .env write error in the migration, what a rollback removes, what the texts name
-# for a floating tag, the temp dir a self-update leaves, the check of .env values
-# before the first compose call, held against the real `docker compose`, a failed
-# swap of the runtime files, a failed rm or tar in the snapshot restore, a
+# for a floating tag, the temp dir a self-update leaves, the check of .env values,
+# quotes and keys before the first compose call, held against the real `docker
+# compose`, a failed swap of the runtime files, a failed rm or tar in the snapshot restore, a
 # migration that cannot append to .env or read the new .env.example, and an update,
 # a rollback and --check on a floating tag over a .env with bytes outside UTF-8 and
 # a NUL byte, and with a terminal on stdin a read-only .env at the re-pin, at the
@@ -176,6 +176,13 @@ case "${AH_TEST_MV_LOCK:-}" in
 esac
 EOF
 chmod +x "$BIN/mv"
+# getent stub: STUB_PASSWD names a passwd file to answer from; unset, no account exists.
+cat > "$BIN/getent" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = passwd ] && [ -n "${STUB_PASSWD:-}" ] || exit 2
+"$AH_TEST_REAL_GREP" -E "^[^:]*:[^:]*:$2:" "$STUB_PASSWD" || exit 2
+EOF
+chmod +x "$BIN/getent"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -802,17 +809,18 @@ run_env_case() {
   out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" "$@" 2>&1); rc=$?
   msg=$(grep 'FEHLER: ' <<<"$out")
 }
-# Exit, message, nothing of the value, nothing changed, no backup or snapshot,
-# no compose call that reads .env.
+# Exit, message (the one about '${', or the pattern $4), nothing of the value,
+# nothing changed, no backup or snapshot, no docker call but `compose version`.
 assert_env_stop() {
-  local line="$1" key="$2" what="$3"
-  { [ $rc -ne 0 ] && grep -q "FEHLER: \.env: der Wert von $key enthaelt ein '\\\${' ohne gueltigen Platzhalter" <<<"$msg" \
-      && grep -q "Invalid template" <<<"$msg"; } \
+  local line="$1" key="$2" what="$3" re="${4:-}"
+  [ -n "$re" ] \
+    || re="FEHLER: \.env: der Wert von $key enthaelt ein '\\\${' ohne gueltigen Platzhalter.*Invalid template"
+  { [ $rc -ne 0 ] && grep -q "$re" <<<"$msg"; } \
     && ok "$what [$line] stops with the key in the message" || bad "$what [$line]: rc=$rc $out"
-  ! grep -q zz9probe <<<"$out" \
+  ! grep -q zz9 <<<"$out" \
     && ok "$what [$line] keeps the value out of the output" || bad "$what [$line] printed the value: $out"
   { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
-      && ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && ! grep -qE '^compose (pull|up|exec)' "$DLOG"; } \
+      && ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && ! grep -qvx 'compose version' "$DLOG"; } \
     && ok "$what [$line] changed nothing: no backup, no snapshot, no compose call" \
     || bad "$what [$line]: backups/ holds $(find "$INST/backups" -mindepth 1 -printf '%f ') docker calls $(tr '\n' ';' < "$DLOG")"
 }
@@ -826,6 +834,11 @@ for mode in --redeploy --check; do
   run_env_case "${ENV_BAD[0]}" "$WORK/inst30${mode#-}" "$mode"
   assert_env_stop "${ENV_BAD[0]}" SMTP_PASSWORD "$mode"
 done
+# A quote that never closes ends every compose call as well, and compose's message
+# quotes the value: update.sh stops the same way and names the key.
+run_env_case 'SMTP_PASSWORD="zz9secret' "$WORK/inst30-quote"
+assert_env_stop 'SMTP_PASSWORD="zz9secret' SMTP_PASSWORD "update" \
+  'FEHLER: \.env: der Wert von SMTP_PASSWORD hat ein nicht geschlossenes Anfuehrungszeichen'
 
 # ── 31. a '$' compose can read does not stop the update ─────────────────────
 # shellcheck disable=SC2016
@@ -861,19 +874,26 @@ ENV_MORE=('X=ab${a b}cd' 'X=ab${x/y/z}cd' 'X=ab${cd:-${ef}' 'X="ab${cd"' '  X = 
 ENV_MULTI=($'P=\'line1\nzz9frag: ab${q\n\'' $'P="line1\nzz9frag=ab${q\n"' $'P="line1\nzz9frag=${DOMAIN}\n"'
   $'P=\'a\\\'b\nzz9frag: ab${q\n\'' $'P="a ${ZZ:-\nb}"' $'P=\'a\n  b\'\nQ=ab${q'
   $'P=\'a\nb\' Q=ab${q' $'P="a\nb" Q=${DOMAIN}')
-n=0
-for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}"; do
+# Appends $1 to a fresh install's .env and holds --check against `docker compose
+# config -q` there; leaves shown=, base= (the lines before $1), out=, ours=, theirs=.
+env_differential() {
+  local line="$1"
   n=$((n + 1)); shown=${line//$'\n'/\\n}
   INST="$WORK/inst32-$n"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  base=$(wc -l < "$INST/.env")
   printf '%s\n' "$line" >> "$INST/.env"
   out=$(run_update "$INST" --check 2>&1); ours=$?
   ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
     >/dev/null 2>"$INST.compose"; theirs=$?
   # A refusal has to be the check's own, not --check failing for another reason.
   { [ "$((ours != 0))" = "$((theirs != 0))" ] \
-      && { [ "$ours" -eq 0 ] || grep -q 'FEHLER: \.env: der Wert von' <<<"$out"; }; } \
+      && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: der (Wert von|Eintrag in Zeile)' <<<"$out"; }; } \
     && ok "[$shown]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
     || bad "[$shown]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
+}
+n=0
+for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}"; do
+  env_differential "$line"
   # A refusal names the key of the value's first line, and nothing of the lines
   # after it shows up in the output.
   case $line in
@@ -881,6 +901,51 @@ for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}";
       { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q 'der Wert von P enthaelt' <<<"$out"; }; } \
         && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
   esac
+done
+# Quotes and keys: a quote never closed, text after a closing quote that is no key,
+# and a key compose does not take end every compose call too, and compose's message
+# quotes the line. A refusal names the line's first key (SMTP_PASSWORD, P), also
+# for an error after a closing quote, else the line, and nothing marked zz9. Then:
+# a key line after a value over two lines (its number counts them), text after a
+# quote closed one line down, a tab in a key (skipped like a blank), and blanks
+# beyond ASCII that compose skips in front of a statement, after "export" and in
+# front of a value (U+00A0, U+2007, U+202F, U+2003), whatever the caller's locale.
+# shellcheck disable=SC2016
+ENV_KEYS=('SMTP_PASSWORD="zz9secret' "SMTP_PASSWORD='zz9secret" 'SMTP_PASSWORD="zz9sec${ret'
+  "P='zz9ab'zz9cd'zz9ef\${q'" 'P="zz9ab"zz9cd"zz9ef"' '"SMTP_PASSWORD"=zz9secret' 'zz9stray!line'
+  'SMTP PASSWORD=zz9secret' 'P="zz9ab"zz9cd' 'a.b-c[0]=zz9v' 'zz9strayline'
+  "P='zz9a'zz9b=\"zz9c" "P='zz9a'zz9b='zz9c'zz9d!" "P='zz9a'zz9b=zz9c\${q"
+  $'Q="zz9a\nzz9b"\nzz9bad!key' $'P="zz9a\nzz9b"zz9c"' $'SMTP\tPASSWORD=zz9v'
+  $'\xc2\xa0# zz9c' $'\xc2\xa0export K=zz9v' $'P="zz9a"\xc2\xa0# c' $'\xe2\x80\x87# zz9c'
+  $'\xe2\x80\xaf# zz9c' $'\xe2\x80\x83# zz9c' $'X=\xc2\xa0\'zz9${q\'')
+# Characters beyond ASCII in a key are judged under C.UTF-8; without it test 39
+# ends the run with 75. A BOM within .env, a no-break space before the '=', a
+# U+2000 after "export " (compose skips it in front of a statement, not there).
+[ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ] \
+  || ENV_KEYS+=('ÄKEY=zz9v' $'\xef\xbb\xbfSMTP_PASSWORD=zz9v' $'X \xc2\xa0=zz9v'
+    $'export \xe2\x80\x80K=zz9v')
+for line in "${ENV_KEYS[@]}"; do
+  env_differential "$line"
+  [ "$ours" -ne 0 ] || continue
+  case $line in
+    SMTP_PASSWORD=*|P=*) want="der Wert von ${line%%=*} " ;;
+    *) want="der Eintrag in Zeile $((base + $(grep -c '' <<<"$line"))) " ;;
+  esac
+  { grep -qF "$want" <<<"$out" && ! grep -q zz9 <<<"$out"; } \
+    && ok "[$shown]: the refusal names '${want% }' and nothing of the value" || bad "[$shown]: $out"
+done
+# A BOM at the start of .env is compose's to drop, not a character of the first key
+# (bom); the last line, without a line break and without '=' or ':', is a value to
+# compose, not a key, so a space in it is no error (eof).
+for how in bom eof; do
+  INST="$WORK/inst32-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  if [ "$how" = bom ]; then sed -i '1s/^/\xef\xbb\xbf/' "$INST/.env"; else printf 'zz9a zz9b' >> "$INST/.env"; fi
+  out=$(run_update "$INST" --check 2>&1); ours=$?
+  ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
+    >/dev/null 2>"$INST.compose"; theirs=$?
+  { [ "$ours" -eq 0 ] && [ "$theirs" -eq 0 ]; } \
+    && ok "$how: --check and docker compose accept the .env" \
+    || bad "$how: --check rc=$ours, docker compose config rc=$theirs $out"
 done
 
 # ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
@@ -1194,6 +1259,35 @@ else
     && ok "rollback after the deploy over a read-only .env on a terminal put every pin back on 0.33.0" \
     || bad "rollback after the deploy over a read-only .env on a terminal: pins $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ' ')"
 fi
+
+# ── 41. the install directory is at most 0750 after an update, a container UID is named ──
+INST="$WORK/inst41"; make_install 0.33.0 "$SRC_OLD" "$INST"; chmod 0755 "$INST"
+printf '%s\n' 'root:x:0:0::/root:/bin/sh' 'pg:x:70:70::/var/lib/pg:/bin/sh' > "$WORK/passwd41"
+out=$(STUB_PASSWD="$WORK/passwd41" run_update "$INST" --check 2>&1)
+[ "$(stat -c %a "$INST")" = 755 ] && ok "--check leaves the directory mode alone" \
+  || bad "--check changed the mode to $(stat -c %a "$INST")"
+grep -q "WARNING: host account 'pg' has UID 70" <<<"$out" \
+  && ok "--check names the account with UID 70 too" || bad "--check: no warning for UID 70"
+out=$(STUB_PASSWD="$WORK/passwd41" run_update "$INST" 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a host account with a container UID does not stop the update" || bad "update exit $rc"
+[ "$(stat -c %a "$INST")" = 750 ] && ok "install directory 0750 after the update" \
+  || bad "install directory mode $(stat -c %a "$INST")"
+grep -q "WARNING: host account 'pg' has UID 70" <<<"$out" \
+  && ok "the account with UID 70 is named" || bad "no warning for UID 70: $(grep -i warn <<<"$out")"
+chmod 0700 "$INST"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(stat -c %a "$INST")" = 700 ]; } && ok "a stricter 0700 stays 0700 after the update" \
+  || bad "0700 after the update: exit $rc, mode $(stat -c %a "$INST")"
+# a chmod that refuses to close the directory (the caller is not its owner)
+FAILCHMOD="$WORK/failchmod"; mkdir -p "$FAILCHMOD"
+# shellcheck disable=SC2016 # the stub expands its own arguments
+printf '#!/bin/sh\n[ "$1" = g-w,o-rwx ] && [ "$2" = . ] && exit 1\nexec %s "$@"\n' "$(command -v chmod)" > "$FAILCHMOD/chmod"
+chmod +x "$FAILCHMOD/chmod"
+chmod 0755 "$INST"
+out=$(PATH="$FAILCHMOD:$PATH" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q "WARNING: could not close" <<<"$out"; } \
+  && ok "a chmod that fails is a warning, the update goes on" \
+  || bad "failing chmod: exit $rc, $(grep -i warn <<<"$out")"
 
 echo
 echo "──────────────────────────────────────────"

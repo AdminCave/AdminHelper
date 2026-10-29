@@ -2,15 +2,23 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Pure-logic tests for app/alerter.py.
+"""Tests for app/alerter.py: the rule filter (_rule_matches), the cooldown
+(_is_in_cooldown, also for every value the column holds), recovery bypassing the
+cooldown, the message built once per transition and its subject and text
+(build_message, also as a mail through _send_email), the webhook's SSRF guard and
+log lines, a failing rule not stopping the others, the unknown policy and the
+sent-state, and the alerts muted while the host is down or in a maintenance window.
 
-Tested without a real DB: rule filter (_rule_matches), cooldown time window
-(_is_in_cooldown via a fake query), the guarantee that recovery
-(new_status == 'ok') bypasses the cooldown (process_alert), and the
-unknown-policy (transitions into 'unknown' never notify).
+Most tests use a fake session (_CapturingDb, _FakeDb) and replace _dispatch; the
+webhook tests stub the resolver and the transport below the pinned connection, the
+mail test the SMTP server. Where the query itself is under test (cooldown window,
+enabled rules, host-down and Host Ping lookups), they run on an in-memory SQLite with
+the model schema.
 """
 
+import email.policy
 import logging
+import smtplib
 import socket
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -23,7 +31,13 @@ from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core import ssrf as ssrf_mod
 from app.core.logging_config import configure_logging
 from app.core.ssrf import Target, UrlVerdict
-from app.models import MonitorAlertRule, MonitorCheck, MonitorMaintenance, MonitorState
+from app.models import (
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorMaintenance,
+    MonitorState,
+)
 
 from ._helpers import _CapturingDb, make_check, make_msg, make_rule, no_env_proxy
 
@@ -107,6 +121,74 @@ class TestIsInCooldown:
         assert _is_in_cooldown(db, make_rule(cooldown_minutes=30), make_check()) is False
 
 
+def _sent_log(rule_id: str, age: timedelta) -> MonitorAlertLog:
+    """A successful send of rule_id for make_check()'s check, ``age`` before _NOW."""
+    return MonitorAlertLog(
+        alert_rule_id=rule_id,
+        check_id="check-1",
+        old_status="ok",
+        new_status="critical",
+        sent_at=_NOW - age,
+        success=True,
+    )
+
+
+class TestCooldownForEveryStoredValue:
+    """R-0631: _is_in_cooldown answers for every value the column holds. The
+    schema allows up to int32 minutes, whose window reaches back before year 1,
+    and the column is nullable; raising there escaped the per-rule isolation and
+    lost the alert of every rule and the bell's."""
+
+    @pytest.fixture
+    def db(self, monkeypatch):
+        monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
+        return _sqlite_session()
+
+    @pytest.mark.parametrize("minutes", [1_070_000_000, 2_147_483_647])
+    def test_window_before_year_one_counts_every_earlier_send(self, db, minutes):
+        rule = make_rule(cooldown_minutes=minutes)
+        assert _is_in_cooldown(db, rule, make_check()) is False
+        db.add(_sent_log("rule-1", timedelta(days=3653)))
+        db.commit()
+        assert _is_in_cooldown(db, rule, make_check()) is True
+
+    @pytest.mark.parametrize(
+        ("age", "expected"), [(timedelta(minutes=10), True), (timedelta(minutes=40), False)]
+    )
+    def test_null_counts_as_the_default_30(self, db, age, expected):
+        db.add(_sent_log("rule-1", age))
+        db.commit()
+        assert _is_in_cooldown(db, make_rule(cooldown_minutes=None), make_check()) is expected
+
+    def test_a_huge_cooldown_does_not_stop_the_other_rules_or_the_bell(self, db, monkeypatch):
+        def _rule(rid, minutes):
+            return MonitorAlertRule(
+                id=rid, name=rid, channel="webhook", channel_config="{}", cooldown_minutes=minutes
+            )
+
+        db.add(_rule("rule-huge", 2_147_483_647))
+        db.add(_rule("rule-30", 30))
+        db.add(_sent_log("rule-huge", timedelta(days=1)))
+        db.commit()
+        dispatched, posted = [], []
+
+        def fake_dispatch(rule, check, msg):
+            dispatched.append(rule.id)
+            return True, None
+
+        def fake_post(payload, label):
+            posted.append(payload)
+            return True
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter, "post_hub_event", fake_post)
+
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+        assert dispatched == ["rule-30"]
+        assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "critical")]
+
+
 class TestRecoveryBypassesCooldown:
     def test_recovery_dispatches_even_when_cooldown_active(self, monkeypatch):
         rule = make_rule()
@@ -167,7 +249,7 @@ class TestRecoveryBypassesCooldown:
 
 
 class TestBuildsMessageOnce:
-    """2.30: _build_message runs once per transition on the caller's session, not
+    """2.30: build_message runs once per transition on the caller's session, not
     once per matching rule plus once for the hub (which opened N+1 sessions and
     could yield text that diverged if the state row changed between builds)."""
 
@@ -179,10 +261,10 @@ class TestBuildsMessageOnce:
             calls["n"] += 1
             return make_msg()
 
-        monkeypatch.setattr(alerter, "_build_message", counting_build)
+        monkeypatch.setattr(alerter, "build_message", counting_build)
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
         monkeypatch.setattr(alerter, "_dispatch", lambda *a, **k: (True, None))
-        monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **k: None)
+        monkeypatch.setattr(alerter, "emit_to_hub", lambda *a, **k: None)
 
         process_alert(db, make_check(), old_status="ok", new_status="critical")
 
@@ -289,6 +371,26 @@ class TestWebhookSsrf:
         assert "SSRF" in error
         assert sent == []
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://☃.hooks.example.com/x",  # no IDNA 2008 label
+            "https://hooks.example.com:abc/x",  # a port that is no number
+            "https://hooks.example.com/x\ud800",  # a lone surrogate
+        ],
+    )
+    def test_a_url_httpx_cannot_read_is_rejected_without_request(self, monkeypatch, url):
+        # R-0606: the real guard reads the URL with httpx before the try. A URL httpx
+        # cannot read is the usual rejection, not an exception out of _send_webhook.
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        sent = _requests_below_the_pin(monkeypatch)
+
+        result = alerter._send_webhook({"url": url}, make_rule(), make_check(), make_msg())
+
+        assert result == (False, "Webhook target is private/reserved (not allowed)")
+        assert asked == []
+        assert sent == []
+
     def test_request_connects_to_the_checked_address(self, monkeypatch):
         # ssrf-pin: the connection goes to the address the guard checked. httpx resolving
         # the name a second time could get another answer (DNS rebinding).
@@ -317,6 +419,23 @@ class TestWebhookSsrf:
 
         assert asked == ["hooks.example.com"]
         assert connected == [("192.0.2.10", 3128)]
+        assert (success, error) == (False, "Webhook connection failed")
+
+    def test_beside_a_proxy_no_proxy_connects_to_the_checked_address(self, monkeypatch):
+        # A target that NO_PROXY takes past the proxy (here every target) connects as
+        # without a proxy: to the checked address, not by name.
+        no_env_proxy(monkeypatch)
+        monkeypatch.setenv("HTTPS_PROXY", "http://192.0.2.10:3128")
+        monkeypatch.setenv("NO_PROXY", "*")
+        asked = _resolving_to(monkeypatch, _PUBLIC)
+        connected = _connections_refused(monkeypatch)
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com:8443/x"}, make_rule(), make_check(), make_msg()
+        )
+
+        assert asked == ["hooks.example.com"]
+        assert connected == [(_PUBLIC, 8443)]
         assert (success, error) == (False, "Webhook connection failed")
 
 
@@ -479,11 +598,11 @@ def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
 
 
 def test_build_message_recovery_escalation_and_details():
-    # 6.60: _build_message's content — recovery vs escalation subject/text, and the "Details: ..."
+    # 6.60: build_message's content — recovery vs escalation subject/text, and the "Details: ..."
     # state-message append — was never pinned; the fake-based tests monkeypatch it away. It takes the
     # caller's session (2.30, no longer opens its own SessionLocal), so a plain fake db supplies the
     # MonitorState; no network, no SessionLocal patch.
-    from app.alerter import _build_message
+    from app.alerter import build_message
 
     check = make_check(name="web", check_type="http", severity="critical")
 
@@ -500,7 +619,7 @@ def test_build_message_recovery_escalation_and_details():
         def first(self):
             return self._state
 
-    rec = _build_message(_Db(None), check, old_status="critical", new_status="ok")
+    rec = build_message(_Db(None), check, old_status="critical", new_status="ok")
     assert rec["is_recovery"] is True
     # R-0488: the recovery frame is English and follows the alert pattern "<LABEL>: <check>".
     assert rec["subject"] == "[AdminHelper Monitor] RECOVERY: web"
@@ -509,7 +628,7 @@ def test_build_message_recovery_escalation_and_details():
     )
 
     state = SimpleNamespace(message="Port 22: refused")
-    esc = _build_message(_Db(state), check, old_status="warning", new_status="critical")
+    esc = build_message(_Db(state), check, old_status="warning", new_status="critical")
     assert esc["is_recovery"] is False
     assert "CRITICAL" in esc["subject"]
     assert "Severity: critical" in esc["text"]
@@ -532,7 +651,7 @@ def test_build_message_subject_is_capped_at_the_check_severity(severity, new_sta
     # text keeps the real transition, its label and the severity line.
     check = make_check(name="web", check_type="http", severity=severity)
 
-    msg = alerter._build_message(_CapturingDb([]), check, old_status="ok", new_status=new_status)
+    msg = alerter.build_message(_CapturingDb([]), check, old_status="ok", new_status=new_status)
 
     assert msg["subject"] == f"[AdminHelper Monitor] {label}: web"
     assert msg["text"] == (
@@ -544,9 +663,101 @@ def test_build_message_subject_is_capped_at_the_check_severity(severity, new_sta
 def test_build_message_recovery_subject_ignores_the_severity(severity):
     check = make_check(name="web", check_type="http", severity=severity)
 
-    msg = alerter._build_message(_CapturingDb([]), check, old_status="critical", new_status="ok")
+    msg = alerter.build_message(_CapturingDb([]), check, old_status="critical", new_status="ok")
 
     assert msg["subject"] == "[AdminHelper Monitor] RECOVERY: web"
+
+
+# A check name with a control character (C0, DEL, C1) or U+2028/U+2029, and the name as the
+# subject shows it: one space per character.
+_CONTROL_NAMES = [
+    ("web\r\nnext", "web  next"),
+    ("a\nb", "a b"),
+    ("a\rb", "a b"),
+    ("a\x0bb", "a b"),
+    ("a\x1cb", "a b"),
+    ("a\x7fb", "a b"),
+    ("a\x85b", "a b"),
+    ("a b", "a b"),
+    ("a b", "a b"),
+]
+_ALARM_AND_RECOVERY = [("ok", "critical", "CRITICAL"), ("critical", "ok", "RECOVERY")]
+
+
+@pytest.mark.parametrize(("old_status", "new_status", "label"), _ALARM_AND_RECOVERY)
+@pytest.mark.parametrize(("name", "shown"), _CONTROL_NAMES)
+def test_build_message_subject_shows_control_characters_as_spaces(
+    name, shown, old_status, new_status, label
+):
+    # The subject is a mail header and stays on one line; the text and the webhook's
+    # check_name keep the name as it is.
+    check = make_check(name=name, check_type="http", severity="critical")
+
+    msg = alerter.build_message(_CapturingDb([]), check, old_status, new_status)
+
+    assert msg["subject"] == f"[AdminHelper Monitor] {label}: {shown}"
+    assert f"\nCheck: {name} (http)\n" in msg["text"]
+    assert msg["check_name"] == name
+
+
+@pytest.mark.parametrize(("old_status", "new_status", "label"), _ALARM_AND_RECOVERY)
+# U+007E and U+00A0 border the characters that become a space and stay as they are.
+@pytest.mark.parametrize("name", ["Web 1 – Grüße ✓", "a~\xa0b"])
+def test_build_message_subject_keeps_a_name_without_control_characters(
+    name, old_status, new_status, label
+):
+    check = make_check(name=name, check_type="http", severity="critical")
+
+    msg = alerter.build_message(_CapturingDb([]), check, old_status, new_status)
+
+    assert msg["subject"] == f"[AdminHelper Monitor] {label}: {name}"
+
+
+class _SerializingSMTP(smtplib.SMTP):
+    """smtplib.SMTP without a server: the real send_message flattens the message as it
+    goes on the wire, sendmail keeps the bytes instead of sending them."""
+
+    sent: list[bytes] = []
+
+    def __init__(self, host, port, timeout):
+        # No host, no connection; a fixed local name spares the FQDN lookup.
+        super().__init__(local_hostname="monitor.example")
+
+    def ehlo_or_helo_if_needed(self):
+        pass
+
+    def starttls(self, context=None):
+        return 220, b"ready"
+
+    def sendmail(self, from_addr, to_addrs, msg, mail_options=(), rcpt_options=()):
+        _SerializingSMTP.sent.append(msg)
+        return {}
+
+
+@pytest.mark.parametrize(("old_status", "new_status", "label"), _ALARM_AND_RECOVERY)
+@pytest.mark.parametrize(("name", "shown"), _CONTROL_NAMES)
+def test_mail_for_a_name_with_control_characters_goes_out_with_one_subject(
+    monkeypatch, name, shown, old_status, new_status, label
+):
+    # The real _send_email and smtplib's send_message: a line break in the subject made
+    # the serialization fail, and the mail did not go out.
+    monkeypatch.setattr(alerter.smtplib, "SMTP", _SerializingSMTP)
+    monkeypatch.setattr(_SerializingSMTP, "sent", [])
+    monkeypatch.setattr(alerter, "SMTP_CA_FILE", "")
+    check = make_check(name=name, check_type="http", severity="critical")
+    msg = alerter.build_message(_CapturingDb([]), check, old_status, new_status)
+    config = {
+        "recipients": ["ops@monitor.example"],
+        "from": "alerts@monitor.example",
+        "smtp_host": "smtp.monitor.example",
+        "smtp_port": 587,
+    }
+
+    assert alerter._send_email(config, make_rule(channel="email"), check, msg) == (True, None)
+
+    [wire] = _SerializingSMTP.sent
+    sent = email.message_from_bytes(wire, policy=email.policy.default)
+    assert sent.get_all("Subject") == [f"[AdminHelper Monitor] {label}: {shown}"]
 
 
 class TestUnknownNeverNotifies:
@@ -565,7 +776,7 @@ class TestUnknownNeverNotifies:
             lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None),
         )
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
         )
         return dispatched, emitted
 
@@ -640,7 +851,7 @@ class TestUnknownNeverNotifies:
         captured = {}
         monkeypatch.setattr(
             alerter,
-            "_build_message",
+            "build_message",
             lambda db, check, old, new: captured.update(old=old, new=new) or make_msg(),
         )
         state = SimpleNamespace(
@@ -724,14 +935,14 @@ class TestHostDownSuppression:
         dispatched = {"n": 0}
         emitted = {"n": 0}
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
-        monkeypatch.setattr(alerter, "_build_message", lambda *a, **k: make_msg())
+        monkeypatch.setattr(alerter, "build_message", lambda *a, **k: make_msg())
         monkeypatch.setattr(
             alerter,
             "_dispatch",
             lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None),
         )
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
         )
         return dispatched, emitted
 
@@ -889,7 +1100,7 @@ class TestHostPingRankOrder:
             lambda rule, check, msg: dispatched.append(check.id) or (True, None),
         )
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda check, *a, **k: emitted.append(check.id) or True
+            alerter, "emit_to_hub", lambda check, *a, **k: emitted.append(check.id) or True
         )
 
         for check in checks:
@@ -961,14 +1172,14 @@ class TestMaintenanceSuppression:
         dispatched = {"n": 0}
         emitted = {"n": 0}
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
-        monkeypatch.setattr(alerter, "_build_message", lambda *a, **k: make_msg())
+        monkeypatch.setattr(alerter, "build_message", lambda *a, **k: make_msg())
         monkeypatch.setattr(
             alerter,
             "_dispatch",
             lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None),
         )
         monkeypatch.setattr(
-            alerter, "_emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
+            alerter, "emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
         )
         return dispatched, emitted
 

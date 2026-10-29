@@ -199,17 +199,37 @@ def test_status_change_dispatches_alert_in_background(client_db, monkeypatch):
     assert dispatched == [("chk-1", "ok", "critical")]
 
 
-def test_capped_limits_length_and_rejects_non_list():
-    from app.routers.agent import _MAX_REPORT_ITEMS, _capped
-
+def test_capped_limits_length_and_rejects_non_list(client_db, monkeypatch):
     # 3.76: cap array length so a huge report can't flood the service, and treat a
     # non-list (a malicious agent sending disks="x" or null) as empty rather than
-    # iterating it as chars.
-    assert _capped(list(range(1000))) == list(range(_MAX_REPORT_ITEMS))
-    assert _capped([1, 2, 3]) == [1, 2, 3]
-    assert _capped(None) == []
-    assert _capped("string") == []
-    assert _capped({"a": 1}) == []
+    # iterating it as chars. R-0632: the handler caps with capped_objects of the
+    # checkers, one limit for both paths.
+    from app.checkers.agent import _MAX_REPORT_ENTRIES
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    disks = [{"mount": f"/m{i}", "fstype": "ext4", "percent": 1} for i in range(1000)]
+    r = client.post("/agent/srv-1/report", json={"resources": {"disks": disks}})
+    assert r.status_code == 200, r.text
+    mounts = [
+        line.split(",mount=", 1)[1].split(" ", 1)[0]
+        for batch in writes
+        for line in batch
+        if line.startswith("monitor_agent_disk_percent,")
+    ]
+    assert mounts == [f"/m{i}" for i in range(_MAX_REPORT_ENTRIES)]
+
+    for value in (None, "string", {"a": 1}):
+        writes.clear()
+        report = {"resources": {"cpu_percent": 10, "disks": value, "temperatures": value}}
+        r = client.post("/agent/srv-1/report", json=report)
+        assert r.status_code == 200, r.text
+        assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+            "monitor_agent_cpu_percent,server_id=srv-1 value=10i"
+        ], value
 
 
 def test_malformed_report_metrics_do_not_500(client_db):
@@ -339,31 +359,90 @@ def test_push_check_without_measured_values_writes_its_status(
 
 def test_push_check_with_measured_values_writes_one_status_as_before(client_db, monkeypatch):
     # Next to a check without measured values: no second status line for either, and the
-    # check with values keeps its duration and value lines.
+    # check with values keeps its duration and value lines. docker_health, since
+    # agent_resources writes no measured values of its own (R-0633).
     from app.core import victoria as vm
 
     client, factory = client_db
-    _add_resources_check(factory, consecutive_fails=1)
+    _add_push_check(factory, "chk-d", "docker_health")
     _add_push_check(factory, "chk-x", "system_state")
     writes: list[list[str]] = []
     monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
 
     report = {
-        "resources": {"cpu_percent": 50, "memory_percent": 40},
+        "docker": {
+            "available": True,
+            "containers": [{"id": "abc123def456", "name": "web", "state": "running"}],
+        },
         "system_state": {"oom_kills": 0},
     }
     r = client.post("/agent/srv-1/report", json=report)
     assert r.status_code == 200, r.text
     assert r.json()["checksUpdated"] == 2
-    tags = "check_id=chk-1,check_type=agent_resources,name=Resources,server_id=srv-1"
-    assert _lines_of(writes, "chk-1") == [
+    tags = "check_id=chk-d,check_type=docker_health,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-d") == [
         f"monitor_check_status,{tags} value=0i",
         f"monitor_check_duration_ms,{tags} value=0i",
-        f"monitor_agent_cpu_percent,{tags} value=50i",
-        f"monitor_agent_memory_percent,{tags} value=40i",
+        f"monitor_docker_ok,{tags} value=1i",
+        f"monitor_docker_critical,{tags} value=0i",
+        f"monitor_docker_warning,{tags} value=0i",
     ]
     tags = "check_id=chk-x,check_type=system_state,name=Check,server_id=srv-1"
     assert _lines_of(writes, "chk-x") == [f"monitor_check_status,{tags} value=0i"]
+
+
+def test_cpu_and_memory_are_written_once_per_server(client_db, monkeypatch):
+    # R-0633: the push handler writes CPU and RAM per server, and agent_resources wrote the
+    # same names again with its check labels. Filtered by server_id, the metrics endpoint
+    # returned two series of one label, and the desktop's list of current values broke on it.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post(
+        "/agent/srv-1/report", json={"resources": {"cpu_percent": 50, "memory_percent": 40}}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    lines = [line.rsplit(" ", 1)[0] for batch in writes for line in batch]
+    names = ("monitor_agent_cpu_percent,", "monitor_agent_memory_percent,")
+    assert [line for line in lines if line.startswith(names)] == [
+        "monitor_agent_cpu_percent,server_id=srv-1 value=50i",
+        "monitor_agent_memory_percent,server_id=srv-1 value=40i",
+    ]
+    tags = "check_id=chk-1,check_type=agent_resources,name=Resources,server_id=srv-1"
+    assert _lines_of(writes, "chk-1") == [f"monitor_check_status,{tags} value=0i"]
+
+
+def test_resources_metrics_read_only_the_series_of_the_push_handler(client_db, monkeypatch):
+    # R-0633: the series of the push handler carry no check_id; check_id="" leaves out the
+    # check-labelled CPU/RAM copies the checker wrote before, which stay in VictoriaMetrics
+    # until the retention ends. The status timeline still reads by check_id.
+    from app.core import victoria as vm
+    from app.main import app
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    app.dependency_overrides[require_internal] = lambda: None
+    queries: list[str] = []
+
+    def fake_query_range(query, start, end, step):
+        queries.append(query)
+        return {"data": {"result": []}}
+
+    monkeypatch.setattr(vm.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/chk-1/metrics")
+    assert r.status_code == 200, r.text
+    assert queries == [
+        '{__name__=~"monitor_agent_cpu_percent_value|monitor_agent_memory_percent_value",'
+        'server_id="srv-1",check_id=""}',
+        '{__name__=~"monitor_agent_(disk_percent|temp).*_value",server_id="srv-1",check_id=""}',
+        'monitor_check_status_value{check_id="chk-1"}',
+    ]
 
 
 def test_system_state_metrics_read_only_the_status_timeline(client_db, monkeypatch):
@@ -388,40 +467,150 @@ def test_system_state_metrics_read_only_the_status_timeline(client_db, monkeypat
     assert queries == ['monitor_check_status_value{check_id="chk-x"}']
 
 
+_CPU_LINE = "monitor_agent_cpu_percent,server_id=srv-1"
+
+
 @pytest.mark.parametrize(
-    "raw,want",
+    ("raw", "want"),
     [
-        (42, 42),  # int passes through
-        (1.5, 1.5),  # float passes through
-        ("3.14", 3.14),  # numeric string is coerced (leniency)
-        (True, None),  # bool is NOT a metric value — would inject into the line protocol
-        (False, None),
-        ("abc", None),  # non-numeric string dropped
-        (None, None),
-        ([1], None),  # non-scalar dropped
-        (float("inf"), None),  # inf/nan poison the whole VictoriaMetrics batch — dropped
-        (float("nan"), None),
-        ("inf", None),  # inf/nan as strings dropped too
-        ("nan", None),
-        # An int beyond the float range: format_line rejects it like inf (id: 401 digits otherwise).
-        pytest.param(10**400, None, id="int-beyond-float-range"),
-        (2**63, 2**63),  # beyond int64 but a float: format_line writes it as a float
+        pytest.param(42, [f"{_CPU_LINE} value=42i"], id="int"),
+        pytest.param(1.5, [f"{_CPU_LINE} value=1.5"], id="float"),
+        # Beyond int64 but a finite float: format_line writes it as a float, without "i".
+        pytest.param(2**63, [f"{_CPU_LINE} value=9.223372036854776e+18"], id="beyond-int64"),
+        pytest.param("97", [], id="numeric-string"),
+        pytest.param("3.14", [], id="float-string"),
+        pytest.param("abc", [], id="string"),
+        # A bool is no measured value: written as one it would inject into the line protocol.
+        pytest.param(True, [], id="true"),
+        pytest.param(False, [], id="false"),
+        pytest.param(None, [], id="null"),
+        pytest.param([1], [], id="list"),
+        # inf/nan poison the whole VictoriaMetrics batch, as a number or as a string.
+        pytest.param(float("inf"), [], id="inf"),
+        pytest.param(float("nan"), [], id="nan"),
+        pytest.param("inf", [], id="inf-string"),
+        pytest.param("nan", [], id="nan-string"),
+        # format_line rejects an int beyond the float range like inf (id: 401 digits otherwise).
+        pytest.param(10**400, [], id="int-beyond-float-range"),
     ],
 )
-def test_num_coerces_and_drops_non_metric_values(raw, want):
-    # _num is the boundary filter for all agent-supplied metric values before format_line (6.56).
-    # A regression (bool check removed, isfinite forgotten) would only surface as a 500 in the report
-    # endpoint or a poisoned VictoriaMetrics batch, not in the suite.
-    from app.routers.agent import _num
+def test_report_writes_a_measured_value_only_as_a_json_number(client_db, monkeypatch, raw, want):
+    # R-0632: the handler takes a measured value as the checkers do (agent_number): a JSON
+    # number, no bool, finite as a float. Its own _num also took numeric strings, which
+    # agent_resources does not rate, so the graph showed a value the check never saw.
+    from app.core import victoria as vm
 
-    assert _num(raw) == want
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    # The body as json.dumps writes it: httpx refuses NaN and Infinity, an agent's JSON may
+    # still carry them.
+    body = json.dumps({"resources": {"cpu_percent": raw, "memory_percent": 40}})
+    r = client.post(
+        "/agent/srv-1/report", content=body, headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 200, r.text
+    lines = [line.rsplit(" ", 1)[0] for batch in writes for line in batch]
+    assert [line for line in lines if line.startswith(f"{_CPU_LINE} ")] == want
+    # Only the value itself is missing, the rest of the report is written.
+    assert "monitor_agent_memory_percent,server_id=srv-1 value=40i" in lines
+
+
+def test_a_list_entry_that_is_no_object_costs_only_itself(client_db, monkeypatch, caplog):
+    # R-0632: a string in disks raised AttributeError in the handler, and the extraction's
+    # except dropped every metric of the report. capped_objects skips the entry instead.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {
+            "cpu_percent": 10,
+            "disks": ["x", {"mount": "/", "fstype": "ext4", "percent": 50}],
+            "temperatures": ["y", {"sensor": "cpu", "temp_c": 40}],
+        }
+    }
+    with caplog.at_level(logging.ERROR, logger="app.routers.agent"):
+        r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+        f"{_CPU_LINE} value=10i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/ value=50i",
+        "monitor_agent_temp,server_id=srv-1,sensor=cpu value=40i",
+    ]
+    assert not [
+        rec
+        for rec in caplog.records
+        if "Metrik-Extraktion aus Agent-Report fehlgeschlagen" in rec.getMessage()
+    ]
+
+
+def test_a_text_field_that_is_no_string_counts_as_missing(client_db, monkeypatch):
+    # R-0632: fstype, mount and sensor count only as a string, as in the checkers (entry_text).
+    # A list as fstype raised TypeError in the EXCLUDED_FSTYPES lookup and cost every metric of
+    # the report; a number as mount or sensor became its text.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {
+            "cpu_percent": 10,
+            "disks": [
+                {"mount": "/data", "fstype": [], "percent": 40},
+                {"mount": 5, "fstype": "ext4", "percent": 50},
+            ],
+            "temperatures": [{"sensor": 7, "temp_c": 30}],
+        }
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+        f"{_CPU_LINE} value=10i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/data value=40i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=? value=50i",
+        "monitor_agent_temp,server_id=srv-1,sensor=unknown value=30i",
+    ]
+
+
+def test_a_disk_without_mount_gets_its_own_series(client_db, monkeypatch):
+    # R-0753: the push wrote a disk without a mount as mount=/, so its values went into the
+    # root disk's series and disk_forecast (grouped by mount) mixed both fill rates. It is
+    # named ? as in the checker (NO_MOUNT) and in disk_forecast.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {
+            "disks": [
+                {"fstype": "ext4", "percent": 70},
+                {"mount": "/", "fstype": "ext4", "percent": 20},
+            ],
+        }
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert [line.rsplit(" ", 1)[0] for batch in writes for line in batch] == [
+        "monitor_agent_disk_percent,server_id=srv-1,mount=? value=70i",
+        "monitor_agent_disk_percent,server_id=srv-1,mount=/ value=20i",
+    ]
 
 
 def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch):
     # 6.58: victoria.write was stubbed to a no-op, so the endpoint's line generation was untested:
-    # the EXCLUDED_FSTYPES skip (a tmpfs mount would flood VictoriaMetrics), safe_metric_part's
-    # sanitisation of the SMART measurement name (line-protocol injection), and the metricsWritten
-    # counter. Capture the lines and assert on them instead of discarding them.
+    # the EXCLUDED_FSTYPES skip (a tmpfs mount would flood VictoriaMetrics) and the metricsWritten
+    # counter. Capture the lines and assert on them instead of discarding them. R-0633: the SMART
+    # series come only from the smart_health checker; the handler's own copy carried no check_id
+    # and nothing read it. The sanitised device part is pinned by test_victoria::TestSafeMetricPart
+    # and test_smart_checker.
     from app.core import victoria as vm
 
     client, _factory = client_db
@@ -449,14 +638,43 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
     assert len(disk_lines) == 1, f"only the ext4 disk should be written: {disk_lines}"
     assert "mount=/t" not in joined, "tmpfs mount must be filtered out"
 
-    # The SMART measurement name (before the first tag) is sanitized — no ';' injection.
-    smart_lines = [ln for ln in captured if ln.startswith("monitor_smart_temp_")]
-    assert len(smart_lines) == 1, f"expected one SMART temp line: {captured}"
-    measurement = smart_lines[0].split(",", 1)[0]
-    assert ";" not in measurement, f"measurement name not sanitized: {measurement}"
+    # No SMART line from the handler (no smart_health check in this setup either).
+    smart_lines = [ln for ln in captured if ln.startswith("monitor_smart_")]
+    assert smart_lines == [], f"the handler must not write SMART lines: {smart_lines}"
 
     # metricsWritten reflects the actual lines written (no checks in this payload).
     assert r.json()["metricsWritten"] == len(captured)
+
+
+def test_smart_series_still_come_from_the_smart_health_check(client_db, monkeypatch):
+    # R-0633: without the handler's SMART lines, the smart_health checker stays the one source of
+    # monitor_smart_* — with its check labels, which GET /checks/{id}/metrics filters on.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-s", "smart_health")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "smart": [
+            {"device": "/dev/sda", "temp_c": 38, "reallocated_sectors": 0, "pending_sectors": 0}
+        ]
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    tags = "check_id=chk-s,check_type=smart_health,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-s") == [
+        f"monitor_check_status,{tags} value=0i",
+        f"monitor_check_duration_ms,{tags} value=0i",
+        f"monitor_smart_disks_ok,{tags} value=1i",
+        f"monitor_smart_disks_warning,{tags} value=0i",
+        f"monitor_smart_disks_critical,{tags} value=0i",
+        f"monitor_smart_temp_dev_sda,{tags} value=38i",
+        f"monitor_smart_reallocated_dev_sda,{tags} value=0i",
+        f"monitor_smart_pending_dev_sda,{tags} value=0i",
+    ]
 
 
 def test_report_drops_only_the_value_beyond_the_float_range(client_db, monkeypatch):
@@ -642,6 +860,111 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     assert [
         r for r in caplog.records if r.name == "monitor.engine" and "->" in r.getMessage()
     ] == []
+
+
+@pytest.mark.parametrize(
+    "flush_in_check",
+    [
+        pytest.param(True, id="error-inside-the-check"),
+        pytest.param(False, id="error-at-the-savepoint-release"),
+    ],
+)
+def test_a_database_error_costs_only_its_check(client_db, monkeypatch, caplog, flush_in_check):
+    # R-0635: the checks of one report share a transaction. A database error in one of them
+    # (a deadlock, a lock abort at FOR UPDATE, a failed flush) left the session needing a
+    # rollback: every following check and the commit failed, and the report answered 500
+    # without any result. A SAVEPOINT per check rolls back only the broken one. The broken
+    # row fails either in a flush inside the check or only in the flush of the savepoint's
+    # release; either way neither the check's status line nor its alert may come through.
+    from app.core import victoria as vm
+    from app.models import MonitorAgentLiveness
+    from app.routers import agent as agent_router
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-a", "agent_resources")
+    _add_push_check(factory, "chk-b", "agent_resources")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+    dispatched: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(agent_router, "dispatch_alert_bg", lambda *alert: dispatched.append(alert))
+    real_apply_result = agent_router.apply_result
+
+    def apply_result_breaking_the_first_check(db, check, *args, **kwargs):
+        result = real_apply_result(db, check, *args, **kwargs)
+        if check.id == "chk-a":
+            # last_report_at is NOT NULL: the insert fails, after the state of chk-a.
+            db.add(MonitorAgentLiveness(server_id="broken", last_report_at=None))
+            if flush_in_check:
+                db.flush()
+        return result
+
+    monkeypatch.setattr(agent_router, "apply_result", apply_result_breaking_the_first_check)
+
+    with caplog.at_level(logging.ERROR, logger="app.routers.agent"):
+        r = client.post("/agent/srv-1/report", json=_report(cpu=99))
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-a").first() is None
+        assert db.query(MonitorState).filter_by(check_id="chk-b").one().status == "critical"
+        assert db.query(MonitorAgentLiveness).filter_by(server_id="broken").first() is None
+    assert _lines_of(writes, "chk-a") == []
+    tags = "check_id=chk-b,check_type=agent_resources,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-b") == [f"monitor_check_status,{tags} value=2i"]
+    assert dispatched == [("chk-b", "pending", "critical")]
+    failures = [r for r in caplog.records if r.getMessage().startswith("Auswertung von Check")]
+    assert len(failures) == 1, [r.getMessage() for r in caplog.records]
+
+
+@pytest.mark.parametrize(
+    "flush_in_check",
+    [
+        pytest.param(True, id="error-inside-the-check"),
+        pytest.param(False, id="error-at-the-savepoint-release"),
+    ],
+)
+def test_only_the_saved_transition_is_logged(client_db, monkeypatch, caplog, flush_in_check):
+    # As above, with both checks ok before: the broken check's savepoint is rolled back,
+    # so its transition did not happen and gets no line; the other one gets exactly one.
+    from app.models import MonitorAgentLiveness
+    from app.routers import agent as agent_router
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-a", "agent_resources")
+    _add_push_check(factory, "chk-b", "agent_resources")
+    client.post("/agent/srv-1/report", json=_report(cpu=5))
+    with factory() as db:
+        assert {s.check_id: s.status for s in db.query(MonitorState)} == {
+            "chk-a": "ok",
+            "chk-b": "ok",
+        }
+    real_apply_result = agent_router.apply_result
+
+    def apply_result_breaking_the_first_check(db, check, *args, **kwargs):
+        result = real_apply_result(db, check, *args, **kwargs)
+        if check.id == "chk-a":
+            db.add(MonitorAgentLiveness(server_id="broken", last_report_at=None))
+            if flush_in_check:
+                db.flush()
+        return result
+
+    monkeypatch.setattr(agent_router, "apply_result", apply_result_breaking_the_first_check)
+    monkeypatch.setattr(agent_router, "dispatch_alert_bg", lambda *alert: None)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
+        r = client.post("/agent/srv-1/report", json=_report(cpu=99))
+    assert r.status_code == 200, r.text
+    transitions = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "monitor.engine" and "->" in r.getMessage()
+    ]
+    assert len(transitions) == 1, transitions
+    assert "ok -> critical" in transitions[0]
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-a").one().status == "ok"
+        assert db.query(MonitorState).filter_by(check_id="chk-b").one().status == "critical"
 
 
 def _add_docker_check(factory, consecutive_fails: int) -> str:

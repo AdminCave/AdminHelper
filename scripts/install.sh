@@ -15,7 +15,11 @@
 # device with a token"), gets an on-device cert, then logs in.
 #
 # Options:
-#   --domain D --admin-user U --admin-password P --enroll-ttl-minutes N
+#   --domain D --admin-user U --enroll-ttl-minutes N
+#   --admin-password-file FILE (the admin password is the first line of FILE;
+#                a relative path is taken from where install.sh was started.
+#                --admin-password P still works, but leaves the password in the
+#                process list and the shell history)
 #   --ref REF   (release to install AND the pinned image tag: vX.Y.Z -> :X.Y.Z.
 #                Default: the latest published release. A release tag fetches the
 #                verified runtime bundle; a branch ref (e.g. main) falls back to a
@@ -47,6 +51,7 @@ RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/p
 DOMAIN=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD=""
+ADMIN_PASSWORD_FILE=""
 ENROLL_TTL=60
 TARGET_DIR="adminhelper"
 PERMISSIVE=0
@@ -58,6 +63,7 @@ while [ $# -gt 0 ]; do
         --domain) DOMAIN="${2:?}"; shift ;;
         --admin-user) ADMIN_USER="${2:?}"; shift ;;
         --admin-password) ADMIN_PASSWORD="${2:?}"; shift ;;
+        --admin-password-file) ADMIN_PASSWORD_FILE="${2:?}"; shift ;;
         --enroll-ttl-minutes) ENROLL_TTL="${2:?}"; shift ;;
         --ref) REF="${2:?}"; shift ;;
         --dir) TARGET_DIR="${2:?}"; shift ;;
@@ -69,6 +75,21 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# Read here, before the bootstrap below changes into --dir: a relative path
+# names a file where install.sh was started. Messages name the path, never the
+# content.
+if [ -n "$ADMIN_PASSWORD_FILE" ]; then
+    [ -z "$ADMIN_PASSWORD" ] \
+        || { echo "ERROR: --admin-password and --admin-password-file exclude each other." >&2; exit 2; }
+    ADMIN_PASSWORD=$(head -n 1 -- "$ADMIN_PASSWORD_FILE" 2>/dev/null) \
+        || { echo "ERROR: cannot read the admin password file ${ADMIN_PASSWORD_FILE}." >&2; exit 1; }
+    ADMIN_PASSWORD="${ADMIN_PASSWORD%$'\r'}"
+    [ -n "$ADMIN_PASSWORD" ] \
+        || { echo "ERROR: the first line of the admin password file ${ADMIN_PASSWORD_FILE} is empty." >&2; exit 1; }
+elif [ -n "$ADMIN_PASSWORD" ]; then
+    echo "[install] WARNING: --admin-password leaves the password in the process list and the shell history; --admin-password-file FILE avoids both." >&2
+fi
 
 # Per-file raw fetch — dev/branch refs, or release tags older than the runtime
 # bundle (≤ 0.33.0). RUNTIME_FILES omits install.sh (it's the running script).
@@ -173,8 +194,29 @@ if [ ! -f docker-compose.yml ]; then
 fi
 
 # --- Preflight --------------------------------------------------------------
+# The services run as UID 10001 (app) and Postgres as UID/GID 70: a host account that has
+# one of these IDs reaches the data of the containers. The install directory is closed to
+# others (at most 0750, the owner stays who installs), and such an account is named, not refused.
+# Tighten only: g-w,o-rwx turns 0755/0775 into 0750 and leaves a stricter 0700 alone.
+close_install_dir() {
+    chmod g-w,o-rwx . 2>/dev/null \
+        || echo "WARNING: could not close $(pwd) to other accounts; they may read the install directory." >&2
+    return 0
+}
+warn_host_uids() {
+    command -v getent >/dev/null 2>&1 || return 0
+    local uid name
+    for uid in 10001 70; do
+        # getent ends with 2 for no such account; under pipefail that must not end the run.
+        name=$(getent passwd "$uid" 2>/dev/null | cut -d: -f1) || name=""
+        [ -z "$name" ] || echo "WARNING: host account '$name' has UID $uid, which a container uses; it can read the data of the services (see docs/admin/betrieb.html)." >&2
+    done
+    return 0
+}
+warn_host_uids
 command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
+close_install_dir
 
 upsert_env() {
     local key="$1" value="$2"
@@ -220,7 +262,7 @@ if [ -z "$DOMAIN" ] && [ -n "$TTY" ]; then
 fi
 DOMAIN="${DOMAIN:-localhost}"
 if [ -z "$ADMIN_PASSWORD" ]; then
-    [ -n "$TTY" ] || { echo "FEHLER: Kein Terminal fuer die Passwort-Abfrage. Uebergib --admin-password … --yes (z.B. bei 'curl | bash' ohne Terminal)." >&2; exit 1; }
+    [ -n "$TTY" ] || { echo "FEHLER: Kein Terminal fuer die Passwort-Abfrage. Uebergib --admin-password-file … --yes (z.B. bei 'curl | bash' ohne Terminal)." >&2; exit 1; }
     read -rsp "Admin-Passwort (min. 8 Zeichen): " ADMIN_PASSWORD <"$TTY"; echo
 fi
 [ "${#ADMIN_PASSWORD}" -ge 8 ] || { echo "FEHLER: Passwort < 8 Zeichen." >&2; exit 1; }

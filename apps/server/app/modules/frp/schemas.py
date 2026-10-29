@@ -17,14 +17,19 @@ from app.modules.frp.extra_config import ALLOWED_KEYS, value_allowed
 # of a TOML string and inject a directive (quote, backslash, newline, control
 # chars — DEL included, TOML forbids it in a basic string) at the boundary, so
 # the generator stays a pure interpolation. (Defense in depth — the fields are
-# admin-set, so this is hardening, not an open hole.)
+# admin-set, so this is hardening, not an open hole.) TOML allows the C1 controls
+# U+0080 to U+009F in a basic string, but the agent refuses every line of a
+# frpc.toml with a unicode.IsControl character (U+0000 to U+001F, U+007F to
+# U+009F), so they are rejected as well and the host is not left without a config.
 _TOML_BREAKERS = set('"\\\n\r')
 
 
 def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
     if v is None:
         return v
-    if any(c in _TOML_BREAKERS for c in v) or any(ord(c) < 0x20 or c == "\x7f" for c in v):
+    if any(c in _TOML_BREAKERS for c in v) or any(
+        ord(c) < 0x20 or c == "\x7f" or 0x80 <= ord(c) <= 0x9F for c in v
+    ):
         raise ValueError("enthält unzulässige Zeichen (Anführungszeichen/Backslash/Steuerzeichen)")
     # JSON can spell one as \ud800, and it has no UTF-8 form: no config file carries it.
     if any("\ud800" <= c <= "\udfff" for c in v):
@@ -51,7 +56,23 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
 # The generator emits extra_config keys unquoted (`{key} = ...`), so they must
 # be TOML bare keys (dotted keys allowed). Anything else would break — or worse,
 # extend — the generated config.
-_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_.-]+")
+# A bare or dotted key of segments [A-Za-z0-9_-]+, as the agent takes them (serverKey in
+# apps/agent/internal/frpc/servertoml.go); an empty segment (".a", "a.", "a..b") is no TOML key.
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*")
+
+# TOML integers are 64 bits; a Python int has no limit.
+_TOML_INT_MIN, _TOML_INT_MAX = -(2**63), 2**63 - 1
+
+# The keys the generator writes into each [[proxies]] table (generate_frpc_toml).
+_GENERATOR_PROXY_KEYS = (
+    "name",
+    "type",
+    "localIP",
+    "localPort",
+    "secretKey",
+    "allowUsers",
+    "customDomains",
+)
 
 
 def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
@@ -67,12 +88,68 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
         if not _TOML_BARE_KEY.fullmatch(str(key)):
             raise ValueError(
                 f"extra_config-Schlüssel '{key}' ist kein gültiger TOML-Key "
-                "(erlaubt: A-Z a-z 0-9 _ . -)"
+                "(erlaubt: Segmente aus A-Z a-z 0-9 _ -, getrennt durch je einen .)"
             )
         if isinstance(value, str):
             _reject_toml_breakers(value)
         elif not isinstance(value, (bool, int, float)):
             raise ValueError(f"extra_config-Wert für '{key}' muss str, bool, int oder float sein")
+        elif isinstance(value, int) and not isinstance(value, bool):
+            if not _TOML_INT_MIN <= value <= _TOML_INT_MAX:
+                raise ValueError(f"extra_config value for '{key}' is no 64-bit integer")
+    return v
+
+
+# frp maps the fields of a proxy without regard to case and reads its plugin from the
+# member `plugin`, so `plugin`, `plugin.type` and `PLUGIN.type` all set up a proxy plugin.
+# The server sets up none, and the agent refuses a frpc.toml with such a key in a proxy
+# (apps/agent/internal/frpc/servertoml.go), so the whole host would get no config.
+def is_plugin_key(key: str) -> bool:
+    """Whether an extra_config key belongs to the plugin family: its first segment is
+    `plugin` in any case. A key that passed _TOML_BARE_KEY is ASCII, so lower() is enough."""
+    return key.split(".", 1)[0].lower() == "plugin"
+
+
+def _take_key_path(root: dict, key: str) -> Optional[str]:
+    """Enter key into the trie of a proxy's key paths; return the key it clashes with, if any."""
+    node = root
+    segments = key.lower().split(".")
+    for segment in segments[:-1]:
+        child = node.setdefault(segment, {})
+        if isinstance(child, str):
+            return child
+        node = child
+    last = segments[-1]
+    if last not in node:
+        node[last] = key
+        return None
+    taken = node[last]
+    while isinstance(taken, dict):
+        taken = next(iter(taken.values()))
+    return taken
+
+
+def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
+    v = _check_extra_config(v)
+    for key in v or {}:
+        if is_plugin_key(key):
+            raise ValueError(
+                f"extra_config key '{key}' belongs to the plugin family; "
+                "a tunnel sets up no proxy plugin"
+            )
+    # The agent refuses a proxy whose key paths repeat or nest, compared in lower case (frp
+    # maps fields without regard to case): with the generator's keys and with each other.
+    # Like keyTable.add, as a trie of the key paths by segment: a node is a key (its name) or
+    # a table longer keys opened. Each key walks its segments once, so the check stays linear
+    # in the size of the extra_config, however many or long its keys are.
+    root: dict = {}
+    for key in (*_GENERATOR_PROXY_KEYS, *(v or {})):
+        clash = _take_key_path(root, key)
+        if clash is not None:
+            raise ValueError(
+                f"extra_config key '{key}' clashes with '{clash}' (keys of a proxy are compared "
+                "without regard to case, and none may be a prefix of another)"
+            )
     return v
 
 
@@ -258,7 +335,7 @@ class FrpTunnelCreate(RequestModel):
         _reject_toml_breakers
     )
     _v_secret = field_validator("secret_key")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 class FrpTunnelUpdate(RequestModel):
@@ -282,7 +359,7 @@ class FrpTunnelUpdate(RequestModel):
         _reject_toml_breakers
     )
     _v_secret = field_validator("secret_key")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 # --- Responses ---

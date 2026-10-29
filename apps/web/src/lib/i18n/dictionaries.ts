@@ -12,11 +12,13 @@ export type Translations = Record<Language, Record<string, string>>;
 export const translations: Translations = {
   de: {
     'error.generic': 'Fehler',
+    'error.timeout': 'Zeitüberschreitung: Der Server hat nicht rechtzeitig geantwortet.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
     'login.failed': 'Anmeldung fehlgeschlagen',
+    'toast.session.idle': 'Nach {minutes} Minuten ohne Bedienung abgemeldet.',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Benutzer',
@@ -54,6 +56,12 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Typ',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web-Panel nur für Admins',
+    'page.adminOnly.text': 'Bitte den Desktop-Client nutzen.',
+    'page.notFound.title': 'Seite nicht gefunden',
+    'page.notFound.back': 'Zur Benutzerverwaltung',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Benutzer',
     'page.users.subtitle': 'Zugriffsverwaltung',
@@ -89,6 +97,8 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'Benutzer gespeichert',
+    'toast.user.ownPasswordChanged':
+      'Eigenes Passwort geändert – bitte mit dem neuen Passwort anmelden.',
     'toast.user.created': 'Benutzer erstellt',
     'toast.user.deleted': 'Benutzer gelöscht',
     'confirm.user.delete': 'Benutzer wirklich löschen?',
@@ -109,6 +119,7 @@ export const translations: Translations = {
     'page.audit.col.actor': 'Actor',
     'page.audit.col.action': 'Aktion',
     'page.audit.col.object': 'Objekt',
+    'page.audit.col.detail': 'Detail',
     'page.audit.col.ip': 'IP',
     'page.audit.col.status': 'Status',
     'page.audit.truncated': 'Nur die neuesten {n} Einträge — Filter verfeinern für ältere.',
@@ -126,7 +137,8 @@ export const translations: Translations = {
     'modal.apikey.titleNew': 'Neuer API-Key',
     'modal.apikey.titleReveal': 'API-Key erstellt',
     'modal.apikey.revealHint': 'Dieser Schlüssel wird nur einmal angezeigt. Kopiere ihn jetzt.',
-    'toast.apikey.copied': 'In Zwischenablage kopiert',
+    'toast.copied': 'In Zwischenablage kopiert',
+    'toast.copyFailed': 'Kopieren fehlgeschlagen',
     'toast.apikey.deleted': 'API-Key gelöscht',
     'confirm.apikey.delete': 'API-Key wirklich löschen?',
 
@@ -148,6 +160,7 @@ export const translations: Translations = {
     'hook.event.connections.imported': 'Verbindungen importiert',
     'hook.event.user.created': 'Benutzer erstellt',
     'hook.event.user.deleted': 'Benutzer gelöscht',
+    'hook.event.user.promoted': 'Benutzer zum Admin hochgestuft',
     'hook.event.server.created': 'Server erstellt',
     'hook.event.server.updated': 'Server geändert',
     'hook.event.server.deleted': 'Server gelöscht',
@@ -191,7 +204,7 @@ export const translations: Translations = {
     'modal.hook.intervalCustom': 'Cron-Ausdruck…',
     'modal.hook.cron': 'Cron-Ausdruck',
     'modal.hook.cronFormat':
-      'Format: Minute Stunde Tag Monat Wochentag (Wochentag: 0 und 7 = Sonntag, 1 = Montag)',
+      'Format: Minute Stunde Tag Monat Wochentag (Wochentag: 0 und 7 = Sonntag, 1 = Montag), Zeiten in UTC',
     'modal.hook.script': 'Script *',
     'modal.hook.scriptPlaceholder': '# Python-Script hier eingeben',
     'modal.hook.selectEvent': 'Bitte mindestens ein Event auswählen',
@@ -285,7 +298,6 @@ export const translations: Translations = {
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP-Config gespeichert',
     'toast.frpConfig.created': 'FRP-Config erstellt',
-    'toast.frp.copied': 'In Zwischenablage kopiert',
     'toast.frp.zipDownloaded': 'ZIP heruntergeladen',
 
     // ── FRP Status ────────────────────────────────────────────────────
@@ -300,11 +312,13 @@ export const translations: Translations = {
 
   en: {
     'error.generic': 'Error',
+    'error.timeout': 'Request timed out: the server did not answer in time.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Username',
     'login.password': 'Password',
     'login.submit': 'Sign in',
     'login.failed': 'Login failed',
+    'toast.session.idle': 'Signed out after {minutes} minutes without activity.',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Users',
@@ -342,6 +356,12 @@ export const translations: Translations = {
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Type',
 
+    // ── Catch-all Page ────────────────────────────────────────────────
+    'page.adminOnly.title': 'Web panel for admins only',
+    'page.adminOnly.text': 'Please use the desktop client.',
+    'page.notFound.title': 'Page not found',
+    'page.notFound.back': 'Go to user management',
+
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Users',
     'page.users.subtitle': 'Access management',
@@ -377,6 +397,7 @@ export const translations: Translations = {
 
     // ── User Toasts ───────────────────────────────────────────────────
     'toast.user.saved': 'User saved',
+    'toast.user.ownPasswordChanged': 'Your password was changed – sign in with the new password.',
     'toast.user.created': 'User created',
     'toast.user.deleted': 'User deleted',
     'confirm.user.delete': 'Really delete this user?',
@@ -396,6 +417,7 @@ export const translations: Translations = {
     'page.audit.col.actor': 'Actor',
     'page.audit.col.action': 'Action',
     'page.audit.col.object': 'Object',
+    'page.audit.col.detail': 'Detail',
     'page.audit.col.ip': 'IP',
     'page.audit.col.status': 'Status',
     'page.audit.truncated': 'Showing the latest {n} entries — narrow the filters for older ones.',
@@ -413,7 +435,8 @@ export const translations: Translations = {
     'modal.apikey.titleNew': 'New API Key',
     'modal.apikey.titleReveal': 'API Key created',
     'modal.apikey.revealHint': 'This key will only be shown once. Copy it now.',
-    'toast.apikey.copied': 'Copied to clipboard',
+    'toast.copied': 'Copied to clipboard',
+    'toast.copyFailed': 'Copy failed',
     'toast.apikey.deleted': 'API key deleted',
     'confirm.apikey.delete': 'Really delete this API key?',
 
@@ -435,6 +458,7 @@ export const translations: Translations = {
     'hook.event.connections.imported': 'Connections imported',
     'hook.event.user.created': 'User created',
     'hook.event.user.deleted': 'User deleted',
+    'hook.event.user.promoted': 'User promoted to admin',
     'hook.event.server.created': 'Server created',
     'hook.event.server.updated': 'Server updated',
     'hook.event.server.deleted': 'Server deleted',
@@ -478,7 +502,7 @@ export const translations: Translations = {
     'modal.hook.intervalCustom': 'Cron expression…',
     'modal.hook.cron': 'Cron expression',
     'modal.hook.cronFormat':
-      'Format: Minute Hour Day Month Weekday (weekday: 0 and 7 = Sunday, 1 = Monday)',
+      'Format: Minute Hour Day Month Weekday (weekday: 0 and 7 = Sunday, 1 = Monday), times in UTC',
     'modal.hook.script': 'Script *',
     'modal.hook.scriptPlaceholder': '# Enter Python script here',
     'modal.hook.selectEvent': 'Please select at least one event',
@@ -571,7 +595,6 @@ export const translations: Translations = {
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP config saved',
     'toast.frpConfig.created': 'FRP config created',
-    'toast.frp.copied': 'Copied to clipboard',
     'toast.frp.zipDownloaded': 'ZIP downloaded',
 
     // ── FRP Status ────────────────────────────────────────────────────

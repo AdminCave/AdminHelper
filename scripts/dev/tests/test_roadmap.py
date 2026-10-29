@@ -483,17 +483,20 @@ def test_a_neu_section_without_a_table_gets_one(tmp_path: pathlib.Path) -> None:
     assert findings(text) == []
 
 
-def test_the_neu_cap_refuses_the_21st(
+def test_add_takes_a_21st_neu_row(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     s = clean_sections()
     s["Neu (untriagiert)"] = [row(f"R-01{n:02d}", "neu", "BUG") for n in range(20)]
-    text = doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")
-    p = aged(write(tmp_path, text))
-    assert add(p, *ADD) == 3
-    assert "neu cap is reached (20/20)" in capsys.readouterr().err
-    assert p.read_text(encoding="utf-8") == text
-    assert not (tmp_path / "ROADMAP.md.bak").exists()
+    p = aged(write(tmp_path, doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")))
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.strip() == "R-0120"
+    text = p.read_text(encoding="utf-8")
+    neu = [r.id for _, r in roadmap.Roadmap(text).rows() if r.state == "neu"]
+    assert len(neu) == 21 and neu[-1] == "R-0120"
+    # The 20 stays in the header as a mark to read, like aktiv's 2.
+    assert "Stand: 2026-09-25 · WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 21/20 · ALT: 0" in text
+    assert findings(text) == []
 
 
 def test_an_open_dedup_key_is_refused_and_named(
@@ -1126,6 +1129,78 @@ def test_next_with_nothing_ready_is_exit_1(
 ) -> None:
     assert run(write(tmp_path, CLEAN.replace("| freigegeben |", "| geplant |")), "next") == 1
     assert "no freigegeben row is ready" in capsys.readouterr().err
+
+
+def train_row(rid: str, status: str, klasse: str, ledger: str) -> str:
+    return f"| {rid} | {klasse} | Zeile {rid} | {status} | kevin 2026-09-01 | {ledger} | — | — | — | — |"
+
+
+TRAINS = {
+    "In Arbeit": [
+        train_row("R-0030", "aktiv", "BUG", "tasks/klein-doku-1.md"),
+        train_row("R-0040", "aktiv", "REF", "tasks/arch-api-1.md"),
+    ],
+    "Neu (untriagiert)": [row("R-0031", "neu", "REF")],
+    "Geplant (Stufen in Reihenfolge)": [
+        train_row("R-0032", "geplant", "BUG", "tasks/klein-doku-1.md"),
+        train_row("R-0033", "geplant", "REF", "tasks/klein-tests-web-1.md"),
+        train_row("R-0034", "geplant", "REF", "tasks/klein-tests-web-1.md"),
+        train_row("R-0035", "freigegeben", "BUG", "tasks/klein-ui-desktop-1.md"),
+        train_row("R-0036", "geplant", "SEC", "tasks/ops-install-1.md"),
+        row("R-0037", "geplant", "FEAT"),
+    ],
+    "Zurückgestellt": [train_row("R-0038", "zurückgestellt", "REF", "tasks/klein-doku-2.md")],
+    "Blockiert": [],
+    "Abgeschlossen (letzte 30 Tage)": [
+        train_row("R-0039", "abgeschlossen 2026-09-15", "REF", "tasks/klein-alt-1.md")
+    ],
+    "Archiv": [],
+}
+
+
+def test_zuege_lists_waiting_trains_by_class_then_size_and_moving_ones_last(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = write(tmp_path, doc(TRAINS))
+    assert run(p, "zuege") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "tasks/ops-install-1.md · kern · wartet · 1 Zeilen · R-0036:SEC",
+        "tasks/klein-ui-desktop-1.md · klein · wartet · 1 Zeilen · R-0035:BUG",
+        "tasks/klein-tests-web-1.md · klein · wartet · 2 Zeilen · R-0033:REF R-0034:REF",
+        "tasks/klein-doku-1.md · klein · unterwegs (1 von 2) · 2 Zeilen · R-0030:BUG R-0032:BUG",
+        "tasks/arch-api-1.md · arch · unterwegs (1 von 1) · 1 Zeilen · R-0040:REF",
+    ]
+    assert p.read_text(encoding="utf-8") == doc(TRAINS)  # read only
+
+
+def test_zuege_by_stage(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    p = write(tmp_path, doc(TRAINS))
+    assert run(p, "zuege", "--stufe", "kern") == 0
+    assert (
+        capsys.readouterr().out
+        == "tasks/ops-install-1.md · kern · wartet · 1 Zeilen · R-0036:SEC\n"
+    )
+    assert run(p, "zuege", "--stufe", "klein") == 0
+    assert "ops-install" not in capsys.readouterr().out
+    # An architecture project is its own session's: never a kern train.
+    assert run(p, "zuege", "--stufe", "arch") == 0
+    assert capsys.readouterr().out.startswith("tasks/arch-api-1.md · arch")
+
+
+def test_next_by_stage(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    p = write(tmp_path, doc(TRAINS))
+    # R-0036 (SEC, ops- ledger) is kern; R-0037 has no ledger and is kern as well.
+    assert run(p, "next", "--status", "geplant", "--stufe", "kern") == 0
+    assert capsys.readouterr().out.startswith("R-0036 SEC")
+    assert run(p, "next", "--status", "geplant", "--stufe", "klein") == 0
+    assert capsys.readouterr().out.startswith("R-0032 BUG")
+
+
+def test_zuege_without_a_train_is_exit_1(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(write(tmp_path, CLEAN), "zuege") == 1
+    assert "no train" in capsys.readouterr().err
 
 
 def fake_gh(
