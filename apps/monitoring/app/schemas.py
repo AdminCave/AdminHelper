@@ -345,3 +345,29 @@ class CheckMetricsOut(BaseModel):
     # VictoriaMetrics query_range series, passed through as they come.
     data: Any
     statusHistory: Any
+
+
+class AlertRuleOut(BaseModel):
+    id: str
+    name: str
+    matchSeverity: str | None
+    matchServerId: str | None
+    channel: str
+    # masked_channel_config hands a stored non-dict back as it is.
+    channelConfig: Any
+    cooldownMinutes: int | None
+    enabled: bool | None
+    templateId: str | None
+    createdAt: str | None
+    updatedAt: str | None
+
+
+class AlertLogOut(BaseModel):
+    id: int
+    alertRuleId: str
+    checkId: str
+    oldStatus: str
+    newStatus: str
+    sentAt: str
+    success: bool
+    error: str | None

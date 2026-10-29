@@ -12,8 +12,9 @@ from datetime import datetime
 
 import pytest
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import update
 
-from app.models import MonitorCheck, MonitorState
+from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
 
 
 def _response_schema(path: str, method: str) -> dict:
@@ -44,6 +45,12 @@ def _ref_name(schema: dict) -> str:
         ("/status/server/{server_id}", "get", "MonitorCheckOut"),
         ("/status/summary", "get", "StatusSummaryOut"),
         ("/checks/{check_id}/metrics", "get", "CheckMetricsOut"),
+        ("/alerts", "get", "AlertRuleOut"),
+        ("/alerts", "post", "AlertRuleOut"),
+        ("/alerts/log", "get", "AlertLogOut"),
+        ("/alerts/{rule_id}", "get", "AlertRuleOut"),
+        ("/alerts/{rule_id}", "put", "AlertRuleOut"),
+        ("/alerts/{rule_id}/toggle", "post", "AlertRuleOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -103,6 +110,13 @@ def _seed_checks(factory):
             )
         )
         db.commit()
+        # None in the constructor takes the column's Python default; only an UPDATE stores NULL.
+        db.execute(
+            update(MonitorCheck)
+            .where(MonitorCheck.id == "chk-sparse")
+            .values(enabled=None, consecutive_fails=None)
+        )
+        db.commit()
 
 
 def _produced(factory, check_id: str) -> dict:
@@ -118,6 +132,7 @@ class TestCheckShape:
         _seed_checks(factory)
         want = [_produced(factory, "chk-full"), _produced(factory, "chk-sparse")]
         assert "state" in want[0] and "state" not in want[1]
+        assert want[1]["enabled"] is None and want[1]["consecutiveFails"] is None
 
         for path in ("/checks", "/status"):
             r = client.get(path)
@@ -218,3 +233,132 @@ def test_metrics_pass_the_series_through(client_db, monkeypatch):
     assert body["checkId"] == "chk-full" and body["period"] == "6h"
     assert body["statusHistory"] == series
     assert body["data"] and all(isinstance(s, dict) for s in body["data"])
+
+
+def _seed_alerts(factory):
+    """rule-full: email with a stored SMTP password (masked in every answer), every nullable
+    column set; rule-sparse: an empty channel_config and the nullable columns NULL; rule-legacy:
+    a stored channel_config that is no object, handed out as it is."""
+    with factory() as db:
+        db.add(
+            MonitorAlertRule(
+                id="rule-full",
+                name="a-mail",
+                match_severity="critical",
+                match_server_id="srv-1",
+                channel="email",
+                channel_config='{"to": "ops@example.com", "smtp_password": "smtp-secret-value"}',
+                cooldown_minutes=15,
+                enabled=True,
+                template_id="tpl-1",
+                created_at=datetime(2026, 10, 1, 12, 0, 0),
+                updated_at=datetime(2026, 10, 2, 12, 0, 0),
+            )
+        )
+        db.add(
+            MonitorAlertRule(
+                id="rule-sparse",
+                name="b-hook",
+                channel="webhook",
+                channel_config="",
+                cooldown_minutes=None,
+                enabled=None,
+            )
+        )
+        db.add(
+            MonitorAlertRule(
+                id="rule-legacy", name="c-legacy", channel="webhook", channel_config='["x"]'
+            )
+        )
+        db.add(
+            MonitorAlertLog(
+                alert_rule_id="rule-full",
+                check_id="chk-full",
+                old_status="ok",
+                new_status="critical",
+                sent_at=datetime(2026, 10, 3, 8, 0, 0),
+                success=False,
+                error="relay refused",
+            )
+        )
+        db.add(
+            MonitorAlertLog(
+                alert_rule_id="rule-sparse",
+                check_id="chk-full",
+                old_status="critical",
+                new_status="ok",
+                sent_at=datetime(2026, 10, 3, 9, 0, 0),
+                success=True,
+                error=None,
+            )
+        )
+        db.commit()
+        db.execute(
+            update(MonitorAlertRule)
+            .where(MonitorAlertRule.id == "rule-sparse")
+            .values(cooldown_minutes=None, enabled=None)
+        )
+        db.commit()
+
+
+def _rule(factory, rule_id: str) -> dict:
+    with factory() as db:
+        return jsonable_encoder(db.get(MonitorAlertRule, rule_id).to_dict())
+
+
+class TestAlertShape:
+    def test_rules_equal_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        _seed_alerts(factory)
+        r = client.get("/alerts")
+        assert r.status_code == 200, r.text
+        by_id = {rule["id"]: rule for rule in r.json()}
+        for rule_id in ("rule-full", "rule-sparse", "rule-legacy"):
+            assert by_id[rule_id] == _rule(factory, rule_id), rule_id
+            got = client.get(f"/alerts/{rule_id}")
+            assert got.status_code == 200, got.text
+            assert got.json() == _rule(factory, rule_id), rule_id
+        assert by_id["rule-full"]["channelConfig"]["smtp_password"] == "***"
+        assert "smtp-secret-value" not in r.text
+        assert by_id["rule-sparse"]["channelConfig"] == {}
+        assert by_id["rule-sparse"]["cooldownMinutes"] is None
+        assert by_id["rule-sparse"]["enabled"] is None
+        assert by_id["rule-legacy"]["channelConfig"] == ["x"]
+
+    def test_log_equals_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        _seed_alerts(factory)
+        r = client.get("/alerts/log")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = [
+                jsonable_encoder(e.to_dict())
+                for e in db.query(MonitorAlertLog).order_by(MonitorAlertLog.sent_at.desc())
+            ]
+        assert r.json() == want
+        assert {e["error"] for e in want} == {"relay refused", None}
+
+    def test_writes_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        r = client.post(
+            "/alerts",
+            json={
+                "name": "made",
+                "channel": "email",
+                "channel_config": {"to": "ops@example.com", "smtp_password": "smtp-secret-value"},
+            },
+        )
+        assert r.status_code == 201, r.text
+        rule_id = r.json()["id"]
+        assert r.json() == _rule(factory, rule_id)
+        assert r.json()["channelConfig"]["smtp_password"] == "***"
+
+        r = client.put(f"/alerts/{rule_id}", json={"cooldown_minutes": 5})
+        assert r.status_code == 200, r.text
+        assert r.json() == _rule(factory, rule_id)
+
+        r = client.post(f"/alerts/{rule_id}/toggle")
+        assert r.status_code == 200, r.text
+        assert r.json() == _rule(factory, rule_id)

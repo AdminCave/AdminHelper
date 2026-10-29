@@ -59,8 +59,10 @@ Orakel: contract — die Modelle gegen die `to_dict`-Methoden und Dict-Literale 
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T14 — Monitoring: Alert-Regeln und Alert-Log (R-0685)  [ ]
+### T14 — Monitoring: Alert-Regeln und Alert-Log (R-0685)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/alerts.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f96b1028 2026-10-29T22:21:14+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T14.verdict.json)
 Änderung: `AlertRuleOut` wie `MonitorAlertRule.to_dict` (`apps/monitoring/app/models.py:154-173`; `channelConfig: dict[str, Any]` frei, das maskierte `smtp_password` bleibt `***`; `cooldownMinutes`, `enabled` nullbar), `AlertLogOut` wie `MonitorAlertLog.to_dict` (`:201-211`; `id: int`, Spalte `:188`). Routen in `apps/monitoring/app/routers/alerts.py`: `27`, `42` (201), `66` (log), `73`, `82`, `142` (toggle). Tests nach Muster; (b) mit einer Regel mit SMTP-Passwort (maskiert) und einer ohne `channelConfig`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_alert_secrets.py tests/test_stored_json_numbers.py
 Doku: keine
@@ -104,3 +106,4 @@ Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
 ## Entscheidungen
+- T14: `AlertRuleOut.channelConfig` ist `Any` statt `dict[str, Any]` (Plan): `masked_channel_config` gibt eine gespeicherte Nicht-Objekt-Konfiguration unverändert heraus; ein Dict-Typ machte eine solche Altzeile und damit die ganze Liste zur 500 (Regel 3). Test `rule-legacy` mit `["x"]`.
