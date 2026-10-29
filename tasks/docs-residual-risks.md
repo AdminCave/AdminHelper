@@ -129,8 +129,10 @@ Dedup-Key: bug:docs:desktop.html:tofu-err-codes
 HEAD: b25c65a6
 Semantik: R-0770 (Dedup `bug:docs:troubleshooting.html:mismatch-text`) und der 401-Teil von R-0453 gehören in dieselbe Task, weil sie dieselben Dateien treffen.
 
-### T8 — Desktop-Kommentare: Pin-Verifier-Meldungen und Test-Helfer wie der Code (R-0769)  [ ]
+### T8 — Desktop-Kommentare: Pin-Verifier-Meldungen und Test-Helfer wie der Code (R-0769)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/error.rs, apps/desktop/src-tauri/src/session.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8c7ef7aa 2026-10-29T11:01:27+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T8.verdict.json)
 Änderung: Nur Kommentare, englisch. (1) `apps/desktop/src-tauri/src/error.rs:7-12`, Doc-Kommentar von `is_unknown_issuer`: Die TOFU- und Enrolled-CA-Verifier geben eigene `General`-Meldungen zurück (ein geänderter Pin mit stabilem `ERR_*`-Code, ein unbrauchbarer Schlüsselbund ohne Code), nie `UnknownIssuer`; die Aussage „matching it is unambiguous“ bleibt. (2) `apps/desktop/src-tauri/src/session.rs:1218-1219`, Doc-Kommentar von `get_allowing_self_signed`: ein GET, das das selbstsignierte Zertifikat des Test-Servers annimmt, gleich was die Sitzung gewählt hat; der Pin ist vorab gesetzt (`serve_self_signed`, `:1183-1187`), es ist also kein erster Kontakt. Kein Code, kein Test ändert sich.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session::
 Doku: keine (Kommentare; die Doku-Seite trägt T7)

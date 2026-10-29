@@ -8,8 +8,9 @@ use serde::Serialize;
 /// `InvalidCertificate(UnknownIssuer)` — the server cert chains to no trusted
 /// root, i.e. the public-CA path met a self-signed / own-PKI server (the
 /// standard install's gateway leaf). Only that path can produce this variant:
-/// the TOFU and enrolled-CA verifiers map it to their own `ERR_*` General
-/// messages before it ever reaches reqwest, so matching it is unambiguous.
+/// the TOFU and enrolled-CA verifiers return their own General messages (a
+/// changed pin with a stable `ERR_*` code, an unusable keyring without one) and
+/// never `UnknownIssuer`, so matching it is unambiguous.
 fn is_unknown_issuer(err: &reqwest::Error) -> bool {
     fn matches(cause: &(dyn std::error::Error + 'static)) -> bool {
         if let Some(rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer)) =
