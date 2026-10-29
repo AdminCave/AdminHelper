@@ -116,8 +116,10 @@ Orakel: contract — Doku gegen `delete_user` und die FRP-Konfiguration
 Dedup-Key: feat:docs:deactivate-user-rotate-secrets
 HEAD: b25c65a6
 
-### T7 — Desktop-Doku: Pin-Verifier-Meldungen, Tunnel-Abgleich nach 401/403, TOFU-Text in der EN-Fehlersuche (R-0769, R-0770, R-0453)  [ ]
+### T7 — Desktop-Doku: Pin-Verifier-Meldungen, Tunnel-Abgleich nach 401/403, TOFU-Text in der EN-Fehlersuche (R-0769, R-0770, R-0453)  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/en/admin/troubleshooting.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fff0e837 2026-10-29T11:01:07+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T7.verdict.json)
 Änderung: (1) `docs/developer/desktop.html:240` (EN `:240`), letzter Satz: Die Pin-Verifier liefern nie rohes `UnknownIssuer`; ein geänderter Pin meldet sich mit stabilem Code (`ERR_TOFU_PIN_MISMATCH`, `apps/desktop/src-tauri/src/tofu.rs:271-274`; `ERR_CA_PIN_MISMATCH`, `apps/desktop/src-tauri/src/enrollment.rs:708-711`), ein unbrauchbarer Schlüsselbund mit einer Meldung ohne Code (`tofu.rs:276-283`). (2) `:259` (EN `:259`), der Satz „jeder andere Fehler (Netz, 5xx, 401 nach gescheitertem Refresh, …) lässt den laufenden frpc unangetastet“: Scheitert die Erneuerung der Sitzung, endet die Sitzung und mit ihr frpc (`apps/desktop/src-tauri/src/session.rs:320-332`, `apps/desktop/src-tauri/src/main.rs:199-206`); jeder andere Fehler (Netz, 5xx, ein 401 trotz erneuerter Sitzung, ein 403, eine von der Allow-List abgewiesene TOML) lässt den laufenden frpc stehen (`apps/desktop/src-tauri/src/frpc.rs:277-287`). (3) `docs/en/admin/troubleshooting.html:73`: statt `AdminHelper TOFU: … changed` den echten (deutschen) Text zitieren: `ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für … hat sich seit dem ersten Verbinden geändert …` (`tofu.rs:272-274`); die DE-Seite zitiert schon deutsch und bleibt. `feature/docs-drift` T5 ändert dieselbe EN-Datei an anderen Zeilen (`:63`, `:123`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG
