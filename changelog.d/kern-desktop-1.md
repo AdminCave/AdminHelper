@@ -8,3 +8,6 @@
   Anfrage baut ihn neu.
 - **Desktop: RDP-Start nach Ablauf der Frist:** Ist die Zeit fuer den Verbindungsaufbau schon abgelaufen, startet
   der Desktop keine Anmeldepruefung mehr und meldet die Zeitueberschreitung.
+- **Desktop: Geraete-Identitaet zuruecksetzen:** Das Loeschen des gepinnten Zertifikats blockiert die Oberflaeche
+  nicht mehr; konnte der Server die Identitaet nicht widerrufen und bleibt zusaetzlich der Pin stehen, nennt die
+  Fehlermeldung beides.

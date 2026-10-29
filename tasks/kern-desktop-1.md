@@ -39,8 +39,10 @@ Review: approve (.ah-out/review/kern-desktop-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: changelog.d/kern-desktop-1.md
 
-### T4 — Geräte-Reset: blockierend auslagern, beide Teilfehler melden (R-0931, R-0870 Rust-Teil)  [ ]
+### T4 — Geräte-Reset: blockierend auslagern, beide Teilfehler melden (R-0931, R-0870 Rust-Teil)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, changelog.d/kern-desktop-1.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @dd1f9b01 2026-10-29T18:52:22+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T4.verdict.json)
 Änderung: `reset_device_identity_in` (`commands.rs:146-155`) führt `tofu::forget_pin` über `blocking()` wie `reset_server_cert_pin` (`:86-92`); scheitert das Pin-Löschen nach einem Reset `LocalOnly`, nennt der Fehler beides (Widerruf nur lokal, Pin nicht gelöscht). Test (Naht für `forget_pin`): Fehlerpfad mit beiden Teilfehlern.
 Beweis: Code-Lesung `commands.rs:146-155` (origin/main@fd3a3b32; Fund aus feature/desktop-blocking T9) · `commands.rs:146-149` (feature/desktop-hardening-3@cdb0dfd1)
 Dedup-Key: bug:desktop:commands.rs:reset-device-identity-blocking
