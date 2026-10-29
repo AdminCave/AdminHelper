@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-server-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-server-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-ref-server-1 · Review: pro Task
 Spec: docs/features/klein-ref-server-1.md (Roadmap R-0838, R-0895, R-0906, R-0940, R-0941)
 Heavy: none — Log-Formatierung, OpenAPI-Beschreibung und Doku im Server, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -40,8 +40,10 @@ Dedup-Key: ref:server:config_generator.py:refused-warning-per-poll
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_config.py
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html
 
-### T4 — OpenAPI: Fehlercodes der Hook-Trigger-Routen (R-0838)  [ ]
+### T4 — OpenAPI: Fehlercodes der Hook-Trigger-Routen (R-0838)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_hooks.py, changelog.d/klein-ref-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c03e9867 2026-10-29T18:31:48+01:00
+Review: approve (.ah-out/review/klein-ref-server-1/T4.verdict.json)
 Änderung: `responses=` an `POST /api/hooks/trigger` (401, 403, 404, 429) und `/trigger/{token}` (403, 404, 429); der Docstring bleibt unberührt (er wäre die OpenAPI-Beschreibung). Snapshot per `--update-openapi-snapshot` neu; ein Test pinnt die deklarierten Codes. Dazu das CHANGELOG-Fragment (`### Changed`, umlautfrei) für alle vier Tasks. 413 setzt das Gateway, nicht die App, und fehlt daher.
 Beweis: Code-Lesung origin/main hooks/router.py:255-272, _do_trigger 196-215
 Dedup-Key: ref:server:hooks:trigger-openapi-errors

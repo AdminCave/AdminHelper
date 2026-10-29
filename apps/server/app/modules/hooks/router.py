@@ -252,7 +252,15 @@ async def _do_trigger(token: str, request: Request, db: Session):
     return result
 
 
-@trigger_router.post("/trigger")
+@trigger_router.post(
+    "/trigger",
+    responses={
+        401: {"description": "X-Hook-Token header missing"},
+        403: {"description": "Hook is disabled"},
+        404: {"description": "No webhook hook with this token"},
+        429: {"description": "Rate limit exceeded for this client IP"},
+    },
+)
 async def trigger_webhook_header(request: Request, db: Session = Depends(get_db)):
     # Token via X-Hook-Token header instead of the URL path: a token in the path leaks
     # into nginx/proxy access logs, browser history and referrers. Both variants work;
@@ -267,7 +275,14 @@ async def trigger_webhook_header(request: Request, db: Session = Depends(get_db)
 
 # Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
 # admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
-@trigger_router.post("/trigger/{token}")
+@trigger_router.post(
+    "/trigger/{token}",
+    responses={
+        403: {"description": "Hook is disabled"},
+        404: {"description": "No webhook hook with this token"},
+        429: {"description": "Rate limit exceeded for this client IP"},
+    },
+)
 async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
     return await _do_trigger(token, request, db)
 
