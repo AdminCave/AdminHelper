@@ -86,7 +86,7 @@ export interface FrpConfig {
   id: string;
   name: string;
   serverAddr: string;
-  bindPort: number;
+  bindPort: number | null;
   vhostHttpsPort?: number | null;
   authToken?: string | null;
   subdomainHost?: string | null;
@@ -150,7 +150,7 @@ export interface FrpStatusProxy {
 export interface FrpStatus {
   proxies: FrpStatusProxy[];
   total?: number;
-  error?: string;
+  error?: string | null;
 }
 
 export interface FrpProvisionToken {

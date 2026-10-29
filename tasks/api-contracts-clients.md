@@ -59,8 +59,10 @@ Orakel: contract — der Listeneintrag gegen die Antwort von `POST /api/api-keys
 Dedup-Key: ref:web:types.ts:handwritten-api-types
 HEAD: b25c65a6
 
-### T19 — web: Vertragstest `types.contract.test.ts` und Typ-Korrekturen (R-0686)  [ ]
+### T19 — web: Vertragstest `types.contract.test.ts` und Typ-Korrekturen (R-0686)  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/types.contract.test.ts, apps/web/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/types.ts, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @56ed10db 2026-10-29T23:31:20+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T19.verdict.json)
 Änderung: Neue Testdatei (SPDX) nach den Regeln der Spec („Client-Vertragstest“): `typescript` (devDependency) liest `types.ts` per `ts.createSourceFile`, der Test liest `apps/server/tests/openapi.snapshot.json` wie `mocks.contract.test.ts` (`deref`, `shapeOf`). Zuordnungstabelle für die Antwort-Interfaces (`LoginResponse`, `RefreshResponse`, `User`, `EnrollmentGrant`, `ApiKey`, `ApiKeyCreateResult`, `Server`, `Hook`, `HookDetail`, `HookCreateResult`, `HookTokenResult`, `FrpConfig`, `FrpStatusProxy`, `FrpStatus`, `AuditEntry`) und die Anfrage-Interfaces (`UserCreate`, `UserUpdate`, `ApiKeyCreate`, `HookCreate`, `HookUpdate`, `FrpConfigInput`), je mit `omit` und Grund; `HookRunResult` und `ApiError` sind ausgenommen (Nicht-Ziel bzw. kein Schema). Wächter: Paare existieren, Zahl gepinnt, Gegenprobe je Regel an einem synthetischen Paar. Korrekturen, die der Test verlangt, mindestens: `User.created_at` (`types.ts:21`) bekommt `| null` (Schema: required und nullbar, `apps/server/app/modules/users/schemas.py:80`), `FrpConfig.bindPort` (`:147`) `number | null` (`apps/server/app/modules/frp/schemas.py:299`; Leser `FrpConfigModal.svelte:47` hat schon `?? 7000`), `FrpStatusProxy` (`:172-182`) `tunnel` aufnehmen oder in `omit`. Die geteilten Symbole `FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server` (`apps/desktop/ui/scripts/sync-from-web.sh:107`) im selben Commit gleich in der Desktop-`types.ts`; `svelte-check` beider Frontends muss grün bleiben.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/types.contract.test.ts  und bash apps/desktop/ui/scripts/sync-from-web.sh --check
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (Abschnitt „Paritäts- und Contract-Gates“ / „Parity and contract gates“: Zeile „Web-Typen gegen den Server-Snapshot“ mit Datei und Regeln)
@@ -142,3 +144,9 @@ Orakel: metric — Casts `as Monitor…Details` in den drei Dateien
 Metrik: `grep -c ' as Monitor[A-Za-z]*Details'` (GNU grep) über SecLive, SecServices, SecDocker: 5 → 0
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
+
+## Entscheidungen
+- 2026-10-29 T19: Web-Zuordnung `ServerSummary` → `ServerSummary` statt `Server` — das Web kennt seit R-0723 nur `ServerSummary`, `Server` steht nicht mehr in `types.ts` und nicht mehr in `sync-from-web.sh` (`CHECK_SHARED`).
+- 2026-10-29 T19: `User` gegen zwei Schemas (`UserResponse`, `UserMe`) — `/api/auth/me` und die Nutzerliste teilen im Web einen Typ; ein Feld ist nur Pflicht, wo beide Schemas es verlangen. Kein neuer Typ, keine Umbenennung in Stores und Seiten.
+- 2026-10-29 T19: Über die drei Pflicht-Korrekturen hinaus verlangte der Test `token_type?` in `LoginResponse`/`RefreshResponse` (Schema nicht required), `EnrollmentGrant.expiresAt: string | null` und `FrpStatus.error?: string | null` (geteilt, Desktop gleich); keine Leser betroffen (`formatDateTime` nimmt `null`, `status.error` wird nur auf Wahrheit geprüft). `FrpConfig.extraConfig` und `FrpStatusProxy.tunnel` stehen in `omit`: kein Client liest sie.
+- 2026-10-29 T19: Zusätzlicher Wächter: jedes Interface in `types.ts` ist zugeordnet oder steht in `EXEMPT` (`HookRunResult`, `AuditQuery`) mit Grund — ein neues Interface muss eingeordnet werden. Eine `omit`-Angabe, die das Schema nicht (mehr) kennt oder die das Interface doch beschreibt, ist rot.
