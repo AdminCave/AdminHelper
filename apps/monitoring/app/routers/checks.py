@@ -51,6 +51,14 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
     return [c.to_dict(state=states.get(c.id)) for c in checks]
 
 
+def _schedule(check: MonitorCheck) -> None:
+    """Brings the running scheduler in line with a committed check."""
+    if check.enabled:
+        add_check(check.id, check.interval, check.check_type)
+    else:
+        remove_check(check.id)
+
+
 def _same_config(a, b) -> bool:
     """== on parsed JSON, except that a bool never equals a number: 0 == False would
     let a 0 sent for a stored false count as unchanged and skip the strict boundary.
@@ -177,8 +185,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(check)
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
+    _schedule(check)
 
     return check.to_dict(state=state)
 
@@ -261,10 +268,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(check)
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
-    else:
-        remove_check(check.id)
+    _schedule(check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -281,10 +285,11 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
 
-    remove_check(check.id)
     tombstone_check(db, check)
     db.delete(check)
     db.commit()
+    # Only now: if the commit fails, the check stays and its job must keep running.
+    remove_check(check_id)
 
 
 @router.post("/checks/{check_id}/toggle", dependencies=[Depends(require_internal)])
@@ -298,10 +303,7 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
     mark_overrides(db, check, {"enabled": check.enabled})
     db.commit()
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
-    else:
-        remove_check(check.id)
+    _schedule(check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -328,10 +330,7 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(check)
 
-    if check.enabled:
-        add_check(check.id, check.interval, check.check_type)
-    else:
-        remove_check(check.id)
+    _schedule(check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)

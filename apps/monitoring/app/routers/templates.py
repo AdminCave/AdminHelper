@@ -260,14 +260,17 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Template not found")
 
     checks = db.query(MonitorCheck).filter(MonitorCheck.template_id == template_id).all()
+    check_ids = [check.id for check in checks]
     for check in checks:
-        remove_check(check.id)
         db.delete(check)
 
     db.query(MonitorAlertRule).filter(MonitorAlertRule.template_id == template_id).delete()
 
     db.delete(template)
     db.commit()
+    # Only now: if the commit fails, the checks stay and their jobs must keep running.
+    for check_id in check_ids:
+        remove_check(check_id)
 
 
 # ---------------------------------------------------------------------------
