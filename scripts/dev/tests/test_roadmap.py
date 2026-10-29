@@ -1136,7 +1136,10 @@ def train_row(rid: str, status: str, klasse: str, ledger: str) -> str:
 
 
 TRAINS = {
-    "In Arbeit": [train_row("R-0030", "aktiv", "BUG", "tasks/klein-doku-1.md")],
+    "In Arbeit": [
+        train_row("R-0030", "aktiv", "BUG", "tasks/klein-doku-1.md"),
+        train_row("R-0040", "aktiv", "REF", "tasks/arch-api-1.md"),
+    ],
     "Neu (untriagiert)": [row("R-0031", "neu", "REF")],
     "Geplant (Stufen in Reihenfolge)": [
         train_row("R-0032", "geplant", "BUG", "tasks/klein-doku-1.md"),
@@ -1165,6 +1168,7 @@ def test_zuege_lists_waiting_trains_by_class_then_size_and_moving_ones_last(
         "tasks/klein-ui-desktop-1.md · klein · wartet · 1 Zeilen · R-0035:BUG",
         "tasks/klein-tests-web-1.md · klein · wartet · 2 Zeilen · R-0033:REF R-0034:REF",
         "tasks/klein-doku-1.md · klein · unterwegs (1 von 2) · 2 Zeilen · R-0030:BUG R-0032:BUG",
+        "tasks/arch-api-1.md · arch · unterwegs (1 von 1) · 1 Zeilen · R-0040:REF",
     ]
     assert p.read_text(encoding="utf-8") == doc(TRAINS)  # read only
 
@@ -1178,6 +1182,9 @@ def test_zuege_by_stage(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[st
     )
     assert run(p, "zuege", "--stufe", "klein") == 0
     assert "ops-install" not in capsys.readouterr().out
+    # An architecture project is its own session's: never a kern train.
+    assert run(p, "zuege", "--stufe", "arch") == 0
+    assert capsys.readouterr().out.startswith("tasks/arch-api-1.md · arch")
 
 
 def test_next_by_stage(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

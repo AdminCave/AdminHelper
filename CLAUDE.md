@@ -31,7 +31,8 @@ Block je Zug) und mit Empfehlung.
 (§6). Zwei feste Sessions, gestartet mit `bash scripts/dev/start-session.sh kern|klein` (Kevin 2026-10-29): die
 **Kern-Session** (Opus) baut SEC, REG, BUG mit Datenpfad, FEAT, Install/Update/Restore und Release; die
 **Klein-Session** (Sonnet) baut die `klein-`-Züge (Doku-Drift, Kommentare, Test-Lücken, kleine REF und UI-Fehler).
-Ein Architektur-Vorhaben über Komponenten startet Kevin als eigene Session (`start-session.sh arch R-nnnn`).
+Ein Architektur-Vorhaben über Komponenten startet Kevin als eigene Session (`start-session.sh arch R-nnnn`, Ledger
+`arch-<…>`).
 **Gebaut wird in Zügen:** ein Ledger nimmt alle Zeilen auf, die die Triage ihm zuordnet (Spalte `Ledger`, `roadmap.py
 zuege`); einzeln fahren nur REG, ein BUG mit Nutzerwirkung und Architektur. Je Ledger und Worktree baut ein Akteur.
 Jede Session nimmt nur Züge ihrer Stufe (`--stufe`), wechselt zwischen ihren Vorhaben, während Prüfer, CI oder VMs
