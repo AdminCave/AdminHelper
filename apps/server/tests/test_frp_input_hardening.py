@@ -995,6 +995,34 @@ def test_generator_keeps_a_tunnel_with_a_neighbour_of_the_plugin_family(key, cap
     assert _generator_warnings(caplog) == []
 
 
+# Rows stored before the key form, the 64-bit bound and the clash rule (REFUSED_EXTRA_CONFIGS):
+# the agent would refuse the whole host's config, so only that tunnel is left out. Two keys
+# that clash only together are named both.
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {".a": 1},
+        {"bandwidthLimitMode": 2**63},
+        {"localport": 2222},
+        {"foo": 1, "FOO": 2},
+    ],
+    ids=["empty segment", "int over 64 bits", "a generator key", "two keys apart only in case"],
+)
+def test_generator_leaves_out_a_stored_tunnel_out_of_the_agents_form(extra, caplog):
+    refused = _plugin_tunnel(json.dumps(extra))
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        text = generate_frpc_toml(_legacy_row(), [refused, _stored_tunnel()], "srv1")
+
+    assert text == generate_frpc_toml(_legacy_row(), [_stored_tunnel()], "srv1")
+    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["n-ssh"]
+    warned = _generator_warnings(caplog)
+    assert len(warned) == 1, warned
+    assert "'p-ssh'" in warned[0], warned
+    for key, value in extra.items():
+        assert repr(key) in warned[0], warned
+        assert str(value) not in warned[0], warned
+
+
 # Stored extra_config the API refuses today (rows from before its checks): by entry, with
 # the key the warning names, or as text that is no JSON object, where it names none.
 REFUSED_BY_ENTRY = [

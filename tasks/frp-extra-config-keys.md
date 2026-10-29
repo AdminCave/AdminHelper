@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: extra_config eines Tunnels nur in der Form, die der Agent annimmt — Task-Ledger
-Status: aktiv · Branch: feature/frp-extra-config-keys · Review: am Ende
+Status: bereit · Branch: feature/frp-extra-config-keys · Review: am Ende
 Spec: docs/features/frp-extra-config-keys.md
 Heavy: linux-full — Server-API (`POST`/`PUT /api/frp/tunnels`) und der frpc-Generator für gespeicherte Altwerte. Kein `scenario`: für jeden Tunnel, dessen `extra_config` die neuen Regeln erfüllt, bleibt die `frpc.toml` byte-gleich; kein Agent-, PKI- oder Install-Pfad. Kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -18,8 +18,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py tests/test_frp_tunnels.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (`POST /api/frp/tunnels`, Satz zu `extra_config`-Schlüsseln: Segmente aus `A-Z a-z 0-9 _ -`, getrennt durch `.`; kein Schlüssel, der ohne Rücksicht auf Groß-/Kleinschreibung einem Feld des Proxys oder einem anderen Schlüssel gleicht oder Präfix davon ist; Ganzzahlen 64 Bit; sonst `422`, ebenso im `PUT`) · CHANGELOG.md (Fixed, umlautfrei)
 
-### T2 — Generator: gespeicherte extra_config mit solchen Werten lässt nur ihren Tunnel weg  [ ]
+### T2 — Generator: gespeicherte extra_config mit solchen Werten lässt nur ihren Tunnel weg  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_input_hardening.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @96733b05 2026-10-29T05:34:39+01:00
+Review: am Ende (Branch-Review)
 Änderung: `without_refused_extra_config` (`config_generator.py:139`) prüft außer jedem Schlüssel einzeln (`_api_takes`, `:131`) die ganze `extra_config` wie die API (`_check_tunnel_extra_config`), damit Kollisionen zweier Schlüssel auffallen; ein abgelehnter Tunnel fällt mit Warnung weg, die die Schlüssel nennt (repr, eine Zeile), nie Werte. Tests im Generator-Abschnitt von `test_frp_input_hardening.py` (`_stored_tunnel`, `_generator_warnings`): gespeicherte Zeilen mit `.a`, `2**63`, `localport`, `{"foo": 1, "FOO": 2}` neben einem sauberen Tunnel → genau ein `[[proxies]]`, Text gleich dem nur mit dem sauberen Tunnel, eine Warnung je weggelassenem Tunnel mit Schlüssel und ohne Wert. Zuerst rot: alle vier.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py tests/test_config_generator.py tests/test_frp_provision_sync.py
 Doku: docs/developer/server.html + docs/en/developer/server.html (`:119`, welche gespeicherte `extra_config` der Generator weglässt: auch eine, die die heutige Schlüssel- und Zahlenprüfung nicht besteht) · CHANGELOG.md (Fixed, umlautfrei)

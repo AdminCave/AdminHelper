@@ -391,6 +391,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: ein gespeicherter Tunnel mit einer solchen extra_config faellt allein weg:** Der Generator laesst einen
+  Tunnel, dessen gespeicherte `extra_config` die neue Pruefung nicht besteht, mit Warnung aus der frpc-Konfiguration
+  weg, auch wenn erst zwei Schluessel zusammen kollidieren; die uebrigen Tunnel des Hosts bleiben. Doku:
+  Server-Entwicklerseite (DE+EN).
 - **FRP: extra_config eines Tunnels nur in der Form, die der Agent annimmt:** `POST` und `PUT /api/frp/tunnels`
   antworten `422` an `extra_config` auf Schluessel mit leeren Segmenten (`.a`, `a.`, `a..b`), auf Ganzzahlen ausserhalb
   64 Bit und auf Schluessel, die ohne Ruecksicht auf Gross-/Kleinschreibung einem Feld des Proxys oder einem anderen
