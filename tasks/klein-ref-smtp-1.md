@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-smtp-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-smtp-1 · Review: am Ende
+Status: bereit · Branch: feature/klein-ref-smtp-1 · Review: am Ende
 Spec: docs/features/klein-ref-smtp-1.md (Roadmap R-0831)
 Heavy: none — Unit-Tests in Server und Monitoring, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -20,8 +20,10 @@ Dedup-Key: ref:tests:smtp-hardening:nits
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alert_secrets.py
 Doku: keine (Test)
 
-### T2 — test_email_sender: ohne CA-Datei auch auf 465, Kontext aus create_default_context (R-0831)  [ ]
+### T2 — test_email_sender: ohne CA-Datei auch auf 465, Kontext aus create_default_context (R-0831)  [x]
 Komponente: server · Dateien: apps/server/tests/test_email_sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e2c26c8f 2026-10-30T00:46:16+01:00
+Review: am Ende (Branch-Review)
 Änderung: `test_without_smtp_ca_file_the_context_has_no_extra_ca` läuft auf 587 und 465. Ein Spion um `ssl.create_default_context` hält fest, dass der an `starttls()`/`SMTP_SSL` gereichte Kontext genau der von `create_default_context` ist (nicht allein aus der CA-Datei gebaut), unabhängig davon, ob das System-Bundle eager geladen wird. Gegenprobe: `ssl.SSLContext(PROTOCOL_TLS_CLIENT)` statt `create_default_context()` in `sender.py` macht den Test rot (danach zurückgenommen).
 Beweis: R-0831 Code-Lesung apps/server/tests/test_email_sender.py:194
 Dedup-Key: ref:tests:smtp-hardening:nits

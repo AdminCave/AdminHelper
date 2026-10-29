@@ -191,15 +191,27 @@ def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tm
     _assert_verifying(ctx)  # an extra CA, not a weaker check
 
 
-def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, tmp_path):
+@pytest.mark.parametrize("port", [587, 465])
+def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, tmp_path, port):
     # Pairs with the test above: the CA in the file is what put its name there.
     _write_ca_pem(tmp_path / "smtp-ca.pem")
-    _configure(monkeypatch, 587)
+    _configure(monkeypatch, port)
+    created = []
+    real_create = sender.ssl.create_default_context
 
-    ctx = _sent_context(monkeypatch, 587)
+    def spy(*args, **kwargs):
+        created.append(real_create(*args, **kwargs))
+        return created[-1]
+
+    monkeypatch.setattr(sender.ssl, "create_default_context", spy)
+
+    ctx = _sent_context(monkeypatch, port)
 
     assert _CA_CN not in _ca_common_names(ctx)
     _assert_verifying(ctx)
+    # Whether a box loads its system CAs eagerly or from a hashed directory, the context has to
+    # be the default one; one built from nothing passes the CA counts above on a lazy box.
+    assert created == [ctx]
 
 
 @pytest.mark.parametrize(
