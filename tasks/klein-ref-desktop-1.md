@@ -20,8 +20,10 @@ Dedup-Key: ref:desktop:frpc.rs:head-left-behind-symlink
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: keine (interne Prüfung)
 
-### T2 — ansible: Laufordner-Hygiene (R-0873)  [ ]
+### T2 — ansible: Laufordner-Hygiene (R-0873)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @1779da82 2026-10-29T20:45:29+01:00
+Review: approve (.ah-out/review/klein-ref-desktop-1/T2.verdict.json)
 Änderung: `create_run_dir` deklariert `mut builder` nur unter `cfg(unix)`; das Aufräumskript löscht den von `confined_run_dir` geprüften kanonischen Ordner (`launch_ansible_with` reicht kanonische Dateipfade an `start` weiter, `linux_run_script` leitet den Ordner daraus ab) statt des rohen Elternverzeichnisses; `scratch()` und `stub_ansible_playbook` legen ihre Verzeichnisse über `create_run_dir`/ein eigenes eindeutiges Verzeichnis an statt unter festen Namen. Test: ein Inventarpfad über einen Symlink auf den Laufordner löscht den Ordner, nicht den Symlink-Namen. Keine Eigentümerprüfung (Spec, Trade-offs).
 Beweis: Code-Lesung origin/main ansible.rs:149, 353, 517, 772
 Dedup-Key: ref:desktop:ansible.rs:run-dir-hygiene
