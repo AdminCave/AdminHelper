@@ -446,3 +446,183 @@ describe('http client error messages', () => {
     expect(await messageOf({ detail: [{ loc: ['body'] }] })).toBe('HTTP 422');
   });
 });
+
+// R-0779: a request started in a session that ended (logout, then a new login) and that answers
+// 401 only afterwards belongs to the old session: it must neither refresh, retry with the new
+// session's token nor run the auth-failure handler, which would end the new session.
+describe('http client: a 401 of a request from an ended session', () => {
+  let calls: FetchCall[];
+
+  beforeEach(() => {
+    calls = [];
+    vi.stubGlobal('localStorage', createLocalStorageStub());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function deferredResponse(): { promise: Promise<Response>; resolve: (r: Response) => void } {
+    let resolve!: (r: Response) => void;
+    const promise = new Promise<Response>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  // fetch: the first /api/servers waits for `first`, the refresh answers `refresh` (or waits for it).
+  function stubFetch(first: Promise<Response>, refresh: () => Promise<Response>): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') return refresh();
+        if (calls.filter((c) => c.path === path).length === 1) return first;
+        return Promise.resolve(jsonResponse({ ok: true }));
+      }),
+    );
+  }
+
+  function expectSessionExpired(err: unknown): void {
+    expect(err).toBeInstanceOf(Error);
+    expect((err as ApiError).status).toBe(401);
+    expect((err as ApiError).message).toBe('Session expired');
+  }
+
+  it('does not refresh and leaves the new session alone', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('is not retried with the new token, even where a refresh would succeed', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ access_token: 'newer' })));
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+  });
+
+  it('a refresh of the old session that fails after the new login leaves the new session alone', async () => {
+    const refresh = deferredResponse();
+    stubFetch(Promise.resolve(jsonResponse({ detail: 'expired' }, 401)), () => refresh.promise);
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/auth/refresh'));
+    clearTokens();
+    setAccessToken('new-token');
+    refresh.resolve(jsonResponse({ detail: 'no' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']);
+  });
+
+  it('requestRaw: does not refresh and leaves the new session alone', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
+    const { requestRaw, setAccessToken, clearTokens, registerAuthFailureHandler } =
+      await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = requestRaw('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('a logout alone ends the session for a request still open', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ access_token: 'newer' })));
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    clearTokens();
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('a login alone starts a new session for a request sent while logged out', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ access_token: 'newer' })));
+    const { http, setAccessToken, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    setAccessToken('new-token');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  it('a refresh answered after the logout sets no token', async () => {
+    const refresh = deferredResponse();
+    stubFetch(Promise.resolve(jsonResponse({ detail: 'expired' }, 401)), () => refresh.promise);
+    const { http, setAccessToken, clearTokens, getAccessToken } = await importClient();
+    setAccessToken('old-token');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/auth/refresh'));
+    clearTokens();
+    refresh.resolve(jsonResponse({ access_token: 'late-token' }));
+
+    expectSessionExpired(await pending);
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it('a new token within the same session still ends it on a failed refresh', async () => {
+    const first = deferredResponse();
+    stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
+    const { http, setAccessToken, registerAuthFailureHandler } = await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('t1');
+
+    const pending = http.get('/api/servers').catch((e: unknown) => e);
+    setAccessToken('t2');
+    first.resolve(jsonResponse({ detail: 'expired' }, 401));
+
+    expectSessionExpired(await pending);
+    expect(onAuthFailure).toHaveBeenCalledTimes(1);
+  });
+});

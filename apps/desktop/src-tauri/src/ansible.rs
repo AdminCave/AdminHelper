@@ -5,12 +5,98 @@
 use std::io::Write;
 
 use crate::error::AppError;
+use crate::session::SessionState;
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct AnsibleTarget {
     pub hostname: String,
     pub groups: Vec<String>,
+}
+
+/// A playbook as a run takes it from the server: its file name and its content.
+pub struct Playbook {
+    pub filename: String,
+    pub content: String,
+}
+
+/// Of the answer to `GET /api/ansible/playbooks/{id}`, what a run needs.
+#[derive(serde::Deserialize)]
+struct PlaybookMeta {
+    filename: String,
+}
+
+/// The answer to `GET /api/ansible/playbooks/{id}/content`.
+#[derive(serde::Deserialize)]
+struct PlaybookText {
+    content: String,
+}
+
+/// Fails unless `id` has the form the server gives a playbook, a UUID (8-4-4-4-12 hex digits,
+/// either case). The id goes into the path of a request to the server.
+pub fn check_playbook_id(id: &str) -> Result<(), AppError> {
+    let groups: Vec<&str> = id.split('-').collect();
+    let hex = groups
+        .iter()
+        .all(|group| group.bytes().all(|b| b.is_ascii_hexdigit()));
+    if hex && groups.iter().map(|group| group.len()).eq([8, 4, 4, 4, 12]) {
+        return Ok(());
+    }
+    Err(AppError::Validation("invalid playbook id".to_string()))
+}
+
+/// The playbook `id` (checked by [`check_playbook_id`]) from the signed-in server: its file name
+/// (`GET /api/ansible/playbooks/{id}`) and its content (`…/{id}/content`), both through the
+/// session ([`crate::auth::authenticated_get`]).
+pub async fn fetch_playbook(session: &SessionState, id: &str) -> Result<Playbook, AppError> {
+    let path = format!("/api/ansible/playbooks/{id}");
+    let meta: PlaybookMeta = fetch_json(session, &path).await?;
+    let text: PlaybookText = fetch_json(session, &format!("{path}/content")).await?;
+    Ok(Playbook {
+        filename: meta.filename,
+        content: text.content,
+    })
+}
+
+/// The answer to an authenticated GET of `path` as `T`. A status other than 2xx is an error
+/// that names the status, not the answer.
+async fn fetch_json<T: serde::de::DeserializeOwned>(
+    session: &SessionState,
+    path: &str,
+) -> Result<T, AppError> {
+    let (response, _) = crate::auth::authenticated_get(session, path).await?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(AppError::Validation(format!(
+            "the playbook could not be loaded ({status})"
+        )));
+    }
+    Ok(response.json().await?)
+}
+
+/// A run of `playbook` on `targets`: writes the inventory and the playbook, then hands both
+/// paths to `launch` ([`launch_ansible`] in the app). If a step fails, the files written so far
+/// go, also when `launch` rejected their paths: they are this run's own. After a launch that
+/// succeeded, they are left to the run.
+pub fn run(
+    targets: &[AnsibleTarget],
+    playbook: &Playbook,
+    launch: impl FnOnce(&str, &str) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    let inventory = generate_inventory(targets)?;
+    let playbook_path = match write_playbook_temp(&playbook.filename, &playbook.content) {
+        Ok(path) => path,
+        Err(e) => {
+            let _ = std::fs::remove_file(&inventory);
+            return Err(e);
+        }
+    };
+    let launched = launch(&inventory, &playbook_path);
+    if launched.is_err() {
+        let _ = std::fs::remove_file(&inventory);
+        let _ = std::fs::remove_file(&playbook_path);
+    }
+    launched
 }
 
 /// Creates a fresh temp file for our ansible scratch data. On Unix it is created
@@ -85,10 +171,27 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         std::process::id(),
         seq
     ));
-    let mut file = create_temp_file(&path)?;
-    file.write_all(content.as_bytes())?;
+    write_new_temp(&path, content.as_bytes(), |file, bytes| {
+        file.write_all(bytes)
+    })?;
 
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Creates `path` ([`create_temp_file`]) and writes `content` with `write`. A write that fails
+/// after the file exists removes it: its path never reaches the caller, so nothing else would.
+fn write_new_temp(
+    path: &std::path::Path,
+    content: &[u8],
+    write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut file = create_temp_file(path)?;
+    if let Err(e) = write(&mut file, content) {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Writes the playbook content to a temporary file and returns the path.
@@ -110,17 +213,19 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
         seq,
         safe_name
     ));
-    let mut file = create_temp_file(&path)?;
-    file.write_all(content.as_bytes())?;
+    write_new_temp(&path, content.as_bytes(), |file, bytes| {
+        file.write_all(bytes)
+    })?;
 
     Ok(path.to_string_lossy().to_string())
 }
 
 /// True only for one of our own ansible temp files: after resolving symlinks and
 /// `..`, the path must sit directly inside the system temp dir and carry our
-/// `adminhelper_ansible` prefix. Guards `launch_ansible` against a (compromised)
-/// frontend pointing `ansible-playbook` at an arbitrary attacker-controlled YAML
-/// — an ansible playbook runs arbitrary commands, so an unconfined path is RCE.
+/// `adminhelper_ansible` prefix. So `ansible-playbook` only gets such files, and a
+/// failed start (`launch_ansible_with`) only deletes such files. It does not check
+/// what a playbook says: `write_playbook_temp` writes the content as
+/// [`fetch_playbook`] loaded it from the signed-in server.
 fn is_confined_ansible_path(path: &str) -> bool {
     let canon = match std::fs::canonicalize(path) {
         Ok(p) => p,
@@ -212,18 +317,170 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_temp_file, generate_inventory, is_confined_ansible_path, launch_ansible_with,
-        write_playbook_temp, AnsibleTarget,
+        create_temp_file, fetch_playbook, generate_inventory, is_confined_ansible_path,
+        launch_ansible_with, run, write_new_temp, write_playbook_temp, AnsibleTarget, Playbook,
     };
     use crate::error::AppError;
+    use crate::session::SessionState;
     use std::fs;
     use std::path::Path;
+    use std::sync::{Arc, Mutex};
 
     fn one_target() -> Vec<AnsibleTarget> {
         vec![AnsibleTarget {
             hostname: "web01".to_string(),
             groups: vec!["web".to_string()],
         }]
+    }
+
+    const PLAYBOOK_ID: &str = "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f";
+
+    /// Serve HTTP on a fresh loopback port, one request per connection: the n-th request gets
+    /// the n-th of `replies` (status line and body), a request after them its connection closed
+    /// unanswered. The request line of every request lands in the log.
+    async fn serve(replies: Vec<(&'static str, String)>) -> (String, Arc<Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&log);
+        tokio::spawn(async move {
+            let mut replies = replies.into_iter();
+            loop {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                let head = String::from_utf8_lossy(&head);
+                seen.lock()
+                    .unwrap()
+                    .push(head.lines().next().unwrap_or_default().to_string());
+                if let Some((status, body)) = replies.next() {
+                    let reply = format!(
+                        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    tcp.write_all(reply.as_bytes()).await.unwrap();
+                }
+                let _ = tcp.shutdown().await;
+            }
+        });
+        (url, log)
+    }
+
+    /// A session of `ops-admin` on `server`.
+    async fn signed_in(server: String) -> SessionState {
+        let session = SessionState::default();
+        session
+            .set(
+                server,
+                "access".to_string(),
+                "refresh".to_string(),
+                "ops-admin".to_string(),
+                false,
+            )
+            .await;
+        session
+    }
+
+    /// The metadata of the playbook [`PLAYBOOK_ID`] as the server lists it.
+    fn listed_playbook() -> String {
+        serde_json::json!({
+            "id": PLAYBOOK_ID,
+            "name": "Deploy",
+            "filename": "deploy.yml",
+            "description": "",
+            "tags": [],
+            "createdAt": "2026-10-22T10:00:00Z",
+            "updatedAt": "2026-10-22T10:00:00Z",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn check_playbook_id_takes_only_a_uuid() {
+        for id in [PLAYBOOK_ID, "0B6F2C1E-8A4D-4C3B-9E7F-1A2B3C4D5E6F"] {
+            assert!(super::check_playbook_id(id).is_ok(), "{id}");
+        }
+        for id in [
+            "",
+            "pb1",
+            "0b6f2c1e8a4d4c3b9e7f1a2b3c4d5e6f",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6g",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f-",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f/content",
+            "../0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f",
+            " 0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f",
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f?x=1",
+            "+b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f",
+        ] {
+            assert!(
+                matches!(super::check_playbook_id(id), Err(AppError::Validation(_))),
+                "{id:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_playbook_loads_name_and_content_from_the_signed_in_server() {
+        let (server, log) = serve(vec![
+            ("200 OK", listed_playbook()),
+            (
+                "200 OK",
+                serde_json::json!({ "content": "- hosts: all\n  tasks: []\n" }).to_string(),
+            ),
+        ])
+        .await;
+        let session = signed_in(server).await;
+
+        let playbook = fetch_playbook(&session, PLAYBOOK_ID).await.unwrap();
+
+        assert_eq!(playbook.filename, "deploy.yml");
+        assert_eq!(playbook.content, "- hosts: all\n  tasks: []\n");
+        assert_eq!(
+            *log.lock().unwrap(),
+            [
+                format!("GET /api/ansible/playbooks/{PLAYBOOK_ID} HTTP/1.1"),
+                format!("GET /api/ansible/playbooks/{PLAYBOOK_ID}/content HTTP/1.1"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_playbook_fails_on_a_refused_answer_and_names_only_the_status() {
+        let body = r#"{"detail":"Playbook nicht gefunden"}"#.to_string();
+        for (case, replies, requests) in [
+            ("metadata", vec![("404 Not Found", body.clone())], 1),
+            (
+                "content",
+                vec![
+                    ("200 OK", listed_playbook()),
+                    ("404 Not Found", body.clone()),
+                ],
+                2,
+            ),
+        ] {
+            let (server, log) = serve(replies).await;
+            let session = signed_in(server).await;
+
+            let message = fetch_playbook(&session, PLAYBOOK_ID)
+                .await
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default();
+
+            assert!(message.contains("404 Not Found"), "{case}: {message}");
+            assert!(!message.contains("nicht gefunden"), "{case}: {message}");
+            assert_eq!(log.lock().unwrap().len(), requests, "{case}");
+        }
     }
 
     /// A directory holding a stub `ansible-playbook`: it runs `before`, records its arguments in
@@ -380,6 +637,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn linux_run_script_keeps_both_files_until_the_run_ends_after_hup_or_term() {
+        // Without `trap exit HUP TERM` bash would run its EXIT trap at once and remove the
+        // files under a run still reading them; the test above stays green either way, since
+        // it only looks once everything has ended. Here the stub outlives the signal by a
+        // moment and checks that both files are still there. No `exec`: its trap must stay.
+        for (case, signal) in [("hangup-keeps", "-HUP"), ("term-keeps", "-TERM")] {
+            let run = signal_mid_run(
+                case,
+                r#"trap 'sleep 0.3; if [ -f "$2" ] && [ -f "$3" ]; then echo AH_KEPT_BOTH; fi; exit 0' HUP TERM"#,
+                "while :; do sleep 0.1; done",
+                signal,
+            );
+            assert!(run.started, "{case}: the stub never ran on both files");
+            assert!(run.ended, "{case}: bash did not end after {signal}");
+            assert_eq!(run.left, (false, false), "{case}: files left after the run");
+            assert!(
+                run.stdout.contains("AH_KEPT_BOTH"),
+                "{case}: the files went before the run ended: {:?}",
+                run.stdout
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn linux_run_script_removes_both_files_after_ctrl_c_mid_run() {
         // ansible-playbook catches Ctrl-C and exits 99: the run still goes on to the prompt.
         let caught = signal_mid_run(
@@ -519,6 +801,51 @@ mod tests {
             "db group (sorted first): {content}"
         );
         assert!(content.contains("[web]\nweb01\n"), "web group: {content}");
+    }
+
+    #[test]
+    fn write_new_temp_removes_the_file_when_the_write_fails() {
+        let path = std::env::temp_dir().join(format!(
+            "adminhelper_ansible_{}_write-fails.yml",
+            std::process::id()
+        ));
+        let err = write_new_temp(&path, b"- hosts: all\n", |_, _| {
+            Err(std::io::Error::other("disk full"))
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "disk full");
+        assert!(!path.exists(), "the half-written file stayed");
+    }
+
+    #[test]
+    fn run_removes_the_inventory_when_the_playbook_cannot_be_written() {
+        // A name longer than any file system allows: the playbook's temp file cannot be
+        // created after the inventory was written.
+        let host = format!("write-fails-{}.example.net", std::process::id());
+        let targets = [AnsibleTarget {
+            hostname: host.clone(),
+            groups: vec![],
+        }];
+        let playbook = Playbook {
+            filename: "p".repeat(300),
+            content: "- hosts: all\n".to_string(),
+        };
+        let launched = std::cell::Cell::new(false);
+        assert!(run(&targets, &playbook, |_, _| {
+            launched.set(true);
+            Ok(())
+        })
+        .is_err());
+        assert!(!launched.get());
+        let prefix = format!("adminhelper_ansible_inventory_{}_", std::process::id());
+        let left: Vec<_> = fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+            .filter(|entry| fs::read_to_string(entry.path()).is_ok_and(|text| text.contains(&host)))
+            .map(|entry| entry.path())
+            .collect();
+        assert!(left.is_empty(), "inventories left: {left:?}");
     }
 
     #[test]

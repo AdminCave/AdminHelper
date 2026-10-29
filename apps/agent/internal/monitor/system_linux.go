@@ -7,6 +7,7 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -32,18 +33,18 @@ var rebootRequiredPath = "/var/run/reboot-required"
 
 // systemCLI indirects the lookups and calls of the system state tools (needs-restarting,
 // timedatectl) so tests can drive every path without them (same reason as dockerCLI). run runs one
-// call under pluginTimeout. apt-get and dnf are looked up here as well, so the package family is told
-// apart in one place; their update counts run through updatesCalls.
+// call under pluginTimeout and ctx. apt-get and dnf are looked up here as well, so the package family
+// is told apart in one place; their update counts run through updatesCalls.
 var systemCLI = struct {
 	lookPath func(file string) (string, error)
-	run      func(name string, args ...string) ([]byte, error)
+	run      func(ctx context.Context, name string, args ...string) ([]byte, error)
 }{exec.LookPath, runWithTimeout}
 
 // collectSystemState reports the system_state block and returns st, the state the last successful
 // push saved, with what it measured replaced. A field is set only when measured; why one is missing
 // goes to the log. A counter it cannot read keeps the saved one, so the next report still counts the
-// OOM kills since the last counter it could read.
-func collectSystemState(st reportState) (map[string]any, reportState) {
+// OOM kills since the last counter it could read. ctx ends its tool calls.
+func collectSystemState(ctx context.Context, st reportState) (map[string]any, reportState) {
 	block := map[string]any{}
 	if count, source, ok := readOOMKill(); ok {
 		// The first run has no counter to count from, nor has a run that reads another source than the
@@ -55,13 +56,13 @@ func collectSystemState(st reportState) (map[string]any, reportState) {
 		st.OOMKill = &count
 		st.OOMKillSource = source
 	}
-	if required, ok := rebootRequired(); ok {
+	if required, ok := rebootRequired(ctx); ok {
 		block["reboot_required"] = required
 	}
-	if synced, ok := timeSynchronized(); ok {
+	if synced, ok := timeSynchronized(ctx); ok {
 		block["time_synchronized"] = synced
 	}
-	st.Updates = securityUpdates(st.Updates)
+	st.Updates = securityUpdates(ctx, st.Updates)
 	if st.Updates != nil && st.Updates.Security != nil {
 		block["security_updates"] = *st.Updates.Security
 	}
@@ -128,7 +129,7 @@ func oomKillsSince(saved, count uint64) uint64 {
 // Debian family (apt-get on the path) flags it with /var/run/reboot-required, the RPM family answers
 // through needs-restarting -r (exit 1: reboot needed). A host with neither has no tool to ask, which
 // is no failure and stays out of the log (like docker not installed).
-func rebootRequired() (required, ok bool) {
+func rebootRequired(ctx context.Context) (required, ok bool) {
 	if _, err := systemCLI.lookPath("apt-get"); err == nil {
 		_, err := os.Stat(rebootRequiredPath)
 		if err == nil {
@@ -144,7 +145,7 @@ func rebootRequired() (required, ok bool) {
 	if _, err := systemCLI.lookPath("needs-restarting"); err != nil {
 		return false, false
 	}
-	_, err := systemCLI.run("needs-restarting", "-r")
+	_, err := systemCLI.run(ctx, "needs-restarting", "-r")
 	if err == nil {
 		return false, true
 	}
@@ -160,12 +161,12 @@ func rebootRequired() (required, ok bool) {
 // timeSynchronized says whether the kernel reports the clock as synchronized, the NTPSynchronized
 // property of timedatectl show (org.freedesktop.timedate1(5)); ok is false when that is unknown, and
 // the log names why.
-func timeSynchronized() (synced, ok bool) {
+func timeSynchronized(ctx context.Context) (synced, ok bool) {
 	if _, err := systemCLI.lookPath("timedatectl"); err != nil {
 		logger.Warnf("system state: timedatectl not found, time_synchronized left out")
 		return false, false
 	}
-	out, err := systemCLI.run("timedatectl", "show")
+	out, err := systemCLI.run(ctx, "timedatectl", "show")
 	if err != nil {
 		logger.Warnf("system state: timedatectl show failed: %s, time_synchronized left out",
 			commandFailure("timedatectl", pluginTimeout, err))

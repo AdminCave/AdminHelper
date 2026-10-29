@@ -74,6 +74,8 @@ export const translations: Translations = {
     'infra.prov.used': 'Verwendet ({time})',
     'infra.prov.active': 'Aktiv',
     'infra.prov.expired': 'Abgelaufen',
+    'infra.prov.badResponse':
+      'Token oder Server-ID haben nicht das erwartete Format — es wurde kein Befehl erzeugt.',
     'infra.conn.add': 'Verbindung',
     'infra.conn.empty': 'Keine Verbindungen für diesen Server',
     'infra.conn.new': 'Neue Verbindung',
@@ -119,6 +121,7 @@ export const translations: Translations = {
     'infra.tun.validation.configRequired': 'Bitte eine FRP-Konfiguration wählen',
     'infra.tun.validation.nameRequired': 'Name darf nicht leer sein',
     'infra.tun.validation.portRequired': 'Lokaler Port erforderlich',
+    'infra.tun.validation.visitorPortRange': 'Visitor-Port muss zwischen 1 und 65535 liegen',
 
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Speichern',
@@ -296,6 +299,7 @@ export const translations: Translations = {
     'editor.validation.failed': 'Validierung fehlgeschlagen',
     'editor.status.saved': 'Gespeichert',
     'editor.status.deleted': 'Geloescht',
+    'editor.deleteConfirm': 'Verbindung „{name}“ wirklich löschen?',
 
     // ── Desktop: WorkspaceEditor ──────────────────────────────────────
     'workspace.editor.title.new': 'Neuer Workspace',
@@ -800,6 +804,8 @@ export const translations: Translations = {
     'error.rdpAuth': 'RDP-Authentifizierung fehlgeschlagen',
     'connections.empty': 'Noch keine Verbindungen angelegt',
     'connections.noResults': 'Keine Treffer für deine Filter',
+    'connections.loadFailed': 'Die Verbindungen ließen sich nicht laden: {error}',
+    'connections.loadFailed.kept': 'Angezeigt wird die zuletzt geladene Liste.',
   },
 
   en: {
@@ -866,6 +872,8 @@ export const translations: Translations = {
     'infra.prov.used': 'Used ({time})',
     'infra.prov.active': 'Active',
     'infra.prov.expired': 'Expired',
+    'infra.prov.badResponse':
+      'The token or server ID is not in the expected format — no command was generated.',
     'infra.conn.add': 'Connection',
     'infra.conn.empty': 'No connections for this server',
     'infra.conn.new': 'New connection',
@@ -911,6 +919,7 @@ export const translations: Translations = {
     'infra.tun.validation.configRequired': 'Please select an FRP configuration',
     'infra.tun.validation.nameRequired': 'Name must not be empty',
     'infra.tun.validation.portRequired': 'Local port is required',
+    'infra.tun.validation.visitorPortRange': 'The visitor port must be between 1 and 65535',
 
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Save',
@@ -1086,6 +1095,7 @@ export const translations: Translations = {
     'editor.validation.failed': 'Validation failed',
     'editor.status.saved': 'Saved',
     'editor.status.deleted': 'Deleted',
+    'editor.deleteConfirm': 'Really delete the connection "{name}"?',
 
     // ── Desktop: WorkspaceEditor ──────────────────────────────────────
     'workspace.editor.title.new': 'New workspace',
@@ -1589,5 +1599,7 @@ export const translations: Translations = {
     'error.rdpAuth': 'RDP authentication failed',
     'connections.empty': 'No connections saved yet',
     'connections.noResults': 'No matches for your filters',
+    'connections.loadFailed': 'The connections did not load: {error}',
+    'connections.loadFailed.kept': 'The list shown is the one loaded last.',
   },
 };

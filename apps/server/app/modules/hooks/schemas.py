@@ -17,6 +17,7 @@ VALID_EVENTS = [
     "connections.imported",
     "user.created",
     "user.deleted",
+    "user.promoted",
     "server.created",
     "server.updated",
     "server.deleted",

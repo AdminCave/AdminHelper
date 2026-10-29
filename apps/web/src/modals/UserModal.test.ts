@@ -10,8 +10,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
-vi.mock('$lib/api/users', () => ({ update: vi.fn() }));
-vi.mock('$lib/api/servers', () => ({ list: vi.fn(async () => []) }));
+vi.mock('$lib/api/users', () => ({ list: vi.fn(), update: vi.fn(), create: vi.fn() }));
+vi.mock('$lib/api/servers', () => ({ listSummaries: vi.fn(async () => []) }));
 // A session without a server, as in ConfirmDialog.test.ts.
 vi.mock('$lib/api/client', () => ({
   restoreSession: vi.fn(async () => true),
@@ -24,10 +24,11 @@ vi.mock('$lib/api/auth', () => ({
 }));
 
 import UserModal from './UserModal.svelte';
-import { update } from '$lib/api/users';
+import { update, create } from '$lib/api/users';
+import * as serversApi from '$lib/api/servers';
 import * as authApi from '$lib/api/auth';
 import { auth, isAdmin } from '$lib/stores/auth';
-import { ApiError, type User } from '$lib/api/types';
+import { ApiError, type ServerSummary, type User } from '$lib/api/types';
 import { language } from '$lib/i18n';
 import { translations } from '$lib/i18n/dictionaries';
 import { toasts, dismissToast } from '$lib/stores/notifications';
@@ -138,5 +139,119 @@ describe('UserModal editing the signed-in admin', () => {
     expect(get(toasts)).toContainEqual(
       expect.objectContaining({ kind: 'success', message: de['toast.user.saved'] }),
     );
+  });
+});
+
+// The form -> payload mapping and the server list (R-0722). The list holds two servers; a server's
+// checkbox is found by its name.
+describe('UserModal form and server list', () => {
+  const SERVERS = [
+    { id: 's1', name: 'web-01', hostname: 'web-01.example' },
+    { id: 's2', name: 'db-01', hostname: 'db-01.example' },
+  ] as ServerSummary[];
+
+  beforeEach(() => {
+    vi.mocked(serversApi.listSummaries).mockClear().mockResolvedValue(SERVERS);
+    vi.mocked(create)
+      .mockReset()
+      .mockImplementation(async (data) => ({ id: 3, ...data }) as User);
+  });
+
+  afterEach(() => {
+    vi.mocked(serversApi.listSummaries).mockReset().mockResolvedValue([]);
+  });
+
+  function serverBox(container: HTMLElement, name: string): HTMLInputElement {
+    const label = [...container.querySelectorAll('label')].find((l) =>
+      [...l.querySelectorAll('span')].some((sp) => sp.textContent === name),
+    );
+    return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  }
+
+  function open(editing: User | null) {
+    const onClose = vi.fn();
+    const view = render(UserModal, { props: { open: true, editing, onClose } });
+    const el = (selector: string) => view.container.querySelector(selector) as HTMLInputElement;
+    return { onClose, view, el, submit: () => fireEvent.submit(el('#user-form')) };
+  }
+
+  it('creates a user with a trimmed name and the servers ticked', async () => {
+    const m = open(null);
+    await waitFor(() => expect(serverBox(m.view.container, 'db-01')).toBeTruthy());
+    await fireEvent.input(m.el('#ufUsername'), { target: { value: '  alice  ' } });
+    await fireEvent.input(m.el('#ufPassword'), { target: { value: 'a-password' } });
+    await fireEvent.click(serverBox(m.view.container, 'db-01'));
+    await m.submit();
+
+    await waitFor(() => expect(m.onClose).toHaveBeenCalledTimes(1));
+    expect(create).toHaveBeenCalledWith({
+      username: 'alice',
+      password: 'a-password',
+      is_admin: false,
+      server_ids: ['s2'],
+    });
+    expect(get(toasts).map((t) => t.message)).toContain(de['toast.user.created']);
+  });
+
+  it('a new user without a password sends nothing and says why', async () => {
+    const m = open(null);
+    await fireEvent.input(m.el('#ufUsername'), { target: { value: 'bob' } });
+    await m.submit();
+
+    await waitFor(() =>
+      expect(get(toasts)).toContainEqual(
+        expect.objectContaining({ kind: 'error', message: de['modal.user.passwordRequired'] }),
+      ),
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(m.onClose).not.toHaveBeenCalled();
+  });
+
+  it('editing another user swaps the servers and sends no password key', async () => {
+    const m = open({ ...OTHER, server_ids: ['s1'] });
+    await waitFor(() => expect(serverBox(m.view.container, 'web-01').checked).toBe(true));
+    await fireEvent.click(serverBox(m.view.container, 'web-01'));
+    await fireEvent.click(serverBox(m.view.container, 'db-01'));
+    await m.submit();
+
+    await waitFor(() => expect(m.onClose).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(update).mock.calls[0]).toEqual([2, { is_admin: false, server_ids: ['s2'] }]);
+    expect(get(toasts).map((t) => t.message)).toContain(de['toast.user.saved']);
+  });
+
+  it('lists every server with its name and host name', async () => {
+    const m = open(null);
+    await waitFor(() => expect(m.view.container.textContent).toContain('web-01.example'));
+    for (const s of SERVERS) {
+      const box = serverBox(m.view.container, s.name);
+      expect(box).toBeTruthy();
+      expect(box.closest('label')?.textContent).toContain(s.hostname);
+    }
+  });
+
+  it('a list that fails to load says so and shows the error', async () => {
+    vi.mocked(serversApi.listSummaries).mockRejectedValue(new ApiError(500, 'inventory down'));
+    const m = open(null);
+
+    await waitFor(() =>
+      expect(m.view.container.textContent).toContain(de['page.users.serverLoadFailed']),
+    );
+    expect(get(toasts)).toContainEqual(
+      expect.objectContaining({ kind: 'error', message: 'inventory down' }),
+    );
+    expect(m.view.container.textContent).not.toContain(de['page.users.noServers']);
+  });
+
+  it('opening the dialog loads the server summary once', async () => {
+    const m = open(null);
+    await waitFor(() => expect(serverBox(m.view.container, 'web-01')).toBeTruthy());
+    expect(serversApi.listSummaries).toHaveBeenCalledTimes(1);
+  });
+
+  it('an empty list says there are no servers', async () => {
+    vi.mocked(serversApi.listSummaries).mockResolvedValue([]);
+    const m = open(null);
+
+    await waitFor(() => expect(m.view.container.textContent).toContain(de['page.users.noServers']));
   });
 });
