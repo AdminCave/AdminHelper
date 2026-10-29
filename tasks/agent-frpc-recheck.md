@@ -36,5 +36,11 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/... ./cmd/.
 Doku: docs/developer/agent.html + docs/en/developer/agent.html (Absatz zur Prüfung des Server-Texts: statt „schreibt dann nichts und startet nichts“ der Verweis auf die Tabellenzeile; Marker-Satz: Version und Hash)
 Abhängt von: T2
 
+### T4 — Doku: Satzfehler im Absatz zur Prüfung  [ ]
+Komponente: agent · Dateien: docs/developer/agent.html
+Änderung: „nie den Wert; er was dann folgt“ → „nie den Wert; was dann folgt“ (aus T3, security branch Runde 2). Die EN-Fassung ist richtig.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/...
+Doku: docs/developer/agent.html (nur DE)
+
 ## Entscheidungen
 - 2026-10-29 Kevin: ein abgelehnter Server-Text stoppt frpc (fail-closed), statt auf der alten Datei weiterzulaufen; nach einem Agent-Update wird einmal neu geprüft.
