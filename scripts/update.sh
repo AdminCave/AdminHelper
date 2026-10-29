@@ -24,8 +24,10 @@
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
 # runtime files + .env before the swap; on a failed swap, .env migration, agent-repo
-# refresh, image pull, recreate or health check it auto-rolls-back the runtime files
-# + image pins (use --no-rollback to inspect the broken state). The updater updates
+# refresh, image pull, or `docker compose up --wait` (recreate plus the health
+# check of every service that has one) it auto-rolls-back the runtime files + image
+# pins and says "zurueckgerollt" only when the old state comes up healthy again (use
+# --no-rollback to inspect the broken state). The updater updates
 # ITSELF: if the release ships a newer update.sh it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
@@ -261,6 +263,9 @@ warn_host_uids
 check_env_templates
 command -v docker >/dev/null 2>&1 || die "docker fehlt."
 docker compose version >/dev/null 2>&1 || die "'docker compose' fehlt."
+compose_up_help=$(docker compose up --help 2>&1 || true)
+{ grep -qE -- '--wait([[:space:]]|$)' <<<"$compose_up_help" && grep -q -- '--wait-timeout' <<<"$compose_up_help"; } \
+    || die "docker compose $(docker compose version --short 2>/dev/null || echo '?') lacks 'up --wait' and '--wait-timeout' (Compose v2.17 or newer) — nothing changed."
 command -v curl >/dev/null 2>&1 || die "curl fehlt."
 # After the checks that stop with "nothing changed"; --check changes nothing, the mode included.
 [ "$CHECK" = 1 ] || close_install_dir
@@ -433,18 +438,12 @@ update_agent_repo() {
     cp -a "$staging"/. repo/ || return 1
 }
 
-# Wait until the server accepts connections (migrations done, uvicorn up).
-# Retries/interval are tunable (default 120×2s = 240s) for slow hosts and tests.
-wait_for_server() {
-    local attempt=0 max="${AH_HEALTH_RETRIES:-120}" iv="${AH_HEALTH_INTERVAL:-2}"
-    log "Warte auf den Server (Alembic laeuft beim Start)..."
-    until docker compose exec -T server \
-            python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" >/dev/null 2>&1; do
-        attempt=$((attempt + 1))
-        [ "$attempt" -ge "$max" ] && return 1
-        sleep "$iv"
-    done
-    return 0
+# Start the stack and wait. --wait waits for every service with a healthcheck to
+# turn healthy and fails on an unhealthy or exited container; a service without
+# one counts as soon as it runs (probed with Compose v5.5.1, docs/features/update-rollback.md).
+stack_up() {
+    log "Starte den Stack und warte auf die Healthchecks (Alembic laeuft beim Start)..."
+    docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}"
 }
 
 # ---------------------------------------------------------------------------
@@ -455,9 +454,7 @@ if [ "$REDEPLOY" = 1 ]; then
     if [ "$SKIP_BACKUP" != 1 ]; then log "Backup-first..."; ./scripts/backup.sh "${BACKUP_ARGS[@]}"; fi
     log "Ziehe die gepinnten Images neu..."
     docker compose pull || die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit?) — Re-Deploy abgebrochen, Container unveraendert."
-    log "Starte den Stack neu..."
-    docker compose up -d
-    wait_for_server || die "Server nicht rechtzeitig bereit. Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    stack_up || die "stack start or health check failed (docker compose up --wait). Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
     log "Re-Deploy fertig (Version unveraendert: $(installed_label))."
     exit 0
 fi
@@ -702,7 +699,7 @@ rollback_after_deploy() {
             && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
       ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
-    docker compose up -d >/dev/null \
+    stack_up >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
         || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
@@ -714,11 +711,5 @@ log "Ziehe die Images..."
 docker compose pull \
     || rollback_before_deploy "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit/Image nicht veroeffentlicht?)" \
         "Weiter mit ./scripts/update.sh --redeploy (gepinnte Images erneut ziehen und starten) oder --ref ${TARGET} (Release erneut anwenden)."
-log "Starte den Stack neu..."
-docker compose up -d || rollback_after_deploy "Stack-Neustart fehlgeschlagen"
-
-if wait_for_server; then
-    log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
-else
-    rollback_after_deploy "Server nicht rechtzeitig bereit"
-fi
+stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
+log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"

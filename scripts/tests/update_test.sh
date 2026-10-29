@@ -57,8 +57,11 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose version >/dev/null 2>&1 \
   || { echo "SKIP: docker compose missing — the .env check cannot be held against it"; exit 75; }
 
-# --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH,
-# the pull AH_TEST_PULL; AH_TEST_UP_FAIL_ONCE=<marker> fails the first `compose
+# --- a docker stub: succeeds at everything; `compose up --help` names --wait and
+# --wait-timeout unless AH_TEST_NO_WAIT=1; a `compose up --wait` fails its health
+# check with AH_TEST_HEALTH=1 at the first call of an update.sh run (marker per
+# run under $AH_TEST_STUB_STATE) and with AH_TEST_HEALTH=always at every call;
+# the pull honours AH_TEST_PULL; AH_TEST_UP_FAIL_ONCE=<marker> fails the first `compose
 # up` (and creates the marker), AH_TEST_UP_FAIL=always every one;
 # AH_TEST_UP_LOCK_ONCE=<marker> takes the write right of .env at the first
 # `compose up` (and creates the marker); AH_TEST_DOCKER_LOG records every call,
@@ -69,7 +72,11 @@ cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
 case "$*" in
-  *create_connection*) [ "${AH_TEST_HEALTH:-0}" = 0 ] && exit 0 || exit 1 ;;
+  "compose up --help")
+    if [ "${AH_TEST_NO_WAIT:-0}" = 1 ]; then echo "  -d, --detach   Detached mode"
+    else printf '%s\n' "  -d, --detach   Detached mode" "      --wait   Wait for services" \
+      "      --wait-timeout int   Maximum duration in seconds to wait"; fi
+    exit 0 ;;
   "compose pull"*) [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0 || { echo "stub: pull failed" >&2; exit 1; } ;;
   "compose up"*)
     [ "${AH_TEST_UP_FAIL:-}" != always ] || { echo "stub: up failed" >&2; exit 1; }
@@ -79,6 +86,15 @@ case "$*" in
     if [ -n "${AH_TEST_UP_LOCK_ONCE:-}" ] && [ ! -e "$AH_TEST_UP_LOCK_ONCE" ]; then
       : > "$AH_TEST_UP_LOCK_ONCE"; chmod a-w .env
     fi
+    case " $* " in
+      *" --wait "*)
+        # $PPID is the update.sh process: the rollback's start of the same run passes
+        health_marker="$AH_TEST_STUB_STATE/health-$PPID"
+        if [ "${AH_TEST_HEALTH:-0}" = always ] \
+          || { [ "${AH_TEST_HEALTH:-0}" = 1 ] && [ ! -e "$health_marker" ]; }; then
+          : > "$health_marker"; echo "stub: container adminhelper-server-1 is unhealthy" >&2; exit 1
+        fi ;;
+    esac
     exit 0 ;;
   *) exit 0 ;;
 esac
@@ -184,8 +200,7 @@ cat > "$BIN/getent" <<'EOF'
 EOF
 chmod +x "$BIN/getent"
 export PATH="$BIN:$PATH"
-# keep the health-fail path fast (default would wait 240s)
-export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
+AH_TEST_STUB_STATE="$WORK/stub-state"; mkdir -p "$AH_TEST_STUB_STATE"; export AH_TEST_STUB_STATE
 
 # --- build a fixture source tree for version $1 into dir $2 -------------------
 # Real ops scripts + the under-test update.sh, but stub backup.sh/init-secrets.sh
@@ -476,7 +491,7 @@ cmp -s "$WORK/inst14.env" "$INST/.env" \
   && ok "pull failure rolled back the runtime files" || bad "runtime files not rolled back"
 grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt' <<<"$out" \
   && ok "pull failure message names the rollback" || bad "no rollback message"
-{ grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up' "$DLOG"; } \
+{ grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up -d' "$DLOG"; } \
   && ok "pull failure recreated no container" || bad "pull failure: docker calls $(tr '\n' ';' < "$DLOG")"
 
 # ── 15. ...and the next run tries the update again ──────────────────────────
@@ -488,7 +503,7 @@ out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
     && grep -q 'marker: 0.34.0' "$INST/docker-compose.yml"; } \
   && ok "the retry lands on 0.34.0" || bad "the retry did not land on 0.34.0"
 # A working pull keeps today's order: pull, then recreate.
-[ "$(grep -E '^compose (pull|up)' "$DLOG" | tr '\n' ';')" = "compose pull;compose up -d;" ] \
+[ "$(grep -E '^compose (pull|up -d)' "$DLOG" | tr '\n' ';')" = "compose pull;compose up -d --wait --wait-timeout 600;" ] \
   && ok "a working pull is followed by the recreate" || bad "docker calls: $(tr '\n' ';' < "$DLOG")"
 
 # ── 16. pull failure on a floating tag: the pins come back too ──────────────
@@ -519,7 +534,7 @@ DLOG="$WORK/inst18.docker"
 out=$(AH_TEST_PULL=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --redeploy 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen' <<<"$out"; } \
   && ok "--redeploy pull failure exits with a message" || bad "--redeploy pull failure: rc=$rc"
-{ cmp -s "$WORK/inst18.env" "$INST/.env" && grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up' "$DLOG"; } \
+{ cmp -s "$WORK/inst18.env" "$INST/.env" && grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up -d' "$DLOG"; } \
   && ok "--redeploy pull failure recreated nothing" || bad "--redeploy pull failure: docker calls $(tr '\n' ';' < "$DLOG")"
 out=$(run_update "$INST" --redeploy 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Re-Deploy fertig' <<<"$out"; } \
@@ -588,7 +603,7 @@ for how in http checksum unpack; do
   grep -qx 'repo-marker-0.33.0' "$INST/repo/dists/Release" 2>/dev/null \
     && ok "agent-repo failure ($how) kept the installed ./repo" || bad "agent-repo failure ($how) changed ./repo"
   # The preflight's `compose version` proves the log is written at all.
-  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
     && ok "agent-repo failure ($how) touched no container" || bad "agent-repo failure ($how): docker calls $(tr '\n' ';' < "$DLOG")"
 done
 # Once the asset can be had, the next run retries instead of calling 0.34.0 current.
@@ -634,13 +649,13 @@ INST="$WORK/inst23"; make_install 0.33.0 "$SRC_OLD" "$INST"
 DLOG="$WORK/inst23.docker"; : > "$DLOG"
 out=$(AH_TEST_UP_FAIL_ONCE="$WORK/inst23.upfail" AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
 echo "$out" | sed 's/^/    │ /'
-{ [ $rc -ne 0 ] && grep -q 'FEHLER: Stack-Neustart fehlgeschlagen.*zurueckgerollt auf 0.33.0' <<<"$out"; } \
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: stack start or health check failed (docker compose up --wait).*zurueckgerollt auf 0.33.0' <<<"$out"; } \
   && ok "a failed recreate exits with the rollback message" || bad "failed recreate: rc=$rc"
 { grep -qx 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:0.33.0' "$INST/.env" \
     && grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.33.0' "$INST/.env" \
     && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
   && ok "a failed recreate rolled back the pins and the runtime files" || bad "failed recreate: not rolled back"
-[ "$(grep -c '^compose up' "$DLOG")" = 2 ] \
+[ "$(grep -c '^compose up -d' "$DLOG")" = 2 ] \
   && ok "a failed recreate restarts the installed state" || bad "failed recreate: docker calls $(tr '\n' ';' < "$DLOG")"
 out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Update 0.33.0 -> 0.34.0' <<<"$out" && grep -q 'server:0.34.0' "$INST/.env"; } \
@@ -652,7 +667,7 @@ out=$(run_update "$INST" 2>&1); rc=$?
 INST="$WORK/inst24"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_UP_FAIL_ONCE="$WORK/inst24.upfail" run_update "$INST" --no-rollback 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env" \
-    && grep -q 'FEHLER: Stack-Neustart fehlgeschlagen.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
+    && grep -q 'FEHLER: stack start or health check failed.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
   && ok "--no-rollback after a failed recreate keeps the state, names --redeploy and --ref v0.33.0" \
   || bad "--no-rollback failed recreate: rc=$rc $out"
 # The containers ran, so Alembic may have migrated the database already.
@@ -664,7 +679,7 @@ grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$ms
 INST="$WORK/inst25"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env" \
-    && grep -q 'FEHLER: Server nicht rechtzeitig bereit.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
+    && grep -q 'FEHLER: stack start or health check failed.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
   && ok "--no-rollback health-fail names --redeploy and --ref v0.33.0" || bad "--no-rollback health-fail: rc=$rc $out"
 msg=$(grep 'FEHLER: ' <<<"$out")
 grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
@@ -711,7 +726,7 @@ msg=$(grep 'FEHLER: ' <<<"$out")
 { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env" \
     && grep -q 'WARN: Start des Stands 0.33.0 fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$out"; } \
   && ok "a failed restart of the installed state warns" || bad "failed restart of 0.33.0: rc=$rc"
-{ grep -q 'Stack-Neustart fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+{ grep -q 'stack start or health check failed.*UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
   && ok "a failed restart of the installed state: the closing message says incomplete" \
   || bad "failed restart of 0.33.0: closing message '$msg'"
 # The restart's own reason reaches the operator, as the first recreate's does.
@@ -737,7 +752,7 @@ left=$(find "$INST" -maxdepth 1 -name '.env*' ! -name .env ! -name .env.example 
 [ -z "$left" ] && ok "a .env write error left no copy of .env behind" || bad ".env write error left: $left"
 grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
   && ok "a .env write error rolled back the runtime files" || bad ".env write error: compose not rolled back"
-{ grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+{ grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
   && ok "a .env write error touched no container" || bad ".env write error: docker calls $(tr '\n' ';' < "$DLOG")"
 # --no-rollback: .env may be half migrated, so only --ref re-applies the release.
 INST="$WORK/inst28b"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -820,7 +835,7 @@ assert_env_stop() {
   ! grep -q zz9 <<<"$out" \
     && ok "$what [$line] keeps the value out of the output" || bad "$what [$line] printed the value: $out"
   { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
-      && ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && ! grep -qvx 'compose version' "$DLOG"; } \
+      && ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && ! grep -qvxE 'compose (version|up --help)' "$DLOG"; } \
     && ok "$what [$line] changed nothing: no backup, no snapshot, no compose call" \
     || bad "$what [$line]: backups/ holds $(find "$INST/backups" -mindepth 1 -printf '%f ') docker calls $(tr '\n' ';' < "$DLOG")"
 }
@@ -851,7 +866,7 @@ for line in "${ENV_GOOD[@]}"; do
   # The pull and the recreate in the docker log: the log the stops above are
   # checked against does record compose calls.
   { [ $rc -eq 0 ] && grep -q 'server:0.34.0' "$INST/.env" && grep -q '^compose pull' "$DLOG" \
-      && grep -q '^compose up' "$DLOG"; } \
+      && grep -q '^compose up -d' "$DLOG"; } \
     && ok "update with [$line] runs through" || bad "update with [$line]: rc=$rc $out"
 done
 
@@ -969,7 +984,7 @@ for how in init-secrets key-check; do
     && ok "a failing $how exits with the rollback message" || bad "failing $how: rc=$rc"
   { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
     && ok "a failing $how restored .env and the runtime files" || bad "failing $how: not rolled back"
-  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
     && ok "a failing $how touched no container" || bad "failing $how: docker calls $(tr '\n' ';' < "$DLOG")"
 done
 
@@ -1035,7 +1050,7 @@ for how in cp dir rm; do
   # Neither the copy cp left half written nor anything in the directory in the way.
   left=$(cd "$INST" && find . \( -name '*.ah-new' ! -type d \) -o -path './scripts/restore.sh.ah-new/*' | tr '\n' ' ')
   [ -z "$left" ] && ok "a failed swap ($how) left no copy behind" || bad "failed swap ($how) left: $left"
-  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
     && ok "a failed swap ($how) touched no container" || bad "failed swap ($how): docker calls $(tr '\n' ';' < "$DLOG")"
 done
 
@@ -1123,7 +1138,7 @@ else
         && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example"; } \
       && ok "a migration that cannot $what restored .env and the runtime files" \
       || bad "cannot $what: not rolled back"
-    { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
       && ok "a migration that cannot $what touched no container" \
       || bad "cannot $what: docker calls $(tr '\n' ';' < "$DLOG")"
   done
@@ -1252,7 +1267,7 @@ else
   out=$(AH_TEST_UP_LOCK_ONCE="$INST.uplock" AH_TEST_HEALTH=1 on_tty "$INST" bash ./scripts/update.sh --ref v0.34.0 2>&1); rc=$?
   echo "$out" | sed 's/^/    │ /'
   { [ $rc -ne 0 ] && [ -e "$INST.uplock" ] \
-      && grep -q 'FEHLER: Server nicht rechtzeitig bereit.*zurueckgerollt auf 0\.33\.0\.' <<<"$out"; } \
+      && grep -q 'FEHLER: stack start or health check failed.*zurueckgerollt auf 0\.33\.0\.' <<<"$out"; } \
     && ok "rollback after the deploy over a read-only .env on a terminal exits with the rollback message" \
     || bad "rollback after the deploy over a read-only .env on a terminal: exit $rc (124: mv waited for an answer)"
   pinned_on "$INST" 0.33.0 \
@@ -1288,6 +1303,44 @@ out=$(PATH="$FAILCHMOD:$PATH" run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q "WARNING: could not close" <<<"$out"; } \
   && ok "a chmod that fails is a warning, the update goes on" \
   || bad "failing chmod: exit $rc, $(grep -i warn <<<"$out")"
+
+# ── 42. every start waits for the healthchecks: compose up --wait ───────────
+# The rollback started the old state with a bare `up -d` and called it rolled
+# back; a stack whose old state is unhealthy too is an incomplete rollback.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst42"; make_install 0.33.0 "$SRC_OLD" "$INST"
+DLOG="$WORK/inst42.docker"; : > "$DLOG"
+out=$(AH_TEST_HEALTH=always AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+  && ok "an unhealthy old state after the rollback is incomplete, not rolled back" || bad "unhealthy rollback: rc=$rc $msg"
+{ grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && pinned_on "$INST" 0.33.0; } \
+  && ok "an unhealthy old state: runtime files and pins on 0.33.0 anyway" || bad "unhealthy rollback: files or pins not on 0.33.0"
+{ [ "$(grep -c '^compose up -d' "$DLOG")" = 2 ] \
+    && [ "$(grep -c '^compose up -d' "$DLOG")" = "$(grep -c '^compose up -d --wait --wait-timeout ' "$DLOG")" ]; } \
+  && ok "update and rollback both start with --wait and --wait-timeout" || bad "compose up calls: $(grep '^compose up -d' "$DLOG" | tr '\n' ';')"
+INST="$WORK/inst42-redeploy"; make_install 0.34.0 "$SRC_NEW" "$INST"
+DLOG="$WORK/inst42-redeploy.docker"; : > "$DLOG"
+out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --redeploy --skip-backup 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q '^compose up -d --wait --wait-timeout 600$' "$DLOG" \
+    && [ "$(grep -c '^compose up -d' "$DLOG")" = 1 ]; } \
+  && ok "--redeploy starts with --wait and --wait-timeout" || bad "--redeploy: rc=$rc, $(grep '^compose up -d' "$DLOG" | tr '\n' ';')"
+out=$(AH_TEST_HEALTH=1 run_update "$INST" --redeploy --skip-backup 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: stack start or health check failed.*\./scripts/restore\.sh' <<<"$out"; } \
+  && ok "--redeploy with a failing health check exits with the restore hint" || bad "--redeploy health-fail: rc=$rc $out"
+
+# ── 43. a compose without up --wait stops update.sh before anything changes ──
+INST="$WORK/inst43"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp -p "$INST/.env" "$WORK/inst43.env"
+DLOG="$WORK/inst43.docker"; : > "$DLOG"
+out=$(AH_TEST_NO_WAIT=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: .*--wait' <<<"$out"; } \
+  && ok "a compose without --wait stops update.sh with a message" || bad "compose without --wait: rc=$rc $out"
+{ cmp -s "$INST/.env" "$WORK/inst43.env" && ! grep -qE '^compose (pull|up -d)' "$DLOG" \
+    && [ -z "$(find "$INST/backups" -mindepth 1 2>/dev/null)" ] && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
+  && ok "a compose without --wait: no backup, no snapshot, no pull or up, .env unchanged" \
+  || bad "compose without --wait changed something: $(tr '\n' ';' < "$DLOG") backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"
 
 echo
 echo "──────────────────────────────────────────"
