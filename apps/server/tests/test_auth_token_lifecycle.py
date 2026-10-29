@@ -5,7 +5,12 @@
 """Auth lifecycle hardening (audit #3 refresh-reuse containment, #4 fail-closed)."""
 
 import time
+from datetime import datetime, timedelta, timezone
 
+import jwt
+import pytest
+
+from app.core.auth import ALGORITHM, SECRET_KEY, token_claims
 from app.core.rate_limit import RedisBackend
 from app.core.time import utcnow_naive
 from app.modules.users import auth_router
@@ -123,6 +128,31 @@ def test_refresh_pair_predates_the_watermark_of_a_concurrent_reuse(
         == 401
     )
     assert test_client.post("/api/auth/refresh", json={"refresh_token": r1}).status_code == 401
+
+
+@pytest.mark.parametrize("missing", ["jti", "exp"])
+def test_refresh_token_without_jti_or_exp_is_reuse(test_client, db_session, admin_user, missing):
+    # A signed, otherwise valid refresh token that cannot be blacklisted (no jti or no exp)
+    # fails at the rotation step; that counts as reuse, so the account's watermark moves up.
+    now = datetime.now(timezone.utc)
+    claims = {
+        **token_claims(admin_user),
+        "type": "refresh",
+        "iat": now,
+        "exp": now + timedelta(days=1),
+        "jti": "no-blacklist-row",
+    }
+    del claims[missing]
+    forged = jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)
+    long_ago = datetime(2000, 1, 1)
+    admin_user.tokens_valid_after = long_ago
+    db_session.commit()
+
+    resp = test_client.post("/api/auth/refresh", json={"refresh_token": forged})
+
+    assert resp.status_code == 401, resp.text
+    db_session.refresh(admin_user)
+    assert admin_user.tokens_valid_after > long_ago
 
 
 class _RedisDown:

@@ -193,6 +193,28 @@ def test_hook_run_with_a_background_process_ends_soon_with_the_result(tmp_path):
     assert res["result"] == {"ok": True}, res
 
 
+def test_hook_reader_grace_is_one_deadline_for_both_streams(monkeypatch):
+    # A grandchild holds stdout and stderr open past the worker's exit. Both readers share one
+    # grace: the second join gets what is left of it, so the held run takes one grace longer
+    # than a plain run, not two. Measured against a plain run, as a worker's start time varies.
+    import time
+
+    import app.modules.hooks.script_runner as sr
+
+    def timed(script):
+        start = time.monotonic()
+        run_hook_script(script, "webhook", {}, timeout=5)
+        return time.monotonic() - start
+
+    grace = 1.0
+    monkeypatch.setattr(sr, "_READER_GRACE_SECONDS", grace)
+    timed("result['ok'] = True")  # warm-up: the first worker start is the slow one
+    plain = timed("result['ok'] = True")
+    held = timed("import subprocess\nsubprocess.Popen(['sleep', '30'])\nresult['ok'] = True")
+    extra = held - plain
+    assert 0.8 * grace <= extra < 1.6 * grace, f"expected one grace, took {extra:.1f}s longer"
+
+
 def test_hook_run_at_the_default_timeout_ends_before_the_gateway_gives_up():
     # The gateway closes /api/... after 60 s without a response (nginx's default
     # proxy_read_timeout; apps/gateway/nginx.conf sets none for it), and /api/hooks/trigger and
@@ -253,6 +275,26 @@ def _no_user_site_flags():
 def test_hook_worker_and_its_python_children_run_without_user_site():
     flags = _no_user_site_flags()
     assert (flags["worker"], flags["child"]) == ("1", "1"), flags
+
+
+def test_hook_worker_is_started_with_the_no_user_site_flag(monkeypatch):
+    # -s on its own, so the env var is not the only thing keeping the user site out.
+    import subprocess
+
+    import app.modules.hooks.script_runner as sr
+
+    argvs = []
+    real_popen = subprocess.Popen
+
+    def recording_popen(args, *a, **kw):
+        argvs.append(args)
+        return real_popen(args, *a, **kw)
+
+    monkeypatch.setattr(sr.subprocess, "Popen", recording_popen)
+    res = run_hook_script("result['ok'] = True", "webhook", {})
+    assert res["success"] is True, res
+    [argv] = argvs
+    assert argv[1] == "-s", argv
 
 
 def test_hook_worker_env_sets_pythonnousersite():
