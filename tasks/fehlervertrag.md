@@ -42,8 +42,10 @@ Für alle Tasks:
 
 ## Teil A — Server und Web
 
-### T1 — Server: `CodedHTTPException` schreibt `code` neben `detail` (R-0664)  [ ]
+### T1 — Server: `CodedHTTPException` schreibt `code` neben `detail` (R-0664)  [x]
 Komponente: server · Dateien: apps/server/app/core/errors.py, apps/server/app/main.py, apps/server/tests/test_error_code.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @588130f9 2026-10-29T12:58:27+01:00
+Review: approve (.ah-out/review/fehlervertrag/T1.verdict.json)
 Änderung: Neues Modul `apps/server/app/core/errors.py` (SPDX per `reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later`): `CodedHTTPException(HTTPException)` mit `__init__(self, status_code: int, detail: str, code: str, headers: dict[str, str] | None = None)` und Attribut `code`; ein Handler schreibt `JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=exc.status_code, headers=exc.headers)`; `install_coded_errors(app: FastAPI) -> None` registriert ihn per `app.add_exception_handler`, wie `install_exact_int_bounds` (`apps/server/app/core/openapi.py:36`). `apps/server/app/main.py` ruft `install_coded_errors(app)` neben `install_exact_int_bounds(app)` (`:390`). Ein Kommentar nennt das Warum: `detail` bleibt der Text, den bestehende Clients lesen, `code` ist für den Code der Clients. Starlette 1.3.1 sucht den Handler entlang der MRO (`starlette/_exception_handler.py:16-20`), jede andere `HTTPException` bleibt beim Standard-Handler. Neue `apps/server/tests/test_error_code.py` (SPDX) mit eigener `FastAPI()`-App, `install_coded_errors` und `TestClient`: (a) eine Route wirft `CodedHTTPException(403, "ERR_PROBE: prose", "ERR_PROBE", headers={"X-Probe": "1"})` → Status 403, `resp.json() == {"detail": "ERR_PROBE: prose", "code": "ERR_PROBE"}`, Header `X-Probe: 1`; (b) eine Route wirft `HTTPException(404, "missing")` → `resp.json() == {"detail": "missing"}`; (c) ein 422 dieser App hat kein `code`; (d) `app.main.app` hat für `CodedHTTPException` genau diesen Handler. `tests/test_openapi_snapshot.py` bleibt unverändert grün (kein Schema ändert sich). Zuerst rot: (a)–(d) auf HEAD (das Modul fehlt).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_error_code.py tests/test_openapi_snapshot.py
 Doku: keine (die Antwortform beschreibt T2 mit den ersten Codes)
