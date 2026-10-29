@@ -142,18 +142,20 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           <p>In the desktop client, in the server workspace of the installation the agent is to report to: <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
 
           <div class="code-header"><span>bash</span></div>
-<pre><code># Linux
+<pre><code># Linux. The token is read from stdin (first line), not passed as an argument, so it
+# stays out of the process list: paste it after the call and press Enter.
 sudo adminhelper-agent provision \
   --url       https://srm.example.com \
-  --token     TOKEN_VALUE \
+  --token-stdin \
   --server-id SERVER_ID</code></pre>
 
           <div class="code-header"><span>powershell</span></div>
 <pre><code># Windows (PowerShell, as Admin)
 &amp; 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision `
     --url       https://srm.example.com `
-    --token     TOKEN_VALUE `
-    --server-id SERVER_ID</code></pre>
+    --token-stdin `
+    --server-id SERVER_ID
+# Paste the token after the call and press Enter (stdin, not an argument)</code></pre>
 
           <p>After provisioning the agent enables the <code>adminhelper-agent.timer</code> systemd unit (Linux). To provision, it calls <code>/api/servers/{id}/provision/activate</code> and receives, depending on the configuration, the server API key, the monitor key, <code>frpc.toml</code> and an enrollment token. If the host has an active FRP tunnel, the agent (Linux) writes <code>frpc.toml</code> and starts <code>frpc.service</code> for good (<code>systemctl enable --now</code>); a running frpc is restarted. Without an active tunnel the agent stops and disables <code>frpc.service</code> and removes <code>frpc.toml</code>, also one from an earlier provisioning. The token becomes invalid once redeemed.</p>
           <p><strong>mTLS enrollment (automatic):</strong> during provisioning the agent also fetches its own client certificate from the <code>ca-issuer</code> &mdash; an ECDSA key generated on-device (never leaves the host), CSR sent to the gateway's enroll plane on port <code>8444</code>. Cert + key are stored under <code>/etc/adminhelper/identity/</code> (key <code>0600</code>) and the internal root CA is pinned. The agent then presents this cert, valid for this server only, on all server pushes and auto-renews it at ~50&nbsp;% of its lifetime. <em>Best-effort:</em> if enrollment fails (e.g. port 8444 unreachable) the agent keeps working with the API key for now.</p>

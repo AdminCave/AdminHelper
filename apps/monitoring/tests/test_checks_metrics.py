@@ -7,6 +7,9 @@ VictoriaMetrics PromQL label matchers. A regression (wrong backslash/quote order
 escape) would let a controllable check_id/server_id break out of the matcher and read other servers'
 metrics. Below it, GET /checks/{id}/metrics itself."""
 
+import ast
+from pathlib import Path
+
 import httpx
 import pytest
 from sqlalchemy import create_engine
@@ -122,6 +125,7 @@ def _metrics_with_store(
     failing: str | None,
     check_id: str = "chk-r",
     check_type: str = "agent_resources",
+    query: str = "",
 ):
     """GET /checks/<check_id>/metrics for a check of check_type on srv-1 against a
     VictoriaMetrics that refuses the connection for the `failing` query kind and answers
@@ -158,7 +162,7 @@ def _metrics_with_store(
     transport_client = httpx.Client(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(victoria_mod.victoria, "_client", transport_client)
     try:
-        return client.get(f"/checks/{check_id}/metrics"), asked
+        return client.get(f"/checks/{check_id}/metrics{query}"), asked
     finally:
         transport_client.close()
 
@@ -226,3 +230,37 @@ def test_metrics_of_agent_resources_keep_reading_the_push_series_by_server(clien
         '{__name__=~"monitor_agent_(disk_percent|temp).*_value",server_id="srv-1",check_id=""}',
         'monitor_check_status_value{check_id="chk-r"}',
     ]
+
+
+# R-0697: FastAPI deprecated Query(regex=) for pattern=, which yields the same schema.
+_APP = Path(__file__).resolve().parent.parent / "app"
+
+
+def test_no_query_parameter_uses_the_deprecated_regex_keyword():
+    modules = sorted(_APP.rglob("*.py"))
+    regex_calls, pattern_calls = [], 0
+    for path in modules:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call):
+                names = {kw.arg for kw in node.keywords}
+                if "regex" in names:
+                    regex_calls.append(f"{path.relative_to(_APP)}:{node.lineno}")
+                pattern_calls += "pattern" in names
+    assert len(modules) >= 30  # the scan reads the app, not an empty directory
+    assert pattern_calls >= 1
+    assert regex_calls == []
+
+
+def test_metrics_reject_a_period_outside_the_list(client_db, monkeypatch):
+    r, asked = _metrics_with_store(client_db, monkeypatch, None, query="?period=2h")
+
+    assert r.status_code == 422, r.text
+    assert "string_pattern_mismatch" in r.text
+    assert asked == []
+
+
+def test_metrics_accept_a_period_from_the_list(client_db, monkeypatch):
+    r, _ = _metrics_with_store(client_db, monkeypatch, None, query="?period=7d")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["period"] == "7d"

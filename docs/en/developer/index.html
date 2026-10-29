@@ -35,8 +35,8 @@
 
           <h2>Tech Stack</h2>
           <div class="card-grid">
-            <div class="card"><h3>Server</h3><p>FastAPI 0.11, SQLAlchemy 2 + Alembic, APScheduler, Redis. 100+ pytest tests.</p></div>
-            <div class="card"><h3>Frontend</h3><p>Svelte 5 Runes, TypeScript strict, Vite 5, Playwright E2E.</p></div>
+            <div class="card"><h3>Server</h3><p>FastAPI, SQLAlchemy 2 + Alembic, APScheduler, Redis. 100+ pytest tests.</p></div>
+            <div class="card"><h3>Frontend</h3><p>Svelte 5 Runes, TypeScript strict, Vite, Playwright E2E.</p></div>
             <div class="card"><h3>Desktop</h3><p>Tauri 2, Rust (stable), Svelte 5, ~250 Vitest unit tests.</p></div>
             <div class="card"><h3>Agent</h3><p>Go 1.27, Cobra CLI, gopsutil, cross-compiled Linux + Windows DEB/RPM.</p></div>
           </div>
@@ -68,8 +68,13 @@ DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 cd apps/web &amp;&amp; npm ci &amp;&amp; npm run dev
 
 # Desktop client (starts Tauri dev with auto-reload)
+# The first build needs a placeholder file for the frpc sidecar (externalBin
+# binaries/frpc); CI/CD replaces it with the real frpc (DEVELOPMENT.md)
 cd apps/desktop/ui &amp;&amp; npm ci
-cd ../src-tauri &amp;&amp; cargo tauri dev
+cd ../src-tauri
+mkdir -p binaries
+touch binaries/frpc-x86_64-unknown-linux-gnu
+cargo tauri dev
 
 # Go agent
 cd apps/agent &amp;&amp; go run ./cmd/adminhelper-agent version</code></pre>

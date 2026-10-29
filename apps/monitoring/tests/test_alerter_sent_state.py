@@ -229,9 +229,9 @@ def _set_host_ping(factory, status):
 
 def _heartbeat(factory, status):
     """One evaluation of the server's heartbeat at status: the state is written,
-    then the alerter gets it through _dispatch_alert_bg, the dispatcher of every
+    then the alerter gets it through dispatch_alert_bg, the dispatcher of every
     path. Its first evaluation finds nothing reported yet."""
-    from app.check_engine import _dispatch_alert_bg
+    from app.check_engine import dispatch_alert_bg
 
     with factory() as db:
         if not db.query(MonitorCheck).filter_by(id="hb-1").first():
@@ -250,7 +250,7 @@ def _heartbeat(factory, status):
         row = db.query(MonitorState).filter_by(check_id="hb-1").one()
         old, row.status = row.status, status
         db.commit()
-    _dispatch_alert_bg("hb-1", old, status)
+    dispatch_alert_bg("hb-1", old, status)
 
 
 def test_heartbeat_muted_by_the_host_ping_is_caught_up_once_the_ping_is_back(scenario):

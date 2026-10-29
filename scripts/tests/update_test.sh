@@ -176,6 +176,13 @@ case "${AH_TEST_MV_LOCK:-}" in
 esac
 EOF
 chmod +x "$BIN/mv"
+# getent stub: STUB_PASSWD names a passwd file to answer from; unset, no account exists.
+cat > "$BIN/getent" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = passwd ] && [ -n "${STUB_PASSWD:-}" ] || exit 2
+"$AH_TEST_REAL_GREP" -E "^[^:]*:[^:]*:$2:" "$STUB_PASSWD" || exit 2
+EOF
+chmod +x "$BIN/getent"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -1252,6 +1259,35 @@ else
     && ok "rollback after the deploy over a read-only .env on a terminal put every pin back on 0.33.0" \
     || bad "rollback after the deploy over a read-only .env on a terminal: pins $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ' ')"
 fi
+
+# ── 41. the install directory is at most 0750 after an update, a container UID is named ──
+INST="$WORK/inst41"; make_install 0.33.0 "$SRC_OLD" "$INST"; chmod 0755 "$INST"
+printf '%s\n' 'root:x:0:0::/root:/bin/sh' 'pg:x:70:70::/var/lib/pg:/bin/sh' > "$WORK/passwd41"
+out=$(STUB_PASSWD="$WORK/passwd41" run_update "$INST" --check 2>&1)
+[ "$(stat -c %a "$INST")" = 755 ] && ok "--check leaves the directory mode alone" \
+  || bad "--check changed the mode to $(stat -c %a "$INST")"
+grep -q "WARNING: host account 'pg' has UID 70" <<<"$out" \
+  && ok "--check names the account with UID 70 too" || bad "--check: no warning for UID 70"
+out=$(STUB_PASSWD="$WORK/passwd41" run_update "$INST" 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a host account with a container UID does not stop the update" || bad "update exit $rc"
+[ "$(stat -c %a "$INST")" = 750 ] && ok "install directory 0750 after the update" \
+  || bad "install directory mode $(stat -c %a "$INST")"
+grep -q "WARNING: host account 'pg' has UID 70" <<<"$out" \
+  && ok "the account with UID 70 is named" || bad "no warning for UID 70: $(grep -i warn <<<"$out")"
+chmod 0700 "$INST"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(stat -c %a "$INST")" = 700 ]; } && ok "a stricter 0700 stays 0700 after the update" \
+  || bad "0700 after the update: exit $rc, mode $(stat -c %a "$INST")"
+# a chmod that refuses to close the directory (the caller is not its owner)
+FAILCHMOD="$WORK/failchmod"; mkdir -p "$FAILCHMOD"
+# shellcheck disable=SC2016 # the stub expands its own arguments
+printf '#!/bin/sh\n[ "$1" = g-w,o-rwx ] && [ "$2" = . ] && exit 1\nexec %s "$@"\n' "$(command -v chmod)" > "$FAILCHMOD/chmod"
+chmod +x "$FAILCHMOD/chmod"
+chmod 0755 "$INST"
+out=$(PATH="$FAILCHMOD:$PATH" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q "WARNING: could not close" <<<"$out"; } \
+  && ok "a chmod that fails is a warning, the update goes on" \
+  || bad "failing chmod: exit $rc, $(grep -i warn <<<"$out")"
 
 echo
 echo "──────────────────────────────────────────"

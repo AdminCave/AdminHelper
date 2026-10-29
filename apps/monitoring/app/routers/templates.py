@@ -15,7 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.builtin_templates import apply_builtin_update, canonical_definitions, shipped_builtin
+from app.builtin_templates import (
+    apply_builtin_update,
+    builtin_edited,
+    builtin_update_available,
+    canonical_definitions,
+    shipped_builtin,
+)
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import (
@@ -59,6 +65,14 @@ def _tag_sync_best_effort(db: Session) -> None:
     except Exception:
         db.rollback()
         logger.exception("Tag-sync after binding change failed")
+
+
+def _template_dict(template: MonitorTemplate, **kwargs) -> dict:
+    return template.to_dict(
+        **kwargs,
+        builtin_edited=builtin_edited(template),
+        builtin_update_available=builtin_update_available(template),
+    )
 
 
 def _stored_channel_configs(template: MonitorTemplate) -> dict[str, dict]:
@@ -108,7 +122,8 @@ def list_templates(db: Session = Depends(get_db)):
         ):
             tags_by_template.setdefault(ta.template_id, []).append(ta)
     return [
-        t.to_dict(
+        _template_dict(
+            t,
             assignments=by_template.get(t.id, []),
             tag_assignments=tags_by_template.get(t.id, []),
         )
@@ -183,7 +198,7 @@ def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
     db.add(template)
     db.commit()
     db.refresh(template)
-    return template.to_dict()
+    return _template_dict(template)
 
 
 @router.get("/templates/{template_id}", dependencies=[Depends(require_internal)])
@@ -202,7 +217,7 @@ def get_template(template_id: str, db: Session = Depends(get_db)):
         .filter(MonitorTemplateTagAssignment.template_id == template_id)
         .all()
     )
-    return template.to_dict(assignments=assignments, tag_assignments=tag_assignments)
+    return _template_dict(template, assignments=assignments, tag_assignments=tag_assignments)
 
 
 @router.put("/templates/{template_id}", dependencies=[Depends(require_internal)])
@@ -243,7 +258,7 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
 
     sync_result = sync_template(db, template)
 
-    result = template.to_dict()
+    result = _template_dict(template)
     result["syncResult"] = sync_result
     return result
 
@@ -260,14 +275,17 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Template not found")
 
     checks = db.query(MonitorCheck).filter(MonitorCheck.template_id == template_id).all()
+    check_ids = [check.id for check in checks]
     for check in checks:
-        remove_check(check.id)
         db.delete(check)
 
     db.query(MonitorAlertRule).filter(MonitorAlertRule.template_id == template_id).delete()
 
     db.delete(template)
     db.commit()
+    # Only now: if the commit fails, the checks stay and their jobs must keep running.
+    for check_id in check_ids:
+        remove_check(check_id)
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +365,7 @@ def take_builtin_update(template_id: str, db: Session = Depends(get_db)):
     if sync_result is None:
         raise HTTPException(409, "No update available")
 
-    result = template.to_dict()
+    result = _template_dict(template)
     result["syncResult"] = sync_result
     return result
 

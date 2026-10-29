@@ -604,6 +604,14 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
 - **Python-Sperre:** `server-pytest` und `schemathesis` warten ueber `/var/lib/adminhelper-dev/py.lock`
   (ohne das Verzeichnis `~/.cache/adminhelper-py.lock`) aufeinander, ueber alle Worktrees (Abschnitt
   „Python-Tests lokal“).
+- **Sessions und Zuege (2026-10-29, CLAUDE.md §2):** `bash scripts/dev/start-session.sh kern|klein`
+  startet die Kern-Session (Opus, medium) bzw. die Klein-Session (Sonnet, medium) mit
+  `--autocompact 200k` und einem `/goal`, `start-session.sh arch R-nnnn` eine Architektur-Session
+  (Opus, xhigh); `--dry-run` zeigt nur den Befehl. Welche Zeilen zusammen fahren, zeigt
+  `roadmap.py zuege`; `bash scripts/dev/overlap.sh [--except <branch>] <pfad>...` nennt die offenen
+  `feature/*`-Branches, die dieselben Dateien aendern (Exit 1 bei Ueberschneidung). CHANGELOG-Eintraege
+  schreibt jeder Branch nach `changelog.d/<slug>.md`; der Release faltet sie mit
+  `python3 scripts/release/changelog-assemble.py` in `CHANGELOG.md` (`changelog.d/README.md`).
 - **Was es bewusst nicht gibt (2026-10-14):** keinen Worker-Loop, keinen Runner-Nutzer, kein
   Builder-Profil, keine Sandbox und keinen unbeaufsichtigten Betrieb. Jede Session startet Kevin.
 
@@ -620,7 +628,8 @@ zeigt und triagiert sie (`.claude/skills/roadmap/SKILL.md`).
 python3 scripts/dev/roadmap.py lint                      # tasks/private/ROADMAP.md
 python3 scripts/dev/roadmap.py --file /tmp/x.md lint     # eine andere Datei
 python3 scripts/dev/roadmap.py show [R-nnnn] [--wip]
-python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web]
+python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web] [--stufe klein|kern]
+python3 scripts/dev/roadmap.py zuege [--stufe klein|kern]
 python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
     [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
 python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md] [--pr "#<n>"]
@@ -652,7 +661,13 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   (`next: R-nnnn skipped — ledger <pfad> not found in the tree or on any branch (git fetch?)`).
   Ohne Ausschlussliste, bei `—`, einem Slug oder einem Pfad ausserhalb des Repos bleibt die
   Zeile im Rennen.
-  Nichts bereit: Exit 1.
+  Nichts bereit: Exit 1. `--stufe klein` nimmt nur Zeilen eines `klein-`-Ledgers, `--stufe arch`
+  die eines `arch-`-Ledgers, `--stufe kern` alle anderen (auch Zeilen ohne Ledger).
+- `zuege` zeigt die Zuege (CLAUDE.md §2): die offenen Zeilen (`geplant` bis `pr`), gruppiert nach
+  ihrer Spalte `Ledger`, je Zug eine Zeile mit Stufe (`klein` fuer `klein-…`, `arch` fuer `arch-…`,
+  sonst `kern`),
+  `wartet` oder `unterwegs` und den IDs. Wartende zuerst, nach der hoechsten Klasse, dann nach
+  Groesse; ein Zug unterwegs nimmt keine Zeile mehr auf. Kein Zug: Exit 1.
 - `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
   eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
   eine ID, die ein Hand-Edit wieder entfernt hat, nicht ein zweites Mal. `--proof` und
@@ -961,6 +976,8 @@ pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
+
+**Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut nur der Entrypoint des Containers (`apps/monitoring/docker-entrypoint.sh`).
 
 **Hinweis:** Fuer den vollen Monitoring-Stack wird VictoriaMetrics benoetigt, die per `docker compose up` automatisch mitgestartet wird.
 

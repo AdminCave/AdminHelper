@@ -144,16 +144,19 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
             <li>Im Desktop-Client, im Server-Workspace der Installation, an die sich der Agent melden soll → <em>Infrastruktur → Server hinzufügen</em>, dann beim Server-Eintrag den Tab <em>Provisionierung</em> öffnen. Das System legt einen Server-Eintrag an (mit einer <strong>Server-ID</strong>) und generiert einen einmaligen <strong>Provision-Token</strong> (24h gültig). Beide brauchst du im nächsten Schritt.</li>
             <li>Auf dem Ziel-Server:
               <div class="code-header"><span>bash</span></div>
-<pre><code>sudo adminhelper-agent provision \
+<pre><code># Der Token kommt von stdin (erste Zeile), nicht als Argument: er steht so nicht
+# in der Prozessliste. Nach dem Aufruf einfügen und mit Enter bestätigen.
+sudo adminhelper-agent provision \
     --url       https://srm.example.com \
-    --token     &lt;provision-token&gt; \
+    --token-stdin \
     --server-id &lt;server-id&gt;</code></pre>
               <div class="code-header"><span>powershell</span></div>
 <pre><code># Windows (PowerShell als Administrator)
 &amp; 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision `
     --url       https://srm.example.com `
-    --token     &lt;provision-token&gt; `
-    --server-id &lt;server-id&gt;</code></pre>
+    --token-stdin `
+    --server-id &lt;server-id&gt;
+# Token nach dem Aufruf einfügen und mit Enter bestätigen (stdin, nicht Argument)</code></pre>
             </li>
           </ol>
           <p>Der Agent ruft <code>/api/servers/{id}/provision/activate</code> auf und bekommt je nach Konfiguration Server-API-Key, Monitor-Key, <code>frpc.toml</code> und einen Enrollment-Token; er aktiviert <code>adminhelper-agent.timer</code>. Hat der Host einen aktiven FRP-Tunnel, schreibt der Agent (Linux) die <code>frpc.toml</code> und startet <code>frpc.service</code> dauerhaft (<code>systemctl enable --now</code>), einen laufenden frpc startet er neu. Ohne aktiven Tunnel stoppt und deaktiviert er <code>frpc.service</code> und löscht die <code>frpc.toml</code>, auch die einer früheren Provisionierung. Der Token wird nach Einlösung ungültig.</p>

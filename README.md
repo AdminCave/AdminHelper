@@ -334,6 +334,8 @@ The **monitoring service** runs as a separate container alongside the server and
 |---|---|---|
 | `ALERT_LOG_RETENTION_DAYS` | `90` | Days the monitoring alert log is kept (daily cleanup job). |
 | `VM_RETENTION` | `90d` | VictoriaMetrics metric retention (`-retentionPeriod`). Independent of the alert-log knob — the two do not sync. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | empty / `587` / empty / empty / `adminhelper@localhost` | Relay for the e-mail alert channel; the same variables the server uses for notification e-mails. Empty `SMTP_HOST` = e-mail channel off. |
+| `SMTP_CA_FILE` | empty | Path inside the container to a PEM file with the relay's CA, in addition to the system CAs (not set by the default compose file; see the operations guide, "Relay with its own CA"). |
 
 ### Installing the agent
 

@@ -455,3 +455,15 @@ def pytest_addoption(parser):
         default=False,
         help="rewrite tests/openapi.snapshot.json from the live app schema",
     )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _bootstrap_lock_of_the_session(tmp_path_factory):
+    # DATA_DIR of the tests is shared between worktrees (above), and the process that emits the
+    # bootstrap token first holds its lock until the session ends: a lock file of its own.
+    from app import main
+
+    with pytest.MonkeyPatch.context() as mp:
+        lock_file = tmp_path_factory.mktemp("bootstrap-lock") / ".bootstrap.lock"
+        mp.setattr(main, "_BOOTSTRAP_LOCK_FILE", lock_file, raising=False)
+        yield

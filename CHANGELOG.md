@@ -96,6 +96,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   enthaelt, mit der Fingerprint-Meldung. Mit `--ca-fp` auf die Root nimmt der Agent nur ein Server-Zertifikat des
   `access`-Zwischenzertifikats an, nicht eins eines anderen Scopes unter derselben Root. Doku: Agent-Deployment,
   Betrieb (DE+EN).
+- **Install/Update: Installationsverzeichnis 0750, Warnung bei belegter Container-UID:** `install.sh` und `update.sh`
+  schliessen das Installationsverzeichnis fuer andere Konten (hoechstens `0750`, ein strengeres `0700` bleibt, Eigentuemer
+  bleibt, wer installiert) und warnen, wenn ein Host-Konto die UID 10001 oder 70 traegt, die die Container nutzen;
+  `update.sh --check` warnt, aendert aber nichts. Werkzeuge unter anderen Konten brauchen danach Gruppe oder root. Doku: Installation und
+  Betrieb (DE+EN).
+- **Web: der Cron-Hinweis im Hook-Dialog nennt UTC (R-0853):** Der Format-Hilfetext des Cron-Ausdrucks sagt jetzt
+  „Zeiten in UTC“ (DE) bzw. „times in UTC“ (EN); der Scheduler rechnet Cron-Hooks in UTC (R-0756).
+- **Desktop: verweigert der Server das Visitor-Bundle, stoppt der Tunnel (R-0453):** Antwortet der Server beim
+  Abgleich mit 403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers, stoppt der Desktop seinen Tunnel
+  beim naechsten Abgleich wie bei 404, statt frpc mit der alten Konfiguration weiterlaufen zu lassen. Doku: Desktop
+  fuer Entwickler (DE+EN).
+- **Server-Log nennt bei weiteren Fehlern nur den Fehlertyp:** Scheitert das Entfernen der `frps.toml`, steht im
+  Log der Fehlertyp ohne Traceback und ohne Fehlertext (R-0766). Die Warnungen des Redis-Rate-Limits nennen nur den
+  Fehlertyp, und ein IPv6-Host steht im Log in eckigen Klammern (R-0776). Ein gescheiterter Start des SSE-Push und
+  ein Loeschfehler der Bootstrap-Dateien nach dem ersten Admin stehen mit Fehlertyp, ohne Traceback, im Log (R-0776).
 - **Desktop, Provisionierungs-Tab: der Einzeiler enthaelt den Token nicht mehr:** `agent-install.sh` fragt ihn beim
   Ausfuehren verdeckt ueber `/dev/tty` ab, der Tab zeigt ihn zum Kopieren daneben; so steht er weder in der
   Shell-History noch in der Prozessliste noch im sudo-Log (mit einem Agent, der `--token-stdin` kennt; aeltere bekommen
@@ -327,8 +342,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   postgres und victoria 8 GiB, server 6 GiB, monitoring 4 GiB, scheduler und frps 2 GiB, gateway 1 GiB, ca-issuer und
   redis 512 MiB. Die Grenzen liegen weit ueber dem Bedarf im Leerlauf und reservieren keinen Speicher; ist eine
   erreicht, lagert der Kernel auf einem Host mit Swap bis zur selben Menge aus und beendet danach einen Prozess in
-  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics richtet seine Caches nach
-  seiner Grenze aus (60 Prozent davon) statt nach dem Arbeitsspeicher des Hosts. Eine Grenze hebt man per
+  diesem Container, der Host und die uebrigen Dienste bleiben unberuehrt. VictoriaMetrics legt seine Caches auf 60
+  Prozent des Speichers aus, den es sieht: liegt die Grenze unter dem Arbeitsspeicher des Hosts, sind es 60 Prozent
+  der Grenze, sonst 60 Prozent des Arbeitsspeichers. Eine Grenze hebt man per
   `docker-compose.override.yml` an. Doku: Betrieb (DE+EN).
 - **Compose: Gateway nur mit den Capabilities, die nginx braucht:** Der Dienst gateway laeuft mit `cap_drop: [ALL]`
   und behaelt nur `CHOWN`, `DAC_OVERRIDE`, `SETGID` und `SETUID`, die der nginx-Master zum Start braucht; die Worker
@@ -495,6 +511,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: ein gescheitertes Loeschen laesst den Check eingeplant (R-0695):** Scheitert beim Loeschen eines
+  Checks oder Templates das Speichern, bleibt der Check eingeplant; vorher lief er bis zum Neustart des Dienstes
+  nicht mehr. Der Scheduler aendert sich erst nach dem Speichern.
+- **Server: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin (R-0768):** Sie legen nur noch eine
+  Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus.
+- **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
+  gemeinsamen Schluessel (R-0761):** Wer ihn nicht zuerst schreibt, uebernimmt den des anderen Prozesses. Vorher konnte
+  jeder Prozess einen eigenen erzeugen, und JWTs galten nicht prozessuebergreifend.
+- **Server: mit `WEB_CONCURRENCY` > 1 erzeugt nur noch ein Worker das einmalige Setup-Token (R-0762):** Bisher
+  schrieb jeder Worker ein eigenes Token und einen eigenen Hash; danach passten `.bootstrap_setup` und
+  `.bootstrap_token` oft nicht zusammen, und das Token aus der Datei wurde abgewiesen. Jetzt passen beide immer
+  zusammen, und der Hinweis steht einmal im Log. Neu ist die leere Datei `data/.bootstrap.lock`.
 - **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
   System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
   ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
@@ -679,7 +707,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   xfreerdp ohne Passwort (die Anmeldung geschieht in xfreerdp), haelt er von dessen Ausgabe nur noch die letzten
   8 KiB je Strom (stdout, stderr) statt der ganzen Sitzung, wie schon der Start mit Passwort. Die Meldungen beim Ende
   bleiben: Eine Fehlerzeile im gehaltenen Ende ergibt dieselbe Meldung wie bisher, und „RDP Verbindung
-  fehlgeschlagen“ kommt nur, wenn xfreerdp nie eine Verbindung meldete. Eine Fehlerzeile, die frueh in einer langen,
+  fehlgeschlagen“ kommt beim Ende von xfreerdp nur, wenn im gehaltenen Ende keine Fehlerzeile steht und nie eine
+  Verbindung gemeldet wurde. Eine Fehlerzeile, die frueh in einer langen,
   danach laufenden Sitzung stand, ergibt am Ende keine Meldung mehr.
 - **Desktop, Provisionierungs-Tab: Backslash im erzeugten Befehl auch fuer fish woertlich:** Ein Backslash in der
   Server-URL steht im angezeigten Installationsbefehl jetzt ausserhalb der einfachen Anfuehrungszeichen als `\\`, so
@@ -869,10 +898,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zuletzt geladene ist; waehrend des Ladens zeigt die Seite „Lade…“ statt „Noch keine Verbindungen angelegt“. Auch
   das Dashboard zeigt den Fehler mit „Erneut versuchen“ und unter „Zuletzt genutzt“ waehrend des Ladens „Lade…“ statt
   „Noch keine Verbindungen genutzt“.
-- **Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659):** Unter Linux nimmt die
-  Fenstergroesse „Eingepasst“ die Groesse des Bildschirms statt immer 1088x720, die Skalierung „Automatisch“ erkennt
-  einen HiDPI-Bildschirm, und „HiDPI“ waehlt den Faktor nach dem Bildschirm (`/scale:140` oder `/scale:180`) statt
-  immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht verifiziert.
+- **Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659):** Unter Linux nimmt der
+  Fenstermodus „Eingepasst“ 85 % der Bildschirmbreite und 85 % der Hoehe abzueglich 80 Pixel, mindestens 1024x720,
+  statt immer 1088x720, die Skalierung „Automatisch“ erkennt einen HiDPI-Bildschirm, und „HiDPI“ waehlt den Faktor
+  nach dem Bildschirm (`/scale:140` oder `/scale:180`) statt immer `/scale:180`. Auf einem HiDPI-Bildschirm nicht
+  verifiziert.
 - **Desktop: ohne gespeicherte Sprache gilt die Systemsprache (R-0660):** Ist noch keine Sprache gespeichert, etwa
   nach einer frischen Installation, laeuft die Desktop-UI in der Systemsprache: Deutsch auf einem deutschen System,
   sonst Englisch. Bisher lief sie nach dem Laden der Einstellungen immer englisch. Der Einstellungsdialog zeigt diese
@@ -1456,7 +1486,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Schluesselbund unter einer `id` des Clients ab, die der Server beim Speichern durch eine eigene ersetzt; der Eintrag
   gehoerte danach zu keiner Verbindung. Im Server-Workspace bietet der Passwort-Dialog das Merken jetzt nur fuer eine
   Verbindung an, die schon in der Liste steht; fuer eine noch nicht gespeicherte gilt das getippte Passwort nur fuer
-  diesen Start. Lokal und Sync bleiben unveraendert. Doku: Desktop fuer Entwickler (DE+EN).
+  diesen Start (unter Windows verwirft der Desktop es, und mstsc fragt selbst). Lokal und Sync bleiben
+  unveraendert. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: ein abgebrochenes Schreiben laesst keine Temp-Datei dauerhaft im Datenordner liegen (R-0553):** Endete
   der Desktop, waehrend er eine Datei auf einmal ersetzte (`prefs.json`, `workspaces.json`, eine `workspace.json`,
   `secrets.json`), blieb deren Temp-Datei `<Dateiname>.<pid>.tmp` im Datenordner der App liegen. Jetzt loescht das

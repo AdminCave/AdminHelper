@@ -105,6 +105,7 @@
             <li><strong>Deleting a workspace</strong> (desktop, in the picker): if a server workspace has a device identity, the desktop first revokes the device at the server and then deletes the workspace on the device. If the server does not revoke it, the picker reports “On this device only”; the device then stays valid at the server until an administrator revokes it through the device API, because a later registration, of a new workspace too, does not replace it.</li>
             <li><strong>Registering again:</strong> when a server workspace registers again, the new certificate replaces the previous one of this device. A <code>.p12</code> is a device of its own and replaces nothing; you revoke one that is no longer needed through the device API.</li>
           </ul>
+          <p>Deleting and revoking lock the API at once; they do not lock a tunnel whose visitor configuration the user already has (see <a href="./frp-tunnel.html#revoke-access">FRP tunnel: revoking tunnel access</a>).</p>
 
           <h2>API keys</h2>
           <p>API keys authenticate non-interactive clients (Go agent, scripts, CI jobs). Differences from user credentials:</p>

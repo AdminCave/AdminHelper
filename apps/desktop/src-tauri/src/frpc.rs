@@ -272,10 +272,11 @@ async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle
 
 /// Whether a visitor-bundle reply with this status carries a bundle. 404 is no error but "no
 /// tunnels": the server answers it both without an FRP config and when the user sees no usable
-/// STCP tunnel (generate_router.py). Every other non-2xx — a 401 the refresh could not cure
-/// included — is an error.
+/// STCP tunnel (generate_router.py). 403 is "no tunnels" too: the server refuses the device or
+/// the user access, say after a revocation, so the tunnels go. Every other non-2xx — a 401 the
+/// refresh could not cure included — is an error.
 fn carries_bundle(status: reqwest::StatusCode) -> Result<bool, AppError> {
-    if status == reqwest::StatusCode::NOT_FOUND {
+    if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::FORBIDDEN {
         return Ok(false);
     }
     if !status.is_success() {
@@ -1385,8 +1386,9 @@ fn start_fresh(
 }
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
-/// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure, a session that changed meanwhile) leaves the running frpc alone. The fetch
+/// reload or leave it; no tunnels (404, or 403: access refused) stop it. A failure before that
+/// (network, 5xx, a 401 the refresh could not cure, a session that changed meanwhile) leaves the
+/// running frpc alone. The fetch
 /// goes to the signed-in server with the session's current access token (see
 /// [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
@@ -1426,9 +1428,9 @@ mod tests {
     use super::{
         bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
         reconcile, remap_visitors, request_reload, rewrite_identity_paths, runtime_dir, stop_frpc,
-        tunnel_status, validate_visitor_toml, visitor_names, with_local_head, write_visitor_config,
-        Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding,
-        NO_IDENTITY_HINT, VISITOR_CONFIG,
+        stop_left_behind, tunnel_status, validate_visitor_toml, visitor_names, with_local_head,
+        write_visitor_config, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar,
+        VisitorBinding, NO_IDENTITY_HINT, VISITOR_CONFIG,
     };
     use crate::error::AppError;
     use crate::keyring_store;
@@ -2245,8 +2247,13 @@ method = "token"
     }
 
     #[test]
+    fn refresh_403_means_no_tunnels() {
+        assert!(!carries_bundle(reqwest::StatusCode::FORBIDDEN).unwrap());
+    }
+
+    #[test]
     fn refresh_500_and_every_other_failure_is_an_error() {
-        for code in [500, 502, 503, 401, 403] {
+        for code in [500, 502, 503, 401] {
             let status = reqwest::StatusCode::from_u16(code).unwrap();
             assert!(carries_bundle(status).is_err(), "{status}");
         }
@@ -3533,11 +3540,12 @@ method = "token"
             let ports = TempPorts::new();
             let _keyring = enrolled();
             let sidecar = DiskSidecar::new(&ports.dir);
-            let (_reserved, port) = if case == "no listener" {
+            let (_reserved, port, served) = if case == "no listener" {
                 let (reserved, port) = crate::test_tls::refused_port();
-                (Some(reserved), port)
+                (Some(reserved), port, None)
             } else {
-                (None, serve_one(reply("401 Unauthorized", "")).await.0)
+                let (port, served) = serve_one(reply("401 Unauthorized", "")).await;
+                (None, port, Some(served))
             };
             left_behind(&sidecar, port, |_| {});
 
@@ -3559,7 +3567,57 @@ method = "token"
                 ["identity", VISITOR_CONFIG],
                 "{case}"
             );
+            // The stop went out and was answered; a failure inside the server task shows here.
+            if let Some(served) = served {
+                tokio::time::timeout(Duration::from_secs(5), served)
+                    .await
+                    .expect("the 401 server task did not end")
+                    .unwrap();
+            }
         }
+    }
+
+    #[tokio::test]
+    async fn stop_left_behind_returns_only_once_the_admin_port_is_closed() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (close, closing) = tokio::sync::oneshot::channel::<()>();
+        // Answers the stop, then keeps its port open like an frpc still shutting down, until the
+        // test says it is gone; the listener drops with the task and frees the port.
+        let server = tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                head.extend_from_slice(&buf[..n]);
+            }
+            tcp.write_all(reply("200 OK", "").as_bytes()).await.unwrap();
+            let _ = tcp.shutdown().await;
+            tokio::select! {
+                _ = async { loop { let _ = listener.accept().await; } } => {}
+                _ = closing => {}
+            }
+        });
+
+        let left = head(port, "c0ffee");
+        let stopping = tokio::spawn(async move { stop_left_behind(&left).await });
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(
+            !stopping.is_finished(),
+            "returned while the admin port still answered"
+        );
+        close.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stopping)
+            .await
+            .expect("did not return after the admin port closed")
+            .unwrap();
+        server.await.unwrap();
     }
 
     #[tokio::test]

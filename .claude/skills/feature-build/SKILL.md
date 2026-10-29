@@ -54,6 +54,12 @@ solange spätere Tasks nichts ändern, was er prüft.
 Zusammenhängende Tasks baut die Session am Stück und liest Spec-Stelle und Code dafür einmal. Eine `[?]`-Task
 überspringt sie, bis Kevin antwortet; unabhängige Tasks laufen weiter.
 
+**Ein Zug wartet nicht** (CLAUDE.md §2): hängt eine Task bis zum Abschluss (4.1) noch an Kevins Antwort, oder wird
+sie in zwei Versuchen nicht grün (3, zurückgenommen), wandert ihre Zeile in den nächsten Zug: `bash
+WT/scripts/dev/ledger.sh mark-skip WT/tasks/<slug>.md <id> "verschoben in <nächster-zug>: <Grund>"` als
+`chore(ledger)` und `roadmap.py status R-nnnn geplant --ledger tasks/<nächster-zug>.md --note "<bisherige Notiz>;
+<Grund>"`. Der Zug fährt mit dem Rest.
+
 1. `bash WT/scripts/dev/ledger.sh start WT/tasks/<slug>.md <id>`.
 2. **Bauen.** Task, Spec-Stelle und den echten Code samt Aufrufern und Tests lesen; surgical umsetzen, im Stil des
    umgebenden Codes. Neuer Flow → Test dazu (Bug: erst rot), neue Datei → SPDX-Header, Doku nach dem `Doku:`-Feld
@@ -67,10 +73,13 @@ Zusammenhängende Tasks baut die Session am Stück und liest Spec-Stelle und Cod
    (CLAUDE.md §7); ist die Ursache nach zwei ähnlichen Versuchen unklar, vorher einmal `advisor` (CLAUDE.md §6). Rot
    unabhängig von der Änderung oder nicht lauffähig (Exit 2, 74, ein Pflicht-SKIP) → STOPP für diese Task, die
    Infrastruktur melden, kein stärkeres Modell.
-4. **Review** (bei `Review: pro Task`): `reviewer` mit Einsatzart `task`, WT, Slug, Task-ID, Diff-Pfaden (`git -C WT
-   diff HEAD -- <pfade>` plus die neuen Dateien), Summary-Zeile und eigenem Scratch-Verzeichnis (`mktemp -d -p
-   <Scratchpad der Session>`). Risikopfad (`bash WT/scripts/dev/review.sh risk`): zusätzlich `security`, parallel.
-   Während beide prüfen, baut die Session nichts an dieser Task weiter.
+4. **Review** (bei `Review: pro Task`; eine Task mit `Task-Review: am Ende`, die nur Doku stagt, geht gleich zu 5):
+   `reviewer` mit Einsatzart `task`, WT, Slug, Task-ID, Diff-Pfaden (`git -C WT diff HEAD -- <pfade>` plus die neuen
+   Dateien), Summary-Zeile und eigenem Scratch-Verzeichnis (`mktemp -d -p <Scratchpad der Session>`); in einem
+   `klein-`-Zug mit `model: "sonnet"`. **Ein Prüfer je Zug** (CLAUDE.md §6): die erste Task startet ihn, jede weitere
+   setzt ihn fort (SendMessage mit denselben Eingaben für die neue Task); nach fünf Tasks oder wenn er von einer
+   Kompaktierung berichtet, startet ein frischer. Risikopfad (`bash WT/scripts/dev/review.sh risk`): zusätzlich
+   `security` (immer Opus), parallel. Während beide prüfen, baut die Session nichts an dieser Task weiter.
    - `approve` → 5.
    - `request_changes` mit `blocker` oder belegtem `wichtig` → die Session korrigiert, fährt das `Verify:` erneut und
      setzt denselben `reviewer` fort (SendMessage), einmal. Danach 5 oder `[?]`. Nits blockieren nie; eine dritte
@@ -86,8 +95,8 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
 ## 4. Abschluss
 
 1. Kopf steht auf `bereit` (setzt `task-close.sh` mit der letzten Task); sonst `ledger.sh status … bereit` als
-   `chore(ledger)`. `roadmap.py status R-nnnn bereit`. Steht noch eine `[?]`-Task, wartet der Abschluss auf Kevins
-   Antwort (bauen oder `[~]`).
+   `chore(ledger)`. `roadmap.py status R-nnnn bereit`. Steht noch eine `[?]`-Task: in einem Zug verschieben (3,
+   „Ein Zug wartet nicht“), sonst wartet der Abschluss auf Kevins Antwort (bauen oder `[~]`).
 2. Keine volle Komponenten-Suite lokal: die fährt die PR-CI (CLAUDE.md §5).
 3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts; `linux-full` → kein Lauf
    hier, das Vorhaben geht in den Sammellauf (§5), der PR-Text sagt „Heavy: Sammellauf“ (Ausnahme: der Fix eines
@@ -103,7 +112,8 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
    Urteil → `reviewer` fortsetzen).
 6. Basis nachziehen: `git -C WT fetch origin`; scheitert `git -C WT merge-base --is-ancestor origin/main HEAD`
    (etwa nach dem Merge des parallelen Vorhabens): `git -C WT merge origin/main`, das Union-Ergebnis in
-   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften); die Suiten dazu fährt die PR-CI. Kopf `erledigt`
+   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften; neue Einträge stehen in `changelog.d/<slug>.md`,
+   `python3 scripts/release/changelog-assemble.py --check`); die Suiten dazu fährt die PR-CI. Kopf `erledigt`
    als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`; PR-Text:
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, dahinter `final.md` (nach
    dem Basis-Merge neu erzeugt) und das `security`-Urteil; `gh pr create --title "<type>: <feature>" --body-file
