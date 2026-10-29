@@ -171,10 +171,27 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         std::process::id(),
         seq
     ));
-    let mut file = create_temp_file(&path)?;
-    file.write_all(content.as_bytes())?;
+    write_new_temp(&path, content.as_bytes(), |file, bytes| {
+        file.write_all(bytes)
+    })?;
 
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Creates `path` ([`create_temp_file`]) and writes `content` with `write`. A write that fails
+/// after the file exists removes it: its path never reaches the caller, so nothing else would.
+fn write_new_temp(
+    path: &std::path::Path,
+    content: &[u8],
+    write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut file = create_temp_file(path)?;
+    if let Err(e) = write(&mut file, content) {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Writes the playbook content to a temporary file and returns the path.
@@ -196,8 +213,9 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
         seq,
         safe_name
     ));
-    let mut file = create_temp_file(&path)?;
-    file.write_all(content.as_bytes())?;
+    write_new_temp(&path, content.as_bytes(), |file, bytes| {
+        file.write_all(bytes)
+    })?;
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -300,7 +318,7 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
 mod tests {
     use super::{
         create_temp_file, fetch_playbook, generate_inventory, is_confined_ansible_path,
-        launch_ansible_with, write_playbook_temp, AnsibleTarget,
+        launch_ansible_with, run, write_new_temp, write_playbook_temp, AnsibleTarget, Playbook,
     };
     use crate::error::AppError;
     use crate::session::SessionState;
@@ -783,6 +801,51 @@ mod tests {
             "db group (sorted first): {content}"
         );
         assert!(content.contains("[web]\nweb01\n"), "web group: {content}");
+    }
+
+    #[test]
+    fn write_new_temp_removes_the_file_when_the_write_fails() {
+        let path = std::env::temp_dir().join(format!(
+            "adminhelper_ansible_{}_write-fails.yml",
+            std::process::id()
+        ));
+        let err = write_new_temp(&path, b"- hosts: all\n", |_, _| {
+            Err(std::io::Error::other("disk full"))
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "disk full");
+        assert!(!path.exists(), "the half-written file stayed");
+    }
+
+    #[test]
+    fn run_removes_the_inventory_when_the_playbook_cannot_be_written() {
+        // A name longer than any file system allows: the playbook's temp file cannot be
+        // created after the inventory was written.
+        let host = format!("write-fails-{}.example.net", std::process::id());
+        let targets = [AnsibleTarget {
+            hostname: host.clone(),
+            groups: vec![],
+        }];
+        let playbook = Playbook {
+            filename: "p".repeat(300),
+            content: "- hosts: all\n".to_string(),
+        };
+        let launched = std::cell::Cell::new(false);
+        assert!(run(&targets, &playbook, |_, _| {
+            launched.set(true);
+            Ok(())
+        })
+        .is_err());
+        assert!(!launched.get());
+        let prefix = format!("adminhelper_ansible_inventory_{}_", std::process::id());
+        let left: Vec<_> = fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+            .filter(|entry| fs::read_to_string(entry.path()).is_ok_and(|text| text.contains(&host)))
+            .map(|entry| entry.path())
+            .collect();
+        assert!(left.is_empty(), "inventories left: {left:?}");
     }
 
     #[test]

@@ -399,6 +399,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: eine halb geschriebene Ansible-Datei bleibt nicht im Temp-Verzeichnis (R-0574):** Scheitert das
+  Schreiben von Inventory oder Playbook, nachdem die Datei angelegt ist, loescht der Client sie sofort.
 - **Desktop: eine Tunnel-Zuordnung mit einem Port ausserhalb von 1-65535 laesst die Tunnel-Liste nicht mehr
   scheitern:** Bisher fehlten dann alle Zuordnungen, und keine Verbindung wurde ueber einen Tunnel aufgeloest; eine
   solche Zuordnung loest jetzt nur selbst keinen Visitor auf.

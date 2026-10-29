@@ -117,7 +117,7 @@ Nicht-Ziele (YAGNI):
 | T1 | R-0572 | desktop-rs | `storage.rs` |
 | T2 | R-0569 | desktop-rs | `tunnel.rs`, `CHANGELOG.md` |
 | T3 | R-0574 | desktop-rs | `ansible.rs` |
-| T4 | R-0574 | desktop-rs | `ansible.rs`, `docs/admin/ansible.html`, `docs/en/admin/ansible.html`, `docs/developer/desktop.html`, `docs/en/developer/desktop.html`, `CHANGELOG.md` |
+| T4 | R-0574 | desktop-rs | `ansible.rs`, `CHANGELOG.md` (verkleinert, Ledger `## Entscheidungen` 2026-10-29) |
 | T5 | R-0643 | desktop-rs | `commands.rs`, `CHANGELOG.md` |
 | T6 | R-0642 | desktop-rs | `connection/rdp.rs` |
 | T7 | R-0642 | desktop-rs | `commands.rs`, `connection/mod.rs`, `connection/rdp.rs`, `CHANGELOG.md` |
