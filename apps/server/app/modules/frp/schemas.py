@@ -110,6 +110,25 @@ def is_plugin_key(key: str) -> bool:
     return key.split(".", 1)[0].lower() == "plugin"
 
 
+def _take_key_path(root: dict, key: str) -> Optional[str]:
+    """Enter key into the trie of a proxy's key paths; return the key it clashes with, if any."""
+    node = root
+    segments = key.lower().split(".")
+    for segment in segments[:-1]:
+        child = node.setdefault(segment, {})
+        if isinstance(child, str):
+            return child
+        node = child
+    last = segments[-1]
+    if last not in node:
+        node[last] = key
+        return None
+    taken = node[last]
+    while isinstance(taken, dict):
+        taken = next(iter(taken.values()))
+    return taken
+
+
 def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
     v = _check_extra_config(v)
     for key in v or {}:
@@ -120,25 +139,17 @@ def _check_tunnel_extra_config(v: Optional[dict]) -> Optional[dict]:
             )
     # The agent refuses a proxy whose key paths repeat or nest, compared in lower case (frp
     # maps fields without regard to case): with the generator's keys and with each other.
-    # Like keyTable.add: a path maps to the key that took it (a key) or to None (a table a
-    # longer key opened); each key looks up only itself and its segment prefixes, so the
-    # check stays linear in the number of keys.
-    taken: dict[str, Optional[str]] = {k.lower(): k for k in _GENERATOR_PROXY_KEYS}
-    for key in v or {}:
-        path = key.lower()
-        segments = path.split(".")
-        prefixes = [".".join(segments[:i]) for i in range(1, len(segments))]
-        clash = taken[path] or "a table of other keys" if path in taken else None
-        if clash is None:
-            clash = next((taken[p] for p in prefixes if taken.get(p)), None)
+    # Like keyTable.add, as a trie of the key paths by segment: a node is a key (its name) or
+    # a table longer keys opened. Each key walks its segments once, so the check stays linear
+    # in the size of the extra_config, however many or long its keys are.
+    root: dict = {}
+    for key in (*_GENERATOR_PROXY_KEYS, *(v or {})):
+        clash = _take_key_path(root, key)
         if clash is not None:
             raise ValueError(
                 f"extra_config key '{key}' clashes with '{clash}' (keys of a proxy are compared "
                 "without regard to case, and none may be a prefix of another)"
             )
-        for p in prefixes:
-            taken.setdefault(p, None)
-        taken[path] = key
     return v
 
 

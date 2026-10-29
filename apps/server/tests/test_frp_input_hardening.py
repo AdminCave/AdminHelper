@@ -772,6 +772,21 @@ def test_tunnel_extra_config_check_stays_linear():
     assert time.monotonic() - start < 1.0
 
 
+def test_tunnel_extra_config_check_stays_linear_in_the_key_length():
+    # One key of 20000 segments: building every prefix as a string of its own was
+    # quadratic in time and memory.
+    extra = {".".join(["a"] * 20000): 1}
+    start = time.monotonic()
+    assert _tunnel(extra_config=extra).extra_config == extra
+    assert time.monotonic() - start < 1.0
+
+
+def test_a_clash_with_a_table_names_one_of_its_keys():
+    with pytest.raises(ValidationError) as exc:
+        _tunnel(extra_config={"a.b": 1, "a": 2})
+    assert "'a' clashes with 'a.b'" in exc.value.errors()[0]["msg"]
+
+
 def test_the_clash_rule_knows_every_key_the_generator_writes_into_a_proxy():
     # A key the generator starts to write and _GENERATOR_PROXY_KEYS misses would let an
     # extra_config clash with it again, and the agent refuse the whole host.

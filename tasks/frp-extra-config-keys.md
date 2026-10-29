@@ -36,8 +36,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_harde
 Doku: keine (Verhalten unverändert)
 Abhängt von: T2
 
-### T4 — Kollisionsprüfung auch in der Schlüssellänge linear  [ ]
+### T4 — Kollisionsprüfung auch in der Schlüssellänge linear  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_input_hardening.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5f8f6182 2026-10-29T06:16:41+01:00
+Review: am Ende (Branch-Review)
 Änderung: T3 baut für jeden Schlüssel alle Segment-Präfixe als neue Strings und behält sie: quadratisch in der Länge eines einzelnen Schlüssels, in Zeit und Speicher (Abschlussprüfung Runde 2: ein 20-KB-Schlüssel ≈ 1 s und 128 MB). Neu: ein Trie aus verschachtelten dicts je Segment; ein Knoten ist ein Schlüssel (sein Name) oder eine Tabelle; jeder Schlüssel läuft seine Segmente einmal ab. Die Meldung bei einer Kollision mit einer Tabelle nennt einen Schlüssel dieser Tabelle statt eines Platzhalters. Test: ein Schlüssel mit 20000 Segmenten wird in unter 1 s angenommen. Gegenprobe: mit T3 rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py
 Doku: keine (Verhalten unverändert)
