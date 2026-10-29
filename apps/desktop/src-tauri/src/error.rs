@@ -78,6 +78,13 @@ pub enum AppError {
     Json(serde_json::Error),
     /// The session could not be renewed and is gone (`session::authed_send`).
     SessionExpired,
+    /// A non-2xx answer of the server: `code` only in the form the server promises,
+    /// `message` the redacted text of its `detail` (`AppError::http`).
+    Http {
+        status: u16,
+        code: Option<String>,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for AppError {
@@ -119,13 +126,80 @@ impl std::fmt::Display for AppError {
             AppError::Keyring(msg) => write!(f, "{msg}"),
             AppError::Json(err) => write!(f, "{err}"),
             AppError::SessionExpired => write!(f, "Session expired, please sign in again"),
+            AppError::Http {
+                status, message, ..
+            } if *message == http_fallback(*status) => write!(f, "{message}"),
+            AppError::Http {
+                status, message, ..
+            } => write!(f, "HTTP {status}: {message}"),
         }
     }
 }
 
+fn http_fallback(status: u16) -> String {
+    format!("HTTP {status}")
+}
+
+/// The form of a code the server promises (R-0664): `^ERR_[A-Z0-9_]{1,64}$`.
+fn is_error_code(code: &str) -> bool {
+    code.strip_prefix("ERR_").is_some_and(|rest| {
+        (1..=64).contains(&rest.len())
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+    })
+}
+
+/// The text of an error body's `detail`, read like `errorDetail` in the web client: a
+/// string as is, a list of validation errors as its `msg` texts.
+fn detail_text(body: &serde_json::Value) -> Option<String> {
+    match body.get("detail")? {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Array(items) => {
+            let msgs: Vec<&str> = items
+                .iter()
+                .filter_map(|item| item.get("msg")?.as_str())
+                .collect();
+            (!msgs.is_empty()).then(|| msgs.join("; "))
+        }
+        _ => None,
+    }
+}
+
 impl AppError {
+    /// The refusal of a non-2xx answer with the raw `body`: the server's text is shown,
+    /// never the raw body (an HTML page, a JSON object), and it is redacted, since an
+    /// endpoint can echo a token back.
+    pub fn http(status: u16, body: &str) -> AppError {
+        let json = serde_json::from_str::<serde_json::Value>(body).ok();
+        let code = json
+            .as_ref()
+            .and_then(|value| value.get("code")?.as_str())
+            .filter(|code| is_error_code(code))
+            .map(str::to_string);
+        let mut text = json.as_ref().and_then(detail_text).unwrap_or_default();
+        // The server keeps the code as prefix of the detail for clients that read the
+        // text; with the code at hand the message is the text alone.
+        if let Some(rest) = code
+            .as_deref()
+            .and_then(|code| text.strip_prefix(code)?.strip_prefix(": "))
+        {
+            text = rest.to_string();
+        }
+        let message = if text.trim().is_empty() {
+            http_fallback(status)
+        } else {
+            crate::diagnostics::redact_body(&text)
+        };
+        AppError::Http {
+            status,
+            code,
+            message,
+        }
+    }
+
     /// The stable code of the error: the UI branches on it, never on the message.
-    pub fn code(&self) -> &'static str {
+    pub fn code(&self) -> &str {
         match self {
             AppError::Validation(_) => "ERR_VALIDATION",
             AppError::Io(_) => "ERR_IO",
@@ -137,6 +211,7 @@ impl AppError {
             AppError::Keyring(_) => "ERR_KEYRING",
             AppError::Json(_) => "ERR_JSON",
             AppError::SessionExpired => "ERR_SESSION_EXPIRED",
+            AppError::Http { code, .. } => code.as_deref().unwrap_or("ERR_HTTP"),
         }
     }
 }
@@ -145,15 +220,24 @@ impl AppError {
 struct Refusal<'a> {
     code: &'a str,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<u16>,
 }
 
 // Tauri rejects the command's promise with exactly this value; the UI branches on `code`
 // only (IpcError in bridge/index.ts), the message is for the user.
 impl Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (message, status) = match self {
+            AppError::Http {
+                status, message, ..
+            } => (message.clone(), Some(*status)),
+            _ => (self.to_string(), None),
+        };
         Refusal {
             code: self.code(),
-            message: self.to_string(),
+            message,
+            status,
         }
         .serialize(serializer)
     }
@@ -302,6 +386,94 @@ mod tests {
                 "{err:?}"
             );
         }
+    }
+
+    /// Status, code and message of `AppError::http(status, body)`.
+    fn http_of(status: u16, body: &str) -> (u16, String, String) {
+        let err = AppError::http(status, body);
+        let code = err.code().to_string();
+        let AppError::Http {
+            status, message, ..
+        } = err
+        else {
+            panic!("not an Http error: {err:?}");
+        };
+        (status, code, message)
+    }
+
+    #[test]
+    fn http_takes_the_text_from_detail() {
+        assert_eq!(
+            http_of(409, r#"{"detail":"Template already assigned"}"#),
+            (409, "ERR_HTTP".into(), "Template already assigned".into())
+        );
+        let list = r#"{"detail":[{"loc":["body","a"],"msg":"first"},{"loc":["body","b"],"msg":"second"}]}"#;
+        assert_eq!(http_of(422, list).2, "first; second");
+        assert_eq!(
+            http_of(422, r#"{"detail":[{"loc":["body"]}]}"#).2,
+            "HTTP 422"
+        );
+        for body in ["", r#"{"detail":""}"#, r#"{"other":1}"#, "null"] {
+            assert_eq!(http_of(500, body).2, "HTTP 500", "{body}");
+        }
+    }
+
+    #[test]
+    fn http_shows_no_html_page() {
+        let (_, code, message) = http_of(502, "<html><body>Bad Gateway</body></html>");
+        assert_eq!(message, "HTTP 502");
+        assert_eq!(code, "ERR_HTTP");
+    }
+
+    #[test]
+    fn http_takes_the_server_code_and_drops_its_prefix() {
+        assert_eq!(
+            http_of(
+                403,
+                r#"{"detail":"ERR_CERT_REVOKED: This device certificate is no longer valid.","code":"ERR_CERT_REVOKED"}"#
+            ),
+            (
+                403,
+                "ERR_CERT_REVOKED".into(),
+                "This device certificate is no longer valid.".into()
+            )
+        );
+    }
+
+    #[test]
+    fn http_takes_no_code_of_another_form() {
+        let long = format!("ERR_{}", "A".repeat(65));
+        for code in [
+            serde_json::json!("err_x"),
+            serde_json::json!(5),
+            serde_json::json!(long),
+        ] {
+            let detail = format!("{}: text", code.as_str().unwrap_or("5"));
+            let body = serde_json::json!({ "detail": detail, "code": code }).to_string();
+            assert_eq!(http_of(403, &body), (403, "ERR_HTTP".into(), detail));
+        }
+        let longest = format!("ERR_{}", "A".repeat(64));
+        let body = serde_json::json!({ "detail": "x", "code": longest }).to_string();
+        assert_eq!(http_of(403, &body).1, longest);
+    }
+
+    #[test]
+    fn http_redacts_a_token_in_the_text() {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJlLXZhbHVl";
+        let body = serde_json::json!({ "detail": format!("token {jwt}") }).to_string();
+        let (_, _, message) = http_of(400, &body);
+        assert!(message.contains("<redacted-jwt>"), "{message}");
+        assert!(!message.contains(jwt), "{message}");
+    }
+
+    #[test]
+    fn only_an_http_refusal_carries_a_status() {
+        assert_eq!(
+            serde_json::to_value(AppError::http(409, r#"{"detail":"taken"}"#)).unwrap(),
+            serde_json::json!({ "code": "ERR_HTTP", "message": "taken", "status": 409 })
+        );
+        let value = serde_json::to_value(AppError::Validation("bad".into())).unwrap();
+        assert!(value.get("status").is_none(), "{value}");
     }
 
     fn pin_code_of(text: &str) -> Option<&'static str> {

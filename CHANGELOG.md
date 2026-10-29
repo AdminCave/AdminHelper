@@ -468,6 +468,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Fehlertext des Servers statt rohem Body:** Lehnt der Server eine Anfrage des Desktops ab, zeigt die
+  Statusleiste dessen Text (`detail`), bei 422 die Feldmeldungen, statt `HTTP <Status>: <roher Body>`; ohne
+  lesbaren Text `HTTP <Status>`. Status und Code reichen strukturiert bis ins UI. Doku: Desktop fuer Entwickler
+  (DE+EN).
 - **Server: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin (R-0768):** Sie legen nur noch eine
   Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus.
 - **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
