@@ -10,8 +10,10 @@ Heavy: none — nur Unit-Tests in Desktop-Backend und Desktop-UI, kein Stack-, P
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — launcher-Test nicht mehr zeitknapp (R-0903)  [ ]
+### T1 — launcher-Test nicht mehr zeitknapp (R-0903)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5f1ee8fe 2026-10-29T17:23:36+01:00
+Review: am Ende (Branch-Review)
 Änderung: `open_fails_at_once_when_the_workspace_ends_before_it_holds_its_lock` nutzt eine Frist von 10 s statt 900 ms; die Zusicherung `waited < timeout` bleibt und fällt, wenn `open_within` bis zur Frist wartet.
 Beweis: main-CI Run 39986960668 · Desktop-Backend (cargo test, Windows): „waited 1.4127168s for the deadline“
 Dedup-Key: bug:desktop:launcher.rs:open-fails-at-once-timing-flaky
