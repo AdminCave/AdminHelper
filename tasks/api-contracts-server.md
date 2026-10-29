@@ -166,8 +166,10 @@ Orakel: contract — das Modell gegen `_mint_token` über die echte Route; der W
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T11 — web: Audit-Mock in der vollen Antwortform  [ ]
+### T11 — web: Audit-Mock in der vollen Antwortform  [x]
 Komponente: web · Dateien: apps/web/tests/e2e/mocks.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @18902239 2026-10-29T23:08:20+01:00
+Review: approve (.ah-out/review/api-contracts-server/T11.verdict.json)
 Änderung: Die zwei Zeilen von `AUDIT_ROWS` (`apps/web/tests/e2e/mocks.ts:57-76`) bekommen die fehlenden Schlüssel von `AuditLog.to_dict` (`apps/server/app/modules/audit/models.py:39-53`): `actorId: null`, `objectId: null`, `sourceIp: null`, `status: 'success'`, `detail: null`. Vorbereitung für T12: danach prüft `mocks.contract.test.ts` die Audit-Fixture gegen die required-Liste. `status` ändert die Statuszelle der Audit-Seite (`apps/web/src/pages/Audit.svelte:137`) im Bildvergleich `tests/e2e/smoke.spec.ts-snapshots/audit-chromium-linux.png` (Toleranz 2 %); `smoke.spec.ts` headless fahren, Summary in den Commit-Body. Liegt die Abweichung über der Toleranz: `[?]` (ein neues Referenzbild ist eine sichtbare Teständerung).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine
