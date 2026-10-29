@@ -791,6 +791,8 @@ export const translations: Translations = {
     'error.passwordStore': 'Password-Store: {message}',
     'error.monitoring': 'Monitoring: {message}',
     'error.tunnel': 'Tunnel: {message}',
+    'error.tunnel.refused':
+      'Tunnel: Der Server verweigert den Zugriff (HTTP {code}); die Tunnel sind gestoppt.',
     'validation.name.empty': 'Name darf nicht leer sein',
     'validation.workspaceName.tooLong': 'Name darf höchstens {max} Zeichen haben',
     'validation.workspaceName.control': 'Name darf keine Steuerzeichen enthalten',
@@ -1589,6 +1591,8 @@ export const translations: Translations = {
     'error.passwordStore': 'Password store: {message}',
     'error.monitoring': 'Monitoring: {message}',
     'error.tunnel': 'Tunnel: {message}',
+    'error.tunnel.refused':
+      'Tunnel: the server refuses access (HTTP {code}); the tunnels are stopped.',
     'validation.name.empty': 'Name must not be empty',
     'validation.workspaceName.tooLong': 'Name must have at most {max} characters',
     'validation.workspaceName.control': 'Name must not contain control characters',
