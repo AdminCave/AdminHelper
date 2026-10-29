@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-1 · Review: pro Task
 Spec: docs/features/kern-agent-1.md (Roadmap R-0884, R-0885, R-0929, R-0878, R-0879, R-0881, R-0951)
 Heavy: linux-full — apps/agent: frpc-Abgleich, TLS-Pin, Monitor-Befehle und run --once laufen im Sammellauf (go agent, agent_monitoring, repo_build)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -66,6 +66,13 @@ Review: approve (.ah-out/review/kern-agent-1/T6.verdict.json)
 Änderung: Der Einrichtungs-Hinweis in `deb/DEBIAN/postinst:32`, `rpm/adminhelper-agent.spec:94` und in der Fixture `cmd/adminhelper-agent/packaging_rpm_test.go:54` gibt den Token über stdin (`--token-stdin`) statt als Argument, wie `docs/admin/agent-deployment.html`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
 Doku: changelog.d/kern-agent-1.md
+
+### T7 — Entwickler-Doku zum frpc-Abgleich nachziehen (aus der Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-agent-1.md
+Änderung: `docs/developer/agent.html:97` + EN beschreiben den Abgleich ohne Antwort von systemd wie nach T1 (Reload über die Admin-API, sonst Abbruch); `:99` die Ausnahme für einen beendeten Lauf (T1, `.started-hash` bleibt); `:100` die Grenze von 32 Segmenten je Schlüssel (T3). Changelog-Eintrag zu T1 präzisiert.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/agent.html + EN, changelog.d/kern-agent-1.md
+Task-Review: am Ende
 
 ## Entscheidungen
 - T1: `TestSyncFrpcSystemctlWithoutAnswerChangesNothing` (R-0638) setzt jetzt `ownsAdminPort=false`: ohne systemd-Antwort aendert der Abgleich weiter nichts, solange frpc nicht auf seinem Admin-Port lauscht; lauscht er, laedt er (R-0884). Alle Asserts des Tests bleiben. Der Vorab-Check nutzt `adminAPIListens` (admin.go), nicht `loadAdminAPI`, weil das admin.conf neu schreiben kann.
