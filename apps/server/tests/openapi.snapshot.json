@@ -2618,6 +2618,30 @@
         "title": "ServerCreate",
         "type": "object"
       },
+      "ServerSummary": {
+        "description": "One server as GET /api/servers/summary lists it.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname"
+        ],
+        "title": "ServerSummary",
+        "type": "object"
+      },
       "ServerUpdate": {
         "properties": {
           "hostname": {
@@ -6077,6 +6101,36 @@
           }
         ],
         "summary": "Create Server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/summary": {
+      "get": {
+        "operationId": "list_server_summaries_api_servers_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerSummary"
+                  },
+                  "title": "Response List Server Summaries Api Servers Summary Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Server Summaries",
         "tags": [
           "servers"
         ]

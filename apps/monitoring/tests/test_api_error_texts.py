@@ -7,6 +7,7 @@ passes a refused call on as "HTTP <code>: <body>", so a German text showed up in
 the English interface as well. One case per text the API can reach, through the
 real app, with `detail` compared exactly; status codes are pinned alongside."""
 
+import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -283,6 +284,25 @@ def test_assign_race_has_the_same_text(client_db, monkeypatch):
     r = client.post("/templates/tpl-2/assign", json=_ASSIGN)
     assert r.status_code == 409
     assert _detail(r) == "Template already assigned to this server"
+
+
+def test_metrics_with_the_store_down_have_the_text(client_db, monkeypatch):
+    from app.core import victoria as victoria_mod
+
+    client, factory = client_db
+    _seed(factory)
+
+    def _refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    transport_client = httpx.Client(transport=httpx.MockTransport(_refuse))
+    monkeypatch.setattr(victoria_mod.victoria, "_client", transport_client)
+    try:
+        r = client.get("/checks/c1/metrics")
+    finally:
+        transport_client.close()
+    assert r.status_code == 502
+    assert _detail(r) == "Metrics store unavailable"
 
 
 @pytest.fixture()

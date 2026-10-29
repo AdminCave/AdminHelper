@@ -164,6 +164,16 @@ def resolve_config_server_id(
     return config
 
 
+def log_transition(name: str, old_status: str, new_status: str, message: str) -> None:
+    """The log line of a status change, once the change is saved.
+
+    Without it a transition leaves no trace at all: MonitorAlertLog only records SENT
+    notifications, so one suppressed by maintenance or host-down was invisible
+    afterwards. Both result paths call it after their commit, so a change that a
+    failed commit discards is not logged."""
+    logger.info("Check '%s': %s -> %s (%s)", name, old_status, new_status, message)
+
+
 def apply_result(
     db: Session,
     check: MonitorCheck,
@@ -178,9 +188,9 @@ def apply_result(
     """Write one check result into its MonitorState and decide on notification.
 
     The read-modify-write both result paths share: damping (next_fail_count /
-    effective_status), the recovery hold (next_ok_count / holds_recovery), the
-    transition log line and the sent-state decision. It
-    used to exist twice — here for the scheduler and as a hand-kept copy in
+    effective_status), the recovery hold (next_ok_count / holds_recovery) and the
+    sent-state decision; the transition's log line is the caller's, after its commit
+    (log_transition). It used to exist twice — here for the scheduler and as a hand-kept copy in
     routers/agent.py — which is exactly the duplicate truth that drifts (B3).
 
     The caller passes the already-locked `state` (None before the first result),
@@ -241,16 +251,6 @@ def apply_result(
     else:
         if eff_status != state.status:
             state.since = now
-            # Without this line a transition leaves no trace at all: MonitorAlertLog
-            # only records SENT notifications, so one suppressed by maintenance or
-            # host-down was invisible afterwards.
-            logger.info(
-                "Check '%s': %s -> %s (%s)",
-                check.name,
-                old_status,
-                eff_status,
-                message,
-            )
         state.status = eff_status
         state.fail_count = new_fail_count
         state.ok_count = new_ok_count
@@ -362,10 +362,17 @@ def execute_check(check_id: str) -> None:
         if check is None:
             logger.debug("Check %s was deleted during its run, result dropped", check_id)
             return
+        had_state = state is not None
+        check_name = check.name
         old_status, eff_status, decision = apply_result(
             db, check, state, result_status, message, details, now
         )
+        # The message as stored (capped, with the damping suffix), read before the commit
+        # expires the row.
+        stored_message = state.message if had_state else message
         db.commit()
+        if had_state and eff_status != old_status:
+            log_transition(check_name, old_status, eff_status, stored_message)
 
         # Dispatch OFF the check-worker thread (see _alert_pool /
         # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the

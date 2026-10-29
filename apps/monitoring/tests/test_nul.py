@@ -3,11 +3,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """A NUL byte is refused at the monitoring edge: path, query, body, agent report.
+So is a lone surrogate in a body or an agent report.
 
 This suite runs on sqlite, which stores a NUL without complaint — here the
 unguarded requests answer 2xx or 404, not 500, and it is the 422 assertions that
 go red without the guards. In production the database is Postgres, where the
 same requests died in the driver."""
+
+import json
 
 import pytest
 from pydantic import BaseModel
@@ -89,6 +92,105 @@ def test_a_nul_in_the_agent_report_is_422_but_liveness_counts(client_db, monkeyp
         assert db.get(MonitorAgentLiveness, "srv-1") is not None
     # And someone can see why this server's checks stand still.
     assert any("srv-1" in m and "systemd" in m for m in caplog.messages), caplog.messages
+
+
+# A lone surrogate (U+D800 to U+DFFF) has no UTF-8 form. JSON spells one only as an
+# escape, so the bodies below go out as JSON text: json.dumps writes the escape, httpx's
+# json= would have to encode the character and cannot.
+_JSON = {"content-type": "application/json"}
+_SURROGATE_MSG = "Value error, must not contain a lone surrogate (U+D800 to U+DFFF)"
+
+
+def test_a_lone_surrogate_in_a_body_field_is_422(client_db):
+    client, _ = client_db
+    r = client.post("/checks", content=json.dumps({**_CHECK, "name": "a\ud800"}), headers=_JSON)
+    assert r.status_code == 422, r.text
+    [error] = r.json()["detail"]
+    assert (error["loc"], error["msg"], error["input"]) == (
+        ["body", "name"],
+        _SURROGATE_MSG,
+        "a\ud800",
+    )
+
+
+@pytest.mark.parametrize(
+    ("check_type", "config", "field"),
+    [
+        ("ping", {"target": "h\ud800"}, "target"),
+        ("http", {"url": "https://web.example/", "search_string": "a\ud800"}, "search_string"),
+    ],
+)
+def test_a_lone_surrogate_in_the_config_is_422_and_nothing_is_stored(
+    client_db, check_type, config, field
+):
+    # config is stored as json.dumps text, which escapes the surrogate: a search_string
+    # went into the row that way, and every later answer carrying it could not be encoded.
+    client, _ = client_db
+    body = {**_CHECK, "check_type": check_type, "config": config}
+    r = client.post("/checks", content=json.dumps(body), headers=_JSON)
+    assert r.status_code == 422, r.text
+    [error] = r.json()["detail"]
+    assert (error["loc"], error["msg"]) == (["body", "config", field], _SURROGATE_MSG)
+    r = client.get("/checks")
+    assert (r.status_code, r.json()) == (200, [])
+
+
+def test_a_lone_surrogate_in_a_key_is_422_at_the_key(client_db):
+    client, _ = client_db
+    body = {**_CHECK, "config": {"target": "h1", "k\udfff": 1}}
+    r = client.post("/checks", content=json.dumps(body), headers=_JSON)
+    assert r.status_code == 422, r.text
+    [error] = r.json()["detail"]
+    # pydantic-core holds a loc as UTF-8, so the key comes back with U+FFFD for each byte
+    # of its surrogatepass form, as Python's own "replace" decoder writes it; the input
+    # is the key itself.
+    key = "k\udfff".encode("utf-8", "surrogatepass").decode("utf-8", "replace")
+    assert (error["loc"], error["msg"], error["input"]) == (
+        ["body", "config", key],
+        _SURROGATE_MSG,
+        "k\udfff",
+    )
+
+
+def test_a_paired_surrogate_is_one_character_and_passes(client_db):
+    # JSON spells U+1F600 as the escape pair \ud83d\ude00; json.loads joins it.
+    client, _ = client_db
+    body = json.dumps({**_CHECK, "name": "\U0001f600"})
+    assert "\\ud83d\\ude00" in body
+    r = client.post("/checks", content=body, headers=_JSON)
+    assert r.status_code == 201, r.text
+    assert r.json()["name"] == "\U0001f600"
+
+
+def test_a_lone_surrogate_in_the_agent_report_is_422_but_liveness_counts(
+    client_db, monkeypatch, caplog
+):
+    """As a tag value the surrogate failed to encode in VictoriaClient._send, and the
+    whole batch went with it, lines of other servers included."""
+    from app.checkers import agent as agent_checker
+    from app.core import victoria as victoria_mod
+    from app.models import MonitorAgentLiveness
+
+    client, factory = client_db
+    writes = []
+    monkeypatch.setattr(victoria_mod.victoria, "write", lambda lines: writes.append(lines))
+    monkeypatch.setattr(agent_checker, "_last_report", {})
+    bad = {"resources": {"disks": [{"mount": "\ud800", "fstype": "ext4", "percent": 5}]}}
+    with caplog.at_level("WARNING"):
+        r = client.post("/agent/srv-1/report", content=json.dumps(bad), headers=_JSON)
+    assert r.status_code == 422, r.text
+    [error] = r.json()["detail"]
+    assert (error["loc"], error["msg"]) == (
+        ["body", "resources", "disks", 0, "mount"],
+        _SURROGATE_MSG,
+    )
+    assert writes == []
+    assert "srv-1" in agent_checker._last_report
+    with factory() as db:
+        assert db.get(MonitorAgentLiveness, "srv-1") is not None
+    assert any("srv-1" in m and "lone surrogate" in m and "disks" in m for m in caplog.messages), (
+        caplog.messages
+    )
 
 
 def _refs(node) -> set[str]:

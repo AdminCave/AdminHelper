@@ -259,6 +259,12 @@ export const MOCK_FIXTURES: MockFixture[] = [
     status: 200,
     body: makeEnrollmentGrant({ username: 'bob', ttl_minutes: 10 }),
   },
+  {
+    method: 'GET',
+    path: 'servers/summary',
+    status: 200,
+    body: [{ id: 's1', name: 'web-01', hostname: 'web-01.example' }],
+  },
 ];
 
 export async function mockApi(page: Page): Promise<void> {
@@ -295,9 +301,9 @@ export async function mockApi(page: Page): Promise<void> {
   await page.route(api('auth/me'), async (route) => route.fulfill(json({ body: ADMIN_ME })));
   await page.route(api('auth/logout'), async (route) => route.fulfill({ status: 204, body: '' }));
 
-  // The user modal fetches the servers list; empty is fine for the current suites.
+  // The user modal fetches the server summary; empty is fine for the current suites.
   // Any other unmocked /api call now 500s loudly instead of silently returning [] (6.93).
-  await page.route(api('servers'), async (route) => route.fulfill(json({ body: [] })));
+  await page.route(api('servers/summary'), async (route) => route.fulfill(json({ body: [] })));
 
   await page.route(api('users'), async (route) => {
     if (route.request().method() === 'POST') {
