@@ -156,7 +156,7 @@ def test_template_to_dict_masks_only_a_set_password():
         "not-a-definition",
     ]
     tpl = MonitorTemplate(id="t1", name="T", alert_definitions=json.dumps(defs))
-    shown = tpl.to_dict()["alertDefinitions"]
+    shown = tpl.to_dict(builtin_edited=False, builtin_update_available=False)["alertDefinitions"]
     assert shown[0]["channel_config"]["smtp_password"] == "***"
     assert shown[0]["channel_config"]["to"] == "ops@relay.example"
     assert shown[1:] == defs[1:]
