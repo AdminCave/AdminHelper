@@ -31,6 +31,7 @@ from app.core.config import (
     write_private_file,
 )
 from app.core.database import SessionLocal
+from app.core.errors import install_coded_errors
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
@@ -418,6 +419,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 install_exact_int_bounds(app)
+install_coded_errors(app)
 
 
 def _non_finite_as_null(detail: list) -> list:

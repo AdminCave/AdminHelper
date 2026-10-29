@@ -10,8 +10,9 @@
 // holds: its server, its token, renewed there on a 401.
 //
 // Behaviour mirrors apps/web/src/lib/api/client.ts as far as the proxy allows:
-// non-2xx responses reject (with an Error whose message is "HTTP <status>: …",
-// produced by the Rust side), and 204/empty bodies resolve to null. Note the
+// non-2xx responses reject with an IpcError carrying the status, the server's code
+// (or ERR_HTTP) and the text of its `detail` like errorDetail in the web client
+// (AppError::http on the Rust side), and 204/empty bodies resolve to null. Note the
 // proxy parses every response as JSON, so text/binary endpoints (TOML/ZIP
 // generation) intentionally have no wrapper here.
 
@@ -41,8 +42,8 @@ export function apiRequest<T>(
   );
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
-    // English like the neighbouring raw Rust error details (HTTP <status>: …), which
-    // reach the user through the same errMsg(err) path.
+    // English like the Rust side's own messages, which reach the user through the same
+    // errMsg(err) path.
     timer = setTimeout(() => reject(new Error('Request timed out')), REQUEST_TIMEOUT_MS);
   });
   return Promise.race([proxy, timeout]).finally(() => clearTimeout(timer));

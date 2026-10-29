@@ -163,7 +163,9 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, errorDetail(data) ?? `HTTP ${res.status}`, data);
+    const code = errorCode(data);
+    const message = withoutCodePrefix(errorDetail(data), code);
+    throw new ApiError(res.status, message ?? `HTTP ${res.status}`, data, code);
   }
 
   // A 2xx promises a T. A body that could not be read — cut off by a reload
@@ -188,6 +190,23 @@ function errorDetail(data: unknown): string | null {
     )
     .filter((m): m is string => m !== null);
   return msgs.length ? msgs.join('; ') : null;
+}
+
+// The stable code of an error body (R-0664), only in the form the server promises.
+const ERROR_CODE = /^ERR_[A-Z0-9_]{1,64}$/;
+
+function errorCode(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object' || !('code' in data)) return undefined;
+  const { code } = data;
+  return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
+}
+
+// The server keeps the code as prefix of the detail for clients that read the text; with
+// the code at hand the message is the text alone.
+function withoutCodePrefix(message: string | null, code: string | undefined): string | null {
+  if (message === null || code === undefined) return message;
+  const prefix = `${code}: `;
+  return message.startsWith(prefix) ? message.slice(prefix.length) : message;
 }
 
 // Raw GET that shares the same 401 -> tryRefresh -> retry path as request(), but
