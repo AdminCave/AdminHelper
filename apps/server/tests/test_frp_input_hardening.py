@@ -9,6 +9,7 @@ allow-list default."""
 import io
 import json
 import logging
+import time
 import tomllib
 import zipfile
 
@@ -22,8 +23,10 @@ from app.modules.frp.config_generator import (
     generate_frps_toml,
     generate_visitor_toml,
 )
+from app.modules.frp.extra_config import ALLOWED_KEYS
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import (
+    _GENERATOR_PROXY_KEYS,
     FrpServerConfigCreate,
     FrpServerConfigUpdate,
     FrpTunnelCreate,
@@ -720,6 +723,122 @@ def test_tunnel_routes_answer_422_for_a_plugin_key_in_extra_config(
     assert db_session.get(FrpTunnel, "t-a").extra_config is None
 
 
+# The agent takes a proxy only in the generator's form (apps/agent/internal/frpc/servertoml.go):
+# keys of segments [A-Za-z0-9_-]+, no key twice and none a prefix of another, compared without
+# regard to case, and TOML integers of 64 bits. A tunnel's extra_config that breaks this cost
+# the whole host its config.
+REFUSED_EXTRA_CONFIGS = {
+    "leading dot": {".a": 1},
+    "trailing dot": {"a.": 1},
+    "empty segment": {"a..b": 1},
+    "int over 64 bits": {"bandwidthLimitMode": 2**63},
+    "int under 64 bits": {"bandwidthLimitMode": -(2**63) - 1},
+    "a generator key in lower case": {"localport": 2222},
+    "a generator key in another case": {"Type": "tcp"},
+    "a generator key as a prefix": {"localIP.x": "a"},
+    "two keys apart only in case": {"foo": 1, "FOO": 2},
+    "one key a prefix of another": {"a": 1, "a.b": 2},
+}
+TAKEN_EXTRA_CONFIGS = {
+    "int at the top": {"bandwidthLimitMode": 2**63 - 1},
+    "int at the bottom": {"bandwidthLimitMode": -(2**63)},
+    "dotted key": {"transport.useEncryption": True},
+    "two keys of a table": {"transport.useEncryption": True, "transport.useCompression": True},
+    "plain key": {"bandwidthLimit": "1MB"},
+}
+
+
+@pytest.mark.parametrize("extra", REFUSED_EXTRA_CONFIGS.values(), ids=REFUSED_EXTRA_CONFIGS)
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_tunnel_extra_config_holds_the_agents_form(model, extra):
+    with pytest.raises(ValidationError) as exc:
+        _build(model, extra_config=extra)
+    msg = exc.value.errors()[0]["msg"]
+    assert any(f"'{key}'" in msg for key in extra), msg
+
+
+@pytest.mark.parametrize("extra", TAKEN_EXTRA_CONFIGS.values(), ids=TAKEN_EXTRA_CONFIGS)
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_tunnel_extra_config_takes_what_the_agent_takes(model, extra):
+    assert _build(model, extra_config=extra).extra_config == extra
+
+
+def test_tunnel_extra_config_check_stays_linear():
+    # The body validation runs on the event loop; a check quadratic in the keys took about
+    # 10 s for 8000 of them, and nginx lets 10 MB through.
+    extra = {f"k{i}.v": i for i in range(20000)}
+    start = time.monotonic()
+    assert _tunnel(extra_config=extra).extra_config == extra
+    assert time.monotonic() - start < 1.0
+
+
+def test_tunnel_extra_config_check_stays_linear_in_the_key_length():
+    # One key of 20000 segments: building every prefix as a string of its own was
+    # quadratic in time and memory.
+    extra = {".".join(["a"] * 20000): 1}
+    start = time.monotonic()
+    assert _tunnel(extra_config=extra).extra_config == extra
+    assert time.monotonic() - start < 1.0
+
+
+def test_a_clash_with_a_table_names_one_of_its_keys():
+    with pytest.raises(ValidationError) as exc:
+        _tunnel(extra_config={"a.b": 1, "a": 2})
+    assert "'a' clashes with 'a.b'" in exc.value.errors()[0]["msg"]
+
+
+def test_the_clash_rule_knows_every_key_the_generator_writes_into_a_proxy():
+    # A key the generator starts to write and _GENERATOR_PROXY_KEYS misses would let an
+    # extra_config clash with it again, and the agent refuse the whole host.
+    tunnels = [
+        _stored_tunnel(),
+        _stored_tunnel(
+            id="t-h",
+            name="h-web",
+            tunnel_type="https",
+            protocol="https",
+            custom_domains="a.example.net",
+            secret_key=None,
+            visitor_port=None,
+        ),
+    ]
+    written = set()
+    for proxy in tomllib.loads(generate_frpc_toml(_legacy_row(), tunnels, "srv1"))["proxies"]:
+        written |= set(proxy)
+    assert written == set(_GENERATOR_PROXY_KEYS)
+
+
+def test_server_extra_config_keeps_its_allowed_keys():
+    for key in ALLOWED_KEYS:
+        value = 1 if key != "log.level" else "info"
+        assert _config(extra_config={key: value}).extra_config == {key: value}, key
+
+
+def test_tunnel_routes_answer_422_for_an_extra_config_out_of_the_agents_form(
+    test_client, db_session, admin_user
+):
+    _seed_stcp_tunnel(db_session)
+    h = _login(test_client)
+    body = {
+        "server_id": "srv-a",
+        "frp_config_id": "cfg-1",
+        "name": "neu",
+        "tunnel_type": "stcp",
+        "protocol": "ssh",
+        "local_port": 22,
+    }
+    for name, extra in REFUSED_EXTRA_CONFIGS.items():
+        r = test_client.post("/api/frp/tunnels", json={**body, "extra_config": extra}, headers=h)
+        assert r.status_code == 422, (name, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", "extra_config"], (name, r.text)
+
+        r = test_client.put("/api/frp/tunnels/t-a", json={"extra_config": extra}, headers=h)
+        assert r.status_code == 422, (name, r.text)
+    assert _stored_tunnels(db_session) == {"t-a": 6000}
+    db_session.expire_all()
+    assert db_session.get(FrpTunnel, "t-a").extra_config is None
+
+
 def test_server_route_answers_422_for_a_c1_control_character_in_the_name(
     test_client, db_session, admin_user
 ):
@@ -921,6 +1040,34 @@ def test_generator_keeps_a_tunnel_with_a_neighbour_of_the_plugin_family(key, cap
 
     assert [p["name"] for p in frpc["proxies"]] == ["n-ssh"]
     assert _generator_warnings(caplog) == []
+
+
+# Rows stored before the key form, the 64-bit bound and the clash rule (REFUSED_EXTRA_CONFIGS):
+# the agent would refuse the whole host's config, so only that tunnel is left out. Two keys
+# that clash only together are named both.
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {".a": 1},
+        {"bandwidthLimitMode": 2**63},
+        {"localport": 2222},
+        {"foo": 1, "FOO": 2},
+    ],
+    ids=["empty segment", "int over 64 bits", "a generator key", "two keys apart only in case"],
+)
+def test_generator_leaves_out_a_stored_tunnel_out_of_the_agents_form(extra, caplog):
+    refused = _plugin_tunnel(json.dumps(extra))
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        text = generate_frpc_toml(_legacy_row(), [refused, _stored_tunnel()], "srv1")
+
+    assert text == generate_frpc_toml(_legacy_row(), [_stored_tunnel()], "srv1")
+    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["n-ssh"]
+    warned = _generator_warnings(caplog)
+    assert len(warned) == 1, warned
+    assert "'p-ssh'" in warned[0], warned
+    for key, value in extra.items():
+        assert repr(key) in warned[0], warned
+        assert str(value) not in warned[0], warned
 
 
 # Stored extra_config the API refuses today (rows from before its checks): by entry, with

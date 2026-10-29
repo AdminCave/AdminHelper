@@ -443,6 +443,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: ein gespeicherter Tunnel mit einer solchen extra_config faellt allein weg:** Der Generator laesst einen
+  Tunnel, dessen gespeicherte `extra_config` die neue Pruefung nicht besteht, mit Warnung aus der frpc-Konfiguration
+  weg, auch wenn erst zwei Schluessel zusammen kollidieren; die uebrigen Tunnel des Hosts bleiben. Doku:
+  Server-Entwicklerseite (DE+EN).
+- **FRP: extra_config eines Tunnels nur in der Form, die der Agent annimmt:** `POST` und `PUT /api/frp/tunnels`
+  antworten `422` an `extra_config` auf Schluessel mit leeren Segmenten (`.a`, `a.`, `a..b`), auf Ganzzahlen ausserhalb
+  64 Bit und auf Schluessel, die ohne Ruecksicht auf Gross-/Kleinschreibung einem Feld des Proxys oder einem anderen
+  Schluessel gleichen oder Praefix davon sind; bisher wurden sie gespeichert, und der Agent lehnte daraufhin die
+  Konfiguration des ganzen Hosts ab. Doku: API-Referenz fuer Entwickler (DE+EN).
 - **FRP: Ein gespeicherter Visitor-Port ausserhalb 1-65535 wird beim Aendern ersetzt (R-0570):** Ein `PUT
   /api/frp/tunnels/{id}` ohne `visitor_port` gibt einem STCP-Tunnel mit einem solchen Altwert einen freien Port; die
   automatisch angelegte Verbindung zeigt auf diesen statt auf einen Port, an dem nie ein Visitor lauscht. Doku:
