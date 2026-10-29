@@ -1428,9 +1428,9 @@ mod tests {
     use super::{
         bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
         reconcile, remap_visitors, request_reload, rewrite_identity_paths, runtime_dir, stop_frpc,
-        tunnel_status, validate_visitor_toml, visitor_names, with_local_head, write_visitor_config,
-        Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding,
-        NO_IDENTITY_HINT, VISITOR_CONFIG,
+        stop_left_behind, tunnel_status, validate_visitor_toml, visitor_names, with_local_head,
+        write_visitor_config, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar,
+        VisitorBinding, NO_IDENTITY_HINT, VISITOR_CONFIG,
     };
     use crate::error::AppError;
     use crate::keyring_store;
@@ -3540,11 +3540,12 @@ method = "token"
             let ports = TempPorts::new();
             let _keyring = enrolled();
             let sidecar = DiskSidecar::new(&ports.dir);
-            let (_reserved, port) = if case == "no listener" {
+            let (_reserved, port, served) = if case == "no listener" {
                 let (reserved, port) = crate::test_tls::refused_port();
-                (Some(reserved), port)
+                (Some(reserved), port, None)
             } else {
-                (None, serve_one(reply("401 Unauthorized", "")).await.0)
+                let (port, served) = serve_one(reply("401 Unauthorized", "")).await;
+                (None, port, Some(served))
             };
             left_behind(&sidecar, port, |_| {});
 
@@ -3566,7 +3567,57 @@ method = "token"
                 ["identity", VISITOR_CONFIG],
                 "{case}"
             );
+            // The stop went out and was answered; a failure inside the server task shows here.
+            if let Some(served) = served {
+                tokio::time::timeout(Duration::from_secs(5), served)
+                    .await
+                    .expect("the 401 server task did not end")
+                    .unwrap();
+            }
         }
+    }
+
+    #[tokio::test]
+    async fn stop_left_behind_returns_only_once_the_admin_port_is_closed() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (close, closing) = tokio::sync::oneshot::channel::<()>();
+        // Answers the stop, then keeps its port open like an frpc still shutting down, until the
+        // test says it is gone; the listener drops with the task and frees the port.
+        let server = tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                head.extend_from_slice(&buf[..n]);
+            }
+            tcp.write_all(reply("200 OK", "").as_bytes()).await.unwrap();
+            let _ = tcp.shutdown().await;
+            tokio::select! {
+                _ = async { loop { let _ = listener.accept().await; } } => {}
+                _ = closing => {}
+            }
+        });
+
+        let left = head(port, "c0ffee");
+        let stopping = tokio::spawn(async move { stop_left_behind(&left).await });
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(
+            !stopping.is_finished(),
+            "returned while the admin port still answered"
+        );
+        close.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stopping)
+            .await
+            .expect("did not return after the admin port closed")
+            .unwrap();
+        server.await.unwrap();
     }
 
     #[tokio::test]

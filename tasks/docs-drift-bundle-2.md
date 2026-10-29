@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Drift, zweites Bündel — Task-Ledger
-Status: aktiv · Branch: feature/docs-drift-bundle-2 · Review: pro Task
+Status: bereit · Branch: feature/docs-drift-bundle-2 · Review: pro Task
 Spec: docs/features/docs-drift-bundle-2.md (Roadmap R-0829, R-0841, R-0848, R-0849, R-0850, R-0853, R-0863, R-0866, R-0874, R-0898, R-0904)
 Heavy: linux-full — `docker-compose.yml` ändert nur Kommentare; läuft im Sammellauf über `main`. Kein scenario, kein windows: kein Datenpfad, kein plattformspezifischer Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, Doku im selben Commit, SPDX bei neuen Dateien). Task-Prüfer: reviewer mit `model: "sonnet"` (Kevin 2026-10-29); Branch-Abschlussprüfung Opus.
@@ -77,8 +77,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (nur Kommentar)
 Dedup-Key: ref:desktop:shell.ts:fish-percent-comment
 
-### T8 — Desktop-Rust: veraltete Kommentare und zwei Test-Lücken (R-0866)  [ ]
+### T8 — Desktop-Rust: veraltete Kommentare und zwei Test-Lücken (R-0866)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/terminal.rs, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @078a1726 2026-10-29T13:37:03+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T8.verdict.json)
 Änderung: (1) `launcher.rs` Kommentar zum `threading`-Modul (Zeile frisch greppen; `:547-553` ist heute der `DETACHED_PROCESS`-Kommentar) an den Stand. (2) `frpc.rs`: der 401-Test (`:3547`, `serve_one(...).await.0`) verwirft den JoinHandle; joinen, damit ein Fehler im Server-Thread sichtbar wird. (3) `frpc.rs` `stop_left_behind` (`:1135`): Warten auf den freien Admin-Port bekommt einen Test, in einer Gegenprobe rot zu sehen. (4) `terminal.rs` Gegenprobe-Kommentar (`:585`) präzisieren. (5) CHANGELOG-Satz zu „RDP Verbindung fehlgeschlagen“ (`:653-656`) lesen und angleichen. Keine Verhaltensänderung.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: CHANGELOG.md

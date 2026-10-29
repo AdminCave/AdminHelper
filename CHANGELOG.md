@@ -657,7 +657,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   xfreerdp ohne Passwort (die Anmeldung geschieht in xfreerdp), haelt er von dessen Ausgabe nur noch die letzten
   8 KiB je Strom (stdout, stderr) statt der ganzen Sitzung, wie schon der Start mit Passwort. Die Meldungen beim Ende
   bleiben: Eine Fehlerzeile im gehaltenen Ende ergibt dieselbe Meldung wie bisher, und „RDP Verbindung
-  fehlgeschlagen“ kommt nur, wenn xfreerdp nie eine Verbindung meldete. Eine Fehlerzeile, die frueh in einer langen,
+  fehlgeschlagen“ kommt beim Ende von xfreerdp nur, wenn im gehaltenen Ende keine Fehlerzeile steht und nie eine
+  Verbindung gemeldet wurde. Eine Fehlerzeile, die frueh in einer langen,
   danach laufenden Sitzung stand, ergibt am Ende keine Meldung mehr.
 - **Desktop, Provisionierungs-Tab: Backslash im erzeugten Befehl auch fuer fish woertlich:** Ein Backslash in der
   Server-URL steht im angezeigten Installationsbefehl jetzt ausserhalb der einfachen Anfuehrungszeichen als `\\`, so
