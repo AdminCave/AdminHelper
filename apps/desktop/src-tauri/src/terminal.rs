@@ -581,8 +581,9 @@ mod tests {
         );
 
         // Counter-check that the probe tells the two apart: std::process::Command with the same
-        // flag hands this process's standard handles on. That shows only where they are no console
-        // themselves (cargo test with its output captured, as in CI).
+        // flag hands this process's standard handles on, so the probe sees a pipe. That differs
+        // from the console only where this process's own stdout is not a terminal (cargo test
+        // with its output captured, as in CI); on a terminal the check is skipped.
         if !std::io::stdout().is_terminal() {
             std::fs::remove_file(&report).expect("first probe report");
             let status = Command::new(

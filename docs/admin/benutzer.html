@@ -111,6 +111,7 @@
             <li><strong>Workspace löschen</strong> (Desktop, im Picker): Hat ein Server-Workspace eine Geräte-Identität, widerruft der Desktop das Gerät zuerst am Server und löscht dann den Workspace auf dem Gerät. Widerruft der Server es nicht, meldet der Picker „Nur auf diesem Gerät“; das Gerät bleibt dann am Server gültig, bis ein Admin es über die Geräte-API widerruft, denn eine spätere Registrierung, auch eines neuen Workspace, löst es nicht ab.</li>
             <li><strong>Neu registrieren:</strong> Registriert ein Server-Workspace sich neu, löst das neue Zertifikat das vorige dieses Geräts ab. Eine <code>.p12</code> ist ein eigenes Gerät und löst nichts ab; eine, die nicht mehr gebraucht wird, widerrufst du über die Geräte-API.</li>
           </ul>
+          <p>Löschen und Widerrufen sperren die API sofort; einen Tunnel, dessen Visitor-Konfiguration der Benutzer schon hat, sperren sie nicht (siehe <a href="./frp-tunnel.html#revoke-access">FRP-Tunnel: Zugang zum Tunnel entziehen</a>).</p>
 
           <h2>API-Keys</h2>
           <p>API-Keys authentifizieren nicht-interaktive Clients (Go-Agent, Skripte, CI-Jobs). Unterschiede zu User-Credentials:</p>

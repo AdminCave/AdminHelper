@@ -92,7 +92,9 @@ class RedisBackend:
             value = self._client.get(key)
             return int(value) if value else 0
         except Exception as e:
-            logger.warning("Redis get fehlgeschlagen (%s) — degradiere auf In-Memory: %s", key, e)
+            logger.warning(
+                "Redis get failed (%s), falling back to in-memory: %s", key, type(e).__name__
+            )
             return self._fallback.get_count(key)
 
     def increment(self, key: str, window_seconds: int) -> int:
@@ -103,14 +105,16 @@ class RedisBackend:
             result = pipe.execute()
             return int(result[0])
         except Exception as e:
-            logger.warning("Redis incr fehlgeschlagen (%s) — degradiere auf In-Memory: %s", key, e)
+            logger.warning(
+                "Redis incr failed (%s), falling back to in-memory: %s", key, type(e).__name__
+            )
             return self._fallback.increment(key, window_seconds)
 
     def reset(self, key: str) -> None:
         try:
             self._client.delete(key)
         except Exception as e:
-            logger.warning("Redis del fehlgeschlagen (%s): %s", key, e)
+            logger.warning("Redis del failed (%s): %s", key, type(e).__name__)
         self._fallback.reset(key)
 
 
@@ -138,7 +142,9 @@ def _redis_target(url: str) -> str:
         # urlsplit raises on a malformed IPv6 literal, .port on a port that is no number or out of
         # range.
         return "?"
-    target = f"{parts.scheme}://{parts.hostname}"
+    # An IPv6 literal keeps its brackets, or its colons run into the port.
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    target = f"{parts.scheme}://{host}"
     return f"{target}:{port}" if port is not None else target
 
 

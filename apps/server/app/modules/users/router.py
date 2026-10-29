@@ -102,7 +102,13 @@ def update_user(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    query = db.query(User).filter(User.id == user_id)
+    if data.is_admin:
+        # Two concurrent promotions would otherwise both read is_admin = false, add two
+        # baseline rules and fire user.promoted twice. Only on promotion: locking the target
+        # before the admin rows of a demotion would reverse that lock order (A/B deadlock).
+        query = query.with_for_update().populate_existing()
+    user = query.first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
     was_admin = user.is_admin

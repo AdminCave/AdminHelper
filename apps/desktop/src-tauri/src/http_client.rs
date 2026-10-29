@@ -47,8 +47,9 @@ pub fn build_client(
 
 /// Like [`build_client`], but never with the device identity: no mTLS client
 /// certificate and no enrollment CA pin, the client of a device that isn't
-/// enrolled (TOFU on the self-signed path, public CA otherwise). For a host that
-/// isn't the user's own server, such as a sync URL on another origin.
+/// enrolled (TOFU on the self-signed path, public CA otherwise). For the sync
+/// source of a sync workspace: every sync loads without the identity, which is
+/// for the server of a workspace only.
 pub fn build_client_without_identity(
     server_url: &str,
     allow_self_signed: bool,
