@@ -21,6 +21,15 @@ sudo apt install -y \
   patchelf
 ```
 
+SPDX-Header neuer Quelldateien schreibt `reuse annotate` (CLAUDE.md §10). Ohne sudo (das Debian-Paket
+`reuse` braeuchte es) ein eigenes venv mit Link in den `PATH`, wie bei `pip-audit` unten:
+
+```bash
+python3 -m venv ~/.local/share/ah-tools/reuse-venv
+~/.local/share/ah-tools/reuse-venv/bin/pip install -q reuse==6.2.0
+mkdir -p ~/.local/bin && ln -sfn ~/.local/share/ah-tools/reuse-venv/bin/reuse ~/.local/bin/reuse
+```
+
 ### Rust Toolchain
 
 ```bash
@@ -168,7 +177,13 @@ ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf dies
 Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
 andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —
 auch im Format-Hook `scripts/dev/format-file.sh`, der dann still gar nicht formatiert
-(sein Exit bleibt 0).
+(sein Exit bleibt 0). Ohne ruff im `PATH` formatiert er ebenfalls nichts, und ein nacktes
+`ruff check` scheitert auch nach `source .devenv.sh`, das nur cargo und go in den `PATH` legt.
+Ein Link auf das ruff im `AH_VENV` folgt dem Pin, denn `server-pytest` zieht es auf ihn:
+
+```bash
+mkdir -p ~/.local/bin && ln -s ~/.cache/ah-venv/bin/ruff ~/.local/bin/ruff
+```
 
 ### Python-Tests lokal (ohne Docker)
 
@@ -699,6 +714,13 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 # einsetzen):
 # wget https://go.dev/dl/go1.27.x.linux-amd64.tar.gz
 # sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.27.x.linux-amd64.tar.gz
+```
+
+Liegt Go ohne sudo unter `~/sdk/go`, legt `.devenv.sh` es in den `PATH`; damit ein nacktes `go` oder
+`gofmt` (auch im Format-Hook) es ohne gesourctes `.devenv.sh` findet, zusaetzlich Links:
+
+```bash
+mkdir -p ~/.local/bin && ln -s ~/sdk/go/bin/go ~/sdk/go/bin/gofmt ~/.local/bin/
 ```
 
 ### Node.js + npm (Desktop-UI und Web-Frontend)
