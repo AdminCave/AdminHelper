@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-1 — Task-Ledger
-Status: geplant · Branch: feature/kern-frp-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-1 · Review: pro Task
 Spec: docs/features/kern-frp-1.md (Roadmap R-0894, R-0926)
 Heavy: linux-full — Server-API (FRP-Generator-Routen); kein Wire-Format- oder Install-Pfad ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
