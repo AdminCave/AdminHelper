@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-smtp-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-ref-smtp-1 · Review: am Ende
+Status: aktiv · Branch: feature/klein-ref-smtp-1 · Review: am Ende
 Spec: docs/features/klein-ref-smtp-1.md (Roadmap R-0831)
 Heavy: none — Unit-Tests in Server und Monitoring, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,6 +26,14 @@ Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e2c26c8f 2026-10-
 Review: am Ende (Branch-Review)
 Änderung: `test_without_smtp_ca_file_the_context_has_no_extra_ca` läuft auf 587 und 465. Ein Spion um `ssl.create_default_context` hält fest, dass der an `starttls()`/`SMTP_SSL` gereichte Kontext genau der von `create_default_context` ist (nicht allein aus der CA-Datei gebaut), unabhängig davon, ob das System-Bundle eager geladen wird. Gegenprobe: `ssl.SSLContext(PROTOCOL_TLS_CLIENT)` statt `create_default_context()` in `sender.py` macht den Test rot (danach zurückgenommen).
 Beweis: R-0831 Code-Lesung apps/server/tests/test_email_sender.py:194
+Dedup-Key: ref:tests:smtp-hardening:nits
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
+Doku: keine (Test)
+
+### T3 — test_email_sender: Spion auch im Test mit CA-Datei (R-0831, Abschlussprüfung Runde 1)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_email_sender.py
+Änderung: Der Spion um `ssl.create_default_context` mit `assert created == [ctx]` steht zusätzlich in `test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context` (dort läuft der Datei-Zweig; eine Datei-only-Mutante bestand die Zählung auf einer Box mit lazy CA-Verzeichnis). Gemeinsamer Helfer für den Spion; der Kommentar im Test ohne CA-Datei verweist auf den Test darüber statt auf „CA counts above“. Gegenprobe: `ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)` nur bei gesetzter CA-Datei vor `load_verify_locations` macht den Test rot (danach zurückgenommen).
+Beweis: Abschlussprüfung klein-ref-smtp-1, Urteil Runde 1
 Dedup-Key: ref:tests:smtp-hardening:nits
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
 Doku: keine (Test)
