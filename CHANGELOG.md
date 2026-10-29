@@ -438,6 +438,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
+  System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
+  ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
+- **Desktop: nach der Meldung "Zeitueberschreitung" beim Verbindungsaufbau oeffnet sich kein RDP-, SSH- oder
+  Web-Fenster mehr (R-0642):** Bisher lief der Aufbau weiter und startete spaeter doch; die Anmeldepruefung von
+  xfreerdp endet mit der Frist von 30 s.
+- **Desktop: das Fenster friert nicht mehr ein, solange der System-Schluesselbund oder die Sperre der Einstellungen
+  antwortet (R-0643):** Einstellungen laden und speichern, Passwort-Status, Passwort speichern und loeschen,
+  Geraete-Identitaet, CA-Fingerprint und das Zuruecksetzen des Zertifikat-Pins laufen nicht mehr auf dem Haupt-Thread.
+- **Desktop: eine halb geschriebene Ansible-Datei bleibt nicht im Temp-Verzeichnis (R-0574):** Scheitert das
+  Schreiben von Inventory oder Playbook, nachdem die Datei angelegt ist, loescht der Client sie sofort.
+- **Desktop: eine Tunnel-Zuordnung mit einem Port ausserhalb von 1-65535 laesst die Tunnel-Liste nicht mehr
+  scheitern:** Bisher fehlten dann alle Zuordnungen, und keine Verbindung wurde ueber einen Tunnel aufgeloest; eine
+  solche Zuordnung loest jetzt nur selbst keinen Visitor auf.
 - **FRP: ein gespeicherter Tunnel mit einer solchen extra_config faellt allein weg:** Der Generator laesst einen
   Tunnel, dessen gespeicherte `extra_config` die neue Pruefung nicht besteht, mit Warnung aus der frpc-Konfiguration
   weg, auch wenn erst zwei Schluessel zusammen kollidieren; die uebrigen Tunnel des Hosts bleiben. Doku:
