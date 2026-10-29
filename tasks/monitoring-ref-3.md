@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alarm-Protokoll einmal, Typ-Tabellen gepinnt, Scheduler-Job nach dem Commit, Modulgrenzen, lange Funktionen — Task-Ledger
-Status: geplant · Branch: feature/monitoring-ref-3 · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-ref-3 · Review: pro Task
 Spec: docs/features/monitoring-ref-3.md (Roadmap R-0693, R-0694, R-0695, R-0696, R-0697, R-0728)
 Heavy: none — nur Interna von `apps/monitoring` (Alarm-Pfad, Push-Handler, Reihenfolge Commit/Scheduler, Typ-Tabellen, Modulgrenzen); keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung (T1: `regex=` und `pattern=` ergeben dasselbe Schema, Probe in der Spec), kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP- oder Install-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Die FOR-UPDATE-Tests (`tests/test_check_engine_concurrency.py`) fährt die PR-CI gegen Postgres (`ci.yml`, Job `monitoring`, `DATABASE_URL`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
