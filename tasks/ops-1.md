@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-1 — Task-Ledger
-Status: geplant · Branch: feature/ops-1 · Review: am Ende
+Status: aktiv · Branch: feature/ops-1 · Review: am Ende
 Spec: docs/features/ops-1.md (Roadmap R-0858, R-0864)
 Heavy: none — beide Änderungen deckt der hermetische install_test.sh bzw. agent_install_test.sh ab; kein Install-Datenpfad, kein Paket, kein Stack ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
