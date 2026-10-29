@@ -399,6 +399,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: nach der Meldung "Zeitueberschreitung" beim Verbindungsaufbau oeffnet sich kein RDP-, SSH- oder
+  Web-Fenster mehr (R-0642):** Bisher lief der Aufbau weiter und startete spaeter doch; die Anmeldepruefung von
+  xfreerdp endet mit der Frist von 30 s.
 - **Desktop: das Fenster friert nicht mehr ein, solange der System-Schluesselbund oder die Sperre der Einstellungen
   antwortet (R-0643):** Einstellungen laden und speichern, Passwort-Status, Passwort speichern und loeschen,
   Geraete-Identitaet, CA-Fingerprint und das Zuruecksetzen des Zertifikat-Pins laufen nicht mehr auf dem Haupt-Thread.

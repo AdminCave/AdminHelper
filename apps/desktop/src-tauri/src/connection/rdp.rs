@@ -65,6 +65,7 @@ const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(3); // TCP reachability 
 #[cfg(target_os = "windows")]
 const RDP_FILE_CLEANUP_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 
+#[allow(clippy::too_many_arguments)]
 pub fn open_rdp(
     connection: &Connection,
     password: Option<&str>,
@@ -73,6 +74,7 @@ pub fn open_rdp(
     ui_language: Option<&str>,
     correlation_id: &str,
     app: &tauri::AppHandle,
+    deadline: &super::Deadline,
 ) -> Result<(), AppError> {
     let host = connection
         .host
@@ -105,7 +107,9 @@ pub fn open_rdp(
 
     #[cfg(target_os = "windows")]
     {
-        return open_rdp_windows(app, connection, host, port, username, domain, rdp, password);
+        return open_rdp_windows(
+            app, connection, host, port, username, domain, rdp, password, deadline,
+        );
     }
 
     #[cfg(unix)]
@@ -128,13 +132,15 @@ pub fn open_rdp(
                 domain,
                 connection.trust_cert,
                 secret,
-                AUTH_CHECK_TIMEOUT,
+                deadline.remaining(),
             )?;
             args.push("/from-stdin:force".to_string());
             args.push("/log-level:INFO".to_string());
+            deadline.start()?;
             spawn_rdp_with_password(rdp_binary, args, secret, correlation_id, app)?;
         } else {
             args.push("/log-level:INFO".to_string());
+            deadline.start()?;
             spawn_rdp_interactive(rdp_binary, args, correlation_id, app)?;
         }
         Ok(())
@@ -163,6 +169,7 @@ fn open_rdp_windows(
     domain: &str,
     rdp: RdpOptions,
     password: Option<&str>,
+    deadline: &super::Deadline,
 ) -> Result<(), AppError> {
     use std::process::Command;
 
@@ -181,6 +188,9 @@ fn open_rdp_windows(
         rdp.performance_profile,
     )?;
     crate::password::start_mstsc(&base, host, port, connection, password, || {
+        // A start past the deadline does not run, and run_termsrv_plan takes back the
+        // entry and hold it made for it.
+        deadline.start()?;
         Command::new("mstsc").arg(&rdp_path).spawn()?;
         Ok(())
     })
@@ -585,10 +595,6 @@ pub fn preflight_rdp(host: &str, port: u16) -> Result<(), AppError> {
         "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.".to_string(),
     ))
 }
-
-/// How long the credential check may take; the outer deadline of the command is the same.
-#[cfg(unix)]
-const AUTH_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Runs xfreerdp's `+auth-only` check. It ends within `timeout`: an xfreerdp that hangs
 /// (a host that never answers the handshake) is killed and reaped, so nothing waits on it

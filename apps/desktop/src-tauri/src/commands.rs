@@ -300,18 +300,26 @@ pub fn save_connections(
 /// enables the "time" feature, not "rt", so tokio::task::spawn_blocking isn't available.
 const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Runs `work` with a [`connection::Deadline`] of `timeout`. Past it, the command gives up
+/// only if the work has not started anything yet; a start that came first is waited for and
+/// its outcome returned, so no window opens after the timeout message.
 async fn run_with_deadline<F>(timeout: Duration, work: F) -> Result<(), AppError>
 where
-    F: FnOnce() -> Result<(), AppError> + Send + 'static,
+    F: FnOnce(&connection::Deadline) -> Result<(), AppError> + Send + 'static,
 {
-    let handle = tauri::async_runtime::spawn_blocking(work);
-    match tokio::time::timeout(timeout, handle).await {
-        Ok(joined) => joined
-            .map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?,
-        Err(_) => Err(AppError::Connection(
-            "Verbindungsaufbau: Zeitueberschreitung (Server nicht erreichbar oder haengt)".into(),
-        )),
-    }
+    let deadline = std::sync::Arc::new(connection::Deadline::new(timeout));
+    let theirs = std::sync::Arc::clone(&deadline);
+    let mut handle = tauri::async_runtime::spawn_blocking(move || work(&theirs));
+    let joined = match tokio::time::timeout(timeout, &mut handle).await {
+        Ok(joined) => joined,
+        Err(_) if deadline.expire() => {
+            return Err(AppError::Connection(
+                connection::TIMEOUT_MESSAGE.to_string(),
+            ))
+        }
+        Err(_) => handle.await,
+    };
+    joined.map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?
 }
 
 /// Rejects `connection` if it goes to a loopback port of another workspace's tunnel
@@ -344,7 +352,7 @@ pub async fn open_connection(
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
         None => Vec::new(),
     };
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
@@ -357,6 +365,7 @@ pub async fn open_connection(
             settings.language.as_deref(),
             &cid,
             &app,
+            deadline,
         )
     })
     .await
@@ -384,7 +393,7 @@ pub async fn open_connection_stored(
         }
         None => Default::default(),
     };
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
@@ -403,6 +412,7 @@ pub async fn open_connection_stored(
             rdp,
             settings.language.as_deref(),
             &cid,
+            deadline,
         )
     })
     .await
@@ -540,7 +550,8 @@ pub async fn resolve_connection(
     };
     let resolved = tunnel::resolve_connection(&connection, &tunnels, &bindings);
     let target = resolved.connection.clone();
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    // Nothing opens here, so nothing claims the deadline's start.
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |_| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &target, &bindings)
     })
     .await?;
@@ -718,7 +729,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_with_deadline_returns_ok_for_fast_work() {
-        assert!(run_with_deadline(Duration::from_secs(5), || Ok(()))
+        assert!(run_with_deadline(Duration::from_secs(5), |_| Ok(()))
             .await
             .is_ok());
     }
@@ -727,7 +738,7 @@ mod tests {
     async fn run_with_deadline_maps_a_hung_task_to_a_timeout_error() {
         // 4.3: a blocking task that overruns the deadline surfaces a Connection error (the
         // user gets a message, not a frozen webview) instead of hanging.
-        let r = run_with_deadline(Duration::from_millis(50), || {
+        let r = run_with_deadline(Duration::from_millis(50), |_| {
             std::thread::sleep(Duration::from_millis(500));
             Ok(())
         })
@@ -736,8 +747,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_with_deadline_starts_nothing_after_the_timeout() {
+        // The work reaches its start only past the deadline: it must not start, and the
+        // command has already answered with the timeout.
+        let started = Arc::new(Mutex::new(None));
+        let seen = Arc::clone(&started);
+        let r = run_with_deadline(Duration::from_millis(50), move |deadline| {
+            std::thread::sleep(Duration::from_millis(200));
+            *seen.lock().unwrap() = Some(deadline.start().is_ok());
+            Ok(())
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(*started.lock().unwrap(), Some(false), "the late start ran");
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_waits_for_work_that_started_in_time() {
+        // Started before the deadline, finished after it: its outcome counts, not a timeout.
+        // A second leaves a loaded runner time to start the blocking thread before it.
+        let r = run_with_deadline(Duration::from_secs(1), |deadline| {
+            deadline.start()?;
+            std::thread::sleep(Duration::from_millis(1500));
+            Err(AppError::Connection("the started work's own error".into()))
+        })
+        .await;
+        match r {
+            Err(AppError::Connection(message)) => {
+                assert_eq!(message, "the started work's own error")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn run_with_deadline_passes_through_work_errors() {
-        let r = run_with_deadline(Duration::from_secs(5), || {
+        let r = run_with_deadline(Duration::from_secs(5), |_| {
             Err(AppError::Connection("boom".into()))
         })
         .await;
