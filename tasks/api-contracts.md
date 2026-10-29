@@ -167,8 +167,10 @@ Orakel: contract — das Modell gegen `AuditLog.to_dict` über die echte Route; 
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T13 — Monitoring: Checks, Status, Summary, Metriken (R-0685)  [ ]
+### T13 — Monitoring: Checks, Status, Summary, Metriken (R-0685)  [x] (gebaut im Teil-Ledger tasks/api-contracts-monitoring.md, gemergt in 6523be96)
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4256d779 2026-10-29T22:12:10+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T13.verdict.json im Teil-Worktree)
 Änderung: In `app/schemas.py`: `MonitorStateOut` wie `MonitorState.to_dict` (`apps/monitoring/app/models.py:125-135`; `details: Any`), `MonitorCheckOut` wie `MonitorCheck.to_dict` (`:77-100`; `config: Any`, nullbare Spalten `Optional`, `state: Optional[MonitorStateOut] = None` nur mit Zustandszeile `:98-99`), `StatusSummaryOut` (sechs `int`, `apps/monitoring/app/routers/checks.py:406-418`), `CheckMetricsOut` `{checkId, checkType, period, data: Any, statusHistory: Any}` (VictoriaMetrics-Durchreiche). Routen in `checks.py`: `127` (list), `146` (201), `187`, `197`, `291` (toggle), `311` (reset), `341` (run), `374` (status), `387` (status/server), `399` (summary), `427` (metrics); alle mit `MonitorCheckOut` mit `response_model_exclude_unset=True`. Neue Datei `tests/test_response_shapes.py` (SPDX) mit dem Testmuster; (c) Check mit und ohne Zustandszeile; Gegenprobe zu `test_stored_json_numbers.py`: Zahlen in `config`/`details` bleiben Zahlen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_checks_crud.py tests/test_checks_metrics.py tests/test_pagination.py tests/test_stored_json_numbers.py
 Doku: keine
@@ -177,8 +179,10 @@ Orakel: contract — die Modelle gegen die `to_dict`-Methoden und Dict-Literale 
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T14 — Monitoring: Alert-Regeln und Alert-Log (R-0685)  [ ]
+### T14 — Monitoring: Alert-Regeln und Alert-Log (R-0685)  [x] (gebaut im Teil-Ledger tasks/api-contracts-monitoring.md, gemergt in 6523be96)
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/alerts.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f96b1028 2026-10-29T22:21:14+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T14.verdict.json im Teil-Worktree)
 Änderung: `AlertRuleOut` wie `MonitorAlertRule.to_dict` (`apps/monitoring/app/models.py:154-173`; `channelConfig: dict[str, Any]` frei, das maskierte `smtp_password` bleibt `***`; `cooldownMinutes`, `enabled` nullbar), `AlertLogOut` wie `MonitorAlertLog.to_dict` (`:201-211`; `id: int`, Spalte `:188`). Routen in `apps/monitoring/app/routers/alerts.py`: `27`, `42` (201), `66` (log), `73`, `82`, `142` (toggle). Tests nach Muster; (b) mit einer Regel mit SMTP-Passwort (maskiert) und einer ohne `channelConfig`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_alert_secrets.py tests/test_stored_json_numbers.py
 Doku: keine
@@ -188,8 +192,10 @@ Orakel: contract — die Modelle gegen die `to_dict`-Methoden über die echte Ro
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T15 — Monitoring: Wartung und Admin (R-0685)  [ ]
+### T15 — Monitoring: Wartung und Admin (R-0685)  [x] (gebaut im Teil-Ledger tasks/api-contracts-monitoring.md, gemergt in 6523be96)
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/maintenance.py, apps/monitoring/app/routers/admin.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @725d48b0 2026-10-29T22:24:53+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T15.verdict.json im Teil-Worktree)
 Änderung: `MaintenanceOut` wie `MonitorMaintenance.to_dict` (`apps/monitoring/app/models.py:398-412`; `weekdays: list[Any]`, `enabled` nullbar), `AgentKeyOut` wie `MonitorAgentKey.to_dict` (`:351-357`; die Route `apps/monitoring/app/routers/admin.py:24` setzt `apiKey` beim Anlegen auf den Rohschlüssel, `:47`), `AgentKeyDeletedOut` `{deleted: bool}` (`:55`), `ServerCleanupOut` `{checksDeleted: int, alertsDeleted: int}` (`apps/monitoring/app/template_sync.py:743`). Routen `maintenance.py:39`, `:48` (201), `:59`; `admin.py:24`, `:51`, `:59`. Tests nach Muster. Der Server liest von `POST /agent-keys` nur `apiKey` (`apps/server/app/modules/provisioning/helpers.py:64-66`).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_maintenance_router.py tests/test_admin_router.py
 Doku: keine
@@ -199,8 +205,10 @@ Orakel: contract — die Modelle gegen `to_dict` und die Dict-Literale über die
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T16 — Monitoring: Templates und Builtin-Update (R-0685)  [ ]
+### T16 — Monitoring: Templates und Builtin-Update (R-0685)  [x] (gebaut im Teil-Ledger tasks/api-contracts-monitoring.md, gemergt in 6523be96)
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c935cd01 2026-10-29T22:34:15+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T16.verdict.json im Teil-Worktree)
 Änderung: `TemplateOut` wie `MonitorTemplate.to_dict` (`apps/monitoring/app/models.py:232-257`; Check- und Alert-Definitionen `list[dict[str, Any]]`, weil ihre Schlüssel je Definition wechseln), dazu `assignments`, `tagAssignments` (`TemplateAssignmentOut` wie `MonitorTemplateAssignment.to_dict` `:281-289`, `TagAssignmentOut` wie `MonitorTemplateTagAssignment.to_dict` `:329-334`) und `syncResult` (`SyncResultOut` `{created, updated, deleted, servers}`, `apps/monitoring/app/template_sync.py:388-393`) je `Optional[...] = None`; `BuiltinUpdateOut` `{currentVersion, shippedVersion, current, shipped}` (`apps/monitoring/app/routers/templates.py:301-306`). Routen `templates.py:68` (list), `136` (201), `166`, `185` (PUT, mit `syncResult`), `281` (builtin-update GET), `310` (builtin-update POST, mit `syncResult`); alle mit `response_model_exclude_unset=True`. Tests nach Muster; (c) GET ohne, PUT mit `syncResult`, ein Template mit Zuordnungen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_templates_router.py tests/test_template_overrides.py tests/test_stored_json_numbers.py
 Doku: keine
@@ -210,8 +218,10 @@ Orakel: contract — die Modelle gegen `to_dict` und die Ergänzungen der Routen
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T17 — Monitoring: Zuordnungen, Vorschläge, Tag-Sync (R-0685)  [ ]
+### T17 — Monitoring: Zuordnungen, Vorschläge, Tag-Sync (R-0685)  [x] (gebaut im Teil-Ledger tasks/api-contracts-monitoring.md, gemergt in 6523be96)
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_templates_router.py, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0e23fb01 2026-10-29T22:41:12+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T17.verdict.json im Teil-Worktree)
 Änderung: `ServerAssignmentOut` (`TemplateAssignmentOut` plus `templateName: Optional[str]`, `removedChecks: int`, `apps/monitoring/app/routers/templates.py:97`), `TemplateSuggestionOut` `{slug, templateId, templateName, reason}` (`:255`), `ApplyResultOut` `{checksCreated: list[str], alertsCreated: list[str]}` (die IDs, nicht Zahlen: `apps/monitoring/app/template_sync.py:583-612`) für `assign`, `RestoreOut` `{restored: int}` (`templates.py:399`, `template_sync.py:672-674`), `TagSyncOut` `{created, removed, refreshed: int}` (`apps/monitoring/app/tag_sync.py:142`); `assign-tag` (`templates.py:412`, 201) mit `TagAssignmentOut` aus T16 (`:427`). Routen `templates.py:97`, `:255`, `:332`, `:385`, `:412`, `:453`. Der Stand-in in `tests/test_templates_router.py:195-205` liefert heute `{"created": 2, "removed": 1}` ohne `refreshed` und würde mit dem Modell zur 500: er liefert und erwartet künftig `{"created": 2, "removed": 1, "refreshed": 0}`, die echte Form (keine Test-Löschung, die Assertion prüft weiter die Durchreiche). Tests nach Muster.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_templates_router.py tests/test_template_suggestions.py tests/test_tag_sync.py
 Doku: CHANGELOG.md (Changed, umlautfrei: die OpenAPI-Beschreibung des Monitoring-Dienstes nennt die Felder seiner JSON-Antworten; die Antworten bleiben gleich)
