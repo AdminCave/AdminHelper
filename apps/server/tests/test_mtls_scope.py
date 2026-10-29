@@ -36,6 +36,7 @@ from app.core.identity import (
     get_client_identity,
     require_scope,
 )
+from tests.token_claims import claims_for
 
 # --- helpers -----------------------------------------------------------------
 
@@ -285,7 +286,7 @@ def test_enforced_admin_route_blocks_without_cert(test_client, monkeypatch):
 
 def test_enforced_admin_route_passes_with_access_cert(test_client, admin_user, monkeypatch):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
-    token = create_access_token({"sub": admin_user.username})
+    token = create_access_token(claims_for(admin_user.username))
     resp = test_client.get(
         "/api/api-keys",
         headers={
@@ -299,7 +300,7 @@ def test_enforced_admin_route_passes_with_access_cert(test_client, admin_user, m
 
 def test_enforced_admin_route_rejects_agent_cert(test_client, admin_user, monkeypatch):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
-    token = create_access_token({"sub": admin_user.username})
+    token = create_access_token(claims_for(admin_user.username))
     resp = test_client.get(
         "/api/api-keys",
         headers={"Authorization": f"Bearer {token}", **_gateway_headers(ou=SCOPE_AGENT)},
