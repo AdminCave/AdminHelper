@@ -38,8 +38,10 @@ Review: approve (.ah-out/review/kern-server-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py
 Doku: docs/developer/hooks.html + EN (Umgebung des Workers) · changelog.d/kern-server-1.md
 
-### T4 — Hook-Runner: Payload mit Zeitlimit schreiben, Ausgabe stückweise sammeln (R-0845, R-0846)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hooks_webhook_dos.py, docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d/kern-server-1.md
+### T4 — Hook-Runner: Payload mit Zeitlimit schreiben, Ausgabe stückweise sammeln (R-0845, R-0846)  [x]
+Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hooks_webhook_dos.py, docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d/kern-server-1.md, apps/server/tests/test_hook_isolation.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d326420c 2026-10-29T18:13:06+01:00
+Review: approve (.ah-out/review/kern-server-1/T4.verdict.json)
 Änderung: Das Schreiben des Payloads (`script_runner.py:204-208`) läuft in einem Thread, `proc.wait(timeout)` begrenzt den ganzen Aufruf; `_drain` (`:179-187`) liest in Stücken und sammelt bis zum Budget, sodass nach der Gnadenfrist das bis dahin Gelesene ausgewertet wird. Tests zuerst rot: (a) Worker liest stdin nicht, Payload größer als der Pipe-Puffer → Ende nach dem Timeout; (b) Worker schreibt sein Ergebnis und startet einen Nachfahren in eigener Session, der stdout offen hält → Ergebnis kommt an.
 Beweis: Code-Lesung `script_runner.py:179-209` (feature/hooks-hardening@d597130e, Fund des builders)
 Dedup-Key: bug:server:script_runner.py:stdin-write-no-timeout · bug:server:script_runner.py:detached-child-holds-stdout

@@ -196,6 +196,18 @@ def test_hook_run_with_a_background_process_ends_soon_with_the_result(tmp_path):
     assert res["result"] == {"ok": True}, res
 
 
+def test_hook_run_keeps_the_result_a_background_process_in_its_own_session_holds_open(tmp_path):
+    # R-0846: the worker has written its result before it exits; the background process keeps the
+    # pipe open past both graces, and the runner still evaluates what it read until then.
+    pid_file = tmp_path / "sleep.pid"
+    try:
+        res = run_hook_script(_background_sleep_script(pid_file, True), "webhook", {}, timeout=5)
+    finally:
+        _kill_background_sleep(pid_file)
+    assert res["success"] is True, res
+    assert res["result"] == {"ok": True}, res
+
+
 def test_hook_reader_grace_is_one_deadline_for_both_streams(monkeypatch):
     # A grandchild holds stdout and stderr open past the worker's exit. Both readers share one
     # grace: the second join gets what is left of it, so the held run takes one grace longer

@@ -45,6 +45,8 @@ only JSON-native types survive. Non-native values in event_data (datetime, Decim
 objects) reach the hook as their str() form, not as the original type (4.137).
 """
 
+import codecs
+import io
 import json
 import logging
 import os
@@ -204,21 +206,44 @@ def run_hook_script(
         out_holder: list[str] = []
         err_holder: list[str] = []
 
+        # The readers collect in chunks rather than in one read to EOF: a background process in a
+        # session of its own can hold the pipe open past both graces below, and what the worker
+        # wrote before it exited is then still evaluated (R-0846). They decode like the text-mode
+        # stream they bypass, which a read on its fd would otherwise wait on for a full count.
         def _drain(stream, holder):
-            data = stream.read(_MAX_HOOK_OUTPUT_BYTES + 1)
-            holder.append(data)
-            if len(data) > _MAX_HOOK_OUTPUT_BYTES:
-                # Over budget: the reader stops here, so the worker will block on a full pipe. Kill
-                # it now so proc.wait() returns at once instead of burning the whole timeout.
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    pass
+            decoder = io.IncrementalNewlineDecoder(
+                codecs.getincrementaldecoder(stream.encoding)(stream.errors), translate=True
+            )
+            size = 0
+            while chunk := os.read(stream.fileno(), 65536):
+                text = decoder.decode(chunk)
+                holder.append(text)
+                size += len(text)
+                if size > _MAX_HOOK_OUTPUT_BYTES:
+                    # Over budget: the reader stops here, so the worker will block on a full pipe.
+                    # Kill it now so proc.wait() returns at once instead of burning the timeout.
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    return
+            holder.append(decoder.decode(b"", final=True))
+
+        # The payload goes in from a thread too: a worker that does not read stdin would block a
+        # write larger than the pipe buffer, and proc.wait(timeout) below would never start (R-0845).
+        def _feed():
+            try:
+                proc.stdin.write(payload)
+                proc.stdin.close()
+            except OSError:
+                pass  # worker died before reading stdin; its stderr explains why
 
         t_out = threading.Thread(target=_drain, args=(proc.stdout, out_holder), daemon=True)
         t_err = threading.Thread(target=_drain, args=(proc.stderr, err_holder), daemon=True)
+        t_in = threading.Thread(target=_feed, daemon=True)
         t_out.start()
         t_err.start()
+        t_in.start()
     except BaseException:
         # A worker that started before the failure must not outlive this request either.
         if proc is not None:
@@ -229,11 +254,6 @@ def run_hook_script(
         _hook_semaphore.release()
         raise
     try:
-        try:
-            proc.stdin.write(payload)
-            proc.stdin.close()
-        except BrokenPipeError:
-            pass  # worker died before reading stdin; its stderr explains why
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         # Kill the entire process group (the worker plus any grandchildren it spawned); with
@@ -269,15 +289,15 @@ def run_hook_script(
             pass
         # Bounded again: a grandchild that escaped the killpg (a hook that double-forked into its own
         # session while holding fd 1) would otherwise hang the final join forever. Abandon such a
-        # reader — a leaked daemon thread + one fd — rather than hang the request thread; the holder
-        # guard below tolerates the unread stream. Only reachable by a pathological trusted-admin
+        # reader — a leaked daemon thread + one fd — rather than hang the request thread; what it
+        # has read so far is evaluated below. Only reachable by a pathological trusted-admin
         # hook, never by the webhook caller, but this keeps the bound of
         # timeout + 2 × _READER_GRACE_SECONDS above absolute.
         deadline = time.monotonic() + _READER_GRACE_SECONDS
         t_out.join(timeout=_READER_GRACE_SECONDS)
         t_err.join(timeout=max(0.0, deadline - time.monotonic()))
-    out = out_holder[0] if out_holder else ""
-    err = err_holder[0] if err_holder else ""
+    out = "".join(out_holder)
+    err = "".join(err_holder)
 
     if len(out) > _MAX_HOOK_OUTPUT_BYTES or len(err) > _MAX_HOOK_OUTPUT_BYTES:
         # A stream blew the budget (the drain thread already SIGKILLed the worker; kill again as a

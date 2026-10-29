@@ -18,3 +18,8 @@
 - **Server: Bootstrap mit mehreren Workern legt genau einen Admin an:** Zwei gleichzeitige Aufrufe mit dem
   Setup-Token konnten zwei Admins anlegen; die Pruefung "noch kein Nutzer" und das Anlegen laufen jetzt unter einer
   Postgres-Sperre.
+- **Server-Hooks: Timeout auch beim Schreiben des Payloads:** Las ein Worker stdin nicht, blockierte ein grosser
+  Payload den Lauf ueber den Timeout hinaus; der Runner schreibt ihn jetzt nebenlaeufig.
+- **Server-Hooks: Ergebnis trotz offener Ausgabe:** Hielt ein Hintergrundprozess in eigener Session stdout des
+  Workers offen, endete der Lauf mit "Ungueltige Worker-Ausgabe"; der Runner wertet jetzt aus, was der Worker bis
+  dahin geschrieben hat.
