@@ -6,7 +6,7 @@
 // (R-0276). errRaw keeps them for the one place that branches on them.
 
 import { describe, it, expect } from 'vitest';
-import { errMsg, errRaw, SESSION_EXPIRED } from './errors';
+import { IpcError, errCode, errMsg, errRaw, errStatus, SESSION_EXPIRED } from './errors';
 
 const CODES = [
   'ERR_CA_PIN_MISMATCH',
@@ -49,5 +49,21 @@ describe('errRaw', () => {
     const raw = `${CHAIN}ERR_CA_PIN_MISMATCH: Server-CA passt nicht`;
     expect(errRaw(new Error(raw))).toBe(raw);
     expect(errRaw(raw)).toBe(raw);
+  });
+});
+
+describe('errCode and errStatus', () => {
+  it('read code and status of an IpcError', () => {
+    const err = new IpcError('Template already assigned', 'ERR_HTTP', 409);
+    expect(errCode(err)).toBe('ERR_HTTP');
+    expect(errStatus(err)).toBe(409);
+    expect(errMsg(err)).toBe('Template already assigned');
+  });
+
+  it('have nothing to read on a plain Error or a string', () => {
+    expect(errCode(new Error('ERR_CERT_REVOKED: x'))).toBeUndefined();
+    expect(errStatus(new Error('HTTP 409: conflict'))).toBeUndefined();
+    expect(errCode('ERR_CERT_REVOKED: x')).toBeUndefined();
+    expect(errStatus('409')).toBeUndefined();
   });
 });
