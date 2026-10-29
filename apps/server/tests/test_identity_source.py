@@ -29,6 +29,7 @@ from app.core.auth import create_access_token
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, get_client_identity
 from tests.test_mtls_scope import _gateway_headers
+from tests.token_claims import claims_for
 
 # Lifts _every_peer_is_the_gateway (conftest): here the real check runs.
 pytestmark = pytest.mark.identity_source
@@ -284,7 +285,7 @@ def _get_servers(db_session, peer: str, username: str, cn: str):
         return TestClient(app, client=(peer, 50000)).get(
             "/api/servers",
             headers={
-                "Authorization": f"Bearer {create_access_token({'sub': username})}",
+                "Authorization": f"Bearer {create_access_token(claims_for(username))}",
                 **_gateway_headers(cn=cn, ou=SCOPE_ACCESS),
             },
         )

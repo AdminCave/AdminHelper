@@ -15,13 +15,14 @@ from app.core.config import ALGORITHM, SECRET_KEY
 from app.core.time import utcnow_naive
 from app.modules.users import auth_router
 from app.modules.users.models import User
+from tests.token_claims import claims_for
 
 
 def _token(username: str, token_type: str, issued_at: datetime) -> str:
     # The shape of create_access_token/create_refresh_token with a chosen `iat`.
     return jwt.encode(
         {
-            "sub": username,
+            **claims_for(username),
             "type": token_type,
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
             "iat": issued_at,
@@ -43,17 +44,17 @@ def _login(client, username: str, password: str) -> dict:
 
 
 def test_tokens_issued_before_a_user_exists_do_not_hold_for_him(test_client, admin_user):
-    # JWTs name their user by `sub` = username: these carry the name of a user who
-    # does not exist yet, issued a minute before he does.
+    # Tokens carrying the new user's name and id, issued a minute before he exists: only
+    # the watermark tells them apart from his own.
     earlier = datetime.now(timezone.utc) - timedelta(seconds=60)
-    access = _token("bob", "access", earlier)
-    refresh = _token("bob", "refresh", earlier)
 
     admin = _login(test_client, "admin", "adminpass")["access_token"]
     created = test_client.post(
         "/api/users", json={"username": "bob", "password": "password1"}, headers=_bearer(admin)
     )
     assert created.status_code == 201, created.text
+    access = _token("bob", "access", earlier)
+    refresh = _token("bob", "refresh", earlier)
 
     assert test_client.get("/api/auth/me", headers=_bearer(access)).status_code == 401
     assert test_client.post("/api/auth/refresh", json={"refresh_token": refresh}).status_code == 401
