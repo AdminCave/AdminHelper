@@ -14,10 +14,12 @@ Für alle Tasks: Zeilenangaben `origin/main@9baee4b1`, vor dem Schreiben neu gre
 CHANGELOG umlautfrei in `changelog.d/kern-server-1.md`. `security` zusätzlich bei T1, T2, T3, T7, T8 (und wo
 `review.sh risk` es verlangt).
 
-### T1 — Mail-Betreff einzeilig wie im Monitoring (R-0827)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, apps/server/tests/test_notifications_sender.py, changelog.d/kern-server-1.md
+### T1 — Mail-Betreff einzeilig wie im Monitoring (R-0827)  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, changelog.d/kern-server-1.md, apps/server/tests/test_email_sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f9d453f4 2026-10-29T17:38:02+01:00
+Review: approve (.ah-out/review/kern-server-1/T1.verdict.json)
 Änderung: `send_email` (`app/modules/notifications/sender.py:20-29`) ersetzt im Betreff dieselben Zeichen wie `apps/monitoring/app/alerter.py:78-80` (C0, DEL, C1, U+2028, U+2029) je durch ein Leerzeichen; der Text bleibt. Test: Betreff mit Zeilenumbruch und U+2028 wird einzeilig gesendet (SMTP-Stub wie im Bestand), der Body unverändert.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications_sender.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py
 Doku: changelog.d/kern-server-1.md
 
 ### T2 — Warnung bei zu weiten Rechten der Schlüsseldatei (R-0832)  [ ]

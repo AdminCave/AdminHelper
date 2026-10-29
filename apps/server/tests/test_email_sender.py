@@ -223,3 +223,18 @@ def test_unloadable_smtp_ca_file_raises_before_connecting(monkeypatch, tmp_path,
 
     plain_mock.assert_not_called()  # no connection, so nothing for the relay to see
     ssl_mock.assert_not_called()
+
+
+def test_subject_is_one_line_like_the_monitoring_alerter(monkeypatch):
+    # Same rule as apps/monitoring/app/alerter.py _SUBJECT_TO_SPACE: control characters, DEL,
+    # C1 and the line and paragraph separators become a space, one for one; the body stays.
+    _configure(monkeypatch, 587)
+    plain_mock = MagicMock()
+    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
+
+    sender.send_email("to@example.com", "a\r\nb\x85c\u2028d\x7fe\tf\u2029g", "line 1\nline 2")
+
+    message = plain_mock.return_value.__enter__.return_value.send_message.call_args.args[0]
+    assert message["Subject"] == "a  b c d e f g"
+    assert message.get_payload()[0].get_payload() == "line 1\nline 2"
+    message.as_string()  # a CR or LF left in the header would raise here
