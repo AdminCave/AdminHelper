@@ -103,8 +103,10 @@ Orakel: contract — die Template-Interfaces gegen den Monitoring-Snapshot
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T23 — desktop-ui: Narrowing-Funktionen für `state.details` (R-0687)  [ ]
+### T23 — desktop-ui: Narrowing-Funktionen für `state.details` (R-0687)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/checkDetails.ts, apps/desktop/ui/src/lib/models/checkDetails.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0da44c2f 2026-10-29T22:58:39+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T23.verdict.json)
 Änderung: Neue Dateien (SPDX). Je Checker-Form eine Funktion `unknown → <Typ> | null` (bzw. Liste leer) für `MonitorZfsDetails`, `MonitorSmartDetails` (kennt auch `{absent: <Grund>}`, `apps/monitoring/app/checkers/smart.py:97`), `MonitorResourceDetails`, `MonitorForecastDetails`, `MonitorServiceDetails`, `MonitorContainerDetails` (`apps/desktop/ui/src/lib/api/types.ts:424-433`). Ein Feld mit falschem Typ gilt als fehlend, gültige Daten kommen unverändert zurück; Vorbild für das Prüfen `SecSystem.svelte:67-97` (`LooseDetails`, `asFlag`, `asCount`). Tests je Funktion: gültige Form, `null`/`undefined`, Feld mit falschem Typ, SMART `absent`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/checkDetails.test.ts
 Doku: keine
