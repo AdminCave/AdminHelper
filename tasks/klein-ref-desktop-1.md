@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-desktop-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-desktop-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-ref-desktop-1 · Review: pro Task
 Spec: docs/features/klein-ref-desktop-1.md (Roadmap R-0856, R-0873, R-0875, R-0937)
 Heavy: none — interne Prüfungen, Aufräumpfad und Tests im Desktop, keine Journey, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Dedup-Key: ref:desktop:ansible.rs:run-dir-hygiene
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible
 Doku: keine (interner Aufräumpfad)
 
-### T3 — shellQuote: % quoten (R-0937)  [ ]
+### T3 — shellQuote: % quoten (R-0937)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/shell.ts, apps/desktop/ui/src/lib/utils/shell.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @b0eebcc9 2026-10-29T20:47:52+01:00
+Review: approve (.ah-out/review/klein-ref-desktop-1/T3.verdict.json)
 Änderung: `%` fliegt aus `SAFE`, der Kommentar zur fish-Ausnahme entfällt; Test: `%self` und ein Wert mit `%` kommen gequotet heraus, der `BARE`-Eintrag mit `%2B` wandert nach `QUOTED`.
 Beweis: Code-Lesung origin/main shell.ts:7
 Dedup-Key: ref:desktop-ui:shell.ts:safe-percent
