@@ -204,8 +204,10 @@ Dedup-Key: bug:docs:changelog:r0551-windows-wording
 HEAD: b25c65a6
 Semantik: Der Eintrag zu R-0431 im selben Abschnitt (`CHANGELOG.md:143`) sagt schon „ein nur getipptes fragt mstsc wie bisher selbst ab“. Der Release-Text von v0.46.0 auf GitHub ändert sich durch den Commit nicht.
 
-### T14 — CHANGELOG: Eintrag zu R-0659 wie der Code (R-0782)  [ ]
+### T14 — CHANGELOG: Eintrag zu R-0659 wie der Code (R-0782)  [x]
 Komponente: scripts · Dateien: CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ba06307d 2026-10-29T11:22:52+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T14.verdict.json)
 Änderung: Erst nach dem Merge von PR #262. Den Eintrag „Desktop: der RDP-Start gibt Bildschirmgroesse und Skalierungsfaktor mit (R-0659)“ per `grep -n 'R-0659' CHANGELOG.md` finden (Abschnitt, in dem er dann steht). Der Satz „Unter Linux nimmt die Fenstergroesse „Eingepasst" die Groesse des Bildschirms statt immer 1088x720“ wird: „Unter Linux nimmt der Fenstermodus „Eingepasst" 85 % der Bildschirmbreite und 85 % der Hoehe abzueglich 80 Pixel, mindestens 1024x720, statt immer 1088x720“. Werte vor dem Schreiben an `fit_window_size` (`apps/desktop/src-tauri/src/connection/rdp_logic.rs`, auf dem Branch `:128-141`) und am Label (`settings.rdp.windowMode` „Fenstermodus“, `apps/desktop/ui/src/lib/i18n/dictionaries.ts`) prüfen. Umlaut-Prüfung wie T13.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist der CHANGELOG
