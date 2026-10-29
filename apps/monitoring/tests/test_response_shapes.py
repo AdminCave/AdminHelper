@@ -14,7 +14,14 @@ import pytest
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import update
 
-from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
+from app.models import (
+    MonitorAgentKey,
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorMaintenance,
+    MonitorState,
+)
 
 
 def _response_schema(path: str, method: str) -> dict:
@@ -51,6 +58,12 @@ def _ref_name(schema: dict) -> str:
         ("/alerts/{rule_id}", "get", "AlertRuleOut"),
         ("/alerts/{rule_id}", "put", "AlertRuleOut"),
         ("/alerts/{rule_id}/toggle", "post", "AlertRuleOut"),
+        ("/maintenance", "get", "MaintenanceOut"),
+        ("/maintenance", "post", "MaintenanceOut"),
+        ("/maintenance/{maintenance_id}", "put", "MaintenanceOut"),
+        ("/agent-keys/{server_id}", "post", "AgentKeyOut"),
+        ("/agent-keys/{server_id}", "delete", "AgentKeyDeletedOut"),
+        ("/servers/{server_id}/cleanup", "delete", "ServerCleanupOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -362,3 +375,94 @@ class TestAlertShape:
         r = client.post(f"/alerts/{rule_id}/toggle")
         assert r.status_code == 200, r.text
         assert r.json() == _rule(factory, rule_id)
+
+
+def _maintenance(factory, maintenance_id: str) -> dict:
+    with factory() as db:
+        return jsonable_encoder(db.get(MonitorMaintenance, maintenance_id).to_dict())
+
+
+class TestMaintenanceShape:
+    def test_list_equals_the_producer(self, client_db):
+        # m-weekly: every weekly column set; m-sparse: a once window with the nullable columns
+        # NULL, weekdays NULL handed out as [].
+        client, factory = client_db
+        with factory() as db:
+            db.add(
+                MonitorMaintenance(
+                    id="m-weekly",
+                    server_id="srv-1",
+                    note="patch night",
+                    kind="weekly",
+                    weekdays="[0, 6]",
+                    start_time="02:00",
+                    duration_minutes=120,
+                    timezone="Europe/Berlin",
+                    enabled=True,
+                    created_at=datetime(2026, 10, 1, 12, 0, 0),
+                )
+            )
+            db.add(
+                MonitorMaintenance(
+                    id="m-sparse",
+                    kind="once",
+                    starts_at=datetime(2026, 10, 5, 1, 0, 0),
+                    ends_at=datetime(2026, 10, 5, 3, 0, 0),
+                    created_at=datetime(2026, 10, 2, 12, 0, 0),
+                )
+            )
+            db.commit()
+            db.execute(
+                update(MonitorMaintenance)
+                .where(MonitorMaintenance.id == "m-sparse")
+                .values(enabled=None)
+            )
+            db.commit()
+        r = client.get("/maintenance")
+        assert r.status_code == 200, r.text
+        assert r.json() == [_maintenance(factory, "m-weekly"), _maintenance(factory, "m-sparse")]
+        assert r.json()[1]["weekdays"] == [] and r.json()[1]["enabled"] is None
+
+    def test_writes_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        body = {"kind": "weekly", "weekdays": [6], "start_time": "02:00", "duration_minutes": 60}
+        r = client.post("/maintenance", json=body)
+        assert r.status_code == 201, r.text
+        mid = r.json()["id"]
+        assert r.json() == _maintenance(factory, mid)
+
+        once = {
+            "kind": "once",
+            "starts_at": "2026-10-05T01:00:00",
+            "ends_at": "2026-10-05T03:00:00",
+        }
+        r = client.put(f"/maintenance/{mid}", json=once)
+        assert r.status_code == 200, r.text
+        assert r.json() == _maintenance(factory, mid)
+
+
+class TestAdminShape:
+    def test_agent_key_answers_with_the_raw_key_once(self, client_db):
+        client, factory = client_db
+        r = client.post("/agent-keys/srv-1")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        with factory() as db:
+            key = db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == "srv-1").one()
+            want = jsonable_encoder(key.to_dict())
+            assert MonitorAgentKey.hash_key(body["apiKey"]) == key.hashed_key
+        # The raw key replaces the masked one; every other key is the producer's.
+        assert want["apiKey"].startswith("***")
+        assert body == {**want, "apiKey": body["apiKey"]}
+
+        r = client.delete("/agent-keys/srv-1")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"deleted": True}
+
+    def test_cleanup_counts(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        _seed_alerts(factory)
+        r = client.delete("/servers/srv-1/cleanup")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"checksDeleted": 1, "alertsDeleted": 1}

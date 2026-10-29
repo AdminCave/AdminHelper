@@ -1,6 +1,55 @@
 {
   "components": {
     "schemas": {
+      "AgentKeyDeletedOut": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "AgentKeyDeletedOut",
+        "type": "object"
+      },
+      "AgentKeyOut": {
+        "description": "apiKey is the raw key on creation, else the masked hash tail.",
+        "properties": {
+          "apiKey": {
+            "title": "Apikey",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "apiKey",
+          "createdAt"
+        ],
+        "title": "AgentKeyOut",
+        "type": "object"
+      },
       "AlertLogOut": {
         "properties": {
           "alertRuleId": {
@@ -655,6 +704,131 @@
         "title": "MaintenanceInput",
         "type": "object"
       },
+      "MaintenanceOut": {
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "durationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationminutes"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "endsAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endsat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "startTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starttime"
+          },
+          "startsAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startsat"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {},
+            "title": "Weekdays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "note",
+          "kind",
+          "startsAt",
+          "endsAt",
+          "weekdays",
+          "startTime",
+          "durationMinutes",
+          "timezone",
+          "enabled",
+          "createdAt"
+        ],
+        "title": "MaintenanceOut",
+        "type": "object"
+      },
       "MonitorCheckOut": {
         "properties": {
           "checkType": {
@@ -891,6 +1065,24 @@
           "notifiedStatus"
         ],
         "title": "MonitorStateOut",
+        "type": "object"
+      },
+      "ServerCleanupOut": {
+        "properties": {
+          "alertsDeleted": {
+            "title": "Alertsdeleted",
+            "type": "integer"
+          },
+          "checksDeleted": {
+            "title": "Checksdeleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checksDeleted",
+          "alertsDeleted"
+        ],
+        "title": "ServerCleanupOut",
         "type": "object"
       },
       "StatusSummaryOut": {
@@ -1276,7 +1468,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgentKeyDeletedOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1312,7 +1506,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgentKeyOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2121,7 +2317,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MaintenanceOut"
+                  },
+                  "title": "Response List Maintenance Maintenance Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -2146,7 +2348,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2225,7 +2429,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2263,7 +2469,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupOut"
+                }
               }
             },
             "description": "Successful Response"

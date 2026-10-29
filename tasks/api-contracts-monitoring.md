@@ -72,8 +72,10 @@ Orakel: contract — die Modelle gegen die `to_dict`-Methoden über die echte Ro
 Dedup-Key: ref:cross:openapi:response-side-blind
 HEAD: b25c65a6
 
-### T15 — Monitoring: Wartung und Admin (R-0685)  [ ]
+### T15 — Monitoring: Wartung und Admin (R-0685)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/maintenance.py, apps/monitoring/app/routers/admin.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @725d48b0 2026-10-29T22:24:53+01:00
+Review: approve (.ah-out/review/api-contracts-monitoring/T15.verdict.json)
 Änderung: `MaintenanceOut` wie `MonitorMaintenance.to_dict` (`apps/monitoring/app/models.py:398-412`; `weekdays: list[Any]`, `enabled` nullbar), `AgentKeyOut` wie `MonitorAgentKey.to_dict` (`:351-357`; die Route `apps/monitoring/app/routers/admin.py:24` setzt `apiKey` beim Anlegen auf den Rohschlüssel, `:47`), `AgentKeyDeletedOut` `{deleted: bool}` (`:55`), `ServerCleanupOut` `{checksDeleted: int, alertsDeleted: int}` (`apps/monitoring/app/template_sync.py:743`). Routen `maintenance.py:39`, `:48` (201), `:59`; `admin.py:24`, `:51`, `:59`. Tests nach Muster. Der Server liest von `POST /agent-keys` nur `apiKey` (`apps/server/app/modules/provisioning/helpers.py:64-66`).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_maintenance_router.py tests/test_admin_router.py
 Doku: keine

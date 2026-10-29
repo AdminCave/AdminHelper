@@ -371,3 +371,36 @@ class AlertLogOut(BaseModel):
     sentAt: str
     success: bool
     error: str | None
+
+
+class MaintenanceOut(BaseModel):
+    id: str
+    serverId: str | None
+    note: str | None
+    kind: str
+    startsAt: str | None
+    endsAt: str | None
+    weekdays: list[Any]
+    startTime: str | None
+    durationMinutes: int | None
+    timezone: str
+    enabled: bool | None
+    createdAt: str | None
+
+
+class AgentKeyOut(BaseModel):
+    """apiKey is the raw key on creation, else the masked hash tail."""
+
+    id: str
+    serverId: str
+    apiKey: str
+    createdAt: str | None
+
+
+class AgentKeyDeletedOut(BaseModel):
+    deleted: bool
+
+
+class ServerCleanupOut(BaseModel):
+    checksDeleted: int
+    alertsDeleted: int
