@@ -24,8 +24,10 @@ Dedup-Key: bug:agent:sync.go:startFrpc-hash-on-cancel
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/...
 Doku: changelog.d/kern-agent-1.md
 
-### T2 — Direkter Pin prüft die Gültigkeit (R-0885)  [ ]
+### T2 — Direkter Pin prüft die Gültigkeit (R-0885)  [x]
 Komponente: agent · Dateien: apps/agent/internal/httpclient/httpclient.go, apps/agent/internal/httpclient/cafp_test.go, changelog.d/kern-agent-1.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @4f9373bd 2026-10-29T19:27:42+01:00
+Review: approve (.ah-out/review/kern-agent-1/T2.verdict.json)
 Änderung: `verifyAnchorFingerprint` (`internal/httpclient/httpclient.go:154`) prüft beim direkt gepinnten Zertifikat (`:176-178`) die Gültigkeit wie der Weg über die CA. Test zuerst rot: abgelaufenes, direkt gepinntes Zertifikat → abgewiesen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/httpclient/...
 Doku: changelog.d/kern-agent-1.md

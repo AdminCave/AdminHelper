@@ -197,9 +197,10 @@ func TestCAFingerprintRejectsALeafThatDoesNotNameTheHost(t *testing.T) {
 	}
 }
 
-func TestCAFingerprintAcceptsDirectLeafPin(t *testing.T) {
-	// Degenerate but valid: the pinned fingerprint is the presented leaf itself
-	// (self-signed single-cert server) — a direct pin, nothing to chain.
+// makeSoloCert is a self-signed single-cert server for the httptest host, valid
+// from notBefore to notAfter.
+func makeSoloCert(t *testing.T, notBefore, notAfter time.Time) ([]byte, *ecdsa.PrivateKey) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -207,8 +208,8 @@ func TestCAFingerprintAcceptsDirectLeafPin(t *testing.T) {
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(3),
 		Subject:               pkix.Name{CommonName: "solo"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
@@ -218,6 +219,13 @@ func TestCAFingerprintAcceptsDirectLeafPin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return der, key
+}
+
+func TestCAFingerprintAcceptsDirectLeafPin(t *testing.T) {
+	// Degenerate but valid: the pinned fingerprint is the presented leaf itself
+	// (self-signed single-cert server) — a direct pin, nothing to chain.
+	der, key := makeSoloCert(t, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	srv, handled := serveChain(t, key, der)
 
 	client := NewCAFingerprint(fpOf(der), hostOf(t, srv), 5*time.Second)
@@ -228,6 +236,33 @@ func TestCAFingerprintAcceptsDirectLeafPin(t *testing.T) {
 	resp.Body.Close()
 	if !*handled {
 		t.Fatal("Request hat den Handler nie erreicht")
+	}
+}
+
+func TestCAFingerprintRejectsADirectPinOutsideItsValidity(t *testing.T) {
+	// The direct pin is held to the certificate's validity like a chain to the
+	// pinned CA: an expired or not yet valid pinned leaf fails before a request.
+	now := time.Now()
+	for name, span := range map[string][2]time.Time{
+		"expired":       {now.Add(-2 * time.Hour), now.Add(-time.Hour)},
+		"not yet valid": {now.Add(time.Hour), now.Add(2 * time.Hour)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			der, key := makeSoloCert(t, span[0], span[1])
+			srv, handled := serveChain(t, key, der)
+
+			client := NewCAFingerprint(fpOf(der), hostOf(t, srv), 5*time.Second)
+			_, err := client.Get(srv.URL)
+			if err == nil {
+				t.Fatal("a pinned leaf outside its validity was accepted")
+			}
+			if !strings.Contains(err.Error(), "pinned certificate") {
+				t.Errorf("error = %v, want it to name the pinned certificate", err)
+			}
+			if *handled {
+				t.Fatal("a request reached the handler despite the rejected handshake")
+			}
+		})
 	}
 }
 
