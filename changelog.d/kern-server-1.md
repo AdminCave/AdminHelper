@@ -4,6 +4,9 @@
   lesen, warnt der Server beim Start (Pfad und Modus); der Schluessel wird weiter genutzt.
 - **Server-Hooks: eigenes HOME fuer den Worker:** Hat der Server kein `HOME`, bekommt der Hook-Worker
   `DATA_DIR/hooks-home` (0700, beim ersten Lauf angelegt) statt `/tmp`.
+- **Server: Hostnamen in TRUSTED_PROXIES und der Gateway-Name:** Der Server loest sie ab dem Start auf statt bei
+  der ersten Anfrage, als absolute Namen ohne Suchdomaene, und die Aufloesung laeuft nach einem unerwarteten
+  Fehler weiter. Ein Eintrag, den das System als Adresse liest (etwa `0x7f000001`), gilt nicht als Hostname.
 
 ### Fixed
 

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-1 · Review: pro Task
 Spec: docs/features/kern-server-1.md (Roadmap R-0827, R-0832, R-0836, R-0837, R-0839, R-0845, R-0846, R-0897, R-0901, R-0942)
 Heavy: linux-full — T8 ändert die Namensauflösung für Gateway und TRUSTED_PROXIES (Gateway-Pfad), T7 den Bootstrap auf Postgres mit mehreren Workern
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -79,8 +79,10 @@ Dedup-Key: bug:server:auth_router.py:bootstrap
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_bootstrap_workers.py
 Doku: changelog.d/kern-server-1.md
 
-### T8 — Gateway- und Proxy-Namen: Auflösung ab dem Start, nur gemeinte Namen (R-0897, R-0901)  [ ]
+### T8 — Gateway- und Proxy-Namen: Auflösung ab dem Start, nur gemeinte Namen (R-0897, R-0901)  [x]
 Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/app/core/identity.py, apps/server/app/main.py, apps/server/tests/test_ip_filter.py, apps/server/tests/test_identity_source.py, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b0254eef 2026-10-29T18:20:10+01:00
+Review: approve (.ah-out/review/kern-server-1/T8.verdict.json)
 Änderung: Der Resolver-Thread startet im lifespan (`app/main.py`), `_run` (`middleware.py:164-166`) überlebt eine unerwartete Ausnahme (loggen, `_NAME_RETRY`). Die Namen werden als absolute Namen aufgelöst, und ein Name, den `getaddrinfo` als Adresse liest, gilt nicht als Name (`_is_host_name`, `middleware.py:24-33`). Einzelheiten privat (tasks/private). Tests je Regel, mit Gegenprobe.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ip_filter.py tests/test_identity_source.py
 Doku: docs/admin/installation.html + EN (TRUSTED_PROXIES-Namen) · changelog.d/kern-server-1.md
@@ -88,3 +90,5 @@ Doku: docs/admin/installation.html + EN (TRUSTED_PROXIES-Namen) · changelog.d/k
 ## Entscheidungen
 - T3: Nur der Rückfall wird ersetzt (Zeilentitel R-0836): ein gesetztes `HOME` des Servers geht weiter unverändert durch. Ein vorhandenes `hooks-home` mit weiteren Rechten wird auf 0700 gesetzt; ist es nicht nutzbar (OSError), scheitert der Lauf vor dem Semaphor mit Fehler statt auf `/tmp` zurückzufallen. Die zwei Bestandstests zum `/tmp`-Rückfall erwarten jetzt `DATA_DIR/hooks-home` (gewollte Verhaltensänderung).
 - T6: Die Grenze liegt jetzt als `PASSWORD_MAX_LEN` in `users/schemas.py` (alle vier Passwortfelder nutzen sie), die CLI importiert sie; vorher stand 128 viermal als Literal. Doku in `troubleshooting.html` DE+EN, wo `reset-admin` beschrieben ist (benutzer.html/users.html nennen die CLI nicht).
+- T8: Absolute Namen per Probe belegt (2026-10-29): `gateway.` löst im Basisimage python:3.12-slim über das Docker-DNS auf wie `gateway`; dass der Punkt die Suchdomänen abschaltet, steht in resolv.conf(5) und ist nicht selbst geprüft. `start()` neu, damit der lifespan beide Resolver ohne Lesezugriff startet.
+- T8: Absolute Namen umgehen in glibc `/etc/hosts` (Probe reviewer/security: `--add-host proxyhost` löst nur ohne Punkt auf). Hingenommen und dokumentiert (installation.html DE+EN: Adresse statt hosts-Name eintragen), fail-closed; die Compose-Dienstnamen beantwortet das Docker-DNS.

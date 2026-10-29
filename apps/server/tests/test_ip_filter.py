@@ -141,10 +141,12 @@ class TestResolveClientIpTrustedProxies:
 
 def _fake_getaddrinfo(answers):
     """A getaddrinfo that answers from `answers` (name -> IPv4 addresses, or an
-    OSError to raise) instead of asking DNS."""
+    OSError to raise) instead of asking DNS. It takes absolute names only: a name
+    without the final dot fails the lookup."""
 
     def getaddrinfo(host, port, *args, **kwargs):
-        answer = answers[host]
+        assert host.endswith("."), host
+        answer = answers[host[:-1]]
         if isinstance(answer, OSError):
             raise answer
         return [
@@ -270,6 +272,7 @@ class TestTrustedProxyNameParsing:
             ".".join(["a" * 63] * 3 + ["a" * 62]),  # 254 chars
             "10.0.0.300",  # a mistyped address, not a name: all-numeric last label
             "2130706433",  # getaddrinfo would read it as 127.0.0.1
+            "0x7f000001",  # the same in hex
         ],
     )
     def test_invalid_entry_warns_and_is_ignored(self, entry, caplog):
@@ -309,3 +312,22 @@ class TestTrustedProxyNameThread:
         threads = [t for t in threading.enumerate() if t.name == "trusted-proxy-names"]
         # A non-daemon thread would keep a uvicorn worker from exiting.
         assert threads and all(t.daemon for t in threads)
+
+    def test_the_thread_survives_an_unexpected_error(self, monkeypatch):
+        # A round that raises something refresh() does not catch must not end the thread: the
+        # names would keep their last addresses for good.
+        monkeypatch.setattr(mw, "_NAME_RETRY", 0.01)
+        calls = []
+
+        def getaddrinfo(host, port, *args, **kwargs):
+            calls.append(host)
+            if len(calls) == 1:
+                raise RuntimeError("unexpected")
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.10", 0))]
+
+        resolver = mw._NameResolver(["gateway"], getaddrinfo, thread_name="names-survive-test")
+        resolver.networks()  # the first read starts the thread
+        deadline = time.monotonic() + 5
+        while not resolver.networks() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert resolver.networks() == [ipaddress.ip_network("192.0.2.10")]
