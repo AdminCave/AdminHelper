@@ -5211,6 +5211,18 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "X-Hook-Token header missing"
+          },
+          "403": {
+            "description": "Hook is disabled"
+          },
+          "404": {
+            "description": "No webhook hook with this token"
+          },
+          "429": {
+            "description": "Rate limit exceeded for this client IP"
           }
         },
         "summary": "Trigger Webhook Header",
@@ -5242,6 +5254,12 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "Hook is disabled"
+          },
+          "404": {
+            "description": "No webhook hook with this token"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5251,6 +5269,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Rate limit exceeded for this client IP"
           }
         },
         "summary": "Trigger Webhook",
