@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/kern-server-1/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_secret_key_file.py
 Doku: docs/admin/installation.html + EN (Datei `.secret_key` 0600, Warnung beim Start) · changelog.d/kern-server-1.md
 
-### T3 — Eigenes HOME für den Hook-Worker (R-0836)  [ ]
+### T3 — Eigenes HOME für den Hook-Worker (R-0836)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hook_isolation.py, docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d/kern-server-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f940f864 2026-10-29T17:53:22+01:00
+Review: approve (.ah-out/review/kern-server-1/T3.verdict.json)
 Änderung: Der Worker bekommt `HOME` = ein Verzeichnis unter `DATA_DIR` (0700, beim ersten Lauf angelegt), statt des Rückfalls `/tmp` (`script_runner.py:122`). Test: HOME im Worker zeigt dorthin, Modus 0700.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py
 Doku: docs/developer/hooks.html + EN (Umgebung des Workers) · changelog.d/kern-server-1.md
@@ -76,3 +78,4 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ip_filter.py te
 Doku: docs/admin/installation.html + EN (TRUSTED_PROXIES-Namen) · changelog.d/kern-server-1.md
 
 ## Entscheidungen
+- T3: Nur der Rückfall wird ersetzt (Zeilentitel R-0836): ein gesetztes `HOME` des Servers geht weiter unverändert durch. Ein vorhandenes `hooks-home` mit weiteren Rechten wird auf 0700 gesetzt; ist es nicht nutzbar (OSError), scheitert der Lauf vor dem Semaphor mit Fehler statt auf `/tmp` zurückzufallen. Die zwei Bestandstests zum `/tmp`-Rückfall erwarten jetzt `DATA_DIR/hooks-home` (gewollte Verhaltensänderung).

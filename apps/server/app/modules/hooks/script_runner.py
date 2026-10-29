@@ -46,6 +46,7 @@ objects) reach the hook as their str() form, not as the original type (4.137).
 """
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -53,6 +54,10 @@ import sys
 import threading
 import time
 from pathlib import Path
+
+from app.core import config
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -87,6 +92,17 @@ _LOGGED_ERROR_MAX = 1000
 _WORKER_SCRIPT = str(Path(__file__).parent / "script_worker.py")
 
 
+def _fallback_home() -> str:
+    """HOME for a worker whose server has none: DATA_DIR/hooks-home, 0700, made on first use.
+
+    chmod also narrows a directory someone created with wider rights; mkdir alone would keep them.
+    """
+    home = config.DATA_DIR.resolve() / "hooks-home"
+    home.mkdir(mode=0o700, exist_ok=True)
+    home.chmod(0o700)
+    return str(home)
+
+
 # ---------------------------------------------------------------------------
 # Main function
 # ---------------------------------------------------------------------------
@@ -112,14 +128,26 @@ def run_hook_script(
     # deliberately inherited (hooks need DB access), and SECRET_KEY stays reachable
     # via DATA_DIR/.secret_key or the loaded config. Hooks = trusted code.
     # HOME/LANG are set so HOME- and locale-sensitive code behaves predictably rather than
-    # defaulting oddly; a configured egress proxy is forwarded below so a hook's HTTP calls
-    # (http_get/http_post) honour it — that's egress/SSRF control, not a secret (4.138).
+    # defaulting oddly (HOME falls back to a private directory, not a world-writable one); a
+    # configured egress proxy is forwarded below so a hook's HTTP calls (http_get/http_post)
+    # honour it — that's egress/SSRF control, not a secret (4.138).
     # PYTHONNOUSERSITE does for every Python process a script starts what -s does for the worker
     # (see the Popen call).
     server_dir = str(Path(__file__).parents[3])  # server/
+    try:
+        home = os.environ.get("HOME") or _fallback_home()
+    except OSError as exc:
+        # The path goes to the server log only: a webhook caller gets this error text back.
+        logger.warning("Hook HOME %s unusable: %s", config.DATA_DIR / "hooks-home", exc)
+        return {
+            "success": False,
+            "result": {},
+            "logs": [],
+            "error": f"Hook HOME unusable: {type(exc).__name__}",
+        }
     worker_env = {
         "PATH": os.environ.get("PATH", ""),
-        "HOME": os.environ.get("HOME", "/tmp"),
+        "HOME": home,
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "PYTHONPATH": server_dir,
         "PYTHONNOUSERSITE": "1",
@@ -157,8 +185,8 @@ def run_hook_script(
         # and keep running unbounded past the timeout (4.69).
         # -s leaves out the user site: the image's Python has no venv, so without it the worker
         # would put $HOME/.local/lib/pythonX.Y/site-packages on sys.path and run a usercustomize
-        # from there — with the HOME fallback above, under /tmp. -I and -E are no option: they
-        # ignore PYTHONPATH, which the worker needs to import app.
+        # from there. -I and -E are no option: they ignore PYTHONPATH, which the worker needs to
+        # import app.
         proc = subprocess.Popen(
             [sys.executable, "-s", _WORKER_SCRIPT],
             stdin=subprocess.PIPE,
