@@ -87,6 +87,7 @@
             <tbody>
               <tr><td><code>{"hash": null}</code> (no FRP config)</td><td>Stop and disable frpc, delete <code>frpc.toml</code> and the hash.</td></tr>
               <tr><td>Server text without <code>[[proxies]]</code></td><td>Stop and disable frpc, delete <code>frpc.toml</code>, store the hash.</td></tr>
+              <tr><td>Server text fails the check (sync and provisioning)</td><td>Error naming line and key, never a value; stop and disable frpc, delete <code>frpc.toml</code> and the hash, so frpc does not keep running on the old file. The next run fetches and checks again; with nothing left, <code>systemctl</code> is not touched.</td></tr>
               <tr><td>frpc not running</td><td>Write, <code>systemctl enable --now frpc.service</code>.</td></tr>
               <tr><td>frpc running, common part as at its start</td><td>Write, reload over the local admin API (<code>/usr/bin/frpc reload -c /etc/frp/frpc.toml</code>, 15&nbsp;s timeout). If the agent's own frpc does not listen there or the reload fails, restart.</td></tr>
               <tr><td>frpc running, common part changed (frps address, token, <code>user</code>, TLS)</td><td>Write, <code>systemctl restart frpc.service</code>.</td></tr>

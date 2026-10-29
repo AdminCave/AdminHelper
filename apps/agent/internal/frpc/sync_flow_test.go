@@ -1038,8 +1038,8 @@ func TestReloadOnlyWhenFrpcHoldsTheAdminPort(t *testing.T) {
 
 // The server sets no local head: a server text with a webServer or loginFailExit key or table,
 // in any case and also after the proxies (a table header there is a root table again), is
-// refused. Nothing is written and frpc keeps running as it is; the hash stays, so the next run
-// tries again.
+// refused. frpc does not keep running on the old file: it is stopped and disabled, frpc.toml and
+// the hash go, so the next run fetches and checks again.
 func TestReloadRefusesALocalHeadFromTheServer(t *testing.T) {
 	common := "serverAddr = \"1.2.3.4\"\n"
 	proxy := "\n[[proxies]]\nname = \"ssh\"\n"
@@ -1056,21 +1056,17 @@ func TestReloadRefusesALocalHeadFromTheServer(t *testing.T) {
 			calls := setupSyncTest(t, "https://unused.example")
 			writeFrpcState(t)
 			calls.active = true
-			oldConfig, oldHash := readFile(t, config.FrpConfigFile()), readFile(t, config.FrpHashFile())
 			serveToml(t, []byte(toml))
 
 			if err := Sync(context.Background()); err == nil {
 				t.Fatal("Sync must refuse the server's text")
 			}
-			if calls.reloads+calls.restarts+calls.enables+calls.disables != 0 {
-				t.Errorf("reloads = %d, restarts = %d, enables = %d, disables = %d, want none",
-					calls.reloads, calls.restarts, calls.enables, calls.disables)
+			if calls.reloads+calls.restarts+calls.enables != 0 || calls.disables != 1 || calls.active {
+				t.Errorf("reloads = %d, restarts = %d, enables = %d, disables = %d, active = %v, want 0, 0, 0, 1, false",
+					calls.reloads, calls.restarts, calls.enables, calls.disables, calls.active)
 			}
-			if got := readFile(t, config.FrpConfigFile()); got != oldConfig {
-				t.Errorf("frpc.toml = %q, want the old %q", got, oldConfig)
-			}
-			if got := readFile(t, config.FrpHashFile()); got != oldHash {
-				t.Errorf("hash file = %q, want the old %q", got, oldHash)
+			if !frpcGone() {
+				t.Errorf("frpc.toml or the hash is still there, want both removed")
 			}
 		})
 	}

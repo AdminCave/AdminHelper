@@ -87,6 +87,7 @@
             <tbody>
               <tr><td><code>{"hash": null}</code> (keine FRP-Config)</td><td>frpc stoppen und deaktivieren, <code>frpc.toml</code> und Hash l&ouml;schen.</td></tr>
               <tr><td>Server-Text ohne <code>[[proxies]]</code></td><td>frpc stoppen und deaktivieren, <code>frpc.toml</code> l&ouml;schen, Hash speichern.</td></tr>
+              <tr><td>Server-Text besteht die Pr&uuml;fung nicht (Sync und Provisionierung)</td><td>Fehler mit Zeile und Schl&uuml;ssel, nie einem Wert; frpc stoppen und deaktivieren, <code>frpc.toml</code> und Hash l&ouml;schen, damit frpc nicht auf der alten Datei weiterl&auml;uft. Der n&auml;chste Lauf holt und pr&uuml;ft erneut; ist nichts mehr da, bleibt <code>systemctl</code> unber&uuml;hrt.</td></tr>
               <tr><td>frpc l&auml;uft nicht</td><td>Schreiben, <code>systemctl enable --now frpc.service</code>.</td></tr>
               <tr><td>frpc l&auml;uft, Common-Teil wie beim Start</td><td>Schreiben, Reload &uuml;ber die lokale Admin-API (<code>/usr/bin/frpc reload -c /etc/frp/frpc.toml</code>, 15&nbsp;s Timeout). Lauscht dort nicht der eigene frpc oder scheitert der Reload, Neustart.</td></tr>
               <tr><td>frpc l&auml;uft, Common-Teil anders (frps-Adresse, Token, <code>user</code>, TLS)</td><td>Schreiben, <code>systemctl restart frpc.service</code>.</td></tr>

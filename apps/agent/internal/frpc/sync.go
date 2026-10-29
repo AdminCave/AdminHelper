@@ -229,7 +229,7 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	}
 
 	if err := checkServerConfig(serverToml); err != nil {
-		return err
+		return refuseServerConfig(ctx, err)
 	}
 	api, err := loadAdminAPI()
 	if err != nil {
@@ -265,6 +265,23 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	}
 	logger.Infof("frpc.toml updated, frpc %s.", started)
 	return nil
+}
+
+// refuseServerConfig stops frpc on a server text the check refuses: what frpc runs on must be a
+// text the check accepted, and the frpc.toml in place may predate the check or this server's
+// text. Without the hash the next run fetches and checks again; with nothing left (frpcGone) a
+// former run already stopped frpc, which keeps systemctl out of every timer run.
+func refuseServerConfig(ctx context.Context, refusal error) error {
+	if frpcGone() {
+		return refusal
+	}
+	if err := stopFrpc(ctx); err != nil {
+		return errors.Join(refusal, err)
+	}
+	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
+		return errors.Join(refusal, fmt.Errorf("remove the config hash: %w", err))
+	}
+	return fmt.Errorf("frpc stopped until the server sends a config that passes: %w", refusal)
 }
 
 // startFrpc puts frpc onto the frpc.toml just written and says how. frpc is stopped on the first

@@ -50,6 +50,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent: ein abgelehnter frpc-Text stoppt frpc:** Weicht die frpc-Konfiguration des Servers von der Form ab, die
+  der Generator schreibt, stoppt und deaktiviert der Agent frpc und loescht `frpc.toml` und Hash, statt frpc auf der
+  alten Datei weiterlaufen zu lassen; der naechste Lauf holt und prueft erneut. Gilt fuer Abgleich und
+  Provisionierung. Doku: Agent-Entwicklerseite, Agent-Verteilung (DE+EN).
 - **Web-Panel: das Audit-Log zeigt die Spalte Detail:** Je Eintrag steht das Detail mit in der Tabelle, etwa die
   geaenderten Felder eines `user.updated`; bisher war es nur ueber `GET /api/audit` zu sehen. Doku: Betrieb (DE+EN).
 - **Web-Panel: ein gescheitertes Kopieren meldet sich ueberall gleich:** Scheitert das Kopieren in die Zwischenablage,
