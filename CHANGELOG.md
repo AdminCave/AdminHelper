@@ -65,6 +65,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Web: der Cron-Hinweis im Hook-Dialog nennt UTC (R-0853):** Das Format-Hilfetext des Cron-Ausdrucks sagt jetzt
+  „Zeiten in UTC“ (DE) bzw. „times in UTC“ (EN); der Scheduler rechnet Cron-Hooks seit jeher in UTC.
 - **Desktop: verweigert der Server das Visitor-Bundle, stoppt der Tunnel (R-0453):** Antwortet der Server beim
   Abgleich mit 403, etwa nach Widerruf des Geraets oder Loeschen des Benutzers, stoppt der Desktop seinen Tunnel
   beim naechsten Abgleich wie bei 404, statt frpc mit der alten Konfiguration weiterlaufen zu lassen. Doku: Desktop

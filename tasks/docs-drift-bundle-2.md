@@ -59,8 +59,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
 Dedup-Key: ref:docs:agent-deployment-token-stdin-examples
 
-### T6 — Web: Hook-Hinweis nennt UTC (R-0853)  [ ]
+### T6 — Web: Hook-Hinweis nennt UTC (R-0853)  [x]
 Komponente: web · Dateien: apps/web/src/lib/i18n/dictionaries.ts, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @34028779 2026-10-29T13:17:24+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T6.verdict.json)
 Änderung: `modal.hook.cronFormat` (DE `:206`, EN `:504`): „(UTC)“ ergänzen, Code von `hooks-hardening` T3 gegenlesen (Cron-Hooks rechnen in UTC). Prüfen, ob ein i18n-Paritätstest greift; kein neuer Test nötig.
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: CHANGELOG.md (Unreleased, umlautfrei)
