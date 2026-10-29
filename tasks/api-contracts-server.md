@@ -142,8 +142,10 @@ Orakel: contract — die Modelle gegen die Dict-Literale über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T9 — hooks: `HookTokenOut` für rotate (R-0684)  [ ]
+### T9 — hooks: `HookTokenOut` für rotate (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/schemas.py, apps/server/app/modules/hooks/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @199d8cb6 2026-10-29T22:54:18+01:00
+Review: approve (.ah-out/review/api-contracts-server/T9.verdict.json)
 Änderung: `HookTokenOut` `{token: str}` (`apps/server/app/modules/hooks/router.py:334`) an `POST /{hook_id}/rotate` (`:320`). Trigger und `/run` bleiben (Spec, Nicht-Ziele). Tests nach Muster; für rotate gibt es heute keinen Test der Antwortform.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_hooks.py
 Doku: keine

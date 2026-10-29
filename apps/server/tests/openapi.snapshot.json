@@ -2372,6 +2372,19 @@
         "title": "HookResponse",
         "type": "object"
       },
+      "HookTokenOut": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "HookTokenOut",
+        "type": "object"
+      },
       "HookUpdate": {
         "properties": {
           "description": {
@@ -6337,7 +6350,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HookTokenOut"
+                }
               }
             },
             "description": "Successful Response"

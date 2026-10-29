@@ -80,6 +80,7 @@ def _ref_name(schema: dict) -> str:
         ("/api/internal/events", "post", "EventsAcceptedOut"),
         ("/api/auth/logout", "post", "LogoutOut"),
         ("/api/users/me/servers", "get", "MyServerOut"),
+        ("/api/hooks/{hook_id}/rotate", "post", "HookTokenOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -622,3 +623,21 @@ class TestUserShape:
         r = test_client.get("/api/users/me/servers", headers=h)
         assert r.status_code == 200, r.text
         assert r.json() == [{"id": "srv-mine", "name": "mine", "hostname": "mine.example"}]
+
+
+class TestHookShape:
+    def test_rotate_answers_with_the_new_token(self, test_client, admin_user):
+        h = _login(test_client)
+        r = test_client.post(
+            "/api/hooks",
+            json={"name": "wh", "hook_type": "webhook", "script": "-- noop"},
+            headers=h,
+        )
+        assert r.status_code in (200, 201), r.text
+        hook_id, old = r.json()["id"], r.json()["token"]
+
+        r = test_client.post(f"/api/hooks/{hook_id}/rotate", headers=h)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert list(body) == ["token"]
+        assert isinstance(body["token"], str) and body["token"] != old
