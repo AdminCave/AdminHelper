@@ -598,7 +598,8 @@ pub fn preflight_rdp(host: &str, port: u16) -> Result<(), AppError> {
 
 /// Runs xfreerdp's `+auth-only` check. It ends within `timeout`: an xfreerdp that hangs
 /// (a host that never answers the handshake) is killed and reaped, so nothing waits on it
-/// once the command gave up.
+/// once the command gave up. With no time left it starts no xfreerdp at all: the command has
+/// given up already, and the password must not reach a process nobody waits for.
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 pub fn check_rdp_auth(
@@ -611,6 +612,9 @@ pub fn check_rdp_auth(
     password: &str,
     timeout: std::time::Duration,
 ) -> Result<(), AppError> {
+    if timeout.is_zero() {
+        return Err(AppError::Connection(super::TIMEOUT_MESSAGE.to_string()));
+    }
     let mut args = vec![
         format!("/v:{host}:{port}"),
         "+auth-only".to_string(),
@@ -940,6 +944,28 @@ mod tests {
             .unwrap()
             .success();
         assert!(!alive, "xfreerdp {pid} still runs after the deadline");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn check_rdp_auth_starts_no_xfreerdp_once_the_deadline_is_past() {
+        let stub = stub_rdp_binary("past", "touch \"$(dirname \"$0\")/ran\"; exit 0");
+        let result = check_rdp_auth(
+            stub.to_str().unwrap(),
+            "192.0.2.10",
+            3389,
+            "u",
+            "",
+            false,
+            "pw",
+            std::time::Duration::ZERO,
+        );
+        assert!(
+            matches!(&result, Err(AppError::Connection(m)) if m == super::super::TIMEOUT_MESSAGE),
+            "{result:?}"
+        );
+        let dir = stub.parent().unwrap();
+        assert!(!dir.join("ran").exists(), "xfreerdp ran after the deadline");
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -16,6 +16,13 @@ from email.mime.text import MIMEText
 
 from app.core.config import SMTP_CA_FILE, SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_USER
 
+# As in the monitoring alerter (apps/monitoring/app/alerter.py, _SUBJECT_TO_SPACE): the
+# control characters, DEL, C1 and the line and paragraph separators become a space, one for
+# one. The subject is a header value; the body keeps the text as it is.
+_SUBJECT_TO_SPACE = str.maketrans(
+    dict.fromkeys([*range(0x20), *range(0x7F, 0xA0), 0x2028, 0x2029], " ")
+)
+
 
 def send_email(to: str, subject: str, body: str) -> None:
     """Send one plaintext e-mail via the configured SMTP relay. Raises on failure."""
@@ -23,7 +30,7 @@ def send_email(to: str, subject: str, body: str) -> None:
         raise RuntimeError("SMTP nicht konfiguriert (SMTP_HOST fehlt)")
 
     message = MIMEMultipart("alternative")
-    message["Subject"] = subject
+    message["Subject"] = subject.translate(_SUBJECT_TO_SPACE)
     message["From"] = SMTP_FROM
     message["To"] = to
     message.attach(MIMEText(body, "plain"))

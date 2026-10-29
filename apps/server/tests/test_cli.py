@@ -18,6 +18,7 @@ from concurrent.futures import Future
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 import app.cli as cli
 from app.cli import create_admin, mint_enroll_token, reset_admin
@@ -35,6 +36,7 @@ from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.users.models import User
+from app.modules.users.schemas import LoginRequest
 from tests.token_claims import claims_for
 
 
@@ -54,6 +56,23 @@ def test_create_admin_rejects_duplicate_username(db_session, admin_user):
 def test_create_admin_rejects_short_password(db_session):
     assert create_admin(db_session, "kev", "short") == 1
     assert db_session.query(User).filter_by(username="kev").first() is None
+
+
+def test_a_cli_password_over_the_login_limit_could_not_log_in():
+    # The reason for the CLI's upper bound: the login schema refuses such a password.
+    with pytest.raises(ValidationError):
+        LoginRequest(username="kev", password="x" * 129)
+    LoginRequest(username="kev", password="x" * 128)
+
+
+def test_create_admin_rejects_a_password_the_login_would_refuse(db_session, capsys):
+    assert create_admin(db_session, "kev", "x" * 129) == 1
+    assert db_session.query(User).filter_by(username="kev").first() is None
+    assert "at most 128" in capsys.readouterr().err
+
+
+def test_create_admin_accepts_a_password_at_the_login_limit(db_session):
+    assert create_admin(db_session, "kev", "x" * 128) == 0
 
 
 def test_mint_enroll_token_for_existing_user(db_session, admin_user):
@@ -155,6 +174,14 @@ def test_reset_admin_refuses_unknown_user(db_session):
 def test_reset_admin_refuses_short_password(db_session):
     assert create_admin(db_session, "kevin", "supersecret") == 0
     assert reset_admin(db_session, "kevin", "kurz") == 1
+
+
+def test_reset_admin_refuses_a_password_the_login_would_refuse(db_session, capsys):
+    assert create_admin(db_session, "kevin", "supersecret") == 0
+    assert reset_admin(db_session, "kevin", "x" * 129) == 1
+    assert "at most 128" in capsys.readouterr().err
+    user = db_session.query(User).filter_by(username="kevin").one()
+    assert verify_password("supersecret", user.hashed_password)
 
 
 def test_create_admin_gets_default_subscription(db_session):

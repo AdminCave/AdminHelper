@@ -232,6 +232,7 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     h.refreshTunnel.mockResolvedValue({
       status: { running: true, visitors: ['db-visitor'] },
       outcome: 'started',
+      refused: null,
     });
     h.fetchTunnels.mockResolvedValue([MAPPING]);
     h.stopTunnel.mockResolvedValue(undefined);
