@@ -441,6 +441,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
   gemeinsamen Schluessel (R-0761):** Wer ihn nicht zuerst schreibt, uebernimmt den des anderen Prozesses. Vorher konnte
   jeder Prozess einen eigenen erzeugen, und JWTs galten nicht prozessuebergreifend.
+- **Server: mit `WEB_CONCURRENCY` > 1 erzeugt nur noch ein Worker das einmalige Setup-Token (R-0762):** Bisher
+  schrieb jeder Worker ein eigenes Token und einen eigenen Hash; danach passten `.bootstrap_setup` und
+  `.bootstrap_token` oft nicht zusammen, und das Token aus der Datei wurde abgewiesen. Jetzt passen beide immer
+  zusammen, und der Hinweis steht einmal im Log. Neu ist die leere Datei `data/.bootstrap.lock`.
 - **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
   System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
   ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
