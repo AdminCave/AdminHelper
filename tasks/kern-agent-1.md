@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-1 · Review: pro Task
 Spec: docs/features/kern-agent-1.md (Roadmap R-0884, R-0885, R-0929, R-0878, R-0879, R-0881, R-0951)
 Heavy: linux-full — apps/agent: frpc-Abgleich, TLS-Pin, Monitor-Befehle und run --once laufen im Sammellauf (go agent, agent_monitoring, repo_build)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -67,8 +67,10 @@ Review: approve (.ah-out/review/kern-agent-1/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
 Doku: changelog.d/kern-agent-1.md
 
-### T7 — Entwickler-Doku zum frpc-Abgleich nachziehen (aus der Abschlussprüfung)  [ ]
+### T7 — Entwickler-Doku zum frpc-Abgleich nachziehen (aus der Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-agent-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @30b3eb85 2026-10-29T20:22:22+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `docs/developer/agent.html:97` + EN beschreiben den Abgleich ohne Antwort von systemd wie nach T1 (Reload über die Admin-API, sonst Abbruch); `:99` die Ausnahme für einen beendeten Lauf (T1, `.started-hash` bleibt); `:100` die Grenze von 32 Segmenten je Schlüssel (T3). Changelog-Eintrag zu T1 präzisiert.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/agent.html + EN, changelog.d/kern-agent-1.md
