@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-1 · Review: pro Task
 Spec: docs/features/kern-monitoring-1.md (Roadmap R-0921, R-0826, R-0828, R-0917)
 Heavy: none — nur apps/monitoring (HTTP-Check, interne Alert-Route, Template-Abgleich), hermetische pytest-Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -42,8 +42,10 @@ Dedup-Key: bug:monitoring:alerts.py:create-mask-password
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alert_secrets.py
 Doku: changelog.d/kern-monitoring-1.md
 
-### T4 — Template-Variablen ohne Steuerzeichen (R-0917)  [ ]
+### T4 — Template-Variablen ohne Steuerzeichen (R-0917)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_template_sync.py, changelog.d/kern-monitoring-1.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @80f6ea4d 2026-10-29T21:08:50+01:00
+Review: approve (.ah-out/review/kern-monitoring-1/T4.verdict.json)
 Änderung: `_build_variables` (`template_sync.py:80`) ersetzt C0-Steuerzeichen und DEL in `hostname` und `server_name` durch Leerzeichen (die Grenze von `_no_control_characters`, `schemas.py:24`). Test zuerst rot: Zuweisung mit Steuerzeichen im Hostnamen → Check-Name ohne Steuerzeichen.
 Beweis: security-Review monitoring-hardening-2 T9 2026-10-28 · template_sync.py:73-83, schemas.py:190-193; Test: hostname "a\nb" → MonitorCheck.name ohne "\n"
 Dedup-Key: bug:monitoring:template_sync:substitute_variables
