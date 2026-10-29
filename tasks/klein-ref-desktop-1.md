@@ -10,8 +10,10 @@ Heavy: none — interne Prüfungen, Aufräumpfad und Tests im Desktop, keine Jou
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — frpc: Vorprüfung vor head_left_behind, Typalias im Test (R-0856, R-0875)  [ ]
+### T1 — frpc: Vorprüfung vor head_left_behind, Typalias im Test (R-0856, R-0875)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @462485ff 2026-10-29T20:42:07+01:00
+Review: approve (.ah-out/review/klein-ref-desktop-1/T1.verdict.json)
 Änderung: `head_left_behind` prüft `run_dir` zuerst mit `symlink_metadata` (wie `empty_run_dir`): ist es kein Verzeichnis (Symlink, Junction, Datei), loggt es eine Warnung und liefert `None`, ohne `visitor.toml` zu lesen. Test: ein Symlink als `run_dir` auf einen Ordner mit gültigem Kopf stoppt nichts (unter `cfg(unix)`). Im Test `the_first_reconciliation_stops_nothing_behind_a_head_that_is_not_the_desktops` ersetzt ein Typalias den Typ von `cases`; `cargo clippy --all-targets -- -D warnings` läuft danach sauber (Beleg zusätzlich zum Verify).
 Beweis: R-0856 Code-Lesung origin/main frpc.rs head_left_behind; R-0875 clippy --all-targets frpc.rs:3510
 Dedup-Key: ref:desktop:frpc.rs:head-left-behind-symlink
