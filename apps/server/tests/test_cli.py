@@ -35,6 +35,7 @@ from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.users.models import User
+from tests.token_claims import claims_for
 
 
 def test_create_admin_creates_hashed_admin(db_session):
@@ -115,8 +116,8 @@ def test_reset_admin_updates_password(db_session):
 
 def test_reset_admin_signs_out_existing_sessions(db_session, admin_user):
     # Same token watermark as a password change over the API (users/router.py).
-    access = create_access_token({"sub": "admin"})
-    refresh = create_refresh_token({"sub": "admin"})
+    access = create_access_token(claims_for("admin"))
+    refresh = create_refresh_token(claims_for("admin"))
     assert _get_user_from_token(access, db_session) is not None
     assert get_user_from_refresh_token(refresh, db_session) is not None
 
@@ -127,7 +128,7 @@ def test_reset_admin_signs_out_existing_sessions(db_session, admin_user):
     # A JWT iat has whole seconds, and a token from the reset's own second counts
     # as issued before it (core/auth.py); a second later a new login holds.
     time.sleep(1)
-    fresh = create_access_token({"sub": "admin"})
+    fresh = create_access_token(claims_for("admin"))
     assert _get_user_from_token(fresh, db_session) is not None
 
 

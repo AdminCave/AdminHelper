@@ -50,6 +50,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
+  der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
+  gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).
 - **Web-Panel: das Audit-Log zeigt die Spalte Detail:** Je Eintrag steht das Detail mit in der Tabelle, etwa die
   geaenderten Felder eines `user.updated`; bisher war es nur ueber `GET /api/audit` zu sehen. Doku: Betrieb (DE+EN).
 - **Web-Panel: ein gescheitertes Kopieren meldet sich ueberall gleich:** Scheitert das Kopieren in die Zwischenablage,

@@ -20,6 +20,8 @@ from app.core.auth import (
     hash_api_key,
     hash_password,
     is_token_blacklisted,
+    token_claims,
+    user_id_from_token_unverified,
     username_from_token_unverified,
     verify_password,
 )
@@ -141,9 +143,10 @@ def _refuse_reused_refresh(token: str, request: Request, db: Session) -> NoRetur
     # watermark — otherwise the attacker's already-rotated chain (which they
     # obtained by refreshing first) stays valid indefinitely; only the single
     # replayed token would be blocked.
-    reused_username = username_from_token_unverified(token)
-    if reused_username:
-        reused_user = db.query(User).filter(User.username == reused_username).first()
+    # By the account id: a name may belong to a newer account than the token's.
+    reused_id = user_id_from_token_unverified(token)
+    if reused_id is not None:
+        reused_user = db.get(User, reused_id)
         if reused_user is not None:
             reused_user.tokens_valid_after = utcnow_naive()
             db.commit()
@@ -210,8 +213,8 @@ def login(
         object_id=user.id,
         object_label=user.username,
     )
-    access = create_access_token({"sub": user.username})
-    refresh = create_refresh_token({"sub": user.username})
+    access = create_access_token(token_claims(user))
+    refresh = create_refresh_token(token_claims(user))
     return _token_response(request, response, access, refresh)
 
 
@@ -252,8 +255,8 @@ def refresh_token(
     # concurrent call with the same token sets once it fails after that commit, so a
     # reuse kills this pair too. Issued after it, a delayed call could stamp a later
     # second and outlive the watermark (`iat` has whole seconds, core/auth.py).
-    access = create_access_token({"sub": user.username})
-    refresh = create_refresh_token({"sub": user.username})
+    access = create_access_token(token_claims(user))
+    refresh = create_refresh_token(token_claims(user))
 
     # Rotation: only the call that blacklists the old refresh token gets the new
     # pair. False means the jti was already there (a concurrent call with the same
@@ -388,6 +391,6 @@ def bootstrap(
     _reset_rate_limit(ip)
     logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)
 
-    access = create_access_token({"sub": user.username})
-    refresh = create_refresh_token({"sub": user.username})
+    access = create_access_token(token_claims(user))
+    refresh = create_refresh_token(token_claims(user))
     return _token_response(request, response, access, refresh)
