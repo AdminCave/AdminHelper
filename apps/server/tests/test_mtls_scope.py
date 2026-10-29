@@ -5,14 +5,19 @@
 """mTLS client-identity + per-route scope guards (ADR 0001 D8, ADR 0002 A3).
 
 The gateway forwards the verified client cert as headers; the app reads identity
-and enforces a per-route scope. During the permissive rollout a mismatch is
-logged but allowed; A8 flips MTLS_ENFORCE to reject. These tests pin both modes
-at the unit level (the dependency) and the integration level (real routes)."""
+and enforces a per-route scope. Enforced is the default (A8): a mismatch gets a
+403. With MTLS_ENFORCE=false, the permissive mode of the rollout, a mismatch is
+logged but allowed. These tests pin both modes at the unit level (the dependency)
+and the integration level (real routes), and the default itself."""
 
 from __future__ import annotations
 
 import datetime
+import os
+import subprocess
+import sys
 import urllib.parse
+from pathlib import Path
 
 import pytest
 from cryptography import x509
@@ -31,6 +36,7 @@ from app.core.identity import (
     get_client_identity,
     require_scope,
 )
+from tests.token_claims import claims_for
 
 # --- helpers -----------------------------------------------------------------
 
@@ -110,7 +116,7 @@ def test_identity_unverified_on_garbage_cert():
     assert ident.verified is False
 
 
-# --- require_scope: permissive (default) -------------------------------------
+# --- require_scope: permissive (MTLS_ENFORCE=false) --------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -210,6 +216,35 @@ def test_enforced_dual_use_accepts_either_scope(monkeypatch):
         _check(dep, ClientIdentity(True, "svc", "internal"))
 
 
+# --- MTLS_ENFORCE: the default of app.core.config ----------------------------
+
+_SERVER_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_mtls_enforce_defaults_to_enforced_without_the_env(tmp_path):
+    # config reads the environment once at import, and conftest sets MTLS_ENFORCE=false for
+    # the suite: only a fresh interpreter without the variable sees the code default.
+    def enforce(value: str | None) -> str:
+        env = {k: v for k, v in os.environ.items() if k != "MTLS_ENFORCE"}
+        env["DATA_DIR"] = str(tmp_path)
+        if value is not None:
+            env["MTLS_ENFORCE"] = value
+        proc = subprocess.run(
+            [sys.executable, "-c", "from app.core import config; print(config.MTLS_ENFORCE)"],
+            cwd=_SERVER_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert proc.returncode == 0, proc.stderr
+        return proc.stdout.strip()
+
+    assert enforce(None) == "True"
+    # The counterpart: the probe can fail, the variable is read.
+    assert enforce("false") == "False"
+
+
 # --- require_scope: revocation (F1, ADR 0001 §3.4 lever 2) --------------------
 
 
@@ -251,7 +286,7 @@ def test_enforced_admin_route_blocks_without_cert(test_client, monkeypatch):
 
 def test_enforced_admin_route_passes_with_access_cert(test_client, admin_user, monkeypatch):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
-    token = create_access_token({"sub": admin_user.username})
+    token = create_access_token(claims_for(admin_user.username))
     resp = test_client.get(
         "/api/api-keys",
         headers={
@@ -265,7 +300,7 @@ def test_enforced_admin_route_passes_with_access_cert(test_client, admin_user, m
 
 def test_enforced_admin_route_rejects_agent_cert(test_client, admin_user, monkeypatch):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
-    token = create_access_token({"sub": admin_user.username})
+    token = create_access_token(claims_for(admin_user.username))
     resp = test_client.get(
         "/api/api-keys",
         headers={"Authorization": f"Bearer {token}", **_gateway_headers(ou=SCOPE_AGENT)},

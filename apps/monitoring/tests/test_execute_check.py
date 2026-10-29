@@ -6,11 +6,13 @@
 since-reset only on a status change, the suppression suffix, the recovery hold (R-0424), and the H7
 transaction contract — state is committed BEFORE the alert is dispatched off-thread, so a failing
 alert dispatch must not roll the state back (6.50). Only the extracted pure functions were tested
-before."""
+before. Since R-0615 no pooled connection is held while the checker or the metric write runs."""
 
 import datetime
+import logging
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -178,3 +180,201 @@ def test_heartbeat_recovery_is_held_too(monkeypatch):
 
     ce.execute_check("c1")
     assert _state(factory) == ("ok", 2, "msg")
+
+
+# --- R-0615: no pooled connection during network I/O ------------------------
+# A checker runs up to its timeout and the metric write follows; a session held over
+# both let 30 scheduler workers drain the 30 pool connections. StaticPool shares one
+# connection and counts nothing, so these tests run on a file sqlite with the default
+# QueuePool, where engine.pool.checkedout() is the number of connections handed out.
+
+
+@pytest.fixture()
+def file_engine(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'monitor.db'}", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+
+def _wire_counting(monkeypatch, factory, engine, held, run=None):
+    """execute_check against `factory`; the fake checker and the fake metric write note
+    the connections checked out while they run."""
+
+    def counting_run(cfg):
+        held.append(("run", engine.pool.checkedout()))
+        return "critical", "msg", None
+
+    def counting_write(**kw):
+        held.append(("write", engine.pool.checkedout()))
+
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(ce, "get_checker", lambda t: SimpleNamespace(run=run or counting_run))
+    monkeypatch.setattr(ce.victoria, "write_check_result", counting_write)
+
+
+def test_run_and_metric_write_hold_no_pooled_connection(monkeypatch, file_engine):
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory)
+    held = []
+    _wire_counting(monkeypatch, factory, file_engine, held)
+    submits = []
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: submits.append(a)))
+
+    ce.execute_check("c1")
+
+    assert held == [("run", 0), ("write", 0)]
+    with factory() as db:
+        st = db.query(MonitorState).one()
+        assert (st.status, st.fail_count) == ("critical", 1)
+    assert [s[1:] for s in submits] == [("c1", "pending", "critical")]
+
+
+def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, file_engine, caplog):
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory)
+
+    ran = []
+
+    def deleting_run(cfg):
+        ran.append(cfg)
+        with factory() as other:
+            other.query(MonitorCheck).filter(MonitorCheck.id == "c1").delete()
+            other.commit()
+        return "critical", "msg", None
+
+    _wire_counting(monkeypatch, factory, file_engine, [], run=deleting_run)
+    submits = []
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: submits.append(a)))
+
+    with caplog.at_level(logging.DEBUG, logger="monitor.engine"):
+        ce.execute_check("c1")
+
+    assert len(ran) == 1
+    with factory() as db:
+        assert db.query(MonitorState).count() == 0
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert "Check c1 was deleted during its run, result dropped" in [
+        r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG
+    ]
+    assert submits == []
+
+
+def test_manual_run_holds_no_pooled_connection(monkeypatch, file_engine):
+    from fastapi.testclient import TestClient
+
+    from app.core.auth import require_internal
+    from app.core.database import get_db
+    from app.main import app
+
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory)
+    held = []
+    _wire_counting(monkeypatch, factory, file_engine, held)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    def override_get_db():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, override_get_db)
+    monkeypatch.setitem(app.dependency_overrides, require_internal, lambda: None)
+
+    r = TestClient(app).post("/checks/c1/run")
+
+    assert r.status_code == 200, r.text
+    assert held == [("run", 0), ("write", 0)]
+    assert r.json()["id"] == "c1"
+    assert r.json()["state"]["status"] == "critical"
+
+
+def test_manual_run_of_a_check_deleted_during_its_run_is_404(monkeypatch, file_engine):
+    from fastapi.testclient import TestClient
+
+    from app.core.auth import require_internal
+    from app.core.database import get_db
+    from app.main import app
+
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory)
+    ran = []
+
+    def deleting_run(cfg):
+        ran.append(cfg)
+        with factory() as other:
+            other.query(MonitorCheck).filter(MonitorCheck.id == "c1").delete()
+            other.commit()
+        return "critical", "msg", None
+
+    _wire_counting(monkeypatch, factory, file_engine, [], run=deleting_run)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    def override_get_db():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, override_get_db)
+    monkeypatch.setitem(app.dependency_overrides, require_internal, lambda: None)
+
+    r = TestClient(app, raise_server_exceptions=False).post("/checks/c1/run")
+
+    assert len(ran) == 1
+    assert r.status_code == 404, r.text
+    assert r.json() == {"detail": "Check not found"}
+
+
+def _transition_lines(caplog) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "monitor.engine" and "->" in r.getMessage()
+    ]
+
+
+def test_a_transition_whose_commit_fails_is_not_logged(monkeypatch, file_engine, caplog):
+    # The line says a status changed; a commit that fails discards the change, so the
+    # line must not come.
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory, initial_status="ok")
+    _wire_counting(monkeypatch, factory, file_engine, [])
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    def failing_commit_factory():
+        db = factory()
+
+        def fail():
+            raise RuntimeError("commit refused")
+
+        db.commit = fail
+        return db
+
+    monkeypatch.setattr(database_mod, "SessionLocal", failing_commit_factory)
+
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
+        ce.execute_check("c1")
+
+    assert _transition_lines(caplog) == []
+    assert any(
+        r.levelno == logging.ERROR and r.getMessage() == "execute_check(c1) fehlgeschlagen"
+        for r in caplog.records
+    )
+
+
+def test_a_saved_transition_is_logged_once(monkeypatch, file_engine, caplog):
+    factory = sessionmaker(bind=file_engine)
+    _seed(factory, initial_status="ok")
+    _wire_counting(monkeypatch, factory, file_engine, [])
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
+        ce.execute_check("c1")
+
+    assert _transition_lines(caplog) == ["Check 'n': ok -> critical (msg)"]

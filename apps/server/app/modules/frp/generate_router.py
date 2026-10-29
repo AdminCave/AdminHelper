@@ -18,6 +18,7 @@ from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
+    without_refused_extra_config,
     without_secretless_stcp,
     without_unbindable_visitor,
 )
@@ -78,15 +79,18 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    # Left out before the check: a server whose tunnels all lack a usable secret has no
-    # tunnel to configure, and its frpc.toml would carry the frps auth token for nothing.
-    tunnels = without_secretless_stcp(
-        db.query(FrpTunnel)
-        .filter(
-            FrpTunnel.server_id == server_id,
-            FrpTunnel.enabled.is_(True),
+    # Left out before the check: a server whose tunnels all lack a usable secret or carry
+    # a stored extra_config the API would refuse has no tunnel to configure, and its
+    # frpc.toml would carry the frps auth token for nothing.
+    tunnels = without_refused_extra_config(
+        without_secretless_stcp(
+            db.query(FrpTunnel)
+            .filter(
+                FrpTunnel.server_id == server_id,
+                FrpTunnel.enabled.is_(True),
+            )
+            .all()
         )
-        .all()
     )
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
@@ -188,8 +192,11 @@ def gen_bulk_zip(
         # warned about once, not per server, user and generator call.
         all_tunnels = without_secretless_stcp(all_tunnels)
 
+        # A tunnel with a stored extra_config the API would refuse is left out of the
+        # frpc.toml files only, once as well; the visitor TOMLs below carry no
+        # extra_config and keep it, like the visitor routes.
         by_server = {}
-        for t in all_tunnels:
+        for t in without_refused_extra_config(all_tunnels):
             by_server.setdefault(t.server_id, []).append(t)
 
         servers = db.query(Server).filter(Server.id.in_(by_server.keys())).all()

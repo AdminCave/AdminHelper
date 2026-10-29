@@ -231,3 +231,92 @@ class TestStreamReauth:
 
         asyncio.run(scenario())
         assert seen == [identity]
+
+
+# --- R-0618: the stream holds no get_db session ------------------------------
+# A router dependency with get_db (the scope guard) closes its session only after the
+# response, and a stream's response lives for the whole session of a desktop. The stream
+# checks the scope itself, on the short session of authenticate_stream_user.
+
+
+def _stream_route():
+    from app.main import app
+    from tests.test_route_auth_gate import _collect_api_routes
+
+    return next(r for r in _collect_api_routes(app) if r.path == "/api/notifications/stream")
+
+
+def _include_dependency_qualnames(path: str) -> set[str]:
+    """The dependencies an include_router(..., dependencies=...) adds to the router that
+    holds `path`, with their own sub-dependencies. FastAPI >= 0.138 keeps them on the
+    include (_IncludedRouter.include_context), not in the route's dependant."""
+    from fastapi.dependencies.utils import get_dependant
+
+    from app.main import app
+
+    names: set[str] = set()
+
+    def walk(dependant) -> None:
+        for dep in dependant.dependencies:
+            names.add(f"{dep.call.__module__}:{dep.call.__qualname__}")
+            walk(dep)
+
+    for node in app.routes:
+        ctx = getattr(node, "include_context", None)
+        routes = getattr(getattr(ctx, "included_router", None), "routes", None) or ()
+        if any(getattr(r, "path", None) == path for r in routes):
+            for depends in ctx.dependencies:
+                call = depends.dependency
+                names.add(f"{call.__module__}:{call.__qualname__}")
+                walk(get_dependant(path=path, call=call))
+    return names
+
+
+def test_the_include_walk_sees_a_router_scope_guard():
+    # Positive control: the feed router is included with the access scope guard, whose
+    # get_db the walk must find; else a changed FastAPI would leave the next test blind.
+    assert "app.core.database:get_db" in _include_dependency_qualnames("/api/notifications")
+
+
+def test_the_stream_route_depends_on_no_get_db():
+    from tests.test_route_auth_gate import _dependency_qualnames
+
+    route = _stream_route()
+    names = _dependency_qualnames(route) | _include_dependency_qualnames(route.path)
+    assert "app.core.database:get_db" not in names, sorted(names)
+
+
+@pytest.fixture
+def _enforced_on_the_test_session(db_session, monkeypatch):
+    import app.core.database as db_mod
+    from app.core import config
+    from tests.test_certificate_check import _Session
+
+    monkeypatch.setattr(config, "MTLS_ENFORCE", True)
+    monkeypatch.setattr(db_mod, "SessionLocal", lambda: _Session(db_session))
+
+
+@pytest.mark.parametrize("scope", [None, "agent"], ids=["no-cert", "agent-cert"])
+def test_opening_the_stream_without_an_access_certificate_is_403(
+    db_session, admin_user, _enforced_on_the_test_session, scope
+):
+    from fastapi import HTTPException
+
+    from app.modules.notifications.stream import authenticate_stream_user
+    from tests.test_certificate_check import _bearer, _leaf
+    from tests.test_mtls_scope import _req
+
+    headers = dict(_bearer("admin"))
+    if scope:
+        headers.update(_leaf("admin", ou=scope)[0])
+    with pytest.raises(HTTPException) as exc:
+        authenticate_stream_user(_req(headers))
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Kein gültiges Client-Zertifikat mit passendem Scope"
+
+
+def test_the_stream_without_certificate_and_token_is_403_before_401(
+    test_client, db_session, _enforced_on_the_test_session
+):
+    r = test_client.get("/api/notifications/stream")
+    assert r.status_code == 403, r.text

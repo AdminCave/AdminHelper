@@ -20,9 +20,13 @@ import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
-from urllib.request import getproxies
 
 import httpx
+
+# The table httpx itself builds its proxy mounts from, NO_PROXY included, so the choice
+# between proxy and direct path stays httpx's own. Private API: the differential test in
+# apps/server/tests/test_ssrf_pin.py reports a change after an httpx upgrade.
+from httpx._utils import get_environment_proxies
 
 # getLogger(__name__) gives "app.core.ssrf", not this service's "monitor.*" — the parity
 # test requires both copies to be one implementation, and a hard-coded name cannot be.
@@ -150,8 +154,9 @@ def check_target(url: str) -> Target:
     The host resolved is the name the request carries as Host header and TLS name:
     httpx's raw_host, IDNA 2008-encoded. Not urlparse's Unicode name, which
     getaddrinfo encodes by IDNA 2003 into another name for ß or ς. A URL httpx
-    cannot read (a host it cannot encode, a port that is no number) is rejected like
-    an unreadable URL: the request would fail on it at the same place.
+    cannot read (a host it cannot encode, a port that is no number, a lone surrogate
+    anywhere in it) is rejected like an unreadable URL: the request would fail on it
+    at the same place.
 
     Both rejections fail closed; the reason only lets a caller tell an operator
     whether the target resolves to a blocked address (PRIVATE, an unreadable
@@ -164,14 +169,14 @@ def check_target(url: str) -> Target:
         hostname = urlparse(url).hostname
     except ValueError:
         # The name resolved is httpx's; urlparse only goes first because it raises on a
-        # malformed IPv6 literal ("http://[::1"), which httpx reads as the host "%5B".
+        # malformed IPv6 literal ("http://["), which httpx reads as the host "%5B".
         # An unreadable URL fails closed like an unreadable address below (R-0181).
         return Target(UrlVerdict.PRIVATE)
     if not hostname:
         return Target(UrlVerdict.UNRESOLVED)
     try:
         hostname = httpx.URL(url).raw_host.decode("ascii")
-    except httpx.InvalidURL:
+    except (httpx.InvalidURL, UnicodeError):
         return Target(UrlVerdict.PRIVATE)
     if not hostname:
         # urlparse skips leading whitespace, httpx reads such a URL as relative.
@@ -280,24 +285,34 @@ def pinned_client(
     `target` is check_target(url); one without addresses (a rejection) raises
     ValueError. Host header and TLS name (SNI and certificate check) stay the
     hostname. A request for any other host is refused without connecting, so each
-    redirect hop needs a check_target and a client of its own. Without a proxy `url`
-    is parsed here as the request would parse it, so an httpx.InvalidURL can come
-    from this call already.
+    redirect hop needs a check_target and a client of its own. With a proxy from the
+    environment for the URL's scheme, what httpx sends through the proxy goes through
+    it as before, unpinned; everything else goes through the pin.
     """
     if not target.addresses:
         raise ValueError(f"no checked address to connect to ({target.verdict.value})")
-    proxies = getproxies()
-    if proxies.get(urlparse(url).scheme) or proxies.get("all"):
-        # With a proxy from the environment for this scheme httpx picks the proxy as
-        # before, NO_PROXY included (a target under NO_PROXY goes out directly and
-        # unpinned, as before): a client with a transport of its own ignores environment
-        # proxies, and through a CONNECT tunnel httpcore takes the TLS name from the
-        # target host, not from sni_hostname, so a pinned address would be checked
-        # against the certificate instead of the name.
-        return httpx.Client(verify=verify)
+    parsed = httpx.URL(url)
+    proxies = get_environment_proxies()
+    mounts: dict[str, httpx.BaseTransport | None] = {}
+    if proxies.get(f"{parsed.scheme}://") or proxies.get("all://"):
+        # A client with a transport of its own reads no proxy from the environment, so
+        # httpx's mounts are built here. Over a proxy mount the proxy connects as before:
+        # through a CONNECT tunnel httpcore takes the TLS name from the target host, not
+        # from sni_hostname, so a pinned address would be checked against the
+        # certificate instead of the name. A None mount (NO_PROXY) and every URL no
+        # proxy pattern matches fall back to the client's transport, the pin
+        # (httpx.Client._transport_for_url). Without a proxy for the scheme the client
+        # has the pin alone, as before: NO_PROXY goes unused, and an unusable proxy for
+        # another scheme cannot fail the client.
+        mounts = {
+            pattern: None if proxy is None else httpx.HTTPTransport(verify=verify, proxy=proxy)
+            for pattern, proxy in proxies.items()
+        }
     # Compared in httpx's own form. httpx's URL.host does not fit every spelling: it
     # decodes IDNA only when the whole host starts with xn-- (www.bücher.example stays
     # encoded) and keeps the case of an IPv6 literal. raw_host is IDNA-encoded
     # throughout; lower() does the rest.
-    raw_host = httpx.URL(url).raw_host.lower()
-    return httpx.Client(transport=_PinnedTransport(raw_host, target.addresses, verify=verify))
+    return httpx.Client(
+        transport=_PinnedTransport(parsed.raw_host.lower(), target.addresses, verify=verify),
+        mounts=mounts,
+    )

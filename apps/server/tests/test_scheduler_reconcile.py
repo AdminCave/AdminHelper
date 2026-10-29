@@ -7,6 +7,7 @@ the dedicated scheduler process reconciles scheduled hooks from the DB. These
 tests pin the reconcile (add / drop / leave-system-jobs / ignore-non-schedule)."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -105,3 +106,39 @@ class TestReconcile:
         warned = [r for r in caplog.records if "r0235-bad" in r.getMessage()]
         assert len(warned) == 1, [r.getMessage() for r in caplog.records]
         assert "a b c d e" in warned[0].getMessage()
+
+
+class TestReconcileKeepsTheNextRun:
+    # R-0617: a new IntervalTrigger starts at now + interval. The reconcile runs every
+    # 30 s and replaced every job, so an interval hook's next run moved out each time
+    # and never came.
+    def test_an_unchanged_interval_job_keeps_its_next_run(self, db_session):
+        _sched_hook(db_session, "h1", "5m")
+        reconcile_scheduled_hooks(db_session)
+        due = (datetime.now(UTC) + timedelta(minutes=2)).replace(microsecond=0)
+        scheduler.modify_job("h1", next_run_time=due)
+
+        reconcile_scheduled_hooks(db_session)
+
+        assert scheduler.get_job("h1").next_run_time == due
+        db_session.expire_all()
+        assert db_session.get(Hook, "h1").next_run == due.replace(tzinfo=None)
+
+    def test_a_changed_interval_replaces_the_job(self, db_session):
+        h = _sched_hook(db_session, "h1", "5m")
+        reconcile_scheduled_hooks(db_session)
+        h.schedule_interval = "1h"
+        db_session.commit()
+
+        reconcile_scheduled_hooks(db_session)
+
+        assert scheduler.get_job("h1").trigger.interval == timedelta(hours=1)
+
+    def test_an_unchanged_cron_job_keeps_its_next_run(self, db_session):
+        _sched_hook(db_session, "h1", "0 9 * * 1")
+        reconcile_scheduled_hooks(db_session)
+        first = scheduler.get_job("h1").next_run_time
+
+        reconcile_scheduled_hooks(db_session)
+
+        assert scheduler.get_job("h1").next_run_time == first

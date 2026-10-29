@@ -11,19 +11,36 @@ are forwarded internally within the Docker network to the monitoring container.
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import get_current_admin
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
+from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_cert_server, require_scope
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend
+from app.core.request_context import actor_from_request
+from app.modules.audit import service as audit
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
+
+logger = logging.getLogger(__name__)
+
+
+def _upstream_error(route: str, exc: httpx.HTTPError) -> HTTPException:
+    """The answer for a forward the monitoring service did not answer: 504 for a timeout,
+    502 for anything else. Logged with the type only: the message carries the URL."""
+    logger.warning("monitoring proxy (%s): %s", route, type(exc).__name__)
+    if isinstance(exc, httpx.TimeoutException):
+        return HTTPException(status_code=504, detail="monitoring service timed out")
+    return HTTPException(status_code=502, detail="monitoring service unreachable")
+
 
 # The agent-report ingest is public (X-API-Key, no JWT). Cap per-IP so an
 # unauthenticated flood can't drive the proxy-forward + monitoring auth path.
@@ -67,6 +84,25 @@ _ALLOWED_PATH_PREFIXES = (
     "agent",
 )
 
+# Raised before the request left this process: the monitoring received nothing.
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol)
+
+
+async def _audit_write(db: Session, request: Request, path: str, status: str, detail: str) -> None:
+    """One audit row for a forwarded write (none for GET); the request body never lands in it."""
+    if request.method == "GET":
+        return
+    await run_in_threadpool(
+        audit.record,
+        db,
+        f"monitoring.{request.method.lower()}",
+        object_type="monitoring",
+        object_label=path,
+        status=status,
+        detail=detail,
+        actor=actor_from_request(request),
+    )
+
 
 @router.post("/agent/{server_id}/report", dependencies=[Depends(require_cert_server)])
 async def proxy_agent_report(
@@ -83,14 +119,17 @@ async def proxy_agent_report(
         raise HTTPException(status_code=429, detail="Zu viele Agent-Reports")
     # `server_id` is percent-DECODED by Starlette: re-encode it, or a '?'/'#' truncates the
     # target URL (another monitoring route) and a control character makes httpx raise InvalidURL.
-    resp = await _client.post(
-        f"{_MONITOR_BASE}/agent/{quote(server_id, safe='')}/report",
-        content=await request.body(),
-        headers={
-            "X-API-Key": request.headers.get("x-api-key", ""),
-            "Content-Type": request.headers.get("content-type", "application/json"),
-        },
-    )
+    try:
+        resp = await _client.post(
+            f"{_MONITOR_BASE}/agent/{quote(server_id, safe='')}/report",
+            content=await request.body(),
+            headers={
+                "X-API-Key": request.headers.get("x-api-key", ""),
+                "Content-Type": request.headers.get("content-type", "application/json"),
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise _upstream_error("agent report", exc) from None
     return Response(
         content=resp.content,
         status_code=resp.status_code,
@@ -116,6 +155,7 @@ async def proxy_agent_report(
 async def proxy_to_monitoring(
     path: str,
     request: Request,
+    db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
     _scope=Depends(require_scope(SCOPE_ACCESS)),
 ):
@@ -138,15 +178,30 @@ async def proxy_to_monitoring(
         forward_path = quote(path, safe="/")
 
     target_url = f"{_MONITOR_BASE}/{forward_path}"
-    resp = await _client.request(
-        method=request.method,
-        url=target_url,
-        content=await request.body(),
-        headers={
-            "X-Internal-Key": MONITOR_API_KEY,
-            "Content-Type": request.headers.get("content-type", "application/json"),
-        },
-        params=request.query_params,
+    try:
+        resp = await _client.request(
+            method=request.method,
+            url=target_url,
+            content=await request.body(),
+            headers={
+                "X-Internal-Key": MONITOR_API_KEY,
+                "Content-Type": request.headers.get("content-type", "application/json"),
+            },
+            params=request.query_params,
+        )
+    except httpx.HTTPError as exc:
+        # A connection error means nothing was sent. An error after sending may hide a change
+        # the monitoring already applied, hence an `error` row. Only the type name: the
+        # message carries the target URL.
+        if not isinstance(exc, _NOT_SENT):
+            await _audit_write(db, request, forward_path, "error", f"error={type(exc).__name__}")
+        raise _upstream_error("admin proxy", exc) from None
+    await _audit_write(
+        db,
+        request,
+        forward_path,
+        "success" if resp.status_code < 400 else "failure",
+        f"status={resp.status_code}",
     )
     # Forward the pagination total — the proxy otherwise strips response
     # headers, which would make X-Total-Count unreachable for the UI.

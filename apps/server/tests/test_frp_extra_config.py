@@ -346,23 +346,25 @@ def test_post_and_put_answer_422_for_a_lone_surrogate(api, db_session):
         return api.client.request(method, url, content=content, headers=headers)
 
     url = "/api/frp/server-config"
+    # RequestModel refuses the surrogate before any field validator, at the string itself:
+    # inside extra_config that is the key it stands under.
     bad = [
-        {"extra_config": {"log.level": "a\ud800b"}},
-        *({field: "\ud800" + "a" * 16} for field in STRING_FIELDS.values()),
+        ({"extra_config": {"log.level": "a\ud800b"}}, ["body", "extra_config", "log.level"]),
+        *(({field: "\ud800" + "a" * 16}, ["body", field]) for field in STRING_FIELDS.values()),
     ]
-    for fields in bad:
+    for fields, loc in bad:
         r = send("POST", url, {"name": "frps", "server_addr": "frps.example.net", **fields})
         assert r.status_code == 422, (fields, r.text)
-        assert r.json()["detail"][0]["loc"] == ["body", *fields], r.text
+        assert r.json()["detail"][0]["loc"] == loc, r.text
     assert db_session.query(FrpServerConfig).count() == 0
 
     created = _post(api, {"log.level": "info"})
     assert created.status_code == 201, created.text
     config_id = created.json()["id"]
-    for fields in bad:
+    for fields, loc in bad:
         r = send("PUT", f"{url}/{config_id}", fields)
         assert r.status_code == 422, (fields, r.text)
-        assert r.json()["detail"][0]["loc"] == ["body", *fields], r.text
+        assert r.json()["detail"][0]["loc"] == loc, r.text
     assert _stored_extra(db_session, config_id) == {"log.level": "info"}
 
     # A 422 whose input has a UTF-8 form carries it unescaped.
