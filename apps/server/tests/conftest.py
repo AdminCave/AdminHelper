@@ -32,6 +32,7 @@ from app.core.auth import hash_password
 from app.core.database import Base, _session_utc, get_db
 from app.core.time import utcnow_naive
 from app.modules.users.models import User
+from tests import token_claims
 
 
 def _password_forms(url: str | None) -> tuple[str, ...]:
@@ -368,9 +369,11 @@ def db_session(pg_engine):
         if not nested.is_active:
             nested = connection.begin_nested()
 
+    token_claims.use_session(session)
     try:
         yield session
     finally:
+        token_claims.use_session(None)
         session.close()
         if outer.is_active:
             outer.rollback()

@@ -50,6 +50,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
+  der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
+  gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).
 - **Agent: nach einem Update prueft der Agent die frpc-Konfiguration einmal neu:** Der erste Lauf nach einem
   Agent-Update holt die Konfiguration des Servers auch bei gleichem Hash und prueft sie; besteht sie, bleibt frpc
   unberuehrt, sonst stoppt der Agent frpc wie bei jeder abgelehnten Konfiguration. Neue Datei `/etc/frp/.checked-by`.
