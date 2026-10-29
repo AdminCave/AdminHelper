@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung 3: Ansible-Laufverzeichnis, Playbook-Name, Sync-Doku, Pin-Reset, Provisionierungsbefehl — Task-Ledger
-Status: aktiv · Branch: feature/desktop-hardening-3 · Review: pro Task
+Status: bereit · Branch: feature/desktop-hardening-3 · Review: pro Task
 Spec: docs/features/desktop-hardening-3.md (Roadmap R-0748, R-0771, R-0817; Härtung, Kevin 2026-10-22)
 Heavy: linux-full + windows — linux-full: T7 und T9 ändern den Provisionierungs-Tab, den `provisioning.live.js` zeigt, T5 den Pin-Reset in Login und Einstellungen, T1 den Ansible-Lauf (GUI-E2E im Sammellauf über `main`); windows = der Job `rust-windows` der PR-CI (keine Windows-VM im Pool): T1 legt das Laufverzeichnis unter `%TEMP%` an, T2 ändert den Namen, der an `wt`/`cmd` geht, T5 und T6 ändern `tofu.rs`; kein `scenario` (kein FRP-Datenpfad, keine PKI, `enrollment.rs` unverändert, kein Install-Skript)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -140,8 +140,10 @@ Abhängt von: T7; ops-install-hardening gemergt
 Beweis: Code-Lesung apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte:94-99 (Token im Einzeiler) gegen scripts/agent-install.sh:32-33 und :306-316 (Abfrage ohne `--token`)
 HEAD: cea7fb9b
 
-### T10 — README: Einzeiler ohne Token (Fund der Abschlussprüfung)  [ ]
+### T10 — README: Einzeiler ohne Token (Fund der Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: README.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f0de06a4 2026-10-29T09:20:25+01:00
+Review: approve (.ah-out/review/desktop-hardening-3/T10.verdict.json)
 Änderung: `README.md` (Abschnitt „Installing the agent“, `:340-346`) beschreibt den Einzeiler des Provisionierungs-Tabs noch mit `--token <PROVISION-TOKEN>`; seit T9 enthält er keinen Token mehr, `agent-install.sh` fragt ihn verdeckt ab. Beispiel ohne `--token`, ein Satz zur Abfrage und zu `--token` für unbeaufsichtigte Rollouts, wie `agent-deployment.html` (DE+EN). CHANGELOG: der T9-Eintrag nennt README unter Doku und wird umbrochen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task

@@ -68,8 +68,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop, Provisionierungs-Tab: der Einzeiler enthaelt den Token nicht mehr:** `agent-install.sh` fragt ihn beim
   Ausfuehren verdeckt ueber `/dev/tty` ab, der Tab zeigt ihn zum Kopieren daneben; so steht er weder in der
   Shell-History noch in der Prozessliste noch im sudo-Log (mit einem Agent, der `--token-stdin` kennt; aeltere bekommen
-  ihn mit Warnung als Argument). Kopieren des Einzeilers blendet den Token nicht aus. Der Befehl "Nur provisionieren" behaelt `--token`. Doku: Agent-Deployment
-  (DE+EN).
+  ihn mit Warnung als Argument). Kopieren des Einzeilers blendet den Token nicht aus. Der Befehl "Nur provisionieren"
+  behaelt `--token`. Doku: Agent-Deployment (DE+EN), README.
 - **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
   der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
   gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).
