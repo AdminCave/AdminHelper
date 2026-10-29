@@ -59,7 +59,8 @@ ihn. Jede Task ein Commit, einzeln zurücknehmbar. T1 berührt die FRP-Config: `
 ## Doku-Impact
 
 `docs/developer/server.html` (Tabelle der Generatoren, Zeilen zu `generate_frpc_toml` und `generate_visitor_toml`)
-+ EN; `changelog.d/kern-frp-1.md`.
++ EN; `docs/developer/api-reference.html` (404- und Auslass-Bedingungen der Generate-Routen) + EN;
+`changelog.d/kern-frp-1.md`.
 
 ## Offene Fragen
 

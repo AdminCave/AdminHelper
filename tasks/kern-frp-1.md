@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-1 · Review: pro Task
 Spec: docs/features/kern-frp-1.md (Roadmap R-0894, R-0926)
 Heavy: linux-full — Server-API (FRP-Generator-Routen); kein Wire-Format- oder Install-Pfad ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,13 +22,15 @@ Review: approve (.ah-out/review/kern-frp-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py
 Doku: changelog.d/kern-frp-1.md, docs/developer/server.html:110-111 + EN
 
-### T2 — Generator-Routen filtern wie active_tunnels (R-0926)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_input_hardening.py, changelog.d/kern-frp-1.md
+### T2 — Generator-Routen filtern wie active_tunnels (R-0926)  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_input_hardening.py, changelog.d/kern-frp-1.md, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/features/kern-frp-1.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d4c657e2 2026-10-29T21:21:57+01:00
+Review: approve (.ah-out/review/kern-frp-1/T2.verdict.json)
 Änderung: `gen_frpc_toml` (`generate_router.py:77`) und der Bulk-ZIP (:193-199) nehmen vor der 404-Prüfung dieselbe Menge wie `active_tunnels`, also auch `without_unreachable_local` und den Filter aus T1; die Visitor-Routen (:125, :154, :216) zusätzlich den Filter aus T1. Kommentare :81-83 und :190-192 nachziehen. Test zuerst rot: ein Server, dessen einziger Tunnel ein ungültiges `local_port` hat → 404, im Bulk-ZIP keine `frpc.toml`.
 Beweis: Code-Lesung feature/server-fixes@0eb986e0 generate_router.py; Test: Server nur mit local_port 0 → frpc-toml-Route 200 statt 404
 Dedup-Key: ref:server:frp/generate_router.py:active-tunnel-prefilter
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py
-Doku: changelog.d/kern-frp-1.md
+Doku: changelog.d/kern-frp-1.md, docs/developer/api-reference.html:150-153 + EN
 Abhängt von: T1
 
 ## Entscheidungen
