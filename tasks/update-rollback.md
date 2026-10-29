@@ -55,8 +55,10 @@ Beweis: Code-Lesung docker-compose.yml:392-399 (TCP-Connect, Kommentar versprich
 Dedup-Key: bug:ops:update.sh:no-compose-wait-gateway-healthcheck
 HEAD: 237b450a
 
-### T3 — Stack-Prüfung: gateway, victoria und monitoring werden healthy, ein hängender monitoring-Prozess unhealthy  [ ]
+### T3 — Stack-Prüfung: gateway, victoria und monitoring werden healthy, ein hängender monitoring-Prozess unhealthy  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @17e90274 2026-10-29T16:50:47+01:00
+Review: approve (.ah-out/review/update-rollback/T3.verdict.json)
 Änderung: Neuer Schritt vor der Summary, nach den Schritten aus compose-hardening T8/T13 (Nummer nach dem letzten Schritt auf `main` zur Bauzeit). Er startet victoria und monitoring wie die bestehenden Schritte (`e2e_dc up -d --no-deps …`, vgl. `:623`, `:698`), falls sie nicht laufen. (a) gateway, victoria, monitoring, ca-issuer und server: `docker inspect --format '{{.State.Health.Status}}'` wird binnen `start_period + retries × interval` des Dienstes (aus `e2e_dc config --format json`) `healthy` (Polling, je Dienst eine ok/bad-Zeile). (b) hängender Prozess: `docker kill --signal STOP` auf den monitoring-Container (aus dem Host-Namensraum wird STOP auch an PID 1 zugestellt; ist PID 1 nicht uvicorn, den uvicorn-Prozess aus `docker top`) → der Befehl aus `docker inspect --format '{{json .Config.Healthcheck.Test}}'` per `docker exec` endet ≠ 0 binnen 10 s; Gegenprobe: der alte TCP-Befehl `python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"` endet 0 (die Prüfung kann fallen); danach `--signal CONT`, der Healthcheck-Befehl wieder 0. Den echten Lauf fährt die Session (Dispatch des `integration-stack`-Jobs auf dem Branch oder `/test` in der Lane); seine Summary-Zeile kommt in den PR-Text.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
