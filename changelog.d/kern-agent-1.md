@@ -7,6 +7,8 @@
   statt einer CA, prueft der Agent dessen Gueltigkeit und Verwendungszweck wie bei einer Kette zur CA.
 - **Agent: Schluessel der Server-Konfiguration fuer frpc:** Der Agent nimmt in der frpc-Konfiguration vom Server
   nur Schluessel mit hoechstens 32 Segmenten an; frp kennt keine tieferen Felder.
+- **Agent: `run --once` bei SIGTERM:** Stoppt systemd den Timer-Lauf, beendet der Agent den laufenden Schritt
+  ueber seinen Kontext wie im Dauerbetrieb, statt hart abzubrechen.
 
 ### Fixed
 

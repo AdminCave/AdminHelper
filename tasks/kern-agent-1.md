@@ -50,8 +50,10 @@ Dedup-Key: bug:agent:services.go:commandFailure-waitdelay
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: changelog.d/kern-agent-1.md
 
-### T5 — `run --once` endet über ctx bei SIGINT/SIGTERM (R-0881)  [ ]
+### T5 — `run --once` endet über ctx bei SIGINT/SIGTERM (R-0881)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/run.go, apps/agent/cmd/adminhelper-agent/run_test.go, changelog.d/kern-agent-1.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @4ebbdc1b 2026-10-29T19:50:48+01:00
+Review: approve (.ah-out/review/kern-agent-1/T5.verdict.json)
 Änderung: `runCmd` (`cmd/adminhelper-agent/run.go:64-65`) startet `runOnce` mit einem `signal.NotifyContext` wie `runLoop` (`:84`). Test: ein Signal beendet den ctx des Durchlaufs (über einen Seam, ohne echtes Signal an den Testprozess, falls nötig).
 Dedup-Key: ref:agent:run.go:once-no-signal-handler
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
