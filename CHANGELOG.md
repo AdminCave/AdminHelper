@@ -442,6 +442,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin (R-0768):** Sie legen nur noch eine
+  Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus.
 - **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
   gemeinsamen Schluessel (R-0761):** Wer ihn nicht zuerst schreibt, uebernimmt den des anderen Prozesses. Vorher konnte
   jeder Prozess einen eigenen erzeugen, und JWTs galten nicht prozessuebergreifend.

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server mit mehreren Prozessen: ein Schlüssel, ein Bootstrap-Token, gesperrte Hochstufung, Haltbarkeit, Log-Hygiene — Task-Ledger
-Status: aktiv · Branch: feature/server-multiworker · Review: pro Task
+Status: bereit · Branch: feature/server-multiworker · Review: pro Task
 Spec: docs/features/server-multiworker.md (Roadmap R-0761, R-0762, R-0768, R-0767, R-0766, R-0776)
 Heavy: linux-full — der Server-Start erzeugt `.secret_key` und die Bootstrap-Dateien neu abgestimmt (T2, T3), `PUT /api/users/{id}` sperrt bei einer Hochstufung die Zielzeile (T8), Server-API und Startpfad also; der Stack-Lauf fährt einen frischen Server-Start neben dem Scheduler-Container und die Web-E2E. T4/T5 ändern an `frps.toml` nur Haltbarkeit und eine Log-Zeile, nicht Inhalt oder Tunnel-Datenpfad; keine PKI, kein Install-/Compose-Pfad: kein `scenario`, kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -127,8 +127,10 @@ Orakel: contract — vom Fehler steht im Log nur sein Typ
 Dedup-Key: ref:server:rate_limit.py:log-hygiene
 HEAD: 53a7dbc5
 
-### T8 — Eine Hochstufung sperrt die Zielzeile  [ ]
+### T8 — Eine Hochstufung sperrt die Zielzeile  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/router.py, apps/server/tests/test_users_promotion_event.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2e6379b6 2026-10-29T10:26:56+01:00
+Review: approve (.ah-out/review/server-multiworker/T8.verdict.json)
 Änderung: In `update_user` (`apps/server/app/modules/users/router.py:97-152`; AC `:105`) wird die Zielzeile bei einer Hochstufung gesperrt gelesen: `query = db.query(User).filter(User.id == user_id)`; `if data.is_admin: query = query.with_for_update().populate_existing()`; `user = query.first()`. Nur bei `is_admin: true`, weil eine Sperre des Ziels vor der Admin-Sperre der Herabstufung (`:128-132`) die Sperr-Reihenfolge umkehrte (Deadlock bei A↔B-Herabstufung, Spec Trade-off 3); `populate_existing()` wie `apps/server/app/main.py:295-300`. Kommentar fürs Warum: zwei gleichzeitige Hochstufungen läsen sonst beide `is_admin = false` und legten zwei Standardregeln an und feuerten `user.promoted` zweimal. Kein `db.refresh(..., with_for_update=True)` nach Änderungen (verwürfe ein gesetztes Passwort). Docstring und Antwort der Route unverändert. Neuer Test in `test_users_promotion_event.py` (Helfer `fired`, `_headers`, `_promoted` aus AC; `_a_session_waits_for` aus `tests/test_identity_revocation.py:234-248` importiert, wie dort `from tests.test_certificate_check import …`): ein Fixture legt den Zielbenutzer (`promo-race-<uuid>`, kein Admin) über `sessionmaker(bind=pg_engine)` committet an und löscht im Teardown seine `NotificationSubscription`-Zeilen und ihn selbst; es steht in der Signatur vor `test_client`/`db_session`, damit sein Teardown nach dem Rollback von `db_session` läuft (bis dahin hält dessen offene Transaktion die Zeilensperre). Ablauf: Login im Haupt-Thread; eine zweite Session sperrt die Zielzeile (`with_for_update().one()`, `pg_backend_pid()`); der `PUT {"is_admin": true}` läuft in einem `ThreadPoolExecutor`; `_a_session_waits_for(pg_engine, pid)` muss `True` liefern; dann setzt die zweite Session `is_admin = True`, legt `default_admin_subscription(<id>)` an und committet (die erste Hochstufung); der `PUT` antwortet 200. Erwartet: über `db_session` genau eine `NotificationSubscription` des Ziels, `_promoted(fired) == []`; die Assertion nennt die gezählte Zahl. `finally`: zweite Session schließen, Executor beenden. Zuerst rot auf dem Stand vor dem Fix: der `PUT` wartet dort erst beim `UPDATE`, nachdem er ungesperrt `is_admin = false` gelesen hat → zwei Regeln und ein `user.promoted`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_users_promotion_event.py tests/test_users_last_admin.py tests/test_users.py tests/test_openapi_snapshot.py
 Doku: CHANGELOG.md (Fixed, umlautfrei: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin legen nur noch eine Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus)
