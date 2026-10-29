@@ -287,6 +287,123 @@
         "title": "ConnectionCreate",
         "type": "object"
       },
+      "ConnectionImportResult": {
+        "properties": {
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imported",
+          "mode"
+        ],
+        "title": "ConnectionImportResult",
+        "type": "object"
+      },
+      "ConnectionOut": {
+        "additionalProperties": true,
+        "description": "Connection.to_dict. The extra fields a client stored ride along as further keys.",
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "keyPath": {
+            "title": "Keypath",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "lastUsed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastused"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "tags": {
+            "title": "Tags"
+          },
+          "trustCert": {
+            "title": "Trustcert",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "host",
+          "port",
+          "username",
+          "domain",
+          "keyPath",
+          "url",
+          "notes",
+          "tags",
+          "trustCert",
+          "lastUsed"
+        ],
+        "title": "ConnectionOut",
+        "type": "object"
+      },
       "ConnectionUpdate": {
         "additionalProperties": true,
         "properties": {
@@ -3792,8 +3909,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/ConnectionOut"
                   },
                   "title": "Response Get Connections Api Connections Get",
                   "type": "array"
@@ -3843,9 +3959,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Create Connection Api Connections Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionOut"
                 }
               }
             },
@@ -3912,7 +4026,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionImportResult"
+                }
               }
             },
             "description": "Successful Response"
@@ -4006,9 +4122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Update Connection Api Connections  Conn Id  Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionOut"
                 }
               }
             },
@@ -4059,9 +4173,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Touch Connection Api Connections  Conn Id  Touch Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionOut"
                 }
               }
             },

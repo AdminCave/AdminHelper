@@ -47,8 +47,10 @@ Für alle Tasks:
 
 Teil-Ledger (Kevin 2026-10-23, Spec Trade-off 8): T1–T12 aus `tasks/api-contracts.md`, gemergt in `feature/api-contracts`. CHANGELOG-Einträge in `changelog.d/api-contracts-server.md` statt `CHANGELOG.md` (Konvention seit dem Plan).
 
-### T1 — connections: `ConnectionOut` und `ConnectionImportResult` (R-0684)  [ ]
+### T1 — connections: `ConnectionOut` und `ConnectionImportResult` (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d03d3794 2026-10-29T22:00:37+01:00
+Review: approve (.ah-out/review/api-contracts-server/T1.verdict.json)
 Änderung: Vorher die offizielle FastAPI-Doku zu Response Model und `response_model_exclude_unset` lesen (WebFetch), Ergebnis in den Commit-Body. Neu in `connections/schemas.py`: `ConnectionOut` mit `model_config = ConfigDict(extra="allow")` und den Schlüsseln von `Connection.to_dict` (`apps/server/app/modules/connections/models.py:66-90`): `id`, `name`, `kind` als `str` (Spalte `:49` nicht eingeschränkt, die Import-Validierung gibt es erst seit v0.36.0, Commit `84d4eaa8`), `host`, `username`, `domain`, `keyPath`, `url`, `notes` als `str` (`or ""`), `port: Optional[int]`, `tags: list[Any]`, `trustCert: bool`, `lastUsed: Optional[str]`, `serverId: Optional[str] = None` (nur gesetzt, wenn es einen Server gibt). `ConnectionImportResult` `{imported: int, mode: str}` (`router.py:306`). Routen `GET ''` (`router.py:95`, `list[ConnectionOut]`), `POST ''` (`:110`), `PUT /{conn_id}` (`:138`), `POST /{conn_id}/touch` (`:173`) mit `response_model_exclude_unset=True`; `POST /import` (`:237`). Neue Datei `tests/test_response_shapes.py` mit dem Testmuster; (c) Verbindung ohne Server → kein `serverId`; Verbindung mit `extra_data` `{"proxyJump": "jump.example"}` → der Schlüssel steht in der Antwort (prüft, dass `extra="allow"` mit `exclude_unset` Extras behält); Altzeile direkt per ORM mit `kind="vnc"` und `tags='[1, "a"]'` → 200 und gleich `to_dict()`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_connections_isolation.py tests/test_connections_import.py
 Doku: keine (das Schema steht unter `/api/docs`; CHANGELOG sammelt T12)
@@ -170,3 +172,6 @@ Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
 ## Entscheidungen
+- T1: `ConnectionOut.tags` ist `Any`, nicht `list[Any]` wie im Plan: ein Import vor v0.36.0 schrieb einen
+  Nicht-Listen-Wert unverändert, eine solche Altzeile machte die ganze Liste zur 500 (Regel 3). Der Snapshot zeigt
+  `tags` damit ungetypt; die Client-Vertragstests (T19/T20) lesen es als unbekannt.
