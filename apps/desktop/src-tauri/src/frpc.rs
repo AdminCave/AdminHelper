@@ -245,14 +245,18 @@ struct VisitorBundle {
     // identity instead; any `pki` field the server still sends is ignored.
 }
 
+/// A visitor-bundle reply: the bundle, `None` for no tunnels (see [`carries_bundle`]), and
+/// the HTTP code if the server refused the access (403).
+struct BundleReply {
+    bundle: Option<VisitorBundle>,
+    refused: Option<u16>,
+}
+
 /// Fetch the visitor bundle from the server. TOML only — the server no longer
-/// ships PKI (D6); the identity comes from enrollment. `None` means the user has
-/// no tunnels (see [`carries_bundle`]). Comes with the sign-in it was fetched for; a bundle
-/// that arrives after that user signed out, or after someone else signed in, is refused,
-/// so frpc never takes over the tunnels of a session that is gone.
-async fn fetch_visitor_bundle(
-    session: &SessionState,
-) -> Result<(Option<VisitorBundle>, SignedIn), AppError> {
+/// ships PKI (D6); the identity comes from enrollment. Comes with the sign-in it was fetched
+/// for; a bundle that arrives after that user signed out, or after someone else signed in, is
+/// refused, so frpc never takes over the tunnels of a session that is gone.
+async fn fetch_visitor_bundle(session: &SessionState) -> Result<(BundleReply, SignedIn), AppError> {
     let path = "/api/frp/generate/visitor-bundle";
     let (response, who) = auth::authenticated_get(session, path).await?;
     let bundle = bundle_from(response).await?;
@@ -260,14 +264,22 @@ async fn fetch_visitor_bundle(
     Ok((bundle, who))
 }
 
-/// The bundle a visitor-bundle reply carries; `None` means no tunnels (see [`carries_bundle`]).
-async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle>, AppError> {
-    if !carries_bundle(response.status())? {
-        return Ok(None);
+/// What a visitor-bundle reply carries (see [`carries_bundle`]).
+async fn bundle_from(response: reqwest::Response) -> Result<BundleReply, AppError> {
+    let status = response.status();
+    if !carries_bundle(status)? {
+        let refused = (status == reqwest::StatusCode::FORBIDDEN).then_some(status.as_u16());
+        return Ok(BundleReply {
+            bundle: None,
+            refused,
+        });
     }
 
     let bundle: VisitorBundle = response.json().await.map_err(AppError::from)?;
-    Ok(Some(bundle))
+    Ok(BundleReply {
+        bundle: Some(bundle),
+        refused: None,
+    })
 }
 
 /// Whether a visitor-bundle reply with this status carries a bundle. 404 is no error but "no
@@ -1386,11 +1398,10 @@ fn start_fresh(
 }
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
-/// reload or leave it; no tunnels (404, or 403: access refused) stop it. A failure before that
-/// (network, 5xx, a 401 the refresh could not cure, a session that changed meanwhile) leaves the
-/// running frpc alone. The fetch
-/// goes to the signed-in server with the session's current access token (see
-/// [`auth::authenticated_get`]).
+/// reload or leave it; no tunnels (404, or 403: access refused, then named in `refused`) stop
+/// it. A failure before that (network, 5xx, a 401 the refresh could not cure, a session that
+/// changed meanwhile) leaves the running frpc alone. The fetch goes to the signed-in server
+/// with the session's current access token (see [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
     app: tauri::AppHandle,
     state: FrpcState,
@@ -1401,18 +1412,19 @@ pub async fn refresh_tunnel(
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
     let data_dir = app_data_dir(&app)?;
     let run_dir = runtime_dir(&data_dir)?;
-    let (bundle, who) = fetch_visitor_bundle(session).await?;
+    let (reply, who) = fetch_visitor_bundle(session).await?;
     let ports = PortRegistry::new(&data_dir);
     let sidecar = AppSidecar {
         app: &app,
         run_dir,
         data_dir,
     };
-    let server_toml = bundle.as_ref().map(|bundle| bundle.toml.as_str());
+    let server_toml = reply.bundle.as_ref().map(|bundle| bundle.toml.as_str());
     let outcome = reconcile(&state, &sidecar, &ports, server_toml, who, since).await?;
     Ok(TunnelRefresh {
         status: tunnel_status(&state),
         outcome,
+        refused: reply.refused,
     })
 }
 
@@ -4061,15 +4073,31 @@ method = "token"
 
         let (port, _request) = serve_one(reply("404 Not Found", "")).await;
         let none = bundle_from(get(port).await.unwrap()).await.unwrap();
-        assert!(none.is_none());
+        assert!(none.bundle.is_none());
+        assert_eq!(none.refused, None);
 
         let body = r#"{"toml":"serverAddr = \"f\""}"#;
         let (port, _request) = serve_one(reply("200 OK", body)).await;
         let bundle = bundle_from(get(port).await.unwrap()).await.unwrap();
-        assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
+        assert_eq!(bundle.refused, None);
+        assert_eq!(bundle.bundle.expect("a bundle").toml, "serverAddr = \"f\"");
 
         let (port, _request) = serve_one(reply("500 Internal Server Error", "")).await;
         assert!(bundle_from(get(port).await.unwrap()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_bundle_reply_403_is_no_tunnels_and_names_the_refusal() {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let (port, _request) = serve_one(reply("403 Forbidden", "")).await;
+        let response = client
+            .get(format!("http://127.0.0.1:{port}/"))
+            .send()
+            .await
+            .unwrap();
+        let refused = bundle_from(response).await.unwrap();
+        assert!(refused.bundle.is_none());
+        assert_eq!(refused.refused, Some(403));
     }
 
     #[tokio::test]
@@ -4127,8 +4155,8 @@ method = "token"
             match next {
                 // The same user signed in again: the tunnels are still theirs.
                 Some("ops-admin") => {
-                    let (bundle, who) = fetched.expect("the bundle");
-                    assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
+                    let (reply, who) = fetched.expect("the bundle");
+                    assert_eq!(reply.bundle.expect("a bundle").toml, "serverAddr = \"f\"");
                     assert_eq!(
                         (who.server_url.as_str(), who.username.as_str()),
                         (server.as_str(), "ops-admin")

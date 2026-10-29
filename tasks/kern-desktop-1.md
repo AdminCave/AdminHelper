@@ -59,8 +59,10 @@ Dedup-Key: bug:desktop:SettingsModal.svelte:reset-failure-state
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.identity.test.ts
 Doku: changelog.d/kern-desktop-1.md
 
-### T6 — Tunnel-Abgleich meldet einen verweigerten Zugriff (R-0948, Rust)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, changelog.d/kern-desktop-1.md
+### T6 — Tunnel-Abgleich meldet einen verweigerten Zugriff (R-0948, Rust)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, changelog.d/kern-desktop-1.md, apps/desktop/src-tauri/src/models.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @29508b93 2026-10-29T19:00:56+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T6.verdict.json)
 Änderung: Antwortet der Server auf das Visitor-Bundle mit 403 (`carries_bundle`, `frpc.rs:278`), stoppt der Abgleich frpc wie bisher, und `TunnelRefresh` trägt zusätzlich den Grund (`refused` mit HTTP-Code 403); bei 404 und allen anderen Ausgängen fehlt er. Tests: 403 → Grund gesetzt, 404 → keiner.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: → T7
