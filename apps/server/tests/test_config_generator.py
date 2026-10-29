@@ -458,3 +458,58 @@ class TestRefusedExtraConfigWarning:
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
             assert without_refused_extra_config([tunnel]) == [tunnel]
         assert not self._warnings(caplog)
+
+
+class TestFieldsTheApiRefuses:
+    # R-0894: rows stored before the schema checked name, local_ip, custom_domains and
+    # secret_key are left out of the frpc and visitor TOML, logged by name only; the tunnels
+    # next to them are untouched.
+    BAD_VALUES = ('a"b', "a\\b", "a\nb", "a\x7fb", "a{{b", "a\ud800b")
+    FIELDS = ("name", "local_ip", "custom_domains", "secret_key")
+
+    def _bad(self):
+        return [
+            _make_tunnel(
+                **{"name": f"bad-{field}-{i}", "tunnel_type": "https", field: value}
+                if field == "custom_domains"
+                else {"name": f"bad-{field}-{i}", field: value}
+            )
+            for field in self.FIELDS
+            for i, value in enumerate(self.BAD_VALUES)
+        ]
+
+    def _warnings(self, caplog):
+        return [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+
+    def test_frpc_and_visitor_leave_the_row_out(self, caplog):
+        ok = _make_tunnel(name="ok", visitor_port=6001)
+        tunnels = [*self._bad(), ok]
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            frpc = generate_frpc_toml(_make_config(), tunnels, "srv1")
+            visitor = generate_visitor_toml(_make_config(), tunnels)
+        assert frpc == generate_frpc_toml(_make_config(), [ok], "srv1")
+        assert visitor == generate_visitor_toml(_make_config(), [ok])
+        assert [p["name"] for p in tomllib.loads(frpc)["proxies"]] == ["ok"]
+        warned = self._warnings(caplog)
+        for tunnel in tunnels[:-1]:
+            assert any(repr(tunnel.name) in m and "left out" in m for m in warned), (
+                tunnel.name,
+                warned,
+            )
+
+    def test_the_warning_carries_no_value(self, caplog):
+        tunnel = _make_tunnel(name="leaky", secret_key="s3cr3t-value-0123456789\n")
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            generate_frpc_toml(_make_config(), [tunnel], "srv1")
+        warned = " ".join(self._warnings(caplog))
+        assert "'leaky'" in warned and "secret_key" in warned
+        assert "s3cr3t" not in warned
+
+    def test_a_row_the_api_takes_is_kept_without_a_warning(self, caplog):
+        tunnel = _make_tunnel(
+            name="web", tunnel_type="https", custom_domains="a.example, b.example"
+        )
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            toml = generate_frpc_toml(_make_config(), [tunnel], "srv1")
+        assert toml.count("[[proxies]]") == 1
+        assert not self._warnings(caplog)
