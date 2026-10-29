@@ -77,11 +77,16 @@ def substitute_variables(obj, variables: dict):
     return obj
 
 
+# C0 and DEL, the boundary of _no_control_characters (schemas.py): the substituted
+# values reach check names past that validator, from the assignment and the inventory sync.
+_CONTROL_TO_SPACE = {**{c: " " for c in range(0x20)}, 0x7F: " "}
+
+
 def _build_variables(assignment: MonitorTemplateAssignment) -> dict:
     """Builds the variable map from an assignment."""
     return {
-        "hostname": assignment.server_hostname,
-        "server_name": assignment.server_name,
+        "hostname": (assignment.server_hostname or "").translate(_CONTROL_TO_SPACE),
+        "server_name": (assignment.server_name or "").translate(_CONTROL_TO_SPACE),
         "server_id": assignment.server_id,
     }
 
