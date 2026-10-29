@@ -115,11 +115,13 @@ Dedup-Key: bug:desktop:proxy.rs:raw-error-body-to-ui
 HEAD: 237b450a
 Semantik: keine Stelle in docs/ beschreibt die Meldung (gesucht in `docs/developer/desktop.html`, `api_proxy` `:168`, `:178`); Maßstab `apps/desktop/ui/src/lib/api/request.ts:12` — „Behaviour mirrors apps/web/src/lib/api/client.ts“, das Web liest `detail` (`docs/developer/webui.html:79`, `client.ts:126-140`); Kevin 2026-10-22: Rust reicht Status und Code strukturiert ans UI
 
-### T7 — Desktop-Rust: Ablehnung der Anmeldung als `Http` oder `MtlsCertRequired` (R-0709)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/error.rs, apps/desktop/src-tauri/src/auth.rs, CHANGELOG.md
+### T7 — Desktop-Rust: Ablehnung der Anmeldung als `Http` oder `MtlsCertRequired` (R-0709)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/error.rs, apps/desktop/src-tauri/src/auth.rs, CHANGELOG.md, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @82088bdf 2026-10-29T13:43:24+01:00
+Review: approve (.ah-out/review/fehlervertrag/T7.verdict.json)
 Änderung: `error.rs`: neue Variante `MtlsCertRequired`, `Display` der heutige Text aus `apps/desktop/src-tauri/src/auth.rs:51-54` samt Präfix, `code()` `ERR_MTLS_CERT_REQUIRED`. `login_failure` (`auth.rs:48-61`): die Gateway-Seite → `AppError::MtlsCertRequired`; jede andere Antwort → `AppError::http(status.as_u16(), body)` aus T6. Tests in `auth.rs`: `the_gateway_no_cert_page_becomes_the_stable_code` (`:254`) zusätzlich `code() == "ERR_MTLS_CERT_REQUIRED"`; statt `other_failures_keep_the_status_and_the_body` (`:264`) `other_failures_carry_status_code_and_detail`: 400 `{"detail":"bad request"}` → `Http` 400 ohne Server-Code, Text `bad request`; 401 `{"detail":"Invalid credentials"}` → 401, Text `Invalid credentials`; 403 `{"detail":"ERR_CERT_USER_MISMATCH: The client certificate belongs to another user.","code":"ERR_CERT_USER_MISMATCH"}` → `code()` `ERR_CERT_USER_MISMATCH`, Text ohne Präfix, `status` 403; 403 und 500 mit der nginx-Seite → `Http` mit Text `HTTP 403` bzw. `HTTP 500`, `code()` nicht `ERR_MTLS_CERT_REQUIRED`, kein `<html>`. `other_failures_still_redact_the_body` (`:285`) mit dem Body `{"detail":"token <jwt>"}` → `<redacted-jwt>`, kein JWT; dazu derselbe JWT als Nicht-JSON-Body → Text `HTTP 401`. Zuerst rot: der 403-Fall mit `code` auf HEAD.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- error:: -- auth::
-Doku: CHANGELOG.md (Changed, umlautfrei: die Anmeldung des Desktops zeigt bei einer Ablehnung den Text des Servers statt `Login fehlgeschlagen (<Status>): <roher Body>`)
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (IPC-Absatz: `ERR_MTLS_CERT_REQUIRED`, `login` als Quelle von `status`) · CHANGELOG.md (Changed, umlautfrei: die Anmeldung des Desktops zeigt bei einer Ablehnung den Text des Servers statt `Login fehlgeschlagen (<Status>): <roher Body>`)
 Abhängt von: T6
 Test-Löschung: apps/desktop/src-tauri/src/auth.rs::other_failures_keep_the_status_and_the_body — ersetzt durch other_failures_carry_status_code_and_detail im selben Commit: Status und Code reisen strukturiert statt im Text (gewollte Änderung, R-0662/R-0709, Kevin 2026-10-22)
 Orakel: contract — die Ablehnung der Anmeldung gegen die Spec-Tabelle „Desktop-IPC“
@@ -190,3 +192,7 @@ Beweis: origin/main@237b450a · Code-Lesung: `AppError::SessionExpired` schreibt
 Orakel: contract — die abgelaufene Sitzung hängt am Code
 Dedup-Key: ref:desktop:error.rs:string-errors-at-ipc
 HEAD: 237b450a
+
+## Entscheidungen
+
+- 2026-10-29 T6: `Display` von `AppError::Http` schreibt ohne lesbaren Text nur `HTTP <status>`, sonst `HTTP <status>: <message>` — sonst stünde in Logs `HTTP 502: HTTP 502`; die IPC trägt die message ohne Präfix (Test `http_names_its_status_once`, T7)

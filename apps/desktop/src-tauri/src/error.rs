@@ -78,6 +78,9 @@ pub enum AppError {
     Json(serde_json::Error),
     /// The session could not be renewed and is gone (`session::authed_send`).
     SessionExpired,
+    /// The gateway refused a login without a device certificate under enforced mTLS
+    /// (`auth::login_failure`).
+    MtlsCertRequired,
     /// A non-2xx answer of the server: `code` only in the form the server promises,
     /// `message` the redacted text of its `detail` (`AppError::http`).
     Http {
@@ -126,6 +129,12 @@ impl std::fmt::Display for AppError {
             AppError::Keyring(msg) => write!(f, "{msg}"),
             AppError::Json(err) => write!(f, "{err}"),
             AppError::SessionExpired => write!(f, "Session expired, please sign in again"),
+            AppError::MtlsCertRequired => write!(
+                f,
+                "ERR_MTLS_CERT_REQUIRED: The server requires a device certificate (mTLS is \
+                 enforced). Enroll this device with a one-time enrollment token from your \
+                 administrator."
+            ),
             AppError::Http {
                 status, message, ..
             } if *message == http_fallback(*status) => write!(f, "{message}"),
@@ -211,6 +220,7 @@ impl AppError {
             AppError::Keyring(_) => "ERR_KEYRING",
             AppError::Json(_) => "ERR_JSON",
             AppError::SessionExpired => "ERR_SESSION_EXPIRED",
+            AppError::MtlsCertRequired => "ERR_MTLS_CERT_REQUIRED",
             AppError::Http { code, .. } => code.as_deref().unwrap_or("ERR_HTTP"),
         }
     }
@@ -378,6 +388,7 @@ mod tests {
             (AppError::Keyring("locked".into()), "ERR_KEYRING"),
             (AppError::Json(json), "ERR_JSON"),
             (AppError::SessionExpired, "ERR_SESSION_EXPIRED"),
+            (AppError::MtlsCertRequired, "ERR_MTLS_CERT_REQUIRED"),
         ];
         for (err, code) in cases {
             assert_eq!(
@@ -464,6 +475,15 @@ mod tests {
         let (_, _, message) = http_of(400, &body);
         assert!(message.contains("<redacted-jwt>"), "{message}");
         assert!(!message.contains(jwt), "{message}");
+    }
+
+    #[test]
+    fn http_names_its_status_once() {
+        assert_eq!(
+            AppError::http(409, r#"{"detail":"taken"}"#).to_string(),
+            "HTTP 409: taken"
+        );
+        assert_eq!(AppError::http(502, "<html></html>").to_string(), "HTTP 502");
     }
 
     #[test]
