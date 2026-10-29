@@ -886,7 +886,7 @@ def test_a_database_error_costs_only_its_check(client_db, monkeypatch, caplog, f
     writes: list[list[str]] = []
     monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
     dispatched: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(agent_router, "_dispatch_alert_bg", lambda *alert: dispatched.append(alert))
+    monkeypatch.setattr(agent_router, "dispatch_alert_bg", lambda *alert: dispatched.append(alert))
     real_apply_result = agent_router.apply_result
 
     def apply_result_breaking_the_first_check(db, check, *args, **kwargs):
@@ -949,7 +949,7 @@ def test_only_the_saved_transition_is_logged(client_db, monkeypatch, caplog, flu
         return result
 
     monkeypatch.setattr(agent_router, "apply_result", apply_result_breaking_the_first_check)
-    monkeypatch.setattr(agent_router, "_dispatch_alert_bg", lambda *alert: None)
+    monkeypatch.setattr(agent_router, "dispatch_alert_bg", lambda *alert: None)
 
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="monitor.engine"):

@@ -464,6 +464,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: ein gescheitertes Loeschen laesst den Check eingeplant (R-0695):** Scheitert beim Loeschen eines
+  Checks oder Templates das Speichern, bleibt der Check eingeplant; vorher lief er bis zum Neustart des Dienstes
+  nicht mehr. Der Scheduler aendert sich erst nach dem Speichern.
 - **Server: zwei gleichzeitige Hochstufungen desselben Benutzers zum Admin (R-0768):** Sie legen nur noch eine
   Standard-Benachrichtigungsregel an und loesen `user.promoted` einmal aus.
 - **Server: ohne gesetztes `SECRET_KEY` erzeugen Server-Worker und Scheduler beim ersten Start nur noch einen
