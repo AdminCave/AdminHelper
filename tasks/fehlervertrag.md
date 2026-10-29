@@ -209,3 +209,4 @@ HEAD: 237b450a
 
 - 2026-10-29 T6: `Display` von `AppError::Http` schreibt ohne lesbaren Text nur `HTTP <status>`, sonst `HTTP <status>: <message>` — sonst stünde in Logs `HTTP 502: HTTP 502`; die IPC trägt die message ohne Präfix (Test `http_names_its_status_once`, T7)
 - 2026-10-29 T9: `AppError::http` nimmt die Codes, die nur der Client vergibt (`ERR_TLS_UNKNOWN_ISSUER`, `ERR_TOFU_PIN_MISMATCH`, `ERR_CA_PIN_MISMATCH`, `ERR_MTLS_CERT_REQUIRED`), nicht vom Server an — sonst könnte ein Server ab T10 per `code` den Vertrauensdialog oder den Pin-Reset öffnen (security-Hinweis aus T7)
+- 2026-10-29 Abschluss (Kevin): Codes, die nicht in `CLIENT_CODES` stehen, darf der Server setzen, auch `ERR_SESSION_EXPIRED` (die UI meldet dann keinen Fehler) und `ERR_CERT_*` (die Anmeldung bietet das Zuruecksetzen mit Bestaetigung an). Hingenommen: der Server konnte dasselbe bisher ueber den Text, er gewinnt dadurch nichts.
