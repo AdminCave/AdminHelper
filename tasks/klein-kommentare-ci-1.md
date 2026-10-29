@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-kommentare-ci-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-kommentare-ci-1 · Review: am Ende
+Status: erledigt · Branch: feature/klein-kommentare-ci-1 · Review: am Ende
 Spec: docs/features/klein-kommentare-ci-1.md (Roadmap R-0847, R-0877, R-0927)
 Heavy: none — nur Kommentare in einem Workflow, kein Schritt ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
