@@ -115,8 +115,10 @@ Orakel: contract — die Narrower gegen die Formen der Checker
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T24 — desktop-ui: SecZfs, SecSmart, SecForecast ohne Cast (R-0687)  [ ]
+### T24 — desktop-ui: SecZfs, SecSmart, SecForecast ohne Cast (R-0687)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecForecast.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts, apps/desktop/ui/src/components/monitoring/section/SecForecast.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6295523f 2026-10-29T23:07:34+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T24.verdict.json)
 Änderung: Die Casts `SecZfs.svelte:34`, `:38`, `SecSmart.svelte:28`, `SecForecast.svelte:22` werden Aufrufe der Narrower aus T23. Die Darstellung gültiger Daten bleibt; SMART `absent` wird typisiert, nicht angezeigt (eine Anzeige wäre sichtbares Verhalten). Neue Tests (SPDX) für SecSmart und SecForecast wie `SecZfs.test.ts`: gültige Daten rendern wie heute, `details` mit falschem Feldtyp rendert die leere Sektion statt zu werfen. Suite vor und nach dem Diff grün, beide Summary-Zeilen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecZfs.test.ts src/components/monitoring/section/SecSmart.test.ts src/components/monitoring/section/SecForecast.test.ts
 Doku: keine
