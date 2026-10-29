@@ -11,6 +11,7 @@ from datetime import timedelta
 from app.core.auth import create_access_token, hash_api_key
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit.models import AuditLog
+from tests.token_claims import claims_for
 
 BODY = {"name": "audit-conn", "kind": "ssh"}
 
@@ -133,7 +134,7 @@ def test_repeated_logouts_without_a_token_write_nothing(test_client, db_session)
 def test_logout_with_only_an_expired_access_token_is_not_audited(
     test_client, db_session, admin_user
 ):
-    expired = create_access_token({"sub": "admin"}, expires_delta=timedelta(minutes=-5))
+    expired = create_access_token(claims_for("admin"), expires_delta=timedelta(minutes=-5))
     _logout(test_client, headers={"Authorization": f"Bearer {expired}"})
     assert _rows(db_session, "auth.logout") == []
 

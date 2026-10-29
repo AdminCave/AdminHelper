@@ -24,7 +24,7 @@ from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
 from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
-from app.modules.servers.schemas import ServerCreate, ServerUpdate
+from app.modules.servers.schemas import ServerCreate, ServerSummary, ServerUpdate
 
 logger = logging.getLogger("adminhelper.servers")
 
@@ -130,6 +130,15 @@ def create_server(
     )
     _notify_monitoring_tag_sync("server.created")
     return server.to_dict()
+
+
+# Declared before /{server_id}, else FastAPI reads "summary" as a server id. The user
+# dialog only needs these three fields to assign servers; GET /api/servers loads every
+# connection and tunnel of every server for them.
+@router.get("/summary", response_model=list[ServerSummary])
+def list_server_summaries(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    rows = db.query(Server.id, Server.name, Server.hostname).order_by(Server.name, Server.id)
+    return [ServerSummary(id=r.id, name=r.name, hostname=r.hostname) for r in rows]
 
 
 @router.get("/{server_id}")

@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"adminhelper-agent/internal/config"
 )
 
 // stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
@@ -24,14 +26,14 @@ func stubReportHost(t *testing.T) {
 	oldInterval := cpuSampleInterval
 	cpuSampleInterval = 0
 	oldPlugins := pluginCollectors
-	pluginCollectors.docker = func() map[string]any { return nil }
-	pluginCollectors.proxmox = func() map[string]any { return nil }
-	pluginCollectors.zfs = func() map[string]any { return nil }
-	pluginCollectors.smart = func() ([]SmartDisk, string) { return nil, "not_installed" }
+	pluginCollectors.docker = func(context.Context) map[string]any { return nil }
+	pluginCollectors.proxmox = func(context.Context) map[string]any { return nil }
+	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
+	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
-	serviceHealthCollector = func() map[string]any { return map[string]any{} }
+	serviceHealthCollector = func(context.Context) map[string]any { return map[string]any{} }
 	oldSystemState := systemStateCollector
-	systemStateCollector = func(st reportState) (map[string]any, reportState) { return nil, st }
+	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) { return nil, st }
 	oldHostFacts := hostFactsCalls
 	hostFactsCalls.platform = func() (string, string, string, error) { return "", "", "", nil }
 	hostFactsCalls.virtualization = func() (string, string, error) { return "", "", nil }
@@ -139,6 +141,36 @@ func TestBuildReportSmartDisks(t *testing.T) {
 	}
 }
 
+func TestBuildReportPassesItsContextToSmart(t *testing.T) {
+	type ctxKey struct{}
+	stubReportHost(t)
+	var got context.Context
+	pluginCollectors.smart = func(ctx context.Context) ([]SmartDisk, string) {
+		got = ctx
+		return nil, "not_installed"
+	}
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	if got == nil || got.Value(ctxKey{}) != t.Name() {
+		t.Errorf("smart collector got context %v, want the report's", got)
+	}
+}
+
+func TestBuildReportPassesItsContextToTheSystemState(t *testing.T) {
+	type ctxKey struct{}
+	stubReportHost(t)
+	var got context.Context
+	systemStateCollector = func(ctx context.Context, st reportState) (map[string]any, reportState) {
+		got = ctx
+		return nil, st
+	}
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	if got == nil || got.Value(ctxKey{}) != t.Name() {
+		t.Errorf("system state collector got context %v, want the report's", got)
+	}
+}
+
 func TestBuildReportSystemState(t *testing.T) {
 	// The key comes only with a field: a block without one (nothing measured) is no block.
 	for name, tc := range map[string]struct {
@@ -151,7 +183,7 @@ func TestBuildReportSystemState(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			stubReportHost(t)
-			systemStateCollector = func(st reportState) (map[string]any, reportState) { return tc.block, st }
+			systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) { return tc.block, st }
 			got, ok := BuildReport(nil)["system_state"]
 			if ok != tc.want || (ok && !reflect.DeepEqual(got, tc.block)) {
 				t.Errorf("system_state = %v (present %v), want %v (present %v)", got, ok, tc.block, tc.want)
@@ -169,14 +201,14 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	saved, measured := uint64(5), uint64(7)
 	var handed []reportState
-	systemStateCollector = func(st reportState) (map[string]any, reportState) {
+	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) {
 		handed = append(handed, st)
 		st.OOMKill = &measured
 		return map[string]any{"oom_kills": measured - saved}, st
 	}
 
 	prevCPU := &cpuSample{Unix: now.Add(-5 * time.Minute).Unix(), Total: 1000, Busy: 200}
-	report, next := buildReportWithState(nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
+	report, next := buildReportWithState(context.Background(), nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
 	if len(handed) != 1 || handed[0].OOMKill == nil || *handed[0].OOMKill != saved {
 		t.Fatalf("collector got %+v, want the saved counter %d", handed, saved)
 	}
@@ -301,5 +333,48 @@ func TestPushReportAbortsInFlightRequestOnContextCancel(t *testing.T) {
 	}
 	if got := attempts.Load(); got != 1 {
 		t.Errorf("attempts = %d, erwartet 1 (kein Retry)", got)
+	}
+}
+
+func TestPushBudgetKeepsThePushReserve(t *testing.T) {
+	stubReportHost(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	oldReserve := pushReserve
+	pushReserve = 300 * time.Millisecond
+	t.Cleanup(func() { pushReserve = oldReserve })
+	// A collector that hangs until its context ends: only the collection deadline
+	// pushReserve before the run's deadline leaves the push its time.
+	pluginCollectors.docker = func(ctx context.Context) map[string]any {
+		<-ctx.Done()
+		return nil
+	}
+
+	received := make(chan time.Time, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- time.Now()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	if err := Push(ctx); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	select {
+	case at := <-received:
+		if !at.Before(deadline) {
+			t.Fatalf("report received %s after the deadline", at.Sub(deadline))
+		}
+	default:
+		t.Fatal("the server got no report")
 	}
 }

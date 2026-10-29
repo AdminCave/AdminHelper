@@ -13,8 +13,8 @@ use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 /// Process-wide client cache. Rebuilding the client per request means an empty connection pool —
-/// every request pays a fresh TCP+TLS handshake and keep-alive is useless — plus up to 5 synchronous
-/// keyring reads. The cached client (a cheap Arc clone) keeps a warm pool. The key covers the
+/// every request pays a fresh TCP+TLS handshake and keep-alive is useless. The device identity it
+/// needs comes from what `enrollment` read once (R-0644), not from the keyring. The cached client (a cheap Arc clone) keeps a warm pool. The key covers the
 /// trust-anchor inputs; an identity/pin change invalidates it explicitly via
 /// [`invalidate_client_cache`], because `is_enrolled()` alone can't see a client-cert swap (5.1).
 static CLIENT_CACHE: LazyLock<Mutex<Option<(String, reqwest::Client)>>> =
@@ -67,7 +67,8 @@ fn client_for(
     // credentials to a non-TLS server. The scheme is never relaxed.
     crate::validation::validate_server_url_secure(server_url)?;
 
-    // One is_enrolled() read, reused for both the cache key and the trust-anchor choice below.
+    // One is_enrolled() check (the held identity, no keyring read), for both the cache key and the
+    // trust-anchor choice below.
     // The key carries the choice, so a client built without the identity never answers a call
     // that wants it (and the other way round).
     let mtls = with_identity && crate::enrollment::is_enrolled();

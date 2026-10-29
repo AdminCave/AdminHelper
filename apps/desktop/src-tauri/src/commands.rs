@@ -83,8 +83,12 @@ pub fn generate_diagnostics(app: tauri::AppHandle) -> Result<String, AppError> {
 /// workspace: only the server or sync source of this workspace
 /// ([`workspace::own_url`]), never that of another one.
 #[tauri::command]
-pub fn reset_server_cert_pin(app: tauri::AppHandle, server_url: String) -> Result<(), AppError> {
-    reset_server_cert_pin_in(&storage::app_data_dir(&app)?, &server_url)
+pub async fn reset_server_cert_pin(
+    app: tauri::AppHandle,
+    server_url: String,
+) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || reset_server_cert_pin_in(&base, &server_url)).await
 }
 
 /// [`reset_server_cert_pin`] in the app data dir `base`.
@@ -98,23 +102,23 @@ fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
 /// intermediate). The provisioning tab embeds it as the agent's `--ca-fp`, so
 /// the agent's first contact is verified instead of TOFU. None until enrolled.
 #[tauri::command]
-pub fn pinned_ca_fingerprint() -> Option<String> {
-    enrollment::pinned_ca_fingerprint()
+pub async fn pinned_ca_fingerprint() -> Result<Option<String>, AppError> {
+    blocking(|| Ok(enrollment::pinned_ca_fingerprint())).await
 }
 
 /// Name (CN) and expiry of this device's enrolled certificate, for the identity
 /// line in the settings. None until enrolled; an error when the stored
 /// certificate is unreadable — the UI then shows a fixed text, never the error.
 #[tauri::command]
-pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
-    enrollment::device_identity()
+pub async fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
+    blocking(enrollment::device_identity).await
 }
 
 /// Whether this device currently holds an enrolled mTLS identity. Drives the
 /// visibility of the "reset device identity" action in the settings UI.
 #[tauri::command]
-pub fn is_device_enrolled() -> bool {
-    enrollment::is_enrolled()
+pub async fn is_device_enrolled() -> Result<bool, AppError> {
+    blocking(|| Ok(enrollment::is_enrolled())).await
 }
 
 /// Reset this device's enrolled mTLS identity AND forget the TOFU pin for the
@@ -255,13 +259,13 @@ pub fn load_connections(app: tauri::AppHandle) -> Result<Vec<Connection>, AppErr
 
 /// What the webview reads is the base against which `save_settings` tells what it changed.
 #[tauri::command]
-pub fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
-    storage::load_settings_for_webview(&app)
+pub async fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
+    blocking(move || storage::load_settings_for_webview(&app)).await
 }
 
 #[tauri::command]
-pub fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), AppError> {
-    storage::save_settings(&app, &settings)
+pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), AppError> {
+    blocking(move || storage::save_settings(&app, &settings)).await
 }
 
 /// Loads the connections of the sync workspace of this process from the source it keeps
@@ -300,18 +304,26 @@ pub fn save_connections(
 /// enables the "time" feature, not "rt", so tokio::task::spawn_blocking isn't available.
 const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Runs `work` with a [`connection::Deadline`] of `timeout`. Past it, the command gives up
+/// only if the work has not started anything yet; a start that came first is waited for and
+/// its outcome returned, so no window opens after the timeout message.
 async fn run_with_deadline<F>(timeout: Duration, work: F) -> Result<(), AppError>
 where
-    F: FnOnce() -> Result<(), AppError> + Send + 'static,
+    F: FnOnce(&connection::Deadline) -> Result<(), AppError> + Send + 'static,
 {
-    let handle = tauri::async_runtime::spawn_blocking(work);
-    match tokio::time::timeout(timeout, handle).await {
-        Ok(joined) => joined
-            .map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?,
-        Err(_) => Err(AppError::Connection(
-            "Verbindungsaufbau: Zeitueberschreitung (Server nicht erreichbar oder haengt)".into(),
-        )),
-    }
+    let deadline = std::sync::Arc::new(connection::Deadline::new(timeout));
+    let theirs = std::sync::Arc::clone(&deadline);
+    let mut handle = tauri::async_runtime::spawn_blocking(move || work(&theirs));
+    let joined = match tokio::time::timeout(timeout, &mut handle).await {
+        Ok(joined) => joined,
+        Err(_) if deadline.expire() => {
+            return Err(AppError::Connection(
+                connection::TIMEOUT_MESSAGE.to_string(),
+            ))
+        }
+        Err(_) => handle.await,
+    };
+    joined.map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?
 }
 
 /// Rejects `connection` if it goes to a loopback port of another workspace's tunnel
@@ -344,7 +356,7 @@ pub async fn open_connection(
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
         None => Vec::new(),
     };
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
@@ -357,6 +369,7 @@ pub async fn open_connection(
             settings.language.as_deref(),
             &cid,
             &app,
+            deadline,
         )
     })
     .await
@@ -384,7 +397,7 @@ pub async fn open_connection_stored(
         }
         None => Default::default(),
     };
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
@@ -403,28 +416,34 @@ pub async fn open_connection_stored(
             rdp,
             settings.language.as_deref(),
             &cid,
+            deadline,
         )
     })
     .await
 }
 
 #[tauri::command]
-pub fn password_state(connection: Connection) -> Result<PasswordState, AppError> {
-    password::password_state(&connection)
+pub async fn password_state(connection: Connection) -> Result<PasswordState, AppError> {
+    blocking(move || password::password_state(&connection)).await
 }
 
 #[tauri::command]
-pub fn save_password(
+pub async fn save_password(
     app: tauri::AppHandle,
     connection: Connection,
     password: String,
 ) -> Result<(), AppError> {
-    password::save_password(&storage::app_data_dir(&app)?, &connection, &password)
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || password::save_password(&base, &connection, &password)).await
 }
 
 #[tauri::command]
-pub fn delete_password(app: tauri::AppHandle, connection: Connection) -> Result<(), AppError> {
-    password::delete_password(&storage::app_data_dir(&app)?, &connection)
+pub async fn delete_password(
+    app: tauri::AppHandle,
+    connection: Connection,
+) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || password::delete_password(&base, &connection)).await
 }
 
 /// Signs in at the server of this workspace, as a user no other workspace signs in to it as
@@ -535,7 +554,8 @@ pub async fn resolve_connection(
     };
     let resolved = tunnel::resolve_connection(&connection, &tunnels, &bindings);
     let target = resolved.connection.clone();
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    // Nothing opens here, so nothing claims the deadline's start.
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |_| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &target, &bindings)
     })
     .await?;
@@ -713,7 +733,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_with_deadline_returns_ok_for_fast_work() {
-        assert!(run_with_deadline(Duration::from_secs(5), || Ok(()))
+        assert!(run_with_deadline(Duration::from_secs(5), |_| Ok(()))
             .await
             .is_ok());
     }
@@ -722,7 +742,7 @@ mod tests {
     async fn run_with_deadline_maps_a_hung_task_to_a_timeout_error() {
         // 4.3: a blocking task that overruns the deadline surfaces a Connection error (the
         // user gets a message, not a frozen webview) instead of hanging.
-        let r = run_with_deadline(Duration::from_millis(50), || {
+        let r = run_with_deadline(Duration::from_millis(50), |_| {
             std::thread::sleep(Duration::from_millis(500));
             Ok(())
         })
@@ -731,8 +751,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_with_deadline_starts_nothing_after_the_timeout() {
+        // The work reaches its start only past the deadline: it must not start, and the
+        // command has already answered with the timeout.
+        let started = Arc::new(Mutex::new(None));
+        let seen = Arc::clone(&started);
+        let r = run_with_deadline(Duration::from_millis(50), move |deadline| {
+            std::thread::sleep(Duration::from_millis(200));
+            *seen.lock().unwrap() = Some(deadline.start().is_ok());
+            Ok(())
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(*started.lock().unwrap(), Some(false), "the late start ran");
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_waits_for_work_that_started_in_time() {
+        // Started before the deadline, finished after it: its outcome counts, not a timeout.
+        // A second leaves a loaded runner time to start the blocking thread before it.
+        let r = run_with_deadline(Duration::from_secs(1), |deadline| {
+            deadline.start()?;
+            std::thread::sleep(Duration::from_millis(1500));
+            Err(AppError::Connection("the started work's own error".into()))
+        })
+        .await;
+        match r {
+            Err(AppError::Connection(message)) => {
+                assert_eq!(message, "the started work's own error")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn run_with_deadline_passes_through_work_errors() {
-        let r = run_with_deadline(Duration::from_secs(5), || {
+        let r = run_with_deadline(Duration::from_secs(5), |_| {
             Err(AppError::Connection("boom".into()))
         })
         .await;
@@ -1783,6 +1838,34 @@ mod tests {
                 "this sync workspace has no sync URL yet",
                 "no source",
             );
+        }
+    }
+
+    /// A synchronous command runs on the main thread: the window stands still while the
+    /// keyring or the settings lock keeps it waiting. These wait on either, so each is async
+    /// and does its work through `blocking`.
+    #[test]
+    fn commands_that_wait_run_on_a_blocking_thread() {
+        // A Windows checkout carries CRLF line ends.
+        let source = include_str!("commands.rs").replace("\r\n", "\n");
+        for name in [
+            "reset_server_cert_pin",
+            "pinned_ca_fingerprint",
+            "device_identity",
+            "is_device_enrolled",
+            "load_settings",
+            "save_settings",
+            "password_state",
+            "save_password",
+            "delete_password",
+        ] {
+            let head = format!("#[tauri::command]\npub async fn {name}(");
+            let start = source
+                .find(&head)
+                .unwrap_or_else(|| panic!("{name} is not an async command"));
+            let body = &source[start..];
+            let body = &body[..body.find("\n}\n").expect("end of the command")];
+            assert!(body.contains("blocking("), "{name} does not use blocking");
         }
     }
 }

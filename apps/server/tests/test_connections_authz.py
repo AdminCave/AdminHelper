@@ -27,6 +27,7 @@ import pytest
 
 from app.core.auth import create_access_token, hash_api_key
 from app.modules.api_keys.models import ApiKey
+from tests.token_claims import claims_for
 
 BODY = {"name": "authz-regression", "kind": "ssh"}
 
@@ -115,7 +116,7 @@ class TestEveryPresentedCredentialMustHold:
 
     def test_valid_key_with_expired_bearer(self, test_client, db_session, admin_user):
         key = _api_key(db_session, "read")
-        expired = create_access_token({"sub": "admin"}, expires_delta=timedelta(seconds=-10))
+        expired = create_access_token(claims_for("admin"), expires_delta=timedelta(seconds=-10))
         r = test_client.get(
             "/api/connections", headers={"X-API-Key": key, "Authorization": f"Bearer {expired}"}
         )

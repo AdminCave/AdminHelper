@@ -102,11 +102,11 @@ trait PinStore: Send + Sync {
     fn store(&self, identity: &str, fingerprint: &str) -> Result<(), ()>;
 
     /// Atomically decide the TOFU outcome for `presented` and, on first use,
-    /// capture it — the whole read→decide→store sequence under ONE lock. The
-    /// split `load()` then `store()` is racy: two concurrent first connections
-    /// can both observe "no pin" and pin different certs. The default impl is the
-    /// non-atomic fallback (fine for the single-threaded in-memory test store);
-    /// the keyring store overrides it to hold its cache lock across the decision.
+    /// capture it — the whole read→decide→store sequence of one identity under one
+    /// lock. The split `load()` then `store()` is racy: two concurrent first
+    /// connections can both observe "no pin" and pin different certs. The default
+    /// impl is the non-atomic fallback (fine for the single-threaded in-memory test
+    /// store); the keyring store overrides it to hold the lock of the identity.
     fn load_or_store(&self, identity: &str, presented: &str) -> PinDecision {
         // Fail closed: an unreadable store must not be taken as "no pin" (3.60).
         let pinned = match self.load(identity) {
@@ -125,7 +125,23 @@ trait PinStore: Send + Sync {
 /// enforcement path does not hit the keyring on every single request — only the
 /// first read and the first-use write. The cache only holds pins the keyring
 /// returned or stored, never one whose write failed.
-struct KeyringPinStore;
+///
+/// No keyring call runs under the global lock (R-0644): a keyring that keeps one
+/// identity waiting would stall every connection, the pinned ones too. The global
+/// lock guards the cache and the table of per-identity locks only; the read, decide
+/// and store of a first contact run under the lock of its identity, so two first
+/// contacts of one server still cannot both pin.
+struct KeyringPinStore {
+    cache: &'static Mutex<HashMap<String, String>>,
+    locks: &'static Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    read: ReadPin,
+    write: WritePin,
+    delete: DeletePin,
+}
+
+type ReadPin = Arc<dyn Fn(&str) -> Result<Option<String>, ()> + Send + Sync>;
+type WritePin = Arc<dyn Fn(&str, &str) -> Result<(), ()> + Send + Sync>;
+type DeletePin = Arc<dyn Fn(&str) -> Result<(), AppError> + Send + Sync>;
 
 // A poisoned lock only means another thread panicked mid-access; the map
 // itself stays consistent, so recover the guard instead of panicking too.
@@ -135,66 +151,112 @@ fn cache() -> &'static Mutex<HashMap<String, String>> {
     &CACHE
 }
 
-impl PinStore for KeyringPinStore {
-    fn load(&self, identity: &str) -> Result<Option<String>, ()> {
-        if let Some(hit) = cache()
+fn identity_locks() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    &LOCKS
+}
+
+impl KeyringPinStore {
+    fn production() -> Self {
+        Self {
+            cache: cache(),
+            locks: identity_locks(),
+            read: Arc::new(keyring_read),
+            write: Arc::new(keyring_write),
+            delete: Arc::new(keyring_delete),
+        }
+    }
+
+    fn cached(&self, identity: &str) -> Option<String> {
+        self.cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(identity)
             .cloned()
-        {
-            return Ok(Some(hit));
-        }
-        let stored = keyring_read(identity)?;
-        if let Some(ref fingerprint) = stored {
-            cache()
+    }
+
+    fn remember(&self, identity: &str, fingerprint: &str) {
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(identity.to_string(), fingerprint.to_string());
+    }
+
+    /// The lock of one pin identity, made under the global lock on first use.
+    fn identity_lock(&self, identity: &str) -> Arc<Mutex<()>> {
+        Arc::clone(
+            self.locks
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .insert(identity.to_string(), fingerprint.clone());
+                .entry(identity.to_string())
+                .or_default(),
+        )
+    }
+
+    /// Drop the pin of `identity` from cache and keyring, after any first contact of it
+    /// that is storing right now: that one is then gone too, or begins only afterwards.
+    fn forget(&self, identity: &str) -> Result<(), AppError> {
+        let lock = self.identity_lock(identity);
+        let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(identity);
+        (self.delete)(identity)
+    }
+}
+
+impl PinStore for KeyringPinStore {
+    fn load(&self, identity: &str) -> Result<Option<String>, ()> {
+        if let Some(hit) = self.cached(identity) {
+            return Ok(Some(hit));
+        }
+        let stored = (self.read)(identity)?;
+        if let Some(ref fingerprint) = stored {
+            self.remember(identity, fingerprint);
         }
         Ok(stored)
     }
 
     fn store(&self, identity: &str, fingerprint: &str) -> Result<(), ()> {
-        keyring_write(identity, fingerprint)?;
-        cache()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(identity.to_string(), fingerprint.to_string());
+        let lock = self.identity_lock(identity);
+        let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+        (self.write)(identity, fingerprint)?;
+        self.remember(identity, fingerprint);
         Ok(())
     }
 
     fn load_or_store(&self, identity: &str, presented: &str) -> PinDecision {
-        // Hold the cache lock across the entire read→decide→capture so two
-        // parallel first connections cannot both read "no pin" and pin different
-        // certs. On a cache miss the (slow) keyring read happens under the lock —
-        // acceptable because it only fires on the first use per identity; every
-        // later request is a pure in-memory cache hit.
-        let mut guard = cache().lock().unwrap_or_else(|e| e.into_inner());
-        let pinned = match guard.get(identity) {
-            Some(hit) => Some(hit.clone()),
-            None => match keyring_read(identity) {
-                // Fail closed: a keyring we cannot read must not be taken as "no pin"
-                // and capture the presented cert — an MITM presenting its own cert
-                // during a keyring outage would otherwise be pinned and trusted (3.60).
-                Err(()) => return PinDecision::Unavailable,
-                Ok(stored) => {
-                    if let Some(ref fingerprint) = stored {
-                        guard.insert(identity.to_string(), fingerprint.clone());
-                    }
-                    stored
-                }
-            },
+        // Every request after the first: a pure in-memory hit, no lock but the cache's.
+        if let Some(hit) = self.cached(identity) {
+            return decide(Some(&hit), presented);
+        }
+        let lock = self.identity_lock(identity);
+        let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+        // A first contact of this identity in parallel may have stored meanwhile.
+        if let Some(hit) = self.cached(identity) {
+            return decide(Some(&hit), presented);
+        }
+        let pinned = match (self.read)(identity) {
+            // Fail closed: a keyring we cannot read must not be taken as "no pin"
+            // and capture the presented cert — an MITM presenting its own cert
+            // during a keyring outage would otherwise be pinned and trusted (3.60).
+            Err(()) => return PinDecision::Unavailable,
+            Ok(stored) => stored,
         };
+        if let Some(ref fingerprint) = pinned {
+            self.remember(identity, fingerprint);
+        }
         let decision = decide(pinned.as_deref(), presented);
         if decision == PinDecision::Capture {
             // Trust a first use only once the pin is in the keyring: a pin held in
             // the cache alone ends with the process, and the next start would pin
             // whatever certificate is presented then.
-            if keyring_write(identity, presented).is_err() {
+            if (self.write)(identity, presented).is_err() {
                 return PinDecision::Unavailable;
             }
-            guard.insert(identity.to_string(), presented.to_string());
+            self.remember(identity, presented);
         }
         decision
     }
@@ -352,7 +414,7 @@ fn client_with_verifier(
 pub fn pinning_client(server_url: &str) -> Result<reqwest::Client, AppError> {
     let verifier = Arc::new(TofuVerifier {
         identity: pin_identity(server_url),
-        store: Arc::new(KeyringPinStore),
+        store: Arc::new(KeyringPinStore::production()),
         provider: ring_provider(),
     });
     client_with_verifier(verifier)
@@ -369,16 +431,16 @@ pub fn forget_pin(server_url: &str) -> Result<(), AppError> {
 /// [`forget_pin`] with the keyring delete as a parameter, so a test can make it fail.
 fn forget_pin_with(
     server_url: &str,
-    delete: impl FnOnce(&str) -> Result<(), AppError>,
+    delete: impl Fn(&str) -> Result<(), AppError> + Send + Sync + 'static,
 ) -> Result<(), AppError> {
     let identity = pin_identity(server_url);
-    cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&identity);
+    let store = KeyringPinStore {
+        delete: Arc::new(delete),
+        ..KeyringPinStore::production()
+    };
     // Both caches go even when the delete fails: this process then holds no pin the
     // user asked to forget, and the next contact reads the keyring again.
-    let deleted = delete(&identity);
+    let deleted = store.forget(&identity);
     // Drop the cached http client — it may hold a pool pinned to the old cert (5.1).
     crate::http_client::invalidate_client_cache();
     deleted.map_err(|err| {
@@ -401,6 +463,229 @@ pub(crate) fn seed_cached_pin(server_url: &str, fingerprint: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── R-0644: no keyring call under the global lock ─────────────────────────
+
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// A gate the test opens: the keyring call that waits on it hangs until then, and
+    /// says so once it is inside, so the test goes on only once the call hangs.
+    struct Gate {
+        wait: Mutex<Option<mpsc::Receiver<()>>>,
+        inside: Mutex<mpsc::Sender<()>>,
+    }
+
+    impl Gate {
+        /// The gate, the sender that opens it and the receiver that hears it was entered.
+        fn new() -> (Arc<Self>, mpsc::Sender<()>, mpsc::Receiver<()>) {
+            let (open, wait) = mpsc::channel();
+            let (inside, entered) = mpsc::channel();
+            let gate = Self {
+                wait: Mutex::new(Some(wait)),
+                inside: Mutex::new(inside),
+            };
+            (Arc::new(gate), open, entered)
+        }
+        fn pass(&self) {
+            if let Some(wait) = self.wait.lock().unwrap().take() {
+                let _ = self.inside.lock().unwrap().send(());
+                let _ = wait.recv();
+            }
+        }
+    }
+
+    /// A store with a cache, locks and a keyring map of its own; `read` and `write` may hang.
+    struct Probe {
+        store: Arc<KeyringPinStore>,
+        keyring: Arc<Mutex<HashMap<String, String>>>,
+        writes: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    fn probe(
+        read_gate: Option<(String, Arc<Gate>)>,
+        write_gate: Option<(String, Arc<Gate>)>,
+        read_fails: bool,
+        write_fails: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Probe {
+        let keyring = Arc::new(Mutex::new(HashMap::new()));
+        let writes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (k1, k2, k3, w) = (
+            keyring.clone(),
+            keyring.clone(),
+            keyring.clone(),
+            writes.clone(),
+        );
+        let store = KeyringPinStore {
+            cache: Box::leak(Box::new(Mutex::new(HashMap::new()))),
+            locks: Box::leak(Box::new(Mutex::new(HashMap::new()))),
+            read: Arc::new(move |id: &str| {
+                if let Some((ref gated, ref gate)) = read_gate {
+                    if gated == id {
+                        gate.pass();
+                    }
+                }
+                if read_fails {
+                    return Err(());
+                }
+                Ok(k1.lock().unwrap().get(id).cloned())
+            }),
+            write: Arc::new(move |id: &str, fp: &str| {
+                w.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some((ref gated, ref gate)) = write_gate {
+                    if gated == id {
+                        gate.pass();
+                    }
+                }
+                if write_fails.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err(());
+                }
+                k2.lock().unwrap().insert(id.to_string(), fp.to_string());
+                Ok(())
+            }),
+            delete: Arc::new(move |id: &str| {
+                k3.lock().unwrap().remove(id);
+                Ok(())
+            }),
+        };
+        Probe {
+            store: Arc::new(store),
+            keyring,
+            writes,
+        }
+    }
+
+    fn no_failure() -> Arc<std::sync::atomic::AtomicBool> {
+        Arc::new(std::sync::atomic::AtomicBool::new(false))
+    }
+
+    /// `load_or_store` on a thread of its own; its answer arrives on the channel.
+    fn decide_on_thread(
+        store: &Arc<KeyringPinStore>,
+        identity: &str,
+        presented: &str,
+    ) -> mpsc::Receiver<PinDecision> {
+        let (tx, rx) = mpsc::channel();
+        let (store, identity, presented) = (
+            Arc::clone(store),
+            identity.to_string(),
+            presented.to_string(),
+        );
+        std::thread::spawn(move || {
+            let _ = tx.send(store.load_or_store(&identity, &presented));
+        });
+        rx
+    }
+
+    const ANSWER: Duration = Duration::from_secs(5);
+
+    #[test]
+    fn a_hung_keyring_read_does_not_hold_up_a_pinned_identity() {
+        let (gate, open, entered) = Gate::new();
+        let p = probe(Some(("x.example".into(), gate)), None, false, no_failure());
+        p.store.remember("y.example", FP_A);
+        let hung = decide_on_thread(&p.store, "x.example", FP_A);
+        entered.recv_timeout(ANSWER).unwrap();
+
+        let pinned = decide_on_thread(&p.store, "y.example", FP_A);
+        assert_eq!(pinned.recv_timeout(ANSWER).unwrap(), PinDecision::Trust);
+        open.send(()).unwrap();
+        assert_eq!(hung.recv_timeout(ANSWER).unwrap(), PinDecision::Capture);
+    }
+
+    #[test]
+    fn two_first_contacts_of_one_identity_still_pin_once() {
+        let (gate, open, entered) = Gate::new();
+        let p = probe(None, Some(("x.example".into(), gate)), false, no_failure());
+        let first = decide_on_thread(&p.store, "x.example", FP_A);
+        entered.recv_timeout(ANSWER).unwrap();
+        let second = decide_on_thread(&p.store, "x.example", FP_B);
+        assert!(
+            second.recv_timeout(Duration::from_millis(300)).is_err(),
+            "the second first contact decided while the first was storing"
+        );
+
+        open.send(()).unwrap();
+        assert_eq!(first.recv_timeout(ANSWER).unwrap(), PinDecision::Capture);
+        assert_eq!(second.recv_timeout(ANSWER).unwrap(), PinDecision::Reject);
+        assert_eq!(p.store.cached("x.example").as_deref(), Some(FP_A));
+        assert_eq!(p.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn an_unreadable_keyring_pins_nothing() {
+        let p = probe(None, None, true, no_failure());
+        assert_eq!(
+            p.store.load_or_store("x.example", FP_A),
+            PinDecision::Unavailable
+        );
+        assert_eq!(p.store.cached("x.example"), None);
+        assert_eq!(p.writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_failed_first_use_store_is_retried_on_the_next_contact() {
+        let fails = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let p = probe(None, None, false, Arc::clone(&fails));
+        assert_eq!(
+            p.store.load_or_store("x.example", FP_A),
+            PinDecision::Unavailable
+        );
+        assert_eq!(p.store.cached("x.example"), None);
+
+        fails.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            p.store.load_or_store("x.example", FP_A),
+            PinDecision::Capture
+        );
+        assert_eq!(p.writes.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(
+            p.keyring
+                .lock()
+                .unwrap()
+                .get("x.example")
+                .map(String::as_str),
+            Some(FP_A)
+        );
+    }
+
+    #[test]
+    fn forgetting_waits_for_a_first_contact_that_is_storing() {
+        let (gate, open, entered) = Gate::new();
+        let p = probe(None, Some(("x.example".into(), gate)), false, no_failure());
+        let first = decide_on_thread(&p.store, "x.example", FP_A);
+        entered.recv_timeout(ANSWER).unwrap();
+
+        let (done_tx, done) = mpsc::channel();
+        let store = Arc::clone(&p.store);
+        std::thread::spawn(move || {
+            store.forget("x.example").unwrap();
+            let _ = done_tx.send(());
+        });
+        assert!(
+            done.recv_timeout(Duration::from_millis(300)).is_err(),
+            "forget returned while the first contact was storing"
+        );
+        open.send(()).unwrap();
+        assert_eq!(first.recv_timeout(ANSWER).unwrap(), PinDecision::Capture);
+        done.recv_timeout(ANSWER).unwrap();
+        assert_eq!(p.store.cached("x.example"), None);
+        assert!(p.keyring.lock().unwrap().get("x.example").is_none());
+    }
+
+    #[test]
+    fn a_hung_first_use_store_does_not_hold_up_a_pinned_identity() {
+        let (gate, open, entered) = Gate::new();
+        let p = probe(None, Some(("x.example".into(), gate)), false, no_failure());
+        p.store.remember("y.example", FP_B);
+        let hung = decide_on_thread(&p.store, "x.example", FP_A);
+        entered.recv_timeout(ANSWER).unwrap();
+
+        let pinned = decide_on_thread(&p.store, "y.example", FP_B);
+        assert_eq!(pinned.recv_timeout(ANSWER).unwrap(), PinDecision::Trust);
+        open.send(()).unwrap();
+        assert_eq!(hung.recv_timeout(ANSWER).unwrap(), PinDecision::Capture);
+    }
 
     const CERT_A: &[u8] = include_bytes!("../test-fixtures/certA.der");
     const CERT_B: &[u8] = include_bytes!("../test-fixtures/certB.der");
@@ -537,18 +822,18 @@ mod tests {
         // `try_get` finds nothing, like a keyring that cannot be written.
         let identity = "keyring-unstored.example:443";
         assert_eq!(
-            KeyringPinStore.load_or_store(identity, FP_A),
+            KeyringPinStore::production().load_or_store(identity, FP_A),
             PinDecision::Unavailable
         );
         assert!(!cached(identity), "an unstored pin must not be cached");
         // Still no pin: the next connection is refused again, not trusted from the cache.
         assert_eq!(
-            KeyringPinStore.load_or_store(identity, FP_A),
+            KeyringPinStore::production().load_or_store(identity, FP_A),
             PinDecision::Unavailable
         );
         assert!(!cached(identity), "an unstored pin must not be cached");
 
-        assert_eq!(KeyringPinStore.store(identity, FP_A), Err(()));
+        assert_eq!(KeyringPinStore::production().store(identity, FP_A), Err(()));
         assert!(!cached(identity), "an unstored pin must not be cached");
     }
 
@@ -557,7 +842,7 @@ mod tests {
         let _keyring = crate::keyring_store::memory();
         let identity = "keyring-stored.example:443";
         assert_eq!(
-            KeyringPinStore.load_or_store(identity, FP_A),
+            KeyringPinStore::production().load_or_store(identity, FP_A),
             PinDecision::Capture
         );
         assert_eq!(
@@ -565,11 +850,11 @@ mod tests {
             Some(FP_A)
         );
         assert_eq!(
-            KeyringPinStore.load_or_store(identity, FP_A),
+            KeyringPinStore::production().load_or_store(identity, FP_A),
             PinDecision::Trust
         );
         assert_eq!(
-            KeyringPinStore.load_or_store(identity, FP_B),
+            KeyringPinStore::production().load_or_store(identity, FP_B),
             PinDecision::Reject
         );
     }
@@ -620,14 +905,15 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner())
             .insert(identity.clone(), FP_A.to_string());
 
-        let mut asked = None;
-        let err = forget_pin_with("https://forget-fails.example/api", |id| {
-            asked = Some(id.to_string());
+        let asked = Arc::new(Mutex::new(None));
+        let seen = Arc::clone(&asked);
+        let err = forget_pin_with("https://forget-fails.example/api", move |id| {
+            *seen.lock().unwrap() = Some(id.to_string());
             Err(AppError::Keyring("collection is locked".to_string()))
         })
         .unwrap_err();
 
-        assert_eq!(asked.as_deref(), Some(identity.as_str()));
+        assert_eq!(asked.lock().unwrap().as_deref(), Some(identity.as_str()));
         let msg = err.to_string();
         assert!(
             matches!(&err, AppError::Keyring(_))

@@ -60,6 +60,32 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+WEB_IDLE_TIMEOUT_DEFAULT_MINUTES = 30
+
+
+def parse_web_idle_timeout(raw: str | None) -> int:
+    """Minutes without user input after which the web panel signs out (0 = off)."""
+    value = (raw or "").strip()
+    if not value:
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    try:
+        minutes = int(value)
+    except ValueError:
+        minutes = -1
+    if minutes < 0:
+        # Fall back instead of refusing to start: a typo in this knob should not take the
+        # whole panel down.
+        logger.warning(
+            "WEB_IDLE_TIMEOUT_MINUTES=%r is not a whole number >= 0, using %d",
+            raw,
+            WEB_IDLE_TIMEOUT_DEFAULT_MINUTES,
+        )
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    return minutes
+
+
+WEB_IDLE_TIMEOUT_MINUTES = parse_web_idle_timeout(os.environ.get("WEB_IDLE_TIMEOUT_MINUTES", ""))
+
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see server/alembic/), no longer by
 # Base.metadata.create_all().
@@ -120,7 +146,8 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 # Ignored if TRUSTED_PROXIES is set.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
 
-# Comma-separated list of IPs/CIDRs of the trusted reverse proxies.
+# Comma-separated list of IPs/CIDRs or host names of the trusted reverse proxies
+# (a name counts with the addresses it resolved to, looked up every 30 s).
 # X-Forwarded-For / X-Real-IP are evaluated ONLY if the direct connection
 # comes from one of these IPs. Recommended over TRUST_PROXY_HEADERS.
 # Example: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
@@ -152,6 +179,24 @@ if WEB_CONCURRENCY > 1 and not REDIS_URL:
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
 DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
 
+
+def parse_mtls_enforce(raw: str | None) -> bool:
+    """MTLS_ENFORCE as the gateway entrypoint reads it: unset or empty enforces,
+    1/true/yes/on enforce, 0/false/no/off are permissive (any case, no trimming), and
+    any other value enforces with a warning (fail-closed)."""
+    if not raw:
+        return True
+    value = raw.lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    logger.warning(
+        "MTLS_ENFORCE=%r is not a known value — fail-closed, per-route scope enforced.", raw
+    )
+    return True
+
+
 # mTLS scope enforcement (ADR 0001 D3/D8). The gateway forwards the verified client
 # identity as headers; per-route scope guards (app.core.identity) read it. Enforced by
 # default (true), matching compose (MTLS_ENFORCE:-true) and the docs' "enforced by default
@@ -160,7 +205,10 @@ DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
 # central trust boundary with no warning. MTLS_ENFORCE=false is the permissive rollout
 # (scope mismatches logged but allowed), needed only for a manual first bootstrap. The
 # startup log makes the effective stance observable (no split-brain guessing) (3.89).
-MTLS_ENFORCE = os.environ.get("MTLS_ENFORCE", "true").lower() in ("1", "true", "yes")
+# parse_mtls_enforce uses the table of the gateway entrypoint (apps/gateway/
+# docker-entrypoint.sh), so a value like `on` cannot leave the server permissive while
+# the gateway enforces; tests/test_mtls_enforce_parse.py keeps the two equal.
+MTLS_ENFORCE = parse_mtls_enforce(os.environ.get("MTLS_ENFORCE", "true"))
 if MTLS_ENFORCE:
     logger.info("MTLS_ENFORCE=true — Datenebene erzwingt Per-Route-Scope.")
 else:
@@ -188,6 +236,10 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Optional path inside the container to a PEM file with the relay's CA (self-signed
+# or company CA). Loaded in addition to the system CAs and used only for SMTP, so
+# certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
+SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
 # Bell-feed retention in days. A daily system job prunes notification rows older

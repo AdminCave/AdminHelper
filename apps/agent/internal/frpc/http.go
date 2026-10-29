@@ -5,14 +5,15 @@
 package frpc
 
 import (
+	"context"
 	"net/http"
 
 	"adminhelper-agent/internal/httpclient"
 )
 
-// httpGet performs a GET request with an API-Key header.
-func httpGet(client *http.Client, url, apiKey string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
+// httpGet performs a GET request with an API-Key header; it ends with ctx.
+func httpGet(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}

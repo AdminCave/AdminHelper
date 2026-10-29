@@ -13,7 +13,7 @@
 import { errMsg } from '$lib/utils/errors';
 import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import type { Connection } from '$lib/bridge/types';
+import type { ClientInfo, Connection } from '$lib/bridge/types';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
 import { sessionStore } from './session';
@@ -146,8 +146,9 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
 }
 
 /**
- * Where `connection` is reached: Rust resolves it through a tunnel mapping (admins only) or, at
- * 127.0.0.1/localhost and the server port of a visitor, to the local port that visitor got.
+ * Where `connection` is reached: Rust resolves it through a tunnel mapping (an admin's, or one on
+ * a server assigned to the user) or, at 127.0.0.1/localhost and the server port of a visitor, to
+ * the local port that visitor got.
  * `null` once the status bar shows why Rust refused it (a loopback port of another workspace's
  * tunnel, say): open_connection would refuse the same target, so nothing may ask for a password
  * or check the URL first.
@@ -253,6 +254,18 @@ interface PerformOptions {
   useStoredPassword?: boolean;
 }
 
+/**
+ * The screen an RDP start hands to Rust, which sizes "Fit" and picks the HiDPI scale from it.
+ * Read at each start, not once: the window may have moved to another screen since.
+ */
+function clientInfo(): ClientInfo {
+  return {
+    screenWidth: window.screen.width,
+    screenHeight: window.screen.height,
+    scaleFactor: window.devicePixelRatio || 1,
+  };
+}
+
 /** Open `resolved`, the target of `connection`, the connection as listed. */
 async function performConnect(
   connection: Connection,
@@ -266,9 +279,10 @@ async function performConnect(
     if (resolved.kind === 'rdp') {
       rdpId = startRdpAttempt();
       const cid = rdpId;
+      const client = clientInfo();
       const promise = useStoredPassword
-        ? bridge.openConnectionStored(resolved, connection, undefined, cid)
-        : bridge.openConnection(resolved, password, undefined, cid);
+        ? bridge.openConnectionStored(resolved, connection, client, cid)
+        : bridge.openConnection(resolved, password, client, cid);
       promise.catch((err: unknown) => {
         clearRdpAttempt(cid);
         reportError(errMsg(err));

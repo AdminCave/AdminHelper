@@ -5,10 +5,12 @@
 package enroll
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,7 +24,7 @@ import (
 
 func TestLockIdentityWaitsUntilTheHolderUnlocks(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "identity") // not pre-created -> LockIdentity must mkdir
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("LockIdentity: %v", err)
 	}
@@ -32,7 +34,7 @@ func TestLockIdentityWaitsUntilTheHolderUnlocks(t *testing.T) {
 	}
 	second := make(chan result, 1)
 	go func() {
-		u, err := LockIdentity(dir)
+		u, err := LockIdentity(context.Background(), dir)
 		second <- result{u, err}
 	}()
 
@@ -71,7 +73,7 @@ func TestLockIdentityGivesUpAfterItsWait(t *testing.T) {
 	const wait = 300 * time.Millisecond
 	shortenLockWait(t, wait)
 	dir := t.TempDir()
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("LockIdentity: %v", err)
 	}
@@ -80,7 +82,7 @@ func TestLockIdentityGivesUpAfterItsWait(t *testing.T) {
 	start := time.Now()
 	second := make(chan error, 1)
 	go func() {
-		u, err := LockIdentity(dir)
+		u, err := LockIdentity(context.Background(), dir)
 		if err == nil {
 			u()
 		}
@@ -102,12 +104,51 @@ func TestLockIdentityGivesUpAfterItsWait(t *testing.T) {
 	}
 }
 
+// The end of the ctx ends the wait for a held lock, long before identityLockWait.
+func TestLockIdentityEndsWithTheContext(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := LockIdentity(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	defer unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	second := make(chan error, 1)
+	go func() {
+		u, err := LockIdentity(ctx, dir)
+		if err == nil {
+			u()
+		}
+		second <- err
+	}()
+	select {
+	case err := <-second:
+		t.Fatalf("a second LockIdentity returned (%v) while the first held the lock", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case err := <-second:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want an error that wraps context.Canceled, got %v", err)
+		}
+		if lockFile := filepath.Join(dir, LockFileName); !strings.Contains(err.Error(), lockFile) {
+			t.Fatalf("the error does not name the lock file %s: %v", lockFile, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("LockIdentity did not end with its ctx (identityLockWait %s)", identityLockWait)
+	}
+}
+
 func TestLockIdentityFailsWhenTheLockFileCannotBeOpened(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, LockFileName), 0700); err != nil {
 		t.Fatal(err)
 	}
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(context.Background(), dir)
 	if err == nil {
 		unlock()
 		t.Fatal("LockIdentity took a lock on a directory named like the lock file")
@@ -178,7 +219,7 @@ func TestLockIdentityKeepsConcurrentStoresAMatchingPair(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				unlock, err := LockIdentity(dir)
+				unlock, err := LockIdentity(context.Background(), dir)
 				if err != nil {
 					t.Error(err)
 					return

@@ -20,9 +20,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from app.core.identity import ClientIdentity, get_client_identity, require_cert_user
+from app.core.identity import (
+    SCOPE_ACCESS,
+    ClientIdentity,
+    check_scope,
+    get_client_identity,
+    require_cert_user,
+)
 from app.modules.notifications import stream_hub
 
+# Included without the router scope guard (main.py): every route here must depend on
+# authenticate_stream_user, which checks the scope itself.
 stream_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 # Heartbeat comment cadence — keeps the stream under nginx's proxy_read_timeout.
@@ -67,7 +75,9 @@ def authenticate_stream_user(request: Request) -> int:
     Depends(get_current_user): that holds the get_db session for the whole
     response, and an SSE response lives for minutes/hours — one DB connection per
     open stream would exhaust the pool. Here the session is opened and closed
-    immediately, before the stream starts."""
+    immediately, before the stream starts. The scope check of the access routes runs
+    here too, first and on the same short session (the router carries no scope
+    dependency, whose get_db session would also live as long as the stream)."""
     from app.core.auth import _get_user_from_token
     from app.core.database import SessionLocal
 
@@ -75,6 +85,7 @@ def authenticate_stream_user(request: Request) -> int:
     token = header[7:] if header.lower().startswith("bearer ") else ""
     db = SessionLocal()
     try:
+        check_scope(request, get_client_identity(request), db, frozenset({SCOPE_ACCESS}))
         user = _get_user_from_token(token, db) if token else None
         if user is None:
             raise HTTPException(

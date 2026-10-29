@@ -643,9 +643,11 @@ grep -q 'auf dem letzten PASS-Commit' "$REG_LEDGER" 2>/dev/null \
   || bad "no proof paragraph"
 # The shape of /feature-plan --kurz (R-0100): the head fields and the proof lines
 # of tasks/README.md, so --kurz completes the draft instead of rewriting it.
-grep -q '^Status: .* · Review: am Ende · Modell: Opus$' "$REG_LEDGER" 2>/dev/null \
+# No model in the head: who builds and with which model is CLAUDE.md's, not the ledger's.
+grep -q '^Status: geplant · Branch: feature/reg-[^ ]* · Review: am Ende$' "$REG_LEDGER" 2>/dev/null \
+  && ! grep -q 'Modell:' "$REG_LEDGER" \
   && grep -q '^Heavy: linux-full — ' "$REG_LEDGER" && grep -q '^DoD je Task: CLAUDE.md' "$REG_LEDGER" \
-  && ok "the reg ledger head: Review: am Ende, Modell, Heavy: linux-full, DoD" \
+  && ok "the reg ledger head: Review: am Ende, no Modell:, Heavy: linux-full, DoD" \
   || bad "reg ledger head: $(sed -n '/^# Regression/,/^Task-Status/p' "$REG_LEDGER" 2>/dev/null)"
 grep -q '^Dedup-Key: reg:web-vitest$' "$REG_LEDGER" 2>/dev/null \
   && grep -qx "HEAD: $(git -C "$FIX" rev-parse HEAD)" "$REG_LEDGER" \

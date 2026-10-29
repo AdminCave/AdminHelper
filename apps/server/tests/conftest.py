@@ -32,6 +32,56 @@ from app.core.auth import hash_password
 from app.core.database import Base, _session_utc, get_db
 from app.core.time import utcnow_naive
 from app.modules.users.models import User
+from tests import token_claims
+
+
+def _password_forms(url: str | None) -> tuple[str, ...]:
+    """The forms the password of DATABASE_URL takes in an error text, longest first:
+    decoded, as written in the URL (percent-encoded) and as repr() shows it."""
+    if not url:
+        return ()
+    from urllib.parse import urlsplit
+
+    from sqlalchemy.engine import make_url
+
+    try:
+        decoded = make_url(url).password
+        raw = urlsplit(url).password
+    except Exception:  # an unparsable URL: nothing to look for
+        return ()
+    forms = {f for f in (decoded, raw, repr(decoded)[1:-1] if decoded else None) if f}
+    return tuple(sorted(forms, key=len, reverse=True))
+
+
+_DB_PASSWORD_FORMS = _password_forms(os.environ.get("DATABASE_URL"))
+
+
+def _mask_db_password(text: str) -> str:
+    for form in _DB_PASSWORD_FORMS:
+        text = text.replace(form, "***")
+    return text
+
+
+# pytest prints the arguments of a traceback's last frame (psycopg's connect(conninfo,
+# **kwargs)) and, with -l, its locals (SQLAlchemy's cparams): a failed connection of the
+# test engine puts the password of DATABASE_URL into the terminal and the JUnit report.
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    report = yield
+    if _DB_PASSWORD_FORMS:
+        if isinstance(report.longrepr, tuple):
+            # A skip's (path, line, reason): the terminal report needs the tuple.
+            report.longrepr = tuple(
+                _mask_db_password(part) if isinstance(part, str) else part
+                for part in report.longrepr
+            )
+        elif report.longrepr is not None:
+            text = str(report.longrepr)
+            if any(form in text for form in _DB_PASSWORD_FORMS):
+                report.longrepr = _mask_db_password(text)
+        report.sections = [(name, _mask_db_password(body)) for name, body in report.sections]
+    return report
+
 
 # One seed, not a new one per run. A property suite that draws different data every
 # time is a gate that goes red on a commit which touched nothing, and whose failure
@@ -117,6 +167,23 @@ def _no_event_threads(request):
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(events, "_executor", _DiscardingExecutor())
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _every_peer_is_the_gateway(request):
+    # The server takes the identity headers only from the gateway (app.core.identity,
+    # _from_gateway). The suite has no gateway: its requests come from no peer or from
+    # "testclient", and no test should look the name up. So here every peer counts as
+    # the gateway; tests of that check itself are marked identity_source. A context of
+    # its own, so that a test's monkeypatch.undo() keeps the stand-in.
+    if request.node.get_closest_marker("identity_source") is not None:
+        yield
+        return
+    from app.core import identity
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(identity, "_from_gateway", lambda _request: True)
         yield
 
 
@@ -302,9 +369,11 @@ def db_session(pg_engine):
         if not nested.is_active:
             nested = connection.begin_nested()
 
+    token_claims.use_session(session)
     try:
         yield session
     finally:
+        token_claims.use_session(None)
         session.close()
         if outer.is_active:
             outer.rollback()
@@ -368,6 +437,11 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "app_engine: the test may connect through the app engine (see _no_app_engine)"
+    )
+    config.addinivalue_line(
+        "markers",
+        "identity_source: identity headers count only from the gateway "
+        "(see _every_peer_is_the_gateway)",
     )
 
 

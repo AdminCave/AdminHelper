@@ -39,6 +39,7 @@ from app.modules.enrollment.models import (
 from app.modules.servers.models import Server
 from tests.test_certificate_check import _fp, _leaf, _record
 from tests.test_mtls_scope import _gateway_headers
+from tests.token_claims import claims_for
 
 
 def _login(client, username: str, password: str) -> str:
@@ -170,7 +171,7 @@ def test_a_new_user_keeps_the_former_namesakes_certificates_out(
     revoked_at = _revoked_at(db_session, "bob")
 
     admin = {
-        "Authorization": f"Bearer {create_access_token({'sub': 'admin'})}",
+        "Authorization": f"Bearer {create_access_token(claims_for('admin'))}",
         **_gateway_headers(cn="admin"),
     }
     created = test_client.post(
@@ -179,7 +180,7 @@ def test_a_new_user_keeps_the_former_namesakes_certificates_out(
     assert created.status_code == 201, created.text
     assert _revoked_at(db_session, "bob") == revoked_at
 
-    bob = {"Authorization": f"Bearer {create_access_token({'sub': 'bob'})}"}
+    bob = {"Authorization": f"Bearer {create_access_token(claims_for('bob'))}"}
     old = _gateway_headers(cn="bob", not_before=revoked_at - timedelta(days=1))
     new = _gateway_headers(cn="bob", not_before=revoked_at + timedelta(seconds=2))
     assert test_client.get("/api/users/me/servers", headers={**bob, **old}).status_code == 403

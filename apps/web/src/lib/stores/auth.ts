@@ -100,9 +100,3 @@ export const isAdmin = derived(_auth, ($a) => $a.user?.is_admin ?? false);
 registerAuthFailureHandler(() => {
   void endSession();
 });
-
-export function requireUser(): User {
-  const state = get(_auth);
-  if (!state.user) throw new Error('Not authenticated');
-  return state.user;
-}
