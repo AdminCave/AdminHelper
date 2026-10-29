@@ -287,6 +287,240 @@ def _in_container(report: dict) -> bool:
     )
 
 
+class _Grader:
+    """Problems, worst status and per-metric levels of one agent_resources round.
+
+    Hysteresis memory is per METRIC (not per check) on purpose: a shared
+    flag would let an alerting CPU lower the disk thresholds and create a
+    self-sustaining warning for a metric that never crossed entry."""
+
+    def __init__(self, config: dict, prev_details: dict | None) -> None:
+        self.hysteresis_pp = config.get("hysteresis_pp", 10)
+        prev_problems = (prev_details or {}).get("problems") or {}
+        self.prev_problems = prev_problems if isinstance(prev_problems, dict) else {}
+        self.problems: list[str] = []
+        self.status = "ok"
+        self.problem_levels: dict[str, str] = {}
+
+    def grade(
+        self,
+        key: str,
+        value: float,
+        warn: float,
+        crit: float,
+        label: str,
+        unit: str,
+        hysteresis: bool = True,
+    ) -> None:
+        prev_level = self.prev_problems.get(key) if hysteresis else None
+        warn_rel = self.hysteresis_pp if prev_level in ("warning", "critical") else 0.0
+        crit_rel = self.hysteresis_pp if prev_level == "critical" else 0.0
+        self.status, level = _grade(
+            value, warn, crit, label, unit, self.problems, self.status, warn_rel, crit_rel
+        )
+        if level:
+            self.problem_levels[key] = level
+
+
+def _grade_usage(grader: _Grader, config: dict, resources: dict) -> tuple:
+    """CPU, RAM and swap: (cpu, memory, swap, swap_total_mb) as read."""
+    # CPU and memory: no metric here, as with disks and temperatures below. The agent
+    # router already writes monitor_agent_cpu_percent/monitor_agent_memory_percent per
+    # server; a copy with this check's labels was a second series of the same name
+    # (R-0633). Still graded below.
+    cpu = agent_number(resources.get("cpu_percent"))
+    if cpu is not None:
+        cpu_crit = config.get("cpu_crit", 95)
+        cpu_warn = config.get("cpu_warn", 80)
+        grader.grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
+
+    # Memory
+    mem = agent_number(resources.get("memory_percent"))
+    if mem is not None:
+        mem_crit = config.get("memory_crit", 95)
+        mem_warn = config.get("memory_warn", 80)
+        grader.grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
+
+    # Swap (agent v3, Linux): a host without a swap device sends swap_total_mb 0.
+    swap = agent_number(resources.get("swap_percent"))
+    swap_total = agent_number(resources.get("swap_total_mb"))
+    if swap is not None and swap_total is not None and swap_total > 0:
+        swap_crit = config.get("swap_crit", 95)
+        swap_warn = config.get("swap_warn", 80)
+        grader.grade("swap", swap, swap_warn, swap_crit, f"Swap {swap}%", "%")
+    return cpu, mem, swap, swap_total
+
+
+def _grade_load(
+    grader: _Grader, config: dict, resources: dict, load_rated: bool
+) -> tuple[int | None, float | None]:
+    """Load per CPU: (cpu_count, load_per_cpu) as read."""
+    # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
+    # No hysteresis: hysteresis_pp is in percentage points, and load_5m is the
+    # kernel's own 5-minute average, already smoothed whatever the push interval.
+    # Not rated in a container, only shown: load_5m is the host's there (unless
+    # lxcfs virtualizes /proc/loadavg), while cpu_count may be cut to the
+    # container's cores, so the quotient says nothing about the container.
+    cpu_count = agent_number(resources.get("cpu_count"))
+    if not isinstance(cpu_count, int) or cpu_count < 1:
+        cpu_count = None
+    load_5m = agent_number(resources.get("load_5m"))
+    load_per_cpu = None
+    if cpu_count is not None and load_5m is not None:
+        # Rounded before grading, so the label shows the value that was graded.
+        load_per_cpu = round(load_5m / cpu_count, 2)
+        if load_rated:
+            load_crit = config.get("load_crit", 3.0)
+            load_warn = config.get("load_warn", 1.5)
+            grader.grade(
+                "load",
+                load_per_cpu,
+                load_warn,
+                load_crit,
+                f"Load {load_per_cpu}/CPU",
+                "/CPU",
+                hysteresis=False,
+            )
+    return cpu_count, load_per_cpu
+
+
+def _grade_disks(grader: _Grader, config: dict, resources: dict) -> tuple[list[dict], set]:
+    """Usage and inodes per disk: (the disks after the fstype filter, ignore_mounts)."""
+    # Disks — filter pseudo filesystems server-side
+    # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
+    raw_disks = capped_objects(resources.get("disks"))
+    disks = [d for d in raw_disks if entry_text(d, "fstype", "_real_") not in EXCLUDED_FSTYPES]
+
+    disk_crit = config.get("disk_crit", 95)
+    disk_warn = config.get("disk_warn", 85)
+    disk_min_free_gb = config.get("disk_min_free_gb", 20)
+    ignore_mounts = set(config.get("ignore_mounts", []))
+    disk_overrides = config.get("disk_overrides", {})
+    inode_crit = config.get("inode_crit", 90)
+    inode_warn = config.get("inode_warn", 80)
+    for disk in disks:
+        pct = entry_number(disk, "percent", 0)
+        mount = entry_text(disk, "mount", NO_MOUNT)
+        if mount in ignore_mounts:
+            continue
+        # The schema takes null for an override key; it counts as unset, like a missing one.
+        ov = {k: v for k, v in disk_overrides.get(mount, {}).items() if v is not None}
+        d_warn = ov.get("warn", disk_warn)
+        d_crit = ov.get("crit", disk_crit)
+        min_free_gb = ov.get("min_free_gb", disk_min_free_gb)
+        # Agent v3 sends free_gb: the percentage counts only below min_free_gb free, 0
+        # turns the gate off. Without free_gb (older agent) it counts as before.
+        free_gb = agent_number(disk.get("free_gb"))
+        if free_gb is None or min_free_gb == 0 or free_gb < min_free_gb:
+            label = f"Disk {mount} {pct}%"
+            if free_gb is not None:
+                label += f", {free_gb} GB free"
+            # No per-mount metric: the agent router already writes monitor_agent_disk_percent
+            # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
+            # duplicate series in a second schema (1.18); the value is still graded below.
+            grader.grade(f"disk:{mount}", pct, d_warn, d_crit, label, "%")
+        # Agent v3 on Linux, and only for a filesystem that reports inodes.
+        inodes = agent_number(disk.get("inodes_percent"))
+        if inodes is not None:
+            grader.grade(
+                f"inode:{mount}",
+                inodes,
+                inode_warn,
+                inode_crit,
+                f"Inodes {mount} {inodes}%",
+                "%",
+            )
+    return disks, ignore_mounts
+
+
+def _grade_temperatures(grader: _Grader, config: dict, resources: dict) -> list[dict]:
+    # Temperatures (optional — VMs provide no sensor data)
+    temperatures = capped_objects(resources.get("temperatures"))
+    if temperatures:
+        temp_crit = config.get("temp_crit", 95)
+        temp_warn = config.get("temp_warn", 80)
+        temp_overrides = config.get("temp_overrides", {})
+        for sensor in temperatures:
+            temp_c = entry_number(sensor, "temp_c", 0)
+            sensor_name = entry_text(sensor, "sensor", "?")
+            # Same as disks: the router writes monitor_agent_temp dimensionally (sensor
+            # tag); the name-encoded copy here was the duplicate (1.18). Still graded below.
+            ov = temp_overrides.get(sensor_name, {})
+            s_crit = ov.get("crit", temp_crit)
+            s_warn = ov.get("warn", temp_warn)
+            grader.grade(
+                f"temp:{sensor_name}",
+                temp_c,
+                s_warn,
+                s_crit,
+                f"Temp {sensor_name} {temp_c}°C",
+                "°C",
+            )
+    return temperatures
+
+
+def _resources_message(problems: list[str], cpu, mem) -> str:
+    if problems:
+        return join_capped(problems, "; ")
+    parts = []
+    if cpu is not None:
+        parts.append(f"CPU {cpu}%")
+    if mem is not None:
+        parts.append(f"RAM {mem}%")
+    return ", ".join(parts) if parts else "OK"
+
+
+def _resources_details(
+    resources: dict,
+    *,
+    cpu,
+    mem,
+    swap,
+    swap_total,
+    cpu_count: int | None,
+    load_per_cpu: float | None,
+    problem_levels: dict[str, str],
+    disks: list[dict],
+    ignore_mounts: set,
+    temperatures: list[dict],
+) -> dict:
+    return {
+        "cpu": cpu,
+        "memory": mem,
+        # Next round's hysteresis memory (see _Grader.grade).
+        "problems": problem_levels,
+        "memory_total_mb": agent_number(resources.get("memory_total_mb")),
+        "memory_used_mb": agent_number(resources.get("memory_used_mb")),
+        "swap": swap,
+        "swap_total_mb": swap_total,
+        "swap_used_mb": agent_number(resources.get("swap_used_mb")),
+        "cpu_count": cpu_count,
+        "load_per_cpu": load_per_cpu,
+        "disks": [
+            {
+                "mount": entry_text(d, "mount", NO_MOUNT),
+                "percent": entry_number(d, "percent", 0),
+                "total_gb": agent_number(d.get("total_gb")),
+                "used_gb": agent_number(d.get("used_gb")),
+                "free_gb": agent_number(d.get("free_gb")),
+                "inodes_percent": agent_number(d.get("inodes_percent")),
+                # Still listed, so the desktop shows the usage without a rating.
+                "ignored": entry_text(d, "mount", NO_MOUNT) in ignore_mounts,
+            }
+            for d in disks
+        ],
+        "temperatures": [
+            {
+                "sensor": entry_text(s, "sensor", "?"),
+                "temp_c": entry_number(s, "temp_c", 0),
+                "high": entry_number(s, "high", 0),
+                "critical": entry_number(s, "critical", 0),
+            }
+            for s in temperatures
+        ],
+    }
+
+
 class AgentResourcesChecker:
     """Evaluates agent resource metrics against thresholds.
 
@@ -326,210 +560,33 @@ class AgentResourcesChecker:
         if not isinstance(resources, dict) or not resources:
             return "unknown", "No resource data", None
 
-        problems = []
-        status = "ok"
-        metrics = {}
-
-        # Hysteresis memory is per METRIC (not per check) on purpose: a shared
-        # flag would let an alerting CPU lower the disk thresholds and create a
-        # self-sustaining warning for a metric that never crossed entry.
-        hysteresis_pp = config.get("hysteresis_pp", 10)
-        prev_problems = (prev_details or {}).get("problems") or {}
-        if not isinstance(prev_problems, dict):
-            prev_problems = {}
-        problem_levels: dict[str, str] = {}
-
-        def grade(
-            key: str,
-            value: float,
-            warn: float,
-            crit: float,
-            label: str,
-            unit: str,
-            hysteresis: bool = True,
-        ):
-            nonlocal status
-            prev_level = prev_problems.get(key) if hysteresis else None
-            warn_rel = hysteresis_pp if prev_level in ("warning", "critical") else 0.0
-            crit_rel = hysteresis_pp if prev_level == "critical" else 0.0
-            status, level = _grade(
-                value, warn, crit, label, unit, problems, status, warn_rel, crit_rel
-            )
-            if level:
-                problem_levels[key] = level
-
-        # CPU and memory: no metric here, as with disks and temperatures below. The agent
-        # router already writes monitor_agent_cpu_percent/monitor_agent_memory_percent per
-        # server; a copy with this check's labels was a second series of the same name
-        # (R-0633). Still graded below.
-        cpu = agent_number(resources.get("cpu_percent"))
-        if cpu is not None:
-            cpu_crit = config.get("cpu_crit", 95)
-            cpu_warn = config.get("cpu_warn", 80)
-            grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
-
-        # Memory
-        mem = agent_number(resources.get("memory_percent"))
-        if mem is not None:
-            mem_crit = config.get("memory_crit", 95)
-            mem_warn = config.get("memory_warn", 80)
-            grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
-
-        # Swap (agent v3, Linux): a host without a swap device sends swap_total_mb 0.
-        swap = agent_number(resources.get("swap_percent"))
-        swap_total = agent_number(resources.get("swap_total_mb"))
-        if swap is not None and swap_total is not None and swap_total > 0:
-            swap_crit = config.get("swap_crit", 95)
-            swap_warn = config.get("swap_warn", 80)
-            grade("swap", swap, swap_warn, swap_crit, f"Swap {swap}%", "%")
-
-        # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
-        # No hysteresis: hysteresis_pp is in percentage points, and load_5m is the
-        # kernel's own 5-minute average, already smoothed whatever the push interval.
-        # Not rated in a container, only shown: load_5m is the host's there (unless
-        # lxcfs virtualizes /proc/loadavg), while cpu_count may be cut to the
-        # container's cores, so the quotient says nothing about the container.
+        grader = _Grader(config, prev_details)
+        cpu, mem, swap, swap_total = _grade_usage(grader, config, resources)
         load_rated = not _in_container(report)
-        cpu_count = agent_number(resources.get("cpu_count"))
-        if not isinstance(cpu_count, int) or cpu_count < 1:
-            cpu_count = None
-        load_5m = agent_number(resources.get("load_5m"))
-        load_per_cpu = None
-        if cpu_count is not None and load_5m is not None:
-            # Rounded before grading, so the label shows the value that was graded.
-            load_per_cpu = round(load_5m / cpu_count, 2)
-            if load_rated:
-                load_crit = config.get("load_crit", 3.0)
-                load_warn = config.get("load_warn", 1.5)
-                grade(
-                    "load",
-                    load_per_cpu,
-                    load_warn,
-                    load_crit,
-                    f"Load {load_per_cpu}/CPU",
-                    "/CPU",
-                    hysteresis=False,
-                )
+        cpu_count, load_per_cpu = _grade_load(grader, config, resources, load_rated)
+        disks, ignore_mounts = _grade_disks(grader, config, resources)
+        temperatures = _grade_temperatures(grader, config, resources)
 
-        # Disks — filter pseudo filesystems server-side
-        # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
-        raw_disks = capped_objects(resources.get("disks"))
-        disks = [d for d in raw_disks if entry_text(d, "fstype", "_real_") not in EXCLUDED_FSTYPES]
-
-        disk_crit = config.get("disk_crit", 95)
-        disk_warn = config.get("disk_warn", 85)
-        disk_min_free_gb = config.get("disk_min_free_gb", 20)
-        ignore_mounts = set(config.get("ignore_mounts", []))
-        disk_overrides = config.get("disk_overrides", {})
-        inode_crit = config.get("inode_crit", 90)
-        inode_warn = config.get("inode_warn", 80)
-        for disk in disks:
-            pct = entry_number(disk, "percent", 0)
-            mount = entry_text(disk, "mount", NO_MOUNT)
-            if mount in ignore_mounts:
-                continue
-            # The schema takes null for an override key; it counts as unset, like a missing one.
-            ov = {k: v for k, v in disk_overrides.get(mount, {}).items() if v is not None}
-            d_warn = ov.get("warn", disk_warn)
-            d_crit = ov.get("crit", disk_crit)
-            min_free_gb = ov.get("min_free_gb", disk_min_free_gb)
-            # Agent v3 sends free_gb: the percentage counts only below min_free_gb free, 0
-            # turns the gate off. Without free_gb (older agent) it counts as before.
-            free_gb = agent_number(disk.get("free_gb"))
-            if free_gb is None or min_free_gb == 0 or free_gb < min_free_gb:
-                label = f"Disk {mount} {pct}%"
-                if free_gb is not None:
-                    label += f", {free_gb} GB free"
-                # No per-mount metric: the agent router already writes monitor_agent_disk_percent
-                # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
-                # duplicate series in a second schema (1.18); the value is still graded below.
-                grade(f"disk:{mount}", pct, d_warn, d_crit, label, "%")
-            # Agent v3 on Linux, and only for a filesystem that reports inodes.
-            inodes = agent_number(disk.get("inodes_percent"))
-            if inodes is not None:
-                grade(
-                    f"inode:{mount}",
-                    inodes,
-                    inode_warn,
-                    inode_crit,
-                    f"Inodes {mount} {inodes}%",
-                    "%",
-                )
-
-        # Temperatures (optional — VMs provide no sensor data)
-        temperatures = capped_objects(resources.get("temperatures"))
-        if temperatures:
-            temp_crit = config.get("temp_crit", 95)
-            temp_warn = config.get("temp_warn", 80)
-            temp_overrides = config.get("temp_overrides", {})
-            for sensor in temperatures:
-                temp_c = entry_number(sensor, "temp_c", 0)
-                sensor_name = entry_text(sensor, "sensor", "?")
-                # Same as disks: the router writes monitor_agent_temp dimensionally (sensor
-                # tag); the name-encoded copy here was the duplicate (1.18). Still graded below.
-                ov = temp_overrides.get(sensor_name, {})
-                s_crit = ov.get("crit", temp_crit)
-                s_warn = ov.get("warn", temp_warn)
-                grade(
-                    f"temp:{sensor_name}",
-                    temp_c,
-                    s_warn,
-                    s_crit,
-                    f"Temp {sensor_name} {temp_c}\u00b0C",
-                    "\u00b0C",
-                )
-
-        if problems:
-            message = join_capped(problems, "; ")
-        else:
-            parts = []
-            if cpu is not None:
-                parts.append(f"CPU {cpu}%")
-            if mem is not None:
-                parts.append(f"RAM {mem}%")
-            message = ", ".join(parts) if parts else "OK"
-
-        metrics["_details"] = {
-            "cpu": cpu,
-            "memory": mem,
-            # Next round's hysteresis memory (see grade() above).
-            "problems": problem_levels,
-            "memory_total_mb": agent_number(resources.get("memory_total_mb")),
-            "memory_used_mb": agent_number(resources.get("memory_used_mb")),
-            "swap": swap,
-            "swap_total_mb": swap_total,
-            "swap_used_mb": agent_number(resources.get("swap_used_mb")),
-            "cpu_count": cpu_count,
-            "load_per_cpu": load_per_cpu,
-            "disks": [
-                {
-                    "mount": entry_text(d, "mount", NO_MOUNT),
-                    "percent": entry_number(d, "percent", 0),
-                    "total_gb": agent_number(d.get("total_gb")),
-                    "used_gb": agent_number(d.get("used_gb")),
-                    "free_gb": agent_number(d.get("free_gb")),
-                    "inodes_percent": agent_number(d.get("inodes_percent")),
-                    # Still listed, so the desktop shows the usage without a rating.
-                    "ignored": entry_text(d, "mount", NO_MOUNT) in ignore_mounts,
-                }
-                for d in disks
-            ],
-            "temperatures": [
-                {
-                    "sensor": entry_text(s, "sensor", "?"),
-                    "temp_c": entry_number(s, "temp_c", 0),
-                    "high": entry_number(s, "high", 0),
-                    "critical": entry_number(s, "critical", 0),
-                }
-                for s in temperatures
-            ],
-        }
+        details = _resources_details(
+            resources,
+            cpu=cpu,
+            mem=mem,
+            swap=swap,
+            swap_total=swap_total,
+            cpu_count=cpu_count,
+            load_per_cpu=load_per_cpu,
+            problem_levels=grader.problem_levels,
+            disks=disks,
+            ignore_mounts=ignore_mounts,
+            temperatures=temperatures,
+        )
         # Only in a container, so the details of a host or VM stay as they were; the
         # desktop shows the load then without a rating.
         if not load_rated:
-            metrics["_details"]["load_rated"] = False
+            details["load_rated"] = False
 
-        return status, message, metrics
+        message = _resources_message(grader.problems, cpu, mem)
+        return grader.status, message, {"_details": details}
 
 
 class ServiceProcessChecker:

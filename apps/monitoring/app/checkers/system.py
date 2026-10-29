@@ -53,7 +53,9 @@ class SystemStateChecker:
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         return "unknown", "Waiting for agent data", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
         block = report.get("system_state")
         if not isinstance(block, dict):
             block = {}

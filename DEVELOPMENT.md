@@ -21,6 +21,15 @@ sudo apt install -y \
   patchelf
 ```
 
+SPDX-Header neuer Quelldateien schreibt `reuse annotate` (CLAUDE.md §10). Ohne sudo (das Debian-Paket
+`reuse` braeuchte es) ein eigenes venv mit Link in den `PATH`, wie bei `pip-audit` unten:
+
+```bash
+python3 -m venv ~/.local/share/ah-tools/reuse-venv
+~/.local/share/ah-tools/reuse-venv/bin/pip install -q reuse==6.2.0
+mkdir -p ~/.local/bin && ln -sfn ~/.local/share/ah-tools/reuse-venv/bin/reuse ~/.local/bin/reuse
+```
+
 ### Rust Toolchain
 
 ```bash
@@ -168,7 +177,13 @@ ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf dies
 Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
 andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —
 auch im Format-Hook `scripts/dev/format-file.sh`, der dann still gar nicht formatiert
-(sein Exit bleibt 0).
+(sein Exit bleibt 0). Ohne ruff im `PATH` formatiert er ebenfalls nichts, und ein nacktes
+`ruff check` scheitert auch nach `source .devenv.sh`, das nur cargo und go in den `PATH` legt.
+Ein Link auf das ruff im `AH_VENV` folgt dem Pin, denn `server-pytest` zieht es auf ihn:
+
+```bash
+mkdir -p ~/.local/bin && ln -s ~/.cache/ah-venv/bin/ruff ~/.local/bin/ruff
+```
 
 ### Python-Tests lokal (ohne Docker)
 
@@ -701,6 +716,13 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 # sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.27.x.linux-amd64.tar.gz
 ```
 
+Liegt Go ohne sudo unter `~/sdk/go`, legt `.devenv.sh` es in den `PATH`; damit ein nacktes `go` oder
+`gofmt` (auch im Format-Hook) es ohne gesourctes `.devenv.sh` findet, zusaetzlich Links:
+
+```bash
+mkdir -p ~/.local/bin && ln -s ~/sdk/go/bin/go ~/sdk/go/bin/gofmt ~/.local/bin/
+```
+
 ### Node.js + npm (Desktop-UI und Web-Frontend)
 
 Beide Svelte-Frontends (und `cargo tauri dev`, das den Vite-Dev-Server
@@ -939,6 +961,8 @@ pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
+
+**Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut nur der Entrypoint des Containers (`apps/monitoring/docker-entrypoint.sh`).
 
 **Hinweis:** Fuer den vollen Monitoring-Stack wird VictoriaMetrics benoetigt, die per `docker compose up` automatisch mitgestartet wird.
 

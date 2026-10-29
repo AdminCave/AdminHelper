@@ -20,8 +20,10 @@ pub struct TunnelMapping {
     pub server_id: String,
     pub tunnel_type: String,
     pub protocol: String,
-    pub local_port: u16,
-    pub visitor_port: Option<u16>,
+    // Wider than a port: the server may still list a row stored before it checked the range,
+    // and one such row must not fail the whole list. Only a value that is a port resolves.
+    pub local_port: i64,
+    pub visitor_port: Option<i64>,
     pub custom_domains: Option<String>,
     pub connection_id: Option<String>,
     pub enabled: bool,
@@ -81,7 +83,10 @@ pub fn resolve_connection(
             let mut resolved = connection.clone();
             match t.tunnel_type.as_str() {
                 "stcp" => {
-                    let visitor = t.visitor_port.and_then(|vport| visitor_at(bindings, vport));
+                    let visitor = t
+                        .visitor_port
+                        .and_then(|vport| u16::try_from(vport).ok())
+                        .and_then(|vport| visitor_at(bindings, vport));
                     if let Some(visitor) = visitor {
                         to_visitor(&mut resolved, visitor.local_port, t.protocol == "web");
                     }
@@ -472,6 +477,24 @@ mod tests {
         assert!(resolved.via_tunnel);
         assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
         assert_eq!(resolved.connection.port, Some(3389));
+    }
+
+    #[test]
+    fn stcp_with_a_visitor_port_outside_the_range_keeps_original_target() {
+        // 78925 is 13389 + 65536: a cast to u16 would have found the visitor at 13389.
+        for vport in [78925, -1] {
+            let conn = connection("c1");
+            let mut mapping = tunnel("c1", "stcp", "rdp");
+            mapping.visitor_port = Some(vport);
+            let resolved = resolve_connection(&conn, &[mapping], &same_ports());
+            assert!(resolved.via_tunnel, "{vport}");
+            assert_eq!(
+                resolved.connection.host.as_deref(),
+                Some("server.internal"),
+                "{vport}"
+            );
+            assert_eq!(resolved.connection.port, Some(3389), "{vport}");
+        }
     }
 
     #[test]
@@ -1039,6 +1062,25 @@ mod tests {
             assert_eq!(held(&session).await, listed(), "{case}");
             assert_eq!(*log.lock().unwrap(), [FETCH, FETCH], "{case}");
         }
+    }
+
+    #[tokio::test]
+    async fn fetch_tunnels_takes_mappings_with_ports_outside_the_range() {
+        let mut far = serde_json::to_value(tunnel("c2", "stcp", "rdp")).unwrap();
+        far["id"] = "t-far".into();
+        far["localPort"] = 70000.into();
+        far["visitorPort"] = 70000.into();
+        let mut low = serde_json::to_value(tunnel("c3", "stcp", "ssh")).unwrap();
+        low["id"] = "t-low".into();
+        low["localPort"] = (-1).into();
+        low["visitorPort"] = 0.into();
+        let listed = serde_json::json!([tunnel("c1", "stcp", "rdp"), far, low]);
+        let (server, _) = serve(vec![Some(("200 OK", listed.to_string()))]).await;
+        let session = signed_in(server).await;
+
+        let fetched = fetch_tunnels(&session).await.unwrap();
+        assert_eq!(serde_json::to_value(&fetched).unwrap(), listed);
+        assert_eq!(held(&session).await, listed);
     }
 
     #[tokio::test]

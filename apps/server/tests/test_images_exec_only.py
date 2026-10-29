@@ -345,7 +345,7 @@ def test_the_entrypoint_of_monitoring_creates_its_database_once(pg_engine):
         assert not exists()
         first = run()
         assert (first.returncode, first.stderr) == (0, ""), first.stderr
-        assert first.stdout == f"[entrypoint] Lege Datenbank {name} an...\n"
+        assert first.stdout == f"[entrypoint] Creating database {name}...\n"
         assert exists()
         again = run()
         assert (again.returncode, again.stdout, again.stderr) == (0, "", ""), again.stderr
@@ -358,7 +358,7 @@ def test_the_entrypoint_of_monitoring_creates_its_database_once(pg_engine):
         leaked = sentinel in failed.stdout + failed.stderr
         assert not leaked, "the output of the failed run names the password"
         assert failed.returncode == 1, failed.stderr
-        assert failed.stderr.startswith(f"[entrypoint] FEHLER: Datenbank {name}: "), failed.stderr
+        assert failed.stderr.startswith(f"[entrypoint] ERROR: database {name}: "), failed.stderr
     finally:
         with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
