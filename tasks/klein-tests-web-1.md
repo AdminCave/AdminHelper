@@ -10,8 +10,10 @@ Heavy: none — Unit-Tests im Web-Frontend, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — App.idle.test: „0 = aus“ über das Standardlimit hinaus (R-0888)  [ ]
+### T1 — App.idle.test: „0 = aus“ über das Standardlimit hinaus (R-0888)  [x]
 Komponente: web · Dateien: apps/web/src/App.idle.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @e8fe21a1 2026-10-29T22:20:46+01:00
+Review: approve (.ah-out/review/klein-tests-web-1/T1.verdict.json)
 Änderung: Fall (b) lässt 31 Minuten plus ein Prüfintervall (`CHECK`) vergehen statt 10; ein Rückfall auf `|| 30` färbt ihn rot (Gegenprobe im Test-Lauf, danach zurückgenommen).
 Beweis: R-0888 Code-Lesung App.idle.test.ts:110
 Dedup-Key: ref:web:App.idle.test.ts:zero-off-window
