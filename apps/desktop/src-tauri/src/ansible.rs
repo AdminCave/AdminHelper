@@ -619,6 +619,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn linux_run_script_keeps_both_files_until_the_run_ends_after_hup_or_term() {
+        // Without `trap exit HUP TERM` bash would run its EXIT trap at once and remove the
+        // files under a run still reading them; the test above stays green either way, since
+        // it only looks once everything has ended. Here the stub outlives the signal by a
+        // moment and checks that both files are still there. No `exec`: its trap must stay.
+        for (case, signal) in [("hangup-keeps", "-HUP"), ("term-keeps", "-TERM")] {
+            let run = signal_mid_run(
+                case,
+                r#"trap 'sleep 0.3; if [ -f "$2" ] && [ -f "$3" ]; then echo AH_KEPT_BOTH; fi; exit 0' HUP TERM"#,
+                "while :; do sleep 0.1; done",
+                signal,
+            );
+            assert!(run.started, "{case}: the stub never ran on both files");
+            assert!(run.ended, "{case}: bash did not end after {signal}");
+            assert_eq!(run.left, (false, false), "{case}: files left after the run");
+            assert!(
+                run.stdout.contains("AH_KEPT_BOTH"),
+                "{case}: the files went before the run ended: {:?}",
+                run.stdout
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn linux_run_script_removes_both_files_after_ctrl_c_mid_run() {
         // ansible-playbook catches Ctrl-C and exits 99: the run still goes on to the prompt.
         let caught = signal_mid_run(

@@ -59,8 +59,10 @@ Orakel: contract — der Desktop nimmt jede Zeile, die `GET /api/frp/tunnels` li
 Dedup-Key: bug:desktop:src-tauri/tunnel.rs:TunnelMapping-port-range
 HEAD: b1432223
 
-### T3 — Test: die Ansible-Dateien bleiben, bis `ansible-playbook` nach HUP/TERM endet (R-0574)  [ ]
+### T3 — Test: die Ansible-Dateien bleiben, bis `ansible-playbook` nach HUP/TERM endet (R-0574)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @2c1b50b6 2026-10-29T06:20:36+01:00
+Review: approve (.ah-out/review/desktop-blocking/T3.verdict.json)
 Änderung: Ein neuer Test (`#[cfg(unix)]`) über `signal_mid_run` (`ansible.rs:320-371`), je für `-HUP` und `-TERM` (eigene Fallnamen, etwa `hangup-keeps`, `term-keeps`): der Stub bekommt als `before` `trap 'sleep 0.3; if [ -f "$2" ] && [ -f "$3" ]; then echo AH_KEPT_BOTH; fi; exit 0' HUP TERM` und als `then` `while :; do sleep 0.1; done` (kein `exec`: der Trap des Stubs muss bleiben). Erwartet: `started`, `ended`, `left == (false, false)` und `stdout` enthält `AH_KEPT_BOTH` (der Stub sieht 0,3 s nach dem Signal noch beide Dateien). Ein Kommentar nennt das Warum: ohne `trap exit HUP TERM` (`:206`) führt bash den EXIT-Trap sofort aus, und der bestehende HUP-Test (`:373-380`) bliebe trotzdem grün. Produktcode bleibt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible::
 Doku: keine (nur Test; das Soll steht in `docs/admin/ansible.html:67` und `docs/developer/desktop.html:114`)
