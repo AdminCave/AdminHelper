@@ -11,3 +11,6 @@
 - **Desktop: Geraete-Identitaet zuruecksetzen:** Das Loeschen des gepinnten Zertifikats blockiert die Oberflaeche
   nicht mehr; konnte der Server die Identitaet nicht widerrufen und bleibt zusaetzlich der Pin stehen, nennt die
   Fehlermeldung beides.
+- **Desktop: Anzeige nach einem gescheiterten Zuruecksetzen:** Scheitert das Zuruecksetzen der Geraete-Identitaet,
+  nachdem sie schon geloescht ist, zeigt der Einstellungsdialog das Geraet als nicht registriert statt der alten
+  Identitaet.

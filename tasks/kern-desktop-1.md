@@ -49,8 +49,10 @@ Dedup-Key: bug:desktop:commands.rs:reset-device-identity-blocking
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- commands
 Doku: changelog.d/kern-desktop-1.md
 
-### T5 — Einstellungen: Zustand nach gescheitertem Geräte-Reset neu laden (R-0870)  [ ]
+### T5 — Einstellungen: Zustand nach gescheitertem Geräte-Reset neu laden (R-0870)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.identity.test.ts, changelog.d/kern-desktop-1.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @afc2981b 2026-10-29T18:57:17+01:00
+Review: approve (.ah-out/review/kern-desktop-1/T5.verdict.json)
 Änderung: Im `catch` von `onResetDeviceIdentity` (`SettingsModal.svelte:202`) lädt die UI den Identitätszustand neu (`refreshDeviceIdentity()`), statt `deviceEnrolled` stehen zu lassen. Test zuerst rot: Reset scheitert, die Identität ist danach weg → die Einstellungen zeigen das Gerät nicht mehr als registriert, der Fehler wird gemeldet.
 Beweis: Code-Lesung `SettingsModal.svelte:196` (feature/desktop-hardening-3@cdb0dfd1)
 Dedup-Key: bug:desktop:SettingsModal.svelte:reset-failure-state
