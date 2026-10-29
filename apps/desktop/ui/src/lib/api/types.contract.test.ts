@@ -165,6 +165,69 @@ const MAPPINGS: Mapping[] = [
     schema: 'NotificationPrefsUpdate',
     direction: 'request',
   },
+  {
+    ts: 'MonitoringTemplateFull',
+    snapshot: 'monitoring',
+    schema: 'TemplateOut',
+    direction: 'response',
+    omit: { syncResult: 'the rollout counts of a PUT; no client reads them' },
+  },
+  {
+    ts: 'MonitoringTemplateAssignment',
+    snapshot: 'monitoring',
+    schema: 'TemplateAssignmentOut',
+    direction: 'response',
+  },
+  {
+    ts: 'MonitoringTemplateTagAssignment',
+    snapshot: 'monitoring',
+    schema: 'TagAssignmentOut',
+    direction: 'response',
+  },
+  {
+    ts: 'TemplateAssignment',
+    snapshot: 'monitoring',
+    schema: 'ServerAssignmentOut',
+    direction: 'response',
+  },
+  {
+    ts: 'MonitoringBuiltinUpdate',
+    snapshot: 'monitoring',
+    schema: 'BuiltinUpdateOut',
+    direction: 'response',
+  },
+  {
+    ts: 'MonitoringBuiltinDefinitions',
+    snapshot: 'monitoring',
+    schema: 'TemplateDefinitionsOut',
+    direction: 'response',
+  },
+  {
+    ts: 'TemplateSuggestion',
+    snapshot: 'monitoring',
+    schema: 'TemplateSuggestionOut',
+    direction: 'response',
+  },
+  {
+    ts: 'TemplateCheckDef',
+    snapshot: 'monitoring',
+    schema: 'TemplateCheckDef',
+    direction: 'request',
+  },
+  {
+    ts: 'TemplateAlertDef',
+    snapshot: 'monitoring',
+    schema: 'TemplateAlertDef',
+    direction: 'request',
+  },
+  {
+    ts: 'MonitoringTemplateInput',
+    snapshot: 'monitoring',
+    // POST and PUT send the same body; TemplateCreate is the stricter schema
+    // (TemplateUpdate requires nothing and allows null everywhere).
+    schema: 'TemplateCreate',
+    direction: 'request',
+  },
 ];
 
 // Interfaces of types.ts that describe no schema of their own.
@@ -186,19 +249,6 @@ const EXEMPT: Record<string, string> = {
       'MonitorSystemStateDetails',
       'MonitorZfsDetails',
     ].map((n) => [n, 'free form state.details of a checker, narrowed in models/checkDetails.ts']),
-  ),
-  ...Object.fromEntries(
-    [
-      'MonitoringBuiltinDefinitions',
-      'MonitoringBuiltinUpdate',
-      'MonitoringTemplateAssignment',
-      'MonitoringTemplateFull',
-      'MonitoringTemplateInput',
-      'MonitoringTemplateTagAssignment',
-      'TemplateAlertDef',
-      'TemplateAssignment',
-      'TemplateCheckDef',
-    ].map((n) => [n, 'monitoring template type, mapped against its snapshot in T22']),
   ),
 };
 
@@ -433,7 +483,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(27);
+    expect(MAPPINGS.length).toBe(37);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # API-Verträge: Antwortmodelle für Server und Monitoring, Client-Typen gegen den Snapshot (Teil clients) — Task-Ledger
-Status: aktiv · Branch: feature/api-contracts-clients · Review: pro Task
+Status: bereit · Branch: feature/api-contracts-clients · Review: pro Task
 Spec: docs/features/api-contracts.md (Roadmap R-0686, R-0687)
 Heavy: none — Teil-Ledger von tasks/api-contracts.md (T18–T25); die schwere Prüfung (linux-full + scenario + windows) fährt das Vorhabens-Ledger vor dem Merge
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -98,8 +98,10 @@ Orakel: contract — die Monitoring-Interfaces gegen den Monitoring-Snapshot
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T22 — desktop-ui: Monitoring-Typen für Templates (R-0685, R-0687)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts
+### T22 — desktop-ui: Monitoring-Typen für Templates (R-0685, R-0687)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.svelte, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.test.ts, apps/desktop/ui/src/lib/models/monitorTemplate.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2064d835 2026-10-30T00:04:06+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T22.verdict.json)
 Änderung: Zuordnung für `MonitoringTemplateFull` (`types.ts:642-658`), `MonitoringTemplateAssignment` (`:629-634`), `MonitoringBuiltinUpdate` (`:674-679`), `TemplateSuggestion` (inline in `apps/desktop/ui/src/lib/api/monitoring.ts:31-36`, nach `types.ts` verschoben, damit der Test es findet) und `TemplateCheckDef`/`TemplateAlertDef` (`:608-627`) in Richtung Anfrage. Korrekturen: `createdAt`, `updatedAt`, `syncResult` an `MonitoringTemplateFull`, `id`, `templateId` an `MonitoringTemplateAssignment` (aufnehmen oder `omit` mit Grund). Aufrufer wie T21.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts src/lib/api/monitoring.test.ts
 Doku: keine
@@ -157,3 +159,4 @@ HEAD: b25c65a6
 - 2026-10-29 T20: Die Desktop-Zuordnung trägt je Interface den Snapshot (`server`/`monitoring`); T20 ordnet die 18 Server-Interfaces zu, die Monitoring-Interfaces stehen bis T21/T22 mit diesem Grund in `EXEMPT` (T21/T22 ersetzen ihn durch die Zuordnung oder einen bleibenden Grund). `MonCheckSummary` bleibt ausgenommen (Ausschnitt von `MonitorCheck` für `computeSummary`).
 - 2026-10-29 T20: `Server` nimmt `frpTunnels?` und `createdAt?` auf (der Typ beschreibt, was der Server sendet; `?` hält jeden Leser unverändert); `FrpTunnel.extraConfig` steht in `omit` wie `FrpConfig.extraConfig`. Nullbar geworden: `FrpTunnel.localIp`/`enabled`, `FrpProvisionToken.expiresAt`, `FrpProvisionTokenCreateResult.expiresAt`, `NotificationItem.createdAt`; `svelte-check` ohne Befund (`fmt`, `timeAgo` und `frpTunnel.ts:63` nehmen `null` schon), keine Datei außerhalb von `Dateien:`.
 - 2026-10-29 T21: Bleibend ausgenommen: `MonitorCheckConfig`, `AlertChannelConfig` (frei geformte Konfiguration, im Schema `any`/`object`), `MonitoringMetricSeries` (eine VictoriaMetrics-Reihe im frei geformten `data`) und die zehn `Monitor…Details` (frei geformtes `state.details`, eingeengt in `models/checkDetails.ts`). Aufgenommen statt `omit`: `createdAt`/`updatedAt` an `MonitorCheck` und `AlertRule`, `templateId` an `AlertRule`, `checkId`/`checkType`/`period` an `MonitoringMetricsResponse`, alle optional. `svelte-check` traf nur `canRunManually` (über `MonitoringTab.svelte:397` und `MonCheckLine.svelte:56`); die in der Task erwarteten Treffer in `MonitoringAlerts.svelte`, `AlertRuleModal.svelte`, `MaintenanceModal.svelte` gab es nicht. `monitoring.test.ts` dazu (Test für `enabled: null`).
+- 2026-10-29 T22: Zehn Zuordnungen, Pin 37; `EXEMPT` trägt keinen T22-Platzhalter mehr. `MonitoringTemplateInput` nur gegen `TemplateCreate`: POST und PUT schicken denselben Body, und `TemplateUpdate` ist in jedem Feld lockerer; die Vereinigung beider (Pflicht nur, wo jedes verlangt) hätte die Anfrage-Regeln ausgehebelt (Prüfer-Fund). `syncResult` an `MonitoringTemplateFull` per `omit` (Zählung der PUT-Ausrollung, kein Leser); `createdAt`/`updatedAt` optional aufgenommen, `assignments`/`tagAssignments` nullbar. `id`/`templateId` an `MonitoringTemplateAssignment` als Pflichtfelder aufgenommen (das Schema verlangt sie); die Fixture in `monitorTemplate.test.ts` zieht nach. `TemplateSuggestion` nach `types.ts` verschoben; `MonitoringTab.svelte` und `MonitoringTab.test.ts` importieren es von dort.

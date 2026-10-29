@@ -642,6 +642,8 @@ export interface TemplateAlertDef {
 }
 
 export interface MonitoringTemplateAssignment {
+  id: string;
+  templateId: string;
   serverId: string;
   serverName?: string;
   serverHostname?: string;
@@ -668,8 +670,10 @@ export interface MonitoringTemplateFull {
   builtinUpdateAvailable?: boolean;
   checkDefinitions?: TemplateCheckDef[];
   alertDefinitions?: TemplateAlertDef[];
-  assignments?: MonitoringTemplateAssignment[];
-  tagAssignments?: MonitoringTemplateTagAssignment[];
+  assignments?: MonitoringTemplateAssignment[] | null;
+  tagAssignments?: MonitoringTemplateTagAssignment[] | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 // A definition as GET /templates/{id}/builtin-update shows it: every key at its
@@ -691,6 +695,15 @@ export interface MonitoringBuiltinUpdate {
   shippedVersion: number;
   current: MonitoringBuiltinDefinitions;
   shipped: MonitoringBuiltinDefinitions;
+}
+
+// A standard template the server's host facts suggest; `reason` is `os:<os>` or
+// `subsystem:<name>`.
+export interface TemplateSuggestion {
+  slug: string;
+  templateId: string;
+  templateName: string;
+  reason: string;
 }
 
 export interface MonitoringTemplateInput {

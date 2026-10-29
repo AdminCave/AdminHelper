@@ -13,9 +13,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     MonitoringTemplateFull,
     Server,
     TemplateAssignment,
+    TemplateSuggestion,
   } from '$lib/api/types';
   import type { AuthSession } from '$lib/bridge/types';
-  import { monitoringApi, type TemplateSuggestion } from '$lib/api/monitoring';
+  import { monitoringApi } from '$lib/api/monitoring';
   import { statusClass, canRunManually, isPushOnlyCheck } from '$lib/models/monitoring';
   import { session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
