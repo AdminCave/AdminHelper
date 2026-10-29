@@ -58,6 +58,7 @@ Doku: → T4
 Abhängt von: T5
 
 ## Entscheidungen
+- 2026-10-29 Übergabe: Entwurf der T4-Doku liegt als `.ah-out/t4-draft.patch` im Worktree (vor T5 geschrieben; die Sätze zu Backup/Restore „als Superuser“ nach T5 auf die Dienst-Rollen umstellen). Nächste Task: T5.
 - 2026-10-29 T5 (advisor): Restore meldet sich mit den Dienst-Rollen an statt als Superuser mit `SET ROLE`; `db-init` läuft vorher. `pg-restore.sh` ändert dabei seine Zugangsdaten (sichtbares Verhalten) → eigene Task T6 mit Frage an Kevin. Begründung privat.
 - 2026-10-29 T3: Schritt 14 (Grenzen je Dienst) prüfte jeden Dienst als laufend; der Einmal-Dienst `db-init` aus T2 ist beendet und machte den Stack-Test rot. T3 prüft ihn am beendeten Container (Exit 0, `no-new-privileges`, pids-Limit aus der Compose-Konfiguration). Lokaler Stack-Lauf: `integration_stack_test: 83 passed, 0 failed` (ein früherer Lauf scheiterte flaky am Enroll mit 502, eigene Zeile).
 - 2026-10-29 T2 (Prüfung): gekoppelte Dateien kamen dazu — Test-Overlay (`db-init` auf dem lokal gebauten Server-Image), die `.env` der Test-Stacks (`lib_e2e_stack.sh`), die Maskierung im Diagnose-Bundle (`scripts/diagnostics.sh`) und drei Dockerfile-Kommentare; darum mehr als acht Dateien.
