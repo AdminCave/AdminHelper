@@ -399,6 +399,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Anfragen an den Server lesen die Geraete-Identitaet nicht mehr bei jedem Aufruf aus dem
+  System-Schluesselbund (R-0644):** Der Prozess liest sie einmal und nach Registrieren, Erneuern und Zuruecksetzen neu;
+  ein kurzer Lesefehler des Schluesselbunds schickt nicht mehr dauerhaft Anfragen ohne Geraete-Zertifikat.
 - **Desktop: nach der Meldung "Zeitueberschreitung" beim Verbindungsaufbau oeffnet sich kein RDP-, SSH- oder
   Web-Fenster mehr (R-0642):** Bisher lief der Aufbau weiter und startete spaeter doch; die Anmeldepruefung von
   xfreerdp endet mit der Frist von 30 s.
