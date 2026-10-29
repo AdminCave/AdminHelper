@@ -435,10 +435,14 @@ export type MonitorCheckDetails =
   | Record<string, unknown>;
 
 export interface MonitorCheckState {
+  checkId?: string;
   status?: MonStatus;
-  message?: string;
-  lastCheck?: string;
-  details?: MonitorCheckDetails;
+  message?: string | null;
+  lastCheck?: string | null;
+  since?: string | null;
+  failCount?: number | null;
+  notifiedStatus?: string | null;
+  details?: MonitorCheckDetails | null;
 }
 
 export interface MonitorCheck {
@@ -448,10 +452,10 @@ export interface MonitorCheck {
   checkType: MonitorCheckType;
   interval: MonitorInterval;
   severity: MonitorSeverity;
-  consecutiveFails?: number;
+  consecutiveFails?: number | null;
   consecutiveOks?: number;
   description?: string | null;
-  enabled: boolean;
+  enabled: boolean | null;
   config?: MonitorCheckConfig;
   state?: MonitorCheckState | null;
   templateId?: string | null;
@@ -459,6 +463,8 @@ export interface MonitorCheck {
   // Template fields the user changed, which the template sync keeps; named as in
   // the request body (snake_case, e.g. 'check_type'), not as the fields above.
   overriddenFields?: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface MonitorCheckInput {
@@ -489,7 +495,7 @@ export interface MaintenanceWindow {
   startTime?: string | null;
   durationMinutes?: number | null;
   timezone: string;
-  enabled: boolean;
+  enabled: boolean | null;
   createdAt?: string | null;
 }
 
@@ -507,6 +513,9 @@ export interface MaintenanceInput {
 }
 
 export interface MonitoringMetricsResponse {
+  checkId?: string;
+  checkType?: string;
+  period?: string;
   data?: MonitoringMetricSeries[];
   statusHistory?: MonitoringMetricSeries[];
 }
@@ -526,9 +535,12 @@ export interface AlertRule {
   channel: AlertChannel;
   matchSeverity?: MonitorSeverity | null;
   matchServerId?: string | null;
-  cooldownMinutes: number;
+  cooldownMinutes: number | null;
   channelConfig?: AlertChannelConfig;
-  enabled: boolean;
+  enabled: boolean | null;
+  templateId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface AlertRuleInput {
@@ -541,8 +553,9 @@ export interface AlertRuleInput {
 }
 
 export interface AlertLogEntry {
-  id: string;
+  id: number;
   sentAt: string;
+  alertRuleId: string;
   checkId: string;
   oldStatus: MonStatus;
   newStatus: MonStatus;

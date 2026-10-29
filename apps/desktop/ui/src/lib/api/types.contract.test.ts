@@ -130,6 +130,35 @@ const MAPPINGS: Mapping[] = [
     schema: 'SubscriptionInput',
     direction: 'request',
   },
+  { ts: 'MonitorCheck', snapshot: 'monitoring', schema: 'MonitorCheckOut', direction: 'response' },
+  {
+    ts: 'MonitorCheckState',
+    snapshot: 'monitoring',
+    schema: 'MonitorStateOut',
+    direction: 'response',
+  },
+  {
+    ts: 'MonitoringMetricsResponse',
+    snapshot: 'monitoring',
+    schema: 'CheckMetricsOut',
+    direction: 'response',
+  },
+  { ts: 'AlertRule', snapshot: 'monitoring', schema: 'AlertRuleOut', direction: 'response' },
+  { ts: 'AlertLogEntry', snapshot: 'monitoring', schema: 'AlertLogOut', direction: 'response' },
+  {
+    ts: 'MaintenanceWindow',
+    snapshot: 'monitoring',
+    schema: 'MaintenanceOut',
+    direction: 'response',
+  },
+  { ts: 'MonitorCheckInput', snapshot: 'monitoring', schema: 'CheckCreate', direction: 'request' },
+  { ts: 'AlertRuleInput', snapshot: 'monitoring', schema: 'AlertRuleCreate', direction: 'request' },
+  {
+    ts: 'MaintenanceInput',
+    snapshot: 'monitoring',
+    schema: 'MaintenanceInput',
+    direction: 'request',
+  },
   {
     ts: 'NotificationPrefsUpdate',
     snapshot: 'server',
@@ -141,19 +170,12 @@ const MAPPINGS: Mapping[] = [
 // Interfaces of types.ts that describe no schema of their own.
 const EXEMPT: Record<string, string> = {
   MonCheckSummary: 'the slice of MonitorCheck that computeSummary reads',
+  MonitorCheckConfig: 'the free form config of a check, its keys depend on the check type',
+  AlertChannelConfig: 'the free form channel config of an alert rule',
+  MonitoringMetricSeries: 'one VictoriaMetrics series inside the free form metrics data',
   ...Object.fromEntries(
     [
-      'AlertChannelConfig',
-      'AlertLogEntry',
-      'AlertRule',
-      'AlertRuleInput',
-      'MaintenanceInput',
-      'MaintenanceWindow',
       'MonitorBackupDetails',
-      'MonitorCheck',
-      'MonitorCheckConfig',
-      'MonitorCheckInput',
-      'MonitorCheckState',
       'MonitorContainerDetails',
       'MonitorForecastDetails',
       'MonitorResourceDetails',
@@ -163,10 +185,12 @@ const EXEMPT: Record<string, string> = {
       'MonitorSmartDetails',
       'MonitorSystemStateDetails',
       'MonitorZfsDetails',
+    ].map((n) => [n, 'free form state.details of a checker, narrowed in models/checkDetails.ts']),
+  ),
+  ...Object.fromEntries(
+    [
       'MonitoringBuiltinDefinitions',
       'MonitoringBuiltinUpdate',
-      'MonitoringMetricSeries',
-      'MonitoringMetricsResponse',
       'MonitoringTemplateAssignment',
       'MonitoringTemplateFull',
       'MonitoringTemplateInput',
@@ -174,7 +198,7 @@ const EXEMPT: Record<string, string> = {
       'TemplateAlertDef',
       'TemplateAssignment',
       'TemplateCheckDef',
-    ].map((n) => [n, 'monitoring service type, mapped against its snapshot in T21/T22']),
+    ].map((n) => [n, 'monitoring template type, mapped against its snapshot in T22']),
   ),
 };
 
@@ -409,7 +433,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(18);
+    expect(MAPPINGS.length).toBe(27);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);
