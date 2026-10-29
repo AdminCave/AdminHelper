@@ -179,6 +179,22 @@ def test_remove_logs_an_oserror_instead_of_raising(frp_dir, caplog):
     assert any("frps.toml" in r.getMessage() for r in caplog.records)
 
 
+def test_a_failed_removal_logs_only_the_error_type(frp_dir, caplog):
+    (frp_dir / "frps.toml").mkdir()
+    with caplog.at_level(logging.ERROR, logger=docker_manager.logger.name):
+        docker_manager.remove_frps_config()
+    errors = [
+        r
+        for r in caplog.records
+        if r.name == docker_manager.logger.name and r.levelno == logging.ERROR
+    ]
+    assert len(errors) == 1
+    assert "frps.toml" in errors[0].getMessage()
+    assert "IsADirectoryError" in errors[0].getMessage()
+    assert all(r.exc_info is None for r in caplog.records)
+    assert "Is a directory" not in caplog.text
+
+
 def test_delete_route_answers_204_when_the_file_cannot_be_removed(
     test_client, db_session, admin_user, frp_dir, monkeypatch
 ):

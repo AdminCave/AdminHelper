@@ -65,6 +65,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server-Log nennt bei weiteren Fehlern nur den Fehlertyp:** Scheitert das Entfernen der `frps.toml`, steht im
+  Log der Fehlertyp ohne Traceback und ohne Fehlertext (R-0766).
 - **Server: Tokens nennen ihr Konto per ID:** Access- und Refresh-Token tragen zusaetzlich `uid` (`users.id`), und
   der Server ordnet jeden Token ueber diese ID seinem Konto zu, nicht mehr ueber den Benutzernamen. Tokens ohne `uid`
   gelten nicht mehr: nach dem Update melden sich Web und Desktop einmal neu an. Doku: Server-Entwicklerseite (DE+EN).

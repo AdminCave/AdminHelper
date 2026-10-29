@@ -96,7 +96,7 @@ def remove_frps_config() -> None:
         path.unlink()
     except FileNotFoundError:
         return
-    except OSError:
-        logger.exception("could not remove frps.toml (%s)", path)
+    except OSError as exc:
+        logger.error("could not remove frps.toml (%s): %s", path, type(exc).__name__)
         return
     logger.info("frps.toml entfernt: %s", path)

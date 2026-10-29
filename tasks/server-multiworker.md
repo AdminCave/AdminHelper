@@ -89,8 +89,10 @@ Orakel: contract — nach dem Tausch folgt ein `fsync` von `FRP_CONFIG_DIR`
 Dedup-Key: ref:server:config.py:no-dir-fsync
 HEAD: 53a7dbc5
 
-### T5 — `remove_frps_config` loggt einen Fehler nur mit Typ  [ ]
+### T5 — `remove_frps_config` loggt einen Fehler nur mit Typ  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/docker_manager.py, apps/server/tests/test_frp_docker_manager.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1c258c20 2026-10-29T10:00:57+01:00
+Review: approve (.ah-out/review/server-multiworker/T5.verdict.json)
 Änderung: In `remove_frps_config` (`docker_manager.py:89-101`) wird `except OSError: logger.exception("could not remove frps.toml (%s)", path)` (`:98-99`) zu `except OSError as exc: logger.error("could not remove frps.toml (%s): %s", path, type(exc).__name__)` — Stufe ERROR bleibt (Spec, Trade-off 5), Traceback und Fehlertext fallen weg, wie `:66` und `:82`. `test_remove_logs_an_oserror_instead_of_raising` (`tests/test_frp_docker_manager.py:150-156`) bleibt unverändert. Neuer Test daneben, Aufbau wie dort (`frps.toml` als Verzeichnis, `unlink` scheitert mit `IsADirectoryError`): genau ein ERROR-Record vom Logger von `docker_manager`, dessen Meldung `frps.toml` und `IsADirectoryError` nennt; kein Record mit `exc_info`; `Is a directory` steht nicht in `caplog.text`. Zuerst rot auf dem Stand vor dem Fix (`exc_info` gesetzt, Traceback samt Text im Log).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_docker_manager.py
 Doku: CHANGELOG.md (Changed, umlautfrei: neuer Eintrag „Server-Log nennt bei weiteren Fehlern nur den Fehlertyp“ — scheitert das Entfernen der `frps.toml`, steht im Log der Fehlertyp ohne Traceback; T6 und T7 ergaenzen denselben Eintrag)
