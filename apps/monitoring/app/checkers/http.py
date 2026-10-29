@@ -92,7 +92,9 @@ class HttpChecker:
                 # network (VictoriaMetrics, other services, cloud metadata) unchecked.
                 # The method is kept across hops (uptime checks are GET and send no
                 # body), so no browser-style 303 POST->GET rewrite is needed.
-                if not location or redirects == _MAX_REDIRECTS:
+                if not location:
+                    return "critical", "Redirect without Location header", None
+                if redirects == _MAX_REDIRECTS:
                     return "critical", f"Too many redirects (>{_MAX_REDIRECTS})", None
                 next_url = str(resp.url.join(location))
                 hop = check_target(next_url)

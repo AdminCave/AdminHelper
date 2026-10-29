@@ -550,20 +550,21 @@ def test_http_checker_follows_at_most_five_redirects(monkeypatch, redirects, exp
     assert [r.url.path for r in sent] == ["/", "/1", "/2", "/3", "/4", "/5"]
 
 
-def test_http_checker_ends_at_a_redirect_without_location(monkeypatch):
-    # A redirect without Location leads nowhere: critical after the one request. The
-    # message is left out on purpose: "Too many redirects" does not fit this case.
+@pytest.mark.parametrize("headers", [{}, {"location": ""}], ids=["missing", "empty"])
+def test_http_checker_ends_at_a_redirect_without_location(monkeypatch, headers):
+    # A redirect without Location leads nowhere: critical after the one request, with a
+    # message that says so.
     _resolving(monkeypatch, {"checks.example": _FIRST})
     sent = []
 
     def fake_send(_transport, request):
         sent.append(request)
-        return httpx.Response(302, request=request)
+        return httpx.Response(302, headers=headers, request=request)
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
-    status, _msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example/"})
+    status, msg, _ = http_mod.HttpChecker().run({"url": "http://checks.example/"})
 
-    assert status == "critical"
+    assert (status, msg) == ("critical", "Redirect without Location header")
     assert len(sent) == 1
 
 

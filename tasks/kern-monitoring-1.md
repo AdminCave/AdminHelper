@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-monitoring-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: changelog.d/kern-monitoring-1.md, docs/developer/monitoring.html:180 + EN
 
-### T2 — HTTP-Check: Redirect ohne Location bekommt eine eigene Meldung (R-0826)  [ ]
+### T2 — HTTP-Check: Redirect ohne Location bekommt eine eigene Meldung (R-0826)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/tests/test_http_checker.py, changelog.d/kern-monitoring-1.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f2f950f9 2026-10-29T21:04:04+01:00
+Review: approve (.ah-out/review/kern-monitoring-1/T2.verdict.json)
 Änderung: Ein 3xx ohne `Location` (`checkers/http.py:93-94`) meldet `critical` „Redirect without Location header“ statt „Too many redirects (>5)“; `test_http_checker_ends_at_a_redirect_without_location` prüft die Meldung.
 Beweis: Code-Lesung origin/feature/monitoring-io@13f340e4 apps/monitoring/app/checkers/http.py:89-90; Test: 302 ohne Location → Meldung ≠ "Too many redirects (>5)"
 Dedup-Key: bug:monitoring:http.py:redirect-no-location-text
