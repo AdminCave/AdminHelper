@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage, tNow } from '$lib/i18n';
-import { withoutErrorCodes } from '$lib/utils/errors';
+import { IpcError, withoutErrorCodes } from '$lib/utils/errors';
 import type { ResetOutcome } from '$lib/bridge';
 
 // What auth.rs makes of the server's 403.
@@ -141,7 +141,10 @@ describe('Login — a reset the server could not take', () => {
 describe('Login — a reset after a pinned-CA mismatch', () => {
   it('adds the hint when the server did not revoke the device', async () => {
     h.login.mockRejectedValueOnce(
-      new Error('Login fehlgeschlagen: ERR_CA_PIN_MISMATCH: Server-CA passt nicht'),
+      new IpcError(
+        'Login fehlgeschlagen: ERR_CA_PIN_MISMATCH: Server-CA passt nicht',
+        'ERR_CA_PIN_MISMATCH',
+      ),
     );
     h.resetDeviceIdentity.mockResolvedValueOnce('localOnly');
     const { container } = render(Login);
