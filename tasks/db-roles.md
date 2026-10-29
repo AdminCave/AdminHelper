@@ -30,8 +30,8 @@ Test-Löschung: apps/server/tests/test_images_exec_only.py::test_the_entrypoint_
 
 ### T3 — Stack-Test: die Rollen im echten Stack  [ ]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
-Änderung: Nach dem Hochfahren prüft der Stack-Test über `docker compose exec postgres`: keine Login-Rolle außer dem Bootstrap-Konto ist Superuser; `server` und `ca-issuer` verbinden sich mit `ah_server` bzw. `ah_ca` (`pg_stat_activity`); `ah_ca` bekommt auf `SELECT … FROM users` einen Rechtefehler. Läuft im Stack-Job (main/Dispatch) und im Sammellauf.
-Verify: bash scripts/dev/verify.sh scripts --strict -- integration_stack_test
+Änderung: Nach dem Hochfahren prüft der Stack-Test über `docker compose exec postgres`: keine Login-Rolle außer dem Bootstrap-Konto ist Superuser; `server` und `ca-issuer` verbinden sich mit `ah_server` bzw. `ah_ca` (`pg_stat_activity`); `ah_ca` bekommt auf `SELECT … FROM users` einen Rechtefehler. Läuft im Stack-Job (main/Dispatch) und im Sammellauf; den echten Lauf fährt die Session per Dispatch des Stack-Jobs auf dem Branch (wie compose-hardening T13), seine Summary-Zeile kommt in den PR-Text.
+Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T4
 Abhängt von: T2
 
