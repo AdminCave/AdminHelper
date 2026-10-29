@@ -8,15 +8,22 @@ Pydantic drops a key the model does not declare without a word, so (a) the opera
 schema in the live OpenAPI names the model, and (b) the body over the real route equals what
 the producer hands out, for a full row and a sparse one; (c) covers each conditional key."""
 
+import datetime
 import json
+import secrets
+import uuid
 
 import pytest
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import update
 
+from app.core.auth import hash_api_key
 from app.modules.ansible.models import Playbook
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.provisioning import router as provisioning_router
+from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
 
 
@@ -61,6 +68,9 @@ def _ref_name(schema: dict) -> str:
         ("/api/ansible/playbooks/{playbook_id}", "get", "PlaybookOut"),
         ("/api/ansible/playbooks/{playbook_id}", "put", "PlaybookOut"),
         ("/api/ansible/playbooks/{playbook_id}/content", "get", "PlaybookContentOut"),
+        ("/api/servers/{server_id}/provision/token", "post", "ProvisionTokenCreatedOut"),
+        ("/api/servers/{server_id}/provision/tokens", "get", "ProvisionTokenOut"),
+        ("/api/servers/{server_id}/provision/activate", "post", "ActivateOut"),
     ],
 )
 def test_routes_declare_their_response_model(path, method, model):
@@ -429,3 +439,94 @@ class TestPlaybookShape:
         assert updated.status_code == 200, updated.text
         assert updated.json() == self._expected(db_session, pid)
         test_client.delete(f"/api/ansible/playbooks/{pid}", headers=h)
+
+
+class TestProvisioningShape:
+    def _server(self, db) -> str:
+        db.add(Server(id="srv-prov", name="prov", hostname="prov.example"))
+        db.commit()
+        return "srv-prov"
+
+    def _token(self, db, server_id: str) -> str:
+        raw = f"adminhelper_prov_{secrets.token_urlsafe(16)}"
+        db.add(
+            ProvisionToken(
+                id=str(uuid.uuid4()),
+                server_id=server_id,
+                hashed_token=hash_api_key(raw),
+                expires_at=datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(hours=24),
+            )
+        )
+        db.commit()
+        return raw
+
+    def _activate(self, client, server_id: str, raw: str) -> dict:
+        r = client.post(
+            f"/api/servers/{server_id}/provision/activate", headers={"X-Provision-Token": raw}
+        )
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_token_create_and_list_equal_to_dict(self, test_client, db_session, admin_user):
+        sid = self._server(db_session)
+        h = _login(test_client)
+        created = test_client.post(f"/api/servers/{sid}/provision/token", headers=h)
+        assert created.status_code == 200, created.text
+        body = created.json()
+        assert set(body) == {"token", "expiresAt", "serverId", "serverName"}
+        assert body["serverId"] == sid and body["serverName"] == "prov"
+        assert hash_api_key(body["token"]) == db_session.query(ProvisionToken).one().hashed_token
+
+        # A spent token next to the fresh one: usedAt set, isValid false.
+        self._token(db_session, sid)
+        spent = db_session.query(ProvisionToken).order_by(ProvisionToken.created_at).all()[-1]
+        db_session.execute(
+            update(ProvisionToken)
+            .where(ProvisionToken.id == spent.id)
+            .values(used_at=datetime.datetime(2026, 1, 1))
+        )
+        db_session.commit()
+        listed = test_client.get(f"/api/servers/{sid}/provision/tokens", headers=h)
+        assert listed.status_code == 200, listed.text
+        rows = {t["id"]: t for t in listed.json()}
+        assert len(rows) == 2
+        for token in db_session.query(ProvisionToken).all():
+            db_session.refresh(token)
+            assert rows[token.id] == jsonable_encoder(token.to_dict())
+        assert rows[spent.id]["usedAt"] is not None and rows[spent.id]["isValid"] is False
+
+    def test_activate_without_monitor_and_frp(self, test_client, db_session):
+        sid = self._server(db_session)
+        body = self._activate(test_client, sid, self._token(db_session, sid))
+        assert set(body) == {
+            "serverName",
+            "apiKey",
+            "monitorApiKey",
+            "monitorUrl",
+            "frp",
+            "enrollment",
+        }
+        assert body["monitorApiKey"] is None and body["monitorUrl"] is None and body["frp"] is None
+        enrollment = body["enrollment"]
+        assert set(enrollment) == {"token", "subjectId", "scope", "enrollPort"}
+        assert enrollment["subjectId"] == sid and enrollment["scope"] == "tunnel"
+        assert isinstance(enrollment["enrollPort"], int)
+
+    def test_activate_with_monitor_and_frp(self, test_client, db_session, monkeypatch):
+        monkeypatch.setattr(provisioning_router, "fetch_or_skip_monitor_key", lambda _: "mon-key")
+        db_session.add(
+            FrpServerConfig(
+                id="cfg-prov",
+                name="prov",
+                server_addr="frps.example",
+                bind_port=7000,
+                auth_token="frps-auth-token-value",
+            )
+        )
+        sid = self._server(db_session)
+        body = self._activate(test_client, sid, self._token(db_session, sid))
+        assert body["monitorApiKey"] == "mon-key"
+        assert body["monitorUrl"] == "/api/monitoring"
+        assert set(body["frp"]) == {"config", "pkiBundle"}
+        assert body["frp"]["config"] and body["frp"]["pkiBundle"] == ""

@@ -106,8 +106,10 @@ Orakel: contract — das Modell gegen `Playbook.to_dict` über die echte Route
 Dedup-Key: ref:server:routers:missing-response-models
 HEAD: b25c65a6
 
-### T6 — provisioning: Token- und Activate-Antworten (R-0684)  [ ]
+### T6 — provisioning: Token- und Activate-Antworten (R-0684)  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/schemas.py, apps/server/app/modules/provisioning/router.py, apps/server/tests/test_response_shapes.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a8dcceaf 2026-10-29T22:29:01+01:00
+Review: approve (.ah-out/review/api-contracts-server/T6.verdict.json)
 Änderung: Neue Datei `provisioning/schemas.py` (SPDX) mit `ProvisionTokenCreatedOut` `{token, expiresAt, serverId, serverName}` (`apps/server/app/modules/provisioning/router.py:83-88`), `ProvisionTokenOut` wie `ProvisionToken.to_dict` (`provisioning/models.py:49-57`: `id`, `serverId`, `expiresAt`, `usedAt: Optional[str]`, `isValid: bool`, `createdAt`), `ActivateOut` (`router.py:209-226`): `serverName`, `apiKey: str`, `monitorApiKey: Optional[str]`, `monitorUrl: Optional[str]`, `frp: Optional[FrpBundleOut]` (`provisioning/helpers.py:77-110`: `None` oder `{config: str, pkiBundle: str}`), `enrollment: ActivateEnrollmentOut` `{token, subjectId, scope: str, enrollPort: int}`. Routen `POST /{server_id}/provision/token` (`router.py:59`), `GET /{server_id}/provision/tokens` (`:92`), `POST /{server_id}/provision/activate` (`:109`). Tests nach Muster; (c) Activate mit und ohne FRP-Konfiguration, mit und ohne erreichbaren Monitoring-Dienst (`monitorApiKey`/`monitorUrl` null). Der Go-Spiegel im Agent bleibt (R-0688).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_provisioning.py
 Doku: keine

@@ -1,6 +1,91 @@
 {
   "components": {
     "schemas": {
+      "ActivateEnrollmentOut": {
+        "properties": {
+          "enrollPort": {
+            "title": "Enrollport",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "subjectId": {
+            "title": "Subjectid",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "subjectId",
+          "scope",
+          "enrollPort"
+        ],
+        "title": "ActivateEnrollmentOut",
+        "type": "object"
+      },
+      "ActivateOut": {
+        "properties": {
+          "apiKey": {
+            "title": "Apikey",
+            "type": "string"
+          },
+          "enrollment": {
+            "$ref": "#/components/schemas/ActivateEnrollmentOut"
+          },
+          "frp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FrpBundleOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "monitorApiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitorapikey"
+          },
+          "monitorUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitorurl"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverName",
+          "apiKey",
+          "monitorApiKey",
+          "monitorUrl",
+          "frp",
+          "enrollment"
+        ],
+        "title": "ActivateOut",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "properties": {
           "name": {
@@ -665,6 +750,24 @@
           "username"
         ],
         "title": "EnrollmentTokenForRequest",
+        "type": "object"
+      },
+      "FrpBundleOut": {
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "pkiBundle": {
+            "title": "Pkibundle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "pkiBundle"
+        ],
+        "title": "FrpBundleOut",
         "type": "object"
       },
       "FrpServerConfigCreate": {
@@ -2773,6 +2876,102 @@
           }
         },
         "title": "PlaybookUpdate",
+        "type": "object"
+      },
+      "ProvisionTokenCreatedOut": {
+        "description": "A new provision token; token is the raw value, handed out only here.",
+        "properties": {
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt",
+          "serverId",
+          "serverName"
+        ],
+        "title": "ProvisionTokenCreatedOut",
+        "type": "object"
+      },
+      "ProvisionTokenOut": {
+        "description": "A provision token as ProvisionToken.to_dict hands it out.",
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isValid": {
+            "title": "Isvalid",
+            "type": "boolean"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "usedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usedat"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "expiresAt",
+          "usedAt",
+          "isValid",
+          "createdAt"
+        ],
+        "title": "ProvisionTokenOut",
         "type": "object"
       },
       "RefreshRequest": {
@@ -6744,7 +6943,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActivateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6785,7 +6986,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionTokenCreatedOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6831,7 +7034,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProvisionTokenOut"
+                  },
+                  "title": "Response List Provision Tokens Api Servers  Server Id  Provision Tokens Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
