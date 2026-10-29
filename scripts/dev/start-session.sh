@@ -40,17 +40,17 @@ case "$KIND" in
   kern)
     [ -z "$ARG" ] || { echo "start-session: kern takes no argument" >&2; exit 2; }
     FLAGS=(--model opus --effort medium) NAME=adminhelper-kern
-    GOAL="/goal Du bist die Kern-Session (CLAUDE.md §2). Arbeite deine Züge ab: zuerst \`python3 scripts/dev/roadmap.py zuege --stufe kern\` (wartende Züge, oberster zuerst), dann \`roadmap.py next --status freigegeben --stufe kern\` und \`--status geplant --stufe kern\`; je Zug bzw. Zeile /feature-plan (Zug: --zug), /feature-build bis Merge, roadmap.py sync. Fertig, wenn beide Befehle nichts mehr zeigen oder alles Übrige auf Kevin wartet (Fragen gesammelt mit Empfehlung gestellt); die Ausgabe der Befehle steht als Beleg im Verlauf."
+    GOAL="/goal Du bist die Kern-Session (CLAUDE.md §2). Zuerst bringst du die Züge unterwegs aus \`python3 scripts/dev/roadmap.py zuege --stufe kern\` zu Ende (Ledger aktiv/bereit, offene PRs: /feature-build ab dem Stand im Ledger, CLAUDE.md §13), dann die wartenden (oberster zuerst), dann \`roadmap.py next --status freigegeben --stufe kern\` und \`--status geplant --stufe kern\`; je Zug bzw. Zeile /feature-plan (Zug: --zug), /feature-build bis Merge, roadmap.py sync. Fertig, wenn \`zuege --stufe kern\` keinen Zug und beide next-Befehle nichts mehr zeigen, oder alles Übrige auf Kevin wartet (Fragen gesammelt mit Empfehlung gestellt); die Ausgabe der Befehle steht als Beleg im Verlauf."
     ;;
   klein)
     [ -z "$ARG" ] || { echo "start-session: klein takes no argument" >&2; exit 2; }
     FLAGS=(--model sonnet --effort medium) NAME=adminhelper-klein
-    GOAL="/goal Du bist die Klein-Session (CLAUDE.md §2). Arbeite die wartenden Züge aus \`python3 scripts/dev/roadmap.py zuege --stufe klein\` ab, den obersten zuerst: /feature-plan --zug, /feature-build bis Merge, roadmap.py sync. Task-Prüfer mit model \"sonnet\", security und Abschlussprüfung Opus (CLAUDE.md §6). Steht kein Zug an, aber es gibt neu-Zeilen, schlag Kevin /roadmap triage vor. Fertig, wenn \`roadmap.py zuege --stufe klein\` keinen wartenden Zug zeigt oder alles Übrige auf Kevin wartet; die Ausgabe steht als Beleg im Verlauf."
+    GOAL="/goal Du bist die Klein-Session (CLAUDE.md §2). Bring zuerst die Züge unterwegs aus \`python3 scripts/dev/roadmap.py zuege --stufe klein\` zu Ende (CLAUDE.md §13), dann arbeite die wartenden ab, den obersten zuerst: /feature-plan --zug, /feature-build bis Merge, roadmap.py sync. Task-Prüfer mit model \"sonnet\", security und Abschlussprüfung Opus (CLAUDE.md §6). Steht kein Zug an, aber es gibt neu-Zeilen, schlag Kevin /roadmap triage vor. Fertig, wenn \`roadmap.py zuege --stufe klein\` keinen Zug mehr zeigt oder alles Übrige auf Kevin wartet; die Ausgabe steht als Beleg im Verlauf."
     ;;
   arch)
     [ -n "$ARG" ] || { echo "start-session: arch needs the row or slug of the project" >&2; exit 2; }
     FLAGS=(--model opus --effort xhigh) NAME="adminhelper-arch"
-    GOAL="/goal Du bist eine Architektur-Session (CLAUDE.md §2) für genau ein Vorhaben: $ARG. Plane es mit /feature-plan (Spec, Design-Gate) und baue es mit /feature-build bis zum Merge. Fertig, wenn der PR gemergt ist, die CI auf dem Merge-Commit grün ist und roadmap.py sync gelaufen ist, oder eine Entscheidung Kevins offen ist (Frage mit Empfehlung gestellt); Belege als Ausgabe im Verlauf."
+    GOAL="/goal Du bist eine Architektur-Session (CLAUDE.md §2) für genau ein Vorhaben: $ARG. Sein Slug beginnt mit arch- (Ledger tasks/arch-<…>.md, roadmap.py --stufe arch), damit keine andere Session es aufnimmt. Plane es mit /feature-plan (Spec, Design-Gate) und baue es mit /feature-build bis zum Merge. Fertig, wenn der PR gemergt ist, die CI auf dem Merge-Commit grün ist und roadmap.py sync gelaufen ist, oder eine Entscheidung Kevins offen ist (Frage mit Empfehlung gestellt); Belege als Ausgabe im Verlauf."
     ;;
   *) usage >&2; exit 2 ;;
 esac

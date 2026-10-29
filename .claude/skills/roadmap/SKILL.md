@@ -63,7 +63,8 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
      neutral, nie `sec-` — Branch und Ledger sind öffentlich, bevor der Fix released ist), ein Thema über
      mehrere Zeilen unter eigenem Slug.
    - **Einzeln** (eigener Slug, kein Zug): REG, ein BUG mit Nutzerwirkung (fährt sofort),
-     Architektur über Komponenten (`start-session.sh arch`).
+     Architektur über Komponenten (`start-session.sh arch`, Ledger `tasks/arch-<…>.md`: die Stufe
+     `arch` nimmt weder die Kern- noch die Klein-Session auf).
    - Ein Zug nimmt nur Zeilen derselben schweren Prüfstufe und desselben Mergers; höchstens 15
      Tasks. Ist der passende Zug voll oder unterwegs, der nächste (`<n>+1`).
    - Ändert ein offener Branch die Dateien der Zeile (`bash scripts/dev/overlap.sh <dateien>`), gehört

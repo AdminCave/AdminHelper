@@ -661,10 +661,11 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   (`next: R-nnnn skipped — ledger <pfad> not found in the tree or on any branch (git fetch?)`).
   Ohne Ausschlussliste, bei `—`, einem Slug oder einem Pfad ausserhalb des Repos bleibt die
   Zeile im Rennen.
-  Nichts bereit: Exit 1. `--stufe klein` nimmt nur Zeilen eines `klein-`-Ledgers, `--stufe kern`
-  alle anderen (auch Zeilen ohne Ledger).
+  Nichts bereit: Exit 1. `--stufe klein` nimmt nur Zeilen eines `klein-`-Ledgers, `--stufe arch`
+  die eines `arch-`-Ledgers, `--stufe kern` alle anderen (auch Zeilen ohne Ledger).
 - `zuege` zeigt die Zuege (CLAUDE.md §2): die offenen Zeilen (`geplant` bis `pr`), gruppiert nach
-  ihrer Spalte `Ledger`, je Zug eine Zeile mit Stufe (`klein` fuer `klein-…`, sonst `kern`),
+  ihrer Spalte `Ledger`, je Zug eine Zeile mit Stufe (`klein` fuer `klein-…`, `arch` fuer `arch-…`,
+  sonst `kern`),
   `wartet` oder `unterwegs` und den IDs. Wartende zuerst, nach der hoechsten Klasse, dann nach
   Groesse; ein Zug unterwegs nimmt keine Zeile mehr auf. Kein Zug: Exit 1.
 - `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
