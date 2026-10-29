@@ -327,3 +327,83 @@ def test_env_admin_gets_default_subscription(db_session, monkeypatch):
         .one()
     )
     assert (sub.scope_type, sub.min_severity) == ("all", "warning")
+
+
+def test_two_concurrent_bootstraps_with_the_token_create_one_admin(pg_engine, monkeypatch):
+    # Two workers, each with its own session that really commits. The barrier inside
+    # hash_password holds the first call until the second has checked "no user" too, so
+    # without a lock both create an admin; with it the second waits before its check,
+    # the barrier times out and the first goes on alone.
+    import threading
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    import app.modules.users.auth_router as auth_router
+    from app.core.database import get_db
+    from app.main import app
+
+    raw = secrets.token_urlsafe(32)
+    BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(raw))
+    new_session = sessionmaker(bind=pg_engine)
+
+    def _own_session():
+        session = new_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    barrier = threading.Barrier(2)
+    real_hash = auth_router.hash_password
+
+    def _hash_after_both_checked(password):
+        try:
+            barrier.wait(timeout=3)
+        except threading.BrokenBarrierError:
+            pass
+        return real_hash(password)
+
+    monkeypatch.setattr(auth_router, "hash_password", _hash_after_both_checked)
+    app.dependency_overrides[get_db] = _own_session
+    names = ("first-a", "first-b")
+    statuses: dict[str, int] = {}
+
+    def _bootstrap(name):
+        res = TestClient(app).post(
+            "/api/auth/bootstrap",
+            json={"token": raw, "username": name, "password": "abcdefgh"},
+        )
+        statuses[name] = res.status_code
+
+    try:
+        threads = [threading.Thread(target=_bootstrap, args=(n,)) for n in names]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        with pg_engine.connect() as conn:
+            admins = (
+                conn.execute(
+                    text("SELECT username FROM users WHERE username = ANY(:names)").bindparams(
+                        names=list(names)
+                    ),
+                )
+                .scalars()
+                .all()
+            )
+    finally:
+        app.dependency_overrides.clear()
+        with pg_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM audit_log WHERE object_label = ANY(:names)").bindparams(
+                    names=list(names)
+                )
+            )
+            conn.execute(
+                text("DELETE FROM users WHERE username = ANY(:names)").bindparams(names=list(names))
+            )
+        BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+    assert len(admins) == 1, (admins, statuses)
+    assert sorted(statuses.values()) == [201, 409], statuses
