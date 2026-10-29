@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -371,4 +372,30 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 			t.Errorf("run returned after %s, the grandchild held it past the timeout", elapsed)
 		}
 	})
+}
+
+// A command that exits 0 while a child it started still holds its stdout ends after
+// commandWaitDelay with exec.ErrWaitDelay; its output is complete, so runTimed and runTimedEnv
+// return it without an error.
+func TestRunTimedTakesErrWaitDelayAsSuccess(t *testing.T) {
+	const script = "sleep 5 & echo ok"
+	for name, run := range map[string]func() ([]byte, error){
+		"runTimed": func() ([]byte, error) {
+			return runTimed(context.Background(), time.Minute, "sh", "-c", script)
+		},
+		"runTimedEnv": func() ([]byte, error) {
+			return runTimedEnv(context.Background(), time.Minute, []string{"LC_ALL=C"}, "sh", "-c", script)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := exec.LookPath("sh"); err != nil {
+				t.Fatal(err)
+			}
+			out, err := run()
+			if err != nil || string(out) != "ok\n" {
+				t.Errorf("%s = %q, %v; want \"ok\\n\", nil", name, out, err)
+			}
+		})
+	}
 }
