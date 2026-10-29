@@ -111,3 +111,67 @@ def test_start_without_confirmation_warns_and_starts_the_reader(monkeypatch, cap
     with caplog.at_level(logging.WARNING, logger=stream_hub.logger.name):
         _start_with(monkeypatch, _SilentPubSub())
     assert any("did not confirm the subscription" in r.getMessage() for r in caplog.records)
+
+
+_SECRET = "redis://hookuser:s3cr3t-pw@redis.example:6379/0"
+
+
+def _assert_only_the_error_type(caplog, *, expected: str) -> None:
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].getMessage().startswith(expected)
+    assert "ConnectionError" in warnings[0].getMessage()
+    assert all(r.exc_info is None for r in caplog.records)
+    assert "s3cr3t-pw" not in caplog.text
+
+
+def test_reader_reconnect_logs_only_the_error_type(monkeypatch, caplog):
+    monkeypatch.setattr(stream_hub, "_RECONNECT_DELAY", 0.0)
+    calls = {"n": 0}
+
+    class _FakePubSub:
+        async def get_message(self, **_kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ConnectionError(f"Error 111 connecting to {_SECRET}")
+            raise asyncio.CancelledError
+
+        async def subscribe(self, _ch):
+            pass
+
+    async def scenario():
+        with contextlib.suppress(asyncio.CancelledError):
+            await stream_hub._reader(_FakePubSub())
+
+    with caplog.at_level(logging.WARNING, logger=stream_hub.logger.name):
+        asyncio.run(scenario())
+
+    _assert_only_the_error_type(caplog, expected="SSE Redis reader: connection lost")
+
+
+def test_publish_failure_logs_only_the_error_type(monkeypatch, caplog):
+    import app.core.config as config
+
+    monkeypatch.setattr(config, "REDIS_URL", _SECRET)
+
+    class _FailingClient:
+        def publish(self, *_a):
+            raise ConnectionError(f"Error 111 connecting to {_SECRET}")
+
+    monkeypatch.setattr(stream_hub, "_get_pub_client", lambda: _FailingClient())
+    with caplog.at_level(logging.WARNING, logger=stream_hub.logger.name):
+        stream_hub.publish([42], 7)
+
+    _assert_only_the_error_type(caplog, expected="SSE fan-out publish failed")
+
+
+def test_subscribe_confirmation_failure_logs_only_the_error_type(caplog):
+    class _FailingPubSub:
+        async def get_message(self, **_kw):
+            raise ConnectionError(f"Error 111 connecting to {_SECRET}")
+
+    with caplog.at_level(logging.WARNING, logger=stream_hub.logger.name):
+        confirmed = asyncio.run(stream_hub._await_subscribed(_FailingPubSub()))
+
+    assert confirmed is False
+    _assert_only_the_error_type(caplog, expected="SSE fan-out: reading the subscribe confirmation")

@@ -20,12 +20,14 @@ Dedup-Key: ref:server:logs:decoded-request-path
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_log_request_path.py tests/test_nul_middleware.py tests/test_identity_source.py tests/test_mtls_scope.py
 Doku: keine (nur Log-Formatierung)
 
-### T2 — Redis-Logs: nur Fehlertyp, englisch (R-0940, R-0941)  [ ]
+### T2 — Redis-Logs: nur Fehlertyp, englisch (R-0940, R-0941)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/stream_hub.py, apps/server/app/core/rate_limit.py, apps/server/tests/test_stream_reconnect.py, apps/server/tests/test_rate_limit.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b2a0db3c 2026-10-29T18:21:52+01:00
+Review: approve (.ah-out/review/klein-ref-server-1/T2.verdict.json)
 Änderung: `stream_hub.py` (publish, `_await_subscribed`, `_reader`) loggt ohne `exc_info` den Fehlertyp (`type(e).__name__`) in englischem Text; `get_backend()` meldet englisch wie die übrigen Warnungen. Tests: `caplog` zeigt Typ, kein `exc_info`, keine Verbindungsdaten.
 Beweis: Code-Lesung origin/main stream_hub.py:97,113,136-157; rate_limit.py:174,178,181
 Dedup-Key: ref:server:stream_hub.py:log-exc-info
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_stream_reconnect.py tests/test_stream_redis.py tests/test_rate_limit.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_stream_reconnect.py tests/test_rate_limit.py
 Doku: keine (nur Log-Text)
 
 ### T3 — FRP: abgelehnter Tunnel warnt einmal, Wortlaut getestet, Servername-strip dokumentiert (R-0895)  [ ]

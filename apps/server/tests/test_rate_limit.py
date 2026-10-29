@@ -146,13 +146,27 @@ def test_unreachable_redis_logs_only_its_target_and_the_error_type(fake_redis, c
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     message = warnings[0].getMessage()
-    assert "redis://redis.example:6380" in message
+    assert message.startswith("Redis unreachable (redis://redis.example:6380)")
     assert "ConnectionError" in message
     for leaked in (*_URL_SECRETS, "Redis down"):
         assert leaked not in caplog.text
     assert not any(r.exc_info for r in caplog.records)
     # The connection itself still gets the whole URL.
     assert fake_redis["urls"] == [_SECRET_REDIS_URL]
+
+
+def test_a_missing_redis_client_library_is_reported_in_english_and_not_retried(
+    fake_redis, monkeypatch, caplog
+):
+    monkeypatch.setitem(sys.modules, "redis", None)  # `import redis` raises ImportError
+    with caplog.at_level(logging.INFO, logger=rl.logger.name):
+        backend = rl.get_backend()
+
+    assert isinstance(backend, InMemoryBackend)
+    assert [r.getMessage() for r in caplog.records] == [
+        "redis-py is not installed — falling back to the in-memory rate limit",
+        "Rate limit uses in-memory counters",
+    ]
 
 
 def test_reachable_redis_logs_only_its_target(fake_redis, caplog):
@@ -163,7 +177,7 @@ def test_reachable_redis_logs_only_its_target(fake_redis, caplog):
     assert isinstance(backend, rl.RedisBackend)
     infos = [r for r in caplog.records if r.levelno == logging.INFO]
     assert len(infos) == 1
-    assert "redis://redis.example:6380" in infos[0].getMessage()
+    assert infos[0].getMessage() == "Rate limit uses Redis (redis://redis.example:6380)"
     for leaked in _URL_SECRETS:
         assert leaked not in caplog.text
     assert fake_redis["urls"] == [_SECRET_REDIS_URL]
