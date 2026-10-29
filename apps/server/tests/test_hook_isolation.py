@@ -14,7 +14,30 @@ no unauthenticated RCE). Fix = HONEST posture + partial hardening:
   code made).
 """
 
+import os
+import signal
+import time
+
 from app.modules.hooks.script_runner import run_hook_script
+
+_PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")
+
+
+def _unset_server_env(monkeypatch, *names):
+    # The setenv seed lets undo() restore the prior state, set or not: delenv alone raises on an
+    # unset variable, and with raising=False it records nothing to undo.
+    for name in names:
+        monkeypatch.setenv(name, os.environ.get(name, ""))
+        monkeypatch.delenv(name)
+
+
+def _worker_env(*names):
+    script = "import os\n" + "".join(
+        f"log({name!r} + '=' + os.environ.get({name!r}, '__NONE__'))\n" for name in names
+    )
+    res = run_hook_script(script, "webhook", {})
+    assert res["success"] is True, res
+    return dict(line.split("=", 1) for line in res["logs"])
 
 
 def test_admin_password_not_inherited_by_worker():
@@ -98,8 +121,8 @@ def test_hook_output_flood_is_capped():
 def test_hook_backgrounded_grandchild_does_not_hang_parent():
     # 4.139/4.69: a hook backgrounding a subprocess that inherits fd 1/2 and outlives the worker
     # must not hang the parent. proc.wait() only reaps the direct child, so the reader-thread join
-    # is bounded and the process group is killed to close the inherited pipe. Short timeout so the
-    # bounded join fires quickly; the grandchild (sleep 30) far outlives it.
+    # is bounded and the process group is killed to close the inherited pipe. The grandchild
+    # (sleep 30) far outlives the bounded join.
     import time
 
     start = time.monotonic()
@@ -111,6 +134,73 @@ def test_hook_backgrounded_grandchild_does_not_hang_parent():
     )
     elapsed = time.monotonic() - start
     assert elapsed < 10, f"parent hung on the grandchild's inherited pipe, took {elapsed:.1f}s"
+
+
+# R-0778: the script backgrounds `sleep 40`, which inherits the worker's stdout and stderr and
+# outlives the worker, and writes its PID so the test can end it: in a session of its own it
+# survives the runner's killpg.
+_SLEEP_CMDLINE = b"sleep\x0040\x00"
+
+
+def _background_sleep_script(pid_file, new_session):
+    return (
+        "import subprocess\n"
+        "from pathlib import Path\n"
+        f"proc = subprocess.Popen(['sleep', '40'], start_new_session={new_session})\n"
+        f"Path({str(pid_file)!r}).write_text(str(proc.pid))\n"
+        "result['ok'] = True\n"
+    )
+
+
+def _kill_background_sleep(pid_file):
+    # Only the sleep the script started: once it is gone, its PID may belong to another process.
+    try:
+        pid = int(pid_file.read_text())
+        with open(f"/proc/{pid}/cmdline", "rb") as cmdline:
+            if cmdline.read() != _SLEEP_CMDLINE:
+                return
+        os.kill(pid, signal.SIGKILL)
+    except (FileNotFoundError, ProcessLookupError):
+        pass
+
+
+def test_hook_run_with_a_background_process_in_its_own_session_ends_soon(tmp_path):
+    # The killpg after the first grace does not reach a process in its own session, so the
+    # readers stay blocked; the runner gives up after the second grace instead of after twice
+    # the timeout per reader.
+    pid_file = tmp_path / "sleep.pid"
+    start = time.monotonic()
+    try:
+        run_hook_script(_background_sleep_script(pid_file, True), "webhook", {}, timeout=5)
+        elapsed = time.monotonic() - start
+    finally:
+        _kill_background_sleep(pid_file)
+    assert elapsed < 10, f"run waited for a background process in its own session: {elapsed:.1f}s"
+
+
+def test_hook_run_with_a_background_process_ends_soon_with_the_result(tmp_path):
+    # In the worker's process group the killpg after the first grace ends the background process,
+    # the pipe closes and the runner still gets the worker's output.
+    pid_file = tmp_path / "sleep.pid"
+    start = time.monotonic()
+    try:
+        res = run_hook_script(_background_sleep_script(pid_file, False), "webhook", {}, timeout=5)
+        elapsed = time.monotonic() - start
+    finally:
+        _kill_background_sleep(pid_file)
+    assert elapsed < 8, f"run waited for a background process: {elapsed:.1f}s"
+    assert res["success"] is True, res
+    assert res["result"] == {"ok": True}, res
+
+
+def test_hook_run_at_the_default_timeout_ends_before_the_gateway_gives_up():
+    # The gateway closes /api/... after 60 s without a response (nginx's default
+    # proxy_read_timeout; apps/gateway/nginx.conf sets none for it), and /api/hooks/trigger and
+    # /api/hooks/{id}/run answer only after the run, which takes at most the timeout plus one
+    # reader grace before and one after the killpg.
+    import app.modules.hooks.script_runner as sr
+
+    assert sr.SCRIPT_TIMEOUT_SECONDS + 2 * sr._READER_GRACE_SECONDS < 60
 
 
 def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
@@ -130,6 +220,73 @@ def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
     assert "HOME=__NONE__" not in joined, res
     assert "LANG=__NONE__" not in joined, res
     assert "PROXY=http://proxy.example:3128" in joined, res
+
+
+def test_hook_worker_env_falls_back_for_home_and_lang(monkeypatch):
+    # docs/developer/hooks.html: HOME falls back to /tmp and LANG to C.UTF-8 when the server has
+    # neither.
+    _unset_server_env(monkeypatch, "HOME", "LANG")
+    assert _worker_env("HOME", "LANG") == {"HOME": "/tmp", "LANG": "C.UTF-8"}
+
+
+# Inside a venv site.ENABLE_USER_SITE is always False, so the tests check the flag that -s and
+# PYTHONNOUSERSITE set, not whether a user site gets loaded. The child is a Python process the
+# script starts itself; it inherits only the worker's env.
+_NO_USER_SITE_SCRIPT = (
+    "import os, subprocess, sys\n"
+    "log('HOME=' + os.environ.get('HOME', '__NONE__'))\n"
+    "log('worker=' + str(sys.flags.no_user_site))\n"
+    "child = subprocess.run(\n"
+    "    [sys.executable, '-c', 'import sys; print(sys.flags.no_user_site)'],\n"
+    "    capture_output=True, text=True, check=True,\n"
+    ")\n"
+    "log('child=' + child.stdout.strip())\n"
+)
+
+
+def _no_user_site_flags():
+    res = run_hook_script(_NO_USER_SITE_SCRIPT, "webhook", {})
+    assert res["success"] is True, res
+    return dict(line.split("=", 1) for line in res["logs"])
+
+
+def test_hook_worker_and_its_python_children_run_without_user_site():
+    flags = _no_user_site_flags()
+    assert (flags["worker"], flags["child"]) == ("1", "1"), flags
+
+
+def test_hook_worker_env_sets_pythonnousersite():
+    assert _worker_env("PYTHONNOUSERSITE") == {"PYTHONNOUSERSITE": "1"}
+
+
+def test_hook_worker_runs_without_user_site_on_the_home_fallback(monkeypatch):
+    # The fallback case: with HOME=/tmp the user site would be a directory any local user can
+    # create.
+    _unset_server_env(monkeypatch, "HOME")
+    flags = _no_user_site_flags()
+    assert flags == {"HOME": "/tmp", "worker": "1", "child": "1"}, flags
+
+
+def test_hook_worker_env_forwards_lowercase_proxy_vars_as_set(monkeypatch):
+    _unset_server_env(monkeypatch, *_PROXY_VARS)
+    monkeypatch.setenv("http_proxy", "http://192.0.2.10:3128")
+    monkeypatch.setenv("https_proxy", "http://192.0.2.11:3128")
+    monkeypatch.setenv("no_proxy", "hook-target.example")
+    assert _worker_env(*_PROXY_VARS) == {
+        "HTTP_PROXY": "__NONE__",
+        "HTTPS_PROXY": "__NONE__",
+        "NO_PROXY": "__NONE__",
+        "http_proxy": "http://192.0.2.10:3128",
+        "https_proxy": "http://192.0.2.11:3128",
+        "no_proxy": "hook-target.example",
+    }
+
+
+def test_hook_worker_env_leaves_out_proxy_vars_the_server_lacks(monkeypatch):
+    # docs/developer/hooks.html: a proxy variable reaches the worker only if the server has it,
+    # not as an empty value.
+    _unset_server_env(monkeypatch, *_PROXY_VARS)
+    assert _worker_env(*_PROXY_VARS) == dict.fromkeys(_PROXY_VARS, "__NONE__")
 
 
 def test_hook_semaphore_non_blocking_returns_busy_immediately():

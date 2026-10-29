@@ -2,15 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// No refresh_token: the browser keeps it only in the HttpOnly cookie, and the server sends the
+// body field to a browser request as an empty string.
 export interface LoginResponse {
   access_token: string;
-  refresh_token: string;
   token_type: string;
 }
 
 export interface RefreshResponse {
   access_token: string;
-  refresh_token: string;
   token_type: string;
 }
 
@@ -20,6 +20,8 @@ export interface User {
   is_admin: boolean;
   created_at?: string;
   server_ids?: string[];
+  // Only GET /api/auth/me sends it: the minutes without input before the panel signs out, 0 = off.
+  idle_timeout_minutes?: number;
 }
 
 export interface UserCreate {
@@ -79,13 +81,11 @@ export class ApiError extends Error {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-export interface Server {
+// One server as GET /api/servers/summary lists it.
+export interface ServerSummary {
   id: string;
   name: string;
   hostname: string;
-  osType?: string | null;
-  tags?: string[];
-  notes?: string | null;
 }
 
 export type HookType = 'webhook' | 'event' | 'schedule';
@@ -130,12 +130,10 @@ export interface HookUpdate {
 }
 
 export interface HookRunResult {
-  success?: boolean;
-  output?: string;
+  success: boolean;
+  result: unknown;
+  logs: string[];
   error?: string;
-  exit_code?: number;
-  duration_ms?: number;
-  [key: string]: unknown;
 }
 
 export interface HookTokenResult {

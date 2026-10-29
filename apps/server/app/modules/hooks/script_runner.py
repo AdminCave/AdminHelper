@@ -51,6 +51,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,10 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SCRIPT_TIMEOUT_SECONDS = 30
+
+# How long both reader threads together may take to read the rest of the output once the worker
+# has exited, before and once more after the process group is killed (see the joins below).
+_READER_GRACE_SECONDS = 2
 
 # Defense-in-depth: bound the number of concurrent hook subprocesses so a burst
 # of (slow) hooks can't spawn unbounded processes / exhaust the threadpool +
@@ -73,6 +78,11 @@ _hook_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_HOOKS)
 # unbounded, so a hook writing directly to fd 1/2 (os.write(1, b"x"*10**10), a flooding subprocess)
 # past the worker's own log cap could OOM the parent server — a public-webhook-triggered DoS (4.139).
 _MAX_HOOK_OUTPUT_BYTES = 8 * 1024 * 1024
+
+# Cap on the error text of a failed run in a log line: the error of a worker that exits non-zero
+# is its whole stderr, up to _MAX_HOOK_OUTPUT_BYTES. A traceback ends with the exception, so the
+# end of the text is kept.
+_LOGGED_ERROR_MAX = 1000
 
 _WORKER_SCRIPT = str(Path(__file__).parent / "script_worker.py")
 
@@ -104,12 +114,15 @@ def run_hook_script(
     # HOME/LANG are set so HOME- and locale-sensitive code behaves predictably rather than
     # defaulting oddly; a configured egress proxy is forwarded below so a hook's HTTP calls
     # (http_get/http_post) honour it — that's egress/SSRF control, not a secret (4.138).
+    # PYTHONNOUSERSITE does for every Python process a script starts what -s does for the worker
+    # (see the Popen call).
     server_dir = str(Path(__file__).parents[3])  # server/
     worker_env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", "/tmp"),
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "PYTHONPATH": server_dir,
+        "PYTHONNOUSERSITE": "1",
         "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
         "DATA_DIR": os.environ.get("DATA_DIR", ""),
     }
@@ -142,8 +155,12 @@ def run_hook_script(
         # WHOLE tree, not just the direct child: hook scripts get real builtins and can spawn
         # grandchildren (os.system, subprocess, multiprocessing) that would otherwise be orphaned
         # and keep running unbounded past the timeout (4.69).
+        # -s leaves out the user site: the image's Python has no venv, so without it the worker
+        # would put $HOME/.local/lib/pythonX.Y/site-packages on sys.path and run a usercustomize
+        # from there — with the HOME fallback above, under /tmp. -I and -E are no option: they
+        # ignore PYTHONPATH, which the worker needs to import app.
         proc = subprocess.Popen(
-            [sys.executable, _WORKER_SCRIPT],
+            [sys.executable, "-s", _WORKER_SCRIPT],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -206,11 +223,17 @@ def run_hook_script(
 
     # Bound the join: proc.wait() only reaps the direct child, so a hook that backgrounds a
     # grandchild inheriting fd 1/2 keeps the pipe open past the worker's exit — an unbounded join
-    # would hang this request thread indefinitely (bypassing the timeout). If a reader is still
-    # alive after the timeout, kill the whole group (start_new_session ⇒ pgid == proc.pid) to close
-    # the inherited write-ends, then re-join — this preserves the runtime bound 4.69 guarantees.
-    t_out.join(timeout=timeout)
-    t_err.join(timeout=timeout)
+    # would hang this request thread indefinitely (bypassing the timeout). The worker has written
+    # its output when it exits, so the readers only need a short grace, for both together, to read
+    # the rest. If a reader is still alive after it, kill the whole group (start_new_session ⇒
+    # pgid == proc.pid) to close the inherited write-ends, then re-join within the same grace.
+    # A run so ends after at most timeout + 2 × _READER_GRACE_SECONDS (34 s at the default): the
+    # gateway closes /api/... after 60 s without a response (nginx's default proxy_read_timeout,
+    # apps/gateway/nginx.conf sets none for it), and /api/hooks/trigger and /api/hooks/{id}/run
+    # answer only after the run.
+    deadline = time.monotonic() + _READER_GRACE_SECONDS
+    t_out.join(timeout=_READER_GRACE_SECONDS)
+    t_err.join(timeout=max(0.0, deadline - time.monotonic()))
     if t_out.is_alive() or t_err.is_alive():
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -220,9 +243,11 @@ def run_hook_script(
         # session while holding fd 1) would otherwise hang the final join forever. Abandon such a
         # reader — a leaked daemon thread + one fd — rather than hang the request thread; the holder
         # guard below tolerates the unread stream. Only reachable by a pathological trusted-admin
-        # hook, never by the webhook caller, but this keeps the runtime bound absolute.
-        t_out.join(timeout=timeout)
-        t_err.join(timeout=timeout)
+        # hook, never by the webhook caller, but this keeps the bound of
+        # timeout + 2 × _READER_GRACE_SECONDS above absolute.
+        deadline = time.monotonic() + _READER_GRACE_SECONDS
+        t_out.join(timeout=_READER_GRACE_SECONDS)
+        t_err.join(timeout=max(0.0, deadline - time.monotonic()))
     out = out_holder[0] if out_holder else ""
     err = err_holder[0] if err_holder else ""
 
@@ -260,3 +285,13 @@ def run_hook_script(
         }
 
     return result
+
+
+def failed_run_error(result: dict) -> str | None:
+    """The error text of a failed run, shortened for a log line; None for a successful run."""
+    if result.get("success") is True:
+        return None
+    error = str(result.get("error") or "unknown error")
+    if len(error) > _LOGGED_ERROR_MAX:
+        return "…" + error[-_LOGGED_ERROR_MAX:]
+    return error

@@ -15,7 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     logoutAndReload,
   } from '$lib/stores/settings';
   import { context, reloadContextForUrl } from '$lib/stores/workspace';
-  import { t, currentLocale } from '$lib/i18n';
+  import { t, currentLocale, resolveLanguage, type Language } from '$lib/i18n';
   import {
     resetServerCertPin,
     resetDeviceIdentity,
@@ -55,7 +55,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Rust refused (a device identity, but no URL) they have none, and the reset is the way out.
   let resetTarget = $derived($session?.serverUrl ?? workspace?.url ?? '');
   let intervalMinutes = $state(1);
-  let language = $state<'de' | 'en'>('de');
+  let language = $state<Language>('de');
   let storePasswords = $state(false);
   let allowSelfSignedCerts = $state(false);
   let rdpScalingMode = $state<RdpScalingMode>('auto');
@@ -89,7 +89,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!$settingsModalOpen) return;
     const s = $settings ?? getSettingsDefaults();
     intervalMinutes = getIntervalMinutes(s);
-    language = s.language === 'en' ? 'en' : 'de';
+    language = resolveLanguage(s.language);
     storePasswords = Boolean(s.storePasswords);
     allowSelfSignedCerts = Boolean(s.allowSelfSignedCerts);
     rdpScalingMode = s.rdpScalingMode ?? 'auto';
@@ -160,6 +160,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       pinResetMsgKey = 'settings.resetCertPin.missingUrl';
       return;
     }
+    // The same step as the pin reset on the login screen, so the same warning first.
+    asking += 1;
+    const ok = await confirmDialog($t('login.resetPin.confirmMitm'), {
+      confirmLabel: $t('settings.resetCertPin'),
+    });
+    asking -= 1;
+    if (!ok) return;
     try {
       await resetServerCertPin(target);
       pinResetMsgKey = 'settings.resetCertPin.done';
@@ -418,11 +425,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span>{$t('settings.allowSelfSigned')}</span>
           </label>
           <div class="sm-reset-pin">
-            <button class="btn ghost small" onclick={onResetPin}
+            <button class="btn ghost small" data-action="pin-reset" onclick={onResetPin}
               >{$t('settings.resetCertPin')}</button
             >
             <span class="field-label">{$t('settings.resetCertPin.hint')}</span>
-            {#if pinResetMsgKey}<span class="sm-reset-msg">{$t(pinResetMsgKey)}</span>{/if}
+            {#if pinResetMsgKey}<span class="sm-reset-msg" data-msg="pin-reset"
+                >{$t(pinResetMsgKey)}</span
+              >{/if}
           </div>
         {/if}
 

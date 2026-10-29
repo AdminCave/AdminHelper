@@ -23,6 +23,7 @@ import (
 var version = "dev"
 
 func main() {
+	frpc.SetAgentVersion(version)
 	root := &cobra.Command{
 		Use:   "adminhelper-agent",
 		Short: "AdminHelper Agent — FRPC Sync + Monitoring (Linux & Windows)",
@@ -121,7 +122,7 @@ func frpcSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Einmaliger Config-Sync",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return frpc.Sync()
+			return frpc.Sync(context.Background())
 		},
 	}
 }
@@ -146,7 +147,7 @@ func monitorInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Ersteinrichtung des Monitor-Agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return monitor.Init(monitor.InitParams{
+			return initMonitor(monitor.InitParams{
 				URL:      url,
 				APIKey:   apiKey,
 				ServerID: serverID,
@@ -160,11 +161,31 @@ func monitorInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
 	cmd.Flags().StringVar(&services, "services", "", "Kommagetrennte Service-Namen")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "SSL-Verifikation deaktivieren")
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.MarkFlagRequired("url")
 	cmd.MarkFlagRequired("api-key")
 	cmd.MarkFlagRequired("server-id")
 	return cmd
+}
+
+// monitorInit and enableTimer are monitor.Init and service.EnableTimer; tests swap them, the real
+// ones write the monitor config and run systemctl.
+var (
+	monitorInit = monitor.Init
+	enableTimer = service.EnableTimer
+)
+
+// initMonitor sets the monitor up and only then enables the agent timer (R-0641): a setup that
+// failed enables nothing, and a timer that cannot be enabled is a warning, the setup stands.
+func initMonitor(p monitor.InitParams) error {
+	if err := monitorInit(p); err != nil {
+		return err
+	}
+	if err := enableTimer(); err != nil {
+		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
+		logger.Warnf("Bitte manuell aktivieren")
+	}
+	return nil
 }
 
 func monitorPushCmd() *cobra.Command {

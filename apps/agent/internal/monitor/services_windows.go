@@ -7,6 +7,7 @@
 package monitor
 
 import (
+	"context"
 	"regexp"
 	"strings"
 )
@@ -19,17 +20,17 @@ import (
 // which this class excludes (3.44).
 var reWinServiceName = regexp.MustCompile(`^[A-Za-z0-9._$-]+$`)
 
-// collectServiceHealth collects Windows service status.
+// collectServiceHealth collects Windows service status; ctx ends the sc call.
 // The format is compatible with the systemd format for the monitoring server.
-func collectServiceHealth() map[string]any {
+func collectServiceHealth(ctx context.Context) map[string]any {
 	// The block is built in scServiceHealth (no build tag) so it is unit-tested on any platform —
 	// see scquery.go / scquery_test.go (6.20).
-	out, err := runWithTimeout("sc", "query", "state=", "all")
+	out, err := runWithTimeout(ctx, "sc", "query", "state=", "all")
 	return scServiceHealth(out, err)
 }
 
-// collectWatchedServices checks the status of specific Windows services.
-func collectWatchedServices(names []string) []map[string]any {
+// collectWatchedServices checks the status of specific Windows services; ctx ends every sc call.
+func collectWatchedServices(ctx context.Context, names []string) []map[string]any {
 	var services []map[string]any
 	for _, name := range names {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
@@ -39,12 +40,12 @@ func collectWatchedServices(names []string) []map[string]any {
 			services = append(services, svc)
 			continue
 		}
-		out, err := runWithTimeout("sc", "query", name)
+		out, err := runWithTimeout(ctx, "sc", "query", name)
 		if err == nil {
 			output := string(out)
 			if strings.Contains(output, "RUNNING") {
 				svc["running"] = true
-				exOut, err := runWithTimeout("sc", "queryex", name)
+				exOut, err := runWithTimeout(ctx, "sc", "queryex", name)
 				if err == nil {
 					for _, line := range strings.Split(string(exOut), "\n") {
 						if strings.Contains(line, "PID") && !strings.Contains(line, "FLAGS") {

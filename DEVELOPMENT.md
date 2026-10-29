@@ -265,7 +265,7 @@ Komponenten-Suite startet. Es sourct `.devenv.sh` (bzw. `$AH_DEVENV`), loest
 `AH_TEST_DB` auf und delegiert an `scripts/tests/run.sh`:
 
 ```bash
-bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--tree <pfad>] [-- <args>]
+bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--full] [--tree <pfad>] [-- <args>]
 
 bash scripts/dev/verify.sh monitoring --strict           # eine Komponente
 bash scripts/dev/verify.sh web desktop-e2e --strict      # mehrere, in einem Lauf
@@ -297,6 +297,20 @@ vorerst im `TMPDIR` des Aufrufers (meist `/tmp`).
 Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
 ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
 nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
+
+**Log und Digest.** Die volle Ausgabe der Suite landet in
+`.ah-out/logs/verify-<zeit>-<pid>.log` (die neuesten 30 bleiben; `last-verify.json` nennt
+den Pfad unter `log`). Auf stdout steht der Digest von `scripts/dev/log-digest.sh`: eine Zeile je
+Schritt (die per `--only` oder `--` ausgelassenen nur als Zahl), je rotem oder selbst
+uebersprungenem Schritt seine Fehlerzeilen (hoechstens 60) und die letzten 20 Zeilen seines
+Abschnitts mit Zeilennummern, dann der Schlussblock von `run.sh` (Summary, `strict-failed`- und
+`failed`-Liste), Exit-Code und Logpfad; steht kein Schlussblock am Ende des Logs, die letzten 40
+Zeilen. Gibt ein roter Test eingefangene `run.sh`-Ausgabe aus, setzt sie keine Grenzen: je Schritt
+gilt das schlechteste Ergebnis, widerspruechliche Zeilen werden genannt, und ein Auszug zeigt im
+Zweifel mehr. Keine Schritt-Zeile wird gekuerzt. Mehr liest man
+gezielt (`sed -n <a>,<b>p <log>`). Auf einem Terminal oder mit `--full` laeuft die volle Ausgabe
+zusaetzlich mit. Jedes andere `run.sh`-Log fasst `bash scripts/dev/log-digest.sh <log> [<exit>]`
+genauso zusammen.
 
 ### OpenAPI-Snapshot aktualisieren
 
@@ -357,12 +371,19 @@ bash scripts/dev/openapi-breaking.sh server --base origin/main
 bash scripts/dev/openapi-breaking.sh monitoring --base origin/main
 ```
 
+Auch `gnome-keyring` braucht der Pflicht-Schritt `scripts`: `scripts/tests/lib_e2e_stack_test.sh`
+startet fuer seine Keyring-Faelle einen echten `gnome-keyring-daemon` in einer eigenen
+D-Bus-Session und endet ohne `gnome-keyring-daemon`, `dbus-run-session` oder `dbus-send` mit
+Exit 75 — unter `--strict` also rot. CI (Job `ops-scripts`) und die Test-Boxen
+(`scripts/vm/bootstrap_linux.sh`) installieren es; auf der Dev-Box (Debian/Ubuntu):
+`sudo apt-get install --no-install-recommends gnome-keyring dbus`.
+
 ### Geteilte API-Typen (sync-from-web.sh --check)
 
 `apps/web/src/lib/api/types.ts` und `apps/desktop/ui/src/lib/api/types.ts` sind
 **keine** gemeinsame Datei mehr: das Web beschreibt die Admin-Panel-API (25
-Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole —
-`FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server`.
+Exporte), das Desktop die Client-API (58). Gemeinsam sind drei Symbole —
+`FrpConfig`, `FrpStatus`, `FrpStatusProxy`.
 
 ```bash
 bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
@@ -370,13 +391,13 @@ bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
 
 Geprueft wird die Schnittmenge, und zwar als **Teilmenge**: jede Zeile des
 Web-Blocks muss im Desktop-Block stehen, das Desktop darf mehr fuehren. Das ist
-kein Kompromiss, sondern die richtige Invariante — `Server` traegt im Desktop
-zusaetzlich `connections?: Connection[]`, weil `to_dict()` das Feld liefert und
-nur das Admin-Panel es ignoriert. Der reale Drift, den die Regel faengt: das Web
-zieht ein neues Server-Feld nach, das Desktop nicht.
+kein Kompromiss, sondern die richtige Invariante — bis R-0723 trug das gemeinsame
+`Server` im Desktop zusaetzlich `connections?: Connection[]`, das nur das
+Admin-Panel ignorierte (seitdem kennt das Web nur `ServerSummary`). Der reale
+Drift, den die Regel faengt: das Web zieht ein neues Feld nach, das Desktop nicht.
 
 Quell-Exporte ohne Gegenstueck im Ziel werden nur berichtet, nicht bemaengelt.
-Die vier erwarteten gemeinsamen Symbole stehen namentlich im Skript
+Die drei erwarteten gemeinsamen Symbole stehen namentlich im Skript
 (`CHECK_SHARED`): verschwindet eines von einer Seite, ist das ein Fehler, keine
 kleinere gruene Menge. Ein blosser Zaehl-Boden haette erst bei zwei gleichzeitigen
 Verlusten gegriffen — der realistische Fall ist der einzelne Refactor.
@@ -468,11 +489,11 @@ veralteten geplanten Workflow — kein Trigger, keine `WARN:`-Zeile. Manuell:
 ### Task schliessen: `ledger.sh` und `task-close.sh`
 
 Kein Modell setzt selbst einen Haken oder macht einen Task-Commit. Der Weg einer Task, im Worktree des
-Vorhabens:
+Vorhabens (Ablauf: `.claude/skills/feature-build/SKILL.md`):
 
 ```bash
 bash scripts/dev/ledger.sh start tasks/<slug>.md T7      # .vm/active-task: Komponente + Dateien
-# ... builder baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
+# ... die Session baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
 bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 ```
 
@@ -504,11 +525,22 @@ ohne Ankuendigung · `4` private Datei oder Token im Diff, geaenderte Ankuendigu
 lauffaehig oder Handarbeits-Task. Nach einem Fehler in Schritt 9 oder 10 setzt ein zweiter Lauf
 dieselbe Zeile neu.
 
-`ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`, `mark-skip`,
-`mark-question`, `set-files`, `status`, `lint`); Details in [`tasks/README.md`](tasks/README.md).
+`ledger.sh` ist die einzige Stelle, die Task-Status, Haken und Kopf eines Ledgers schreibt (`start`,
+`mark-done`, `mark-skip`, `mark-question`, `set-files`, `status`, `lint`); Plan und `## Entscheidungen` schreibt
+die Session von Hand. Details in [`tasks/README.md`](tasks/README.md).
 **`--evidence` ist ein Feld, kein Beweis:** `mark-done` nimmt jede Zeichenkette; wahr macht die Zeile
 nur, dass `task-close.sh` sie aus dem eigenen Lauf erzeugt. Deshalb steht `ledger.sh mark-done` in
 `.claude/settings.json` unter `ask`.
+
+**Abschluss eines Vorhabens: `review.sh final`.** Vor dem PR prueft
+`bash scripts/dev/review.sh final tasks/<slug>.md` das Branch-Urteil des `reviewer`
+(`.ah-out/review/<slug>/branch.verdict.json` des Worktrees, in dem das Ledger liegt): keine Task mehr `[ ]`
+oder `[?]`, `approve` gesamt, fuer den Code- und fuer den Testteil, beide mit Evidenz, eine Abdeckungsliste,
+hoechstens drei Gegenproben (`red`, `green`, `not-runnable`), kein `blocker` neben einem `approve`, und seit
+dem geprueften Commit (`head`) auf der eigenen Linie des Branches nur Commits, die allein das Ledger aendern, und
+Merges ohne eigene Aenderungen (ein aufgeloester Konflikt zaehlt als neue Aenderung; `CHANGELOG.md` mit seinem
+`merge=union` ausgenommen). Exit 0 druckt den PR-Abschnitt (Adressen und Hostnamen entfernt wie bei `pr-body`), Exit 3 jeden
+Grund, Exit 2 einen Aufruffehler.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
@@ -518,17 +550,22 @@ den `Unreleased`-Block (`.claude/rules/release.md`).
 
 ### Entwicklung mit Claude Code
 
-Gearbeitet wird in **einer** interaktiven Claude-Code-Session in tmux (Opus), die Kevin im
-Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebenslauf eines Vorhabens,
-§5 Tests, §6 Pruefer, §7 Commit, §8 Roadmap und Worktrees); hier steht, welche Teile es dafuer gibt.
+Gearbeitet wird in einer interaktiven Claude-Code-Session in tmux, die Kevin im Haupt-Checkout auf
+`main` startet. Die Regeln stehen in `CLAUDE.md` (§2 wer entscheidet und baut, §4 Lebenslauf eines
+Vorhabens, §5 Tests, §6 Rollen, Pruefer und Modelle, §7 Commit, §8 Roadmap und Worktrees, §13
+Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welche Teile es dafuer gibt.
 
-- **Sub-Agenten** in `.claude/agents/`: `builder` baut eine Task, `reviewer` prueft einen Task- oder
-  Branch-Diff gegen sieben Kriterien, `tester` prueft vor dem Abschluss, ob die Tests da und echt
-  sind, `security` prueft Risikopfade. Die Session ruft sie ueber das Agent-Werkzeug mit
-  `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
+- **Modelle:** `.claude/settings.json` startet die Session mit `model: opus` und `effortLevel: high`
+  (vor den Benutzer-Settings); `claude --model sonnet` fuer klar begrenzte Arbeit, `claude --effort xhigh`
+  fuer ein Architektur-Vorhaben oder `/model` und `/effort` ueberschreiben das fuer eine Session. Die
+  Sub-Agenten tragen Modell und Effort im Frontmatter.
+- **Sub-Agenten** in `.claude/agents/`: `reviewer` (eine Task vor dem Commit, oder der Branch vor dem PR
+  ueber Code und Tests), `security` (Risikopfade), `advisor` (nur lesend, gezielte Hilfe bei
+  schwierigen Fragen). Gebaut wird in der Session selbst. Die Session ruft sie ueber das Agent-Werkzeug
+  mit `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
   jeder Aufruf nennt den absoluten Worktree-Pfad, die Agenten arbeiten mit `git -C <wt>` und
   `bash <wt>/scripts/…`. Eine neue Agent-Datei sieht eine laufende Session nur, wenn
-  `.claude/agents/` bei ihrem Start schon existierte.
+  `.claude/agents/` bei ihrem Start schon existierte und der Haupt-Checkout sie traegt.
 - **Worktrees:** Jedes Vorhaben baut in `../AdminHelper-<slug>` auf `feature/<slug>`.
   `bash scripts/dev/worktree-setup.sh <pfad> <slug>` richtet ihn ein (eigene Test-DB, eigenes Venv,
   `node_modules` als Hardlink-Kopie, frpc-Sidecar, Venv-Links, `.vm/lane`);
@@ -548,7 +585,7 @@ Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebensl
 - **Lange Laeufe** (Suiten ueber zehn Minuten, `/test`, Wochenlauf) laufen in einem tmux-Fenster ohne
   Modell, Ausgabe und Exit-Code in Dateien:
   `tmux new-window -d -n ah-quick "( . ./.devenv.sh; bash scripts/tests/run.sh quick --strict ) > <log> 2>&1; echo \$? > <rc>"`.
-  Die Session wartet auf die `rc`-Datei und liest danach das Log.
+  Die Session wartet auf die `rc`-Datei und liest danach `bash scripts/dev/log-digest.sh <log> <rc>`.
 - **Python-Sperre:** `server-pytest` und `schemathesis` warten ueber `/var/lib/adminhelper-dev/py.lock`
   (ohne das Verzeichnis `~/.cache/adminhelper-py.lock`) aufeinander, ueber alle Worktrees (Abschnitt
   „Python-Tests lokal“).
@@ -605,9 +642,10 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
   eine ID, die ein Hand-Edit wieder entfernt hat, nicht ein zweites Mal. `--proof` und
   `Dedup-Key: <key>` stehen mit in „Quelle / Beweis"; `Ablauf` folgt der Klasse (IDEE 60
-  Tage, REF 90 Tage, sonst `nie`). Bei 20 `neu`-Zeilen ist Schluss (Exit 3). Traegt eine
-  offene Zeile den Dedup-Key schon, ist das Exit 4 mit ihrer ID, und ein leerer Commit
-  `roadmap: dedup <key> -> R-nnnn` haelt die Weigerung fuer `stats` fest.
+  Tage, REF 90 Tage, sonst `nie`). Wie viele Zeilen schon `neu` sind, haelt `add` nicht auf:
+  `neu N/20` im WIP-Kopf ist Anzeige wie `aktiv N/2`. Traegt eine offene Zeile den Dedup-Key
+  schon, ist das Exit 4 mit ihrer ID, und ein leerer Commit `roadmap: dedup <key> -> R-nnnn`
+  haelt die Weigerung fuer `stats` fest.
 - `status` setzt den Status und verschiebt die Zeile in den Abschnitt, der zu ihm gehoert.
   Erlaubt sind nur die Uebergaenge der Tabelle `TRANSITIONS` im Skript (sonst Exit 2);
   derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
@@ -1222,21 +1260,28 @@ Suites auf einer ephemeren Proxmox-VM (das Token in `~/.config/adminhelper/pve.e
 Konfiguration im gitignoreten `.claude/settings.local.json`; siehe „VMs mit vm.py“).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
-[--only <keys…>] [--step <name>]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
+[--only <keys…>] [--step <name>] [--part gui|rest]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
 `--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
-Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
+Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Test,
+`--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil).
+`scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
-  `bash scripts/vm/warm.sh <desktop|server|pond>` hydriert **einmal** und merkt die
-  VMID und den Namen aus `clone` (`.vm/warm.env`). Wieder genommen wird der Slot nur, solange
-  `vm.py list` auf der VMID eine laufende Box der eigenen Lane mit seiner Rolle, ohne Szenario
-  und unter diesem Namen zeigt; einen Slot ohne Namen uebernimmt `warm.sh` einmal. Danach ist
-  jede Iteration inkrementell (`target/` +
+  `bash scripts/vm/warm.sh <desktop|gui|server|pond>` hydriert **einmal** und merkt die
+  VMID und den Namen aus `clone` (`.vm/warm.env`); `gui` ist eine zweite volle Box derselben
+  Lane mit eigenem Slot fuer den GUI-Teil des Sammellaufs. Wieder genommen wird der Slot
+  nur, solange `vm.py list` auf der VMID eine laufende Box der eigenen Lane mit seiner
+  Rolle, ohne Szenario und unter diesem Namen zeigt; einen Slot ohne Namen uebernimmt
+  `warm.sh` einmal. Danach ist jede Iteration inkrementell (`target/` +
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
   `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
-  auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf. Bei Fehler
+  auf der warmen Box. Ein vorangestelltes `--slot gui` (Layer-Form und `--cmd`) faehrt auf
+  der Box des Slots `gui` statt `desktop`, mit deren Namen und Frist; mit `--desktop` gibt
+  es kein `--slot`. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf, mit
+  `--role <desktop|server|gui>` nur diesen einen Slot samt seinen Eintraegen in `warm.env`
+  (beim Server auch die Zugangsdaten); die anderen Slots bleiben stehen. Bei Fehler
   bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
   landen automatisch lokal unter `.ah-out/`.
 - **Parallele Lanes.** Jedes Vorhaben baut in einem eigenen Git-Worktree
@@ -1256,8 +1301,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   dem naechsten Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
-  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der
-  Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `worktree-teardown.sh <pfad> <slug>`
+  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit, und diese Werte gehen
+  vor dem `git` der Box, auch wenn der Sync aus dem Haupt-Checkout ein Repo mitbringt.
+  Ein Test, der auf der Box `git` voraussetzt, gehoert deshalb nicht auf die Box.
+  `worktree-teardown.sh <pfad> <slug>`
   zerstoert die VMs der Lane und raeumt Worktree, Test-DB, Venv und den gemergten Branch ab —
   auch dann, wenn der Worktree schon von Hand entfernt wurde.
   Ablauf eines Vorhabens im eigenen Worktree: `CLAUDE.md` §8.
@@ -1269,8 +1316,8 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   Unter der Summary nennt der Lauf die Go-Version, mit der die Server-Box das Agent-Binary
   der Pakete gebaut hat (`go version (agent .deb, server box): …`, aus dem Binary gelesen).
   Die Frist der Warm-Box kommt aus `AH_WARM_TTL` (Default 8h); `iter.sh` verlaengert bei
-  jedem Lauf um genau diese Frist (warm.sh merkt sie als `desktop_ttl` in `.vm/warm.env`),
-  eine bewusst kurze Box bleibt also kurz.
+  jedem Lauf um genau diese Frist (warm.sh merkt sie je Slot als `desktop_ttl` bzw.
+  `gui_ttl` in `.vm/warm.env`), eine bewusst kurze Box bleibt also kurz.
 
 ### Wochenlauf (heavy.sh)
 
@@ -1288,48 +1335,76 @@ tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warme Box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone
-  --strict`; `weekly` = beides seriell. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
+- `all` = `run.sh all --strict` auf **zwei Boxen gleichzeitig**: Teil `rest`
+  (`--part rest`) auf der warmen Box des Slots `desktop`, Teil `gui` (`--part gui`, die
+  Desktop-GUI-E2E samt Smoke-Test) auf einer zweiten Box derselben Lane (`warm.sh gui`,
+  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. `PASS` nur mit zwei
+  gruenen Teilen: ein Teil, der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch
+  Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
+  roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
+  (`FAIL in part rest`). Ein Abbruch von `heavy.sh` (INT/TERM/HUP) beendet beide Teile.
+  Ist die zweite Box auch im zweiten Versuch nicht zu bekommen, laeuft Teil `gui` nach Teil
+  `rest` seriell auf der Box des Slots `desktop` (`iter.sh all --strict --part gui`): ein
+  laengerer Lauf statt eines verlorenen. Die Notizen sagen es mit der letzten Zeile aus
+  `warm-gui.log`, die Ebenen-Zeile nennt zweimal dieselbe Box, eine GUI-Box gibt es nicht
+  freizugeben, und das Urteil bleibt `PASS` nur mit zwei gruenen Teilen. Verweigert `warm.sh gui`
+  (Exit 2), laeuft nichts seriell, der Lauf ist UNVERIFIED.
+  Nach dem Lauf gibt `heavy.sh` die GUI-Box frei (`reap.sh --role gui`), wenn Teil `gui` gruen
+  ist (ein `flaky` Schritt zaehlt nicht als rot); ist er rot oder `infra`, bleibt sie zur Sichtung
+  stehen, bis ihre Frist ablaeuft, und die Notizen nennen `python3 scripts/vm/vm.py ssh <vmid>` —
+  sofern sie nicht schon vor einer Zweit-VM oder dem Capstone ging (siehe Klassifikation).
+  `capstone` = `multibox.sh --capstone --strict`; `weekly` = beides seriell, der Capstone
+  bekommt die Box des Slots `desktop`. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
   UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL
   stoppt ihn nicht.
-- **Vorab:** `vm.py doctor --roles <was der Modus klont>`, und `vm.py list --json` darf keine
+- **Vorab:** `vm.py doctor --roles <was der Modus klont>` — bei `all` nur der Slot `desktop`,
+  wenn seine Box nicht schon laeuft (sonst ein leeres `--roles`); ob die GUI-Box passt,
+  entscheidet die Kapazitaetspruefung von `vm.py clone` —, und
+  `vm.py list --json` darf keine
   Box einer fremden Lane und nichts Geleaktes auf der eigenen zeigen — sonst ist die
   Kapazitaet nicht da und der Lauf bricht ab, bevor er eine VM verbraucht.
 - **Report:** `.ah-out/weekly/<jjjj-mm-tt-hhmm>/report.md`. Erste Zeile ist das Urteil
   (`PASS` | `FAIL` | `UNVERIFIED (<grund>)`), dann die Summary-Zeilen der Wrapper
-  **woertlich**, die Schritt-Tabelle, „Kevin sichtet", die Notizen, die `audit.yml`-Zeile und
-  die VM-Liste danach. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
+  **woertlich** (bei `all` je Teil mit Etikett: `[rest] run.sh[all]: …`, `[gui] …`), die
+  Schritt-Tabelle (alle Schritte beider Teile mit Sekunden und Box, dazu **eine** Ebenen-Zeile
+  mit Wandzeit, `<box-rest>+<box-gui>` und `rest <s> s, gui <s> s`), „Kevin sichtet", die
+  Notizen, die `audit.yml`-Zeile und die VM-Liste danach. Jeder Teil hat sein Log
+  (`all-rest.log`, `all-gui.log`) und sein Zieh-Verzeichnis (`rest/`, `gui/`: Artefakt,
+  Screenshots, Logs der Box); `steps-all.tsv` fuehrt die Schritte beider Teile, den Teil in der
+  vierten Spalte. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
   Session-Start in Zeile 4 des `AH-STATUS`-Blocks. Die `audit.yml`-Zeile erzeugt bei rot genau
   **eine** REL-Zeile je roter Phase: der Eintrag bleibt in `seen.md` offen (`deps-audit · open`),
   bis ein Lauf mit `success` ihn schliesst (`resolved`) — abgebrochene oder uebersprungene Laeufe
   aendern nichts. Eine neue Zeile gibt es erst beim naechsten roten Lauf nach einem gruenen, und
   auch dann nur, wenn die alte REL-Zeile nicht mehr offen ist: ihr Dedup-Key `rel:deps-audit`
   haelt die neue sonst zurueck. Roadmap-Zeilen legt `heavy.sh` ueber `roadmap.py add` an; ist
-  der Deckel von 20 `neu`-Zeilen voll oder die Zeile schon offen, steht das laut in den Notizen
-  des Reports.
+  die Zeile schon offen oder scheitert `add`, steht das laut in den Notizen des Reports.
 - **JUnit:** Die pytest-Schritte von `run.sh` schreiben `.ah-out/junit/<schritt-id>.xml`
   (`monitoring-pytest`, `ca-issuer-pytest`, `server-pytest`, fuer Schemathesis eine Datei je
   Dienst: `schemathesis-server` usw.), `stack-pytest` je Test `stack-<name>.xml`, Playwright
   `web-playwright.xml` bzw. `web-live.xml` (nur mit gesetztem `AH_OUT_DIR`, sonst schriebe der
   Reporter auf stdout) und die Desktop-E2E je `wdio run` eine `desktop-e2e-<ms>-<cid>.xml`
   (`@wdio/junit-reporter`). Jeder `run.sh`-Lauf verwirft vorher die XMLs des
-  letzten, und `heavy.sh` leert das lokale `junit/` vor dem Lauf: der Pull von der Box loescht
-  nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert das gezogene `junit/`
-  nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die Report-Zeile `JUnit:` nennt, wie viele
-  XMLs dort liegen.
+  letzten, und `heavy.sh` leert das `junit/` im Zieh-Verzeichnis jedes Teils vor dem Lauf: der
+  Pull von der Box loescht nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert
+  das gezogene `junit/` beider Teile nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die
+  Report-Zeile `JUnit:` nennt, wie viele XMLs dort liegen.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
-  steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
+  steht also auch `skip` in der Spalte — eine Zeile je Schritt (Spalte `vm` = Box seines
+  Teils) plus eine Ebenen-Zeile (bei `all` mit `vm` = `<box-rest>+<box-gui>`),
   committet im privaten Repo, **nie** gepusht; Felder mit Komma oder Anfuehrungszeichen
   sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
   Layer Pflicht (Box-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
   `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
-- **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
+- **Klassifikation.** `infra` gilt fuer die **ganze Ebene** (bei `all` fuer den ganzen Teil),
+  nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `vm.py: capacity` oder
   `privilege` (und auf der Ein-Box-Ebene zusaetzlich `vm.py: no ip|no ssh|timeout|sync failed|
-  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report hat dann bewusst keine
+  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene bzw. den
+  Teil sofort — er hat dann bewusst keine Zeilen in der
   Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine Regression. Meldet das
   Box-Artefakt einen Pflicht-Schritt als `strict-failed` (SKIP unter `--strict`), ist die Ebene
   ebenfalls `infra`, die Schritt-Tabelle bleibt aber stehen: gelaufene Schritte `pass`, die
@@ -1343,7 +1418,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Folgefehler, endet die Ebene UNVERIFIED mit dem Grund „capstone infra: …" und der
   Multibox-Summary-Zeile; jeder FAIL, der nicht auf einen Abbruch seiner Rolle folgt,
   macht die Ebene FAIL. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert:
-  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
+  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`; im Teil
+  `gui` mit `iter.sh --slot gui`, nach einem seriellen Lauf auf der Box `desktop`) — ein
+  gruener Lauf ⇒ `flaky`
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
   (Worktree `.ah-worktrees/w2`, Lane `w2`): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile
@@ -1353,6 +1430,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die
   stabile Signatur, die eine Regressions-Behauptung braucht — keine Zweit-VM).
   `--no-second-vm` ueberspringt die Zweit-VM, `--base <sha>` setzt den Vergleichs-Commit.
+  Vor der ersten Zweit-VM und vor dem Capstone (`weekly`) gibt `heavy.sh` die GUI-Box seines
+  Laufs frei (`reap.sh --role gui`, einmal je Lauf, die Notizen nennen es), weil neben ihr und
+  der Box des Slots `desktop` die `w2`-Box bzw. die Capstone-Rollen nicht passen; die
+  Zweit-VM-Pruefungen laufen deshalb erst, wenn beide Teile alle Wiederholungen hinter sich haben.
 - **Exit-Codes:** `0` = PASS, `1` = FAIL, `74` = UNVERIFIED (Infrastruktur — der Lauf konnte
   nicht stattfinden, ueber den Code ist damit nichts bekannt), `2` = Usage. Als Infrastruktur
   zaehlen auch die Faelle, in denen die Wrapper nur `1` liefern: keine warme Box, Warm-Pond

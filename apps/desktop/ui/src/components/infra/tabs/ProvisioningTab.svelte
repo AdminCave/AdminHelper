@@ -13,6 +13,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { session, settings } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
   import { t, language } from '$lib/i18n';
+  import { shellQuote } from '$lib/utils/shell';
+
+  // The forms the server issues: `adminhelper_prov_` + token_urlsafe, and a uuid4. Only the
+  // character class for the token, so another prefix on the server would not break the tab.
+  const TOKEN_FORM = /^[A-Za-z0-9_-]+$/;
+  const UUID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   interface Props {
     server: Server;
@@ -65,26 +71,41 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!s) return;
     try {
       const result = await provisioningApi.createToken(s, server.id);
+      // Both commands run as root on the target host: a value in another form
+      // yields no command. The token exists on the server anyway, so the list
+      // is reloaded all the same. typeof first: test() would read a missing
+      // token as the word "undefined".
+      if (
+        typeof result.token !== 'string' ||
+        !TOKEN_FORM.test(result.token) ||
+        !UUID_FORM.test(server.id)
+      ) {
+        scriptCommand = '';
+        command = '';
+        reportError($t('infra.prov.badResponse'));
+        await loadTokens();
+        return;
+      }
       // The agent fetches its API key, optional monitor key and optional FRP
       // bundle from the activate response in this single provision call.
-      const fpArg = caFp ? ` \\\n  --ca-fp ${caFp}` : '';
+      const fpArg = caFp ? ` \\\n  --ca-fp ${shellQuote(caFp)}` : '';
       // Recommended path: the install script sets up the signed package repo,
       // installs the agent and provisions it in one go.
       scriptCommand =
         `curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \\\n` +
         `  | sudo bash -s -- \\\n` +
-        `  --server ${s.serverUrl} \\\n` +
-        `  --token ${result.token} \\\n` +
-        `  --server-id ${server.id}${fpArg}`;
+        `  --server ${shellQuote(s.serverUrl)} \\\n` +
+        `  --token ${shellQuote(result.token)} \\\n` +
+        `  --server-id ${shellQuote(server.id)}${fpArg}`;
       // Provision-only variant for hosts that already carry the package.
       // --ca-fp supersedes --insecure; without an enrolled identity fall back
       // to the previous TOFU behaviour (only when the user opted in).
       const trust = caFp ? fpArg : $settings?.allowSelfSignedCerts ? ' \\\n  --insecure' : '';
       command =
         `sudo adminhelper-agent provision \\\n` +
-        `  --url ${s.serverUrl} \\\n` +
-        `  --token ${result.token} \\\n` +
-        `  --server-id ${server.id}${trust}`;
+        `  --url ${shellQuote(s.serverUrl)} \\\n` +
+        `  --token ${shellQuote(result.token)} \\\n` +
+        `  --server-id ${shellQuote(server.id)}${trust}`;
       showStatus($t('infra.prov.created'));
       scheduleHide(60_000); // auto-hide the token after a minute if left untouched
       await loadTokens();

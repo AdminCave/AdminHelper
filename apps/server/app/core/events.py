@@ -22,7 +22,7 @@ _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="event-hook")
 def _run_event(event_type: str, event_data: Any) -> None:
     from app.core.database import SessionLocal
     from app.modules.hooks.models import Hook
-    from app.modules.hooks.script_runner import run_hook_script
+    from app.modules.hooks.script_runner import failed_run_error, run_hook_script
 
     db = SessionLocal()
     try:
@@ -39,11 +39,16 @@ def _run_event(event_type: str, event_data: Any) -> None:
                 triggers = json.loads(hook.event_triggers or "[]")
                 if event_type not in triggers:
                     continue
-                run_hook_script(
+                result = run_hook_script(
                     script=hook.script,
                     hook_type="event",
                     context={"event_type": event_type, "event_data": event_data or {}},
                 )
+                error = failed_run_error(result)
+                if error is not None:
+                    logger.warning(
+                        "Event hook %r failed (event %s): %r", hook.name, event_type, error
+                    )
             except Exception:
                 logger.exception("Event-Hook '%s' fehlgeschlagen (event=%s)", hook.name, event_type)
     except Exception:

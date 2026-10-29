@@ -492,6 +492,7 @@ def test_the_roles_the_wrappers_use_all_exist():
     for role in (
         "server",
         "desktop",
+        "gui",
         "agent",
         "tunnel",
         "visitor",
@@ -501,6 +502,14 @@ def test_the_roles_the_wrappers_use_all_exist():
         "bake",
     ):
         assert role in roles
+
+
+def test_the_gui_role_has_the_shape_of_the_desktop_role():
+    # warm.sh gui is the second full box of a heavy run: the GUI suites move from
+    # the desktop box to it, so it needs the same RAM and cores.
+    roles = vm.load_profiles()["roles"]
+    assert roles["gui"]["memory"] == roles["desktop"]["memory"]
+    assert roles["gui"]["cores"] == roles["desktop"]["cores"]
 
 
 def test_an_unreadable_profiles_file_is_a_usage_error(tmp_path):
@@ -1595,7 +1604,7 @@ def reachable(http, monkeypatch):
 def test_the_exclude_list_never_hides_tracked_source():
     """The invariant the file itself states, checked against the real index.
 
-    The box builds its evidence hash from what it RECEIVED, so an exclude over
+    The artifact of a synced run carries the CLIENT's tree hash, so an exclude over
     tracked source would make every artifact describe a tree the box never had —
     green, and about something else. This used to be checked by comparing the
     list against crabbox's; with crabbox gone, check the property directly.
@@ -1633,8 +1642,8 @@ def test_the_exclude_list_never_hides_tracked_source():
             hits = [t for t in tracked if entry in t.split("/")]
         assert not hits, "%s excludes tracked source: %s" % (entry, hits[:3])
     # .git is not excluded (R-0095: vm.py stays as it is). Synced from the main
-    # checkout, the box's own git answers for the tree it holds; from a worktree
-    # it is a dead pointer, and run.sh takes head and tree_hash from the client.
+    # checkout it is a repository, from a worktree a dead pointer; either way
+    # run.sh takes head and tree_hash from the client when iter.sh passes them in.
     assert ".git" not in ours
     # Our own local state never travels — it describes THIS machine's leases.
     assert {".vm", ".ah-out"} <= set(ours)

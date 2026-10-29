@@ -164,6 +164,16 @@ def resolve_config_server_id(
     return config
 
 
+def log_transition(name: str, old_status: str, new_status: str, message: str) -> None:
+    """The log line of a status change, once the change is saved.
+
+    Without it a transition leaves no trace at all: MonitorAlertLog only records SENT
+    notifications, so one suppressed by maintenance or host-down was invisible
+    afterwards. Both result paths call it after their commit, so a change that a
+    failed commit discards is not logged."""
+    logger.info("Check '%s': %s -> %s (%s)", name, old_status, new_status, message)
+
+
 def apply_result(
     db: Session,
     check: MonitorCheck,
@@ -178,9 +188,9 @@ def apply_result(
     """Write one check result into its MonitorState and decide on notification.
 
     The read-modify-write both result paths share: damping (next_fail_count /
-    effective_status), the recovery hold (next_ok_count / holds_recovery), the
-    transition log line and the sent-state decision. It
-    used to exist twice — here for the scheduler and as a hand-kept copy in
+    effective_status), the recovery hold (next_ok_count / holds_recovery) and the
+    sent-state decision; the transition's log line is the caller's, after its commit
+    (log_transition). It used to exist twice — here for the scheduler and as a hand-kept copy in
     routers/agent.py — which is exactly the duplicate truth that drifts (B3).
 
     The caller passes the already-locked `state` (None before the first result),
@@ -241,16 +251,6 @@ def apply_result(
     else:
         if eff_status != state.status:
             state.since = now
-            # Without this line a transition leaves no trace at all: MonitorAlertLog
-            # only records SENT notifications, so one suppressed by maintenance or
-            # host-down was invisible afterwards.
-            logger.info(
-                "Check '%s': %s -> %s (%s)",
-                check.name,
-                old_status,
-                eff_status,
-                message,
-            )
         state.status = eff_status
         state.fail_count = new_fail_count
         state.ok_count = new_ok_count
@@ -293,14 +293,23 @@ def execute_check(check_id: str) -> None:
         if check.check_type in PUSH_ONLY_TYPES:
             return
 
-        config = resolve_config_server_id(config, check.check_type, check.server_id)
+        check_type, server_id, name = check.check_type, check.server_id, check.name
+        config = resolve_config_server_id(config, check_type, server_id)
 
         checker = None
         if config is not None:
             try:
-                checker = get_checker(check.check_type)
+                checker = get_checker(check_type)
             except ValueError as exc:
-                logger.warning("Check %s: %s", check.name, exc)
+                logger.warning("Check %s: %s", name, exc)
+
+        # End the read transaction before the run: the checker takes up to its configured
+        # timeout (at most 300 s) and the metric write follows. Held over both, the 30
+        # scheduler workers (scheduler.py) could take all 30 pool connections
+        # (core/database.py) whenever a target or VictoriaMetrics hangs, and agent reports
+        # and API requests would fail (R-0615). The rollback expires `check`; until it is
+        # read again below, only the values taken above are used.
+        db.rollback()
 
         # A corrupt config or an unknown check type must surface as unknown so the normal alert
         # chain fires — not silently freeze the state on its last value (a "dead" check that still
@@ -317,7 +326,7 @@ def execute_check(check_id: str) -> None:
                 result_status = "unknown"
                 message = f"Unexpected error: {exc}"
                 metrics = None
-                logger.exception("Check %s fehlgeschlagen", check.name)
+                logger.exception("Check %s fehlgeschlagen", name)
         duration_ms = int((time.monotonic() - start) * 1000)
 
         # Extract structured details (not sent to VictoriaMetrics)
@@ -327,10 +336,10 @@ def execute_check(check_id: str) -> None:
 
         # Send metrics to VictoriaMetrics
         victoria.write_check_result(
-            check_id=check.id,
-            check_type=check.check_type,
-            server_id=check.server_id,
-            name=check.name,
+            check_id=check_id,
+            check_type=check_type,
+            server_id=server_id,
+            name=name,
             status=result_status,
             duration_ms=duration_ms,
             extra_metrics=metrics,
@@ -344,14 +353,26 @@ def execute_check(check_id: str) -> None:
         # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
         state = (
             db.query(MonitorState)
-            .filter(MonitorState.check_id == check.id)
+            .filter(MonitorState.check_id == check_id)
             .with_for_update()
             .first()
         )
+        # Read again: the check may have been changed or deleted during the run.
+        check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+        if check is None:
+            logger.debug("Check %s was deleted during its run, result dropped", check_id)
+            return
+        had_state = state is not None
+        check_name = check.name
         old_status, eff_status, decision = apply_result(
             db, check, state, result_status, message, details, now
         )
+        # The message as stored (capped, with the damping suffix), read before the commit
+        # expires the row.
+        stored_message = state.message if had_state else message
         db.commit()
+        if had_state and eff_status != old_status:
+            log_transition(check_name, old_status, eff_status, stored_message)
 
         # Dispatch OFF the check-worker thread (see _alert_pool /
         # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
@@ -360,8 +381,8 @@ def execute_check(check_id: str) -> None:
         # A heartbeat's discrepancy stays open for the agent alert bundle
         # (alert_bundle.flush_agent_alerts), which reports agents that go silent
         # or come back together in one message.
-        if decision == "notify" and check.check_type != "agent_ping":
-            _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
+        if decision == "notify" and check_type != "agent_ping":
+            _alert_pool.submit(_dispatch_alert_bg, check_id, old_status, eff_status)
 
     except Exception:
         logger.exception("execute_check(%s) fehlgeschlagen", check_id)

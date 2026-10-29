@@ -17,7 +17,8 @@
 set -uo pipefail
 # run.sh exports AH_OUT_DIR for the REAL checkout; verify.sh and task-close.sh
 # honour it, so the fixture would read the developer's artifact as its own.
-unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV AH_TEST_DB
+unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV AH_TEST_DB \
+      AH_HEAD AH_TREE_HASH
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -35,13 +36,14 @@ for f in task-close.sh ledger.sh review.sh tree-hash.sh; do cp "$REPO_ROOT/scrip
 # The fake suite: records its arguments, writes the artifact the closer reads.
 # FIXTURE_VRC decides the run, FIXTURE_TOUCH writes into the tree while it runs,
 # FIXTURE_STAGE stages a file meanwhile (the worktree, and its hash, stay).
+# Like run.sh, it stamps a client's AH_TREE_HASH instead of measuring the tree.
 cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
 #!/usr/bin/env bash
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 mkdir -p "$root/.ah-out"; echo "$*" > "$root/.ah-out/verify-called.txt"
 [ -z "${FIXTURE_TOUCH:-}" ] || echo x > "$root/$FIXTURE_TOUCH"
 [ -z "${FIXTURE_STAGE:-}" ] || git -C "$root" add -- "$FIXTURE_STAGE"
-th="$(bash "$root/scripts/dev/tree-hash.sh")" args="$*"
+th="${AH_TREE_HASH:-$(bash "$root/scripts/dev/tree-hash.sh")}" args="$*"
 printf '{"layer": "quick", "passed": 7, "failed": 0, "skipped": 2, "tree_hash": "%s", "component": "%s"}\n' \
   "$th" "${args%% --strict*}" > "$root/.ah-out/last-verify.json"
 exit "${FIXTURE_VRC:-0}"
@@ -155,6 +157,17 @@ FIXTURE_VRC=1 c fix T1 --stage -m x; [ $rc -eq 3 ] && grep -q 'verify-red' <<<"$
 FIXTURE_VRC=74 c fix T1 --stage -m x; [ $rc -eq 74 ] && ok "a suite that cannot run -> 74" || bad "74: rc=$rc $OUT"
 FIXTURE_TOUCH=scripts/dev/new.txt c fix T1 --stage -m x
 [ $rc -eq 2 ] && grep -q 'tree changed while the suite ran' <<<"$OUT" && ok "the tree changed under the suite -> 2" || bad "tree: rc=$rc $OUT"
+# The check needs the hash the suite measures over this checkout. Client values
+# left in the environment (iter.sh passes them to a box) would be stamped
+# instead: set to the hash from before the run, they must not let a tree that
+# changed under the suite pass as unchanged.
+reset_repo; edit scripts/dev/tool.sh; verdict fix T1 approve
+before=$(cd "$FIX" && bash scripts/dev/tree-hash.sh)
+AH_TREE_HASH="$before" AH_HEAD=1111111111111111111111111111111111111111 FIXTURE_TOUCH=scripts/dev/new.txt \
+  c fix T1 --stage -m x
+[ $rc -eq 2 ] && grep -q 'tree changed while the suite ran' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "AH_TREE_HASH/AH_HEAD in the environment stay out of the suite — the changed tree still -> 2" \
+  || bad "client values from the environment: rc=$rc heads=$(heads) $OUT"
 reset_repo; edit scripts/dev/tool.sh; c fix T6 --stage -m x
 [ $rc -eq 2 ] && grep -q "does not name the task's component 'web'" <<<"$OUT" && ok "a Verify: line for another component -> 2" || bad "T6: rc=$rc $OUT"
 verdict fix T2 approve; c fix T2 --stage -m "fix: narrow"
