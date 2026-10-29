@@ -445,15 +445,15 @@ if DEB="$(vm_build_agent_deb serverbox)"; then
 else
   echo "[serverbox] deb build failed — skipping the signed repo (fallback path)"
 fi
-# The CA fingerprint the desktop would embed as --ca-fp: the access intermediate
-# is the SECOND cert the gateway presents (fullchain = leaf + intermediate).
+# The CA fingerprint the desktop would embed as --ca-fp: the root is the THIRD and
+# last cert the gateway presents (leaf + access intermediate + root).
 openssl s_client -connect 127.0.0.1:443 -showcerts </dev/null 2>/dev/null \
-  | awk '/-----BEGIN CERTIFICATE-----/{c++} c==2{print} /-----END CERTIFICATE-----/{if(c==2)exit}' \
-  > /tmp/mb-inter.pem || true
-if openssl x509 -in /tmp/mb-inter.pem -outform der -out /tmp/mb-inter.der 2>/dev/null; then
-  echo "MB_CA_FP=$(sha256sum /tmp/mb-inter.der | cut -d' ' -f1)"
+  | awk '/-----BEGIN CERTIFICATE-----/{c++} c==3{print} /-----END CERTIFICATE-----/{if(c==3)exit}' \
+  > /tmp/mb-root.pem || true
+if openssl x509 -in /tmp/mb-root.pem -outform der -out /tmp/mb-root.der 2>/dev/null; then
+  echo "MB_CA_FP=$(sha256sum /tmp/mb-root.der | cut -d' ' -f1)"
 else
-  echo "[serverbox] could not extract the intermediate for MB_CA_FP (agents fall back to TOFU)"
+  echo "[serverbox] could not extract the root for MB_CA_FP (agents fall back to TOFU)"
 fi
 # Tunnel mode: the FRP config seed above wrote frps.toml into the shared volume, and
 # the supervisor runs frps from it (its ca-issuer-provisioned leaf carries the

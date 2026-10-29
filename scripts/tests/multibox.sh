@@ -203,7 +203,7 @@ AGENT_GO="$(mb MB_AGENT_GO)"
 # means the dogfooded agent-install.sh flow silently degrades, so fail loudly.
 [ -n "$REPO_FP" ] && ok "signed test repo live on :8445 (gpg $REPO_FP)" \
   || bad "signed repo missing on :8445 (serverbox package/repo build failed — agents fall back to the local .deb path)"
-[ -n "$CAFP" ] && ok "gateway intermediate fingerprint extracted (--ca-fp $CAFP)" \
+[ -n "$CAFP" ] && ok "internal CA root fingerprint extracted (--ca-fp $CAFP)" \
   || bad "MB_CA_FP missing — agents fall back to TOFU first contact"
 # Old-Debian regression guard: the .deb must install AND its binary must run on
 # debian:9 (dpkg 1.18 + glibc 2.24 = Stretch / UniFi firmware). "0" is either the

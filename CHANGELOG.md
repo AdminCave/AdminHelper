@@ -89,6 +89,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop, Provisionierungs-Tab: `--ca-fp` ist der Fingerprint der Root der internen CA:** bisher der des
+  access-Zwischenzertifikats, der mit dessen Rotation ungueltig wurde. Der neue Wert bleibt ueber eine Rotation
+  der Zwischenzertifikate gueltig; aeltere Befehle gelten bis zur naechsten Rotation. Desktop und Server zusammen
+  aktualisieren: der Befehl eines neuen Desktops scheitert gegen einen Server, dessen Kette die Root nicht
+  enthaelt, mit der Fingerprint-Meldung. Doku: Agent-Deployment, Betrieb (DE+EN).
 - **Desktop, Provisionierungs-Tab: der Einzeiler enthaelt den Token nicht mehr:** `agent-install.sh` fragt ihn beim
   Ausfuehren verdeckt ueber `/dev/tty` ab, der Tab zeigt ihn zum Kopieren daneben; so steht er weder in der
   Shell-History noch in der Prozessliste noch im sudo-Log (mit einem Agent, der `--token-stdin` kennt; aeltere bekommen

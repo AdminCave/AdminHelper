@@ -33,7 +33,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Shown beside the one-liner, which carries no token: agent-install.sh asks
   // for it on /dev/tty, so it stays out of shell history and the process list.
   let token = $state('');
-  // The desktop's pinned CA fingerprint (access intermediate): handed to the
+  // The desktop's pinned CA fingerprint (root of the internal CA): handed to the
   // agent as --ca-fp so its first contact is VERIFIED instead of TOFU. The
   // desktop is the trusted courier here — it talks to the server over its own
   // pinned channel, so embedding the value in the command closes the
