@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import type { Server } from '$lib/api/types';
+import { IpcError } from '$lib/utils/errors';
 
 // Infra store selection invariants (6.117): a selection that survives a reload/delete decides whether
 // ServerDetail shows a live server or crashes on a null lookup. The sibling stores test this; infra
@@ -124,10 +125,18 @@ describe('saveServer monitoring-template opt-in (T15)', () => {
   it('a 409 (already assigned by the tag sync) counts as success (T45)', async () => {
     h.create.mockResolvedValueOnce({ id: 'new-1', name: 'web01', hostname: 'web01.example' });
     h.assignTemplate.mockRejectedValueOnce(
-      new Error('HTTP 409: Template bereits diesem Server zugewiesen'),
+      new IpcError('Template bereits diesem Server zugewiesen', 'ERR_HTTP', 409),
     );
     const ok = await saveServer(input('web01', 'web01.example'), null, 'tpl-x');
     expect(ok).toBe(true);
     expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('a text that only starts like a 409 is reported', async () => {
+    h.create.mockResolvedValueOnce({ id: 'new-1', name: 'web01', hostname: 'web01.example' });
+    h.assignTemplate.mockRejectedValueOnce(new Error('HTTP 409: Template bereits zugewiesen'));
+    const ok = await saveServer(input('web01', 'web01.example'), null, 'tpl-x');
+    expect(ok).toBe(true);
+    expect(h.reportError).toHaveBeenCalledTimes(1);
   });
 });

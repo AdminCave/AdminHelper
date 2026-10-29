@@ -10,11 +10,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
+import { IpcError } from '$lib/utils/errors';
 
-const UNKNOWN_ISSUER =
-  'ERR_TLS_UNKNOWN_ISSUER: AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.';
-const MTLS_REQUIRED =
-  'ERR_MTLS_CERT_REQUIRED: The server requires a device certificate (mTLS is enforced). Enroll this device with a one-time enrollment token from your administrator.';
+const UNKNOWN_ISSUER = new IpcError(
+  'ERR_TLS_UNKNOWN_ISSUER: AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.',
+  'ERR_TLS_UNKNOWN_ISSUER',
+);
+const MTLS_REQUIRED = new IpcError(
+  'ERR_MTLS_CERT_REQUIRED: The server requires a device certificate (mTLS is enforced). Enroll this device with a one-time enrollment token from your administrator.',
+  'ERR_MTLS_CERT_REQUIRED',
+);
 
 const h = vi.hoisted(() => ({
   login: vi.fn(),
@@ -105,6 +110,23 @@ describe('Login — device certificate required (ERR_MTLS_CERT_REQUIRED)', () =>
     );
     expect(h.login).toHaveBeenCalledTimes(2);
     expect(container.textContent).not.toContain('ERR_MTLS_CERT_REQUIRED');
+  });
+
+  it('shows no hint for a text that only names the code', async () => {
+    h.login.mockRejectedValueOnce(
+      new IpcError('Login fehlgeschlagen: ERR_MTLS_CERT_REQUIRED: x', 'ERR_VALIDATION'),
+    );
+    const { container } = render(Login);
+
+    await submitLogin(container);
+
+    await waitFor(() =>
+      expect(container.querySelector('.login-error')?.textContent).toContain(
+        'Login fehlgeschlagen',
+      ),
+    );
+    expect(container.querySelector('[data-msg="mtls-required"]')).toBeNull();
+    expect(container.querySelector('[data-action="mtls-enroll"]')).toBeNull();
   });
 
   it('shows any other login failure as text, without the hint', async () => {

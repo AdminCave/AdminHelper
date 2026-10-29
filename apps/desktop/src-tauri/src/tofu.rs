@@ -1047,6 +1047,24 @@ mod tests {
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn changed_cert_refuses_with_the_tofu_code() {
+            let store = Arc::new(InMemoryPinStore::default());
+            store.store("pin-test", FP_A).unwrap();
+            let store: Arc<dyn PinStore> = store;
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(serve_once(listener, server_config(CERT_B, KEY_B)));
+            let client = pinning_client_for("pin-test", store);
+            let err = client
+                .get(format!("https://127.0.0.1:{port}/"))
+                .send()
+                .await
+                .expect_err("a changed certificate must be refused");
+            assert_eq!(AppError::from(err).code(), "ERR_TOFU_PIN_MISMATCH");
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
         async fn first_use_is_refused_when_the_pin_cannot_be_stored() {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();

@@ -26,6 +26,74 @@ export function withoutErrorCodes(msg: string): string {
   return msg.replace(ERROR_CODES, '');
 }
 
-/** Sentinel the session layer throws when the JWT expired (surfaced by refresh);
- * callers suppress the error toast when errMsg(err) matches it. */
-export const SESSION_EXPIRED = 'SESSION_EXPIRED';
+/** A command's refusal as the backend sends it ({code, message, status}, error.rs): the
+ * code is for the code that branches, the message for the user. */
+export class IpcError extends Error {
+  readonly code: string | undefined;
+  readonly status: number | undefined;
+
+  constructor(message: string, code?: string, status?: number) {
+    super(message);
+    this.name = 'IpcError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+// How much of a refusal of unknown form its message keeps.
+const MAX_RAW = 300;
+
+/** The Error a refused invoke() rejects with: the backend's object as IpcError, Tauri's own
+ * text refusals (invalid args, unknown command) as a plain Error, anything else as an
+ * Error whose message shows the value, never "[object Object]". */
+export function fromIpc(raw: unknown): Error {
+  if (raw instanceof Error) return raw;
+  if (typeof raw === 'string') return new Error(raw);
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    'code' in raw &&
+    'message' in raw &&
+    typeof raw.code === 'string' &&
+    typeof raw.message === 'string'
+  ) {
+    const status = 'status' in raw ? httpStatus(raw.status) : undefined;
+    return new IpcError(raw.message, raw.code, status);
+  }
+  return new Error(shown(raw));
+}
+
+function httpStatus(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
+    ? value
+    : undefined;
+}
+
+function shown(raw: unknown): string {
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(raw);
+  } catch {
+    // A cycle or a BigInt: the plain string form below.
+  }
+  text ??= String(raw);
+  return text.length > MAX_RAW ? `${text.slice(0, MAX_RAW - 1)}…` : text;
+}
+
+/** The backend's code of a refusal, or undefined for any other thrown value. */
+export function errCode(err: unknown): string | undefined {
+  return err instanceof IpcError ? err.code : undefined;
+}
+
+/** The HTTP status of a refusal that carries one, or undefined. */
+export function errStatus(err: unknown): number | undefined {
+  return err instanceof IpcError ? err.status : undefined;
+}
+
+/** The code of a refusal whose session is gone (AppError::SessionExpired, error.rs): the
+ * login screen follows, so callers report no error for it. */
+export const SESSION_EXPIRED = 'ERR_SESSION_EXPIRED';
+
+export function isSessionExpired(err: unknown): boolean {
+  return errCode(err) === SESSION_EXPIRED;
+}

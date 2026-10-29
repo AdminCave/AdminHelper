@@ -224,6 +224,16 @@ Content-Type: application/json
 
           <p>Errors follow Pydantic validation conventions. When a <code>422</code> echoes input with a lone surrogate, its body writes every character outside ASCII as a JSON escape (<code>\uXXXX</code>).</p>
 
+          <p>An error a client is meant to react to carries the field <code>code</code> next to <code>detail</code>: stable, of the form <code>ERR_&hellip;</code>. <code>detail</code> stays text and, for compatibility, starts with <code>&lt;code&gt;: </code>; the wording after it may change. Today the <code>403</code> of the certificate check carry a code: <code>ERR_CERT_REVOKED</code> (certificate revoked or not recorded), <code>ERR_CERT_USER_MISMATCH</code> (certificate of another user), <code>ERR_CERT_SERVER_MISMATCH</code> (agent certificate of another server). Clients branch on <code>code</code>, never on the text. Every other error has no <code>code</code>.</p>
+          <div class="code-header"><span>json</span></div>
+<pre><code>HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{
+  "detail": "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device identity and register the device again.",
+  "code": "ERR_CERT_REVOKED"
+}</code></pre>
+
           <h2>Rate Limits</h2>
           <ul>
             <li>Login: 5 failed attempts / 60&nbsp;s / IP (Redis with in-memory fallback).</li>
