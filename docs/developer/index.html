@@ -95,6 +95,10 @@ DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 cd apps/web && npm ci && npm run dev
 
 # Desktop-Client (startet Tauri-Dev mit Auto-Reload)
+# Beim ersten Build braucht das frpc-Sidecar (externalBin binaries/frpc) eine
+# Platzhalter-Datei, die CI/CD durch das echte frpc ersetzt (DEVELOPMENT.md)
+mkdir -p apps/desktop/src-tauri/binaries
+touch apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
 cd apps/desktop/ui && npm ci
 cd ../src-tauri && cargo tauri dev
 

@@ -41,8 +41,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien DE+EN, CHANGELOG
 Dedup-Key: ref:docs:troubleshooting.html:compose-hardening-doc-nits
 
-### T4 — Entwickler-Doku: frpc-Platzhalter, Bulk-ZIP-Rückfall, Anmelde-URL (R-0849, R-0850, R-0874)  [ ]
+### T4 — Entwickler-Doku: frpc-Platzhalter, Bulk-ZIP-Rückfall, Anmelde-URL (R-0849, R-0850, R-0874)  [x]
 Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @24784a68 2026-10-29T13:09:30+01:00
+Review: approve (.ah-out/review/docs-drift-bundle-2/T4.verdict.json)
 Änderung: `developer/index.html` Desktop-Block (um `:97-99`): die frpc-Platzhalter-Binary erwähnen (`DEVELOPMENT.md:856-860`, `tauri.conf.json` `externalBin`), mit Verweis statt Kopie. `server.html:111` (`generate_visitor_toml`): Bulk-ZIP-Rückfall nennen (Nutzer ohne Server bekommt eine `visitor.toml` mit allen sichtbaren STCP-Tunneln; Code in `modules/frp/generate_router.py` lesen). `desktop.html:247`: solange keine URL gespeichert ist, geht jede Anmeldung/Registrierung an die URL aus dem Fenster (Code lesen, `workspace`-Modul).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien DE+EN
@@ -80,3 +82,4 @@ Dedup-Key: ref:desktop:launcher.rs:stale-threading-comment
 - 2026-10-29 T3: `benutzer.html`/`users.html` (Docker-Netz nicht in `ALLOWED_IPS`) und das `mem_limit`-Override in `betrieb.html`/`operations.html` waren schon richtig, nichts geändert — Beleg: `benutzer.html` „nicht das Docker-Netz des Gateways“, Override-Beispiel mit `mem_limit: 8g`.
 - 2026-10-29 T3: „Compose v2.6+“ (`installation.html:84`) bleibt unverändert und **nicht verifiziert**: die v2.6.0-Release-Notes nennen keines der genutzten Felder (`sysctls`, `pids_limit`, `mem_limit`, `cap_drop`, `depends_on`-`condition`); welches Feature die Untergrenze trägt, ist offen. Melden an Kevin.
 - 2026-10-29 T3: VictoriaMetrics „60 % der Grenze nur bei Grenze < Host-RAM“: die Flag-Doku (`-memory.allowedPercent`, Default 60) sagt nur „system memory“; dass VictoriaMetrics die cgroup-Grenze erkennt, steht dort nicht — die Formulierung folgt der Roadmap-Zeile, in der Doku des Projekts nicht belegt.
+- 2026-10-29 T4: `desktop.html:247` (DE+EN) blieb unverändert: der Text deckt `storage::meta_with` (erste URL nur ohne Identität im Schlüsselbund) und `storage::keep_enrolled_url` (Registrierung gibt einer Workspace ohne URL die Ziel-URL, eine fremde URL ist ein Fehler) bereits ab. Bulk-ZIP-Rückfall präzisiert: gilt, wenn **kein** Nutzer einen Server hat (`gen_bulk_zip`), nicht je Nutzer ohne Server wie in R-0850.
