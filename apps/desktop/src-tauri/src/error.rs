@@ -175,6 +175,23 @@ fn detail_text(body: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// Codes only the client gives (a TLS failure, the gateway's no-certificate page): a
+/// server that sends one must not open the trust dialog or offer the pin reset.
+const CLIENT_CODES: [&str; 4] = [
+    "ERR_TLS_UNKNOWN_ISSUER",
+    "ERR_TOFU_PIN_MISMATCH",
+    "ERR_CA_PIN_MISMATCH",
+    "ERR_MTLS_CERT_REQUIRED",
+];
+
+/// The certificate codes a server before R-0664 writes only as prefix of `detail`
+/// (`identity.py`). Goes once no supported server answers without `code`.
+const PREFIX_ONLY_CODES: [&str; 3] = [
+    "ERR_CERT_REVOKED",
+    "ERR_CERT_USER_MISMATCH",
+    "ERR_CERT_SERVER_MISMATCH",
+];
+
 impl AppError {
     /// The refusal of a non-2xx answer with the raw `body`: the server's text is shown,
     /// never the raw body (an HTML page, a JSON object), and it is redacted, since an
@@ -184,7 +201,15 @@ impl AppError {
         let code = json
             .as_ref()
             .and_then(|value| value.get("code")?.as_str())
-            .filter(|code| is_error_code(code))
+            .filter(|code| is_error_code(code) && !CLIENT_CODES.contains(code))
+            .or_else(|| {
+                let detail = json.as_ref()?.get("detail")?.as_str()?;
+                PREFIX_ONLY_CODES.into_iter().find(|code| {
+                    detail
+                        .strip_prefix(code)
+                        .is_some_and(|rest| rest.starts_with(": "))
+                })
+            })
             .map(str::to_string);
         let mut text = json.as_ref().and_then(detail_text).unwrap_or_default();
         // The server keeps the code as prefix of the detail for clients that read the
@@ -449,6 +474,54 @@ mod tests {
                 "This device certificate is no longer valid.".into()
             )
         );
+    }
+
+    #[test]
+    fn http_takes_the_certificate_codes_of_an_older_server_from_the_text() {
+        for code in [
+            "ERR_CERT_REVOKED",
+            "ERR_CERT_USER_MISMATCH",
+            "ERR_CERT_SERVER_MISMATCH",
+        ] {
+            let body = serde_json::json!({ "detail": format!("{code}: the text") }).to_string();
+            assert_eq!(http_of(403, &body), (403, code.into(), "the text".into()));
+        }
+        for detail in [
+            "ERR_TOFU_PIN_MISMATCH: x",
+            "x ERR_CERT_REVOKED: y",
+            "ERR_CERT_REVOKED",
+            "ERR_CERT_REVOKEDx: y",
+        ] {
+            let body = serde_json::json!({ "detail": detail }).to_string();
+            assert_eq!(
+                http_of(403, &body),
+                (403, "ERR_HTTP".into(), detail.into()),
+                "{detail}"
+            );
+        }
+        let body = serde_json::json!({
+            "detail": "ERR_CERT_REVOKED: the text",
+            "code": "ERR_CERT_USER_MISMATCH"
+        })
+        .to_string();
+        assert_eq!(http_of(403, &body).1, "ERR_CERT_USER_MISMATCH");
+    }
+
+    #[test]
+    fn http_takes_no_code_only_the_client_gives() {
+        for code in [
+            "ERR_TLS_UNKNOWN_ISSUER",
+            "ERR_TOFU_PIN_MISMATCH",
+            "ERR_CA_PIN_MISMATCH",
+            "ERR_MTLS_CERT_REQUIRED",
+        ] {
+            let body = serde_json::json!({ "detail": "x", "code": code }).to_string();
+            assert_eq!(
+                http_of(403, &body),
+                (403, "ERR_HTTP".into(), "x".into()),
+                "{code}"
+            );
+        }
     }
 
     #[test]

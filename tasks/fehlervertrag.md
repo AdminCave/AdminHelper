@@ -141,8 +141,10 @@ Orakel: contract — nur das Feld `code` entscheidet
 Dedup-Key: ref:desktop:error.rs:string-errors-at-ipc
 HEAD: 237b450a
 
-### T9 — Desktop-Rust: Rückfall für Server ohne `code` (R-0664)  [ ]
+### T9 — Desktop-Rust: Rückfall für Server ohne `code` (R-0664)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/error.rs, apps/desktop/src-tauri/src/enrollment.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @7ba4c1d5 2026-10-29T13:50:16+01:00
+Review: approve (.ah-out/review/fehlervertrag/T9.verdict.json)
 Änderung (Kevin 2026-10-22: ja, befristet): In `AppError::http` (T6): trägt der Body kein gültiges `code` und beginnt `detail` (String) genau mit `ERR_CERT_REVOKED: `, `ERR_CERT_USER_MISMATCH: ` oder `ERR_CERT_SERVER_MISMATCH: `, wird dieser Code der `code` und der Rest der Text. Nur am Anfang und nur diese drei (die schreibt ein Server vor T2, `apps/server/app/core/identity.py:108-128`). Ein Kommentar nennt das Warum und wann der Rückfall geht (kein unterstützter Server ohne `code` mehr). Tests in `error.rs`: die drei Präfixe ohne `code` → Code und Text ohne Präfix; `ERR_TOFU_PIN_MISMATCH: x` ohne `code` → kein Code; `x ERR_CERT_REVOKED: y` → kein Code; ein gültiges `code` im Body gewinnt vor dem Präfix. `enrollment.rs:1115-1127`: 403 `{"detail":"ERR_CERT_REVOKED: no longer valid"}` ohne `code` → wieder wahr. Zuerst rot: die Präfix-Fälle nach T8.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- error:: -- enrollment::
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Absatz aus T5/T6: ein Satz zum Übergang für Server ohne `code`) · CHANGELOG.md (Changed, ein Satz)
@@ -198,3 +200,4 @@ HEAD: 237b450a
 ## Entscheidungen
 
 - 2026-10-29 T6: `Display` von `AppError::Http` schreibt ohne lesbaren Text nur `HTTP <status>`, sonst `HTTP <status>: <message>` — sonst stünde in Logs `HTTP 502: HTTP 502`; die IPC trägt die message ohne Präfix (Test `http_names_its_status_once`, T7)
+- 2026-10-29 T9: `AppError::http` nimmt die Codes, die nur der Client vergibt (`ERR_TLS_UNKNOWN_ISSUER`, `ERR_TOFU_PIN_MISMATCH`, `ERR_CA_PIN_MISMATCH`, `ERR_MTLS_CERT_REQUIRED`), nicht vom Server an — sonst könnte ein Server ab T10 per `code` den Vertrauensdialog oder den Pin-Reset öffnen (security-Hinweis aus T7)

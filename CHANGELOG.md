@@ -71,7 +71,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Desktop: Anmeldung zeigt den Text des Servers:** Lehnt der Server die Anmeldung ab, zeigt der Desktop
   dessen Text statt `Login fehlgeschlagen (<Status>): <roher Body>`; Status und Code reichen strukturiert bis
-  ins UI.
+  ins UI. Gegen einen Server ohne Feld `code` gelten die Zertifikatscodes am Anfang von `detail` weiter.
 - **Web: Fehlertext ohne Maschinencode:** Schickt der Server zu einem Fehler ein `code` (`ERR_...`), zeigt das
   Web den Text ohne das Praefix `ERR_...:` und haelt den Code in `ApiError.code` fest. Doku: Web-UI fuer
   Entwickler (DE+EN).

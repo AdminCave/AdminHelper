@@ -1235,7 +1235,8 @@ mod tests {
             403,
             r#"{"detail":"server ERR_CERT_REVOKED","code":"ERR_CERT_USER_MISMATCH"}"#
         ));
-        assert!(!revoked_by(
+        // A server without `code` (before R-0664) names it as prefix of `detail`.
+        assert!(revoked_by(
             403,
             r#"{"detail":"ERR_CERT_REVOKED: no longer valid"}"#
         ));
