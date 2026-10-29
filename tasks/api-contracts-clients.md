@@ -129,8 +129,10 @@ Metrik: `grep -c ' as Monitor[A-Za-z]*Details'` (GNU grep) über SecZfs, SecSmar
 Dedup-Key: ref:desktop:types.ts:no-contract-test
 HEAD: b25c65a6
 
-### T25 — desktop-ui: SecLive, SecServices, SecDocker ohne Cast (R-0687)  [ ]
+### T25 — desktop-ui: SecLive, SecServices, SecDocker ohne Cast (R-0687)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts, apps/desktop/ui/src/components/monitoring/section/SecDocker.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7778b35d 2026-10-29T23:15:42+01:00
+Review: approve (.ah-out/review/api-contracts-clients/T25.verdict.json)
 Änderung: Die Casts `SecLive.svelte:79`, `:118`, `:129`, `SecServices.svelte:77`, `SecDocker.svelte:89` werden Aufrufe der Narrower aus T23. Je vorhandene Testdatei ein Fall mit falschem Feldtyp in `details` (leere bzw. Rückfall-Darstellung statt Wurf); die bestehenden Fälle bleiben unverändert grün. Suite vor und nach dem Diff grün, beide Summary-Zeilen in den Commit-Body.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecLive.test.ts src/components/monitoring/section/SecServices.test.ts src/components/monitoring/section/SecDocker.test.ts
 Doku: keine
