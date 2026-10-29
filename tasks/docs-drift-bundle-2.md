@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Drift, zweites Bündel — Task-Ledger
-Status: bereit · Branch: feature/docs-drift-bundle-2 · Review: pro Task
+Status: erledigt · Branch: feature/docs-drift-bundle-2 · Review: pro Task
 Spec: docs/features/docs-drift-bundle-2.md (Roadmap R-0829, R-0841, R-0848, R-0849, R-0850, R-0853, R-0863, R-0866, R-0874, R-0898, R-0904)
 Heavy: linux-full — `docker-compose.yml` ändert nur Kommentare; läuft im Sammellauf über `main`. Kein scenario, kein windows: kein Datenpfad, kein plattformspezifischer Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, Doku im selben Commit, SPDX bei neuen Dateien). Task-Prüfer: reviewer mit `model: "sonnet"` (Kevin 2026-10-29); Branch-Abschlussprüfung Opus.
