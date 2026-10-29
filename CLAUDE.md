@@ -154,8 +154,9 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
 ## 10. Konventionen
 - **Conventional Commits** (`feat: fix: chore: refactor: docs: test: perf: tune:`), englisch, ein Commit je logischem
   Schritt; Release-Tags `vX.Y.Z`. Die Ledger-Datei `tasks/<slug>.md` wird im Task-Commit mitgestaged.
-- **Toolchains nur nach `source .devenv.sh`** (gitignored; setzt PATH für `go`/`ruff` und `AH_TEST_DB`). Fehlt es, sind
-  `go` und `ruff` unsichtbar — dann ist die Umgebung falsch, nicht der Code.
+- **Toolchains nur nach `source .devenv.sh`** (gitignored; setzt PATH für `go` und `AH_TEST_DB`; `ruff`, `go` und
+  `reuse` liegen zusätzlich als Links in `~/.local/bin`, DEVELOPMENT.md). Fehlt eins davon, ist die Umgebung falsch,
+  nicht der Code.
 - **Formatierung und Lint sind Gates** (Befehle in der Tabelle §1; TypeScript strict ohne `any`, ESLint + Prettier;
   `ruff.toml` im Root).
 - **SPDX-Header in jeder neuen Quelldatei** (`.py .go .rs .ts .svelte .js .mjs .sh`): `reuse annotate --copyright
