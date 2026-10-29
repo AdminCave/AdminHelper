@@ -73,6 +73,13 @@ esac
 exec "$AH_TEST_REAL_GREP" "$@"
 EOF
 chmod +x "$BIN/grep"
+# getent stub: STUB_PASSWD names a passwd file to answer from; unset, no account exists.
+cat > "$BIN/getent" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = passwd ] && [ -n "${STUB_PASSWD:-}" ] || exit 2
+"$AH_TEST_REAL_GREP" -E "^[^:]*:[^:]*:$2:" "$STUB_PASSWD" || exit 2
+EOF
+chmod +x "$BIN/getent"
 export PATH="$BIN:$PATH" STUB_ADMIN_STDIN="$WORK/admin.stdin"
 
 # install.sh copy pinned to the test key, used as the runner.
@@ -337,6 +344,39 @@ err=$(cat "$WORK/err8g")
 { grep -q 'process list' <<<"$err" && grep -q -- '--admin-password-file' <<<"$err" && ! grep -q zz9 <<<"$err$out"; } \
   && ok "--admin-password warns on stderr and points to --admin-password-file, no value named" \
   || bad "--admin-password warning missing or names the value: $(tr '\n' ' ' <<<"$err")"
+
+# ── 9. the install directory is 0750, and a host account with a container UID is named ─
+INST="$WORK/inst9"; mkdir -p "$INST/scripts"; chmod 0755 "$INST"
+cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+cp "$SRC"/scripts/*.sh "$INST/scripts/"
+printf '%s\n' 'root:x:0:0::/root:/bin/sh' 'app2:x:10001:10001::/home/app2:/bin/sh' > "$WORK/passwd9"
+out=$(cd "$INST" && STUB_PASSWD="$WORK/passwd9" bash "$INSTALL" --domain t9.example \
+  --admin-password sikrit123 --yes 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a host account with a container UID does not stop the install" || bad "install exit $rc"
+[ "$(stat -c %a "$INST")" = 750 ] && ok "install directory 0750 afterwards" \
+  || bad "install directory mode $(stat -c %a "$INST")"
+grep -q "WARNING: host account 'app2' has UID 10001" <<<"$out" \
+  && ok "the account with UID 10001 is named" || bad "no warning for UID 10001: $(grep -i warn <<<"$out")"
+printf '%s\n' 'root:x:0:0::/root:/bin/sh' > "$WORK/passwd9b"
+out=$(cd "$INST" && STUB_PASSWD="$WORK/passwd9b" bash "$INSTALL" --domain t9.example \
+  --admin-password sikrit123 --yes 2>&1)
+! grep -q 'WARNING: host account' <<<"$out" && ok "no container UID on the host: no warning" \
+  || bad "warned without a matching account: $(grep 'WARNING: host account' <<<"$out")"
+# without getent the check is skipped: a PATH that carries every command but getent
+NOGETENT="$WORK/nogetent"; mkdir -p "$NOGETENT"
+IFS=: read -ra path_dirs <<<"$PATH"
+for d in "${path_dirs[@]}"; do
+  for f in "$d"/*; do
+    n=${f##*/}
+    [ "$n" = getent ] || [ -e "$NOGETENT/$n" ] || [ ! -x "$f" ] || ln -s "$f" "$NOGETENT/$n"
+  done
+done
+chmod 0755 "$INST"
+out=$(cd "$INST" && PATH="$NOGETENT" STUB_PASSWD="$WORK/passwd9" bash "$INSTALL" --domain t9.example \
+  --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q 'WARNING: host account' <<<"$out" && [ "$(stat -c %a "$INST")" = 750 ]; } \
+  && ok "without getent: no warning, exit 0, directory still 0750" \
+  || bad "without getent: exit $rc, mode $(stat -c %a "$INST"), $(grep -i warn <<<"$out")"
 
 echo
 echo "──────────────────────────────────────────"

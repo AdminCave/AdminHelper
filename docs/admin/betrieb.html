@@ -82,7 +82,7 @@
               <tr><td><code>victoria-data</code> (Docker-Volume)</td><td>VictoriaMetrics-Speicher – Retention 90&nbsp;Tage (eigenes Volume, nicht Teil dieses Datenverzeichnisses).</td></tr>
             </tbody>
           </table>
-          <p><code>server</code>, <code>scheduler</code>, <code>ca-issuer</code> und <code>monitoring</code> laufen unter dem Nutzer <code>app</code> (UID 10001) aus Programmen, die dieser Nutzer nur ausführen, nicht lesen kann. Die UID 10001 sollte auf dem Host keinem anderen Konto oder Dienst gehören.</p>
+          <p><code>server</code>, <code>scheduler</code>, <code>ca-issuer</code> und <code>monitoring</code> laufen unter dem Nutzer <code>app</code> (UID 10001) aus Programmen, die dieser Nutzer nur ausführen, nicht lesen kann. Die UID 10001 sollte auf dem Host keinem anderen Konto oder Dienst gehören, ebenso die UID 70 (Postgres im Container). <code>install.sh</code> und <code>update.sh</code> nennen ein solches Konto mit einer Warnung (sie brechen nicht ab) und setzen das Installationsverzeichnis auf <code>0750</code>; der Eigentümer bleibt, wer installiert.</p>
 
           <h2>Backup</h2>
           <p><code>scripts/backup.sh</code> sichert den kompletten Stand inklusive des <strong>CA-Kronjuwels</strong> in <em>ein</em> Tarball — bei laufendem Stack:</p>

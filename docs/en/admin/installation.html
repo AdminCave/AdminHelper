@@ -77,6 +77,7 @@
 # (password on the first line; keep the file readable only by you, e.g. chmod 600).
 # --permissive leaves the stack permissive (no enforced mTLS).
 # --reset wipes volumes from a failed attempt (docker compose down -v).</code></pre>
+          <p>The script sets the install directory to <code>0750</code> (the owner stays whoever installs), so that other accounts on the host cannot reach the data of the services; a host account with UID 10001 or 70, which the containers use, is named in a warning (see <a href="./operations.html">Operations</a>).</p>
           <p>The script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client: create a server workspace with the server URL in the picker and open it, then <em>"Enroll this device with a token"</em> — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button. Updates: <code>./scripts/update.sh</code> inside the created <code>adminhelper/</code> directory.</p>
           <p>Why the token? Under enforced mTLS the data plane <code>:443</code> (including login) rejects certless clients at the TLS handshake. The very first admin therefore cannot fetch a cert via login; the script mints the token out-of-band over the internal network. The admin onboards follow-up users afterwards (<a href="../developer/index.html">ADR 0003</a>).</p>
 
