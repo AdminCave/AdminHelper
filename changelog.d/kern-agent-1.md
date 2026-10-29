@@ -5,6 +5,8 @@
   Teil der Konfiguration unveraendert ist; sonst aendert der Abgleich wie bisher nichts.
 - **Agent: `--ca-fp` auf das Server-Zertifikat selbst:** Ist der Fingerabdruck der des vorgelegten Server-Zertifikats
   statt einer CA, prueft der Agent dessen Gueltigkeit und Verwendungszweck wie bei einer Kette zur CA.
+- **Agent: Schluessel der Server-Konfiguration fuer frpc:** Der Agent nimmt in der frpc-Konfiguration vom Server
+  nur Schluessel mit hoechstens 32 Segmenten an; frp kennt keine tieferen Felder.
 
 ### Fixed
 

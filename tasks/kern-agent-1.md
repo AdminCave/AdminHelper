@@ -32,8 +32,10 @@ Review: approve (.ah-out/review/kern-agent-1/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/httpclient/...
 Doku: changelog.d/kern-agent-1.md
 
-### T3 — Schlüssel der Server-TOML begrenzt prüfen (R-0929)  [ ]
+### T3 — Schlüssel der Server-TOML begrenzt prüfen (R-0929)  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/servertoml.go, apps/agent/internal/frpc/servertoml_test.go, changelog.d/kern-agent-1.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ee15c176 2026-10-29T19:36:48+01:00
+Review: approve (.ah-out/review/kern-agent-1/T3.verdict.json)
 Änderung: `keyTable.add` (`internal/frpc/servertoml.go:130-146`) bzw. die Zeilenprüfung davor weist Schlüssel ab, die mehr Segmente tragen, als der Server je schreibt; Meldung über `refuse`. Test zuerst rot: Schlüssel mit sehr vielen Segmenten → abgewiesen, ohne alle Präfixe zu bauen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/...
 Doku: changelog.d/kern-agent-1.md
@@ -61,3 +63,4 @@ Doku: changelog.d/kern-agent-1.md
 
 ## Entscheidungen
 - T1: `TestSyncFrpcSystemctlWithoutAnswerChangesNothing` (R-0638) setzt jetzt `ownsAdminPort=false`: ohne systemd-Antwort aendert der Abgleich weiter nichts, solange frpc nicht auf seinem Admin-Port lauscht; lauscht er, laedt er (R-0884). Alle Asserts des Tests bleiben. Der Vorab-Check nutzt `adminAPIListens` (admin.go), nicht `loadAdminAPI`, weil das admin.conf neu schreiben kann.
+- T3: Grenze 32 Segmente statt eines Tries: der Server begrenzt die Segmentzahl nicht (schemas.py `_TOML_BARE_KEY`), frpc kennt aber keine Felder tiefer als etwa drei Ebenen und weist tiefere Schluessel ohnehin ab; die Praefixe sind Teilstrings von `path` statt `strings.Join`, so bleibt die Arbeit je Schluessel linear in seiner Laenge. Die Meldung nennt den Schluessel nicht (Laenge).
