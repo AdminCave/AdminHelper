@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: blockierende Keyring- und Sperr-Zugriffe, Frist beim Verbindungsaufbau, Tunnel-Ports, Ansible-Temp-Dateien — Task-Ledger
-Status: geplant · Branch: feature/desktop-blocking · Review: pro Task
+Status: aktiv · Branch: feature/desktop-blocking · Review: pro Task
 Spec: docs/features/desktop-blocking.md (Roadmap R-0643, R-0644, R-0642, R-0569, R-0572, R-0574)
 Heavy: linux-full + scenario --agents 0 --desktop --enforce + windows — T5 und T8 ändern, wie jede Desktop-Journey Einstellungen, Passwort-Status und Geräte-Identität liest (GUI-E2E im Sammellauf, `run.sh e2e`, u. a. `desktop_e2e_connect.sh`, `desktop_e2e_tunnel.sh`, `desktop_e2e_workspaces.sh`); T8 und T9 ändern Desktop-Enrollment und TOFU (CLAUDE.md §5), die nur die Desktop-Journeys gegen einen entfernten Server unter `MTLS_ENFORCE` über Hosts hinweg zeigen (`multibox.sh --desktop --enforce`, S3; ask-first, Spec offene Frage 1); `windows` ist der CI-Job `rust-windows` (`cargo test`, kein Windows im Pool): T7 ändert den mstsc-Start (`rdp.rs`, `cfg(windows)`), T5 und T8 laufen dort mit allen Tests. Kein `--tunnel`: der FRP-Datenpfad bleibt, `frpc.rs` ändert sich nicht.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
