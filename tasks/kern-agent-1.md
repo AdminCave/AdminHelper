@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-agent-1 · Review: pro Task
 Spec: docs/features/kern-agent-1.md (Roadmap R-0884, R-0885, R-0929, R-0878, R-0879, R-0881, R-0951)
 Heavy: linux-full — apps/agent: frpc-Abgleich, TLS-Pin, Monitor-Befehle und run --once laufen im Sammellauf (go agent, agent_monitoring, repo_build)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
