@@ -45,6 +45,9 @@ def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
         raise HTTPException(400, f"Invalid channel. Allowed: {', '.join(sorted(VALID_CHANNELS))}")
     if data.match_severity and data.match_severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Invalid severity")
+    # GET shows a stored password as the mask; a new rule has none it could stand for.
+    if data.channel_config.get("smtp_password") == "***":
+        raise HTTPException(422, "smtp_password must be the password itself, not the mask '***'")
 
     rule = MonitorAlertRule(
         id=str(uuid.uuid4()),

@@ -172,6 +172,18 @@ def test_apply_creates_checks_states_and_alerts(db):
     assert rule.match_server_id == "srv-1"
 
 
+def test_apply_writes_no_control_characters_from_the_assignment(db):
+    # hostname and server_name reach the check name past its schema validator, so
+    # C0 and DEL in them become spaces, as in every other substituted field.
+    tpl = _template(db, [PING_DEF])
+
+    apply_template(db, tpl, "srv-1", "web01\x7f.example", "Web\n01\x1b")
+
+    check = db.query(MonitorCheck).one()
+    assert check.name == "Ping Web 01 "
+    assert json.loads(check.config)["host"] == "web01 .example"
+
+
 def test_apply_passes_check_type_so_push_only_is_skippable(db):
     """2.34: template_sync must pass check_type to add_check; without it, add_check
     can't skip push-only checks (agent_resources, ...) and each one leaves a ghost
