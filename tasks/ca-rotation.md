@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: Intermediates rotieren — Task-Ledger
-Status: aktiv · Branch: feature/ca-rotation · Review: pro Task
+Status: bereit · Branch: feature/ca-rotation · Review: pro Task
 Spec: docs/features/ca-rotation.md (Roadmap R-0667; hängt ab von R-0666, feature/ca-issuer-lifetime)
 Heavy: linux-full + scenario --agents 1 --tunnel — `apps/ca-issuer` (PKI: neue Intermediates, Trust-Bundles alt+neu, Re-Mint der Server-Leaves, `/renew` über retired Intermediates), `apps/gateway/nginx.conf` und der Entrypoint des ca-issuer laufen im Sammellauf über `main` (`integration-stack` mit dem Rotationsschritt aus T9, `backup-restore`, `upgrade-path` vom letzten Release); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/ca-rotation`. `scenario` vor dem Merge (ask-first): mit T7 präsentiert das Gateway auf `:443`, `:8444` und `:8445` eine Kette mit Root, die ein Agent auf einem zweiten Host über `--ca-fp`, mTLS, das Repo und den frpc-Tunnel prüft. Kein `windows`: die Agent-Änderung (T14) ist eine plattformunabhängige x509-Prüfung, die `agent-windows` der PR-CI mit `cafp_test.go` fährt, die Desktop-Änderung (T8) ist plattformunabhängige PEM-Auswahl ohne Keyring- oder Pfad-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -196,8 +196,10 @@ Doku: CHANGELOG.md (Added-Eintrag aus T5, `CHANGELOG.md:37`, umlautfrei: Exit 1 
 Abhängt von: T11, T13
 HEAD: 280b3f3a
 
-### T16 — CHANGELOG-Einträge als Fragment `changelog.d/ca-rotation.md`  [ ]
+### T16 — CHANGELOG-Einträge als Fragment `changelog.d/ca-rotation.md`  [x]
 Komponente: scripts · Dateien: CHANGELOG.md, changelog.d/ca-rotation.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8f85635a 2026-10-29T16:39:46+01:00
+Review: approve (.ah-out/review/ca-rotation/T16.verdict.json)
 Änderung: Seit dem Basis-Merge gilt `changelog.d/` (README dort): die drei neuen Einträge des Branch („CA: Ablaufdaten anzeigen …“ unter Added, „Desktop, Provisionierungs-Tab: `--ca-fp` …“ und „Gateway: sendet die Root …“ unter Changed) wandern wortgleich aus `CHANGELOG.md` nach `changelog.d/ca-rotation.md`. Die Korrektur des bestehenden Unreleased-Eintrags zum HTTP 503 (Text „is expired“ / „is not yet valid“) bleibt in `CHANGELOG.md`: ein Fragment kann einen vorhandenen Eintrag nicht ändern.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task
