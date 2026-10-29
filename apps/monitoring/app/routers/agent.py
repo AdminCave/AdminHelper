@@ -37,9 +37,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Push checkers whose evaluate() takes the check's previous _details as a third argument.
-_PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process", "docker_health"})
-
 
 @router.post("/agent/{server_id}/report")
 def agent_report(
@@ -203,21 +200,16 @@ def agent_report(
                     .first()
                 )
 
-                if check.check_type in _PREV_DETAILS_TYPES:
-                    try:
-                        prev_details = (
-                            json.loads(state.details) if state and state.details else None
-                        )
-                    except (json.JSONDecodeError, TypeError):
-                        prev_details = None
-                    # Valid-but-non-dict JSON ("[]") must degrade the same way —
-                    # evaluate expects a mapping and the loop-except would otherwise
-                    # freeze this check on every push.
-                    if not isinstance(prev_details, dict):
-                        prev_details = None
-                    result_status, message, metrics = checker.evaluate(config, report, prev_details)
-                else:
-                    result_status, message, metrics = checker.evaluate(config, report)
+                try:
+                    prev_details = json.loads(state.details) if state and state.details else None
+                except (json.JSONDecodeError, TypeError):
+                    prev_details = None
+                # Valid-but-non-dict JSON ("[]") must degrade the same way —
+                # evaluate expects a mapping and the loop-except would otherwise
+                # freeze this check on every push.
+                if not isinstance(prev_details, dict):
+                    prev_details = None
+                result_status, message, metrics = checker.evaluate(config, report, prev_details)
 
                 # Extract structured details
                 details = metrics.pop("_details", None) if metrics else None

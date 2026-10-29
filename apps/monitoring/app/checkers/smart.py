@@ -84,7 +84,9 @@ class SmartHealthChecker:
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         return "unknown", "Waiting for agent data", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
         smart = capped_objects(report.get("smart"))
         if not smart:
             # No disk — not an error; smart_absent says why.
