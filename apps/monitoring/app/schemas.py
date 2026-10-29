@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
@@ -290,3 +290,203 @@ VALID_CHANNELS = {"webhook", "email"}
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"}
 
 VALID_SEVERITIES = {"info", "warning", "critical"}
+
+
+# Response models (R-0685): key for key what the to_dict methods and dict literals of the
+# routes hand out. A stored JSON column (config, details) passes through as Any: older rows
+# hold shapes no schema of today describes, and one of them must not turn a listing into a 500.
+
+
+class MonitorStateOut(BaseModel):
+    checkId: str
+    status: str
+    since: str | None
+    lastCheck: str | None
+    failCount: int | None
+    message: str | None
+    details: Any
+    notifiedStatus: str | None
+
+
+class MonitorCheckOut(BaseModel):
+    id: str
+    serverId: str | None
+    name: str
+    description: str | None
+    checkType: str
+    config: Any
+    enabled: bool | None
+    interval: str
+    severity: str
+    consecutiveFails: int | None
+    consecutiveOks: int
+    templateId: str | None
+    templateDefId: str | None
+    overriddenFields: list[str]
+    createdAt: str | None
+    updatedAt: str | None
+    # Only with a state row; the routes drop it unset (response_model_exclude_unset).
+    state: MonitorStateOut | None = None
+
+
+class StatusSummaryOut(BaseModel):
+    total: int
+    ok: int
+    warning: int
+    critical: int
+    unknown: int
+    pending: int
+
+
+class CheckMetricsOut(BaseModel):
+    checkId: str
+    checkType: str
+    period: str
+    # VictoriaMetrics query_range series, passed through as they come.
+    data: Any
+    statusHistory: Any
+
+
+class AlertRuleOut(BaseModel):
+    id: str
+    name: str
+    matchSeverity: str | None
+    matchServerId: str | None
+    channel: str
+    # masked_channel_config hands a stored non-dict back as it is.
+    channelConfig: Any
+    cooldownMinutes: int | None
+    enabled: bool | None
+    templateId: str | None
+    createdAt: str | None
+    updatedAt: str | None
+
+
+class AlertLogOut(BaseModel):
+    id: int
+    alertRuleId: str
+    checkId: str
+    oldStatus: str
+    newStatus: str
+    sentAt: str
+    success: bool
+    error: str | None
+
+
+class MaintenanceOut(BaseModel):
+    id: str
+    serverId: str | None
+    note: str | None
+    kind: str
+    startsAt: str | None
+    endsAt: str | None
+    weekdays: list[Any]
+    startTime: str | None
+    durationMinutes: int | None
+    timezone: str
+    enabled: bool | None
+    createdAt: str | None
+
+
+class AgentKeyOut(BaseModel):
+    """apiKey is the raw key on creation, else the masked hash tail."""
+
+    id: str
+    serverId: str
+    apiKey: str
+    createdAt: str | None
+
+
+class AgentKeyDeletedOut(BaseModel):
+    deleted: bool
+
+
+class ServerCleanupOut(BaseModel):
+    checksDeleted: int
+    alertsDeleted: int
+
+
+class TemplateAssignmentOut(BaseModel):
+    id: str
+    templateId: str
+    serverId: str
+    serverHostname: str
+    serverName: str
+    source: str
+
+
+class TagAssignmentOut(BaseModel):
+    id: str
+    templateId: str
+    tag: str
+
+
+class ServerAssignmentOut(TemplateAssignmentOut):
+    """An assignment of a server; templateName None when its template is gone."""
+
+    templateName: str | None
+    removedChecks: int
+
+
+class TemplateSuggestionOut(BaseModel):
+    slug: str
+    templateId: str
+    templateName: str
+    reason: str
+
+
+class ApplyResultOut(BaseModel):
+    """The IDs of the checks and alert rules an assignment created."""
+
+    checksCreated: list[str]
+    alertsCreated: list[str]
+
+
+class RestoreOut(BaseModel):
+    restored: int
+
+
+class TagSyncOut(BaseModel):
+    created: int
+    removed: int
+    refreshed: int
+
+
+class SyncResultOut(BaseModel):
+    created: int
+    updated: int
+    deleted: int
+    servers: int
+
+
+class TemplateOut(BaseModel):
+    """assignments and tagAssignments come with the list and a single template,
+    syncResult with a change that rolled the template out."""
+
+    id: str
+    name: str
+    description: str | None
+    builtinSlug: str | None
+    builtinVersion: int | None
+    builtinEdited: bool
+    builtinUpdateAvailable: bool
+    # Their keys vary per definition and check type.
+    checkDefinitions: list[dict[str, Any]]
+    alertDefinitions: list[dict[str, Any]]
+    createdAt: str | None
+    updatedAt: str | None
+    assignments: list[TemplateAssignmentOut] | None = None
+    tagAssignments: list[TagAssignmentOut] | None = None
+    syncResult: SyncResultOut | None = None
+
+
+class TemplateDefinitionsOut(BaseModel):
+    checkDefinitions: list[dict[str, Any]]
+    alertDefinitions: list[dict[str, Any]]
+
+
+class BuiltinUpdateOut(BaseModel):
+    currentVersion: int | None
+    shippedVersion: int
+    current: TemplateDefinitionsOut
+    shipped: TemplateDefinitionsOut
