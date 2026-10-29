@@ -337,12 +337,12 @@ The **monitoring service** runs as a separate container alongside the server and
 
 ### Installing the agent
 
-The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows. The recommended rollout is the one-liner the desktop client generates in *Infrastructure → Server → Provisioning* — it sets up the server's signed package repo (GPG-fingerprint-checked), installs the agent and provisions it with a **verified first contact** (`--ca-fp`):
+The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows. The recommended rollout is the one-liner the desktop client generates in *Infrastructure → Server → Provisioning* — it sets up the server's signed package repo (GPG-fingerprint-checked), installs the agent and provisions it with a **verified first contact** (`--ca-fp`). The one-time token is not in the one-liner: the tab shows it beside it, and the script asks for it with the input hidden (unattended rollouts pass `--token`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \
   | sudo bash -s -- \
-  --server https://<server> --token <PROVISION-TOKEN> \
+  --server https://<server> \
   --server-id <SERVER-ID> --ca-fp <SHA256-FROM-THE-TAB>
 ```
 
