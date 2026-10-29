@@ -103,7 +103,9 @@ def test_headers_from_the_gateway_count(dns):
     ident = get_client_identity(_req(GATEWAY, _gateway_headers(cn="user-01")))
     assert ident.verified is True
     assert (ident.cn, ident.scope) == ("user-01", SCOPE_ACCESS)
-    assert dns.asked == ["gateway"]  # the cached address answers, no lookup out of turn
+    # As an absolute name, so no search domain is tried; the cached address answers, no lookup
+    # out of turn.
+    assert dns.asked == ["gateway."]
 
 
 def test_the_first_request_before_any_lookup_counts(dns):
@@ -331,3 +333,28 @@ def test_the_binding_to_the_user_sees_the_answer_of_the_scope_guard(
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"] == identity.CERT_USER_MISMATCH
     assert flipping.answers == [True]
+
+
+def test_the_app_starts_the_name_lookups_before_the_first_request(test_client, monkeypatch):
+    import httpx
+
+    import app.core.events as events
+    import app.main as m
+    from app.modules.monitoring_proxy import router as proxy
+    from app.modules.notifications import stream_hub
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(m, "_run_startup_tasks", lambda: None)
+    monkeypatch.setattr(events, "fire_event", lambda *a, **k: None)
+    monkeypatch.setattr(stream_hub, "start", _noop)
+    monkeypatch.setattr(stream_hub, "stop", _noop)
+    # The shutdown closes the proxy client; monkeypatch puts the one of the other tests back.
+    monkeypatch.setattr(proxy, "_client", httpx.AsyncClient(timeout=30))
+    started = []
+    monkeypatch.setattr(mw._NameResolver, "_start", lambda self: started.append(self))
+    monkeypatch.setattr(mw, "_PROXY_NAMES", mw._NameResolver(["proxy"], _Dns(OTHER)))
+    with test_client:
+        pass
+    assert started == [mw._PROXY_NAMES, identity._GATEWAY]

@@ -24,13 +24,23 @@ _HOST_LABEL = re.compile(r"[A-Za-z0-9-]{1,63}")
 def _is_host_name(entry: str) -> bool:
     # An all-numeric last label makes no name (RFC 3696 section 2) but a mistyped
     # address, and getaddrinfo would read some of those as one ("2130706433" is
-    # 127.0.0.1): such an entry stays invalid, as before names were accepted.
+    # 127.0.0.1): such an entry stays invalid, as before names were accepted. So
+    # does any other entry getaddrinfo reads as an address ("0x7f000001").
     labels = entry.split(".")
     return (
         len(entry) <= 253
         and all(_HOST_LABEL.fullmatch(label) for label in labels)
         and not labels[-1].isdigit()
+        and not _reads_as_address(entry)
     )
+
+
+def _reads_as_address(entry: str) -> bool:
+    try:
+        socket.getaddrinfo(entry, None, flags=socket.AI_NUMERICHOST)
+    except OSError:
+        return False
+    return True
 
 
 def _parse_networks(raw: str, var_name: str, names: list[str] | None = None) -> list:
@@ -70,9 +80,9 @@ class _NameResolver:
     """The addresses of a list of host names: those in TRUSTED_PROXIES, and the
     gateway whose requests may carry a client certificate (app.core.identity).
 
-    A read never waits on DNS: a daemon thread, started on the first read, looks
-    the names up every _NAME_TTL seconds (_NAME_RETRY after a failure) and
-    publishes the result, and a read returns the last one. Until the first
+    A read never waits on DNS: a daemon thread, started with the app (start) or on
+    the first read, looks the names up every _NAME_TTL seconds (_NAME_RETRY after
+    a failure) and publishes the result, and a read returns the last one. Until the first
     lookup, and while a lookup fails, a name adds no address, so the direct
     address counts. A failed name loses its old addresses: after a restart of
     its container they may belong to another one. Only has_address waits, on a
@@ -100,9 +110,12 @@ class _NameResolver:
         self._urgent: threading.Thread | None = None
         self._urgent_at = 0.0
 
-    def networks(self) -> list:
+    def start(self) -> None:
         if self.names and self._thread is None:
             self._start()
+
+    def networks(self) -> list:
+        self.start()
         return self._networks
 
     def has_address(self, address: str, wait: float) -> bool:
@@ -135,7 +148,9 @@ class _NameResolver:
             found = set()
             for name in self.names:
                 try:
-                    infos = self._getaddrinfo(name, None, type=socket.SOCK_STREAM)
+                    # As an absolute name: it counts as written, no search domain is
+                    # appended. glibc then skips /etc/hosts (documented limit).
+                    infos = self._getaddrinfo(f"{name}.", None, type=socket.SOCK_STREAM)
                     networks = {ipaddress.ip_network(info[4][0]) for info in infos}
                 except (OSError, ValueError) as exc:
                     if name not in self._failing:
@@ -162,8 +177,15 @@ class _NameResolver:
                 self._thread.start()
 
     def _run(self) -> None:
+        # Without this thread the names keep their last addresses for good, so an
+        # unexpected error ends one round, not the thread.
         while True:
-            time.sleep(self.refresh())
+            try:
+                delay = self.refresh()
+            except Exception:
+                logger.exception("%s: name lookup failed", self._label)
+                delay = _NAME_RETRY
+            time.sleep(delay)
 
 
 _ALLOWED_NETWORKS = _parse_networks(ALLOWED_IPS_RAW, "ALLOWED_IPS") if ALLOWED_IPS_RAW else []
