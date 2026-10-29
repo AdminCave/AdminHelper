@@ -472,7 +472,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Fixed
 
 - **Desktop: Hilfen der Anmeldung nur nach dem Code:** Die Hilfen des Anmeldebildschirms — Vertrauensdialog,
-  Pin oder Geraete-Identitaet zuruecksetzen, Geraet registrieren — richten sich nur nach dem Code des Fehlers;
+  Pin oder Geraete-Identitaet zuruecksetzen, Geraet registrieren, die Hinweise zum Zertifikat des Geraets
+  (anderer Benutzer, nicht mehr gueltig) — richten sich nur nach dem Code des Fehlers;
   ein Text, der einen Code nur enthaelt, loest keine mehr aus.
 - **Desktop: Fehlertext des Servers statt rohem Body:** Lehnt der Server eine Anfrage des Desktops ab, zeigt die
   Statusleiste dessen Text (`detail`), bei 422 die Feldmeldungen, statt `HTTP <Status>: <roher Body>`; ohne

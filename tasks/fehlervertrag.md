@@ -166,8 +166,10 @@ Orakel: contract — die Hilfen hängen am Code, nicht am Text
 Dedup-Key: ref:desktop:error.rs:string-errors-at-ipc
 HEAD: 237b450a
 
-### T11 — Desktop-UI: Anmeldung verzweigt an `code` für die Zertifikatscodes des Servers (R-0709)  [ ]
+### T11 — Desktop-UI: Anmeldung verzweigt an `code` für die Zertifikatscodes des Servers (R-0709)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/Login.revoked.test.ts, apps/desktop/ui/src/components/Login.binding.test.ts, apps/desktop/ui/src/components/Login.dialog.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @dbb86c0b 2026-10-29T14:04:05+01:00
+Review: approve (.ah-out/review/fehlervertrag/T11.verdict.json)
 Änderung: `certUserMismatch` und `certRevoked` (`apps/desktop/ui/src/components/Login.svelte:79-82`) lesen `errorCode` aus T10 (`ERR_CERT_USER_MISMATCH`, `ERR_CERT_REVOKED`). Tests: `Login.revoked.test.ts`, `Login.binding.test.ts` und `Login.dialog.test.ts` lehnen mit `new IpcError(<Text ohne Präfix, wie ihn T7 liefert>, '<Code>', 403)` ab (Konstanten `Login.revoked.test.ts:16-19`, `Login.binding.test.ts:17-18`, `Login.dialog.test.ts:15-16`); neu je Code ein Gegenfall: `IpcError` mit Code `ERR_HTTP`, Status 403 und einem Text, der `ERR_CERT_REVOKED` bzw. `ERR_CERT_USER_MISMATCH` enthält → kein Hinweis, kein Knopf. Die Tests auf `withoutErrorCodes` (`Login.revoked.test.ts:163-165`, `Login.binding.test.ts:127-129`) bleiben. Zuerst rot: die Gegenfälle auf HEAD.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login
 Doku: CHANGELOG.md (der Eintrag aus T10 nennt auch die Hinweise zum Zertifikat des Geraets: anderer Benutzer, nicht mehr gueltig)

@@ -82,10 +82,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let mtlsRequired = $derived(errorCode === 'ERR_MTLS_CERT_REQUIRED');
   // Under mTLS the device certificate belongs to one user (R-0223): signing in as
   // another one is refused. Name that and offer to register the device anew.
-  let certUserMismatch = $derived(error.includes('ERR_CERT_USER_MISMATCH'));
+  let certUserMismatch = $derived(errorCode === 'ERR_CERT_USER_MISMATCH');
   // A certificate the server no longer admits (R-0224): revoked, or not recorded once
   // the transition is over. The way out is the same, a reset and a new registration.
-  let certRevoked = $derived(error.includes('ERR_CERT_REVOKED'));
+  let certRevoked = $derived(errorCode === 'ERR_CERT_REVOKED');
   // Never show the machine-readable code to the user; keep only the human text.
   let displayError = $derived(withoutErrorCodes(error));
 
