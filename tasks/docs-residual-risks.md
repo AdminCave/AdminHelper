@@ -191,8 +191,10 @@ Orakel: property — keine Adresse unter `docs/examples` außerhalb der drei Dok
 Dedup-Key: idee:docs:examples-rfc5737-guard
 HEAD: b25c65a6
 
-### T13 — CHANGELOG: Eintrag zu R-0551 nennt das Windows-Verhalten (R-0595)  [ ]
+### T13 — CHANGELOG: Eintrag zu R-0551 nennt das Windows-Verhalten (R-0595)  [x]
 Komponente: scripts · Dateien: CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @90c7baae 2026-10-29T11:17:25+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T13.verdict.json)
 Änderung: Im Eintrag „Desktop: „Passwort merken“ im Server-Workspace nur fuer Verbindungen, die der Server fuehrt (R-0551)“ (`CHANGELOG.md:665-670`, Abschnitt `## [0.46.0]`) den Halbsatz „fuer eine noch nicht gespeicherte gilt das getippte Passwort nur fuer diesen Start“ ergänzen: „… nur fuer diesen Start (unter Windows verwirft der Desktop es, und mstsc fragt selbst)“ (`apps/desktop/src-tauri/src/connection/mod.rs:25-31`). Der Eintrag bleibt in seinem Abschnitt (Korrektur, kein neues Verhalten). Umlautfrei; der builder prüft `git diff -U0 CHANGELOG.md` auf ä/ö/ü/ß in hinzugefügten Zeilen (Ausgabe in eine Datei, dann greppen; leer).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist der CHANGELOG

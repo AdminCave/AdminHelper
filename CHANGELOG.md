@@ -1388,7 +1388,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Schluesselbund unter einer `id` des Clients ab, die der Server beim Speichern durch eine eigene ersetzt; der Eintrag
   gehoerte danach zu keiner Verbindung. Im Server-Workspace bietet der Passwort-Dialog das Merken jetzt nur fuer eine
   Verbindung an, die schon in der Liste steht; fuer eine noch nicht gespeicherte gilt das getippte Passwort nur fuer
-  diesen Start. Lokal und Sync bleiben unveraendert. Doku: Desktop fuer Entwickler (DE+EN).
+  diesen Start (unter Windows verwirft der Desktop es, und mstsc fragt selbst). Lokal und Sync bleiben
+  unveraendert. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: ein abgebrochenes Schreiben laesst keine Temp-Datei dauerhaft im Datenordner liegen (R-0553):** Endete
   der Desktop, waehrend er eine Datei auf einmal ersetzte (`prefs.json`, `workspaces.json`, eine `workspace.json`,
   `secrets.json`), blieb deren Temp-Datei `<Dateiname>.<pid>.tmp` im Datenordner der App liegen. Jetzt loescht das
