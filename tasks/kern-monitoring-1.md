@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-1 · Review: pro Task
 Spec: docs/features/kern-monitoring-1.md (Roadmap R-0921, R-0826, R-0828, R-0917)
 Heavy: none — nur apps/monitoring (HTTP-Check, interne Alert-Route, Template-Abgleich), hermetische pytest-Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
