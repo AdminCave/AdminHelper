@@ -40,8 +40,10 @@ Review: approve (.ah-out/review/kern-agent-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/...
 Doku: changelog.d/kern-agent-1.md
 
-### T4 — Monitor-Befehle: WaitDelay als Erfolg, Abbruch eigene Meldung (R-0878)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/updates_linux.go, apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/services_test.go, changelog.d/kern-agent-1.md
+### T4 — Monitor-Befehle: WaitDelay als Erfolg, Abbruch eigene Meldung (R-0878)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/updates_linux.go, apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/services_test.go, changelog.d/kern-agent-1.md, apps/agent/internal/monitor/updates_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2c05d9d8 2026-10-29T19:42:10+01:00
+Review: approve (.ah-out/review/kern-agent-1/T4.verdict.json)
 Änderung: `runTimed` (`internal/monitor/plugins.go:61`) und `runTimedEnv` (`internal/monitor/updates_linux.go:38`) geben bei `exec.ErrWaitDelay` die Ausgabe ohne Fehler zurück; `commandFailure` (`internal/monitor/services.go:41`) meldet `context.Canceled` als Abbruch statt „did not start“. Tests zuerst rot.
 Beweis: Code-Lesung feature/agent-run-ctx@f3c2b1db internal/monitor/services.go:41-50; Test: commandFailure(context.Canceled) ≠ "<name> did not start"
 Dedup-Key: bug:agent:services.go:commandFailure-waitdelay

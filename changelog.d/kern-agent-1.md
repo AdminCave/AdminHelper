@@ -13,3 +13,6 @@
 - **Agent: Abbruch waehrend des frpc-Abgleichs:** Endet der Lauf (Signal, Laufbudget) waehrend frpc neu geladen
   wird, startet der Agent frpc nicht mehr neu und behaelt den Stand; der naechste Lauf laedt, statt alle Tunnel neu
   aufzubauen.
+- **Agent: Monitoring-Befehle mit offenem Kindprozess:** Endet ein Werkzeug (etwa docker, zpool, apt-get) mit
+  Erfolg, waehrend ein von ihm gestarteter Prozess seine Ausgabe noch offen haelt, wertet der Agent die Ausgabe
+  aus, statt "did not start" zu melden; ein abgebrochener Lauf heisst "canceled before it ended".
