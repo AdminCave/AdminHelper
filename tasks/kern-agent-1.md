@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-1 · Review: pro Task
 Spec: docs/features/kern-agent-1.md (Roadmap R-0884, R-0885, R-0929, R-0878, R-0879, R-0881, R-0951)
 Heavy: linux-full — apps/agent: frpc-Abgleich, TLS-Pin, Monitor-Befehle und run --once laufen im Sammellauf (go agent, agent_monitoring, repo_build)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -59,8 +59,10 @@ Dedup-Key: ref:agent:run.go:once-no-signal-handler
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
 Doku: changelog.d/kern-agent-1.md
 
-### T6 — Paket-Hinweis nennt `--token-stdin` (R-0951)  [ ]
+### T6 — Paket-Hinweis nennt `--token-stdin` (R-0951)  [x]
 Komponente: agent · Dateien: apps/agent/deb/DEBIAN/postinst, apps/agent/rpm/adminhelper-agent.spec, apps/agent/cmd/adminhelper-agent/packaging_rpm_test.go, changelog.d/kern-agent-1.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1e704188 2026-10-29T19:54:39+01:00
+Review: approve (.ah-out/review/kern-agent-1/T6.verdict.json)
 Änderung: Der Einrichtungs-Hinweis in `deb/DEBIAN/postinst:32`, `rpm/adminhelper-agent.spec:94` und in der Fixture `cmd/adminhelper-agent/packaging_rpm_test.go:54` gibt den Token über stdin (`--token-stdin`) statt als Argument, wie `docs/admin/agent-deployment.html`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
 Doku: changelog.d/kern-agent-1.md

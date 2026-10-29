@@ -9,6 +9,9 @@
   nur Schluessel mit hoechstens 32 Segmenten an; frp kennt keine tieferen Felder.
 - **Agent: `run --once` bei SIGTERM:** Stoppt systemd den Timer-Lauf, beendet der Agent den laufenden Schritt
   ueber seinen Kontext wie im Dauerbetrieb, statt hart abzubrechen.
+- **Agent-Paket: Einrichtungs-Hinweis mit `--token-stdin`:** Der Hinweis nach der Installation des deb- und
+  rpm-Pakets gibt den Provision-Token ueber stdin statt als Argument, wie die Doku; so steht er weder in der
+  Shell-History noch in der Prozessliste.
 
 ### Fixed
 
