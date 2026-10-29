@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Postgres: eine Rolle je Dienst statt des gemeinsamen Superusers — Task-Ledger
-Status: aktiv · Branch: feature/db-roles · Review: pro Task
+Status: bereit · Branch: feature/db-roles · Review: pro Task
 Spec: docs/features/db-roles.md
 Heavy: linux-full — `docker-compose.yml`, Server-Entrypoint, alle Dienste mit Postgres; der Sammellauf fährt `integration_stack` und `upgrade_path_test.sh` (letztes Release mit Bestandsdaten → dieser Stand). `scenario --agents 1` vor dem Merge (Agent-Report über monitoring mit neuer Rolle; Kevin fragen). Kein `windows`. PR merged Kevin (Datenmigration, `update.sh`-Pfad über `init-secrets.sh`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,9 +37,11 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T4
 Abhängt von: T2
 
-### T4 — Doku: Datenbank-Rollen, neue Passwörter, Korrektur pki-Netz  [ ]
-Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, DEVELOPMENT.md, CHANGELOG.md
-Änderung: Entwickler-Index (Komponenten): Rollen je Dienst, `db-init`; Korrektur der Aussage, nur das Gateway erreiche den `ca-issuer` (auch `postgres` hängt im pki-Netz). Installation/Betrieb: die vier `.env`-Passwörter, `db-init` beim Start, Backup/Restore als Superuser, Rollback-Hinweis; `update.sh --redeploy` und ein Restore aus einem Backup von vor diesem Stand brauchen vorher `scripts/init-secrets.sh` (die `.env` hat die vier Schlüssel sonst nicht, und kein Dienst startet). `DEVELOPMENT.md`: `tests/test_db_roles.py` braucht Docker. CHANGELOG (Changed, umlautfrei).
+### T4 — Doku: Datenbank-Rollen, neue Passwörter, Korrektur pki-Netz  [x]
+Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, DEVELOPMENT.md, CHANGELOG.md, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0324085a 2026-10-29T09:22:53+01:00
+Review: approve (.ah-out/review/db-roles/T4.verdict.json)
+Änderung: Entwickler-Index (Komponenten): Rollen je Dienst, `db-init`; Korrektur der Aussage, nur das Gateway erreiche den `ca-issuer` (auch `postgres` hängt im pki-Netz). Installation/Betrieb: die vier `.env`-Passwörter, `db-init` beim Start, Backup als Superuser, `restore.sh` als die Dienst-Rollen nach `db-init` (T5), `pg-restore.sh` als Superuser, Rollback-Hinweis; `update.sh --redeploy` und ein Restore aus einem Backup von vor diesem Stand brauchen vorher `scripts/init-secrets.sh` (die `.env` hat die vier Schlüssel sonst nicht, und kein Dienst startet). `DEVELOPMENT.md`: `tests/test_db_roles.py` braucht Docker. CHANGELOG (Changed, umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien dieser Task
 
