@@ -59,26 +59,58 @@ _PUBLIC_ROUTES = {
 }
 
 
-def _dependency_qualnames(route: APIRoute) -> set[str]:
-    """All ``module:qualname`` strings in the route's recursive dependency tree."""
+def _qualname(call) -> str:
+    # Class-based dependencies (HTTPBearer, ApiKeyOrUser instances) have no __qualname__.
+    qualname = getattr(call, "__qualname__", None) or type(call).__qualname__
+    module = getattr(call, "__module__", None) or type(call).__module__
+    return f"{module}:{qualname}"
+
+
+def _include_dependency_qualnames(path: str, app=None) -> set[str]:
+    """The dependencies an include_router(..., dependencies=...) adds to the router that
+    holds `path`, with their own sub-dependencies. FastAPI >= 0.138 keeps them on the
+    include (_IncludedRouter.include_context), not in the route's dependant."""
+    from fastapi.dependencies.utils import get_dependant
+
+    if app is None:
+        from app.main import app
+
+    names: set[str] = set()
+
+    def walk(dependant) -> None:
+        for dep in dependant.dependencies:
+            names.add(_qualname(dep.call))
+            walk(dep)
+
+    for node in app.routes:
+        ctx = getattr(node, "include_context", None)
+        routes = getattr(getattr(ctx, "included_router", None), "routes", None) or ()
+        if any(getattr(r, "path", None) == path for r in routes):
+            for depends in ctx.dependencies:
+                call = depends.dependency
+                names.add(_qualname(call))
+                walk(get_dependant(path=path, call=call))
+    return names
+
+
+def _dependency_qualnames(route: APIRoute, app=None) -> set[str]:
+    """All ``module:qualname`` strings in the route's recursive dependency tree, including
+    the ones its router got from ``include_router(..., dependencies=...)``."""
     names: set[str] = set()
 
     def walk(deps) -> None:
         for dep in deps:
-            call = dep.call
-            qualname = getattr(call, "__qualname__", None) or type(call).__qualname__
-            module = getattr(call, "__module__", None) or type(call).__module__
-            names.add(f"{module}:{qualname}")
+            names.add(_qualname(dep.call))
             walk(dep.dependencies)
 
     walk(route.dependant.dependencies)
-    return names
+    return names | _include_dependency_qualnames(route.path, app)
 
 
-def _is_guarded(route: APIRoute) -> bool:
+def _is_guarded(route: APIRoute, app=None) -> bool:
     return any(
         token in qualname
-        for qualname in _dependency_qualnames(route)
+        for qualname in _dependency_qualnames(route, app)
         for token in _AUTH_MARKER_TOKENS
     )
 
@@ -207,3 +239,32 @@ def test_detector_distinguishes_guarded_from_unguarded():
     routes = {r.path: r for r in probe.routes if isinstance(r, APIRoute)}
     assert _is_guarded(routes["/closed"]) is True
     assert _is_guarded(routes["/open"]) is False
+
+
+def test_detector_sees_a_guard_that_only_the_include_carries():
+    """A router without its own guard, included with ``dependencies=[Depends(guard)]``,
+    is guarded; on FastAPI >= 0.138 the guard is not in the route's dependant."""
+    from fastapi import APIRouter, Depends, FastAPI
+
+    from app.core.auth import get_current_admin
+
+    router = APIRouter()
+
+    @router.get("/inner")
+    def _inner():
+        return {}
+
+    bare = APIRouter()
+
+    @bare.get("/bare")
+    def _bare():
+        return {}
+
+    probe = FastAPI()
+    probe.include_router(router, dependencies=[Depends(get_current_admin)])
+    probe.include_router(bare)
+
+    routes = {r.path: r for r in _collect_api_routes(probe)}
+    assert set(routes) == {"/inner", "/bare"}
+    assert _is_guarded(routes["/inner"], probe) is True
+    assert _is_guarded(routes["/bare"], probe) is False

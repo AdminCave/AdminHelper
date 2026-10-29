@@ -10,8 +10,10 @@ Heavy: none — nur Server-Unit-Tests und eine CLI-Argumentprüfung, kein Stack-
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Route-Gate sieht Include-Abhängigkeiten (R-0925)  [ ]
+### T1 — Route-Gate sieht Include-Abhängigkeiten (R-0925)  [x]
 Komponente: server · Dateien: apps/server/tests/test_route_auth_gate.py, apps/server/tests/test_stream.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @42cc2b48 2026-10-29T16:16:13+01:00
+Review: approve (.ah-out/review/klein-tests-server-1/T1.verdict.json)
 Änderung: `_include_dependency_qualnames` aus `test_stream.py` nach `test_route_auth_gate.py` verschieben, `_dependency_qualnames` bezieht die Include-Abhängigkeiten der Route ein; `test_stream.py` importiert den Helfer. Positivprobe: ein Router, der nur am Include einen Guard trägt, gilt als geschützt.
 Beweis: HEAD · `bash scripts/dev/verify.sh server --strict -- apps/server/tests/test_route_auth_gate.py` → Probe-Test mit Guard allein am Include rot vor der Änderung
 Dedup-Key: bug:server:tests/test_route_auth_gate.py:include-deps
