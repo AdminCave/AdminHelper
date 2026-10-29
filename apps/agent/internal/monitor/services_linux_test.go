@@ -1043,6 +1043,48 @@ func TestServiceFallbackEndsAtTheEndOfTheContext(t *testing.T) {
 	}
 }
 
+// Every systemctl call of the service collector runs under the collector's context, the batch, the
+// per-unit fallback and the alias lookup included: a call under a fresh context would outlast the end
+// of the run (R-0883).
+func TestServiceCollectorPassesItsContextToEverySystemctlCall(t *testing.T) {
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	var calls []string
+	old := runSystemctl
+	t.Cleanup(func() { runSystemctl = old })
+	setup := func(fail error) {
+		calls = nil
+		runSystemctl = func(c context.Context, args ...string) ([]byte, error) {
+			if c.Value(ctxKey{}) != t.Name() {
+				t.Errorf("systemctl %v ran without the collector's context", args)
+			}
+			calls = append(calls, strings.Join(args, " "))
+			if len(args) > 0 && args[0] == "show" {
+				return nil, fail
+			}
+			return nil, nil
+		}
+	}
+
+	setup(nil)
+	collectServiceHealth(ctx)
+	if len(calls) < 3 {
+		t.Errorf("collectServiceHealth ran %d systemctl calls (%v), want at least the three lists", len(calls), calls)
+	}
+
+	setup(exec.Command("false").Run()) // a batch that answers with exit 1 gets the per-unit fallback
+	filterEnabledInactive(ctx, []string{"cron.service", "ssh.service"})
+	if len(calls) != 3 {
+		t.Errorf("filterEnabledInactive ran %v, want the batch and one query per unit", calls)
+	}
+
+	setup(nil)
+	resolveAliases(ctx, []ServiceEntry{{"unit": "sshd.service", "enabled_state": "alias"}})
+	if len(calls) != 1 {
+		t.Errorf("resolveAliases ran %v, want one show call", calls)
+	}
+}
+
 func TestBuildReportPassesItsContextToTheServiceCollectors(t *testing.T) {
 	type ctxKey struct{}
 	stubReportHost(t)

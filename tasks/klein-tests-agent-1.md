@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-agent-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-agent-1 · Review: pro Task
+Status: bereit · Branch: feature/klein-tests-agent-1 · Review: pro Task
 Spec: docs/features/klein-tests-agent-1.md (Roadmap R-0851, R-0883)
 Heavy: none — Unit-Tests im Agent, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -20,8 +20,10 @@ Dedup-Key: ref:agent:docs_cli_test.go:path-exe-calls
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/...
 Doku: keine (Test; bei einem Fund die betroffene Seite DE+EN)
 
-### T2 — monitor: ctx von smartctl-Scan und systemctl-Aufrufen testen (R-0883)  [ ]
+### T2 — monitor: ctx von smartctl-Scan und systemctl-Aufrufen testen (R-0883)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @bdb7d3b3 2026-10-29T21:57:40+01:00
+Review: approve (.ah-out/review/klein-tests-agent-1/T2.verdict.json)
 Änderung: Je ein Test legt einen Marker in den `ctx` (`context.WithValue`) und prüft im Stub, dass der scan-Aufruf von `collectSmart` und die systemctl-Aufrufe aus `filterEnabledInactive` und `resolveAliases` (über `serviceHealth`) genau diesen `ctx` bekommen. Gegenprobe: `context.Background()` an der Stelle färbt den Test rot.
 Beweis: R-0883 Code-Lesung smart.go:68, services_linux.go:56-57
 Dedup-Key: ref:agent:smart.go:ctx-untested
