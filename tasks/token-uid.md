@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Tokens an die Benutzer-ID binden — Task-Ledger
-Status: bereit · Branch: feature/token-uid · Review: am Ende
+Status: erledigt · Branch: feature/token-uid · Review: am Ende
 Spec: docs/features/token-uid.md
 Heavy: linux-full — Server-Auth (Login, Refresh, alle JWT-Routen und der SSE-Stream gehen über `_get_user_from_token`); der Stack-Test meldet sich über das Gateway an. Kein `scenario` (kein Agent-, PKI- oder Install-Pfad), kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
