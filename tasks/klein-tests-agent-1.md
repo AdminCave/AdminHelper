@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-agent-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-agent-1 · Review: pro Task
+Status: erledigt · Branch: feature/klein-tests-agent-1 · Review: pro Task
 Spec: docs/features/klein-tests-agent-1.md (Roadmap R-0851, R-0883)
 Heavy: none — Unit-Tests im Agent, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
