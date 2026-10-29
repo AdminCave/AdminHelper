@@ -65,8 +65,10 @@ Orakel: contract — Labelnamen der Doku gegen die `tags`-Dicts, die `format_lin
 Dedup-Key: bug:docs:monitoring.html:labels-drift
 HEAD: b25c65a6
 
-### T3 — Server-Entwicklerseite: Event-Liste wie im Code (R-0758)  [ ]
+### T3 — Server-Entwicklerseite: Event-Liste wie im Code (R-0758)  [x]
 Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2014a819 2026-10-29T10:12:49+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T3.verdict.json)
 Änderung: Die Liste „Aktive Event-Typen“ (`docs/developer/server.html:164-171`, EN gleiche Zeilen): `api_key.created`, `api_key.deleted` raus (kein `fire_event` dafür, `apps/server/app/modules/api_keys/router.py`); neu `server.startup` (`apps/server/app/main.py:382`) und `alert.triggered` (`apps/server/app/modules/notifications/router.py:208-209`). Die übrigen Einträge stimmen (`git grep -n -A1 'fire_event(' apps/server/app`). Nur diese Liste; die Abschnitte, die `feature/docs-drift` T3 und `feature/compose-hardening` T11 ändern, bleiben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG
