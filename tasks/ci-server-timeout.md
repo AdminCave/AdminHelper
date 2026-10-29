@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI: Deckel der Server-pytest-Jobs über ihrer Laufzeit — Task-Ledger
-Status: bereit · Branch: feature/ci-server-timeout · Review: am Ende
+Status: erledigt · Branch: feature/ci-server-timeout · Review: am Ende
 Spec: Roadmap R-0947
 Heavy: none — nur `timeout-minutes` zweier Jobs in `.github/workflows/ci.yml`; kein Stack-, Gateway-, PKI- oder Install-Pfad; den Beweis liefert die PR-CI selbst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
