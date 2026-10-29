@@ -661,19 +661,67 @@ describe('http client: a 401 of a request from an ended session', () => {
     expect(getAccessToken()).toBeNull();
   });
 
-  it('a new token within the same session still ends it on a failed refresh', async () => {
+  // A login while a token is still held (auth.hydrate() fell back to logged out after a /me error)
+  // is a new session all the same (R-0924).
+  it('a login while a token is held starts a new session', async () => {
     const first = deferredResponse();
     stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
     const { http, setAccessToken, registerAuthFailureHandler } = await importClient();
     const onAuthFailure = vi.fn();
     registerAuthFailureHandler(onAuthFailure);
-    setAccessToken('t1');
+    setAccessToken('old-token');
 
     const pending = http.get('/api/servers').catch((e: unknown) => e);
-    setAccessToken('t2');
+    setAccessToken('new-token');
     first.resolve(jsonResponse({ detail: 'expired' }, 401));
 
     expectSessionExpired(await pending);
-    expect(onAuthFailure).toHaveBeenCalledTimes(1);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  // Without Web Locks: a refresh of the old session still open after the new login answers false
+  // for the old session; a 401 of the new session must not take that answer (R-0923).
+  it('a 401 of the new session does not share the refresh of the old one', async () => {
+    const oldRefresh = deferredResponse();
+    let refreshes = 0;
+    let servers = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') {
+          refreshes++;
+          return refreshes === 1
+            ? oldRefresh.promise
+            : Promise.resolve(jsonResponse({ access_token: 'renewed-token' }));
+        }
+        servers++;
+        // The first request of each session gets 401, the retry with the renewed token passes.
+        return Promise.resolve(
+          servers <= 2 ? jsonResponse({ detail: 'expired' }, 401) : jsonResponse({ ok: true }),
+        );
+      }),
+    );
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler, getAccessToken } =
+      await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const oldPending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(refreshes).toBe(1));
+    clearTokens();
+    setAccessToken('new-token');
+    const newPending = http.get('/api/servers');
+    await vi.waitFor(() => expect(servers).toBe(2));
+    oldRefresh.resolve(jsonResponse({ detail: 'no' }, 401));
+
+    expectSessionExpired(await oldPending);
+    await expect(newPending).resolves.toEqual({ ok: true });
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(refreshes).toBe(2);
+    expect(getAccessToken()).toBe('renewed-token');
   });
 });

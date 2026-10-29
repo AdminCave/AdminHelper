@@ -16,7 +16,7 @@ storageRemove('adminhelper_token');
 storageRemove('adminhelper_refresh_token');
 
 let accessToken: string | null = null;
-let refreshInFlight: Promise<boolean> | null = null;
+let refreshInFlight: { session: number; promise: Promise<boolean> } | null = null;
 let onAuthFailure: (() => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -47,14 +47,14 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-// A session starts when setAccessToken() (a login) sets a token while none is held and ends with
-// clearTokens(); a refresh keeps it. A request answered 401 after its session ended must not refresh,
+// A session starts with every setAccessToken() (a login, also one while a token is still held) and
+// ends with clearTokens(); a refresh keeps it. A request answered 401 after its session ended must not refresh,
 // retry or run the auth-failure handler: the handler ends the session that is current by then,
 // refresh cookie included (stores/auth.ts).
 let session = 0;
 
 export function setAccessToken(access: string): void {
-  if (accessToken === null) session++;
+  session++;
   accessToken = access;
 }
 
@@ -93,10 +93,12 @@ export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function tryRefresh(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
+  // A refresh started in an earlier session answers for that session only (refresh() returns false
+  // once it ended): a request of the current one must not take its answer.
+  if (refreshInFlight?.session === session) return refreshInFlight.promise;
 
+  const started = session;
   const refresh = async (): Promise<boolean> => {
-    const started = session;
     // The refresh token rides along as the HttpOnly cookie (same-origin
     // request → sent automatically); the body is intentionally empty.
     const res = await fetchWithTimeout('/api/auth/refresh', {
@@ -106,24 +108,26 @@ async function tryRefresh(): Promise<boolean> {
     });
     if (!res.ok) return false;
     const data = (await res.json()) as RefreshResponse;
-    // A refresh renews the session it runs in, also one without a token yet: no new session. One
-    // answered after that session ended sets no token, else the next login would find one held.
+    // A refresh renews the session that asked for it, also one without a token yet: no new session.
+    // One answered after that session ended (also one that waited for the lock across a login) sets
+    // no token: it would replace the token of the session current by then.
     if (started !== session) return false;
     accessToken = data.access_token;
     return true;
   };
 
-  refreshInFlight = (async () => {
+  const promise = (async () => {
     try {
       return await withAuthLock(refresh);
     } catch {
       return false;
     } finally {
-      refreshInFlight = null;
+      // session only grows, so at most one refresh per session is in flight: a later session's stays.
+      if (refreshInFlight?.session === started) refreshInFlight = null;
     }
   })();
-
-  return refreshInFlight;
+  refreshInFlight = { session: started, promise };
+  return promise;
 }
 
 async function request<T>(
