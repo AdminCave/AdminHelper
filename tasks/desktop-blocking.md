@@ -47,8 +47,10 @@ Orakel: property — kein Fixture-Name ist als `u32` lesbar, also nie die PID de
 Dedup-Key: bug:desktop:src-tauri:write_json_atomic-test-fixed-pid
 HEAD: b1432223
 
-### T2 — `fetch_tunnels` nimmt Ports außerhalb von 1–65535 (R-0569)  [ ]
+### T2 — `fetch_tunnels` nimmt Ports außerhalb von 1–65535 (R-0569)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @55d2b0ab 2026-10-29T06:16:02+01:00
+Review: approve (.ah-out/review/desktop-blocking/T2.verdict.json)
 Änderung: `TunnelMapping.local_port` wird `i64`, `visitor_port` `Option<i64>` (`tunnel.rs:23-24`); Feldnamen und JSON bleiben (`ui/src/lib/bridge/types.ts:109-120`: `number`). In `resolve_connection` (`:83`) löst ein Visitor-Port nur über `u16::try_from(vport).ok()` zu `visitor_at` auf, nie über `as` (das bildete 78925 auf 13389 ab). Andere Rust-Leser der Felder gibt es nicht (Testfixtures `tunnel.rs:374-375`, `session.rs:847-848`, `connection/mod.rs:240-241` bleiben als Literale). Tests in `tunnel.rs`: (a) `fetch_tunnels` über den vorhandenen Fake-Server `serve` (`:955`): 200 mit drei Zuordnungen — `tunnel("c1", "stcp", "rdp")`, eine mit `"localPort": 70000, "visitorPort": 70000`, eine mit `"localPort": -1, "visitorPort": 0` — liefert `Ok` mit allen dreien, Ports wie gesendet, und die Session hält alle drei (`held`, `:1010-1012`). Zuerst rot auf HEAD (serde: „invalid value: integer `70000`, expected u16“). (b) `resolve_connection` mit einer STCP-Zuordnung der Verbindung, deren `visitor_port` `Some(78925)` (13389 + 65536) bzw. `Some(-1)` ist, und dem Visitor aus `same_ports()` (Server-Port 13389): Ziel unverändert (Host `server.internal`, Port 3389), `via_tunnel` wie in `stcp_without_visitor_port_keeps_original_target` (`:466-474`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- tunnel::
 Doku: CHANGELOG.md (Fixed: Desktop: eine Tunnel-Zuordnung mit einem Port ausserhalb von 1–65535 laesst die Tunnel-Liste nicht mehr scheitern (R-0569) — bisher fehlten dann alle Zuordnungen, und keine Verbindung wurde ueber einen Tunnel aufgeloest; eine solche Zuordnung loest keinen Visitor auf)

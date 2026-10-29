@@ -399,6 +399,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: eine Tunnel-Zuordnung mit einem Port ausserhalb von 1-65535 laesst die Tunnel-Liste nicht mehr
+  scheitern:** Bisher fehlten dann alle Zuordnungen, und keine Verbindung wurde ueber einen Tunnel aufgeloest; eine
+  solche Zuordnung loest jetzt nur selbst keinen Visitor auf.
 - **FRP: Ein gespeicherter Visitor-Port ausserhalb 1-65535 wird beim Aendern ersetzt (R-0570):** Ein `PUT
   /api/frp/tunnels/{id}` ohne `visitor_port` gibt einem STCP-Tunnel mit einem solchen Altwert einen freien Port; die
   automatisch angelegte Verbindung zeigt auf diesen statt auf einen Port, an dem nie ein Visitor lauscht. Doku:
