@@ -20,6 +20,8 @@ Logs, TLS, Boundary · (5) Stil und tote Reste · (6) Doku nach `.claude/rules/d
 Blast-Radius: geteilte Contracts; gekoppelte Stellen (MINISIGN_PUBKEY in install/update, Versions-Trio
 tauri.conf/Agent-Tag/FRP_VERSION).
 
+**Diffs lesen:** erst `--stat`, dann je Datei; ganze Dateien nur, wo der Diff-Kontext nicht reicht.
+
 **Einsatzart `task`:** `git -C WT diff HEAD -- <pfade>` plus die genannten neuen Dateien gegen die Task. Keine vollen
 Suiten; die Summary-Zeile gegen den Diff halten, einzelne Tests fahren ist erlaubt. Urteil zusätzlich als JSON nach
 `WT/.ah-out/review/<slug>/<id>.verdict.json`:
@@ -46,9 +48,15 @@ Suiten; die Summary-Zeile gegen den Diff halten, einzelne Tests fahren ist erlau
   `{"mode":"branch","verdict":"…","head":"<sha>","code":{"verdict":"…","checked":["1",…,"7"],"evidence":["<Befehl oder Stelle> → <Ergebnis>"],"findings":[…]},"tests":{"verdict":"…","coverage":[{"file":"…","tests":["…"]}],"probes":[{"test":"…","result":"red|green|not-runnable","evidence":"…"}],"evidence":["…"],"findings":[…]}}`.
   `bash WT/scripts/dev/review.sh final WT/tasks/<slug>.md` prüft genau diese Form; fahr es zum Schluss selbst.
 
-Setzt die Session dich nach einer Korrektur fort, prüfst du die Änderungen seit deinem Urteil und schreibst die
-Datei neu (bei `branch` mit neuem `head`). Proben nur im Scratch-Verzeichnis oder im Probe-Worktree; nur eigene Pfade
-löschen, nie per Glob. `request_changes` nur mit konkretem Fund (`blocker|wichtig|nit`, `datei:zeile`, was genau);
-Nits blockieren nie; nichts Konkretes falsch heißt `approve`; keine Alibi-Funde. Sicherheitsfunde, die nicht im
-öffentlichen Repo stehen dürfen, nur in der Antwort an die Session, nicht in der Datei. Antwort an die Session: das
-Urteil und die Funde, knapp.
+Bevor du den Diff liest, hältst du den Stand fest, bei `task` als Datei, weil Shell-Variablen keine Fortsetzung
+überleben: `bash scripts/dev/review-snap.sh WT <pfade> > <scratch>/<id>.snap && cat <scratch>/<id>.snap` (Pfade samt
+neuen Dateien; das Skript bewusst aus dem Haupt-Checkout, nicht aus WT, damit ein Branch nicht bestimmt, was sein Prüfer
+sieht); bei `branch` ist es `head`. Setzt die Session dich nach einer Korrektur fort, liest du nur das Delta seit diesem
+Stand, nicht noch einmal den ganzen Diff: `git -C WT diff "$(cat <scratch>/<id>.snap)" "$(bash
+scripts/dev/review-snap.sh WT <pfade>)"` bzw. `git -C WT diff <head> HEAD -- $(git -C WT diff --name-only main...)`;
+alte Stellen nur, wo das Delta sie berührt. Scheitert der Delta-Befehl (eine leere ID gibt Exit 128), liest du den
+ganzen Diff. Dann schreibst du die Datei neu (bei `branch` mit neuem `head`, bei `task` auch `<scratch>/<id>.snap`).
+Proben nur im Scratch-Verzeichnis oder im Probe-Worktree; nur eigene Pfade löschen, nie per Glob. `request_changes` nur
+mit konkretem Fund (`blocker|wichtig|nit`, `datei:zeile`, was genau); Nits blockieren nie; nichts Konkretes falsch heißt
+`approve`; keine Alibi-Funde. Sicherheitsfunde, die nicht im öffentlichen Repo stehen dürfen, nur in der Antwort an die
+Session, nicht in der Datei. Antwort an die Session: das Urteil und die Funde, knapp.
