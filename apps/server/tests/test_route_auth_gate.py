@@ -10,11 +10,12 @@ This is a *structural* check ("is a guard wired?"), not a *semantic* one
 class — a router added in ``app.main`` without a router-level scope guard and
 without endpoint-level auth — at PR time instead of in production.
 
-Why introspection works: FastAPI propagates ``include_router(dependencies=...)``
-down into every route, so a router-level ``Depends(require_scope(...))`` shows
-up in that route's ``dependant.dependencies`` tree just like an endpoint-level
-``Depends(get_current_admin)`` does. We therefore walk the recursive dependency
-tree and look for any known auth callable by its ``module:qualname``.
+Why introspection works: a router-level ``Depends(require_scope(...))`` is as visible
+as an endpoint-level ``Depends(get_current_admin)``. FastAPI <= 0.136 propagates
+``include_router(dependencies=...)`` into each route's ``dependant.dependencies``; from 0.138 the
+include keeps them in ``include_context.dependencies``, which we read for the router that holds
+the route. We walk the recursive dependency tree of both and look for any known auth callable by
+its ``module:qualname``.
 
 Adding a genuinely public route is a deliberate act: the test forces a line in
 ``PUBLIC_ROUTES`` (with a reason), rather than letting an unguarded route slip
@@ -66,9 +67,10 @@ def _qualname(call) -> str:
     return f"{module}:{qualname}"
 
 
-def _include_dependency_qualnames(path: str, app=None) -> set[str]:
+def _include_dependency_qualnames(path: str, app=None, route=None) -> set[str]:
     """The dependencies an include_router(..., dependencies=...) adds to the router that
-    holds `path`, with their own sub-dependencies. FastAPI >= 0.138 keeps them on the
+    holds `path` (with `route`: that very route, as another router can hold the same path
+    under another method), with their own sub-dependencies. FastAPI >= 0.138 keeps them on the
     include (_IncludedRouter.include_context), not in the route's dependant."""
     from fastapi.dependencies.utils import get_dependant
 
@@ -85,7 +87,10 @@ def _include_dependency_qualnames(path: str, app=None) -> set[str]:
     for node in app.routes:
         ctx = getattr(node, "include_context", None)
         routes = getattr(getattr(ctx, "included_router", None), "routes", None) or ()
-        if any(getattr(r, "path", None) == path for r in routes):
+        if any(
+            (r is route) if route is not None else (getattr(r, "path", None) == path)
+            for r in routes
+        ):
             for depends in ctx.dependencies:
                 call = depends.dependency
                 names.add(_qualname(call))
@@ -104,7 +109,7 @@ def _dependency_qualnames(route: APIRoute, app=None) -> set[str]:
             walk(dep.dependencies)
 
     walk(route.dependant.dependencies)
-    return names | _include_dependency_qualnames(route.path, app)
+    return names | _include_dependency_qualnames(route.path, app, route)
 
 
 def _is_guarded(route: APIRoute, app=None) -> bool:
@@ -268,3 +273,31 @@ def test_detector_sees_a_guard_that_only_the_include_carries():
     assert set(routes) == {"/inner", "/bare"}
     assert _is_guarded(routes["/inner"], probe) is True
     assert _is_guarded(routes["/bare"], probe) is False
+
+
+def test_detector_ties_an_include_guard_to_its_route_not_to_the_path():
+    """The same path in two routers (GET guarded by its include, POST bare) must not lend the
+    POST the GET's guard."""
+    from fastapi import APIRouter, Depends, FastAPI
+
+    from app.core.auth import get_current_admin
+
+    guarded = APIRouter()
+
+    @guarded.get("/x")
+    def _get():
+        return {}
+
+    bare = APIRouter()
+
+    @bare.post("/x")
+    def _post():
+        return {}
+
+    probe = FastAPI()
+    probe.include_router(guarded, dependencies=[Depends(get_current_admin)])
+    probe.include_router(bare)
+
+    routes = {next(iter(r.methods)): r for r in _collect_api_routes(probe)}
+    assert _is_guarded(routes["GET"], probe) is True
+    assert _is_guarded(routes["POST"], probe) is False
