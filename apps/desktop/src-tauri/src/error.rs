@@ -12,11 +12,42 @@ use serde::Serialize;
 /// changed pin with a stable `ERR_*` code, an unusable keyring without one) and
 /// never `UnknownIssuer`, so matching it is unambiguous.
 fn is_unknown_issuer(err: &reqwest::Error) -> bool {
-    fn matches(cause: &(dyn std::error::Error + 'static)) -> bool {
-        if let Some(rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer)) =
-            cause.downcast_ref::<rustls::Error>()
-        {
-            return true;
+    find_rustls(std::error::Error::source(err), &|e| {
+        matches!(
+            e,
+            rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer)
+        )
+        .then_some(())
+    })
+    .is_some()
+}
+
+/// The codes the TOFU verifier (tofu.rs) and the enrolled-CA pin (enrollment.rs) put in
+/// front of their `General` refusal when the server's certificate changed.
+const PIN_MISMATCH_CODES: [&str; 2] = ["ERR_TOFU_PIN_MISMATCH", "ERR_CA_PIN_MISMATCH"];
+
+/// The pin-mismatch code a TLS failure in the chain from `source` on carries as prefix.
+fn pin_mismatch_code(source: Option<&(dyn std::error::Error + 'static)>) -> Option<&'static str> {
+    find_rustls(source, &|e| match e {
+        rustls::Error::General(msg) => PIN_MISMATCH_CODES.into_iter().find(|code| {
+            msg.strip_prefix(code)
+                .is_some_and(|rest| rest.starts_with(": "))
+        }),
+        _ => None,
+    })
+}
+
+/// The first answer of `f` for a rustls error in the chain from `source` on.
+fn find_rustls<T>(
+    mut source: Option<&(dyn std::error::Error + 'static)>,
+    f: &dyn Fn(&rustls::Error) -> Option<T>,
+) -> Option<T> {
+    fn at<T>(
+        cause: &(dyn std::error::Error + 'static),
+        f: &dyn Fn(&rustls::Error) -> Option<T>,
+    ) -> Option<T> {
+        if let Some(found) = cause.downcast_ref::<rustls::Error>().and_then(f) {
+            return Some(found);
         }
         // io::Error::source() skips the wrapped error (it forwards to the
         // inner error's OWN source), so the rustls error inside the TLS
@@ -25,17 +56,16 @@ fn is_unknown_issuer(err: &reqwest::Error) -> bool {
         cause
             .downcast_ref::<std::io::Error>()
             .and_then(|io| io.get_ref())
-            .is_some_and(|inner| matches(inner))
+            .and_then(|inner| at(inner, f))
     }
 
-    let mut source = std::error::Error::source(err);
     while let Some(cause) = source {
-        if matches(cause) {
-            return true;
+        if let Some(found) = at(cause, f) {
+            return Some(found);
         }
         source = cause.source();
     }
-    false
+    None
 }
 
 #[derive(Debug)]
@@ -93,9 +123,39 @@ impl std::fmt::Display for AppError {
     }
 }
 
+impl AppError {
+    /// The stable code of the error: the UI branches on it, never on the message.
+    pub fn code(&self) -> &'static str {
+        match self {
+            AppError::Validation(_) => "ERR_VALIDATION",
+            AppError::Io(_) => "ERR_IO",
+            AppError::Network(err) if is_unknown_issuer(err) => "ERR_TLS_UNKNOWN_ISSUER",
+            AppError::Network(err) => {
+                pin_mismatch_code(std::error::Error::source(err)).unwrap_or("ERR_NETWORK")
+            }
+            AppError::Connection(_) => "ERR_CONNECTION",
+            AppError::Keyring(_) => "ERR_KEYRING",
+            AppError::Json(_) => "ERR_JSON",
+            AppError::SessionExpired => "ERR_SESSION_EXPIRED",
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct Refusal<'a> {
+    code: &'a str,
+    message: String,
+}
+
+// Tauri rejects the command's promise with exactly this value; the UI branches on `code`
+// only (IpcError in bridge/index.ts), the message is for the user.
 impl Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
+        Refusal {
+            code: self.code(),
+            message: self.to_string(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -175,7 +235,13 @@ mod tests {
             .await
             .expect_err("Handshake gegen selbstsigniertes Zertifikat muss scheitern");
 
-        let msg = AppError::from(err).to_string();
+        let err = AppError::from(err);
+        assert_eq!(err.code(), "ERR_TLS_UNKNOWN_ISSUER");
+        assert_eq!(
+            serde_json::to_value(&err).unwrap()["code"],
+            "ERR_TLS_UNKNOWN_ISSUER"
+        );
+        let msg = err.to_string();
         assert!(msg.contains("ERR_TLS_UNKNOWN_ISSUER"), "Code fehlt: {msg}");
         assert!(
             msg.contains("Selbstsignierte Zertifikate erlauben"),
@@ -209,11 +275,59 @@ mod tests {
         }
         assert!(refused, "no ConnectionRefused in the chain: {err:?}");
 
-        let msg = AppError::from(err).to_string();
+        let err = AppError::from(err);
+        assert_eq!(err.code(), "ERR_NETWORK");
+        let msg = err.to_string();
         assert!(
             !msg.contains("ERR_TLS_UNKNOWN_ISSUER"),
             "False positive: {msg}"
         );
+    }
+
+    #[test]
+    fn a_refusal_is_the_code_and_the_message() {
+        let json = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+        let cases = [
+            (AppError::Validation("bad".into()), "ERR_VALIDATION"),
+            (AppError::Io(std::io::Error::other("disk")), "ERR_IO"),
+            (AppError::Connection("down".into()), "ERR_CONNECTION"),
+            (AppError::Keyring("locked".into()), "ERR_KEYRING"),
+            (AppError::Json(json), "ERR_JSON"),
+            (AppError::SessionExpired, "ERR_SESSION_EXPIRED"),
+        ];
+        for (err, code) in cases {
+            assert_eq!(
+                serde_json::to_value(&err).unwrap(),
+                serde_json::json!({ "code": code, "message": err.to_string() }),
+                "{err:?}"
+            );
+        }
+    }
+
+    fn pin_code_of(text: &str) -> Option<&'static str> {
+        let io = std::io::Error::other(rustls::Error::General(text.to_string()));
+        pin_mismatch_code(Some(&io))
+    }
+
+    #[test]
+    fn the_pin_codes_are_found_behind_the_io_error() {
+        assert_eq!(
+            pin_code_of("ERR_CA_PIN_MISMATCH: x"),
+            Some("ERR_CA_PIN_MISMATCH")
+        );
+        assert_eq!(
+            pin_code_of("ERR_TOFU_PIN_MISMATCH: x"),
+            Some("ERR_TOFU_PIN_MISMATCH")
+        );
+        // The keyring refusal of the TOFU verifier carries no code (tofu.rs).
+        assert_eq!(
+            pin_code_of(
+                "AdminHelper TOFU: The certificate pin for h could not be read from or stored \
+                 in the system keyring, so the connection was refused."
+            ),
+            None
+        );
+        assert_eq!(pin_code_of("x ERR_CA_PIN_MISMATCH: y"), None);
     }
 
     const URL_PASSWORD: &str = "pw-9d41c7";
