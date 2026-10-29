@@ -67,8 +67,8 @@ mit Steuerzeichen wird erst beim nächsten Abgleich der Zuweisung bereinigt.
 ## Doku-Impact
 
 `changelog.d/kern-monitoring-1.md`. `docs/developer/monitoring.html:180` + EN (HTTP-Check) nennt die Grenze der
-Schichten neben der Redirect-Grenze. Die Alert-Kanäle in `docs/admin/monitoring.html` beschreiben die Maske nicht;
-keine weitere Seite.
+Schichten neben der Redirect-Grenze. `docs/admin/monitoring.html:340` + EN (Kanal `email`) beschreibt die Maske und
+nennt jetzt auch die 422 beim Anlegen einer Regel; keine weitere Seite.
 
 ## Offene Fragen
 
