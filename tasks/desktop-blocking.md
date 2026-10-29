@@ -98,8 +98,10 @@ Orakel: contract — jeder der neun ist ein async Command, dessen Arbeit über `
 Dedup-Key: bug:desktop:commands.rs:sync-keyring-commands-main-thread
 HEAD: b1432223
 
-### T6 — `check_rdp_auth` mit eigener Frist (R-0642)  [ ]
+### T6 — `check_rdp_auth` mit eigener Frist (R-0642)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @2d60227c 2026-10-29T06:44:01+01:00
+Review: approve (.ah-out/review/desktop-blocking/T6.verdict.json)
 Änderung: `check_rdp_auth` (`rdp.rs:570-629`) bekommt `timeout: Duration`. Statt `wait_with_output` (`:606`) liest es stdout und stderr auf je einem Thread und fragt `try_wait` (etwa alle 50 ms) bis zur Frist; ist sie um, `kill` und `wait` (kein Zombie), ohne auf die Lese-Threads zu warten, und `Err(AppError::Connection(<englischer Text: die Anmeldeprüfung lief in die Frist>))`. Ein normales Ende geht wie bisher weiter (`auth_only_unsupported`, Erfolg, `parse_freerdp_error`). `open_rdp` (`:120-128`) übergibt bis T7 eine eigene Konstante von 30 s (die äußere Frist, `commands.rs:287`). Tests (`#[cfg(unix)]`) mit einem Stub-Skript als `rdp_binary` in einem eigenen Temp-Verzeichnis: (a) Skript schreibt `$$` in eine Datei und macht `exec sleep 30`; `check_rdp_auth(stub, "192.0.2.10", 3389, "u", "", false, "pw", 300 ms)` gibt in unter 5 s `Err` zurück, danach scheitert `kill -0 <pid>` (beendet und abgeholt). Zuerst rot: mit dem Parameter, aber noch `wait_with_output` (Lauf über 5 s). (b) Skript `exit 0` → `Ok` innerhalb der Frist.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::rdp::
 Doku: keine (sichtbar erst mit T7; CHANGELOG dort)

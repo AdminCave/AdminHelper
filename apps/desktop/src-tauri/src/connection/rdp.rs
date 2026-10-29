@@ -128,6 +128,7 @@ pub fn open_rdp(
                 domain,
                 connection.trust_cert,
                 secret,
+                AUTH_CHECK_TIMEOUT,
             )?;
             args.push("/from-stdin:force".to_string());
             args.push("/log-level:INFO".to_string());
@@ -585,7 +586,15 @@ pub fn preflight_rdp(host: &str, port: u16) -> Result<(), AppError> {
     ))
 }
 
+/// How long the credential check may take; the outer deadline of the command is the same.
 #[cfg(unix)]
+const AUTH_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Runs xfreerdp's `+auth-only` check. It ends within `timeout`: an xfreerdp that hangs
+/// (a host that never answers the handshake) is killed and reaped, so nothing waits on it
+/// once the command gave up.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 pub fn check_rdp_auth(
     rdp_binary: &str,
     host: &str,
@@ -594,6 +603,7 @@ pub fn check_rdp_auth(
     domain: &str,
     trust_cert: bool,
     password: &str,
+    timeout: std::time::Duration,
 ) -> Result<(), AppError> {
     let mut args = vec![
         format!("/v:{host}:{port}"),
@@ -622,9 +632,46 @@ pub fn check_rdp_auth(
 
     feed_password_stdin(&mut child, password)?;
 
-    let output = child.wait_with_output()?;
-    let mut combined = output.stderr;
-    combined.extend_from_slice(&output.stdout);
+    // Read both pipes on threads of their own, so a full pipe cannot stall the child, and
+    // poll for its end up to the deadline instead of waiting without one.
+    let reader = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = reader(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+    );
+    let stderr = reader(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+    );
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            // The reader threads end with the pipes; nothing waits for them here.
+            return Err(AppError::Connection(
+                "The RDP credential check did not finish in time.".to_string(),
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let mut combined = stderr.join().unwrap_or_default();
+    combined.extend_from_slice(&stdout.join().unwrap_or_default());
     let output_text = String::from_utf8_lossy(&combined);
     let output_lower = output_text.to_lowercase();
 
@@ -634,7 +681,7 @@ pub fn check_rdp_auth(
         return Ok(());
     }
 
-    if output.status.success() {
+    if status.success() {
         return Ok(());
     }
 
@@ -844,6 +891,68 @@ mod tests {
             wait_interactive_on(script, Duration::from_secs(10)).as_deref(),
             Some("RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.")
         );
+    }
+
+    /// A stub `rdp_binary` in a directory of its own: `body` is its shell script.
+    fn stub_rdp_binary(case: &str, body: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "adminhelper-rdp-stub-{}-{case}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("xfreerdp");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[test]
+    fn check_rdp_auth_gives_up_at_its_deadline_and_reaps_the_child() {
+        let stub = stub_rdp_binary(
+            "hangs",
+            "echo $$ > \"$(dirname \"$0\")/pid\"; exec sleep 30",
+        );
+        let start = std::time::Instant::now();
+        let result = check_rdp_auth(
+            stub.to_str().unwrap(),
+            "192.0.2.10",
+            3389,
+            "u",
+            "",
+            false,
+            "pw",
+            std::time::Duration::from_millis(300),
+        );
+        assert!(result.is_err(), "{result:?}");
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        let dir = stub.parent().unwrap();
+        let pid = std::fs::read_to_string(dir.join("pid")).unwrap();
+        let alive = std::process::Command::new("kill")
+            .args(["-0", pid.trim()])
+            .status()
+            .unwrap()
+            .success();
+        assert!(!alive, "xfreerdp {pid} still runs after the deadline");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn check_rdp_auth_passes_an_xfreerdp_that_ends_in_time() {
+        let stub = stub_rdp_binary("ends", "cat > /dev/null; exit 0");
+        let result = check_rdp_auth(
+            stub.to_str().unwrap(),
+            "192.0.2.10",
+            3389,
+            "u",
+            "",
+            false,
+            "pw",
+            std::time::Duration::from_secs(10),
+        );
+        assert!(result.is_ok(), "{result:?}");
+        let _ = std::fs::remove_dir_all(stub.parent().unwrap());
     }
 }
 
