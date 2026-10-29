@@ -14,6 +14,21 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def fsync_dir(path: Path) -> None:
+    """Syncs the directory path; a failure is logged with its type and not raised."""
+    # The directory entry an os.replace wrote is durable only after an fsync of the directory
+    # (fsync(2)). The file is already in place at that point: raising would make the caller
+    # treat a swap that worked as failed.
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        logger.warning("directory %s not synced (%s)", path, type(exc).__name__)
+
+
 def write_private_file(path: Path, text: str) -> None:
     """Writes text (UTF-8) to path, readable and writable by its owner only, atomically."""
     # mkstemp creates the temp file 0600, never wider whatever the umask: no window with wider
@@ -31,6 +46,7 @@ def write_private_file(path: Path, text: str) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    fsync_dir(path.parent)
 
 
 def _resolve_secret_key() -> str:

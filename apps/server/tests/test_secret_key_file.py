@@ -99,6 +99,47 @@ def test_a_failed_swap_raises_and_leaves_no_temp_file(tmp_path, monkeypatch):
     assert _names(tmp_path) == [".secret_key"]
 
 
+def _spy_fsync_and_replace(monkeypatch, calls, fail_on_dirs=False):
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd):
+        st = os.fstat(fd)
+        calls.append(("fsync", stat.S_ISDIR(st.st_mode), st.st_ino))
+        if fail_on_dirs and stat.S_ISDIR(st.st_mode):
+            raise OSError(errno.EINVAL, "Invalid argument")
+        real_fsync(fd)
+
+    def replace(src, dst):
+        calls.append(("replace",))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "replace", replace)
+
+
+def test_the_directory_is_synced_after_the_swap(tmp_path, monkeypatch):
+    calls = []
+    _spy_fsync_and_replace(monkeypatch, calls)
+    config.write_private_file(tmp_path / "f", "x")
+    assert [c[:2] for c in calls] == [("fsync", False), ("replace",), ("fsync", True)]
+    assert calls[2][2] == tmp_path.stat().st_ino
+
+
+def test_a_failed_directory_sync_is_logged_by_type_and_not_raised(tmp_path, monkeypatch, caplog):
+    calls = []
+    _spy_fsync_and_replace(monkeypatch, calls, fail_on_dirs=True)
+    caplog.set_level("WARNING", logger="adminhelper.config")
+    config.write_private_file(tmp_path / "f", "x")
+    assert (tmp_path / "f").read_text() == "x"
+    warnings = [
+        r for r in caplog.records if r.name == "adminhelper.config" and r.levelname == "WARNING"
+    ]
+    assert len(warnings) == 1
+    assert "OSError" in warnings[0].getMessage()
+    assert "Invalid argument" not in caplog.text
+    assert not any(r.exc_info for r in caplog.records)
+
+
 @pytest.fixture()
 def key_env(request, monkeypatch, tmp_path):
     if request.param is None:

@@ -39,8 +39,10 @@ Für alle Tasks:
   `monkeypatch.setenv("SECRET_KEY", "")` (conftest setzt einen Default; `delenv` hätte kein Undo).
 - Proben gegen eine Datenbank drucken nur Exception-Typen.
 
-### T1 — `write_private_file` synct nach dem Tausch das Verzeichnis  [ ]
+### T1 — `write_private_file` synct nach dem Tausch das Verzeichnis  [x]
 Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/tests/test_secret_key_file.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @18fa95d3 2026-10-29T09:27:35+01:00
+Review: approve (.ah-out/review/server-multiworker/T1.verdict.json)
 Änderung: Neu in `apps/server/app/core/config.py` neben `write_private_file` (SH `:17-33`): `fsync_dir(path: Path) -> None` — `os.open(path, os.O_RDONLY | os.O_DIRECTORY)`, `os.fsync`, `os.close` im `finally`; ein `OSError` (beim Öffnen oder beim `fsync`) wird als `logger.warning("directory %s not synced (%s)", path, type(exc).__name__)` geloggt und nicht geworfen. Kommentar fürs Warum: der Verzeichniseintrag eines `os.replace` ist erst nach einem `fsync` des Verzeichnisses haltbar (fsync(2)); die Datei steht schon an ihrem Platz, ein Wurf ließe den Aufrufer einen gelungenen Tausch als gescheitert behandeln. `write_private_file` ruft nach `os.replace(tmp, path)` (SH `:30`) `fsync_dir(path.parent)`, außerhalb des `except`, das die Temp-Datei entfernt. Neue Tests in `test_secret_key_file.py`: (a) `os.fsync` und `os.replace` per `monkeypatch` als Spione, die je Aufruf `("fsync", stat.S_ISDIR(os.fstat(fd).st_mode), os.fstat(fd).st_ino)` bzw. `("replace",)` festhalten und das Original rufen → nach `write_private_file(tmp_path / "f", "x")` ist die Folge `fsync` (Datei), `replace`, `fsync` (Verzeichnis, `st_ino == tmp_path.stat().st_ino`). (b) Der `fsync`-Spion wirft für Verzeichnis-Deskriptoren `OSError(errno.EINVAL, "Invalid argument")` → `write_private_file` wirft nicht, die Datei hält den Inhalt, genau eine WARNING von `adminhelper.config` nennt `OSError`, `Invalid argument` steht nicht in `caplog.text`, kein Record mit `exc_info`. Zuerst rot: (a) und (b) auf dem Stand vor dem Fix (kein Verzeichnis-`fsync`, keine WARNING).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_secret_key_file.py tests/test_bootstrap.py
 Doku: keine (intern)
