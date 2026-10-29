@@ -103,8 +103,10 @@ Dedup-Key: bug:docs:ca-chain-drift
 HEAD: b25c65a6
 Semantik: R-0453: „wirksame Sperre nur serverseitig: secretKeys der fuer ihn sichtbaren Tunnel und ggf. frps-Token rotieren. Abschnitt in benutzer.html/users.html und frp-tunnel.html (DE+EN)“; „deaktivieren“ gibt es im Code nicht (`apps/server/app/modules/users/models.py`, kein `is_active`), die Doku spricht von Löschen, Widerrufen und Entziehen.
 
-### T6 — Benutzer-Doku: Löschen und Widerrufen sperren die API, nicht den Tunnel (R-0453)  [ ]
+### T6 — Benutzer-Doku: Löschen und Widerrufen sperren die API, nicht den Tunnel (R-0453)  [x]
 Komponente: scripts · Dateien: docs/admin/benutzer.html, docs/en/admin/users.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e009097f 2026-10-29T10:45:41+01:00
+Review: approve (.ah-out/review/docs-residual-risks/T6.verdict.json)
 Änderung: Abschnitt „Geräte und Widerruf“ (`docs/admin/benutzer.html:104-112`, EN `docs/en/admin/users.html:98-106`): ein Satz nach der Liste, DE und EN: Löschen und Widerrufen sperren die API sofort; einen Tunnel, dessen Visitor-Konfiguration der Benutzer schon hat, sperren sie nicht. Verweis auf `frp-tunnel.html#revoke-access` (DE `docs/admin/frp-tunnel.html`, EN `docs/en/admin/frp-tunnel.html`). Sonst nichts an diesem Abschnitt; `feature/compose-hardening` T12 ändert die Datei an anderer Stelle.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Task ist die Doku; kein CHANGELOG
