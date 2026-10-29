@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: frpc-Config nach einer Ablehnung und nach einem Update — Task-Ledger
-Status: bereit · Branch: feature/agent-frpc-recheck · Review: am Ende
+Status: aktiv · Branch: feature/agent-frpc-recheck · Review: am Ende
 Spec: docs/features/agent-frpc-recheck.md
 Heavy: linux-full — `apps/agent` (Abgleich und Provisionierung von frpc); Windows über den CI-Job `agent-windows` (`go test ./...` nativ, `sync.go` ist plattformgemeinsam), keine Windows-VM. Kein `scenario`: ein angenommener Server-Text nimmt denselben Weg wie heute, der FRP-Datenpfad ändert sich nicht
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,6 +26,13 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/... ./cmd/...
 Doku: docs/developer/agent.html + docs/en/developer/agent.html (Absatz über der Tabelle: nach einem Agent-Update holt der erste Lauf den Text einmal und prüft ihn, auch bei gleichem Hash; besteht er, bleibt frpc unberührt; neue Datei im FRP-Verzeichnis nennen) · CHANGELOG.md (Changed, umlautfrei)
 Abhängt von: T1
+
+### T3 — Funde der Abschlussprüfung: Ablehnung bleibt ein Fehler, Marker am Hash  [ ]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/servertoml_test.go, docs/developer/agent.html, docs/en/developer/agent.html
+Änderung: (1) `refuseServerConfig` hängt einen gescheiterten Stopp ohne `%w` an die Ablehnung, damit `warnOnServiceFailure` (`apply.go:152`) sie nicht in eine Warnung verwandelt: eine abgelehnte Provisionierung endet immer mit Fehler (reviewer und security, branch). (2) Der Marker trägt Version und Hash (`<version> <hash>`) und gilt nur zum gespeicherten Hash. (3) Ohne gespeicherten Hash und für einen Text ohne `[[proxies]]` gibt es keine Nachprüfung (`applyConfig` prüft einen solchen nie). Tests: Ablehnung mit gescheitertem `disableService` bei Provisionierung und Sync → Fehler; Marker einer anderen Version oder eines anderen Hashs → Nachprüfung; kein Hash → kein Abruf. Gegenprobe: (1) mit `%w` rot.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/... ./cmd/...
+Doku: docs/developer/agent.html + docs/en/developer/agent.html (Absatz zur Prüfung des Server-Texts: statt „schreibt dann nichts und startet nichts“ der Verweis auf die Tabellenzeile; Marker-Satz: Version und Hash)
+Abhängt von: T2
 
 ## Entscheidungen
 - 2026-10-29 Kevin: ein abgelehnter Server-Text stoppt frpc (fail-closed), statt auf der alten Datei weiterzulaufen; nach einem Agent-Update wird einmal neu geprüft.
