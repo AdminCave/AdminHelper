@@ -109,8 +109,12 @@ func Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// After an agent update the text in place has not been through this agent's check yet: fetch
+	// and check it once, even with the same hash.
+	recheck := checkedBy() != agentVersion
+	unchanged := remoteHash == localHash && !stuck && !configWithoutTunnel()
 	if remoteHash == localHash {
-		if !stuck && !configWithoutTunnel() {
+		if unchanged && !recheck {
 			return nil
 		}
 	} else {
@@ -143,6 +147,13 @@ func Sync(ctx context.Context) error {
 		return err
 	}
 	defer unlock()
+	if unchanged {
+		// The check passes the text frpc runs on: nothing to write, reload or restart.
+		if err := checkServerConfig(newConfig); err != nil {
+			return refuseServerConfig(ctx, err)
+		}
+		return writeCheckedBy()
+	}
 	// Without a tunnel applyConfig stops frpc, which needs no admin API.
 	if stuck && hasProxies(newConfig) {
 		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
@@ -224,6 +235,9 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 		if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 			return fmt.Errorf("write the config hash: %w", err)
 		}
+		if err := writeCheckedBy(); err != nil {
+			return err
+		}
 		logger.Infof("No tunnel for this host, frpc stopped and disabled.")
 		return nil
 	}
@@ -263,7 +277,43 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 		return fmt.Errorf("Hash schreiben: %w", err)
 	}
+	if err := writeCheckedBy(); err != nil {
+		return err
+	}
 	logger.Infof("frpc.toml updated, frpc %s.", started)
+	return nil
+}
+
+// agentVersion is the version of this agent, set by main. A text stored under another version
+// (or none: every agent before this file existed) is checked once more by the next sync.
+var agentVersion = "dev"
+
+// SetAgentVersion records the agent's version for the check after an update.
+func SetAgentVersion(v string) { agentVersion = v }
+
+// checkedByFile holds the agent version that last checked the stored text.
+func checkedByFile() string { return filepath.Join(config.FrpDir(), ".checked-by") }
+
+// checkedBy is the version checkedByFile records, "" without one.
+func checkedBy() string {
+	data, err := os.ReadFile(checkedByFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeCheckedBy() error {
+	if err := config.WriteFile(checkedByFile(), []byte(agentVersion), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", checkedByFile(), err)
+	}
+	return nil
+}
+
+func removeCheckedBy() error {
+	if err := os.Remove(checkedByFile()); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", checkedByFile(), err)
+	}
 	return nil
 }
 
@@ -280,6 +330,9 @@ func refuseServerConfig(ctx context.Context, refusal error) error {
 	}
 	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
 		return errors.Join(refusal, fmt.Errorf("remove the config hash: %w", err))
+	}
+	if err := removeCheckedBy(); err != nil {
+		return errors.Join(refusal, err)
 	}
 	return fmt.Errorf("frpc stopped until the server sends a config that passes: %w", refusal)
 }
@@ -373,6 +426,9 @@ func syncWithoutFrpConfig(ctx context.Context) error {
 	}
 	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove the config hash: %w", err)
+	}
+	if err := removeCheckedBy(); err != nil {
+		return err
 	}
 	logger.Infof("No FRP config or tunnel for this host on the server, frpc stopped and disabled.")
 	return nil

@@ -23,6 +23,7 @@ import (
 var version = "dev"
 
 func main() {
+	frpc.SetAgentVersion(version)
 	root := &cobra.Command{
 		Use:   "adminhelper-agent",
 		Short: "AdminHelper Agent — FRPC Sync + Monitoring (Linux & Windows)",

@@ -239,8 +239,11 @@ func TestSyncNoOpOnIdenticalHash(t *testing.T) {
 	}))
 	defer srv.Close()
 	calls := setupSyncTest(t, srv.URL)
-	// Local hash already matches remote -> no fetch/write/restart.
+	// Local hash already matches remote and this agent checked the text -> no fetch/write/restart.
 	if err := os.WriteFile(config.FrpHashFile(), []byte(hash), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCheckedBy(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1077,5 +1080,118 @@ func TestReloadLocalHeadCheckLetsValuesPass(t *testing.T) {
 	toml := []byte("serverAddr = \"1.2.3.4\"\nuser = \"webServer\"\n\n[[proxies]]\nname = \"loginFailExit\"\n")
 	if err := checkServerConfig(toml); err != nil {
 		t.Errorf("checkServerConfig = %v, want nil when only values name webServer or loginFailExit", err)
+	}
+}
+
+// seedRunningTunnel puts frpc running on tunnelToml under its hash, as a former sync left it,
+// with checkedBy holding the given version ("" for none, as every agent before the marker).
+func seedRunningTunnel(t *testing.T, calls *seamCalls, toml []byte, checkedByVersion string) {
+	t.Helper()
+	if err := os.WriteFile(config.FrpConfigFile(), toml, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.FrpHashFile(), []byte(hashConfig(toml)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if checkedByVersion != "" {
+		if err := os.WriteFile(checkedByFile(), []byte(checkedByVersion), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls.active = true
+}
+
+// useAgentVersion sets the agent version for one test.
+func useAgentVersion(t *testing.T, v string) {
+	t.Helper()
+	orig := agentVersion
+	SetAgentVersion(v)
+	t.Cleanup(func() { SetAgentVersion(orig) })
+}
+
+// After an agent update the stored text is fetched and checked once, even with the same hash.
+// When it passes, frpc and its files stay as they are and only the marker is written; the next
+// run is a no-op again. Without a marker (an agent from before it) it is the same.
+func TestSyncRechecksTheConfigAfterAnUpdate(t *testing.T) {
+	for name, before := range map[string]string{"no marker": "", "older agent": "0.45.0"} {
+		t.Run(name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://unused.example")
+			useAgentVersion(t, "0.47.0")
+			fetches := serveToml(t, tunnelToml)
+			seedRunningTunnel(t, calls, tunnelToml, before)
+			files, actions := frpFiles(t), *calls
+
+			if err := Sync(context.Background()); err != nil {
+				t.Fatalf("Sync after an update: %v", err)
+			}
+			if *fetches != 1 {
+				t.Errorf("config fetches = %d, want 1", *fetches)
+			}
+			if *calls != actions {
+				t.Errorf("frpc service state %+v, want it unchanged %+v (no reload or restart)", *calls, actions)
+			}
+			if got := readFile(t, config.FrpConfigFile()); got != files["frpc.toml"] {
+				t.Errorf("frpc.toml = %q, want it unchanged %q", got, files["frpc.toml"])
+			}
+			if got := checkedBy(); got != "0.47.0" {
+				t.Errorf("checked by %q, want 0.47.0", got)
+			}
+
+			if err := Sync(context.Background()); err != nil {
+				t.Fatalf("second Sync: %v", err)
+			}
+			if *fetches != 1 {
+				t.Errorf("config fetches after the second run = %d, want still 1", *fetches)
+			}
+		})
+	}
+}
+
+// A stored text the updated agent's check refuses is not left running: the recheck stops frpc
+// like any refused text.
+func TestSyncRecheckStopsFrpcOnARefusedStoredText(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	useAgentVersion(t, "0.47.0")
+	refused := []byte(refusedOverTheFlows["proxy plugin"])
+	serveToml(t, refused)
+	seedRunningTunnel(t, calls, refused, "0.45.0")
+
+	if err := Sync(context.Background()); err == nil {
+		t.Fatal("the recheck must refuse the stored text")
+	}
+	if calls.disables != 1 || calls.active || calls.enables+calls.restarts+calls.reloads != 0 {
+		t.Errorf("frpc service state %+v, want it stopped and disabled once, nothing started", *calls)
+	}
+	if !frpcGone() {
+		t.Errorf("frpc.toml or the hash is still there, want both removed")
+	}
+	if got := checkedBy(); got != "" {
+		t.Errorf("checked by %q, want the marker removed", got)
+	}
+}
+
+// Writing a config records the agent that checked it, and a host without an FRP config keeps
+// no marker.
+func TestSyncKeepsTheMarkerWithTheConfig(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	useAgentVersion(t, "0.47.0")
+	serveToml(t, tunnelToml)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if got := checkedBy(); got != "0.47.0" {
+		t.Errorf("checked by %q after writing the config, want 0.47.0", got)
+	}
+
+	srv, _ := hashServer(t, `{"hash": null}`, nil)
+	pointSyncAt(t, srv.URL)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync with a null hash: %v", err)
+	}
+	if _, err := os.Stat(checkedByFile()); !os.IsNotExist(err) {
+		t.Errorf("marker stat = %v, want it removed with the config", err)
+	}
+	if calls.disables != 1 {
+		t.Errorf("disables = %d, want 1", calls.disables)
 	}
 }

@@ -50,6 +50,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent: nach einem Update prueft der Agent die frpc-Konfiguration einmal neu:** Der erste Lauf nach einem
+  Agent-Update holt die Konfiguration des Servers auch bei gleichem Hash und prueft sie; besteht sie, bleibt frpc
+  unberuehrt, sonst stoppt der Agent frpc wie bei jeder abgelehnten Konfiguration. Neue Datei `/etc/frp/.checked-by`.
+  Doku: Agent-Entwicklerseite (DE+EN).
 - **Agent: ein abgelehnter frpc-Text stoppt frpc:** Weicht die frpc-Konfiguration des Servers von der Form ab, die
   der Generator schreibt, stoppt und deaktiviert der Agent frpc und loescht `frpc.toml` und Hash, statt frpc auf der
   alten Datei weiterlaufen zu lassen; der naechste Lauf holt und prueft erneut. Gilt fuer Abgleich und
