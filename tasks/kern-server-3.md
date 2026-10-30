@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-3 · Review: pro Task
 Spec: docs/features/kern-server-3.md (Roadmap R-0960, R-0959, R-0958, R-0990, R-0991, R-0957, R-0976)
 Heavy: linux-full — Server-Auth und Proxy-Vertrauen hinter dem Gateway; der Stack-Test prüft Login und Bootstrap
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -73,8 +73,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source
 Doku: changelog.d/kern-server-3.md (neutral)
 Abhängt von: T1
 
-### T7 — Installations-Doku: ADMIN_PASSWORD nur mit 8–128 Zeichen (R-0957, Fund der Abschlussprüfung)  [ ]
+### T7 — Installations-Doku: ADMIN_PASSWORD nur mit 8–128 Zeichen (R-0957, Fund der Abschlussprüfung)  [x]
 Komponente: server · Dateien: docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f4556437 2026-10-30T12:05:47+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Tabelle (`installation.html:142` + EN `:51`) und Absatz (`:183` + EN `:136`) nennen 8–128 Zeichen; ein Wert außerhalb fällt wie leer auf den Bootstrap-Token zurück.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py
 Doku: docs/admin/installation.html + EN
