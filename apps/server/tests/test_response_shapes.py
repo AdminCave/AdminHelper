@@ -292,10 +292,13 @@ class TestServerShape:
     def test_internal_listing(self, test_client, db_session, monkeypatch):
         monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "right")
         self._full(db_session)
+        self._sparse(db_session)
         r = test_client.get("/api/internal/servers", headers={"X-Internal-Key": "right"})
         assert r.status_code == 200, r.text
+        # Ordered by id; a server with no stored tags lists an empty list, not null.
         assert r.json() == [
-            {"id": "srv-full", "hostname": "full.example", "name": "full", "tags": ["prod"]}
+            {"id": "srv-full", "hostname": "full.example", "name": "full", "tags": ["prod"]},
+            {"id": "srv-sparse", "hostname": "sparse.example", "name": "sparse", "tags": []},
         ]
 
 
