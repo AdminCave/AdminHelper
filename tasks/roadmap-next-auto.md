@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # „Als Nächstes“ automatisch aus den Roadmap-Zeilen — Task-Ledger
-Status: geplant · Branch: feature/roadmap-next-auto · Review: am Ende
+Status: aktiv · Branch: feature/roadmap-next-auto · Review: am Ende
 Spec: Roadmap R-0999
 Heavy: none — nur `scripts/dev/roadmap.py` samt Unit-Tests und Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
