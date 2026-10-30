@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-3 — Task-Ledger
-Status: aktiv · Branch: feature/ops-3 · Review: pro Task
+Status: bereit · Branch: feature/ops-3 · Review: pro Task
 Spec: docs/features/ops-3.md (Roadmap R-0859, R-0862, R-0896, R-0865, R-0986, R-0956, R-0987)
 Heavy: linux-full — `scripts/update.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -48,8 +48,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (nur Tests)
 Abhängt von: T3
 
-### T5 — Installations-Doku: Passwortdatei ohne Shell-History (R-0859)  [ ]
+### T5 — Installations-Doku: Passwortdatei ohne Shell-History (R-0859)  [x]
 Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d57fd11e 2026-10-30T13:33:55+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Bei `--admin-password-file` (`installation.html:97`, EN `:78`) steht, wie man die Datei mit `umask 077` und `read -s` (oder einem Editor) anlegt und nach der Installation löscht.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/installation.html + EN
