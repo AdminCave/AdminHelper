@@ -51,6 +51,10 @@ services:
     volumes:
       - test-data:/app/data
 
+  # db-init runs the server image too (app.db_roles), and the ghcr.io tag knows no such module.
+  db-init:
+    image: adminhelper-test/server:latest
+
   gateway:
     image: adminhelper-test/gateway:latest
     build:

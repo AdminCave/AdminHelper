@@ -235,11 +235,11 @@ curl -k -X POST https://localhost/api/auth/bootstrap \
 
 The response directly contains `access_token` + `refresh_token` — no additional login required. The token file is automatically deleted after the bootstrap.
 
-> **Why `init-secrets.sh`?** The server and monitoring containers share a `MONITOR_API_KEY` as an internal shared secret. If the value in `.env` is empty, the monitoring container generates its own random one — and the server-to-monitoring calls fail with 401, which makes the monitoring page in the web UI appear dead. The init script fixes that.
+> **Why `init-secrets.sh`?** The server and monitoring containers share a `MONITOR_API_KEY` as an internal shared secret. If the value in `.env` is empty, the monitoring container generates its own random one — and the server-to-monitoring calls fail with 401, which makes the monitoring page in the web UI appear dead. The init script fixes that. It also fills the four role passwords `SERVER_DB_PASSWORD`, `SCHEDULER_DB_PASSWORD`, `MONITOR_DB_PASSWORD` and `CA_DB_PASSWORD`; without them no service starts.
 
 ### Persistent data
 
-The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the monitoring service's first start, by its entrypoint). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
+The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently by the one-shot service `db-init` on every start of the stack). Each service connects with a Postgres role of its own without superuser rights (`ah_server`, `ah_scheduler`, `ah_monitor`, `ah_ca`); `db-init` creates the roles. The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
 
 File-based server data is stored in the `./data/` directory in the project root (bind mount). This directory is listed in `.gitignore` and is created automatically.
 
