@@ -95,8 +95,10 @@ class _NameResolver:
         *,
         label: str = "TRUSTED_PROXIES",
         thread_name: str = "trusted-proxy-names",
+        ttl: float | None = None,
     ):
         self.names = names
+        self._ttl = ttl
         self._getaddrinfo = getaddrinfo
         self._label = label
         self._thread_name = thread_name
@@ -166,7 +168,9 @@ class _NameResolver:
                 self._failing.discard(name)
                 found |= networks
             self._networks = list(found)
-            return _NAME_RETRY if self._failing else _NAME_TTL
+            if self._failing:
+                return _NAME_RETRY
+            return _NAME_TTL if self._ttl is None else self._ttl
 
     def _start(self) -> None:
         with self._lock:

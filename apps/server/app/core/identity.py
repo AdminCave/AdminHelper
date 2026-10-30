@@ -61,7 +61,12 @@ _H_CERT = "x-client-cert"  # URL-escaped PEM ($ssl_client_escaped_cert)
 # of its own, not TRUSTED_PROXIES: an entry there vouches for the client address a
 # proxy forwards, not for a client certificate.
 _GATEWAY_NAMES = ("gateway",)
-_GATEWAY = _NameResolver(list(_GATEWAY_NAMES), label="mTLS identity", thread_name="gateway-names")
+# Shorter than the proxies' TTL: an old gateway address is trusted with client
+# certificates, so it may outlive a recreated gateway only briefly (R-0959).
+_GATEWAY_TTL = 5.0
+_GATEWAY = _NameResolver(
+    list(_GATEWAY_NAMES), label="mTLS identity", thread_name="gateway-names", ttl=_GATEWAY_TTL
+)
 # A recreated gateway (an update) comes back with a new address: a request from an
 # unknown peer waits this long for the fresh lookup that has_address starts.
 _GATEWAY_WAIT = 1.0

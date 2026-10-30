@@ -62,8 +62,10 @@ Doku: docs/developer/api-reference.html + EN
 Task-Review: am Ende
 Abhängt von: T2
 
-### T6 — Gateway-Namen kürzer zwischenspeichern (R-0959)  [ ]
+### T6 — Gateway-Namen kürzer zwischenspeichern (R-0959)  [x]
 Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/app/core/identity.py, apps/server/tests/test_identity_source.py, changelog.d/kern-server-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @6f34fa86 2026-10-30T11:58:45+01:00
+Review: approve (.ah-out/review/kern-server-3/T6.verdict.json)
 Änderung: `_NameResolver` bekommt eine TTL je Instanz (Standard `_NAME_TTL`, `middleware.py:74`); die Gateway-Namen (`identity.py:64`) lösen alle 5 s neu auf (Kevin 2026-10-30). Test: die Gateway-Instanz plant ihre nächste Runde nach 5 s, die Proxy-Namen weiter nach 30 s.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_ip_filter.py
 Doku: changelog.d/kern-server-3.md (neutral)
