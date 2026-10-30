@@ -25,8 +25,10 @@
 The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
 Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min); everything
-else — prose, "Als Nächstes", blank lines, a row it cannot read — passes
-through byte for byte.
+else — prose, blank lines, a row it cannot read — passes through byte for
+byte. "Als Nächstes" is the script's: every write rewrites it from the rows
+(what is in progress, the next waiting train of each stage, the open REL rows,
+the blocked rows that wait on Kevin); nobody keeps it by hand.
 
 The file is --file, else $AH_ROADMAP, else tasks/private/ROADMAP.md. Tests
 always name a fixture: the real file is Kevin's. --today pins the date that
@@ -463,6 +465,14 @@ class Roadmap:
     def next_id(self) -> str:
         return f"R-{self.highest() + 1:04d}"
 
+    def set_next_up(self) -> None:
+        """ "Als Nächstes" from the rows, between its heading and the next one."""
+        try:
+            start, end = self.section_bounds("Als Nächstes")
+        except UsageError:
+            return
+        self.items[start + 1 : end] = [*next_up_lines(self), ""]
+
     def set_header(self, today: dt.date) -> None:
         """`Stand: <today> · WIP: …` computed from the rows, above the first section."""
         line = f"Stand: {today.isoformat()} · {wip_text(self.counts(today))}"
@@ -650,6 +660,7 @@ def write(
             commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
             raise
         pruned = roadmap.prune(today)
+        roadmap.set_next_up()
         roadmap.set_header(today)
         bak = sibling(path, ".bak")
         bak.write_bytes(before_text.encode("utf-8"))
@@ -826,7 +837,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def next_up(roadmap: Roadmap) -> list[str]:
-    """The "Als Nächstes" section as Kevin wrote it, heading included."""
+    """The "Als Nächstes" section as the last write left it, heading included."""
     try:
         start, end = roadmap.section_bounds("Als Nächstes")
     except UsageError:
@@ -973,34 +984,75 @@ def train_stage(ledger: str) -> str:
     return next((s for s in ("klein", "arch") if name.startswith(f"{s}-")), "kern")
 
 
-def cmd_zuege(args: argparse.Namespace) -> int:
-    trains: dict[str, list[Row]] = {}
-    for _, r in Roadmap.load(roadmap_path(args.file)).rows():
+def trains(roadmap: Roadmap, stufe: str | None = None) -> list[tuple[str, list[Row], int]]:
+    """(ledger, rows, moving) per train, in the order `zuege` prints them: a
+    moving train takes no new row; of the waiting ones the highest class goes
+    first, then the fullest."""
+    found: dict[str, list[Row]] = {}
+    for _, r in roadmap.rows():
         if not r.well_formed or r.state not in TRAIN_WAITING + TRAIN_MOVING:
             continue
         ledger = r.cells[LEDGER]
-        if ledger in ("", "—", "-") or (args.stufe and train_stage(ledger) != args.stufe):
+        if ledger in ("", "—", "-") or (stufe and train_stage(ledger) != stufe):
             continue
-        trains.setdefault(ledger, []).append(r)
-    if not trains:
-        print("zuege: no train", file=sys.stderr)
-        return 1
-    lines = []
-    for ledger, rs in trains.items():
+        found.setdefault(ledger, []).append(r)
+    keyed = []
+    for ledger, rs in found.items():
         waiting = [r for r in rs if r.state in TRAIN_WAITING]
         moving = len(rs) - len(waiting)
         top = min(CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)) for r in waiting or rs)
+        keyed.append(((moving > 0, top, -len(waiting), ledger), (ledger, rs, moving)))
+    return [t for _, t in sorted(keyed)]
+
+
+def cmd_zuege(args: argparse.Namespace) -> int:
+    found = trains(Roadmap.load(roadmap_path(args.file)), args.stufe)
+    if not found:
+        print("zuege: no train", file=sys.stderr)
+        return 1
+    for ledger, rs, moving in found:
         state = f"unterwegs ({moving} von {len(rs)})" if moving else "wartet"
         ids = " ".join(f"{r.id}:{r.cells[KLASSE]}" for r in rs)
-        # A moving train takes no new row; of the waiting ones the highest
-        # class goes first, then the fullest.
-        key = (moving > 0, top, -len(waiting), ledger)
-        lines.append(
-            (key, f"{ledger} · {train_stage(ledger)} · {state} · {len(rs)} Zeilen · {ids}")
-        )
-    for _, line in sorted(lines):
-        print(line)
+        print(f"{ledger} · {train_stage(ledger)} · {state} · {len(rs)} Zeilen · {ids}")
     return 0
+
+
+NEXT_UP_NOTE = "_Erzeugt von roadmap.py bei jedem Schreiben aus den Zeilen; nicht von Hand ändern._"
+STAGE_LABEL = {"kern": "Kern", "klein": "Klein", "arch": "Architektur"}
+
+
+def short(title: str, width: int = 60) -> str:
+    return title if len(title) <= width else title[: width - 1] + "…"
+
+
+def next_up_lines(roadmap: Roadmap) -> list[str]:
+    """The points of "Als Nächstes", one line each (the session-start hook
+    prints every point as its line)."""
+    rows = [r for _, r in roadmap.rows() if r.well_formed]
+    moving = [r for r in rows if r.state in TRAIN_MOVING]
+    in_progress = [
+        f"{r.id} {r.state}" + (f" {r.cells[PR]}" if "#" in r.cells[PR] else "") for r in moving
+    ]
+    points = [f"In Arbeit: {' · '.join(in_progress) or '—'}"]
+    waiting = [(ledger, rs) for ledger, rs, m in trains(roadmap) if not m]
+    for stage in ("kern", "klein", "arch"):
+        mine = [(ledger, rs) for ledger, rs in waiting if train_stage(ledger) == stage]
+        if mine:
+            ledger, rs = mine[0]
+            top = min((r.cells[KLASSE] for r in rs), key=lambda k: CLASS_RANK.get(k, len(CLASSES)))
+            more = f"; danach {len(mine) - 1} weitere" if len(mine) > 1 else ""
+            points.append(
+                f"Nächster Zug {STAGE_LABEL[stage]}: {ledger} ({len(rs)} Zeilen, ab {top}){more}"
+            )
+    rel = [r for r in rows if r.is_open and r.cells[KLASSE] == "REL"]
+    if rel:
+        points.append("Vor dem Release: " + " · ".join(f"{r.id} {r.state}" for r in rel))
+    blocked = [r for r in rows if r.state == "blockiert"]
+    if blocked:
+        points.append(
+            "Wartet auf Kevin: " + " · ".join(f"{r.id} {short(r.cells[TITEL])}" for r in blocked)
+        )
+    return [NEXT_UP_NOTE, *(f"{n}. {p}" for n, p in enumerate(points, 1))]
 
 
 def merged_prs() -> dict[int, dt.date]:

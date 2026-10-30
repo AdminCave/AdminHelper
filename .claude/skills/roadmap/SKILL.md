@@ -14,8 +14,8 @@ Reihenfolge-Wahrheit (CLAUDE.md §4). Dieser Skill **liest** sie über `roadmap.
 **ändert** sie nur über `roadmap.py`: flock, `.bak`, Zeilenzahl-Prüfung und ein lokaler
 Commit je Schritt kommen von dort (DEVELOPMENT.md, „Die Roadmap als Skript").
 
-**Nie:** `Edit`/`Write` auf die Datei · „Als Nächstes" umschreiben (das kuratiert Kevin von
-Hand; der Skill darf einen Vorschlag machen, nicht schreiben) · `approve` (die Freigabe setzt
+**Nie:** `Edit`/`Write` auf die Datei · „Als Nächstes" umschreiben (das erzeugt `roadmap.py`
+bei jedem Schreiben aus den Zeilen) · `approve` (die Freigabe setzt
 die Session nach dem Plan-Commit von `/feature-plan`, CLAUDE.md §4). Nach jeder Änderung
 pusht die Session das private Repo (`git -C tasks/private push`, CLAUDE.md §11).
 
@@ -97,5 +97,5 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
 
 Er gibt nichts frei (`approve` setzt die Session nach dem Plan-Commit von
 `/feature-plan`, CLAUDE.md §4), plant nichts (das ist `/feature-plan`), schreibt kein
-„Als Nächstes" und legt keine Zeilen an (`add` gehört `heavy.sh`, dem Gate von `/feature-plan`
+„Als Nächstes" (das erzeugt `roadmap.py`) und legt keine Zeilen an (`add` gehört `heavy.sh`, dem Gate von `/feature-plan`
 und Kevin).
