@@ -501,41 +501,70 @@ pub enum ResetOutcome {
 /// device can no longer prove which certificate it means.
 pub async fn reset_identity(server_url: &str) -> Result<ResetOutcome, AppError> {
     reset_with(
-        leaf_fingerprint(),
+        off_worker(leaf_fingerprint).await?,
         || revoke_on_server(server_url),
-        clear_identity,
-        |fingerprint| {
-            if let Ok(key) = keyring_key(KEYRING_REPLACES) {
-                let _ = keyring_store::set(&key, fingerprint);
-            }
+        || async { off_worker(clear_identity).await? },
+        |fingerprint| async move {
+            let _ = off_worker(move || {
+                if let Ok(key) = keyring_key(KEYRING_REPLACES) {
+                    let _ = keyring_store::set(&key, &fingerprint);
+                }
+            })
+            .await;
         },
     )
     .await
 }
 
+/// Runs the keyring step `work` on a blocking thread: a keyring that waits (a locked Secret
+/// Service, an open unlock prompt) would otherwise hold an async worker of the runtime. Tests
+/// run it in place, because their in-memory keyring and workspace are per thread.
+async fn off_worker<T, W>(work: W) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    W: FnOnce() -> T + Send + 'static,
+{
+    #[cfg(test)]
+    return Ok(work());
+    #[cfg(not(test))]
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "resetting the device identity did not finish: {e}"
+            )))
+        })
+}
+
 /// The order of `reset_identity`, with the keyring and the server call as
 /// parameters, so a test can see the order and choose the server's answer. A
 /// delete that fails here is an error that says whether the server revoked it.
-async fn reset_with<F, Fut>(
+async fn reset_with<F, Fut, C, CFut, M, MFut>(
     fingerprint: Option<String>,
     revoke: F,
-    clear: impl FnOnce() -> Result<(), AppError>,
-    remember: impl FnOnce(&str),
+    clear: C,
+    remember: M,
 ) -> Result<ResetOutcome, AppError>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<bool, AppError>>,
+    C: FnOnce() -> CFut,
+    CFut: std::future::Future<Output = Result<(), AppError>>,
+    M: FnOnce(String) -> MFut,
+    MFut: std::future::Future<Output = ()>,
 {
     let Some(fingerprint) = fingerprint else {
-        clear().map_err(|err| not_deleted(ResetOutcome::NotEnrolled, err))?;
+        clear()
+            .await
+            .map_err(|err| not_deleted(ResetOutcome::NotEnrolled, err))?;
         return Ok(ResetOutcome::NotEnrolled);
     };
     let revoked = matches!(revoke().await, Ok(true));
-    let cleared = clear();
+    let cleared = clear().await;
     let outcome = if revoked {
         ResetOutcome::Revoked
     } else {
-        remember(&fingerprint);
+        remember(fingerprint).await;
         ResetOutcome::LocalOnly
     };
     cleared.map_err(|err| not_deleted(outcome, err))?;
@@ -1292,11 +1321,11 @@ mod tests {
                 calls.borrow_mut().push("revoke");
                 Ok(true)
             },
-            || {
+            || async {
                 calls.borrow_mut().push("clear");
                 Ok(())
             },
-            |_| calls.borrow_mut().push("remember"),
+            |_| async { calls.borrow_mut().push("remember") },
         )
         .await
         .unwrap();
@@ -1315,11 +1344,11 @@ mod tests {
             let outcome = reset_with(
                 Some("fp".to_string()),
                 || async { answer },
-                || {
+                || async {
                     calls.borrow_mut().push("clear");
                     Ok(())
                 },
-                |fp: &str| *remembered.borrow_mut() = Some(fp.to_string()),
+                |fp: String| async { *remembered.borrow_mut() = Some(fp) },
             )
             .await
             .unwrap();
@@ -1338,11 +1367,11 @@ mod tests {
                 calls.borrow_mut().push("revoke");
                 Ok(true)
             },
-            || {
+            || async {
                 calls.borrow_mut().push("clear");
                 Ok(())
             },
-            |_| calls.borrow_mut().push("remember"),
+            |_| async { calls.borrow_mut().push("remember") },
         )
         .await
         .unwrap();
@@ -1360,8 +1389,8 @@ mod tests {
             let result = reset_with(
                 Some("fp".to_string()),
                 || async { answer },
-                || Err(AppError::Keyring("locked".to_string())),
-                |_| {},
+                || async { Err(AppError::Keyring("locked".to_string())) },
+                |_| async {},
             )
             .await;
             let err = result
@@ -1372,8 +1401,8 @@ mod tests {
         let result = reset_with(
             None,
             || async { Ok(true) },
-            || Err(AppError::Keyring("locked".to_string())),
-            |_| {},
+            || async { Err(AppError::Keyring("locked".to_string())) },
+            |_| async {},
         )
         .await;
         assert!(result.is_err());

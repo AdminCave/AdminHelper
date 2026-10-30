@@ -264,8 +264,13 @@ async fn fetch_visitor_bundle(session: &SessionState) -> Result<(BundleReply, Si
     Ok((bundle, who))
 }
 
-/// What a visitor-bundle reply carries (see [`carries_bundle`]).
-async fn bundle_from(response: reqwest::Response) -> Result<BundleReply, AppError> {
+/// The most a visitor bundle may hold, as for the connection list (sync.rs).
+const MAX_BUNDLE_BYTES: usize = 16 * 1024 * 1024;
+
+/// What a visitor-bundle reply carries (see [`carries_bundle`]). A bundle over
+/// [`MAX_BUNDLE_BYTES`] is refused by its declared length before any of the body is read, else
+/// as soon as more has arrived; no error quotes the answer.
+async fn bundle_from(mut response: reqwest::Response) -> Result<BundleReply, AppError> {
     let status = response.status();
     if !carries_bundle(status)? {
         let refused = (status == reqwest::StatusCode::FORBIDDEN).then_some(status.as_u16());
@@ -275,7 +280,28 @@ async fn bundle_from(response: reqwest::Response) -> Result<BundleReply, AppErro
         });
     }
 
-    let bundle: VisitorBundle = response.json().await.map_err(AppError::from)?;
+    let too_large = || {
+        AppError::Validation(format!(
+            "the tunnel list could not be loaded (answer larger than {} MiB)",
+            MAX_BUNDLE_BYTES / (1024 * 1024)
+        ))
+    };
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_BUNDLE_BYTES as u64)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_BUNDLE_BYTES {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let bundle: VisitorBundle = serde_json::from_slice(&body).map_err(|_| {
+        AppError::Validation("the tunnel list could not be loaded (unexpected answer)".to_string())
+    })?;
     Ok(BundleReply {
         bundle: Some(bundle),
         refused: None,
@@ -4108,6 +4134,49 @@ method = "token"
 
         let (port, _request) = serve_one(reply("500 Internal Server Error", "")).await;
         assert!(bundle_from(get(port).await.unwrap()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_bundle_over_the_bound_is_refused_without_quoting_it() {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let get = |port: u16| client.get(format!("http://127.0.0.1:{port}/")).send();
+
+        // A bundle one byte over the bound.
+        let oversized = format!("{{\"toml\":\"{}\"}}", "x".repeat(16 * 1024 * 1024 - 10));
+        assert_eq!(oversized.len(), 16 * 1024 * 1024 + 1);
+
+        // Declared by its length: refused before the body is read.
+        let (port, _request) = serve_one(reply("200 OK", &oversized)).await;
+        let refused = bundle_from(get(port).await.unwrap())
+            .await
+            .err()
+            .expect("refused");
+        assert!(
+            refused.to_string().contains("larger than 16 MiB"),
+            "{refused}"
+        );
+        assert!(!refused.to_string().contains("xxxx"), "{refused}");
+
+        // Without a declared length (read until the connection closes): refused while reading.
+        let unbounded = format!("HTTP/1.1 200 OK\r\nconnection: close\r\n\r\n{oversized}");
+        let (port, _request) = serve_one(unbounded).await;
+        let refused = bundle_from(get(port).await.unwrap())
+            .await
+            .err()
+            .expect("refused");
+        assert!(
+            refused.to_string().contains("larger than 16 MiB"),
+            "{refused}"
+        );
+        assert!(!refused.to_string().contains("xxxx"), "{refused}");
+
+        // An answer that is no bundle: the error quotes none of it either.
+        let (port, _request) = serve_one(reply("200 OK", r#"{"toml":["sekret"]}"#)).await;
+        let refused = bundle_from(get(port).await.unwrap())
+            .await
+            .err()
+            .expect("refused");
+        assert!(!refused.to_string().contains("sekret"), "{refused}");
     }
 
     #[tokio::test]
