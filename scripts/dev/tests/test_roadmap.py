@@ -38,8 +38,11 @@ def row(
     title: str = "Etwas",
     source: str = "kevin 2026-09-01",
     ablauf: str = "—",
+    depends: str = "—",
 ) -> str:
-    return f"| {rid} | {klasse} | {title} | {status} | {source} | — | — | — | {ablauf} | — |"
+    return (
+        f"| {rid} | {klasse} | {title} | {status} | {source} | — | {depends} | — | {ablauf} | — |"
+    )
 
 
 def doc(
@@ -76,11 +79,12 @@ def clean_sections() -> dict[str, list[str]]:
             row("R-0005", "neu", "BUG", "Ein Fehler", "hunt 2026-09-18", ablauf="nie"),
         ],
         "Geplant (Stufen in Reihenfolge)": [row("R-0003", "geplant"), row("R-0007", "freigegeben")],
-        "Zurückgestellt": [row("R-0009", "zurückgestellt", "IDEE")],
+        # R-0009 holds R-0001 in the archive (Roadmap.prune).
+        "Zurückgestellt": [row("R-0009", "zurückgestellt", "IDEE", depends="R-0001")],
         "Blockiert": [],
-        "Abgeschlossen (letzte 30 Tage)": [
-            row("R-0002", "abgeschlossen 2026-09-15 (PR #3, Merge abc1234)", "BUG"),
-            row("R-0008", "abgelehnt 2026-09-14 (kein Bedarf)", "IDEE"),
+        "Abgeschlossen (letzte 7 Tage)": [
+            row("R-0002", "abgeschlossen 2026-09-20 (PR #3, Merge abc1234)", "BUG"),
+            row("R-0008", "abgelehnt 2026-09-19 (kein Bedarf)", "IDEE"),
         ],
         "Archiv": [row("R-0001", "abgeschlossen 2026-07-01")],
     }
@@ -273,7 +277,7 @@ def test_a_dedup_key_two_open_rows_share() -> None:
 
 def test_a_dedup_key_on_a_closed_row_does_not_count() -> None:
     s = clean_sections()
-    s["Abgeschlossen (letzte 30 Tage)"].append(
+    s["Abgeschlossen (letzte 7 Tage)"].append(
         row(
             "R-0010",
             "abgeschlossen 2026-09-10",
@@ -296,7 +300,7 @@ def test_a_wip_header_the_rows_do_not_add_up_to() -> None:
 def test_alt_counts_open_rows_past_their_expiry() -> None:
     s = clean_sections()
     s["Neu (untriagiert)"][1] = row("R-0005", "neu", "BUG", "Ein Fehler", ablauf="2026-09-24")
-    s["Abgeschlossen (letzte 30 Tage)"][0] = row(
+    s["Abgeschlossen (letzte 7 Tage)"][0] = row(
         "R-0002", "abgeschlossen 2026-09-15", ablauf="2026-01-01"
     )
     assert findings(doc(s)) == ["header line 2: WIP says ALT 0, the rows say 1"]
@@ -324,7 +328,7 @@ def test_a_roadmap_in_the_style_of_today_reports_exactly_its_faults() -> None:
     s["Neu (untriagiert)"].insert(
         0, row("R-0047", "neu", "REF", "Von heavy.sh", "weekly 2026-09-19")
     )
-    s["Abgeschlossen (letzte 30 Tage)"].insert(
+    s["Abgeschlossen (letzte 7 Tage)"].insert(
         0, row("R-0047", "abgeschlossen 2026-09-20", "BUG", "Von Hand gezählt")
     )
     s["Archiv"] += [
@@ -510,7 +514,7 @@ def test_an_open_dedup_key_is_refused_and_named(
 
 def test_the_dedup_key_of_a_closed_row_is_free(tmp_path: pathlib.Path) -> None:
     s = clean_sections()
-    s["Abgeschlossen (letzte 30 Tage)"].append(
+    s["Abgeschlossen (letzte 7 Tage)"].append(
         row(
             "R-0010",
             "abgeschlossen 2026-09-10",
@@ -803,12 +807,12 @@ def test_a_closed_alias_keeps_its_day_note_and_place(tmp_path: pathlib.Path) -> 
     """The cleanup of the real file turns `erledigt` into `abgeschlossen`: the
     day it closed and its note are history, not something to overwrite."""
     s = clean_sections()
-    s["Archiv"].insert(0, row("R-0010", "erledigt 2026-06-01 (PR #12)", "BUG", "Alt"))
+    s["Archiv"].insert(0, row("R-0010", "erledigt 2026-09-20 (PR #12)", "BUG", "Alt"))
     p = aged(write(tmp_path, doc(s)))
     assert status(p, "R-0010", "abgeschlossen") == 0
     rows = roadmap.Roadmap(p.read_text(encoding="utf-8")).rows()
     assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0010", "R-0001"]
-    assert placed(p, "R-0010")[1].cells[roadmap.STATUS] == "abgeschlossen 2026-06-01 (PR #12)"
+    assert placed(p, "R-0010")[1].cells[roadmap.STATUS] == "abgeschlossen 2026-09-20 (PR #12)"
 
 
 def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> None:
@@ -816,7 +820,7 @@ def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> Non
     assert status(p, "R-0002", "abgeschlossen", "--note", "PR #3, nachgetragen") == 0
     assert (
         placed(p, "R-0002")[1].cells[roadmap.STATUS]
-        == "abgeschlossen 2026-09-15 (PR #3, nachgetragen)"
+        == "abgeschlossen 2026-09-20 (PR #3, nachgetragen)"
     )
 
 
@@ -934,28 +938,59 @@ def test_the_header_follows_the_move(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_closed_rows_older_than_30_days_go_to_the_top_of_the_archive(
-    tmp_path: pathlib.Path,
-) -> None:
+def test_closed_rows_older_than_7_days_leave_the_file(tmp_path: pathlib.Path) -> None:
+    """Every write drops what closed more than 7 days ago; the private git keeps it."""
     s = clean_sections()
     kept, older = (
-        row("R-0011", "abgeschlossen 2026-08-26 (30 Tage)", "BUG"),
-        row("R-0012", "abgeschlossen 2026-08-25 (31 Tage)", "BUG"),
+        row("R-0011", "abgeschlossen 2026-09-18 (7 Tage)", "BUG"),
+        row("R-0012", "abgeschlossen 2026-09-17 (8 Tage)", "BUG"),
     )
-    s["Abgeschlossen (letzte 30 Tage)"] = [
-        row("R-0002", "abgeschlossen 2026-09-15", "BUG"),
+    s["Abgeschlossen (letzte 7 Tage)"] = [
+        row("R-0002", "abgeschlossen 2026-09-20", "BUG"),
         kept,
         older,
         row("R-0013", "abgelehnt 2026-08-01", "IDEE"),
         row("R-0014", "abgeschlossen (Datum fehlt)", "BUG"),
     ]
+    s["Archiv"].append(row("R-0017", "abgeschlossen 2026-07-01"))
     p = aged(write(tmp_path, doc(s)))
-    assert status(p, "R-0003", "freigegeben") == 0  # any write archives
+    assert status(p, "R-0003", "freigegeben") == 0  # any write prunes
     text = p.read_text(encoding="utf-8")
     rows = roadmap.Roadmap(text).rows()
     assert [r.id for sec, r in rows if sec == "Abgeschlossen"] == ["R-0002", "R-0011", "R-0014"]
-    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0012", "R-0013", "R-0001"]
-    assert older in text.split("\n")  # moved byte for byte
+    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0001"]
+    assert older not in text.split("\n")
+    assert findings(text) == []
+
+
+def test_an_old_closed_row_an_open_row_depends_on_moves_to_the_archive(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`next` counts a dependency as met only while its row stands abgeschlossen
+    in the file: the row an open row names under "Hängt ab von" stays."""
+    s = clean_sections()
+    needed = row("R-0015", "abgeschlossen 2026-08-20", "BUG")
+    s["Abgeschlossen (letzte 7 Tage)"].append(needed)
+    s["Neu (untriagiert)"].append(row("R-0016", "neu", "BUG", depends="R-0015", ablauf="nie"))
+    p = aged(write(tmp_path, doc(s)))
+    assert status(p, "R-0003", "freigegeben") == 0
+    text = p.read_text(encoding="utf-8")
+    rows = roadmap.Roadmap(text).rows()
+    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0015", "R-0001"]
+    assert needed in text.split("\n")  # moved byte for byte
+    # Once nothing open names it, the next write drops it.
+    assert status(p, "R-0016", "abgelehnt", "--note", "kein Bedarf") == 0
+    rows = roadmap.Roadmap(p.read_text(encoding="utf-8")).rows()
+    assert "R-0015" not in [r.id for _, r in rows]
+
+
+def test_the_closed_heading_names_the_days_rows_are_kept(tmp_path: pathlib.Path) -> None:
+    text = CLEAN.replace("## Abgeschlossen (letzte 7 Tage)", "## Abgeschlossen (letzte 30 Tage)")
+    assert "letzte 30 Tage" in text
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "freigegeben") == 0
+    out = p.read_text(encoding="utf-8")
+    assert "## Abgeschlossen (letzte 7 Tage)" in out and "letzte 30 Tage" not in out
 
 
 def test_approve_and_revoke(tmp_path: pathlib.Path) -> None:
@@ -1151,7 +1186,7 @@ TRAINS = {
     ],
     "Zurückgestellt": [train_row("R-0038", "zurückgestellt", "REF", "tasks/klein-doku-2.md")],
     "Blockiert": [],
-    "Abgeschlossen (letzte 30 Tage)": [
+    "Abgeschlossen (letzte 7 Tage)": [
         train_row("R-0039", "abgeschlossen 2026-09-15", "REF", "tasks/klein-alt-1.md")
     ],
     "Archiv": [],
@@ -1248,7 +1283,7 @@ def test_sync_closes_the_rows_whose_prs_are_all_merged(
     assert placed(p, "R-0010")[1].status == "pr"  # PR #9 is not merged
     assert (
         placed(p, "R-0002")[1].cells[roadmap.STATUS]
-        == "abgeschlossen 2026-09-15 (PR #3, Merge abc1234)"
+        == "abgeschlossen 2026-09-20 (PR #3, Merge abc1234)"
     )
     assert git(p.parent, "log", "-1", "--format=%s").strip() == "roadmap: sync R-0004"
     assert findings(p.read_text(encoding="utf-8")) == []
@@ -1302,7 +1337,7 @@ def test_stats_on_a_repository_of_three_commits(
         s["Geplant (Stufen in Reihenfolge)"] += (
             [row("R-0011", r11, "FEAT", "Elf")] if r11 != "aktiv" else []
         )
-        s["Abgeschlossen (letzte 30 Tage)"] = [
+        s["Abgeschlossen (letzte 7 Tage)"] = [
             "| R-0002 | BUG | Etwas | abgeschlossen 2026-09-15 | kevin | — | — | #3 | — | 12 |",
             "| R-0008 | FEAT | Etwas | abgeschlossen 2026-09-14 | kevin | — | — | #5 | — | 20 |",
             "| R-0012 | REF | Ohne PR | abgeschlossen 2026-09-14 | kevin | — | — | — | — | 99 |",
