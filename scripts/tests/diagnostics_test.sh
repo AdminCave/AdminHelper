@@ -66,14 +66,16 @@
 #       name turns into a dangling link just before the open (nothing is created); it
 #       stays 0600 in a dir with a default ACL; no value of the .env stands in the
 #       arguments of sed;
-#   (o) the token forms are masked before .env values under 8 bytes, which are
-#       masked elsewhere too, and after longer ones, which go whole;
+#   (o) a .env value under 8 bytes inside a token form goes with the token, which
+#       keeps its name; a longer value with a token form inside goes whole;
 #   (p) a mask program that fails (env_values, also for --mask-hosts) stops the run
 #       with its error and an error of its own, and no bundle is written; so does a
 #       rule file that cannot be written;
 #   (q) the quoted value of another key that runs on over lines is read as compose reads
 #       it: the line it runs on to goes from env.sanitized, and its value is masked;
-#   (r) backup.sh holds the same dotenv tokenizer text.
+#   (r) backup.sh holds the same dotenv tokenizer text;
+#   (s) a value and a token form that overlap or touch without a separator go as one,
+#       no byte of either stays.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -842,12 +844,12 @@ build_redaction_sedfile "$env_q" "$sed_q"
 same "(q) the quoted value of another key over lines in the logs" 'smtp: <redacted> <redacted>' \
     "$(printf '%s\n' 'smtp: q9c q9leak3' | redact "$sed_q")" || fail=1
 
-# --- (o) the token forms before the short values --------------------------------------
+# --- (o) a short value inside a token form ---------------------------------------------
 # A value under 8 bytes may stand by chance inside a token; masked first, it would
-# leave rests of the token too short for the token rule. The token rules run before
-# the short values and after the long ones; the short value is masked elsewhere too. A
-# long value with a token form inside goes whole: the JWT rule first would leave its
-# beginning.
+# leave rests of the token too short for the token rule. Value and token are found on
+# the line as it came and go as one, the token keeping its name; the short value is
+# masked elsewhere too. A long value with a token form inside goes whole: the JWT rule
+# first would leave its beginning.
 cat > "$tmp/o.env" <<'EOF'
 SMTP_PASSWORD=ab12
 SECRET_KEY=longvalue1234
@@ -859,6 +861,25 @@ same "(o) token forms before short values" \
         'db=<redacted>')" \
     "$(printf '%s\n' 'Authorization: Bearer xyzab12cdefghij' 'pw=ab12 key=longvalue1234' \
         'jwt eyJab12cdef.eyJpayload12.sigab12' 'db=pre9x.eyJabcdefgh.eyJabcdefgh.sig1' | redact "$tmp/o.sed")" || fail=1
+
+# --- (s) values and token forms that overlap -------------------------------------------
+# A short value with a byte outside the token class right behind a Bearer token and
+# behind a JWT, a long value inside a Bearer token and inside a JWT, a long value that
+# is the beginning of adminhelper_prov_: masked one after the other, the first cut the
+# second, and a rest of it stayed. No byte of value or token stays.
+cat > "$tmp/s.env" <<'EOF'
+SMTP_PASSWORD=ab#1
+ADMIN_PASSWORD=q%7
+SECRET_KEY=mid9secret
+POSTGRES_PASSWORD=adminhelper
+EOF
+build_redaction_sedfile "$tmp/s.env" "$tmp/s.sed"
+same "(s) values and token forms that overlap" \
+    "$(printf '%s\n' 'auth Bearer <redacted> ok' 'jwt <redacted-jwt> ok' 'auth Bearer <redacted> ok' \
+        'jwt <redacted-jwt> ok' 'key <redacted> ok')" \
+    "$(printf '%s\n' 'auth Bearer xyzxyzxyab#1 ok' 'jwt eyJabcdefgh.eyJabcdefgh.sigq%7 ok' \
+        'auth Bearer abcmid9secretxyz ok' 'jwt eyJabcdefgh.eyJmid9secretxy.sig ok' \
+        'key adminhelper_prov_abcdefgh12 ok' | redact "$tmp/s.sed")" || fail=1
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
 # A docker stub on PATH answers what main asks; `compose ps` lands in report.txt,
@@ -1162,25 +1183,25 @@ EOF
         sed 's/^/    | /' "$p/run.log" >&2; fail=1
     fi
 done
-# The rules must stop the run when they cannot be written, too: a cat stub fails where
-# it writes the token rules (cat without an argument, the here-document). main calls
+# The rules must stop the run when they cannot be written, too: a sort stub fails where
+# it orders the values for the rule file (sort without an argument). main calls
 # build_redaction_sedfile as a command of its own; under || set -e would be off in it
 # and the run would go on without the rules.
-mkdir -p "$p/bin-cat" "$p/out-cat"
-p_cat="$(command -v cat)"
-cat > "$p/bin-cat/cat" <<EOF
+mkdir -p "$p/bin-sort" "$p/out-sort"
+p_sort="$(command -v sort)"
+cat > "$p/bin-sort/sort" <<EOF
 #!/usr/bin/env bash
-[ "\$#" != 0 ] || { echo "cat: stub fails" >&2; exit 1; }
-exec "$p_cat" "\$@"
+[ "\$#" != 0 ] || { echo "sort: stub fails" >&2; exit 1; }
+exec "$p_sort" "\$@"
 EOF
-chmod +x "$p/bin-cat/cat"
+chmod +x "$p/bin-sort/sort"
 rc=0
-( cd "$p" && PATH="$p/bin-cat:$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" \
-    --output "$p/out-cat" ) > "$p/run-cat.log" 2>&1 || rc=$?
-p_left="$(ls -A "$p/out-cat")"
-if [ "$rc" = 0 ] || [ -n "$p_left" ] || ! has 'cat: stub fails' "$(cat "$p/run-cat.log")"; then
+( cd "$p" && PATH="$p/bin-sort:$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" \
+    --output "$p/out-sort" ) > "$p/run-sort.log" 2>&1 || rc=$?
+p_left="$(ls -A "$p/out-sort")"
+if [ "$rc" = 0 ] || [ -n "$p_left" ] || ! has 'sort: stub fails' "$(cat "$p/run-sort.log")"; then
     echo "(p) rules that cannot be written: exit $rc, left: $(tr '\n' ' ' <<<"$p_left")" >&2
-    sed 's/^/    | /' "$p/run-cat.log" >&2; fail=1
+    sed 's/^/    | /' "$p/run-sort.log" >&2; fail=1
 fi
 
 # --- (h) the switch in the usage ----------------------------------------------------

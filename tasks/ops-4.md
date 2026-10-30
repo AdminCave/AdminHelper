@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-4 — Task-Ledger
-Status: aktiv · Branch: feature/ops-4 · Review: am Ende
+Status: bereit · Branch: feature/ops-4 · Review: am Ende
 Spec: docs/features/ops-4.md (Roadmap R-1014, R-1015)
 Heavy: none — nur Bash-Filter der .env und sed-Regeln; diagnostics_test und restore_guard_test fahren sie lokal ohne Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,8 +34,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagno
 Doku: keine (Verhalten wie dokumentiert, nur exakter)
 Abhängt von: T1
 
-### T3 — Masken-Reihenfolge mit Platzhalter (R-1015)  [ ]
+### T3 — Masken-Reihenfolge mit Platzhalter (R-1015)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, changelog.d/ops-4.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @34cea667 2026-10-30T19:06:47+01:00
+Review: am Ende (Branch-Review)
 Änderung: `build_redaction_sedfile` (`scripts/diagnostics.sh:97`) ersetzt jeden Wert (längster zuerst) durch einen
 Platzhalter aus Zeilenumbrüchen, den die Token-Regeln als Token-Byte mitlesen, dann die Token-Formen, dann
 Platzhalter → `<redacted>`, dann die Host-Regeln. Neue Fälle: kurzer Wert mit Nicht-Token-Byte direkt an einem
@@ -50,3 +52,10 @@ Doku: changelog.d/ops-4.md
   install.sh und release.yml. Fall (q) ist mit der alten Fassung in `sanitize_env` rot, der Log-Teil war schon grün
   (env_values verfolgte den gesuchten Schlüssel hinter jedem Quote) und bleibt als Schutz.
 - T2: backup.sh trägt den Block zwischen `# >>> dotenv tokenizer` und `# <<< dotenv tokenizer` samt ENV_WS/ENV_SP/ENV_SEP (dafür aus dem Kopf von diagnostics.sh in den Block verschoben); (r) vergleicht beide Blöcke. Eine auskommentierte Zeile, die ein Passphrase-Span berührt, geht ganz (wie bisher bei Kommentarzeilen); 15c ist mit der alten Fassung rot (`pp8c'` blieb).
+- T3: statt des Platzhalters der Spec (Werte zuerst durch eine Folge von Zeilenumbrüchen ersetzen) maskiert ein
+  awk-Lauf (`REDACT_AWK`) die Vereinigung aller Fundstellen von Werten und Token-Formen auf der unveränderten Zeile;
+  der Platzhalter hätte einen kurzen Wert, der einen Teil eines Token-Namens trifft (`admin` vor
+  `adminhelper_prov_`), den Token zerteilen und stehen lassen. Die Werte stehen als sed-Kommentare `#=<key> <value>`
+  in der Regeldatei (nie in Argumenten), die Host-Regeln bleiben sed dahinter. Ein Token behält seinen Namen nur,
+  wenn kein Wert ihn schneidet; `Bearer eyJ…` wird jetzt `Bearer <redacted>` statt `Bearer <redacted-jwt>`. (p)
+  stubbt statt des Heredoc-`cat` (gibt es nicht mehr) das `sort`, das die Regeldatei ordnet; dieselbe Aussage.

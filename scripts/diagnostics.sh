@@ -54,10 +54,10 @@ done
 # regular .env key since the notification hub — without it the SMTP relay password would
 # end up in cleartext in env.sanitized / the logs of a bundle advertised as issue-safe (3.7).
 # SMTP_USER too: with some mail providers the user is itself an access token or a key ID.
-# Its rule stops at word edges (a short user like admin must not eat into adminhelper),
-# and it runs by its length like every value (build_redaction_sedfile): a user that is a
-# word of another secret cannot cut that secret in two, and a secret inside the user
-# cannot cut the user.
+# It is masked at word edges only (a short user like admin must not eat into
+# adminhelper), and like every value at every place (REDACT_AWK): a user that is a word
+# of another secret cannot cut that secret in two, and a secret inside the user cannot
+# cut the user.
 SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD
     MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER)
 
@@ -72,26 +72,21 @@ mask_error() {
 }
 
 # build_redaction_sedfile <envfile> <sedfile> [mask_hosts]
-# Writes a sed script that masks the .env secret values plus generic token forms, and
-# with mask_hosts=1 the host names and addresses of host_rules as well. Each value once
-# and the longest first: a value is masked whole before a shorter one inside it (another
-# line of a value over several lines, the value of another key) can cut it in two. The
-# token forms come after the values of 8 bytes and more and before the shorter ones: a
-# short value may stand by chance inside a token and would leave a rest of it too short
-# for its rule; a value of 8 bytes and more (over the segment length 6 of the JWT rule)
-# is still masked whole before a token rule can take part of it. A value of SMTP_USER
-# that is also one of another key keeps that key's rule, without word edges. A line of a
-# value that is only whitespace (ENV_WS) is no rule: it holds no secret, and its rule
-# would mask every blank of the logs.
+# Writes the rule file of redact: the .env secret values, one per line as a sed comment
+# "#=<key> <value>" that awk reads in redact and sed passes over, and with mask_hosts=1
+# the sed rules of host_rules behind them. Each value once; a value of SMTP_USER that is
+# also one of another key is that key's, without word edges. A line of a value that is
+# only whitespace (ENV_WS) is no value: it holds no secret, and would mask every blank of
+# the logs.
 build_redaction_sedfile() {
-    local envfile="$1" sedfile="$2" mask_hosts="${3:-0}" short=""
+    local envfile="$1" sedfile="$2" mask_hosts="${3:-0}"
     : > "$sedfile"
     if [ -f "$envfile" ]; then
-        local key line val esc len list
-        # The list is taken whole before its first rule: a mask program that fails
-        # (env_values, sed) fails the function, and the caller writes no bundle. Call it
-        # as a command of its own, never under || or if: that turns set -e off in it,
-        # and a rule that cannot be written would no longer stop the run.
+        local key list
+        # The list is taken whole before it is written: a mask program that fails
+        # (env_values, sed, awk, sort) fails the function, and the caller writes no
+        # bundle. Call it as a command of its own, never under || or if: that turns
+        # set -e off in it, and a rule that cannot be written would no longer stop the run.
         list="$(
             for key in "${SECRET_KEYS[@]}"; do
                 env_values "$envfile" "$key" | LC_ALL=C sed -e "s/^/$key /" || exit 1
@@ -101,37 +96,11 @@ build_redaction_sedfile() {
                 v !~ ("^" ws "*$") && v != "change-me-in-production" && (!(v in by) || by[v] == "SMTP_USER") {
                     by[v] = $1
                 }
-                END { for (v in by) print length(v) "\t" by[v] " " v }
-            ' | LC_ALL=C sort -t "$(printf '\t')" -k1,1rn
+                END { for (v in by) print "#=" by[v] " " v }
+            ' | LC_ALL=C sort
         )" || { mask_error; return 1; }
-        [ -n "$list" ] && while IFS= read -r line; do
-            len="${line%%$'\t'*}"
-            line="${line#*$'\t'}"
-            key="${line%% *}"
-            val="${line#* }"
-            esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')" || { mask_error; return 1; }
-            if [ "$key" = SMTP_USER ]; then
-                esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')" \
-                    || { mask_error; return 1; }
-            fi
-            if [ "$len" -ge 8 ]; then
-                printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
-            else
-                short+="s/$esc/<redacted>/g"$'\n'
-            fi
-        done < <(printf '%s\n' "$list")
+        [ -z "$list" ] || printf '%s\n' "$list" >> "$sedfile"
     fi
-    # Generic token shapes that may appear in logs regardless of .env. The query
-    # parameters stand in the request line of the gateway's and the server's access
-    # logs (nginx combined, uvicorn); other query values stay readable.
-    cat >> "$sedfile" <<'SED'
-s/eyJ[A-Za-z0-9_-]\{6,\}\.[A-Za-z0-9_-]\{6,\}\.[A-Za-z0-9_-]*/<redacted-jwt>/g
-s/[Bb]earer [A-Za-z0-9._-]\{8,\}/Bearer <redacted>/g
-s/\([?&]\(api_key\|token\|access_token\)=\)[^&[:space:]"]\{1,\}/\1<redacted>/gI
-s#/hooks/trigger/[^/?[:space:]"]\{8,\}#/hooks/trigger/<redacted>#g
-s/adminhelper_prov_[A-Za-z0-9_-]\{8,\}/adminhelper_prov_<redacted>/g
-SED
-    printf '%s' "$short" >> "$sedfile"
     if [ "$mask_hosts" = 1 ]; then
         host_rules "$envfile" >> "$sedfile" || { mask_error; return 1; }
     fi
@@ -420,11 +389,91 @@ env_values() {
     ' "$1"
 }
 
-# redact <sedfile> : filter stdin -> stdout through the redaction sed script.
-# LC_ALL=C: byte for byte. Under UTF-8, `[^…]` stops in front of a byte outside
-# UTF-8, and the rest of a token would stay.
+# REDACT_AWK: the awk program of redact. It finds on each line every place of a value of
+# the rule file (of SMTP_USER at word edges only) and every generic token form that may
+# appear in logs regardless of .env. The query parameters stand in the request line of
+# the gateway's and the server's access logs (nginx combined, uvicorn); other query
+# values stay readable. All places are found on the line as it came, and places that
+# overlap are masked as one: a value inside a token, a token inside a value or the two
+# side by side without a separator leave no rest of either (masked one after the other,
+# the first cut the second, and its rest no longer matched). Such a run begins with its
+# leftmost place, the longest of those: a token form keeps its name (Bearer, the query
+# parameter, /hooks/trigger/, adminhelper_prov_) unless a value overlaps it, a JWT
+# becomes <redacted-jwt>, all else <redacted>. Repetitions are spelled out: older mawk
+# knows no {n,}.
+REDACT_AWK='
+    function rep(c, k,    s) { s = ""; while (k-- > 0) s = s c; return s }
+    # tok(re, s, kind, pre): every match of re in s, one behind the other; pre is the
+    # length of the name the match begins with.
+    function tok(re, s, kind, pre,    p, q) {
+        for (p = 1; p <= length(s) && match(substr(s, p), re); p = B[n] + 1) {
+            q = p + RSTART - 1
+            n++; A[n] = q; B[n] = q + RLENGTH - 1; K[n] = kind
+            L[n] = kind == "query" ? index(substr(s, q, RLENGTH), "=") : pre
+        }
+    }
+    BEGIN {
+        w = "[A-Za-z0-9_-]"; b = "[A-Za-z0-9._-]"; h = "[^/?[:space:]\"]"
+        re_jwt = "eyJ" rep(w, 6) w "*[.]" rep(w, 6) w "*[.]" w "*"
+        re_bearer = "[Bb]earer " rep(b, 8) b "*"
+        re_query = "[?&](api_key|token|access_token)=[^&[:space:]\"]+"
+        re_hook = "/hooks/trigger/" rep(h, 8) h "*"
+        re_prov = "adminhelper_prov_" rep(w, 8) w "*"
+        while ((getline l < rf) > 0)
+            if (substr(l, 1, 2) == "#=") {
+                nv++
+                V[nv] = substr(l, index(l, " ") + 1)
+                U[nv] = substr(l, 3, index(l, " ") - 3) == "SMTP_USER"
+            }
+        close(rf)
+    }
+    {
+        s = $0
+        n = 0
+        tok(re_jwt, s, "jwt", 0)
+        tok(re_bearer, s, "bearer", 7)
+        tok(re_query, tolower(s), "query", 0)
+        tok(re_hook, s, "hook", 15)
+        tok(re_prov, s, "prov", 17)
+        for (i = 1; i <= nv; i++)
+            for (p = 1; j = index(substr(s, p), V[i]); p = q + 1) {
+                q = p + j - 1
+                e = q + length(V[i]) - 1
+                if (U[i] && ((substr(V[i], 1, 1) ~ /[A-Za-z0-9_]/ && substr(s, q - 1, 1) ~ /[A-Za-z0-9_]/) \
+                    || (substr(V[i], length(V[i])) ~ /[A-Za-z0-9_]/ && substr(s, e + 1, 1) ~ /[A-Za-z0-9_]/)))
+                    continue
+                n++; A[n] = q; B[n] = e; K[n] = "value"; L[n] = 0
+            }
+        o = ""
+        for (p = 1; ; p = e + 1) {
+            f = 0
+            for (j = 1; j <= n; j++)
+                if (A[j] >= p && (!f || A[j] < A[f] || (A[j] == A[f] && B[j] > B[f]))) f = j
+            if (!f) break
+            e = B[f]
+            do {
+                more = 0
+                for (j = 1; j <= n; j++) if (A[j] <= e && B[j] > e) { e = B[j]; more = 1 }
+            } while (more)
+            m = "<redacted>"
+            if (K[f] == "jwt") m = "<redacted-jwt>"
+            else if (L[f]) {
+                for (j = 1; j <= n; j++)
+                    if (K[j] == "value" && A[j] < A[f] + L[f] && B[j] >= A[f]) break
+                if (j > n) m = (K[f] == "bearer" ? "Bearer " : substr(s, A[f], L[f])) m
+            }
+            o = o substr(s, p, A[f] - p) m
+        }
+        print o substr(s, p)
+    }
+'
+
+# redact <rulefile> : filter stdin -> stdout through the rule file of
+# build_redaction_sedfile: REDACT_AWK, then the sed rules of --mask-hosts. LC_ALL=C:
+# byte for byte. Under UTF-8, `[^…]` stops in front of a byte outside UTF-8, and the
+# rest of a token would stay.
 redact() {
-    LC_ALL=C sed -f "$1"
+    LC_ALL=C awk -v rf="$1" "$REDACT_AWK" | LC_ALL=C sed -f "$1"
 }
 
 # sanitize_env <envfile> [mask_hosts] : mask secret VALUES by key, for env.sanitized
