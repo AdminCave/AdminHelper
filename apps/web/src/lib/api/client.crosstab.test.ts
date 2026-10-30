@@ -184,6 +184,46 @@ describe('refresh across tabs', () => {
     expect(server.sent()).toBe(1);
     expect(tab.getAccessToken()).toBe('access-a');
   });
+
+  // Without Web Locks nothing orders the tabs, but within a tab a refresh of an ended session and
+  // one of the current session, or a refresh and the logout, must still not overlap (R-0975).
+  it('runs the calls of withAuthLock within a tab one after another when the browser has no Web Locks', async () => {
+    expect('locks' in navigator).toBe(false);
+    const tab = await openTab();
+    const order: string[] = [];
+    let failFirst!: (e: Error) => void;
+    let endSecond!: () => void;
+
+    const first = tab.withAuthLock(async () => {
+      order.push('first start');
+      await new Promise<void>((_, reject) => (failFirst = reject));
+    });
+    const second = tab.withAuthLock(async () => {
+      order.push('second start');
+      await new Promise<void>((resolve) => (endSecond = resolve));
+      order.push('second end');
+    });
+    const third = tab.withAuthLock(async () => {
+      order.push('third start');
+      return 3;
+    });
+
+    await vi.waitFor(() => expect(order).toEqual(['first start']));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(['first start']);
+
+    // A failing call frees the next one and still hands its error to its own caller.
+    failFirst(new Error('refresh failed'));
+    await expect(first).rejects.toThrow('refresh failed');
+    await vi.waitFor(() => expect(order).toEqual(['first start', 'second start']));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(['first start', 'second start']);
+
+    endSecond();
+    await expect(second).resolves.toBeUndefined();
+    await expect(third).resolves.toBe(3);
+    expect(order).toEqual(['first start', 'second start', 'second end', 'third start']);
+  });
 });
 
 describe('logout across tabs', () => {

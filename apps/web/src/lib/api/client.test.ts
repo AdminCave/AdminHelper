@@ -758,9 +758,14 @@ describe('http client: a 401 of a request from an ended session', () => {
     clearTokens();
     setAccessToken('new-token');
     const firstNew = http.get('/api/servers');
-    await vi.waitFor(() => expect(refreshes).toBe(2));
+    // Without Web Locks the refreshes of the tab still run one after another (R-0975): the new
+    // session's refresh is open from its 401 on, but sent only once the old one has ended.
+    await vi.waitFor(() => expect(servers).toBe(2));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(refreshes).toBe(1);
     oldRefresh.resolve(jsonResponse({ detail: 'no' }, 401));
     expectSessionExpired(await oldPending);
+    await vi.waitFor(() => expect(refreshes).toBe(2));
 
     const secondNew = http.get('/api/servers');
     await vi.waitFor(() => expect(servers).toBe(3));

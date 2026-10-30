@@ -285,25 +285,33 @@ def test_visitor_toml_round_trips(name, visitor_port, secret):
 # test_frp_extra_config.py::test_the_schema_rejects_every_key_the_generator_writes.
 
 
-def test_allow_users_is_only_safe_because_usernames_are_validated():
-    """allowUsers decides who may open an STCP tunnel — and the generator writes it
-    without escaping.
-
-    Nothing in the FRP layer stops a name from closing that quote; what stops it is
-    _USERNAME_PATTERN in the users schema, two modules away. This test states that
-    dependency out loud, so loosening the pattern (an e-mail login, a display name)
-    fails here instead of quietly growing a tunnel's allow-list.
-    """
+def test_allow_users_leaves_out_a_name_the_api_refuses():
+    """allowUsers decides who may open an STCP tunnel. _USERNAME_PATTERN in the users
+    schema keeps a quote out of new names; a name stored before it (an import, an old
+    row) is left out by the generator itself instead of closing the quote."""
     forged = 'mallory", "admin'
     with pytest.raises(ValidationError):
         UserCreate(username=forged, password="correct horse battery")
 
-    # ...and this is what it would do if it ever got through:
     tunnel = _tunnel(name="t", secret_key="0123456789abcdef")
+    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], "u", [forged, "bob"]))
+    assert parsed["proxies"][0]["allowUsers"] == ["bob"]
     parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], "u", [forged]))
-    assert parsed["proxies"][0]["allowUsers"] == ["mallory", "admin"], (
-        "one name became two — the generator interpolates allowUsers verbatim"
-    )
+    assert parsed["proxies"][0]["allowUsers"] == ["ops-admin"], "fail closed, not open"
+
+
+def test_a_server_name_the_api_refuses_gets_no_user_and_no_tunnel():
+    """The frpc user is the server name; one stored before the schema check must not
+    reach the TOML, and without it no proxy can be named after it either."""
+    tunnel = _tunnel(name="t", secret_key="0123456789abcdef")
+    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], 'web"\nx = "1', ["bob"]))
+    assert "user" not in parsed
+    assert parsed.get("proxies", []) == []
+
+
+def test_a_visitor_user_the_api_refuses_is_an_error():
+    with pytest.raises(ValueError):
+        generate_visitor_toml(_config(), [], 'eve"')
 
 
 @given(

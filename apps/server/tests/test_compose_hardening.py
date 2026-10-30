@@ -185,3 +185,30 @@ def test_the_server_always_trusts_the_gateway_and_takes_further_proxies_from_the
 
 def test_the_scheduler_trusts_no_proxy():
     assert "TRUSTED_PROXIES" not in _entries(_services()["scheduler"], "environment")
+
+
+def _commented_service(name: str) -> dict:
+    """A service the compose file ships commented out (`# name:` plus its `#   key: value`
+    lines up to the blank line): yaml.safe_load drops comments, so the tests above never see
+    it, and whoever uncomments it takes it over exactly as written."""
+    block: list[str] = []
+    for line in _COMPOSE.read_text(encoding="utf-8").splitlines():
+        if line == f"  # {name}:":
+            block = [f"  {name}:"]
+        elif block and line.startswith("  #   "):
+            block.append("  " + line[4:])
+        elif block:
+            break
+    assert block, f"no commented-out service {name} in {_COMPOSE.name}"
+    return yaml.safe_load("services:\n" + "\n".join(block))["services"][name]
+
+
+def test_the_commented_out_pg_backup_carries_the_hardening_of_the_active_services():
+    service = _commented_service("pg-backup")
+
+    assert _NO_NEW_PRIVILEGES in service.get("security_opt", [])
+    limit = service.get("pids_limit")
+    assert type(limit) is int and limit >= 128
+    memory = service.get("mem_limit")
+    assert isinstance(memory, str) and re.fullmatch(r"[1-9][0-9]*[kmg]", memory)
+    assert int(memory[:-1]) * _BYTE_UNITS[memory[-1]] >= 128 * 1024**2

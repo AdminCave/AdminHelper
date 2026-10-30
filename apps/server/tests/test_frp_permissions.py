@@ -485,3 +485,124 @@ class TestTunnelsWithoutVisitorPort:
             if "a-ssh" in r.getMessage() and "visitor_port" in r.getMessage()
         ]
         assert len(hits) == 1, [r.getMessage() for r in hits]
+
+
+class TestNamesTheApiRefuses:
+    """A server or user name stored before the schema check (an import, an old row) is
+    written verbatim into TOML strings by the generators. Such a name is left out, and a
+    route that would have nothing else to hand out answers like one without tunnels."""
+
+    REFUSED = 'evil"name'
+
+    @staticmethod
+    def _rename_server(db, sid: str, name: str) -> None:
+        db.get(Server, sid).name = name
+        db.commit()
+
+    def test_frpc_toml_for_a_refused_server_name_is_404(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        self._rename_server(db_session, "srv-a", self.REFUSED)
+        r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=_login(test_client))
+        assert r.status_code == 404, r.text
+        assert "super-secret" not in r.text and "secret-frps-auth" not in r.text
+
+    def test_visitor_routes_leave_out_a_tunnel_of_a_refused_server_name(
+        self, db_session, admin_user, two_servers_with_tunnels
+    ):
+        self._rename_server(db_session, "srv-a", self.REFUSED)
+        bundle = gen_visitor_bundle(config_id=None, db=db_session, current_user=admin_user)
+        assert "a-ssh" not in bundle["toml"] and self.REFUSED not in bundle["toml"]
+        assert "b-ssh" in bundle["toml"]
+        toml = gen_visitor_toml(
+            config_id=None, user_id=None, db=db_session, current_user=admin_user
+        ).body.decode()
+        assert "a-ssh" not in toml and "b-ssh" in toml
+
+    def test_visitor_routes_refuse_a_user_with_a_refused_name(
+        self, db_session, normal_user, two_servers_with_tunnels
+    ):
+        normal_user.servers.append(db_session.get(Server, "srv-a"))
+        normal_user.username = self.REFUSED
+        db_session.commit()
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_toml(config_id=None, user_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+
+    def test_bulk_zip_skips_refused_server_and_user_names(
+        self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels
+    ):
+        import io
+        import tomllib
+        import zipfile
+
+        normal_user.servers.append(db_session.get(Server, "srv-b"))
+        normal_user.username = 'eve"'
+        db_session.commit()
+        self._rename_server(db_session, "srv-a", self.REFUSED)
+        h = _login(test_client)
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=h)
+        assert r.status_code == 200, r.text
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = zf.namelist()
+        assert "clients/serverB/frpc.toml" in names, names
+        assert not any(self.REFUSED in n or "eve" in n for n in names), names
+        # The only user with servers is left out: no shared visitor.toml in its place.
+        assert "visitor.toml" not in names, names
+        for n in names:
+            tomllib.loads(zf.read(n).decode())  # every file still parses
+        assert all(self.REFUSED not in zf.read(n).decode() for n in names)
+
+
+class TestFilterWarnsOncePerTunnel:
+    """The sync and the hash poll run the filters every few seconds; a row that stays
+    left out warns once, not on every poll (R-0969), and its name is quoted with %r, so
+    a stored name with a line break cannot fake a log line (R-0971)."""
+
+    @staticmethod
+    def _tunnel(**overrides) -> FrpTunnel:
+        fields = {
+            "name": "x-ssh",
+            "tunnel_type": "stcp",
+            "local_ip": "127.0.0.1",
+            "local_port": 22,
+            "secret_key": "s" * 16,
+            "visitor_port": 6000,
+            "enabled": True,
+        }
+        fields.update(overrides)
+        return FrpTunnel(**fields)
+
+    @pytest.mark.parametrize(
+        ("filter_name", "overrides"),
+        [
+            ("without_secretless_stcp", {"secret_key": None}),
+            ("without_unbindable_visitor", {"visitor_port": 70000}),
+            ("without_refused_fields", {"local_ip": "127.0.0.1\nx"}),
+            ("without_unreachable_local", {"local_port": 0}),
+        ],
+    )
+    def test_second_call_does_not_warn_again(self, caplog, filter_name, overrides):
+        from app.modules.frp import config_generator
+
+        run = getattr(config_generator, filter_name)
+        tunnel = self._tunnel(name="x-ssh\nforged", **overrides)
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            assert run([tunnel]) == []
+            assert run([tunnel]) == []
+        messages = [r.getMessage() for r in caplog.records]
+        assert len(messages) == 1, messages
+        assert "'x-ssh\\nforged'" in messages[0] and "\n" not in messages[0], messages
+
+    def test_each_reason_warns_once(self, caplog):
+        from app.modules.frp import config_generator
+
+        tunnel = self._tunnel(secret_key=None, local_port=0)
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            for _ in range(2):
+                config_generator.without_secretless_stcp([tunnel])
+                config_generator.without_unreachable_local([tunnel])
+        assert len(caplog.records) == 2, [r.getMessage() for r in caplog.records]

@@ -107,6 +107,7 @@ func MaybeRenew(ctx context.Context, dir, baseURL string, timeout time.Duration)
 		return false, err
 	}
 	defer unlock()
+	RemoveStaleTemps(dir)
 	if due, err := renewalDue(dir); err != nil || !due {
 		return false, err
 	}
