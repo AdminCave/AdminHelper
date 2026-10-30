@@ -9,8 +9,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { Server } from '$lib/api/types';
-import type { TemplateSuggestion } from '$lib/api/monitoring';
+import type { Server, TemplateSuggestion } from '$lib/api/types';
 
 const mocks = vi.hoisted(() => ({
   fetchStatus: vi.fn().mockResolvedValue([]),

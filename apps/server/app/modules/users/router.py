@@ -21,7 +21,13 @@ from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
 from app.modules.users.models import User
-from app.modules.users.schemas import DeviceResponse, UserCreate, UserResponse, UserUpdate
+from app.modules.users.schemas import (
+    DeviceResponse,
+    MyServerOut,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -258,6 +264,6 @@ def revoke_device(
     )
 
 
-@router.get("/me/servers")
+@router.get("/me/servers", response_model=list[MyServerOut])
 def my_servers(current_user=Depends(get_current_user)):
     return [{"id": s.id, "name": s.name, "hostname": s.hostname} for s in current_user.servers]

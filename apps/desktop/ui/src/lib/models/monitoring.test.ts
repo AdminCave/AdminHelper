@@ -210,6 +210,10 @@ describe('isPushOnlyCheck / canRunManually', () => {
     expect(canRunManually({ checkType: 'smart_health', enabled: true })).toBe(false);
     expect(canRunManually({ checkType: 'smart_health', enabled: false })).toBe(false);
   });
+
+  it('answers false, not null, for a check whose enabled is null', () => {
+    expect(canRunManually({ checkType: 'ping', enabled: null })).toBe(false);
+  });
 });
 
 describe('formatCheckTime (R-0202)', () => {

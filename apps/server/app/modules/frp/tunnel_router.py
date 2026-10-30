@@ -18,7 +18,14 @@ from app.modules.audit import service as audit
 from app.modules.connections.models import Connection
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.schemas import PORT_MAX, PORT_MIN, FrpTunnelCreate, FrpTunnelUpdate
+from app.modules.frp.schemas import (
+    PORT_MAX,
+    PORT_MIN,
+    FrpTunnelCreate,
+    FrpTunnelOut,
+    FrpTunnelUpdate,
+    TunnelListItem,
+)
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
@@ -39,7 +46,7 @@ _MAPPING_FIELDS = (
 )
 
 
-@router.get("/tunnels")
+@router.get("/tunnels", response_model=list[TunnelListItem])
 def list_tunnels(
     server_id: str | None = Query(None),
     frp_config_id: str | None = Query(None),
@@ -127,7 +134,7 @@ def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None
         tunnel.connection_id = auto_conn.id
 
 
-@router.post("/tunnels", status_code=status.HTTP_201_CREATED)
+@router.post("/tunnels", status_code=status.HTTP_201_CREATED, response_model=FrpTunnelOut)
 def create_tunnel(
     data: FrpTunnelCreate,
     request: Request,
@@ -213,7 +220,7 @@ def create_tunnel(
     return tunnel.to_dict(mask_secrets=True)
 
 
-@router.get("/tunnels/{tunnel_id}")
+@router.get("/tunnels/{tunnel_id}", response_model=FrpTunnelOut)
 def get_tunnel(tunnel_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
@@ -221,7 +228,7 @@ def get_tunnel(tunnel_id: str, db: Session = Depends(get_db), _admin=Depends(get
     return tunnel.to_dict(mask_secrets=True)
 
 
-@router.put("/tunnels/{tunnel_id}")
+@router.put("/tunnels/{tunnel_id}", response_model=FrpTunnelOut)
 def update_tunnel(
     tunnel_id: str,
     data: FrpTunnelUpdate,

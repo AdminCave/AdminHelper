@@ -31,6 +31,7 @@ from app.core.request_context import Actor, actor_from_request
 from app.core.time import iso_utc
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import line_of, revoke_line
+from app.modules.enrollment.schemas import EnrollmentGrantOut
 from app.modules.enrollment.service import DEFAULT_TTL, mint_enrollment_grant
 from app.modules.users.models import User
 
@@ -75,7 +76,7 @@ def _browser_detail(browser: bool) -> str:
     return "browser=False"
 
 
-@router.post("/token")
+@router.post("/token", response_model=EnrollmentGrantOut)
 def mint_self_enrollment_token(
     request: Request,
     browser: bool = False,
@@ -104,7 +105,7 @@ class EnrollmentTokenForRequest(RequestModel):
     ttl_minutes: int = Field(DEFAULT_TTL // datetime.timedelta(minutes=1), ge=1, le=MAX_TTL_MINUTES)
 
 
-@router.post("/token/for")
+@router.post("/token/for", response_model=EnrollmentGrantOut)
 def mint_enrollment_token_for(
     data: EnrollmentTokenForRequest,
     request: Request,

@@ -33,6 +33,7 @@ from app.modules.hooks.schemas import (
     HookCreatedResponse,
     HookDetailResponse,
     HookResponse,
+    HookTokenOut,
     HookUpdate,
 )
 from app.modules.hooks.script_runner import run_hook_script
@@ -437,7 +438,7 @@ def toggle_hook(
     return _to_dict(hook)
 
 
-@router.post("/{hook_id}/rotate")
+@router.post("/{hook_id}/rotate", response_model=HookTokenOut)
 def rotate_hook_token(
     hook_id: str,
     request: Request,

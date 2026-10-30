@@ -5,7 +5,7 @@
 import re
 from typing import Optional
 
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 
 from app.core.bounds import RequestModel
 from app.modules.frp.schemas import _validate_tags
@@ -51,3 +51,19 @@ class PlaybookUpdate(RequestModel):
                 "Dateiname muss auf .yml oder .yaml enden und darf keine Pfad-Separatoren enthalten"
             )
         return v
+
+
+class PlaybookOut(BaseModel):
+    """A playbook as Playbook.to_dict hands it out."""
+
+    id: str
+    name: str
+    filename: str
+    description: str
+    tags: list[str]
+    createdAt: Optional[str]
+    updatedAt: Optional[str]
+
+
+class PlaybookContentOut(BaseModel):
+    content: str
