@@ -22,11 +22,13 @@ Beweis: Abschlusspruefung kern-web-2 2026-10-30 · Code-Lesung feature/kern-web-
 Verify: bash scripts/dev/verify.sh web --strict -- idle
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html (Satz zur Abmeldung beim Laden), changelog.d/kern-web-3.md
 
-### T2 — withAuthLock ohne Web Locks: Aufrufe im Tab nacheinander (R-0975)  [ ]
-Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.crosstab.test.ts
+### T2 — withAuthLock ohne Web Locks: Aufrufe im Tab nacheinander (R-0975)  [x]
+Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.crosstab.test.ts, apps/web/src/lib/api/client.test.ts, docs/developer/webui.html, docs/en/developer/webui.html
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @31d55135 2026-10-30T17:09:38+01:00
+Review: approve (.ah-out/review/kern-web-3/T2.verdict.json)
 Änderung: `withAuthLock` (`client.ts:88-93`) hängt `fn` ohne `navigator.locks` an eine modulweite Promise-Kette (ein Fehler von `fn` bricht die Kette nicht); Kommentar nachziehen. Test zuerst rot: ohne Lock-Manager laufen zwei `withAuthLock`-Aufrufe nicht überlappend.
 Verify: bash scripts/dev/verify.sh web --strict -- client
-Doku: keine (internes Verhalten, in docs/ nicht beschrieben)
+Doku: docs/developer/webui.html, docs/en/developer/webui.html (Fall ohne Web Locks)
 
 ### T3 — Web-Vertragstest: fehlende Pflichtfelder in Anfragen (R-0980)  [ ]
 Komponente: web · Dateien: apps/web/src/lib/api/types.contract.test.ts, apps/web/src/lib/api/types.ts
