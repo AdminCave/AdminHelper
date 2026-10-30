@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-2 · Review: pro Task
 Spec: docs/features/kern-agent-2.md (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385)
 Heavy: linux-full — `apps/agent` (Sammellauf: `agent_monitoring`, `upgrade_path`, Tunnel-E2E); `windows` ist der CI-Job `agent-windows`, weil `main.go` die Terminal-Eingabe auch unter Windows liest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestMonitorInit|TestDo
 Doku: README.md · docs/admin/agent-deployment.html · docs/en/admin/agent-deployment.html · changelog.d/kern-agent-2.md
 Abhängt von: T3
 
-### T5 — Identität: Temp-Reste unter der Sperre räumen (R-0385)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, changelog.d/kern-agent-2.md
+### T5 — Identität: Temp-Reste unter der Sperre räumen (R-0385)  [x]
+Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, changelog.d/kern-agent-2.md, apps/agent/internal/enroll/renew_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @64eb2fa2 2026-10-30T14:10:53+01:00
+Review: approve (.ah-out/review/kern-agent-2/T5.verdict.json)
 Änderung: Eine Funktion räumt `<agent.key|agent.crt|ca>.<n>.tmp` (exakter Name: Basis aus den drei Dateinamen, nur Ziffern, Suffix `.tmp`, reguläre Datei) im Identitätsverzeichnis; aufgerufen nur unter `LockIdentity` (Provisionierung nach dem Sperren, Erneuerung nach dem Sperren), nie aus `CheckStorable`. Tests: Reste weg, fremde Dateien und Nicht-Ziffern-Namen bleiben.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestStore|TestRenew|TestCheckStorable|TestStale|TestProvision
 Doku: changelog.d/kern-agent-2.md

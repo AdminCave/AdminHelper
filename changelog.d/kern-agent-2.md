@@ -11,3 +11,6 @@
 - **Agent: `monitor init --api-key-stdin`:** Der API-Key fuer `monitor init` laesst sich wie der Provisionierungs-Token
   ueber stdin uebergeben (am Terminal ohne Echo); Paket-Hinweis, README, Doku und der Hinweis zum Neu-Provisionieren
   zeigen die stdin-Formen.
+- **Agent: Reste unterbrochener Identitaets-Schreibvorgaenge:** Provisionierung und Zertifikats-Erneuerung raeumen
+  unter der Identitaets-Sperre liegengebliebene Temp-Dateien (`agent.key`, `agent.crt`, `ca.crt` mit Suffix
+  `.<Zahl>.tmp`) aus dem Identitaetsverzeichnis; andere Dateien bleiben.
