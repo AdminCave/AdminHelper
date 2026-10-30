@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-web-2 — Task-Ledger
-Status: geplant · Branch: feature/kern-web-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-web-2 · Review: am Ende
 Spec: docs/features/kern-web-2.md (Roadmap R-0890)
 Heavy: none — nur die Web-Logik beim Laden, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
