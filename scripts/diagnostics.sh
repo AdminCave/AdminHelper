@@ -404,13 +404,25 @@ env_values() {
 REDACT_AWK='
     function rep(c, k,    s) { s = ""; while (k-- > 0) s = s c; return s }
     # tok(re, s, kind, pre): every match of re in s, one behind the other; pre is the
-    # length of the name the match begins with.
-    function tok(re, s, kind, pre,    p, q) {
-        for (p = 1; p <= length(s) && match(substr(s, p), re); p = B[n] + 1) {
-            q = p + RSTART - 1
+    # length of the name the match begins with. gsub marks each match with a newline,
+    # which no line holds, and split cuts there: one pass, however many matches.
+    function tok(re, s, kind, pre,    t, P, k, i, q) {
+        t = s
+        if (!gsub(re, "\n&", t)) return
+        k = split(t, P, "\n")
+        q = length(P[1]) + 1
+        for (i = 2; i <= k; i++) {
+            match(P[i], "^(" re ")")
             n++; A[n] = q; B[n] = q + RLENGTH - 1; K[n] = kind
-            L[n] = kind == "query" ? index(substr(s, q, RLENGTH), "=") : pre
+            L[n] = kind == "query" ? index(substr(P[i], 1, RLENGTH), "=") : pre
+            q += length(P[i])
         }
+    }
+    # mark(s, f): what the run that begins with place f becomes.
+    function mark(s, f,    y) {
+        if (K[f] == "jwt") return "<redacted-jwt>"
+        for (y = A[f]; y < A[f] + L[f]; y++) if (y in VS) return "<redacted>"
+        return L[f] ? (K[f] == "bearer" ? "Bearer " : substr(s, A[f], L[f])) "<redacted>" : "<redacted>"
     }
     BEGIN {
         w = "[A-Za-z0-9_-]"; b = "[A-Za-z0-9._-]"; h = "[^/?[:space:]\"]"
@@ -444,27 +456,21 @@ REDACT_AWK='
                     continue
                 n++; A[n] = q; B[n] = e; K[n] = "value"; L[n] = 0
             }
-        o = ""
-        for (p = 1; ; p = e + 1) {
-            f = 0
-            for (j = 1; j <= n; j++)
-                if (A[j] >= p && (!f || A[j] < A[f] || (A[j] == A[f] && B[j] > B[f]))) f = j
-            if (!f) break
-            e = B[f]
-            do {
-                more = 0
-                for (j = 1; j <= n; j++) if (A[j] <= e && B[j] > e) { e = B[j]; more = 1 }
-            } while (more)
-            m = "<redacted>"
-            if (K[f] == "jwt") m = "<redacted-jwt>"
-            else if (L[f]) {
-                for (j = 1; j <= n; j++)
-                    if (K[j] == "value" && A[j] < A[f] + L[f] && B[j] >= A[f]) break
-                if (j > n) m = (K[f] == "bearer" ? "Bearer " : substr(s, A[f], L[f])) m
-            }
-            o = o substr(s, p, A[f] - p) m
+        if (!n) { print s; next }
+        # By start: the longest place there (the first of equals), and where values begin.
+        delete E; delete F; delete VS
+        for (j = 1; j <= n; j++) {
+            if (!(A[j] in E) || B[j] > E[A[j]]) { E[A[j]] = B[j]; F[A[j]] = j }
+            if (K[j] == "value") VS[A[j]] = 1
         }
-        print o substr(s, p)
+        p = 1; f = 0; ls = length(s)
+        for (x = 1; x <= ls; x++) {
+            if (!(x in E)) continue
+            if (f && x <= e) { if (E[x] > e) e = E[x]; continue }
+            if (f) { printf "%s%s", substr(s, p, A[f] - p), mark(s, f); p = e + 1 }
+            f = F[x]; e = E[x]
+        }
+        printf "%s%s%s\n", substr(s, p, A[f] - p), mark(s, f), substr(s, e + 1)
     }
 '
 

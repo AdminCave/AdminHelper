@@ -75,7 +75,8 @@
 #       it: the line it runs on to goes from env.sanitized, and its value is masked;
 #   (r) backup.sh holds the same dotenv tokenizer text;
 #   (s) a value and a token form that overlap or touch without a separator go as one,
-#       no byte of either stays.
+#       no byte of either stays;
+#   (t) a line full of token forms is masked in linear time.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -880,6 +881,18 @@ same "(s) values and token forms that overlap" \
     "$(printf '%s\n' 'auth Bearer xyzxyzxyab#1 ok' 'jwt eyJabcdefgh.eyJabcdefgh.sigq%7 ok' \
         'auth Bearer abcmid9secretxyz ok' 'jwt eyJabcdefgh.eyJmid9secretxy.sig ok' \
         'key adminhelper_prov_abcdefgh12 ok' | redact "$tmp/s.sed")" || fail=1
+
+# --- (t) a line full of token forms in linear time --------------------------------------
+# Log text that anyone may send (a request line of 72 KB with 8000 query tokens) is
+# masked in a time that grows with the line, not with the square of its tokens: about
+# 0.2 s here, the 10 s of the timeout only on a machine 50 times slower; quadratic it
+# took over a minute.
+t_line="GET /x$(printf '?token=a&%.0s' $(seq 8000))"
+rc=0
+t_out="$(printf '%s\n' "$t_line" | timeout 10 bash -c 'f="$1" r="$2"; set --; source "$f"; redact "$r"' _ "$ROOT/scripts/diagnostics.sh" "$tmp/s.sed")" \
+    || rc=$?
+[ "$rc" = 0 ] || { echo "(t) a line of 8000 query tokens: exit $rc (124: over 10 s)" >&2; fail=1; }
+same "(t) every token of the long line masked" 8000 "$(grep -o '?token=<redacted>&' <<<"$t_out" | wc -l)" || fail=1
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
 # A docker stub on PATH answers what main asks; `compose ps` lands in report.txt,

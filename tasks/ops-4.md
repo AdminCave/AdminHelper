@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-4 — Task-Ledger
-Status: aktiv · Branch: feature/ops-4 · Review: am Ende
+Status: bereit · Branch: feature/ops-4 · Review: am Ende
 Spec: docs/features/ops-4.md (Roadmap R-1014, R-1015)
 Heavy: none — nur Bash-Filter der .env und sed-Regeln; diagnostics_test und restore_guard_test fahren sie lokal ohne Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Bearer- und einem JWT-Token, langer Wert mitten in einem Token; keine Restbytes.
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: changelog.d/ops-4.md
 
-### T4 — REDACT_AWK linear in den Fundstellen einer Zeile (R-1015, Abschlussprüfung)  [ ]
+### T4 — REDACT_AWK linear in den Fundstellen einer Zeile (R-1015, Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b7fa1854 2026-10-30T19:33:40+01:00
+Review: am Ende (Branch-Review)
 Änderung: `REDACT_AWK` (`scripts/diagnostics.sh:408`) sucht die Token-Formen in einem Durchgang je Regel und wählt die
 Läufe über die Startstellen statt je Lauf über alle Fundstellen; die Laufzeit wächst nicht mehr quadratisch mit Log-Text
 voller Token-Formen. Neuer Fall: eine lange Zeile mit vielen Query-Tokens in einer Zeitgrenze.
@@ -68,3 +70,7 @@ Abhängt von: T3
   in der Regeldatei (nie in Argumenten), die Host-Regeln bleiben sed dahinter. Ein Token behält seinen Namen nur,
   wenn kein Wert ihn schneidet; `Bearer eyJ…` wird jetzt `Bearer <redacted>` statt `Bearer <redacted-jwt>`. (p)
   stubbt statt des Heredoc-`cat` (gibt es nicht mehr) das `sort`, das die Regeldatei ordnet; dieselbe Aussage.
+- T4: jede Token-Form in einem gsub/split-Durchgang je Zeile (Marke `\n`, die eine Zeile nie trägt), die Läufe
+  über die Startstellen in Byte-Reihenfolge statt je Lauf über alle Fundstellen, die Ausgabe per printf statt
+  wachsender Verkettung. Gemessen mit 8000 Query-Tokens in einer Zeile: 0,14 s (gawk) bzw. 0,07 s (mawk) statt über
+  10 s; (t) ist mit der T3-Fassung rot (Exit 124).
