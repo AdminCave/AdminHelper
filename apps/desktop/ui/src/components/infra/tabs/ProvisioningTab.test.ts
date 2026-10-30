@@ -77,6 +77,10 @@ describe('ProvisioningTab — trust anchor handover', () => {
 
     const plain = getByTestId('provision-command').textContent ?? '';
     expect(plain).toContain('adminhelper-agent provision');
+    // The token is read from stdin, like the one-liner asks for it: never an argument.
+    expect(plain).toContain('--token-stdin');
+    expect(plain).not.toContain('--token ');
+    expect(plain).not.toContain('tok-123');
     expect(plain).toContain(`--ca-fp ${FP}`);
     expect(plain).not.toContain('--insecure');
   });
@@ -154,7 +158,7 @@ describe('ProvisioningTab — the values in the commands', () => {
     expect(script).toContain(`--server ${quoted} `);
     expect(plain).toContain(`--url ${quoted} `);
     // The values the server issues stay as they are.
-    expect(plain).toContain('--token tok-123 ');
+    expect(plain).toContain('--token-stdin ');
     expect(plain).toContain(`--server-id ${SERVER_ID}`);
     expect(reportError).not.toHaveBeenCalled();
   });
@@ -225,5 +229,17 @@ describe('ProvisioningTab — the token beside the one-liner', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await waitFor(() => expect(view.queryByTestId('prov-token')).toBeNull());
     expect(view.queryByTestId('script-command')).toBeNull();
+  });
+
+  it('keeps the token on screen when the provision-only command is copied', async () => {
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const view = await created();
+    await waitFor(() => expect(view.queryByTestId('prov-token')).not.toBeNull());
+
+    const plain = view.getByTestId('provision-command');
+    await fireEvent.click(plain.querySelector('button') as HTMLButtonElement);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(view.queryByTestId('prov-token')).not.toBeNull();
   });
 });

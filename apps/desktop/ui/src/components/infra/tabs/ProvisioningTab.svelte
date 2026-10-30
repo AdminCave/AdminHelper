@@ -40,8 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // trust-on-first-use gap. Null while this device is not enrolled.
   let caFp = $state<string | null>(null);
 
-  // The token (and the provision-only command that embeds it) is redeemable until
-  // it expires, so don't leave it on screen indefinitely — auto-hide (3.64).
+  // The token is redeemable until it expires, so don't leave it on screen indefinitely — auto-hide (3.64).
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleHide(ms: number): void {
     if (hideTimer) clearTimeout(hideTimer);
@@ -103,14 +102,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
         `  --server ${shellQuote(s.serverUrl)} \\\n` +
         `  --server-id ${shellQuote(server.id)}${fpArg}`;
       token = result.token;
-      // Provision-only variant for hosts that already carry the package.
+      // Provision-only variant for hosts that already carry the package. The
+      // token is read from stdin, never an argument (process list, shell history).
       // --ca-fp supersedes --insecure; without an enrolled identity fall back
       // to the previous TOFU behaviour (only when the user opted in).
       const trust = caFp ? fpArg : $settings?.allowSelfSignedCerts ? ' \\\n  --insecure' : '';
       command =
         `sudo adminhelper-agent provision \\\n` +
         `  --url ${shellQuote(s.serverUrl)} \\\n` +
-        `  --token ${shellQuote(result.token)} \\\n` +
+        `  --token-stdin \\\n` +
         `  --server-id ${shellQuote(server.id)}${trust}`;
       showStatus($t('infra.prov.created'));
       scheduleHide(60_000); // auto-hide the token after a minute if left untouched
@@ -129,8 +129,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await navigator.clipboard.writeText(text);
       showStatus($t(copied));
-      // The one-liner carries no secret, and the script asks for the token only
-      // after the package install: copying it must leave the token on screen.
+      // Neither command carries the secret, and both ask for the token only once
+      // they run: copying one must leave the token on screen.
       if (secret) scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
     } catch {
       reportError($t('infra.prov.copyError'));
@@ -207,7 +207,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div class="cmd-box" data-testid="provision-command">
       <div class="cmd-head">
         <strong>{$t('infra.prov.runOnTarget')}</strong>
-        <button class="btn small" onclick={() => copyText(command)}>{$t('action.copy')}</button>
+        <button
+          class="btn small"
+          onclick={() => copyText(command, 'infra.prov.commandCopied', false)}
+          >{$t('action.copy')}</button
+        >
       </div>
       <pre>{command}</pre>
     </div>
