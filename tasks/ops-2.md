@@ -24,8 +24,10 @@ Zeilen. Tests zuerst rot: je Zeilenform ein Fall in `diagnostics_test.sh` (Maske
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: changelog.d/ops-2.md (docs/admin/troubleshooting.html nennt die Lesart der .env nicht)
 
-### T2 — backup.sh-Filter liest .env-Zeilen wie compose (R-0908)  [ ]
+### T2 — backup.sh-Filter liest .env-Zeilen wie compose (R-0908)  [x]
 Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, changelog.d/ops-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f0492213 2026-10-30T16:15:41+01:00
+Review: approve (.ah-out/review/ops-2/T2.verdict.json)
 Änderung: der Filter in `backup.sh:103-143` entfernt die gefilterte Zuweisung in jeder Form, die compose liest, und
 behält andere Zuweisungen derselben Zeile; auskommentierte Werte über mehrere Zeilen gehen ganz. Ein Fehler bricht
 weiter ab. Tests zuerst rot: Fälle in `restore_guard_test.sh` neben 12–14 (`env.sanitized`).
