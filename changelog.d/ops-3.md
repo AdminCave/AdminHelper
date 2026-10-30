@@ -12,6 +12,7 @@
   `CA_ROOT_PASSPHRASE`) nur als Kommentar in `.env`, haengt das Update ihn wieder aktiv an, statt dass
   `docker compose up` danach abbricht. Ein Schluessel mit `export`, Leerzeichen vor dem `=` oder `:` bekommt keine
   zweite Zeile mehr (ausser einem Geheimnis, das `init-secrets.sh` fuellt).
-- **Update: Strg-C waehrend eines Rollbacks:** ein Signal bricht einen Rollback nach einem Fehler nicht mehr ab und
-  startet ihn nicht neu; mit `--no-rollback` nennt die Meldung nach einem Signal, was an dieser Stelle wirklich
-  stehen bleibt.
+- **Update: Strg-C waehrend eines Rollbacks:** INT und TERM brechen einen Rollback nach einem Fehler nicht mehr ab
+  und starten ihn nicht neu. Nach einem HUP (Terminal geschlossen) schreibt das Update weiter nach
+  `backups/update-<zeit>.log` und startet den Rollback einmal neu, weitere HUP ignoriert es. Mit `--no-rollback`
+  nennt die Meldung nach einem Signal, was an dieser Stelle wirklich stehen bleibt.

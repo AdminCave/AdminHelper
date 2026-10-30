@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-3 — Task-Ledger
-Status: aktiv · Branch: feature/ops-3 · Review: pro Task
+Status: bereit · Branch: feature/ops-3 · Review: pro Task
 Spec: docs/features/ops-3.md (Roadmap R-0859, R-0862, R-0896, R-0865, R-0986, R-0956, R-0987)
 Heavy: linux-full — `scripts/update.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -57,8 +57,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/installation.html + EN
 Task-Review: am Ende
 
-### T6 — Abschlussprüfung: Changelog zu HUP, Passwort-Snippet wörtlich (R-0986, R-0859)  [ ]
+### T6 — Abschlussprüfung: Changelog zu HUP, Passwort-Snippet wörtlich (R-0986, R-0859)  [x]
 Komponente: scripts · Dateien: changelog.d/ops-3.md, docs/admin/installation.html, docs/en/admin/installation.html, tasks/ops-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dacb2386 2026-10-30T13:54:20+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Der Changelog-Eintrag zum Rollback nennt nur INT/TERM als ignoriert und den einmaligen Neustart nach HUP mit Ausgabe ins Log (Branch-Prüfung reviewer). Das Snippet für die Passwortdatei liest mit `IFS= read -rs` (Leerzeichen am Rand bleiben, `install.sh` liest die Zeile wörtlich) und löscht eine alte Datei vorher, damit `umask 077` greift (Branch-Prüfung security, nit).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: changelog.d/ops-3.md · docs/admin/installation.html + EN

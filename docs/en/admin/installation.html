@@ -81,7 +81,7 @@
 # --reset wipes volumes from a failed attempt (docker compose down -v).</code></pre>
           <p><strong>A password file without shell history:</strong> do not write the password into the file with <code>echo</code>, or it ends up in the history. Read it without echo and create the file readable only by you right away (or write it with an editor under <code>umask 077</code>), and delete it after the install:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>( umask 077; read -rs -p 'Admin password: ' pw; echo; printf '%s\n' "$pw" &gt; ~/ah-admin.pw )
+<pre><code>( umask 077; rm -f ~/ah-admin.pw; IFS= read -rs -p 'Admin password: ' pw; echo; printf '%s\n' "$pw" &gt; ~/ah-admin.pw )
 curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/install.sh \
   | bash -s -- --domain srm.example.com --admin-password-file ~/ah-admin.pw --yes
 rm -f ~/ah-admin.pw</code></pre>
