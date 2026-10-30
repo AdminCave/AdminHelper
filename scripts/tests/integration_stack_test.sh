@@ -58,6 +58,8 @@ done
 [ -n "$TOKEN" ] && ok "minted enrollment token in-container" || { bad "could not mint enrollment token"; e2e_dc logs --tail 40 server; exit 1; }
 
 # ── 2. Client key + CSR, then redeem on the certless enroll plane :8444 ───────
+# The gateway answers :443 before the ca-issuer listens; until then :8444 gives 502 (R-0935).
+e2e_wait_enroll_plane || { bad "enroll plane :8444 never reached the ca-issuer"; e2e_dc logs --tail 40 ca-issuer; exit 1; }
 # EC P-256 matches the desktop client; the issuer overrides the CN from the
 # token grant, so the CSR subject is irrelevant.
 openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client.key" 2>/dev/null

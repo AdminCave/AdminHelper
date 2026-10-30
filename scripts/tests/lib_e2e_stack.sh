@@ -288,6 +288,22 @@ e2e_up() {
     return 1
 }
 
+# e2e_wait_enroll_plane [seconds] — wait until :8444 reaches the ca-issuer. e2e_up waits
+# for :443 only, and the gateway hangs on the ca-issuer with service_started: right after a
+# fresh PKI the enroll plane answers 502 (or resets) until the issuer listens (R-0935).
+# Any other status counts as reached; rc 1 names the last one.
+e2e_wait_enroll_plane() {
+    local deadline=$(( $(date +%s) + ${1:-60} )) code=000
+    while :; do
+        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "https://localhost:$E2E_ENROLL_PORT/" 2>/dev/null) || code=000
+        case "$code" in 000|502|503|504) ;; *) return 0 ;; esac
+        [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep 1
+    done
+    echo "[e2e] enroll plane :$E2E_ENROLL_PORT never reached the ca-issuer (last HTTP '$code')" >&2
+    return 1
+}
+
 # e2e_admin_token — print the admin JWT (retries until the startup lifespan has
 # created the admin from ADMIN_PASSWORD). Empty output on failure.
 e2e_admin_token() {

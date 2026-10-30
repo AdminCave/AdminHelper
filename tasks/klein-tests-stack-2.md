@@ -10,8 +10,10 @@ Heavy: linux-full — ändert integration_stack_test.sh (Stack-Lauf); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Enroll erst, wenn :8444 den ca-issuer erreicht (R-0935, R-0955)  [ ]
+### T1 — Enroll erst, wenn :8444 den ca-issuer erreicht (R-0935, R-0955)  [x]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9dbd771a 2026-10-30T12:37:03+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-0935 / R-0955 `FAIL enrollment on the certless plane failed` (HTTP 502 bzw. Connection reset) vor 'ca-issuer Started server process'
 Dedup-Key: bug:scripts:integration_stack_test.sh:enroll-502-ca-issuer-start
 Änderung: neuer Helfer `e2e_wait_enroll_plane [sekunden]` in `lib_e2e_stack.sh`: fragt `https://localhost:$E2E_ENROLL_PORT/` per curl (max 60 s), Erfolg bei jedem Status ausser 000/502/503/504, sonst rc 1 mit letztem Status. `integration_stack_test.sh` ruft ihn vor dem Enroll auf (FAIL „enroll plane :8444 never reached the ca-issuer (last '…')“). `lib_e2e_stack_test.sh` prueft ihn mit curl-Stub: 502,502,404 → ok nach drei Aufrufen; dauerhaft 502 → rc 1 mit Status in der Meldung (Gegenprobe: die Zeile, die auf 502 wartet, entfernen → rot).
