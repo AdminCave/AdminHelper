@@ -68,8 +68,11 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # one per line; the Alembic query (`compose exec -T postgres psql`) answers
 # AH_TEST_REV_SERVER / AH_TEST_REV_MONITOR (default r1) for -d adminhelper /
 # adminhelper_monitor, after the install dir's first `compose up` the *_AFTER
-# value if set, and fails with AH_TEST_REV_FAIL=1; AH_TEST_PULL_LOG records, per pull, SERVER_IMAGE from the
-# environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
+# value if set, and fails with AH_TEST_REV_FAIL=1; AH_TEST_STOP_FAIL=1 fails the
+# stop of the migrating services (`compose stop server …`), and so does
+# AH_TEST_NO_SCHEDULER_IN=<ver> while the compose file of <ver> is in place (no
+# scheduler service before 0.38.0); AH_TEST_PULL_LOG
+# records, per pull, SERVER_IMAGE from the environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
 # AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
 # and wait up to 30 s for <marker> ---
 BIN="$WORK/bin"
@@ -95,6 +98,12 @@ case "$*" in
       "      --wait-timeout int   Maximum duration in seconds to wait"; fi
     exit 0 ;;
   "compose pull"*) [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0 || { echo "stub: pull failed" >&2; exit 1; } ;;
+  "compose stop server "*)
+    [ "${AH_TEST_STOP_FAIL:-}" != 1 ] || { echo "stub: stop failed" >&2; exit 1; }
+    case "$*" in *scheduler*)
+      [ -z "${AH_TEST_NO_SCHEDULER_IN:-}" ] || ! grep -q "marker: ${AH_TEST_NO_SCHEDULER_IN}\$" docker-compose.yml \
+        || { echo "no such service: scheduler" >&2; exit 1; } ;;
+    esac ;;
   "compose exec -T postgres psql "*)
     [ "${AH_TEST_REV_FAIL:-}" != 1 ] || { echo "stub: psql failed" >&2; exit 1; }
     case "$*" in
@@ -1447,7 +1456,7 @@ failed_update() {
 # <label> <inst>: the migrated path, judged on $rc, $out and <inst>.docker
 assert_stopped() {
   local msg; msg=$(grep 'FEHLER: ' <<<"$out")
-  { [ $rc -ne 0 ] && [ "$(grep -E '^compose (up -d|stop)' "$2.docker" | tr '\n' ';')" = "compose up -d --wait --wait-timeout 600;compose stop;" ] \
+  { [ $rc -ne 0 ] && [ "$(grep -E '^compose (up -d|stop)' "$2.docker" | tr '\n' ';')" = "compose up -d --wait --wait-timeout 600;compose stop server scheduler monitoring;compose stop;" ] \
       && grep -q 'marker: 0.33.0' "$2/docker-compose.yml" && pinned_on "$2" 0.33.0 \
       && grep -q -- 'update\.sh --ref v0\.34\.0' <<<"$msg" && ! grep -q zurueckgerollt <<<"$msg"; } \
     && ok "$1: files and pins on 0.33.0, stack stopped, not restarted" \
@@ -1456,13 +1465,28 @@ assert_stopped() {
 INST="$WORK/inst45a"; make_install 0.33.0 "$SRC_OLD" "$INST"
 failed_update "$INST" --
 { [ $rc -ne 0 ] && grep -q 'FEHLER: .*zurueckgerollt auf 0\.33\.0\.' <<<"$out" \
-    && [ "$(grep -E '^compose (up -d|stop)' "$INST.docker" | tr '\n' ';')" = "compose up -d --wait --wait-timeout 600;compose up -d --wait --wait-timeout 600;" ]; } \
+    && [ "$(grep -E '^compose (up -d|stop)' "$INST.docker" | tr '\n' ';')" = "compose up -d --wait --wait-timeout 600;compose stop server scheduler monitoring;compose up -d --wait --wait-timeout 600;" ]; } \
   && ok "unchanged revisions: rolled back and restarted" || bad "unchanged revisions: rc=$rc $(tr '\n' ';' < "$INST.docker")"
 INST="$WORK/inst45b"; make_install 0.33.0 "$SRC_OLD" "$INST"
 failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 --
 assert_stopped "server database migrated" "$INST"
 grep 'FEHLER: ' <<<"$out" | grep -qF './scripts/restore.sh backups/adminhelper-backup-test.tar.gz' \
   && ok "server database migrated: names this run's backup for restore.sh" || bad "migrated: $out"
+# A migration still running behind a failed `up --wait` shows the old revision until
+# it commits: the services that migrate stop before the second revision query.
+stop_at=$(grep -nE '^compose stop server scheduler monitoring$' "$INST.docker" | cut -d: -f1)
+query_at=$(grep -n '^compose exec -T postgres psql ' "$INST.docker" | sed -n 3p | cut -d: -f1)
+{ [ -n "$stop_at" ] && [ -n "$query_at" ] && [ "$stop_at" -lt "$query_at" ]; } \
+  && ok "the migrating services stop before the revisions are read again" \
+  || bad "stop/query order: $(tr '\n' ';' < "$INST.docker")"
+INST="$WORK/inst45g"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_STOP_FAIL=1 --
+assert_stopped "unchanged revisions, but the migrating services did not stop" "$INST"
+# The stop runs on the target's compose file: the installed one may lack scheduler.
+INST="$WORK/inst45h"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_NO_SCHEDULER_IN=0.33.0 --
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: .*zurueckgerollt auf 0\.33\.0\.' <<<"$out"; } \
+  && ok "the stop runs before the installed compose file is back" || bad "stop on the old compose file: rc=$rc $out"
 INST="$WORK/inst45c"; make_install 0.33.0 "$SRC_OLD" "$INST"
 failed_update "$INST" AH_TEST_REV_MONITOR_AFTER=r2 --
 assert_stopped "monitoring database migrated" "$INST"

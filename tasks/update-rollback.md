@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Update: Rollback mit Health-Prüfung und Migrationsstand, Image-Pins nach dem Pull, Healthchecks für Gateway, Victoria und Monitoring — Task-Ledger
-Status: aktiv · Branch: feature/update-rollback · Review: pro Task
+Status: bereit · Branch: feature/update-rollback · Review: pro Task
 Spec: docs/features/update-rollback.md (Roadmap R-0612, R-0613, R-0614; der install.sh-Teil von R-0614 in tasks/install-restore.md T4 auf feature/install-restore)
 Hängt ab von: feature/compose-hardening, feature/ops-install-hardening, feature/ops-scripts-hardening (gemergt vor dem Bau; Überschneidungen je Funktion in der Spec)
 Heavy: linux-full — `docker-compose.yml` (Healthchecks), `apps/gateway/nginx.conf` und `scripts/update.sh` im Diff (CLAUDE.md §5): der Sammellauf über `main` fährt `integration-stack` mit dem Schritt aus T3 und `upgrade-path` (Schritt 4 startet die `update.sh` dieses Stands samt Preflight aus T4 bis zur Übergabe an die des Release); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/update-rollback`. Kein `scenario`: kein `multibox.sh`-Flag und kein `box_*.sh` ruft `update.sh` auf (Spec, Offene Frage 2). Kein `windows`
@@ -99,8 +99,10 @@ Beweis: Code-Lesung scripts/update.sh:588-618, apps/server/docker-entrypoint.sh:
 Dedup-Key: bug:ops:update.sh:rollback_after_deploy-migrated-db
 HEAD: 237b450a
 
-### T7 — update.sh: Rollback stoppt die migrierenden Dienste, bevor er die Revisionen liest  [ ]
+### T7 — update.sh: Rollback stoppt die migrierenden Dienste, bevor er die Revisionen liest  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b7f01366 2026-10-30T03:13:27+01:00
+Review: approve (.ah-out/review/update-rollback/T7.verdict.json)
 Änderung: Fund der Abschlussprüfung (reviewer branch @0a53f157, wichtig): `rollback_after_deploy` liest die Revisionen, während server, scheduler und monitoring des Ziels noch migrieren können (Signal während `up --wait`, abgelaufenes `--wait-timeout`, anderer Dienst vorher unhealthy); die offene Transaktion zeigt die alte Revision, `stack_up` startet die alten Images, und committet die Migration im Grace-Fenster, laufen sie auf der migrierten Datenbank. Vor `db_revisions` `docker compose stop server scheduler monitoring` (danach ist jede Migration committet oder zurückgerollt); scheitert der Stopp, gilt der Stand als unbekannt (Weg „gestoppt“). Tests: im Rollback-Weg steht `compose stop server scheduler monitoring` vor der zweiten Revisionsabfrage; ein scheiternder Stopp führt bei gleichen Revisionen in den Weg „gestoppt“. Zuerst rot.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test doc_smoke_test
 Doku: keine (installation.html beschreibt das Verhalten schon: Rollback nur ohne Migration, sonst Stopp)

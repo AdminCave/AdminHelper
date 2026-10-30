@@ -714,6 +714,14 @@ rollback_after_deploy() {
     fi
     local incomplete=0
     echo >&2
+    # server, scheduler and monitoring may still be migrating behind a failed or
+    # interrupted `up --wait`: until that transaction commits, the query sees the old
+    # revision. Stopped, every migration has committed or rolled back; if the stop
+    # fails, the revision read below is not trusted. Before the snapshot goes back:
+    # the target's compose file knows all three (scheduler exists since 0.38.0).
+    local settled=1
+    docker compose stop server scheduler monitoring \
+        || { log "WARN: Stoppen von server/scheduler/monitoring fehlgeschlagen — Migrationsstand unbestaetigt."; settled=0; }
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..." >&2
     # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
@@ -732,7 +740,7 @@ rollback_after_deploy() {
       ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     local revs_after; revs_after=$(db_revisions)
-    if [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; then
+    if [ "$settled" = 0 ] || [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; then
         log "Alembic revisions before: $(tr '\n' ' ' <<<"$REVS_BEFORE")now: $(tr '\n' ' ' <<<"$revs_after")" >&2
         docker compose stop \
             || { log "WARN: Stoppen des Stacks fehlgeschlagen — bitte manuell pruefen."; incomplete=1; }
@@ -743,7 +751,7 @@ rollback_after_deploy() {
             restore="./scripts/restore.sh ${last:-<backup>} (this run made no backup, --skip-backup; that is the last backup before it)"
         fi
         [ "$incomplete" = 0 ] || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. The database may already be migrated by ${TARGET_VER}. Back: ${restore}; forward again: ./scripts/update.sh --ref ${TARGET}"
-        die "$1. The database was already migrated by ${TARGET_VER} (or its revision is unreadable); the images of ${INSTALLED_LABEL} do not start on it. Runtime files and image pins are back on ${INSTALLED_LABEL}, the stack is stopped. Back: ${restore} (restores the state before the update and starts ${INSTALLED_LABEL}); forward again: ./scripts/update.sh --ref ${TARGET}"
+        die "$1. The database was already migrated by ${TARGET_VER} (or its revision is unreadable or unconfirmed); the images of ${INSTALLED_LABEL} do not start on it. Runtime files and image pins are back on ${INSTALLED_LABEL}, the stack is stopped. Back: ${restore} (restores the state before the update and starts ${INSTALLED_LABEL}); forward again: ./scripts/update.sh --ref ${TARGET}"
     fi
     stack_up >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
