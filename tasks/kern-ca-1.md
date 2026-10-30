@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: Startprüfung, Server-Leaves und Renew-Laufzeit — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-1 · Review: pro Task
 Spec: docs/features/kern-ca-1.md (Roadmap R-0918, R-0834, R-0880, R-0912, R-0833)
 Heavy: linux-full — `apps/ca-issuer` (Startprüfung der Hierarchie, Gateway-/frps-Leaf und Trust-Bundles) läuft im Sammellauf über `main` (`integration-stack`, `backup-restore`, `upgrade-path`); kein `scenario`: kein Wire-Format, kein Enrollment-Pfad und keine Agent-Seite ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -36,8 +36,10 @@ Beweis: R-0880 feature/agent-run-ctx@f3c2b1db apps/ca-issuer/app/storage.py:212-
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: docs/admin/agent-deployment.html:189 · docs/en/admin/agent-deployment.html:187 · changelog.d/kern-ca-1.md
 
-### T3 — storage: Trust-Bundles atomar schreiben  [ ]
+### T3 — storage: Trust-Bundles atomar schreiben  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_gateway_cert.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @06bc57dd 2026-10-30T01:16:11+01:00
+Review: approve (.ah-out/review/kern-ca-1/T3.verdict.json)
 Änderung: R-0912: das Trust-Bundle (`storage.py:405`) entsteht als tmp-Datei im Zielverzeichnis und ersetzt das alte mit `os.replace`; ein Fehler beim Schreiben lässt das alte Bundle unverändert. Test: ein Schreibfehler (monkeypatch) lässt das alte Bundle stehen und keine tmp-Datei zurück.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: keine (internes Schreibverhalten, kein dokumentiertes Verhalten)

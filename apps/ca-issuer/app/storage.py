@@ -228,6 +228,21 @@ def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
     return RuntimeError(f"{message}; {hint}" if hint else f"{message}.")
 
 
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Replace `path` by `data` atomically: a reader (nginx, frps) never sees a half
+    file, and a failed write leaves the old one in place."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with tmp.open("wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _read_pem(path: Path, load: Callable[[bytes], _T], what: str, scope: str = "") -> _T:
     try:
         return load(path.read_bytes())
@@ -435,7 +450,7 @@ def _provision_server_material(
     for extra in extra_trust:
         trusted += [extra.cert, *extra.retired]
     bundle = inter.chain + pki.chain_pem(*trusted)
-    (out_dir / bundle_name).write_bytes(bundle)
+    _write_atomic(out_dir / bundle_name, bundle)
 
     cert_path = out_dir / cert_name
     key_path = out_dir / key_name

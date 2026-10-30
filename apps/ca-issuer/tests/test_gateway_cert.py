@@ -7,6 +7,7 @@ server leaf + trust bundle into a shared volume for the nginx gateway, since the
 gateway holds no signing key (D6) and there is no on-device CSR for it."""
 
 import ipaddress
+import os
 
 import pytest
 from cryptography import x509
@@ -80,6 +81,28 @@ def test_client_ca_is_the_access_trust_bundle(tmp_path):
     assert bundle == access.chain
     parsed = x509.load_pem_x509_certificates(bundle)
     assert [c.subject for c in parsed] == [access.cert.subject, root_cert.subject]
+
+
+def test_a_failed_bundle_write_keeps_the_old_bundle(tmp_path, monkeypatch):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    bundle = tmp_path / "client-ca.pem"
+    before = bundle.read_bytes()
+    rotated, _ = _access_intermediate()
+
+    def broken_fsync(fd):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "fsync", broken_fsync)
+    with pytest.raises(OSError):
+        ensure_gateway_cert(tmp_path, rotated, "localhost")
+
+    assert bundle.read_bytes() == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "client-ca.pem",
+        "gateway-fullchain.pem",
+        "gateway.key",
+    ]
 
 
 def test_extra_sans_are_classified_into_dns_and_ip(tmp_path):
