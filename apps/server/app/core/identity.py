@@ -202,6 +202,7 @@ CERT_REVOKED = (
 
 # The 403 of an enforced request without a fitting client certificate.
 _NO_CERT = "Kein gültiges Client-Zertifikat mit passendem Scope"
+_NO_SIGN_IN_CERT = "No valid client certificate"
 
 
 def require_cert_if_enforced(request: Request) -> None:
@@ -210,7 +211,7 @@ def require_cert_if_enforced(request: Request) -> None:
     and require_cert_user lets a request without a certificate through. Permissive, nothing
     changes: the manual first bootstrap runs without one."""
     if config.MTLS_ENFORCE and not get_client_identity(request).verified:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_NO_CERT)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_NO_SIGN_IN_CERT)
 
 
 def require_cert_user(request: Request, username: str, db: Session) -> None:

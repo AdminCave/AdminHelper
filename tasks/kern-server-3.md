@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/kern-server-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ip_filter.py tests/test_identity_source.py
 Doku: changelog.d/kern-server-3.md (neutral)
 
-### T2 — Sign-in-Routen: Refresh-Audit, Sitzungsdauer ohne Überlauf, 403-Text, Bootstrap-Kommentar (R-0990, R-0991a/b/d/e, R-0958)  [ ]
+### T2 — Sign-in-Routen: Refresh-Audit, Sitzungsdauer ohne Überlauf, 403-Text, Bootstrap-Kommentar (R-0990, R-0991a/b/d/e, R-0958)  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/auth_router.py, apps/server/app/core/auth.py, apps/server/app/core/identity.py, apps/server/tests/test_web_session_max.py, apps/server/tests/test_cert_user_binding.py, apps/server/tests/test_identity_source.py, apps/server/tests/test_stream.py, changelog.d/kern-server-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fd48ade5 2026-10-30T11:51:47+01:00
+Review: approve (.ah-out/review/kern-server-3/T2.verdict.json)
 Änderung:
 - R-0990: `refresh_token` (`auth_router.py:263`) auditiert einen ohne Zertifikat abgewiesenen Refresh als `auth.refresh_failed`, wie `login` (`:211`).
 - R-0991a: `_token_pair` (`:147`) vergleicht die Restdauer in Sekunden, bevor ein `timedelta` entsteht. Damit gibt es bei riesigem `WEB_SESSION_MAX_HOURS` keinen `OverflowError` mehr.
