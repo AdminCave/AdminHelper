@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-agent-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSync|TestStopFrpc|TestServerConfig|TestHashConfig
 Doku: changelog.d/kern-agent-2.md (neutral)
 
-### T2 — Prüfung der Server-Konfig: Grenzen, kurze Meldungen, Reihenfolge (R-0964)  [ ]
+### T2 — Prüfung der Server-Konfig: Grenzen, kurze Meldungen, Reihenfolge (R-0964)  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/servertoml.go, apps/agent/internal/frpc/servertoml_test.go, changelog.d/kern-agent-2.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @79b8450c 2026-10-30T13:57:31+01:00
+Review: approve (.ah-out/review/kern-agent-2/T2.verdict.json)
 Änderung: Grenze für Schlüssel je Tabelle und je Text (deutlich über dem, was der Generator für viele Tunnel schreibt); Schlüssel in Meldungen gekürzt; Segmentprüfung vor der Wertprüfung. Tests: Grenzen, gekürzte Meldung, Messung von Zeit/Heap des großen Falls vorher/nachher unter `## Entscheidungen`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServerConfig
 Doku: changelog.d/kern-agent-2.md (neutral)
@@ -47,3 +49,4 @@ Doku: changelog.d/kern-agent-2.md
 
 ## Entscheidungen
 - T1: frp stoppt bei einem Reload jeden Proxy, den die neue Konfig nicht mehr nennt (`UpdateAll` in `client/proxy/proxy_manager.go`, v0.69.1); Probe mit frpc 0.69.1 gegen frps: `frpc reload` ohne `[[proxies]]` meldet „reload success“, Log „proxy removed: [p1]“, der Remote-Port ist danach zu, frpc läuft weiter; `frpc verify -c` nimmt eine Konfig ohne Proxies an. Daher Abbau per Reload mit dem gemeinsamen Teil statt Prozess-Kill. Kein neues admin.conf im Fehlerpfad (`adminAPIListens` liest nur), damit ein fremder Port nie einen Reload bekommt; lauscht frpc nicht, hängt der Grund am Fehler.
+- T2: Grenzen 4096 Schlüsselpfade je Tabelle, 131072 im Text (Schlüssel plus die Tabellen, die ein gepunkteter Schlüssel öffnet); ein Generator-Tunnel hat rund 20, 2000 Tunnel mit je 15 Schlüsseln liegen bei rund 40 000. Messung `checkServerConfig` (go test -overlay, Scratch, nicht eingecheckt): 2000 Tunnel (719 KB) 65 ms / 4 MiB, angenommen. Zeilen werden einzeln mit `strings.Cut` gelesen statt über `strings.Split`. Schlüssel und Tabellennamen in Meldungen auf 64 Bytes gekürzt (ASCII nach `serverKey`/`serverHead`).
