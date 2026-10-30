@@ -78,26 +78,36 @@ ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
 ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
 
 # build_redaction_sedfile <envfile> <sedfile> [mask_hosts]
-# Writes a sed script that masks the .env secret values plus generic token forms,
-# and with mask_hosts=1 the host names and addresses of host_rules as well. Each
-# value once and the longest first: a value is masked whole before a shorter one
-# inside it (another line of a value over several lines, the value of another key)
-# can cut it in two. A value of SMTP_USER that is also one of another key keeps that
-# key's rule, without word edges. A line of a value that is only whitespace (ENV_WS)
-# is no rule: it holds no secret, and its rule would mask every blank of the logs.
+# Writes a sed script that masks the .env secret values plus generic token forms, and
+# with mask_hosts=1 the host names and addresses of host_rules as well. Each value once
+# and the longest first: a value is masked whole before a shorter one inside it (another
+# line of a value over several lines, the value of another key) can cut it in two. The
+# token forms come after the values of 8 bytes and more and before the shorter ones: a
+# short value may stand by chance inside a token and would leave a rest of it too short
+# for its rule; a value of 8 bytes and more (over the segment length 6 of the JWT rule)
+# is still masked whole before a token rule can take part of it. A value of SMTP_USER
+# that is also one of another key keeps that key's rule, without word edges. A line of a
+# value that is only whitespace (ENV_WS) is no rule: it holds no secret, and its rule
+# would mask every blank of the logs.
 build_redaction_sedfile() {
-    local envfile="$1" sedfile="$2" mask_hosts="${3:-0}"
+    local envfile="$1" sedfile="$2" mask_hosts="${3:-0}" short=""
     : > "$sedfile"
     if [ -f "$envfile" ]; then
-        local key line val esc
+        local key line val esc len
         while IFS= read -r line; do
+            len="${line%%$'\t'*}"
+            line="${line#*$'\t'}"
             key="${line%% *}"
             val="${line#* }"
             esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
             if [ "$key" = SMTP_USER ]; then
                 esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')"
             fi
-            printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
+            if [ "$len" -ge 8 ]; then
+                printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
+            else
+                short+="s/$esc/<redacted>/g"$'\n'
+            fi
         done < <(
             for key in "${SECRET_KEYS[@]}"; do
                 env_values "$envfile" "$key" | LC_ALL=C sed -e "s/^/$key /"
@@ -108,7 +118,7 @@ build_redaction_sedfile() {
                     by[v] = $1
                 }
                 END { for (v in by) print length(v) "\t" by[v] " " v }
-            ' | LC_ALL=C sort -t "$(printf '\t')" -k1,1rn | cut -f2-
+            ' | LC_ALL=C sort -t "$(printf '\t')" -k1,1rn
         )
     fi
     # Generic token shapes that may appear in logs regardless of .env. The query
@@ -121,6 +131,7 @@ s/\([?&]\(api_key\|token\|access_token\)=\)[^&[:space:]"]\{1,\}/\1<redacted>/gI
 s#/hooks/trigger/[^/?[:space:]"]\{8,\}#/hooks/trigger/<redacted>#g
 s/adminhelper_prov_[A-Za-z0-9_-]\{8,\}/adminhelper_prov_<redacted>/g
 SED
+    printf '%s' "$short" >> "$sedfile"
     if [ "$mask_hosts" = 1 ]; then
         host_rules "$envfile" >> "$sedfile"
     fi
@@ -425,7 +436,7 @@ sanitize_env() {
             tail(substr(v, i + 2))
         }
         # tail(s): s, the rest of a masked line, read as statements of any key; a
-        # quoted value among them that runs on leaves q set (cmt behind a '#').
+        # quoted value among them that runs on leaves q set (cmt behind a "#").
         function tail(s,    c, i) {
             while (1) {
                 match(s, lead)

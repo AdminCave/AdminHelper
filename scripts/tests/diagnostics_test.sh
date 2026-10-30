@@ -65,7 +65,9 @@
 #       it), the temp path leads out of the output dir through a linked dir or the
 #       name turns into a dangling link just before the open (nothing is created); it
 #       stays 0600 in a dir with a default ACL; no value of the .env stands in the
-#       arguments of sed.
+#       arguments of sed;
+#   (o) the token forms are masked before .env values under 8 bytes, which are
+#       masked elsewhere too.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -814,6 +816,20 @@ same "(n) a host statement behind a quoted value in sanitize_env --mask-hosts" '
 same "(n) a value over lines behind a masked host value in sanitize_env --mask-hosts" \
     $'DOMAIN=<masked>\nE=keep9' "$(sanitize_env "$env_n" 1 | grep -A1 '^DOMAIN=')" || fail=1
 unset -f uname
+
+# --- (o) the token forms before the short values --------------------------------------
+# A value under 8 bytes may stand by chance inside a token; masked first, it would
+# leave rests of the token too short for the token rule. The token rules run before
+# the short values and after the long ones; the short value is masked elsewhere too.
+cat > "$tmp/o.env" <<'EOF'
+SMTP_PASSWORD=ab12
+SECRET_KEY=longvalue1234
+EOF
+build_redaction_sedfile "$tmp/o.env" "$tmp/o.sed"
+same "(o) token forms before short values" \
+    "$(printf '%s\n' 'Authorization: Bearer <redacted>' 'pw=<redacted> key=<redacted>' 'jwt <redacted-jwt>')" \
+    "$(printf '%s\n' 'Authorization: Bearer xyzab12cdefghij' 'pw=ab12 key=longvalue1234' \
+        'jwt eyJab12cdef.eyJpayload12.sigab12' | redact "$tmp/o.sed")" || fail=1
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
 # A docker stub on PATH answers what main asks; `compose ps` lands in report.txt,

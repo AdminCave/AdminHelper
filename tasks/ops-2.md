@@ -34,8 +34,10 @@ weiter ab. Tests zuerst rot: Fälle in `restore_guard_test.sh` neben 12–14 (`e
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: changelog.d/ops-2.md
 
-### T3 — Reihenfolge der Masken-Regeln (R-0910)  [ ]
+### T3 — Reihenfolge der Masken-Regeln (R-0910)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, changelog.d/ops-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a6a53e94 2026-10-30T16:23:37+01:00
+Review: approve (.ah-out/review/ops-2/T3.verdict.json)
 Änderung: `build_redaction_sedfile` (`:88-127`) schreibt die Regeln der `.env`-Werte ab 8 Zeichen zuerst, dann die
 allgemeinen Token-Regeln, dann die kürzeren Werte. Test zuerst rot: ein kurzer Wert in der `.env` und ein Token in
 einem Log; das Token ist ganz maskiert, der kurze Wert auch.
