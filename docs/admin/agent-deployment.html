@@ -73,16 +73,21 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>SERVER=srm.example.com                 # dein AdminHelper-Server
 REPO="https://${SERVER}:8445"
 
-# 1) Signaturschluessel holen und Fingerprint ERZWUNGEN vergleichen (Vertrauenswurzel!)
-#    Erst nach /tmp laden, gegen den veroeffentlichten Wert pruefen, dann installieren —
-#    ein blosses "--show-keys" gibt den Fingerprint nur aus, vergleicht aber nichts.
+# 1) Signaturschluessel holen und NUR den Schluessel mit dem veroeffentlichten
+#    Fingerprint installieren (Vertrauenswurzel!). Die geladene Datei kann weitere
+#    Schluessel tragen: in ein Wegwerf-Verzeichnis importieren, nur $FPR exportieren,
+#    den Export ERZWUNGEN pruefen, nur ihn installieren (wie agent-install.sh).
 FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
+TMP=$(mktemp -d)
+curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o "$TMP/download.gpg"
+gpg --homedir "$TMP" --batch --no-autostart --import "$TMP/download.gpg"
+gpg --homedir "$TMP" --batch --no-autostart --export "$FPR" &gt; "$TMP/pinned.gpg"
+[ "$(gpg --homedir "$TMP" --batch --no-autostart --show-keys --with-colons "$TMP/pinned.gpg" \
+     | awk -F: 'p {print $10; p=0} $1=="pub" {p=1}')" = "$FPR" ] \
+  || { echo "FEHLER: kein Schluessel mit diesem Fingerprint — Abbruch!"; rm -rf "$TMP"; exit 1; }
 sudo install -d -m 0755 /usr/share/keyrings
-curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o /tmp/ah-keyring.gpg
-gpg --show-keys --with-colons /tmp/ah-keyring.gpg \
-  | awk -F: '/^fpr:/{print $10; exit}' | grep -qx "$FPR" \
-  || { echo "FEHLER: Keyring-Fingerprint weicht ab — Abbruch!"; exit 1; }
-sudo install -D -m 0644 /tmp/ah-keyring.gpg /usr/share/keyrings/adminhelper-archive-keyring.gpg
+sudo install -D -m 0644 "$TMP/pinned.gpg" /usr/share/keyrings/adminhelper-archive-keyring.gpg
+rm -rf "$TMP"
 
 # 2) Repo-Quelle (deb822); Signed-By bindet das Repo an genau diesen Schluessel
 sudo tee /etc/apt/sources.list.d/adminhelper.sources &gt;/dev/null &lt;&lt;EOF
