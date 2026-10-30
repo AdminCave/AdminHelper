@@ -68,6 +68,8 @@
 #       arguments of sed;
 #   (o) the token forms are masked before .env values under 8 bytes, which are
 #       masked elsewhere too, and after longer ones, which go whole;
+#   (q) the quoted value of another key that runs on over lines is read as compose reads
+#       it: the line it runs on to goes from env.sanitized, and its value is masked;
 #   (p) a mask program that fails (env_values, also for --mask-hosts) stops the run
 #       with its error and an error of its own, and no bundle is written; so does a
 #       rule file that cannot be written.
@@ -819,6 +821,25 @@ same "(n) a host statement behind a quoted value in sanitize_env --mask-hosts" '
 same "(n) a value over lines behind a masked host value in sanitize_env --mask-hosts" \
     $'DOMAIN=<masked>\nE=keep9' "$(sanitize_env "$env_n" 1 | grep -A1 '^DOMAIN=')" || fail=1
 unset -f uname
+
+# --- (q) the quoted value of another key over lines ------------------------------------
+# compose reads the whole file: A's value runs on over its newline to the quote behind
+# a, and SMTP_PASSWORD's value then runs on to the quote behind q9leak3. A line filter
+# lost A's open quote; it read SECRET_KEY=a as a statement and never saw the quote that
+# opens SMTP_PASSWORD's value, so the line it runs on to stayed in env.sanitized.
+env_q="$tmp/.env-quote-lines"
+cat > "$env_q" <<'EOF'
+A="x
+SECRET_KEY=q9a" SMTP_PASSWORD="q9c
+q9leak3"
+F=keep9
+EOF
+same "(q) the quoted value of another key over lines in sanitize_env" \
+    "$(printf '%s\n' 'A="x' 'SECRET_KEY=<redacted>' 'F=keep9')" "$(sanitize_env "$env_q")" || fail=1
+sed_q="$tmp/redact-q.sed"
+build_redaction_sedfile "$env_q" "$sed_q"
+same "(q) the quoted value of another key over lines in the logs" 'smtp: <redacted> <redacted>' \
+    "$(printf '%s\n' 'smtp: q9c q9leak3' | redact "$sed_q")" || fail=1
 
 # --- (o) the token forms before the short values --------------------------------------
 # A value under 8 bytes may stand by chance inside a token; masked first, it would

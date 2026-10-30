@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Zeilenangaben `origin/main@8df222b7`, vor dem Bauen neu greppen. `security` in der Abschlussprüfung.
 
-### T1 — diagnostics.sh: exakter dotenv-Tokenizer für env_values und sanitize_env (R-1014)  [ ]
+### T1 — diagnostics.sh: exakter dotenv-Tokenizer für env_values und sanitize_env (R-1014)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, changelog.d/ops-4.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @08d1cfdc 2026-10-30T18:45:20+01:00
+Review: am Ende (Branch-Review)
 Änderung: Ein awk-Tokenizer nach compose-go (Spec) zerlegt die ganze `.env` in Anweisungen mit Byte-Positionen;
 `env_values` (`scripts/diagnostics.sh:260`) und `sanitize_env` (`:417`) nutzen ihn, die bisherige Über-Maskierung
 (allein gelesen hinter Zeilenanfang und Quote, Kommentare) bleibt. Neue Fälle: der offene Quote eines anderen
@@ -40,3 +42,8 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: changelog.d/ops-4.md
 
 ## Entscheidungen
+- T1: Tokenizer = exakter Lauf nach compose-go ∪ der bisherige Lauf „allein gelesen“ an jedem Zeilenanfang und hinter
+  jedem Quote (maskiert nie weniger als vorher); einen Schlüssel, den compose ablehnt, überspringt der exakte Lauf bis
+  zum Zeilenende. Zwei Kopien des awk-Texts (diagnostics.sh, backup.sh) statt `scripts/lib/`: sonst ändern sich
+  install.sh und release.yml. Fall (q) ist mit der alten Fassung in `sanitize_env` rot, der Log-Teil war schon grün
+  (env_values verfolgte den gesuchten Schlüssel hinter jedem Quote) und bleibt als Schutz.

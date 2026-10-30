@@ -232,161 +232,191 @@ SED
         done
 }
 
+# >>> dotenv tokenizer (scripts/backup.sh holds the same text; a test keeps the two equal)
+# ENV_TOK: awk functions that find the statements of a .env, for LC_ALL=C awk (byte
+# for byte: a NUL byte or a byte outside UTF-8 passes). The program appends every line
+# with a newline to S, defines want(k) (1 for a key whose values it needs) and
+# hit(k, ks, vs, ve, q, closed, cs) (called for such a key only: a statement of k from
+# ks, its value from vs to ve:
+# q is its quote, "" for an unquoted value that ends before its newline; closed is 0
+# for a quoted value without its closing quote; cs is the place of the "#" in front of
+# a commented-out statement, 0 outside a comment), and calls tok_init(sp, sep,
+# cmt) in BEGIN and tok_run() in END. A statement may be found more than once.
+# tok_exact reads the file as compose does (compose-go dotenv: parse,
+# getStatementStart, locateKeyName, extractVarValue): a quoted value runs on to its
+# closing quote over any number of lines, whatever key it belongs to, and behind it
+# the next statement begins. compose refuses a file with a key it cannot read; such a
+# line is passed over here and the next one read. tok_alone then reads every line
+# start and the place behind every quote as if it began a line, statements one behind
+# the other while each quoted value closes on its line: the text may be a value of
+# another key that only looks like an assignment, or a file compose refuses, and a
+# secret there must still go. A quoted value of a wanted key runs on to its closing
+# quote; with cmt also behind any "#" among the whitespace in front of a statement,
+# and there over the commented-out lines that follow, to its closing quote or to the
+# first line that is no comment.
+ENV_TOK='
+    function tok_init(sp, sep, cmt) {
+        tsp = "^(" sp ")*"
+        tspl = tok_nonl(sp)
+        hs = tok_nonl(sep)
+        tlead = "^(" tspl (cmt ? "|#" : "") ")*"
+        tcre = "^(" tspl ")*#"
+        tgre = "^(export(" tspl ")+)?[^[:space:]=:#\"\047]+(" hs ")*[=:]"
+        tkey = "^(" hs "|[][A-Za-z0-9_.-]|[\200-\377])*"
+        tcmt = cmt
+    }
+    # tok_nonl(re): re without the newline: a statement ends at its line.
+    function tok_nonl(re) { gsub(/\[\[:space:\]\]/, "[ \t\v\f\r]", re); return re }
+    # tok_eol(p): the place of the newline that ends the line of p.
+    function tok_eol(p) { return p + index(substr(S, p), "\n") - 1 }
+    # tok_close(s, c): the place of the quote c that closes a quoted value in s, 0
+    # without one; a quote behind a backslash does not.
+    function tok_close(s, c,    i, e, x) {
+        for (i = 1; i <= length(s); i++) {
+            x = substr(s, i, 1)
+            if (e) e = 0
+            else if (x == "\\") e = 1
+            else if (x == c) return i
+        }
+        return 0
+    }
+    function tok_exact(    p, t, k, c, i, ks) {
+        p = 1
+        while (p <= N) {
+            t = substr(S, p)
+            match(t, tsp)
+            p += RLENGTH
+            if (p > N) return
+            if (substr(S, p, 1) == "#") { p = tok_eol(p) + 1; continue }
+            ks = p
+            t = substr(S, p)
+            if (match(t, "^export[ \t\f\r]")) { match(t, "^export(" hs ")*"); p += RLENGTH }
+            match(substr(S, p), tkey)
+            k = substr(S, p, RLENGTH)
+            c = substr(S, p + RLENGTH, 1)
+            p += RLENGTH + 1
+            sub("(" hs ")+$", "", k)
+            if (k == "" || index(k, " ") || (c != "=" && c != ":" && c != "\n")) { p = tok_eol(ks) + 1; continue }
+            if (c == "\n") continue
+            match(substr(S, p), "^(" hs ")*")
+            p += RLENGTH
+            c = substr(S, p, 1)
+            if (c == "\"" || c == "\047") {
+                i = tok_close(substr(S, p + 1), c)
+                if (want(k)) hit(k, ks, p, i ? p + i : N, c, i > 0, 0)
+                p = i ? p + i + 1 : N + 1
+                continue
+            }
+            i = tok_eol(p)
+            if (want(k)) hit(k, ks, p, i - 1, "", 1, 0)
+            p = i + 1
+        }
+    }
+    # tok_alone(p, h): the statements from p on as described above; h: p stands in a
+    # commented-out line.
+    function tok_alone(p, h,    t, k, c, i, j, e, ks, cs, x) {
+        while (1) {
+            t = substr(S, p)
+            match(t, tlead)
+            if (i = index(substr(t, 1, RLENGTH), "#")) { h = 1; if (!cs) cs = p + i - 1 }
+            p += RLENGTH
+            t = substr(S, p)
+            if (!match(t, tgre)) return
+            k = substr(t, 1, RLENGTH - 1)
+            sub("^export(" tspl ")+", "", k)
+            sub("(" hs ")+$", "", k)
+            ks = p
+            p += RLENGTH
+            match(substr(S, p), "^(" hs ")*")
+            p += RLENGTH
+            c = substr(S, p, 1)
+            e = tok_eol(p)
+            if (c != "\"" && c != "\047") { if (want(k)) hit(k, ks, p, e - 1, "", 1, cs); return }
+            i = tok_close(substr(S, p + 1), c)
+            if (i && p + i < e) {
+                if (want(k)) hit(k, ks, p, p + i, c, 1, cs)
+                p += i + 1
+                continue
+            }
+            if (!want(k)) return
+            if (!(h && tcmt)) { hit(k, ks, p, i ? p + i : N, c, i > 0, cs); return }
+            for (x = e + 1; x <= N && substr(S, x, tok_eol(x) - x) ~ tcre; x = tok_eol(x) + 1)
+                if (j = tok_close(substr(S, x, tok_eol(x) - x), c)) { hit(k, ks, p, x + j - 1, c, 1, cs); return }
+            hit(k, ks, p, x - 2, c, 0, cs)
+            return
+        }
+    }
+    function tok_run(    p, c, h) {
+        N = length(S)
+        tok_exact()
+        for (p = 1; p <= N; p++) {
+            if (p == 1 || substr(S, p - 1, 1) == "\n") {
+                h = substr(S, p, tok_eol(p) - p) ~ tcre
+                tok_alone(p, 0)
+            }
+            c = substr(S, p, 1)
+            if (c == "\"" || c == "\047") tok_alone(p + 1, h)
+        }
+    }
+'
+# <<< dotenv tokenizer
+
 # env_values <envfile> <key> : every value of <key> in the .env as compose reads it
 # -> stdout, one line per line of the value, preceded by the value as the file
 # spells it where the two differ. The logs carry the compose form, a copy of the .env
 # the file form. Every value of the key, not the last only: compose takes the last
-# one, an older one may still stand in a log. The key as compose reads it: behind
-# whitespace (ENV_SP), an "export" may lead, '=' or ':' separates, whitespace
-# (ENV_SEP) may stand before it. Not a commented-out line: it is no configuration,
-# and .env.example carries example values there. The value begins behind the
-# separator and the whitespace (ENV_SEP) after it. Unquoted, it ends before " #",
-# loses the whitespace (ENV_WS) at its end, and $$ is $. In single quotes it is
-# literal but for \' (a '). In double quotes compose decodes \a \b \f \n \r \t \v \$
-# \" \\ and \0 with three octal digits (to UTF-8; a \0 without them loses its 0), and
-# $$ is $. A quote behind an odd number of backslashes does not end the value, and a
-# value that does not end on its line runs on to its closing quote, without one to
-# the end of the file. Behind a closing quote compose reads the rest of the line as
-# the next statement (compose-go dotenv: parse, getStatementStart), so a line may set
-# <key> behind the quoted value of another key (A="x" KEY=v); an unquoted value and a
-# '#' end the line. Only the quotes of <key> are followed across lines: the line that
-# opened a value may stand in a quoted value of another key, and a line it runs on to
-# hold an assignment of <key>; such a line gives its own value as well, read as that
-# line alone. For the same reason any quote of a line may close the value of another
-# key: what follows each quote is read alone as well, and a value of <key> that opens
-# there and runs on is followed to its closing quote too. awk under LC_ALL=C reads the
-# file byte for byte: grep took a line with a byte the caller's locale cannot decode
-# (or a file with a NUL byte) for binary and left it out.
+# one, an older one may still stand in a log. The statements as ENV_TOK finds them,
+# not in a comment: .env.example carries example values there. Unquoted, a value ends
+# before " #", loses the whitespace (ENV_WS) at its end, and $$ is $. In single quotes
+# it is literal but for \' (a '). In double quotes compose decodes \a \b \f \n \r \t
+# \v \$ \" \\ and \0 with three octal digits (to UTF-8; a \0 without them loses its 0),
+# and $$ is $. A value without its closing quote runs to the end of the file. awk
+# under LC_ALL=C reads the file byte for byte: grep took a line with a byte the
+# caller's locale cannot decode (or a file with a NUL byte) for binary and left it out.
 env_values() {
-    LC_ALL=C awk -v key="$2" -v sp="$ENV_SP" -v ws="$ENV_WS" -v sep="$ENV_SEP" '
+    LC_ALL=C awk -v key="$2" -v sp="$ENV_SP" -v ws="$ENV_WS" -v sep="$ENV_SEP" "$ENV_TOK"'
         BEGIN {
-            kre = "^(export" sp "+)?" key sep "*[=:]"
-            gre = "^(export" sp "+)?[^[:space:]=:#\"\047]+" sep "*[=:]"
+            tok_init(sp, sep, 0)
             dec["a"] = "\007"; dec["b"] = "\010"; dec["f"] = "\014"; dec["n"] = "\n"; dec["r"] = "\r"
             dec["t"] = "\t"; dec["v"] = "\013"; dec["$"] = "$$"; dec["\\"] = "\\"
         }
-        function emit() {
-            if (q != "\047") gsub(/\$\$/, "$", val)
-            if (file != val) print file
-            print val
-            q = ""
-        }
-        # closeat(s, c): the place of the quote c that closes a quoted value in s, 0
-        # without one; a quote behind a backslash does not.
-        function closeat(s, c,    i, e, x) {
-            for (i = 1; i <= length(s); i++) {
-                x = substr(s, i, 1)
-                if (e) e = 0
-                else if (x == "\\") e = 1
-                else if (x == c) return i
-            }
-            return 0
-        }
-        # take(s): s is a line of a quoted value, behind its opening quote or one the
-        # value runs on to; file gets it as spelled, val as compose reads it. 1 when
-        # the value closes in s, rest is then what follows its quote.
-        function take(s,    i, c, d, o) {
-            for (i = 1; i <= length(s); i++) {
-                c = substr(s, i, 1)
-                if (esc) {
-                    esc = 0
-                    if (c == q) val = val c
-                    else if (q == "\047") val = val "\\" c
-                    else if (c in dec) val = val dec[c]
-                    else if (c == "0") {
-                        d = substr(s, i + 1, 3)
-                        sub(/[^0123456789].*/, "", d)
-                        i += length(d)
-                        if (d !~ /^[0123][01234567][01234567]$/) { val = val "\\" d; continue }
-                        o = substr(d, 1, 1) * 64 + substr(d, 2, 1) * 8 + substr(d, 3, 1)
-                        val = val (o < 128 ? sprintf("%c", o) : sprintf("%c%c", 192 + int(o / 64), 128 + o % 64))
-                    } else val = val "\\" c
-                } else if (c == "\\") esc = 1
-                else if (c == q) { file = file substr(s, 1, i - 1); emit(); rest = substr(s, i + 1); return 1 }
-                else val = val c
-            }
-            file = file s "\n"
-            if (esc) { val = val "\\"; esc = 0 }
-            val = val "\n"
-            return 0
-        }
-        # start(v): v is a line of key behind its separator; its value begins. 1 when
-        # it is quoted and closes on the line (take).
-        function start(v,    i) {
-            sub("^" sep "*", "", v)
-            file = val = ""
-            q = substr(v, 1, 1)
-            if (q == "\"" || q == "\047") return take(substr(v, 2))
-            q = ""
-            if (i = index(v, " #")) v = substr(v, 1, i - 1)
-            sub("(" ws ")+$", "", v)
-            file = val = v
-            emit()
-            return 0
-        }
-        # statements(s): s holds statements one behind the other; each value of key
-        # among them is emitted. A statement of another key is passed over when its
-        # value is quoted and closes on the line; anything else ends the line.
-        function statements(s,    c, i) {
-            while (1) {
-                sub("^" sp "*", "", s)
-                if (match(s, kre)) {
-                    if (!start(substr(s, RLENGTH + 1))) return
-                    s = rest
-                    continue
+        function want(k) { return k == key }
+        function hit(k, ks, vs, ve, q, closed, cs,    s, i, c, d, o, esc, val) {
+            if (k != key) return
+            if (q == "") {
+                s = substr(S, vs, ve - vs + 1)
+                if (i = index(s, " #")) s = substr(s, 1, i - 1)
+                sub("(" ws ")+$", "", s)
+                val = s
+            } else {
+                s = substr(S, vs + 1, ve - vs - closed)
+                if (!closed) sub(/\n$/, "", s)
+                for (i = 1; i <= length(s); i++) {
+                    c = substr(s, i, 1)
+                    if (esc) {
+                        esc = 0
+                        if (c == q) val = val c
+                        else if (q == "\047") val = val "\\" c
+                        else if (c in dec) val = val dec[c]
+                        else if (c == "0") {
+                            d = substr(s, i + 1, 3)
+                            sub(/[^0123456789].*/, "", d)
+                            i += length(d)
+                            if (d !~ /^[0123][01234567][01234567]$/) { val = val "\\" d; continue }
+                            o = substr(d, 1, 1) * 64 + substr(d, 2, 1) * 8 + substr(d, 3, 1)
+                            val = val (o < 128 ? sprintf("%c", o) : sprintf("%c%c", 192 + int(o / 64), 128 + o % 64))
+                        } else val = val "\\" c
+                    } else if (c == "\\") esc = 1
+                    else val = val c
                 }
-                if (!match(s, gre)) return
-                s = substr(s, RLENGTH + 1)
-                sub("^" sep "*", "", s)
-                c = substr(s, 1, 1)
-                if ((c != "\"" && c != "\047") || !(i = closeat(substr(s, 2), c))) return
-                s = substr(s, i + 2)
+                if (esc) val = val "\\"
             }
+            if (q != "\047") gsub(/\$\$/, "$", val)
+            if (s != val) print s
+            print val
         }
-        # finish(): a quoted value without its closing quote ends here.
-        function finish() { sub(/\n$/, "", file); sub(/\n$/, "", val); emit() }
-        # alone(s): the values of key in s, read as if s stood alone; q stays. A value
-        # that runs on past s is followed as the pending one (pq), unless one is.
-        function alone(s,    qq, qfile, qval) {
-            qq = q; qfile = file; qval = val; q = ""
-            statements(s)
-            if (q != "") {
-                if (pq == "") { pq = q; pfile = file; pval = val }
-                else finish()
-            }
-            q = qq; file = qfile; val = qval
-        }
-        # swap(): trades the value followed in q for the pending one.
-        function swap(    t) {
-            t = q; q = pq; pq = t
-            t = file; file = pfile; pfile = t
-            t = val; val = pval; pval = t
-        }
-        # behind(s): what follows each quote of s, read alone.
-        function behind(s,    i, c) {
-            for (i = 1; i <= length(s); i++) {
-                c = substr(s, i, 1)
-                if (c == "\"" || c == "\047") alone(substr(s, i + 1))
-            }
-        }
-        pq != "" {
-            swap()
-            pc = take($0)
-            pr = rest
-            swap()
-            if (pc) alone(pr)
-        }
-        q != "" {
-            alone($0)
-            behind($0)
-            if (take($0)) statements(rest)
-            next
-        }
-        { behind($0); statements($0) }
-        END {
-            if (q != "") finish()
-            if (pq != "") { swap(); finish() }
-        }
+        { S = S $0 "\n" }
+        END { tok_run() }
     ' "$1"
 }
 
@@ -397,120 +427,58 @@ redact() {
     LC_ALL=C sed -f "$1"
 }
 
-# sanitize_env <envfile> [mask_hosts] : mask secret VALUES by key line, for
-# env.sanitized -> stdout. The second, independent redaction path —
-# build_redaction_sedfile redacts by value, this redacts by key, so a secret is
-# masked even if its value never appeared in a log. The key as compose reads it (as
-# in env_values: also behind the closed quoted value of another key, and without one
-# from the start of the line behind any quote of it), and commented out as well (any
+# sanitize_env <envfile> [mask_hosts] : mask secret VALUES by key, for env.sanitized
+# -> stdout. The second, independent redaction path — build_redaction_sedfile redacts
+# by value, this redacts by key, so a secret is masked even if its value never
+# appeared in a log. The statements as ENV_TOK finds them, commented out as well (any
 # '#' among the whitespace in front of a statement): an old value there may still be
-# valid. The line keeps its form up to the first such value, the rest of the line
-# goes. A value in quotes that does not end on its line runs on to its closing quote
-# (as in env_values), and the lines it runs on to go; so do those of a quoted value of
-# any key in the rest of the line, and what follows the closing quote is read again.
-# One in a commented-out line runs on over the commented-out lines that follow it, to
-# its closing quote or to the first line that is no comment. awk under LC_ALL=C: byte
-# for byte, a byte outside UTF-8 or a NUL byte passes unchanged; every line is printed
-# with a newline. With mask_hosts=1 the values of the HOST_KEYS become <masked> as
-# well, and the rest of the file runs through host_rules: an address or a name may
-# also stand in a comment or in another key.
+# valid. A line keeps its form up to the first such value, then <redacted>, and the
+# rest of the line goes; so do the lines a value runs on to. The line that closes a
+# value goes too, unless another such value begins behind its closing quote: then the
+# line is printed from behind the quote up to that value. awk under LC_ALL=C: byte for
+# byte, a byte outside UTF-8 or a NUL byte passes unchanged; every line is printed with
+# a newline. With mask_hosts=1 the values of the HOST_KEYS become <masked> as well, and
+# the rest of the file runs through host_rules: an address or a name may also stand in
+# a comment or in another key.
 sanitize_env() {
-    local envfile="$1" mask_hosts="${2:-0}" secrets hosts rules prog
-    secrets="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
+    local envfile="$1" mask_hosts="${2:-0}" secrets hosts="" rules prog
+    secrets="${SECRET_KEYS[*]}"
     # shellcheck disable=SC2016 # an awk program, $0 is awk's
-    prog='
+    prog="$ENV_TOK"'
         BEGIN {
-            lead = "^(" sp "|#)*"
-            sre = "^(export" sp "+)?(" secrets ")" sep "*[=:]" sep "*"
-            if (hosts != "") hre = "^(export" sp "+)?(" hosts ")" sep "*[=:]" sep "*"
-            gre = "^(export" sp "+)?[^[:space:]=:#\"\047]+" sep "*[=:]" sep "*"
-            cre = "^" sp "*#"
+            tok_init(sp, sep, 1)
+            split(secrets, a, " "); for (i in a) sec[a[i]] = 1
+            split(hosts, a, " "); for (i in a) hst[a[i]] = 1
         }
-        # closeat(s, c): as in env_values.
-        function closeat(s, c,    i, e, x) {
-            for (i = 1; i <= length(s); i++) {
-                x = substr(s, i, 1)
-                if (e) e = 0
-                else if (x == "\\") e = 1
-                else if (x == c) return i
-            }
-            return 0
+        function want(k) { return (k in sec) || (k in hst) }
+        function hit(k, ks, vs, ve, q, closed, cs) {
+            n++
+            A[n] = vs; B[n] = ve; M[n] = (k in sec) ? "<redacted>" : "<masked>"
         }
-        # mask(n, m, h): the line up to its value (n bytes), then m; a quoted value
-        # that runs on leaves q set, and the lines up to its closing quote go; h: it
-        # stands in a comment, and only commented-out lines run on. The first hide
-        # bytes of the line end a masked value and stay out.
-        function mask(n, m, h,    v, i) {
-            print substr($0, hide + 1, n - hide) m
-            v = substr($0, n + 1)
-            q = substr(v, 1, 1)
-            cmt = h
-            if (q != "\"" && q != "\047") { q = ""; return }
-            if (!(i = closeat(substr(v, 2), q))) return
-            q = ""
-            tail(substr(v, i + 2))
-        }
-        # tail(s): s, the rest of a masked line, read as statements of any key; a
-        # quoted value among them that runs on leaves q set (cmt behind a "#").
-        function tail(s,    c, i) {
-            while (1) {
-                match(s, lead)
-                if (index(substr(s, 1, RLENGTH), "#")) cmt = 1
-                s = substr(s, RLENGTH + 1)
-                if (!match(s, gre)) return
-                s = substr(s, RLENGTH + 1)
-                c = substr(s, 1, 1)
-                if (c != "\"" && c != "\047") return
-                if (!(i = closeat(substr(s, 2), c))) { q = c; return }
-                s = substr(s, i + 2)
+        { S = S $0 "\n" }
+        END {
+            tok_run()
+            for (ls = 1; ls <= N; ls = le + 1) {
+                le = tok_eol(ls)
+                # from: the first byte of the line behind every value that covers it
+                from = ls
+                do {
+                    more = 0
+                    for (j = 1; j <= n; j++) if (A[j] < from && B[j] >= from) { from = B[j] + 1; more = 1 }
+                } while (more)
+                best = 0
+                for (j = 1; j <= n; j++) if (A[j] >= from && A[j] < le && (!best || A[j] < A[best])) best = j
+                if (best) print substr(S, from, A[best] - from) M[best]
+                else if (from == ls) print substr(S, ls, le - ls)
             }
         }
-        # scan(n, h): masks the first secret or host statement of the line behind its
-        # first n bytes, 1 if there is one; statements of other keys are passed over
-        # as in env_values. h: a comment has begun.
-        function scan(n, h,    s, c, i) {
-            s = substr($0, n + 1)
-            while (1) {
-                match(s, lead)
-                if (index(substr(s, 1, RLENGTH), "#")) h = 1
-                n += RLENGTH
-                s = substr(s, RLENGTH + 1)
-                if (match(s, sre)) { mask(n + RLENGTH, "<redacted>", h); return 1 }
-                if (hre != "" && match(s, hre)) { mask(n + RLENGTH, "<masked>", h); return 1 }
-                if (!match(s, gre)) return 0
-                n += RLENGTH
-                s = substr(s, RLENGTH + 1)
-                c = substr(s, 1, 1)
-                if ((c != "\"" && c != "\047") || !(i = closeat(substr(s, 2), c))) return 0
-                n += i + 1
-                s = substr(s, i + 2)
-            }
-        }
-        # rescan(k, h): scan from the line start behind its first k bytes, then behind
-        # each later quote; 1 when a statement was masked. k > 0: the line ends a
-        # masked value there, and what follows the quote is a statement of its own.
-        function rescan(k, h,    i, c) {
-            hide = k
-            if (scan(k, h)) { hide = 0; return 1 }
-            for (i = k + 1; i <= length($0); i++) {
-                c = substr($0, i, 1)
-                if ((c == "\"" || c == "\047") && scan(i, h)) { hide = 0; return 1 }
-            }
-            hide = 0
-            return 0
-        }
-        q != "" && !cmt { if (i = closeat($0, q)) { q = ""; rescan(i, 0) }; next }
-        q != "" && $0 ~ cre { if (i = closeat($0, q)) { q = ""; rescan(i, 1) }; next }
-        { q = "" }
-        rescan(0, $0 ~ cre) { next }
-        { print }
     '
     if [ "$mask_hosts" != 1 ]; then
         LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" -v secrets="$secrets" -v hosts= "$prog" "$envfile"
         return
     fi
     rules="$(host_rules "$envfile")" || return 1
-    hosts="$(IFS='|'; printf '%s' "${HOST_KEYS[*]}")"
+    hosts="${HOST_KEYS[*]}"
     # The rules reach sed through a pipe, not as an argument: the arguments of a process
     # stand in the process list for every user of the host, and the rules carry the
     # names and addresses --mask-hosts is to hide.
