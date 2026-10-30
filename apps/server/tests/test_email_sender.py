@@ -176,13 +176,30 @@ def _sent_context(monkeypatch, port):
     return server.starttls.call_args.kwargs.get("context")
 
 
+def _spy_default_context(monkeypatch) -> list:
+    """Every context ssl.create_default_context hands out while the test runs."""
+    created = []
+    real_create = sender.ssl.create_default_context
+
+    def spy(*args, **kwargs):
+        created.append(real_create(*args, **kwargs))
+        return created[-1]
+
+    monkeypatch.setattr(sender.ssl, "create_default_context", spy)
+    return created
+
+
 @pytest.mark.parametrize("port", [587, 465])
 def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tmp_path, port):
     _configure(monkeypatch, port)
     monkeypatch.setattr(sender, "SMTP_CA_FILE", _write_ca_pem(tmp_path / "smtp-ca.pem"))
+    created = _spy_default_context(monkeypatch)
 
     ctx = _sent_context(monkeypatch, port)
 
+    # The default context with the file added, not one built from the file alone: the count
+    # below cannot tell the two apart on a box whose system CAs sit in a lazily read directory.
+    assert created == [ctx]
     assert _CA_CN in _ca_common_names(ctx)
     # On top of the system CAs, not instead of them: a context built from the file alone
     # would reject every public relay. Holds on a box without a CA bundle too (0 + 1).
@@ -191,15 +208,20 @@ def test_smtp_ca_file_adds_the_relay_ca_to_the_verifying_context(monkeypatch, tm
     _assert_verifying(ctx)  # an extra CA, not a weaker check
 
 
-def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, tmp_path):
+@pytest.mark.parametrize("port", [587, 465])
+def test_without_smtp_ca_file_the_context_has_no_extra_ca(monkeypatch, tmp_path, port):
     # Pairs with the test above: the CA in the file is what put its name there.
     _write_ca_pem(tmp_path / "smtp-ca.pem")
-    _configure(monkeypatch, 587)
+    _configure(monkeypatch, port)
+    created = _spy_default_context(monkeypatch)
 
-    ctx = _sent_context(monkeypatch, 587)
+    ctx = _sent_context(monkeypatch, port)
 
     assert _CA_CN not in _ca_common_names(ctx)
     _assert_verifying(ctx)
+    # Whether a box loads its system CAs eagerly or from a hashed directory, the context has to
+    # be the default one; one built from nothing passes the CA-name check on a lazy box.
+    assert created == [ctx]
 
 
 @pytest.mark.parametrize(

@@ -130,10 +130,10 @@ pub async fn is_device_enrolled() -> Result<bool, AppError> {
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
 /// UI whether that happened. Only at the server of this workspace
-/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the pin
-/// could not be forgotten. The identity entries are deleted best effort before it,
-/// in the same keyring, so they may have stayed as well; the reset can be repeated
-/// (without an identity it ends as `NotEnrolled` and forgets the pin again).
+/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the
+/// identity could not be deleted on this device (the message names a revoke that
+/// happened; the pin then stays) or the pin could not be forgotten. The reset can be
+/// repeated (without an identity it ends as `NotEnrolled` and forgets the pin again).
 #[tauri::command]
 pub async fn reset_device_identity(
     app: tauri::AppHandle,
@@ -158,7 +158,7 @@ where
     Fut: Future<Output = Result<(), AppError>>,
 {
     let server_url = sign_in_target(base, sent, None)?;
-    let outcome = enrollment::reset_identity(&server_url).await;
+    let outcome = enrollment::reset_identity(&server_url).await?;
     forget(server_url).await.map_err(|err| {
         AppError::Keyring(match outcome {
             enrollment::ResetOutcome::LocalOnly => format!(
@@ -232,12 +232,14 @@ where
     E: FnOnce(String) -> EnrollFut,
     EnrollFut: Future<Output = Result<(), AppError>>,
     R: FnOnce(String) -> ResetFut,
-    ResetFut: Future<Output = enrollment::ResetOutcome>,
+    ResetFut: Future<Output = Result<enrollment::ResetOutcome, AppError>>,
 {
     let server_url = sign_in_target(base, sent, None)?;
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
-        reset(server_url).await;
+        // The registration fails with `e` either way; a reset that fails too leaves the
+        // identity for the user's own reset.
+        let _ = reset(server_url).await;
         return Err(e);
     }
     Ok(())
@@ -1460,7 +1462,7 @@ mod tests {
     }
 
     /// The reset of a registration the workspace does not keep: none comes in these cases.
-    fn no_reset(url: String) -> std::future::Ready<ResetOutcome> {
+    fn no_reset(url: String) -> std::future::Ready<Result<ResetOutcome, AppError>> {
         panic!("the registration at {url} was reset")
     }
 

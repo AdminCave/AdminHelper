@@ -9,6 +9,8 @@ former self-run FRP CA. The CA private key never reaches frps."""
 import ipaddress
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from app import pki
@@ -33,6 +35,7 @@ def test_provisions_serverauth_leaf_under_tunnel(tmp_path):
 
     # frps.crt = leaf + tunnel intermediate; leaf chains tunnel -> root.
     certs = x509.load_pem_x509_certificates(cert_path.read_bytes())
+    assert len(certs) == 2  # no root: only the gateway sends it along (R-0667)
     leaf, presented_inter = certs[0], certs[1]
     assert presented_inter.subject == tunnel.cert.subject
     leaf.verify_directly_issued_by(tunnel.cert)
@@ -83,6 +86,17 @@ def test_ca_trusts_access_visitor_certs_with_extra_trust(tmp_path):
     visitor_leaf.verify_directly_issued_by(access_cert)
 
 
+def test_remints_when_the_frps_extra_sans_change(tmp_path):
+    tunnel, _ = _tunnel_intermediate()
+    ensure_frps_cert(tmp_path, tunnel, "frp.example")
+
+    ensure_frps_cert(tmp_path, tunnel, "frp.example", extra_sans="203.0.113.7")
+
+    leaf = x509.load_pem_x509_certificates((tmp_path / "frps.crt").read_bytes())[0]
+    san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert ipaddress.ip_address("203.0.113.7") in san.get_values_for_type(x509.IPAddress)
+
+
 def test_idempotent_keeps_existing_frps_key(tmp_path):
     tunnel, _ = _tunnel_intermediate()
     ensure_frps_cert(tmp_path, tunnel, "frp.example")
@@ -114,3 +128,60 @@ def test_remints_frps_leaf_once_past_half_life(tmp_path, monkeypatch):
     # and breaks the tunnel edge (F4).
     ensure_frps_cert(tmp_path, tunnel, "frp.example")
     assert (tmp_path / "frps.crt").read_bytes() != aged
+
+
+# --- R-0667: after a rotation (retired intermediates) ------------------------
+
+
+def _generations(scope: str, root_cert, root_key) -> tuple[Intermediate, Intermediate]:
+    """Two intermediates of `scope` under the root, as after a rotation: the retired
+    one (with its key, to mint leaves under it) and the current one, which lists
+    the retired one like ensure_hierarchy does."""
+    old_cert, old_key = pki.build_intermediate_ca(scope, root_cert, root_key)
+    new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key)
+    old = Intermediate(scope, old_cert, old_key, pki.chain_pem(old_cert, root_cert))
+    chain = pki.chain_pem(new_cert, root_cert)
+    return old, Intermediate(scope, new_cert, new_key, chain, retired=(old_cert,))
+
+
+def _der(certs) -> list[bytes]:
+    return [c.public_bytes(serialization.Encoding.DER) for c in certs]
+
+
+def _signed_by(cert: x509.Certificate, issuer: x509.Certificate) -> bool:
+    try:
+        cert.verify_directly_issued_by(issuer)
+    except (InvalidSignature, ValueError, TypeError):
+        return False
+    return True
+
+
+def test_ca_carries_current_and_retired_of_tunnel_and_extra_trust(tmp_path):
+    root_cert, root_key = pki.build_root_ca()
+    old_tunnel, tunnel = _generations("tunnel", root_cert, root_key)
+    old_access, access = _generations("access", root_cert, root_key)
+
+    ensure_frps_cert(tmp_path, tunnel, "frp.example", extra_trust=(access,))
+
+    bundle = x509.load_pem_x509_certificates((tmp_path / "ca.crt").read_bytes())
+    assert _der(bundle) == _der(
+        [tunnel.cert, root_cert, old_tunnel.cert, access.cert, old_access.cert]
+    )
+    # An agent (tunnel) and a visitor (access) cert from before the rotation, sent
+    # without their chain, each find their issuer in the bundle.
+    for old in (old_tunnel, old_access):
+        leaf, _ = pki.build_server_leaf(old.cert, old.key, "before-rotation")
+        assert _der(c for c in bundle if _signed_by(leaf, c)) == _der([old.cert])
+
+
+def test_remints_an_frps_leaf_of_a_retired_tunnel_intermediate(tmp_path):
+    root_cert, root_key = pki.build_root_ca()
+    old, tunnel = _generations("tunnel", root_cert, root_key)
+    ensure_frps_cert(tmp_path, old, "frp.example")  # last boot before the rotation
+    key_before = (tmp_path / "frps.key").read_bytes()
+
+    ensure_frps_cert(tmp_path, tunnel, "frp.example")  # first boot after it
+    certs = x509.load_pem_x509_certificates((tmp_path / "frps.crt").read_bytes())
+    certs[0].verify_directly_issued_by(tunnel.cert)
+    assert _der(certs[1:2]) == _der([tunnel.cert])
+    assert (tmp_path / "frps.key").read_bytes() != key_before

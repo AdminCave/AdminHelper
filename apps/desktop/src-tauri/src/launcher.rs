@@ -355,7 +355,8 @@ fn purge_outcome(code: i32) -> Option<ResetOutcome> {
 /// dir, `meta` its `workspace.json`, none if that does not load or the directory is gone. A
 /// server workspace with a URL revokes its device first: `revoke` gets the URL and gives how
 /// that went (`enrollment::reset_identity` at a real purge); without a server to ask, an
-/// identity goes here only (`LocalOnly`). Then its identity, its RDP keys, the index, its port
+/// identity goes here only (`LocalOnly`). A `revoke` that fails stops the purge before anything
+/// else goes, so it runs again. Then its identity, its RDP keys, the index, its port
 /// map entries and its directory go. The index goes on its own, once its keys
 /// are deleted or handed over, and the directory last: a purge that stopped on the way runs
 /// again. What names keys to delete or hand over is read before anything changes: a name that is
@@ -373,7 +374,7 @@ fn purge_outcome(code: i32) -> Option<ResetOutcome> {
 pub fn purge(
     base: &Path,
     meta: Option<&Meta>,
-    revoke: impl FnOnce(&str) -> ResetOutcome,
+    revoke: impl FnOnce(&str) -> Result<ResetOutcome, AppError>,
 ) -> Result<ResetOutcome, AppError> {
     let ws = workspace::current()?;
     let dir = ws.data_dir(base);
@@ -408,7 +409,7 @@ pub fn purge(
                 kind: SyncMode::Server,
                 url: Some(url),
                 ..
-            }) => revoke(url),
+            }) => revoke(url)?,
             _ if enrollment::is_enrolled() => ResetOutcome::LocalOnly,
             _ => ResetOutcome::NotEnrolled,
         };
@@ -2639,7 +2640,7 @@ mod tests {
             other => panic!("expected the purge of {ws}, got {other:?}"),
         };
         let _entered = workspace::enter(held.workspace.clone());
-        purge(base, meta.as_ref(), revoke)
+        purge(base, meta.as_ref(), |url| Ok(revoke(url)))
     }
 
     /// A `revoke` for a purge that must not ask a server.
@@ -2721,6 +2722,48 @@ mod tests {
         assert_eq!(workspace_dirs(base), ["standard", "w-4e5f6a7b"]);
         // The launcher takes it out of the registry once the purge said how it went.
         assert_eq!(registry_bytes(base), registry);
+    }
+
+    #[test]
+    fn a_revoke_that_fails_stops_the_purge_before_anything_goes() {
+        let scratch = Scratch::new("purge-revoke-fails");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[(
+                "w-0a1b2c3d",
+                created(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+            )],
+            false,
+        );
+        let prefix = prefix_of("w-0a1b2c3d");
+        let own = [behind(&prefix, &IDENTITY), behind(&prefix, &RDP)].concat();
+        index(base, "w-0a1b2c3d", &behind(&prefix, &RDP));
+        store(&own);
+        write_port_map(base, &[("w-0a1b2c3d", "ssh", 23000)]);
+        let (held, meta) = match startup(workspace::Mode::Purge(id("w-0a1b2c3d")), base, acquire) {
+            workspace::Plan::Purge(held, meta) => (held, meta),
+            other => panic!("expected the purge, got {other:?}"),
+        };
+        let _entered = workspace::enter(held.workspace.clone());
+
+        let error = purge(base, meta.as_ref(), |_| {
+            Err(AppError::Keyring(
+                "deleting it on this device failed".into(),
+            ))
+        })
+        .unwrap_err()
+        .to_string();
+
+        // The purge can run again: nothing of the workspace went.
+        assert!(
+            error.contains("deleting it on this device failed"),
+            "{error}"
+        );
+        assert_eq!(held_keys(&own), own);
+        assert_eq!(port_owners(base), ["w-0a1b2c3d"]);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
     }
 
     #[test]
@@ -3812,7 +3855,7 @@ mod tests {
                 .enable_all()
                 .build()
                 .unwrap();
-            let outcome = runtime.block_on(enrollment::reset_identity(url));
+            let outcome = runtime.block_on(enrollment::reset_identity(url)).unwrap();
             assert!(
                 keyring_store::get(&replaces).is_some(),
                 "the server was out of reach, yet the reset remembered no leaf"
@@ -3848,7 +3891,7 @@ mod tests {
         write_port_map(base, &[("w-0a1b2c3d", "ssh", 23000)]);
         let meta = Meta::load(&dir_of(base, "w-0a1b2c3d")).unwrap();
 
-        let result = purge(base, Some(&meta), no_revoke);
+        let result = purge(base, Some(&meta), |url| Ok(no_revoke(url)));
 
         assert!(matches!(result, Err(AppError::Validation(_))), "{result:?}");
         assert_eq!(held_keys(&keys), keys);

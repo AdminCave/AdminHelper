@@ -15,12 +15,15 @@ from app.core.bounds import IntPk
 from app.core.database import get_db
 from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import (
+    active_tunnels,
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
     without_refused_extra_config,
+    without_refused_fields,
     without_secretless_stcp,
     without_unbindable_visitor,
+    without_unreachable_local,
 )
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
@@ -79,18 +82,17 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    # Left out before the check: a server whose tunnels all lack a usable secret or carry
-    # a stored extra_config the API would refuse has no tunnel to configure, and its
-    # frpc.toml would carry the frps auth token for nothing.
-    tunnels = without_refused_extra_config(
-        without_secretless_stcp(
-            db.query(FrpTunnel)
-            .filter(
-                FrpTunnel.server_id == server_id,
-                FrpTunnel.enabled.is_(True),
-            )
-            .all()
+    # Left out before the check, the same set the generator writes (active_tunnels): a
+    # server whose tunnels all lack a usable secret or local_port, or carry a stored value
+    # the API would refuse, has no tunnel to configure, and its frpc.toml would carry the
+    # frps auth token for nothing.
+    tunnels = active_tunnels(
+        db.query(FrpTunnel)
+        .filter(
+            FrpTunnel.server_id == server_id,
+            FrpTunnel.enabled.is_(True),
         )
+        .all()
     )
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
@@ -123,13 +125,13 @@ def gen_visitor_toml(
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     tunnels = without_unbindable_visitor(
-        without_secretless_stcp(_visible_stcp_tunnels(db, config, user))
+        without_refused_fields(without_secretless_stcp(_visible_stcp_tunnels(db, config, user)))
     )
     # The visitor TOML embeds the shared frps auth token; without visible STCP
     # tunnels the user has no legitimate reason for it, so refuse rather than hand
     # the global secret to any authenticated (non-admin, server-less) user (3.33).
-    # Tunnels without a secret or a usable visitor port count as none: the generator
-    # would leave them out.
+    # Tunnels without a secret or a usable visitor port, or with a stored field the API
+    # would refuse, count as none: the generator would leave them out.
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
@@ -152,7 +154,9 @@ def gen_visitor_bundle(
     config = _resolve_config(db, config_id)
 
     tunnels = without_unbindable_visitor(
-        without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
+        without_refused_fields(
+            without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
+        )
     )
     # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
     # visible, usable STCP tunnels (3.33).
@@ -188,15 +192,18 @@ def gen_bulk_zip(
             .all()
         )
         # Once, up here: a server left with no usable tunnel gets no frpc.toml (the
-        # single routes answer 404 for it), and each secretless stcp tunnel is
-        # warned about once, not per server, user and generator call.
-        all_tunnels = without_secretless_stcp(all_tunnels)
+        # single routes answer 404 for it), and each secretless stcp tunnel or tunnel with
+        # a stored field the API would refuse is warned about once, not per server, user
+        # and generator call.
+        all_tunnels = without_refused_fields(without_secretless_stcp(all_tunnels))
 
-        # A tunnel with a stored extra_config the API would refuse is left out of the
-        # frpc.toml files only, once as well; the visitor TOMLs below carry no
-        # extra_config and keep it, like the visitor routes.
+        # Together with the line above this is active_tunnels, split so the visitor TOMLs
+        # keep what they don't need: a new filter there belongs here as well.
+        # A tunnel without a usable local_port or with a stored extra_config the API would
+        # refuse is left out of the frpc.toml files only, once as well; the visitor TOMLs
+        # below need neither and keep it, like the visitor routes.
         by_server = {}
-        for t in without_refused_extra_config(all_tunnels):
+        for t in without_refused_extra_config(without_unreachable_local(all_tunnels)):
             by_server.setdefault(t.server_id, []).append(t)
 
         servers = db.query(Server).filter(Server.id.in_(by_server.keys())).all()
