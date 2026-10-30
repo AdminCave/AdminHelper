@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-3 — Task-Ledger
-Status: geplant · Branch: feature/ops-3 · Review: pro Task
+Status: aktiv · Branch: feature/ops-3 · Review: pro Task
 Spec: docs/features/ops-3.md (Roadmap R-0859, R-0862, R-0896, R-0865, R-0986, R-0956, R-0987)
 Heavy: linux-full — `scripts/update.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
