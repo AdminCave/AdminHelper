@@ -45,8 +45,10 @@ Beweis: Code-Lesung `apps/server/app/main.py:92` prüft nur `len(ADMIN_PASSWORD)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py
 Doku: changelog.d/kern-server-3.md
 
-### T4 — Connection.to_dict: tags aus Altzeilen immer als Liste (R-0976)  [ ]
+### T4 — Connection.to_dict: tags aus Altzeilen immer als Liste (R-0976)  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/tests/test_connections_storage.py, changelog.d/kern-server-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @33040f43 2026-10-30T11:58:34+01:00
+Review: approve (.ah-out/review/kern-server-3/T4.verdict.json)
 Beweis: Code-Lesung `apps/server/app/modules/connections/models.py:79` (`json.loads(self.tags)` ungeprüft); `from_dict` (`:118`) speichert Nicht-Listen roh · Dedup-Key: bug:server:connections/models.py:tags-non-list
 Änderung: `to_dict` liest `tags` defensiv wie `_extra` (`:93`): eine JSON-Liste bleibt, alles andere (kein JSON, Objekt, Zahl, String) wird `[]` mit Warnung. Der Test (erst rot): Altzeilen mit `"a,b"`, `"{}"` und `"5"` → `tags == []`, die Liste der Verbindungen antwortet `200`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_storage.py
