@@ -1,7 +1,9 @@
 ### Added
 
 - **CA: Rotation nach einem Leck:** `rotate-intermediates --compromised <scope>` behaelt fuer diesen Scope kein
-  abgeloestes Zwischenzertifikat; danach gelten dort nur neu ausgestellte Zertifikate (Betrieb, CA-Rotation).
+  abgeloestes Zwischenzertifikat im Trust-Bundle und erneuert keine Zertifikate des alten mehr. Die Geraete des Scopes
+  sind danach zu widerrufen und neu einzurichten; ganz geschlossen ist ein Leck erst mit einer neuen Root (Betrieb,
+  CA-Rotation).
 
 ### Fixed
 

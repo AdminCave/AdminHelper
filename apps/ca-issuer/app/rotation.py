@@ -222,5 +222,5 @@ def _replace(path: Path, data: bytes, mode: int) -> None:
             tmp.unlink(missing_ok=True)
         raise RotationError(
             f"cannot write {path}: {exc}; the rotation stopped part way, "
-            "run it again once the cause is fixed"
+            "run it again with the same options once the cause is fixed"
         ) from exc
