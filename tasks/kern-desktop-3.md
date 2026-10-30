@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-3 — Task-Ledger
-Status: geplant · Branch: feature/kern-desktop-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-desktop-3 · Review: pro Task
 Spec: docs/features/kern-desktop-3.md (Roadmap R-0962, R-0961, R-0984, R-0981)
 Heavy: linux-full — Desktop-Journeys: Tunnel-Abgleich (Visitor-Bundle) und Geräte-Reset
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
