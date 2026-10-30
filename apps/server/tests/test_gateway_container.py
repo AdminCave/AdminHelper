@@ -21,6 +21,10 @@ close idle connections after short timeouts; the mTLS plane :443 keeps nginx's d
 from nginx.conf, and in the container on the repo plane: one address gets 429 beyond its cap
 while its other downloads go on, and a connection that sends no request after the handshake is
 closed.
+
+The gateway's healthcheck asks a listener of its own on 127.0.0.1 that answers only /healthz
+without TLS: from nginx.conf and docker-compose.yml, and in the container, where the compose
+command succeeds, a wrong port fails and the listener is out of reach from the network.
 """
 
 import contextlib
@@ -153,7 +157,7 @@ def test_the_certless_planes_cap_concurrent_requests_and_close_idle_connections_
     assert _args(http, "limit_conn_status") == [["429"]]
 
     servers = _servers()
-    assert sorted(servers) == ["443", "8444", "8445"]
+    assert sorted(servers) == ["127.0.0.1:8081", "443", "8444", "8445"]
     for port, limits in CERTLESS_LIMITS.items():
         assert _args(servers[port], "limit_conn") == limits, port
         timeouts = {name: _args(servers[port], name) for name in CERTLESS_TIMEOUTS}
@@ -467,3 +471,54 @@ def test_on_the_repo_plane_a_connection_without_a_request_is_closed_within_15_se
                     closed = True
                 elapsed = time.monotonic() - opened
         assert closed and elapsed <= IDLE_LIMIT, elapsed
+
+
+def _healthz_listener() -> tuple[str, list[Directive]]:
+    """The port and block of the one server that listens on 127.0.0.1 only."""
+    local = [
+        (listen[0], block)
+        for listen_args, block in ((_args(b, "listen"), b) for b in _servers().values())
+        for listen in listen_args
+        if listen[0].startswith("127.0.0.1:")
+    ]
+    assert len(local) == 1, local
+    ((address, block),) = local
+    assert _args(block, "listen") == [[address]], "no ssl, no default_server"
+    return address.removeprefix("127.0.0.1:"), block
+
+
+def _seconds(duration: str) -> int:
+    value = re.fullmatch(r"(?:(\d+)m)?(?:(\d+)s)?", str(duration))
+    assert value and any(value.groups()), duration
+    return int(value[1] or 0) * 60 + int(value[2] or 0)
+
+
+def test_the_gateway_healthcheck_asks_a_plain_listener_on_localhost_for_healthz():
+    port, block = _healthz_listener()
+    locations = {tuple(d.args): d.block for d in block if d.name == "location"}
+    assert _args(locations[("=", "/healthz")], "return")[0][0] == "200"
+
+    healthcheck = _compose_gateway()["healthcheck"]
+    url = f"http://127.0.0.1:{port}/healthz"
+    assert healthcheck["test"] == ["CMD", "wget", "-q", "-O", "/dev/null", url]
+    # The entrypoint waits up to 120 s for the TLS material before nginx starts.
+    assert _seconds(healthcheck["start_period"]) >= 120
+
+
+def test_in_the_container_the_healthcheck_passes_and_the_listener_stays_local(gateway_setup):
+    port, _ = _healthz_listener()
+    command = _compose_gateway()["healthcheck"]["test"][1:]
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        check = box.exec(*command)
+        assert check.returncode == 0, (check, box.logs())
+
+        wrong = [arg.replace(f":{port}/", f":{int(port) + 1}/") for arg in command]
+        assert wrong != command
+        assert box.exec(*wrong).returncode != 0
+
+        remote = ["wget", "-q", "-T", "3", "-O", "/dev/null", f"http://{box.name}:{port}/healthz"]
+        result = subprocess.run(
+            [box.docker, "exec", gateway_setup.client, *remote], capture_output=True, text=True
+        )
+        assert result.returncode != 0, result
