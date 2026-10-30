@@ -55,8 +55,6 @@ class UserMe(BaseModel):
     is_admin: bool
     idle_timeout_minutes: int
 
-    model_config = {"from_attributes": True}
-
 
 # Users
 class UserCreate(RequestModel):

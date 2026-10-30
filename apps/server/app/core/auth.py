@@ -185,6 +185,16 @@ def user_id_from_token_unverified(token: str) -> Optional[int]:
     return uid if isinstance(uid, int) and not isinstance(uid, bool) else None
 
 
+def web_session_start(token: str, from_cookie: bool) -> Optional[int]:
+    """Sign-in time of the browser session a valid refresh token belongs to, None for a
+    desktop, CLI or script token. A cookie token without the `web` claim was issued before
+    R-0887; its own `iat` stands in for the sign-in."""
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("web") is True:
+        return int(payload["auth_time"])
+    return int(payload["iat"]) if from_cookie else None
+
+
 def username_from_token_unverified(token: str) -> Optional[str]:
     """Decode a token's subject ignoring expiry and the validity watermark.
 

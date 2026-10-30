@@ -200,6 +200,19 @@ CERT_REVOKED = (
 )
 
 
+# The 403 of an enforced request without a fitting client certificate.
+_NO_CERT = "Kein gültiges Client-Zertifikat mit passendem Scope"
+
+
+def require_cert_if_enforced(request: Request) -> None:
+    """Enforced (``MTLS_ENFORCE``), the sign-in routes need a verified client certificate
+    as every other route does (R-0900): login, refresh and bootstrap carry no scope guard,
+    and require_cert_user lets a request without a certificate through. Permissive, nothing
+    changes: the manual first bootstrap runs without one."""
+    if config.MTLS_ENFORCE and not get_client_identity(request).verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_NO_CERT)
+
+
 def require_cert_user(request: Request, username: str, db: Session) -> None:
     """Under mTLS the client certificate belongs to the signed-in user (R-0223): a
     verified identity must carry the access scope and ``username`` as its CN, or the
@@ -314,10 +327,7 @@ def check_scope(
         return identity
 
     if config.MTLS_ENFORCE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Kein gültiges Client-Zertifikat mit passendem Scope",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_NO_CERT)
 
     wanted = "/".join(sorted(allowed))
     if identity.verified:

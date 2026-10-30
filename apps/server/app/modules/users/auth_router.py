@@ -4,6 +4,8 @@
 
 import logging
 import secrets
+import time
+from datetime import timedelta
 from typing import NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -25,10 +27,16 @@ from app.core.auth import (
     user_id_from_token_unverified,
     username_from_token_unverified,
     verify_password,
+    web_session_start,
 )
-from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
+from app.core.config import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    BOOTSTRAP_SETUP_FILE,
+    BOOTSTRAP_TOKEN_FILE,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+)
 from app.core.database import get_db
-from app.core.identity import require_cert_user
+from app.core.identity import require_cert_if_enforced, require_cert_user
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
@@ -128,8 +136,36 @@ def _token_response(
     # Sec-Fetch-Site; desktop (reqwest), CLI and scripts send neither. The field stays
     # a required string, "" for a browser: omitting it or making it nullable would
     # break the response schema.
-    body_refresh = "" if "sec-fetch-site" in request.headers else refresh
+    body_refresh = "" if _is_browser(request) else refresh
     return TokenResponse(access_token=access, refresh_token=body_refresh)
+
+
+def _is_browser(request: Request) -> bool:
+    return "sec-fetch-site" in request.headers
+
+
+def _token_pair(user: User, web_start: int | None) -> tuple[str, str]:
+    """Access and refresh token; a browser session (`web_start` = its sign-in) carries its
+    start in the refresh token and gets no access token that outlives it (R-0887)."""
+    claims = token_claims(user)
+    if web_start is None:
+        return create_access_token(claims), create_refresh_token(claims)
+    lifetime = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    if config.WEB_SESSION_MAX_HOURS:
+        left = web_start + config.WEB_SESSION_MAX_HOURS * 3600 - time.time()
+        lifetime = min(lifetime, timedelta(seconds=left))
+    return (
+        create_access_token(claims, expires_delta=lifetime),
+        create_refresh_token({**claims, "web": True, "auth_time": web_start}),
+    )
+
+
+def _web_session_over(web_start: int | None) -> bool:
+    return (
+        web_start is not None
+        and config.WEB_SESSION_MAX_HOURS > 0
+        and time.time() >= web_start + config.WEB_SESSION_MAX_HOURS * 3600
+    )
 
 
 def _resolve_refresh_token(request: Request, body_token: str | None) -> str | None:
@@ -174,6 +210,7 @@ def login(
     # The certificate has to belong to the user who signs in (R-0223). Checked before
     # the password, so the answer says nothing about it.
     try:
+        require_cert_if_enforced(request)
         require_cert_user(request, data.username, db)
     except HTTPException:
         audit.record(
@@ -218,8 +255,7 @@ def login(
         object_id=user.id,
         object_label=user.username,
     )
-    access = create_access_token(token_claims(user))
-    refresh = create_refresh_token(token_claims(user))
+    access, refresh = _token_pair(user, int(time.time()) if _is_browser(request) else None)
     return _token_response(request, response, access, refresh)
 
 
@@ -230,7 +266,10 @@ def refresh_token(
     data: RefreshRequest | None = None,
     db: Session = Depends(get_db),
 ):
-    token = _resolve_refresh_token(request, data.refresh_token if data else None)
+    # Before any look at the token, so a refused refresh neither uses it up nor counts as reuse.
+    require_cert_if_enforced(request)
+    body_token = data.refresh_token if data else None
+    token = _resolve_refresh_token(request, body_token)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -256,12 +295,23 @@ def refresh_token(
     # Before the rotation, so a refused refresh does not use up the token.
     require_cert_user(request, user.username, db)
 
+    # An ended browser session is no theft signal: no rotation, no watermark, and the
+    # stale cookie goes.
+    web_start = web_session_start(token, from_cookie=not body_token)
+    if _web_session_over(web_start):
+        cleared = Response()
+        _clear_refresh_cookie(cleared)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungültiger oder abgelaufener Refresh-Token",
+            headers={"set-cookie": cleared.headers["set-cookie"]},
+        )
+
     # Issued before the blacklist commit: their `iat` then precedes the watermark a
     # concurrent call with the same token sets once it fails after that commit, so a
     # reuse kills this pair too. Issued after it, a delayed call could stamp a later
     # second and outlive the watermark (`iat` has whole seconds, core/auth.py).
-    access = create_access_token(token_claims(user))
-    refresh = create_refresh_token(token_claims(user))
+    access, refresh = _token_pair(user, web_start)
 
     # Rotation: only the call that blacklists the old refresh token gets the new
     # pair. False means the jti was already there (a concurrent call with the same
@@ -339,6 +389,8 @@ def bootstrap(
     """
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
+    # Before the lock and the token, so the answer says nothing about the server's state.
+    require_cert_if_enforced(request)
 
     # Several workers serve this route: without the lock two calls with the token can both
     # see "no user" and both create an admin. Held until the commit below.
@@ -399,6 +451,5 @@ def bootstrap(
     _reset_rate_limit(ip)
     logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)
 
-    access = create_access_token(token_claims(user))
-    refresh = create_refresh_token(token_claims(user))
+    access, refresh = _token_pair(user, int(time.time()) if _is_browser(request) else None)
     return _token_response(request, response, access, refresh)
