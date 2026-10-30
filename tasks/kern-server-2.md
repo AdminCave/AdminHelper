@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-server-2 · Review: am Ende
+Status: erledigt · Branch: feature/kern-server-2 · Review: am Ende
 Spec: docs/features/kern-server-2.md (Roadmap R-0900, R-0887)
 Heavy: linux-full — Server-Auth hinter dem Gateway; der Stack-Test 15b (enforced) prüft den direkten Login
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
