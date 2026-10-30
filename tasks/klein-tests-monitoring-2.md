@@ -20,8 +20,10 @@ Dedup-Key: ref:monitoring:test_checker_messages.py:http-message-catalog
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_messages.py
 Doku: keine (Tests)
 
-### T2 — Monitoring-Antwortform: Metrics-Serie, dünne Zeile, /run über die Route (R-0977)  [ ]
+### T2 — Monitoring-Antwortform: Metrics-Serie, dünne Zeile, /run über die Route (R-0977)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_response_shapes.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b46226ac 2026-10-30T10:37:07+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-0977 apps/monitoring/tests/test_response_shapes.py (`test_metrics_pass_the_series_through` prüft `data` nur auf nicht leer)
 Dedup-Key: ref:cross:tests/test_response_shapes.py:gaps
 Änderung: `data` des Metrics-Tests gegen die durchgereichte Serie (`data == series`, soweit die Route sie unverändert liefert, sonst gegen die belegte Form); ein Check mit State-Zeile aus NULL-Feldern gegen `_produced`; `POST /checks/{id}/run` (Ausführung gestubbt) gegen `_produced`.

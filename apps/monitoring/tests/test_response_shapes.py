@@ -253,19 +253,73 @@ def test_metrics_pass_the_series_through(client_db, monkeypatch):
 
     client, factory = client_db
     _seed_checks(factory)
-    series = [{"metric": {"__name__": "rtt"}, "values": [[1761800000, "12.5"]]}]
-    monkeypatch.setattr(
-        victoria_mod.victoria,
-        "query_range",
-        lambda **kw: {"status": "success", "data": {"result": series}},
-    )
+    # Two different answers, so a route that swapped data and statusHistory, or answered
+    # both from one query, shows.
+    metric = [{"metric": {"__name__": "rtt"}, "values": [[1761800000, "12.5"]]}]
+    history = [
+        {"metric": {"__name__": "monitor_check_status_value"}, "values": [[1761800000, "1"]]}
+    ]
+
+    def query_range(**kw):
+        result = history if "monitor_check_status_value" in kw["query"] else metric
+        return {"status": "success", "data": {"result": result}}
+
+    monkeypatch.setattr(victoria_mod.victoria, "query_range", query_range)
     r = client.get("/checks/chk-full/metrics", params={"period": "6h"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body) == {"checkId", "checkType", "period", "data", "statusHistory"}
     assert body["checkId"] == "chk-full" and body["period"] == "6h"
-    assert body["statusHistory"] == series
-    assert body["data"] and all(isinstance(s, dict) for s in body["data"])
+    assert body["checkType"] == "ping"
+    assert body["data"] == metric
+    assert body["statusHistory"] == history
+
+
+def test_check_with_a_thin_state_row_equals_the_producer(client_db):
+    # A state row with only what the table requires: every nullable column NULL, so
+    # the nested state carries null where chk-full's carries values.
+    client, factory = client_db
+    _seed_checks(factory)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-thin",
+                name="c-thin",
+                check_type="ping",
+                config='{"target": "192.0.2.13"}',
+                interval="5m",
+                severity="critical",
+            )
+        )
+        db.add(MonitorState(check_id="chk-thin", since=datetime(2026, 10, 3, 8, 0, 0)))
+        db.commit()
+        db.execute(
+            update(MonitorState).where(MonitorState.check_id == "chk-thin").values(fail_count=None)
+        )
+        db.commit()
+    want = _produced(factory, "chk-thin")
+    assert want["state"]["lastCheck"] is None and want["state"]["failCount"] is None
+    assert want["state"]["message"] is None and want["state"]["details"] is None
+
+    r = client.get("/checks/chk-thin")
+    assert r.status_code == 200, r.text
+    assert r.json() == want
+    listed = {c["id"]: c for c in client.get("/checks").json()}
+    assert listed["chk-thin"] == want
+
+
+def test_run_answers_as_the_producer(client_db, monkeypatch):
+    # The run itself is stubbed; what the route answers afterwards is the stored row.
+    from app import check_engine
+
+    client, factory = client_db
+    _seed_checks(factory)
+    ran = []
+    monkeypatch.setattr(check_engine, "execute_check", ran.append)
+    r = client.post("/checks/chk-full/run")
+    assert r.status_code == 200, r.text
+    assert ran == ["chk-full"]
+    assert r.json() == _produced(factory, "chk-full")
 
 
 def _seed_alerts(factory):
