@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-desktop-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-desktop-2 · Review: am Ende
 Spec: docs/features/kern-desktop-2.md (Roadmap R-0842, R-0871)
 Heavy: linux-full — Desktop-Journeys: Provisionierungs-Tab und Geräte-Reset
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,3 +29,9 @@ Review: am Ende (Branch-Review)
 Änderung: `clear_identity` (`enrollment.rs:571`) versucht alle drei Einträge und gibt den ersten Fehler von `keyring_store::delete` zurück (Löschen über einen Parameter, wie `tofu::forget_pin_with`, damit ein Test es scheitern lassen kann); `reset_with`/`reset_identity` reichen ihn als Fehler weiter, die Meldung in `reset_device_identity_in` (`commands.rs:151`) nennt einen erfolgten Widerruf am Server. Beweis: Code-Lesung `enrollment.rs:287-291` (`let _ = keyring_store::delete`). Dedup-Key: bug:desktop:enrollment.rs:clear-identity-swallows-delete. Test zuerst rot: ein scheiterndes Löschen → Fehler statt `Ok`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
 Doku: changelog.d/kern-desktop-2.md
+
+### T3 — Doc-Kommentare zum gescheiterten Löschen, Test für einen scheiternden Widerruf im Purge (R-0871)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/launcher.rs
+Änderung: Fund der Abschlussprüfung: der Doc-Kommentar von `reset_device_identity` (`commands.rs:133`) beschreibt das Löschen noch als best effort; er nennt jetzt den Fehler eines gescheiterten Löschens (Pin bleibt, Reset wiederholbar). Der Doc von `launcher::purge` nennt, dass ein scheiternder `revoke` den Purge vor jedem Löschen stoppt; ein Test belegt das.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher
+Doku: keine (nur Doc-Kommentare; Changelog-Eintrag aus T2 deckt das Verhalten)
