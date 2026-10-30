@@ -5,8 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # kern-server-3 — Spec
 
-Roadmap: R-0960, R-0958, R-0990, R-0991, R-0957, R-0976 (Zug `tasks/kern-server-3.md`). R-0959 und R-0979 fahren
-nicht mit (offene Frage an Kevin), sie gehen in `tasks/kern-server-4.md`.
+Roadmap: R-0960, R-0959, R-0958, R-0990, R-0991, R-0957, R-0976 (Zug `tasks/kern-server-3.md`). R-0979 ist abgelehnt (Kevin
+2026-10-30: der Handler existiert auf main nicht).
 
 ## Problem / Motivation
 Nachzügler aus den Prüfungen von kern-server-1, kern-server-2 und api-contracts:
@@ -28,6 +28,9 @@ Nachzügler aus den Prüfungen von kern-server-1, kern-server-2 und api-contract
   kann. Das Schema begrenzt das Passwort auf `PASSWORD_MAX_LEN` (128); `main.py` prüft nur die Mindestlänge.
 - **R-0976:** `Connection.to_dict` gibt `tags` aus Altzeilen roh aus, wenn sie keine JSON-Liste sind. Ist der Wert gar
   kein JSON, scheitert die ganze Liste.
+
+- **R-0959:** Die Gateway-Namen werden so selten neu aufgelöst wie die Proxy-Namen (Details privat). Kevin
+  2026-10-30: eine kürzere TTL (5 s) nur für die Gateway-Namen.
 
 ## Ziel & Nicht-Ziele
 Ziel: Jede Zeile ist behoben und durch einen Test belegt.
@@ -74,4 +77,4 @@ streng, wie sein Docstring es schon zusagt.
 - Sonst keine.
 
 ## Offene Fragen
-Keine für diesen Zug. Die Fragen zu R-0959 und R-0979 stehen am Gate.
+Keine (R-0959 und R-0979 hat Kevin am 2026-10-30 entschieden).

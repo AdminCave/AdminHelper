@@ -5,13 +5,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # kern-server-3 — Task-Ledger
 Status: geplant · Branch: feature/kern-server-3 · Review: pro Task
-Spec: docs/features/kern-server-3.md (Roadmap R-0960, R-0958, R-0990, R-0991, R-0957, R-0976)
+Spec: docs/features/kern-server-3.md (Roadmap R-0960, R-0959, R-0958, R-0990, R-0991, R-0957, R-0976)
 Heavy: linux-full — Server-Auth und Proxy-Vertrauen hinter dem Gateway; der Stack-Test prüft Login und Bootstrap
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 Zeilenangaben `origin/main@725fbb4c`, vor dem Bauen neu greppen. Neue Code-Strings englisch, CHANGELOG umlautfrei.
-`security` bei T1 und T2. R-0959 und R-0979 fahren nicht mit (Frage an Kevin, `tasks/kern-server-4.md`).
+`security` bei T1, T2 und T6. R-0979 abgelehnt (Kevin 2026-10-30).
 
 ### T1 — Namensauflösung: Fehlerpfad fail-closed (R-0960)  [ ]
 Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/tests/test_ip_filter.py, changelog.d/kern-server-3.md
@@ -54,4 +54,12 @@ Doku: docs/developer/api-reference.html + EN
 Task-Review: am Ende
 Abhängt von: T2
 
+### T6 — Gateway-Namen kürzer zwischenspeichern (R-0959)  [ ]
+Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/app/core/identity.py, apps/server/tests/test_identity_source.py, changelog.d/kern-server-3.md
+Änderung: `_NameResolver` bekommt eine TTL je Instanz (Standard `_NAME_TTL`, `middleware.py:74`); die Gateway-Namen (`identity.py:64`) lösen alle 5 s neu auf (Kevin 2026-10-30). Test: die Gateway-Instanz plant ihre nächste Runde nach 5 s, die Proxy-Namen weiter nach 30 s.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_ip_filter.py
+Doku: changelog.d/kern-server-3.md (neutral)
+Abhängt von: T1
+
 ## Entscheidungen
+- 2026-10-30 Kevin: R-0959 mit kürzerer TTL für die Gateway-Namen (Empfehlung angenommen); R-0979 abgelehnt.
