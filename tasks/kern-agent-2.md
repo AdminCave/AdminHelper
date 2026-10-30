@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-2 · Review: pro Task
 Spec: docs/features/kern-agent-2.md (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385)
 Heavy: linux-full — `apps/agent` (Sammellauf: `agent_monitoring`, `upgrade_path`, Tunnel-E2E); `windows` ist der CI-Job `agent-windows`, weil `main.go` die Terminal-Eingabe auch unter Windows liest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -52,6 +52,13 @@ Review: approve (.ah-out/review/kern-agent-2/T5.verdict.json)
 Änderung: Eine Funktion räumt `<agent.key|agent.crt|ca>.<n>.tmp` (exakter Name: Basis aus den drei Dateinamen, nur Ziffern, Suffix `.tmp`, reguläre Datei) im Identitätsverzeichnis; aufgerufen nur unter `LockIdentity` (Provisionierung nach dem Sperren, Erneuerung nach dem Sperren), nie aus `CheckStorable`. Tests: Reste weg, fremde Dateien und Nicht-Ziffern-Namen bleiben.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestStore|TestRenew|TestCheckStorable|TestStale|TestProvision
 Doku: changelog.d/kern-agent-2.md
+
+### T6 — Entwickler-Doku: Stopp ohne systemd und Grenzen der Konfig-Prüfung (Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html
+Änderung: Abschnitt FRP-Abgleich DE+EN: Absatz „Stopp ohne systemd“ (Tunnel über die Admin-API des eigenen frpc abbauen, Fehler und alter Hash bleiben); in der Formbeschreibung die Grenzen 4096 Schlüsselpfade je Tabelle / 131072 gesamt und die Kürzung zitierter Schlüssel auf 64 Bytes.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/agent.html · docs/en/developer/agent.html
+Task-Review: am Ende
 
 ## Entscheidungen
 - T1: frp stoppt bei einem Reload jeden Proxy, den die neue Konfig nicht mehr nennt (`UpdateAll` in `client/proxy/proxy_manager.go`, v0.69.1); Probe mit frpc 0.69.1 gegen frps: `frpc reload` ohne `[[proxies]]` meldet „reload success“, Log „proxy removed: [p1]“, der Remote-Port ist danach zu, frpc läuft weiter; `frpc verify -c` nimmt eine Konfig ohne Proxies an. Daher Abbau per Reload mit dem gemeinsamen Teil statt Prozess-Kill. Kein neues admin.conf im Fehlerpfad (`adminAPIListens` liest nur), damit ein fremder Port nie einen Reload bekommt; lauscht frpc nicht, hängt der Grund am Fehler.
