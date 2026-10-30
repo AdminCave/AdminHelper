@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-stack-2 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-stack-2 · Review: am Ende
+Status: bereit · Branch: feature/klein-tests-stack-2 · Review: am Ende
 Spec: docs/features/klein-tests-stack-2.md (Roadmap R-0935, R-0899, R-0955)
 Heavy: linux-full — ändert integration_stack_test.sh (Stack-Lauf); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test init-secret
 Doku: keine (Tests)
 Task-Review: am Ende
 
-### T3 — Test fuer `_secret_sources()` (R-0899)  [ ]
+### T3 — Test fuer `_secret_sources()` (R-0899)  [x]
 Komponente: server · Dateien: apps/server/tests/test_env_parity.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c2e4df6e 2026-10-30T13:05:20+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-0899 apps/server/tests/test_env_parity.py:169 (`_secret_sources` nur indirekt benutzt)
 Dedup-Key: ref:scripts:integration_stack_test.sh:unstable-fail-ids
 Änderung: `_secret_sources()` gegen ein kleines Compose-Beispiel in `tmp_path` (monkeypatch auf `_COMPOSE`): ein Secret mit `environment`, eines mit `file`, ein leeres; erwartet nur den `environment`-Namen. Gegenprobe: Filter entfernen → rot.
