@@ -373,7 +373,7 @@ fn purge_outcome(code: i32) -> Option<ResetOutcome> {
 pub fn purge(
     base: &Path,
     meta: Option<&Meta>,
-    revoke: impl FnOnce(&str) -> ResetOutcome,
+    revoke: impl FnOnce(&str) -> Result<ResetOutcome, AppError>,
 ) -> Result<ResetOutcome, AppError> {
     let ws = workspace::current()?;
     let dir = ws.data_dir(base);
@@ -408,7 +408,7 @@ pub fn purge(
                 kind: SyncMode::Server,
                 url: Some(url),
                 ..
-            }) => revoke(url),
+            }) => revoke(url)?,
             _ if enrollment::is_enrolled() => ResetOutcome::LocalOnly,
             _ => ResetOutcome::NotEnrolled,
         };
@@ -2639,7 +2639,7 @@ mod tests {
             other => panic!("expected the purge of {ws}, got {other:?}"),
         };
         let _entered = workspace::enter(held.workspace.clone());
-        purge(base, meta.as_ref(), revoke)
+        purge(base, meta.as_ref(), |url| Ok(revoke(url)))
     }
 
     /// A `revoke` for a purge that must not ask a server.
@@ -3812,7 +3812,7 @@ mod tests {
                 .enable_all()
                 .build()
                 .unwrap();
-            let outcome = runtime.block_on(enrollment::reset_identity(url));
+            let outcome = runtime.block_on(enrollment::reset_identity(url)).unwrap();
             assert!(
                 keyring_store::get(&replaces).is_some(),
                 "the server was out of reach, yet the reset remembered no leaf"
@@ -3848,7 +3848,7 @@ mod tests {
         write_port_map(base, &[("w-0a1b2c3d", "ssh", 23000)]);
         let meta = Meta::load(&dir_of(base, "w-0a1b2c3d")).unwrap();
 
-        let result = purge(base, Some(&meta), no_revoke);
+        let result = purge(base, Some(&meta), |url| Ok(no_revoke(url)));
 
         assert!(matches!(result, Err(AppError::Validation(_))), "{result:?}");
         assert_eq!(held_keys(&keys), keys);

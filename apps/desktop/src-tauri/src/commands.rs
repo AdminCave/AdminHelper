@@ -158,7 +158,7 @@ where
     Fut: Future<Output = Result<(), AppError>>,
 {
     let server_url = sign_in_target(base, sent, None)?;
-    let outcome = enrollment::reset_identity(&server_url).await;
+    let outcome = enrollment::reset_identity(&server_url).await?;
     forget(server_url).await.map_err(|err| {
         AppError::Keyring(match outcome {
             enrollment::ResetOutcome::LocalOnly => format!(
@@ -232,12 +232,14 @@ where
     E: FnOnce(String) -> EnrollFut,
     EnrollFut: Future<Output = Result<(), AppError>>,
     R: FnOnce(String) -> ResetFut,
-    ResetFut: Future<Output = enrollment::ResetOutcome>,
+    ResetFut: Future<Output = Result<enrollment::ResetOutcome, AppError>>,
 {
     let server_url = sign_in_target(base, sent, None)?;
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
-        reset(server_url).await;
+        // The registration fails with `e` either way; a reset that fails too leaves the
+        // identity for the user's own reset.
+        let _ = reset(server_url).await;
         return Err(e);
     }
     Ok(())
@@ -1460,7 +1462,7 @@ mod tests {
     }
 
     /// The reset of a registration the workspace does not keep: none comes in these cases.
-    fn no_reset(url: String) -> std::future::Ready<ResetOutcome> {
+    fn no_reset(url: String) -> std::future::Ready<Result<ResetOutcome, AppError>> {
         panic!("the registration at {url} was reset")
     }
 

@@ -499,7 +499,7 @@ pub enum ResetOutcome {
 /// Reset the device identity: revoke it at the server with this very certificate,
 /// then delete it here. The revocation goes first, because without the key the
 /// device can no longer prove which certificate it means.
-pub async fn reset_identity(server_url: &str) -> ResetOutcome {
+pub async fn reset_identity(server_url: &str) -> Result<ResetOutcome, AppError> {
     reset_with(
         leaf_fingerprint(),
         || revoke_on_server(server_url),
@@ -514,29 +514,42 @@ pub async fn reset_identity(server_url: &str) -> ResetOutcome {
 }
 
 /// The order of `reset_identity`, with the keyring and the server call as
-/// parameters, so a test can see the order and choose the server's answer.
+/// parameters, so a test can see the order and choose the server's answer. A
+/// delete that fails here is an error that says whether the server revoked it.
 async fn reset_with<F, Fut>(
     fingerprint: Option<String>,
     revoke: F,
-    clear: impl FnOnce(),
+    clear: impl FnOnce() -> Result<(), AppError>,
     remember: impl FnOnce(&str),
-) -> ResetOutcome
+) -> Result<ResetOutcome, AppError>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<bool, AppError>>,
 {
     let Some(fingerprint) = fingerprint else {
-        clear();
-        return ResetOutcome::NotEnrolled;
+        clear().map_err(|err| not_deleted(ResetOutcome::NotEnrolled, err))?;
+        return Ok(ResetOutcome::NotEnrolled);
     };
     let revoked = matches!(revoke().await, Ok(true));
-    clear();
-    if revoked {
+    let cleared = clear();
+    let outcome = if revoked {
         ResetOutcome::Revoked
     } else {
         remember(&fingerprint);
         ResetOutcome::LocalOnly
-    }
+    };
+    cleared.map_err(|err| not_deleted(outcome, err))?;
+    Ok(outcome)
+}
+
+fn not_deleted(outcome: ResetOutcome, err: AppError) -> AppError {
+    AppError::Keyring(match outcome {
+        ResetOutcome::Revoked => format!(
+            "resetting the device identity: the server revoked it, but deleting it on this \
+             device failed; {err}"
+        ),
+        _ => format!("resetting the device identity: deleting it on this device failed; {err}"),
+    })
 }
 
 /// `POST /api/enrollment/self/revoke` with the enrolled mTLS client: the
@@ -568,19 +581,33 @@ fn revoked_by(status: u16, body: &str) -> bool {
 /// user out under enforced mTLS — the cert is needed to reach the login). Invoked
 /// by the explicit "reset device identity" settings action (`reset_device_identity`)
 /// — the recovery path after a server reinstall / PKI re-creation.
-pub fn clear_identity() {
-    forget(KEYRING_KEY);
-    forget(KEYRING_CERT);
-    forget(KEYRING_CA);
+pub fn clear_identity() -> Result<(), AppError> {
+    clear_identity_with(keyring_store::delete)
+}
+
+/// [`clear_identity`] with the keyring delete as a parameter, so a test can make it fail.
+/// Every entry is tried and the first failure returned: one that fails leaves no other
+/// behind. The launcher has none to delete.
+fn clear_identity_with(delete: impl Fn(&str) -> Result<(), AppError>) -> Result<(), AppError> {
+    let mut deleted = Ok(());
+    for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+        if let Ok(key) = keyring_key(entry) {
+            let result = delete(&key);
+            if deleted.is_ok() {
+                deleted = result;
+            }
+        }
+    }
     // Drop the held identity and the cached mTLS client so the next build_client falls back to
     // the non-enrolled path (5.1).
     reload_identity();
+    deleted
 }
 
 /// Forget every identity entry of the workspace of this process, the leaf it
 /// remembers for its next enrollment (`enroll|replaces`) too: for the purge of
 /// the workspace (R-0431), after which no enrollment of it follows. Unlike
-/// `clear_identity`, a delete that fails is an error, so the purge stops while
+/// `clear_identity`, a delete that fails stops the purge at once, while
 /// the workspace is still there to delete again; the launcher has no entries.
 pub fn purge_identity() -> Result<(), AppError> {
     for entry in [KEYRING_CERT, KEYRING_KEY, KEYRING_CA, KEYRING_REPLACES] {
@@ -1265,10 +1292,14 @@ mod tests {
                 calls.borrow_mut().push("revoke");
                 Ok(true)
             },
-            || calls.borrow_mut().push("clear"),
+            || {
+                calls.borrow_mut().push("clear");
+                Ok(())
+            },
             |_| calls.borrow_mut().push("remember"),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(outcome, ResetOutcome::Revoked);
         assert_eq!(*calls.borrow(), vec!["revoke", "clear"]);
     }
@@ -1284,10 +1315,14 @@ mod tests {
             let outcome = reset_with(
                 Some("fp".to_string()),
                 || async { answer },
-                || calls.borrow_mut().push("clear"),
+                || {
+                    calls.borrow_mut().push("clear");
+                    Ok(())
+                },
                 |fp: &str| *remembered.borrow_mut() = Some(fp.to_string()),
             )
-            .await;
+            .await
+            .unwrap();
             assert_eq!(outcome, ResetOutcome::LocalOnly);
             assert_eq!(*calls.borrow(), vec!["clear"]);
             assert_eq!(remembered.borrow().as_deref(), Some("fp"));
@@ -1303,12 +1338,45 @@ mod tests {
                 calls.borrow_mut().push("revoke");
                 Ok(true)
             },
-            || calls.borrow_mut().push("clear"),
+            || {
+                calls.borrow_mut().push("clear");
+                Ok(())
+            },
             |_| calls.borrow_mut().push("remember"),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(outcome, ResetOutcome::NotEnrolled);
         assert_eq!(*calls.borrow(), vec!["clear"]);
+    }
+
+    // R-0871: a delete that fails is no reset; the error says whether the server revoked it.
+    #[tokio::test]
+    async fn a_reset_whose_delete_fails_is_an_error() {
+        for (answer, said) in [
+            (Ok(true), "the server revoked it, but deleting it"),
+            (Ok(false), "deleting it on this device failed"),
+        ] {
+            let result = reset_with(
+                Some("fp".to_string()),
+                || async { answer },
+                || Err(AppError::Keyring("locked".to_string())),
+                |_| {},
+            )
+            .await;
+            let err = result
+                .expect_err("a failed delete reported success")
+                .to_string();
+            assert!(err.contains(said) && err.contains("locked"), "{err}");
+        }
+        let result = reset_with(
+            None,
+            || async { Ok(true) },
+            || Err(AppError::Keyring("locked".to_string())),
+            |_| {},
+        )
+        .await;
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1798,7 +1866,9 @@ mod tests {
         // server can be handed it.
         let (_reserved, port) = crate::test_tls::refused_port();
 
-        let outcome = reset_identity(&format!("https://127.0.0.1:{port}")).await;
+        let outcome = reset_identity(&format!("https://127.0.0.1:{port}"))
+            .await
+            .unwrap();
 
         assert_eq!(outcome, ResetOutcome::LocalOnly);
         assert_eq!(keyring_store::get(KEYRING_REPLACES), Some(fingerprint));
@@ -1947,13 +2017,33 @@ mod tests {
     }
 
     #[test]
+    fn clearing_tries_every_entry_and_reports_the_first_failure() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        enrolled_before_workspaces();
+        let tried = std::cell::RefCell::new(Vec::new());
+
+        let result = clear_identity_with(|key| {
+            tried.borrow_mut().push(key.to_string());
+            if key.ends_with(KEYRING_KEY) {
+                Err(AppError::Keyring("locked".to_string()))
+            } else {
+                keyring_store::delete(key)
+            }
+        });
+
+        assert_eq!(result.unwrap_err().to_string(), "locked");
+        assert_eq!(tried.borrow().len(), 3);
+    }
+
+    #[test]
     fn resetting_and_storing_read_the_identity_again() {
         let _keyring = keyring_store::memory();
         let _standard = workspace::enter(standard());
         enrolled_before_workspaces();
         assert!(is_enrolled());
 
-        clear_identity();
+        clear_identity().unwrap();
         assert!(!is_enrolled());
 
         let (cert, key, _) = leaf();
@@ -2110,7 +2200,7 @@ mod tests {
         let (url, request) =
             answer_once("HTTP/1.1 204 No Content\r\nconnection: close\r\n\r\n".to_string()).await;
 
-        let outcome = reset_identity(&url).await;
+        let outcome = reset_identity(&url).await.unwrap();
 
         assert_eq!(outcome, ResetOutcome::LocalOnly);
         request.abort();
@@ -2138,7 +2228,9 @@ mod tests {
         let _a = workspace::enter(workspace);
         store_identity(&key, &issued(&cert)).unwrap();
 
-        let outcome = reset_identity(&format!("http://127.0.0.1:{port}")).await;
+        let outcome = reset_identity(&format!("http://127.0.0.1:{port}"))
+            .await
+            .unwrap();
 
         assert_eq!(outcome, ResetOutcome::LocalOnly);
         for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
@@ -2166,10 +2258,13 @@ mod tests {
         assert!(enrolled_client().is_err());
         assert!(store_identity(&key, &issued(&cert)).is_err());
         settle_replaces(&Ok(()));
-        clear_identity();
+        clear_identity().unwrap();
         let (_reserved, port) = crate::test_tls::refused_port();
         let url = format!("http://127.0.0.1:{port}");
-        assert_eq!(reset_identity(&url).await, ResetOutcome::NotEnrolled);
+        assert_eq!(
+            reset_identity(&url).await.unwrap(),
+            ResetOutcome::NotEnrolled
+        );
         // Refused before the token reaches a server: a one-time token stays unspent.
         let no_workspace = crate::workspace::current().unwrap_err().to_string();
         match enroll_with_token(&url, "one-time", false).await {
