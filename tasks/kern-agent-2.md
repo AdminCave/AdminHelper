@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-2 — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-2 · Review: pro Task
 Spec: docs/features/kern-agent-2.md (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385)
 Heavy: linux-full — `apps/agent` (Sammellauf: `agent_monitoring`, `upgrade_path`, Tunnel-E2E); `windows` ist der CI-Job `agent-windows`, weil `main.go` die Terminal-Eingabe auch unter Windows liest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
