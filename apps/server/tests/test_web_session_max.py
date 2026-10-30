@@ -11,7 +11,7 @@ import jwt
 import pytest
 
 from app.core import config
-from app.core.auth import create_refresh_token
+from app.core.auth import create_refresh_token, hash_api_key, web_session_start
 from app.core.config import ALGORITHM, SECRET_KEY, parse_web_session_max_hours
 from tests.token_claims import claims_for
 
@@ -146,6 +146,43 @@ class TestOtherClients:
         claims = _claims(login.json()["refresh_token"])
         assert "web" not in claims
         assert "auth_time" not in claims
+
+    def test_a_huge_limit_does_not_overflow(self, test_client, admin_user, monkeypatch):
+        monkeypatch.setattr(config, "WEB_SESSION_MAX_HOURS", 10**12)
+
+        assert _browser_login(test_client)
+
+    def test_browser_bootstrap_marks_the_refresh_token_as_web(
+        self, test_client, tmp_path, monkeypatch
+    ):
+        import app.modules.users.auth_router as auth_router
+
+        token_file = tmp_path / ".bootstrap_token"
+        token_file.write_text(hash_api_key("setup-token"))
+        monkeypatch.setattr(auth_router, "BOOTSTRAP_TOKEN_FILE", token_file)
+        monkeypatch.setattr(auth_router, "BOOTSTRAP_SETUP_FILE", tmp_path / ".bootstrap_setup")
+        before = int(time.time())
+
+        res = test_client.post(
+            "/api/auth/bootstrap",
+            json={"token": "setup-token", "username": "first", "password": "a-long-password"},
+            headers=BROWSER,
+        )
+
+        assert res.status_code == 201, res.text
+        claims = _claims(test_client.cookies.get("refresh_token"))
+        assert claims["web"] is True
+        assert before <= claims["auth_time"] <= int(time.time())
+
+    def test_session_start_of_a_token_that_just_ran_out(self):
+        # The caller validated the token a moment before; expiring in between is no error.
+        token = jwt.encode(
+            {**claims_for("admin"), "web": True, "auth_time": 1000, "exp": int(time.time()) - 1},
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+
+        assert web_session_start(token, from_cookie=True) == 1000
 
     def test_desktop_token_in_the_body_outlives_the_limit(
         self, test_client, admin_user, monkeypatch

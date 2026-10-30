@@ -153,7 +153,9 @@ def _token_pair(user: User, web_start: int | None) -> tuple[str, str]:
     lifetime = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     if config.WEB_SESSION_MAX_HOURS:
         left = web_start + config.WEB_SESSION_MAX_HOURS * 3600 - time.time()
-        lifetime = min(lifetime, timedelta(seconds=left))
+        # Compared in seconds first: timedelta overflows on a huge WEB_SESSION_MAX_HOURS.
+        if left < lifetime.total_seconds():
+            lifetime = timedelta(seconds=left)
     return (
         create_access_token(claims, expires_delta=lifetime),
         create_refresh_token({**claims, "web": True, "auth_time": web_start}),
@@ -266,10 +268,23 @@ def refresh_token(
     data: RefreshRequest | None = None,
     db: Session = Depends(get_db),
 ):
-    # Before any look at the token, so a refused refresh neither uses it up nor counts as reuse.
-    require_cert_if_enforced(request)
     body_token = data.refresh_token if data else None
     token = _resolve_refresh_token(request, body_token)
+    # Before any look at the token, so a refused refresh neither uses it up nor counts as reuse.
+    try:
+        require_cert_if_enforced(request)
+    except HTTPException:
+        # Audited like a refused login; the name is the token's claim, unverified.
+        label = username_from_token_unverified(token) if token else None
+        audit.record(
+            db,
+            "auth.refresh_failed",
+            status="failure",
+            actor=Actor("anonymous", None, label, resolve_client_ip(request)),
+            object_type="user",
+            object_label=label,
+        )
+        raise
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -396,8 +411,9 @@ def bootstrap(
     # see "no user" and both create an admin. Held until the commit below.
     db.execute(text(_BOOTSTRAP_LOCK_SQL))
     if db.query(User).count() > 0:
-        # Server is already initialized – bootstrap is no longer possible.
-        # Same response as 'no token active' to avoid disclosing the DB state.
+        # Server is already initialized – bootstrap is no longer possible. A documented
+        # answer of its own (409, unlike 401 for no active token): it only says that setup
+        # is done.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Server ist bereits initialisiert",

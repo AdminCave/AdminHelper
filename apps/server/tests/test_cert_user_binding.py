@@ -259,7 +259,7 @@ def test_a_refused_bootstrap_creates_no_user(test_client, db_session, bootstrap_
 
 
 # --- enforced: no certificate, no sign-in (R-0900) --------------------------------
-NO_CERT = "Kein gültiges Client-Zertifikat mit passendem Scope"
+NO_CERT = "No valid client certificate"
 
 
 def test_enforced_login_without_a_certificate_is_refused_and_audited(
@@ -286,6 +286,17 @@ def test_enforced_refresh_without_a_certificate_is_refused_and_keeps_the_token(
         "/api/auth/refresh", json={"refresh_token": refresh}, headers=_gateway_headers(cn="admin")
     )
     assert again.status_code == 200, again.text
+
+
+def test_enforced_refresh_without_a_certificate_is_audited(test_client, db_session, admin_user):
+    refresh = create_refresh_token(claims_for("admin"))
+    refused = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
+    assert refused.status_code == 403, refused.text
+    rows = db_session.query(AuditLog).filter(AuditLog.action == "auth.refresh_failed").all()
+    assert len(rows) == 1
+    assert rows[0].status == "failure"
+    assert rows[0].actor_label == "admin"
+    assert rows[0].object_label == "admin"
 
 
 def test_enforced_bootstrap_without_a_certificate_creates_no_user(

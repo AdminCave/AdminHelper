@@ -313,6 +313,33 @@ class TestTrustedProxyNameThread:
         # A non-daemon thread would keep a uvicorn worker from exiting.
         assert threads and all(t.daemon for t in threads)
 
+    def test_an_unexpected_error_drops_the_last_addresses(self, monkeypatch):
+        # The docstring promises fail-closed: a round that ends in an error the lookup does
+        # not catch must not leave the previous round's addresses trusted.
+        rounds = iter(["ok", "boom", "ok"])
+
+        def getaddrinfo(host, port, *args, **kwargs):
+            if next(rounds) == "boom":
+                raise RuntimeError("unexpected")
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.10", 0))]
+
+        resolver = mw._NameResolver(["gateway"], getaddrinfo)
+        seen = []
+
+        class _Stop(Exception):
+            pass
+
+        def sleep(_delay):
+            seen.append(list(resolver._networks))
+            if len(seen) == 3:
+                raise _Stop
+
+        monkeypatch.setattr(mw.time, "sleep", sleep)
+        with pytest.raises(_Stop):
+            resolver._run()
+        gateway = [ipaddress.ip_network("192.0.2.10")]
+        assert seen == [gateway, [], gateway]
+
     def test_the_thread_survives_an_unexpected_error(self, monkeypatch):
         # A round that raises something refresh() does not catch must not end the thread: the
         # names would keep their last addresses for good.
