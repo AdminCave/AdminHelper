@@ -14,8 +14,10 @@ Für alle Tasks: Zeilenangaben `origin/main@2eac9b1d`, vor dem Schreiben neu gre
 CHANGELOG umlautfrei und neutral in `changelog.d/kern-desktop-3.md`. `security` zusätzlich bei T1 und T2 (SEC) und wo
 `review.sh risk` es verlangt.
 
-### T1 — Visitor-Bundle mit Lesegrenze (R-0962)  [ ]
+### T1 — Visitor-Bundle mit Lesegrenze (R-0962)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-desktop-3.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @55ca4f9f 2026-10-30T15:12:59+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T1.verdict.json)
 Änderung: `bundle_from` (`frpc.rs:268-283`) liest wie `read_list` (`sync.rs:43-71`) höchstens 16 MiB: zuerst die angegebene Länge, dann chunkweise; Fehler ohne Zitat der Antwort. Test zuerst rot: eine Antwort über der Grenze wird abgewiesen (lokaler Test-Server wie in den bestehenden frpc-Tests, sonst ein Test der Lesefunktion).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: docs/developer/desktop.html DE+EN (nur wenn die Seite Lesegrenzen nennt), changelog.d/kern-desktop-3.md
