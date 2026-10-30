@@ -45,6 +45,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py
 Doku: docs/admin/betrieb.html#ca-rotation · docs/en/admin/operations.html#ca-rotation · changelog.d/kern-ca-2.md
 
+### T5 — Leck-Rotation: CLI-Ausgabe und Hilfe wie die Doku (Abschlussprüfung reviewer)  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py
+Änderung: Die Ausgabe von `rotate-intermediates --compromised` und die Hilfe zur Option sagen nicht mehr zu, dass alle Zertifikate des Scopes ungültig werden, sondern verweisen auf Widerruf, Neueinrichtung und neue Root (wie T4).
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py
+Doku: keine (T4 hat die Doku nachgezogen)
+
 ## Entscheidungen
 - T3: Die drei Renew-Tests in `internal/enroll/renew_test.go` vertrauten dem selbstsignierten httptest-Zertifikat direkt; das lehnt `NewMTLS` jetzt gewollt ab. Ihre Fixture ist ein Gateway-Leaf unter einem access-Zwischenzertifikat, die Assertions bleiben.
 - T4: Abschlussprüfung security fand, dass `--compromised` einen geleakten Schlüssel nicht wirksam aussperrt (Details privat). Die Doku sagt jetzt, was gilt; die wirksame Sperre ist eine eigene Roadmap-Zeile (R-1009), kein Teil dieses Zugs.
