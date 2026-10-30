@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI: apt-Schritt der Desktop-Jobs mit Deckel und Retry — Task-Ledger
-Status: bereit · Branch: feature/ci-1 · Review: am Ende
+Status: aktiv · Branch: feature/ci-1 · Review: am Ende
 Spec: Roadmap R-0825
 Heavy: none — nur der Schritt `Tauri system dependencies` zweier Jobs in `.github/workflows/ci.yml`; kein Stack-, Gateway-, PKI- oder Install-Pfad; den Beweis liefert die PR-CI selbst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -23,3 +23,9 @@ Beweis: PR #270 Lauf 39776102278: Job Desktop (tauri build smoke, Linux) cancell
 Dedup-Key: bug:ci:tauri-smoke-apt (Roadmap: flaky:ci:tauri-smoke-apt)
 HEAD: 29c94b43
 Semantik: keine Stelle in docs/ — gesucht nach `Tauri system dependencies`, `timeout-minutes` und apt in docs/developer (DE+EN)
+
+### T2 — Schritt-Frist ohne wirkungslose apt-Optionen; cicd.html nachziehen  [ ]
+Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, tasks/ci-1.md
+Änderung: Aus der Branch-Prüfung: `Acquire::Retries=3` und `Acquire::http::Timeout=30` sind die apt-Defaults (Retries seit apt 2.3.2, Timeout gemessen mit apt 3.0.3), also wirkungslos; sie fliegen raus, der Kommentar nennt nur noch die Schritt-Frist und den Job, in dem der Hänger lag. cicd.html (DE+EN) nennt die 10-min-Frist am Eintrag Rust/Tauri wie beim Playwright-Install.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/cicd.html · docs/en/developer/cicd.html
