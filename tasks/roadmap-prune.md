@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Aufräumen: geschlossene Roadmap-Zeilen nach 7 Tagen löschen, fertige Ledger und Specs entfernen — Task-Ledger
-Status: aktiv · Branch: feature/roadmap-prune · Review: am Ende
+Status: bereit · Branch: feature/roadmap-prune · Review: am Ende
 Spec: Roadmap R-0993
 Heavy: none — nur `scripts/dev/roadmap.py` samt Unit-Tests und das Löschen von Markdown unter `tasks/` und `docs/features/`; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,17 +28,22 @@ Nummer hält. Die Überschrift „Abgeschlossen (letzte N Tage)“ zieht die Fri
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Abschnitt roadmap.py `status`)
 
-### T2 — fertige Ledger unter tasks/ und unverlinkte Specs unter docs/features/ löschen  [ ]
+### T2 — fertige Ledger unter tasks/ und unverlinkte Specs unter docs/features/ löschen  [x]
 Komponente: scripts · Dateien: tasks/roadmap-prune.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @656a1a5e 2026-10-30T09:56:49+01:00
 Review: am Ende (Branch-Review)
-Änderung: 150 Ledger mit `Status: erledigt` und 94 Specs fertiger Vorhaben löschen. Es bleiben: offene Ledger und die
+Änderung: 135 Ledger mit `Status: erledigt` und 94 Specs fertiger Vorhaben löschen. Es bleiben: offene Ledger und die
 Ledger, die eine offene Roadmap-Zeile in `Ledger` nennt, Ledger und Specs, auf die Code, Tests, Skripte oder bleibende
 Doku verweisen (`git grep` ohne `tasks/` und die gelöschten Specs; etwa `alert-sent-state.md` aus Alembic-Revisionen,
-`update-rollback.md` aus `scripts/update.sh`, `klein-doku-2.md`/`klein-tests-web-1.md` aus `test_roadmap.py`), und
-`tasks/README.md`. Die Historie bleibt in git.
+`update-rollback.md` aus `scripts/update.sh`), und `tasks/README.md`. Die Historie bleibt in git.
 Verify: bash scripts/dev/verify.sh scripts --strict
 
 ## Entscheidungen
 - T1: Löschen statt eigenem Verb: `prune` läuft bei jedem Schreiben an der Stelle des alten `archive` (wie bisher das
   Archivieren), damit niemand es aufrufen muss. `stats` rechnet `kevin-min/PR` aus den Zeilen der Datei, also künftig
   über die letzten 7 Tage; `tasks/day` und die Wartezeiten lesen weiter die git-Historie.
+- T2: `klein-doku-2.md` und `klein-tests-web-1.md` stehen in `test_roadmap.py` nur als Namen in Fixture-Zeilen; der
+  Test braucht die Dateien nicht (228 passed ohne sie), sie gehen mit. `desktop-blocking.md:146` nennt
+  `tasks/desktop-tofu-store.md` als Beleg; das offene Ledger bleibt unberührt, der Beleg liegt in der git-Historie.
+- T2: 17 fertige Ledger tragen `Test-Löschung:`-Zeilen; `task-close.sh` nimmt einen Commit zurück, der solche Zeilen
+  ändert (Exit 4, Beleg gelöschter Tests). Sie bleiben, die Sperre bleibt unangetastet.
