@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-monitoring-2 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-monitoring-2 · Review: am Ende
+Status: bereit · Branch: feature/klein-tests-monitoring-2 · Review: am Ende
 Spec: docs/features/klein-tests-monitoring-2.md (Roadmap R-0966, R-0977)
 Heavy: none — nur Unit-Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Dedup-Key: ref:cross:tests/test_response_shapes.py:gaps
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_response_shapes.py
 Doku: keine (Tests)
 
-### T3 — Server-Antwortform: interne Serverliste ohne Tags (R-0977)  [ ]
+### T3 — Server-Antwortform: interne Serverliste ohne Tags (R-0977)  [x]
 Komponente: server · Dateien: apps/server/tests/test_response_shapes.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0257af7f 2026-10-30T10:41:42+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-0977 apps/server/tests/test_response_shapes.py:292 (`test_internal_listing` kennt nur einen Server mit Tags)
 Dedup-Key: ref:cross:tests/test_response_shapes.py:gaps
 Änderung: `test_internal_listing` legt zusätzlich den dünnen Server (`_sparse`, `tags` NULL) an und erwartet die Liste mit beiden Einträgen; die Form von `tags` (hier `[]`) wird an der Route belegt, nicht geraten.
