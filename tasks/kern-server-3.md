@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-server-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-server-3 · Review: pro Task
 Spec: docs/features/kern-server-3.md (Roadmap R-0960, R-0959, R-0958, R-0990, R-0991, R-0957, R-0976)
 Heavy: linux-full — Server-Auth und Proxy-Vertrauen hinter dem Gateway; der Stack-Test prüft Login und Bootstrap
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -72,6 +72,14 @@ Review: approve (.ah-out/review/kern-server-3/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_ip_filter.py
 Doku: changelog.d/kern-server-3.md (neutral)
 Abhängt von: T1
+
+### T7 — Installations-Doku: ADMIN_PASSWORD nur mit 8–128 Zeichen (R-0957, Fund der Abschlussprüfung)  [ ]
+Komponente: server · Dateien: docs/admin/installation.html, docs/en/admin/installation.html
+Änderung: Tabelle (`installation.html:142` + EN `:51`) und Absatz (`:183` + EN `:136`) nennen 8–128 Zeichen; ein Wert außerhalb fällt wie leer auf den Bootstrap-Token zurück.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py
+Doku: docs/admin/installation.html + EN
+Task-Review: am Ende
+Abhängt von: T3
 
 ## Entscheidungen
 - 2026-10-30 Kevin: R-0959 mit kürzerer TTL für die Gateway-Namen (Empfehlung angenommen); R-0979 abgelehnt.
