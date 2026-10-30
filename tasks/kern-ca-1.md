@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: Startprüfung, Server-Leaves und Renew-Laufzeit — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ca-1 · Review: pro Task
 Spec: docs/features/kern-ca-1.md (Roadmap R-0918, R-0834, R-0880, R-0912, R-0833)
 Heavy: linux-full — `apps/ca-issuer` (Startprüfung der Hierarchie, Gateway-/frps-Leaf und Trust-Bundles) läuft im Sammellauf über `main` (`integration-stack`, `backup-restore`, `upgrade-path`); kein `scenario`: kein Wire-Format, kein Enrollment-Pfad und keine Agent-Seite ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -54,3 +54,9 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew
 Doku: changelog.d/kern-ca-1.md
 
 ## Entscheidungen
+
+### T5 — Test: Laufzeit des Nachfolgers einer übernommenen Identität (R-0833, Abschlussprüfung)  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/test_enroll_renew.py
+Änderung: Fund der Abschlussprüfung (blocker): der Übernahme-Pfad reicht `legacy_kind` an `sign` (`db.py`, `tokens.py`), kein Test prüft die Laufzeit des Nachfolgers. `test_an_unrecorded_certificate_from_before_the_register_is_taken_over` prüft für beide Stores zusätzlich: `days=365` → `LEAF_DAYS_BROWSER`, `days=90` → `LEAF_DAYS_NATIVE`. Gegenprobe: `kind = "desktop"` im Übernahme-Pfad → rot.
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew.py
+Doku: keine (nur Test)
