@@ -14,8 +14,10 @@ Für alle Tasks: Zeilenangaben `origin/main@94aba678`, vor dem Schreiben neu gre
 CHANGELOG umlautfrei in `changelog.d/kern-desktop-2.md`. `security` zusätzlich bei T1 (SEC) und wo `review.sh risk`
 es verlangt.
 
-### T1 — Provisionierungsbefehl fragt den Token ab (R-0842)  [ ]
+### T1 — Provisionierungsbefehl fragt den Token ab (R-0842)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, changelog.d/kern-desktop-2.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d03816dc 2026-10-30T01:29:44+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Befehl „Nur provisionieren“ (`ProvisioningTab.svelte:110-114`) trägt `--token-stdin` statt `--token <token>`; der Hinweis `infra.prov.tokenPrompt` (DE+EN) nennt beide Wege (Skript fragt verdeckt, `provision` liest die erste Eingabezeile). Einzelheiten privat. Test zuerst rot: der Befehl enthält `--token-stdin` und nicht den Token.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/ProvisioningTab.test.ts
 Doku: changelog.d/kern-desktop-2.md (der Desktop-Befehl steht in docs/ nicht wörtlich)
