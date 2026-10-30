@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-smtp-2 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-smtp-2 · Review: am Ende
+Status: bereit · Branch: feature/klein-ref-smtp-2 · Review: am Ende
 Spec: docs/features/klein-ref-smtp-2.md (Roadmap R-0830, R-0992)
 Heavy: none — Fehlertexte und Unit-Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Dedup-Key: ref:smtp:alerter.py:ca-file-error-text
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_dispatch.py
 Doku: → T3
 
-### T3 — Agent: Fingerprint-Hinweis beim --insecure-Erstkontakt, Changelog (R-0992, R-0830)  [ ]
+### T3 — Agent: Fingerprint-Hinweis beim --insecure-Erstkontakt, Changelog (R-0992, R-0830)  [x]
 Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, changelog.d/klein-ref-smtp-2.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2ccfc7c6 2026-10-30T08:39:29+01:00
+Review: am Ende (Branch-Review)
 Änderung: die Hinweiszeilen in `pinIfBlindInsecure` nennen den Vergleich (`openssl x509 -noout -fingerprint -sha256` am Server- oder Gateway-Zertifikat, Ziffern ohne Doppelpunkte und Groß-/Kleinschreibung) und `--ca-fp` als verifizierten Erstkontakt, ohne den nicht vorhandenen „im Server angezeigten Fingerprint“. Ein Test fängt die Ausgabe von `pinIfBlindInsecure` mit gültigem PEM ab und prüft den neuen Text und das Fehlen der alten Aussage. Das Fragment `changelog.d/klein-ref-smtp-2.md` (Fixed) nennt beide Änderungen (Hub/Monitoring und Agent).
 Beweis: R-0992 Code-Lesung apps/agent/internal/provision/provision.go:277-279, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte (zeigt den CA-Fingerprint)
 Dedup-Key: bug:agent:provision.go:insecure-fingerprint-hint
