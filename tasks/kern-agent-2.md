@@ -36,8 +36,10 @@ Review: approve (.ah-out/review/kern-agent-2/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestProvisionCmd|TestReadStdinToken
 Doku: changelog.d/kern-agent-2.md (neutral)
 
-### T4 — monitor init --api-key-stdin, Hinweise auf die stdin-Formen (R-0965)  [ ]
-Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/monitor_init_test.go, apps/agent/internal/enroll/client.go, apps/agent/deb/DEBIAN/postinst, README.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-agent-2.md
+### T4 — monitor init --api-key-stdin, Hinweise auf die stdin-Formen (R-0965)  [x]
+Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/monitor_init_test.go, apps/agent/internal/enroll/client.go, apps/agent/deb/DEBIAN/postinst, README.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-agent-2.md, apps/agent/rpm/adminhelper-agent.spec
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0adbc262 2026-10-30T14:08:59+01:00
+Review: approve (.ah-out/review/kern-agent-2/T4.verdict.json)
 Änderung: `monitor init --api-key-stdin` mit demselben Leser wie T3 (genau eine von `--api-key`/`--api-key-stdin`); postinst, README, `reprovisionHint` und die CLI-Tabelle DE+EN zeigen die stdin-Formen.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestMonitorInit|TestDocs|TestPackaging|TestProvisionCmd|TestReprovision
 Doku: README.md · docs/admin/agent-deployment.html · docs/en/admin/agent-deployment.html · changelog.d/kern-agent-2.md

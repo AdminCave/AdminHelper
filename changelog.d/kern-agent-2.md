@@ -8,3 +8,6 @@
   kuerzt Schluessel in seinen Fehlermeldungen auf 64 Zeichen.
 - **Agent: `provision --token-stdin` am Terminal:** Ist stdin ein Terminal, fragt der Agent den Token ohne Echo ab
   (Eingabeaufforderung auf stderr); aus einer Pipe oder Datei liest er wie bisher die erste Zeile.
+- **Agent: `monitor init --api-key-stdin`:** Der API-Key fuer `monitor init` laesst sich wie der Provisionierungs-Token
+  ueber stdin uebergeben (am Terminal ohne Echo); Paket-Hinweis, README, Doku und der Hinweis zum Neu-Provisionieren
+  zeigen die stdin-Formen.
