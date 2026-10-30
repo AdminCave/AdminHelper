@@ -26,8 +26,9 @@ Roadmap R-1014, R-1015 (Zug `tasks/ops-4.md`).
 - Die heutige Über-Maskierung bleibt (Sicherheitsnetz für Dateien, die compose ablehnt, und für Text, der nur wie
   eine Zuweisung aussieht): Anweisungen hinter jedem Zeilenanfang und jedem Quote werden zusätzlich allein
   gelesen, wie bisher; auskommentierte Zeilen ebenso. Jede bestehende Erwartung der Tests bleibt.
-- Masken in der Reihenfolge Werte → Token-Formen → Hosts, mit einem Platzhalter, den die Token-Klassen als Teil des
-  Tokens lesen; erst danach wird er `<redacted>`.
+- Werte und Token-Formen werden auf der unveränderten Zeile gesucht und überlappende Fundstellen als ein Stück
+  maskiert (`REDACT_AWK`), danach die Host-Regeln. Gebaut statt des zuerst geplanten Platzhalters, der einen Token
+  hätte zerteilen können, wenn ein kurzer Wert einen Teil seines Namens trifft (Ledger `## Entscheidungen`, T3).
 - Nicht: Variablen-Interpolation (`${…}`) auswerten, `.env` validieren, neue Schlüssel maskieren.
 
 ## Betroffene Komponenten & Dateien
