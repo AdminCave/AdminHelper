@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-desktop-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-desktop-3 · Review: pro Task
 Spec: docs/features/kern-desktop-3.md (Roadmap R-0962, R-0961, R-0984, R-0981)
 Heavy: linux-full — Desktop-Journeys: Tunnel-Abgleich (Visitor-Bundle) und Geräte-Reset
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,8 +39,17 @@ Beweis: PR #326 CI 2026-10-30 · gh run view 40972646852 --job 123792900394: lau
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher
 Doku: keine (nur Tests)
 
+### T4 — Rollback-Meldung ohne Widerspruch (R-0984, Fund der Abschlussprüfung)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/commands.rs
+Änderung: `URL_TAKEN` (`storage.rs:337`) sagt schon „the new device identity is reset, register again“, auch wenn das Zurücksetzen danach scheitert (T2 hängt dann „the device identity stays“ an). Der Satz wandert aus `URL_TAKEN` in den Erfolgszweig von `enroll_with_token_in` (`commands.rs:239-250`); jeder Zweig nennt nur, was geschah. Test: der Fehlerfall enthält „is reset, register again“ nicht, der Erfolgsfall enthält es.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
+Doku: keine (die Meldung steht in docs/ nicht wörtlich; der CHANGELOG-Eintrag aus T2 deckt sie)
+
 ## Entscheidungen
 - T2: `reset_with` nimmt `clear` und `remember` jetzt als async-Schritte (statt unverändert, wie die Spec sagt): ein
   synchroner Schritt kann innerhalb der async-Reihenfolge nicht auf einen Blocking-Thread wechseln. Reihenfolge,
   Ergebnis und die Assertions der `reset_with`-Tests bleiben; nur ihre Closures sind async. `off_worker` läuft unter
   `cfg(test)` an Ort und Stelle, weil Memory-Keyring und Workspace der Tests thread-lokal sind (Plattform-Wiring).
+- T1: `bundle_from` liest wie `read_list`, ohne gemeinsamen Helfer: `read_list` gibt eigene Fehlertexte für die
+  Verbindungsliste zurück, ein Helfer bräuchte Text-Parameter für zwei Aufrufer (YAGNI, Spec Nicht-Ziel).
+- T4: Fund der Abschlussprüfung (Meldung widersprach sich bei gescheitertem Zurücksetzen) als eigene Task.
