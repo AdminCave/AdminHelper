@@ -303,6 +303,21 @@ func TestProvisionTrustBlindInsecurePinsThePresentedCertificate(t *testing.T) {
 	}
 }
 
+// The notice must not send the operator to a fingerprint no AdminHelper screen shows;
+// it names the comparison to make and the verified --ca-fp route.
+func TestInsecureFingerprintNoticeNamesTheComparison(t *testing.T) {
+	fp := sha256.Sum256([]byte("ca"))
+	got := insecureFingerprintNotice(fp)
+	for _, want := range []string{hex.EncodeToString(fp[:]), "openssl x509 -noout -fingerprint -sha256", "--ca-fp"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("notice lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "angezeigten") {
+		t.Errorf("notice still points at a fingerprint the server shows:\n%s", got)
+	}
+}
+
 func TestPinVerifiedAnchorWritesOnlyTheAnchor(t *testing.T) {
 	// The pinned file must contain EXACTLY the fingerprint-matched cert — pinning
 	// the whole presented chain would anchor the rotating leaf too, defeating the

@@ -507,3 +507,5 @@ def test_unloadable_smtp_ca_file_stores_tls_failed_without_connecting(
     assert connects == []  # no connection, so the relay sees nothing, credentials included
     lines = _alerter_lines(caplog)
     assert len(lines) == 1 and lines[0].startswith("Email failed: c: ")
+    # The log names the setting to fix; the stored message above stays generic.
+    assert f"SMTP_CA_FILE {ca_file} cannot be loaded" in lines[0]

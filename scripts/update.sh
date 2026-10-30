@@ -24,8 +24,12 @@
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
 # runtime files + .env before the swap; on a failed swap, .env migration, agent-repo
-# refresh, image pull, recreate or health check it auto-rolls-back the runtime files
-# + image pins (use --no-rollback to inspect the broken state). The updater updates
+# refresh, image pull, or `docker compose up --wait` (recreate plus the health
+# check of every service that has one), and on SIGINT, SIGTERM or SIGHUP (Ctrl-C,
+# kill, a dropped SSH session) once the snapshot exists, it auto-rolls-back the
+# runtime files + image pins and says "zurueckgerollt" only when the old state comes
+# up healthy again (use --no-rollback to inspect the broken state). The image pins
+# reach .env only after the pull. The updater updates
 # ITSELF: if the release ships a newer update.sh it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
@@ -261,6 +265,9 @@ warn_host_uids
 check_env_templates
 command -v docker >/dev/null 2>&1 || die "docker fehlt."
 docker compose version >/dev/null 2>&1 || die "'docker compose' fehlt."
+compose_up_help=$(docker compose up --help 2>&1 || true)
+{ grep -qE -- '--wait([[:space:]]|$)' <<<"$compose_up_help" && grep -q -- '--wait-timeout' <<<"$compose_up_help"; } \
+    || die "docker compose $(docker compose version --short 2>/dev/null || echo '?') lacks 'up --wait' and '--wait-timeout' (Compose v2.17 or newer) — nothing changed."
 command -v curl >/dev/null 2>&1 || die "curl fehlt."
 # After the checks that stop with "nothing changed"; --check changes nothing, the mode included.
 [ "$CHECK" = 1 ] || close_install_dir
@@ -433,18 +440,12 @@ update_agent_repo() {
     cp -a "$staging"/. repo/ || return 1
 }
 
-# Wait until the server accepts connections (migrations done, uvicorn up).
-# Retries/interval are tunable (default 120×2s = 240s) for slow hosts and tests.
-wait_for_server() {
-    local attempt=0 max="${AH_HEALTH_RETRIES:-120}" iv="${AH_HEALTH_INTERVAL:-2}"
-    log "Warte auf den Server (Alembic laeuft beim Start)..."
-    until docker compose exec -T server \
-            python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" >/dev/null 2>&1; do
-        attempt=$((attempt + 1))
-        [ "$attempt" -ge "$max" ] && return 1
-        sleep "$iv"
-    done
-    return 0
+# Start the stack and wait. --wait waits for every service with a healthcheck to
+# turn healthy and fails on an unhealthy or exited container; a service without
+# one counts as soon as it runs (probed with Compose v5.5.1, docs/features/update-rollback.md).
+stack_up() {
+    log "Starting the stack and waiting for the health checks (Alembic runs at startup)..."
+    docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}"
 }
 
 # ---------------------------------------------------------------------------
@@ -455,9 +456,7 @@ if [ "$REDEPLOY" = 1 ]; then
     if [ "$SKIP_BACKUP" != 1 ]; then log "Backup-first..."; ./scripts/backup.sh "${BACKUP_ARGS[@]}"; fi
     log "Ziehe die gepinnten Images neu..."
     docker compose pull || die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit?) — Re-Deploy abgebrochen, Container unveraendert."
-    log "Starte den Stack neu..."
-    docker compose up -d
-    wait_for_server || die "Server nicht rechtzeitig bereit. Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    stack_up || die "stack start or health check failed (docker compose up --wait). Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
     log "Re-Deploy fertig (Version unveraendert: $(installed_label))."
     exit 0
 fi
@@ -525,12 +524,28 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
 fi
 
 # --- Backup-first (data) + snapshot the current runtime files ---------------
+# The archive goes into a rollback's message once the database may be migrated.
+BACKUP_ARCHIVE=""
 if [ "$SKIP_BACKUP" != 1 ]; then
     log "Backup-first..."
-    ./scripts/backup.sh "${BACKUP_ARGS[@]}"
+    ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out"
+    BACKUP_ARCHIVE=$(sed -n 's/^\[backup\] OK -> \(.*\) ([^)]*)$/\1/p' "${TMP}/backup.out")
 else
     log "Backup uebersprungen (--skip-backup)."
 fi
+
+# The Alembic revisions of both databases, one line each, "unknown" for a query
+# that fails. The new images migrate at startup, and the old ones do not start on
+# a newer revision, so a rollback after the start compares against these.
+db_revisions() {
+    local db rev
+    for db in adminhelper adminhelper_monitor; do
+        rev=$(docker compose exec -T postgres psql -U adminhelper -d "$db" -tAc \
+            'SELECT version_num FROM alembic_version ORDER BY 1' </dev/null 2>/dev/null) || rev=unknown
+        printf '%s=%s\n' "$db" "$rev"
+    done
+}
+REVS_BEFORE=$(db_revisions)
 
 mkdir -p backups
 SNAP="backups/runtime-prev-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
@@ -571,12 +586,12 @@ restore_snapshot() {
 # limit, an image the release did not publish) comes before the recreate, so
 # nothing of the new version ever ran: the installed state is the snapshot plus the
 # old .env as a whole, pins of a floating tag included. No recreate needed. $1 says
-# what failed, $2 is the way on that --no-rollback names: once .env is pinned on
-# the target, a bare re-run would call the install current. $3 replaces what
-# --no-rollback says stays: a failed swap comes before the re-pin.
+# what failed, $2 is the way on that --no-rollback names: the new runtime files
+# stay, so --ref applies the release again. $3 replaces what --no-rollback says
+# stays: the pins reach .env only after the pull (pin_images).
 rollback_before_deploy() {
     if [ "$NO_ROLLBACK" = 1 ]; then
-        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien + Image-Pins bleiben stehen}, Container unveraendert. $2"
+        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien bleiben stehen, Image-Pins unveraendert}, Container unveraendert. $2"
     fi
     local incomplete=0
     echo >&2
@@ -625,11 +640,34 @@ swap_runtime_files() {
         fi
     done
 }
+# --- Abort by signal: roll back like a failure at the same point ------------
+# From here on files change. bash runs a trap only once the foreground command
+# ends; a dropped SSH session sends SIGHUP to the whole foreground process group,
+# so docker compose ends too. Before the recreate the containers are untouched,
+# after it they may run the new version. The rollback itself ignores further
+# signals. After SIGHUP the terminal is gone, so its messages go to a log file.
+DEPLOY_STARTED=0
+on_signal() {
+    trap '' INT TERM HUP
+    if [ "$1" = HUP ]; then
+        local logf
+        logf="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
+        ( umask 077; : >> "$logf" ) && exec >> "$logf" 2>&1
+    fi
+    if [ "$DEPLOY_STARTED" = 1 ]; then
+        rollback_after_deploy "interrupted by SIG$1"
+    fi
+    rollback_before_deploy "interrupted by SIG$1" \
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+}
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'on_signal HUP' HUP
 swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlgeschlagen" \
     "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
     "teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
 
-# --- .env migration: add new keys, fill new secrets, re-pin images ----------
+# --- .env migration: add new keys, fill new secrets --------------------------
 # One step: the caller tests the status, which turns set -e off in here, so every
 # part that can fail returns 1 itself, and the caller rolls the whole .env back.
 # Additive only: append active KEY=value from the new .env.example that .env is
@@ -653,15 +691,6 @@ migrate_env() {
     fi
     # Fill any newly-added empty secrets (idempotent — leaves set values alone).
     ./scripts/init-secrets.sh >/dev/null || return 1
-
-    # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
-    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}" || return 1
-    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}" || return 1
-    upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}" || return 1
-    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}" || return 1
-    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}" || return 1
-    chmod 600 .env 2>/dev/null || true
-    log "Images gepinnt auf :${TARGET_VER}"
 }
 migrate_env || rollback_before_deploy ".env-Migration fehlgeschlagen" \
     ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
@@ -685,6 +714,14 @@ rollback_after_deploy() {
     fi
     local incomplete=0
     echo >&2
+    # server, scheduler and monitoring may still be migrating behind a failed or
+    # interrupted `up --wait`: until that transaction commits, the query sees the old
+    # revision. Stopped, every migration has committed or rolled back; if the stop
+    # fails, the revision read below is not trusted. Before the snapshot goes back:
+    # the target's compose file knows all three (scheduler exists since 0.38.0).
+    local settled=1
+    docker compose stop server scheduler monitoring \
+        || { log "WARN: Stoppen von server/scheduler/monitoring fehlgeschlagen — Migrationsstand unbestaetigt."; settled=0; }
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..." >&2
     # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
@@ -702,7 +739,21 @@ rollback_after_deploy() {
             && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
       ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
-    docker compose up -d >/dev/null \
+    local revs_after; revs_after=$(db_revisions)
+    if [ "$settled" = 0 ] || [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; then
+        log "Alembic revisions before: $(tr '\n' ' ' <<<"$REVS_BEFORE")now: $(tr '\n' ' ' <<<"$revs_after")" >&2
+        docker compose stop \
+            || { log "WARN: Stoppen des Stacks fehlgeschlagen — bitte manuell pruefen."; incomplete=1; }
+        local restore="./scripts/restore.sh ${BACKUP_ARCHIVE:-./backups/<neuestes>.tar.gz}"
+        if [ "$SKIP_BACKUP" = 1 ]; then
+            local last=""; local f
+            for f in backups/adminhelper-backup-*.tar.gz; do [ -e "$f" ] && last="$f"; done
+            restore="./scripts/restore.sh ${last:-<backup>} (this run made no backup, --skip-backup; that is the last backup before it)"
+        fi
+        [ "$incomplete" = 0 ] || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. The database may already be migrated by ${TARGET_VER}. Back: ${restore}; forward again: ./scripts/update.sh --ref ${TARGET}"
+        die "$1. The database was already migrated by ${TARGET_VER} (or its revision is unreadable or unconfirmed); the images of ${INSTALLED_LABEL} do not start on it. Runtime files and image pins are back on ${INSTALLED_LABEL}, the stack is stopped. Back: ${restore} (restores the state before the update and starts ${INSTALLED_LABEL}); forward again: ./scripts/update.sh --ref ${TARGET}"
+    fi
+    stack_up >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
         || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
@@ -710,15 +761,30 @@ rollback_after_deploy() {
 }
 
 # --- Deploy + health check, with automatic rollback on failure --------------
+# The target images, KEY=image, for the pull and the pins (vX.Y.Z -> :X.Y.Z).
+TARGET_IMAGES=()
+for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+    TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
+done
+# The pull gets the target images from the environment, which Compose ranks above
+# .env (docs/features/update-rollback.md): .env keeps the old pins until every image
+# is here, so an abort during the pull leaves nothing to undo in it.
 log "Ziehe die Images..."
-docker compose pull \
+env "${TARGET_IMAGES[@]}" docker compose pull \
     || rollback_before_deploy "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit/Image nicht veroeffentlicht?)" \
-        "Weiter mit ./scripts/update.sh --redeploy (gepinnte Images erneut ziehen und starten) oder --ref ${TARGET} (Release erneut anwenden)."
-log "Starte den Stack neu..."
-docker compose up -d || rollback_after_deploy "Stack-Neustart fehlgeschlagen"
-
-if wait_for_server; then
-    log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
-else
-    rollback_after_deploy "Server nicht rechtzeitig bereit"
-fi
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+# One step, like migrate_env: the caller tests the status.
+pin_images() {
+    local kv
+    for kv in "${TARGET_IMAGES[@]}"; do
+        upsert_env "${kv%%=*}" "${kv#*=}" || return 1
+    done
+    chmod 600 .env 2>/dev/null || true
+    log "Images gepinnt auf :${TARGET_VER}"
+}
+pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \
+    ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
+    "neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
+DEPLOY_STARTED=1
+stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
+log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"

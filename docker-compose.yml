@@ -263,6 +263,15 @@ services:
       # first admin's cert out-of-band, so a fresh install is enforced from the
       # start (see docs/Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+    # A listener on 127.0.0.1 that only nginx.conf knows: healthy once nginx has loaded its
+    # whole configuration. start_period covers the entrypoint's wait of up to 120 s for the
+    # TLS material from the ca-issuer.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 150s
     logging: *default-logging
     restart: unless-stopped
     # The nginx master runs as root and starts its workers as the image's user nginx, which
@@ -532,9 +541,14 @@ services:
     sysctls:
       net.ipv4.ping_group_range: "0 2147483647"
     healthcheck:
-      # /health exists (app.main); a wedged-but-running monitoring shows unhealthy, not
-      # just Up (4.49). Same TCP-connect probe as the server (python is in the image).
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      # A wedged-but-running monitoring shows unhealthy, not just Up (4.49). An HTTP GET on
+      # /health (app.main), not a TCP connect: the kernel completes a connect from the listen
+      # backlog even while the process hangs, only a running process answers the request.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()"
       interval: 10s
       timeout: 3s
       retries: 12
@@ -561,6 +575,14 @@ services:
       - "-storageDataPath=/victoria-metrics-data"
     expose:
       - "8428"
+    healthcheck:
+      # /health answers once the storage is open; opening a large data set takes a while,
+      # hence the longer start period and more retries than the other services.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8428/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 60s
     logging: *default-logging
     restart: unless-stopped
     # No process gains privileges on exec (setuid bits, file capabilities).

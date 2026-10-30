@@ -1156,10 +1156,100 @@ except urllib.error.HTTPError as e:
 }
 client_address
 
-# ── 16. Each service connects with its own Postgres role ─────────────────────
+# ── 16. Healthchecks: the services turn healthy, a hanging monitoring does not ──
+# docker compose ps and up --wait read the healthchecks of docker-compose.yml. gateway, victoria,
+# monitoring, ca-issuer and server turn healthy within start_period + retries × interval of
+# their own check. A monitoring process stopped with SIGSTOP still has its socket open, so a TCP
+# connect completes from the kernel's backlog; the HTTP request of its healthcheck must fail.
+
+# hc_budget <service> — seconds start_period + retries × interval of the service's healthcheck in
+# CFG (compose defaults where unset), plus one interval; empty without a healthcheck.
+hc_budget() {
+    python3 -c '
+import json, re, sys
+hc = json.load(sys.stdin)["services"].get(sys.argv[1], {}).get("healthcheck")
+if not hc or not hc.get("test"):
+    sys.exit()
+def sec(v, default):
+    if v is None:
+        return default
+    if isinstance(v, (int, float)):
+        return v / 1e9
+    units = {"h": 3600, "m": 60, "s": 1, "ms": 0.001, "us": 1e-6, "ns": 1e-9}
+    return sum(float(n) * units[u] for n, u in re.findall(r"([\d.]+)(h|ms|us|ns|m|s)", v))
+interval = sec(hc.get("interval"), 30)
+print(int(sec(hc.get("start_period"), 0) + hc.get("retries", 3) * interval + interval) + 1)' "$1" <<<"$CFG" 2>/dev/null
+}
+
+is_healthy() { LAST=$(docker inspect --format '{{.State.Health.Status}}' "$1" 2>/dev/null); [ "$LAST" = healthy ]; }
+
+# hc_exec <container> <json test> — runs a CMD healthcheck in the container, its exit code.
+hc_exec() {
+    local -a cmd
+    mapfile -t cmd < <(python3 -c '
+import json, sys
+test = json.loads(sys.argv[1])
+if test[:1] != ["CMD"]:
+    sys.exit(1)
+print("\n".join(test[1:]))' "$2") || return 99
+    [ "${#cmd[@]}" -gt 0 ] || return 99
+    timeout 10 docker exec "$1" "${cmd[@]}" >/dev/null 2>&1
+}
+
+healthchecks() {
+    local svc down=() id budget test rc tcp
+    for svc in victoria monitoring; do
+        [ -n "$(e2e_dc ps -q --status running "$svc" 2>/dev/null)" ] || down+=("$svc")
+    done
+    if [ "${#down[@]}" -gt 0 ] \
+        && ! e2e_dc up -d --no-deps --build "${down[@]}" >"$E2E_WORK/health-up.log" 2>&1; then
+        bad "${down[*]} did not come up"; tail -20 "$E2E_WORK/health-up.log"; return
+    fi
+    CFG=$(e2e_dc config --format json 2>/dev/null)
+
+    # a. Each service turns healthy within the budget of its own healthcheck.
+    for svc in gateway victoria monitoring ca-issuer server; do
+        id=$(e2e_dc ps -q "$svc" 2>/dev/null)
+        budget=$(hc_budget "$svc")
+        if [ -z "$id" ] || [ -z "$budget" ]; then
+            bad "$svc: no container ('$id') or no healthcheck in the compose config"; continue
+        fi
+        if until_ok "$budget" is_healthy "$id"; then
+            ok "$svc: healthy (budget ${budget} s)"
+        else
+            bad "$svc: health '$LAST' after ${budget} s, expected healthy"
+            docker inspect --format '{{json .State.Health.Log}}' "$id" 2>/dev/null | tail -c 600; echo
+        fi
+    done
+
+    # b. A stopped (hanging) monitoring process: its healthcheck fails, a TCP connect does not.
+    id=$(e2e_dc ps -q monitoring 2>/dev/null)
+    test=$(docker inspect --format '{{json .Config.Healthcheck.Test}}' "$id" 2>/dev/null)
+    rc=0; hc_exec "$id" "$test" || rc=$?
+    [ "$rc" = 0 ] || { bad "monitoring: its healthcheck $test exits $rc before the stop, expected 0"; return; }
+    if ! docker kill --signal STOP "$id" >/dev/null 2>&1; then
+        bad "monitoring: docker kill --signal STOP failed"; return
+    fi
+    rc=0; hc_exec "$id" "$test" || rc=$?
+    tcp=0
+    timeout 10 docker exec "$id" python -c \
+        "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" >/dev/null 2>&1 || tcp=$?
+    docker kill --signal CONT "$id" >/dev/null 2>&1
+    [ "$rc" != 0 ] && [ "$rc" != 99 ] && ok "monitoring: with uvicorn stopped its healthcheck fails (exit $rc)" \
+        || bad "monitoring: with uvicorn stopped its healthcheck exits $rc, expected a failure"
+    [ "$tcp" = 0 ] && ok "counter-check: a TCP connect to the stopped monitoring still succeeds" \
+        || bad "counter-check: a TCP connect to the stopped monitoring exits $tcp, expected 0" \
+            "— the check above could not tell a hang from a dead socket"
+    rc=0; until_ok 20 hc_exec "$id" "$test" || rc=$?
+    [ "$rc" = 0 ] && ok "monitoring: after SIGCONT its healthcheck passes again" \
+        || bad "monitoring: after SIGCONT its healthcheck still fails"
+}
+healthchecks
+
+# ── 17. Each service connects with its own Postgres role ─────────────────────
 # db-init (app.db_roles setup) gives every service a login role without superuser rights; only
 # the bootstrap account of the postgres image stays superuser. The server and the ca-issuer hold
-# pooled sessions by now (steps 1-15 went through both), and ah_ca reads only the tables of the
+# pooled sessions by now (steps 1-16 went through both), and ah_ca reads only the tables of the
 # PKI: the users table is refused, while ah_server reads it.
 pg_q() {  # pg_q <role> <sql> — tuples only; stderr folded in, so a refusal is visible
     e2e_dc exec -T postgres psql -U "$1" -d adminhelper -tA -v ON_ERROR_STOP=1 -c "$2" 2>&1
@@ -1184,7 +1274,7 @@ db_roles() {
 }
 db_roles
 
-# ── 17. Rotating the intermediates in the running stack (R-0667) ─────────────
+# ── 18. Rotating the intermediates in the running stack (R-0667) ─────────────
 # Last, because it changes the hierarchy every later step would see. A device enrolled
 # before the rotation keeps working: client-ca.pem carries the retired intermediate, so its
 # leaf alone (as a browser .p12 presents it) still gets through, and it renews under the

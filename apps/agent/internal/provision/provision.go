@@ -273,12 +273,22 @@ func pinIfBlindInsecure(cacert string, insecure bool, serverCertPEM []byte) (str
 	// against the server's own cert hash: with --insecure at first contact, an on-path
 	// attacker could otherwise pin its own cert as the permanent trust anchor (3.45).
 	if block, _ := pem.Decode(serverCertPEM); block != nil {
-		fp := sha256.Sum256(block.Bytes)
-		fmt.Printf("  SHA-256-Fingerprint: %x\n", fp)
-		fmt.Println("  Bitte gegen den im AdminHelper-Server angezeigten Fingerprint pruefen —")
-		fmt.Println("  ohne Pruefung kann ein aktiver MITM im Erstkontakt den Trust-Anchor faelschen.")
+		fmt.Print(insecureFingerprintNotice(sha256.Sum256(block.Bytes)))
 	}
 	return pinnedPath, false, func() { os.Remove(pinnedPath) }, nil
+}
+
+// insecureFingerprintNotice is the text printed after a blind --insecure pin. No
+// AdminHelper screen shows the server certificate's fingerprint (the desktop shows
+// the CA's), so it names where to read it and the verified alternative instead.
+func insecureFingerprintNotice(fp [sha256.Size]byte) string {
+	return fmt.Sprintf(`  SHA-256-Fingerprint: %x
+  Compare it with the server certificate, e.g. on the server:
+    openssl x509 -noout -fingerprint -sha256 -in <server certificate>
+  (same digits; ignore the colons and the case). Without that check an active MITM
+  can forge the trust anchor on first contact. Provision again with --ca-fp to verify
+  the first contact against the CA fingerprint instead.
+`, fp)
 }
 
 // monitorBaseURL derives the metrics-push base from the just-provisioned server URL
