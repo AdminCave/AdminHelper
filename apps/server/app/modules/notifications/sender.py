@@ -43,8 +43,15 @@ def send_email(to: str, subject: str, body: str) -> None:
     ctx = ssl.create_default_context()
     if SMTP_CA_FILE:
         # A relay with a private CA: added to the system CAs, checks stay on. A missing
-        # or broken file raises here, before any connection; the outbox retries.
-        ctx.load_verify_locations(cafile=SMTP_CA_FILE)
+        # or broken file raises here, before any connection; the outbox retries. The raw
+        # error names neither the variable nor the path, and the outbox stores only
+        # str(exc) as last_error (no traceback), so the reason is spelled out here.
+        try:
+            ctx.load_verify_locations(cafile=SMTP_CA_FILE)
+        except (OSError, ssl.SSLError) as exc:
+            raise RuntimeError(
+                f"SMTP_CA_FILE {SMTP_CA_FILE} cannot be loaded: {type(exc).__name__}: {exc}"
+            ) from exc
     if SMTP_PORT == 465:
         smtp_ctx = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10, context=ctx)
     else:
