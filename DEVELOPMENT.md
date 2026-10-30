@@ -625,10 +625,12 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
 ### Die Roadmap als Skript: `roadmap.py`
 
 `tasks/private/ROADMAP.md` (privates Repo) bleibt Markdown, das Kevin lesen und von Hand
-aendern kann; den Abschnitt „Als Naechstes" kuratiert er allein. `scripts/dev/roadmap.py` (nur
-Python-Stdlib) liest den Kopf (`Stand: … · WIP: …`) und die Tabellenzeilen mit ihren zehn
-Spalten; alles andere, also Prosa, „Als Naechstes" und Leerzeilen, reicht es byte-gleich
-durch. Zeilen legen Kevin und die Skripte an (`heavy.sh`, spaeter die Finder); `/roadmap`
+aendern kann. `scripts/dev/roadmap.py` (nur Python-Stdlib) liest den Kopf (`Stand: … · WIP: …`)
+und die Tabellenzeilen mit ihren zehn Spalten; alles andere, also Prosa und Leerzeilen, reicht
+es byte-gleich durch. Den Abschnitt „Als Naechstes" schreibt es bei jedem Schreiben neu aus den
+Zeilen, niemand pflegt ihn von Hand: was in Arbeit ist (`aktiv`, `bereit`, `pr` mit PR), je
+Stufe der naechste wartende Zug (Reihenfolge wie `zuege`), die offenen REL-Zeilen und die
+`blockiert`-Zeilen als „Wartet auf Kevin"; Handarbeit fuer Kevin ist darum eine `blockiert`-Zeile. Zeilen legen Kevin und die Skripte an (`heavy.sh`, spaeter die Finder); `/roadmap`
 zeigt und triagiert sie (`.claude/skills/roadmap/SKILL.md`).
 
 ```bash
@@ -650,7 +652,7 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   genau zehn Spalten (ein unmaskiertes `|` im Text macht eine elfte; `\|` ist erlaubt),
   einen `Dedup-Key:`, den zwei offene Zeilen tragen, und einen WIP-Kopf, der nicht zu den
   Zeilen passt. Exit 0 sauber, 1 Funde, 2 Aufruf falsch oder Datei fehlt.
-- `show` liest nur: ohne Argument „Als Naechstes" woertlich, die WIP-Zaehler aus den Zeilen,
+- `show` liest nur: ohne Argument „Als Naechstes", wie das letzte Schreiben ihn hinterliess, die WIP-Zaehler aus den Zeilen,
   die offenen Abschnitte mit ihren Zeilen und die Historie als Anzahl; mit einer ID die Zeile
   Feld fuer Feld; mit `--wip` nur die Zaehler (die liest der Status-Hook).
 - `next` nennt die naechste Zeile zum Bauen: Klasse vor Reihenfolge (SEC > REG > REL > BUG >

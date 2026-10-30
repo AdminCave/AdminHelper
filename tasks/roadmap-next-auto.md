@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # „Als Nächstes“ automatisch aus den Roadmap-Zeilen — Task-Ledger
-Status: aktiv · Branch: feature/roadmap-next-auto · Review: am Ende
+Status: bereit · Branch: feature/roadmap-next-auto · Review: am Ende
 Spec: Roadmap R-0999
 Heavy: none — nur `scripts/dev/roadmap.py` samt Unit-Tests und Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,8 +13,9 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Kevin 2026-10-30: „wie als nächstes pflege ich? dann schaffe es ab oder mache es automatisch“. Die Session wählt
 automatisch: der SessionStart-Hook liest den Abschnitt weiter, und die Reihenfolge der Züge steht schon in `zuege`.
 
-### T1 — roadmap.py schreibt „Als Nächstes“ bei jedem Schreiben aus den Zeilen  [ ]
+### T1 — roadmap.py schreibt „Als Nächstes“ bei jedem Schreiben aus den Zeilen  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md, CLAUDE.md, .claude/skills/roadmap/SKILL.md, tasks/roadmap-next-auto.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @cbf9a277 2026-10-30T10:39:59+01:00
 Review: am Ende (Branch-Review)
 Änderung: `write()` ruft nach `prune` `Roadmap.set_next_up` auf; es ersetzt den Inhalt von „## Als Nächstes“ durch
 einen Hinweis und nummerierte Punkte, je einer Zeile (der Hook `session-status.sh` druckt jeden Punkt als seine
