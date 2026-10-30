@@ -47,8 +47,8 @@ Keine. Keine neue Abhängigkeit.
 ## Aufteilung
 
 Einheit ist die Testdatei (Fixtures mit `scope="module"` und Container-Tests einer Datei bleiben zusammen).
-Dateien nach Pfad sortiert, jede geht an den Shard mit den bisher wenigsten Tests (bei Gleichstand der
-kleinste Index). Ohne `--shard` läuft alles wie heute.
+Dateien mit den meisten Tests zuerst (bei Gleichstand nach Pfad), jede geht an den Shard mit den bisher
+wenigsten Tests (bei Gleichstand der kleinste Index). Geteilt wird nach `-m`/`-k`. Ohne `--shard` läuft alles wie heute.
 
 ## Externe Integrationen
 

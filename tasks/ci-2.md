@@ -13,9 +13,11 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Zeilenangaben `origin/main@0c474527`, vor dem Schreiben neu greppen. Messung 2026-10-30: 2564 Tests in 1452 s,
 die 60 langsamsten 446 s; CI-Jobs 13–14 min (Lauf 41092318397).
 
-### T1 — pytest-Option `--shard K/N` für die Server-Suite (R-0950)  [ ]
-Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_shard.py
-Änderung: `pytest_addoption` (`conftest.py:459`) bekommt `--shard K/N`; ein `pytest_collection_modifyitems` teilt die Testdateien (nach Pfad sortiert, je an den Shard mit den wenigsten Tests) und wählt die fremden ab (`pytest_deselected`). Ohne Option keine Änderung. `test_shard.py` (SPDX) prüft: Shards zusammen = alle Tests, disjunkt, deterministisch, eine Datei bleibt ganz, `0/2`, `3/2`, `x` abgewiesen.
+### T1 — pytest-Option `--shard K/N` für die Server-Suite (R-0950)  [x]
+Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_shard.py, docs/features/ci-2.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ade72989 2026-10-30T18:16:05+01:00
+Review: am Ende (Branch-Review)
+Änderung: `pytest_addoption` (`conftest.py:459`) bekommt `--shard K/N`; ein `pytest_collection_modifyitems` teilt die Testdateien (größte zuerst, je an den Shard mit den wenigsten Tests) und wählt die fremden ab (`pytest_deselected`). Ohne Option keine Änderung. `test_shard.py` (SPDX) prüft: Shards zusammen = alle Tests, disjunkt, deterministisch, eine Datei bleibt ganz, `0/2`, `3/2`, `x` abgewiesen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py
 Doku: → T2
 
