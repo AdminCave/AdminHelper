@@ -18,8 +18,8 @@ services:
       - TZ=${TZ:-Europe/Berlin}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # The monitoring DB (adminhelper_monitor) is created by the monitoring
-      # service's entrypoint, not a bind-mounted init script — this keeps
+      # The monitoring DB (adminhelper_monitor) and the service roles come from the
+      # db-init service below, not a bind-mounted init script — this keeps
       # docker-compose.yml free of repo-file bind mounts (single self-contained
       # file, distributable on its own).
     healthcheck:
@@ -40,6 +40,33 @@ services:
     # In pki (so the ca-issuer reaches it without sharing the default net with frps)
     # + default (server/scheduler/monitoring). No host port either way (1.1).
     networks: [default, pki]
+
+  # One Postgres role per service (apps/server/app/db_roles.py): creates the roles or resets
+  # their passwords, the monitoring DB, ownership and CONNECT, on every `up`, idempotently,
+  # then exits. Besides postgres the only service that holds the superuser's password.
+  db-init:
+    image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
+    entrypoint: ["python", "-m", "app.db_roles", "setup"]
+    user: "10001:10001"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=adminhelper
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - SERVER_DB_PASSWORD=${SERVER_DB_PASSWORD}
+      - SCHEDULER_DB_PASSWORD=${SCHEDULER_DB_PASSWORD}
+      - MONITOR_DB_PASSWORD=${MONITOR_DB_PASSWORD}
+      - CA_DB_PASSWORD=${CA_DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    # One Python process for a few seconds.
+    pids_limit: 128
+    mem_limit: 256m
 
   server:
     image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
@@ -90,14 +117,13 @@ services:
       # The host port compose publishes for frps (below), reported with the supervisor status.
       - FRP_BIND_PORT=${FRP_BIND_PORT:-7000}
       # Postgres
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - DATABASE_URL=postgresql+psycopg://ah_server:${SERVER_DB_PASSWORD}@postgres:5432/adminhelper
       # libpq variables for the entrypoint's pg_isready wait. No PGPASSWORD:
       # pg_isready does not authenticate, and the password already travels in
-      # DATABASE_URL. Only the monitoring entrypoint opens a session (psycopg, to
-      # create its database) and needs it.
+      # DATABASE_URL.
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=adminhelper
+      - PGUSER=ah_server
       # Monitoring-Proxy
       - MONITOR_SERVICE_URL=http://monitoring:8080
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
@@ -152,6 +178,8 @@ services:
       retries: 48
       start_period: 60s
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       postgres:
@@ -171,10 +199,10 @@ services:
       # Same pool knobs as the web service: the scheduler holds its own engine.
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - DATABASE_URL=postgresql+psycopg://ah_scheduler:${SCHEDULER_DB_PASSWORD}@postgres:5432/adminhelper
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=adminhelper
+      - PGUSER=ah_scheduler
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       - REDIS_URL=redis://redis:6379/0
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
@@ -204,6 +232,8 @@ services:
     # Memory: one interpreter with its jobs and up to eight hook processes.
     mem_limit: 2g
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -314,7 +344,7 @@ services:
       # Works on the server's tables in the shared DB: consumes enrollment tokens and
       # keeps the certificate register (device lines, issued certificates); it reads
       # identity revocations and never mints a token.
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - DATABASE_URL=postgresql+psycopg://ah_ca:${CA_DB_PASSWORD}@postgres:5432/adminhelper
     healthcheck:
       test:
         - "CMD"
@@ -342,6 +372,8 @@ services:
     labels:
       com.admincave.adminhelper.ca-root-passphrase-present: "${CA_ROOT_PASSPHRASE:+yes}"
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       # The server's Alembic migration creates the tables this service works on, and the
@@ -488,11 +520,10 @@ services:
       - SERVER_HUB_URL=http://server:8080
       - ALLOW_INSECURE_HUB=1
       # Postgres
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper_monitor
+      - DATABASE_URL=postgresql+psycopg://ah_monitor:${MONITOR_DB_PASSWORD}@postgres:5432/adminhelper_monitor
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=adminhelper
-      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - PGUSER=ah_monitor
     logging: *default-logging
     restart: unless-stopped
     # No process gains privileges on exec (setuid bits, file capabilities).
@@ -523,6 +554,8 @@ services:
       retries: 12
       start_period: 30s
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       victoria:
         condition: service_started
       postgres:

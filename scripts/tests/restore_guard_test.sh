@@ -46,6 +46,11 @@
 # for a dangling link just before the open creates nothing through it.
 # 21: the archive is 0600 in an output dir with a default ACL.
 # 22: --output with a trailing slash: the temp file still counts as in the output dir.
+# 23-25: restore.sh and the service roles, against a docker stub that logs argv and the
+# PGPASSWORD it gets: a missing role password in .env stops the restore before any
+# docker call, with the hint to init-secrets.sh, and the environment stands in for
+# .env as it does for compose; db-init runs before the first pg_restore, each DB goes
+# back as its role, nothing as adminhelper, and no password shows in an argv.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
@@ -63,6 +68,15 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+
+# restore.sh reads the role passwords from the environment before .env, as compose
+# does: none may leak in from the caller.
+unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD
+ROLE_ENV='SERVER_DB_PASSWORD=pw-server
+SCHEDULER_DB_PASSWORD=pw-scheduler
+MONITOR_DB_PASSWORD=pw-monitor
+CA_DB_PASSWORD=pw-ca'
+printf '%s\n' "$ROLE_ENV" > "$WORK/.env"
 
 # --- craft archives ---------------------------------------------------------
 # clean: a normal backup-shaped archive
@@ -129,11 +143,11 @@ printf 'dump\n' > "$WORK/dr/adminhelper.dump"
 tar czf "$WORK/dr.tar.gz" -C "$WORK/dr" .
 out=$( cd "$WORK" && STUB_DIR="$WORK" PATH="$WORK/bin:$PATH" bash "$RESTORE" "$WORK/dr.tar.gz" --yes </dev/null 2>&1 ); rc=$?
 ready=$(grep -n '^rc=0 .*pg_isready -h 127.0.0.1' "$WORK/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
-first_psql=$(grep -n 'psql' "$WORK/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
+first_psql=$(grep -nE 'psql|pg_restore|db-init' "$WORK/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
 [ $rc -eq 0 ] && ok "restore.sh finishes on a fresh host" || bad "fresh host: rc=$rc out=[$out]"
 { [ -n "$ready" ] && [ -n "$first_psql" ] && [ "$ready" -lt "$first_psql" ]; } \
-  && ok "TCP is ready before the first psql" \
-  || bad "no TCP pg_isready before psql: $(cat "$WORK/calls.log" 2>/dev/null)"
+  && ok "TCP is ready before the first database call" \
+  || bad "no TCP pg_isready before the first database call: $(cat "$WORK/calls.log" 2>/dev/null)"
 
 # --- 6./7. restore.sh reopens the register transition after the server DB ───
 REOPEN="UPDATE certificate_register_state SET installed_at = timezone('UTC', now())"
@@ -638,6 +652,59 @@ entries=$(ls -A "$WORK/bk/v/out" 2>/dev/null)
 { [ $rc -eq 0 ] && [ "$entries" = "$FIXED_NAME" ]; } \
   && ok "--output with a trailing slash writes the archive" \
   || bad "trailing slash: rc=$rc entries=[$entries] out=[$out]"
+
+# --- 23./24. restore.sh needs the role passwords before it stops anything ────
+mkdir -p "$WORK/roles/bin" "$WORK/roles/miss" "$WORK/roles/envonly" "$WORK/roles/run"
+cat > "$WORK/roles/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *pg_restore*|*ON_ERROR_STOP*) cat >/dev/null ;;
+esac
+echo "pw=[${PGPASSWORD-}] $*" >> "$STUB_DIR/calls.log"
+exit 0
+STUB
+chmod +x "$WORK/roles/bin/docker"
+grep -v '^MONITOR_DB_PASSWORD=' <<<"$ROLE_ENV" > "$WORK/roles/miss/.env"
+out=$( cd "$WORK/roles/miss" && STUB_DIR="$WORK/roles/miss" PATH="$WORK/roles/bin:$PATH" \
+    bash "$RESTORE" "$WORK/reg/full.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+{ [ $rc -eq 1 ] && grep -q 'MONITOR_DB_PASSWORD' <<<"$out" && grep -q 'init-secrets.sh' <<<"$out" \
+    && [ ! -e "$WORK/roles/miss/calls.log" ]; } \
+  && ok "a role password missing in .env stops the restore before any docker call" \
+  || bad "missing role password: rc=$rc out=[$out] calls=[$(cat "$WORK/roles/miss/calls.log" 2>/dev/null)]"
+
+out=$( cd "$WORK/roles/envonly" && env $ROLE_ENV STUB_DIR="$WORK/roles/envonly" PATH="$WORK/roles/bin:$PATH" \
+    bash "$RESTORE" "$WORK/reg/full.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+[ $rc -eq 0 ] \
+  && ok "the role passwords may come from the environment instead of .env" \
+  || bad "environment only: rc=$rc out=[$out]"
+
+# --- 25. db-init first, each DB as its role, no password in an argv ─────────
+mkdir -p "$WORK/roles/both"
+printf 'dump\n' > "$WORK/roles/both/adminhelper.dump"
+printf 'dump\n' > "$WORK/roles/both/adminhelper_monitor.dump"
+tar czf "$WORK/roles/both.tar.gz" -C "$WORK/roles/both" .
+cp "$WORK/.env" "$WORK/roles/run/.env"
+out=$( cd "$WORK/roles/run" && STUB_DIR="$WORK/roles/run" PATH="$WORK/roles/bin:$PATH" \
+    bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+calls="$WORK/roles/run/calls.log"
+init=$(grep -n 'run --rm -T db-init' "$calls" 2>/dev/null | head -n1 | cut -d: -f1)
+first_restore=$(grep -n 'pg_restore' "$calls" 2>/dev/null | head -n1 | cut -d: -f1)
+{ [ $rc -eq 0 ] && [ -n "$init" ] && [ -n "$first_restore" ] && [ "$init" -lt "$first_restore" ]; } \
+  && ok "db-init runs before the first pg_restore" \
+  || bad "order: db-init at ${init:-none}, pg_restore at ${first_restore:-none}, rc=$rc out=[$out]"
+{ grep -q '^pw=\[pw-server\] .*-e PGPASSWORD postgres pg_restore .*-U ah_server .*--no-privileges -d adminhelper$' "$calls" \
+    && grep -q '^pw=\[pw-monitor\] .*-e PGPASSWORD postgres pg_restore .*-U ah_monitor .*--no-privileges -d adminhelper_monitor$' "$calls" \
+    && grep -q '^pw=\[pw-server\] .*psql .*-U ah_server -d adminhelper .*ON_ERROR_STOP' "$calls"; } \
+  && ok "each DB goes back as its role, the password through the environment" \
+  || bad "roles: calls=[$(cat "$calls" 2>/dev/null)]"
+# pg_isready probes without logging in; every call that logs in counts. Read into
+# variables first: a negated grep -q at the end of a pipe takes the exit of the pipe.
+db_calls=$(grep -E 'pg_restore|psql|createdb' "$calls" 2>/dev/null)
+argvs=$(sed 's/^pw=\[[^]]*\] //' "$calls" 2>/dev/null)
+{ [ -n "$db_calls" ] && ! grep -qE -- '-U adminhelper( |$)|createdb' <<<"$db_calls" \
+    && [ -n "$argvs" ] && ! grep -qE 'pw-(server|scheduler|monitor|ca)' <<<"$argvs"; } \
+  && ok "nothing as adminhelper, no role password in an argv" \
+  || bad "superuser or password in argv: calls=[$(cat "$calls" 2>/dev/null)]"
 
 echo
 echo "──────────────────────────────────────────"

@@ -124,7 +124,7 @@ PID="$(val PID)"
   && ok "without a key: project ah-e2e-<pid>, ports from the pid, the URL on localhost" \
   || bad "without a key: pid '$PID', project '$(val PROJECT)', https=$HTTPS_PORT pg=$PG_PORT redis=$REDIS_PORT, URL '$(val URL)'"
 ENV_KEYS="$(sed 's/=.*//' "$STUB_LOG/env" 2>/dev/null | tr '\n' ' ')"
-[ "$ENV_KEYS" = "DOMAIN SECRET_KEY POSTGRES_PASSWORD CA_ROOT_PASSPHRASE MONITOR_API_KEY ADMIN_PASSWORD MTLS_ENFORCE ITEST_HTTPS_PORT ITEST_ENROLL_PORT ITEST_REPO_PORT ITEST_PG_PORT ITEST_REDIS_PORT " ] \
+[ "$ENV_KEYS" = "DOMAIN SECRET_KEY POSTGRES_PASSWORD SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD CA_ROOT_PASSPHRASE MONITOR_API_KEY ADMIN_PASSWORD MTLS_ENFORCE ITEST_HTTPS_PORT ITEST_ENROLL_PORT ITEST_REPO_PORT ITEST_PG_PORT ITEST_REDIS_PORT " ] \
   && ok "without a key: the .env names no bind address and no FRP ports (gateway with no host address, frps on 7000/7443)" \
   || bad "without a key, the .env names: $ENV_KEYS"
 

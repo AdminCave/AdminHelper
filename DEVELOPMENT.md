@@ -217,6 +217,9 @@ DATABASE_URL="postgresql+psycopg://adminhelper:<passwort>@localhost:5432/adminhe
   apps/server/.venv/bin/python -m pytest -q
 ```
 
+`tests/test_db_roles.py` startet unabhängig davon einen eigenen Wegwerf-Container `postgres:17-alpine`
+(Superuser, Rollen, Eigentum, Rechte des `ca-issuer`); ohne Docker überspringt pytest diese Tests.
+
 Das Passwort steht nicht im Befehl: `\password` fragt es ab, verschlüsselt es und schickt es als
 `ALTER ROLE` an den Server, ohne Klartext in der History oder im Server-Log (psql-Doku). Als Wert
 eignet sich `openssl rand -hex 16`; Hex braucht in der URL keine Prozent-Kodierung. Dieselbe URL
@@ -883,7 +886,8 @@ Das startet:
 - **frps** auf Port 7000 (FRP-Protokoll) und 7443 (HTTPS-vhosts)
 - **Monitoring** nur intern im Compose-Network (`expose 8080`, kein Host-Port); Agent-Metriken laufen tunnelfrei über den Server unter `/api/monitoring`
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
-- **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start des Monitoring-Service (durch dessen Entrypoint) angelegt
+- **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB legt `db-init` an
+- **db-init** (Server-Image, Einmal-Dienst) — legt bei jedem Start die Postgres-Rollen je Dienst und die Monitoring-DB an und übergibt ihnen das Schema `public`; Server, Scheduler, Monitoring und ca-issuer starten erst nach seinem Ende
 - **scheduler** (Server-Image mit `RUN_MODE=scheduler`, nur intern, seit 0.38.0) — die **einzige** APScheduler-Instanz für periodische Jobs (u. a. FRP-Zertifikats-Renewals); bewusst **nicht** skalieren, sonst laufen die Jobs doppelt
 - **redis** (`redis:7-alpine`, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern
 
@@ -987,7 +991,7 @@ VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
 
-**Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut nur der Entrypoint des Containers (`apps/monitoring/docker-entrypoint.sh`).
+**Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut im Stack nur der Einmal-Dienst `db-init` (`python -m app.db_roles setup`, `apps/server/app/db_roles.py`).
 
 **Hinweis:** Fuer den vollen Monitoring-Stack wird VictoriaMetrics benoetigt, die per `docker compose up` automatisch mitgestartet wird.
 

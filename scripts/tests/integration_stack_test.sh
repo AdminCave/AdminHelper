@@ -975,6 +975,19 @@ compose_limits() {
     # a. Every service of the compose file runs with no-new-privileges and its process limit.
     for i in "${!names[@]}"; do
         svc=${names[$i]}; want=${limits[$i]}
+        # db-init runs once before the services and has exited by now: its container keeps the
+        # options it ran with, and its exit code says the roles are in place.
+        if [ "$svc" = db-init ]; then
+            id=$(e2e_dc ps -aq --status exited "$svc" 2>/dev/null)
+            have=$(docker inspect --format '{{.State.ExitCode}} {{.HostConfig.PidsLimit}} {{json .HostConfig.SecurityOpt}}' \
+                "$id" 2>/dev/null)
+            if [ "$want" != - ] && [ "$have" = "0 $want [\"no-new-privileges:true\"]" ]; then
+                ok "$svc: exited 0, ran with no-new-privileges and pids limit $want as in the compose config"
+            else
+                bad "$svc: exit, pids limit, security options '$have' (expected '0 $want [\"no-new-privileges:true\"]')"
+            fi
+            continue
+        fi
         id=$(e2e_dc ps -q --status running "$svc" 2>/dev/null)
         if [ -z "$id" ]; then
             bad "$svc: not running, its limits unchecked"; continue
@@ -1233,7 +1246,35 @@ healthchecks() {
 }
 healthchecks
 
-# ── 17. Rotating the intermediates in the running stack (R-0667) ─────────────
+# ── 17. Each service connects with its own Postgres role ─────────────────────
+# db-init (app.db_roles setup) gives every service a login role without superuser rights; only
+# the bootstrap account of the postgres image stays superuser. The server and the ca-issuer hold
+# pooled sessions by now (steps 1-16 went through both), and ah_ca reads only the tables of the
+# PKI: the users table is refused, while ah_server reads it.
+pg_q() {  # pg_q <role> <sql> — tuples only; stderr folded in, so a refusal is visible
+    e2e_dc exec -T postgres psql -U "$1" -d adminhelper -tA -v ON_ERROR_STOP=1 -c "$2" 2>&1
+}
+db_roles() {
+    local supers sessions denied allowed
+    supers=$(pg_q adminhelper "SELECT string_agg(rolname, ',' ORDER BY rolname) FROM pg_catalog.pg_roles
+        WHERE rolsuper AND rolcanlogin AND rolname <> 'adminhelper'")
+    [ -z "$supers" ] && ok "no login role but the bootstrap account is superuser" \
+        || bad "superuser login roles besides adminhelper: '$supers'"
+    sessions=$(pg_q adminhelper "SELECT string_agg(DISTINCT usename, ',' ORDER BY usename) FROM pg_catalog.pg_stat_activity
+        WHERE datname = 'adminhelper' AND usename IN ('ah_server', 'ah_ca')")
+    [ "$sessions" = "ah_ca,ah_server" ] && ok "server and ca-issuer are connected as ah_server and ah_ca" \
+        || bad "sessions of ah_server/ah_ca in pg_stat_activity: '$sessions'"
+    allowed=$(pg_q ah_server "SELECT count(*) >= 0 FROM public.users")
+    [ "$allowed" = t ] && ok "ah_server reads the users table" || bad "ah_server on users: '$allowed'"
+    denied=$(pg_q ah_ca "SELECT count(*) FROM public.users")
+    case $denied in
+        *"permission denied for table users"*) ok "ah_ca is refused the users table" ;;
+        *) bad "ah_ca on users: '$denied' (expected permission denied)" ;;
+    esac
+}
+db_roles
+
+# ── 18. Rotating the intermediates in the running stack (R-0667) ─────────────
 # Last, because it changes the hierarchy every later step would see. A device enrolled
 # before the rotation keeps working: client-ca.pem carries the retired intermediate, so its
 # leaf alone (as a browser .p12 presents it) still gets through, and it renews under the
