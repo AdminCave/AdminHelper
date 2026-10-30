@@ -68,7 +68,7 @@ export const translations: Translations = {
     'infra.prov.created': 'Token erzeugt',
     'infra.prov.commandCopied': 'Befehl kopiert',
     'infra.prov.tokenPrompt':
-      'Token: Das Install-Skript fragt beim Ausführen danach, die Eingabe bleibt verdeckt.',
+      'Token: Das Install-Skript fragt beim Ausführen danach, die Eingabe bleibt verdeckt. „Nur provisionieren“ liest ihn als erste Eingabezeile (einfügen, Enter).',
     'infra.prov.tokenCopied': 'Token kopiert',
     'infra.prov.copyError': 'Kopieren fehlgeschlagen',
     'infra.prov.colCreated': 'Erstellt',
@@ -871,7 +871,7 @@ export const translations: Translations = {
     'infra.prov.created': 'Token created',
     'infra.prov.commandCopied': 'Command copied',
     'infra.prov.tokenPrompt':
-      'Token: the install script asks for it when it runs; the input stays hidden.',
+      'Token: the install script asks for it when it runs; the input stays hidden. “Provision only” reads it as the first input line (paste, Enter).',
     'infra.prov.tokenCopied': 'Token copied',
     'infra.prov.copyError': 'Copy failed',
     'infra.prov.colCreated': 'Created',

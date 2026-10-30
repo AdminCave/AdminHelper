@@ -1142,6 +1142,131 @@ except urllib.error.HTTPError as e:
 }
 client_address
 
+# ── 16. Rotating the intermediates in the running stack (R-0667) ─────────────
+# Last, because it changes the hierarchy every later step would see. A device enrolled
+# before the rotation keeps working: client-ca.pem carries the retired intermediate, so its
+# leaf alone (as a browser .p12 presents it) still gets through, and it renews under the
+# new intermediate. After restarting ca-issuer (healthy) and then the gateway, the gateway
+# presents a leaf of the new access intermediate, a fresh enrollment gets one too, and the
+# frps trust bundle holds the old and the new tunnel intermediate.
+health_of() { docker inspect --format '{{.State.Health.Status}}' "$(e2e_dc ps -q "$1" 2>/dev/null)" 2>/dev/null; }
+issuer_cn() { openssl x509 -noout -issuer -nameopt multiline 2>/dev/null | sed -n 's/^ *commonName *= *//p'; }
+# chain_cns — the subject CN of every certificate on stdin, in order, one per line.
+chain_cns() {
+    openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null | openssl pkcs7 -print_certs -noout 2>/dev/null \
+        | sed -n 's/^subject=.*CN *= *\([^,]*\).*/\1/p'
+}
+# reach <curl cert args…> — the status of a request without a JWT: 401 from the app means the
+# gateway took the certificate, 400 that it refused it.
+reach() { curl -k -s "$@" -o /dev/null -w '%{http_code}' --max-time 10 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000; }
+# renew_issuer <fullchain> <key> <csr> — the issuer CN of the leaf /ca/renew returns, or the error.
+renew_issuer() {
+    python3 - "$E2E_SERVER_URL" "$1" "$2" "$3" <<'PY' | issuer_cn
+import json, ssl, sys, urllib.request
+base, chain, key, csr = sys.argv[1:5]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+ctx.load_cert_chain(chain, key)
+req = urllib.request.Request(f"{base}/ca/renew", data=json.dumps({"csr": open(csr).read()}).encode(),
+    headers={"Content-Type": "application/json"})
+body = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))
+print(body.get("fullchain") or body.get("cert") or "")
+PY
+}
+gateway_takes_client5() {
+    [ "$(reach --cert "$E2E_WORK/client5-fullchain.pem" --key "$E2E_WORK/client5.key")" = 401 ]
+}
+ca_rotation() {
+    local token today status out leaf_only gw_issuer gw_chain frps_cns code
+    today=$(date -u +%Y-%m-%d)
+    token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client5.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client5.key" -subj "/CN=itest" -out "$E2E_WORK/client5.csr" 2>/dev/null
+    if [ -z "$token" ] || ! enroll "$token" client5; then
+        bad "rotation: could not enroll a device before the rotation"; return
+    fi
+
+    if out=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli status 2>&1); then
+        ok "rotation: status before the rotation exits 0"
+    else
+        bad "rotation: status before the rotation: $out"; return
+    fi
+    if out=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli rotate-intermediates </dev/null 2>&1); then
+        ok "rotation: rotate-intermediates exits 0 (passphrase from the secret file)"
+    else
+        bad "rotation: rotate-intermediates failed: $out"; return
+    fi
+    e2e_dc restart ca-issuer >/dev/null 2>&1
+    until_ok 90 eval '[ "$(health_of ca-issuer)" = healthy ]' \
+        || { bad "rotation: ca-issuer not healthy within 90 s after the restart"; return; }
+    e2e_dc restart gateway >/dev/null 2>&1
+    until_ok 60 gateway_takes_client5 \
+        || { bad "rotation: the gateway does not take a device certificate within 60 s after its restart"; return; }
+
+    # a. status lists one retired intermediate per scope.
+    status=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli status 2>&1)
+    if [ "$(grep -c '(retired)' <<<"$status")" = 3 ] && ! grep -q 'SKIPPED' <<<"$status"; then
+        ok "rotation: status lists three retired intermediates"
+    else
+        bad "rotation: status after the rotation: $status"
+    fi
+
+    # b. The gateway presents a leaf of today's access intermediate, and the root third (T7).
+    out=$(openssl s_client -connect "localhost:$E2E_HTTPS_PORT" -servername localhost -showcerts \
+        -cert "$E2E_WORK/client5-fullchain.pem" -key "$E2E_WORK/client5.key" </dev/null 2>/dev/null)
+    gw_issuer=$(issuer_cn <<<"$out")
+    gw_chain=$(chain_cns <<<"$out")
+    if [ "$gw_issuer" = "AdminHelper Access Intermediate $today" ] \
+        && [ "$(sed -n 2p <<<"$gw_chain")" = "AdminHelper Access Intermediate $today" ] \
+        && [ "$(sed -n 3p <<<"$gw_chain")" = "AdminHelper Root CA" ]; then
+        ok "rotation: the gateway presents a leaf of '$gw_issuer', that intermediate and the root"
+    else
+        bad "rotation: the gateway's chain: $(tr '\n' ';' <<<"$gw_chain") (leaf issuer '$gw_issuer'), expected" \
+            "a leaf of 'AdminHelper Access Intermediate $today', that intermediate and 'AdminHelper Root CA'"
+    fi
+
+    # c. The device enrolled before reaches the app with its fullchain and with its leaf alone.
+    leaf_only="$E2E_WORK/client5-leaf.pem"
+    openssl x509 -in "$E2E_WORK/client5-fullchain.pem" -out "$leaf_only" 2>/dev/null
+    code=$(reach --cert "$E2E_WORK/client5-fullchain.pem" --key "$E2E_WORK/client5.key")
+    [ "$code" = 401 ] && ok "rotation: a device enrolled before reaches the app with its fullchain (401 without JWT)" \
+        || bad "rotation: a device enrolled before, fullchain: HTTP '$code', expected 401"
+    code=$(reach --cert "$leaf_only" --key "$E2E_WORK/client5.key")
+    [ "$code" = 401 ] && ok "rotation: ... and with its leaf alone (the retired intermediate is in client-ca.pem)" \
+        || bad "rotation: a device enrolled before, leaf only: HTTP '$code', expected 401"
+
+    # d. It renews, and the new leaf comes from today's access intermediate.
+    out=$(renew_issuer "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" 2>&1)
+    [ "$out" = "AdminHelper Access Intermediate $today" ] && ok "rotation: /ca/renew with the old certificate gives a leaf of '$out'" \
+        || bad "rotation: /ca/renew with the old certificate: '$out'"
+
+    # e. A fresh enrollment gets a leaf of the new intermediate, which reaches the app.
+    token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client6.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client6.key" -subj "/CN=itest" -out "$E2E_WORK/client6.csr" 2>/dev/null
+    if [ -n "$token" ] && enroll "$token" client6; then
+        out=$(issuer_cn < "$E2E_WORK/client6-fullchain.pem")
+        code=$(reach --cert "$E2E_WORK/client6-fullchain.pem" --key "$E2E_WORK/client6.key")
+        if [ "$out" = "AdminHelper Access Intermediate $today" ] && [ "$code" = 401 ]; then
+            ok "rotation: a fresh enrollment gets a leaf of '$out' and reaches the app"
+        else
+            bad "rotation: fresh enrollment: issuer '$out', HTTP '$code'"
+        fi
+    else
+        bad "rotation: a fresh enrollment after the rotation failed"
+    fi
+
+    # f. frps trusts the old and the new tunnel intermediate.
+    e2e_dc exec -T ca-issuer cat /app/frps-certs/ca.crt > "$E2E_WORK/frps-ca.crt" 2>/dev/null
+    frps_cns=$(chain_cns < "$E2E_WORK/frps-ca.crt")
+    if grep -qx "AdminHelper Tunnel Intermediate $today" <<<"$frps_cns" \
+        && [ "$(grep -c '^AdminHelper Tunnel Intermediate' <<<"$frps_cns")" -ge 2 ]; then
+        ok "rotation: frps-certs/ca.crt holds the old and the new tunnel intermediate"
+    else
+        bad "rotation: frps-certs/ca.crt holds: $(tr '\n' ';' <<<"$frps_cns")"
+    fi
+}
+ca_rotation
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"

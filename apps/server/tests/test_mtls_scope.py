@@ -229,14 +229,18 @@ def test_mtls_enforce_defaults_to_enforced_without_the_env(tmp_path):
         env["DATA_DIR"] = str(tmp_path)
         if value is not None:
             env["MTLS_ENFORCE"] = value
-        proc = subprocess.run(
-            [sys.executable, "-c", "from app.core import config; print(config.MTLS_ENFORCE)"],
-            cwd=_SERVER_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", "from app.core import config; print(config.MTLS_ENFORCE)"],
+                cwd=_SERVER_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            # No traceback: the frames of subprocess.run carry env.
+            pytest.fail("the config probe did not end within 60 s", pytrace=False)
         assert proc.returncode == 0, proc.stderr
         return proc.stdout.strip()
 

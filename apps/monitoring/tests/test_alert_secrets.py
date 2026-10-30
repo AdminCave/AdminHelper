@@ -316,6 +316,8 @@ def _stored_rule(factory, rule_id="r1") -> tuple[str, dict]:
         pytest.param({"smtp_host": "relay-b.example"}, id="host"),
         pytest.param({"smtp_port": 2525}, id="port"),
         pytest.param({"smtp_host": None}, id="host-removed"),
+        pytest.param({"smtp_host": "  "}, id="host-blank"),
+        pytest.param({"smtp_port": None}, id="port-removed"),
     ],
 )
 def test_alert_put_with_the_mask_for_another_relay_is_refused(client_db, relay):
