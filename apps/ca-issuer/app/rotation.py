@@ -43,13 +43,21 @@ class RotatedScope:
     new: x509.Certificate
 
 
-def rotate_intermediates(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
+def rotate_intermediates(
+    pki_dir: Path, passphrase: bytes, compromised: frozenset[str] = frozenset()
+) -> list[RotatedScope]:
     """Issue a new intermediate for every scope under root.crt; the replaced ones that
     are still valid go to <scope>-retired.pem, expired entries leave that file. A
     current intermediate of its scope that is not valid yet by this clock stops it
-    (RotationError).
+    (RotationError). For a scope in `compromised` nothing replaced stays trusted: its
+    retired file ends up empty, whatever it held. A name in `compromised` that is no
+    scope is a RotationError before anything is read.
     Holds an exclusive lock on <pki_dir>/.rotate.lock (RotationError if another run
     holds it). Returns one RotatedScope per scope, in pki.SCOPES order."""
+    if unknown := sorted(compromised - set(pki.SCOPES)):
+        raise RotationError(
+            f"no such scope: {', '.join(unknown)} (scopes: {', '.join(pki.SCOPES)})"
+        )
     lock_path = pki_dir / LOCK_NAME
     try:
         lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
@@ -60,12 +68,12 @@ def rotate_intermediates(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RotationError("another rotation is running") from None
-        return _rotate(pki_dir, passphrase)
+        return _rotate(pki_dir, passphrase, compromised)
     finally:
         os.close(lock_fd)  # releases the lock
 
 
-def _rotate(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
+def _rotate(pki_dir: Path, passphrase: bytes, compromised: frozenset[str]) -> list[RotatedScope]:
     now = pki._now()
     root_cert, root_key = _load_root(pki_dir, passphrase, now)
     label = now.strftime("%Y-%m-%d")
@@ -73,6 +81,12 @@ def _rotate(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
     for scope in pki.SCOPES:
         crt = pki_dir / f"{scope}.crt"
         old = _read_cert(crt)
+        if scope in compromised:
+            # Its key may sign for someone else: neither it nor a predecessor stays
+            # trusted, so the clock (which only decides what is kept) does not matter.
+            new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key, label=label)
+            planned.append((RotatedScope(scope, old, new_cert), new_key, []))
+            continue
         # An intermediate is valid from its issuing, so one not valid yet means this clock
         # is behind the one that issued it. Replaced under it, the intermediate would not
         # be kept as retired (it is not valid now), and once the clock is right nothing

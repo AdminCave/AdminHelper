@@ -20,8 +20,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py
 Doku: keine (betrieb.html beschreibt die Uhrprüfung für Zwischenzertifikate des Scopes; das bleibt wahr)
 
-### T2 — rotate-intermediates --compromised <scope> (R-0945)  [ ]
+### T2 — rotate-intermediates --compromised <scope> (R-0945)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/app/cli.py, apps/ca-issuer/tests/test_rotation.py, apps/ca-issuer/tests/test_cli.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-2.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @90843075 2026-10-30T14:26:53+01:00
+Review: am Ende (Branch-Review)
 Änderung: `rotate_intermediates(..., compromised=frozenset())`; für einen genannten Scope wird `<scope>-retired.pem` leer geschrieben und das abgelöste nicht behalten; unbekannte Scopes sind ein Fehler vor dem ersten Schreiben. CLI `--compromised SCOPE` (mehrfach, Auswahl aus `pki.SCOPES`), Ausgabe nennt je Scope, dass nichts abgelöst vertraut bleibt. Tests für Rotation und CLI.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py
 Doku: docs/admin/betrieb.html#ca-rotation · docs/en/admin/operations.html#ca-rotation · changelog.d/kern-ca-2.md
