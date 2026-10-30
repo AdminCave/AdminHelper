@@ -524,12 +524,28 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
 fi
 
 # --- Backup-first (data) + snapshot the current runtime files ---------------
+# The archive goes into a rollback's message once the database may be migrated.
+BACKUP_ARCHIVE=""
 if [ "$SKIP_BACKUP" != 1 ]; then
     log "Backup-first..."
-    ./scripts/backup.sh "${BACKUP_ARGS[@]}"
+    ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out"
+    BACKUP_ARCHIVE=$(sed -n 's/^\[backup\] OK -> \(.*\) ([^)]*)$/\1/p' "${TMP}/backup.out")
 else
     log "Backup uebersprungen (--skip-backup)."
 fi
+
+# The Alembic revisions of both databases, one line each, "unknown" for a query
+# that fails. The new images migrate at startup, and the old ones do not start on
+# a newer revision, so a rollback after the start compares against these.
+db_revisions() {
+    local db rev
+    for db in adminhelper adminhelper_monitor; do
+        rev=$(docker compose exec -T postgres psql -U adminhelper -d "$db" -tAc \
+            'SELECT version_num FROM alembic_version ORDER BY 1' </dev/null 2>/dev/null) || rev=unknown
+        printf '%s=%s\n' "$db" "$rev"
+    done
+}
+REVS_BEFORE=$(db_revisions)
 
 mkdir -p backups
 SNAP="backups/runtime-prev-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
@@ -715,6 +731,20 @@ rollback_after_deploy() {
             && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
       ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    local revs_after; revs_after=$(db_revisions)
+    if [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; then
+        log "Alembic revisions before: $(tr '\n' ' ' <<<"$REVS_BEFORE")now: $(tr '\n' ' ' <<<"$revs_after")" >&2
+        docker compose stop \
+            || { log "WARN: Stoppen des Stacks fehlgeschlagen — bitte manuell pruefen."; incomplete=1; }
+        local restore="./scripts/restore.sh ${BACKUP_ARCHIVE:-./backups/<neuestes>.tar.gz}"
+        if [ "$SKIP_BACKUP" = 1 ]; then
+            local last=""; local f
+            for f in backups/adminhelper-backup-*.tar.gz; do [ -e "$f" ] && last="$f"; done
+            restore="./scripts/restore.sh ${last:-<backup>} (this run made no backup, --skip-backup; that is the last backup before it)"
+        fi
+        [ "$incomplete" = 0 ] || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. The database may already be migrated by ${TARGET_VER}. Back: ${restore}; forward again: ./scripts/update.sh --ref ${TARGET}"
+        die "$1. The database was already migrated by ${TARGET_VER} (or its revision is unreadable); the images of ${INSTALLED_LABEL} do not start on it. Runtime files and image pins are back on ${INSTALLED_LABEL}, the stack is stopped. Back: ${restore} (restores the state before the update and starts ${INSTALLED_LABEL}); forward again: ./scripts/update.sh --ref ${TARGET}"
+    fi
     stack_up >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \

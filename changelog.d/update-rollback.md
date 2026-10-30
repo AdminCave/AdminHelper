@@ -13,3 +13,8 @@
   Ziehen aller Images in die `.env`; ein Abbruch per Strg-C, `kill` oder eine getrennte SSH-Sitzung rollt zurueck.
   Zuvor konnte die `.env` danach auf der neuen Version stehen, mit den alten Containern, und `update.sh --check`
   meldete das Update als installiert. Nach einer getrennten Sitzung steht die Ausgabe in `backups/update-<zeit>.log`.
+- **update.sh: kein Rollback auf alte Images, wenn die Datenbank schon migriert ist:** Scheitert der Start nach dem
+  Update, vergleicht `update.sh` die Alembic-Revisionen beider Datenbanken mit dem Stand vor dem Update. Haben sie sich
+  geaendert oder sind sie nicht lesbar, setzt es Laufzeit-Dateien und Image-Pins zurueck, stoppt den Stack und nennt
+  `./scripts/restore.sh` mit dem Backup dieses Laufs sowie `./scripts/update.sh --ref <Ziel>`, statt die alten Images
+  auf der neuen Revision zu starten.

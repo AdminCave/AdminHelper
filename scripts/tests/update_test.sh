@@ -65,7 +65,10 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # up` (and creates the marker), AH_TEST_UP_FAIL=always every one;
 # AH_TEST_UP_LOCK_ONCE=<marker> takes the write right of .env at the first
 # `compose up` (and creates the marker); AH_TEST_DOCKER_LOG records every call,
-# one per line; AH_TEST_PULL_LOG records, per pull, SERVER_IMAGE from the
+# one per line; the Alembic query (`compose exec -T postgres psql`) answers
+# AH_TEST_REV_SERVER / AH_TEST_REV_MONITOR (default r1) for -d adminhelper /
+# adminhelper_monitor, after the install dir's first `compose up` the *_AFTER
+# value if set, and fails with AH_TEST_REV_FAIL=1; AH_TEST_PULL_LOG records, per pull, SERVER_IMAGE from the
 # environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
 # AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
 # and wait up to 30 s for <marker> ---
@@ -92,7 +95,17 @@ case "$*" in
       "      --wait-timeout int   Maximum duration in seconds to wait"; fi
     exit 0 ;;
   "compose pull"*) [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0 || { echo "stub: pull failed" >&2; exit 1; } ;;
+  "compose exec -T postgres psql "*)
+    [ "${AH_TEST_REV_FAIL:-}" != 1 ] || { echo "stub: psql failed" >&2; exit 1; }
+    case "$*" in
+      *" -d adminhelper_monitor "*) rev=${AH_TEST_REV_MONITOR:-r1} after=${AH_TEST_REV_MONITOR_AFTER:-} ;;
+      *) rev=${AH_TEST_REV_SERVER:-r1} after=${AH_TEST_REV_SERVER_AFTER:-} ;;
+    esac
+    [ -z "$after" ] || [ ! -e "$AH_TEST_STUB_STATE/up$(pwd | tr / _)" ] || rev=$after
+    echo "$rev"; exit 0 ;;
   "compose up"*)
+    # the revision query runs in a subshell of update.sh, so the marker is per install dir
+    : > "$AH_TEST_STUB_STATE/up$(pwd | tr / _)"
     [ "${AH_TEST_UP_FAIL:-}" != always ] || { echo "stub: up failed" >&2; exit 1; }
     if [ -n "${AH_TEST_UP_FAIL_ONCE:-}" ] && [ ! -e "$AH_TEST_UP_FAIL_ONCE" ]; then
       : > "$AH_TEST_UP_FAIL_ONCE"; echo "stub: up failed" >&2; exit 1
@@ -231,7 +244,7 @@ make_src() {
     cp "$REPO_ROOT/scripts/$s.sh" "$dir/scripts/$s.sh" 2>/dev/null || true
   done
   # stub the two scripts update.sh invokes, so the flow stays hermetic
-  printf '#!/usr/bin/env bash\nmkdir -p backups; : > backups/adminhelper-backup-test.tar.gz\n' > "$dir/scripts/backup.sh"
+  printf '#!/usr/bin/env bash\nmkdir -p backups; : > backups/adminhelper-backup-test.tar.gz\necho "[backup] OK -> backups/adminhelper-backup-test.tar.gz (0)"\n' > "$dir/scripts/backup.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/scripts/init-secrets.sh"
   chmod +x "$dir"/scripts/*.sh
   printf '# fixture-compose marker: %s\nservices: {}\n' "$ver" > "$dir/docker-compose.yml"
@@ -1416,6 +1429,58 @@ interrupt_update "$INST" "$WORK/inst44d.block" AH_TEST_UP_BLOCK TERM
     && grep -q 'FEHLER: interrupted by SIGTERM.*zurueckgerollt auf 0\.33\.0\.' "$INST.out"; } \
   && ok "SIGTERM during compose up: rolled back after the deploy and started again" \
   || bad "SIGTERM during compose up: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
+
+# ── 45. a rollback after the start follows the Alembic revisions ────────────
+# The new images migrate both databases at startup; the old ones do not start on
+# a newer revision. Unchanged revisions roll back and restart as before; changed
+# or unreadable ones put files and pins back, stop the stack and name restore.sh.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+# <inst> [env…] -- [args…]: an update to v0.34.0 whose health check fails; sets $rc, $out
+failed_update() {
+  local inst="$1" e=(); shift
+  while [ "$1" != -- ]; do e+=("$1"); shift; done; shift
+  : > "$inst.docker"
+  out=$( { [ ${#e[@]} -eq 0 ] || export "${e[@]}"; }
+    AH_TEST_HEALTH=1 AH_TEST_DOCKER_LOG="$inst.docker" run_update "$inst" --ref v0.34.0 "$@" 2>&1); rc=$?
+  echo "$out" | sed 's/^/    │ /'
+}
+# <label> <inst>: the migrated path, judged on $rc, $out and <inst>.docker
+assert_stopped() {
+  local msg; msg=$(grep 'FEHLER: ' <<<"$out")
+  { [ $rc -ne 0 ] && [ "$(grep -E '^compose (up -d|stop)' "$2.docker" | tr '\n' ';')" = "compose up -d --wait --wait-timeout 600;compose stop;" ] \
+      && grep -q 'marker: 0.33.0' "$2/docker-compose.yml" && pinned_on "$2" 0.33.0 \
+      && grep -q -- 'update\.sh --ref v0\.34\.0' <<<"$msg" && ! grep -q zurueckgerollt <<<"$msg"; } \
+    && ok "$1: files and pins on 0.33.0, stack stopped, not restarted" \
+    || bad "$1: rc=$rc docker $(tr '\n' ';' < "$2.docker") $msg"
+}
+INST="$WORK/inst45a"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" --
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: .*zurueckgerollt auf 0\.33\.0\.' <<<"$out" \
+    && [ "$(grep -E '^compose (up -d|stop)' "$INST.docker" | tr '\n' ';')" = "compose up -d --wait --wait-timeout 600;compose up -d --wait --wait-timeout 600;" ]; } \
+  && ok "unchanged revisions: rolled back and restarted" || bad "unchanged revisions: rc=$rc $(tr '\n' ';' < "$INST.docker")"
+INST="$WORK/inst45b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 --
+assert_stopped "server database migrated" "$INST"
+grep 'FEHLER: ' <<<"$out" | grep -qF './scripts/restore.sh backups/adminhelper-backup-test.tar.gz' \
+  && ok "server database migrated: names this run's backup for restore.sh" || bad "migrated: $out"
+INST="$WORK/inst45c"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_MONITOR_AFTER=r2 --
+assert_stopped "monitoring database migrated" "$INST"
+INST="$WORK/inst45d"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_FAIL=1 --
+assert_stopped "revisions unreadable" "$INST"
+INST="$WORK/inst45e"; make_install 0.33.0 "$SRC_OLD" "$INST"
+: > "$INST/backups/adminhelper-backup-2026-01-01_00-00-00.tar.gz"
+failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 -- --skip-backup
+assert_stopped "--skip-backup, database migrated" "$INST"
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ grep -q -- '--skip-backup' <<<"$msg" && ! grep -q 'adminhelper-backup-test' <<<"$msg" \
+    && grep -qF './scripts/restore.sh backups/adminhelper-backup-2026-01-01_00-00-00.tar.gz' <<<"$msg"; } \
+  && ok "--skip-backup: no archive of this run, names the last backup before it" || bad "--skip-backup migrated: $msg"
+INST="$WORK/inst45f"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_REV_FAIL=1 run_update "$INST" --ref v0.34.0 2>&1); rc=$?
+{ [ $rc -eq 0 ] && pinned_on "$INST" 0.34.0; } \
+  && ok "unreadable revisions do not stop a working update" || bad "unreadable revisions, working update: rc=$rc $out"
 
 echo
 echo "──────────────────────────────────────────"
