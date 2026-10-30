@@ -107,9 +107,10 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     kept = []
     for tunnel in tunnels:
         if tunnel.tunnel_type == "stcp" and not tunnel.secret_key:
-            logger.warning(
-                "FRP tunnel %s is stcp without a secret, left out of the config", tunnel.name
-            )
+            if _first_warning(tunnel.name, ("no secret",)):
+                logger.warning(
+                    "FRP tunnel %r is stcp without a secret, left out of the config", tunnel.name
+                )
             continue
         kept.append(tunnel)
     return kept
@@ -137,9 +138,11 @@ def _api_takes(extra: dict) -> bool:
     return True
 
 
-# The sync and the hash poll both run this for every host, every few seconds; a row that stays
-# refused would warn each time. One warning per (tunnel name, refused keys), forgotten when the
-# set grows past the bound (the next poll then warns once more, which is harmless).
+# The sync and the hash poll run the filters for every host, every few seconds; a row that
+# stays refused would warn each time. One warning per (name, reason): the reason of
+# without_refused_extra_config is its refused keys (bare TOML keys, no spaces), the other
+# filters use a phrase with a space, so the two never meet. Forgotten when the set grows past
+# the bound (the next poll then warns once more, which is harmless).
 _refused_warned: set[tuple[str, tuple[str, ...] | None]] = set()
 _REFUSED_WARNED_MAX = 1024
 
@@ -204,13 +207,15 @@ def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     kept = []
     for tunnel in tunnels:
         if tunnel.tunnel_type == "stcp" and not _is_port(tunnel.visitor_port):
-            logger.warning(
-                "FRP tunnel %s: visitor_port %r is outside %d-%d, left out of the visitor config",
-                tunnel.name,
-                tunnel.visitor_port,
-                PORT_MIN,
-                PORT_MAX,
-            )
+            if _first_warning(tunnel.name, ("visitor port",)):
+                logger.warning(
+                    "FRP tunnel %r: visitor_port %r is outside %d-%d, "
+                    "left out of the visitor config",
+                    tunnel.name,
+                    tunnel.visitor_port,
+                    PORT_MIN,
+                    PORT_MAX,
+                )
             continue
         kept.append(tunnel)
     return kept
@@ -222,8 +227,9 @@ _CHECKED_TUNNEL_FIELDS = ("name", "local_ip", "custom_domains", "secret_key")
 
 
 def without_refused_fields(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
-    """Leave out tunnels with a stored name, local_ip, custom_domains or secret_key the
-    API would refuse.
+    """Leave out tunnels with a stored name, local_ip, custom_domains or secret_key that
+    has characters the API refuses (_reject_toml_breakers; its other checks, such as the
+    minimum length of a secret, stay out of this).
 
     Rows from before the schema checked these fields are not migrated, and the generator
     writes them verbatim into frpc and visitor TOML. The warning names the field, never
@@ -237,11 +243,13 @@ def without_refused_fields(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
             except ValueError:
                 refused.append(field)
         if refused:
-            logger.warning(
-                "FRP tunnel %r: stored %s would be refused by the API, left out of the config",
-                tunnel.name,
-                ", ".join(refused),
-            )
+            if _first_warning(tunnel.name, ("refused fields", *refused)):
+                logger.warning(
+                    "FRP tunnel %r: stored %s has characters the API refuses, "
+                    "left out of the config",
+                    tunnel.name,
+                    ", ".join(refused),
+                )
             continue
         kept.append(tunnel)
     return kept
@@ -257,13 +265,44 @@ def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     kept = []
     for tunnel in tunnels:
         if not _is_port(tunnel.local_port):
-            logger.warning(
-                "FRP tunnel %s: local_port %r is outside %d-%d, left out of the frpc config",
-                tunnel.name,
-                tunnel.local_port,
-                PORT_MIN,
-                PORT_MAX,
-            )
+            if _first_warning(tunnel.name, ("local port",)):
+                logger.warning(
+                    "FRP tunnel %r: local_port %r is outside %d-%d, left out of the frpc config",
+                    tunnel.name,
+                    tunnel.local_port,
+                    PORT_MIN,
+                    PORT_MAX,
+                )
+            continue
+        kept.append(tunnel)
+    return kept
+
+
+def name_refused(name: str | None) -> bool:
+    """True for a server or user name whose characters the API refuses today
+    (_reject_toml_breakers). The schemas hold new names to it; rows from before stay as
+    they are, and the generators write these names verbatim as TOML strings (frpc user,
+    allowUsers, visitor user and serverUser)."""
+    try:
+        _reject_toml_breakers(name)
+    except ValueError:
+        return True
+    return False
+
+
+def without_refused_server_name(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out tunnels whose target server's name the API refuses: the visitor writes
+    it as serverUser. Only the visitor uses this; the frpc side checks its user itself."""
+    kept = []
+    for tunnel in tunnels:
+        server_name = tunnel.target_server.name if tunnel.target_server else ""
+        if name_refused(server_name):
+            if _first_warning(tunnel.name, ("server name",)):
+                logger.warning(
+                    "FRP tunnel %r: the name of its server has characters the API refuses, "
+                    "left out of the visitor config",
+                    tunnel.name,
+                )
             continue
         kept.append(tunnel)
     return kept
@@ -272,10 +311,10 @@ def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, stcp only with
     a secret, a local_port from 1 to 65535 (without_unreachable_local), and none whose
-    stored fields (without_refused_fields) or extra_config (without_refused_extra_config)
-    the API would refuse. Without an active tunnel, the text carries no frps
-    token; config-hash, config download and provisioning bundle all come from that
-    text, so they can't drift.
+    stored fields have characters the API refuses (without_refused_fields) or whose
+    extra_config the API would refuse (without_refused_extra_config). Without an active
+    tunnel, the text carries no frps token; config-hash, config download and provisioning
+    bundle all come from that text, so they can't drift.
 
     Sorted by name (unique): the callers query without ORDER BY, and Postgres
     returns rows in physical order, which an UPDATE of a column outside the config
@@ -410,14 +449,29 @@ def generate_frpc_toml(
         tunnels: All tunnels belonging to this host.
         frpc_user: The frpc user identifier (e.g. "k01-lnx1").
     """
-    active = active_tunnels(tunnels)
+    # A refused user can be written neither as `user` nor as the prefix frps gives the
+    # proxies; the host gets the text without a tunnel, as for one without an active tunnel.
+    user_refused = name_refused(frpc_user)
+    if user_refused and _first_warning(repr(frpc_user), ("frpc user",)):
+        logger.warning(
+            "FRP server %r: its name has characters the API refuses, "
+            "its frpc config carries no tunnel",
+            frpc_user,
+        )
+    allowed = [u for u in allow_users or [] if not name_refused(u)]
+    for refused_user in sorted(set(allow_users or []) - set(allowed)):
+        if _first_warning(repr(refused_user), ("allowUsers",)):
+            logger.warning(
+                "User %r has characters the API refuses, left out of allowUsers", refused_user
+            )
+    active = [] if user_refused else active_tunnels(tunnels)
     lines = [
         f'serverAddr = "{config.server_addr}"',
         f"serverPort = {_bind_port(config)}",
-        f'user = "{frpc_user}"',
-        "",
-        'auth.method = "token"',
     ]
+    if not user_refused:
+        lines.append(f'user = "{frpc_user}"')
+    lines.extend(["", 'auth.method = "token"'])
     if active:
         lines.append(f'auth.token = "{config.auth_token}"')
 
@@ -433,7 +487,7 @@ def generate_frpc_toml(
 
         if tunnel.tunnel_type == "stcp":
             lines.append(f'secretKey = "{tunnel.secret_key}"')
-            users = allow_users if allow_users else ["ops-admin"]
+            users = allowed or ["ops-admin"]
             user_list = ", ".join(f'"{u}"' for u in users)
             lines.append(f"allowUsers = [{user_list}]")
 
@@ -468,8 +522,11 @@ def generate_visitor_toml(
 
     Aggregates all STCP tunnels with a secret and a usable visitor port and emits
     one [[visitors]] block each. The TLS block points at the desktop's enrolled
-    identity (F2), which it supplies itself.
+    identity (F2), which it supplies itself. A visitor_user whose characters the API
+    refuses (name_refused) is a ValueError: the callers leave such a user out before.
     """
+    if name_refused(visitor_user):
+        raise ValueError("visitor user has characters the API refuses")
     lines = [
         f'serverAddr = "{config.server_addr}"',
         f"serverPort = {_bind_port(config)}",
@@ -481,9 +538,13 @@ def generate_visitor_toml(
 
     lines.extend(_tls_client_block())
 
-    stcp_tunnels = without_unbindable_visitor(
-        without_refused_fields(
-            without_secretless_stcp([t for t in tunnels if t.tunnel_type == "stcp" and t.enabled])
+    stcp_tunnels = without_refused_server_name(
+        without_unbindable_visitor(
+            without_refused_fields(
+                without_secretless_stcp(
+                    [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
+                )
+            )
         )
     )
     stcp_tunnels.sort(key=lambda t: t.visitor_port)
