@@ -24,6 +24,8 @@
 # 15: env.sanitized drops CA_ROOT_PASSPHRASE in every key form compose reads
 # (export, whitespace around the separator, ':' as the separator) and keeps a key
 # that only starts with it.
+# 15b: env.sanitized drops the passphrase behind another statement of the line and
+# keeps that statement, and a commented-out value over lines with all its lines.
 # 16: backup.sh, against the same stubs and a date stub that fixes the archive
 # name: a directory under that name fails the backup and takes no archive, and no
 # temp file stays; a symlink under it is replaced by the archive, its target
@@ -352,6 +354,20 @@ sanitized=$(bk_env "$WORK/bk/f")
 { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f/expected" "$sanitized"; } \
   && ok "env.sanitized drops the passphrase in every key form compose reads" \
   || bad "passphrase key forms: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# --- 15b. backup.sh: the passphrase behind another statement, commented over lines
+# Compose reads the rest of a line behind a closing quote as the next statement, so
+# the passphrase may stand there; the other statements of the line stay. A
+# commented-out value over lines goes with all its commented lines, and so does
+# one that opens on the line where the one before closes.
+mkdir -p "$WORK/bk/f2"
+printf 'A="x" CA_ROOT_PASSPHRASE=pp1\nA="x"CA_ROOT_PASSPHRASE="pp2" B=3\nB=\x27y\x27 CA_ROOT_PASSPHRASE="pp3a\npp3b" C=4\n#CA_ROOT_PASSPHRASE="pp4a\n#pp4b"\nE=5\nG="z" # CA_ROOT_PASSPHRASE="pp6a\n# pp6b"\nH=7\n#CA_ROOT_PASSPHRASE="pp7a\n#pp7b" CA_ROOT_PASSPHRASE="pp7c\n#pp7d"\nJ=8\n' > "$WORK/bk/run/.env"
+printf 'A="x"\nA="x" B=3\nB=\x27y\x27\n C=4\nE=5\nG="z"\nH=7\nJ=8\n' > "$WORK/bk/f2/expected"
+out=$(bk_run "$WORK/bk/f2" "$WORK/bk/f2/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f2")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f2/expected" "$sanitized"; } \
+  && ok "env.sanitized drops the passphrase behind another statement and commented over lines" \
+  || bad "passphrase statements: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
 
 # --- 16. backup.sh: the archive lands under its name as a file ───────────────
 # Without -T, mv takes a directory under the archive name (or a symlink to one)

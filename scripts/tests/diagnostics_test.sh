@@ -51,13 +51,26 @@
 #       the lines a value runs on to, to the end of the file without a closing
 #       quote; under the locale C.UTF-8, an NBSP in front of a value and at the end
 #       of an unquoted one is no part of it, one inside quotes is;
+#   (n) several statements on a line, as compose reads them: behind the closed quoted
+#       value of another key (also without a blank, behind export, behind the closing
+#       line of a value over several lines, behind any quote of a line) a key is
+#       found, in the logs and in sanitize_env, which cuts the line behind the first
+#       masked value; behind an unquoted value nothing is a statement, behind a '#'
+#       only sanitize_env masks;
+#       a commented-out value over several lines leaves out the commented-out lines it
+#       runs on to, up to its closing quote or the first line that is no comment;
 #   (m) main under umask 022: the bundle has mode 600, replaces a file under its
 #       name instead of writing into it, and leaves no temp file, also when tar
 #       fails, a link already holds the temp name (nothing is written through
 #       it), the temp path leads out of the output dir through a linked dir or the
 #       name turns into a dangling link just before the open (nothing is created); it
 #       stays 0600 in a dir with a default ACL; no value of the .env stands in the
-#       arguments of sed.
+#       arguments of sed;
+#   (o) the token forms are masked before .env values under 8 bytes, which are
+#       masked elsewhere too, and after longer ones, which go whole;
+#   (p) a mask program that fails (env_values, also for --mask-hosts) stops the run
+#       with its error and an error of its own, and no bundle is written; so does a
+#       rule file that cannot be written.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -706,7 +719,124 @@ else
     cmp -s "$tmp/l.log.exp" "$tmp/l.log.out" \
         || { echo "(l) log lines with NBSP under C.UTF-8: $(cat -v "$tmp/l.log.out" | tr '\n' ' ')" >&2; fail=1; }
 fi
+
+# --- (n) several statements on a line ------------------------------------------------
+# Behind a closing quote compose reads the rest of the line as the next statement
+# (compose-go dotenv: parse, getStatementStart); an unquoted value runs to the end of
+# its line, and a '#' starts a comment (compose skips it, sanitize_env masks an old
+# value there as in (k)). A commented-out value in quotes runs on over the
+# commented-out lines behind it in sanitize_env. A value over lines may begin behind
+# the closing quote of another one, of a masked key or of one no filter follows, and
+# behind a masked value that closes on its line (sanitize_env drops the rest of that
+# line, and the lines a quoted value there runs on to).
+env_n="$tmp/.env-statements"
+cat > "$env_n" <<'EOF'
+A="x" SECRET_KEY=st9second
+A='y'POSTGRES_PASSWORD="st9glued" B=1
+export A="x" MONITOR_API_KEY=st9export # note
+A=unq9 SMTP_PASSWORD=st9unquoted
+A="x" # ADMIN_PASSWORD=st9comment
+CA_DB_PASSWORD="st9first
+st9second" SERVER_DB_PASSWORD=st9behind
+A="st9open
+st9more" SMTP_PASSWORD=st9other
+A="x" DOMAIN=st9.example.com
+#CA_ROOT_PASSPHRASE="st9cfirst
+#st9csecond"
+B=keep9
+  # SMTP_USER="st9ufirst
+C=keep9
+SECRET_KEY="st9a1
+st9b1" SMTP_PASSWORD="st9c1
+st9d1leak"
+A="x
+y" SMTP_PASSWORD="st9c2
+st9d2leak"
+D=keep9
+SECRET_KEY="st9e" SMTP_PASSWORD="st9f1
+st9f2leak"
+SECRET_KEY="st9g1
+st9g2" SMTP_PASSWORD="st9h" SERVER_DB_PASSWORD="st9i1
+st9i2leak"
+#SECRET_KEY="st9j" SMTP_PASSWORD="st9k1
+#st9k2leak"
+DOMAIN="st9host.example.com" SMTP_PASSWORD="st9l1
+st9l2leak"
+E=keep9
+EOF
+log_n="$(cat <<'EOF'
+app: st9second st9glued st9export
+smtp: A=unq9 SMTP_PASSWORD=st9unquoted
+admin: st9comment
+db: st9first st9second st9behind st9other
+multi: st9b1 st9c1 st9d1leak st9c2 st9d2leak
+masked: st9e st9f1 st9f2leak st9h st9i1 st9i2leak st9l1 st9l2leak
+EOF
+)"
+exp_n="$(cat <<'EOF'
+app: <redacted> <redacted> <redacted>
+smtp: A=unq9 SMTP_PASSWORD=st9unquoted
+admin: st9comment
+db: <redacted> <redacted> <redacted> <redacted>
+multi: <redacted> <redacted> <redacted> <redacted> <redacted>
+masked: <redacted> <redacted> <redacted> <redacted> <redacted> <redacted> <redacted> <redacted>
+EOF
+)"
+sed_n="$tmp/redact-n.sed"
+build_redaction_sedfile "$env_n" "$sed_n"
+same "(n) statements behind a quoted value in the logs" "$exp_n" "$(printf '%s\n' "$log_n" | redact "$sed_n")" || fail=1
+exp_ns="$(cat <<'EOF'
+A="x" SECRET_KEY=<redacted>
+A='y'POSTGRES_PASSWORD=<redacted>
+export A="x" MONITOR_API_KEY=<redacted>
+A=unq9 SMTP_PASSWORD=st9unquoted
+A="x" # ADMIN_PASSWORD=<redacted>
+CA_DB_PASSWORD=<redacted>
+ SERVER_DB_PASSWORD=<redacted>
+A="st9open
+st9more" SMTP_PASSWORD=<redacted>
+A="x" DOMAIN=st9.example.com
+#CA_ROOT_PASSPHRASE=<redacted>
+B=keep9
+  # SMTP_USER=<redacted>
+C=keep9
+SECRET_KEY=<redacted>
+ SMTP_PASSWORD=<redacted>
+A="x
+y" SMTP_PASSWORD=<redacted>
+D=keep9
+SECRET_KEY=<redacted>
+SECRET_KEY=<redacted>
+ SMTP_PASSWORD=<redacted>
+#SECRET_KEY=<redacted>
+DOMAIN="st9host.example.com" SMTP_PASSWORD=<redacted>
+E=keep9
+EOF
+)"
+same "(n) statements behind a quoted value in sanitize_env" "$exp_ns" "$(sanitize_env "$env_n")" || fail=1
+same "(n) a host statement behind a quoted value in sanitize_env --mask-hosts" 'A="x" DOMAIN=<masked>' \
+    "$(sanitize_env "$env_n" 1 | grep '^A="x" DOMAIN')" || fail=1
+same "(n) a value over lines behind a masked host value in sanitize_env --mask-hosts" \
+    $'DOMAIN=<masked>\nE=keep9' "$(sanitize_env "$env_n" 1 | grep -A1 '^DOMAIN=')" || fail=1
 unset -f uname
+
+# --- (o) the token forms before the short values --------------------------------------
+# A value under 8 bytes may stand by chance inside a token; masked first, it would
+# leave rests of the token too short for the token rule. The token rules run before
+# the short values and after the long ones; the short value is masked elsewhere too. A
+# long value with a token form inside goes whole: the JWT rule first would leave its
+# beginning.
+cat > "$tmp/o.env" <<'EOF'
+SMTP_PASSWORD=ab12
+SECRET_KEY=longvalue1234
+SERVER_DB_PASSWORD=pre9x.eyJabcdefgh.eyJabcdefgh.sig1
+EOF
+build_redaction_sedfile "$tmp/o.env" "$tmp/o.sed"
+same "(o) token forms before short values" \
+    "$(printf '%s\n' 'Authorization: Bearer <redacted>' 'pw=<redacted> key=<redacted>' 'jwt <redacted-jwt>' \
+        'db=<redacted>')" \
+    "$(printf '%s\n' 'Authorization: Bearer xyzab12cdefghij' 'pw=ab12 key=longvalue1234' \
+        'jwt eyJab12cdef.eyJpayload12.sigab12' 'db=pre9x.eyJabcdefgh.eyJabcdefgh.sig1' | redact "$tmp/o.sed")" || fail=1
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
 # A docker stub on PATH answers what main asks; `compose ps` lands in report.txt,
@@ -978,6 +1108,58 @@ m_same || { echo "(m) a failing tar changed the earlier bundle" >&2; fail=1; }
 m_left="$(ls -A "$m/out")"
 [ "$m_left" = "${m_bundle##*/}" ] \
     || { echo "(m) a failing tar left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+
+# --- (p) a failing mask program stops the run -----------------------------------------
+# An awk stub fails where env_values reads the values of one key (-v key=<key>), every
+# other awk runs as usual. Without the values of that key the bundle would carry them
+# in the clear: the run ends with an error of its own and the error of awk, and writes
+# no bundle. SECRET_KEY: the rules for the logs; DOMAIN with --mask-hosts: the host rules.
+p="$tmp/p"
+mkdir -p "$p/bin" "$p/out-SECRET_KEY" "$p/out-DOMAIN"
+cp "$work/docker-compose.yml" "$work/.env" "$p/"
+p_awk="$(command -v awk)"
+for p_key in SECRET_KEY DOMAIN; do
+    cat > "$p/bin/awk" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+    [ "\$a" != "key=$p_key" ] || { echo "awk: stub fails for $p_key" >&2; exit 2; }
+done
+exec "$p_awk" "\$@"
+EOF
+    chmod +x "$p/bin/awk"
+    p_args=(--output "$p/out-$p_key")
+    [ "$p_key" != DOMAIN ] || p_args+=(--mask-hosts)
+    rc=0
+    ( cd "$p" && PATH="$p/bin:$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" "${p_args[@]}" ) \
+        > "$p/run.log" 2>&1 || rc=$?
+    p_log="$(cat "$p/run.log")"
+    p_left="$(ls -A "$p/out-$p_key")"
+    if [ "$rc" = 0 ] || [ -n "$p_left" ] || ! has '\[diagnostics\] ERROR' "$p_log" \
+        || ! has "stub fails for $p_key" "$p_log"; then
+        echo "(p) awk failing for $p_key: exit $rc, left: $(tr '\n' ' ' <<<"$p_left")" >&2
+        sed 's/^/    | /' "$p/run.log" >&2; fail=1
+    fi
+done
+# The rules must stop the run when they cannot be written, too: a cat stub fails where
+# it writes the token rules (cat without an argument, the here-document). main calls
+# build_redaction_sedfile as a command of its own; under || set -e would be off in it
+# and the run would go on without the rules.
+mkdir -p "$p/bin-cat" "$p/out-cat"
+p_cat="$(command -v cat)"
+cat > "$p/bin-cat/cat" <<EOF
+#!/usr/bin/env bash
+[ "\$#" != 0 ] || { echo "cat: stub fails" >&2; exit 1; }
+exec "$p_cat" "\$@"
+EOF
+chmod +x "$p/bin-cat/cat"
+rc=0
+( cd "$p" && PATH="$p/bin-cat:$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" \
+    --output "$p/out-cat" ) > "$p/run-cat.log" 2>&1 || rc=$?
+p_left="$(ls -A "$p/out-cat")"
+if [ "$rc" = 0 ] || [ -n "$p_left" ] || ! has 'cat: stub fails' "$(cat "$p/run-cat.log")"; then
+    echo "(p) rules that cannot be written: exit $rc, left: $(tr '\n' ' ' <<<"$p_left")" >&2
+    sed 's/^/    | /' "$p/run-cat.log" >&2; fail=1
+fi
 
 # --- (h) the switch in the usage ----------------------------------------------------
 # The usage line is the last line --help prints: a range that ends too early loses it,
