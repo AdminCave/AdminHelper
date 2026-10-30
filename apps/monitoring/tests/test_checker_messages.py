@@ -430,8 +430,10 @@ def test_push_checker_message_is_english(call, status, message):
 _PUBLIC = "http://93.184.216.34/"
 
 
-def _reply(status_code, text="", location=None):
+def _reply(status_code, text="", location=None, encoding=None):
     headers = {"location": location} if location else {}
+    if encoding:
+        headers["content-encoding"] = encoding
 
     def respond(_transport, request):
         # Streamed, as a real transport hands a body over: the HTTP checker reads the raw
@@ -512,6 +514,23 @@ PULL_CASES = [
         "critical",
         "Too many redirects (>5)",
         id="http-too-many-redirects",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _reply(302)),
+        "critical",
+        "Redirect without Location header",
+        id="http-redirect-without-location",
+    ),
+    pytest.param(
+        # Six layers is one over the cap; the check fails before a byte is inflated.
+        lambda mp: _http(
+            mp,
+            _reply(200, text="hello", encoding=", ".join(["gzip"] * 6)),
+            search_string="hello",
+        ),
+        "unknown",
+        "Error: Too many content encodings (>5)",
+        id="http-too-many-content-encodings",
     ),
     pytest.param(
         lambda mp: _http(mp, _reply(500), verify_ssl=False),
