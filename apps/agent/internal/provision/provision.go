@@ -343,6 +343,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 		return err
 	}
 	defer unlock()
+	enroll.RemoveStaleTemps(dir)
 	// An identity issued for another server is one this server never accepts (R-0283):
 	// drop it before asking, so a failed enrollment leaves the agent on its API key, as
 	// the best-effort enrollment promises (R-0312).

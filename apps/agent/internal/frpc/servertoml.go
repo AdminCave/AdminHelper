@@ -46,6 +46,18 @@ var serverValue = regexp.MustCompile(`^(?:` + strings.Join([]string{
 // a deeper key anyway; the bound keeps the work per key small however long the line is.
 const maxKeySegments = 32
 
+// maxTableKeys and maxKeys bound the key paths of one table and of the whole text: every key
+// and every table a dotted key opens. A tunnel from the generator has a few dozen, so the bounds
+// leave room for thousands of tunnels.
+const (
+	maxTableKeys = 4096
+	maxKeys      = 1 << 17
+)
+
+// maxQuotedKey bounds a key or table name as an error message quotes it: the log holds it on
+// every sync.
+const maxQuotedKey = 64
+
 // serverHead is a table head whose name may stand in an error message.
 var serverHead = regexp.MustCompile(`^\[\[?[A-Za-z0-9_.-]+\]\]?$`)
 
@@ -59,10 +71,15 @@ var serverHead = regexp.MustCompile(`^\[\[?[A-Za-z0-9_.-]+\]\]?$`)
 // line and key, never the value: a line may hold auth.token or a secretKey.
 func checkServerConfig(serverToml []byte) error {
 	root := keyTable{}
-	table, prefix := root, ""
+	table, prefix, total := root, "", 0
 	tlsHead, inProxies, rootTLS := false, false, false
-	for i, raw := range strings.Split(string(serverToml), "\n") {
-		n := i + 1
+	// Line by line instead of strings.Split: a slice of all lines would hold a header for every
+	// line of the text, however short.
+	rest, n := string(serverToml), 0
+	for more := true; more; {
+		var raw string
+		raw, rest, more = strings.Cut(rest, "\n")
+		n++
 		switch {
 		case !utf8.ValidString(raw):
 			return refuseLine(n, raw, "is not valid UTF-8")
@@ -92,7 +109,7 @@ func checkServerConfig(serverToml []byte) error {
 		case strings.HasPrefix(line, "["):
 			head := "a table head"
 			if serverHead.MatchString(line) {
-				head = "the table " + line
+				head = "the table " + quoteKey(line)
 			}
 			return refuse(n, head+"; only [transport.tls] and [[proxies]] are applied")
 		}
@@ -101,16 +118,16 @@ func checkServerConfig(serverToml []byte) error {
 		if !ok || !serverKey.MatchString(key) {
 			return refuse(n, "not a line of the form key = value with a bare or dotted key")
 		}
-		if !serverValue.MatchString(value) {
-			return refuse(n, fmt.Sprintf("the value of %s is not one the server writes", key))
-		}
 		path := prefix + key
 		if strings.Count(path, ".") >= maxKeySegments {
 			return refuse(n, fmt.Sprintf("a key with more than %d segments", maxKeySegments))
 		}
+		if !serverValue.MatchString(value) {
+			return refuse(n, fmt.Sprintf("the value of %s is not one the server writes", quoteKey(key)))
+		}
 		if !inProxies {
 			if !serverRootKeys[path] {
-				return refuse(n, fmt.Sprintf("%s is no key the server sets in the root", path))
+				return refuse(n, fmt.Sprintf("%s is no key the server sets in the root", quoteKey(path)))
 			}
 			if path == "auth.method" && value != `"token"` {
 				return refuse(n, `auth.method must be "token"`)
@@ -119,10 +136,18 @@ func checkServerConfig(serverToml []byte) error {
 				rootTLS = true
 			}
 		} else if first, _, _ := strings.Cut(path, "."); strings.EqualFold(first, "plugin") {
-			return refuse(n, fmt.Sprintf("%s is a plugin key; a proxy from the server carries no plugin", path))
+			return refuse(n, fmt.Sprintf("%s is a plugin key; a proxy from the server carries no plugin", quoteKey(path)))
 		}
+		before := len(table)
 		if !table.add(path) {
-			return refuse(n, fmt.Sprintf("%s is set twice, or as a value and a table at once", path))
+			return refuse(n, fmt.Sprintf("%s is set twice, or as a value and a table at once", quoteKey(path)))
+		}
+		total += len(table) - before
+		switch {
+		case len(table) > maxTableKeys:
+			return refuse(n, fmt.Sprintf("a table with more than %d keys", maxTableKeys))
+		case total > maxKeys:
+			return refuse(n, fmt.Sprintf("more than %d keys", maxKeys))
 		}
 	}
 	return nil
@@ -158,6 +183,15 @@ func (t keyTable) add(path string) bool {
 	return true
 }
 
+// quoteKey is key as an error message names it, cut after maxQuotedKey bytes. A key matched
+// serverKey before, so it is ASCII and the cut splits no rune.
+func quoteKey(key string) string {
+	if len(key) <= maxQuotedKey {
+		return key
+	}
+	return key[:maxQuotedKey] + "..."
+}
+
 // refuse is the error for line n of a server text out of the generator's form.
 func refuse(n int, why string) error {
 	return fmt.Errorf("the server's frpc.toml is not in the form the server writes, line %d: %s; not applied", n, why)
@@ -167,7 +201,7 @@ func refuse(n int, why string) error {
 func refuseLine(n int, line, why string) error {
 	subject := "the line"
 	if key, _, ok := strings.Cut(strings.Trim(line, " "), " = "); ok && serverKey.MatchString(key) {
-		subject = "the line of " + key
+		subject = "the line of " + quoteKey(key)
 	}
 	return refuse(n, subject+" "+why)
 }

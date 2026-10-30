@@ -92,4 +92,4 @@ if [ -f /etc/frp/frpc.toml ]; then
 fi
 echo "adminhelper-agent installiert. Timer ist aktiv (laeuft alle 5 Minuten)."
 echo "Einrichtung (Server + Monitor + FRP): sudo adminhelper-agent provision --url <ADMINHELPER_URL> --token-stdin --server-id <ID>  (Token danach einfuegen, Enter)"
-echo "Nur Monitoring (alternativ):          sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"
+echo "Nur Monitoring (alternativ):          sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key-stdin --server-id <ID>  (Key danach einfuegen, Enter)"
