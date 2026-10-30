@@ -300,6 +300,13 @@ else
     [ ! -e "$AH_APT_SOURCES_DIR/adminhelper.sources" ] && ok "no source file written" || bad "source written for a subkey pin"
 fi
 
+echo "── -h prints the header comment and no code"
+out=$(bash "$SCRIPT" -h 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q '^# Options:' <<<"$out" && grep -q 'no provisioning' <<<"$out"; } \
+    && ok "-h prints the options" || bad "-h: exit $rc, $(tail -2 <<<"$out")"
+! grep -qv '^#\|^$' <<<"$out" && ok "-h prints only comment lines" \
+    || bad "-h prints code: $(grep -v '^#\|^$' <<<"$out" | head -2)"
+
 echo ""
 echo "agent_install_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -47,11 +47,12 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # a stub that exits without reading kills install.sh's printf with SIGPIPE now and
 # then (exit 141 under pipefail). Only that branch reads — in the default branch
 # `cat` would hang on an inherited stdin. AH_TEST_DOCKER_LOG records every call,
-# one per line.
+# one per line; AH_TEST_DOCKER_ENV the ADMIN_PASSWORD each call inherited.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
+[ -z "${AH_TEST_DOCKER_ENV:-}" ] || printf '%s\n' "${ADMIN_PASSWORD-<unset>}" >> "$AH_TEST_DOCKER_ENV"
 case "$*" in
   *create_connection*) exit 0 ;;
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
@@ -344,6 +345,19 @@ err=$(cat "$WORK/err8g")
 { grep -q 'process list' <<<"$err" && grep -q -- '--admin-password-file' <<<"$err" && ! grep -q zz9 <<<"$err$out"; } \
   && ok "--admin-password warns on stderr and points to --admin-password-file, no value named" \
   || bad "--admin-password warning missing or names the value: $(tr '\n' ' ' <<<"$err")"
+# (h) an ADMIN_PASSWORD exported by the caller does not pass the password on to child processes
+new_inst inst8h; DENV="$WORK/docker8h.env"; rm -f "$WORK/admin.stdin" "$DENV"
+printf 'zz9pw-file8h\n' > "$INST/pw"
+out=$(cd "$INST" && ADMIN_PASSWORD=zz9pw-env AH_TEST_DOCKER_ENV="$DENV" bash "$INSTALL" --domain new.example \
+  --admin-password-file pw --yes 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "exported ADMIN_PASSWORD: exit 0" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "exported ADMIN_PASSWORD: exit $rc"; }
+[ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = zz9pw-file8h ] \
+  && ok "exported ADMIN_PASSWORD: the file's password reached create-admin" \
+  || bad "exported ADMIN_PASSWORD: create-admin got '$(cat "$WORK/admin.stdin" 2>/dev/null)'"
+{ [ -s "$DENV" ] && ! grep -q zz9 "$DENV"; } \
+  && ok "exported ADMIN_PASSWORD: no docker call inherits the password" \
+  || bad "docker calls inherited ADMIN_PASSWORD: $(sort -u "$DENV" 2>/dev/null | tr '\n' ' ')"
 
 # ── 9. the install directory is at most 0750, and a host account with a container UID is named ─
 INST="$WORK/inst9"; mkdir -p "$INST/scripts"; chmod 0755 "$INST"

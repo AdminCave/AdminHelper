@@ -121,7 +121,7 @@ while [ $# -gt 0 ]; do
         --gpg-fp) GPG_FP="${2:?}"; shift ;;
         --repo-port) REPO_PORT="${2:?}"; shift ;;
         --from-github) FROM_GITHUB=1 ;;
-        -h|--help) sed -n '6,44p' "$0"; exit 0 ;;
+        -h|--help) sed -n '6,/^$/p' "$0"; exit 0 ;;
         *) die "unknown option: $1" ;;
     esac
     shift
