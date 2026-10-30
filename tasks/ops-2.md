@@ -14,8 +14,10 @@ Für alle Tasks: Zeilenangaben `origin/main@76f331f0`, vor dem Schreiben neu gre
 CHANGELOG umlautfrei und neutral in `changelog.d/ops-2.md`. `security` zusätzlich bei T1, T2 und T3 (SEC).
 Einzelheiten der Fälle in der privaten Spec.
 
-### T1 — diagnostics.sh liest .env-Zeilen wie compose (R-0908)  [ ]
+### T1 — diagnostics.sh liest .env-Zeilen wie compose (R-0908)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, changelog.d/ops-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fbd63e92 2026-10-30T16:02:19+01:00
+Review: approve (.ah-out/review/ops-2/T1.verdict.json)
 Änderung: `env_values` (`diagnostics.sh:229-291`) und `sanitize_env` (`:314-358`) erkennen jede Zuweisung eines
 Schlüssels, die compose aus einer Zeile liest (`compose-go/dotenv/parser.go`), auch auskommentierte Werte über mehrere
 Zeilen. Tests zuerst rot: je Zeilenform ein Fall in `diagnostics_test.sh` (Masken-Regel und `env.sanitized`).
