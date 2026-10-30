@@ -948,3 +948,23 @@ func TestRunSucceedsWhenTheTimerCannotBeEnabled(t *testing.T) {
 		t.Errorf("timer enabled %d times, want 1", *calls)
 	}
 }
+
+// R-0385: a provisioning removes, under the identity lock, the staged copies an
+// interrupted renewal left, even when its enrollment fails afterwards.
+func TestProvisionRemovesStaleTemps(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	dir := config.AgentPkiDir()
+	storeIdentityOf(t, dir, "srv-1")
+	stale := filepath.Join(dir, "agent.crt.31.tmp")
+	if err := os.WriteFile(stale, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srv, port := issuerDown(t)
+
+	if err := runEnrollment(srv.URL, &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}, "", true); err == nil {
+		t.Fatal("erwartet Fehler, der Issuer antwortet 500")
+	}
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
+		t.Errorf("the stale staged file is still there (err %v)", err)
+	}
+}

@@ -355,10 +355,11 @@ Manual alternative (package from the [GitHub release](https://github.com/AdminCa
 sudo apt install ./adminhelper-agent_<version>_amd64.deb
 
 # Full provisioning in a single call (server API key + optional monitor + optional FRP);
-# --ca-fp (from the provisioning tab) verifies the first contact instead of TOFU:
+# --ca-fp (from the provisioning tab) verifies the first contact instead of TOFU;
+# --token-stdin keeps the token out of the process list (paste it, then Enter):
 sudo adminhelper-agent provision \
   --url https://<server> \
-  --token <PROVISION-TOKEN> \
+  --token-stdin \
   --server-id <SERVER-ID> \
   --ca-fp <SHA256-FROM-THE-TAB>
 
@@ -381,7 +382,7 @@ and installs, depending on the response:
 
 This means provisioning also works for servers **without** an FRP tunnel — up to v0.22.x
 the flow was coupled to FRP. Manual setups (e.g. monitoring only) still work
-via `adminhelper-agent monitor init --api-key ...`.
+via `adminhelper-agent monitor init --api-key-stdin ...`.
 
 **Agent subcommands:**
 

@@ -6,6 +6,7 @@ package frpc
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"strings"
@@ -159,6 +160,84 @@ func TestServerConfigRefusesKeysWithTooManySegments(t *testing.T) {
 	limit := strings.Repeat("b.", maxKeySegments-1) + "b"
 	if err := checkServerConfig([]byte(head + limit + " = 1\n")); err != nil {
 		t.Errorf("checkServerConfig(%d segments) = %v, want nil", maxKeySegments, err)
+	}
+}
+
+// A key with too many segments is refused as such even when its value is refused as well: the
+// value error would quote the key.
+func TestServerConfigChecksSegmentsBeforeTheValue(t *testing.T) {
+	const head = "serverAddr = \"203.0.113.10\"\n\n[[proxies]]\nname = \"ssh\"\n"
+	long := strings.Repeat("a.", 5000) + "a"
+	err := checkServerConfig([]byte(head + long + " = 'x'\n"))
+	if err == nil || !strings.Contains(err.Error(), "a key with more than") {
+		t.Errorf("checkServerConfig = %v, want the segments refused", err)
+	}
+}
+
+// An error quotes a key cut after maxQuotedKey bytes, so a long key does not fill the log on
+// every sync.
+func TestServerConfigErrorCutsTheKey(t *testing.T) {
+	long := strings.Repeat("k", 10000)
+	for name, text := range map[string]string{
+		"value":    "serverAddr = \"203.0.113.10\"\n[[proxies]]\n" + long + " = 'x'\n",
+		"root":     "serverAddr = \"203.0.113.10\"\n" + long + " = 1\n",
+		"plugin":   "[[proxies]]\nplugin." + long + " = 1\n",
+		"twice":    "[[proxies]]\n" + long + " = 1\n" + long + " = 2\n",
+		"the line": "[[proxies]]\n" + long + " = \"{{\"\n",
+		"head":     "[[proxies]]\n[" + long + "]\n",
+	} {
+		err := checkServerConfig([]byte(text))
+		if err == nil {
+			t.Errorf("%s: checkServerConfig = nil, want it refused", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), strings.Repeat("k", maxQuotedKey-len("plugin."))+"...") ||
+			strings.Contains(err.Error(), strings.Repeat("k", maxQuotedKey+1)) {
+			t.Errorf("%s: checkServerConfig = %.300q, want the key cut after %d bytes", name, err, maxQuotedKey)
+		}
+	}
+}
+
+// The keys of one table and of the whole text are bounded: past maxTableKeys in a table or
+// maxKeys in all, the text is refused; the tables a dotted key opens count. Up to the bounds it
+// passes.
+func TestServerConfigBoundsTheKeys(t *testing.T) {
+	const head = "serverAddr = \"203.0.113.10\"\n"
+	table := func(keys int, tag string) string {
+		var b strings.Builder
+		b.WriteString("\n[[proxies]]\n")
+		for i := range keys {
+			fmt.Fprintf(&b, "%s%d = 1\n", tag, i)
+		}
+		return b.String()
+	}
+	if err := checkServerConfig([]byte(head + table(maxTableKeys, "k"))); err != nil {
+		t.Errorf("a table of %d keys: %v, want nil", maxTableKeys, err)
+	}
+	err := checkServerConfig([]byte(head + table(maxTableKeys+1, "k")))
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("a table with more than %d keys", maxTableKeys)) {
+		t.Errorf("a table of %d keys: %v, want it refused", maxTableKeys+1, err)
+	}
+	// m.k<i> adds the key and, once, the table m.
+	dotted := strings.ReplaceAll(table(maxTableKeys, "m.k"), "m.k0 = 1\n", "")
+	if err := checkServerConfig([]byte(head + dotted + "m.k0 = 1\n")); err == nil {
+		t.Errorf("a table of %d keys and the table m: nil, want it refused", maxTableKeys)
+	}
+
+	var all strings.Builder
+	all.WriteString(head)
+	// serverAddr is the first of the maxKeys.
+	for range maxKeys/maxTableKeys - 1 {
+		all.WriteString(table(maxTableKeys, "k"))
+	}
+	all.WriteString(table(maxTableKeys-1, "k"))
+	if err := checkServerConfig([]byte(all.String())); err != nil {
+		t.Errorf("%d keys in all: %v, want nil", maxKeys, err)
+	}
+	all.WriteString(table(1, "k"))
+	err = checkServerConfig([]byte(all.String()))
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("more than %d keys", maxKeys)) {
+		t.Errorf("%d keys in all: %v, want it refused", maxKeys+1, err)
 	}
 }
 

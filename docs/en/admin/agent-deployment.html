@@ -148,7 +148,8 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code># Linux. The token is read from stdin (first line), not passed as an argument, so it
-# stays out of the process list: paste it after the call and press Enter.
+# stays out of the process list: paste it after the call and press Enter. On a
+# terminal the agent asks with "Provision token:" and does not show what you type.
 sudo adminhelper-agent provision \
   --url       https://srm.example.com \
   --token-stdin \
@@ -160,7 +161,8 @@ sudo adminhelper-agent provision \
     --url       https://srm.example.com `
     --token-stdin `
     --server-id SERVER_ID
-# Paste the token after the call and press Enter (stdin, not an argument)</code></pre>
+# Paste the token after the call and press Enter (stdin, not an argument);
+# after "Provision token:" nothing you type is shown</code></pre>
 
           <p>After provisioning the agent enables the <code>adminhelper-agent.timer</code> systemd unit (Linux). To provision, it calls <code>/api/servers/{id}/provision/activate</code> and receives, depending on the configuration, the server API key, the monitor key, <code>frpc.toml</code> and an enrollment token. If the host has an active FRP tunnel, the agent (Linux) writes <code>frpc.toml</code> and starts <code>frpc.service</code> for good (<code>systemctl enable --now</code>); a running frpc is restarted. Without an active tunnel the agent stops and disables <code>frpc.service</code> and removes <code>frpc.toml</code>, also one from an earlier provisioning. The token becomes invalid once redeemed.</p>
           <p><strong>mTLS enrollment (automatic):</strong> during provisioning the agent also fetches its own client certificate from the <code>ca-issuer</code> &mdash; an ECDSA key generated on-device (never leaves the host), CSR sent to the gateway's enroll plane on port <code>8444</code>. Cert + key are stored under <code>/etc/adminhelper/identity/</code> (key <code>0600</code>) and the internal root CA is pinned. The agent then presents this cert, valid for this server only, on all server pushes and auto-renews it at ~50&nbsp;% of its lifetime. <em>Best-effort:</em> if enrollment fails (e.g. port 8444 unreachable) the agent keeps working with the API key for now.</p>
@@ -183,7 +185,7 @@ sudo adminhelper-agent provision \
               <tr><td><code>run</code></td><td>Run FRPC sync + monitor push (without flag: continuous, every 5 minutes)</td><td><code>--once</code></td></tr>
               <tr><td><code>provision</code></td><td>Provision the server against AdminHelper (server API key + optional monitor + FRP)</td><td><code>--url</code>*, <code>--token</code>* or <code>--token-stdin</code>* (one of the two), <code>--server-id</code>*, <code>--ca-fp</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
               <tr><td><code>frpc sync</code></td><td>One-off config sync</td><td>—</td></tr>
-              <tr><td><code>monitor init</code></td><td>First-time setup of the monitor agent</td><td><code>--url</code>*, <code>--api-key</code>*, <code>--server-id</code>*, <code>--services</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
+              <tr><td><code>monitor init</code></td><td>First-time setup of the monitor agent</td><td><code>--url</code>*, <code>--api-key</code>* or <code>--api-key-stdin</code>* (one of the two), <code>--server-id</code>*, <code>--services</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
               <tr><td><code>monitor push</code></td><td>One-off metrics push</td><td>—</td></tr>
               <tr><td><code>service install</code></td><td>Register and start the OS service</td><td>—</td></tr>
               <tr><td><code>service uninstall</code></td><td>Deregister the OS service</td><td>—</td></tr>
