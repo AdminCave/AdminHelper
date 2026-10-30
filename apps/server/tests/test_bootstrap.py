@@ -257,6 +257,27 @@ def test_short_env_admin_password_falls_back_to_bootstrap(db_session, monkeypatc
         BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
 
 
+@pytest.mark.parametrize(("length", "created"), [(128, True), (129, False)])
+def test_overlong_env_admin_password_falls_back_to_bootstrap(
+    db_session, monkeypatch, length, created
+):
+    """R-0957: sign-in takes at most PASSWORD_MAX_LEN characters, so a longer
+    ADMIN_PASSWORD would create an admin who can never sign in."""
+    import app.main as m
+    from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
+    from app.modules.users.models import User
+
+    monkeypatch.setattr(m, "ADMIN_PASSWORD", "x" * length)
+    try:
+        m._ensure_admin(db_session)
+        admins = db_session.query(User).filter(User.username == "admin").count()
+        assert admins == (1 if created else 0)
+        assert BOOTSTRAP_TOKEN_FILE.exists() is not created
+    finally:
+        BOOTSTRAP_SETUP_FILE.unlink(missing_ok=True)
+        BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+
+
 def test_lifespan_survives_redis_outage_at_boot(monkeypatch):
     """4.68: Redis carries only the optional SSE push fan-out (rate-limit degrades to in-memory,
     SSE has a polling fallback). If stream_hub.start raises at boot (compose race, a Redis

@@ -36,8 +36,10 @@ Tests: Refresh ohne Zertifikat unter Enforce → `403` und eine Audit-Zeile `aut
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_web_session_max.py tests/test_cert_user_binding.py tests/test_identity_source.py tests/test_stream.py tests/test_auth.py tests/test_bootstrap.py tests/test_openapi_snapshot.py
 Doku: → T5
 
-### T3 — Server-Start: ADMIN_PASSWORD über 128 Zeichen wie zu kurzes (R-0957)  [ ]
+### T3 — Server-Start: ADMIN_PASSWORD über 128 Zeichen wie zu kurzes (R-0957)  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_bootstrap.py, changelog.d/kern-server-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @29d53b46 2026-10-30T11:58:21+01:00
+Review: approve (.ah-out/review/kern-server-3/T3.verdict.json)
 Beweis: Code-Lesung `apps/server/app/main.py:92` prüft nur `len(ADMIN_PASSWORD) < 8`; das Schema begrenzt auf `PASSWORD_MAX_LEN` (`users/schemas.py:16`) · Dedup-Key: bug:server:main.py:admin-password-max-len
 Änderung: Ein `ADMIN_PASSWORD` länger als `PASSWORD_MAX_LEN` wird wie ein zu kurzes ignoriert: Warnung, Bootstrap-Token, kein Admin. Der Test (erst rot): 129 Zeichen → kein Benutzer, Token geschrieben; 128 Zeichen → Admin angelegt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py
@@ -67,3 +69,5 @@ Abhängt von: T1
 
 ## Entscheidungen
 - 2026-10-30 Kevin: R-0959 mit kürzerer TTL für die Gateway-Namen (Empfehlung angenommen); R-0979 abgelehnt.
+- 2026-10-30 T4: Der Test prüft `to_dict` am Modell (Altzeilen mit `"a,b"`, `"{}"`, `"5"`, `"\"x\""` und einer gültigen Liste). Ein eigener API-Listentest entfällt: die Liste ruft für jede Zeile nur `to_dict` auf.
+- 2026-10-30 T6: Die Gateway-TTL ist eine Konstante (`_GATEWAY_TTL = 5.0`), keine Konfiguration (YAGNI).

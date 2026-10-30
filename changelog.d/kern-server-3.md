@@ -13,3 +13,7 @@
 - **Server: Anmeldung und Refresh ohne 500:** Ein sehr grosser `WEB_SESSION_MAX_HOURS` und ein Refresh-Token, der
   waehrend der Pruefung ablaeuft, fuehren nicht mehr zu einem Serverfehler. Der `403` ohne Client-Zertifikat an Login,
   Refresh und Bootstrap nennt keinen Scope mehr, den er nicht prueft.
+- **Server: zu langes `ADMIN_PASSWORD` wie zu kurzes:** Ein `ADMIN_PASSWORD` mit mehr als 128 Zeichen legt keinen
+  Admin mehr an, der sich nie anmelden koennte. Der Server warnt und schreibt stattdessen den Bootstrap-Token.
+- **Server: Verbindungen mit alten `tags`-Werten:** Ein gespeicherter `tags`-Wert, der keine JSON-Liste ist, wird als
+  leere Liste gelesen (mit einer Warnung im Log), statt die Liste der Verbindungen scheitern zu lassen.
