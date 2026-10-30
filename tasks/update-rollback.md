@@ -99,6 +99,15 @@ Beweis: Code-Lesung scripts/update.sh:588-618, apps/server/docker-entrypoint.sh:
 Dedup-Key: bug:ops:update.sh:rollback_after_deploy-migrated-db
 HEAD: 237b450a
 
+### T7 — update.sh: Rollback stoppt die migrierenden Dienste, bevor er die Revisionen liest  [ ]
+Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Änderung: Fund der Abschlussprüfung (reviewer branch @0a53f157, wichtig): `rollback_after_deploy` liest die Revisionen, während server, scheduler und monitoring des Ziels noch migrieren können (Signal während `up --wait`, abgelaufenes `--wait-timeout`, anderer Dienst vorher unhealthy); die offene Transaktion zeigt die alte Revision, `stack_up` startet die alten Images, und committet die Migration im Grace-Fenster, laufen sie auf der migrierten Datenbank. Vor `db_revisions` `docker compose stop server scheduler monitoring` (danach ist jede Migration committet oder zurückgerollt); scheitert der Stopp, gilt der Stand als unbekannt (Weg „gestoppt“). Tests: im Rollback-Weg steht `compose stop server scheduler monitoring` vor der zweiten Revisionsabfrage; ein scheiternder Stopp führt bei gleichen Revisionen in den Weg „gestoppt“. Zuerst rot.
+Verify: bash scripts/dev/verify.sh scripts --strict -- update_test doc_smoke_test
+Doku: keine (installation.html beschreibt das Verhalten schon: Rollback nur ohne Migration, sonst Stopp)
+Abhängt von: T6
+Beweis: reviewer branch.verdict.json @0a53f157, Code-Lesung scripts/update.sh:734, apps/server/docker-entrypoint.sh:44, apps/monitoring/docker-entrypoint.sh:58
+Dedup-Key: bug:ops:update.sh:rollback_after_deploy-revision-race
+
 ## Entscheidungen
 - 2026-10-29 T2: der Docker-Test zieht das gepinnte victoria-Image, wenn es lokal fehlt (sonst SKIP): so läuft er auch in der Server-CI, statt dort immer zu überspringen. Die Ausnahmeliste kennt nur `scheduler`; kommt mit db-roles der Einmal-Dienst `db-init` auf main, nimmt der Basis-Merge ihn mit Grund auf.
 - 2026-10-29 T4: Mindestversion Compose v2.17 für `up --wait-timeout` (`--wait` seit v2.1.1) aus den docker/compose Release Notes v2.17.0 (PR docker/compose#10276), per `gh api repos/docker/compose/releases` nachgelesen.
