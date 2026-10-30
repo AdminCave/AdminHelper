@@ -101,14 +101,19 @@ dump_db adminhelper_monitor
 
 # --- Secrets (passphrase stripped) -----------------------------------------
 if [ -f .env ]; then
-    # Drops every line that sets CA_ROOT_PASSPHRASE in a form compose reads, and
-    # the commented-out ones: before the key any mix of whitespace, '#', a BOM and
-    # the Unicode spaces compose skips (Go's unicode.IsSpace; their UTF-8 bytes in
-    # sp), then an optional "export"; '=' or ':' separates, whitespace (NEL and
-    # NBSP too) may stand before it. A quoted value that does not close on its line
-    # runs on to its closing quote, as in compose (a quote after an odd number of
-    # backslashes does not close it), and without one to the end of the file:
-    # those lines go too. CA_ROOT_PASSPHRASE_OLD and the like are other keys and
+    # Drops every statement that sets CA_ROOT_PASSPHRASE in a form compose reads,
+    # and the commented-out ones: before the key any mix of whitespace, '#', a BOM
+    # and the Unicode spaces compose skips (Go's unicode.IsSpace; their UTF-8 bytes
+    # in sp), then an optional "export"; '=' or ':' separates, whitespace (NEL and
+    # NBSP too) may stand before it. As in compose, a line holds statements one
+    # behind the other while each quoted value closes; the passphrase may stand
+    # there or behind any quote (that quote may close a value of another key begun
+    # on an earlier line), and the other statements of the line stay. A quoted
+    # value that does not close on its line runs on to its closing quote (a quote
+    # after an odd number of backslashes does not close it), and without one to the
+    # end of the file: those lines go too, in a comment the commented lines that
+    # follow. In a comment the line goes from its '#' on; a line left with nothing
+    # but whitespace goes. CA_ROOT_PASSPHRASE_OLD and the like are other keys and
     # stay. LC_ALL=C: awk reads bytes, so a NUL byte or a byte the caller's locale
     # cannot decode passes unchanged (grep took such a file for binary and left
     # lines out). Every other line is printed as is, the last with a newline; any
@@ -117,27 +122,103 @@ if [ -f .env ]; then
         BEGIN {
             sp = "([[:space:]]|\357\273\277|\302[\205\240]|\341\232\200|\342\200[\200\201\202\203\204\205\206\207\210\211\212\250\251\257]|\342\201\237|\343\200\200)"
             sep = "([[:space:]]|\302[\205\240])"
-            key = "^(" sp "|#)*(export" sp "+)?CA_ROOT_PASSPHRASE" sep "*[=:]"
+            kre = "^(export" sp "+)?CA_ROOT_PASSPHRASE" sep "*[=:]"
+            gre = "^(export" sp "+)?[^[:space:]=:#\"\047]+" sep "*[=:]"
+            lead = "^(" sp "|#)*"
+            cre = "^" sp "*#"
         }
-        function closes(s,    i, c, esc) {
+        # closeat(s, c): the place of the quote c that closes a quoted value in s, 0
+        # without one; a quote behind a backslash does not.
+        function closeat(s, c,    i, e, x) {
             for (i = 1; i <= length(s); i++) {
-                c = substr(s, i, 1)
-                if (esc) esc = 0
-                else if (c == "\\") esc = 1
-                else if (c == quote) return 1
+                x = substr(s, i, 1)
+                if (e) e = 0
+                else if (x == "\\") e = 1
+                else if (x == c) return i
             }
             return 0
         }
-        quote != "" { if (closes($0)) quote = ""; next }
-        match($0, key) {
-            if (index(substr($0, 1, RLENGTH), "#")) next
-            rest = substr($0, RLENGTH + 1)
-            sub("^" sep "*", "", rest)
-            quote = substr(rest, 1, 1)
-            if ((quote != "\"" && quote != "\047") || closes(substr(rest, 2))) quote = ""
+        # walk(s): where in s a statement of the passphrase begins, s read as statements
+        # one behind the other; a statement of another key is passed over when its
+        # value is quoted and closes, anything else ends s. 0 without one. A "#" starts
+        # a comment: wc = 1, the place is that of the "#", the statement wk bytes on.
+        function walk(s,    n, c, i) {
+            n = 0
+            while (1) {
+                match(s, lead)
+                if (i = index(substr(s, 1, RLENGTH), "#")) {
+                    wc = 1
+                    wk = RLENGTH - i + 1
+                    return substr(s, RLENGTH + 1) ~ kre ? n + i : 0
+                }
+                n += RLENGTH
+                s = substr(s, RLENGTH + 1)
+                wc = wk = 0
+                if (s ~ kre) return n + 1
+                if (!match(s, gre)) return 0
+                n += RLENGTH
+                s = substr(s, RLENGTH + 1)
+                match(s, "^" sep "*")
+                n += RLENGTH
+                s = substr(s, RLENGTH + 1)
+                c = substr(s, 1, 1)
+                if ((c != "\"" && c != "\047") || !(i = closeat(substr(s, 2), c))) return 0
+                n += i + 1
+                s = substr(s, i + 2)
+            }
+        }
+        # find(s): the first place where a statement of the passphrase begins in s, read
+        # from its start and behind each of its quotes (any quote may close the value
+        # of another key); 0 without one.
+        # fc and fk are wc and wk of that place.
+        function find(s,    p, i, c, w) {
+            if (p = walk(s)) { fc = wc; fk = wk }
+            for (i = 1; i <= length(s) && (!p || i < p); i++) {
+                c = substr(s, i, 1)
+                if ((c == "\"" || c == "\047") && (w = walk(substr(s, i + 1))) && (!p || i + w < p)) {
+                    p = i + w
+                    fc = wc
+                    fk = wk
+                }
+            }
+            return p
+        }
+        # cut(s): s without its passphrase statements; an unquoted value takes the rest
+        # of s, a quoted one that runs on past s leaves q set (and cmt in a comment).
+        # A comment that holds one goes from its "#" on.
+        function cut(s,    out, p, v, c, i) {
+            out = ""
+            while (p = find(s)) {
+                out = out substr(s, 1, p - 1)
+                v = substr(s, p + fk)
+                match(v, kre)
+                v = substr(v, RLENGTH + 1)
+                sub("^" sep "*", "", v)
+                c = substr(v, 1, 1)
+                if (c != "\"" && c != "\047") return out
+                if (!(i = closeat(substr(v, 2), c))) { q = c; cmt = fc; return out }
+                if (fc) return out
+                s = substr(v, i + 2)
+            }
+            return out s
+        }
+        # keep(s): what is left of a line, unless only whitespace is.
+        function keep(s) {
+            if (s ~ ("^" sp "*$")) return
+            sub("(" sp ")+$", "", s)
+            print s
+        }
+        q != "" && cmt && $0 ~ cre { if (i = closeat($0, q)) { q = ""; cut(substr($0, i + 1)); cmt = 1 }; next }
+        q != "" && cmt { q = "" }
+        q != "" { if (i = closeat($0, q)) { q = ""; keep(cut(substr($0, i + 1))) }; next }
+        $0 ~ cre {
+            match($0, lead)
+            s = substr($0, RLENGTH + 1)
+            if (cut(s) == s) print
+            else cmt = 1
             next
         }
-        { print }
+        { cmt = 0; o = cut($0); if (o == $0) print; else keep(o) }
     ' .env > "$STAGE/env.sanitized" \
         || { echo "[backup] ERROR: could not copy .env without CA_ROOT_PASSPHRASE — backup aborted." >&2; exit 1; }
     echo "[backup] .env gesichert (CA_ROOT_PASSPHRASE entfernt — getrennt aufbewahren!)"
