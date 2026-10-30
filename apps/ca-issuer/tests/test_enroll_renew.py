@@ -644,6 +644,11 @@ def test_an_unrecorded_certificate_from_before_the_register_is_taken_over(
     line = store.line_of(_fp(old))
     assert (line.legacy, line.kind, line.subject_id) == (True, kind, "old-device")
     assert store.line_of(_fp(r.json()["cert"])).line_id == line.line_id
+    # The successor's lifetime follows the kind read from the taken-over certificate.
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    want = pki.LEAF_DAYS_BROWSER if kind == "browser" else pki.LEAF_DAYS_NATIVE
+    assert abs(span.days - want) <= 1
 
 
 def test_an_unrecorded_certificate_is_refused_once_the_transition_ends(register_client):
@@ -695,7 +700,7 @@ def test_a_deprovisioning_while_signing_refuses_the_renewal(client):
     current = CertRecord.of(_leaf(pem))
     successor = _leaf(_enroll(client, "agent-12b", "tunnel"))
 
-    def sign():
+    def sign(_kind):
         store.deprovision("agent-12", "tunnel", at=current.not_before)
         return successor, {}
 
@@ -764,7 +769,7 @@ def _taken_over_store() -> tuple[InMemoryTokenStore, CertRecord]:
 def test_a_failed_signing_takes_nothing_over():
     store, current = _taken_over_store()
 
-    def sign():
+    def sign(_kind):
         raise RuntimeError("signing failed")
 
     with pytest.raises(RuntimeError):
@@ -776,7 +781,7 @@ def test_a_renewal_refused_after_signing_takes_nothing_over():
     store, current = _taken_over_store()
     successor = _leaf(_self_signed_leaf("old-device", "tunnel"))
 
-    def sign():
+    def sign(_kind):
         store.deprovision("old-device", "tunnel", at=current.not_before)
         return successor, {}
 
@@ -791,7 +796,7 @@ def test_a_successful_renewal_takes_the_certificate_over():
     successor = _leaf(_self_signed_leaf("old-device", "tunnel"))
 
     response = store.renew(
-        current, "old-device", "tunnel", "agent", lambda: (successor, {"a": "b"})
+        current, "old-device", "tunnel", "agent", lambda _kind: (successor, {"a": "b"})
     )
     assert response == {"a": "b"}
     line = store.line_of(current.fingerprint)
@@ -809,9 +814,9 @@ def test_of_two_renewals_taking_one_certificate_over_the_later_is_refused():
     earlier = _leaf(_self_signed_leaf("old-device", "tunnel"))
     later = _leaf(_self_signed_leaf("old-device", "tunnel"))
 
-    def sign():
+    def sign(_kind):
         # Another renewal of the same certificate completes while this one signs.
-        store.renew(current, "old-device", "tunnel", "agent", lambda: (earlier, {}))
+        store.renew(current, "old-device", "tunnel", "agent", lambda _kind: (earlier, {}))
         return later, {}
 
     with pytest.raises(RenewalRefused):
@@ -919,6 +924,25 @@ def test_a_short_native_leaf_renews_at_the_full_native_lifetime(client, monkeypa
     new = _leaf(r.json()["cert"])
     span = new.not_valid_after_utc - new.not_valid_before_utc
     assert abs(span.days - pki.LEAF_DAYS_NATIVE) <= 1
+
+
+def test_a_short_browser_leaf_renews_at_the_full_browser_lifetime(register_client, monkeypatch):
+    # A browser leaf cut to native length or below (sign_leaf before its intermediate's
+    # end) is still a browser leaf: the register's line says so, not the span.
+    with monkeypatch.context() as m:
+        m.setattr(pki, "LEAF_DAYS_BROWSER", 30)
+        old_pem = _enroll_pem(
+            register_client, "b1", EnrollmentGrant("admin-b", "access", browser=True)
+        )
+    old = _leaf(old_pem)
+    assert abs((old.not_valid_after_utc - old.not_valid_before_utc).days - 30) <= 1
+
+    r = _renew(register_client, old_pem)
+
+    assert r.status_code == 200, r.text
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    assert abs(span.days - pki.LEAF_DAYS_BROWSER) <= 1
 
 
 def test_an_intermediate_near_its_end_warns_once_a_utc_day(client, monkeypatch, caplog):

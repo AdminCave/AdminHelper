@@ -22,15 +22,19 @@ import datetime
 import ipaddress
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
+
+_T = TypeVar("_T")
 
 logger = logging.getLogger("ca-issuer.storage")
 
@@ -111,8 +115,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     on later boots only the intermediates are loaded — the root stays cold.
 
     Every boot then checks what it loaded and raises RuntimeError (file, scope,
-    reason) unless root.crt is self-signed and valid now and each intermediate is
-    signed by it, valid now, matches its key and has the chain [intermediate, root].
+    reason) unless every file is readable, root.crt is self-signed and valid now and each
+    intermediate is one of its scope under it (pki.intermediate_problem), valid now,
+    matches its key and has the chain [intermediate, root].
     A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING. What
     concerns an intermediate's end (abort or WARNING) ends with ROTATE_HINT, the abort
     for one not valid yet with CLOCK_HINT.
@@ -166,7 +171,7 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     # Checked on every boot, the first included: an intermediate past its end, from another
     # root or beside a foreign key or chain would otherwise sign leaves no client accepts.
     now = pki._now()
-    root = pki.cert_from_pem(root_crt.read_bytes())
+    root = _read_pem(root_crt, pki.cert_from_pem, "a PEM certificate")
     if problem := _signature_problem(root, root):
         raise _invalid_hierarchy(f"{root_crt}: the root certificate is not self-signed ({problem})")
     if problem := _validity_problem(root, now):
@@ -177,13 +182,17 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
         cert_path = pki_dir / f"{scope}.crt"
         key_path = pki_dir / f"{scope}.key"
         chain_path = pki_dir / f"{scope}-chain.pem"
-        cert = pki.cert_from_pem(cert_path.read_bytes())
-        key = pki.key_from_pem(key_path.read_bytes())
+        cert = _read_pem(cert_path, pki.cert_from_pem, "a PEM certificate", scope)
+        key = _read_pem(key_path, pki.key_from_pem, "a PEM EC private key", scope)
         chain = chain_path.read_bytes()
         if problem := _signature_problem(cert, root):
             raise _invalid_hierarchy(
                 f"scope {scope!r}, {cert_path}: not signed by {root_crt.name} ({problem})"
             )
+        # The signature alone would let another scope's intermediate (with its own key and
+        # chain) or a CA that may sign CAs pass as this scope's.
+        if problem := pki.intermediate_problem(cert, scope, root):
+            raise _invalid_hierarchy(f"scope {scope!r}, {cert_path}: {problem}")
         if problem := _validity_problem(cert, now):
             hint = ROTATE_HINT if now >= cert.not_valid_after_utc else CLOCK_HINT
             raise _invalid_hierarchy(
@@ -217,6 +226,30 @@ def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
     # The hint goes last, without a full stop, so the command copies off the line as is.
     message = f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it"
     return RuntimeError(f"{message}; {hint}" if hint else f"{message}.")
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Replace `path` by `data` atomically: a reader (nginx, frps) never sees a half
+    file, and a failed write leaves the old one in place."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with tmp.open("wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _read_pem(path: Path, load: Callable[[bytes], _T], what: str, scope: str = "") -> _T:
+    try:
+        return load(path.read_bytes())
+    # TypeError: an encrypted key; UnsupportedAlgorithm: a curve or key type cryptography lacks.
+    except (ValueError, TypeError, UnsupportedAlgorithm) as exc:
+        where = f"scope {scope!r}, {path}" if scope else str(path)
+        raise _invalid_hierarchy(f"{where}: not {what} ({exc})") from exc
 
 
 def _load_retired(
@@ -363,6 +396,20 @@ def _presents_after_leaf(fullchain_path: Path, chain_pem: bytes) -> bool:
     return _chain_is(chain_pem, certs[1:])
 
 
+def _names_are(
+    fullchain_path: Path, dns_names: tuple[str, ...], ip_addresses: tuple[str, ...]
+) -> bool:
+    """Whether the leaf in fullchain_path names exactly dns_names and ip_addresses, in any order."""
+    try:
+        leaf = x509.load_pem_x509_certificate(fullchain_path.read_bytes())
+        san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except (OSError, ValueError, x509.ExtensionNotFound):
+        return False
+    return set(san.get_values_for_type(x509.DNSName)) == set(dns_names) and set(
+        san.get_values_for_type(x509.IPAddress)
+    ) == {ipaddress.ip_address(ip) for ip in ip_addresses}
+
+
 def _holds_key(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> bool:
     """Whether `key` is the private half of `cert`'s public key."""
     spki = serialization.PublicFormat.SubjectPublicKeyInfo
@@ -389,8 +436,9 @@ def _provision_server_material(
     Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
     the leaf is kept across restarts but re-minted once past half its life (F4) so
     it never expires under a long-running stack, once the current intermediate
-    did not sign it (the first boot after a rotation), or once the file does not
-    present what follows the leaf now (a fullchain from before send_root)."""
+    did not sign it (the first boot after a rotation), once the file does not
+    present what follows the leaf now (a fullchain from before send_root), or once
+    its names differ from primary + extra_sans (a changed DOMAIN or EXTRA_SANS)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Trust bundle = the signing intermediate's chain (root already in it) and its
     # retired intermediates, plus any extra trust intermediates (e.g. frps also
@@ -402,7 +450,7 @@ def _provision_server_material(
     for extra in extra_trust:
         trusted += [extra.cert, *extra.retired]
     bundle = inter.chain + pki.chain_pem(*trusted)
-    (out_dir / bundle_name).write_bytes(bundle)
+    _write_atomic(out_dir / bundle_name, bundle)
 
     cert_path = out_dir / cert_name
     key_path = out_dir / key_name
@@ -419,6 +467,9 @@ def _provision_server_material(
     # And require the certificates after the leaf to be `presented`: a gateway fullchain from
     # before the root went along would otherwise fail a `--ca-fp` pinned on the root until half
     # the leaf's life.
+    # And require the leaf to name what DOMAIN and EXTRA_SANS name now: a changed name would
+    # otherwise reach the leaf only after half its life (R-0880).
+    dns_names, ip_addresses = _classify_sans(primary, extra_sans)
     if (
         cert_path.exists()
         and key_path.exists()
@@ -426,10 +477,10 @@ def _provision_server_material(
         and _pair_matches(cert_path, key_path)
         and _leaf_signed_by(cert_path, inter.cert)
         and _presents_after_leaf(cert_path, presented)
+        and _names_are(cert_path, dns_names, ip_addresses)
     ):
         return
 
-    dns_names, ip_addresses = _classify_sans(primary, extra_sans)
     leaf, leaf_key = pki.build_server_leaf(inter.cert, inter.key, primary, dns_names, ip_addresses)
     # fullchain = leaf + `presented` (what the server sends on the wire).
     cert_path.write_bytes(pki.cert_to_pem(leaf) + presented)
