@@ -10,8 +10,10 @@ Heavy: linux-full — Server-API (FRP-Generate- und Sync-Routen)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — FRP-Generator prüft Server- und Nutzernamen (R-0972)  [ ]
+### T1 — FRP-Generator prüft Server- und Nutzernamen (R-0972)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_toml_roundtrip.py, apps/server/tests/test_frp_permissions.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5c44b226 2026-10-30T14:46:39+01:00
+Review: approve (.ah-out/review/kern-frp-2/T1.verdict.json)
 Änderung: Namen mit Zeichen, die `_reject_toml_breakers` ablehnt, landen in keiner TOML (Spec, Ziel 1): frpc-`user` → Text ohne Tunnel und ohne `user`-Zeile, Route 404, Bulk-ZIP ohne den Server; `allowUsers` ohne den Namen; Visitor ohne Tunnel des Zielservers; abgelehnter Visitor-Nutzer → 404 bzw. kein Eintrag. Tests je Fall.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_toml_roundtrip.py tests/test_frp_permissions.py
 Doku: → T3

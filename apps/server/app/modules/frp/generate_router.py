@@ -19,8 +19,10 @@ from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
+    name_refused,
     without_refused_extra_config,
     without_refused_fields,
+    without_refused_server_name,
     without_secretless_stcp,
     without_unbindable_visitor,
     without_unreachable_local,
@@ -82,6 +84,9 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    # A name the API refuses gets no tunnel from the generator (generate_frpc_toml).
+    if name_refused(server.name):
+        raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
 
     # Left out before the check, the same set the generator writes (active_tunnels): a
     # server whose tunnels all lack a usable secret or local_port, or carry a stored value
@@ -125,15 +130,18 @@ def gen_visitor_toml(
         if not user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    tunnels = without_unbindable_visitor(
-        without_refused_fields(without_secretless_stcp(_visible_stcp_tunnels(db, config, user)))
+    tunnels = without_refused_server_name(
+        without_unbindable_visitor(
+            without_refused_fields(without_secretless_stcp(_visible_stcp_tunnels(db, config, user)))
+        )
     )
     # The visitor TOML embeds the shared frps auth token; without visible STCP
     # tunnels the user has no legitimate reason for it, so refuse rather than hand
     # the global secret to any authenticated (non-admin, server-less) user (3.33).
     # Tunnels without a secret or a usable visitor port, or with a stored field the API
-    # would refuse, count as none: the generator would leave them out.
-    if not tunnels:
+    # would refuse, count as none: the generator would leave them out. So does a user
+    # whose name the API refuses: the generator cannot write it.
+    if not tunnels or name_refused(user.username):
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
     toml = generate_visitor_toml(config, tunnels, user.username)
@@ -154,14 +162,16 @@ def gen_visitor_bundle(
     empty for backward compatibility with the desktop's response shape."""
     config = _resolve_config(db, config_id)
 
-    tunnels = without_unbindable_visitor(
-        without_refused_fields(
-            without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
+    tunnels = without_refused_server_name(
+        without_unbindable_visitor(
+            without_refused_fields(
+                without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
+            )
         )
     )
     # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
-    # visible, usable STCP tunnels (3.33).
-    if not tunnels:
+    # visible, usable STCP tunnels (3.33), nor to one the generator cannot name.
+    if not tunnels or name_refused(current_user.username):
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
     toml = generate_visitor_toml(config, tunnels, current_user.username)
 
@@ -212,7 +222,8 @@ def gen_bulk_zip(
 
         for server_id, tunnels in by_server.items():
             server = servers_by_id.get(server_id)
-            if not server:
+            # A refused name gets no tunnel (generate_frpc_toml) and is no safe path either.
+            if not server or name_refused(server.name):
                 continue
             allow_users = get_allow_users(db, server_id)
             frpc = generate_frpc_toml(config, tunnels, server.name, allow_users)
@@ -221,10 +232,14 @@ def gen_bulk_zip(
         # Once as well, after the frpc.toml files: a tunnel without a usable visitor port
         # keeps its proxy above, no visitor TOML carries it, and it is warned about once,
         # not per user; a user whose tunnels all lack one gets no visitor TOML.
-        stcp_tunnels = without_unbindable_visitor(
-            [t for t in all_tunnels if t.tunnel_type == "stcp"]
+        stcp_tunnels = without_refused_server_name(
+            without_unbindable_visitor([t for t in all_tunnels if t.tunnel_type == "stcp"])
         )
-        users_with_servers = db.query(User).filter(User.servers.any()).all()
+        users_with_servers = [
+            u
+            for u in db.query(User).filter(User.servers.any()).all()
+            if not name_refused(u.username)
+        ]
         if users_with_servers:
             for user in users_with_servers:
                 u_server_ids = {s.id for s in user.servers}

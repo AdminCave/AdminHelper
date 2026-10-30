@@ -485,3 +485,71 @@ class TestTunnelsWithoutVisitorPort:
             if "a-ssh" in r.getMessage() and "visitor_port" in r.getMessage()
         ]
         assert len(hits) == 1, [r.getMessage() for r in hits]
+
+
+class TestNamesTheApiRefuses:
+    """A server or user name stored before the schema check (an import, an old row) is
+    written verbatim into TOML strings by the generators. Such a name is left out, and a
+    route that would have nothing else to hand out answers like one without tunnels."""
+
+    REFUSED = 'evil"name'
+
+    @staticmethod
+    def _rename_server(db, sid: str, name: str) -> None:
+        db.get(Server, sid).name = name
+        db.commit()
+
+    def test_frpc_toml_for_a_refused_server_name_is_404(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        self._rename_server(db_session, "srv-a", self.REFUSED)
+        r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=_login(test_client))
+        assert r.status_code == 404, r.text
+        assert "super-secret" not in r.text and "secret-frps-auth" not in r.text
+
+    def test_visitor_routes_leave_out_a_tunnel_of_a_refused_server_name(
+        self, db_session, admin_user, two_servers_with_tunnels
+    ):
+        self._rename_server(db_session, "srv-a", self.REFUSED)
+        bundle = gen_visitor_bundle(config_id=None, db=db_session, current_user=admin_user)
+        assert "a-ssh" not in bundle["toml"] and self.REFUSED not in bundle["toml"]
+        assert "b-ssh" in bundle["toml"]
+        toml = gen_visitor_toml(
+            config_id=None, user_id=None, db=db_session, current_user=admin_user
+        ).body.decode()
+        assert "a-ssh" not in toml and "b-ssh" in toml
+
+    def test_visitor_routes_refuse_a_user_with_a_refused_name(
+        self, db_session, normal_user, two_servers_with_tunnels
+    ):
+        normal_user.servers.append(db_session.get(Server, "srv-a"))
+        normal_user.username = self.REFUSED
+        db_session.commit()
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_toml(config_id=None, user_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+
+    def test_bulk_zip_skips_refused_server_and_user_names(
+        self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels
+    ):
+        import io
+        import tomllib
+        import zipfile
+
+        normal_user.servers.append(db_session.get(Server, "srv-b"))
+        normal_user.username = 'eve"'
+        db_session.commit()
+        self._rename_server(db_session, "srv-a", self.REFUSED)
+        h = _login(test_client)
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=h)
+        assert r.status_code == 200, r.text
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = zf.namelist()
+        assert "clients/serverB/frpc.toml" in names, names
+        assert not any(self.REFUSED in n or "eve" in n for n in names), names
+        for n in names:
+            tomllib.loads(zf.read(n).decode())  # every file still parses
+        assert all(self.REFUSED not in zf.read(n).decode() for n in names)
