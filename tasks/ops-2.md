@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-2 — Task-Ledger
-Status: geplant · Branch: feature/ops-2 · Review: pro Task
+Status: aktiv · Branch: feature/ops-2 · Review: pro Task
 Spec: docs/features/ops-2.md (Roadmap R-0908, R-0910, R-0909)
 Heavy: none — nur Ops-Skripte mit hermetischen Tests (Docker-Stub), kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
