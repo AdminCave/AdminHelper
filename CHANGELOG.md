@@ -201,7 +201,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Host und die Namen des Zertifikats. Bisher nahm der Erstkontakt das Zertifikat an, loeste den Token ein und meldete
   „OK: Provisioning abgeschlossen.“, danach scheiterte jeder Lauf an der Hostnamen-Pruefung. Das betrifft auch Befehle
   aus dem Provisionierungs-Tab eines Desktops, der ueber eine IP-Adresse verbunden ist, die das Zertifikat nicht nennt
-  (eine IP-Adresse nennt es nur, wenn sie beim Ausstellen in `EXTRA_SANS` des Servers stand). Doku: Agent-Deployment
+  (eine IP-Adresse nennt es nur, wenn sie `127.0.0.1` ist, dem `DOMAIN` des Servers entspricht oder beim Ausstellen in `EXTRA_SANS` stand). Doku: Agent-Deployment
   (DE+EN).
 - **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
   Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
