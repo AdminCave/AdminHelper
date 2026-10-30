@@ -34,8 +34,18 @@ Doku: → T3
 Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, changelog.d/klein-ref-smtp-2.md
 Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2ccfc7c6 2026-10-30T08:39:29+01:00
 Review: am Ende (Branch-Review)
-Änderung: die Hinweiszeilen in `pinIfBlindInsecure` nennen den Vergleich (`openssl x509 -noout -fingerprint -sha256` am Server- oder Gateway-Zertifikat, Ziffern ohne Doppelpunkte und Groß-/Kleinschreibung) und `--ca-fp` als verifizierten Erstkontakt, ohne den nicht vorhandenen „im Server angezeigten Fingerprint“. Ein Test fängt die Ausgabe von `pinIfBlindInsecure` mit gültigem PEM ab und prüft den neuen Text und das Fehlen der alten Aussage. Das Fragment `changelog.d/klein-ref-smtp-2.md` (Fixed) nennt beide Änderungen (Hub/Monitoring und Agent).
+Änderung: die Hinweiszeilen in `pinIfBlindInsecure` nennen den Vergleich (`openssl x509 -noout -fingerprint -sha256` am Server- oder Gateway-Zertifikat, Ziffern ohne Doppelpunkte und Groß-/Kleinschreibung) und `--ca-fp` als verifizierten Erstkontakt, ohne den nicht vorhandenen „im Server angezeigten Fingerprint“. Ein Test prüft den Helfer `insecureFingerprintNotice` auf den neuen Text und das Fehlen der alten Aussage. Das Fragment `changelog.d/klein-ref-smtp-2.md` (Fixed) nennt beide Änderungen (Hub/Monitoring und Agent).
 Beweis: R-0992 Code-Lesung apps/agent/internal/provision/provision.go:277-279, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte (zeigt den CA-Fingerprint)
 Dedup-Key: bug:agent:provision.go:insecure-fingerprint-hint
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/provision/...
 Doku: changelog.d/klein-ref-smtp-2.md (T1 bis T3)
+
+### T4 — Hub: Grund der Ausnahme in die Meldung, Spec richtigstellen (R-0830)  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, apps/server/tests/test_email_sender.py, docs/features/klein-ref-smtp-2.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2ba9b2cc 2026-10-30T08:48:56+01:00
+Review: am Ende (Branch-Review)
+Änderung: Fund der Abschlussprüfung (wichtig): die Outbox speichert und loggt nur `str(exc)`, ohne Traceback; die Meldung nennt deshalb `{type(exc).__name__}: {exc}`, damit der Grund von OS/OpenSSL nicht verloren geht. Der Test prüft den vollen Text samt `__cause__`. Die Spec nennt `__cause__` und die rohe Ausnahme nicht mehr als Quelle.
+Beweis: R-0830 Abschlussprüfung klein-ref-smtp-2, apps/server/app/modules/notifications/outbox.py:77,83 (nur `str(exc)`)
+Dedup-Key: ref:smtp:sender.py:ca-file-error-reason
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py tests/test_outbox.py
+Doku: docs/features/klein-ref-smtp-2.md

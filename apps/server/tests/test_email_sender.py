@@ -243,8 +243,10 @@ def test_unloadable_smtp_ca_file_raises_before_connecting(monkeypatch, tmp_path,
     with pytest.raises(RuntimeError) as raised:
         sender.send_email("to@example.com", "subj", "body")
 
-    # The outbox stores str(exc): the variable, the path and the kind of failure must be in it.
-    assert str(raised.value) == f"SMTP_CA_FILE {ca_file} cannot be loaded: {error}"
+    # The outbox stores only str(exc): the variable, the path, the kind and the reason must be in it.
+    assert str(raised.value) == (
+        f"SMTP_CA_FILE {ca_file} cannot be loaded: {error}: {raised.value.__cause__}"
+    )
     plain_mock.assert_not_called()  # no connection, so nothing for the relay to see
     ssl_mock.assert_not_called()
 

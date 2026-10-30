@@ -41,15 +41,16 @@ Keine. Der Hub-Test erwartet danach `RuntimeError` statt `FileNotFoundError`/`ss
 
 ## Trade-offs
 - Hub: eine neue Ausnahme mit Kontext (`raise RuntimeError(...) from exc`) statt `exc.add_note`, weil `str(exc)`
-  die Notiz nicht trägt und `last_error` genau `str(exc)` ist. Der Ausnahmetext des Betriebssystems bleibt über
-  `__cause__` im Log.
+  die Notiz nicht trägt und `last_error` genau `str(exc)` ist. Die Outbox
+  speichert und loggt nur `str(exc)` (kein Traceback), deshalb steht der Ausnahmetext des Betriebssystems
+  (`{type(exc).__name__}: {exc}`) selbst in der Meldung.
 - Monitoring: nur die Logzeile wird angereichert (eine Zeile bleibt eine Zeile, der bestehende Test zählt sie); die
   Alert-Meldung ändert sich nicht.
 - Agent: die Hinweiszeilen werden englisch geschrieben (neue Strings), die Nachbarzeilen bleiben unberührt.
 
 ## Risiken & Rollback
 Gering; `git revert`. `last_error` der Outbox nennt künftig den Pfad der CA-Datei; er steht dort nur für Admins und
-ist ohnehin Teil der rohen Ausnahme bei fehlender Datei.
+ist kein Geheimnis (Betreiber-Konfiguration).
 `apps/agent/internal/provision/*` ist Risikopfad: die Abschlussprüfung bekommt `security`.
 
 ## Doku-Impact
