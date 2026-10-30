@@ -238,8 +238,13 @@ where
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
         // The registration fails with `e` either way; a reset that fails too leaves the
-        // identity for the user's own reset.
-        let _ = reset(server_url).await;
+        // identity for the user's own reset, and the message says so.
+        if let Err(not_reset) = reset(server_url).await {
+            return Err(AppError::Validation(format!(
+                "{e}; resetting it failed, the device identity stays, reset it in the \
+                 settings: {not_reset}"
+            )));
+        }
         return Err(e);
     }
     Ok(())
@@ -1594,6 +1599,40 @@ mod tests {
         assert!(!enrollment::is_enrolled());
         assert!(!enrollment::holds_identity(&prefix).unwrap());
         assert_eq!(url_of(base, "w-0000000c").as_deref(), Some(other));
+    }
+
+    #[tokio::test]
+    async fn enroll_not_kept_whose_reset_fails_says_the_identity_stays() {
+        let scratch = Scratch::new("enroll-taken-reset-fails");
+        let base = &scratch.0;
+        server_workspaces(base, &[("w-0000000d", "Neu", None, None)]);
+        let _c = entered("w-0000000d");
+
+        let result = enroll_with_token_in(
+            base,
+            "https://ah.example.com",
+            |_| async {
+                let settings = Settings {
+                    server_url: Some("https://other.example.com".to_string()),
+                    ..Settings::default()
+                };
+                storage::save_settings_at(base, &settings)?;
+                Ok(())
+            },
+            |_| async { Err(AppError::Keyring("the keyring is locked".to_string())) },
+        )
+        .await;
+
+        let Err(AppError::Validation(msg)) = result else {
+            panic!("not refused as it should be: {result:?}");
+        };
+        for says in [
+            "this workspace took the URL of another server while this device registered",
+            "the device identity stays, reset it in the settings",
+            "the keyring is locked",
+        ] {
+            assert!(msg.contains(says), "{says:?} missing in {msg:?}");
+        }
     }
 
     // ── Reset, pins and the cert check at the server of the workspace ──

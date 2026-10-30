@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-desktop-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: docs/developer/desktop.html DE+EN (nur wenn die Seite Lesegrenzen nennt), changelog.d/kern-desktop-3.md
 
-### T2 — Zurücksetzen: Keyring auf einem Blocking-Thread, Rollback-Fehler in der Meldung (R-0961, R-0984)  [ ]
+### T2 — Zurücksetzen: Keyring auf einem Blocking-Thread, Rollback-Fehler in der Meldung (R-0961, R-0984)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/commands.rs, changelog.d/kern-desktop-3.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e0018546 2026-10-30T15:18:40+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T2.verdict.json)
 Änderung: `reset_identity` (`enrollment.rs:502-514`) ruft `leaf_fingerprint`, `clear_identity` und das Merken von `KEYRING_REPLACES` über einen Blocking-Thread auf (`tauri::async_runtime::spawn_blocking`, wie `blocking` in `commands.rs:594`), die Server-Abfrage bleibt async, `reset_with` unverändert. `enroll_with_token_in` (`commands.rs:239-243`) hängt einen Fehler des Zurücksetzens an die Meldung („the device identity stays, reset it in the settings: …“) statt ihn mit `let _` zu verwerfen. Test zuerst rot für R-0984 (ein scheiternder `reset` erscheint in der Meldung); R-0961 ist Plattform-Wiring (Thread-Wechsel), die bestehenden Reset-Tests bleiben grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
 Doku: changelog.d/kern-desktop-3.md (die Meldung steht in docs/ nicht wörtlich)
@@ -36,3 +38,7 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher
 Doku: keine (nur Tests)
 
 ## Entscheidungen
+- T2: `reset_with` nimmt `clear` und `remember` jetzt als async-Schritte (statt unverändert, wie die Spec sagt): ein
+  synchroner Schritt kann innerhalb der async-Reihenfolge nicht auf einen Blocking-Thread wechseln. Reihenfolge,
+  Ergebnis und die Assertions der `reset_with`-Tests bleiben; nur ihre Closures sind async. `off_worker` läuft unter
+  `cfg(test)` an Ort und Stelle, weil Memory-Keyring und Workspace der Tests thread-lokal sind (Plattform-Wiring).
