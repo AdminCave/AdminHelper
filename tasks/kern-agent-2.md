@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-2 · Review: pro Task
 Spec: docs/features/kern-agent-2.md (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385)
 Heavy: linux-full — `apps/agent` (Sammellauf: `agent_monitoring`, `upgrade_path`, Tunnel-E2E); `windows` ist der CI-Job `agent-windows`, weil `main.go` die Terminal-Eingabe auch unter Windows liest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,10 @@ Review: approve (.ah-out/review/kern-agent-2/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestStore|TestRenew|TestCheckStorable|TestStale|TestProvision
 Doku: changelog.d/kern-agent-2.md
 
-### T6 — Entwickler-Doku: Stopp ohne systemd und Grenzen der Konfig-Prüfung (Abschlussprüfung)  [ ]
+### T6 — Entwickler-Doku: Stopp ohne systemd und Grenzen der Konfig-Prüfung (Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6dd4045b 2026-10-30T14:18:46+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt FRP-Abgleich DE+EN: Absatz „Stopp ohne systemd“ (Tunnel über die Admin-API des eigenen frpc abbauen, Fehler und alter Hash bleiben); in der Formbeschreibung die Grenzen 4096 Schlüsselpfade je Tabelle / 131072 gesamt und die Kürzung zitierter Schlüssel auf 64 Bytes.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html · docs/en/developer/agent.html
