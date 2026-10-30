@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-4 — Task-Ledger
-Status: bereit · Branch: feature/ops-4 · Review: am Ende
+Status: erledigt · Branch: feature/ops-4 · Review: am Ende
 Spec: docs/features/ops-4.md (Roadmap R-1014, R-1015)
 Heavy: none — nur Bash-Filter der .env und sed-Regeln; diagnostics_test und restore_guard_test fahren sie lokal ohne Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
