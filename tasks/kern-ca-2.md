@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-2 — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-ca-2 · Review: am Ende
 Spec: docs/features/kern-ca-2.md (Roadmap R-0982, R-0945, R-0943)
 Heavy: linux-full — `apps/ca-issuer` und `apps/agent` (Sammellauf: Stack mit Enrollment, `agent_monitoring`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
