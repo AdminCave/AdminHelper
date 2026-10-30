@@ -130,10 +130,10 @@ pub async fn is_device_enrolled() -> Result<bool, AppError> {
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
 /// UI whether that happened. Only at the server of this workspace
-/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the pin
-/// could not be forgotten. The identity entries are deleted best effort before it,
-/// in the same keyring, so they may have stayed as well; the reset can be repeated
-/// (without an identity it ends as `NotEnrolled` and forgets the pin again).
+/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the
+/// identity could not be deleted on this device (the message names a revoke that
+/// happened; the pin then stays) or the pin could not be forgotten. The reset can be
+/// repeated (without an identity it ends as `NotEnrolled` and forgets the pin again).
 #[tauri::command]
 pub async fn reset_device_identity(
     app: tauri::AppHandle,
