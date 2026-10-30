@@ -25,9 +25,9 @@ unten).
 - Ziel: die Rotation ersetzt ein `<scope>.crt`, das kein Zwischenzertifikat seines Scopes ist, ohne Uhrprüfung;
   die Uhrprüfung gilt nur dem eigenen Zwischenzertifikat.
 - Ziel: `rotate-intermediates --compromised <scope>` (mehrfach angebbar): für diesen Scope bleibt weder das
-  abgelöste noch ein früheres Zwischenzertifikat vertraut (`<scope>-retired.pem` leer). Nach dem Neustart von
-  ca-issuer, Gateway und frps gelten nur noch Zertifikate des neuen Zwischenzertifikats; die Geräte des Scopes
-  provisionieren bzw. enrollen neu. Die Betriebsdoku beschreibt beide Wege und wann welcher gilt.
+  abgelöste noch ein früheres Zwischenzertifikat im Trust-Bundle oder bei `/renew` (`<scope>-retired.pem` leer).
+  Die Geräte des Scopes werden widerrufen und neu eingerichtet. Die Betriebsdoku beschreibt beide Wege, wann welcher
+  gilt und was die Rotation allein nicht schließt (Abschlussprüfung 2026-10-30: die wirksame Sperre ist R-1009).
 - Ziel: über `NewMTLS` nimmt der Agent nur ein Server-Zertifikat an, das ein `access`-Zwischenzertifikat
   (CN `AdminHelper Access Intermediate`, mit oder ohne Datum) signiert hat.
 - Nicht-Ziel: Root-Erneuerung und Ablaufanzeige (R-0793), Sperrlisten, OCSP.
