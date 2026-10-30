@@ -184,6 +184,8 @@ class _NameResolver:
                 delay = self.refresh()
             except Exception:
                 logger.exception("%s: name lookup failed", self._label)
+                # Fail closed like a failed name: the last addresses may no longer be its.
+                self._networks = []
                 delay = _NAME_RETRY
             time.sleep(delay)
 

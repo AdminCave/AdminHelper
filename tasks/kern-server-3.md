@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Zeilenangaben `origin/main@725fbb4c`, vor dem Bauen neu greppen. Neue Code-Strings englisch, CHANGELOG umlautfrei.
 `security` bei T1, T2 und T6. R-0979 abgelehnt (Kevin 2026-10-30).
 
-### T1 — Namensauflösung: Fehlerpfad fail-closed (R-0960)  [ ]
+### T1 — Namensauflösung: Fehlerpfad fail-closed (R-0960)  [x]
 Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/tests/test_ip_filter.py, changelog.d/kern-server-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0afa6285 2026-10-30T11:44:57+01:00
+Review: approve (.ah-out/review/kern-server-3/T1.verdict.json)
 Änderung: Im `except` von `_NameResolver._run` (`middleware.py:185`) gelten die Adressen der letzten Runde nicht mehr (`_networks` leer), wie der Docstring es zusagt. Test: eine Runde mit Ausnahme nach einer erfolgreichen lässt keine Adresse mehr vertraut, die nächste erfolgreiche Runde stellt sie wieder her.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ip_filter.py tests/test_identity_source.py
 Doku: changelog.d/kern-server-3.md (neutral)
