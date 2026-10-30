@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-compose-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-ref-compose-1 · Review: am Ende
+Status: erledigt · Branch: feature/klein-ref-compose-1 · Review: am Ende
 Spec: docs/features/klein-ref-compose-1.md (Roadmap R-0819)
 Heavy: linux-full — Compose-Datei (nur ein Kommentarblock, im Betrieb ohne Wirkung)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
