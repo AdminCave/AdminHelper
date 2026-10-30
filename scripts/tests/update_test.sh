@@ -850,18 +850,21 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
 # compose ends every call that reads .env with "Invalid template" when a value
 # holds a '${' that starts no valid placeholder. update.sh ran on through backup,
 # swap and re-pin and failed only at the pull; now it stops before the first
-# compose call, names the key and keeps the value (it may be a secret) out.
+# compose call, names the line and keeps the key and the value (either may be a
+# secret) out: zz9pasted is a secret pasted by mistake, read as a key.
 make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
 # The '${' is the point: literal .env lines, not expansions.
 # shellcheck disable=SC2016
 ENV_BAD=('SMTP_PASSWORD=zz9probe${q' 'SMTP_PASSWORD=zz9probe${}cd' 'SMTP_PASSWORD=zz9probe${1x}cd'
-  'SMTP_PASSWORD=zz9probe${cd}${' 'SMTP_PASSWORD=zz9probe#${' 'export X=zz9probe${' 'X: zz9probe${')
+  'SMTP_PASSWORD=zz9probe${cd}${' 'SMTP_PASSWORD=zz9probe#${' 'export X=zz9probe${' 'X: zz9probe${'
+  'zz9pasted=zz9probe${q')
 # The line goes at the end of a fresh 0.33.0 install, the update runs in $2 mode;
-# leaves out=, rc=, msg= (the FEHLER line) and DLOG= for the assertions.
+# leaves out=, rc=, msg= (the FEHLER line), lineno= (the line's number) and DLOG=
+# for the assertions.
 run_env_case() {
   local line="$1" dir="$2"; shift 2
   INST="$dir"; make_install 0.33.0 "$SRC_OLD" "$INST"
-  printf '%s\n' "$line" >> "$INST/.env"; cp "$INST/.env" "$INST.env"
+  printf '%s\n' "$line" >> "$INST/.env"; cp "$INST/.env" "$INST.env"; lineno=$(wc -l < "$INST/.env")
   DLOG="$INST.docker"; : > "$DLOG"
   out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" "$@" 2>&1); rc=$?
   msg=$(grep 'FEHLER: ' <<<"$out")
@@ -869,11 +872,11 @@ run_env_case() {
 # Exit, message (the one about '${', or the pattern $4), nothing of the value,
 # nothing changed, no backup or snapshot, no docker call but `compose version`.
 assert_env_stop() {
-  local line="$1" key="$2" what="$3" re="${4:-}"
+  local line="$1" what="$2" re="${3:-}"
   [ -n "$re" ] \
-    || re="FEHLER: \.env: der Wert von $key enthaelt ein '\\\${' ohne gueltigen Platzhalter.*Invalid template"
+    || re="FEHLER: \.env: the value starting in line $lineno holds a '\\\${' that starts no valid placeholder.*Invalid template"
   { [ $rc -ne 0 ] && grep -q "$re" <<<"$msg"; } \
-    && ok "$what [$line] stops with the key in the message" || bad "$what [$line]: rc=$rc $out"
+    && ok "$what [$line] stops with the line number in the message" || bad "$what [$line]: rc=$rc $out"
   ! grep -q zz9 <<<"$out" \
     && ok "$what [$line] keeps the value out of the output" || bad "$what [$line] printed the value: $out"
   { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
@@ -883,19 +886,19 @@ assert_env_stop() {
 }
 n=0
 for line in "${ENV_BAD[@]}"; do
-  n=$((n + 1)); key=${line#export }; key=${key%%[=:]*}
+  n=$((n + 1))
   run_env_case "$line" "$WORK/inst30-$n"
-  assert_env_stop "$line" "$key" "update"
+  assert_env_stop "$line" "update"
 done
 for mode in --redeploy --check; do
   run_env_case "${ENV_BAD[0]}" "$WORK/inst30${mode#-}" "$mode"
-  assert_env_stop "${ENV_BAD[0]}" SMTP_PASSWORD "$mode"
+  assert_env_stop "${ENV_BAD[0]}" "$mode"
 done
 # A quote that never closes ends every compose call as well, and compose's message
-# quotes the value: update.sh stops the same way and names the key.
+# quotes the value: update.sh stops the same way and names the line.
 run_env_case 'SMTP_PASSWORD="zz9secret' "$WORK/inst30-quote"
-assert_env_stop 'SMTP_PASSWORD="zz9secret' SMTP_PASSWORD "update" \
-  'FEHLER: \.env: der Wert von SMTP_PASSWORD hat ein nicht geschlossenes Anfuehrungszeichen'
+assert_env_stop 'SMTP_PASSWORD="zz9secret' "update" \
+  "FEHLER: \.env: the value starting in line $lineno has a quote that is never closed"
 
 # ── 31. a '$' compose can read does not stop the update ─────────────────────
 # shellcheck disable=SC2016
@@ -944,7 +947,7 @@ env_differential() {
     >/dev/null 2>"$INST.compose"; theirs=$?
   # A refusal has to be the check's own, not --check failing for another reason.
   { [ "$((ours != 0))" = "$((theirs != 0))" ] \
-      && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: der (Wert von|Eintrag in Zeile)' <<<"$out"; }; } \
+      && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: the (value starting|entry) in line' <<<"$out"; }; } \
     && ok "[$shown]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
     || bad "[$shown]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
 }
@@ -955,14 +958,15 @@ for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}";
   # after it shows up in the output.
   case $line in
     *zz9frag*)
-      { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q 'der Wert von P enthaelt' <<<"$out"; }; } \
+      { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q "the value starting in line $((base + 1)) holds" <<<"$out"; }; } \
         && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
   esac
 done
 # Quotes and keys: a quote never closed, text after a closing quote that is no key,
 # and a key compose does not take end every compose call too, and compose's message
-# quotes the line. A refusal names the line's first key (SMTP_PASSWORD, P), also
-# for an error after a closing quote, else the line, and nothing marked zz9. Then:
+# quotes the line. A refusal of a value (SMTP_PASSWORD, P) names the line it starts
+# in, also for an error after a closing quote, else the line of the entry, and
+# nothing marked zz9. Then:
 # a key line after a value over two lines (its number counts them), text after a
 # quote closed one line down, a tab in a key (skipped like a blank), and blanks
 # beyond ASCII that compose skips in front of a statement, after "export" and in
@@ -985,8 +989,8 @@ for line in "${ENV_KEYS[@]}"; do
   env_differential "$line"
   [ "$ours" -ne 0 ] || continue
   case $line in
-    SMTP_PASSWORD=*|P=*) want="der Wert von ${line%%=*} " ;;
-    *) want="der Eintrag in Zeile $((base + $(grep -c '' <<<"$line"))) " ;;
+    SMTP_PASSWORD=*|P=*) want="the value starting in line $((base + 1)) " ;;
+    *) want="the entry in line $((base + $(grep -c '' <<<"$line"))) " ;;
   esac
   { grep -qF "$want" <<<"$out" && ! grep -q zz9 <<<"$out"; } \
     && ok "[$shown]: the refusal names '${want% }' and nothing of the value" || bad "[$shown]: $out"

@@ -13,11 +13,13 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Zeilenangaben `origin/main@7364679e`, vor dem Bauen neu greppen. Neue Meldungen englisch, CHANGELOG umlautfrei.
 Der PR ändert `scripts/update.sh`: Kevin merged. `security` bei T1.
 
-### T1 — .env-Prüfung: englische Meldungen mit Zeilennummer (R-0862, R-0865)  [ ]
-Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-3.md
+### T1 — .env-Prüfung: englische Meldungen mit Zeilennummer (R-0862, R-0865)  [x]
+Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-3.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @01e60447 2026-10-30T12:23:02+01:00
+Review: approve (.ah-out/review/ops-3/T1.verdict.json)
 Änderung: Die `die`-Meldungen von `check_env_templates` (`scripts/update.sh:194-247`) werden englisch und nennen die Zeile der `.env` statt des Schlüssels. Die Fälle in `update_test.sh`, die die Texte prüfen, ziehen mit; ein neuer Fall belegt, dass die Meldung keinen Text aus der Zeile enthält.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
-Doku: changelog.d/ops-3.md (neutral)
+Doku: changelog.d/ops-3.md (neutral), docs/admin/installation.html + EN (Updates)
 
 ### T2 — migrate_env: auskommentierter Schlüssel zählt nicht (R-0896)  [ ]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-3.md

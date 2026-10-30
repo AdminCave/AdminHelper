@@ -187,17 +187,17 @@ env_key_ok() {
 # drop, "export " may lead, '=' or ':' separates, a line without either is a key
 # without a value; a quoted value runs to its closing quote, over several lines if
 # need be, and is literal in single quotes, and the text after that quote is read
-# as a line of its own; an unquoted value ends at " #". The message names the
-# first key of the line or the line number, never a value or the line: either may
-# hold a secret, and compose's own message quotes them. Not a later key of the
-# line either: the text after a closing quote may be meant as part of the value.
+# as a line of its own; an unquoted value ends at " #". The message names only a
+# line number, never a key, a value or the line: a secret pasted by mistake reads as
+# a key once it holds '=' or ':', and compose's own message quotes them all. For a
+# value it is the line its entry starts in.
 check_env_templates() {
-    local line key name val more q rest eol spaced n=0 QUOTED QUOTED_REST TRIMMED
+    local line key name val more q rest eol spaced n=0 start QUOTED QUOTED_REST TRIMMED
     [ -f .env ] || return 0
     while :; do
         # eol=0: the line ends .env without a line break.
         eol=1; IFS= read -r line || { eol=0; [ -n "$line" ] || break; }
-        n=$((n + 1)); name=""
+        n=$((n + 1)); name=""; start=$n
         [ "$n" -gt 1 ] || line=${line#$'\xef\xbb\xbf'}
         # One assignment per pass: after a closing quote, compose reads on.
         while [ -n "$line" ]; do
@@ -210,8 +210,8 @@ check_env_templates() {
             key=${line%%[=:]*}; spaced=1
             [ "$key" != "$line" ] || spaced=$eol
             if ! env_key_ok "$key" "$spaced"; then
-                [ -z "$name" ] || die ".env: der Wert von ${name} hat hinter dem schliessenden Anfuehrungszeichen Text, den docker compose als Schluessel liest und nicht annimmt — compose bricht damit jeden Aufruf ab. Ein Anfuehrungszeichen im Wert als \\\" bzw. \\' schreiben oder den Text entfernen. Abbruch (nichts veraendert)."
-                die ".env: der Eintrag in Zeile ${n} hat einen Schluessel, den docker compose nicht annimmt (erlaubt: Buchstaben, Ziffern und _ . - [ ], kein Leerzeichen) — compose bricht damit jeden Aufruf ab. Den Schluessel korrigieren oder die Zeile mit '#' auskommentieren. Abbruch (nichts veraendert)."
+                [ -z "$name" ] || die ".env: the value starting in line ${start} has text after its closing quote that docker compose reads as a key and rejects, which makes every compose call fail. Write a quote inside the value as \\\" or \\', or remove the text. Aborting (nothing changed)."
+                die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
             fi
             [ "$key" != "$line" ] || break
             key=${key%"${key##*[![:space:]]}"}; name=${name:-$key}
@@ -225,7 +225,7 @@ check_env_templates() {
                     until read_quoted "$q" "$val"; do
                         IFS= read -r more || {
                             eol=0
-                            [ -n "$more" ] || die ".env: der Wert von ${name} hat ein nicht geschlossenes Anfuehrungszeichen — docker compose bricht damit jeden Aufruf ab. Das Anfuehrungszeichen schliessen. Abbruch (nichts veraendert)."
+                            [ -n "$more" ] || die ".env: the value starting in line ${start} has a quote that is never closed, which makes every compose call fail. Close the quote. Aborting (nothing changed)."
                         }
                         n=$((n + 1)); val+=$'\n'$more
                     done
@@ -234,7 +234,7 @@ check_env_templates() {
                 *) val=${val%% #*} ;;
             esac
             env_template_ok "$val" \
-                || die ".env: der Wert von ${name} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+                || die ".env: the value starting in line ${start} holds a '\${' that starts no valid placeholder, which makes every compose call fail with 'Invalid template'. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
             line=$rest
         done
     done < .env
