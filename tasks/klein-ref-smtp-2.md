@@ -20,8 +20,10 @@ Dedup-Key: ref:smtp:sender.py:ca-file-error-text
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_email_sender.py tests/test_outbox.py
 Doku: → T3
 
-### T2 — Monitoring: Logzeile nennt SMTP_CA_FILE und Pfad (R-0830)  [ ]
+### T2 — Monitoring: Logzeile nennt SMTP_CA_FILE und Pfad (R-0830)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter_dispatch.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @099de6c2 2026-10-30T08:36:20+01:00
+Review: am Ende (Branch-Review)
 Änderung: scheitert das Laden der CA-Datei (`loading_ca`), nennt die eine Logzeile `Email failed: <check>: ...` zusätzlich `SMTP_CA_FILE` und den Pfad; die gespeicherte Meldung bleibt `SMTP TLS failed`. Der bestehende Test `test_unloadable_smtp_ca_file_stores_tls_failed_without_connecting` prüft die Zeile auf Variable und Pfad.
 Beweis: R-0830 Code-Lesung apps/monitoring/app/alerter.py (`logger.error("Email failed: ...")` im `except`)
 Dedup-Key: ref:smtp:alerter.py:ca-file-error-text
