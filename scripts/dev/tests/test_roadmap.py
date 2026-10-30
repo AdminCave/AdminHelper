@@ -54,8 +54,9 @@ def doc(
         "Klassen: SEC(P0) > REG(P1) > REL(P2) > BUG(P3) > FEAT(P4) > REF(P5) > IDEE(P6)",
         "",
         "## Als Nächstes",
-        "1. R-0003 erst das, dann das",
-        "2. Kevin, Handarbeit: irgendwas",
+        # What a write generates from the clean sections (Roadmap.set_next_up).
+        roadmap.NEXT_UP_NOTE,
+        "1. In Arbeit: R-0004 aktiv",
     ]
     for heading, rows in sections.items():
         out += ["", f"## {heading}"]
@@ -1079,16 +1080,60 @@ def test_show_one_row(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     assert "  Ablauf: 2026-12-18" in out
 
 
+def test_every_write_rewrites_als_naechstes_from_the_rows(tmp_path: pathlib.Path) -> None:
+    """Nobody keeps "Als Nächstes": a write replaces whatever stands there with
+    what is in progress, the next waiting train of each stage, the open REL
+    rows and the blocked ones."""
+    s = clean_sections()
+    s["In Arbeit"].append(
+        "| R-0020 | SEC | Unterwegs | pr | kevin 2026-09-01 | tasks/kern-a-1.md | — | #12 | — | — |"
+    )
+    s["Geplant (Stufen in Reihenfolge)"] += [
+        train_row("R-0021", "geplant", "REF", "tasks/kern-b-1.md"),
+        train_row("R-0022", "geplant", "BUG", "tasks/kern-c-1.md"),
+        train_row("R-0023", "freigegeben", "REF", "tasks/kern-c-1.md"),
+        train_row("R-0024", "geplant", "REF", "tasks/klein-doku-1.md"),
+        row("R-0025", "geplant", "REL", "Szenario-Lauf vor dem Release"),
+    ]
+    s["Blockiert"] = [
+        row("R-0026", "blockiert (Kevin, Handarbeit)", "SEC", "Kevin: Passwort wechseln")
+    ]
+    text = doc(s).replace("1. In Arbeit: R-0004 aktiv", "1. Kevin, von Hand: alt")
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "freigegeben") == 0
+    assert roadmap.next_up(roadmap.Roadmap(p.read_text(encoding="utf-8"))) == [
+        "## Als Nächstes",
+        roadmap.NEXT_UP_NOTE,
+        "1. In Arbeit: R-0004 aktiv · R-0020 pr #12",
+        "2. Nächster Zug Kern: tasks/kern-c-1.md (2 Zeilen, ab BUG); danach 1 weitere",
+        "3. Nächster Zug Klein: tasks/klein-doku-1.md (1 Zeilen, ab REF)",
+        "4. Vor dem Release: R-0025 geplant",
+        "5. Wartet auf Kevin: R-0026 Kevin: Passwort wechseln",
+    ]
+    # Generated again from the same rows, it is the same section.
+    before = p.read_text(encoding="utf-8")
+    assert status(p, "R-0003", "freigegeben", "--note", "nur die Notiz") == 0
+    after = p.read_text(encoding="utf-8")
+    assert roadmap.next_up(roadmap.Roadmap(after)) == roadmap.next_up(roadmap.Roadmap(before))
+    assert findings(after) == []
+
+
+def test_a_file_without_als_naechstes_gets_none(tmp_path: pathlib.Path) -> None:
+    text = CLEAN.replace(
+        f"## Als Nächstes\n{roadmap.NEXT_UP_NOTE}\n1. In Arbeit: R-0004 aktiv\n\n", ""
+    )
+    assert "Als Nächstes" not in text
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "freigegeben") == 0
+    assert "Als Nächstes" not in p.read_text(encoding="utf-8")
+
+
 def test_show_the_overview(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     long = "Ein Titel, der so lang ist, dass ihn die Übersicht kürzen muss, damit eine Zeile eine Zeile bleibt"
     p = write(tmp_path, CLEAN.replace("| Etwas Großes |", f"| {long} |"))
     assert run(p, "show") == 0
     out = capsys.readouterr().out.splitlines()
-    assert out[:3] == [
-        "## Als Nächstes",
-        "1. R-0003 erst das, dann das",
-        "2. Kevin, Handarbeit: irgendwas",
-    ]
+    assert out[:3] == ["## Als Nächstes", roadmap.NEXT_UP_NOTE, "1. In Arbeit: R-0004 aktiv"]
     assert "WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0" in out
     assert "  R-0004  FEAT  aktiv (T2/5)  " + long[:89] + "…" in out
     assert "  R-0005  BUG   neu  Ein Fehler" in out
