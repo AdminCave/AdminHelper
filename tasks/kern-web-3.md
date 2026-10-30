@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-web-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-web-3 · Review: pro Task
+Status: erledigt · Branch: feature/kern-web-3 · Review: pro Task
 Spec: docs/features/kern-web-3.md (Roadmap R-0989, R-0975, R-0980)
 Heavy: none — nur Web-Client-Logik und Vertragstests, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
