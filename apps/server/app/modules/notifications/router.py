@@ -30,9 +30,14 @@ from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.modules.notifications.models import Notification, NotificationSubscription
 from app.modules.notifications.schemas import (
+    EventsAcceptedOut,
     IncomingEvent,
+    MarkReadOut,
     MarkReadRequest,
+    NotificationOut,
+    NotificationPrefsOut,
     NotificationPrefsUpdate,
+    UnreadCountOut,
 )
 from app.modules.notifications.service import ingest_event
 from app.modules.users.models import User
@@ -45,7 +50,7 @@ internal_router = APIRouter(prefix="/api/internal", tags=["notifications"])
 # --- Bell feed (own scope) -------------------------------------------------
 
 
-@feed_router.get("", response_model=list[dict[str, Any]])
+@feed_router.get("", response_model=list[NotificationOut])
 def list_notifications(
     response: Response,
     db: Session = Depends(get_db),
@@ -63,7 +68,7 @@ def list_notifications(
     return [r.to_dict() for r in rows]
 
 
-@feed_router.get("/unread-count")
+@feed_router.get("/unread-count", response_model=UnreadCountOut)
 def unread_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -77,7 +82,7 @@ def unread_count(
     return {"count": count}
 
 
-@feed_router.post("/read")
+@feed_router.post("/read", response_model=MarkReadOut)
 def mark_read(
     data: MarkReadRequest,
     db: Session = Depends(get_db),
@@ -115,7 +120,7 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
     }
 
 
-@prefs_router.get("/notification-prefs")
+@prefs_router.get("/notification-prefs", response_model=NotificationPrefsOut)
 def get_prefs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -123,7 +128,7 @@ def get_prefs(
     return _prefs_response(db, current_user)
 
 
-@prefs_router.put("/notification-prefs")
+@prefs_router.put("/notification-prefs", response_model=NotificationPrefsOut)
 def put_prefs(
     data: NotificationPrefsUpdate,
     db: Session = Depends(get_db),
@@ -188,7 +193,9 @@ def require_internal_key(x_internal_key: str | None = Depends(_internal_key_sche
 _SERVER_SOURCE_TYPES = frozenset({"frp_config", "frps"})
 
 
-@internal_router.post("/events", status_code=status.HTTP_202_ACCEPTED)
+@internal_router.post(
+    "/events", status_code=status.HTTP_202_ACCEPTED, response_model=EventsAcceptedOut
+)
 def ingest(
     event: IncomingEvent,
     db: Session = Depends(get_db),

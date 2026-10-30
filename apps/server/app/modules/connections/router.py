@@ -5,7 +5,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -21,7 +21,13 @@ from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.connections.models import Connection
-from app.modules.connections.schemas import ConnectionCreate, ConnectionUpdate, ImportRequest
+from app.modules.connections.schemas import (
+    ConnectionCreate,
+    ConnectionImportResult,
+    ConnectionOut,
+    ConnectionUpdate,
+    ImportRequest,
+)
 from app.modules.servers.models import Server
 from app.modules.users.models import User
 
@@ -91,7 +97,7 @@ def _reject_unknown_server(db: Session, server_id: str | None) -> None:
         )
 
 
-@router.get("", response_model=list[dict[str, Any]])
+@router.get("", response_model=list[ConnectionOut], response_model_exclude_unset=True)
 def get_connections(
     response: Response,
     db: Session = Depends(get_db),
@@ -106,7 +112,12 @@ def get_connections(
     return [c.to_dict() for c in connections]
 
 
-@router.post("", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ConnectionOut,
+    response_model_exclude_unset=True,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_connection(
     connection: ConnectionCreate,
     request: Request,
@@ -134,7 +145,7 @@ def create_connection(
     return result
 
 
-@router.put("/{conn_id}", response_model=dict[str, Any])
+@router.put("/{conn_id}", response_model=ConnectionOut, response_model_exclude_unset=True)
 def update_connection(
     conn_id: str,
     connection: ConnectionUpdate,
@@ -169,7 +180,7 @@ def update_connection(
     return result
 
 
-@router.post("/{conn_id}/touch", response_model=dict[str, Any])
+@router.post("/{conn_id}/touch", response_model=ConnectionOut, response_model_exclude_unset=True)
 def touch_connection(
     conn_id: str, request: Request, db: Session = Depends(get_db), auth=Depends(read_dep)
 ):
@@ -233,7 +244,7 @@ def export_connections(
     )
 
 
-@router.post("/import")
+@router.post("/import", response_model=ConnectionImportResult)
 def import_connections(
     req: ImportRequest,
     request: Request,

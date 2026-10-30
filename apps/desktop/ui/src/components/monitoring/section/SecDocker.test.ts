@@ -432,3 +432,20 @@ describe('SecDocker duplicate containers', () => {
     ]);
   });
 });
+
+describe('SecDocker details of the wrong form', () => {
+  // A container without a state string is dropped instead of counted.
+  it('drops a container with a field of the wrong type', async () => {
+    const wrong = check({
+      status: 'ok',
+      details: {
+        available: true,
+        error: null,
+        containers: [rated('web', 'running', 'ok'), { name: 'bad', state: 3, category: 'ok' }],
+      },
+    });
+    const { container: el } = render(SecDocker, { props: { checks: [wrong] } });
+    expect(texts(pills(el))).toEqual(['Alle 1 Container laufen']);
+    expect((await expand(el)).map(row)).toEqual([{ name: 'web', note: 'running' }]);
+  });
+});

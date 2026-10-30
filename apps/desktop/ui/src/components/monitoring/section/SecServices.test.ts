@@ -500,3 +500,24 @@ describe('SecServices translations', () => {
     ]);
   });
 });
+
+describe('SecServices details of the wrong form', () => {
+  // A field of the wrong type counts as missing; a failed list that is no list
+  // made the section throw.
+  it('drops a field of the wrong type and keeps the others', async () => {
+    setLanguage('de');
+    const wrong = check({
+      status: 'warning',
+      details: {
+        mode: 'auto',
+        failed: 'nginx.service',
+        enabled_inactive: ['foo.service', 'bar.service'],
+        active_count: '41',
+        total: 63,
+      },
+    });
+    const { container: el } = render(SecServices, { props: { checks: [wrong] } });
+    expect(texts(pills(el))).toEqual(['2 Probleme']);
+    expect((await expand(el)).map(row).map((r) => r.name)).toEqual(['foo.service', 'bar.service']);
+  });
+});

@@ -191,9 +191,9 @@ export function isPushOnlyCheck(checkType: MonitorCheckType | string): boolean {
 /** A manual run only does something for an enabled, non-push check. */
 export function canRunManually(check: {
   checkType: MonitorCheckType | string;
-  enabled: boolean;
+  enabled: boolean | null;
 }): boolean {
-  return check.enabled && !isPushOnlyCheck(check.checkType);
+  return check.enabled === true && !isPushOnlyCheck(check.checkType);
 }
 
 export interface MonitoringSummary {
