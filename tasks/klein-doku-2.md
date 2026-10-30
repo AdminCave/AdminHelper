@@ -10,8 +10,10 @@ Heavy: none — reine Doku, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — agent-deployment: Vergleichswert und SAN-Aussage (R-0944, R-0882)  [ ]
+### T1 — agent-deployment: Vergleichswert und SAN-Aussage (R-0944, R-0882)  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @34ad482d 2026-10-30T06:03:57+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der `--insecure`-Absatz nennt als Vergleichswert den SHA-256 des Server-Zertifikats (nicht den CA-Fingerprint), den man auf dem Server oder über einen zweiten Weg ermittelt. Die Aussage zu IP-Adressen nennt auch `DOMAIN` und `127.0.0.1`. Derselbe Satz im Eintrag `[Unreleased]` des CHANGELOG folgt.
 Beweis: R-0944 provision.go (Fingerprint-Ausgabe); R-0882 Code-Lesung
 Dedup-Key: bug:docs:agent-deployment.html:insecure-fp
