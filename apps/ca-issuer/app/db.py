@@ -291,6 +291,7 @@ class DbTokenStore:
                         device_lines.c.id,
                         device_lines.c.subject_id,
                         device_lines.c.scope,
+                        device_lines.c.kind,
                         device_lines.c.revoked_at,
                     )
                     .join(issued_certificates, issued_certificates.c.line_id == device_lines.c.id)
@@ -299,14 +300,15 @@ class DbTokenStore:
                 ).first()
                 if line is None:
                     line_id = self._take_over(conn, current, subject_id, scope, legacy_kind, now)
+                    kind = legacy_kind
                 elif line.revoked_at is not None or (line.subject_id, line.scope) != (
                     subject_id,
                     scope,
                 ):
                     raise RenewalRefused("the device line is revoked")
                 else:
-                    line_id = line.id
-                leaf, response = sign()
+                    line_id, kind = line.id, line.kind
+                leaf, response = sign(kind)
                 # Once more after signing: a deprovisioning committed meanwhile is not held
                 # off by the line lock, and the successor's later notBefore would pass it.
                 if not self._active(conn, subject_id, scope, current.not_before):

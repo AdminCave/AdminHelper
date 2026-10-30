@@ -189,6 +189,92 @@ def test_a_root_that_is_not_self_signed_aborts_the_boot(tmp_path):
         storage.ensure_hierarchy(tmp_path, None)
 
 
+# The current intermediate passes the same check as a retired one, and a
+# file the boot cannot read stops it with the file and the scope.
+
+
+def test_another_scopes_intermediate_as_the_current_one_aborts_the_boot(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    # Cert, key and chain of tunnel under the name of access: signature, key and chain match.
+    for suffix in (".crt", ".key", "-chain.pem"):
+        (tmp_path / f"access{suffix}").write_bytes((tmp_path / f"tunnel{suffix}").read_bytes())
+
+    with pytest.raises(RuntimeError, match=r"'access'.*access\.crt.*CN"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
+def test_a_current_intermediate_that_may_sign_cas_aborts_the_boot(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    root_cert, root_key = _root(tmp_path)
+    now = pki._now()
+    key = pki.generate_key()
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(
+            x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, "AdminHelper Access Intermediate"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AdminHelper"),
+                ]
+            )
+        )
+        .issuer_name(root_cert.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=100))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=1), critical=True)
+        .sign(root_key, hashes.SHA256())
+    )
+    (tmp_path / "access.crt").write_bytes(pki.cert_to_pem(cert))
+    (tmp_path / "access.key").write_bytes(pki.key_to_pem(key))
+    (tmp_path / "access-chain.pem").write_bytes(pki.chain_pem(cert, root_cert))
+
+    with pytest.raises(RuntimeError, match=r"'access'.*access\.crt.*path_length"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
+@pytest.mark.parametrize(
+    ("name", "pattern"),
+    [
+        ("root.crt", r"root\.crt.*not a PEM certificate"),
+        ("internal.crt", r"'internal'.*internal\.crt.*not a PEM certificate"),
+        ("internal.key", r"'internal'.*internal\.key.*not a PEM EC private key"),
+    ],
+)
+def test_an_unreadable_hierarchy_file_aborts_the_boot_naming_it(tmp_path, name, pattern):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    (tmp_path / name).write_bytes(b"not a pem\n")
+
+    with pytest.raises(RuntimeError, match=pattern) as exc:
+        storage.ensure_hierarchy(tmp_path, None)
+    assert str(exc.value).startswith("PKI hierarchy invalid")
+
+
+def test_an_intermediate_key_of_another_type_aborts_the_boot_naming_it(tmp_path):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    other = ed25519.Ed25519PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    (tmp_path / "tunnel.key").write_bytes(other)
+
+    with pytest.raises(RuntimeError, match=r"'tunnel'.*tunnel\.key.*not a PEM EC private key"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
+def test_an_encrypted_intermediate_key_aborts_the_boot_naming_it(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    key = pki.key_from_pem((tmp_path / "access.key").read_bytes())
+    (tmp_path / "access.key").write_bytes(pki.key_to_pem(key, passphrase=b"other"))
+
+    with pytest.raises(RuntimeError, match=r"'access'.*access\.key.*not a PEM EC private key"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
 def test_an_intermediate_near_its_end_loads_with_one_warning(monkeypatch, tmp_path, caplog):
     _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_INTERMEDIATE - 30)
     _reissue(monkeypatch, tmp_path, "access")

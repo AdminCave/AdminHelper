@@ -86,6 +86,17 @@ def test_ca_trusts_access_visitor_certs_with_extra_trust(tmp_path):
     visitor_leaf.verify_directly_issued_by(access_cert)
 
 
+def test_remints_when_the_frps_extra_sans_change(tmp_path):
+    tunnel, _ = _tunnel_intermediate()
+    ensure_frps_cert(tmp_path, tunnel, "frp.example")
+
+    ensure_frps_cert(tmp_path, tunnel, "frp.example", extra_sans="203.0.113.7")
+
+    leaf = x509.load_pem_x509_certificates((tmp_path / "frps.crt").read_bytes())[0]
+    san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert ipaddress.ip_address("203.0.113.7") in san.get_values_for_type(x509.IPAddress)
+
+
 def test_idempotent_keeps_existing_frps_key(tmp_path):
     tunnel, _ = _tunnel_intermediate()
     ensure_frps_cert(tmp_path, tunnel, "frp.example")

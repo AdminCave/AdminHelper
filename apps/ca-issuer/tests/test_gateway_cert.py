@@ -7,6 +7,7 @@ server leaf + trust bundle into a shared volume for the nginx gateway, since the
 gateway holds no signing key (D6) and there is no on-device CSR for it."""
 
 import ipaddress
+import os
 
 import pytest
 from cryptography import x509
@@ -82,6 +83,28 @@ def test_client_ca_is_the_access_trust_bundle(tmp_path):
     assert [c.subject for c in parsed] == [access.cert.subject, root_cert.subject]
 
 
+def test_a_failed_bundle_write_keeps_the_old_bundle(tmp_path, monkeypatch):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    bundle = tmp_path / "client-ca.pem"
+    before = bundle.read_bytes()
+    rotated, _ = _access_intermediate()
+
+    def broken_fsync(fd):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "fsync", broken_fsync)
+    with pytest.raises(OSError):
+        ensure_gateway_cert(tmp_path, rotated, "localhost")
+
+    assert bundle.read_bytes() == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "client-ca.pem",
+        "gateway-fullchain.pem",
+        "gateway.key",
+    ]
+
+
 def test_extra_sans_are_classified_into_dns_and_ip(tmp_path):
     access, _ = _access_intermediate()
     ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="10.0.0.5, alt.example")
@@ -101,6 +124,45 @@ def test_idempotent_keeps_existing_leaf_key(tmp_path):
 
     ensure_gateway_cert(tmp_path, access, "localhost")  # second boot
     assert (tmp_path / "gateway.key").read_bytes() == key_before
+    assert (tmp_path / "gateway-fullchain.pem").read_bytes() == cert_before
+
+
+def _names(path) -> tuple[set[str], set]:
+    leaf = x509.load_pem_x509_certificates(path.read_bytes())[0]
+    san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    return set(san.get_values_for_type(x509.DNSName)), set(san.get_values_for_type(x509.IPAddress))
+
+
+def test_remints_when_extra_sans_change(tmp_path):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="alt.example")
+    key_before = (tmp_path / "gateway.key").read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="alt.example, 192.0.2.10")
+
+    dns, ips = _names(tmp_path / "gateway-fullchain.pem")
+    assert ipaddress.ip_address("192.0.2.10") in ips
+    assert "alt.example" in dns
+    assert (tmp_path / "gateway.key").read_bytes() != key_before
+
+
+def test_remints_when_the_domain_changes(tmp_path):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "old.example")
+
+    ensure_gateway_cert(tmp_path, access, "new.example")
+
+    dns, _ = _names(tmp_path / "gateway-fullchain.pem")
+    assert "new.example" in dns and "old.example" not in dns
+
+
+def test_keeps_the_leaf_when_extra_sans_only_change_order_or_spacing(tmp_path):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="alt.example,192.0.2.10")
+    cert_before = (tmp_path / "gateway-fullchain.pem").read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans=" 192.0.2.10 , alt.example ")
+
     assert (tmp_path / "gateway-fullchain.pem").read_bytes() == cert_before
 
 
