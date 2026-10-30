@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Für alle Tasks: Zeilenangaben `origin/main@66d3ef6f`, vor dem Schreiben neu greppen. Neue Code-Strings englisch,
 CHANGELOG umlautfrei in `changelog.d/kern-web-3.md`.
 
-### T1 — Unlesbare Idle-Zeit beendet die Sitzung beim Laden (R-0989)  [ ]
+### T1 — Unlesbare Idle-Zeit beendet die Sitzung beim Laden (R-0989)  [x]
 Komponente: web · Dateien: apps/web/src/lib/idle.ts, apps/web/src/lib/idle.test.ts, docs/admin/benutzer.html, docs/en/admin/users.html, changelog.d/kern-web-3.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @9b9e75c9 2026-10-30T17:01:46+01:00
+Review: approve (.ah-out/review/kern-web-3/T1.verdict.json)
 Beweis: Abschlusspruefung kern-web-2 2026-10-30 · Code-Lesung feature/kern-web-2@32dcd895 apps/web/src/lib/idle.ts:35-42 · Dedup-Key: bug:web:idle:nan-timestamp
 Änderung: Im `restored`-Zweig (`idle.ts:35-42`) gilt ein gespeicherter Wert, dessen Zahl nicht endlich ist, als unbekanntes Alter: `onIdle` sofort; `null` bleibt ohne Wirkung. Test zuerst rot: `restored` mit `'abc'` unter `adminhelper_last_activity` ruft `onIdle`.
 Verify: bash scripts/dev/verify.sh web --strict -- idle
