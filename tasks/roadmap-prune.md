@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Aufräumen: geschlossene Roadmap-Zeilen nach 7 Tagen löschen, fertige Ledger und Specs entfernen — Task-Ledger
-Status: geplant · Branch: feature/roadmap-prune · Review: am Ende
+Status: aktiv · Branch: feature/roadmap-prune · Review: am Ende
 Spec: Roadmap R-0993
 Heavy: none — nur `scripts/dev/roadmap.py` samt Unit-Tests und das Löschen von Markdown unter `tasks/` und `docs/features/`; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
