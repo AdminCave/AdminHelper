@@ -24,16 +24,8 @@ import type {
   MaintenanceInput,
   Server,
   TemplateAssignment,
+  TemplateSuggestion,
 } from '$lib/api/types';
-
-// A standard template the server's host facts suggest; `reason` is `os:<os>` or
-// `subsystem:<name>`.
-export interface TemplateSuggestion {
-  slug: string;
-  templateId: string;
-  templateName: string;
-  reason: string;
-}
 
 export const monitoringApi = {
   // ── Reads ────────────────────────────────────────────────────────────────

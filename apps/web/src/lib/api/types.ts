@@ -6,19 +6,19 @@
 // body field to a browser request as an empty string.
 export interface LoginResponse {
   access_token: string;
-  token_type: string;
+  token_type?: string;
 }
 
 export interface RefreshResponse {
   access_token: string;
-  token_type: string;
+  token_type?: string;
 }
 
 export interface User {
   id: number;
   username: string;
   is_admin: boolean;
-  created_at?: string;
+  created_at?: string | null;
   server_ids?: string[];
   // Only GET /api/auth/me sends it: the minutes without input before the panel signs out, 0 = off.
   idle_timeout_minutes?: number;
@@ -43,7 +43,7 @@ export interface EnrollmentGrant {
   scope: string;
   browser: boolean;
   enrollPort: number;
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 export type ApiKeyPermission = 'read' | 'read_write';
@@ -52,7 +52,7 @@ export interface ApiKey {
   id: number;
   name: string;
   permission: ApiKeyPermission;
-  created_at?: string;
+  created_at?: string | null;
 }
 
 export interface ApiKeyCreate {
@@ -65,6 +65,7 @@ export interface ApiKeyCreateResult {
   id: number;
   name: string;
   permission: ApiKeyPermission;
+  created_at?: string | null;
 }
 
 export class ApiError extends Error {
@@ -147,7 +148,7 @@ export interface FrpConfig {
   id: string;
   name: string;
   serverAddr: string;
-  bindPort: number;
+  bindPort: number | null;
   vhostHttpsPort?: number | null;
   authToken?: string | null;
   subdomainHost?: string | null;
@@ -187,7 +188,7 @@ export interface FrpStatusProxy {
 export interface FrpStatus {
   proxies: FrpStatusProxy[];
   total?: number;
-  error?: string;
+  error?: string | null;
 }
 
 // ── Audit log ───────────────────────────────────────────────────────────

@@ -15,12 +15,17 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import MonitorAgentKey
+from app.schemas import AgentKeyDeletedOut, AgentKeyOut, ServerCleanupOut
 from app.server_cleanup import cleanup_server
 
 router = APIRouter()
 
 
-@router.post("/agent-keys/{server_id}", dependencies=[Depends(require_internal)])
+@router.post(
+    "/agent-keys/{server_id}",
+    response_model=AgentKeyOut,
+    dependencies=[Depends(require_internal)],
+)
 def create_agent_key(server_id: str, db: Session = Depends(get_db)):
     """Generates a new agent API key for a server.
 
@@ -47,7 +52,11 @@ def create_agent_key(server_id: str, db: Session = Depends(get_db)):
     return d
 
 
-@router.delete("/agent-keys/{server_id}", dependencies=[Depends(require_internal)])
+@router.delete(
+    "/agent-keys/{server_id}",
+    response_model=AgentKeyDeletedOut,
+    dependencies=[Depends(require_internal)],
+)
 def delete_agent_key(server_id: str, db: Session = Depends(get_db)):
     """Deletes the agent API key of a server."""
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
@@ -55,7 +64,11 @@ def delete_agent_key(server_id: str, db: Session = Depends(get_db)):
     return {"deleted": True}
 
 
-@router.delete("/servers/{server_id}/cleanup", dependencies=[Depends(require_internal)])
+@router.delete(
+    "/servers/{server_id}/cleanup",
+    response_model=ServerCleanupOut,
+    dependencies=[Depends(require_internal)],
+)
 def server_cleanup(server_id: str, db: Session = Depends(get_db)):
     """Cleans up all monitoring data of a server."""
     result = cleanup_server(db, server_id)

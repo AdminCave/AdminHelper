@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitorCheck, MonitorContainerDetails } from '$lib/api/types';
+  import { containerDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -86,7 +87,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   function info(check: MonitorCheck): Info {
-    const d = check.state?.details as MonitorContainerDetails | undefined;
+    const d = containerDetails(check.state?.details);
     // Rows are keyed by the container id (by name in details before R-0419), so
     // each container once, the first entry winning.
     const keyed = (d?.containers ?? []).map((c) => ({

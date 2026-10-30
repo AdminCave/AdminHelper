@@ -29,6 +29,8 @@ export interface Server {
   tags?: string[];
   notes?: string | null;
   connections?: Connection[];
+  frpTunnels?: FrpTunnel[];
+  createdAt?: string | null;
 }
 
 export interface ServerInput {
@@ -86,7 +88,7 @@ export interface FrpConfig {
   id: string;
   name: string;
   serverAddr: string;
-  bindPort: number;
+  bindPort: number | null;
   vhostHttpsPort?: number | null;
   authToken?: string | null;
   subdomainHost?: string | null;
@@ -108,13 +110,13 @@ export interface FrpTunnel {
   name: string;
   tunnelType: FrpTunnelType;
   protocol: FrpProtocol;
-  localIp: string;
+  localIp: string | null;
   localPort: number;
   secretKey?: string | null;
   customDomains?: string | null;
   visitorPort?: number | null;
   connectionId?: string | null;
-  enabled: boolean;
+  enabled: boolean | null;
   tags?: string[];
   createdAt?: string | null;
 }
@@ -150,13 +152,13 @@ export interface FrpStatusProxy {
 export interface FrpStatus {
   proxies: FrpStatusProxy[];
   total?: number;
-  error?: string;
+  error?: string | null;
 }
 
 export interface FrpProvisionToken {
   id: string;
   serverId: string;
-  expiresAt: string;
+  expiresAt: string | null;
   usedAt?: string | null;
   isValid: boolean;
   createdAt?: string | null;
@@ -164,7 +166,7 @@ export interface FrpProvisionToken {
 
 export interface FrpProvisionTokenCreateResult {
   token: string;
-  expiresAt: string;
+  expiresAt: string | null;
   serverId: string;
   serverName: string;
 }
@@ -433,10 +435,14 @@ export type MonitorCheckDetails =
   | Record<string, unknown>;
 
 export interface MonitorCheckState {
+  checkId?: string;
   status?: MonStatus;
-  message?: string;
-  lastCheck?: string;
-  details?: MonitorCheckDetails;
+  message?: string | null;
+  lastCheck?: string | null;
+  since?: string | null;
+  failCount?: number | null;
+  notifiedStatus?: string | null;
+  details?: MonitorCheckDetails | null;
 }
 
 export interface MonitorCheck {
@@ -446,10 +452,10 @@ export interface MonitorCheck {
   checkType: MonitorCheckType;
   interval: MonitorInterval;
   severity: MonitorSeverity;
-  consecutiveFails?: number;
+  consecutiveFails?: number | null;
   consecutiveOks?: number;
   description?: string | null;
-  enabled: boolean;
+  enabled: boolean | null;
   config?: MonitorCheckConfig;
   state?: MonitorCheckState | null;
   templateId?: string | null;
@@ -457,6 +463,8 @@ export interface MonitorCheck {
   // Template fields the user changed, which the template sync keeps; named as in
   // the request body (snake_case, e.g. 'check_type'), not as the fields above.
   overriddenFields?: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface MonitorCheckInput {
@@ -487,7 +495,7 @@ export interface MaintenanceWindow {
   startTime?: string | null;
   durationMinutes?: number | null;
   timezone: string;
-  enabled: boolean;
+  enabled: boolean | null;
   createdAt?: string | null;
 }
 
@@ -505,6 +513,9 @@ export interface MaintenanceInput {
 }
 
 export interface MonitoringMetricsResponse {
+  checkId?: string;
+  checkType?: string;
+  period?: string;
   data?: MonitoringMetricSeries[];
   statusHistory?: MonitoringMetricSeries[];
 }
@@ -524,9 +535,12 @@ export interface AlertRule {
   channel: AlertChannel;
   matchSeverity?: MonitorSeverity | null;
   matchServerId?: string | null;
-  cooldownMinutes: number;
+  cooldownMinutes: number | null;
   channelConfig?: AlertChannelConfig;
-  enabled: boolean;
+  enabled: boolean | null;
+  templateId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface AlertRuleInput {
@@ -539,8 +553,9 @@ export interface AlertRuleInput {
 }
 
 export interface AlertLogEntry {
-  id: string;
+  id: number;
   sentAt: string;
+  alertRuleId: string;
   checkId: string;
   oldStatus: MonStatus;
   newStatus: MonStatus;
@@ -556,7 +571,7 @@ export type NotificationScopeType = 'all' | 'tag' | 'server';
 // One bell-feed entry (mirrors the server's Notification.to_dict()).
 export interface NotificationItem {
   id: number;
-  createdAt: string;
+  createdAt: string | null;
   severity: NotificationSeverity;
   category: string;
   eventType: string;
@@ -627,6 +642,8 @@ export interface TemplateAlertDef {
 }
 
 export interface MonitoringTemplateAssignment {
+  id: string;
+  templateId: string;
   serverId: string;
   serverName?: string;
   serverHostname?: string;
@@ -653,8 +670,10 @@ export interface MonitoringTemplateFull {
   builtinUpdateAvailable?: boolean;
   checkDefinitions?: TemplateCheckDef[];
   alertDefinitions?: TemplateAlertDef[];
-  assignments?: MonitoringTemplateAssignment[];
-  tagAssignments?: MonitoringTemplateTagAssignment[];
+  assignments?: MonitoringTemplateAssignment[] | null;
+  tagAssignments?: MonitoringTemplateTagAssignment[] | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 // A definition as GET /templates/{id}/builtin-update shows it: every key at its
@@ -676,6 +695,15 @@ export interface MonitoringBuiltinUpdate {
   shippedVersion: number;
   current: MonitoringBuiltinDefinitions;
   shipped: MonitoringBuiltinDefinitions;
+}
+
+// A standard template the server's host facts suggest; `reason` is `os:<os>` or
+// `subsystem:<name>`.
+export interface TemplateSuggestion {
+  slug: string;
+  templateId: string;
+  templateName: string;
+  reason: string;
 }
 
 export interface MonitoringTemplateInput {

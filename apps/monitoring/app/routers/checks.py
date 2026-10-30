@@ -27,7 +27,10 @@ from app.schemas import (
     VALID_INTERVALS,
     VALID_SEVERITIES,
     CheckCreate,
+    CheckMetricsOut,
     CheckUpdate,
+    MonitorCheckOut,
+    StatusSummaryOut,
 )
 from app.template_sync import mark_overrides, resolve_template_check, tombstone_check
 
@@ -131,7 +134,12 @@ _DYNAMIC_METRIC_PATTERNS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-@router.get("/checks", dependencies=[Depends(require_internal)])
+@router.get(
+    "/checks",
+    response_model=list[MonitorCheckOut],
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def list_checks(
     response: Response,
     server_id: str | None = Query(None),
@@ -149,7 +157,11 @@ def list_checks(
 
 
 @router.post(
-    "/checks", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)]
+    "/checks",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
 )
 def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     """Creates a new check and registers it in the scheduler."""
@@ -190,7 +202,12 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     return check.to_dict(state=state)
 
 
-@router.get("/checks/{check_id}", dependencies=[Depends(require_internal)])
+@router.get(
+    "/checks/{check_id}",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def get_check(check_id: str, db: Session = Depends(get_db)):
     """Returns a single check with its state."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
@@ -200,7 +217,12 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
     return check.to_dict(state=state)
 
 
-@router.put("/checks/{check_id}", dependencies=[Depends(require_internal)])
+@router.put(
+    "/checks/{check_id}",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)):
     """Updates a check."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
@@ -292,7 +314,12 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     remove_check(check_id)
 
 
-@router.post("/checks/{check_id}/toggle", dependencies=[Depends(require_internal)])
+@router.post(
+    "/checks/{check_id}/toggle",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def toggle_check(check_id: str, db: Session = Depends(get_db)):
     """Enables/disables a check."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
@@ -309,7 +336,12 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
     return check.to_dict(state=state)
 
 
-@router.post("/checks/{check_id}/reset", dependencies=[Depends(require_internal)])
+@router.post(
+    "/checks/{check_id}/reset",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def reset_check(check_id: str, db: Session = Depends(get_db)):
     """Drops the user's changes to a template check: every template field gets
     the template's value again."""
@@ -336,7 +368,12 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
     return check.to_dict(state=state)
 
 
-@router.post("/checks/{check_id}/run", dependencies=[Depends(require_internal)])
+@router.post(
+    "/checks/{check_id}/run",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def run_check_now(check_id: str, db: Session = Depends(get_db)):
     """Runs a check immediately (manual trigger)."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
@@ -375,7 +412,12 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/status", dependencies=[Depends(require_internal)])
+@router.get(
+    "/status",
+    response_model=list[MonitorCheckOut],
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def get_all_status(
     response: Response,
     limit: int | None = Query(None, ge=1, le=1000),
@@ -388,7 +430,12 @@ def get_all_status(
     return _serialize_with_states(db, checks)
 
 
-@router.get("/status/server/{server_id}", dependencies=[Depends(require_internal)])
+@router.get(
+    "/status/server/{server_id}",
+    response_model=list[MonitorCheckOut],
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
 def get_server_status(server_id: str, db: Session = Depends(get_db)):
     """Returns check states for a specific server."""
     checks = (
@@ -400,7 +447,9 @@ def get_server_status(server_id: str, db: Session = Depends(get_db)):
     return _serialize_with_states(db, checks)
 
 
-@router.get("/status/summary", dependencies=[Depends(require_internal)])
+@router.get(
+    "/status/summary", response_model=StatusSummaryOut, dependencies=[Depends(require_internal)]
+)
 def get_status_summary(db: Session = Depends(get_db)):
     """Summary: count per status. Dict response (aggregate, not a list) —
     deliberately unpaginated."""
@@ -439,7 +488,11 @@ def _series_or_502(response: dict) -> list:
     return response.get("data", {}).get("result", [])
 
 
-@router.get("/checks/{check_id}/metrics", dependencies=[Depends(require_internal)])
+@router.get(
+    "/checks/{check_id}/metrics",
+    response_model=CheckMetricsOut,
+    dependencies=[Depends(require_internal)],
+)
 def get_check_metrics(
     check_id: str,
     period: str = Query("1h", pattern="^(1h|6h|24h|7d)$"),
