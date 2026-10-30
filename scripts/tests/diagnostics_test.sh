@@ -67,7 +67,10 @@
 #       stays 0600 in a dir with a default ACL; no value of the .env stands in the
 #       arguments of sed;
 #   (o) the token forms are masked before .env values under 8 bytes, which are
-#       masked elsewhere too.
+#       masked elsewhere too, and after longer ones, which go whole;
+#   (p) a mask program that fails (env_values, also for --mask-hosts) stops the run
+#       with its error and an error of its own, and no bundle is written; so does a
+#       rule file that cannot be written.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -820,16 +823,20 @@ unset -f uname
 # --- (o) the token forms before the short values --------------------------------------
 # A value under 8 bytes may stand by chance inside a token; masked first, it would
 # leave rests of the token too short for the token rule. The token rules run before
-# the short values and after the long ones; the short value is masked elsewhere too.
+# the short values and after the long ones; the short value is masked elsewhere too. A
+# long value with a token form inside goes whole: the JWT rule first would leave its
+# beginning.
 cat > "$tmp/o.env" <<'EOF'
 SMTP_PASSWORD=ab12
 SECRET_KEY=longvalue1234
+SERVER_DB_PASSWORD=pre9x.eyJabcdefgh.eyJabcdefgh.sig1
 EOF
 build_redaction_sedfile "$tmp/o.env" "$tmp/o.sed"
 same "(o) token forms before short values" \
-    "$(printf '%s\n' 'Authorization: Bearer <redacted>' 'pw=<redacted> key=<redacted>' 'jwt <redacted-jwt>')" \
+    "$(printf '%s\n' 'Authorization: Bearer <redacted>' 'pw=<redacted> key=<redacted>' 'jwt <redacted-jwt>' \
+        'db=<redacted>')" \
     "$(printf '%s\n' 'Authorization: Bearer xyzab12cdefghij' 'pw=ab12 key=longvalue1234' \
-        'jwt eyJab12cdef.eyJpayload12.sigab12' | redact "$tmp/o.sed")" || fail=1
+        'jwt eyJab12cdef.eyJpayload12.sigab12' 'db=pre9x.eyJabcdefgh.eyJabcdefgh.sig1' | redact "$tmp/o.sed")" || fail=1
 
 # --- (e) main: report.txt and the logs in the bundle are redacted -----------------
 # A docker stub on PATH answers what main asks; `compose ps` lands in report.txt,
@@ -1101,6 +1108,58 @@ m_same || { echo "(m) a failing tar changed the earlier bundle" >&2; fail=1; }
 m_left="$(ls -A "$m/out")"
 [ "$m_left" = "${m_bundle##*/}" ] \
     || { echo "(m) a failing tar left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+
+# --- (p) a failing mask program stops the run -----------------------------------------
+# An awk stub fails where env_values reads the values of one key (-v key=<key>), every
+# other awk runs as usual. Without the values of that key the bundle would carry them
+# in the clear: the run ends with an error of its own and the error of awk, and writes
+# no bundle. SECRET_KEY: the rules for the logs; DOMAIN with --mask-hosts: the host rules.
+p="$tmp/p"
+mkdir -p "$p/bin" "$p/out-SECRET_KEY" "$p/out-DOMAIN"
+cp "$work/docker-compose.yml" "$work/.env" "$p/"
+p_awk="$(command -v awk)"
+for p_key in SECRET_KEY DOMAIN; do
+    cat > "$p/bin/awk" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+    [ "\$a" != "key=$p_key" ] || { echo "awk: stub fails for $p_key" >&2; exit 2; }
+done
+exec "$p_awk" "\$@"
+EOF
+    chmod +x "$p/bin/awk"
+    p_args=(--output "$p/out-$p_key")
+    [ "$p_key" != DOMAIN ] || p_args+=(--mask-hosts)
+    rc=0
+    ( cd "$p" && PATH="$p/bin:$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" "${p_args[@]}" ) \
+        > "$p/run.log" 2>&1 || rc=$?
+    p_log="$(cat "$p/run.log")"
+    p_left="$(ls -A "$p/out-$p_key")"
+    if [ "$rc" = 0 ] || [ -n "$p_left" ] || ! has '\[diagnostics\] ERROR' "$p_log" \
+        || ! has "stub fails for $p_key" "$p_log"; then
+        echo "(p) awk failing for $p_key: exit $rc, left: $(tr '\n' ' ' <<<"$p_left")" >&2
+        sed 's/^/    | /' "$p/run.log" >&2; fail=1
+    fi
+done
+# The rules must stop the run when they cannot be written, too: a cat stub fails where
+# it writes the token rules (cat without an argument, the here-document). main calls
+# build_redaction_sedfile as a command of its own; under || set -e would be off in it
+# and the run would go on without the rules.
+mkdir -p "$p/bin-cat" "$p/out-cat"
+p_cat="$(command -v cat)"
+cat > "$p/bin-cat/cat" <<EOF
+#!/usr/bin/env bash
+[ "\$#" != 0 ] || { echo "cat: stub fails" >&2; exit 1; }
+exec "$p_cat" "\$@"
+EOF
+chmod +x "$p/bin-cat/cat"
+rc=0
+( cd "$p" && PATH="$p/bin-cat:$work/bin:$PATH" TMPDIR="$tmp" bash "$ROOT/scripts/diagnostics.sh" \
+    --output "$p/out-cat" ) > "$p/run-cat.log" 2>&1 || rc=$?
+p_left="$(ls -A "$p/out-cat")"
+if [ "$rc" = 0 ] || [ -n "$p_left" ] || ! has 'cat: stub fails' "$(cat "$p/run-cat.log")"; then
+    echo "(p) rules that cannot be written: exit $rc, left: $(tr '\n' ' ' <<<"$p_left")" >&2
+    sed 's/^/    | /' "$p/run-cat.log" >&2; fail=1
+fi
 
 # --- (h) the switch in the usage ----------------------------------------------------
 # The usage line is the last line --help prints: a range that ends too early loses it,

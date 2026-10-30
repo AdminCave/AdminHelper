@@ -77,6 +77,11 @@ ENV_WS="([[:space:]]|"$'\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x8
 ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
 ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
 
+# mask_error : the message of a mask program that failed; the run then writes no bundle.
+mask_error() {
+    echo "[diagnostics] ERROR: the values of .env could not be read for the masking (see above) — no bundle written." >&2
+}
+
 # build_redaction_sedfile <envfile> <sedfile> [mask_hosts]
 # Writes a sed script that masks the .env secret values plus generic token forms, and
 # with mask_hosts=1 the host names and addresses of host_rules as well. Each value once
@@ -93,24 +98,14 @@ build_redaction_sedfile() {
     local envfile="$1" sedfile="$2" mask_hosts="${3:-0}" short=""
     : > "$sedfile"
     if [ -f "$envfile" ]; then
-        local key line val esc len
-        while IFS= read -r line; do
-            len="${line%%$'\t'*}"
-            line="${line#*$'\t'}"
-            key="${line%% *}"
-            val="${line#* }"
-            esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')"
-            if [ "$key" = SMTP_USER ]; then
-                esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')"
-            fi
-            if [ "$len" -ge 8 ]; then
-                printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
-            else
-                short+="s/$esc/<redacted>/g"$'\n'
-            fi
-        done < <(
+        local key line val esc len list
+        # The list is taken whole before its first rule: a mask program that fails
+        # (env_values, sed) fails the function, and the caller writes no bundle. Call it
+        # as a command of its own, never under || or if: that turns set -e off in it,
+        # and a rule that cannot be written would no longer stop the run.
+        list="$(
             for key in "${SECRET_KEYS[@]}"; do
-                env_values "$envfile" "$key" | LC_ALL=C sed -e "s/^/$key /"
+                env_values "$envfile" "$key" | LC_ALL=C sed -e "s/^/$key /" || exit 1
             done | LC_ALL=C awk -v ws="$ENV_WS" '
                 # Skip whitespace only or the well-known placeholder (not a real secret).
                 { v = substr($0, index($0, " ") + 1) }
@@ -119,7 +114,23 @@ build_redaction_sedfile() {
                 }
                 END { for (v in by) print length(v) "\t" by[v] " " v }
             ' | LC_ALL=C sort -t "$(printf '\t')" -k1,1rn
-        )
+        )" || { mask_error; return 1; }
+        [ -n "$list" ] && while IFS= read -r line; do
+            len="${line%%$'\t'*}"
+            line="${line#*$'\t'}"
+            key="${line%% *}"
+            val="${line#* }"
+            esc="$(printf '%s' "$val" | LC_ALL=C sed -e 's/[][\\/.*^$]/\\&/g')" || { mask_error; return 1; }
+            if [ "$key" = SMTP_USER ]; then
+                esc="$(printf '%s' "$esc" | LC_ALL=C sed -e 's/^[[:alnum:]_]/\\b&/' -e 's/[[:alnum:]_]$/&\\b/')" \
+                    || { mask_error; return 1; }
+            fi
+            if [ "$len" -ge 8 ]; then
+                printf 's/%s/<redacted>/g\n' "$esc" >> "$sedfile"
+            else
+                short+="s/$esc/<redacted>/g"$'\n'
+            fi
+        done < <(printf '%s\n' "$list")
     fi
     # Generic token shapes that may appear in logs regardless of .env. The query
     # parameters stand in the request line of the gateway's and the server's access
@@ -133,7 +144,7 @@ s/adminhelper_prov_[A-Za-z0-9_-]\{8,\}/adminhelper_prov_<redacted>/g
 SED
     printf '%s' "$short" >> "$sedfile"
     if [ "$mask_hosts" = 1 ]; then
-        host_rules "$envfile" >> "$sedfile"
+        host_rules "$envfile" >> "$sedfile" || { mask_error; return 1; }
     fi
 }
 
@@ -163,7 +174,7 @@ SED
 # occurrence gets its first letter turned into a newline, which a line never holds,
 # and back after the rule.
 host_rules() {
-    local envfile="$1" key form node name first rest
+    local envfile="$1" key form forms node name first rest
     local w=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_
     local -a parts
     cat <<'SED'
@@ -179,17 +190,21 @@ SED
     {
         if [ -f "$envfile" ]; then
             for key in "${HOST_KEYS[@]}"; do
-                while IFS= read -r form; do
-                    IFS=$', \t<>' read -r -a parts <<< "$form"
-                    printf '%s\n' "${parts[@]}"
-                done < <(
+                # Taken whole first, as in build_redaction_sedfile: a failing mask
+                # program fails the pipe, and host_rules with it.
+                forms="$(
                     if [ "$key" = SMTP_FROM ]; then
                         env_values "$envfile" "$key" | LC_ALL=C sed -e 's/\\"\([^"\\]\|\\[^"]\)*\\"//g' \
                             -e 's/"\([^"\\]\|\\.\)*"//g' -e 's/[^,<]*<\([^>,]*\)>[^,]*/\1/g'
                     else
                         env_values "$envfile" "$key"
                     fi
-                )
+                )" || exit 1
+                [ -n "$forms" ] || continue
+                while IFS= read -r form; do
+                    IFS=$', \t<>' read -r -a parts <<< "$form"
+                    printf '%s\n' "${parts[@]}"
+                done < <(printf '%s\n' "$forms")
             done
         fi
         node="$(uname -n 2>/dev/null)" || true
@@ -372,7 +387,7 @@ env_values() {
             if (q != "") finish()
             if (pq != "") { swap(); finish() }
         }
-    ' "$1" 2>/dev/null
+    ' "$1"
 }
 
 # redact <sedfile> : filter stdin -> stdout through the redaction sed script.
@@ -494,7 +509,7 @@ sanitize_env() {
         LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" -v secrets="$secrets" -v hosts= "$prog" "$envfile"
         return
     fi
-    rules="$(host_rules "$envfile")"
+    rules="$(host_rules "$envfile")" || return 1
     hosts="$(IFS='|'; printf '%s' "${HOST_KEYS[*]}")"
     # The rules reach sed through a pipe, not as an argument: the arguments of a process
     # stand in the process list for every user of the host, and the rules carry the
@@ -551,7 +566,10 @@ main() {
 
     # --- env.sanitized (mask secret VALUES) -------------------------------
     if [ -f .env ]; then
-        sanitize_env .env "$MASK_HOSTS" > "$stage/env.sanitized"
+        sanitize_env .env "$MASK_HOSTS" > "$stage/env.sanitized" || {
+            echo "[diagnostics] ERROR: .env could not be masked for env.sanitized (see above) — no bundle written." >&2
+            exit 1
+        }
     fi
 
     # --- per-service logs (redacted) --------------------------------------

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-2 — Task-Ledger
-Status: aktiv · Branch: feature/ops-2 · Review: pro Task
+Status: bereit · Branch: feature/ops-2 · Review: pro Task
 Spec: docs/features/ops-2.md (Roadmap R-0908, R-0910, R-0909)
 Heavy: none — nur Ops-Skripte mit hermetischen Tests (Docker-Stub), kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: changelog.d/ops-2.md
 Abhängt von: T1
 
-### T4 — Fehler der Masken-Programme brechen ab (R-0909)  [ ]
+### T4 — Fehler der Masken-Programme brechen ab (R-0909)  [x]
 Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, changelog.d/ops-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7157be2d 2026-10-30T16:46:49+01:00
+Review: approve (.ah-out/review/ops-2/T4.verdict.json)
 Änderung: `env_values` schluckt die Fehlerausgabe nicht mehr (`:291`), und `build_redaction_sedfile` prüft den
 Exit-Status der Wertliste (heute in einer Prozess-Substitution, `:104-118`); scheitert ein Masken-Programm, endet
 `diagnostics.sh` mit Meldung, ohne Bundle. Test zuerst rot: ein scheiterndes awk (Stub im PATH) bricht ab.
@@ -58,3 +60,6 @@ Abhängt von: T3
 - T3: keine Mindestlänge für Wert-Regeln (ließe kurze Secrets im Klartext), sondern eine dritte Gruppe nach den
   Token-Regeln. Grenze 8: zufällig mitten in einem Token steht nur ein kurzer Wert; 8 liegt über der Segmentlänge 6
   der JWT-Regel, ein langer Wert läuft weiter zuerst (ein Token, das ihn enthält, verliert sonst nur einen Teil).
+- T4: die Wertlisten (Secrets und Host-Werte) werden ganz eingelesen, bevor die erste Regel entsteht, statt aus
+  einer Prozess-Substitution, deren Exit niemand sieht; auch `sanitize_env` bricht ab. Der Nit aus dem T3-Review
+  (langer Wert mit Token-Form vor den Token-Regeln ungetestet) ist als Fall in (o) mit erledigt.

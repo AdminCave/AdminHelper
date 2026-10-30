@@ -8,3 +8,6 @@
   bleiben erhalten.
 - **Diagnose-Bundle: Reihenfolge der Masken-Regeln:** die allgemeinen Token-Formen werden vor kurzen `.env`-Werten
   maskiert, damit ein kurzer Wert ein Token nicht zerteilt; jeder `.env`-Wert bleibt maskiert.
+- **Diagnose-Bundle: Abbruch bei Fehlern der Maskierung:** scheitert das Lesen der `.env`-Werte fuer die Maskierung,
+  endet `diagnostics.sh` mit einer Fehlermeldung und schreibt kein Bundle; die Fehlerausgabe wird nicht mehr
+  verschluckt.
