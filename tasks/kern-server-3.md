@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-3 · Review: pro Task
 Spec: docs/features/kern-server-3.md (Roadmap R-0960, R-0959, R-0958, R-0990, R-0991, R-0957, R-0976)
 Heavy: linux-full — Server-Auth und Proxy-Vertrauen hinter dem Gateway; der Stack-Test prüft Login und Bootstrap
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -54,8 +54,10 @@ Beweis: Code-Lesung `apps/server/app/modules/connections/models.py:79` (`json.lo
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_storage.py
 Doku: changelog.d/kern-server-3.md
 
-### T5 — API-Referenz: Bootstrap-Reihenfolge und Refresh-Audit (R-0991c, R-0990)  [ ]
+### T5 — API-Referenz: Bootstrap-Reihenfolge und Refresh-Audit (R-0991c, R-0990)  [x]
 Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @baf6fcb6 2026-10-30T11:58:59+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Beim Bootstrap kann das Rate-Limit (`429`) vor dem `403` ohne Zertifikat kommen (`api-reference.html:77` + EN). Bei Login (`:61`) steht: Ein ohne Zertifikat abgewiesener Refresh erscheint als `auth.refresh_failed`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + EN
