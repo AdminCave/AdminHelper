@@ -612,6 +612,13 @@ services:
   #     - RETENTION_DAYS=7
   #   entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
   #   restart: unless-stopped
+  #   # No process gains privileges on exec (setuid bits, file capabilities).
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   # Processes: the loop shell, then one pg_dump or find at a time.
+  #   pids_limit: 128
+  #   # Memory: pg_dump streams to the file, nothing is held.
+  #   mem_limit: 256m
   #   depends_on:
   #     postgres:
   #       condition: service_healthy
