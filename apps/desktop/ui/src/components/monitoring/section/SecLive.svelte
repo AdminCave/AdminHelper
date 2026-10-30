@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitorCheck, MonitorResourceDetails } from '$lib/api/types';
+  import { resourceDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -76,7 +77,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   function rings(check: MonitorCheck): Ring[] {
-    const d = check.state?.details as MonitorResourceDetails | undefined;
+    const d = resourceDetails(check.state?.details);
     const cfg = (check.config ?? {}) as Record<string, unknown>;
     if (!d) return [];
     const out: Ring[] = [];
@@ -115,7 +116,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return out;
   }
   function load(check: MonitorCheck): LoadPill | null {
-    const d = check.state?.details as MonitorResourceDetails | undefined;
+    const d = resourceDetails(check.state?.details);
     const cfg = (check.config ?? {}) as Record<string, unknown>;
     if (d?.load_per_cpu == null) return null;
     const perCpu = num(d.load_per_cpu);
@@ -126,7 +127,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     };
   }
   function disks(check: MonitorCheck): DiskBar[] {
-    const d = check.state?.details as MonitorResourceDetails | undefined;
+    const d = resourceDetails(check.state?.details);
     const cfg = (check.config ?? {}) as Record<string, unknown>;
     if (!d) return [];
     const list = d.disks ?? [];

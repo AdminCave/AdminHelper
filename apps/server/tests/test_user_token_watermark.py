@@ -106,3 +106,22 @@ def test_the_tokens_of_the_bootstrap_answer_hold(test_client, tmp_path, monkeypa
     assert test_client.get("/api/auth/me", headers=_bearer(body["access_token"])).status_code == 200
     rot = test_client.post("/api/auth/refresh", json={"refresh_token": body["refresh_token"]})
     assert rot.status_code == 200, rot.text
+
+
+def test_the_admin_from_admin_password_holds_tokens_from_the_second_of_its_creation(
+    db_session, monkeypatch
+):
+    import app.main as m
+
+    monkeypatch.setattr(m, "ADMIN_PASSWORD", "supersecret")
+    m._ensure_admin(db_session)
+    user = db_session.query(User).filter_by(username="admin").one()
+
+    watermark = user.tokens_valid_after
+    assert watermark is not None
+    assert watermark.microsecond == 0
+
+    issued = watermark.replace(tzinfo=timezone.utc)
+    assert _get_user_from_token(_token("admin", "access", issued), db_session) is not None
+    a_second_earlier = issued - timedelta(seconds=1)
+    assert _get_user_from_token(_token("admin", "access", a_second_earlier), db_session) is None

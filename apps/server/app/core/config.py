@@ -146,6 +146,30 @@ def parse_web_idle_timeout(raw: str | None) -> int:
 
 WEB_IDLE_TIMEOUT_MINUTES = parse_web_idle_timeout(os.environ.get("WEB_IDLE_TIMEOUT_MINUTES", ""))
 
+WEB_SESSION_MAX_DEFAULT_HOURS = 24
+
+
+def parse_web_session_max_hours(raw: str | None) -> int:
+    """Hours after its sign-in at which a browser session ends, active or not (0 = off)."""
+    value = (raw or "").strip()
+    if not value:
+        return WEB_SESSION_MAX_DEFAULT_HOURS
+    try:
+        hours = int(value)
+    except ValueError:
+        hours = -1
+    if hours < 0:
+        logger.warning(
+            "WEB_SESSION_MAX_HOURS=%r is not a whole number >= 0, using %d",
+            raw,
+            WEB_SESSION_MAX_DEFAULT_HOURS,
+        )
+        return WEB_SESSION_MAX_DEFAULT_HOURS
+    return hours
+
+
+WEB_SESSION_MAX_HOURS = parse_web_session_max_hours(os.environ.get("WEB_SESSION_MAX_HOURS", ""))
+
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see server/alembic/), no longer by
 # Base.metadata.create_all().

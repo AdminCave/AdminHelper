@@ -120,6 +120,8 @@ services:
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
       # Web panel signs out after this many minutes without input in any tab (0 = off).
       - WEB_IDLE_TIMEOUT_MINUTES=${WEB_IDLE_TIMEOUT_MINUTES:-30}
+      # Server ends a browser session this many hours after sign-in (0 = off).
+      - WEB_SESSION_MAX_HOURS=${WEB_SESSION_MAX_HOURS:-24}
       # SMTP-Relay fuer E-Mail-Benachrichtigungen (Notification-Hub). Leerer
       # SMTP_HOST = E-Mail-Kanal deaktiviert (Outbox-Eintraege scheitern dann und
       # werden nach NOTIFICATION_MAX_ATTEMPTS verworfen). Kein lokaler MTA: auf
