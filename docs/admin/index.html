@@ -133,7 +133,7 @@
                 bedient das Web-Panel, die REST-API und den
                 APScheduler, der Monitoring-Jobs ausführt.
                 Metriken werden an ein externes <strong>VictoriaMetrics</strong>
-                gestreamt, FRP läuft in einem eigenen Container.
+                gestreamt, FRP läuft in einem eigenen Container; die mTLS-PKI betreibt der eigene Dienst <code>ca-issuer</code> (Laufzeiten der Zertifikate unter <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>).
                 Persistenz: <strong>PostgreSQL 17</strong> (eigener Compose-Service);
                 Server- und Monitoring-Service teilen sich einen
                 Postgres-Cluster mit zwei DBs (<code>adminhelper</code>,
@@ -143,9 +143,7 @@
           </div>
 
           <h2>Versionen</h2>
-          <p>
-            Aktuelle Release-Serie: <span class="chip chip-accent">v0.37.2</span> – Desktop-Recovery nach Server-Neuinstallation (Zertifikat-Reset direkt am Login-Screen + Geräte-Identität). Das Admin-Handbuch gilt für alle 0.17.x-, 0.19.x- und 0.20.x-Installationen; größere Sprünge (Web-Panel auf Svelte 5 in 0.17, Desktop auf Svelte 5 in 0.19, Refresh-Token-Rotation in 0.19) werden explizit markiert. Historie siehe <code>CHANGELOG.md</code> im Repo.
-          </p>
+          <p>Dieses Handbuch beschreibt die jeweils aktuelle Release-Serie; was sich in welcher Version geändert hat, steht in <code>CHANGELOG.md</code> im Repo.</p>
 
           <div class="page-nav">
             <a class="next" href="./installation.html"><span class="label">Nächstes Kapitel</span><span class="title">Installation →</span></a>
