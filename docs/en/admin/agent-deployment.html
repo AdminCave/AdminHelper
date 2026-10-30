@@ -73,16 +73,21 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>SERVER=srm.example.com                 # your AdminHelper server
 REPO="https://${SERVER}:8445"
 
-# 1) Fetch the signing key and COMPARE the fingerprint mechanically (trust root!)
-#    Stage to /tmp, check against the published value, then install — a bare
-#    "--show-keys" only prints the fingerprint, it compares nothing.
+# 1) Fetch the signing key and install ONLY the key with the published
+#    fingerprint (trust root!). The fetched file may carry more keys: import it
+#    into a throwaway directory, export only $FPR, CHECK the export mechanically,
+#    install only that (as agent-install.sh does).
 FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
+TMP=$(mktemp -d)
+curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o "$TMP/download.gpg"
+gpg --homedir "$TMP" --batch --no-autostart --import "$TMP/download.gpg"
+gpg --homedir "$TMP" --batch --no-autostart --export "$FPR" &gt; "$TMP/pinned.gpg"
+[ "$(gpg --homedir "$TMP" --batch --no-autostart --show-keys --with-colons "$TMP/pinned.gpg" \
+     | awk -F: 'p {print $10; p=0} $1=="pub" {p=1}')" = "$FPR" ] \
+  || { echo "ERROR: no key with this fingerprint — aborting!"; rm -rf "$TMP"; exit 1; }
 sudo install -d -m 0755 /usr/share/keyrings
-curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o /tmp/ah-keyring.gpg
-gpg --show-keys --with-colons /tmp/ah-keyring.gpg \
-  | awk -F: '/^fpr:/{print $10; exit}' | grep -qx "$FPR" \
-  || { echo "ERROR: keyring fingerprint mismatch — aborting!"; exit 1; }
-sudo install -D -m 0644 /tmp/ah-keyring.gpg /usr/share/keyrings/adminhelper-archive-keyring.gpg
+sudo install -D -m 0644 "$TMP/pinned.gpg" /usr/share/keyrings/adminhelper-archive-keyring.gpg
+rm -rf "$TMP"
 
 # 2) Repo source (deb822); Signed-By binds the repo to exactly this key
 sudo tee /etc/apt/sources.list.d/adminhelper.sources &gt;/dev/null &lt;&lt;EOF
