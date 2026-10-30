@@ -18,7 +18,7 @@ var logger = logging.For("enroll")
 
 // reprovisionHint is the command an operator runs when the identity has run out
 // (R-0280): provisioning is the one way to a new one.
-const reprovisionHint = "adminhelper-agent provision --url <URL> --token <TOKEN> --server-id <ID>"
+const reprovisionHint = "adminhelper-agent provision --url <URL> --token-stdin --server-id <ID>"
 
 // ReprovisionHint is the same command for the provisioning's own error when the new
 // identity could not be stored after the request.

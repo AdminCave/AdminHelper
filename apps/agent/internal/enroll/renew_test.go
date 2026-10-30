@@ -612,3 +612,34 @@ func TestLeafExpired(t *testing.T) {
 		t.Error("Muell-PEM: want error, got nil")
 	}
 }
+
+// R-0385: a due renewal holds the identity lock and removes what an interrupted one left;
+// an identity that is not due takes no lock and touches nothing.
+func TestStaleTempsRemovedByMaybeRenew(t *testing.T) {
+	orig := renewFunc
+	renewFunc = func(context.Context, string, string, time.Duration) error { return nil }
+	t.Cleanup(func() { renewFunc = orig })
+	now := time.Now()
+	day := 24 * time.Hour
+	for name, c := range map[string]struct {
+		notBefore, notAfter time.Time
+		removed             bool
+	}{
+		"due":     {now.Add(-80 * day), now.Add(10 * day), true},
+		"not due": {now.Add(-1 * day), now.Add(89 * day), false},
+	} {
+		dir := t.TempDir()
+		certPEM, keyPEM := selfSigned(t, "agent", c.notBefore, c.notAfter)
+		mustWrite(t, CertPath(dir), certPEM)
+		mustWrite(t, KeyPath(dir), keyPEM)
+		stale := filepath.Join(dir, "agent.key.77.tmp")
+		mustWrite(t, stale, []byte("x"))
+
+		if _, err := MaybeRenew(context.Background(), dir, "https://x", time.Second); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := os.Lstat(stale); os.IsNotExist(err) != c.removed {
+			t.Errorf("%s: stale staged file removed %v, want %v", name, os.IsNotExist(err), c.removed)
+		}
+	}
+}
