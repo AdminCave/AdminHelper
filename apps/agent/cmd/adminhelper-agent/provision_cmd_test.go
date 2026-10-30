@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -156,5 +157,91 @@ func TestProvisionCmdHelpNamesTokenStdin(t *testing.T) {
 	}
 	if len(calls) != 0 {
 		t.Errorf("provision ran: %+v", calls)
+	}
+}
+
+// fakeTerminal makes stdin a terminal that answers the no-echo read with answer.
+func fakeTerminal(t *testing.T, answer []byte, err error) (reads *int) {
+	t.Helper()
+	origTerm, origRead := stdinTerminal, readTerminal
+	t.Cleanup(func() { stdinTerminal, readTerminal = origTerm, origRead })
+	reads = new(int)
+	stdinTerminal = func(io.Reader) (int, bool) { return 7, true }
+	readTerminal = func(fd int) ([]byte, error) {
+		*reads++
+		if fd != 7 {
+			t.Errorf("read fd %d, want the terminal's 7", fd)
+		}
+		return answer, err
+	}
+	return reads
+}
+
+func TestReadStdinTokenTerminalReadsWithoutEcho(t *testing.T) {
+	reads := fakeTerminal(t, []byte(" adminhelper_prov_test9 "), nil)
+	stdin := &untouchedStdin{}
+	calls, out, err := runProvisionCmd(t, stdin, provisionArgs("--token-stdin")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *reads != 1 || stdin.read {
+		t.Errorf("%d no-echo read(s), stdin read %v; want one no-echo read and stdin untouched", *reads, stdin.read)
+	}
+	if len(calls) != 1 || calls[0].token != "adminhelper_prov_test9" {
+		t.Errorf("calls %+v, want one with the trimmed token", calls)
+	}
+	if !strings.Contains(out, "Provision token: ") || strings.Contains(out, "zz9") {
+		t.Errorf("output %q, want the prompt", out)
+	}
+}
+
+func TestReadStdinTokenTerminalErrors(t *testing.T) {
+	for name, c := range map[string]struct {
+		answer []byte
+		err    error
+		want   string
+	}{
+		"empty":  {[]byte("  "), nil, "no provision token on stdin"},
+		"failed": {nil, io.ErrUnexpectedEOF, "read the provision token from the terminal: unexpected EOF"},
+	} {
+		fakeTerminal(t, c.answer, c.err)
+		calls, _, err := runProvisionCmd(t, &untouchedStdin{}, provisionArgs("--token-stdin")...)
+		if err == nil || err.Error() != c.want {
+			t.Errorf("%s: err %v, want %q", name, err, c.want)
+		}
+		if len(calls) != 0 {
+			t.Errorf("%s: provision ran: %+v", name, calls)
+		}
+	}
+}
+
+func TestReadStdinTokenTerminalBounded(t *testing.T) {
+	fakeTerminal(t, bytes.Repeat([]byte("a"), 3*maxStdinToken), nil)
+	calls, _, err := runProvisionCmd(t, &untouchedStdin{}, provisionArgs("--token-stdin")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || len(calls[0].token) != maxStdinToken {
+		t.Errorf("calls %d, want one with a token of %d bytes", len(calls), maxStdinToken)
+	}
+}
+
+// A pipe is no terminal: the real check must send it the line-reading way.
+func TestReadStdinTokenPipeIsNoTerminal(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := w.WriteString("adminhelper_prov_test9\n"); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	if _, ok := stdinTerminal(r); ok {
+		t.Fatal("a pipe counts as a terminal")
+	}
+	calls, _, err := runProvisionCmd(t, r, provisionArgs("--token-stdin")...)
+	if err != nil || len(calls) != 1 || calls[0].token != "adminhelper_prov_test9" {
+		t.Errorf("err %v, calls %+v; want the token from the pipe", err, calls)
 	}
 }

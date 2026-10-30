@@ -97,6 +97,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 | github.com/tklauser/numcpus | Apache-2.0 |
 | gopkg.in/natefinch/lumberjack.v2 | MIT |
 | golang.org/x/sys | BSD-3-Clause |
+| golang.org/x/term | BSD-3-Clause |
 
 ### Nur Linux
 

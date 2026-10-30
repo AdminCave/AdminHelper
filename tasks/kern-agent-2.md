@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/kern-agent-2/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServerConfig
 Doku: changelog.d/kern-agent-2.md (neutral)
 
-### T3 — provision --token-stdin: auf einem Terminal ohne Echo (R-0983)  [ ]
+### T3 — provision --token-stdin: auf einem Terminal ohne Echo (R-0983)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/provision_cmd_test.go, apps/agent/go.mod, apps/agent/go.sum, THIRD_PARTY_LICENSES.md, changelog.d/kern-agent-2.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a3ed75e2 2026-10-30T14:00:27+01:00
+Review: approve (.ah-out/review/kern-agent-2/T3.verdict.json)
 Änderung: Ist stdin ein Terminal, liest `readStdinToken` mit `golang.org/x/term` ohne Echo (Prompt auf stderr); Pipe/Datei wie bisher, Grenze `maxStdinToken` bleibt. Test für den Nicht-Terminal-Weg und die Weiche (Terminal-Lesen selbst ist Plattform-I/O).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestProvisionCmd|TestReadStdinToken
 Doku: changelog.d/kern-agent-2.md (neutral)

@@ -6,3 +6,5 @@
 - **Agent: Grenzen fuer die frpc-Konfiguration vom Server:** Der Agent nimmt je Tabelle hoechstens 4096 und
   insgesamt hoechstens 131072 Schluessel an (Tabellen, die ein gepunkteter Schluessel oeffnet, zaehlen mit) und
   kuerzt Schluessel in seinen Fehlermeldungen auf 64 Zeichen.
+- **Agent: `provision --token-stdin` am Terminal:** Ist stdin ein Terminal, fragt der Agent den Token ohne Echo ab
+  (Eingabeaufforderung auf stderr); aus einer Pipe oder Datei liest er wie bisher die erste Zeile.

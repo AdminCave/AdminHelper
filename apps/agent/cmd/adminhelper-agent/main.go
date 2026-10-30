@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/diagnostics"
@@ -93,13 +94,38 @@ var runProvision = provision.Run
 // must not hold the command or grow its memory.
 const maxStdinToken = 4 << 10
 
+// stdinTerminal reports the descriptor of in if in is a terminal; tests swap it.
+var stdinTerminal = func(in io.Reader) (int, bool) {
+	f, ok := in.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return 0, false
+	}
+	return int(f.Fd()), true
+}
+
+// readTerminal reads a line from the terminal fd without echo; tests swap it.
+var readTerminal = term.ReadPassword
+
 // readStdinToken returns the first line of in, trimmed, so the token does not have to
-// be a program argument (visible in the process list). Its errors never quote what
-// was read.
-func readStdinToken(in io.Reader) (string, error) {
-	line, err := bufio.NewReader(io.LimitReader(in, maxStdinToken)).ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", fmt.Errorf("read the provision token from stdin: %w", err)
+// be a program argument (visible in the process list). On a terminal it prompts on
+// prompt and reads without echo, so the token stays off the screen. Its errors never
+// quote what was read.
+func readStdinToken(in io.Reader, prompt io.Writer) (string, error) {
+	var line string
+	if fd, ok := stdinTerminal(in); ok {
+		fmt.Fprint(prompt, "Provision token: ")
+		b, err := readTerminal(fd)
+		fmt.Fprintln(prompt)
+		if err != nil {
+			return "", fmt.Errorf("read the provision token from the terminal: %w", err)
+		}
+		line = string(b[:min(len(b), maxStdinToken)])
+	} else {
+		var err error
+		line, err = bufio.NewReader(io.LimitReader(in, maxStdinToken)).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return "", fmt.Errorf("read the provision token from stdin: %w", err)
+		}
 	}
 	if token := strings.TrimSpace(line); token != "" {
 		return token, nil
@@ -116,7 +142,7 @@ func provisionCmd() *cobra.Command {
 		Short: "Provision this host against an AdminHelper server (server API key + optional monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if tokenStdin {
-				t, err := readStdinToken(cmd.InOrStdin())
+				t, err := readStdinToken(cmd.InOrStdin(), cmd.ErrOrStderr())
 				if err != nil {
 					return err
 				}
