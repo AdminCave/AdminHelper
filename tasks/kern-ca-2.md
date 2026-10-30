@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-ca-2 · Review: am Ende
 Spec: docs/features/kern-ca-2.md (Roadmap R-0982, R-0945, R-0943)
 Heavy: linux-full — `apps/ca-issuer` und `apps/agent` (Sammellauf: Stack mit Enrollment, `agent_monitoring`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,5 +37,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestNewMTLS
 Doku: changelog.d/kern-ca-2.md
 
+### T4 — Leck-Rotation: Doku auf die tatsächliche Wirkung, Meldung beim Abbruch (Abschlussprüfung security)  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-2.md
+Änderung: Doku und Changelog versprechen nach `--compromised` nicht mehr, dass nur neue Zertifikate gelten: kein Renew, kein Trust-Bundle, Geräte des Scopes widerrufen und neu einrichten, vollständig erst mit neuer Root. Die Abbruchmeldung von `_replace` verlangt denselben Lauf mit denselben Optionen.
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py
+Doku: docs/admin/betrieb.html#ca-rotation · docs/en/admin/operations.html#ca-rotation · changelog.d/kern-ca-2.md
+
 ## Entscheidungen
 - T3: Die drei Renew-Tests in `internal/enroll/renew_test.go` vertrauten dem selbstsignierten httptest-Zertifikat direkt; das lehnt `NewMTLS` jetzt gewollt ab. Ihre Fixture ist ein Gateway-Leaf unter einem access-Zwischenzertifikat, die Assertions bleiben.
+- T4: Abschlussprüfung security fand, dass `--compromised` einen geleakten Schlüssel nicht wirksam aussperrt (Details privat). Die Doku sagt jetzt, was gilt; die wirksame Sperre ist eine eigene Roadmap-Zeile (R-1009), kein Teil dieses Zugs.
