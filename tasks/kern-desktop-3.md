@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-3 · Review: pro Task
 Spec: docs/features/kern-desktop-3.md (Roadmap R-0962, R-0961, R-0984, R-0981)
 Heavy: linux-full — Desktop-Journeys: Tunnel-Abgleich (Visitor-Bundle) und Geräte-Reset
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/kern-desktop-3/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
 Doku: changelog.d/kern-desktop-3.md (die Meldung steht in docs/ nicht wörtlich)
 
-### T3 — Launcher-Tests ohne feste Obergrenze von 900 ms (R-0981)  [ ]
+### T3 — Launcher-Tests ohne feste Obergrenze von 900 ms (R-0981)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0994f8c8 2026-10-30T15:20:07+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T3.verdict.json)
 Beweis: PR #326 CI 2026-10-30 · gh run view 40972646852 --job 123792900394: launcher.rs:2303 gave up after 1.9524272s · Dedup-Key: flaky:desktop:launcher.rs:open_gives_up_on_a_workspace_that_holds_no_lock_in_time
 Änderung: `open_gives_up_on_a_workspace_that_holds_no_lock_in_time` (`launcher.rs:2282-2310`) und `delete_gives_up_on_a_purge_that_does_not_end_in_time` (`:2505-2533`) prüfen statt `< 900 ms` eine großzügige Obergrenze (Frist plus einige Sekunden: „hängt nicht“); Mindestwartezeit und Zahl der Blicke bleiben.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher
