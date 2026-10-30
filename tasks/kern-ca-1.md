@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CA-Issuer: Startprüfung, Server-Leaves und Renew-Laufzeit — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ca-1 · Review: pro Task
 Spec: docs/features/kern-ca-1.md (Roadmap R-0918, R-0834, R-0880, R-0912, R-0833)
 Heavy: linux-full — `apps/ca-issuer` (Startprüfung der Hierarchie, Gateway-/frps-Leaf und Trust-Bundles) läuft im Sammellauf über `main` (`integration-stack`, `backup-restore`, `upgrade-path`); kein `scenario`: kein Wire-Format, kein Enrollment-Pfad und keine Agent-Seite ändert sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
