@@ -65,6 +65,7 @@
             <li><strong>Refresh-Token</strong>: 7 Tage gültig, rotiert bei jeder Verwendung (der alte wird sofort blacklisted).</li>
             <li><strong>Reuse-Detection</strong>: Wird ein geblacklisteter Refresh-Token erneut verwendet, werden <em>alle</em> Sessions des Users sofort invalidiert – ein Hinweis auf einen gestohlenen Token.</li>
             <li><strong>Abmeldung nach Inaktivität</strong>: Das Web-Panel meldet in allen offenen Tabs ab, wenn in keinem davon 30 Minuten lang bedient wurde (Maus, Tastatur, Touch); ein Hinweis bleibt stehen, bis man ihn schließt. Die Dauer stellt <code>WEB_IDLE_TIMEOUT_MINUTES</code> ein, <code>0</code> schaltet ab (<a href="./installation.html#env">Umgebungsvariablen</a>). Das gilt auch nach Neuladen oder Wiederöffnen im selben Browser: Liegt die letzte Bedienung dort länger als diese Dauer zurück, endet die Sitzung beim Laden sofort mit demselben Hinweis, ebenso, wenn die gespeicherte Zeit nach der Uhr des Rechners liegt (Uhr zurückgestellt).</li>
+            <li><strong>Höchstdauer der Sitzung</strong>: Unabhängig von der Bedienung beendet der Server eine Sitzung im Web-Panel 24 Stunden nach der Anmeldung; danach ist eine neue Anmeldung nötig. Die Dauer stellt <code>WEB_SESSION_MAX_HOURS</code> ein, <code>0</code> schaltet ab (<a href="./installation.html#env">Umgebungsvariablen</a>). Die Desktop-App ist davon nicht betroffen.</li>
           </ul>
 
           <div class="callout callout-note" data-reveal>

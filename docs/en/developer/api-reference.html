@@ -62,7 +62,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/refresh</code>
-            <p>Body: <code>{ "refresh_token" }</code> <em>or</em> HttpOnly cookie (browsers; the body may then be empty). Rotates both tokens, blacklists the old <code>jti</code>. Response as for login; for browser requests <code>refresh_token</code> is <code>""</code> and the new token is only in the cookie. Reusing an already-revoked refresh token invalidates all sessions of the affected user chain. Under <code>MTLS_ENFORCE=true</code> without a client certificate <code>403</code>; the token then stays valid.</p>
+            <p>Body: <code>{ "refresh_token" }</code> <em>or</em> HttpOnly cookie (browsers; the body may then be empty). Rotates both tokens, blacklists the old <code>jti</code>. Response as for login; for browser requests <code>refresh_token</code> is <code>""</code> and the new token is only in the cookie. Reusing an already-revoked refresh token invalidates all sessions of the affected user chain. Under <code>MTLS_ENFORCE=true</code> without a client certificate <code>403</code>; the token then stays valid. A refresh token from a browser sign-in carries its time (<code>web</code>, <code>auth_time</code>); once that lies <code>WEB_SESSION_MAX_HOURS</code> (default 24) or more back, the refresh answers <code>401</code> and clears the cookie without rotating; the access token of a browser session expires with it at the latest.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
