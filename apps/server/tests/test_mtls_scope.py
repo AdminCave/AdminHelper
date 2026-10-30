@@ -229,14 +229,18 @@ def test_mtls_enforce_defaults_to_enforced_without_the_env(tmp_path):
         env["DATA_DIR"] = str(tmp_path)
         if value is not None:
             env["MTLS_ENFORCE"] = value
-        proc = subprocess.run(
-            [sys.executable, "-c", "from app.core import config; print(config.MTLS_ENFORCE)"],
-            cwd=_SERVER_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", "from app.core import config; print(config.MTLS_ENFORCE)"],
+                cwd=_SERVER_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            # No traceback: the frames of subprocess.run carry env.
+            pytest.fail("the config probe did not end within 60 s", pytrace=False)
         assert proc.returncode == 0, proc.stderr
         return proc.stdout.strip()
 
@@ -387,7 +391,22 @@ def test_an_agent_report_with_another_servers_certificate_is_refused(
     resp = _report(test_client, "srv-1", _gateway_headers(cn="srv-2", ou=SCOPE_AGENT))
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"].startswith("ERR_CERT_SERVER_MISMATCH: "), resp.text
+    assert resp.json()["code"] == "ERR_CERT_SERVER_MISMATCH", resp.text
     assert monitoring.forwarded == []
+
+
+def test_the_server_mismatch_body_is_the_text_and_its_code(test_client, monkeypatch):
+    # The contract (R-0664): the detail word for word as before the code, the code next to it.
+    import app.modules.monitoring_proxy.router as proxy
+
+    monkeypatch.setattr(proxy, "_client", _Monitoring())
+    resp = _report(test_client, "srv-1", _gateway_headers(cn="srv-2", ou=SCOPE_AGENT))
+    assert resp.status_code == 403, resp.text
+    assert resp.json() == {
+        "detail": "ERR_CERT_SERVER_MISMATCH: The client certificate belongs to another server. "
+        "Provision this host for the server it reports for.",
+        "code": "ERR_CERT_SERVER_MISMATCH",
+    }
 
 
 def test_an_agent_report_with_its_own_certificate_is_forwarded(test_client, monkeypatch):
@@ -425,6 +444,7 @@ def test_the_frpc_config_takes_only_the_agent_certificate_of_its_server(
     )
     assert other.status_code == 403, other.text
     assert other.json()["detail"].startswith("ERR_CERT_SERVER_MISMATCH: "), other.text
+    assert other.json()["code"] == "ERR_CERT_SERVER_MISMATCH", other.text
     # Past the binding the server has no FRP config: the config is 404, its hash null.
     own = test_client.get(url, headers={**key, **_gateway_headers(cn="srv-own", ou=SCOPE_AGENT)})
     assert own.status_code == past, own.text

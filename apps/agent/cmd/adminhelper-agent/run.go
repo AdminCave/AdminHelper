@@ -46,6 +46,12 @@ var (
 	syncBudget  = 60 * time.Second
 )
 
+// signalContext ends on SIGINT or SIGTERM; a seam for the tests, which cannot send
+// a signal on every platform.
+var signalContext = func() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
 // The phases of runOnce; seams for the tests.
 var (
 	renewPhase = maybeRenewIdentity
@@ -62,7 +68,12 @@ func runCmd() *cobra.Command {
 		Long:  "Ohne --once: Dauerbetrieb (alle 5 Minuten). Mit --once: einmaliger Durchlauf (fuer systemd-Timer).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if once {
-				return runOnce(context.Background())
+				ctx, stop := signalContext()
+				defer stop()
+				// As in runLoop: a second signal ends the process, even in a phase
+				// that ignores its ctx.
+				context.AfterFunc(ctx, stop)
+				return runOnce(ctx)
 			}
 			// On Windows, run under the SCM when started as a service (reports
 			// SERVICE_RUNNING; otherwise sc start times out with error 1053).
@@ -81,7 +92,7 @@ func runLoop() error {
 	logger.Infof("Starte Dauerbetrieb (Intervall: %s)", defaultInterval)
 
 	// SIGINT/SIGTERM end ctx at once, and with it the cycle in flight.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signalContext()
 	defer stop()
 	// stop() at once restores the default handling, so a second Ctrl-C ends the
 	// process instead of waiting for the cycle. wait is read here: the callback

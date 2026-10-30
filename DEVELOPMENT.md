@@ -425,6 +425,13 @@ die Teilmenge erfuellt — das Desktop behaelt die Leiche, und niemand meldet es
 Das ist die einzige der sechs Drift-Formen, die die Regel nicht faengt
 (umbenannt, Typ geaendert, im Ziel entfernt: alle rot).
 
+**Gegen den Server** prueft jede Seite ihr eigener Vertragstest
+(`apps/web/src/lib/api/types.contract.test.ts`, `apps/desktop/ui/src/lib/api/types.contract.test.ts`):
+jedes zugeordnete Interface gegen sein Schema im OpenAPI-Snapshot, das Desktop auch gegen
+den des Monitoring-Dienstes. Eine geaenderte Antwort zieht deshalb Modell, Snapshot und
+beide `types.ts` im selben Commit nach; ein Feld, das der Server nicht mehr sendet, meldet
+dort jede Seite.
+
 **`--apply` ist fuer diese Datei tot** und der bestehende Ueberschreib-Schutz
 haelt es so: er bricht ab, sobald das Ziel Exporte hat, die die Quelle nicht
 kennt — und das sind 54.

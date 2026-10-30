@@ -171,15 +171,15 @@ def get_backend() -> RateLimitBackend:
             )
             client.ping()
             _backend = RedisBackend(client)
-            logger.info("Rate-Limit nutzt Redis (%s)", _redis_target(REDIS_URL))
+            logger.info("Rate limit uses Redis (%s)", _redis_target(REDIS_URL))
             return _backend
         except ImportError:
             # redis-py absent doesn't change at runtime — stop retrying.
-            logger.warning("redis-py nicht installiert — fallback auf In-Memory-Rate-Limit")
+            logger.warning("redis-py is not installed — falling back to the in-memory rate limit")
             _next_redis_retry = float("inf")
         except Exception as e:
             logger.warning(
-                "Redis nicht erreichbar (%s) — In-Memory, retry in %.0fs: %s",
+                "Redis unreachable (%s) — in-memory rate limit, retry in %.0fs: %s",
                 _redis_target(REDIS_URL),
                 _REDIS_RETRY_COOLDOWN,
                 type(e).__name__,
@@ -191,7 +191,7 @@ def get_backend() -> RateLimitBackend:
 
     if _backend is None:
         _backend = InMemoryBackend()
-        logger.info("Rate-Limit nutzt In-Memory")
+        logger.info("Rate limit uses in-memory counters")
     return _backend
 
 

@@ -11,9 +11,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
+import { IpcError } from '$lib/utils/errors';
 
-const UNKNOWN_ISSUER =
-  'ERR_TLS_UNKNOWN_ISSUER: AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.';
+const UNKNOWN_ISSUER = new IpcError(
+  'ERR_TLS_UNKNOWN_ISSUER: AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.',
+  'ERR_TLS_UNKNOWN_ISSUER',
+);
 
 const h = vi.hoisted(() => ({
   login: vi.fn(),
@@ -142,6 +145,22 @@ describe('Login — trust dialog (ERR_TLS_UNKNOWN_ISSUER)', () => {
 
     await waitFor(() => expect(h.login).toHaveBeenCalledTimes(2));
     expect(h.setAllowSelfSignedCerts).toHaveBeenCalledWith(true);
+  });
+
+  it('opens no dialog for a text that only names the code', async () => {
+    h.enrollWithToken.mockRejectedValueOnce(
+      new IpcError('Enrollment fehlgeschlagen: ERR_TLS_UNKNOWN_ISSUER: x', 'ERR_VALIDATION'),
+    );
+    const { container, queryByTestId } = render(Login);
+
+    await submitEnroll(container);
+
+    await waitFor(() =>
+      expect(container.querySelector('.login-error')?.textContent).toContain(
+        'Enrollment fehlgeschlagen',
+      ),
+    );
+    expect(queryByTestId('trust-dialog')).toBeNull();
   });
 
   it('leaves other errors on the inline path — no dialog', async () => {

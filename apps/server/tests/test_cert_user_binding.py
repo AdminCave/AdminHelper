@@ -40,6 +40,7 @@ def _bearer(username: str) -> dict[str, str]:
 def _assert_mismatch(resp) -> None:
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"].startswith(f"{MISMATCH}: "), resp.text
+    assert resp.json()["code"] == MISMATCH, resp.text
 
 
 # --- API routes -------------------------------------------------------------
@@ -57,6 +58,19 @@ def test_another_users_certificate_is_refused_on_an_api_route(test_client, admin
         "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
     )
     _assert_mismatch(resp)
+
+
+def test_the_mismatch_body_is_the_text_and_its_code(test_client, admin_user, normal_user):
+    # The contract (R-0664): the detail word for word as before the code, the code next to it.
+    resp = test_client.get(
+        "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json() == {
+        "detail": "ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. "
+        "Sign in as that user, or register this device for yourself.",
+        "code": "ERR_CERT_USER_MISMATCH",
+    }
 
 
 def test_an_api_key_is_bound_to_no_user(test_client, db_session, normal_user):
@@ -166,6 +180,7 @@ def test_opening_the_stream_with_another_users_certificate_is_refused(monkeypatc
         authenticate_stream_user(_req(headers))
     assert exc.value.status_code == 403
     assert exc.value.detail.startswith(f"{MISMATCH}: ")
+    assert exc.value.code == MISMATCH
 
     own = {"Authorization": "Bearer tok", **_gateway_headers(cn="admin")}
     assert authenticate_stream_user(_req(own)) == 1
@@ -241,6 +256,61 @@ def test_a_refused_bootstrap_creates_no_user(test_client, db_session, bootstrap_
         "/api/auth/bootstrap", json=body, headers=_gateway_headers(cn="firstadmin")
     )
     assert again.status_code == 201, again.text
+
+
+# --- enforced: no certificate, no sign-in (R-0900) --------------------------------
+NO_CERT = "Kein gültiges Client-Zertifikat mit passendem Scope"
+
+
+def test_enforced_login_without_a_certificate_is_refused_and_audited(
+    test_client, db_session, admin_user
+):
+    # The right password does not help.
+    resp = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"] == NO_CERT
+    rows = db_session.query(AuditLog).filter(AuditLog.action == "auth.login_failed").all()
+    assert len(rows) == 1
+    assert rows[0].actor_label == "admin"
+    assert db_session.query(AuditLog).filter(AuditLog.action == "auth.login").count() == 0
+
+
+def test_enforced_refresh_without_a_certificate_is_refused_and_keeps_the_token(
+    test_client, admin_user
+):
+    refresh = create_refresh_token(claims_for("admin"))
+    refused = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["detail"] == NO_CERT
+    again = test_client.post(
+        "/api/auth/refresh", json={"refresh_token": refresh}, headers=_gateway_headers(cn="admin")
+    )
+    assert again.status_code == 200, again.text
+
+
+def test_enforced_bootstrap_without_a_certificate_creates_no_user(
+    test_client, db_session, bootstrap_token
+):
+    body = {"token": bootstrap_token, "username": "firstadmin", "password": "a-long-password"}
+    refused = test_client.post("/api/auth/bootstrap", json=body)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["detail"] == NO_CERT
+    assert db_session.query(User).count() == 0
+    again = test_client.post(
+        "/api/auth/bootstrap", json=body, headers=_gateway_headers(cn="firstadmin")
+    )
+    assert again.status_code == 201, again.text
+
+
+def test_permissive_sign_in_without_a_certificate_still_passes(
+    test_client, admin_user, monkeypatch
+):
+    monkeypatch.setattr(config, "MTLS_ENFORCE", False)
+    login = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert login.status_code == 200, login.text
+    refresh = create_refresh_token(claims_for("admin"))
+    resp = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
+    assert resp.status_code == 200, resp.text
 
 
 def test_the_binding_holds_in_permissive_mode_too(

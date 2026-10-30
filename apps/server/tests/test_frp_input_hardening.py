@@ -1155,6 +1155,55 @@ def test_bulk_zip_writes_no_frpc_toml_for_a_host_whose_only_tunnel_is_left_out(
     assert 'name = "a-ssh-visitor"' in zf.read("visitor.toml").decode()
 
 
+# Stored values only the generator catches: a local_port out of range (the visitor keeps
+# its block, it does not need the port) and a field the API refuses (the visitor drops it).
+STORED_ROWS_LEFT_OUT = {"local_port": ("local_port", 0), "local_ip": ("local_ip", '127.0.0.1"')}
+
+
+def _store_row_field(db, case):
+    field, value = STORED_ROWS_LEFT_OUT[case]
+    _seed_stcp_tunnel(db)
+    setattr(db.get(FrpTunnel, "t-a"), field, value)
+    db.commit()
+
+
+@pytest.mark.parametrize("case", STORED_ROWS_LEFT_OUT)
+def test_frpc_toml_route_answers_404_for_a_host_whose_only_tunnel_has_a_refused_row(
+    case, test_client, db_session, admin_user
+):
+    _store_row_field(db_session, case)
+    r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=_login(test_client))
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.parametrize("case", STORED_ROWS_LEFT_OUT)
+def test_bulk_zip_writes_no_frpc_toml_for_a_host_whose_only_tunnel_has_a_refused_row(
+    case, test_client, db_session, admin_user, caplog
+):
+    _store_row_field(db_session, case)
+    h = _login(test_client)
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=h)
+    assert r.status_code == 200, r.text
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    assert "clients/serverA/frpc.toml" not in zf.namelist(), zf.namelist()
+    # Once per tunnel, not per generator call.
+    assert len([m for m in _generator_warnings(caplog) if "a-ssh" in m]) == 1, caplog.text
+    if case == "local_port":
+        assert 'name = "a-ssh-visitor"' in zf.read("visitor.toml").decode()
+    else:
+        assert "visitor.toml" not in zf.namelist(), zf.namelist()
+
+
+@pytest.mark.parametrize("route", ["visitor-toml", "visitor-bundle"])
+def test_visitor_routes_answer_404_when_the_only_tunnel_has_a_refused_field(
+    route, test_client, db_session, admin_user
+):
+    _store_row_field(db_session, "local_ip")
+    r = test_client.get(f"/api/frp/generate/{route}", headers=_login(test_client))
+    assert r.status_code == 404, r.text
+
+
 # The raw values a mode="before" validator can be handed. Each one used to reach
 # .strip() or the for loop and raise AttributeError/TypeError — not a
 # ValidationError, so the six routes that register _validate_tags answered 500.

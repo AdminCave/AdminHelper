@@ -48,7 +48,7 @@ import {
   assignTagToTemplate,
   monitoringError,
 } from './monitoring';
-import { SESSION_EXPIRED } from '$lib/utils/errors';
+import { IpcError, SESSION_EXPIRED } from '$lib/utils/errors';
 
 function check(serverId: string, status: string): MonitorCheck {
   return { id: `${serverId}-${status}`, serverId, state: { status } } as unknown as MonitorCheck;
@@ -166,8 +166,18 @@ describe('monitoring store: a failed load without the machine codes (R-0261)', (
   });
 
   it('still shows no error for an expired session', async () => {
-    h.fetchStatus.mockRejectedValueOnce(new Error(SESSION_EXPIRED));
+    h.reportError.mockClear();
+    h.fetchStatus.mockRejectedValueOnce(
+      new IpcError('Session expired, please sign in again', SESSION_EXPIRED),
+    );
     await loadMonitoring();
     expect(get(monitoringError)).toBeNull();
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('shows a text that only names the code', async () => {
+    h.fetchStatus.mockRejectedValueOnce(new Error(SESSION_EXPIRED));
+    await loadMonitoring();
+    expect(get(monitoringError)).toBe(SESSION_EXPIRED);
   });
 });

@@ -328,8 +328,9 @@ func TestSyncEndsWithTheContextWhileTheServerHangs(t *testing.T) {
 
 // R-0638: a systemctl that does not answer whether frpc runs (timeout, end of the run) does not
 // make frpc stuck: the sync would renew its admin API and restart a frpc that may run. On a
-// changed hash with frpc.toml in place the sync returns the error before it fetches the config,
-// and changes nothing: admin.conf, frpc.toml and the hash stay, nothing starts.
+// changed hash with frpc.toml in place and no frpc on its admin port (R-0884) the sync returns
+// the error before it fetches the config, and changes nothing: admin.conf, frpc.toml and the hash
+// stay, nothing starts.
 func TestSyncFrpcSystemctlWithoutAnswerChangesNothing(t *testing.T) {
 	calls := setupSyncTest(t, "https://unused.example")
 	serveToml(t, tunnelToml)
@@ -338,6 +339,7 @@ func TestSyncFrpcSystemctlWithoutAnswerChangesNothing(t *testing.T) {
 	}
 	noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
 	isDown = func(context.Context) (bool, error) { return false, noAnswer }
+	ownsAdminPort = func(int) bool { return false }
 	fetches := serveToml(t, twoTunnelsToml)
 	files, actions := frpFiles(t), *calls
 
@@ -352,6 +354,114 @@ func TestSyncFrpcSystemctlWithoutAnswerChangesNothing(t *testing.T) {
 	}
 	if *fetches != 0 {
 		t.Errorf("config fetches = %d, want 0", *fetches)
+	}
+}
+
+// R-0884: a systemd that does not answer does not keep a removed tunnel open. frpc listens on its
+// admin API and the common part is the one it started on: the sync reloads it there, writes the
+// new hash and starts, stops or restarts nothing.
+func TestSyncReloadsWithoutAnswerFromSystemd(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	serveToml(t, twoTunnelsToml)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync with two tunnels: %v", err)
+	}
+	noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
+	isDown = func(context.Context) (bool, error) { return false, noAnswer }
+	isActive = func(context.Context) (bool, error) { return false, noAnswer }
+	var atReload string
+	reloadService = func(context.Context) error {
+		calls.reloads++
+		atReload = readFile(t, config.FrpConfigFile())
+		return nil
+	}
+	serveToml(t, tunnelToml)
+
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync without an answer from systemd: %v, want a reload", err)
+	}
+	if calls.reloads != 1 || calls.restarts != 0 || calls.enables != 1 || calls.disables != 0 {
+		t.Errorf("reloads = %d, restarts = %d, enables = %d, disables = %d, want 1, 0, 1 and 0",
+			calls.reloads, calls.restarts, calls.enables, calls.disables)
+	}
+	if want := localHead(t) + string(tunnelToml); atReload != want {
+		t.Errorf("frpc.toml at the reload = %q, want %q", atReload, want)
+	}
+	if got := readFile(t, config.FrpHashFile()); got != hashConfig(tunnelToml) {
+		t.Errorf("hash file = %q, want the hash of the new text %q", got, hashConfig(tunnelToml))
+	}
+}
+
+// R-0884: without an answer from systemd a reload is the only way left. When the common part
+// changed (a restart would be due) or the reload fails, the sync returns the error, keeps the old
+// hash for the next run, and restarts nothing.
+func TestSyncWithoutAnswerFromSystemdNoReloadKeepsTheHash(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		next   []byte
+		reload error
+	}{
+		{"common part changed", withToken("rotated-token"), nil},
+		{"reload fails", twoTunnelsToml, errors.New("api status code [401]")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://unused.example")
+			serveToml(t, tunnelToml)
+			if err := Sync(context.Background()); err != nil {
+				t.Fatalf("Sync with the first tunnel: %v", err)
+			}
+			noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
+			isDown = func(context.Context) (bool, error) { return false, noAnswer }
+			isActive = func(context.Context) (bool, error) { return false, noAnswer }
+			reloadService = func(context.Context) error { calls.reloads++; return c.reload }
+			serveToml(t, c.next)
+			before := *calls
+
+			if err := Sync(context.Background()); !errors.Is(err, noAnswer) {
+				t.Fatalf("Sync = %v, want the failed status query %q", err, noAnswer)
+			}
+			if calls.restarts != before.restarts || calls.enables != before.enables || calls.disables != before.disables {
+				t.Errorf("frpc service state %+v, want no start, stop or restart since %+v", *calls, before)
+			}
+			if got := readFile(t, config.FrpHashFile()); got != hashConfig(tunnelToml) {
+				t.Errorf("hash file = %q, want the old hash %q", got, hashConfig(tunnelToml))
+			}
+		})
+	}
+}
+
+// R-0879: a run that ends while frpc reloads or restarts keeps the record of the common part frpc
+// started on: the next run reloads frpc instead of restarting it and dropping every tunnel.
+func TestSyncEndedDuringReloadKeepsTheStartedRecord(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	serveToml(t, tunnelToml)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync with the first tunnel: %v", err)
+	}
+	started := readFile(t, startedHashFile())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reload := reloadService
+	reloadService = func(ctx context.Context) error { cancel(); return ctx.Err() }
+	restartService = func(ctx context.Context) error { calls.restarts++; return ctx.Err() }
+	serveToml(t, twoTunnelsToml)
+
+	if err := Sync(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sync = %v, want it ended by its context", err)
+	}
+	if calls.restarts != 0 {
+		t.Errorf("restarts = %d, want 0 after the end of the run", calls.restarts)
+	}
+	if got := readFile(t, startedHashFile()); started == "" || got != started {
+		t.Fatalf("started record = %q, want it kept %q", got, started)
+	}
+
+	reloadService = reload
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("next Sync: %v", err)
+	}
+	if calls.reloads != 1 || calls.restarts != 0 {
+		t.Errorf("next Sync: reloads = %d, restarts = %d, want 1 and 0", calls.reloads, calls.restarts)
 	}
 }
 

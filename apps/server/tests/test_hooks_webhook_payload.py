@@ -130,3 +130,27 @@ def test_a_body_that_is_not_json_still_reaches_the_script_as_empty(test_client, 
     answer = r.json()
     assert answer["success"] is True, answer
     assert answer["result"]["echo"] == {}
+
+
+# Python's json reads NaN, Infinity and -Infinity although JSON has no such numbers; the answer
+# could not carry them back (JSONResponse writes with allow_nan=False).
+NON_FINITE = [
+    pytest.param('{"x": NaN}', ["body", "x"], id="nan"),
+    pytest.param('{"a": [1, Infinity]}', ["body", "a", 1], id="infinity-in-list"),
+    pytest.param("-Infinity", ["body"], id="minus-infinity-top-level"),
+]
+
+
+@pytest.mark.parametrize(("body", "loc"), NON_FINITE)
+def test_a_non_finite_number_is_a_422_at_its_place(test_client, webhook, script_runs, body, loc):
+    r = test_client.post(f"/api/hooks/trigger/{webhook}", content=body, headers=_JSON)
+    assert [(d["type"], d["loc"], d["msg"]) for d in _detail(r)] == [
+        ("value_error", loc, "Value error, must be a finite number")
+    ]
+    assert script_runs == []
+
+
+def test_a_nan_body_the_script_would_echo_is_a_422_not_a_500(test_client, webhook):
+    # The finding itself: the echo script returns the NaN, and the answer is a 422, not a 500.
+    r = test_client.post(f"/api/hooks/trigger/{webhook}", content='{"x": NaN}', headers=_JSON)
+    assert r.status_code == 422, r.text

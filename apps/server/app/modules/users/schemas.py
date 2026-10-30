@@ -12,6 +12,8 @@ from app.core.time import UtcDatetime
 # Usernames are interpolated into FRP TOML and used as PKI/cert file stems,
 # so restrict them to a safe charset (see frp/config_generator + pki.py).
 _USERNAME_PATTERN = r"^[a-zA-Z0-9._-]+$"
+# Also the CLI's bound (app/cli.py): a longer password could never log in.
+PASSWORD_MAX_LEN = 128
 
 
 # Auth
@@ -20,7 +22,7 @@ class LoginRequest(RequestModel):
     # charset-tolerant (no pattern — an existing user's name is whatever it is), but an
     # unbounded username/password ties up DB + prehash work on an unauthenticated call.
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LEN)
 
 
 class TokenResponse(BaseModel):
@@ -44,7 +46,7 @@ class BootstrapRequest(RequestModel):
 
     token: str
     username: str = Field(min_length=3, max_length=64, pattern=_USERNAME_PATTERN)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=PASSWORD_MAX_LEN)
 
 
 class UserMe(BaseModel):
@@ -53,22 +55,32 @@ class UserMe(BaseModel):
     is_admin: bool
     idle_timeout_minutes: int
 
-    model_config = {"from_attributes": True}
-
 
 # Users
 class UserCreate(RequestModel):
     username: str = Field(min_length=3, max_length=64, pattern=_USERNAME_PATTERN)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=PASSWORD_MAX_LEN)
     is_admin: bool = False
     # No numeric bound applies — servers.id is a String column.
     server_ids: list[str] = []
 
 
 class UserUpdate(RequestModel):
-    password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+    password: Optional[str] = Field(default=None, min_length=8, max_length=PASSWORD_MAX_LEN)
     is_admin: Optional[bool] = None
     server_ids: Optional[list[str]] = None
+
+
+class LogoutOut(BaseModel):
+    detail: str
+
+
+class MyServerOut(BaseModel):
+    """A server assigned to the caller."""
+
+    id: str
+    name: str
+    hostname: str
 
 
 class UserResponse(BaseModel):

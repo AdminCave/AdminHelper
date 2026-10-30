@@ -201,6 +201,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       deviceResetMsgKey = 'settings.resetDeviceId.done';
     } catch (err) {
       deviceResetMsgKey = '';
+      // A failed reset may still have deleted the identity: show what is there now.
+      void refreshDeviceEnrolled();
+      void refreshDeviceIdentity();
       reportError(errMsg(err));
     }
   }

@@ -68,7 +68,7 @@ export const translations: Translations = {
     'infra.prov.created': 'Token erzeugt',
     'infra.prov.commandCopied': 'Befehl kopiert',
     'infra.prov.tokenPrompt':
-      'Token: Das Install-Skript fragt beim Ausführen danach, die Eingabe bleibt verdeckt.',
+      'Token: Das Install-Skript fragt beim Ausführen danach, die Eingabe bleibt verdeckt. „Nur provisionieren“ liest ihn als erste Eingabezeile (einfügen, Enter).',
     'infra.prov.tokenCopied': 'Token kopiert',
     'infra.prov.copyError': 'Kopieren fehlgeschlagen',
     'infra.prov.colCreated': 'Erstellt',
@@ -791,6 +791,8 @@ export const translations: Translations = {
     'error.passwordStore': 'Password-Store: {message}',
     'error.monitoring': 'Monitoring: {message}',
     'error.tunnel': 'Tunnel: {message}',
+    'error.tunnel.refused':
+      'Tunnel: Der Server verweigert den Zugriff (HTTP {code}); die Tunnel sind gestoppt.',
     'validation.name.empty': 'Name darf nicht leer sein',
     'validation.workspaceName.tooLong': 'Name darf höchstens {max} Zeichen haben',
     'validation.workspaceName.control': 'Name darf keine Steuerzeichen enthalten',
@@ -869,7 +871,7 @@ export const translations: Translations = {
     'infra.prov.created': 'Token created',
     'infra.prov.commandCopied': 'Command copied',
     'infra.prov.tokenPrompt':
-      'Token: the install script asks for it when it runs; the input stays hidden.',
+      'Token: the install script asks for it when it runs; the input stays hidden. “Provision only” reads it as the first input line (paste, Enter).',
     'infra.prov.tokenCopied': 'Token copied',
     'infra.prov.copyError': 'Copy failed',
     'infra.prov.colCreated': 'Created',
@@ -1589,6 +1591,8 @@ export const translations: Translations = {
     'error.passwordStore': 'Password store: {message}',
     'error.monitoring': 'Monitoring: {message}',
     'error.tunnel': 'Tunnel: {message}',
+    'error.tunnel.refused':
+      'Tunnel: the server refuses access (HTTP {code}); the tunnels are stopped.',
     'validation.name.empty': 'Name must not be empty',
     'validation.workspaceName.tooLong': 'Name must have at most {max} characters',
     'validation.workspaceName.control': 'Name must not contain control characters',

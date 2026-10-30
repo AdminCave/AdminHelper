@@ -406,7 +406,7 @@ describe('http client error messages', () => {
     vi.unstubAllGlobals();
   });
 
-  async function messageOf(body: unknown, status = 422): Promise<string> {
+  async function errorOf(body: unknown, status = 422): Promise<ApiError> {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(jsonResponse(body, status))),
@@ -414,7 +414,11 @@ describe('http client error messages', () => {
     const { http } = await importClient();
     const err = await http.get('/api/hooks').catch((e: unknown) => e);
     expect((err as ApiError).name).toBe('ApiError');
-    return (err as ApiError).message;
+    return err as ApiError;
+  }
+
+  async function messageOf(body: unknown, status = 422): Promise<string> {
+    return (await errorOf(body, status)).message;
   }
 
   // The OpenAPI promises HTTPValidationError for a 422 (R-0207): a list of
@@ -444,6 +448,53 @@ describe('http client error messages', () => {
 
   it('falls back to the status when the list carries no msg', async () => {
     expect(await messageOf({ detail: [{ loc: ['body'] }] })).toBe('HTTP 422');
+  });
+
+  // R-0664: an error a client reacts to carries a stable code next to the text; the
+  // detail keeps the code as prefix for older clients, the message drops it.
+  const REVOKED_TEXT = 'This device certificate is no longer valid.';
+
+  it('takes the code and shows the detail without its prefix', async () => {
+    const err = await errorOf(
+      { detail: `ERR_CERT_REVOKED: ${REVOKED_TEXT}`, code: 'ERR_CERT_REVOKED' },
+      403,
+    );
+    expect(err.message).toBe(REVOKED_TEXT);
+    expect(err.code).toBe('ERR_CERT_REVOKED');
+    expect(err.status).toBe(403);
+  });
+
+  it('keeps the prefix when the server sends no code', async () => {
+    const err = await errorOf({ detail: `ERR_CERT_REVOKED: ${REVOKED_TEXT}` }, 403);
+    expect(err.message).toBe(`ERR_CERT_REVOKED: ${REVOKED_TEXT}`);
+    expect(err.code).toBeUndefined();
+  });
+
+  it.each([['err_x'], [42], [`ERR_${'A'.repeat(65)}`]])(
+    'ignores a code that is not of the form ERR_… (%s)',
+    async (code) => {
+      const detail = `${String(code)}: ${REVOKED_TEXT}`;
+      const err = await errorOf({ detail, code }, 403);
+      expect(err.code).toBeUndefined();
+      expect(err.message).toBe(detail);
+    },
+  );
+
+  it('leaves a detail without the prefix as it is', async () => {
+    const err = await errorOf({ detail: REVOKED_TEXT, code: 'ERR_CERT_REVOKED' }, 403);
+    expect(err.message).toBe(REVOKED_TEXT);
+    expect(err.code).toBe('ERR_CERT_REVOKED');
+  });
+
+  it('shows the msg texts of a 422 list that carries a code', async () => {
+    const body = {
+      detail: [
+        { loc: ['body', 'a'], msg: 'first', type: 'value_error' },
+        { loc: ['body', 'b'], msg: 'second', type: 'missing' },
+      ],
+      code: 'ERR_PROBE',
+    };
+    expect(await messageOf(body)).toBe('first; second');
   });
 });
 
@@ -610,19 +661,116 @@ describe('http client: a 401 of a request from an ended session', () => {
     expect(getAccessToken()).toBeNull();
   });
 
-  it('a new token within the same session still ends it on a failed refresh', async () => {
+  // A login while a token is still held (auth.hydrate() fell back to logged out after a /me error)
+  // is a new session all the same (R-0924).
+  it('a login while a token is held starts a new session', async () => {
     const first = deferredResponse();
     stubFetch(first.promise, () => Promise.resolve(jsonResponse({ detail: 'no' }, 401)));
     const { http, setAccessToken, registerAuthFailureHandler } = await importClient();
     const onAuthFailure = vi.fn();
     registerAuthFailureHandler(onAuthFailure);
-    setAccessToken('t1');
+    setAccessToken('old-token');
 
     const pending = http.get('/api/servers').catch((e: unknown) => e);
-    setAccessToken('t2');
+    setAccessToken('new-token');
     first.resolve(jsonResponse({ detail: 'expired' }, 401));
 
     expectSessionExpired(await pending);
-    expect(onAuthFailure).toHaveBeenCalledTimes(1);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers']);
+  });
+
+  // Without Web Locks: a refresh of the old session still open after the new login answers false
+  // for the old session; a 401 of the new session must not take that answer (R-0923).
+  it('a 401 of the new session does not share the refresh of the old one', async () => {
+    const oldRefresh = deferredResponse();
+    let refreshes = 0;
+    let servers = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') {
+          refreshes++;
+          return refreshes === 1
+            ? oldRefresh.promise
+            : Promise.resolve(jsonResponse({ access_token: 'renewed-token' }));
+        }
+        servers++;
+        // The first request of each session gets 401, the retry with the renewed token passes.
+        return Promise.resolve(
+          servers <= 2 ? jsonResponse({ detail: 'expired' }, 401) : jsonResponse({ ok: true }),
+        );
+      }),
+    );
+    const { http, setAccessToken, clearTokens, registerAuthFailureHandler, getAccessToken } =
+      await importClient();
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+    setAccessToken('old-token');
+
+    const oldPending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(refreshes).toBe(1));
+    clearTokens();
+    setAccessToken('new-token');
+    const newPending = http.get('/api/servers');
+    await vi.waitFor(() => expect(servers).toBe(2));
+    oldRefresh.resolve(jsonResponse({ detail: 'no' }, 401));
+
+    expectSessionExpired(await oldPending);
+    await expect(newPending).resolves.toEqual({ ok: true });
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(refreshes).toBe(2);
+    expect(getAccessToken()).toBe('renewed-token');
+  });
+
+  // The refresh of the old session ends while the new one's is still open: the new session's
+  // refresh stays shared, a further 401 of the new session must not start a third one (R-0923).
+  it('the end of the old refresh keeps the new session sharing its own', async () => {
+    const oldRefresh = deferredResponse();
+    const newRefresh = deferredResponse();
+    let refreshes = 0;
+    let servers = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') {
+          refreshes++;
+          if (refreshes === 1) return oldRefresh.promise;
+          if (refreshes === 2) return newRefresh.promise;
+          return Promise.resolve(jsonResponse({ access_token: 'third-token' }));
+        }
+        servers++;
+        // The old request and both first requests of the new session get 401, the retries pass.
+        return Promise.resolve(
+          servers <= 3 ? jsonResponse({ detail: 'expired' }, 401) : jsonResponse({ ok: true }),
+        );
+      }),
+    );
+    const { http, setAccessToken, clearTokens, getAccessToken } = await importClient();
+    setAccessToken('old-token');
+
+    const oldPending = http.get('/api/servers').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(refreshes).toBe(1));
+    clearTokens();
+    setAccessToken('new-token');
+    const firstNew = http.get('/api/servers');
+    await vi.waitFor(() => expect(refreshes).toBe(2));
+    oldRefresh.resolve(jsonResponse({ detail: 'no' }, 401));
+    expectSessionExpired(await oldPending);
+
+    const secondNew = http.get('/api/servers');
+    await vi.waitFor(() => expect(servers).toBe(3));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(refreshes).toBe(2);
+
+    newRefresh.resolve(jsonResponse({ access_token: 'renewed-token' }));
+    await expect(firstNew).resolves.toEqual({ ok: true });
+    await expect(secondNew).resolves.toEqual({ ok: true });
+    expect(refreshes).toBe(2);
+    expect(getAccessToken()).toBe('renewed-token');
   });
 });

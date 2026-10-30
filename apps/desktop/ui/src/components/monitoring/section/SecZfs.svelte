@@ -5,7 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck, MonitorZfsDetails } from '$lib/api/types';
+  import type { MonitorCheck } from '$lib/api/types';
+  import { zfsDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -31,11 +32,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   ]);
 
   function poolsOf(check: MonitorCheck) {
-    return (check.state?.details as MonitorZfsDetails | undefined)?.pools ?? [];
+    return zfsDetails(check.state?.details)?.pools ?? [];
   }
   // The error's text key when the agent could not read zpool; no pools then.
   function unavailableOf(check: MonitorCheck): string | null {
-    const d = check.state?.details as MonitorZfsDetails | undefined;
+    const d = zfsDetails(check.state?.details);
     if (d?.available !== false) return null;
     // A code this UI does not know yet (a newer agent) still says something.
     return ERROR_KEY.get(d.error ?? '') ?? 'monitoring.zfs.error.unknown';

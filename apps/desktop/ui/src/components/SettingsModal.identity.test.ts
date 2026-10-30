@@ -12,6 +12,8 @@ import { tick } from 'svelte';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
 import { settingsModalOpen } from '$lib/stores/settings';
+import { status } from '$lib/stores/statusBar';
+import { get } from 'svelte/store';
 import type { ResetOutcome } from '$lib/bridge';
 import type { DeviceIdentity } from '$lib/bridge/types';
 
@@ -296,5 +298,26 @@ describe('SettingsModal — device identity line (R-0240)', () => {
     await waitFor(() => expect(el(container, '[data-action="enroll-token"]')).not.toBeNull());
     expect(el(container, '[data-msg="device-identity"]')).toBeNull();
     await waitFor(() => expect(h.deviceIdentity).toHaveBeenCalledTimes(2));
+  });
+
+  // The identity is deleted before the pin; a reset that fails at the pin leaves none.
+  it('shows the device as not enrolled after a failed reset that deleted the identity', async () => {
+    identity('admin', localNoon(2027, 4, 13));
+    h.resetDeviceIdentity.mockImplementation(async () => {
+      h.isDeviceEnrolled.mockImplementation(async () => false);
+      h.deviceIdentity.mockImplementation(async () => null);
+      throw new Error('the pinned certificate could not be removed from the keyring');
+    });
+    const container = open();
+    await line(container);
+
+    await fireEvent.click(el(container, '[data-action="device-reset"]')!);
+
+    await waitFor(() => expect(el(container, '[data-action="enroll-token"]')).not.toBeNull());
+    expect(el(container, '[data-msg="device-identity"]')).toBeNull();
+    expect(get(status)).toMatchObject({
+      isError: true,
+      text: expect.stringContaining('could not be removed from the keyring'),
+    });
   });
 });

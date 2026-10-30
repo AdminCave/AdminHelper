@@ -173,12 +173,16 @@ func verifyAnchorFingerprint(rawCerts [][]byte, fp [sha256.Size]byte, host strin
 				"(possible MITM — or a wrong/outdated --ca-fp value)")
 	}
 	leaf := certs[0]
-	if leaf.Equal(anchor) {
-		// The pinned certificate IS the leaf — direct pin, nothing to chain.
-		return verifyLeafNamesHost(leaf, host)
-	}
 	roots := x509.NewCertPool()
 	roots.AddCert(anchor)
+	if leaf.Equal(anchor) {
+		// The pinned certificate IS the leaf — direct pin, nothing to chain. Verify against
+		// itself as the only root still enforces its validity and EKU, as the chain does.
+		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots}); err != nil {
+			return fmt.Errorf("the pinned certificate the server presented does not verify: %w", err)
+		}
+		return verifyLeafNamesHost(leaf, host)
+	}
 	intermediates := x509.NewCertPool()
 	for _, c := range certs[1:] {
 		if !c.Equal(anchor) {
@@ -187,10 +191,28 @@ func verifyAnchorFingerprint(rawCerts [][]byte, fp [sha256.Size]byte, host strin
 	}
 	// No DNSName here: the hostname is checked after the chain (verifyLeafNamesHost);
 	// expiry/EKU stay enforced.
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates}); err != nil {
+	chains, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
+	if err != nil {
 		return fmt.Errorf("server leaf does not verify against the pinned CA fingerprint: %w", err)
 	}
+	// A pin on the root would otherwise accept a server leaf of any scope under it
+	// (the frps leaf of the tunnel intermediate, too). A pin on the issuer itself is
+	// an older --ca-fp of the access intermediate and needs no name check.
+	if issuer := chains[0][1]; !issuer.Equal(anchor) && !isAccessIntermediate(issuer) {
+		return fmt.Errorf(
+			"the presented server certificate is not issued by the access intermediate "+
+				"(issuer %q) — not the gateway of this server", issuer.Subject.CommonName)
+	}
 	return verifyLeafNamesHost(leaf, host)
+}
+
+// accessIntermediateCN is the CN the ca-issuer gives the access intermediate; a
+// rotation appends " <label>" (apps/ca-issuer/app/pki.py, build_intermediate_ca).
+const accessIntermediateCN = "AdminHelper Access Intermediate"
+
+func isAccessIntermediate(c *x509.Certificate) bool {
+	cn := c.Subject.CommonName
+	return cn == accessIntermediateCN || strings.HasPrefix(cn, accessIntermediateCN+" ")
 }
 
 // verifyLeafNamesHost checks that the leaf names host, as every later call does. It

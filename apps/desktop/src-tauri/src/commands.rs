@@ -130,27 +130,44 @@ pub async fn is_device_enrolled() -> Result<bool, AppError> {
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
 /// UI whether that happened. Only at the server of this workspace
-/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the pin
-/// could not be forgotten. The identity entries are deleted best effort before it,
-/// in the same keyring, so they may have stayed as well; the reset can be repeated
-/// (without an identity it ends as `NotEnrolled` and forgets the pin again).
+/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the
+/// identity could not be deleted on this device (the message names a revoke that
+/// happened; the pin then stays) or the pin could not be forgotten. The reset can be
+/// repeated (without an identity it ends as `NotEnrolled` and forgets the pin again).
 #[tauri::command]
 pub async fn reset_device_identity(
     app: tauri::AppHandle,
     server_url: String,
 ) -> Result<enrollment::ResetOutcome, AppError> {
-    reset_device_identity_in(&storage::app_data_dir(&app)?, &server_url).await
+    let base = storage::app_data_dir(&app)?;
+    reset_device_identity_in(&base, &server_url, |url| {
+        blocking(move || tofu::forget_pin(&url))
+    })
+    .await
 }
 
-/// [`reset_device_identity`] in the app data dir `base`.
-async fn reset_device_identity_in(
+/// [`reset_device_identity`] in the app data dir `base`, `forget` forgetting the pin of the
+/// server it is given.
+async fn reset_device_identity_in<F, Fut>(
     base: &Path,
     sent: &str,
-) -> Result<enrollment::ResetOutcome, AppError> {
+    forget: F,
+) -> Result<enrollment::ResetOutcome, AppError>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<(), AppError>>,
+{
     let server_url = sign_in_target(base, sent, None)?;
-    let outcome = enrollment::reset_identity(&server_url).await;
-    tofu::forget_pin(&server_url)
-        .map_err(|err| AppError::Keyring(format!("resetting the device identity: {err}")))?;
+    let outcome = enrollment::reset_identity(&server_url).await?;
+    forget(server_url).await.map_err(|err| {
+        AppError::Keyring(match outcome {
+            enrollment::ResetOutcome::LocalOnly => format!(
+                "resetting the device identity: it was deleted on this device only, the server \
+                 could not be asked to revoke it; {err}"
+            ),
+            _ => format!("resetting the device identity: {err}"),
+        })
+    })?;
     Ok(outcome)
 }
 
@@ -215,12 +232,14 @@ where
     E: FnOnce(String) -> EnrollFut,
     EnrollFut: Future<Output = Result<(), AppError>>,
     R: FnOnce(String) -> ResetFut,
-    ResetFut: Future<Output = enrollment::ResetOutcome>,
+    ResetFut: Future<Output = Result<enrollment::ResetOutcome, AppError>>,
 {
     let server_url = sign_in_target(base, sent, None)?;
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
-        reset(server_url).await;
+        // The registration fails with `e` either way; a reset that fails too leaves the
+        // identity for the user's own reset.
+        let _ = reset(server_url).await;
         return Err(e);
     }
     Ok(())
@@ -1443,7 +1462,7 @@ mod tests {
     }
 
     /// The reset of a registration the workspace does not keep: none comes in these cases.
-    fn no_reset(url: String) -> std::future::Ready<ResetOutcome> {
+    fn no_reset(url: String) -> std::future::Ready<Result<ResetOutcome, AppError>> {
         panic!("the registration at {url} was reset")
     }
 
@@ -1622,7 +1641,9 @@ mod tests {
 
         // The launcher has no identity to reset.
         let no_workspace = workspace::current().unwrap_err().to_string();
-        let refused = reset_device_identity_in(base, &kept).await.unwrap_err();
+        let refused = reset_device_identity_in(base, &kept, forget_here)
+            .await
+            .unwrap_err();
         assert_eq!(refused.to_string(), no_workspace);
 
         let _a = entered("w-0000000a");
@@ -1633,7 +1654,7 @@ mod tests {
             format!("http://127.0.0.1:{port}"),
         ] {
             assert_refused(
-                reset_device_identity_in(base, &other).await,
+                reset_device_identity_in(base, &other, forget_here).await,
                 &format!("this workspace belongs to the server {kept};"),
                 &other,
             );
@@ -1643,13 +1664,45 @@ mod tests {
             }
         }
         // Its own server, however the webview spells it.
-        let outcome = reset_device_identity_in(base, &format!("https://127.0.0.1:{port}/x"))
-            .await
-            .unwrap();
+        let outcome =
+            reset_device_identity_in(base, &format!("https://127.0.0.1:{port}/x"), forget_here)
+                .await
+                .unwrap();
         assert_eq!(outcome, ResetOutcome::LocalOnly);
         assert!(!enrollment::is_enrolled());
         assert_eq!(keyring_store::get(&own_pin), None);
         assert!(keyring_store::get(&other_pin).is_some());
+    }
+
+    /// Forgets the pin on the test's own thread, where its in-memory keyring lives; the
+    /// command does it through `blocking`.
+    async fn forget_here(server_url: String) -> Result<(), AppError> {
+        crate::tofu::forget_pin(&server_url)
+    }
+
+    #[tokio::test]
+    async fn a_reset_revoked_here_only_whose_pin_stays_names_both() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("reset-identity-both");
+        let base = &scratch.0;
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let kept = format!("https://127.0.0.1:{port}");
+        server_workspaces(
+            base,
+            &[("w-0000000a", "Kunde A", Some(kept.as_str()), None)],
+        );
+        let _a = entered("w-0000000a");
+        enrolled(&workspace::current().unwrap().keyring_prefix());
+
+        let failed = reset_device_identity_in(base, &kept, |_| async {
+            Err(AppError::Keyring("the pin stayed".to_string()))
+        })
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(failed.contains("deleted on this device only"), "{failed}");
+        assert!(failed.contains("the pin stayed"), "{failed}");
+        assert!(!enrollment::is_enrolled());
     }
 
     #[tokio::test]
@@ -1850,6 +1903,7 @@ mod tests {
         let source = include_str!("commands.rs").replace("\r\n", "\n");
         for name in [
             "reset_server_cert_pin",
+            "reset_device_identity",
             "pinned_ca_fingerprint",
             "device_identity",
             "is_device_enrolled",

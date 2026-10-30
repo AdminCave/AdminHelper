@@ -201,7 +201,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Host und die Namen des Zertifikats. Bisher nahm der Erstkontakt das Zertifikat an, loeste den Token ein und meldete
   „OK: Provisioning abgeschlossen.“, danach scheiterte jeder Lauf an der Hostnamen-Pruefung. Das betrifft auch Befehle
   aus dem Provisionierungs-Tab eines Desktops, der ueber eine IP-Adresse verbunden ist, die das Zertifikat nicht nennt
-  (eine IP-Adresse nennt es nur, wenn sie beim Ausstellen in `EXTRA_SANS` des Servers stand). Doku: Agent-Deployment
+  (eine IP-Adresse nennt es nur, wenn sie `127.0.0.1` ist, dem `DOMAIN` des Servers entspricht oder beim Ausstellen in `EXTRA_SANS` stand). Doku: Agent-Deployment
   (DE+EN).
 - **Server: der Startabgleich der `frps.toml` loggt einen Fehler nur mit seinem Typ:** Scheitert beim Start der
   Abgleich der `frps.toml` mit der Datenbank (Konfiguration lesen oder Datei schreiben), schreibt der
@@ -832,11 +832,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Zertifikat spaetestens mit seinem Aussteller (Client- und Server-Zertifikate mit dem Zwischenzertifikat,
   Zwischenzertifikate mit der Root); kurz vor dem Ablauf eines Zwischenzertifikats werden neue Zertifikate also
   kuerzer. Ist das Zwischenzertifikat eines Scopes abgelaufen oder noch nicht gueltig, antworten `/enroll` und
-  `/renew` mit HTTP 503 („the issuing intermediate certificate of scope '…' is expired or not yet valid; see the
-  ca-issuer log“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt unverbraucht. Eine Erneuerung
-  bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn das alte Zertifikat gekuerzt
-  war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer` beim Signieren einmal je Tag und
-  Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days left)“). Doku: Betrieb (DE+EN).
+  `/renew` mit HTTP 503 („the issuing intermediate certificate of scope '…' is expired; see the ca-issuer log …“,
+  entsprechend „is not yet valid“) und schreiben eine Zeile auf ERROR ins Log; der Einmal-Token bleibt
+  unverbraucht. Eine Erneuerung bekommt die volle Laufzeit ihrer Zielgruppe (90 Tage, Browser 365 Tage), auch wenn
+  das alte Zertifikat gekuerzt war. Ab 180 Tagen vor dem Ablauf eines Zwischenzertifikats warnt der `ca-issuer`
+  beim Signieren einmal je Tag und Scope im Log (Logger `ca-issuer.issuer`, „intermediate '…' expires on … (N days
+  left)“). Doku: Betrieb (DE+EN).
 - **ca-issuer: prueft die PKI beim Start (R-0666):** Der `ca-issuer` lud Root und Zwischenzertifikate beim Start ohne
   jede Pruefung, auch ein abgelaufenes, ein von einer fremden Root signiertes oder eines neben fremdem Schluessel oder
   fremder Kette. Jetzt prueft er bei jedem Start, auch direkt nach dem ersten: `root.crt` selbstsigniert und gueltig,

@@ -212,6 +212,13 @@ impl PinStore for KeyringPinStore {
         if let Some(hit) = self.cached(identity) {
             return Ok(Some(hit));
         }
+        // Under the lock of the identity, like `forget`: a pin read before a forget must not
+        // land in the cache after it.
+        let lock = self.identity_lock(identity);
+        let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(hit) = self.cached(identity) {
+            return Ok(Some(hit));
+        }
         let stored = (self.read)(identity)?;
         if let Some(ref fingerprint) = stored {
             self.remember(identity, fingerprint);
@@ -674,6 +681,41 @@ mod tests {
     }
 
     #[test]
+    fn forgetting_waits_for_a_load_that_is_reading() {
+        let (gate, open, entered) = Gate::new();
+        let p = probe(Some(("x.example".into(), gate)), None, false, no_failure());
+        p.keyring
+            .lock()
+            .unwrap()
+            .insert("x.example".into(), FP_A.into());
+        let (loaded_tx, loaded) = mpsc::channel();
+        let store = Arc::clone(&p.store);
+        std::thread::spawn(move || {
+            let _ = loaded_tx.send(store.load("x.example"));
+        });
+        entered.recv_timeout(ANSWER).unwrap();
+
+        let (done_tx, done) = mpsc::channel();
+        let store = Arc::clone(&p.store);
+        std::thread::spawn(move || {
+            store.forget("x.example").unwrap();
+            let _ = done_tx.send(());
+        });
+        assert!(
+            done.recv_timeout(Duration::from_millis(300)).is_err(),
+            "forget returned while a load was reading"
+        );
+        open.send(()).unwrap();
+        assert_eq!(
+            loaded.recv_timeout(ANSWER).unwrap().unwrap().as_deref(),
+            Some(FP_A)
+        );
+        done.recv_timeout(ANSWER).unwrap();
+        assert_eq!(p.store.cached("x.example"), None);
+        assert!(p.keyring.lock().unwrap().get("x.example").is_none());
+    }
+
+    #[test]
     fn a_hung_first_use_store_does_not_hold_up_a_pinned_identity() {
         let (gate, open, entered) = Gate::new();
         let p = probe(None, Some(("x.example".into(), gate)), false, no_failure());
@@ -1044,6 +1086,24 @@ mod tests {
             tokio::spawn(serve_once(listener, server_config(CERT_B, KEY_B)));
             let client = pinning_client_for("pin-test", store);
             assert_eq!(get(&client, port).await, Err(()));
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn changed_cert_refuses_with_the_tofu_code() {
+            let store = Arc::new(InMemoryPinStore::default());
+            store.store("pin-test", FP_A).unwrap();
+            let store: Arc<dyn PinStore> = store;
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(serve_once(listener, server_config(CERT_B, KEY_B)));
+            let client = pinning_client_for("pin-test", store);
+            let err = client
+                .get(format!("https://127.0.0.1:{port}/"))
+                .send()
+                .await
+                .expect_err("a changed certificate must be refused");
+            assert_eq!(AppError::from(err).code(), "ERR_TOFU_PIN_MISMATCH");
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

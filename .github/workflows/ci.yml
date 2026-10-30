@@ -31,7 +31,7 @@ jobs:
     name: Server (pytest, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     # The 3.13 leg pulls the base images and runs the image tests on top of the suite.
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -100,6 +100,7 @@ jobs:
         run: pytest -q -rs -m "not schemathesis" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
       # A test whose precondition is missing skips, and pytest stays green. This leg has them
       # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
+      # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
       - name: No test skipped
         if: matrix.python-version == '3.13'
         run: |
@@ -234,7 +235,7 @@ jobs:
   python-lock-server:
     name: Server (pytest, image lock)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine
@@ -441,8 +442,9 @@ jobs:
         run: go vet ./...
       - name: go vet (windows)
         working-directory: apps/agent
-        # The ubuntu runner's default `go vet` never sees the //go:build windows files (the sc-query
-        # collector). Vet them explicitly so a Windows-only parser bug is caught in CI (6.20).
+        # The ubuntu runner's default `go vet` never sees the //go:build windows files (service,
+        # event log, config paths and secure dir, enroll lock, frpc platform, the sc-query
+        # collector). Vet them explicitly so a Windows-only bug is caught in CI (6.20).
         run: GOOS=windows go vet ./...
       - name: go test
         working-directory: apps/agent
@@ -490,8 +492,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # The four types both api/types.ts files describe (FrpConfig, FrpStatus,
-      # FrpStatusProxy, Server) are maintained twice. Every line the web file
+      # The three types both api/types.ts files describe (FrpConfig, FrpStatus,
+      # FrpStatusProxy) are maintained twice. Every line the web file
       # declares has to exist in the desktop one — the desktop may carry more,
       # since it projects the same payload further (harness 8a, T14).
       - name: Shared API types in lockstep with the web frontend
@@ -589,7 +591,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # A slow apt mirror held this step in tauri-build-smoke until that job's limit
+      # (run 39776102278). The step normally takes under a minute; its own limit makes a
+      # bad mirror cost 10 minutes, not the job.
       - name: Tauri system dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -659,7 +665,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # A slow apt mirror held this step until the job's 45-minute limit
+      # (run 39776102278). The step normally takes under a minute; its own limit makes a
+      # bad mirror cost 10 minutes, not the job.
       - name: Tauri system dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \

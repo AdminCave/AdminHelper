@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import MonitorMaintenance
-from app.schemas import MaintenanceInput
+from app.schemas import MaintenanceInput, MaintenanceOut
 
 router = APIRouter()
 
@@ -35,7 +35,11 @@ def _apply(row: MonitorMaintenance, data: MaintenanceInput) -> None:
     row.enabled = data.enabled
 
 
-@router.get("/maintenance", dependencies=[Depends(require_internal)])
+@router.get(
+    "/maintenance",
+    response_model=list[MaintenanceOut],
+    dependencies=[Depends(require_internal)],
+)
 def list_maintenance(db: Session = Depends(get_db)):
     """Lists all maintenance windows."""
     rows = db.query(MonitorMaintenance).order_by(MonitorMaintenance.created_at).all()
@@ -43,7 +47,10 @@ def list_maintenance(db: Session = Depends(get_db)):
 
 
 @router.post(
-    "/maintenance", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)]
+    "/maintenance",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MaintenanceOut,
+    dependencies=[Depends(require_internal)],
 )
 def create_maintenance(data: MaintenanceInput, db: Session = Depends(get_db)):
     """Creates a maintenance window."""
@@ -55,7 +62,11 @@ def create_maintenance(data: MaintenanceInput, db: Session = Depends(get_db)):
     return row.to_dict()
 
 
-@router.put("/maintenance/{maintenance_id}", dependencies=[Depends(require_internal)])
+@router.put(
+    "/maintenance/{maintenance_id}",
+    response_model=MaintenanceOut,
+    dependencies=[Depends(require_internal)],
+)
 def update_maintenance(maintenance_id: str, data: MaintenanceInput, db: Session = Depends(get_db)):
     """Full update of a maintenance window (same payload as create)."""
     row = db.query(MonitorMaintenance).filter(MonitorMaintenance.id == maintenance_id).first()

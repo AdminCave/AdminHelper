@@ -126,6 +126,17 @@ def _fresh_rate_limit_backend():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_refused_extra_config_warnings():
+    # without_refused_extra_config warns once per tunnel and key set, remembered for the process
+    # (R-0895); without a per-test reset a later test that expects the warning would not see it.
+    from app.modules.frp import config_generator
+
+    config_generator._refused_warned.clear()
+    yield
+    config_generator._refused_warned.clear()
+
+
+@pytest.fixture(autouse=True)
 def _idle_tag_sync_notify_pool():
     # Server CRUD queues a fire-and-forget tag-sync notify on a process-wide
     # single-worker pool (servers router, T46). A notify one test leaves behind

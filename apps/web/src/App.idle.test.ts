@@ -110,7 +110,8 @@ describe('App: sign-out after inactivity', () => {
   it('(b) idle_timeout_minutes 0 never signs out', async () => {
     const { container } = await renderSignedIn(0);
 
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    // Past the 30 minutes a fallback for a missing limit would use, plus one check.
+    await vi.advanceTimersByTimeAsync(31 * 60_000 + CHECK);
     expect(logoutPosts()).toBe(0);
     expect(get(isAuthenticated)).toBe(true);
     expect(container.querySelector('.server-layout')).not.toBeNull();

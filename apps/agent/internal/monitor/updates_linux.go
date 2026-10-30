@@ -8,6 +8,7 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -42,6 +43,9 @@ func runTimedEnv(ctx context.Context, timeout time.Duration, env []string, name 
 	cmd.Env = append(os.Environ(), env...)
 	cmd.WaitDelay = commandWaitDelay
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return out, nil
+	}
 	if err != nil && ctx.Err() != nil {
 		return out, ctx.Err()
 	}

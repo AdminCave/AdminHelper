@@ -191,6 +191,9 @@ pub enum RefreshOutcome {
 pub struct TunnelRefresh {
     pub status: TunnelStatus,
     pub outcome: RefreshOutcome,
+    /// The HTTP code with which the server refused the device or the user the tunnels (403);
+    /// the refresh stopped frpc then. `None` for every other end, no tunnels (404) included.
+    pub refused: Option<u16>,
 }
 
 fn default_sync_interval_minutes() -> u32 {
