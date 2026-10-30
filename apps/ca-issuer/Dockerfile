@@ -32,7 +32,7 @@ RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
 # program that runs them. A directory of the list the image lacks is skipped. The PostgreSQL
 # clients cannot read their own program: pg_isready writes `invalid binary "...": Permission
 # denied` to stderr and runs on, and the entrypoints send that stderr to /dev/null; psql stops,
-# so no entrypoint runs it (monitoring creates its database through psycopg). This stays the
+# so no entrypoint runs it (db-init creates the monitoring database through psycopg). This stays the
 # last RUN, so that it takes in every program the steps above install.
 RUN for dir in /usr/local/bin /usr/local/sbin /usr/bin /usr/sbin /usr/lib/postgresql; do \
         [ ! -d "$dir" ] || find "$dir" -type f -perm /111 \

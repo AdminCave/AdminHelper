@@ -58,7 +58,8 @@ done
 # and it runs by its length like every value (build_redaction_sedfile): a user that is a
 # word of another secret cannot cut that secret in two, and a secret inside the user
 # cannot cut the user.
-SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER)
+SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD
+    MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER)
 
 # The .env keys whose values name this installation: host names, addresses, networks
 # and mail addresses. Masked only with --mask-hosts — a wrong domain or SAN is a
