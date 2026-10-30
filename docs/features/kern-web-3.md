@@ -54,7 +54,7 @@ Jede Task einzeln revertierbar.
 ## Doku-Impact
 
 `docs/admin/benutzer.html` + EN: der Satz zur Abmeldung beim Laden nennt auch eine unlesbare gespeicherte Zeit.
-CHANGELOG über `changelog.d/kern-web-3.md`. R-0975 und R-0980 ohne Doku (intern).
+CHANGELOG über `changelog.d/kern-web-3.md`. R-0975: Entwicklerseite webui.html (Fall ohne Web Locks); R-0980: Regeln des Vertragstests in cicd.html (DE+EN).
 
 ## Offene Fragen
 

@@ -30,16 +30,18 @@ Review: approve (.ah-out/review/kern-web-3/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh web --strict -- client
 Doku: docs/developer/webui.html, docs/en/developer/webui.html (Fall ohne Web Locks)
 
-### T3 — Web-Vertragstest: fehlende Pflichtfelder in Anfragen (R-0980)  [ ]
-Komponente: web · Dateien: apps/web/src/lib/api/types.contract.test.ts, apps/web/src/lib/api/types.ts
+### T3 — Web-Vertragstest: fehlende Pflichtfelder in Anfragen (R-0980)  [x]
+Komponente: web · Dateien: apps/web/src/lib/api/types.contract.test.ts, apps/web/src/lib/api/types.ts, docs/developer/cicd.html, docs/en/developer/cicd.html, docs/features/kern-web-3.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @1a701198 2026-10-30T17:13:28+01:00
+Review: approve (.ah-out/review/kern-web-3/T3.verdict.json)
 Änderung: `compare()` (`types.contract.test.ts:285-321`) meldet bei `request` jedes `required`-Feld des Schemas, das der TS-Typ nicht trägt und `omit` nicht nennt (`<key>: required schema field missing`); Selbsttest dazu. Echte Lücken: Typ ergänzen oder `omit` mit Grund (Entscheidung im Ledger).
 Verify: bash scripts/dev/verify.sh web --strict -- types.contract
-Doku: keine (nur Tests und Typen)
+Doku: docs/developer/cicd.html, docs/en/developer/cicd.html (Regeln für Anfragen, gilt auch für die Desktop-Zeile)
 
 ### T4 — Desktop-UI-Vertragstest: fehlende Pflichtfelder in Anfragen (R-0980)  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts
 Änderung: dieselbe Prüfung wie T3 in der Desktop-Kopie von `compare()`; Lücken wie in T3.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- types.contract
-Doku: keine (nur Tests und Typen)
+Doku: keine (Regeln in cicd.html zieht T3 nach)
 
 ## Entscheidungen
