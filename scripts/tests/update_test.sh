@@ -74,7 +74,8 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # scheduler service before 0.38.0); AH_TEST_PULL_LOG
 # records, per pull, SERVER_IMAGE from the environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
 # AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
-# and wait up to 30 s for <marker> ---
+# and wait up to 30 s for <marker>, AH_TEST_STOP_BLOCK=<marker> the same at the
+# stop of the migrating services ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
@@ -90,6 +91,8 @@ case "$*" in
       || printf 'env=%s dotenv=%s\n' "${SERVER_IMAGE:-}" "$(grep -m1 '^SERVER_IMAGE=' .env)" >> "$AH_TEST_PULL_LOG"
     [ -z "${AH_TEST_PULL_BLOCK:-}" ] || [ -e "$AH_TEST_PULL_BLOCK" ] || block "$AH_TEST_PULL_BLOCK" ;;
   "compose up -d"*) [ -z "${AH_TEST_UP_BLOCK:-}" ] || [ -e "$AH_TEST_UP_BLOCK" ] || block "$AH_TEST_UP_BLOCK" ;;
+  "compose stop server "*)
+    [ -z "${AH_TEST_STOP_BLOCK:-}" ] || [ -e "$AH_TEST_STOP_BLOCK" ] || block "$AH_TEST_STOP_BLOCK" ;;
 esac
 case "$*" in
   "compose up --help")
@@ -1412,12 +1415,12 @@ out=$(AH_TEST_PULL_LOG="$PLOG" run_update "$INST" 2>&1); rc=$?
   && ok "the pull takes the target images from the environment, .env is pinned after it" \
   || bad "pull env/pins: rc=$rc $(cat "$PLOG")"
 # Run update.sh in its own process group, as a login shell runs the foreground
-# job; $1 install dir, $2 marker, $3 the env var that blocks, $4 the signal.
-# Sets rc and leaves stdout/stderr in $1.out.
+# job; $1 install dir, $2 marker, $3 the env var that blocks, $4 the signal, the
+# rest goes to update.sh. Sets rc and leaves stdout/stderr in $1.out.
 interrupt_update() {
   local inst="$1" marker="$2" var="$3" sig="$4" pid pgid
-  ( cd "$inst" && exec env "$var=$marker" AH_TEST_DOCKER_LOG="$inst.docker" AH_TEST_HEALTH=0 \
-      setsid bash ./scripts/update.sh ) > "$inst.out" 2>&1 &
+  ( cd "$inst" && exec env "$var=$marker" AH_TEST_DOCKER_LOG="$inst.docker" AH_TEST_HEALTH="${AH_TEST_HEALTH:-0}" \
+      setsid bash ./scripts/update.sh "${@:5}" ) > "$inst.out" 2>&1 &
   pid=$!
   for _ in $(seq 300); do [ -e "$marker.started" ] && break; sleep 0.1; done
   pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
@@ -1454,6 +1457,65 @@ interrupt_update "$INST" "$WORK/inst44d.block" AH_TEST_UP_BLOCK TERM
     && grep -q 'FEHLER: interrupted by SIGTERM.*zurueckgerollt auf 0\.33\.0\.' "$INST.out"; } \
   && ok "SIGTERM during compose up: rolled back after the deploy and started again" \
   || bad "SIGTERM during compose up: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
+# A signal while a failed health check is being rolled back started the rollback
+# again from the top; it now runs to its end, and so does the stop it hit.
+INST="$WORK/inst44e"; make_install 0.33.0 "$SRC_OLD" "$INST"
+AH_TEST_HEALTH=1 interrupt_update "$INST" "$WORK/inst44e.block" AH_TEST_STOP_BLOCK TERM
+{ [ $rc -ne 0 ] && pinned_on "$INST" 0.33.0 && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && [ "$(grep -c '^compose stop server ' "$INST.docker")" = 1 ] \
+    && grep -q 'FEHLER: stack start or health check failed.*zurueckgerollt auf 0\.33\.0\.' "$INST.out" \
+    && ! grep -q 'interrupted by SIG' "$INST.out"; } \
+  && ok "SIGTERM during a rollback after a failed health check: the rollback runs once to its end" \
+  || bad "SIGTERM during the rollback: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
+# cp blocks in the swap (-T) and in the .env restore of rollback_before_deploy
+# (-pT), mktemp in pin_images (upsert_env is its only user of .env.ah-XXXXXX).
+BLOCKBIN="$WORK/blockbin"; mkdir -p "$BLOCKBIN"
+for _t in "cp:-T:AH_TEST_SWAP_BLOCK" "cp:-pT:AH_TEST_RESTORE_BLOCK" "mktemp:.env.ah-XXXXXX:AH_TEST_PIN_BLOCK"; do
+  IFS=: read -r _cmd _arg _var <<<"$_t"
+  [ -e "$BLOCKBIN/$_cmd" ] || echo '#!/usr/bin/env bash' > "$BLOCKBIN/$_cmd"
+  cat >> "$BLOCKBIN/$_cmd" <<EOF
+if [ "\$1" = "$_arg" ] && [ -n "\${$_var:-}" ] && [ ! -e "\$$_var" ]; then
+  : > "\$$_var.started"
+  for _ in \$(seq 300); do [ -e "\$$_var" ] && break; sleep 0.1; done
+fi
+EOF
+done
+for _cmd in cp mktemp; do
+  echo "exec $(command -v "$_cmd") \"\$@\"" >> "$BLOCKBIN/$_cmd"; chmod +x "$BLOCKBIN/$_cmd"
+done
+# A signal while a failed pull is being rolled back does not restart that rollback.
+INST="$WORK/inst44h"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+AH_TEST_PULL=1 PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44h.block" AH_TEST_RESTORE_BLOCK TERM
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] \
+    && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' "$INST.out" \
+    && ! grep -q 'interrupted by SIG' "$INST.out"; } \
+  && ok "SIGTERM during a rollback after a failed pull: the rollback runs once to its end" \
+  || bad "SIGTERM during the pull rollback: rc=$rc $(cat "$INST.out")"
+# SIGHUP there ends the running cp too: the rollback starts again, once, and
+# tells its end in the log, as the terminal is gone.
+INST="$WORK/inst44i"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+AH_TEST_PULL=1 PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44i.block" AH_TEST_RESTORE_BLOCK HUP
+hup_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] && [ -n "$hup_log" ] \
+    && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' "$hup_log" \
+    && ! grep -q 'interrupted by SIG' "$hup_log" "$INST.out"; } \
+  && ok "SIGHUP during a rollback after a failed pull: rolled back, told in a 0600 log" \
+  || bad "SIGHUP during the pull rollback: rc=$rc log=${hup_log:-none} $(cat "$INST.out")"
+# --no-rollback names what stays where the signal came.
+INST="$WORK/inst44f"; make_install 0.33.0 "$SRC_OLD" "$INST"
+PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44f.block" AH_TEST_SWAP_BLOCK TERM --no-rollback
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: interrupted by SIGTERM. --no-rollback gesetzt: teils getauschte Laufzeit-Dateien bleiben stehen, \.env unveraendert, Container unveraendert\.' "$INST.out" \
+    && ! grep -q '^compose up -d' "$INST.docker"; } \
+  && ok "--no-rollback, SIGTERM during the swap: partly swapped files stay, .env unchanged" \
+  || bad "--no-rollback swap signal: rc=$rc $(cat "$INST.out")"
+INST="$WORK/inst44g"; make_install 0.33.0 "$SRC_OLD" "$INST"
+PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44g.block" AH_TEST_PIN_BLOCK TERM --no-rollback
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: interrupted by SIGTERM. --no-rollback gesetzt: neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen, Container unveraendert\.' "$INST.out" \
+    && ! grep -q '^compose up -d' "$INST.docker"; } \
+  && ok "--no-rollback, SIGTERM in pin_images: new files and partial pins stay" \
+  || bad "--no-rollback pin signal: rc=$rc $(cat "$INST.out")"
 
 # ── 45. a rollback after the start follows the Alembic revisions ────────────
 # The new images migrate both databases at startup; the old ones do not start on

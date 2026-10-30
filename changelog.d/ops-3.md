@@ -11,4 +11,7 @@
 - **Update: auskommentierter Pflichtschluessel in .env:** steht ein Schluessel aus `.env.example` (etwa
   `CA_ROOT_PASSPHRASE`) nur als Kommentar in `.env`, haengt das Update ihn wieder aktiv an, statt dass
   `docker compose up` danach abbricht. Ein Schluessel mit `export`, Leerzeichen vor dem `=` oder `:` bekommt keine
-  zweite Zeile mehr.
+  zweite Zeile mehr (ausser einem Geheimnis, das `init-secrets.sh` fuellt).
+- **Update: Strg-C waehrend eines Rollbacks:** ein Signal bricht einen Rollback nach einem Fehler nicht mehr ab und
+  startet ihn nicht neu; mit `--no-rollback` nennt die Meldung nach einem Signal, was an dieser Stelle wirklich
+  stehen bleibt.

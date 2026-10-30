@@ -30,8 +30,10 @@ Beweis: Code-Lesung `scripts/update.sh:684` (`grep -qE "^#?[[:space:]]*${key}="`
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: changelog.d/ops-3.md
 
-### T3 — Rollback: Signale während der Rücknahme, Text mit --no-rollback (R-0986, R-0956)  [ ]
+### T3 — Rollback: Signale während der Rücknahme, Text mit --no-rollback (R-0986, R-0956)  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @89e12f14 2026-10-30T13:20:18+01:00
+Review: approve (.ah-out/review/ops-3/T3.verdict.json)
 Beweis: Code-Lesung `scripts/update.sh:650-665` (nur `on_signal` setzt `trap '' INT TERM HUP`), `rollback_before_deploy` `:592`, `rollback_after_deploy` `:709` · Dedup-Key: bug:ops:update.sh:rollback_after_deploy-traps
 Änderung: Beide Rollback-Funktionen ignorieren INT/TERM/HUP von ihrem Beginn an, gleich aus welchem Pfad sie kommen. Der Signalpfad mit `--no-rollback` nennt, was je nach Stand wirklich stehen bleibt (während des Tauschs, nach `pin_images`). Test (erst rot): ein Signal während eines Rollbacks aus einem Fehlerpfad bricht ihn nicht ab; der `--no-rollback`-Text nach `pin_images`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test

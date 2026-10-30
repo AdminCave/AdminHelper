@@ -588,8 +588,10 @@ restore_snapshot() {
 # old .env as a whole, pins of a floating tag included. No recreate needed. $1 says
 # what failed, $2 is the way on that --no-rollback names: the new runtime files
 # stay, so --ref applies the release again. $3 replaces what --no-rollback says
-# stays: the pins reach .env only after the pull (pin_images).
+# stays: the pins reach .env only after the pull (pin_images). Signals: see
+# rollback_signals.
 rollback_before_deploy() {
+    rollback_signals rollback_before_deploy "$@"
     if [ "$NO_ROLLBACK" = 1 ]; then
         die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien bleiben stehen, Image-Pins unveraendert}, Container unveraendert. $2"
     fi
@@ -644,28 +646,48 @@ swap_runtime_files() {
 # From here on files change. bash runs a trap only once the foreground command
 # ends; a dropped SSH session sends SIGHUP to the whole foreground process group,
 # so docker compose ends too. Before the recreate the containers are untouched,
-# after it they may run the new version. The rollback itself ignores further
-# signals. After SIGHUP the terminal is gone, so its messages go to a log file.
+# after it they may run the new version. The rollback itself ignores further INT
+# and TERM. After SIGHUP the terminal is gone, so its messages go to a log file.
+# NO_ROLLBACK_STAYS is what --no-rollback leaves in place at this point, empty for
+# the default text of rollback_before_deploy.
 DEPLOY_STARTED=0
+HUP_LOG=""
+hup_to_log() {
+    [ -z "$HUP_LOG" ] || return 0
+    HUP_LOG="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
+    ( umask 077; : >> "$HUP_LOG" ) && exec >> "$HUP_LOG" 2>&1
+}
+# At the start of a rollback, $@ = the rollback call. INT and TERM would cut it
+# short, so they are ignored, by the commands it starts too. HUP cannot be: a
+# write to the dead terminal would end the script before anything is back. The
+# first HUP (it also ended the running command) moves the output to the log and
+# starts the rollback again, which is idempotent; from then on HUP is ignored.
+ROLLBACK_CALL=()
+rollback_signals() {
+    trap '' INT TERM
+    if [ -n "$HUP_LOG" ]; then
+        trap '' HUP
+    else
+        ROLLBACK_CALL=("$@")
+        trap 'hup_to_log; "${ROLLBACK_CALL[@]}"' HUP
+    fi
+}
+NO_ROLLBACK_STAYS="teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
 on_signal() {
     trap '' INT TERM HUP
-    if [ "$1" = HUP ]; then
-        local logf
-        logf="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
-        ( umask 077; : >> "$logf" ) && exec >> "$logf" 2>&1
-    fi
+    if [ "$1" = HUP ]; then hup_to_log; fi
     if [ "$DEPLOY_STARTED" = 1 ]; then
         rollback_after_deploy "interrupted by SIG$1"
     fi
     rollback_before_deploy "interrupted by SIG$1" \
-        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." "$NO_ROLLBACK_STAYS"
 }
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 trap 'on_signal HUP' HUP
 swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlgeschlagen" \
-    "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
-    "teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
+    "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." "$NO_ROLLBACK_STAYS"
+NO_ROLLBACK_STAYS=""
 
 # --- .env migration: add new keys, fill new secrets --------------------------
 # One step: the caller tests the status, which turns set -e off in here, so every
@@ -708,7 +730,9 @@ update_agent_repo "$TARGET" "$TMP" \
 # says what failed. With --no-rollback, .env stays pinned on the target and a bare
 # re-run would call the install current; --ref is never stopped by the downgrade
 # guard, but it pins a release, so a floating tag only comes back by hand.
+# Signals: see rollback_signals.
 rollback_after_deploy() {
+    rollback_signals rollback_after_deploy "$@"
     if [ "$NO_ROLLBACK" = 1 ]; then
         local back="zurueck mit ./scripts/update.sh --ref v${INSTALLED}"
         [ "$INSTALLED" != "unknown" ] || back="zurueck auf den vorigen Floating-Tag nur von Hand (Image-Pins in .env)"
@@ -730,10 +754,11 @@ rollback_after_deploy() {
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # The containers ran, so only the pin lines of the old .env go back: a key the
     # migration added (CA_ROOT_PASSPHRASE= the compose file needs) or a secret
-    # init-secrets.sh filled may be in use already. Taken from env.prev, not rebuilt from INSTALLED, which is
-    # "unknown" for a floating tag (:latest/:main): pins left on the target make
-    # the next run call the install current. A pin the old .env lacked stays
-    # absent. grep exits 1 for "no line selected", which is fine on either side.
+    # init-secrets.sh filled may be in use already. Taken from env.prev, not
+    # rebuilt from INSTALLED, which is "unknown" for a floating tag (:latest/:main):
+    # pins left on the target make the next run call the install current. A pin
+    # the old .env lacked stays absent. grep exits 1 for "no line selected", which
+    # is fine on either side.
     # LC_ALL=C grep -a, as in upsert_env: a file grep takes for binary loses lines.
     local pins='^#?[[:space:]]*(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE='
     { ( umask 077
@@ -784,9 +809,10 @@ pin_images() {
     chmod 600 .env 2>/dev/null || true
     log "Images gepinnt auf :${TARGET_VER}"
 }
+NO_ROLLBACK_STAYS="neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
 pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \
     ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
-    "neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
+    "$NO_ROLLBACK_STAYS"
 DEPLOY_STARTED=1
 stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
 log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
