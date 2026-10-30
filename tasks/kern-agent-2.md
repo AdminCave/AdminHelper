@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — FRP-Sync: Tunnel-Abbau ohne Antwort von systemd (R-0963)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go, changelog.d/kern-agent-2.md
+### T1 — FRP-Sync: Tunnel-Abbau ohne Antwort von systemd (R-0963)  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go, changelog.d/kern-agent-2.md, apps/agent/internal/frpc/sync_flow_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1ed36cb3 2026-10-30T13:46:28+01:00
+Review: approve (.ah-out/review/kern-agent-2/T1.verdict.json)
 Änderung: Scheitert `disableService` in `stopFrpc` und lauscht der eigene frpc auf seinem Admin-Port, schreibt der Agent eine frpc.toml ohne Proxies und lädt sie über die Admin-API; der Fehler bleibt (kein Hash, nächster Lauf wiederholt systemd). Vorher frp-Verhalten bei null Proxies im Quelltext/der Doku belegen und mit echtem frpc proben, Ergebnis unter `## Entscheidungen`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSync|TestStopFrpc|TestServerConfig|TestHashConfig
 Doku: changelog.d/kern-agent-2.md (neutral)
@@ -44,3 +46,4 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestStore|TestRenew|Te
 Doku: changelog.d/kern-agent-2.md
 
 ## Entscheidungen
+- T1: frp stoppt bei einem Reload jeden Proxy, den die neue Konfig nicht mehr nennt (`UpdateAll` in `client/proxy/proxy_manager.go`, v0.69.1); Probe mit frpc 0.69.1 gegen frps: `frpc reload` ohne `[[proxies]]` meldet „reload success“, Log „proxy removed: [p1]“, der Remote-Port ist danach zu, frpc läuft weiter; `frpc verify -c` nimmt eine Konfig ohne Proxies an. Daher Abbau per Reload mit dem gemeinsamen Teil statt Prozess-Kill. Kein neues admin.conf im Fehlerpfad (`adminAPIListens` liest nur), damit ein fremder Port nie einen Reload bekommt; lauscht frpc nicht, hängt der Grund am Fehler.

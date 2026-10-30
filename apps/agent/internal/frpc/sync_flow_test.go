@@ -1354,3 +1354,86 @@ func TestRefusalStaysAnErrorWhenStoppingFrpcFails(t *testing.T) {
 		})
 	}
 }
+
+// R-0963: a stop that systemd does not carry out still drops the tunnels: the agent's own frpc
+// gets its frpc.toml without the [[proxies]] tables over a reload, frp stops every proxy the
+// reload no longer names. The stop stays an error and the old hash stays, so the next run asks
+// systemd again; the common part stays for that run.
+func TestStopFrpcDropsTheTunnelsWhenSystemdFails(t *testing.T) {
+	for name, owns := range map[string]bool{"own frpc": true, "foreign admin port": false} {
+		t.Run(name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://srv.example")
+			serveToml(t, tunnelToml)
+			if err := Sync(context.Background()); err != nil {
+				t.Fatalf("first Sync: %v", err)
+			}
+			withTunnel, _ := os.ReadFile(config.FrpConfigFile())
+			oldHash, _ := os.ReadFile(config.FrpHashFile())
+			srv, _ := hashServer(t, `{"hash": null}`, nil)
+			pointSyncAt(t, srv.URL)
+			disableService = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
+			ownsAdminPort = func(int) bool { return owns }
+			reloads := calls.reloads
+
+			err := Sync(context.Background())
+			if !errors.Is(err, errFrpcService) {
+				t.Fatalf("Sync = %v, want the failed stop as errFrpcService", err)
+			}
+			got, _ := os.ReadFile(config.FrpConfigFile())
+			if h, _ := os.ReadFile(config.FrpHashFile()); string(h) != string(oldHash) {
+				t.Errorf("hash file = %q, want the old %q", h, oldHash)
+			}
+			if !owns {
+				if calls.reloads != reloads || string(got) != string(withTunnel) {
+					t.Errorf("foreign port: reloads %d -> %d, frpc.toml %q, want no reload and the file unchanged",
+						reloads, calls.reloads, got)
+				}
+				if !strings.Contains(err.Error(), "does not listen on its admin port") {
+					t.Errorf("error %v does not say why the tunnels stay", err)
+				}
+				return
+			}
+			if calls.reloads != reloads+1 {
+				t.Errorf("reloads %d -> %d, want one reload without the tunnels", reloads, calls.reloads)
+			}
+			if hasProxies(got) || string(got) != string(commonPart(withTunnel)) {
+				t.Errorf("frpc.toml = %q, want the common part %q", got, commonPart(withTunnel))
+			}
+
+			disableService = func(context.Context) error { calls.disables++; return nil }
+			if err := Sync(context.Background()); err != nil {
+				t.Fatalf("next Sync: %v", err)
+			}
+			if _, err := os.Stat(config.FrpConfigFile()); !os.IsNotExist(err) {
+				t.Errorf("next Sync: frpc.toml stat = %v, want removed", err)
+			}
+		})
+	}
+}
+
+// A reload that fails as well joins the stop error; the stop stays errFrpcService, and the next
+// run reloads again although frpc.toml is already without proxies.
+func TestStopFrpcReportsAFailedTunnelDrop(t *testing.T) {
+	calls := setupSyncTest(t, "https://srv.example")
+	serveToml(t, tunnelToml)
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+	disableService = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
+	reloadService = func(context.Context) error { return errors.New("reload refused") }
+
+	err := stopFrpc(context.Background())
+	if !errors.Is(err, errFrpcService) || !strings.Contains(err.Error(), "reload refused") {
+		t.Errorf("stopFrpc = %v, want errFrpcService with the failed reload", err)
+	}
+
+	// The file is without proxies now, frpc still runs with them: the next run reloads again.
+	reloadService = func(context.Context) error { calls.reloads++; return nil }
+	reloads := calls.reloads
+	if err := stopFrpc(context.Background()); !errors.Is(err, errFrpcService) {
+		t.Errorf("second stopFrpc = %v, want the failed stop as errFrpcService", err)
+	}
+	if calls.reloads != reloads+1 {
+		t.Errorf("second stopFrpc: reloads %d -> %d, want a new reload after the failed one", reloads, calls.reloads)
+	}
+}
