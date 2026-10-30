@@ -1,6 +1,110 @@
 {
   "components": {
     "schemas": {
+      "AgentKeyDeletedOut": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "AgentKeyDeletedOut",
+        "type": "object"
+      },
+      "AgentKeyOut": {
+        "description": "apiKey is the raw key on creation, else the masked hash tail.",
+        "properties": {
+          "apiKey": {
+            "title": "Apikey",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "apiKey",
+          "createdAt"
+        ],
+        "title": "AgentKeyOut",
+        "type": "object"
+      },
+      "AlertLogOut": {
+        "properties": {
+          "alertRuleId": {
+            "title": "Alertruleid",
+            "type": "string"
+          },
+          "checkId": {
+            "title": "Checkid",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "newStatus": {
+            "title": "Newstatus",
+            "type": "string"
+          },
+          "oldStatus": {
+            "title": "Oldstatus",
+            "type": "string"
+          },
+          "sentAt": {
+            "title": "Sentat",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "alertRuleId",
+          "checkId",
+          "oldStatus",
+          "newStatus",
+          "sentAt",
+          "success",
+          "error"
+        ],
+        "title": "AlertLogOut",
+        "type": "object"
+      },
       "AlertRuleCreate": {
         "properties": {
           "channel": {
@@ -57,6 +161,117 @@
           "channel"
         ],
         "title": "AlertRuleCreate",
+        "type": "object"
+      },
+      "AlertRuleOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "channelConfig": {
+            "title": "Channelconfig"
+          },
+          "cooldownMinutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cooldownminutes"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "matchServerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matchserverid"
+          },
+          "matchSeverity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matchseverity"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "templateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templateid"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "matchSeverity",
+          "matchServerId",
+          "channel",
+          "channelConfig",
+          "cooldownMinutes",
+          "enabled",
+          "templateId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "AlertRuleOut",
         "type": "object"
       },
       "AlertRuleUpdate": {
@@ -145,6 +360,64 @@
         "title": "AlertRuleUpdate",
         "type": "object"
       },
+      "ApplyResultOut": {
+        "description": "The IDs of the checks and alert rules an assignment created.",
+        "properties": {
+          "alertsCreated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alertscreated",
+            "type": "array"
+          },
+          "checksCreated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checkscreated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "checksCreated",
+          "alertsCreated"
+        ],
+        "title": "ApplyResultOut",
+        "type": "object"
+      },
+      "BuiltinUpdateOut": {
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/TemplateDefinitionsOut"
+          },
+          "currentVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentversion"
+          },
+          "shipped": {
+            "$ref": "#/components/schemas/TemplateDefinitionsOut"
+          },
+          "shippedVersion": {
+            "title": "Shippedversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currentVersion",
+          "shippedVersion",
+          "current",
+          "shipped"
+        ],
+        "title": "BuiltinUpdateOut",
+        "type": "object"
+      },
       "CheckCreate": {
         "properties": {
           "check_type": {
@@ -218,6 +491,37 @@
           "check_type"
         ],
         "title": "CheckCreate",
+        "type": "object"
+      },
+      "CheckMetricsOut": {
+        "properties": {
+          "checkId": {
+            "title": "Checkid",
+            "type": "string"
+          },
+          "checkType": {
+            "title": "Checktype",
+            "type": "string"
+          },
+          "data": {
+            "title": "Data"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "statusHistory": {
+            "title": "Statushistory"
+          }
+        },
+        "required": [
+          "checkId",
+          "checkType",
+          "period",
+          "data",
+          "statusHistory"
+        ],
+        "title": "CheckMetricsOut",
         "type": "object"
       },
       "CheckUpdate": {
@@ -458,6 +762,494 @@
         "title": "MaintenanceInput",
         "type": "object"
       },
+      "MaintenanceOut": {
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "durationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationminutes"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "endsAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endsat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "startTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starttime"
+          },
+          "startsAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startsat"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {},
+            "title": "Weekdays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "note",
+          "kind",
+          "startsAt",
+          "endsAt",
+          "weekdays",
+          "startTime",
+          "durationMinutes",
+          "timezone",
+          "enabled",
+          "createdAt"
+        ],
+        "title": "MaintenanceOut",
+        "type": "object"
+      },
+      "MonitorCheckOut": {
+        "properties": {
+          "checkType": {
+            "title": "Checktype",
+            "type": "string"
+          },
+          "config": {
+            "title": "Config"
+          },
+          "consecutiveFails": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutivefails"
+          },
+          "consecutiveOks": {
+            "title": "Consecutiveoks",
+            "type": "integer"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overriddenFields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overriddenfields",
+            "type": "array"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorStateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "templateDefId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templatedefid"
+          },
+          "templateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templateid"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "name",
+          "description",
+          "checkType",
+          "config",
+          "enabled",
+          "interval",
+          "severity",
+          "consecutiveFails",
+          "consecutiveOks",
+          "templateId",
+          "templateDefId",
+          "overriddenFields",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "MonitorCheckOut",
+        "type": "object"
+      },
+      "MonitorStateOut": {
+        "properties": {
+          "checkId": {
+            "title": "Checkid",
+            "type": "string"
+          },
+          "details": {
+            "title": "Details"
+          },
+          "failCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failcount"
+          },
+          "lastCheck": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastcheck"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "notifiedStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifiedstatus"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkId",
+          "status",
+          "since",
+          "lastCheck",
+          "failCount",
+          "message",
+          "details",
+          "notifiedStatus"
+        ],
+        "title": "MonitorStateOut",
+        "type": "object"
+      },
+      "RestoreOut": {
+        "properties": {
+          "restored": {
+            "title": "Restored",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "restored"
+        ],
+        "title": "RestoreOut",
+        "type": "object"
+      },
+      "ServerAssignmentOut": {
+        "description": "An assignment of a server; templateName None when its template is gone.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "removedChecks": {
+            "title": "Removedchecks",
+            "type": "integer"
+          },
+          "serverHostname": {
+            "title": "Serverhostname",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          },
+          "templateName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templatename"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "serverId",
+          "serverHostname",
+          "serverName",
+          "source",
+          "templateName",
+          "removedChecks"
+        ],
+        "title": "ServerAssignmentOut",
+        "type": "object"
+      },
+      "ServerCleanupOut": {
+        "properties": {
+          "alertsDeleted": {
+            "title": "Alertsdeleted",
+            "type": "integer"
+          },
+          "checksDeleted": {
+            "title": "Checksdeleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checksDeleted",
+          "alertsDeleted"
+        ],
+        "title": "ServerCleanupOut",
+        "type": "object"
+      },
+      "StatusSummaryOut": {
+        "properties": {
+          "critical": {
+            "title": "Critical",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "ok",
+          "warning",
+          "critical",
+          "unknown",
+          "pending"
+        ],
+        "title": "StatusSummaryOut",
+        "type": "object"
+      },
       "SuggestionDismiss": {
         "properties": {
           "slug": {
@@ -469,6 +1261,80 @@
           "slug"
         ],
         "title": "SuggestionDismiss",
+        "type": "object"
+      },
+      "SyncResultOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "servers": {
+            "title": "Servers",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "updated",
+          "deleted",
+          "servers"
+        ],
+        "title": "SyncResultOut",
+        "type": "object"
+      },
+      "TagAssignmentOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "tag"
+        ],
+        "title": "TagAssignmentOut",
+        "type": "object"
+      },
+      "TagSyncOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "refreshed": {
+            "title": "Refreshed",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "removed",
+          "refreshed"
+        ],
+        "title": "TagSyncOut",
         "type": "object"
       },
       "TemplateAlertDef": {
@@ -550,6 +1416,44 @@
           "server_name"
         ],
         "title": "TemplateAssign",
+        "type": "object"
+      },
+      "TemplateAssignmentOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "serverHostname": {
+            "title": "Serverhostname",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "templateId",
+          "serverId",
+          "serverHostname",
+          "serverName",
+          "source"
+        ],
+        "title": "TemplateAssignmentOut",
         "type": "object"
       },
       "TemplateCheckDef": {
@@ -665,6 +1569,205 @@
           "name"
         ],
         "title": "TemplateCreate",
+        "type": "object"
+      },
+      "TemplateDefinitionsOut": {
+        "properties": {
+          "alertDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alertdefinitions",
+            "type": "array"
+          },
+          "checkDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checkdefinitions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkDefinitions",
+          "alertDefinitions"
+        ],
+        "title": "TemplateDefinitionsOut",
+        "type": "object"
+      },
+      "TemplateOut": {
+        "description": "assignments and tagAssignments come with the list and a single template,\nsyncResult with a change that rolled the template out.",
+        "properties": {
+          "alertDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alertdefinitions",
+            "type": "array"
+          },
+          "assignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TemplateAssignmentOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignments"
+          },
+          "builtinEdited": {
+            "title": "Builtinedited",
+            "type": "boolean"
+          },
+          "builtinSlug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtinslug"
+          },
+          "builtinUpdateAvailable": {
+            "title": "Builtinupdateavailable",
+            "type": "boolean"
+          },
+          "builtinVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtinversion"
+          },
+          "checkDefinitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checkdefinitions",
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "syncResult": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncResultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tagAssignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TagAssignmentOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagassignments"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "builtinSlug",
+          "builtinVersion",
+          "builtinEdited",
+          "builtinUpdateAvailable",
+          "checkDefinitions",
+          "alertDefinitions",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "TemplateOut",
+        "type": "object"
+      },
+      "TemplateSuggestionOut": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "templateId": {
+            "title": "Templateid",
+            "type": "string"
+          },
+          "templateName": {
+            "title": "Templatename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "templateId",
+          "templateName",
+          "reason"
+        ],
+        "title": "TemplateSuggestionOut",
         "type": "object"
       },
       "TemplateTagAssign": {
@@ -803,7 +1906,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgentKeyDeletedOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -839,7 +1944,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgentKeyOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -948,7 +2055,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlertRuleOut"
+                  },
+                  "title": "Response List Alert Rules Alerts Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -983,7 +2096,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRuleOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1024,7 +2139,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlertLogOut"
+                  },
+                  "title": "Response Get Alert Log Alerts Log Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1093,7 +2214,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRuleOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1139,7 +2262,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRuleOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1177,7 +2302,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRuleOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1252,7 +2379,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorCheckOut"
+                  },
+                  "title": "Response List Checks Checks Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1287,7 +2420,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1356,7 +2491,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1402,7 +2539,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1451,7 +2590,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CheckMetricsOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1489,7 +2630,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1527,7 +2670,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1565,7 +2710,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1608,7 +2755,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MaintenanceOut"
+                  },
+                  "title": "Response List Maintenance Maintenance Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1633,7 +2786,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1712,7 +2867,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1750,7 +2907,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1809,7 +2968,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorCheckOut"
+                  },
+                  "title": "Response Get All Status Status Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1847,7 +3012,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorCheckOut"
+                  },
+                  "title": "Response Get Server Status Status Server  Server Id  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1874,7 +3045,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusSummaryOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1891,7 +3064,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateOut"
+                  },
+                  "title": "Response List Templates Templates Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1916,7 +3095,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -1954,7 +3135,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerAssignmentOut"
+                  },
+                  "title": "Response Get Server Assignments Templates Assignments  Server Id  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -1994,7 +3181,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateSuggestionOut"
+                  },
+                  "title": "Response Get Template Suggestions Templates Suggestions  Server Id  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -2066,7 +3259,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TagSyncOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2125,7 +3320,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2171,7 +3368,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2219,7 +3418,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResultOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2267,7 +3468,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2398,7 +3601,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2436,7 +3641,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BuiltinUpdateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -2472,7 +3679,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOut"
+                }
               }
             },
             "description": "Successful Response"

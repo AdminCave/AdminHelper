@@ -73,6 +73,18 @@ class UserUpdate(RequestModel):
     server_ids: Optional[list[str]] = None
 
 
+class LogoutOut(BaseModel):
+    detail: str
+
+
+class MyServerOut(BaseModel):
+    """A server assigned to the caller."""
+
+    id: str
+    name: str
+    hostname: str
+
+
 class UserResponse(BaseModel):
     id: int
     username: str

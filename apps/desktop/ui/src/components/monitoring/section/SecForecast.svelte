@@ -5,7 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck, MonitorForecastDetails } from '$lib/api/types';
+  import type { MonitorCheck } from '$lib/api/types';
+  import { forecastDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -19,7 +20,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let worst = $derived(worstStatus(checks));
 
   function mountsOf(check: MonitorCheck) {
-    return (check.state?.details as MonitorForecastDetails | undefined)?.mounts ?? [];
+    return forecastDetails(check.state?.details)?.mounts ?? [];
   }
   function cfgOf(check: MonitorCheck): Record<string, unknown> {
     return (check.config ?? {}) as Record<string, unknown>;

@@ -18,7 +18,12 @@ export const apikeys = {
       () => api.create(data),
       (keys, created) => [
         ...keys,
-        { id: created.id, name: created.name, permission: created.permission },
+        {
+          id: created.id,
+          name: created.name,
+          permission: created.permission,
+          created_at: created.created_at,
+        },
       ],
     );
   },

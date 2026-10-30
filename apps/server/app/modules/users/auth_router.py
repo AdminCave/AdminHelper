@@ -39,6 +39,7 @@ from app.modules.users.models import User
 from app.modules.users.schemas import (
     BootstrapRequest,
     LoginRequest,
+    LogoutOut,
     LogoutRequest,
     RefreshRequest,
     TokenResponse,
@@ -276,7 +277,7 @@ def refresh_token(
 # and the cookie cleared), so the schema declares the auth optional. FastAPI deep-merges
 # openapi_extra and appends lists, which turns the derived [{HTTPBearer}] into
 # [{HTTPBearer}, {}] — `{}` being OpenAPI's "no auth" alternative (R-0054).
-@router.post("/logout", openapi_extra={"security": [{}]})
+@router.post("/logout", response_model=LogoutOut, openapi_extra={"security": [{}]})
 def logout(
     request: Request,
     response: Response,
