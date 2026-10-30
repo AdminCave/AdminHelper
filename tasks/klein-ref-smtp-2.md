@@ -10,8 +10,10 @@ Heavy: none — Fehlertexte und Unit-Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Hub: unlesbare SMTP_CA_FILE nennt Variable und Pfad (R-0830)  [ ]
+### T1 — Hub: unlesbare SMTP_CA_FILE nennt Variable und Pfad (R-0830)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, apps/server/tests/test_email_sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8af5e2cc 2026-10-30T08:35:42+01:00
+Review: am Ende (Branch-Review)
 Änderung: `send_email` fängt `OSError` und `ssl.SSLError` aus `load_verify_locations` und wirft `RuntimeError("SMTP_CA_FILE <pfad> cannot be loaded: <Ausnahmeklasse>") from exc`; es bleibt vor jeder Verbindung. `test_unloadable_smtp_ca_file_raises_before_connecting` erwartet `RuntimeError` und prüft Variable, Pfad und Klasse im Text (Ausnahmetyp ändert sich gewollt, die Prüfung „keine Verbindung“ bleibt).
 Beweis: R-0830 Code-Lesung apps/server/app/modules/notifications/sender.py:40, outbox.py:77 (`last_error = str(exc)`)
 Dedup-Key: ref:smtp:sender.py:ca-file-error-text
