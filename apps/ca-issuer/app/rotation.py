@@ -46,7 +46,8 @@ class RotatedScope:
 def rotate_intermediates(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
     """Issue a new intermediate for every scope under root.crt; the replaced ones that
     are still valid go to <scope>-retired.pem, expired entries leave that file. A
-    current intermediate that is not valid yet by this clock stops it (RotationError).
+    current intermediate of its scope that is not valid yet by this clock stops it
+    (RotationError).
     Holds an exclusive lock on <pki_dir>/.rotate.lock (RotationError if another run
     holds it). Returns one RotatedScope per scope, in pki.SCOPES order."""
     lock_path = pki_dir / LOCK_NAME
@@ -76,7 +77,12 @@ def _rotate(pki_dir: Path, passphrase: bytes) -> list[RotatedScope]:
         # is behind the one that issued it. Replaced under it, the intermediate would not
         # be kept as retired (it is not valid now), and once the clock is right nothing
         # would trust the leaves it signed: the cure is the clock (storage.CLOCK_HINT).
-        if now < old.not_valid_before_utc:
+        # A certificate that is no intermediate of this scope is never kept as retired
+        # (_retired_after), so the clock costs it nothing and the rotation replaces it.
+        if (
+            now < old.not_valid_before_utc
+            and pki.intermediate_problem(old, scope, root_cert) is None
+        ):
             raise RotationError(
                 f"{crt}: {pki.read_identity(old)[0]!r} is not valid before "
                 f"{old.not_valid_before_utc.isoformat()}, the host clock says "

@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — Rotation: Uhrprüfung nur für ein Zwischenzertifikat des Scopes (R-0982)  [ ]
+### T1 — Rotation: Uhrprüfung nur für ein Zwischenzertifikat des Scopes (R-0982)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/tests/test_rotation.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @b5c083bc 2026-10-30T14:21:37+01:00
+Review: am Ende (Branch-Review)
 Änderung: `_rotate` prüft notBefore nur, wenn `pki.intermediate_problem(old, scope, root)` nichts findet; ein fremdes `<scope>.crt` mit notBefore in der Zukunft wird ersetzt wie jedes fremde. Test: erst rot (RotationError mit Uhr-Meldung), dann grün; der Fall „eigenes Zwischenzertifikat in der Zukunft“ bleibt RotationError.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py
 Doku: keine (betrieb.html beschreibt die Uhrprüfung für Zwischenzertifikate des Scopes; das bleibt wahr)

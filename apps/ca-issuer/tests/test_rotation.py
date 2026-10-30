@@ -295,3 +295,21 @@ def test_a_current_intermediate_not_valid_yet_changes_nothing(monkeypatch, tmp_p
     assert cert.not_valid_before_utc.isoformat() in message
     assert "host clock" in message and "NTP" in message
     assert _snapshot(tmp_path) == before  # also: no temporary file left
+
+
+def test_a_foreign_current_certificate_not_valid_yet_is_replaced(monkeypatch, tmp_path):
+    # access.crt holds tunnel's intermediate, issued ten days after the others; this clock
+    # is five days behind it. It is no access intermediate, so it is never kept as retired
+    # and the clock cannot cost it anything: the rotation replaces it like any wrong
+    # <scope>.crt instead of stopping at the clock.
+    _booted(monkeypatch, tmp_path, days_ago=10)
+    root = pki.cert_from_pem((tmp_path / "root.crt").read_bytes())
+    root_key = pki.key_from_pem((tmp_path / "root.key.enc").read_bytes(), PW)
+    foreign, _ = pki.build_intermediate_ca("tunnel", root, root_key)
+    (tmp_path / "access.crt").write_bytes(pki.cert_to_pem(foreign))
+
+    rotated = {r.scope: r for r in _rotated(monkeypatch, tmp_path, days_ago=5)}
+
+    assert rotated["access"].old == foreign
+    assert rotated["access"].new != foreign
+    assert _retired_file(tmp_path, "access") == []
