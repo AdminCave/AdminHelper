@@ -151,8 +151,9 @@ def rotate(pki_dir: Path, compromised: frozenset[str] = frozenset()) -> int:
         print(f"  old: {_name_and_end(r.old)}")
         print(f"  new: {_name_and_end(r.new)}")
         if r.scope in compromised:
-            print("  compromised: no replaced intermediate stays trusted; every certificate")
-            print("  of this scope is invalid after the restart, issue them anew")
+            print("  compromised: no replaced intermediate is renewed or in a trust bundle; a")
+            print("  client sending it along still passes TLS, so revoke the devices of this")
+            print("  scope and set them up anew; only a new root closes the leak")
     print(_RESTART)
     return 0
 
@@ -193,7 +194,8 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         metavar="SCOPE",
         help=f"a scope whose intermediate key leaked ({', '.join(pki.SCOPES)}; repeatable): "
-        "neither its replaced intermediate nor an earlier one stays trusted",
+        "neither its replaced intermediate nor an earlier one is renewed or kept in a trust "
+        "bundle (revoke its devices too, see the operations docs)",
     )
     args = parser.parse_args(argv)
     if args.command == "status":

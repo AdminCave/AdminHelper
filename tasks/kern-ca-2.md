@@ -45,8 +45,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py
 Doku: docs/admin/betrieb.html#ca-rotation · docs/en/admin/operations.html#ca-rotation · changelog.d/kern-ca-2.md
 
-### T5 — Leck-Rotation: CLI-Ausgabe und Hilfe wie die Doku (Abschlussprüfung reviewer)  [ ]
+### T5 — Leck-Rotation: CLI-Ausgabe und Hilfe wie die Doku (Abschlussprüfung reviewer)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @2a8208e7 2026-10-30T14:37:52+01:00
+Review: am Ende (Branch-Review)
 Änderung: Die Ausgabe von `rotate-intermediates --compromised` und die Hilfe zur Option sagen nicht mehr zu, dass alle Zertifikate des Scopes ungültig werden, sondern verweisen auf Widerruf, Neueinrichtung und neue Root (wie T4).
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_cli.py
 Doku: keine (T4 hat die Doku nachgezogen)
