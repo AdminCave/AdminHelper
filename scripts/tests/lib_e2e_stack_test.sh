@@ -902,12 +902,12 @@ wait_plane() {  # wait_plane <seconds> <codes...> — e2e_wait_enroll_plane agai
   PATH="$WAIT:$PATH" bash -c '. "$1/scripts/tests/lib_e2e_stack.sh"; E2E_ENROLL_PORT=8444; e2e_wait_enroll_plane "$2"' \
     _ "$REPO_ROOT" "$secs" > "$WORK/wait.out" 2>&1
 }
-wait_plane 10 000 502 503 404; rc=$?
+wait_plane 10 000 502 503 405; rc=$?
 [ "$rc" = 0 ] && [ "$(wc -l < "$STUB_LOG/wait.calls")" = 4 ] \
-  && ok "enroll plane: refused, 502 and 503 are waited out, the 404 of the issuer ends the wait (4 curl calls)" \
+  && ok "enroll plane: refused, 502 and 503 are waited out, the 405 of the live issuer ends the wait (4 curl calls)" \
   || bad "enroll plane: rc=$rc, $(wc -l < "$STUB_LOG/wait.calls") calls: $(cat "$WORK/wait.out")"
-grep -qF -- "https://localhost:8444/" "$STUB_LOG/wait.calls" \
-  && ok "enroll plane: asks https://localhost:<E2E_ENROLL_PORT>/" || bad "enroll plane: curl args $(head -1 "$STUB_LOG/wait.calls")"
+grep -qF -- "https://localhost:8444/enroll" "$STUB_LOG/wait.calls" \
+  && ok "enroll plane: asks https://localhost:<E2E_ENROLL_PORT>/enroll (the only path nginx proxies to the issuer)" || bad "enroll plane: curl args $(head -1 "$STUB_LOG/wait.calls")"
 wait_plane 2 502; rc=$?
 [ "$rc" = 1 ] && grep -q "never reached the ca-issuer (last HTTP '502')" "$WORK/wait.out" \
   && ok "enroll plane: a 502 that stays is rc 1 and names the last status" \

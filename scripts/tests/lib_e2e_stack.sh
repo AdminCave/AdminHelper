@@ -291,11 +291,13 @@ e2e_up() {
 # e2e_wait_enroll_plane [seconds] — wait until :8444 reaches the ca-issuer. e2e_up waits
 # for :443 only, and the gateway hangs on the ca-issuer with service_started: right after a
 # fresh PKI the enroll plane answers 502 (or resets) until the issuer listens (R-0935).
-# Any other status counts as reached; rc 1 names the last one.
+# Asks /enroll: the gateway answers every other path of :8444 with its own 404, only /enroll
+# is proxied. A GET there is 405 from a live issuer (POST-only route). Any status but
+# 000/502/503/504 counts as reached; rc 1 names the last one.
 e2e_wait_enroll_plane() {
     local deadline=$(( $(date +%s) + ${1:-60} )) code=000
     while :; do
-        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "https://localhost:$E2E_ENROLL_PORT/" 2>/dev/null) || code=000
+        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "https://localhost:$E2E_ENROLL_PORT/enroll" 2>/dev/null) || code=000
         case "$code" in 000|502|503|504) ;; *) return 0 ;; esac
         [ "$(date +%s)" -lt "$deadline" ] || break
         sleep 1

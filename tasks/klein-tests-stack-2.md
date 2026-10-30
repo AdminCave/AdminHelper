@@ -41,3 +41,14 @@ Dedup-Key: ref:scripts:integration_stack_test.sh:unstable-fail-ids
 Änderung: `_secret_sources()` gegen ein kleines Compose-Beispiel in `tmp_path` (monkeypatch auf `_COMPOSE`): ein Secret mit `environment`, eines mit `file`, ein leeres; erwartet nur den `environment`-Namen. Gegenprobe: Filter entfernen → rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py
 Doku: keine (Tests)
+
+### T4 — Warten auf `/enroll` statt auf `/` (R-0935, R-0955)  [x]
+Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @af9cefcf 2026-10-30T13:19:05+01:00
+Review: am Ende (Branch-Review)
+Beweis: Abschlussprüfung 2026-10-30: `apps/gateway/nginx.conf` beantwortet auf :8444 `location / { return 404; }` selbst, nur `location = /enroll` geht an den ca-issuer; T1 fragte `/` und wartete deshalb nie.
+Dedup-Key: bug:scripts:integration_stack_test.sh:enroll-502-ca-issuer-start
+Änderung: `e2e_wait_enroll_plane` fragt `https://localhost:$E2E_ENROLL_PORT/enroll` (GET; die Route ist POST-only, ein laufender Issuer antwortet 405, ein fehlender 502/Reset). Der Stub-Test verlangt die URL `/enroll`, nutzt 405 als Erfolgsstatus und wartet 000/502/503 aus. Gegenprobe: die Sonde zurück auf `/` → URL-Zeile rot.
+Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
+Doku: keine (Tests)
+Task-Review: am Ende
