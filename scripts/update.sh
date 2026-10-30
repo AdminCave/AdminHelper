@@ -658,10 +658,13 @@ hup_to_log() {
     ( umask 077; : >> "$HUP_LOG" ) && exec >> "$HUP_LOG" 2>&1
 }
 # At the start of a rollback, $@ = the rollback call. INT and TERM would cut it
-# short, so they are ignored, by the commands it starts too. HUP cannot be: a
-# write to the dead terminal would end the script before anything is back. The
-# first HUP (it also ended the running command) moves the output to the log and
-# starts the rollback again, which is idempotent; from then on HUP is ignored.
+# short, so the shell ignores them, and so does a command it starts unless it
+# sets a handler of its own. HUP cannot be ignored: a write to the dead terminal
+# would end the script before anything is back. The first HUP (it also ended the
+# running command) moves the output to the log and starts the rollback again;
+# from then on HUP is ignored. A second run of rollback_after_deploy stops the
+# migrating services on the old compose file: if that lacks one, the revision
+# counts as unconfirmed and the stack stops with the restore hint.
 ROLLBACK_CALL=()
 rollback_signals() {
     trap '' INT TERM

@@ -39,8 +39,10 @@ Beweis: Code-Lesung `scripts/update.sh:650-665` (nur `on_signal` setzt `trap '' 
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: changelog.d/ops-3.md
 
-### T4 — update_test: Rollback nach dem Start, migriert und unvollständig, Stopp scheitert (R-0987)  [ ]
-Komponente: scripts · Dateien: scripts/tests/update_test.sh
+### T4 — update_test: Rollback nach dem Start, migriert und unvollständig, Stopp scheitert (R-0987)  [x]
+Komponente: scripts · Dateien: scripts/tests/update_test.sh, scripts/update.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @32c761a8 2026-10-30T13:30:24+01:00
+Review: approve (.ah-out/review/ops-3/T4.verdict.json)
 Änderung: Zwei Fälle zu Abschnitt 45 (`update_test.sh:1442`): Datenbank migriert und ein Restore-Schritt scheitert → Meldung „UNVOLLSTAENDIG“ mit Restore-Weg; `docker compose stop` scheitert → Migrationsstand unbestätigt, Stack-Stopp gemeldet.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (nur Tests)

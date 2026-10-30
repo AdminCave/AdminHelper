@@ -69,7 +69,8 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # AH_TEST_REV_SERVER / AH_TEST_REV_MONITOR (default r1) for -d adminhelper /
 # adminhelper_monitor, after the install dir's first `compose up` the *_AFTER
 # value if set, and fails with AH_TEST_REV_FAIL=1; AH_TEST_STOP_FAIL=1 fails the
-# stop of the migrating services (`compose stop server …`), and so does
+# stop of the migrating services (`compose stop server …`), AH_TEST_STACK_STOP_FAIL=1
+# the stop of the whole stack (`compose stop`), and so does
 # AH_TEST_NO_SCHEDULER_IN=<ver> while the compose file of <ver> is in place (no
 # scheduler service before 0.38.0); AH_TEST_PULL_LOG
 # records, per pull, SERVER_IMAGE from the environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
@@ -107,6 +108,8 @@ case "$*" in
       [ -z "${AH_TEST_NO_SCHEDULER_IN:-}" ] || ! grep -q "marker: ${AH_TEST_NO_SCHEDULER_IN}\$" docker-compose.yml \
         || { echo "no such service: scheduler" >&2; exit 1; } ;;
     esac ;;
+  "compose stop")
+    [ "${AH_TEST_STACK_STOP_FAIL:-}" != 1 ] || { echo "stub: stop failed" >&2; exit 1; } ;;
   "compose exec -T postgres psql "*)
     [ "${AH_TEST_REV_FAIL:-}" != 1 ] || { echo "stub: psql failed" >&2; exit 1; }
     case "$*" in
@@ -1579,6 +1582,38 @@ msg=$(grep 'FEHLER: ' <<<"$out")
 { grep -q -- '--skip-backup' <<<"$msg" && ! grep -q 'adminhelper-backup-test' <<<"$msg" \
     && grep -qF './scripts/restore.sh backups/adminhelper-backup-2026-01-01_00-00-00.tar.gz' <<<"$msg"; } \
   && ok "--skip-backup: no archive of this run, names the last backup before it" || bad "--skip-backup migrated: $msg"
+# Migrated, and a part of the rollback fails: the message says incomplete and
+# still names both ways, back with restore.sh and forward with --ref.
+INST="$WORK/inst45i"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 AH_TEST_TAR_FAIL=1 --
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'WARN: Snapshot-Restore fehlgeschlagen' <<<"$out" \
+    && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && grep -q 'may already be migrated by 0\.34\.0' <<<"$msg" \
+    && grep -qF 'Back: ./scripts/restore.sh backups/adminhelper-backup-test.tar.gz' <<<"$msg" \
+    && grep -q -- 'forward again: \./scripts/update\.sh --ref v0\.34\.0' <<<"$msg" \
+    && grep -q '^compose stop$' "$INST.docker" && ! grep -q zurueckgerollt <<<"$msg"; } \
+  && ok "migrated, snapshot restore fails: incomplete, stack stopped, restore and --ref named" \
+  || bad "migrated + failed restore: rc=$rc $msg"
+INST="$WORK/inst45j"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 AH_TEST_STACK_STOP_FAIL=1 --
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'WARN: Stoppen des Stacks fehlgeschlagen' <<<"$out" \
+    && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && grep -qF 'Back: ./scripts/restore.sh backups/adminhelper-backup-test.tar.gz' <<<"$msg" \
+    && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && pinned_on "$INST" 0.33.0 \
+    && [ "$(grep -cE '^compose up -d' "$INST.docker")" = 1 ]; } \
+  && ok "migrated, the stack does not stop: incomplete, not restarted, files and pins on 0.33.0" \
+  || bad "migrated + failed stack stop: rc=$rc docker $(tr '\n' ';' < "$INST.docker") $msg"
+# SIGHUP while the rollback after the start stops the migrating services ends that
+# stop: the rollback starts again, once, and tells its end in the log.
+INST="$WORK/inst45k"; make_install 0.33.0 "$SRC_OLD" "$INST"
+AH_TEST_HEALTH=1 interrupt_update "$INST" "$WORK/inst45k.block" AH_TEST_STOP_BLOCK HUP
+hup_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ -n "$hup_log" ] && pinned_on "$INST" 0.33.0 && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && [ "$(grep -c '^compose stop server ' "$INST.docker")" = 2 ] \
+    && grep -q 'FEHLER: stack start or health check failed.*zurueckgerollt auf 0\.33\.0\.' "$hup_log" \
+    && ! grep -q 'interrupted by SIG' "$hup_log" "$INST.out"; } \
+  && ok "SIGHUP during the rollback after the start: rolled back again, told in a 0600 log" \
+  || bad "SIGHUP during the rollback after the start: rc=$rc log=${hup_log:-none} $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
 INST="$WORK/inst45f"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_REV_FAIL=1 run_update "$INST" --ref v0.34.0 2>&1); rc=$?
 { [ $rc -eq 0 ] && pinned_on "$INST" 0.34.0; } \
