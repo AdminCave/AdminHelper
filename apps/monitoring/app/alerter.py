@@ -821,5 +821,8 @@ def _send_email(
         logger.info("E-Mail gesendet: %s -> %s", check.name, recipients)
         return True, None
     except Exception as exc:
-        logger.error("Email failed: %s: %s", check.name, exc)
+        # The stored message stays "SMTP TLS failed"; the log names the setting to fix, since
+        # the raw error of a broken PEM carries neither the variable nor the path.
+        detail = f"SMTP_CA_FILE {SMTP_CA_FILE} cannot be loaded: {exc}" if loading_ca else exc
+        logger.error("Email failed: %s: %s", check.name, detail)
         return False, _email_failure(exc, in_starttls=in_starttls, loading_ca=loading_ca)
