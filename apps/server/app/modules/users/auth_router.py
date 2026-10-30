@@ -28,7 +28,7 @@ from app.core.auth import (
 )
 from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
-from app.core.identity import require_cert_user
+from app.core.identity import require_cert_if_enforced, require_cert_user
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
@@ -174,6 +174,7 @@ def login(
     # The certificate has to belong to the user who signs in (R-0223). Checked before
     # the password, so the answer says nothing about it.
     try:
+        require_cert_if_enforced(request)
         require_cert_user(request, data.username, db)
     except HTTPException:
         audit.record(
@@ -230,6 +231,8 @@ def refresh_token(
     data: RefreshRequest | None = None,
     db: Session = Depends(get_db),
 ):
+    # Before any look at the token, so a refused refresh neither uses it up nor counts as reuse.
+    require_cert_if_enforced(request)
     token = _resolve_refresh_token(request, data.refresh_token if data else None)
     if not token:
         raise HTTPException(
@@ -339,6 +342,8 @@ def bootstrap(
     """
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
+    # Before the lock and the token, so the answer says nothing about the server's state.
+    require_cert_if_enforced(request)
 
     # Several workers serve this route: without the lock two calls with the token can both
     # see "no user" and both create an admin. Held until the commit below.

@@ -14,10 +14,12 @@ Zeilenangaben `origin/main@b61444fd`, vor dem Schreiben neu greppen. Neue Code-S
 Baut erst nach dem Merge von feature/api-contracts (`auth_router.py`); T2 nach dem Merge von feature/kern-web-2
 (`docs/admin/benutzer.html`). `security` bei T1 und T2.
 
-### T1 — Login, Refresh und Bootstrap unter MTLS_ENFORCE nur mit Zertifikat (R-0900)  [ ]
+### T1 — Login, Refresh und Bootstrap unter MTLS_ENFORCE nur mit Zertifikat (R-0900)  [x]
 Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/modules/users/auth_router.py, apps/server/tests/test_cert_user_binding.py, scripts/tests/integration_stack_test.sh, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-2.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @72997169 2026-10-30T06:30:06+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neue Prüfung in `app/core/identity.py` (neben `require_cert_user`, `:203`): unter `config.MTLS_ENFORCE` und ohne verifizierte Identität `403`. `login` ruft sie im auditierten `try` (`auth_router.py:175`), `refresh_token` vor jeder Token-Prüfung (`:232`), `bootstrap` vor dem Setup-Token (`:367`). Tests (Enforce, ohne Gateway-Header): Login `403` und `auth.login_failed`, auch bei richtigem Passwort; Refresh `403`, danach mit Zertifikat derselbe Token gültig; Bootstrap `403`, kein Benutzer; permissiv wie bisher. Stack-Test 15b erwartet `403` statt `401`.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py tests/test_auth.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py tests/test_auth.py tests/test_certificate_check.py tests/test_mtls_scope.py tests/test_identity_revocation.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + EN · changelog.d/kern-server-2.md
 
 ### T2 — Absolute Höchstdauer einer Web-Sitzung, serverseitig (R-0887)  [ ]

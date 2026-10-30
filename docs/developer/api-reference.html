@@ -58,11 +58,11 @@
           <h2>Auth</h2>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/login</code>
-            <p>Body: <code>{ "username", "password" }</code>. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code>; bei Browser-Anfragen (Header <code>Sec-Fetch-Site</code>) ist <code>refresh_token</code> <code>""</code>, der Token steht nur im HttpOnly-Cookie. Login-Rate-Limit: 5 Fehlversuche / 60&nbsp;s / IP.</p>
+            <p>Body: <code>{ "username", "password" }</code>. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code>; bei Browser-Anfragen (Header <code>Sec-Fetch-Site</code>) ist <code>refresh_token</code> <code>""</code>, der Token steht nur im HttpOnly-Cookie. Login-Rate-Limit: 5 Fehlversuche / 60&nbsp;s / IP. Unter <code>MTLS_ENFORCE=true</code> (Standard) nur mit einem vom Gateway geprüften Client-Zertifikat, sonst <code>403</code> vor der Passwortprüfung (im Audit-Log als <code>auth.login_failed</code>); das gilt ebenso für Refresh und Bootstrap.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/refresh</code>
-            <p>Body: <code>{ "refresh_token" }</code> <em>oder</em> HttpOnly-Cookie (Browser, Body darf dann leer sein). Rotiert beide Tokens, blacklisted den alten <code>jti</code>. Antwort wie Login; bei Browser-Anfragen ist <code>refresh_token</code> <code>""</code> und der neue Token steht nur im Cookie. Reuse eines bereits widerrufenen Refresh-Tokens invalidiert alle Sessions der betroffenen User-Kette.</p>
+            <p>Body: <code>{ "refresh_token" }</code> <em>oder</em> HttpOnly-Cookie (Browser, Body darf dann leer sein). Rotiert beide Tokens, blacklisted den alten <code>jti</code>. Antwort wie Login; bei Browser-Anfragen ist <code>refresh_token</code> <code>""</code> und der neue Token steht nur im Cookie. Reuse eines bereits widerrufenen Refresh-Tokens invalidiert alle Sessions der betroffenen User-Kette. Unter <code>MTLS_ENFORCE=true</code> ohne Client-Zertifikat <code>403</code>, der Token bleibt dann gültig.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
@@ -74,7 +74,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/bootstrap</code>
-            <p>Legt beim ersten Start den ersten Admin-User per Setup-Token an (Status <code>201</code>). Body: <code>{ "token", "username", "password" }</code> &ndash; <code>username</code> 3&ndash;64 Zeichen, <code>password</code> 8&ndash;128 Zeichen. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code> (wie Login, bei Browser-Anfragen also <code>refresh_token</code> <code>""</code>). Der Setup-Token wird beim ersten Start ins WARNING-Log geschrieben (Hash unter <code>DATA_DIR/.bootstrap_token</code>) und nach erfolgreichem Bootstrap verbraucht. Es gilt dasselbe Login-Rate-Limit (5 Fehlversuche / 60&nbsp;s / IP). Sobald ein User existiert, antwortet der Endpoint dauerhaft mit <code>409 Conflict</code> (&bdquo;Server ist bereits initialisiert"); fehlt der aktive Token, kommt <code>401</code>.</p>
+            <p>Legt beim ersten Start den ersten Admin-User per Setup-Token an (Status <code>201</code>). Body: <code>{ "token", "username", "password" }</code> &ndash; <code>username</code> 3&ndash;64 Zeichen, <code>password</code> 8&ndash;128 Zeichen. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code> (wie Login, bei Browser-Anfragen also <code>refresh_token</code> <code>""</code>). Der Setup-Token wird beim ersten Start ins WARNING-Log geschrieben (Hash unter <code>DATA_DIR/.bootstrap_token</code>) und nach erfolgreichem Bootstrap verbraucht. Es gilt dasselbe Login-Rate-Limit (5 Fehlversuche / 60&nbsp;s / IP). Sobald ein User existiert, antwortet der Endpoint dauerhaft mit <code>409 Conflict</code> (&bdquo;Server ist bereits initialisiert"); fehlt der aktive Token, kommt <code>401</code>. Unter <code>MTLS_ENFORCE=true</code> ohne Client-Zertifikat <code>403</code> vor allen anderen Prüfungen; ein Bootstrap von Hand braucht deshalb <code>MTLS_ENFORCE=false</code>.</p>
           </div>
 
           <h2>Users</h2>
