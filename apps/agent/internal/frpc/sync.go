@@ -469,14 +469,53 @@ func frpcGone() bool {
 }
 
 // stopFrpc stops and disables frpc, then removes frpc.toml: it holds the frps token. The
-// order keeps the file for the retry when the stop fails.
+// order keeps the file for the retry when the stop fails. A stop that fails still drops the
+// tunnels over the admin API (dropTunnels): frpc must not keep a tunnel the server no longer
+// sends for as long as systemd does not answer.
 func stopFrpc(ctx context.Context) error {
 	if err := disableService(ctx); err != nil {
-		return fmt.Errorf("%w: stop and disable frpc: %w", errFrpcService, err)
+		stopErr := fmt.Errorf("%w: stop and disable frpc: %w", errFrpcService, err)
+		if dropErr := dropTunnels(ctx); dropErr != nil {
+			return fmt.Errorf("%w; dropping the tunnels over the admin API failed as well: %v", stopErr, dropErr)
+		}
+		return stopErr
 	}
 	if err := os.Remove(config.FrpConfigFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove frpc.toml: %w", err)
 	}
+	return nil
+}
+
+// dropTunnels puts frpc onto its frpc.toml without the [[proxies]] tables and reloads it: frp
+// stops every proxy a reload no longer names, and frpc keeps running without one. Only the
+// agent's own frpc gets the reload (adminAPIListens). The common part stays, so the next run,
+// which stops frpc over systemd again, may still reload instead of restart. A file without
+// proxies is no proof that frpc runs without them (a reload may have failed before), so every
+// run reloads again; a reload without proxies changes nothing.
+func dropTunnels(ctx context.Context) error {
+	current, err := os.ReadFile(config.FrpConfigFile())
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read frpc.toml: %w", err)
+	}
+	if !adminAPIListens() {
+		return errors.New("frpc does not listen on its admin port")
+	}
+	if hasProxies(current) {
+		tmp := config.FrpConfigFile() + ".tmp"
+		if err := config.WriteFile(tmp, commonPart(current), 0600); err != nil {
+			return fmt.Errorf("write frpc.toml without tunnels: %w", err)
+		}
+		if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
+			return fmt.Errorf("activate frpc.toml without tunnels: %w", err)
+		}
+	}
+	if err := reloadService(ctx); err != nil {
+		return err
+	}
+	logger.Warnf("systemd did not stop frpc: its tunnels are dropped over the admin API, the next run stops frpc again")
 	return nil
 }
 

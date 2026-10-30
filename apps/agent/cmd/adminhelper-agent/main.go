@@ -7,13 +7,13 @@ package main
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/diagnostics"
@@ -93,18 +93,43 @@ var runProvision = provision.Run
 // must not hold the command or grow its memory.
 const maxStdinToken = 4 << 10
 
-// readStdinToken returns the first line of in, trimmed, so the token does not have to
-// be a program argument (visible in the process list). Its errors never quote what
-// was read.
-func readStdinToken(in io.Reader) (string, error) {
-	line, err := bufio.NewReader(io.LimitReader(in, maxStdinToken)).ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", fmt.Errorf("read the provision token from stdin: %w", err)
+// stdinTerminal reports the descriptor of in if in is a terminal; tests swap it.
+var stdinTerminal = func(in io.Reader) (int, bool) {
+	f, ok := in.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return 0, false
+	}
+	return int(f.Fd()), true
+}
+
+// readTerminal reads a line from the terminal fd without echo; tests swap it.
+var readTerminal = term.ReadPassword
+
+// readStdinSecret returns the first line of in, trimmed, so a secret (what: "provision
+// token", "API key") does not have to be a program argument (visible in the process
+// list). On a terminal it prompts on prompt and reads without echo, so the secret stays
+// off the screen. Its errors never quote what was read.
+func readStdinSecret(in io.Reader, prompt io.Writer, what string) (string, error) {
+	var line string
+	if fd, ok := stdinTerminal(in); ok {
+		fmt.Fprintf(prompt, "%s%s: ", strings.ToUpper(what[:1]), what[1:])
+		b, err := readTerminal(fd)
+		fmt.Fprintln(prompt)
+		if err != nil {
+			return "", fmt.Errorf("read the %s from the terminal: %w", what, err)
+		}
+		line = string(b[:min(len(b), maxStdinToken)])
+	} else {
+		var err error
+		line, err = bufio.NewReader(io.LimitReader(in, maxStdinToken)).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return "", fmt.Errorf("read the %s from stdin: %w", what, err)
+		}
 	}
 	if token := strings.TrimSpace(line); token != "" {
 		return token, nil
 	}
-	return "", errors.New("no provision token on stdin")
+	return "", fmt.Errorf("no %s on stdin", what)
 }
 
 func provisionCmd() *cobra.Command {
@@ -116,7 +141,7 @@ func provisionCmd() *cobra.Command {
 		Short: "Provision this host against an AdminHelper server (server API key + optional monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if tokenStdin {
-				t, err := readStdinToken(cmd.InOrStdin())
+				t, err := readStdinSecret(cmd.InOrStdin(), cmd.ErrOrStderr(), "provision token")
 				if err != nil {
 					return err
 				}
@@ -175,12 +200,19 @@ func monitorCmd() *cobra.Command {
 
 func monitorInitCmd() *cobra.Command {
 	var url, apiKey, serverID, services, cacert string
-	var insecure bool
+	var insecure, apiKeyStdin bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Ersteinrichtung des Monitor-Agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if apiKeyStdin {
+				k, err := readStdinSecret(cmd.InOrStdin(), cmd.ErrOrStderr(), "API key")
+				if err != nil {
+					return err
+				}
+				apiKey = k
+			}
 			return initMonitor(monitor.InitParams{
 				URL:      url,
 				APIKey:   apiKey,
@@ -191,13 +223,15 @@ func monitorInitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Basis-URL: AdminHelper-Server + /api/monitoring (z.B. https://srm.example.com/api/monitoring) (erforderlich)")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "API-Key (erforderlich)")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key (or --api-key-stdin)")
+	cmd.Flags().BoolVar(&apiKeyStdin, "api-key-stdin", false, "read the API key from stdin")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
 	cmd.Flags().StringVar(&services, "services", "", "Kommagetrennte Service-Namen")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.MarkFlagRequired("url")
-	cmd.MarkFlagRequired("api-key")
+	cmd.MarkFlagsOneRequired("api-key", "api-key-stdin")
+	cmd.MarkFlagsMutuallyExclusive("api-key", "api-key-stdin")
 	cmd.MarkFlagRequired("server-id")
 	return cmd
 }
