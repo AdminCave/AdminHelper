@@ -341,7 +341,7 @@ expect_fail "a check without a marker fails the run" \
   "frps egress to 10.0.0.3:22: no marker" FAKE_FRPS_EGRESS=NONE
 reset_state
 bash "$MB" --agents 1 >/dev/null 2>&1
-! grep -q 'frps-egress' "$FAKE_LOG" \
+[ -s "$FAKE_LOG" ] && ! grep -q 'frps-egress' "$FAKE_LOG" \
   && ok "without --tunnel there is no egress check" || bad "egress without the flag: $(grep frps-egress "$FAKE_LOG")"
 
 echo "── the API program on the server box ──"
