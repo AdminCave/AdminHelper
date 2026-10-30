@@ -644,6 +644,11 @@ def test_an_unrecorded_certificate_from_before_the_register_is_taken_over(
     line = store.line_of(_fp(old))
     assert (line.legacy, line.kind, line.subject_id) == (True, kind, "old-device")
     assert store.line_of(_fp(r.json()["cert"])).line_id == line.line_id
+    # The successor's lifetime follows the kind read from the taken-over certificate.
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    want = pki.LEAF_DAYS_BROWSER if kind == "browser" else pki.LEAF_DAYS_NATIVE
+    assert abs(span.days - want) <= 1
 
 
 def test_an_unrecorded_certificate_is_refused_once_the_transition_ends(register_client):
