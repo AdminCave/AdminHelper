@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-stack-2 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-stack-2 · Review: am Ende
+Status: erledigt · Branch: feature/klein-tests-stack-2 · Review: am Ende
 Spec: docs/features/klein-tests-stack-2.md (Roadmap R-0935, R-0899, R-0955)
 Heavy: linux-full — ändert integration_stack_test.sh (Stack-Lauf); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
