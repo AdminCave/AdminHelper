@@ -9,14 +9,10 @@ Zug der Kern-Session (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385). Details z
 `tasks/private/`.
 
 ## Problem
-- **R-0963:** Der Agent baut den letzten Tunnel nur über systemd ab (`stopFrpc`, `apps/agent/internal/frpc/sync.go:473`).
-  Antwortet systemd nicht, bleibt frpc mit seinen Tunneln in mehreren Fällen laufen, in denen der Server keinen
-  Tunnel mehr will (`syncWithoutFrpConfig` :446, `refuseServerConfig` :336, `applyConfig` ohne `[[proxies]]`).
-- **R-0964:** Die Prüfung der Server-Konfig (`apps/agent/internal/frpc/servertoml.go`) braucht Grenzen für die Zahl
-  der Schlüssel; ihre Meldungen zitieren Schlüssel ungekürzt, und die Wertprüfung (:104) läuft vor der
-  Segmentprüfung (:108).
-- **R-0983:** `provision --token-stdin` liest die Token-Zeile mit Echo (`readStdinToken`,
-  `apps/agent/cmd/adminhelper-agent/main.go:99`); interaktiv eingefügt steht der Token im Terminal.
+- **R-0963:** Fehlerpfad beim Tunnel-Abbau in `apps/agent/internal/frpc/sync.go` (Details privat).
+- **R-0964:** Härtung der Prüfung der Server-Konfig in `apps/agent/internal/frpc/servertoml.go` (Details privat).
+- **R-0983:** Eingabe des Tokens bei `provision --token-stdin` (`apps/agent/cmd/adminhelper-agent/main.go`, Details
+  privat).
 - **R-0965:** `monitor init` nimmt den API-Key nur als Argument (`main.go:194`), sichtbar in der Prozessliste;
   postinst (:33), README (:361, :384), `reprovisionHint` (`internal/enroll/client.go:21`) und
   `agent-deployment.html` zeigen noch die Argument-Form.
