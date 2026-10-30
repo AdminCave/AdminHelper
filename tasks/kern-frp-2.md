@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-2 · Review: pro Task
 Spec: docs/features/kern-frp-2.md (Roadmap R-0972, R-0973, R-0969, R-0970, R-0971)
 Heavy: linux-full — Server-API (FRP-Generate- und Sync-Routen)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,10 +29,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Generator-Warnungen einmal, Wortlaut, Doku (R-0969, R-0970, R-0971)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_permissions.py, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-2.md
+### T3 — Generator-Warnungen einmal, Wortlaut, Doku (R-0969, R-0970, R-0971)  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_permissions.py, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-2.md, apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_provision_sync.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @be5aa661 2026-10-30T15:02:00+01:00
+Review: approve (.ah-out/review/kern-frp-2/T3.verdict.json)
 Änderung: `without_refused_fields`, `without_unreachable_local`, `without_unbindable_visitor`, `without_secretless_stcp` und die Namensprüfung aus T1 warnen über `_first_warning` einmal je Tunnel und Grund, Namen mit `%r`; Docstrings und Doku „Zeichen, die die API ablehnt“ statt „die die API ablehnen würde“; Doku DE+EN für T1–T3, Changelog. Test: zweiter Aufruf warnt nicht erneut.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions.py tests/test_frp_toml_roundtrip.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions.py tests/test_frp_toml_roundtrip.py tests/test_frp_provision_sync.py
 Doku: docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-2.md
 Abhängt von: T1
 

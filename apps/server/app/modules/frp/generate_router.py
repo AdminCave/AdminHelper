@@ -125,9 +125,9 @@ def gen_visitor_toml(
     # The visitor TOML embeds the shared frps auth token; without visible STCP
     # tunnels the user has no legitimate reason for it, so refuse rather than hand
     # the global secret to any authenticated (non-admin, server-less) user (3.33).
-    # Tunnels without a secret or a usable visitor port, or with a stored field the API
-    # would refuse, count as none: the generator would leave them out. So does a user
-    # whose name the API refuses: the generator cannot write it.
+    # Tunnels without a secret or a usable visitor port, or with a stored field that has
+    # characters the API refuses, count as none: the generator would leave them out. So
+    # does a user whose name the API refuses: the generator cannot write it.
     if not tunnels or name_refused(user.username):
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
@@ -191,8 +191,8 @@ def gen_bulk_zip(
         )
         # Once, up here: a server left with no usable tunnel gets no frpc.toml (the
         # single routes answer 404 for it), and each secretless stcp tunnel or tunnel with
-        # a stored field the API would refuse is warned about once, not per server, user
-        # and generator call.
+        # a stored field that has characters the API refuses is warned about once, not per
+        # server, user and generator call.
         all_tunnels = without_refused_fields(without_secretless_stcp(all_tunnels))
 
         # Together with the line above this is active_tunnels, split so the visitor TOMLs

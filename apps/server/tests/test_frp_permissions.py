@@ -555,3 +555,54 @@ class TestNamesTheApiRefuses:
         for n in names:
             tomllib.loads(zf.read(n).decode())  # every file still parses
         assert all(self.REFUSED not in zf.read(n).decode() for n in names)
+
+
+class TestFilterWarnsOncePerTunnel:
+    """The sync and the hash poll run the filters every few seconds; a row that stays
+    left out warns once, not on every poll (R-0969), and its name is quoted with %r, so
+    a stored name with a line break cannot fake a log line (R-0971)."""
+
+    @staticmethod
+    def _tunnel(**overrides) -> FrpTunnel:
+        fields = {
+            "name": "x-ssh",
+            "tunnel_type": "stcp",
+            "local_ip": "127.0.0.1",
+            "local_port": 22,
+            "secret_key": "s" * 16,
+            "visitor_port": 6000,
+            "enabled": True,
+        }
+        fields.update(overrides)
+        return FrpTunnel(**fields)
+
+    @pytest.mark.parametrize(
+        ("filter_name", "overrides"),
+        [
+            ("without_secretless_stcp", {"secret_key": None}),
+            ("without_unbindable_visitor", {"visitor_port": 70000}),
+            ("without_refused_fields", {"local_ip": "127.0.0.1\nx"}),
+            ("without_unreachable_local", {"local_port": 0}),
+        ],
+    )
+    def test_second_call_does_not_warn_again(self, caplog, filter_name, overrides):
+        from app.modules.frp import config_generator
+
+        run = getattr(config_generator, filter_name)
+        tunnel = self._tunnel(name="x-ssh\nforged", **overrides)
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            assert run([tunnel]) == []
+            assert run([tunnel]) == []
+        messages = [r.getMessage() for r in caplog.records]
+        assert len(messages) == 1, messages
+        assert "'x-ssh\\nforged'" in messages[0] and "\n" not in messages[0], messages
+
+    def test_each_reason_warns_once(self, caplog):
+        from app.modules.frp import config_generator
+
+        tunnel = self._tunnel(secret_key=None, local_port=0)
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            for _ in range(2):
+                config_generator.without_secretless_stcp([tunnel])
+                config_generator.without_unreachable_local([tunnel])
+        assert len(caplog.records) == 2, [r.getMessage() for r in caplog.records]
