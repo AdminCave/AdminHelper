@@ -83,13 +83,19 @@ export function registerAuthFailureHandler(handler: () => void): void {
 // counts as reuse too. A Web Lock holds per origin across all tabs: the refreshes and the logout
 // (auth.ts) run under it one after another, and a tab that gets the lock after another one
 // already sends the new cookie. Web Locks exist only in secure contexts (HTTPS, localhost);
-// without them fn runs at once. Web Locks are not reentrant: fn must never wait for tryRefresh,
-// which would wait for the lock fn holds. A request to an /auth/ path never calls tryRefresh.
+// without them nothing orders the tabs, but the calls of this tab still run one after another
+// (localAuthQueue), or a refresh of an ended session could overlap one of the current session.
+// Neither is reentrant: fn must never wait for tryRefresh, which would wait for the lock fn holds.
+// A request to an /auth/ path never calls tryRefresh.
+let localAuthQueue: Promise<unknown> = Promise.resolve();
+
 export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
   if ('locks' in navigator) {
     return await navigator.locks.request('adminhelper-auth-refresh', fn);
   }
-  return await fn();
+  const run = localAuthQueue.then(fn);
+  localAuthQueue = run.catch(() => undefined);
+  return await run;
 }
 
 async function tryRefresh(): Promise<boolean> {

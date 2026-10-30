@@ -309,10 +309,10 @@ function compare(
       if (a !== b) problems.push(`${key}: kind ${a}, schema ${b}`);
     }
   }
-  if (direction === 'response') {
-    for (const key of shape.fields.keys()) {
-      if (!tsFields.has(key) && !(key in omit)) problems.push(`${key}: schema field missing`);
-    }
+  for (const [key, s] of shape.fields) {
+    if (tsFields.has(key) || key in omit) continue;
+    if (direction === 'response') problems.push(`${key}: schema field missing`);
+    else if (s.required) problems.push(`${key}: required schema field missing`);
   }
   for (const key of Object.keys(omit)) {
     if (!shape.fields.has(key)) problems.push(`${key}: in omit but not a schema field`);
@@ -437,6 +437,15 @@ describe('the contract rules catch each kind of drift', () => {
     expect(check(nulled, 'In', ['In'], 'request')).toEqual([
       'size: not nullable, must not allow null',
     ]);
+  });
+
+  it('flags a required schema field the request type leaves out, unless omitted', () => {
+    const src = good.replace('In { name: string; size?: number; }', 'In { size?: number; }');
+    expect(check(src, 'In', ['In'], 'request')).toEqual(['name: required schema field missing']);
+    expect(check(src, 'In', ['In'], 'request', { name: 'why' })).toEqual([]);
+    // An optional schema field a request does not send is fine.
+    const noSize = good.replace('In { name: string; size?: number; }', 'In { name: string; }');
+    expect(check(noSize, 'In', ['In'], 'request')).toEqual([]);
   });
 
   it('requires a field of merged schemas only where every schema requires it', () => {

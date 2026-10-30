@@ -276,6 +276,20 @@ describe('watchIdle', () => {
       },
     );
 
+    it.each(['abc', 'NaN', '2026-10-23T08:00:00Z'])(
+      '(f) a stored time %o that is no number: onIdle at once, and nothing keeps running',
+      (stored) => {
+        localStorage.setItem(KEY, stored);
+        const timers = vi.getTimerCount();
+        const onWindow = vi.spyOn(window, 'addEventListener');
+        const { onIdle } = watch(30, { restored: true });
+
+        expect(onIdle).toHaveBeenCalledTimes(1);
+        expect(onWindow).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(timers);
+      },
+    );
+
     it('(d) without a stored time: as after a login', () => {
       const { onIdle } = watch(30, { restored: true });
 
