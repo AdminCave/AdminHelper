@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-doku-4 — Task-Ledger
-Status: bereit · Branch: feature/klein-doku-4 · Review: am Ende
+Status: erledigt · Branch: feature/klein-doku-4 · Review: am Ende
 Spec: docs/features/klein-doku-4.md (Roadmap R-0946)
 Heavy: none — reine Doku, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
