@@ -89,6 +89,17 @@ sudo install -d -m 0755 /usr/share/keyrings
 sudo install -D -m 0644 "$TMP/pinned.gpg" /usr/share/keyrings/adminhelper-archive-keyring.gpg
 rm -rf "$TMP"
 
+# 1b) Keyring schon frueher eingerichtet (aeltere Fassung dieses Rezepts)? Pruefen:
+#     die Datei traegt genau einen Schluessel, den mit $FPR; sonst Schritt 1
+#     erneut ausfuehren (er ersetzt die Datei).
+CHK=$(mktemp -d)
+[ "$(gpg --homedir "$CHK" --batch --no-autostart --show-keys --with-colons \
+       /usr/share/keyrings/adminhelper-archive-keyring.gpg \
+     | awk -F: 'p {f=$10; p=0} $1=="pub" {n++; p=1} END {print n ":" f}')" = "1:$FPR" ] \
+  &amp;&amp; echo "Keyring ok" \
+  || echo "WARNUNG: Keyring traegt nicht genau den Schluessel $FPR — Schritt 1 erneut ausfuehren!"
+rm -rf "$CHK"
+
 # 2) Repo-Quelle (deb822); Signed-By bindet das Repo an genau diesen Schluessel
 sudo tee /etc/apt/sources.list.d/adminhelper.sources &gt;/dev/null &lt;&lt;EOF
 Types: deb
