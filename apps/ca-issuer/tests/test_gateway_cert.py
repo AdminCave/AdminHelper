@@ -10,6 +10,8 @@ import ipaddress
 
 import pytest
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from app import pki
@@ -54,7 +56,7 @@ def test_provisions_three_files_and_chains_to_root(tmp_path):
     ca_path = tmp_path / "client-ca.pem"
     assert fullchain.exists() and key_path.exists() and ca_path.exists()
 
-    # fullchain = leaf + access intermediate.
+    # fullchain = leaf + access intermediate (+ root, see the R-0667 tests below).
     certs = x509.load_pem_x509_certificates(fullchain.read_bytes())
     leaf, presented_inter = certs[0], certs[1]
     assert presented_inter.subject == access.cert.subject
@@ -171,3 +173,100 @@ def test_ensure_hierarchy_aborts_on_partial_pki(tmp_path):
     (tmp_path / f"{pki.SCOPES[0]}.key").unlink()  # simulate a partial dir
     with pytest.raises(RuntimeError, match="unvollständig"):
         ensure_hierarchy(tmp_path, root_passphrase=b"pw")
+
+
+# --- R-0667: after a rotation (retired access intermediates) ------------------
+
+
+def _rotated_access() -> tuple[Intermediate, Intermediate, x509.Certificate]:
+    """Two access intermediates under one root, as after a rotation: the retired
+    one (with its key, to mint leaves under it) and the current one, which lists
+    the retired one like ensure_hierarchy does."""
+    root_cert, root_key = pki.build_root_ca()
+    old_cert, old_key = pki.build_intermediate_ca("access", root_cert, root_key)
+    new_cert, new_key = pki.build_intermediate_ca("access", root_cert, root_key)
+    old = Intermediate("access", old_cert, old_key, pki.chain_pem(old_cert, root_cert))
+    chain = pki.chain_pem(new_cert, root_cert)
+    current = Intermediate("access", new_cert, new_key, chain, retired=(old_cert,))
+    return old, current, root_cert
+
+
+def _der(certs) -> list[bytes]:
+    return [c.public_bytes(serialization.Encoding.DER) for c in certs]
+
+
+def _signed_by(cert: x509.Certificate, issuer: x509.Certificate) -> bool:
+    try:
+        cert.verify_directly_issued_by(issuer)
+    except (InvalidSignature, ValueError, TypeError):
+        return False
+    return True
+
+
+def test_client_ca_carries_the_retired_access_intermediates(tmp_path):
+    old, access, root_cert = _rotated_access()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+
+    bundle = x509.load_pem_x509_certificates((tmp_path / "client-ca.pem").read_bytes())
+    assert _der(bundle) == _der([access.cert, root_cert, old.cert])
+    # A cert from before the rotation sent without its chain (like a browser .p12):
+    # nginx finds its issuer only because the retired intermediate is in the bundle.
+    leaf, _ = pki.build_server_leaf(old.cert, old.key, "before-rotation")
+    assert _der(c for c in bundle if _signed_by(leaf, c)) == _der([old.cert])
+
+
+def test_remints_a_leaf_of_a_retired_intermediate_under_the_current(tmp_path):
+    old, access, _ = _rotated_access()
+    ensure_gateway_cert(tmp_path, old, "localhost")  # last boot before the rotation
+    key_before = (tmp_path / "gateway.key").read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "localhost")  # first boot after it
+    certs = x509.load_pem_x509_certificates((tmp_path / "gateway-fullchain.pem").read_bytes())
+    certs[0].verify_directly_issued_by(access.cert)
+    assert _der(certs[1:2]) == _der([access.cert])
+    assert (tmp_path / "gateway.key").read_bytes() != key_before
+
+
+def test_keeps_a_fresh_leaf_of_the_current_intermediate_beside_retired_ones(tmp_path):
+    _, access, _ = _rotated_access()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    key_before = (tmp_path / "gateway.key").read_bytes()
+    cert_before = (tmp_path / "gateway-fullchain.pem").read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "localhost")  # second boot
+    assert (tmp_path / "gateway.key").read_bytes() == key_before
+    assert (tmp_path / "gateway-fullchain.pem").read_bytes() == cert_before
+
+
+# --- R-0667: the gateway sends the root, so --ca-fp can pin it ----------------
+
+
+def test_fullchain_ends_with_the_root_of_the_hierarchy(tmp_path):
+    from app.storage import ensure_hierarchy
+
+    pki_dir, out = tmp_path / "pki", tmp_path / "gateway"
+    access = ensure_hierarchy(pki_dir, root_passphrase=b"pw")["access"]
+    ensure_gateway_cert(out, access, "localhost")
+
+    certs = x509.load_pem_x509_certificates((out / "gateway-fullchain.pem").read_bytes())
+    root_cert = x509.load_pem_x509_certificate((pki_dir / "root.crt").read_bytes())
+    assert len(certs) == 3
+    assert _der(certs[1:]) == _der([access.cert, root_cert])
+    certs[0].verify_directly_issued_by(access.cert)
+
+
+def test_remints_a_fresh_fullchain_without_the_root(tmp_path):
+    access, root_cert = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    fullchain = tmp_path / "gateway-fullchain.pem"
+    key_path = tmp_path / "gateway.key"
+    # A fresh leaf of the current intermediate, written as before the root went along.
+    leaf, inter = x509.load_pem_x509_certificates(fullchain.read_bytes())[:2]
+    fullchain.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(inter))
+    key_before = key_path.read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "localhost")  # next boot
+    certs = x509.load_pem_x509_certificates(fullchain.read_bytes())
+    assert _der(certs[1:]) == _der([access.cert, root_cert])
+    certs[0].verify_directly_issued_by(access.cert)
+    assert key_path.read_bytes() != key_before

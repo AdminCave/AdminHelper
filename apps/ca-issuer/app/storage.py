@@ -9,6 +9,8 @@ Layout under PKI_DIR:
     root.key.enc          root key, passphrase-encrypted (cold, D7)
     <scope>.crt / .key    intermediate cert + unencrypted key (0600, online)
     <scope>-chain.pem     <scope> intermediate + root (trust bundle)
+    <scope>-retired.pem   optional: earlier <scope> intermediates, certificates
+                          only (no keys), still trusted until they expire
 
 Normal leaf signing only ever loads an intermediate (cert + key) — the root is
 decrypted solely to create/rotate intermediates.
@@ -31,6 +33,21 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from app import pki
 
 logger = logging.getLogger("ca-issuer.storage")
+
+# Appended to every message about an intermediate's end (boot, signing, 503): the command
+# of app/cli.py. Never to the root's: it issues intermediates under the root, not a root.
+ROTATE_HINT = (
+    "rotate with: docker compose run --rm --no-deps ca-issuer python -m app.cli "
+    "rotate-intermediates"
+)
+# Said instead where an intermediate is not valid yet. It is valid from its issuing
+# (pki.build_intermediate_ca), so this clock is behind the one that issued it. The cure is
+# the clock, not a rotation: under this clock the rotation stops before it writes
+# (rotation._rotate), as it would replace that intermediate without keeping it as retired.
+CLOCK_HINT = (
+    "check the host clock (NTP), it is behind the issuing of this intermediate; "
+    "a rotation refuses to run under this clock"
+)
 
 # Re-mint a provisioned server leaf (gateway/frps) once it is past this much of
 # its lifetime. Unlike native client certs these leaves have no client-side
@@ -63,6 +80,9 @@ class Intermediate:
     cert: x509.Certificate
     key: ec.EllipticCurvePrivateKey
     chain: bytes  # intermediate + root (PEM), for trust distribution / fullchain
+    # Earlier intermediates of this scope from <scope>-retired.pem, newest first: valid,
+    # of this scope under the root, never the current one. Verify only — no key here.
+    retired: tuple[x509.Certificate, ...] = ()
 
 
 def _write_private(path: Path, pem: bytes) -> None:
@@ -93,7 +113,15 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     Every boot then checks what it loaded and raises RuntimeError (file, scope,
     reason) unless root.crt is self-signed and valid now and each intermediate is
     signed by it, valid now, matches its key and has the chain [intermediate, root].
-    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING."""
+    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING. What
+    concerns an intermediate's end (abort or WARNING) ends with ROTATE_HINT, the abort
+    for one not valid yet with CLOCK_HINT.
+
+    The optional <scope>-retired.pem adds the scope's earlier intermediates as
+    Intermediate.retired. An entry that is not an intermediate of the scope under
+    root.crt (pki.intermediate_problem) is left out with a WARNING (file, scope, CN,
+    reason) and does not stop the boot; one that is outside its validity (INFO line) or
+    equal to the current one is left out too. A file that is no PEM bundle raises."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     try:
         pki_dir.chmod(0o700)
@@ -157,7 +185,10 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
                 f"scope {scope!r}, {cert_path}: not signed by {root_crt.name} ({problem})"
             )
         if problem := _validity_problem(cert, now):
-            raise _invalid_hierarchy(f"scope {scope!r}, {cert_path}: the intermediate is {problem}")
+            hint = ROTATE_HINT if now >= cert.not_valid_after_utc else CLOCK_HINT
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {cert_path}: the intermediate is {problem}", hint=hint
+            )
         if not _holds_key(cert, key):
             raise _invalid_hierarchy(
                 f"scope {scope!r}, {key_path}: not the private key of {cert_path.name}"
@@ -168,16 +199,65 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             )
         # The check above compares only the certificates in the file; what goes out
         # (enroll responses, trust bundles) is rebuilt from the two checked ones.
-        out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root))
+        out[scope] = Intermediate(
+            scope=scope,
+            cert=cert,
+            key=key,
+            chain=pki.chain_pem(cert, root),
+            retired=_load_retired(pki_dir / f"{scope}-retired.pem", scope, cert, root, now),
+        )
 
     _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
     for scope, inter in out.items():
-        _warn_if_ending(f"intermediate {scope!r}", inter.cert, now)
+        _warn_if_ending(f"intermediate {scope!r}", inter.cert, now, f"; {ROTATE_HINT}")
     return out
 
 
-def _invalid_hierarchy(detail: str) -> RuntimeError:
-    return RuntimeError(f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it.")
+def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
+    # The hint goes last, without a full stop, so the command copies off the line as is.
+    message = f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it"
+    return RuntimeError(f"{message}; {hint}" if hint else f"{message}.")
+
+
+def _load_retired(
+    path: Path,
+    scope: str,
+    current: x509.Certificate,
+    root: x509.Certificate,
+    now: datetime.datetime,
+) -> tuple[x509.Certificate, ...]:
+    """The scope's retired intermediates from `path` (see ensure_hierarchy), newest first.
+    A missing file or one without any text means none."""
+    if not path.exists():
+        return ()
+    data = path.read_bytes()
+    if not data.strip():
+        return ()
+    try:
+        certs = x509.load_pem_x509_certificates(data)
+    except ValueError as exc:
+        raise _invalid_hierarchy(
+            f"scope {scope!r}, {path}: not a PEM certificate bundle ({exc})"
+        ) from exc
+    der = serialization.Encoding.DER
+    seen = {current.public_bytes(der)}
+    retired: list[x509.Certificate] = []
+    for cert in certs:
+        name = pki.read_identity(cert)[0]
+        if problem := pki.intermediate_problem(cert, scope, root):
+            logger.warning("scope %r, %s: skipping retired %r, %s", scope, path.name, name, problem)
+            continue
+        if problem := _validity_problem(cert, now):
+            logger.info(
+                "scope %r, %s: skipping retired %r, it is %s", scope, path.name, name, problem
+            )
+            continue
+        if cert.public_bytes(der) in seen:
+            continue
+        seen.add(cert.public_bytes(der))
+        retired.append(cert)
+    retired.sort(key=lambda c: c.not_valid_before_utc, reverse=True)
+    return tuple(retired)
 
 
 def _signature_problem(cert: x509.Certificate, issuer: x509.Certificate) -> str | None:
@@ -265,6 +345,24 @@ def _pair_matches(cert_path: Path, key_path: Path) -> bool:
     return _holds_key(leaf, key)
 
 
+def _leaf_signed_by(fullchain_path: Path, issuer: x509.Certificate) -> bool:
+    """Whether `issuer` signed the leaf (the first cert) in fullchain_path."""
+    try:
+        leaf = x509.load_pem_x509_certificate(fullchain_path.read_bytes())
+    except (OSError, ValueError):
+        return False
+    return _signature_problem(leaf, issuer) is None
+
+
+def _presents_after_leaf(fullchain_path: Path, chain_pem: bytes) -> bool:
+    """Whether the certificates after the leaf in fullchain_path are exactly those of chain_pem."""
+    try:
+        certs = x509.load_pem_x509_certificates(fullchain_path.read_bytes())
+    except (OSError, ValueError):
+        return False
+    return _chain_is(chain_pem, certs[1:])
+
+
 def _holds_key(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> bool:
     """Whether `key` is the private half of `cert`'s public key."""
     spki = serialization.PublicFormat.SubjectPublicKeyInfo
@@ -283,37 +381,58 @@ def _provision_server_material(
     key_name: str,
     label: str,
     extra_trust: tuple[Intermediate, ...] = (),
+    send_root: bool = False,
 ) -> None:
     """Shared core for the gateway + frps server-cert provisioning (audit 2.9):
-    they differ only in file names, the signing intermediate, and any extra trust.
+    they differ only in file names, the signing intermediate, any extra trust and
+    whether the server presents the root after the intermediate (send_root).
     Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
     the leaf is kept across restarts but re-minted once past half its life (F4) so
-    it never expires under a long-running stack."""
+    it never expires under a long-running stack, once the current intermediate
+    did not sign it (the first boot after a rotation), or once the file does not
+    present what follows the leaf now (a fullchain from before send_root)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Trust bundle = the signing intermediate's chain (root already in it) plus any
-    # extra trust intermediates (e.g. frps also trusting the access chain for the
-    # STCP visitor). Always (re)written so it follows the current hierarchy.
-    bundle = inter.chain + b"".join(pki.cert_to_pem(i.cert) for i in extra_trust)
+    # Trust bundle = the signing intermediate's chain (root already in it) and its
+    # retired intermediates, plus any extra trust intermediates (e.g. frps also
+    # trusting the access chain for the STCP visitor) with theirs: a client cert from
+    # before a rotation, sent without its chain (a browser .p12), still finds its
+    # issuer until the retired one expires. Always (re)written so it follows the
+    # current hierarchy.
+    trusted = list(inter.retired)
+    for extra in extra_trust:
+        trusted += [extra.cert, *extra.retired]
+    bundle = inter.chain + pki.chain_pem(*trusted)
     (out_dir / bundle_name).write_bytes(bundle)
 
     cert_path = out_dir / cert_name
     key_path = out_dir / key_name
+    # What the server presents after its leaf: the signing intermediate, with send_root the
+    # root too (inter.chain is exactly the two).
+    presented = inter.chain if send_root else pki.cert_to_pem(inter.cert)
     # Also require the leaf and key to be a matching pair: a crash between writing the leaf and
     # the key leaves a NEW leaf beside the OLD key, which _leaf_needs_remint (0% aged) would pass
     # — nginx then fails with 'key values mismatch' and crash-loops for up to half the leaf life
     # with no self-repair. On a mismatch, fall through and re-mint the pair (4.19).
+    # And require the current intermediate to have signed the leaf: after a rotation the server
+    # would otherwise go on presenting a leaf of the retired intermediate (whose end also bounds
+    # the leaf) until half its life; re-minting moves it onto the current one on the first boot.
+    # And require the certificates after the leaf to be `presented`: a gateway fullchain from
+    # before the root went along would otherwise fail a `--ca-fp` pinned on the root until half
+    # the leaf's life.
     if (
         cert_path.exists()
         and key_path.exists()
         and not _leaf_needs_remint(cert_path)
         and _pair_matches(cert_path, key_path)
+        and _leaf_signed_by(cert_path, inter.cert)
+        and _presents_after_leaf(cert_path, presented)
     ):
         return
 
     dns_names, ip_addresses = _classify_sans(primary, extra_sans)
     leaf, leaf_key = pki.build_server_leaf(inter.cert, inter.key, primary, dns_names, ip_addresses)
-    # fullchain = leaf + signing intermediate (what the server presents on the wire).
-    cert_path.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(inter.cert))
+    # fullchain = leaf + `presented` (what the server sends on the wire).
+    cert_path.write_bytes(pki.cert_to_pem(leaf) + presented)
     _write_private(key_path, pki.key_to_pem(leaf_key))
     logger.info("%s provisioniert (CN=%s, DNS=%s, IP=%s)", label, primary, dns_names, ip_addresses)
 
@@ -324,15 +443,25 @@ def ensure_gateway_cert(
     """Provision the gateway's TLS material into a shared volume (ADR 0001 §3.2).
 
     Writes three files the gateway mounts read-only:
-        client-ca.pem            access intermediate + root (verify client certs)
-        gateway-fullchain.pem    server leaf + access intermediate (TLS terminate)
+        client-ca.pem            access intermediate + root + retired access
+                                 intermediates (verify client certs)
+        gateway-fullchain.pem    server leaf + access intermediate + root
+                                 (TLS terminate)
         gateway.key              the leaf's private key (0600)
 
     The leaf chains to the pinned Root so native clients (which pin the Root and
-    validate every leaf against it, D2) accept the gateway on :443. Idempotent:
-    the trust bundle is always refreshed (cheap, tracks rotations); the leaf is
-    kept across restarts but re-minted once past half its life (F4) so it never
-    expires under a long-running stack and takes the gateway down."""
+    validate every leaf against it, D2) accept the gateway on :443. The root goes
+    along so an agent's `--ca-fp` can pin it: the agent looks for that fingerprint
+    among the presented certificates (verifyAnchorFingerprint in
+    apps/agent/internal/httpclient/httpclient.go), and unlike the intermediate the
+    root outlives a rotation.
+
+    Idempotent: the trust bundle is always refreshed (cheap, tracks rotations); the
+    retired intermediates in it keep client certs from before a rotation accepted
+    until they expire. The leaf is kept across restarts but re-minted once past half
+    its life (F4) so it never expires under a long-running stack and takes the
+    gateway down, on the first boot after a rotation, so it comes from the current
+    access intermediate, and once a fullchain from before lacks the root."""
     _provision_server_material(
         out_dir,
         access,
@@ -342,6 +471,7 @@ def ensure_gateway_cert(
         cert_name="gateway-fullchain.pem",
         key_name="gateway.key",
         label="Gateway-Cert",
+        send_root=True,
     )
 
 
@@ -354,7 +484,8 @@ def ensure_frps_cert(
 ) -> None:
     """Provision the frps server TLS material under the tunnel intermediate
     (ADR 0001 §3.1 / A7). frps mounts these read-only:
-        ca.crt    tunnel intermediate + root (+ extra_trust intermediates)
+        ca.crt    tunnel intermediate + root + retired tunnel intermediates
+                  (+ extra_trust intermediates, each with its retired ones)
         frps.crt  server leaf + tunnel intermediate (server_auth, SAN=server_addr)
         frps.key  the leaf's private key (0600)
 
@@ -366,7 +497,10 @@ def ensure_frps_cert(
 
     The CA private key never reaches the internet-facing frps — only the public
     chain (the GHSA-rv39 master/published split, now under the unified PKI).
-    Idempotent like the gateway cert; re-minted once past half its life (F4)."""
+    Idempotent like the gateway cert: the retired intermediates keep agent and
+    visitor certs from before a rotation accepted until they expire; the leaf is
+    re-minted once past half its life (F4) and on the first boot after a
+    rotation, so it comes from the current tunnel intermediate."""
     _provision_server_material(
         out_dir,
         tunnel,

@@ -360,14 +360,22 @@ pub fn holds_identity(prefix: &str) -> Result<bool, AppError> {
     Ok(false)
 }
 
-/// SHA-256 (lowercase hex) of the pinned access-intermediate CA — the FIRST
+/// SHA-256 (lowercase hex) of the root of the internal CA — the LAST
 /// certificate of the enrolled chain (`enroll|ca` = intermediate + root). The
 /// provisioning tab embeds it as the agent's `--ca-fp`, turning the agent's
 /// first contact into a verified handshake instead of blind TOFU: the gateway
-/// presents exactly this intermediate in its TLS chain (fullchain = leaf +
-/// intermediate), so the value survives leaf rotation. `None` until enrolled.
+/// presents the root in its TLS chain (leaf + intermediate + root), and the
+/// root survives every intermediate rotation. `None` until enrolled.
 pub fn pinned_ca_fingerprint() -> Option<String> {
-    ca_fingerprint_of_chain(&held_identity()?.ca?)
+    root_fingerprint_of_chain(&held_identity()?.ca?)
+}
+
+/// The fingerprint of the last PEM certificate in `chain_pem`.
+fn root_fingerprint_of_chain(chain_pem: &str) -> Option<String> {
+    let cert = CertificateDer::pem_slice_iter(chain_pem.as_bytes())
+        .last()?
+        .ok()?;
+    Some(crate::tofu::fingerprint(cert.as_ref()))
 }
 
 /// The fingerprint of the first PEM certificate in `chain_pem`. Split out so it
@@ -1323,9 +1331,8 @@ mod tests {
     fn ca_fingerprint_is_the_first_chain_cert() {
         use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 
-        // The provisioning tab hands out the INTERMEDIATE's fingerprint — the
-        // cert the gateway actually presents — i.e. the FIRST cert of the
-        // stored chain (intermediate + root), never the root's.
+        // The helper takes the FIRST cert of a chain: the leaf of a fullchain
+        // (`leaf_fingerprint`); the pinned CA is the root, see the test below.
         let make = || {
             let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
             CertificateParams::new(vec![])
@@ -1341,6 +1348,30 @@ mod tests {
         assert_eq!(got, crate::tofu::fingerprint(inter.der()));
         assert_ne!(got, crate::tofu::fingerprint(root.der()));
         assert_eq!(ca_fingerprint_of_chain("kein pem"), None);
+    }
+
+    #[test]
+    fn pinned_ca_fingerprint_is_the_root() {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+        let make = || {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            CertificateParams::new(vec![])
+                .unwrap()
+                .self_signed(&key)
+                .unwrap()
+        };
+        let inter = make();
+        let root = make();
+
+        let got = root_fingerprint_of_chain(&format!("{}{}", inter.pem(), root.pem())).unwrap();
+        assert_eq!(got, crate::tofu::fingerprint(root.der()));
+        assert_ne!(got, crate::tofu::fingerprint(inter.der()));
+        assert_eq!(
+            root_fingerprint_of_chain(&root.pem()),
+            Some(crate::tofu::fingerprint(root.der()))
+        );
+        assert_eq!(root_fingerprint_of_chain("kein pem"), None);
     }
 
     #[test]
