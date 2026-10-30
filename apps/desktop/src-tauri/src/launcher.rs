@@ -2301,8 +2301,9 @@ mod tests {
             "{result:?}"
         );
         assert!(waited >= timeout, "gave up after {waited:?}");
+        // Only "does not hang": a busy Windows runner gave up after 1.95 s against a 100 ms deadline.
         assert!(
-            waited < Duration::from_millis(900),
+            waited < timeout + Duration::from_secs(5),
             "gave up after {waited:?}"
         );
         // It kept looking until the deadline.
@@ -2526,7 +2527,7 @@ mod tests {
         );
         assert!(waited >= timeout, "gave up after {waited:?}");
         assert!(
-            waited < Duration::from_millis(900),
+            waited < timeout + Duration::from_secs(5),
             "gave up after {waited:?}"
         );
         assert!(spawner.looks.get() >= 2, "{} looks", spawner.looks.get());
