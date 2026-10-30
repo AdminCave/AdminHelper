@@ -31,7 +31,7 @@ jobs:
     name: Server (pytest, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     # The 3.13 leg pulls the base images and runs the image tests on top of the suite.
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +234,7 @@ jobs:
   python-lock-server:
     name: Server (pytest, image lock)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine

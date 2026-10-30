@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from app.core import config
 from app.core.database import get_db
+from app.core.errors import CodedHTTPException
 from app.core.middleware import _NameResolver
 
 logger = logging.getLogger("adminhelper.identity")
@@ -127,7 +128,7 @@ def _peer_is_gateway(request: Request) -> bool:
                 del _ignored_logged[seen]
         _ignored_logged[peer] = now
     logger.warning(
-        "mTLS: %s %s from %s carries client certificate headers but does not come "
+        "mTLS: %s %r from %s carries client certificate headers but does not come "
         "from the gateway; they are ignored",
         request.method,
         request.url.path,
@@ -172,25 +173,29 @@ def get_client_identity(request: Request) -> ClientIdentity:
     )
 
 
-# The detail of the 403 a client keys its hint off (the ERR_* pattern of the desktop);
-# the prose may change, the code must not.
+# The 403 for a certificate of another user. A client branches on its code, the
+# body's `code`; the detail keeps it as prefix for clients that still read the text.
+# The prose may change, the code must not.
+CERT_USER_MISMATCH_CODE = "ERR_CERT_USER_MISMATCH"
 CERT_USER_MISMATCH = (
-    "ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. Sign in as "
+    f"{CERT_USER_MISMATCH_CODE}: The client certificate belongs to another user. Sign in as "
     "that user, or register this device for yourself."
 )
 
 
 # The 403 for an agent certificate on a route of another server (R-0283).
+CERT_SERVER_MISMATCH_CODE = "ERR_CERT_SERVER_MISMATCH"
 CERT_SERVER_MISMATCH = (
-    "ERR_CERT_SERVER_MISMATCH: The client certificate belongs to another server. "
+    f"{CERT_SERVER_MISMATCH_CODE}: The client certificate belongs to another server. "
     "Provision this host for the server it reports for."
 )
 
 
 # The 403 for a certificate the register refuses: revoked, or not recorded after the
-# transition (R-0224). The desktop keys its hint off the code, as with CERT_USER_MISMATCH.
+# transition (R-0224). A client keys its hint off the code, as with CERT_USER_MISMATCH.
+CERT_REVOKED_CODE = "ERR_CERT_REVOKED"
 CERT_REVOKED = (
-    "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device "
+    f"{CERT_REVOKED_CODE}: This device certificate is no longer valid. Reset the device "
     "identity and register the device again."
 )
 
@@ -210,14 +215,14 @@ def require_cert_user(request: Request, username: str, db: Session) -> None:
     if identity.scope == SCOPE_ACCESS and identity.cn == username:
         return
     logger.warning(
-        "mTLS: %s %s — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
+        "mTLS: %s %r — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
         request.method,
         request.url.path,
         identity.cn,
         identity.scope,
         username,
     )
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_USER_MISMATCH)
+    raise CodedHTTPException(status.HTTP_403_FORBIDDEN, CERT_USER_MISMATCH, CERT_USER_MISMATCH_CODE)
 
 
 def require_cert_server(server_id: str, request: Request) -> None:
@@ -230,13 +235,15 @@ def require_cert_server(server_id: str, request: Request) -> None:
     if not identity.verified or identity.scope != SCOPE_AGENT or identity.cn == server_id:
         return
     logger.warning(
-        "mTLS: %s %s — agent certificate CN=%s is not for server %s",
+        "mTLS: %s %r — agent certificate CN=%s is not for server %s",
         request.method,
         request.url.path,
         identity.cn,
         server_id,
     )
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_SERVER_MISMATCH)
+    raise CodedHTTPException(
+        status.HTTP_403_FORBIDDEN, CERT_SERVER_MISMATCH, CERT_SERVER_MISMATCH_CODE
+    )
 
 
 def _is_revoked(
@@ -283,13 +290,13 @@ def _refused(request: Request, db: Session, identity: ClientIdentity) -> bool:
 
 def _deny_refused(request: Request, identity: ClientIdentity) -> None:
     logger.warning(
-        "mTLS: %s %s — client certificate CN=%s (scope=%s) is revoked or not recorded",
+        "mTLS: %s %r — client certificate CN=%s (scope=%s) is revoked or not recorded",
         request.method,
         request.url.path,
         identity.cn,
         identity.scope,
     )
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_REVOKED)
+    raise CodedHTTPException(status.HTTP_403_FORBIDDEN, CERT_REVOKED, CERT_REVOKED_CODE)
 
 
 def check_scope(
@@ -315,7 +322,7 @@ def check_scope(
     wanted = "/".join(sorted(allowed))
     if identity.verified:
         logger.warning(
-            "mTLS permissiv: %s %s erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
+            "mTLS permissiv: %s %r erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
             request.method,
             request.url.path,
             wanted,
@@ -324,7 +331,7 @@ def check_scope(
         )
     else:
         logger.debug(
-            "mTLS permissiv: %s %s ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
+            "mTLS permissiv: %s %r ohne verifiziertes Client-Cert (Scope %s) — erlaubt",
             request.method,
             request.url.path,
             wanted,

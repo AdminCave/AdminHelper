@@ -316,6 +316,8 @@ def _stored_rule(factory, rule_id="r1") -> tuple[str, dict]:
         pytest.param({"smtp_host": "relay-b.example"}, id="host"),
         pytest.param({"smtp_port": 2525}, id="port"),
         pytest.param({"smtp_host": None}, id="host-removed"),
+        pytest.param({"smtp_host": "  "}, id="host-blank"),
+        pytest.param({"smtp_port": None}, id="port-removed"),
     ],
 )
 def test_alert_put_with_the_mask_for_another_relay_is_refused(client_db, relay):
@@ -429,3 +431,19 @@ def test_template_put_for_another_relay_without_password_drops_it(client_db):
     rule = _template_rule_config(factory, tid)
     assert rule["smtp_host"] == "relay-b.example"
     assert "smtp_password" not in rule
+
+
+def test_alert_post_with_the_mask_as_password_is_refused(client_db):
+    # A new rule has no stored password the mask could stand for: storing "***" would
+    # send it to the relay as the password.
+    client, factory = client_db
+
+    r = client.post(
+        "/alerts",
+        json={"name": "r", "channel": "email", "channel_config": _relay_a_config("***")},
+    )
+
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == "smtp_password must be the password itself, not the mask '***'"
+    with factory() as db:
+        assert db.query(MonitorAlertRule).count() == 0

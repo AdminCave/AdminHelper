@@ -10,13 +10,18 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
+import { IpcError } from '$lib/utils/errors';
 import type { ResetOutcome } from '$lib/bridge';
 
 // What a pin verifier leaves at the end of the reqwest source chain (error.rs).
-const TOFU =
-  'error sending request: client error (Connect): ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für srv.example hat sich geändert';
-const CA =
-  'error sending request: client error (Connect): ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der gepinnten CA gedeckt (mögliche MITM-Attacke)';
+const TOFU = new IpcError(
+  'error sending request: client error (Connect): ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für srv.example hat sich geändert',
+  'ERR_TOFU_PIN_MISMATCH',
+);
+const CA = new IpcError(
+  'error sending request: client error (Connect): ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der gepinnten CA gedeckt (mögliche MITM-Attacke)',
+  'ERR_CA_PIN_MISMATCH',
+);
 
 const RESET_PIN = 'Gepinntes Server-Zertifikat zurücksetzen';
 const RESET_IDENTITY = 'Geräte-Identität zurücksetzen';
@@ -93,7 +98,7 @@ async function reset(container: HTMLElement, label: string): Promise<HTMLButtonE
 
 describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMATCH)', () => {
   it('offers to reset the pin, warns first, and resets only the pin', async () => {
-    h.login.mockRejectedValueOnce(new Error(TOFU));
+    h.login.mockRejectedValueOnce(TOFU);
     const { container } = render(Login);
     await submitLogin(container);
 
@@ -111,7 +116,7 @@ describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMA
   });
 
   it('offers the same reset when the token registration hits it', async () => {
-    h.enrollWithToken.mockRejectedValueOnce(new Error(TOFU));
+    h.enrollWithToken.mockRejectedValueOnce(TOFU);
     const { container } = render(Login);
     await submitEnroll(container);
 
@@ -121,7 +126,7 @@ describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMA
   });
 
   it('resets nothing when the warning is declined', async () => {
-    h.login.mockRejectedValueOnce(new Error(TOFU));
+    h.login.mockRejectedValueOnce(TOFU);
     h.confirmDialog.mockResolvedValueOnce(false);
     const { container } = render(Login);
     await submitLogin(container);
@@ -136,7 +141,7 @@ describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMA
 
 describe('Login — a server certificate the enrolled CA no longer covers (ERR_CA_PIN_MISMATCH)', () => {
   it('offers to reset the device identity and resets that, not the pin alone', async () => {
-    h.login.mockRejectedValueOnce(new Error(CA));
+    h.login.mockRejectedValueOnce(CA);
     const { container } = render(Login);
     await submitLogin(container);
 
@@ -149,5 +154,26 @@ describe('Login — a server certificate the enrolled CA no longer covers (ERR_C
     expect(h.confirmDialog.mock.calls[0][0]).toContain('MITM');
     expect(h.confirmDialog.mock.calls[0][1]).toEqual({ confirmLabel: RESET_IDENTITY });
     expect(h.resetServerCertPin).not.toHaveBeenCalled();
+  });
+});
+
+describe('Login — a text that only names a pin code', () => {
+  it('offers no reset', async () => {
+    for (const code of ['ERR_TOFU_PIN_MISMATCH', 'ERR_CA_PIN_MISMATCH']) {
+      h.login.mockRejectedValueOnce(
+        new IpcError(`Login fehlgeschlagen: ${code}: x`, 'ERR_VALIDATION'),
+      );
+      const { container } = render(Login);
+      await submitLogin(container);
+
+      await waitFor(() =>
+        expect(container.querySelector('.login-error')?.textContent).toContain(
+          'Login fehlgeschlagen',
+        ),
+      );
+      expect(buttonsLabelled(container, RESET_PIN)).toHaveLength(0);
+      expect(buttonsLabelled(container, RESET_IDENTITY)).toHaveLength(0);
+      cleanup();
+    }
   });
 });

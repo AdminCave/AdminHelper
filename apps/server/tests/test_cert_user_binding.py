@@ -40,6 +40,7 @@ def _bearer(username: str) -> dict[str, str]:
 def _assert_mismatch(resp) -> None:
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"].startswith(f"{MISMATCH}: "), resp.text
+    assert resp.json()["code"] == MISMATCH, resp.text
 
 
 # --- API routes -------------------------------------------------------------
@@ -57,6 +58,19 @@ def test_another_users_certificate_is_refused_on_an_api_route(test_client, admin
         "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
     )
     _assert_mismatch(resp)
+
+
+def test_the_mismatch_body_is_the_text_and_its_code(test_client, admin_user, normal_user):
+    # The contract (R-0664): the detail word for word as before the code, the code next to it.
+    resp = test_client.get(
+        "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json() == {
+        "detail": "ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. "
+        "Sign in as that user, or register this device for yourself.",
+        "code": "ERR_CERT_USER_MISMATCH",
+    }
 
 
 def test_an_api_key_is_bound_to_no_user(test_client, db_session, normal_user):
@@ -166,6 +180,7 @@ def test_opening_the_stream_with_another_users_certificate_is_refused(monkeypatc
         authenticate_stream_user(_req(headers))
     assert exc.value.status_code == 403
     assert exc.value.detail.startswith(f"{MISMATCH}: ")
+    assert exc.value.code == MISMATCH
 
     own = {"Authorization": "Bearer tok", **_gateway_headers(cn="admin")}
     assert authenticate_stream_user(_req(own)) == 1

@@ -146,7 +146,10 @@ const RUN_DIR_PREFIX: &str = "adminhelper_ansible_";
 /// planted entry) gets a new one, up to 16 tries.
 fn create_run_dir(base: &Path) -> std::io::Result<PathBuf> {
     static RUN_SEQ: AtomicU64 = AtomicU64::new(0);
+    #[cfg(unix)]
     let mut builder = std::fs::DirBuilder::new();
+    #[cfg(not(unix))]
+    let builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
@@ -310,7 +313,19 @@ fn launch_ansible_with(
             "Ansible-Pfad ausserhalb des erlaubten Temp-Verzeichnisses".to_string(),
         ));
     };
-    let started = start(inventory_path, playbook_path);
+    // On Unix the start gets the files under the checked directory, not the paths as given: the
+    // script that ends the run removes the directory they name. Windows keeps the given paths:
+    // `canonicalize` there adds a `\\?\` prefix, and no script of ours removes by them.
+    #[cfg(unix)]
+    let in_run_dir = |path: &str| {
+        Path::new(path)
+            .file_name()
+            .map(|name| run_dir.join(name).to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    #[cfg(not(unix))]
+    let in_run_dir = |path: &str| path.to_string();
+    let started = start(&in_run_dir(inventory_path), &in_run_dir(playbook_path));
     if started.is_err() {
         let _ = std::fs::remove_dir_all(&run_dir);
     }
@@ -377,6 +392,7 @@ mod tests {
     use crate::session::SessionState;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
     fn one_target() -> Vec<AnsibleTarget> {
@@ -513,11 +529,15 @@ mod tests {
         Removed(create_run_dir(&std::env::temp_dir()).unwrap())
     }
 
-    /// An empty directory `ah-ansible-<case>-<pid>` in the temp dir.
+    /// An empty directory `ah-ansible-<case>-<pid>-<n>` in the temp dir, new for every call.
     fn scratch(case: &str) -> Removed {
-        let dir = std::env::temp_dir().join(format!("ah-ansible-{case}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "ah-ansible-{case}-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&dir).unwrap();
         Removed(dir)
     }
 
@@ -974,6 +994,17 @@ mod tests {
         let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
         let playbook = write_playbook_temp(&dir.0, "failed_start.yml", "- hosts: all\n").unwrap();
 
+        #[cfg(unix)]
+        let canonical = |path: &str| {
+            fs::canonicalize(path)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        #[cfg(unix)]
+        let expected = (canonical(&inventory), canonical(&playbook));
+        #[cfg(not(unix))]
+        let expected = (inventory.clone(), playbook.clone());
         let mut seen = None;
         let result = launch_ansible_with(&inventory, &playbook, |inv, pb| {
             seen = Some((inv.to_string(), pb.to_string()));
@@ -981,8 +1012,38 @@ mod tests {
         });
 
         assert!(matches!(result, Err(AppError::Connection(_))), "{result:?}");
-        assert_eq!(seen, Some((inventory.clone(), playbook.clone())));
+        assert_eq!(seen, Some((expected.0, expected.1)));
         assert!(!dir.0.exists(), "{:?} left after a failed start", dir.0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launch_ansible_hands_the_start_the_files_under_the_checked_directory() {
+        // The run script removes the directory its files lie in: that must be the one
+        // `confined_run_dir` checked, not the spelling the caller used.
+        let dir = run_dir();
+        let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
+        let playbook = write_playbook_temp(&dir.0, "linked.yml", "- hosts: all\n").unwrap();
+        let link = scratch("link");
+        let linked = link.0.join("run");
+        std::os::unix::fs::symlink(&dir.0, &linked).unwrap();
+        let through = |path: &str| linked.join(Path::new(path).file_name().unwrap());
+
+        let mut seen = None;
+        launch_ansible_with(
+            through(&inventory).to_str().unwrap(),
+            through(&playbook).to_str().unwrap(),
+            |inv, pb| {
+                seen = Some((inv.to_string(), pb.to_string()));
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        let (inv, pb) = seen.unwrap();
+        let expected = fs::canonicalize(&dir.0).unwrap();
+        assert_eq!(Path::new(&inv).parent(), Some(expected.as_path()));
+        assert_eq!(Path::new(&pb).parent(), Some(expected.as_path()));
     }
 
     #[test]

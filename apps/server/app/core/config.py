@@ -93,6 +93,13 @@ def _resolve_secret_key() -> str:
     if key_file.exists():
         stored = key_file.read_text().strip()
         if stored:
+            mode = key_file.stat().st_mode & 0o777
+            if mode & 0o077:
+                logger.warning(
+                    "%s has mode %o, group or others may read the key; chmod 600 it",
+                    key_file,
+                    mode,
+                )
             return stored
 
     if env_key == "change-me-in-production":

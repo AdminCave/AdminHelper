@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -223,6 +224,50 @@ func TestRunOnceBudgetEndsWithTheParent(t *testing.T) {
 	if got := syncErr.Load(); got != context.Canceled.Error() {
 		t.Fatalf("sync context = %v, want %v", got, context.Canceled)
 	}
+	if got := pushErr.Load(); got != context.Canceled.Error() {
+		t.Fatalf("push context = %v, want %v", got, context.Canceled)
+	}
+}
+
+// run --once runs under the signal context, so SIGTERM (the timer unit stopping) ends the
+// phase in flight instead of the process; like runLoop it restores the default handling at
+// once, so a second signal ends a phase that ignores its context.
+func TestRunOnceFlagEndsWithASignal(t *testing.T) {
+	renewing, release, restored := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var restore sync.Once
+	var pushErr atomic.Value
+	setRunPhases(t, time.Minute, time.Minute, time.Minute,
+		func(ctx context.Context) {
+			close(renewing)
+			<-ctx.Done()
+			<-release
+		},
+		func(ctx context.Context) error { return ctx.Err() },
+		func(ctx context.Context) error {
+			pushErr.Store(fmt.Sprint(ctx.Err()))
+			return ctx.Err()
+		})
+	signaled, send := context.WithCancel(context.Background())
+	defer send()
+	old := signalContext
+	signalContext = func() (context.Context, context.CancelFunc) {
+		return signaled, func() { restore.Do(func() { close(restored) }) }
+	}
+	t.Cleanup(func() { signalContext = old })
+
+	cmd := runCmd()
+	cmd.SetArgs([]string{"--once"})
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Execute()
+		close(done)
+	}()
+	within(t, renewing, time.Second, "renewal started")
+	send()
+	within(t, restored, time.Second, "default signal handling restored while the renewal still runs")
+	close(release)
+	within(t, done, time.Second, "run --once returned after the signal")
+
 	if got := pushErr.Load(); got != context.Canceled.Error() {
 		t.Fatalf("push context = %v, want %v", got, context.Canceled)
 	}

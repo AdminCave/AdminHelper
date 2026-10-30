@@ -70,12 +70,15 @@ export interface ApiKeyCreateResult {
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: unknown;
+  // The server's stable code (ERR_…) of an error a client reacts to; branch on it, not on the text.
+  readonly code: string | undefined;
 
-  constructor(status: number, message: string, detail?: unknown) {
+  constructor(status: number, message: string, detail?: unknown, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 

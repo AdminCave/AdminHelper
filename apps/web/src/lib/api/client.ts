@@ -16,7 +16,7 @@ storageRemove('adminhelper_token');
 storageRemove('adminhelper_refresh_token');
 
 let accessToken: string | null = null;
-let refreshInFlight: Promise<boolean> | null = null;
+let refreshInFlight: { session: number; promise: Promise<boolean> } | null = null;
 let onAuthFailure: (() => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -47,14 +47,14 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-// A session starts when setAccessToken() (a login) sets a token while none is held and ends with
-// clearTokens(); a refresh keeps it. A request answered 401 after its session ended must not refresh,
-// retry or run the auth-failure handler: the handler ends the session that is current by then,
-// refresh cookie included (stores/auth.ts).
+// A session starts with every setAccessToken() (a login, also one while a token is still held) and
+// ends with clearTokens(); a refresh keeps it. A request answered 401 after its session ended must
+// not refresh, retry or run the auth-failure handler: the handler ends the session that is current
+// by then, refresh cookie included (stores/auth.ts).
 let session = 0;
 
 export function setAccessToken(access: string): void {
-  if (accessToken === null) session++;
+  session++;
   accessToken = access;
 }
 
@@ -93,10 +93,12 @@ export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function tryRefresh(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
+  // A refresh started in an earlier session answers for that session only (refresh() returns false
+  // once it ended): a request of the current one must not take its answer.
+  if (refreshInFlight?.session === session) return refreshInFlight.promise;
 
+  const started = session;
   const refresh = async (): Promise<boolean> => {
-    const started = session;
     // The refresh token rides along as the HttpOnly cookie (same-origin
     // request → sent automatically); the body is intentionally empty.
     const res = await fetchWithTimeout('/api/auth/refresh', {
@@ -106,24 +108,27 @@ async function tryRefresh(): Promise<boolean> {
     });
     if (!res.ok) return false;
     const data = (await res.json()) as RefreshResponse;
-    // A refresh renews the session it runs in, also one without a token yet: no new session. One
-    // answered after that session ended sets no token, else the next login would find one held.
+    // A refresh renews the session that asked for it, also one without a token yet: no new session.
+    // One answered after that session ended (also one that waited for the lock across a login) sets
+    // no token: it would replace the token of the session current by then.
     if (started !== session) return false;
     accessToken = data.access_token;
     return true;
   };
 
-  refreshInFlight = (async () => {
+  const promise = (async () => {
     try {
       return await withAuthLock(refresh);
     } catch {
       return false;
     } finally {
-      refreshInFlight = null;
+      // session only grows, so at most one refresh per session is in flight: a later session's
+      // stays.
+      if (refreshInFlight?.session === started) refreshInFlight = null;
     }
   })();
-
-  return refreshInFlight;
+  refreshInFlight = { session: started, promise };
+  return promise;
 }
 
 async function request<T>(
@@ -163,7 +168,9 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, errorDetail(data) ?? `HTTP ${res.status}`, data);
+    const code = errorCode(data);
+    const message = withoutCodePrefix(errorDetail(data), code);
+    throw new ApiError(res.status, message ?? `HTTP ${res.status}`, data, code);
   }
 
   // A 2xx promises a T. A body that could not be read — cut off by a reload
@@ -188,6 +195,23 @@ function errorDetail(data: unknown): string | null {
     )
     .filter((m): m is string => m !== null);
   return msgs.length ? msgs.join('; ') : null;
+}
+
+// The stable code of an error body (R-0664), only in the form the server promises.
+const ERROR_CODE = /^ERR_[A-Z0-9_]{1,64}$/;
+
+function errorCode(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object' || !('code' in data)) return undefined;
+  const { code } = data;
+  return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
+}
+
+// The server keeps the code as prefix of the detail for clients that read the text; with
+// the code at hand the message is the text alone.
+function withoutCodePrefix(message: string | null, code: string | undefined): string | null {
+  if (message === null || code === undefined) return message;
+  const prefix = `${code}: `;
+  return message.startsWith(prefix) ? message.slice(prefix.length) : message;
 }
 
 // Raw GET that shares the same 401 -> tryRefresh -> retry path as request(), but

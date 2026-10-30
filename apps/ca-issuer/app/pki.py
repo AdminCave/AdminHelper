@@ -23,6 +23,7 @@ import ipaddress
 from dataclasses import dataclass
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
@@ -178,15 +179,27 @@ def build_root_ca(
     return cert, key
 
 
+def _intermediate_cn(scope: str) -> str:
+    return f"AdminHelper {scope.capitalize()} Intermediate"
+
+
 def build_intermediate_ca(
     scope: str,
     root_cert: x509.Certificate,
     root_key: ec.EllipticCurvePrivateKey,
+    label: str | None = None,
 ) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """`label` is appended to the CN ("AdminHelper Access Intermediate 2031-05-04"). A
+    rotation passes one so each generation of a scope has its own subject: a client
+    sending only its leaf is matched to its issuer by name in a trust bundle that
+    holds the current and the retired generations side by side."""
     if scope not in SCOPES:
         raise ValueError(f"Unbekannter Scope '{scope}'. Erlaubt: {', '.join(SCOPES)}")
     key = generate_key()
-    subject = _name(f"AdminHelper {scope.capitalize()} Intermediate")
+    common_name = _intermediate_cn(scope)
+    if label:
+        common_name = f"{common_name} {label}"
+    subject = _name(common_name)
     now = _now()
     cert = (
         x509.CertificateBuilder()
@@ -207,6 +220,35 @@ def build_intermediate_ca(
         .sign(root_key, _HASH)
     )
     return cert, key
+
+
+def intermediate_problem(
+    cert: x509.Certificate, scope: str, root_cert: x509.Certificate
+) -> str | None:
+    """Why `cert` is not an intermediate of `scope` as build_intermediate_ca issues one
+    under `root_cert` (the scope's CN with or without a label, a CA restricted to signing
+    leaves, signed by `root_cert`), or None if it is; its validity in time is left to the
+    caller. A signature check alone would let the self-signed root or another scope's
+    intermediate pass as one of `scope`'s."""
+    base = _intermediate_cn(scope)
+    name = read_identity(cert)[0] or ""
+    if name != base and not (name.startswith(f"{base} ") and name[len(base) + 1 :]):
+        return f"its CN is not {base!r}, with or without a label"
+    try:
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except (x509.ExtensionNotFound, x509.DuplicateExtension, ValueError):
+        constraints = None
+    if constraints is None or not constraints.ca or constraints.path_length != 0:
+        return "it is not a CA restricted to signing leaves (BasicConstraints ca, path_length=0)"
+    try:
+        cert.verify_directly_issued_by(root_cert)
+    except InvalidSignature:
+        detail = "the signature does not verify"
+    except (ValueError, TypeError) as exc:
+        detail = str(exc)
+    else:
+        return None
+    return f"it is not signed by root {read_identity(root_cert)[0]!r} ({detail})"
 
 
 # --- Leaf signing ------------------------------------------------------------

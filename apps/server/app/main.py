@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 # Every ORM model before the first query (the lifespan's), see app/model_registry.py.
 # Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
 from app import model_registry  # noqa: F401
+from app.core import identity, middleware
 from app.core.auth import hash_api_key, hash_password
 from app.core.config import (
     ADMIN_PASSWORD,
@@ -31,6 +32,7 @@ from app.core.config import (
     write_private_file,
 )
 from app.core.database import SessionLocal
+from app.core.errors import install_coded_errors
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
@@ -393,6 +395,10 @@ async def lifespan(app: FastAPI):
 
     _run_startup_tasks()
     monitoring_proxy_mod.open_client()
+    # Looked up before the first request: it would otherwise find no address of a proxy name
+    # yet, and wait for one of the gateway.
+    middleware._PROXY_NAMES.start()
+    identity._GATEWAY.start()
     # The APScheduler runs in a DEDICATED process (app.scheduler_main), NOT in the
     # web workers: with uvicorn --workers N each worker would start its own
     # scheduler and every job would run N times (duplicate e-mails from the outbox
@@ -418,6 +424,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 install_exact_int_bounds(app)
+install_coded_errors(app)
 
 
 def _non_finite_as_null(detail: list) -> list:

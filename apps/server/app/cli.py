@@ -40,6 +40,7 @@ from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.users.models import User
+from app.modules.users.schemas import PASSWORD_MAX_LEN
 
 _MIN_PASSWORD_LEN = 8
 # No request, no principal: the operator at the container shell. The web panel
@@ -51,6 +52,11 @@ def create_admin(db, username: str, password: str) -> int:
     """Create an admin user. Returns a process exit code (0 ok, 1 refused)."""
     if len(password) < _MIN_PASSWORD_LEN:
         print(f"Fehler: Passwort muss >= {_MIN_PASSWORD_LEN} Zeichen sein.", file=sys.stderr)
+        return 1
+    if len(password) > PASSWORD_MAX_LEN:
+        print(
+            f"Error: the password must be at most {PASSWORD_MAX_LEN} characters.", file=sys.stderr
+        )
         return 1
     if db.query(User).filter(User.username == username).first() is not None:
         print(f"Fehler: Benutzer '{username}' existiert bereits.", file=sys.stderr)
@@ -85,6 +91,11 @@ def reset_admin(db, username: str, password: str) -> int:
     locked-out admin otherwise has no way back in (8.5)."""
     if len(password) < _MIN_PASSWORD_LEN:
         print(f"Fehler: Passwort muss >= {_MIN_PASSWORD_LEN} Zeichen sein.", file=sys.stderr)
+        return 1
+    if len(password) > PASSWORD_MAX_LEN:
+        print(
+            f"Error: the password must be at most {PASSWORD_MAX_LEN} characters.", file=sys.stderr
+        )
         return 1
     user = db.query(User).filter(User.username == username).first()
     if user is None:
@@ -174,13 +185,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p_admin = sub.add_parser("create-admin", help="Create the first admin user")
     p_admin.add_argument("--username", required=True)
-    p_admin.add_argument(
+    # Exclusive: with both, --password would stay in argv, as the restart only fires without
+    # --password-stdin.
+    admin_pw = p_admin.add_mutually_exclusive_group()
+    admin_pw.add_argument(
         "--password",
         help="Admin password. Visible in the process argv (/proc/<pid>/cmdline) until the "
         "CLI hands it over stdin to a fresh process, before the user is created — prefer "
         "--password-stdin.",
     )
-    p_admin.add_argument(
+    admin_pw.add_argument(
         "--password-stdin",
         action="store_true",
         help="Read the password from the first line of stdin (no argv leak).",
@@ -188,12 +202,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p_reset = sub.add_parser("reset-admin", help="Reset an existing user's password (recovery)")
     p_reset.add_argument("--username", required=True)
-    p_reset.add_argument(
+    reset_pw = p_reset.add_mutually_exclusive_group()
+    reset_pw.add_argument(
         "--password",
         help="New password. INSECURE: visible in the process argv "
         "(/proc/<pid>/cmdline) for the duration of the call — prefer --password-stdin.",
     )
-    p_reset.add_argument(
+    reset_pw.add_argument(
         "--password-stdin",
         action="store_true",
         help="Read the password from the first line of stdin (no argv leak).",
