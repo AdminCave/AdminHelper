@@ -64,6 +64,7 @@ from app.modules.servers.router import router as servers_router
 from app.modules.users.auth_router import router as auth_router
 from app.modules.users.models import User
 from app.modules.users.router import router as users_router
+from app.modules.users.schemas import PASSWORD_MAX_LEN
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,16 @@ def _ensure_admin(db):
         # bootstrap-token path instead (3.90).
         logger.warning(
             "ADMIN_PASSWORD hat < 8 Zeichen — ignoriert; weiche auf den Bootstrap-Token aus."
+        )
+        _emit_bootstrap_token()
+        return
+
+    if len(ADMIN_PASSWORD) > PASSWORD_MAX_LEN:
+        # Sign-in takes at most PASSWORD_MAX_LEN characters: such an admin could never
+        # sign in (R-0957).
+        logger.warning(
+            "ADMIN_PASSWORD is longer than %d characters, ignored; using the bootstrap token.",
+            PASSWORD_MAX_LEN,
         )
         _emit_bootstrap_token()
         return
