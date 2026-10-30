@@ -690,7 +690,10 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   Erlaubt sind nur die Uebergaenge der Tabelle `TRANSITIONS` im Skript (sonst Exit 2);
   derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
   das Wort. Ein geschlossener Status (`abgeschlossen`, `abgelehnt`) traegt den Tag; mehr
-  als 30 Tage danach wandert die Zeile beim naechsten Schreiben oben ins „Archiv".
+  als 7 Tage danach faellt die Zeile beim naechsten Schreiben aus der Datei (die Historie
+  haelt das private git, `git log -S R-nnnn`). Nennt eine offene Zeile sie unter „Haengt ab
+  von", bleibt sie und wandert oben ins „Archiv": `next` zaehlt eine Abhaengigkeit nur, solange
+  ihre Zeile `abgeschlossen` in der Datei steht.
   `--ledger` schreibt die Spalte `Ledger` wie `add --ledger`, auch ohne Statuswechsel — so
   bekommt eine aeltere Zeile ihr Ledger nachgetragen; `next` und die Parallel-Pruefung am
   Gate lesen es dort, nicht aus der Notiz. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,

@@ -817,7 +817,9 @@ out=$(bash "$HEAVY" all 2>&1)
 report_of | grep -q 'Dedup-Key rel:deps-audit is already on open row R-0018' \
   && ok "the report names the open REL row" || bad "report: $(report_of | grep -i roadmap)"
 # … and once it is closed, the next red phase is a new row again.
-sed -i 's/^\(| R-0018 | REL | .*\) | neu | /\1 | abgeschlossen 2026-09-22 | /' "$AH_PRIVATE_DIR/ROADMAP.md"
+# Closed today: heavy.sh writes with the real date, and roadmap.py drops a row
+# closed more than 7 days before it.
+sed -i "s/^\(| R-0018 | REL | .*\) | neu | /\1 | abgeschlossen $(date +%F) | /" "$AH_PRIVATE_DIR/ROADMAP.md"
 touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
 out=$(bash "$HEAVY" all 2>&1)
 [ "$(roadmap_of | grep -c '^| R-')" = 3 ] \

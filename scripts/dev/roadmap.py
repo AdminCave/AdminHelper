@@ -45,8 +45,9 @@ directory is the root of that repository, and never in this public one. A file c
 differs from the one the lock file remembers) is refused: an editor may hold
 it. The ID is the highest R-nnnn of all rows plus one — or of all IDs this
 lock file has seen issued, so an ID a hand edit took out does not come back. A closed row
-(abgeschlossen, abgelehnt) carries the day it closed; more than 30 days later
-the next write moves it from "Abgeschlossen" to the top of "Archiv".
+(abgeschlossen, abgelehnt) carries the day it closed; more than 7 days later
+the next write drops it from the file (the private git keeps it), unless an
+open row names it under "Hängt ab von": that one moves to the top of "Archiv".
 
 next picks by class (SEC > REG > REL > BUG > FEAT > REF > IDEE), then by the
 order of the rows (Kevin's), and skips a row whose "Hängt ab von" names an
@@ -121,7 +122,7 @@ STATE_ORDER = (
 # Ablauf of a new row (roadmap document 3.3.2); every other class never expires.
 EXPIRY_DAYS = {"IDEE": 60, "REF": 90}
 QUIET_SECONDS = 5
-ARCHIVE_AFTER_DAYS = 30
+KEEP_CLOSED_DAYS = 7
 
 SECTIONS = (
     "Als Nächstes",
@@ -134,7 +135,7 @@ SECTIONS = (
     "Archiv",
 )
 # Where a row with this status belongs. A closed row may also sit in the
-# archive: it moves there by age, not by status.
+# archive: it moves there by age, not by status, when an open row depends on it.
 SECTION_OF = {
     "neu": "Neu",
     "geplant": "Geplant",
@@ -174,6 +175,7 @@ TRANSITIONS = {
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 SEPARATOR = re.compile(r"^\|(\s*:?-+:?\s*\|)+\s*$")
 ROW_ID = re.compile(r"R-\d{4,}")
+CLOSED_HEADING = re.compile(r"## Abgeschlossen \(letzte \d+ Tage\)")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 DEDUP = re.compile(r"Dedup-Key:\s*(\S+)")
 WIP_FIELD = re.compile(r"\b(aktiv|bereit|pr|neu)\s+(\d+)\s*/\s*\d+")
@@ -423,18 +425,35 @@ class Roadmap:
             self.remove(row)
             self.insert_row(home, row, top=home == "Abgeschlossen")
 
-    def archive(self, today: dt.date) -> None:
-        """Closed rows more than ARCHIVE_AFTER_DAYS past their date leave
-        "Abgeschlossen" for the top of "Archiv", in the order they stood."""
-        old = []
-        for section, row in self.rows():
+    def prune(self, today: dt.date) -> int:
+        """Closed rows more than KEEP_CLOSED_DAYS past their date leave the
+        file; it returns how many. One an open row names under "Hängt ab von"
+        stays, at the top of "Archiv" in the order they stood: `next` counts a
+        dependency as met only while its row stands abgeschlossen here."""
+        rows = self.rows()
+        needed = {
+            dep
+            for _, r in rows
+            if r.well_formed and r.is_open
+            for dep in ROW_ID.findall(r.cells[DEPENDS])
+        }
+        gone, kept = [], []
+        for section, row in rows:
             day = parse_day(row.cells[STATUS]) if row.well_formed else None
-            if section == "Abgeschlossen" and row.state in CLOSED and day:
-                if (today - day).days > ARCHIVE_AFTER_DAYS:
-                    old.append(row)
-        for row in reversed(old):
+            if row.state in CLOSED and day and (today - day).days > KEEP_CLOSED_DAYS:
+                if row.id not in needed:
+                    gone.append(row)
+                elif section != "Archiv":
+                    kept.append(row)
+        for row in gone:
+            self.remove(row)
+        for row in reversed(kept):
             self.remove(row)
             self.insert_row("Archiv", row, top=True)
+        for i, item in enumerate(self.items):
+            if isinstance(item, str) and CLOSED_HEADING.fullmatch(item):
+                self.items[i] = f"## Abgeschlossen (letzte {KEEP_CLOSED_DAYS} Tage)"
+        return len(gone)
 
     def highest(self) -> int:
         """The highest ID number in the rows, or issued before (write() sets it)."""
@@ -630,18 +649,19 @@ def write(
             # Still under the lock: this record must not race another writer's commit.
             commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
             raise
-        roadmap.archive(today)
+        pruned = roadmap.prune(today)
         roadmap.set_header(today)
         bak = sibling(path, ".bak")
         bak.write_bytes(before_text.encode("utf-8"))
         write_text(path, roadmap.render())
         after = len(Roadmap(path.read_bytes().decode("utf-8")).rows())
-        if after != before + delta:
+        if after != before + delta - pruned:
             replace_file(path, bak.read_bytes())
             remember(lock, path, issued)
             raise Refused(
                 6,
-                f"{before} rows {delta:+d} should make {before + delta}, the written file "
+                f"{before} rows {delta:+d} and {pruned} pruned should make "
+                f"{before + delta - pruned}, the written file "
                 f"has {after} — restored from {bak}",
             )
         remember(lock, path, roadmap.highest())
