@@ -18,8 +18,10 @@ Für alle Tasks:
 - Zertifikate im Test wie in `apps/ca-issuer/tests/test_storage.py` (Root-Passphrase fester Testwert `b"pw"`).
 - Je Task ein Eintrag in `changelog.d/kern-ca-1.md` (neue Datei mit SPDX-Header in der ersten Task, die ihn braucht).
 
-### T1 — storage: aktuelles Intermediate beim Start vollständig prüfen, lesbare Fehler  [ ]
+### T1 — storage: aktuelles Intermediate beim Start vollständig prüfen, lesbare Fehler  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_storage.py, changelog.d/kern-ca-1.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @159cc098 2026-10-30T01:09:19+01:00
+Review: approve (.ah-out/review/kern-ca-1/T1.verdict.json)
 Änderung: R-0918: `ensure_hierarchy` (`storage.py:106`) prüft das aktuelle `<scope>.crt` zusätzlich mit `pki.intermediate_problem(cert, scope, root)` wie `_load_retired` (`storage.py:247`) und bricht bei Fund mit `_invalid_hierarchy` ab. R-0834: `cert_from_pem`/`key_from_pem` für `root.crt` (`:169`), `<scope>.crt` und `<scope>.key` (`:180-181`) fangen `ValueError` und melden über `_invalid_hierarchy` Datei und Scope. Erst die roten Tests.
 Beweis: R-0834 feature/ca-issuer-lifetime@7e06dfa0 apps/ca-issuer/app/storage.py ensure_hierarchy (reviewer T3) · Dedup-Key: bug:ca-issuer:storage.py:unreadable-file-error
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_rotation.py

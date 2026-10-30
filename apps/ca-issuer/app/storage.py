@@ -22,15 +22,19 @@ import datetime
 import ipaddress
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
+
+_T = TypeVar("_T")
 
 logger = logging.getLogger("ca-issuer.storage")
 
@@ -111,8 +115,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     on later boots only the intermediates are loaded — the root stays cold.
 
     Every boot then checks what it loaded and raises RuntimeError (file, scope,
-    reason) unless root.crt is self-signed and valid now and each intermediate is
-    signed by it, valid now, matches its key and has the chain [intermediate, root].
+    reason) unless every file is readable, root.crt is self-signed and valid now and each
+    intermediate is one of its scope under it (pki.intermediate_problem), valid now,
+    matches its key and has the chain [intermediate, root].
     A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING. What
     concerns an intermediate's end (abort or WARNING) ends with ROTATE_HINT, the abort
     for one not valid yet with CLOCK_HINT.
@@ -166,7 +171,7 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     # Checked on every boot, the first included: an intermediate past its end, from another
     # root or beside a foreign key or chain would otherwise sign leaves no client accepts.
     now = pki._now()
-    root = pki.cert_from_pem(root_crt.read_bytes())
+    root = _read_pem(root_crt, pki.cert_from_pem, "a PEM certificate")
     if problem := _signature_problem(root, root):
         raise _invalid_hierarchy(f"{root_crt}: the root certificate is not self-signed ({problem})")
     if problem := _validity_problem(root, now):
@@ -177,13 +182,17 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
         cert_path = pki_dir / f"{scope}.crt"
         key_path = pki_dir / f"{scope}.key"
         chain_path = pki_dir / f"{scope}-chain.pem"
-        cert = pki.cert_from_pem(cert_path.read_bytes())
-        key = pki.key_from_pem(key_path.read_bytes())
+        cert = _read_pem(cert_path, pki.cert_from_pem, "a PEM certificate", scope)
+        key = _read_pem(key_path, pki.key_from_pem, "a PEM EC private key", scope)
         chain = chain_path.read_bytes()
         if problem := _signature_problem(cert, root):
             raise _invalid_hierarchy(
                 f"scope {scope!r}, {cert_path}: not signed by {root_crt.name} ({problem})"
             )
+        # The signature alone would let another scope's intermediate (with its own key and
+        # chain) or a CA that may sign CAs pass as this scope's.
+        if problem := pki.intermediate_problem(cert, scope, root):
+            raise _invalid_hierarchy(f"scope {scope!r}, {cert_path}: {problem}")
         if problem := _validity_problem(cert, now):
             hint = ROTATE_HINT if now >= cert.not_valid_after_utc else CLOCK_HINT
             raise _invalid_hierarchy(
@@ -217,6 +226,15 @@ def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
     # The hint goes last, without a full stop, so the command copies off the line as is.
     message = f"PKI hierarchy invalid — {detail}. The ca-issuer does not start with it"
     return RuntimeError(f"{message}; {hint}" if hint else f"{message}.")
+
+
+def _read_pem(path: Path, load: Callable[[bytes], _T], what: str, scope: str = "") -> _T:
+    try:
+        return load(path.read_bytes())
+    # TypeError: an encrypted key; UnsupportedAlgorithm: a curve or key type cryptography lacks.
+    except (ValueError, TypeError, UnsupportedAlgorithm) as exc:
+        where = f"scope {scope!r}, {path}" if scope else str(path)
+        raise _invalid_hierarchy(f"{where}: not {what} ({exc})") from exc
 
 
 def _load_retired(
