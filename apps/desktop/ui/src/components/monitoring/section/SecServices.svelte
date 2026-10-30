@@ -5,7 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck, MonitorServiceDetails } from '$lib/api/types';
+  import type { MonitorCheck } from '$lib/api/types';
+  import { serviceDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -74,7 +75,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   function info(check: MonitorCheck): Info {
-    const d = (check.state?.details ?? null) as MonitorServiceDetails | null;
+    const d = serviceDetails(check.state?.details);
     if (!d) return { neutral: 'monitoring.services.noData', rows: [], problems: 0, count: null };
     const status = check.state?.status;
     const neutral = (problems: number): Neutral | null =>

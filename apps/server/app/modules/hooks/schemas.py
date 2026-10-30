@@ -74,3 +74,7 @@ class HookDetailResponse(HookResponse):
 
 class HookCreatedResponse(HookDetailResponse):
     token: Optional[str] = None  # Nur bei Webhook-Typ beim Erstellen / Token-Rotation
+
+
+class HookTokenOut(BaseModel):
+    token: str

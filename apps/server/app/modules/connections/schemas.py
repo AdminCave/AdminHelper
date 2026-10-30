@@ -4,7 +4,7 @@
 
 from typing import Any, Literal, Optional
 
-from pydantic import Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from pydantic_core import InitErrorDetails
 
 from app.core.bounds import RequestModel
@@ -106,3 +106,37 @@ class ConnectionUpdate(RequestModel):
 class ImportRequest(RequestModel):
     connections: list[dict[str, Any]]
     mode: Literal["merge", "replace"]
+
+
+# Responses
+
+
+class ConnectionOut(BaseModel):
+    """Connection.to_dict. The extra fields a client stored ride along as further keys."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    name: str
+    # Not a Literal: the column takes any string, and rows from before the import validation
+    # (v0.36.0) can hold another kind.
+    kind: str
+    host: str
+    port: Optional[int]
+    username: str
+    domain: str
+    keyPath: str
+    url: str
+    notes: str
+    # Any, not a list: an import before v0.36.0 stored a non-list value as it came, and such a row
+    # must not turn the whole list into a 500.
+    tags: Any
+    trustCert: bool
+    lastUsed: Optional[str]
+    # Only set when the connection belongs to a server; the routes leave it out otherwise.
+    serverId: Optional[str] = None
+
+
+class ConnectionImportResult(BaseModel):
+    imported: int
+    mode: str

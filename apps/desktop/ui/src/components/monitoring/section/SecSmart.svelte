@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import type { MonitorCheck, MonitorSmartDetails } from '$lib/api/types';
   import { worstStatus } from '$lib/models/monitoring';
+  import { smartDetails } from '$lib/models/checkDetails';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
   import { t, currentLocale } from '$lib/i18n';
@@ -25,7 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return Number.isNaN(n) ? fb : n;
   }
   function disksOf(check: MonitorCheck) {
-    return (check.state?.details as MonitorSmartDetails | undefined)?.disks ?? [];
+    return smartDetails(check.state?.details)?.disks ?? [];
   }
   function maxTempOf(check: MonitorCheck): number {
     let max = 0;
