@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Update: Rollback mit Health-Prüfung und Migrationsstand, Image-Pins nach dem Pull, Healthchecks für Gateway, Victoria und Monitoring — Task-Ledger
-Status: bereit · Branch: feature/update-rollback · Review: pro Task
+Status: aktiv · Branch: feature/update-rollback · Review: pro Task
 Spec: docs/features/update-rollback.md (Roadmap R-0612, R-0613, R-0614; der install.sh-Teil von R-0614 in tasks/install-restore.md T4 auf feature/install-restore)
 Hängt ab von: feature/compose-hardening, feature/ops-install-hardening, feature/ops-scripts-hardening (gemergt vor dem Bau; Überschneidungen je Funktion in der Spec)
 Heavy: linux-full — `docker-compose.yml` (Healthchecks), `apps/gateway/nginx.conf` und `scripts/update.sh` im Diff (CLAUDE.md §5): der Sammellauf über `main` fährt `integration-stack` mit dem Schritt aus T3 und `upgrade-path` (Schritt 4 startet die `update.sh` dieses Stands samt Preflight aus T4 bis zur Übergabe an die des Release); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/update-rollback`. Kein `scenario`: kein `multibox.sh`-Flag und kein `box_*.sh` ruft `update.sh` auf (Spec, Offene Frage 2). Kein `windows`
