@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-frp-2 · Review: pro Task
 Spec: docs/features/kern-frp-2.md (Roadmap R-0972, R-0973, R-0969, R-0970, R-0971)
 Heavy: linux-full — Server-API (FRP-Generate- und Sync-Routen)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
