@@ -10,8 +10,10 @@ Heavy: none — nur Unit-Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Katalog: zwei HTTP-Meldungen ergänzen (R-0966)  [ ]
+### T1 — Katalog: zwei HTTP-Meldungen ergänzen (R-0966)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_checker_messages.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @93831f0e 2026-10-30T10:36:01+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-0966 apps/monitoring/app/checkers/http.py (`Redirect without Location header`, `Too many content encodings`)
 Dedup-Key: ref:monitoring:test_checker_messages.py:http-message-catalog
 Änderung: zwei `PULL_CASES` im Muster der Nachbarfälle: eine 302-Antwort ohne `location` → critical „Redirect without Location header“; eine Antwort mit mehr als fünf `Content-Encoding`-Schichten → die Meldung, die der Checker daraus macht (zuerst die echte Ausgabe lesen, dann den Fall festschreiben).
