@@ -42,8 +42,10 @@ Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: keine (internes Schreibverhalten, kein dokumentiertes Verhalten)
 
-### T4 — renew: Laufzeit aus der kind der Device-Line  [ ]
+### T4 — renew: Laufzeit aus der kind der Device-Line  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/issuer.py, apps/ca-issuer/app/tokens.py, apps/ca-issuer/app/db.py, apps/ca-issuer/tests/test_enroll_renew.py, apps/ca-issuer/tests/test_db_token_store.py, changelog.d/kern-ca-1.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @378a2fcd 2026-10-30T01:15:04+01:00
+Review: approve (.ah-out/review/kern-ca-1/T4.verdict.json)
 Änderung: R-0833: `RenewSigner` (`tokens.py:111`) bekommt die `kind` der Line; `InMemoryTokenStore.renew` (`tokens.py:254`) und `DbTokenStore.renew` (`db.py:272`, `device_lines.c.kind` mitselektieren; bei Übernahme `legacy_kind`) rufen `sign(kind)`; `issuer.py:216-221` setzt die Laufzeit `LEAF_DAYS_BROWSER` für `browser`, sonst `LEAF_DAYS_NATIVE`. Erst der rote Test: ein gekürztes Browser-Leaf einer erfassten Line erneuert mit `LEAF_DAYS_BROWSER`.
 Beweis: R-0833 feature/ca-issuer-lifetime@7e06dfa0 (Prüfer-Bericht T2/T3, nicht verifiziert) · Dedup-Key: bug:ca-issuer:renew:browser-leaf-days
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew.py tests/test_db_token_store.py

@@ -207,29 +207,25 @@ class Issuer:
 
         csr = self._load_csr(csr_pem)
 
-        # Preserve the audience (browser vs native — inferred from the original
-        # span, since it isn't stored in the cert) and renew at the CURRENT policy
-        # for it, not at the old span: sign_leaf cuts a leaf short before its
-        # intermediate's end, and that cut must not pass to every successor; a
-        # lowered LEAF_DAYS_* likewise reaches renewals instead of every legacy
-        # identity renewing at its original span forever.
-        span_days = max(1, (current.not_valid_after_utc - current.not_valid_before_utc).days)
-        audience_max = (
-            pki.LEAF_DAYS_BROWSER if span_days > pki.LEAF_DAYS_NATIVE else pki.LEAF_DAYS_NATIVE
-        )
-        spec = pki.LeafSpec(
-            lifetime_days=audience_max,
-            client_auth=True,
-            server_auth=False,
-            subject_cn=cn,
-            scope=scope,
-        )
-
-        def sign() -> tuple[x509.Certificate, dict[str, str]]:
+        # Renew at the CURRENT policy for the line's audience (browser vs native, as
+        # the register records it), not at the old span: sign_leaf cuts a leaf short
+        # before its intermediate's end, and that cut must neither pass to every
+        # successor nor turn a browser leaf into a native one; a lowered LEAF_DAYS_*
+        # likewise reaches renewals instead of every identity renewing at its
+        # original span forever.
+        def sign(kind: str) -> tuple[x509.Certificate, dict[str, str]]:
+            spec = pki.LeafSpec(
+                lifetime_days=pki.LEAF_DAYS_BROWSER if kind == "browser" else pki.LEAF_DAYS_NATIVE,
+                client_auth=True,
+                server_auth=False,
+                subject_cn=cn,
+                scope=scope,
+            )
             logger.info("Renew: %s (scope=%s, %dd)", cn, scope, spec.lifetime_days)
             return self._sign(csr, spec)
 
         # A certificate the register never recorded gets the kind its span tells.
+        span_days = max(1, (current.not_valid_after_utc - current.not_valid_before_utc).days)
         legacy_kind = kind_of(EnrollmentGrant(cn, scope, browser=span_days > pki.LEAF_DAYS_NATIVE))
         try:
             return self.tokens.renew(CertRecord.of(current), cn, scope, legacy_kind, sign)

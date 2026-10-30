@@ -168,7 +168,7 @@ def test_a_line_revoked_during_a_renewal_waits_and_covers_the_successor(pg_engin
     signing, release = threading.Event(), threading.Event()
     successor = _self_signed("agent-11", "tunnel")
 
-    def sign():
+    def sign(_kind):
         signing.set()  # the line is locked by now
         release.wait(10)
         return successor, {}
@@ -195,7 +195,7 @@ def test_a_line_revoked_during_a_renewal_waits_and_covers_the_successor(pg_engin
     # Once revoked, the line renews nothing more.
     with pytest.raises(RenewalRefused):
         store.renew(
-            CertRecord.of(successor), "agent-11", "tunnel", "agent", lambda: (successor, {})
+            CertRecord.of(successor), "agent-11", "tunnel", "agent", lambda _kind: (successor, {})
         )
 
 
@@ -209,7 +209,7 @@ def test_a_deprovisioning_while_signing_refuses_the_renewal(pg_engine):
     current = CertRecord.of(first)
     successor = _self_signed("agent-13", "tunnel")
 
-    def sign():
+    def sign(_kind):
         with pg_engine.begin() as conn:
             conn.execute(
                 db.revoked_identities.insert().values(
@@ -307,7 +307,7 @@ def test_a_renewal_that_takes_over_waits_for_a_revocation_and_is_refused(pg_engi
             "agent-21",
             "tunnel",
             "agent",
-            lambda: (successor, {}),
+            lambda _kind: (successor, {}),
         )
         assert _waits_for(pg_engine, revocation_pid), "the renewal must wait for the revocation"
         assert not renewing.done()
@@ -326,7 +326,7 @@ def test_a_revocation_waits_for_a_renewal_that_takes_over_and_covers_its_line(pg
     current, successor = _self_signed("agent-22", "tunnel"), _self_signed("agent-22", "tunnel")
     signing, release = threading.Event(), threading.Event()
 
-    def sign():
+    def sign(_kind):
         signing.set()  # the new line exists, not yet committed
         release.wait(10)
         return successor, {}
