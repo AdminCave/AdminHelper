@@ -158,7 +158,7 @@ cat > "$BIN/grep" <<'EOF'
 case "$*" in
   *"-vE ^#?[[:space:]]*SERVER_IMAGE="*)
     [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
-  *"-qE ^#?[[:space:]]*NEW_FEATURE_FLAG="*)
+  *"-qE ^[[:space:]]*(export[[:space:]]+)?NEW_FEATURE_FLAG"*)
     [ "${AH_TEST_GREP_KEY_FAIL:-}" != 1 ] || { echo "stub: grep failed" >&2; exit 2; } ;;
 esac
 exec "$AH_TEST_REAL_GREP" "$@"
@@ -412,6 +412,18 @@ grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && ok "rolled back compose t
 INST="$WORK/inst7"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q '^NEW_FEATURE_FLAG=on' "$INST/.env"; } && ok "new .env key migrated" || bad "env migration missing"
+# A key there only as a comment is missing to compose (an empty CA_ROOT_PASSPHRASE=
+# has to stay, .env.example says): the migration appends it. An active line counts
+# as compose reads it, with blanks, "export " or ':' too, and gets no second one.
+for pre in '# NEW_FEATURE_FLAG=off' '#NEW_FEATURE_FLAG=off' '  NEW_FEATURE_FLAG=off' 'export NEW_FEATURE_FLAG=off' \
+    'NEW_FEATURE_FLAG = off' 'NEW_FEATURE_FLAG: off'; do
+  INST="$WORK/inst7-$(printf '%s' "$pre" | tr -c 'A-Za-z' _)"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  printf '%s\n' "$pre" >> "$INST/.env"
+  out=$(run_update "$INST" 2>&1); rc=$?
+  case $pre in '#'*) want=1 ;; *) want=0 ;; esac
+  { [ $rc -eq 0 ] && [ "$(grep -c '^NEW_FEATURE_FLAG=on$' "$INST/.env")" = "$want" ] && grep -qxF "$pre" "$INST/.env"; } \
+    && ok "[$pre] in .env: the migration appends NEW_FEATURE_FLAG=on $want time(s)" || bad "[$pre]: rc=$rc $(grep NEW_FEATURE "$INST/.env") $out"
+done
 
 # ── 8. self-update: on-disk update.sh differs → re-exec into the release's one ─
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"

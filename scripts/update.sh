@@ -672,6 +672,8 @@ swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlge
 # part that can fail returns 1 itself, and the caller rolls the whole .env back.
 # Additive only: append active KEY=value from the new .env.example that .env is
 # missing — never overwrite an existing value (no clobbering of secrets/config).
+# Only an active line counts, as compose reads it: a key that is there only as a
+# comment is missing to compose, and the example's keys are the ones it needs.
 migrate_env() {
     local line key rc
     if [ -f .env.example ]; then
@@ -679,7 +681,7 @@ migrate_env() {
             case "$line" in
                 [A-Z_]*=*)
                     key="${line%%=*}"
-                    rc=0; LC_ALL=C grep -a -qE "^#?[[:space:]]*${key}=" .env || rc=$?
+                    rc=0; LC_ALL=C grep -a -qE "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" .env || rc=$?
                     case $rc in
                         0) ;;
                         1) printf '%s\n' "$line" >> .env || return 1; log ".env: neuen Key ${key} ergaenzt" ;;
@@ -727,8 +729,8 @@ rollback_after_deploy() {
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # The containers ran, so only the pin lines of the old .env go back: a key the
-    # migration added or a secret init-secrets.sh filled (CA_ROOT_PASSPHRASE) may
-    # be in use already. Taken from env.prev, not rebuilt from INSTALLED, which is
+    # migration added (CA_ROOT_PASSPHRASE= the compose file needs) or a secret
+    # init-secrets.sh filled may be in use already. Taken from env.prev, not rebuilt from INSTALLED, which is
     # "unknown" for a floating tag (:latest/:main): pins left on the target make
     # the next run call the install current. A pin the old .env lacked stays
     # absent. grep exits 1 for "no line selected", which is fine on either side.
