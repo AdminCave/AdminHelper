@@ -198,3 +198,16 @@ def test_unreadable_extra_data_is_left_out_with_a_warning(caplog):
         assert any("c-bad" in r.getMessage() for r in caplog.records), raw
         conn.update_from_dict({"custom": 2})
         assert conn.to_dict()["custom"] == 2
+
+
+def test_tags_that_are_no_list_read_as_empty_with_a_warning(caplog):
+    # R-0976: from_dict stores a non-list tags value as it came (old imports, hook scripts).
+    import logging
+
+    for raw in ("a,b", "{}", "5", '"x"'):
+        conn = Connection(id="c-tags", name="a", kind="ssh", host="h", tags=raw)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            assert conn.to_dict()["tags"] == [], raw
+        assert any("c-tags" in r.getMessage() for r in caplog.records), raw
+    assert Connection(id="c-ok", name="a", kind="ssh", tags='["x"]').to_dict()["tags"] == ["x"]

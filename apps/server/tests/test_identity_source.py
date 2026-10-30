@@ -37,6 +37,8 @@ pytestmark = pytest.mark.identity_source
 GATEWAY = "192.0.2.10"
 OTHER = "192.0.2.11"
 NEW_GATEWAY = "192.0.2.20"
+# The app's own resolver, taken before the autouse fixture swaps in a test one.
+_APP_GATEWAY = identity._GATEWAY
 
 
 class _Dns:
@@ -358,3 +360,12 @@ def test_the_app_starts_the_name_lookups_before_the_first_request(test_client, m
     with test_client:
         pass
     assert started == [mw._PROXY_NAMES, identity._GATEWAY]
+
+
+def test_gateway_names_are_looked_up_again_sooner_than_proxy_names(monkeypatch):
+    # R-0959: an old gateway address is trusted with client certificates, so the gateway's
+    # names come back after 5 s, the proxies' after 30 s.
+    monkeypatch.setattr(_APP_GATEWAY, "_getaddrinfo", _Dns(GATEWAY))
+    monkeypatch.setattr(_APP_GATEWAY, "_networks", [])
+    assert _APP_GATEWAY.refresh() == 5
+    assert mw._NameResolver(["proxy"], _Dns(OTHER)).refresh() == 30
