@@ -1116,7 +1116,8 @@ client_address() {
     fi
 
     # b. Counter-check: the same login straight to server:8080 from the scheduler, with an
-    #    X-Forwarded-For of its own, is recorded with the scheduler's address.
+    #    X-Forwarded-For of its own, is recorded with the scheduler's address. Without a client
+    #    certificate the enforced server refuses it with 403 before the password (R-0900).
     scheduler=$(default_ip scheduler)
     [ -n "$scheduler" ] || { bad "client address: the scheduler has no address in the default network"; return; }
     before=$(audit_last auth.login_failed)
@@ -1132,12 +1133,12 @@ try:
 except urllib.error.HTTPError as e:
     print(e.code)' 2>/dev/null)
     row=$(audit_last auth.login_failed)
-    if [ "$code" = 401 ] && [ -n "$row" ] && [ "${row%% *}" != "${before%% *}" ] && [ "${row#* }" = "$scheduler" ]; then
+    if [ "$code" = 403 ] && [ -n "$row" ] && [ "${row%% *}" != "${before%% *}" ] && [ "${row#* }" = "$scheduler" ]; then
         ok "counter-check: the same login from the scheduler with X-Forwarded-For 203.0.113.9 is recorded" \
             "from the scheduler ($scheduler)"
     else
         bad "login from the scheduler with X-Forwarded-For 203.0.113.9: HTTP '$code', newest auth.login_failed" \
-            "'$row' (before: '$before'), expected 401 and a new row from the scheduler's $scheduler"
+            "'$row' (before: '$before'), expected 403 and a new row from the scheduler's $scheduler"
     fi
 }
 client_address
