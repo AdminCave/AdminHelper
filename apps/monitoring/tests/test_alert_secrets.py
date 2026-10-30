@@ -225,11 +225,23 @@ def test_template_put_with_the_mask_on_a_new_definition_stores_no_password(clien
     assert "smtp_password" not in stored[0]["channel_config"]
 
 
-@pytest.mark.parametrize("password", ["***", ""])
-def test_template_post_does_not_store_the_mask_as_password(client_db, password):
+def test_template_post_with_an_empty_password_stores_none(client_db):
     client, factory = client_db
-    tid = _create_template(client, smtp_password=password).json()["id"]
+    tid = _create_template(client, smtp_password="").json()["id"]
     assert "smtp_password" not in _stored_alert_defs(factory, tid)[0]["channel_config"]
+
+
+def test_template_post_with_the_mask_as_password_is_refused(client_db):
+    # A new template has no stored password the mask could stand for, as POST /alerts.
+    client, factory = client_db
+    r = client.post(
+        "/templates",
+        json={"name": "T", "alert_definitions": [_email_def(smtp_password="***")]},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == "smtp_password must be the password itself, not the mask '***'"
+    with factory() as db:
+        assert db.query(MonitorTemplate).count() == 0
 
 
 def test_builtin_update_masks_the_current_alert_password(client_db):
