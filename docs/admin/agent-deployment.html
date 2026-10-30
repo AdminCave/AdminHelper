@@ -92,6 +92,7 @@ rm -rf "$TMP"
 # 1b) Keyring schon frueher eingerichtet (aeltere Fassung dieses Rezepts)? Pruefen:
 #     die Datei traegt genau einen Schluessel, den mit $FPR; sonst Schritt 1
 #     erneut ausfuehren (er ersetzt die Datei).
+FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
 CHK=$(mktemp -d)
 [ "$(gpg --homedir "$CHK" --batch --no-autostart --show-keys --with-colons \
        /usr/share/keyrings/adminhelper-archive-keyring.gpg \
