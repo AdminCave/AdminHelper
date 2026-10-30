@@ -211,6 +211,11 @@ def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
         d = ad.model_dump()
         if not d.get("def_id"):
             d["def_id"] = str(uuid.uuid4())
+        # As on POST /alerts: a new template has no stored password the mask could stand for.
+        if d["channel_config"].get("smtp_password") == "***":
+            raise HTTPException(
+                422, "smtp_password must be the password itself, not the mask '***'"
+            )
         _keep_smtp_password(d["channel_config"], None)
         alert_defs.append(d)
 

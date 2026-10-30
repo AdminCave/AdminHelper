@@ -1,0 +1,57 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# kern-desktop-3 — Task-Ledger
+Status: erledigt · Branch: feature/kern-desktop-3 · Review: pro Task
+Spec: docs/features/kern-desktop-3.md (Roadmap R-0962, R-0961, R-0984, R-0981)
+Heavy: linux-full — Desktop-Journeys: Tunnel-Abgleich (Visitor-Bundle) und Geräte-Reset
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+Für alle Tasks: Zeilenangaben `origin/main@2eac9b1d`, vor dem Schreiben neu greppen. Neue Code-Strings englisch,
+CHANGELOG umlautfrei und neutral in `changelog.d/kern-desktop-3.md`. `security` zusätzlich bei T1 und T2 (SEC) und wo
+`review.sh risk` es verlangt.
+
+### T1 — Visitor-Bundle mit Lesegrenze (R-0962)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-desktop-3.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @55ca4f9f 2026-10-30T15:12:59+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T1.verdict.json)
+Änderung: `bundle_from` (`frpc.rs:268-283`) liest wie `read_list` (`sync.rs:43-71`) höchstens 16 MiB: zuerst die angegebene Länge, dann chunkweise; Fehler ohne Zitat der Antwort. Test zuerst rot: eine Antwort über der Grenze wird abgewiesen (lokaler Test-Server wie in den bestehenden frpc-Tests, sonst ein Test der Lesefunktion).
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
+Doku: docs/developer/desktop.html DE+EN (nur wenn die Seite Lesegrenzen nennt), changelog.d/kern-desktop-3.md
+
+### T2 — Zurücksetzen: Keyring auf einem Blocking-Thread, Rollback-Fehler in der Meldung (R-0961, R-0984)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/commands.rs, changelog.d/kern-desktop-3.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e0018546 2026-10-30T15:18:40+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T2.verdict.json)
+Änderung: `reset_identity` (`enrollment.rs:502-514`) ruft `leaf_fingerprint`, `clear_identity` und das Merken von `KEYRING_REPLACES` über einen Blocking-Thread auf (`tauri::async_runtime::spawn_blocking`, wie `blocking` in `commands.rs:594`), die Server-Abfrage bleibt async, `reset_with` unverändert. `enroll_with_token_in` (`commands.rs:239-243`) hängt einen Fehler des Zurücksetzens an die Meldung („the device identity stays, reset it in the settings: …“) statt ihn mit `let _` zu verwerfen. Test zuerst rot für R-0984 (ein scheiternder `reset` erscheint in der Meldung); R-0961 ist Plattform-Wiring (Thread-Wechsel), die bestehenden Reset-Tests bleiben grün.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
+Doku: changelog.d/kern-desktop-3.md (die Meldung steht in docs/ nicht wörtlich)
+
+### T3 — Launcher-Tests ohne feste Obergrenze von 900 ms (R-0981)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0994f8c8 2026-10-30T15:20:07+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T3.verdict.json)
+Beweis: PR #326 CI 2026-10-30 · gh run view 40972646852 --job 123792900394: launcher.rs:2303 gave up after 1.9524272s · Dedup-Key: flaky:desktop:launcher.rs:open_gives_up_on_a_workspace_that_holds_no_lock_in_time
+Änderung: `open_gives_up_on_a_workspace_that_holds_no_lock_in_time` (`launcher.rs:2282-2310`) und `delete_gives_up_on_a_purge_that_does_not_end_in_time` (`:2505-2533`) prüfen statt `< 900 ms` eine großzügige Obergrenze (Frist plus einige Sekunden: „hängt nicht“); Mindestwartezeit und Zahl der Blicke bleiben.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher
+Doku: keine (nur Tests)
+
+### T4 — Rollback-Meldung ohne Widerspruch (R-0984, Fund der Abschlussprüfung)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @aa9f1d4d 2026-10-30T15:30:28+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T4.verdict.json)
+Änderung: `URL_TAKEN` (`storage.rs:337`) sagt schon „the new device identity is reset, register again“, auch wenn das Zurücksetzen danach scheitert (T2 hängt dann „the device identity stays“ an). Der Satz wandert aus `URL_TAKEN` in den Erfolgszweig von `enroll_with_token_in` (`commands.rs:239-250`); jeder Zweig nennt nur, was geschah. Test: der Fehlerfall enthält „is reset, register again“ nicht, der Erfolgsfall enthält es.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
+Doku: keine (die Meldung steht in docs/ nicht wörtlich; der CHANGELOG-Eintrag aus T2 deckt sie)
+
+## Entscheidungen
+- T2: `reset_with` nimmt `clear` und `remember` jetzt als async-Schritte (statt unverändert, wie die Spec sagt): ein
+  synchroner Schritt kann innerhalb der async-Reihenfolge nicht auf einen Blocking-Thread wechseln. Reihenfolge,
+  Ergebnis und die Assertions der `reset_with`-Tests bleiben; nur ihre Closures sind async. `off_worker` läuft unter
+  `cfg(test)` an Ort und Stelle, weil Memory-Keyring und Workspace der Tests thread-lokal sind (Plattform-Wiring).
+- T1: `bundle_from` liest wie `read_list`, ohne gemeinsamen Helfer: `read_list` gibt eigene Fehlertexte für die
+  Verbindungsliste zurück, ein Helfer bräuchte Text-Parameter für zwei Aufrufer (YAGNI, Spec Nicht-Ziel).
+- T4: Fund der Abschlussprüfung (Meldung widersprach sich bei gescheitertem Zurücksetzen) als eigene Task.

@@ -89,6 +89,18 @@ sudo install -d -m 0755 /usr/share/keyrings
 sudo install -D -m 0644 "$TMP/pinned.gpg" /usr/share/keyrings/adminhelper-archive-keyring.gpg
 rm -rf "$TMP"
 
+# 1b) Keyring set up earlier (older version of this recipe)? Check it: the
+#     file carries exactly one key, the one with $FPR; otherwise run step 1
+#     again (it replaces the file).
+FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
+CHK=$(mktemp -d)
+[ "$(gpg --homedir "$CHK" --batch --no-autostart --show-keys --with-colons \
+       /usr/share/keyrings/adminhelper-archive-keyring.gpg \
+     | awk -F: 'p {f=$10; p=0} $1=="pub" {n++; p=1} END {print n ":" f}')" = "1:$FPR" ] \
+  &amp;&amp; echo "Keyring ok" \
+  || echo "WARNING: the keyring does not carry exactly the key $FPR — run step 1 again!"
+rm -rf "$CHK"
+
 # 2) Repo source (deb822); Signed-By binds the repo to exactly this key
 sudo tee /etc/apt/sources.list.d/adminhelper.sources &gt;/dev/null &lt;&lt;EOF
 Types: deb

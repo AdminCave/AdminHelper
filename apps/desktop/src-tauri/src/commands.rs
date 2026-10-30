@@ -237,10 +237,15 @@ where
     let server_url = sign_in_target(base, sent, None)?;
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
-        // The registration fails with `e` either way; a reset that fails too leaves the
-        // identity for the user's own reset.
-        let _ = reset(server_url).await;
-        return Err(e);
+        // The registration fails with `e` either way; the message says whether the identity
+        // went or stays for the user's own reset.
+        return Err(AppError::Validation(match reset(server_url).await {
+            Ok(_) => format!("{e}; the new device identity is reset, register again"),
+            Err(not_reset) => format!(
+                "{e}; resetting it failed, the device identity stays, reset it in the \
+                 settings: {not_reset}"
+            ),
+        }));
     }
     Ok(())
 }
@@ -1584,16 +1589,55 @@ mod tests {
         )
         .await;
 
-        assert_refused(
-            result,
+        let Err(AppError::Validation(msg)) = result else {
+            panic!("taken: {result:?}");
+        };
+        for says in [
             "this workspace took the URL of another server while this device registered",
-            "taken",
-        );
+            "the new device identity is reset, register again",
+        ] {
+            assert!(msg.contains(says), "{says:?} missing in {msg:?}");
+        }
         // Revoked where it was issued, and gone here; the workspace keeps the URL it took.
         assert_eq!(*reset_at.borrow(), [registered_at]);
         assert!(!enrollment::is_enrolled());
         assert!(!enrollment::holds_identity(&prefix).unwrap());
         assert_eq!(url_of(base, "w-0000000c").as_deref(), Some(other));
+    }
+
+    #[tokio::test]
+    async fn enroll_not_kept_whose_reset_fails_says_the_identity_stays() {
+        let scratch = Scratch::new("enroll-taken-reset-fails");
+        let base = &scratch.0;
+        server_workspaces(base, &[("w-0000000d", "Neu", None, None)]);
+        let _c = entered("w-0000000d");
+
+        let result = enroll_with_token_in(
+            base,
+            "https://ah.example.com",
+            |_| async {
+                let settings = Settings {
+                    server_url: Some("https://other.example.com".to_string()),
+                    ..Settings::default()
+                };
+                storage::save_settings_at(base, &settings)?;
+                Ok(())
+            },
+            |_| async { Err(AppError::Keyring("the keyring is locked".to_string())) },
+        )
+        .await;
+
+        let Err(AppError::Validation(msg)) = result else {
+            panic!("not refused as it should be: {result:?}");
+        };
+        for says in [
+            "this workspace took the URL of another server while this device registered",
+            "the device identity stays, reset it in the settings",
+            "the keyring is locked",
+        ] {
+            assert!(msg.contains(says), "{says:?} missing in {msg:?}");
+        }
+        assert!(!msg.contains("is reset"), "{msg:?}");
     }
 
     // ── Reset, pins and the cert check at the server of the workspace ──
