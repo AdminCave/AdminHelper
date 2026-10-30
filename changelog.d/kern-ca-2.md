@@ -7,3 +7,5 @@
 
 - **CA: Rotation trotz fremdem Zertifikat:** liegt unter `<scope>.crt` ein Zertifikat, das kein Zwischenzertifikat
   dieses Scopes ist, ersetzt die Rotation es auch dann, wenn es nach der Uhr des Hosts noch nicht gilt.
+- **Agent: Server-Zertifikat nur vom Gateway:** nach dem Enrollment nimmt der Agent fuer seine Aufrufe an den Server
+  nur ein Zertifikat an, das das `access`-Zwischenzertifikat ausgestellt hat.

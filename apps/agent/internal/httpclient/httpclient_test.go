@@ -243,3 +243,86 @@ func TestNewMTLSFailsClosedOnMissingClientCert(t *testing.T) {
 		t.Error("a missing client cert must error (fail closed, no cert-less client)")
 	}
 }
+
+// writeMTLSFiles writes the files NewMTLS reads: c's leaf as the client identity
+// and caDERs as the CA bundle.
+func writeMTLSFiles(t *testing.T, c threeTier, caDERs ...[]byte) (certPath, keyPath, caPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	keyDER, err := x509.MarshalPKCS8PrivateKey(c.leafKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ca []byte
+	for _, der := range caDERs {
+		ca = append(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	}
+	certPath, keyPath, caPath = filepath.Join(dir, "agent.crt"), filepath.Join(dir, "agent.key"), filepath.Join(dir, "ca.pem")
+	for path, data := range map[string][]byte{
+		certPath: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.leafDER}),
+		keyPath:  pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+		caPath:   ca,
+	} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return certPath, keyPath, caPath
+}
+
+func TestNewMTLSAcceptsAGatewayLeafOfTheAccessIntermediate(t *testing.T) {
+	for _, cn := range []string{"AdminHelper Access Intermediate", "AdminHelper Access Intermediate 2031-05-04"} {
+		c := makeThreeTier(t, cn)
+		srv, handled := serveChain(t, c.leafKey, c.leafDER, c.interDER)
+		certPath, keyPath, caPath := writeMTLSFiles(t, c, c.rootDER)
+		client, err := NewMTLS(certPath, keyPath, caPath, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("%s: Gateway-Leaf haette akzeptiert werden muessen: %v", cn, err)
+		}
+		resp.Body.Close()
+		if !*handled {
+			t.Fatalf("%s: Request hat den Handler nie erreicht", cn)
+		}
+	}
+}
+
+func TestNewMTLSRejectsAServerLeafOfAnotherScope(t *testing.T) {
+	// The agent's bundle holds its tunnel intermediate and the root, so the frps leaf
+	// verifies; it must still not pass for the gateway.
+	c := makeThreeTier(t, "AdminHelper Tunnel Intermediate")
+	srv, handled := serveChain(t, c.leafKey, c.leafDER, c.interDER)
+	certPath, keyPath, caPath := writeMTLSFiles(t, c, c.interDER, c.rootDER)
+	client, err := NewMTLS(certPath, keyPath, caPath, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Get(srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "not issued by the access intermediate") {
+		t.Fatalf("Leaf des tunnel-Intermediates haette abgelehnt werden muessen: %v", err)
+	}
+	if *handled {
+		t.Fatal("Request hat den Handler trotz Ablehnung erreicht")
+	}
+}
+
+func TestNewMTLSRejectsAServerCertTrustedDirectly(t *testing.T) {
+	// A certificate in the bundle itself has no issuing intermediate in its chain.
+	c := makeThreeTier(t, "AdminHelper Access Intermediate")
+	der, key := makeSoloCert(t, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	srv, handled := serveChain(t, key, der)
+	certPath, keyPath, caPath := writeMTLSFiles(t, c, der, c.rootDER)
+	client, err := NewMTLS(certPath, keyPath, caPath, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Get(srv.URL); err == nil || !strings.Contains(err.Error(), "not issued by the access intermediate") {
+		t.Fatalf("direkt vertrautes Server-Zertifikat haette abgelehnt werden muessen: %v", err)
+	}
+	if *handled {
+		t.Fatal("Request hat den Handler trotz Ablehnung erreicht")
+	}
+}

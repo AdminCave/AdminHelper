@@ -73,7 +73,8 @@ func New(cacert string, insecure bool, timeout time.Duration) (*http.Client, err
 // key PEM files) and trusts ONLY the given CA bundle — system roots are NOT
 // added (ADR 0001 D2: validate every leaf against our pinned CA, so even a
 // compromised public CA is rejected). Used for all server pushes once the agent
-// is enrolled.
+// is enrolled; those all go to the gateway, so the server certificate must also
+// be issued by the access intermediate (verifyGatewayIssuer).
 func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Client, error) {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
@@ -88,15 +89,35 @@ func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Cli
 		return nil, fmt.Errorf("CA-Zertifikat ungueltig")
 	}
 	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      pool,
-		MinVersion:   tls.VersionTLS12,
+		Certificates:     []tls.Certificate{cert},
+		RootCAs:          pool,
+		MinVersion:       tls.VersionTLS12,
+		VerifyConnection: verifyGatewayIssuer,
 	}
 	return &http.Client{
 		Timeout:       timeout,
 		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
 		CheckRedirect: noRedirect,
 	}, nil
+}
+
+// verifyGatewayIssuer runs after the default chain verification. The agent's CA
+// bundle holds the root and its tunnel intermediate, so a leaf of any scope under
+// the root verifies, the frps leaf among them; only the gateway's leaf is issued
+// by the access intermediate.
+func verifyGatewayIssuer(cs tls.ConnectionState) error {
+	for _, chain := range cs.VerifiedChains {
+		if len(chain) > 1 && isAccessIntermediate(chain[1]) {
+			return nil
+		}
+	}
+	issuer := "none"
+	if len(cs.PeerCertificates) > 0 {
+		issuer = cs.PeerCertificates[0].Issuer.CommonName
+	}
+	return fmt.Errorf(
+		"the presented server certificate is not issued by the access intermediate "+
+			"(issuer %q) — not the gateway of this server", issuer)
 }
 
 // ParseCAFingerprint normalizes a user-supplied SHA-256 certificate fingerprint

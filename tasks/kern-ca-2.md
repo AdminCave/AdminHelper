@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-2 · Review: am Ende
+Status: bereit · Branch: feature/kern-ca-2 · Review: am Ende
 Spec: docs/features/kern-ca-2.md (Roadmap R-0982, R-0945, R-0943)
 Heavy: linux-full — `apps/ca-issuer` und `apps/agent` (Sammellauf: Stack mit Enrollment, `agent_monitoring`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,10 +29,13 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py 
 Doku: docs/admin/betrieb.html#ca-rotation · docs/en/admin/operations.html#ca-rotation · changelog.d/kern-ca-2.md
 Abhängt von: T1
 
-### T3 — Agent: Server-Zertifikat nur vom access-Zwischenzertifikat (R-0943)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/httpclient/httpclient.go, apps/agent/internal/httpclient/httpclient_test.go, changelog.d/kern-ca-2.md
+### T3 — Agent: Server-Zertifikat nur vom access-Zwischenzertifikat (R-0943)  [x]
+Komponente: agent · Dateien: apps/agent/internal/httpclient/httpclient.go, apps/agent/internal/httpclient/httpclient_test.go, changelog.d/kern-ca-2.md, apps/agent/internal/enroll/renew_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @32129a75 2026-10-30T14:30:22+01:00
+Review: am Ende (Branch-Review)
 Änderung: `NewMTLS` setzt `VerifyConnection`: das Zertifikat nach dem Leaf in der geprüften Kette hat den CN `AdminHelper Access Intermediate` oder `AdminHelper Access Intermediate <Label>`; sonst Abbruch mit klarer Meldung. Tests mit einer Test-PKI: Gateway-artiges Leaf unter access → ok; Leaf unter tunnel → abgelehnt.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestNewMTLS
 Doku: changelog.d/kern-ca-2.md
 
 ## Entscheidungen
+- T3: Die drei Renew-Tests in `internal/enroll/renew_test.go` vertrauten dem selbstsignierten httptest-Zertifikat direkt; das lehnt `NewMTLS` jetzt gewollt ab. Ihre Fixture ist ein Gateway-Leaf unter einem access-Zwischenzertifikat, die Assertions bleiben.
