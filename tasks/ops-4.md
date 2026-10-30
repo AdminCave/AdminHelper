@@ -23,8 +23,10 @@ Schlüssels über Zeilen (`A="x` / `SECRET_KEY=a" SMTP_PASSWORD="c` / `leak3"`) 
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: changelog.d/ops-4.md
 
-### T2 — backup.sh: derselbe Tokenizer für den Passphrase-Filter (R-1014)  [ ]
-Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, scripts/tests/diagnostics_test.sh
+### T2 — backup.sh: derselbe Tokenizer für den Passphrase-Filter (R-1014)  [x]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, scripts/tests/diagnostics_test.sh, scripts/diagnostics.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1365c461 2026-10-30T18:53:17+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Filter in `scripts/backup.sh:121` baut auf einer Kopie des Tokenizer-Texts aus T1; ein Test hält
 beide Kopien byte-gleich. Neuer Fall: `CA_ROOT_PASSPHRASE` hinter dem über Zeilen offenen Quote eines anderen
 Schlüssels fehlt in `env.sanitized` des Backups.
@@ -47,3 +49,4 @@ Doku: changelog.d/ops-4.md
   zum Zeilenende. Zwei Kopien des awk-Texts (diagnostics.sh, backup.sh) statt `scripts/lib/`: sonst ändern sich
   install.sh und release.yml. Fall (q) ist mit der alten Fassung in `sanitize_env` rot, der Log-Teil war schon grün
   (env_values verfolgte den gesuchten Schlüssel hinter jedem Quote) und bleibt als Schutz.
+- T2: backup.sh trägt den Block zwischen `# >>> dotenv tokenizer` und `# <<< dotenv tokenizer` samt ENV_WS/ENV_SP/ENV_SEP (dafür aus dem Kopf von diagnostics.sh in den Block verschoben); (r) vergleicht beide Blöcke. Eine auskommentierte Zeile, die ein Passphrase-Span berührt, geht ganz (wie bisher bei Kommentarzeilen); 15c ist mit der alten Fassung rot (`pp8c'` blieb).

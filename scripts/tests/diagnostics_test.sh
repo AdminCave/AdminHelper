@@ -68,11 +68,12 @@
 #       arguments of sed;
 #   (o) the token forms are masked before .env values under 8 bytes, which are
 #       masked elsewhere too, and after longer ones, which go whole;
-#   (q) the quoted value of another key that runs on over lines is read as compose reads
-#       it: the line it runs on to goes from env.sanitized, and its value is masked;
 #   (p) a mask program that fails (env_values, also for --mask-hosts) stops the run
 #       with its error and an error of its own, and no bundle is written; so does a
-#       rule file that cannot be written.
+#       rule file that cannot be written;
+#   (q) the quoted value of another key that runs on over lines is read as compose reads
+#       it: the line it runs on to goes from env.sanitized, and its value is masked;
+#   (r) backup.sh holds the same dotenv tokenizer text.
 #
 # Run: bash scripts/tests/diagnostics_test.sh   (needs bash, coreutils, tar, gzip
 #      and the locale C.UTF-8: without it cases (c), (k) and the NBSP part of (l)
@@ -1198,6 +1199,14 @@ help_last="${help_out##*$'\n'}"
 rc=0
 bash "$ROOT/scripts/diagnostics.sh" --bogus > /dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || { echo "(h) --bogus: exit $rc, expected 2" >&2; fail=1; }
+
+# --- (r) backup.sh holds the same dotenv tokenizer -------------------------------------
+# Both scripts ship as files of their own, so each holds the text; it must not drift.
+tok_of() { sed -n '/^# >>> dotenv tokenizer/,/^# <<< dotenv tokenizer$/p' "$1"; }
+tok_d=$(tok_of "$ROOT/scripts/diagnostics.sh")
+tok_b=$(tok_of "$ROOT/scripts/backup.sh")
+{ grep -q "^ENV_TOK='" <<<"$tok_d" && grep -q '^# <<< dotenv tokenizer$' <<<"$tok_d" && [ "$tok_d" = "$tok_b" ]; } \
+    || { echo "(r) the dotenv tokenizer of backup.sh differs from that of diagnostics.sh" >&2; fail=1; }
 
 if [ "$fail" != 0 ]; then
     echo "diagnostics_test: FAILED" >&2

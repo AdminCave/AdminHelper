@@ -66,17 +66,6 @@ SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD SERVER_DB_PASSWORD SCHEDULER_DB_PASSWO
 # frequent cause the bundle is meant to show.
 HOST_KEYS=(DOMAIN EXTRA_SANS CA_FRPS_EXTRA_SANS ALLOWED_IPS FRP_SERVER_ADDR TRUSTED_PROXIES SMTP_HOST SMTP_FROM)
 
-# The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
-# bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
-# whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
-# LINE and PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC
-# SPACE; compose trims it from the end of an unquoted value. In front of a key it skips
-# that and a BOM: ENV_SP (as the .env filter of backup.sh). Between key and separator,
-# and between separator and value, it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
-ENV_WS="([[:space:]]|"$'\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
-ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
-ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
-
 # mask_error : the message of a mask program that failed; the run then writes no bundle.
 mask_error() {
     echo "[diagnostics] ERROR: the values of .env could not be read for the masking (see above) — no bundle written." >&2
@@ -232,7 +221,18 @@ SED
         done
 }
 
-# >>> dotenv tokenizer (scripts/backup.sh holds the same text; a test keeps the two equal)
+# >>> dotenv tokenizer: diagnostics.sh and backup.sh hold the same text, a test keeps it so
+# The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
+# bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
+# whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
+# LINE and PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC
+# SPACE; compose trims it from the end of an unquoted value. In front of a key it skips
+# that and a BOM: ENV_SP. Between key and separator, and between separator and value,
+# it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
+ENV_WS="([[:space:]]|"$'\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
+ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
+ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
+
 # ENV_TOK: awk functions that find the statements of a .env, for LC_ALL=C awk (byte
 # for byte: a NUL byte or a byte outside UTF-8 passes). The program appends every line
 # with a newline to S, defines want(k) (1 for a key whose values it needs) and
