@@ -839,11 +839,11 @@ app_not_dumpable() {
         # a. Every process of app has /proc/<pid>/status owned by root.
         if ! procs=$(app_procs "$svc"); then
             bad "$svc: could not read the processes"
-        elif others=$(awk '$2 != "0:0"' <<<"$procs" | paste -sd ';') && [ -n "$procs" ] && [ -z "$others" ]; then
+        elif others=$(awk '$2 != "0:0" { print $2 " " $3 }' <<<"$procs" | sort -u | paste -sd ';') && [ -n "$procs" ] && [ -z "$others" ]; then
             ok "$svc: processes of app: $(wc -l <<<"$procs")" \
                 "($(awk '{ print $3 }' <<<"$procs" | sort -u | paste -sd ' ')), each /proc/<pid>/status owned by 0:0"
         else
-            bad "$svc: processes of app whose /proc/<pid>/status is not 0:0 (pid owner name): ${others:-none of app}"
+            bad "$svc: processes of app whose /proc/<pid>/status is not 0:0 (owner name): ${others:-none of app}"
         fi
         # b. No ELF program with an x bit in EXEC_ONLY_DIRS is readable by group or others.
         if ! modes=$(elf_modes "$svc"); then
@@ -876,7 +876,7 @@ app_not_dumpable() {
     elif [ "${LAST#* }" = "$APP_UID:$gid sleep-readable" ]; then
         ok "counter-check: a readable copy of sleep started through gosu keeps /proc/<pid>/status as $APP_UID:$gid"
     else
-        bad "counter-check: the readable copy of sleep has '$LAST', expected $APP_UID:$gid" \
+        bad "counter-check: the readable copy of sleep has '${LAST#* }', expected $APP_UID:$gid" \
             "— the check could not fail"
     fi
     # shellcheck disable=SC2016 # expanded by the container's sh

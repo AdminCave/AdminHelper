@@ -21,8 +21,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Tests)
 Task-Review: am Ende
 
-### T2 — Test-Skripte: stabile FAIL-Zeilen, Negativ-Check mit Beleg, keine .env im Fehlerfall (R-0899)  [ ]
+### T2 — Test-Skripte: stabile FAIL-Zeilen, Negativ-Check mit Beleg, keine .env im Fehlerfall (R-0899)  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/multibox_test.sh, scripts/tests/init-secrets_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @745f075c 2026-10-30T12:50:28+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-0899 integration_stack_test.sh (`app_not_dumpable`: PIDs in zwei FAIL-Zeilen), multibox_test.sh `! grep -q 'frps-egress' "$FAKE_LOG"`, init-secrets_test.sh `tr '\n' ' ' < "$ENV"` in `bad`-Zeilen
 Dedup-Key: ref:scripts:integration_stack_test.sh:unstable-fail-ids
 Änderung: (a) die zwei FAIL-Zeilen mit PIDs nennen sie nicht mehr (Anzahl und Namen statt PIDs; das Detail geht ins Log darüber); (b) der Negativ-Check in `multibox_test.sh` verlangt zuerst, dass `$FAKE_LOG` existiert und nicht leer ist, Gegenprobe: Log loeschen → rot; (c) `init-secrets_test.sh` zeigt im roten Fall nur die Schluesselnamen (`cut -d= -f1`) statt der Werte.
