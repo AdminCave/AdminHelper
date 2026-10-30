@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.auth import get_current_admin, get_current_user
 from app.core.bounds import IntPk
 from app.core.database import get_db
-from app.modules.frp._helpers import get_allow_users, get_frp_config
+from app.modules.frp._helpers import frpc_sync_inputs, get_allow_users, get_frp_config
 from app.modules.frp.config_generator import (
     active_tunnels,
     generate_frpc_toml,
@@ -88,30 +88,17 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     if name_refused(server.name):
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
 
-    # Left out before the check, the same set the generator writes (active_tunnels): a
-    # server whose tunnels all lack a usable secret or local_port, or carry a stored value
-    # the API would refuse, has no tunnel to configure, and its frpc.toml would carry the
-    # frps auth token for nothing.
-    tunnels = active_tunnels(
-        db.query(FrpTunnel)
-        .filter(
-            FrpTunnel.server_id == server_id,
-            FrpTunnel.enabled.is_(True),
-        )
-        .all()
-    )
-    if not tunnels:
+    # The inputs of the agent's sync and of the provisioning bundle (frpc_sync_inputs), so
+    # an admin sees the text the host runs. Without an active tunnel (active_tunnels) the
+    # text carries no tunnel to configure, so it is refused rather than shown.
+    inputs = frpc_sync_inputs(db, server_id)
+    if inputs is None:
+        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    config, tunnels, allow_users = inputs
+    if not active_tunnels(tunnels):
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
 
-    config = (
-        db.query(FrpServerConfig).filter(FrpServerConfig.id == tunnels[0].frp_config_id).first()
-    )
-    if not config:
-        raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
-
-    frpc_user = server.name
-    allow_users = get_allow_users(db, server_id)
-    toml = generate_frpc_toml(config, tunnels, frpc_user, allow_users)
+    toml = generate_frpc_toml(config, tunnels, server.name, allow_users)
     return PlainTextResponse(toml, media_type="application/toml")
 
 
@@ -222,7 +209,7 @@ def gen_bulk_zip(
 
         for server_id, tunnels in by_server.items():
             server = servers_by_id.get(server_id)
-            # A refused name gets no tunnel (generate_frpc_toml) and is no safe path either.
+            # A refused name gets no tunnel (generate_frpc_toml).
             if not server or name_refused(server.name):
                 continue
             allow_users = get_allow_users(db, server_id)
@@ -235,13 +222,13 @@ def gen_bulk_zip(
         stcp_tunnels = without_refused_server_name(
             without_unbindable_visitor([t for t in all_tunnels if t.tunnel_type == "stcp"])
         )
-        users_with_servers = [
-            u
-            for u in db.query(User).filter(User.servers.any()).all()
-            if not name_refused(u.username)
-        ]
+        users_with_servers = db.query(User).filter(User.servers.any()).all()
         if users_with_servers:
             for user in users_with_servers:
+                # The generator cannot write a name the API refuses; filtered here, not
+                # above, so such a user does not turn the ZIP into the shared visitor.toml.
+                if name_refused(user.username):
+                    continue
                 u_server_ids = {s.id for s in user.servers}
                 u_tunnels = [t for t in stcp_tunnels if t.server_id in u_server_ids]
                 if u_tunnels:

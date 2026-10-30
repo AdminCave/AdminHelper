@@ -19,8 +19,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_toml_roundt
 Doku: → T3
 Test-Löschung: apps/server/tests/test_frp_toml_roundtrip.py::test_allow_users_is_only_safe_because_usernames_are_validated — hält fest, dass der Generator allowUsers ungeprüft schreibt; ersetzt durch einen Test, dass er den Namen auslässt (die Schema-Hälfte bleibt).
 
-### T2 — frpc-toml-Route über frpc_sync_inputs (R-0973)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_permissions.py
+### T2 — frpc-toml-Route über frpc_sync_inputs (R-0973)  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_permissions.py, apps/server/tests/test_frp_provision_sync.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5757bfc5 2026-10-30T14:51:51+01:00
+Review: approve (.ah-out/review/kern-frp-2/T2.verdict.json)
 Beweis: security kern-frp-1 T2 2026-10-29 · generate_router.py `gen_frpc_toml` (Config aus `tunnels[0].frp_config_id`)
 Änderung: `gen_frpc_toml` holt Config, Tunnel und allowUsers aus `frpc_sync_inputs`, wie Sync und Bundle; Test: Server mit Tunneln in zwei Configs bekommt denselben Text wie `GET /api/frp/provision/{id}/config` (erst rot).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions.py tests/test_frp_provision_sync.py

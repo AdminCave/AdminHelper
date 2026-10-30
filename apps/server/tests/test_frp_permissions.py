@@ -550,6 +550,8 @@ class TestNamesTheApiRefuses:
         names = zf.namelist()
         assert "clients/serverB/frpc.toml" in names, names
         assert not any(self.REFUSED in n or "eve" in n for n in names), names
+        # The only user with servers is left out: no shared visitor.toml in its place.
+        assert "visitor.toml" not in names, names
         for n in names:
             tomllib.loads(zf.read(n).decode())  # every file still parses
         assert all(self.REFUSED not in zf.read(n).decode() for n in names)
