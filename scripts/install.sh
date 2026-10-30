@@ -51,6 +51,8 @@ RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/p
 DOMAIN=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD=""
+# The password reaches create-admin on stdin only; a caller's export must not pass it to every child.
+export -n ADMIN_PASSWORD
 ADMIN_PASSWORD_FILE=""
 ENROLL_TTL=60
 TARGET_DIR="adminhelper"
