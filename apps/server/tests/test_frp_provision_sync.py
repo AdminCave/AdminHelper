@@ -192,6 +192,61 @@ class TestConfigHash:
         assert res.status_code == 200, res.text
         assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
 
+    def test_the_admin_frpc_toml_route_serves_the_sync_text(
+        self, test_client, db_session, admin_user
+    ):
+        # R-0973: GET /generate/frpc-toml/{id} took its config from the first tunnel, so a
+        # server with tunnels under two configs got another text than its agent syncs.
+        _server(db_session)
+        cfg = _frp_config(db_session)
+        later = FrpServerConfig(
+            id="cfg-later",
+            name="Later",
+            server_addr="frps-later.example.test",
+            bind_port=7000,
+            auth_token="later-frps-auth-token",
+            created_at=cfg.created_at + timedelta(days=1),
+        )
+        db_session.add(later)
+        db_session.commit()
+        _add_tunnel(db_session, cfg, "own-ssh")
+        # Sorts first (active_tunnels sorts by name), so the old route took cfg-later.
+        _add_tunnel(db_session, later, "a-later-ssh")
+        synced = test_client.get(
+            "/api/frp/provision/srv-sync/config", headers=_agent_key(db_session, "srv-sync")
+        )
+        assert synced.status_code == 200, synced.text
+        admin = test_client.get(
+            "/api/frp/generate/frpc-toml/srv-sync", headers=_admin_jwt(test_client)
+        )
+        assert admin.status_code == 200, admin.text
+        assert admin.text == synced.text
+        assert "later-frps-auth-token" not in admin.text
+
+    def test_the_admin_frpc_toml_route_refuses_a_tunnel_only_in_a_later_config(
+        self, test_client, db_session, admin_user
+    ):
+        # The sync takes the earliest config; a tunnel under a later one is not in its
+        # text, so the admin route has no tunnel to show either.
+        _server(db_session)
+        cfg = _frp_config(db_session)
+        later = FrpServerConfig(
+            id="cfg-later",
+            name="Later",
+            server_addr="frps-later.example.test",
+            bind_port=7000,
+            auth_token="later-frps-auth-token",
+            created_at=cfg.created_at + timedelta(days=1),
+        )
+        db_session.add(later)
+        db_session.commit()
+        _add_tunnel(db_session, later, "a-later-ssh")
+        admin = test_client.get(
+            "/api/frp/generate/frpc-toml/srv-sync", headers=_admin_jwt(test_client)
+        )
+        assert admin.status_code == 404, admin.text
+        assert "later-frps-auth-token" not in admin.text
+
     def test_the_hash_stays_when_a_tunnel_row_moves_in_the_table(self, test_client, db_session):
         # connection_id is indexed but not part of the frpc config: updating it is
         # no HOT update, so the new row version lands behind b-rdp and Postgres
