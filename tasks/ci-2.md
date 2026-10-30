@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ci-2 — Task-Ledger
-Status: aktiv · Branch: feature/ci-2 · Review: am Ende
+Status: bereit · Branch: feature/ci-2 · Review: am Ende
 Spec: docs/features/ci-2.md (Roadmap R-0950)
 Heavy: none — nur Test-Auswahl in conftest und CI-Jobs; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,10 +21,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py
 Doku: → T2
 
-### T2 — CI: Server-pytest-Jobs in zwei Shards mit Sammeljob (R-0950)  [ ]
+### T2 — CI: Server-pytest-Jobs in zwei Shards mit Sammeljob (R-0950)  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_shards.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d36f47cf 2026-10-30T18:18:48+01:00
+Review: am Ende (Branch-Review)
 Änderung: `server` (`ci.yml:31`) läuft als Matrix Python × Shard 1..2 mit `--shard`, Skip-Prüfung je 3.13-Shard; ein Sammeljob je Python trägt die Pflicht-Namen `Server (pytest, py3.12|py3.13)` und ist nur bei Erfolg aller Shards grün. `python-lock-server` (`ci.yml:236`) ebenso in zwei Shards. `test_ci_shards.py` (SPDX) prüft, dass Matrix und `--shard` zueinander passen und die Sammeljobs die Pflicht-Namen tragen.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py tests/test_shard.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py tests/test_shard.py tests/test_release_images.py
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (Server-Jobs in Shards, Sammeljob, Skip-Prüfung je Shard)
 Abhängt von: T1
 
