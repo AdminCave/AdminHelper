@@ -591,15 +591,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # A stalled mirror hung this step until the job's 45-minute limit (run 39776102278).
-      # The step limit caps that at 10 minutes; the apt options make a stalled transfer
-      # fail after 30 s and retry it instead (normally the step takes under a minute).
+      # A slow apt mirror held this step in tauri-build-smoke until that job's limit
+      # (run 39776102278). The step normally takes under a minute; its own limit makes a
+      # bad mirror cost 10 minutes, not the job.
       - name: Tauri system dependencies
         timeout-minutes: 10
         run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-            install -y --no-install-recommends \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
             libayatana-appindicator3-dev libssl-dev patchelf file
       - name: frpc sidecar (externalBin must resolve for tauri-build)
@@ -666,15 +665,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # A stalled mirror hung this step until the job's 45-minute limit (run 39776102278).
-      # The step limit caps that at 10 minutes; the apt options make a stalled transfer
-      # fail after 30 s and retry it instead (normally the step takes under a minute).
+      # A slow apt mirror held this step until the job's 45-minute limit
+      # (run 39776102278). The step normally takes under a minute; its own limit makes a
+      # bad mirror cost 10 minutes, not the job.
       - name: Tauri system dependencies
         timeout-minutes: 10
         run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-            install -y --no-install-recommends \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
             libayatana-appindicator3-dev libssl-dev patchelf file
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
