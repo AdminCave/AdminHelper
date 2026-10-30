@@ -104,6 +104,45 @@ def test_idempotent_keeps_existing_leaf_key(tmp_path):
     assert (tmp_path / "gateway-fullchain.pem").read_bytes() == cert_before
 
 
+def _names(path) -> tuple[set[str], set]:
+    leaf = x509.load_pem_x509_certificates(path.read_bytes())[0]
+    san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    return set(san.get_values_for_type(x509.DNSName)), set(san.get_values_for_type(x509.IPAddress))
+
+
+def test_remints_when_extra_sans_change(tmp_path):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="alt.example")
+    key_before = (tmp_path / "gateway.key").read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="alt.example, 192.0.2.10")
+
+    dns, ips = _names(tmp_path / "gateway-fullchain.pem")
+    assert ipaddress.ip_address("192.0.2.10") in ips
+    assert "alt.example" in dns
+    assert (tmp_path / "gateway.key").read_bytes() != key_before
+
+
+def test_remints_when_the_domain_changes(tmp_path):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "old.example")
+
+    ensure_gateway_cert(tmp_path, access, "new.example")
+
+    dns, _ = _names(tmp_path / "gateway-fullchain.pem")
+    assert "new.example" in dns and "old.example" not in dns
+
+
+def test_keeps_the_leaf_when_extra_sans_only_change_order_or_spacing(tmp_path):
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans="alt.example,192.0.2.10")
+    cert_before = (tmp_path / "gateway-fullchain.pem").read_bytes()
+
+    ensure_gateway_cert(tmp_path, access, "admin.example", extra_sans=" 192.0.2.10 , alt.example ")
+
+    assert (tmp_path / "gateway-fullchain.pem").read_bytes() == cert_before
+
+
 def test_gateway_key_is_0600(tmp_path):
     access, _ = _access_intermediate()
     ensure_gateway_cert(tmp_path, access, "localhost")

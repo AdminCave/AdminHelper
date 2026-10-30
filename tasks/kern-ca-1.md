@@ -27,8 +27,10 @@ Beweis: R-0834 feature/ca-issuer-lifetime@7e06dfa0 apps/ca-issuer/app/storage.py
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_rotation.py
 Doku: changelog.d/kern-ca-1.md
 
-### T2 — storage: Server-Leaf neu ausstellen, wenn sich die SANs ändern  [ ]
+### T2 — storage: Server-Leaf neu ausstellen, wenn sich die SANs ändern  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_gateway_cert.py, apps/ca-issuer/tests/test_frps_cert.py, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-ca-1.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @175bd5a3 2026-10-30T01:13:09+01:00
+Review: approve (.ah-out/review/kern-ca-1/T2.verdict.json)
 Änderung: R-0880: `_provision_server_material` (`storage.py:373`) vergleicht die DNS- und IP-SANs des vorhandenen Leafs als Menge mit `_classify_sans(primary, extra_sans)` (`storage.py:309`) und stellt bei Abweichung neu aus; ein unverändertes Leaf bleibt. Doku-Satz zur Neuausstellung bei geänderter `DOMAIN`/`EXTRA_SANS`.
 Beweis: R-0880 feature/agent-run-ctx@f3c2b1db apps/ca-issuer/app/storage.py:212-218 (Code-Lesung) · Dedup-Key: bug:ca-issuer:storage.py:extra-sans-no-reissue
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py

@@ -381,6 +381,20 @@ def _presents_after_leaf(fullchain_path: Path, chain_pem: bytes) -> bool:
     return _chain_is(chain_pem, certs[1:])
 
 
+def _names_are(
+    fullchain_path: Path, dns_names: tuple[str, ...], ip_addresses: tuple[str, ...]
+) -> bool:
+    """Whether the leaf in fullchain_path names exactly dns_names and ip_addresses, in any order."""
+    try:
+        leaf = x509.load_pem_x509_certificate(fullchain_path.read_bytes())
+        san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except (OSError, ValueError, x509.ExtensionNotFound):
+        return False
+    return set(san.get_values_for_type(x509.DNSName)) == set(dns_names) and set(
+        san.get_values_for_type(x509.IPAddress)
+    ) == {ipaddress.ip_address(ip) for ip in ip_addresses}
+
+
 def _holds_key(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> bool:
     """Whether `key` is the private half of `cert`'s public key."""
     spki = serialization.PublicFormat.SubjectPublicKeyInfo
@@ -407,8 +421,9 @@ def _provision_server_material(
     Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
     the leaf is kept across restarts but re-minted once past half its life (F4) so
     it never expires under a long-running stack, once the current intermediate
-    did not sign it (the first boot after a rotation), or once the file does not
-    present what follows the leaf now (a fullchain from before send_root)."""
+    did not sign it (the first boot after a rotation), once the file does not
+    present what follows the leaf now (a fullchain from before send_root), or once
+    its names differ from primary + extra_sans (a changed DOMAIN or EXTRA_SANS)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Trust bundle = the signing intermediate's chain (root already in it) and its
     # retired intermediates, plus any extra trust intermediates (e.g. frps also
@@ -437,6 +452,9 @@ def _provision_server_material(
     # And require the certificates after the leaf to be `presented`: a gateway fullchain from
     # before the root went along would otherwise fail a `--ca-fp` pinned on the root until half
     # the leaf's life.
+    # And require the leaf to name what DOMAIN and EXTRA_SANS name now: a changed name would
+    # otherwise reach the leaf only after half its life (R-0880).
+    dns_names, ip_addresses = _classify_sans(primary, extra_sans)
     if (
         cert_path.exists()
         and key_path.exists()
@@ -444,10 +462,10 @@ def _provision_server_material(
         and _pair_matches(cert_path, key_path)
         and _leaf_signed_by(cert_path, inter.cert)
         and _presents_after_leaf(cert_path, presented)
+        and _names_are(cert_path, dns_names, ip_addresses)
     ):
         return
 
-    dns_names, ip_addresses = _classify_sans(primary, extra_sans)
     leaf, leaf_key = pki.build_server_leaf(inter.cert, inter.key, primary, dns_names, ip_addresses)
     # fullchain = leaf + `presented` (what the server sends on the wire).
     cert_path.write_bytes(pki.cert_to_pem(leaf) + presented)
