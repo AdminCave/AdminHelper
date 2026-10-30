@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-monitoring-2 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-monitoring-2 · Review: am Ende
+Status: erledigt · Branch: feature/klein-tests-monitoring-2 · Review: am Ende
 Spec: docs/features/klein-tests-monitoring-2.md (Roadmap R-0966, R-0977)
 Heavy: none — nur Unit-Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
