@@ -237,15 +237,15 @@ where
     let server_url = sign_in_target(base, sent, None)?;
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
-        // The registration fails with `e` either way; a reset that fails too leaves the
-        // identity for the user's own reset, and the message says so.
-        if let Err(not_reset) = reset(server_url).await {
-            return Err(AppError::Validation(format!(
+        // The registration fails with `e` either way; the message says whether the identity
+        // went or stays for the user's own reset.
+        return Err(AppError::Validation(match reset(server_url).await {
+            Ok(_) => format!("{e}; the new device identity is reset, register again"),
+            Err(not_reset) => format!(
                 "{e}; resetting it failed, the device identity stays, reset it in the \
                  settings: {not_reset}"
-            )));
-        }
-        return Err(e);
+            ),
+        }));
     }
     Ok(())
 }
@@ -1589,11 +1589,15 @@ mod tests {
         )
         .await;
 
-        assert_refused(
-            result,
+        let Err(AppError::Validation(msg)) = result else {
+            panic!("taken: {result:?}");
+        };
+        for says in [
             "this workspace took the URL of another server while this device registered",
-            "taken",
-        );
+            "the new device identity is reset, register again",
+        ] {
+            assert!(msg.contains(says), "{says:?} missing in {msg:?}");
+        }
         // Revoked where it was issued, and gone here; the workspace keeps the URL it took.
         assert_eq!(*reset_at.borrow(), [registered_at]);
         assert!(!enrollment::is_enrolled());
@@ -1633,6 +1637,7 @@ mod tests {
         ] {
             assert!(msg.contains(says), "{says:?} missing in {msg:?}");
         }
+        assert!(!msg.contains("is reset"), "{msg:?}");
     }
 
     // ── Reset, pins and the cert check at the server of the workspace ──

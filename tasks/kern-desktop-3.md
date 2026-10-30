@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-3 · Review: pro Task
 Spec: docs/features/kern-desktop-3.md (Roadmap R-0962, R-0961, R-0984, R-0981)
 Heavy: linux-full — Desktop-Journeys: Tunnel-Abgleich (Visitor-Bundle) und Geräte-Reset
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,8 +39,10 @@ Beweis: PR #326 CI 2026-10-30 · gh run view 40972646852 --job 123792900394: lau
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher
 Doku: keine (nur Tests)
 
-### T4 — Rollback-Meldung ohne Widerspruch (R-0984, Fund der Abschlussprüfung)  [ ]
+### T4 — Rollback-Meldung ohne Widerspruch (R-0984, Fund der Abschlussprüfung)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @aa9f1d4d 2026-10-30T15:30:28+01:00
+Review: approve (.ah-out/review/kern-desktop-3/T4.verdict.json)
 Änderung: `URL_TAKEN` (`storage.rs:337`) sagt schon „the new device identity is reset, register again“, auch wenn das Zurücksetzen danach scheitert (T2 hängt dann „the device identity stays“ an). Der Satz wandert aus `URL_TAKEN` in den Erfolgszweig von `enroll_with_token_in` (`commands.rs:239-250`); jeder Zweig nennt nur, was geschah. Test: der Fehlerfall enthält „is reset, register again“ nicht, der Erfolgsfall enthält es.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
 Doku: keine (die Meldung steht in docs/ nicht wörtlich; der CHANGELOG-Eintrag aus T2 deckt sie)

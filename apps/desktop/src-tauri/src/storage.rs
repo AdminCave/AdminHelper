@@ -334,8 +334,8 @@ fn meta_lock() -> MutexGuard<'static, ()> {
 }
 
 /// Why [`keep_enrolled_url`] fails for a workspace that took another server meanwhile.
-const URL_TAKEN: &str = "this workspace took the URL of another server while this device \
-     registered; the new device identity is reset, register again";
+const URL_TAKEN: &str =
+    "this workspace took the URL of another server while this device registered";
 
 /// Makes `url`, where a registration of this device just succeeded, the URL of the workspace of
 /// this process in the app data dir `base`, if it has none yet: the identity is that server's,
