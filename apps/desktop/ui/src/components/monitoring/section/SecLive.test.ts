@@ -327,3 +327,14 @@ describe('SecLive in English', () => {
     ]);
   });
 });
+
+describe('SecLive details of the wrong form', () => {
+  // A field of the wrong type counts as missing; a disk list that is no list
+  // made the section throw.
+  it('drops a field of the wrong type and keeps the others', () => {
+    setLanguage('de');
+    const wrong = { ...v3(), cpu: '12', disks: '/' } as unknown as MonitorResourceDetails;
+    const { container: el } = render(SecLive, { props: { checks: [check(wrong)] } });
+    expect(pills(el).map(text)).toEqual(['RAM 40%', 'Swap 5%', 'Load 0.42/CPU']);
+  });
+});

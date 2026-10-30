@@ -30,10 +30,12 @@ export function watchIdle(
   const limitMs = minutes * 60_000;
 
   // Otherwise closing the tab would get around the limit: the refresh cookie outlives it.
-  // A missing time or blocked storage reads as null, which must not count as 0 (1970).
+  // A missing time or blocked storage reads as null, which must not count as 0 (1970). A time
+  // after the clock (set back since) leaves the age unknown, so it ends the session too.
   if (restored) {
     const stored = storageGet(LAST_ACTIVITY_KEY);
-    if (stored !== null && Date.now() - Number(stored) >= limitMs) {
+    const age = Date.now() - Number(stored);
+    if (stored !== null && (age >= limitMs || age < 0)) {
       onIdle();
       return () => {};
     }

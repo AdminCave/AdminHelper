@@ -55,8 +55,6 @@ class UserMe(BaseModel):
     is_admin: bool
     idle_timeout_minutes: int
 
-    model_config = {"from_attributes": True}
-
 
 # Users
 class UserCreate(RequestModel):
@@ -71,6 +69,18 @@ class UserUpdate(RequestModel):
     password: Optional[str] = Field(default=None, min_length=8, max_length=PASSWORD_MAX_LEN)
     is_admin: Optional[bool] = None
     server_ids: Optional[list[str]] = None
+
+
+class LogoutOut(BaseModel):
+    detail: str
+
+
+class MyServerOut(BaseModel):
+    """A server assigned to the caller."""
+
+    id: str
+    name: str
+    hostname: str
 
 
 class UserResponse(BaseModel):

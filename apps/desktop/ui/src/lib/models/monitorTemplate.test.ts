@@ -86,7 +86,7 @@ describe('templateToForm', () => {
           enabled: true,
         },
       ],
-      assignments: [{ serverId: 's1', serverName: 'srv-1' }],
+      assignments: [{ id: 'a-1', templateId: 't1', serverId: 's1', serverName: 'srv-1' }],
     };
     const f = templateToForm(tpl);
     expect(f.name).toBe('Base');
