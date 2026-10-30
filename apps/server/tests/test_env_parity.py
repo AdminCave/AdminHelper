@@ -173,6 +173,21 @@ def _secret_sources() -> set[str]:
     return {spec["environment"] for spec in secrets.values() if "environment" in (spec or {})}
 
 
+def test_secret_sources_lists_only_environment_backed_secrets(tmp_path, monkeypatch):
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text(
+        "secrets:\n"
+        "  from_env:\n"
+        "    environment: FROM_ENV_VAR\n"
+        "  from_file:\n"
+        "    file: ./secret.txt\n"
+        "  empty:\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(f"{__name__}._COMPOSE", compose)
+    assert _secret_sources() == {"FROM_ENV_VAR"}
+
+
 def _substituted_and_documented() -> tuple[set[str], set[str]]:
     return (
         set(_SUBSTITUTION.findall(_COMPOSE.read_text(encoding="utf-8"))) | _secret_sources(),

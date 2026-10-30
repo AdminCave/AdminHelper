@@ -29,6 +29,8 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+# The keys of a .env for a FAIL line: its values are secrets, even generated test ones.
+envkeys() { LC_ALL=C cut -d= -f1 "$1" | cat -v | tr '\n' ' '; }
 val() { grep -E "^$1=" "$2" | head -1 | sed -E "s/^$1=//; s/^\"//; s/\"\$//"; }
 
 # ── 1. fresh generation: empty secrets get 64-hex values ─────────────────────
@@ -93,7 +95,7 @@ echo "$out" | sed 's/^/    │ /'
 { grep -q '^Fehler: .*SECRET_KEY' <<<"$out" && ! grep -qE '[0-9a-f]{64}' <<<"$out"; } \
   && ok "error names the key SECRET_KEY, not its value" || bad "no error line naming SECRET_KEY, or a value in the output"
 cmp -s "$WORK/env4.orig" "$ENV" && ok ".env byte-identical after the failed write" \
-  || bad ".env changed by the failed write: $(tr '\n' ' ' < "$ENV")"
+  || bad ".env changed by the failed write: keys: $(envkeys "$ENV")"
 ! compgen -G "$ENV.ah-*" >/dev/null && ok "no .env.ah-* copy left behind" \
   || bad "copies left: $(compgen -G "$ENV.ah-*" | tr '\n' ' ')"
 
@@ -135,7 +137,7 @@ for k in POSTGRES_PASSWORD CA_ROOT_PASSPHRASE; do
   [ "$(LC_ALL=C grep -a -c -x -E "$k=[0-9a-f]{64}" "$ENV")" = 1 ] || both=0
 done
 [ "$both" = 1 ] && ok "fresh install: POSTGRES_PASSWORD and CA_ROOT_PASSPHRASE generated (64-hex, one line each)" \
-  || bad "fresh install: .env now $(tr '\n' ' ' < "$ENV")"
+  || bad "fresh install: .env now keys: $(envkeys "$ENV")"
 ! grep -qF "$CA_HINT" <<<"$out" && ok "fresh install: no hint" || bad "fresh install: the hint, though both were generated: $out"
 
 # ── 7. bytes outside UTF-8 or a NUL byte: no line lost, no set secret renewed ─
@@ -163,7 +165,7 @@ else
     [ $rc -eq 0 ] && ok "$how: exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "$how: exit $rc"; }
     LC_ALL=C grep -a -v '^SECRET_KEY=' "$ENV" | cmp -s - "$ENV.keep" \
       && ok "$how: every line but SECRET_KEY byte for byte as it was" \
-      || bad "$how: .env now $(cat -v "$ENV" | tr '\n' ' ')"
+      || bad "$how: .env now keys: $(envkeys "$ENV")"
     [ "$(LC_ALL=C grep -a -c -x -E 'SECRET_KEY=[0-9a-f]{64}' "$ENV")" = 1 ] \
       && ok "$how: SECRET_KEY generated (64-hex), one line" || bad "$how: no single 64-hex SECRET_KEY line"
     grep -qxF "→ Generiert in $ENV: SECRET_KEY" <<<"$out" \
@@ -209,7 +211,7 @@ else
   [ "${#v}" -eq 64 ] && ok "read-only .env on a terminal: SECRET_KEY generated (64-hex)" \
     || bad "read-only .env on a terminal: SECRET_KEY '$v'"
   grep -v '^SECRET_KEY=' "$ENV" | cmp -s - "$ENV.keep" \
-    && ok "read-only .env on a terminal: the set secrets as they were" || bad "read-only .env on a terminal: .env now $(tr '\n' ' ' < "$ENV")"
+    && ok "read-only .env on a terminal: the set secrets as they were" || bad "read-only .env on a terminal: .env now keys: $(envkeys "$ENV")"
   [ "$(stat -c %a "$ENV")" = 600 ] && ok "read-only .env on a terminal: mode 600 afterwards" \
     || bad "read-only .env on a terminal: mode $(stat -c %a "$ENV")"
 fi
@@ -229,7 +231,7 @@ printf '%s\n' SECRET_KEY=s1 MONITOR_API_KEY=m1 POSTGRES_PASSWORD=p1 CA_ROOT_PASS
 bash "$INIT" "$ENV" >/dev/null 2>&1
 { [ "$(val POSTGRES_PASSWORD "$ENV")" = p1 ] && [ "$(val SERVER_DB_PASSWORD "$ENV")" = keep ] \
   && [ -z "$(val CA_ROOT_PASSPHRASE "$ENV")" ]; } \
-  && ok "existing .env: set secrets and an existing role password unchanged" || bad "existing .env: $(tr '\n' ' ' < "$ENV")"
+  && ok "existing .env: set secrets and an existing role password unchanged" || bad "existing .env: keys: $(envkeys "$ENV")"
 added=1
 for k in SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
   v=$(val "$k" "$ENV"); [ "${#v}" -eq 64 ] || added=0

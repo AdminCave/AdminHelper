@@ -989,9 +989,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 
+DATA_DIR="${TMPDIR:-/tmp}/adminhelper-monitor" \
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
+
+**`DATA_DIR`:** Der Dienst legt das Verzeichnis beim Import an; der Default `/app/data` gehört dem Container, ohne Root scheitert der Start dort mit `PermissionError: '/app'` (`apps/monitoring/app/core/config.py`). Im Verzeichnis liegt die automatisch erzeugte `.api_key`, solange `MONITOR_API_KEY` nicht gesetzt ist.
 
 **Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut im Stack nur der Einmal-Dienst `db-init` (`python -m app.db_roles setup`, `apps/server/app/db_roles.py`).
 
