@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI: apt-Schritt der Desktop-Jobs mit Deckel und Retry — Task-Ledger
-Status: bereit · Branch: feature/ci-1 · Review: am Ende
+Status: erledigt · Branch: feature/ci-1 · Review: am Ende
 Spec: Roadmap R-0825
 Heavy: none — nur der Schritt `Tauri system dependencies` zweier Jobs in `.github/workflows/ci.yml`; kein Stack-, Gateway-, PKI- oder Install-Pfad; den Beweis liefert die PR-CI selbst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
