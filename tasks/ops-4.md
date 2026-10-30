@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-4 — Task-Ledger
-Status: bereit · Branch: feature/ops-4 · Review: am Ende
+Status: aktiv · Branch: feature/ops-4 · Review: am Ende
 Spec: docs/features/ops-4.md (Roadmap R-1014, R-1015)
 Heavy: none — nur Bash-Filter der .env und sed-Regeln; diagnostics_test und restore_guard_test fahren sie lokal ohne Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,6 +44,15 @@ Platzhalter → `<redacted>`, dann die Host-Regeln. Neue Fälle: kurzer Wert mit
 Bearer- und einem JWT-Token, langer Wert mitten in einem Token; keine Restbytes.
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: changelog.d/ops-4.md
+
+### T4 — REDACT_AWK linear in den Fundstellen einer Zeile (R-1015, Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+Änderung: `REDACT_AWK` (`scripts/diagnostics.sh:408`) sucht die Token-Formen in einem Durchgang je Regel und wählt die
+Läufe über die Startstellen statt je Lauf über alle Fundstellen; die Laufzeit wächst nicht mehr quadratisch mit Log-Text
+voller Token-Formen. Neuer Fall: eine lange Zeile mit vielen Query-Tokens in einer Zeitgrenze.
+Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
+Doku: keine (Laufzeit, kein Verhalten)
+Abhängt von: T3
 
 ## Entscheidungen
 - T1: Tokenizer = exakter Lauf nach compose-go ∪ der bisherige Lauf „allein gelesen“ an jedem Zeilenanfang und hinter
