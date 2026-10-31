@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-4 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-4 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ca-4 · Review: pro Task
 Spec: docs/features/kern-ca-4.md (Roadmap R-1022)
 Heavy: linux-full — `apps/ca-issuer` (Start mit DB-Store) und Server-API (Sammellauf: Stack mit Enrollment)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
