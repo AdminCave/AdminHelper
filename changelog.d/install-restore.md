@@ -7,6 +7,10 @@
 - **Install: ohne `--domain` bleibt die `DOMAIN` der `.env`:** ein erneuter Lauf (etwa nach `--reset`) nimmt die
   `DOMAIN` der vorhandenen `.env` als Vorgabe, auch in der Abfrage; bisher setzte er sie ohne `--domain` auf
   `localhost`. `--domain` hat Vorrang.
+- **Install: Start mit `docker compose up --wait`:** `install.sh` wartet auf die Healthchecks aller Dienste
+  (`AH_WAIT_TIMEOUT`, Standard 600 s) statt nur auf den Server-Port und nennt bei einem Fehlschlag
+  `docker compose ps` und `docker compose logs <dienst>`. Ohne `up --wait` (Compose vor v2.17) bricht es ab, bevor
+  es etwas aendert.
 
 ### Changed
 

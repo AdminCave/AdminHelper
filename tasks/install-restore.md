@@ -67,8 +67,10 @@ Beweis: Code-Lesung scripts/install.sh:218-221, :229
 Dedup-Key: bug:ops:install.sh:rerun-overwrites-existing-install
 HEAD: e2304a8b
 
-### T4 — install.sh: Start mit `docker compose up -d --wait` statt TCP-Schleife  [ ]
-Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/install-restore.md
+### T4 — install.sh: Start mit `docker compose up -d --wait` statt TCP-Schleife  [x]
+Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/install-restore.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @452f039f 2026-10-31T10:45:19+01:00
+Review: approve (.ah-out/review/install-restore/T4.verdict.json)
 Änderung: Preflight (`:175-177`) wie `tasks/update-rollback.md` T4: die Hilfe von `docker compose up` einmal in eine Variable, fehlt `--wait` oder `--wait-timeout`, Abbruch vor jeder Änderung (englisch, mit `docker compose version --short`). `:266-294`: nach dem Pull `docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}" </dev/null` statt `up -d` und der TCP-Schleife; scheitert es, prüft das Skript wie heute die Server-Logs auf `password authentication failed` (Meldung `:284-288` bleibt) und bricht sonst mit einer Meldung ab, die `docker compose ps` und `docker compose logs <dienst>` nennt. `create-admin` erst danach. Tests in `install_test.sh`, Stub aus T1: `compose up --help` → Text mit `--wait` und `--wait-timeout` (außer `AH_TEST_NO_WAIT=1`); `compose up` mit `AH_TEST_UP_FAIL=1` → Exit 1; `compose logs` mit `AH_TEST_PG_AUTH=1` → eine Zeile mit `password authentication failed`. (a) Checkout wie Test 5 → `compose up -d --wait --wait-timeout` im Aufruf-Log, kein `create_connection`, Exit 0; (b) `AH_TEST_UP_FAIL=1` → Exit ≠ 0, kein `create-admin` im Log, Meldung nennt `docker compose ps`; (c) zusätzlich `AH_TEST_PG_AUTH=1` → die Postgres-Passwort-Meldung; (d) `AH_TEST_NO_WAIT=1` → Exit ≠ 0, `.env` byte-gleich, kein `compose pull|up`. Zuerst rot: (a), (b), (d).
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
 Doku: changelog.d/install-restore.md (Fixed, umlautfrei). Die Voraussetzung `up --wait` beschreibt `tasks/update-rollback.md` T4 in `docs/admin/installation.html:84`; steht sie zur Bauzeit nicht auf `main`, ergänzt T4 hier sie dort (DE + EN, `ledger.sh set-files`)

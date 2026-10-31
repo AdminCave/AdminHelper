@@ -57,6 +57,9 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # AH_TEST_DOWN_KEEPS=1. AH_TEST_CONFIG_FAIL=1 / AH_TEST_PS_FAIL=1 make compose
 # config / compose ps fail. docker inspect names AH_TEST_WORKDIR (unset: the
 # current directory; empty: no label) as the directory of every container.
+# compose up --help offers --wait and --wait-timeout unless AH_TEST_NO_WAIT=1;
+# compose up fails with AH_TEST_UP_FAIL=1; compose logs names a refused Postgres
+# password with AH_TEST_PG_AUTH=1.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -66,7 +69,13 @@ gone() { [ "${AH_TEST_DOWN_KEEPS:-}" != 1 ] && [ -n "${AH_TEST_DOCKER_LOG:-}" ] 
 case "$*" in
   *create_connection*) exit 0 ;;
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
-  *logs*) exit 0 ;;
+  *logs*) [ "${AH_TEST_PG_AUTH:-}" != 1 ] || echo 'FATAL:  password authentication failed for user "adminhelper"'; exit 0 ;;
+  "compose up --help")
+    echo 'Usage:  docker compose up [OPTIONS] [SERVICE...]'; echo '  -d, --detach   Detached mode'
+    [ "${AH_TEST_NO_WAIT:-}" = 1 ] || { echo '      --wait   Wait for services to be running|healthy'; echo '      --wait-timeout int   Maximum duration in seconds'; }
+    exit 0 ;;
+  "compose up "*) [ "${AH_TEST_UP_FAIL:-}" != 1 ] || { echo 'container adminhelper-server-1 is unhealthy' >&2; exit 1; }; exit 0 ;;
+  "compose version --short") echo 2.16.0; exit 0 ;;
   *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
   "compose config"*)
     [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo "compose config failed in the stub" >&2; exit 1; }
@@ -209,8 +218,8 @@ cmp -s "$WORK/env4.orig" "$INST/.env" && ok ".env byte-identical after the faile
   || bad "copies left: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
 dlog=$(cat "$DLOG" 2>/dev/null)
 grep -qx 'compose version' <<<"$dlog" && ok "docker call log written" || bad "no docker call log"
-! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up after the failed write" \
-  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up after the failed write" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 
 # ── 5. .env holding only the key: grep -v filters every line (exit 1), no error ─
 INST="$WORK/inst5"; mkdir -p "$INST/scripts"
@@ -338,8 +347,8 @@ out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.exam
 { [ $rc -ne 0 ] && grep -q 'missing-pw8d' <<<"$out"; } \
   && ok "missing password file aborts and names the path" || { echo "$out" | sed 's/^/    │ /'; bad "missing password file: rc=$rc"; }
 dlog=$(cat "$DLOG" 2>/dev/null)
-! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up after a missing password file" \
-  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up after a missing password file" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 [ "$(cat "$INST/.env")" = DOMAIN=old.example ] && ok ".env untouched after a missing password file" \
   || bad ".env after a missing password file: $(tr '\n' ' ' < "$INST/.env")"
 # (e) empty file
@@ -357,8 +366,8 @@ out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.exam
   && ok "--admin-password with --admin-password-file aborts, no value named" \
   || { echo "$out" | sed 's/^/    │ /'; bad "both password flags: rc=$rc"; }
 dlog=$(cat "$DLOG" 2>/dev/null)
-! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up with both password flags" \
-  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up with both password flags" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 # (g) --admin-password still works and points to the file on stderr
 new_inst inst8g; rm -f "$WORK/admin.stdin"
 out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password zz9pw-arg --yes 2>"$WORK/err8g"); rc=$?
@@ -466,8 +475,8 @@ existing_install() {
 # unchanged <label> — .env byte-identical, no compose pull/up/down, no value in the output
 unchanged() {
   cmp -s "$WORK/$1.env.orig" "$INST/.env" && ok "$1: .env byte-identical" || bad "$1: .env changed: $(tr '\n' ' ' < "$INST/.env")"
-  ! grep -qE '^compose (pull|up|down)' <<<"$dlog" && ok "$1: no compose pull/up/down" \
-    || bad "$1: stack touched: $(grep -E '^compose (pull|up|down)' <<<"$dlog" | tr '\n' ' ')"
+  ! grep -qE '^compose (pull|up|down)' <<<"${dlog//compose up --help/}" && ok "$1: no compose pull/up/down" \
+    || bad "$1: stack touched: $(grep -E '^compose (pull|up|down)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
   ! grep -q zz9 <<<"$out" && ok "$1: no .env value in the output" || bad "$1: output names a .env value"
 }
 # (b) a data volume of the project
@@ -553,8 +562,8 @@ else
   reset_run inst11e ahtest AH_TEST_VOLUMES=ahtest_postgres-data AH_TEST_DOWN_KEEPS=1
   { [ $rc -ne 0 ] && grep -q 'still has' <<<"$out" && grep -q ahtest_postgres-data <<<"$out"; } \
     && ok "volumes left after down -v: abort names them" || { echo "$out" | sed 's/^/    │ /'; bad "volumes left after down -v: rc=$rc"; }
-  ! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "volumes left after down -v: no compose pull/up" \
-    || bad "volumes left after down -v: $(grep -E '^compose' <<<"$dlog" | tr '\n' ' ')"
+  ! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "volumes left after down -v: no compose pull/up" \
+    || bad "volumes left after down -v: $(grep -E '^compose' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
   # (f) the containers belong to an installation in another directory of the same name
   reset_run inst11f ahtest AH_TEST_CONTAINERS=abc123 AH_TEST_WORKDIR=/srv/other/adminhelper
   { [ $rc -ne 0 ] && grep -q 'belongs to another directory: /srv/other/adminhelper' <<<"$out" \
@@ -600,6 +609,40 @@ out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 
 { [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=last.example ]; } \
   && ok "the last active DOMAIN line is the default" \
   || { echo "$out" | sed 's/^/    │ /'; bad "last active DOMAIN: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+
+# ── 13. the start waits with docker compose up --wait ───────────────────────
+# start_run <name> <env assignments…> — a checkout install with a call log; sets out, rc, dlog.
+start_run() {
+  local name="$1"; shift
+  new_inst "$name"; cp "$INST/.env" "$WORK/$name.env.orig"; DLOG="$WORK/docker-$name.log"
+  out=$(cd "$INST" && env AH_TEST_DOCKER_LOG="$DLOG" "$@" bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+  dlog=$(cat "$DLOG" 2>/dev/null)
+}
+# (a) up --wait, no TCP loop, create-admin after it
+start_run inst13a
+[ $rc -eq 0 ] && ok "start with up --wait exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "start with up --wait: exit $rc"; }
+grep -qx 'compose up -d --wait --wait-timeout 600' <<<"$dlog" && ok "compose up -d --wait --wait-timeout 600 called" \
+  || bad "compose up calls: $(grep -E '^compose up' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
+! grep -q create_connection <<<"${dlog//compose up --help/}" && ok "no TCP readiness loop" || bad "TCP readiness loop still runs"
+[ "$(grep -oE '^compose (up -d|exec -T server python -m app.cli create-admin)' <<<"$dlog" | tr '\n' ' ')" = "compose up -d compose exec -T server python -m app.cli create-admin " ] \
+  && ok "create-admin runs after up --wait" || bad "order: $(grep -E '^compose (up|exec)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
+# (b) up --wait fails: abort before create-admin, the message names docker compose ps
+start_run inst13b AH_TEST_UP_FAIL=1
+{ [ $rc -ne 0 ] && grep -q 'docker compose ps' <<<"$out" && grep -q 'docker compose logs' <<<"$out"; } \
+  && ok "failed up --wait aborts and names docker compose ps/logs" || { echo "$out" | sed 's/^/    │ /'; bad "failed up --wait: rc=$rc"; }
+! grep -q create-admin <<<"$dlog" && ok "failed up --wait: no create-admin" || bad "failed up --wait: create-admin ran"
+# (c) the server logs a refused Postgres password: the stale-volume message
+start_run inst13c AH_TEST_UP_FAIL=1 AH_TEST_PG_AUTH=1
+{ [ $rc -ne 0 ] && grep -q 'Postgres lehnt das Passwort ab' <<<"$out"; } \
+  && ok "failed up --wait with a refused password names the stale volume" || { echo "$out" | sed 's/^/    │ /'; bad "refused password: rc=$rc"; }
+# (d) compose without up --wait: abort before anything changes
+start_run inst13d AH_TEST_NO_WAIT=1
+{ [ $rc -ne 0 ] && grep -q "lacks 'up --wait'" <<<"$out" && grep -q 2.16.0 <<<"$out"; } \
+  && ok "compose without up --wait aborts and names its version" || { echo "$out" | sed 's/^/    │ /'; bad "compose without up --wait: rc=$rc"; }
+cmp -s "$WORK/inst13d.env.orig" "$INST/.env" && ok "compose without up --wait: .env byte-identical" \
+  || bad "compose without up --wait: .env changed: $(tr '\n' ' ' < "$INST/.env")"
+! grep -qE '^compose (pull|up -d|down)' <<<"$dlog" && ok "compose without up --wait: no compose pull/up/down" \
+  || bad "compose without up --wait: $(grep -E '^compose' <<<"$dlog" | tr '\n' ' ')"
 
 echo
 echo "──────────────────────────────────────────"

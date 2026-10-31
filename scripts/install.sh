@@ -235,6 +235,10 @@ warn_host_uids() {
 warn_host_uids
 command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
+# The start waits with up --wait (like update.sh); without it, stop before anything changes.
+compose_up_help=$(docker compose up --help </dev/null 2>&1 || true)
+{ grep -qE -- '--wait([[:space:]]|$)' <<<"$compose_up_help" && grep -q -- '--wait-timeout' <<<"$compose_up_help"; } \
+    || { echo "ERROR: docker compose $(docker compose version --short </dev/null 2>/dev/null || echo '?') lacks 'up --wait' and '--wait-timeout' (Compose v2.17 or newer); nothing was changed." >&2; exit 1; }
 close_install_dir
 
 # Interactive prompts must read from the controlling terminal, not stdin: under
@@ -408,22 +412,15 @@ if [ "$RESET" = 1 ]; then
 fi
 echo "[install] Ziehe die Images..."
 docker compose pull </dev/null
-echo "[install] Starte den Stack..."
-docker compose up -d </dev/null
-
-echo "[install] Warte auf den Server (Migration + uvicorn)..."
-# `</dev/null` on every `docker compose exec` is load-bearing under `curl | bash`:
-# bash reads this script from stdin (the pipe), and an exec'd process that
-# inherits that stdin would swallow the rest of the script, so bash would hit
-# EOF and exit 0 before create-admin ever runs.
-ATTEMPT=0
-until docker compose exec -T server \
-        python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" </dev/null >/dev/null 2>&1; do
+echo "[install] Starte den Stack und warte auf die Healthchecks (Migration + uvicorn)..."
+# --wait waits until every service with a healthcheck is healthy, the server's
+# included, so create-admin below finds it up.
+if ! docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}" </dev/null; then
     # A stale postgres-data volume (from an earlier, failed attempt) was initialised
     # with a different POSTGRES_PASSWORD than the current .env — Postgres only honors
-    # the password on first init, so auth fails forever. Detect it and say so, instead
-    # of burning 240s into an opaque timeout.
-    if docker compose logs --tail=20 server 2>/dev/null | grep -q "password authentication failed"; then
+    # the password on first init, so auth fails forever. Say so instead of a bare
+    # health-check timeout.
+    if docker compose logs --tail=20 server </dev/null 2>/dev/null | grep -q "password authentication failed"; then
         echo "FEHLER: Postgres lehnt das Passwort ab (password authentication failed)." >&2
         echo "       Ursache: meist ein altes 'postgres-data'-Volume aus einem frueheren" >&2
         echo "       (fehlgeschlagenen) Versuch — dessen Init-Passwort passt nicht zur .env." >&2
@@ -431,12 +428,16 @@ until docker compose exec -T server \
         echo "       oder  install.sh … --reset  (raeumt vorab auf)." >&2
         exit 1
     fi
-    ATTEMPT=$((ATTEMPT + 1))
-    if [ "$ATTEMPT" -gt 120 ]; then echo "FEHLER: Server nach 240s nicht bereit." >&2; exit 1; fi
-    sleep 2
-done
+    echo "ERROR: the stack did not become healthy within ${AH_WAIT_TIMEOUT:-600}s (docker compose up --wait)." >&2
+    echo "       Look at  docker compose ps  and  docker compose logs <service>  (server, gateway, ca-issuer, ...)." >&2
+    exit 1
+fi
 
 # --- Erst-Admin + Enroll-Token (in-container CLI, umgeht das enforced :443) --
+# `</dev/null` on every `docker compose exec` is load-bearing under `curl | bash`:
+# bash reads this script from stdin (the pipe), and an exec'd process that
+# inherits that stdin would swallow the rest of the script, so bash would hit
+# EOF and exit 0 before create-admin ever runs.
 # --password-stdin (not --password) so the admin password never lands in the
 # container's argv / /proc/<pid>/cmdline (3.30). -T keeps stdin a clean pipe.
 printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec -T server python -m app.cli create-admin \
