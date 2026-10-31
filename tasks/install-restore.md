@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Install und Restore: bestehende Installation erkennen, `--reset` mit Bestätigung, Start mit `--wait`, Restore auf leerem Host — Task-Ledger
-Status: geplant · Branch: feature/install-restore · Review: pro Task
+Status: aktiv · Branch: feature/install-restore · Review: pro Task
 Spec: docs/features/install-restore.md (Roadmap R-0665, R-0668 und der install.sh-Teil von R-0614; der Rest von R-0614 in tasks/update-rollback.md auf feature/update-rollback)
 Hängt ab von: feature/ops-install-hardening, feature/ops-scripts-hardening, feature/compose-hardening (gemergt vor dem Bau; Überschneidungen je Funktion in der Spec)
 Heavy: linux-full — `scripts/install.sh` im Diff (Install, CLAUDE.md §5) und `scripts/restore.sh`, das `backup_restore_test.sh` (`run.sh integration`) real fährt, mit dem Abschnitt aus T8 (Restore auf einem leeren Host); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/install-restore`. Kein `scenario`: kein `multibox.sh`-Flag und kein `box_*.sh` ruft `install.sh`, `restore.sh` oder `uninstall.sh` auf; `install.sh` fährt keine Suite gegen echte Container (Spec, Offene Frage 2). Kein `windows`
