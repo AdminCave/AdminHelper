@@ -15,6 +15,11 @@
   Volumes), den Compose nutzt, auch `COMPOSE_PROJECT_NAME` aus der `.env`, und fuer seine Hilfs-Container das
   gepinnte postgres-Image ohne Netz statt `alpine`. Scheitert `docker compose config`, bricht es ab, bevor es etwas
   aendert.
+- **Restore: `.env` aus dem Backup auf einem leeren Host:** ohne Datenbank-Volume und ohne `.env` legt `restore.sh`
+  die `.env` aus dem Backup an (mit leerer Zeile `CA_ROOT_PASSPHRASE=`), bevor postgres startet; bisher initialisierte
+  postgres ohne `POSTGRES_PASSWORD` nicht. Eine vorhandene `.env` bleibt, `.env.restored` traegt jetzt die Zeile
+  `CA_ROOT_PASSPHRASE=`. Fehlt die `.env` im Backup oder gibt es zu einem vorhandenen Volume kein
+  `POSTGRES_PASSWORD`, bricht es ab, bevor es etwas aendert.
 
 ### Changed
 

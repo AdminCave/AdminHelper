@@ -59,6 +59,11 @@
 # config, against a compose stub: COMPOSE_PROJECT_NAME of .env counts, the helpers
 # run the pinned postgres image without a network; a failing config or no image
 # stops it before anything changes.
+# 27: restore.sh on a host without a database volume, against the same stub: without
+# .env the .env of the backup (plus CA_ROOT_PASSPHRASE=) is there before postgres
+# starts; without either it stops, unless POSTGRES_PASSWORD is in the environment;
+# an existing .env stays; a volume without POSTGRES_PASSWORD stops it, with it in
+# the environment it restores.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
@@ -79,12 +84,15 @@ trap 'rm -rf "$WORK"' EXIT
 
 # restore.sh reads the role passwords from the environment before .env, as compose
 # does: none may leak in from the caller.
-unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD
+unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD POSTGRES_PASSWORD
 ROLE_ENV='SERVER_DB_PASSWORD=pw-server
 SCHEDULER_DB_PASSWORD=pw-scheduler
 MONITOR_DB_PASSWORD=pw-monitor
 CA_DB_PASSWORD=pw-ca'
-printf '%s\n' "$ROLE_ENV" > "$WORK/.env"
+# The stubs of 5-7 and 23-25 answer every docker volume inspect: the database volume
+# exists there, and restore.sh then needs POSTGRES_PASSWORD (case 27d).
+PG_ENV='POSTGRES_PASSWORD=pw-pg'
+printf '%s\n' "$ROLE_ENV" "$PG_ENV" > "$WORK/.env"
 
 # --- craft archives ---------------------------------------------------------
 # clean: a normal backup-shaped archive
@@ -105,17 +113,25 @@ mkdir -p "$WORK/sub"; printf 'x\n' > "$WORK/sub/evil"
 ln -sf /etc/passwd "$WORK/link"
 tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 
-# The compose stub: compose config names AH_TEST_PROJECT (default drproj) and
-# the postgres image pinned by digest (none with AH_TEST_NO_IMAGE=1); with
-# AH_TEST_CONFIG_FAIL=1 compose config fails. With STUB_DIR it logs every call.
+# The compose stub: compose config names AH_TEST_PROJECT, else the
+# COMPOSE_PROJECT_NAME of an --env-file, else drproj, and the postgres image pinned
+# by digest (none with AH_TEST_NO_IMAGE=1); with AH_TEST_CONFIG_FAIL=1 compose config
+# fails. docker volume inspect finds a volume only with AH_TEST_PGVOL=1. With
+# STUB_DIR it logs every call and keeps the .env as compose up -d postgres finds it.
 mkdir -p "$WORK/cfg/bin"
 cat > "$WORK/cfg/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 [ -z "${STUB_DIR:-}" ] || echo "$*" >> "$STUB_DIR/calls.log"
+ef=""
+if [ "$1 ${2:-}" = "compose --env-file" ]; then ef="$3"; shift 3; set -- compose "$@"; fi
 case "$*" in
+  "volume inspect "*) [ "${AH_TEST_PGVOL:-}" = 1 ] || exit 1 ;;
+  "compose up -d postgres") [ -z "${STUB_DIR:-}" ] || [ ! -f .env ] || cp .env "$STUB_DIR/env.at-pg-start" ;;
   "compose config")
     [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo 'service "server" refers to undefined volume zz-missing' >&2; exit 1; }
-    echo "name: ${AH_TEST_PROJECT:-drproj}"; echo 'services: {}' ;;
+    p="${AH_TEST_PROJECT:-}"
+    [ -n "$p" ] || [ -z "$ef" ] || p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$ef" | tail -n 1)
+    echo "name: ${p:-drproj}"; echo 'services: {}' ;;
   "compose config --images postgres") [ "${AH_TEST_NO_IMAGE:-}" = 1 ] || echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
   *pg_restore*|*ON_ERROR_STOP*) cat >/dev/null ;;
 esac
@@ -731,7 +747,7 @@ out=$( cd "$WORK/roles/miss" && STUB_DIR="$WORK/roles/miss" PATH="$WORK/roles/bi
   && ok "a role password missing in .env stops the restore before any docker call" \
   || bad "missing role password: rc=$rc out=[$out] calls=[$(cat "$WORK/roles/miss/calls.log" 2>/dev/null)]"
 
-out=$( cd "$WORK/roles/envonly" && env $ROLE_ENV STUB_DIR="$WORK/roles/envonly" PATH="$WORK/roles/bin:$PATH" \
+out=$( cd "$WORK/roles/envonly" && env $ROLE_ENV $PG_ENV STUB_DIR="$WORK/roles/envonly" PATH="$WORK/roles/bin:$PATH" \
     bash "$RESTORE" "$WORK/reg/full.tar.gz" --yes </dev/null 2>&1 ); rc=$?
 [ $rc -eq 0 ] \
   && ok "the role passwords may come from the environment instead of .env" \
@@ -806,6 +822,80 @@ proj_run "$WORK/proj/c" AH_TEST_NO_IMAGE=1
 { [ $rc -ne 0 ] && grep -q 'no postgres image' <<<"$out" && ! grep -qE '^compose (down|up)|^run ' <<<"$calls"; } \
   && ok "no postgres image stops the restore before anything changes" \
   || bad "no image: rc=$rc out=[$out] calls=[$calls]"
+
+# --- 27. restore.sh and the .env of the backup on a host without a database ──
+mkdir -p "$WORK/fresh/arch" "$WORK/fresh/noenv"
+printf 'POSTGRES_PASSWORD=zz9pg-old\nCOMPOSE_PROJECT_NAME=ah-prod\nDOMAIN=dr.example\n%s\n' "$ROLE_ENV" > "$WORK/fresh/arch/env.sanitized"
+printf 'x\n' > "$WORK/fresh/ca-pki"; tar czf "$WORK/fresh/arch/ca-pki.tar.gz" -C "$WORK/fresh" ca-pki
+printf 'dump\n' > "$WORK/fresh/arch/adminhelper.dump"
+tar czf "$WORK/fresh/with.tar.gz" -C "$WORK/fresh/arch" .
+cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/noenv/"
+tar czf "$WORK/fresh/without.tar.gz" -C "$WORK/fresh/noenv" .
+{ cat "$WORK/fresh/arch/env.sanitized"; echo 'CA_ROOT_PASSPHRASE='; } > "$WORK/fresh/expected.env"
+# fresh_run <dir> <archive> [VAR=value…] — restore.sh in <dir> (its .env as it is) against the compose stub.
+fresh_run() {
+  local dir="$1" archive="$2"; shift 2
+  out=$( cd "$dir" && env "$@" STUB_DIR="$dir" PATH="$WORK/cfg/bin:$PATH" \
+      bash "$RESTORE" "$archive" --yes </dev/null 2>&1 ); rc=$?
+  calls=$(cat "$dir/calls.log" 2>/dev/null)
+}
+untouched() {  # untouched <label>: no compose down/up, no docker run
+  ! grep -qE '^compose (down|up)|^run ' <<<"$calls" && ok "$1: nothing changed" || bad "$1: calls=[$calls]"
+}
+# (a) no .env, no volume: the .env of the backup is there before postgres starts
+mkdir -p "$WORK/fresh/a"
+fresh_run "$WORK/fresh/a" "$WORK/fresh/with.tar.gz"
+vols=$(grep -oE -- '-v [^ /]+:/dst' <<<"$calls" | cut -d' ' -f2)
+{ [ $rc -eq 0 ] && cmp -s "$WORK/fresh/expected.env" "$WORK/fresh/a/env.at-pg-start" \
+    && [ "$(stat -c '%a' "$WORK/fresh/a/.env")" = 600 ] && cmp -s "$WORK/fresh/expected.env" "$WORK/fresh/a/.env" \
+    && [ ! -e "$WORK/fresh/a/.env.restored" ]; } \
+  && ok "fresh host: the .env of the backup (plus CA_ROOT_PASSPHRASE=) is there before postgres starts, 0600" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "fresh host: rc=$rc files=[$(ls -A "$WORK/fresh/a" | tr '\n' ' ')]"; }
+{ [ -n "$vols" ] && ! grep -qv '^ah-prod_' <<<"$vols"; } \
+  && ok "fresh host: the volumes carry COMPOSE_PROJECT_NAME of the backup" || bad "fresh host volumes: [$vols]"
+! grep -q zz9 <<<"$out" && ok "fresh host: no password in the output" || bad "fresh host: a password in the output"
+# (b) no .env, no volume, no env.sanitized (the role passwords in the environment, so
+# the check of the role passwords passes): stop before anything changes
+mkdir -p "$WORK/fresh/b"
+fresh_run "$WORK/fresh/b" "$WORK/fresh/without.tar.gz" $ROLE_ENV
+{ [ $rc -ne 0 ] && grep -q 'no env.sanitized in the backup' <<<"$out" && [ ! -e "$WORK/fresh/b/.env" ]; } \
+  && ok "no .env and no env.sanitized: the restore stops" || bad "no env.sanitized: rc=$rc out=[$out]"
+untouched "no .env and no env.sanitized"
+# (c) a .env, no volume: the .env stays, .env.restored names POSTGRES_PASSWORD
+mkdir -p "$WORK/fresh/c"
+printf 'POSTGRES_PASSWORD=zz9pg-new\n%s\n' "$ROLE_ENV" > "$WORK/fresh/c/.env"; cp "$WORK/fresh/c/.env" "$WORK/fresh/c.env.orig"
+fresh_run "$WORK/fresh/c" "$WORK/fresh/with.tar.gz"
+{ [ $rc -eq 0 ] && cmp -s "$WORK/fresh/c.env.orig" "$WORK/fresh/c/.env" \
+    && cmp -s "$WORK/fresh/expected.env" "$WORK/fresh/c/.env.restored" && grep -q 'POSTGRES_PASSWORD' <<<"$out" \
+    && ! grep -q zz9 <<<"$out"; } \
+  && ok "a .env without a volume stays; .env.restored has the line, the output names POSTGRES_PASSWORD" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "existing .env: rc=$rc"; }
+# (d) the volume exists, no .env, no POSTGRES_PASSWORD: stop before anything changes
+mkdir -p "$WORK/fresh/d"
+fresh_run "$WORK/fresh/d" "$WORK/fresh/with.tar.gz" AH_TEST_PGVOL=1 $ROLE_ENV
+{ [ $rc -ne 0 ] && grep -q 'POSTGRES_PASSWORD is set neither' <<<"$out" && [ ! -e "$WORK/fresh/d/.env" ]; } \
+  && ok "a volume without POSTGRES_PASSWORD stops the restore" || bad "volume without POSTGRES_PASSWORD: rc=$rc out=[$out]"
+untouched "a volume without POSTGRES_PASSWORD"
+# (e) as (d) with POSTGRES_PASSWORD in the environment (the form of backup_restore_test.sh)
+mkdir -p "$WORK/fresh/e"
+fresh_run "$WORK/fresh/e" "$WORK/fresh/with.tar.gz" AH_TEST_PGVOL=1 $ROLE_ENV POSTGRES_PASSWORD=pw-pg
+{ [ $rc -eq 0 ] && grep -q '^compose up -d postgres' <<<"$calls" && [ ! -e "$WORK/fresh/e/.env" ]; } \
+  && ok "a volume with POSTGRES_PASSWORD in the environment restores" || bad "volume with POSTGRES_PASSWORD: rc=$rc out=[$out]"
+# (f) as (b) with POSTGRES_PASSWORD in the environment (backup_restore_test.sh after
+# down -v, its backup without env.sanitized): postgres can initialise, it restores
+mkdir -p "$WORK/fresh/f"
+fresh_run "$WORK/fresh/f" "$WORK/fresh/without.tar.gz" $ROLE_ENV POSTGRES_PASSWORD=pw-pg
+{ [ $rc -eq 0 ] && grep -q '^compose up -d postgres' <<<"$calls" && [ ! -e "$WORK/fresh/f/.env" ]; } \
+  && ok "no volume, no .env, POSTGRES_PASSWORD in the environment restores" || bad "no volume with POSTGRES_PASSWORD: rc=$rc out=[$out]"
+# (g) the .env of the backup lacks a role password: the message names the backup, not a file
+mkdir -p "$WORK/fresh/g/arch"; grep -v '^CA_DB_PASSWORD=' "$WORK/fresh/arch/env.sanitized" > "$WORK/fresh/g/arch/env.sanitized"
+cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/g/arch/"
+tar czf "$WORK/fresh/g.tar.gz" -C "$WORK/fresh/g/arch" .
+fresh_run "$WORK/fresh/g" "$WORK/fresh/g.tar.gz"
+{ [ $rc -ne 0 ] && grep -q 'the .env of the backup lacks CA_DB_PASSWORD' <<<"$out" && ! grep -q 'env.new' <<<"$out" \
+    && [ ! -e "$WORK/fresh/g/.env" ]; } \
+  && ok "a backup .env without a role password: the message names the backup" || bad "backup without a role password: rc=$rc out=[$out]"
+untouched "a backup .env without a role password"
 
 echo
 echo "──────────────────────────────────────────"
