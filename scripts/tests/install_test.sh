@@ -575,6 +575,32 @@ else
   unchanged inst11h
 fi
 
+# ── 12. without --domain the DOMAIN of the existing .env stays ──────────────
+# (a) .env with DOMAIN=old.example (new_inst), --yes without --domain
+new_inst inst12a
+out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "rerun without --domain exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "rerun without --domain: exit $rc"; }
+[ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=old.example ] && ok "rerun without --domain keeps DOMAIN=old.example" \
+  || bad "rerun without --domain: $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"
+# (b) .env without DOMAIN: localhost
+new_inst inst12b; printf 'OTHER=1\n' > "$INST/.env"
+out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=localhost ]; } \
+  && ok ".env without DOMAIN: DOMAIN=localhost" \
+  || { echo "$out" | sed 's/^/    │ /'; bad ".env without DOMAIN: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+# (c) --domain wins over the .env
+new_inst inst12c
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=new.example ]; } \
+  && ok "--domain wins over the DOMAIN of the .env" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "--domain over .env: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+# (d) a commented line does not count, the last active line does
+new_inst inst12d; printf 'DOMAIN=first.example\nDOMAIN=last.example\n#DOMAIN=commented.example\n' > "$INST/.env"
+out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=last.example ]; } \
+  && ok "the last active DOMAIN line is the default" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "last active DOMAIN: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+
 echo
 echo "──────────────────────────────────────────"
 echo "  install_test: ${PASS} passed, ${FAIL} failed"

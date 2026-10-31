@@ -56,8 +56,10 @@ Beweis: Code-Lesung scripts/install.sh:250-254 (`--yes` überspringt die einzige
 Dedup-Key: bug:ops:install.sh:rerun-overwrites-existing-install
 HEAD: e2304a8b
 
-### T3 — install.sh: ohne `--domain` bleibt die DOMAIN der vorhandenen `.env`  [ ]
+### T3 — install.sh: ohne `--domain` bleibt die DOMAIN der vorhandenen `.env`  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/install-restore.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0e0820ec 2026-10-31T10:35:17+01:00
+Review: approve (.ah-out/review/install-restore/T3.verdict.json)
 Änderung: `install.sh:218-221`: die Vorgabe für die Abfrage und für `--yes` ist der Text hinter `DOMAIN=` der letzten aktiven Zeile der `.env` (gelesen mit `LC_ALL=C grep -a` wie `upsert_env`, `:200`, unverändert zurückgeschrieben), sonst `localhost`; die Abfrage zeigt sie in `[…]`. `--domain` hat Vorrang. Tests in `install_test.sh`: (a) Checkout wie Test 5, `.env` mit `DOMAIN=old.example`, `--yes` ohne `--domain` → danach genau eine Zeile `DOMAIN=old.example`; (b) `.env` ohne `DOMAIN` → `DOMAIN=localhost`; (c) `--domain new.example` → `DOMAIN=new.example` (wie Test 5). Zuerst rot: (a) (heute `DOMAIN=localhost`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
 Doku: changelog.d/install-restore.md (Fixed, umlautfrei)

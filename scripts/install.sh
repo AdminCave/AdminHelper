@@ -23,7 +23,8 @@
 # device with a token"), gets an on-device cert, then logs in.
 #
 # Options:
-#   --domain D --admin-user U --enroll-ttl-minutes N
+#   --domain D (default: DOMAIN of an existing .env, else localhost)
+#   --admin-user U --enroll-ttl-minutes N
 #   --admin-password-file FILE (the admin password is the first line of FILE;
 #                a relative path is taken from where install.sh was started.
 #                --admin-password P still works, but leaves the password in the
@@ -347,10 +348,17 @@ upsert_env() {
 [ -f .env ] || cp .env.example .env
 ./scripts/init-secrets.sh
 
+# Without --domain the DOMAIN of the .env stays (a rerun must not move the
+# installation to localhost): the last active line, as compose reads it, read
+# like upsert_env reads .env and written back as it is.
+DOMAIN_DEFAULT=$( { LC_ALL=C grep -a -E "^[[:space:]]*DOMAIN=" .env || [ $? -eq 1 ]; } | tail -n 1) \
+    || { echo "ERROR: cannot read DOMAIN from .env." >&2; exit 1; }
+DOMAIN_DEFAULT="${DOMAIN_DEFAULT#*DOMAIN=}"
+DOMAIN_DEFAULT="${DOMAIN_DEFAULT:-localhost}"
 if [ -z "$DOMAIN" ] && [ -n "$TTY" ]; then
-    read -rp "Domain (z.B. srm.example.com) [localhost]: " DOMAIN <"$TTY"
+    read -rp "Domain (z.B. srm.example.com) [${DOMAIN_DEFAULT}]: " DOMAIN <"$TTY"
 fi
-DOMAIN="${DOMAIN:-localhost}"
+DOMAIN="${DOMAIN:-$DOMAIN_DEFAULT}"
 if [ -z "$ADMIN_PASSWORD" ]; then
     [ -n "$TTY" ] || { echo "FEHLER: Kein Terminal fuer die Passwort-Abfrage. Uebergib --admin-password-file … --yes (z.B. bei 'curl | bash' ohne Terminal)." >&2; exit 1; }
     read -rsp "Admin-Passwort (min. 8 Zeichen): " ADMIN_PASSWORD <"$TTY"; echo
