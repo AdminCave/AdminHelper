@@ -64,6 +64,15 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_trust.py tes
 Doku: keine (Reihenfolge beim Start)
 Abhängt von: T2
 
+### T7 — FRP-Doku: frps-Bundle ohne Root (R-1009)  [x]
+Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6f261255 2026-10-31T08:59:39+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: Eintrag `trustedCaFile` nennt noch die `tunnel`-Kette; seit T1 trägt `ca.crt` von frps nur die geführten `tunnel`- und `access`-Zwischenzertifikate (aktuell + abgelöst), keine Root (Fund der Abschlussprüfung).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Task-Review: am Ende
+
 ## Entscheidungen
 - 2026-10-31: R-1021 (Root-Erneuerung) fährt nicht mit — ändert Vertrauensanker von Agent und Desktop und den Erneuerungsvertrag (Kevins Bereich, Architektur); verschoben nach tasks/kern-ca-5.md, Frage am Gate.
 - 2026-10-31: Trust-Daten für den Server über ein Volume mit öffentlichem Material statt einer DB-Tabelle (keine Migration); fehlende Datei ist fail-closed wie R-0900.
