@@ -16,6 +16,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,63 @@ func selfSigned(t *testing.T, cn string, notBefore, notAfter time.Time) (certPEM
 	keyDER, _ := x509.MarshalPKCS8PrivateKey(key)
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	return certPEM, keyPEM
+}
+
+// gatewayCert is a server identity of the gateway's shape: a leaf for 127.0.0.1 under
+// the access intermediate, which the agent's mTLS client demands (httpclient.NewMTLS).
+type gatewayCert struct {
+	cert  tls.Certificate // leaf + access intermediate, as the gateway presents them
+	caPEM []byte          // the root, for the agent's CA bundle
+}
+
+func gatewayServerCert(t *testing.T) gatewayCert {
+	t.Helper()
+	newKey := func() *ecdsa.PrivateKey {
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	issue := func(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, signer *ecdsa.PrivateKey) (*x509.Certificate, []byte) {
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, signer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c, der
+	}
+	ca := func(serial int64, cn string) *x509.Certificate {
+		return &x509.Certificate{
+			SerialNumber:          big.NewInt(serial),
+			Subject:               pkix.Name{CommonName: cn},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			IsCA:                  true,
+			KeyUsage:              x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+		}
+	}
+	rootKey, interKey, leafKey := newKey(), newKey(), newKey()
+	rootTmpl := ca(1, "AdminHelper Root CA")
+	root, rootDER := issue(rootTmpl, rootTmpl, &rootKey.PublicKey, rootKey)
+	inter, interDER := issue(ca(2, "AdminHelper Access Intermediate"), root, &interKey.PublicKey, rootKey)
+	_, leafDER := issue(&x509.Certificate{
+		SerialNumber: big.NewInt(3),
+		Subject:      pkix.Name{CommonName: "gateway"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+	}, inter, &leafKey.PublicKey, interKey)
+	return gatewayCert{
+		cert:  tls.Certificate{Certificate: [][]byte{leafDER, interDER}, PrivateKey: leafKey},
+		caPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER}),
+	}
 }
 
 func TestNeedsRenewal(t *testing.T) {
@@ -141,13 +199,15 @@ func TestRenewSwapsIdentity(t *testing.T) {
 			Cert: "new-leaf", Fullchain: "new-leaf+int", Chain: "int+root",
 		})
 	}))
-	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	gw := gatewayServerCert(t)
+	srv.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{gw.cert},
+	}
 	srv.StartTLS()
 	defer srv.Close()
 
-	// Trust the test server's own cert (so the client verifies it under custom-root).
-	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	mustWrite(t, CAPath(dir), srvCertPEM)
+	// The agent's CA bundle holds the root; the server presents a gateway leaf under it.
+	mustWrite(t, CAPath(dir), gw.caPEM)
 
 	if err := Renew(context.Background(), dir, srv.URL, 5*time.Second); err != nil {
 		t.Fatalf("Renew: %v", err)
@@ -184,12 +244,14 @@ func TestRenewEndsWithTheContext(t *testing.T) {
 		// Released when the test ends; the empty answer is no identity to store.
 		<-release
 	}))
-	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	gw := gatewayServerCert(t)
+	srv.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{gw.cert},
+	}
 	srv.StartTLS()
 	defer srv.Close()
 	defer close(release) // runs first: Close waits for the held handler
-	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	mustWrite(t, CAPath(dir), srvCertPEM)
+	mustWrite(t, CAPath(dir), gw.caPEM)
 
 	files := []string{KeyPath(dir), CertPath(dir), CAPath(dir)}
 	before := make([][]byte, len(files))
@@ -249,11 +311,13 @@ func TestServerClientMTLSPresentationVsFallback(t *testing.T) {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	gw := gatewayServerCert(t)
+	srv.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{gw.cert},
+	}
 	srv.StartTLS()
 	defer srv.Close()
-	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	mustWrite(t, CAPath(dir), srvCertPEM)
+	mustWrite(t, CAPath(dir), gw.caPEM)
 
 	// Provisioned client presents the agent cert -> accepted.
 	client, err := ServerClient(dir, "", false, 5*time.Second)

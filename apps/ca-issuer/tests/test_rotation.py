@@ -295,3 +295,74 @@ def test_a_current_intermediate_not_valid_yet_changes_nothing(monkeypatch, tmp_p
     assert cert.not_valid_before_utc.isoformat() in message
     assert "host clock" in message and "NTP" in message
     assert _snapshot(tmp_path) == before  # also: no temporary file left
+
+
+def test_a_foreign_current_certificate_not_valid_yet_is_replaced(monkeypatch, tmp_path):
+    # access.crt holds tunnel's intermediate, issued ten days after the others; this clock
+    # is five days behind it. It is no access intermediate, so it is never kept as retired
+    # and the clock cannot cost it anything: the rotation replaces it like any wrong
+    # <scope>.crt instead of stopping at the clock.
+    _booted(monkeypatch, tmp_path, days_ago=10)
+    root = pki.cert_from_pem((tmp_path / "root.crt").read_bytes())
+    root_key = pki.key_from_pem((tmp_path / "root.key.enc").read_bytes(), PW)
+    foreign, _ = pki.build_intermediate_ca("tunnel", root, root_key)
+    (tmp_path / "access.crt").write_bytes(pki.cert_to_pem(foreign))
+
+    rotated = {r.scope: r for r in _rotated(monkeypatch, tmp_path, days_ago=5)}
+
+    assert rotated["access"].old == foreign
+    assert rotated["access"].new != foreign
+    assert _retired_file(tmp_path, "access") == []
+
+
+def test_a_compromised_scope_keeps_no_replaced_intermediate(monkeypatch, tmp_path):
+    # Two generations back, so the retired file of each scope holds one entry to drop.
+    first = _booted(monkeypatch, tmp_path, days_ago=20)
+    second = _rotated(monkeypatch, tmp_path, days_ago=10)
+    leaf = _leaf(storage.ensure_hierarchy(tmp_path, None)["access"])
+
+    third = {
+        r.scope: r
+        for r in rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"access"}))
+    }
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+    assert third["access"].old == second[pki.SCOPES.index("access")].new
+    assert inter["access"].cert == third["access"].new
+    assert inter["access"].retired == ()
+    assert _retired_file(tmp_path, "access") == []
+    assert leaf.issuer not in {c.subject for c in (inter["access"].cert, *inter["access"].retired)}
+    for i, scope in enumerate(pki.SCOPES):
+        if scope != "access":
+            assert inter[scope].retired == (second[i].new, first[scope].cert)
+
+
+def test_a_compromised_scope_is_rotated_even_with_a_foreign_retired_entry(monkeypatch, tmp_path):
+    # The retired file is dropped whole, so an entry the plain rotation stops at does not
+    # stand in the way; nor does a current intermediate this clock does not consider valid yet.
+    _booted(monkeypatch, tmp_path, days_ago=10)
+    root = pki.cert_from_pem((tmp_path / "root.crt").read_bytes())
+    (tmp_path / "tunnel-retired.pem").write_bytes(pki.cert_to_pem(root))
+    root_key = pki.key_from_pem((tmp_path / "root.key.enc").read_bytes(), PW)
+    cert, key = pki.build_intermediate_ca("tunnel", root, root_key)
+    (tmp_path / "tunnel.crt").write_bytes(pki.cert_to_pem(cert))
+    (tmp_path / "tunnel.key").write_bytes(pki.key_to_pem(key))
+    (tmp_path / "tunnel-chain.pem").write_bytes(pki.chain_pem(cert, root))
+
+    _at(
+        monkeypatch,
+        5,
+        lambda: rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"tunnel"})),
+    )
+
+    assert _retired_file(tmp_path, "tunnel") == []
+
+
+def test_an_unknown_compromised_scope_changes_nothing(tmp_path):
+    storage.ensure_hierarchy(tmp_path, PW)
+    before = _snapshot(tmp_path)
+
+    with pytest.raises(rotation.RotationError, match="no such scope: acces"):
+        rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"acces"}))
+
+    assert _snapshot(tmp_path) == before
