@@ -79,8 +79,10 @@ Beweis: Code-Lesung scripts/install.sh:269-294; Probe zu `up --wait` in docs/fea
 Dedup-Key: bug:ops:update.sh:no-compose-wait-gateway-healthcheck
 HEAD: e2304a8b
 
-### T5 — restore.sh: Projekt- und Volume-Namen von Compose, gepinntes Image statt `alpine`  [ ]
-Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, changelog.d/install-restore.md
+### T5 — restore.sh: Projekt- und Volume-Namen von Compose, gepinntes Image statt `alpine`  [x]
+Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, changelog.d/install-restore.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @959508c6 2026-10-31T10:53:54+01:00
+Review: approve (.ah-out/review/install-restore/T5.verdict.json)
 Änderung: `restore.sh:29` und Kopfkommentar `:15-16`: der Projektname kommt aus `docker compose config` (erste Zeile), bestimmt nach dem Entpacken und vor der Rückfrage (`:56`); scheitert `compose config`, Abbruch vor jeder Änderung mit der Ausgabe von Compose. Das Hilfs-Image für `restore_volume` (`:68`) und den Restore von `./data` (`:102`) ist das des Dienstes postgres aus `docker compose config --images postgres` (gepinnt per Digest) statt `alpine`; leer → Abbruch vor jeder Änderung. Die Hilfs-Container laufen mit `--entrypoint sh` (nicht dem Entrypoint des postgres-Images), `--network none` und wie heute als root (Eigentümer der Dateien im Volume bleiben). Tests in `restore_guard_test.sh`: die Stubs der Fälle 5–7 beantworten `compose config` mit `name: drproj` und `compose config --images postgres` mit `postgres:17-alpine@sha256:` + 64 × `a` (keine Aussage ändert sich). Neuer Fall: (a) Archiv mit `ca-pki.tar.gz`, `monitoring-data.tar.gz`, `server-data.tar.gz`, `adminhelper.dump`; Stub mit `name: ah-prod` → das Aufruf-Log hat `ah-prod_ca-pki:/dst` und `ah-prod_monitoring-data:/dst`, jedes `docker run` nutzt das Digest-Image und `--network none`, keines `alpine`; (b) `compose config` scheitert → Exit ≠ 0, kein `compose down`, kein `docker run`. Zuerst rot: (a), (b). Die übrigen Fälle (auch der Abschnitt `backup.sh` aus ops-scripts-hardening) bleiben grün.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: changelog.d/install-restore.md (Fixed, umlautfrei: Restore nutzt den Projektnamen, den Compose nutzt, auch `COMPOSE_PROJECT_NAME` aus der `.env`, und das gepinnte postgres-Image statt `alpine`)
@@ -116,3 +118,4 @@ Abhängt von: T5, T6
 
 ## Entscheidungen
 - 2026-10-31 T1: CHANGELOG-Einträge aller Tasks in `changelog.d/install-restore.md` statt `CHANGELOG.md` — Konvention `changelog.d/README.md`, parallele Branches ändern nie dieselbe Datei.
+- 2026-10-31 T5: der Grammatik-Nit des Task-Prüfers zu T4 (Plural „brechen“/„stop“, `installation.html` DE+EN) geht mit T5, damit T4 nicht erneut geprüft werden muss. Neuer Fall 26(c): ein leeres `config --images postgres` bricht ebenso ab.

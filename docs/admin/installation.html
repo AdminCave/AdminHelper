@@ -81,7 +81,7 @@
 
           <h2 id="voraussetzungen">Voraussetzungen</h2>
           <ul>
-            <li>Linux-Host mit Docker Engine 24+ und Docker Compose v2.6+; <code>install.sh</code> und <code>update.sh</code> brauchen Compose v2.17+ (<code>docker compose up --wait</code> und <code>--wait-timeout</code>) und bricht sonst ab, bevor es etwas ändert. frps bindet im Container Port 443 ohne root: Compose setzt dafür im frps-Container <code>net.ipv4.ip_unprivileged_port_start=0</code>. Können Engine oder Kernel diesen Wert nicht setzen, scheitert <code>docker compose up</code> mit einer Fehlermeldung.</li>
+            <li>Linux-Host mit Docker Engine 24+ und Docker Compose v2.6+; <code>install.sh</code> und <code>update.sh</code> brauchen Compose v2.17+ (<code>docker compose up --wait</code> und <code>--wait-timeout</code>) und brechen sonst ab, bevor sie etwas ändern. frps bindet im Container Port 443 ohne root: Compose setzt dafür im frps-Container <code>net.ipv4.ip_unprivileged_port_start=0</code>. Können Engine oder Kernel diesen Wert nicht setzen, scheitert <code>docker compose up</code> mit einer Fehlermeldung.</li>
             <li>Öffentlich erreichbarer Port 443 (Web/API) und 8444 (Enrollment); 7000 (FRP-Kontrollkanal, mTLS) und 7443 (FRP-HTTPS-Tunnel unter dem Subdomain-Host), wenn FRP-Tunnel genutzt werden; optional 8445 (Agent-Paket-Repo, falls genutzt)</li>
             <li>FRP-Tunnel richtest du im Web-Interface ein (Seite <em>FRP</em>, siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>); frps arbeitet mit dieser FRP-Server-Konfiguration.</li>
             <li>DNS-Eintrag, der auf den Host zeigt (<code>srm.example.com</code>)</li>

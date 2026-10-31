@@ -55,6 +55,10 @@
 # docker call, with the hint to init-secrets.sh, and the environment stands in for
 # .env as it does for compose; db-init runs before the first pg_restore, each DB goes
 # back as its role, nothing as adminhelper, and no password shows in an argv.
+# 26: restore.sh takes the volume prefix and the helper image from docker compose
+# config, against a compose stub: COMPOSE_PROJECT_NAME of .env counts, the helpers
+# run the pinned postgres image without a network; a failing config or no image
+# stops it before anything changes.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
@@ -101,7 +105,25 @@ mkdir -p "$WORK/sub"; printf 'x\n' > "$WORK/sub/evil"
 ln -sf /etc/passwd "$WORK/link"
 tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 
-run_restore() { ( cd "$WORK" && bash "$RESTORE" "$1" </dev/null 2>&1 ); }
+# The compose stub: compose config names AH_TEST_PROJECT (default drproj) and
+# the postgres image pinned by digest (none with AH_TEST_NO_IMAGE=1); with
+# AH_TEST_CONFIG_FAIL=1 compose config fails. With STUB_DIR it logs every call.
+mkdir -p "$WORK/cfg/bin"
+cat > "$WORK/cfg/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+[ -z "${STUB_DIR:-}" ] || echo "$*" >> "$STUB_DIR/calls.log"
+case "$*" in
+  "compose config")
+    [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo 'service "server" refers to undefined volume zz-missing' >&2; exit 1; }
+    echo "name: ${AH_TEST_PROJECT:-drproj}"; echo 'services: {}' ;;
+  "compose config --images postgres") [ "${AH_TEST_NO_IMAGE:-}" = 1 ] || echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
+  *pg_restore*|*ON_ERROR_STOP*) cat >/dev/null ;;
+esac
+exit 0
+STUB
+chmod +x "$WORK/cfg/bin/docker"
+
+run_restore() { ( cd "$WORK" && PATH="$WORK/cfg/bin:$PATH" bash "$RESTORE" "$1" </dev/null 2>&1 ); }
 
 # --- 1. clean archive passes the guard, stops at the confirm ────────────────
 out=$(run_restore "$WORK/good.tar.gz")
@@ -137,6 +159,8 @@ case "$*" in
   *pg_isready*)                rc=0 ;;
   *psql*)                      rc=0; [ "$tcp" -ge 3 ] || rc=2 ;;
   *pg_restore*)                cat >/dev/null; rc=0 ;;
+  "compose config")                   echo 'name: drproj'; rc=0 ;;
+  "compose config --images postgres") echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; rc=0 ;;
   *)                           rc=0 ;;
 esac
 echo "rc=$rc $*" >> "$STUB_DIR/calls.log"
@@ -161,6 +185,8 @@ cat > "$WORK/reg/bin/docker" <<'STUB'
 case "$*" in
   *ON_ERROR_STOP*) cat > "$STUB_DIR/register.sql" ;;
   *pg_restore*)    cat >/dev/null ;;
+  "compose config")                   echo 'name: drproj' ;;
+  "compose config --images postgres") echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
 esac
 echo "$*" >> "$STUB_DIR/calls.log"
 exit 0
@@ -690,6 +716,8 @@ cat > "$WORK/roles/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
   *pg_restore*|*ON_ERROR_STOP*) cat >/dev/null ;;
+  "compose config")                   echo 'name: drproj' ;;
+  "compose config --images postgres") echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
 esac
 echo "pw=[${PGPASSWORD-}] $*" >> "$STUB_DIR/calls.log"
 exit 0
@@ -736,6 +764,48 @@ argvs=$(sed 's/^pw=\[[^]]*\] //' "$calls" 2>/dev/null)
     && [ -n "$argvs" ] && ! grep -qE 'pw-(server|scheduler|monitor|ca)' <<<"$argvs"; } \
   && ok "nothing as adminhelper, no role password in an argv" \
   || bad "superuser or password in argv: calls=[$(cat "$calls" 2>/dev/null)]"
+
+# --- 26. restore.sh takes the project name and the helper image from compose ─
+# (a) compose names ah-prod (COMPOSE_PROJECT_NAME in .env): every volume carries
+# that prefix, every helper container the pinned postgres image without a network
+mkdir -p "$WORK/proj/arch/srv" "$WORK/proj/a" "$WORK/proj/b" "$WORK/proj/c"
+printf 'k\n' > "$WORK/proj/arch/srv/.secret_key"
+tar czf "$WORK/proj/arch/server-data.tar.gz" -C "$WORK/proj/arch/srv" .
+rm -r "$WORK/proj/arch/srv"
+for v in ca-pki monitoring-data; do printf 'x\n' > "$WORK/proj/$v"; tar czf "$WORK/proj/arch/$v.tar.gz" -C "$WORK/proj" "$v"; done
+printf 'dump\n' > "$WORK/proj/arch/adminhelper.dump"
+tar czf "$WORK/proj/full.tar.gz" -C "$WORK/proj/arch" .
+# proj_run <dir> [VAR=value…] — restore.sh in <dir> with its .env against the compose stub.
+proj_run() {
+  local dir="$1"; shift
+  cp "$WORK/.env" "$dir/.env"
+  out=$( cd "$dir" && env "$@" STUB_DIR="$dir" PATH="$WORK/cfg/bin:$PATH" \
+      bash "$RESTORE" "$WORK/proj/full.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+  calls=$(cat "$dir/calls.log" 2>/dev/null)
+}
+proj_run "$WORK/proj/a" AH_TEST_PROJECT=ah-prod
+runs=$(grep '^run ' <<<"$calls")
+{ [ $rc -eq 0 ] && grep -qF -- '-v ah-prod_ca-pki:/dst ' <<<"$runs" && grep -qF -- '-v ah-prod_monitoring-data:/dst ' <<<"$runs" \
+    && grep -qF '[restore] Ziel-Compose-Projekt: ah-prod' <<<"$out"; } \
+  && ok "the volumes carry the project name compose names" \
+  || bad "project name: rc=$rc out=[$out] calls=[$calls]"
+n_runs=$(grep -c . <<<"$runs"); n_pinned=$(grep -cF -- "--network none --entrypoint sh " <<<"$runs")
+n_img=$(grep -cF " postgres:17-alpine@sha256:$(printf 'a%.0s' $(seq 64)) -c " <<<"$runs")
+{ [ "$n_runs" -eq 3 ] && [ "$n_pinned" -eq 3 ] && [ "$n_img" -eq 3 ] && ! grep -q alpine' ' <<<"$runs" \
+    && grep -qF -- "-v $WORK/proj/a/data:/dst " <<<"$runs"; } \
+  && ok "every helper container runs the pinned postgres image with sh and no network" \
+  || bad "helper containers: runs=$n_runs pinned=$n_pinned img=$n_img [$runs]"
+# (b) compose config fails: stop before anything changes, with compose's message
+proj_run "$WORK/proj/b" AH_TEST_CONFIG_FAIL=1
+{ [ $rc -ne 0 ] && grep -qF 'undefined volume zz-missing' <<<"$out" && grep -q 'nothing was changed' <<<"$out" \
+    && ! grep -qE '^compose (down|up)|^run ' <<<"$calls"; } \
+  && ok "a failing compose config stops the restore before anything changes" \
+  || bad "compose config fails: rc=$rc out=[$out] calls=[$calls]"
+# (c) compose names no postgres image: the same
+proj_run "$WORK/proj/c" AH_TEST_NO_IMAGE=1
+{ [ $rc -ne 0 ] && grep -q 'no postgres image' <<<"$out" && ! grep -qE '^compose (down|up)|^run ' <<<"$calls"; } \
+  && ok "no postgres image stops the restore before anything changes" \
+  || bad "no image: rc=$rc out=[$out] calls=[$calls]"
 
 echo
 echo "──────────────────────────────────────────"

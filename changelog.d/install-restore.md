@@ -11,6 +11,10 @@
   (`AH_WAIT_TIMEOUT`, Standard 600 s) statt nur auf den Server-Port und nennt bei einem Fehlschlag
   `docker compose ps` und `docker compose logs <dienst>`. Ohne `up --wait` (Compose vor v2.17) bricht es ab, bevor
   es etwas aendert.
+- **Restore: Projektname und Hilfs-Image von Compose:** `restore.sh` nimmt den Projektnamen (das Praefix der
+  Volumes), den Compose nutzt, auch `COMPOSE_PROJECT_NAME` aus der `.env`, und fuer seine Hilfs-Container das
+  gepinnte postgres-Image ohne Netz statt `alpine`. Scheitert `docker compose config`, bricht es ab, bevor es etwas
+  aendert.
 
 ### Changed
 

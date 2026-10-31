@@ -12,8 +12,8 @@
 # DESTRUCTIVE: replaces the contents of the ca-pki / monitoring-data /
 # victoria-data volumes and both databases. The script stops the stack first.
 #
-# The compose project name (volume prefix) defaults to the directory name; set
-# COMPOSE_PROJECT_NAME to override (must match what `docker compose up` uses).
+# The compose project name (volume prefix) is the one docker compose uses:
+# COMPOSE_PROJECT_NAME from the environment or .env, else the directory name.
 
 set -euo pipefail
 
@@ -25,8 +25,6 @@ if [ ! -f "$ARCHIVE" ]; then
     echo "[restore] FEHLER: Backup nicht gefunden: $ARCHIVE" >&2
     exit 1
 fi
-
-PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$PWD" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9_-]//g')}"
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
@@ -72,6 +70,24 @@ fi
 SERVER_PW=$(role_password SERVER_DB_PASSWORD)
 MONITOR_PW=$(role_password MONITOR_DB_PASSWORD)
 
+# Compose alone knows the project name (the volume prefix: it reads
+# COMPOSE_PROJECT_NAME from .env too) and the pinned postgres image, which the
+# helper containers below use instead of an unpinned alpine.
+if ! compose_cfg=$(docker compose config </dev/null 2>"$STAGE/.compose-err"); then
+    echo "[restore] ERROR: docker compose config failed; nothing was changed:" >&2
+    cat "$STAGE/.compose-err" >&2
+    exit 1
+fi
+PROJECT=$(sed -n '1s/^name: //p' <<<"$compose_cfg")
+HELPER_IMAGE=$(docker compose config --images postgres </dev/null 2>"$STAGE/.compose-err") || HELPER_IMAGE=""
+unset compose_cfg
+if [ -z "$PROJECT" ] || [ -z "$HELPER_IMAGE" ]; then
+    echo "[restore] ERROR: docker compose names no project or no postgres image; nothing was changed." >&2
+    cat "$STAGE/.compose-err" >&2
+    exit 1
+fi
+rm -f "$STAGE/.compose-err"
+
 echo "[restore] Ziel-Compose-Projekt: $PROJECT"
 echo "[restore] DIES ÜBERSCHREIBT ca-pki, monitoring-data, victoria-data und beide DBs."
 if [ "$ASSUME_YES" != 1 ]; then
@@ -82,12 +98,14 @@ fi
 
 # Restore a volume from a staged tarball: wipe then extract, with the stack down.
 # `docker run` creates the volume if it does not exist (fresh-host DR works).
+# The helpers run as root (the files keep their owners) with sh, not the
+# postgres entrypoint, and without a network.
 restore_volume() {
     vol="$1"; tarball="$2"
     [ -f "$STAGE/$tarball" ] || { echo "[restore] $tarball nicht im Backup — überspringe $vol"; return; }
     echo "[restore] Volume ${PROJECT}_${vol} <- $tarball"
-    docker run --rm -v "${PROJECT}_${vol}:/dst" -v "$STAGE:/src:ro" alpine \
-        sh -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf "/src/'"$tarball"'" -C /dst'
+    docker run --rm --network none --entrypoint sh -v "${PROJECT}_${vol}:/dst" -v "$STAGE:/src:ro" "$HELPER_IMAGE" \
+        -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf "/src/'"$tarball"'" -C /dst'
 }
 
 echo "[restore] Stoppe den Stack (Volumes bleiben erhalten)..."
@@ -120,8 +138,8 @@ if [ -f "$STAGE/server-data.tar.gz" ]; then
     # ("Cannot utime" / "Cannot mkdir: Permission denied"), breaking DR exactly
     # when it is needed. The escape guard above still applies (defense in
     # depth); the extraction is now jailed to /dst as well.
-    docker run --rm -v "$PWD/data:/dst" -v "$STAGE:/src:ro" alpine \
-        sh -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf /src/server-data.tar.gz -C /dst' \
+    docker run --rm --network none --entrypoint sh -v "$PWD/data:/dst" -v "$STAGE:/src:ro" "$HELPER_IMAGE" \
+        -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf /src/server-data.tar.gz -C /dst' \
         || { echo "[restore] FEHLER: ./data konnte nicht wiederhergestellt werden." >&2; exit 1; }
 else
     echo "[restore] server-data.tar.gz nicht im Backup — überspringe ./data"
