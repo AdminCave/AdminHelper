@@ -97,7 +97,8 @@
 # fragt das Admin-Passwort ab. Non-interaktiv: --admin-password-file &lt;datei&gt; --yes
 # (Passwort in der ersten Zeile; die Datei nur fuer dich lesbar, z.B. chmod 600).
 # --permissive laesst den Stack permissiv (kein erzwungenes mTLS).
-# --reset raeumt Volumes eines fehlgeschlagenen Versuchs weg (docker compose down -v).
+# --reset loescht Container und Volumes eines abgebrochenen Versuchs (docker compose down -v),
+# erst nach Eingabe des Projektnamens am Terminal, auch mit --yes.
 # Ueber einer bestehenden Installation bricht es ab, ohne etwas zu aendern;
 # Updates mit ./scripts/update.sh im Install-Verzeichnis.</code></pre>
           <p>Das Installationsverzeichnis schließt das Script für andere Konten (höchstens <code>0750</code>, Eigentümer bleibt, wer installiert); <code>--dir</code> nennt darum ein eigenes Verzeichnis, kein geteiltes wie <code>/opt</code>; ein Host-Konto mit der UID 10001 oder 70, die die Container nutzen, nennt es mit einer Warnung (siehe <a href="./betrieb.html">Betrieb</a>).</p>

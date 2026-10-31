@@ -78,7 +78,8 @@
 # prompts for the admin password. Non-interactive: --admin-password-file &lt;file&gt; --yes
 # (password on the first line; keep the file readable only by you, e.g. chmod 600).
 # --permissive leaves the stack permissive (no enforced mTLS).
-# --reset wipes volumes from a failed attempt (docker compose down -v).
+# --reset deletes the containers and volumes of an aborted attempt (docker compose down -v),
+# only after the project name is typed on a terminal, --yes included.
 # Over an existing installation it stops without changing anything;
 # update with ./scripts/update.sh in the install directory.</code></pre>
           <p>The script closes the install directory to other accounts (at most <code>0750</code>, the owner stays whoever installs), so <code>--dir</code> names a directory of its own, not a shared one like <code>/opt</code>; a host account with UID 10001 or 70, which the containers use, is named in a warning (see <a href="./operations.html">Operations</a>).</p>

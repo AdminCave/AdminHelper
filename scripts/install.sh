@@ -12,7 +12,9 @@
 # changes anything and points to ./scripts/update.sh: in bootstrap mode when the
 # target directory already holds a .env or a docker-compose.yml, in both modes
 # when the compose project already has containers or a postgres-data or ca-pki
-# volume. A .env alone, written ahead of the install, is taken over.
+# volume. A .env alone, written ahead of the install, is taken over. --reset
+# deletes those containers and volumes only after the project name is typed on
+# a terminal, --yes included.
 #
 # Since 0.29.0 mTLS is enforced by default. There is no "arm" step and no
 # permissive window: the first admin + a one-time enrollment token are created
@@ -32,7 +34,9 @@
 #                per-file raw fetch for dev installs.)
 #   --dir DIR   (target dir in bootstrap mode; default ./adminhelper)
 #   --permissive (set MTLS_ENFORCE=false — opt out of enforced default)
-#   --reset      (docker compose down -v first — wipe volumes from a failed try)
+#   --reset      (docker compose down -v first — wipe the containers and volumes of
+#                an aborted try; asks for the project name on a terminal, even
+#                with --yes)
 #   --yes
 
 set -euo pipefail
@@ -232,29 +236,83 @@ command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1;
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
 close_install_dir
 
+# Interactive prompts must read from the controlling terminal, not stdin: under
+# `curl | bash` stdin is the script pipe, so a bare `read` gets script bytes (or
+# EOF) instead of the user — the install would silently abort at the first prompt.
+# [ -r /dev/tty ] only checks the file bit, not whether it can actually be OPENED:
+# with no controlling terminal (pipe, </dev/null, cron) the open() fails and a read
+# would hit EOF. Test real openability, matching uninstall.sh (4.52).
+if (exec </dev/tty) 2>/dev/null; then TTY=/dev/tty; else TTY=""; fi
+
 # --- Existing installation --------------------------------------------------
 # Over an existing installation the steps below would rewrite DOMAIN and the image
 # pins and start the stack, which migrates the database without a backup, and then
 # fail at create-admin. Compose gives the project name (it also reads
 # COMPOSE_PROJECT_NAME from .env); --no-interpolate needs no .env yet.
-existing_install() {
-    local cfg err="$_TMPROOT/compose-config.err" project containers found="" vol
-    cfg=$(docker compose config --no-interpolate </dev/null 2>"$err") \
+# install_state sets CFG, PROJECT, CONTAINERS (ids, one per line) and FOUND (what of
+# the project exists; empty: nothing).
+install_state() {
+    local err="$_TMPROOT/compose-config.err" vol
+    FOUND=""
+    CFG=$(docker compose config --no-interpolate </dev/null 2>"$err") \
         || { echo "ERROR: docker compose config failed, the compose project is unknown:" >&2; cat "$err" >&2; exit 1; }
-    project=$(awk '$1 == "name:" {print $2; exit}' <<<"$cfg")
-    [ -n "$project" ] || { echo "ERROR: docker compose config names no project." >&2; exit 1; }
-    containers=$(docker compose ps --all --quiet </dev/null 2>"$err") \
-        || { echo "ERROR: cannot list the containers of compose project '${project}':" >&2; cat "$err" >&2; exit 1; }
-    [ -z "$containers" ] || found="containers"
-    for vol in "${project}_postgres-data" "${project}_ca-pki"; do
-        docker volume inspect "$vol" </dev/null >/dev/null 2>&1 && found="${found:+$found, }volume $vol"
+    PROJECT=$(awk '$1 == "name:" {print $2; exit}' <<<"$CFG")
+    [ -n "$PROJECT" ] || { echo "ERROR: docker compose config names no project." >&2; exit 1; }
+    CONTAINERS=$(docker compose ps --all --quiet </dev/null 2>"$err") \
+        || { echo "ERROR: cannot list the containers of compose project '${PROJECT}':" >&2; cat "$err" >&2; exit 1; }
+    [ -z "$CONTAINERS" ] || FOUND="containers"
+    for vol in "${PROJECT}_postgres-data" "${PROJECT}_ca-pki"; do
+        docker volume inspect "$vol" </dev/null >/dev/null 2>&1 && FOUND="${FOUND:+$FOUND, }volume $vol"
     done
-    [ -n "$found" ] || return 0
-    [ "$RESET" = 1 ] && return 0
-    echo "ERROR: compose project '${project}' is already installed here (${found}); nothing was changed." >&2
-    echo "       install.sh sets up a new installation. Update with:  ./scripts/update.sh  (the data stays)" >&2
-    echo "       --reset is only for an aborted first attempt: it deletes the containers and volumes." >&2
-    exit 1
+    return 0
+}
+# project_volumes prints the volumes of the project that exist, one per line. The
+# names come from the volumes block of CFG (config --volumes fails without
+# interpolation).
+project_volumes() {
+    local vol
+    while IFS= read -r vol; do
+        docker volume inspect "$vol" </dev/null >/dev/null 2>&1 && echo "$vol"
+    done < <(awk '/^volumes:/ {f = 1; next} /^[^ ]/ {f = 0} f && $1 == "name:" {print $2}' <<<"$CFG")
+    return 0
+}
+existing_install() {
+    local vols="" vol answer ids dirs
+    install_state
+    # --reset deletes every volume of the project, so any of them asks first.
+    [ "$RESET" != 1 ] || vols=$(project_volumes)
+    [ -n "$FOUND$vols" ] || return 0
+    if [ "$RESET" != 1 ]; then
+        echo "ERROR: compose project '${PROJECT}' is already installed here (${FOUND}); its stack and data were not changed." >&2
+        echo "       install.sh sets up a new installation. Update with:  ./scripts/update.sh  (the data stays)" >&2
+        echo "       --reset is only for an aborted first attempt: it deletes the containers and volumes." >&2
+        exit 1
+    fi
+    [ -n "$TTY" ] || { echo "ERROR: --reset deletes data and needs a typed confirmation on a terminal; the stack and its data were not changed." >&2; exit 1; }
+    # The project name is the directory name: an installation in another directory
+    # of the same name shares it, and the question alone cannot tell the two apart.
+    # Its containers name their directory; volumes do not. A container without that
+    # label counts as foreign: it cannot show that it belongs here.
+    if [ -n "$CONTAINERS" ]; then
+        mapfile -t ids <<<"$CONTAINERS"
+        dirs=$(docker inspect --format 'dir={{index .Config.Labels "com.docker.compose.project.working_dir"}}' "${ids[@]}" </dev/null) \
+            || { echo "ERROR: cannot inspect the containers of compose project '${PROJECT}'." >&2; exit 1; }
+        dirs=$(sed -e 's/^dir=$/(no working_dir label)/' -e 's/^dir=//' <<<"$dirs" | LC_ALL=C sort -u \
+            | grep -vxF -e "$PWD" -e "$(pwd -P)" || true)
+        if [ -n "$dirs" ]; then
+            echo "ERROR: compose project '${PROJECT}' belongs to another directory: $(tr '\n' ' ' <<<"$dirs")" >&2
+            echo "       --reset here would delete that installation; the stack and its data were not changed." >&2
+            echo "       Install into a directory with another name, or set COMPOSE_PROJECT_NAME in .env." >&2
+            exit 1
+        fi
+    fi
+    echo "WARNING: --reset deletes the containers of compose project '${PROJECT}' and these volumes with all their data" >&2
+    echo "         (a volume carries only the project name, so also those of another directory of that name):" >&2
+    [ -n "$vols" ] || vols="(none)"
+    while IFS= read -r vol; do echo "           $vol" >&2; done <<<"$vols"
+    printf "Type the project name '%s' to delete them: " "$PROJECT" >&2
+    read -r answer <"$TTY" || answer=""
+    [ "$answer" = "$PROJECT" ] || { echo "ERROR: that is not the project name; the stack and its data were not changed." >&2; exit 1; }
 }
 existing_install
 
@@ -288,14 +346,6 @@ upsert_env() {
 # --- Secrets + .env ---------------------------------------------------------
 [ -f .env ] || cp .env.example .env
 ./scripts/init-secrets.sh
-
-# Interactive prompts must read from the controlling terminal, not stdin: under
-# `curl | bash` stdin is the script pipe, so a bare `read` gets script bytes (or
-# EOF) instead of the user — the install would silently abort at the first prompt.
-# [ -r /dev/tty ] only checks the file bit, not whether it can actually be OPENED:
-# with no controlling terminal (pipe, </dev/null, cron) the open() fails and a read
-# would hit EOF. Test real openability, matching uninstall.sh (4.52).
-if (exec </dev/tty) 2>/dev/null; then TTY=/dev/tty; else TTY=""; fi
 
 if [ -z "$DOMAIN" ] && [ -n "$TTY" ]; then
     read -rp "Domain (z.B. srm.example.com) [localhost]: " DOMAIN <"$TTY"
@@ -344,6 +394,9 @@ fetch_repo_into
 if [ "$RESET" = 1 ]; then
     echo "[install] --reset: entferne bestehende Container + Volumes (postgres-data, CA, ...)..."
     docker compose down -v </dev/null >/dev/null 2>&1 || true
+    install_state
+    LEFT=$(project_volumes | tr '\n' ' ')
+    [ -z "$CONTAINERS$LEFT" ] || { echo "ERROR: compose project '${PROJECT}' still has ${CONTAINERS:+containers; }${LEFT:+volumes $LEFT}after docker compose down -v; the stack was not started." >&2; exit 1; }
 fi
 echo "[install] Ziehe die Images..."
 docker compose pull </dev/null
