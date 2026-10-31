@@ -113,6 +113,27 @@ def _utc_engine(url: str):
     return engine
 
 
+@pytest.fixture(scope="session")
+def _ca_trust_dir(tmp_path_factory):
+    from tests.trust_ca import write_trust_dir
+
+    return write_trust_dir(tmp_path_factory.mktemp("ca-trust"))
+
+
+@pytest.fixture(autouse=True)
+def _ca_trust(_ca_trust_dir):
+    # The server accepts a gateway-forwarded client cert only from a listed intermediate
+    # of its scope (R-1009); tests/trust_ca.py signs the suite's leaves with those.
+    # A context of its own, not the shared monkeypatch: requested here, that one would be
+    # set up before _no_event_threads and undone after it, and a test's setattr of
+    # events._executor would then put the stand-in back for the rest of the session.
+    from app.core import config
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(config, "CA_TRUST_DIR", str(_ca_trust_dir))
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _fresh_rate_limit_backend():
     # The rate-limit backend is a process-global in-memory singleton; without a per-test reset,
