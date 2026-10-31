@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — frps-Bundle ohne Root (R-1009)  [ ]
+### T1 — frps-Bundle ohne Root (R-1009)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/tests/test_frps_cert.py, apps/ca-issuer/tests/test_gateway_cert.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @33e0108d 2026-10-31T07:28:30+01:00
+Review: approve (.ah-out/review/kern-ca-3/T1.verdict.json)
 Änderung: `_provision_server_material` bekommt einen Schalter, ob die Root ins Trust-Bundle geht; `ensure_frps_cert` schreibt `ca.crt` nur mit den Zwischenzertifikaten (aktuell + abgelöst, tunnel und access), das Gateway behält die Root (nginx braucht sie). Tests: `ca.crt` enthält kein selbstsigniertes Zertifikat; mit `cryptography.x509.verification` (Store = Bundle) besteht ein Leaf des aktuellen und eines abgelösten Zwischenzertifikats, eines unter einem nicht geführten Zwischenzertifikat derselben Root (mitgeschickt) nicht; Gateway-Bundle unverändert.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_frps_cert.py tests/test_gateway_cert.py
 Doku: → T5
@@ -33,7 +35,7 @@ Abhängt von: T2
 
 ### T4 — Stack-Probe: gesperrter Aussteller an frps und Server abgelehnt (R-1009)  [ ]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
-Änderung: Im echten Stack ein Zwischenzertifikat unter der echten Root ausstellen, das nicht geführt ist (im `ca-issuer`-Container mit der Passphrase des Testlaufs), damit ein Leaf signieren und mitschicken: frps lehnt den Handshake ab, über das Gateway bekommt der Server-Aufruf 403 `ERR_CERT_REVOKED`; ein echt enrolltes Zertifikat besteht beides weiter. Beweis im Stack-Job per `gh workflow run ci.yml --ref feature/kern-ca-3`.
+Änderung: Im echten Stack ein Zwischenzertifikat unter der echten Root ausstellen, das nicht geführt ist (im `ca-issuer`-Container mit der Passphrase des Testlaufs), damit ein Leaf signieren und mitschicken: frps lehnt den Handshake ab, über das Gateway bekommt der Server-Aufruf 403 `ERR_CERT_REVOKED`; ein echt enrolltes Zertifikat besteht beides weiter. Dazu `tls_probe` an das Bundle ohne Root aus T1 anpassen (OpenSSL braucht `VERIFY_X509_PARTIAL_CHAIN` oder die Root in der Probe-CA-Datei). Beweis im Stack-Job per `gh workflow run ci.yml --ref feature/kern-ca-3`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T5
 Abhängt von: T1, T3
