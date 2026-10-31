@@ -10,12 +10,14 @@
 # fail-closed abort when a release tag has no bundle (audit 3.29), tamper detection,
 # an .env write that hits a full disk (R-0496), an .env with bytes outside UTF-8
 # or a NUL byte (R-0530), a read-only .env with a terminal on stdin (R-0538), and
-# the admin password from --admin-password-file.
+# the admin password from --admin-password-file, the abort over an existing
+# installation and --reset only after the project name typed on a terminal (R-0665).
 #
 # Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign,
 #      the locale C.UTF-8: without it test 6 cannot run, and the test ends with 75;
 #      script from util-linux and a user that file rights bind: as root or without
-#      script test 7 cannot run, and the test ends with 75 as well)
+#      script test 7 cannot run, without script test 11 neither, and the test ends
+#      with 75 as well)
 
 # ok()/bad() never fail, so `cond && ok || bad` is deliberate (not if-then-else).
 # shellcheck disable=SC2015,SC2001
@@ -48,16 +50,48 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # then (exit 141 under pipefail). Only that branch reads — in the default branch
 # `cat` would hang on an inherited stdin. AH_TEST_DOCKER_LOG records every call,
 # one per line; AH_TEST_DOCKER_ENV the ADMIN_PASSWORD each call inherited.
+# The compose project is AH_TEST_PROJECT (default ahtest), its volume keys
+# AH_TEST_VOLUME_KEYS, its containers AH_TEST_CONTAINERS (default none), the
+# volumes that exist AH_TEST_VOLUMES (space-separated, default none).
+# `compose down -v` in the call log removes containers and volumes, unless
+# AH_TEST_DOWN_KEEPS=1. AH_TEST_CONFIG_FAIL=1 / AH_TEST_PS_FAIL=1 make compose
+# config / compose ps fail. docker inspect names AH_TEST_WORKDIR (unset: the
+# current directory; empty: no label) as the directory of every container.
+# compose up --help offers --wait and --wait-timeout unless AH_TEST_NO_WAIT=1;
+# compose up fails with AH_TEST_UP_FAIL=1; compose logs names a refused Postgres
+# password with AH_TEST_PG_AUTH=1.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
 [ -z "${AH_TEST_DOCKER_ENV:-}" ] || printf '%s\n' "${ADMIN_PASSWORD-<unset>}" >> "$AH_TEST_DOCKER_ENV"
+gone() { [ "${AH_TEST_DOWN_KEEPS:-}" != 1 ] && [ -n "${AH_TEST_DOCKER_LOG:-}" ] && grep -qx 'compose down -v' "$AH_TEST_DOCKER_LOG"; }
 case "$*" in
   *create_connection*) exit 0 ;;
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
-  *logs*) exit 0 ;;
+  *logs*) [ "${AH_TEST_PG_AUTH:-}" != 1 ] || echo 'FATAL:  password authentication failed for user "adminhelper"'; exit 0 ;;
+  "compose up --help")
+    echo 'Usage:  docker compose up [OPTIONS] [SERVICE...]'; echo '  -d, --detach   Detached mode'
+    [ "${AH_TEST_NO_WAIT:-}" = 1 ] || { echo '      --wait   Wait for services to be running|healthy'; echo '      --wait-timeout int   Maximum duration in seconds'; }
+    exit 0 ;;
+  "compose up "*) [ "${AH_TEST_UP_FAIL:-}" != 1 ] || { echo 'container adminhelper-server-1 is unhealthy' >&2; exit 1; }; exit 0 ;;
+  "compose version --short") echo 2.16.0; exit 0 ;;
   *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
+  "compose config"*)
+    [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo "compose config failed in the stub" >&2; exit 1; }
+    echo "name: ${AH_TEST_PROJECT:-ahtest}"; echo "services: {}"; echo "volumes:"
+    for k in ${AH_TEST_VOLUME_KEYS:-ca-pki gateway-certs postgres-data}; do
+      echo "  $k:"; echo "    name: ${AH_TEST_PROJECT:-ahtest}_$k"
+    done
+    exit 0 ;;
+  "compose ps --all --quiet")
+    [ "${AH_TEST_PS_FAIL:-}" != 1 ] || { echo "compose ps failed in the stub" >&2; exit 1; }
+    gone || [ -z "${AH_TEST_CONTAINERS:-}" ] || echo "$AH_TEST_CONTAINERS"; exit 0 ;;
+  "inspect --format "*)
+    shift 3; for _ in "$@"; do echo "dir=${AH_TEST_WORKDIR-$PWD}"; done; exit 0 ;;
+  "volume inspect "*)
+    gone || for v in ${AH_TEST_VOLUMES:-}; do [ "$v" != "$3" ] || exit 0; done
+    echo "Error: No such volume: $3" >&2; exit 1 ;;
   *) exit 0 ;;
 esac
 EOF
@@ -184,8 +218,8 @@ cmp -s "$WORK/env4.orig" "$INST/.env" && ok ".env byte-identical after the faile
   || bad "copies left: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
 dlog=$(cat "$DLOG" 2>/dev/null)
 grep -qx 'compose version' <<<"$dlog" && ok "docker call log written" || bad "no docker call log"
-! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up after the failed write" \
-  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up after the failed write" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 
 # ── 5. .env holding only the key: grep -v filters every line (exit 1), no error ─
 INST="$WORK/inst5"; mkdir -p "$INST/scripts"
@@ -313,8 +347,8 @@ out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.exam
 { [ $rc -ne 0 ] && grep -q 'missing-pw8d' <<<"$out"; } \
   && ok "missing password file aborts and names the path" || { echo "$out" | sed 's/^/    │ /'; bad "missing password file: rc=$rc"; }
 dlog=$(cat "$DLOG" 2>/dev/null)
-! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up after a missing password file" \
-  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up after a missing password file" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 [ "$(cat "$INST/.env")" = DOMAIN=old.example ] && ok ".env untouched after a missing password file" \
   || bad ".env after a missing password file: $(tr '\n' ' ' < "$INST/.env")"
 # (e) empty file
@@ -332,8 +366,8 @@ out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.exam
   && ok "--admin-password with --admin-password-file aborts, no value named" \
   || { echo "$out" | sed 's/^/    │ /'; bad "both password flags: rc=$rc"; }
 dlog=$(cat "$DLOG" 2>/dev/null)
-! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up with both password flags" \
-  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up with both password flags" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 # (g) --admin-password still works and points to the file on stderr
 new_inst inst8g; rm -f "$WORK/admin.stdin"
 out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password zz9pw-arg --yes 2>"$WORK/err8g"); rc=$?
@@ -407,10 +441,214 @@ out=$(cd "$INST" && PATH="$FAILCHMOD:$PATH" bash "$INSTALL" --domain t9.example 
   && ok "a chmod that fails is a warning, the install goes on" \
   || bad "failing chmod: exit $rc, $(grep -i warn <<<"$out")"
 
+# ── 10. an existing installation: abort, nothing changed (R-0665) ────────────
+# Every .env carries the marker zz9, so a leak of a value into the output shows.
+# (a) bootstrap into a directory with a .env, or with only a docker-compose.yml
+entries() { find "$1" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' '; }
+INST="$WORK/inst10a"; mkdir -p "$INST"; printf 'SECRET_KEY=zz9secret\n' > "$INST/.env"
+cp "$INST/.env" "$WORK/env10a.orig"
+out=$(run_install --ref v0.34.0 --dir "$INST" --domain t10.example --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out"; } && ok "bootstrap over a .env aborts and names update.sh" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "bootstrap over a .env: rc=$rc"; }
+[ ! -e "$INST/docker-compose.yml" ] && [ ! -e "$INST/scripts" ] && ok "bootstrap over a .env: nothing extracted" \
+  || bad "bootstrap over a .env extracted: $(entries "$INST")"
+cmp -s "$WORK/env10a.orig" "$INST/.env" && ok "bootstrap over a .env: .env byte-identical" || bad "bootstrap over a .env: .env changed"
+! grep -q zz9 <<<"$out" && ok "bootstrap over a .env: no value of it in the output" || bad "bootstrap output names a .env value"
+INST="$WORK/inst10a2"; mkdir -p "$INST"; printf 'services: {zz9: 1}\n' > "$INST/docker-compose.yml"
+cp "$INST/docker-compose.yml" "$WORK/compose10a2.orig"
+out=$(run_install --ref v0.34.0 --dir "$INST" --domain t10.example --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out"; } && ok "bootstrap over a docker-compose.yml aborts and names update.sh" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "bootstrap over a docker-compose.yml: rc=$rc"; }
+{ cmp -s "$WORK/compose10a2.orig" "$INST/docker-compose.yml" && [ "$(entries "$INST")" = "docker-compose.yml " ]; } \
+  && ok "bootstrap over a docker-compose.yml: it stays byte-identical, nothing added" \
+  || bad "bootstrap over a docker-compose.yml: now $(entries "$INST")"
+# existing_install <name> <env assignments…> — a checkout-mode run like test 5 over a
+# .env with a secret; sets out, rc and dlog, and checks that nothing changed.
+existing_install() {
+  local name="$1"; shift
+  new_inst "$name"; printf 'SECRET_KEY=zz9secret\n' >> "$INST/.env"; cp "$INST/.env" "$WORK/$name.env.orig"
+  DLOG="$WORK/docker-$name.log"
+  out=$(cd "$INST" && env AH_TEST_DOCKER_LOG="$DLOG" "$@" bash "$INSTALL" --domain new.example \
+    --admin-password sikrit123 --yes 2>&1); rc=$?
+  dlog=$(cat "$DLOG" 2>/dev/null)
+}
+# unchanged <label> — .env byte-identical, no compose pull/up/down, no value in the output
+unchanged() {
+  cmp -s "$WORK/$1.env.orig" "$INST/.env" && ok "$1: .env byte-identical" || bad "$1: .env changed: $(tr '\n' ' ' < "$INST/.env")"
+  ! grep -qE '^compose (pull|up|down)' <<<"${dlog//compose up --help/}" && ok "$1: no compose pull/up/down" \
+    || bad "$1: stack touched: $(grep -E '^compose (pull|up|down)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
+  ! grep -q zz9 <<<"$out" && ok "$1: no .env value in the output" || bad "$1: output names a .env value"
+}
+# (b) a data volume of the project
+existing_install inst10b AH_TEST_VOLUMES=ahtest_postgres-data
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'ahtest' <<<"$out"; } \
+  && ok "postgres-data volume: abort names update.sh and the project" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "postgres-data volume: rc=$rc"; }
+unchanged inst10b
+# (c) containers of the project
+existing_install inst10c AH_TEST_CONTAINERS=abc123
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'ahtest' <<<"$out"; } \
+  && ok "containers: abort names update.sh and the project" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "containers: rc=$rc"; }
+unchanged inst10c
+# (d) the project name comes from compose: its volume stops the run, another project's does not
+existing_install inst10d AH_TEST_PROJECT=ah-prod AH_TEST_VOLUMES=ah-prod_ca-pki
+{ [ $rc -ne 0 ] && grep -q 'ah-prod' <<<"$out"; } && ok "ca-pki volume of project ah-prod: abort names it" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "ca-pki volume of ah-prod: rc=$rc"; }
+unchanged inst10d
+existing_install inst10d2 AH_TEST_PROJECT=ah-prod AH_TEST_VOLUMES=adminhelper_ca-pki
+[ $rc -eq 0 ] && ok "a volume of another project (adminhelper) does not stop project ah-prod" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "volume of another project: rc=$rc"; }
+# (e) compose config or compose ps fails: abort, the stack stays as it is
+existing_install inst10e AH_TEST_CONFIG_FAIL=1
+{ [ $rc -ne 0 ] && grep -q 'compose config failed' <<<"$out"; } && ok "compose config fails: abort with its error" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "compose config fails: rc=$rc"; }
+unchanged inst10e
+existing_install inst10e2 AH_TEST_PS_FAIL=1
+{ [ $rc -ne 0 ] && grep -q "cannot list the containers of compose project 'ahtest'" <<<"$out"; } \
+  && ok "compose ps fails: abort names the project" || { echo "$out" | sed 's/^/    │ /'; bad "compose ps fails: rc=$rc"; }
+unchanged inst10e2
+
+# ── 11. --reset deletes only after the project name typed on a terminal (R-0665) ─
+# --yes does not skip the question; without a terminal (setsid: no controlling
+# terminal, as under cron) --reset stops. Each run gets its answer through a FIFO of
+# its own that the test holds open, so the terminal of script never sees an EOF.
+RESET_SKIP=""
+if ! command -v script >/dev/null 2>&1 || ! command -v setsid >/dev/null 2>&1; then
+  RESET_SKIP="test 11 (--reset on a terminal) needs script and setsid from util-linux, this system lacks one"
+  echo "  SKIP $RESET_SKIP"
+else
+  # reset_run <name> <answer> <env assignments…> — --reset --yes on a terminal that
+  # gets <answer> typed; sets out, rc and dlog like existing_install.
+  reset_run() {
+    local name="$1" answer="$2" fifo fd; shift 2
+    new_inst "$name"; printf 'SECRET_KEY=zz9secret\n' >> "$INST/.env"; cp "$INST/.env" "$WORK/$name.env.orig"
+    DLOG="$WORK/docker-$name.log"; fifo="$WORK/tty-$name"; mkfifo "$fifo"; exec {fd}<>"$fifo"
+    printf '%s\n' "$answer" >&"$fd"
+    out=$( ( cd "$INST" && SHELL="$BASH" timeout 60 script -qec "$(printf '%q ' env AH_TEST_DOCKER_LOG="$DLOG" "$@" \
+      bash "$INSTALL" --reset --domain new.example --admin-password sikrit123 --yes)" /dev/null <&"$fd" ) 2>&1 | tr -d '\r'
+      exit "${PIPESTATUS[0]}"); rc=$?
+    exec {fd}>&-
+    dlog=$(cat "$DLOG" 2>/dev/null)
+  }
+  # (a) containers of this directory and the project name typed: down -v before
+  # the pull, both volumes named
+  reset_run inst11a ahtest AH_TEST_CONTAINERS=abc123 AH_TEST_VOLUMES="ahtest_postgres-data ahtest_ca-pki"
+  [ $rc -eq 0 ] && ok "--reset with the project name typed exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "--reset typed: rc=$rc"; }
+  { grep -q ahtest_postgres-data <<<"$out" && grep -q ahtest_ca-pki <<<"$out"; } \
+    && ok "--reset names both volumes before it asks" || bad "--reset question: $(grep -i volume <<<"$out" | tr '\n' ' ')"
+  [ "$(grep -nE '^compose (down -v|pull)' <<<"$dlog" | cut -d: -f2 | tr '\n' ' ')" = "compose down -v compose pull " ] \
+    && ok "--reset runs compose down -v before compose pull" || bad "--reset calls: $(grep -E '^compose' <<<"$dlog" | tr '\n' ' ')"
+  ! grep -q zz9 <<<"$out" && ok "--reset: no .env value in the output" || bad "--reset output names a .env value"
+  # (b) another answer: abort, nothing changed
+  reset_run inst11b nein AH_TEST_VOLUMES="ahtest_postgres-data ahtest_ca-pki"
+  { [ $rc -ne 0 ] && grep -q 'not the project name' <<<"$out"; } && ok "--reset with a wrong answer aborts" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--reset wrong answer: rc=$rc"; }
+  unchanged inst11b
+  # (c) no terminal: abort before any question, --yes or not
+  new_inst inst11c; printf 'SECRET_KEY=zz9secret\n' >> "$INST/.env"; cp "$INST/.env" "$WORK/inst11c.env.orig"
+  DLOG="$WORK/docker-inst11c.log"
+  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" AH_TEST_VOLUMES=ahtest_postgres-data setsid -w bash "$INSTALL" \
+    --reset --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+  dlog=$(cat "$DLOG" 2>/dev/null)
+  { [ $rc -ne 0 ] && grep -q 'needs a typed confirmation on a terminal' <<<"$out"; } \
+    && ok "--reset --yes without a terminal aborts" || { echo "$out" | sed 's/^/    │ /'; bad "--reset without a terminal: rc=$rc"; }
+  unchanged inst11c
+  # (d) nothing there: no question (the answer would be wrong), the run goes on
+  reset_run inst11d nein
+  { [ $rc -eq 0 ] && ! grep -q 'Type the project name' <<<"$out"; } && ok "--reset over nothing asks nothing, exit 0" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--reset over nothing: rc=$rc"; }
+  # (e) the volumes outlive down -v: abort before the pull
+  reset_run inst11e ahtest AH_TEST_VOLUMES=ahtest_postgres-data AH_TEST_DOWN_KEEPS=1
+  { [ $rc -ne 0 ] && grep -q 'still has' <<<"$out" && grep -q ahtest_postgres-data <<<"$out"; } \
+    && ok "volumes left after down -v: abort names them" || { echo "$out" | sed 's/^/    │ /'; bad "volumes left after down -v: rc=$rc"; }
+  ! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "volumes left after down -v: no compose pull/up" \
+    || bad "volumes left after down -v: $(grep -E '^compose' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
+  # (f) the containers belong to an installation in another directory of the same name
+  reset_run inst11f ahtest AH_TEST_CONTAINERS=abc123 AH_TEST_WORKDIR=/srv/other/adminhelper
+  { [ $rc -ne 0 ] && grep -q 'belongs to another directory: /srv/other/adminhelper' <<<"$out" \
+    && ! grep -q 'Type the project name' <<<"$out"; } && ok "containers of another directory: --reset aborts before the question" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "containers of another directory: rc=$rc"; }
+  unchanged inst11f
+  # (g) only a volume without postgres or CA data: --reset still asks
+  reset_run inst11g nein AH_TEST_VOLUME_KEYS="gateway-certs monitoring-data" AH_TEST_VOLUMES=ahtest_monitoring-data
+  { [ $rc -ne 0 ] && grep -q 'Type the project name' <<<"$out" && grep -q ahtest_monitoring-data <<<"$out"; } \
+    && ok "--reset over a monitoring-data volume asks, a wrong answer aborts" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--reset over monitoring-data: rc=$rc"; }
+  unchanged inst11g
+  # (h) a container without the working_dir label counts as another directory
+  reset_run inst11h ahtest AH_TEST_CONTAINERS=abc123 AH_TEST_WORKDIR=
+  { [ $rc -ne 0 ] && grep -q 'belongs to another directory: (no working_dir label)' <<<"$out"; } \
+    && ok "container without a working_dir label: --reset aborts" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "container without a working_dir label: rc=$rc"; }
+  unchanged inst11h
+fi
+
+# ── 12. without --domain the DOMAIN of the existing .env stays ──────────────
+# (a) .env with DOMAIN=old.example (new_inst), --yes without --domain
+new_inst inst12a
+out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "rerun without --domain exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "rerun without --domain: exit $rc"; }
+[ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=old.example ] && ok "rerun without --domain keeps DOMAIN=old.example" \
+  || bad "rerun without --domain: $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"
+# (b) .env without DOMAIN: localhost
+new_inst inst12b; printf 'OTHER=1\n' > "$INST/.env"
+out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=localhost ]; } \
+  && ok ".env without DOMAIN: DOMAIN=localhost" \
+  || { echo "$out" | sed 's/^/    │ /'; bad ".env without DOMAIN: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+# (c) --domain wins over the .env
+new_inst inst12c
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=new.example ]; } \
+  && ok "--domain wins over the DOMAIN of the .env" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "--domain over .env: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+# (d) a commented line does not count, the last active line does
+new_inst inst12d; printf 'DOMAIN=first.example\nDOMAIN=last.example\n#DOMAIN=commented.example\n' > "$INST/.env"
+out=$(cd "$INST" && bash "$INSTALL" --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env")" = DOMAIN=last.example ]; } \
+  && ok "the last active DOMAIN line is the default" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "last active DOMAIN: rc=$rc $(LC_ALL=C grep -a 'DOMAIN=' "$INST/.env" | tr '\n' ' ')"; }
+
+# ── 13. the start waits with docker compose up --wait ───────────────────────
+# start_run <name> <env assignments…> — a checkout install with a call log; sets out, rc, dlog.
+start_run() {
+  local name="$1"; shift
+  new_inst "$name"; cp "$INST/.env" "$WORK/$name.env.orig"; DLOG="$WORK/docker-$name.log"
+  out=$(cd "$INST" && env AH_TEST_DOCKER_LOG="$DLOG" "$@" bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+  dlog=$(cat "$DLOG" 2>/dev/null)
+}
+# (a) up --wait, no TCP loop, create-admin after it
+start_run inst13a
+[ $rc -eq 0 ] && ok "start with up --wait exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "start with up --wait: exit $rc"; }
+grep -qx 'compose up -d --wait --wait-timeout 600' <<<"$dlog" && ok "compose up -d --wait --wait-timeout 600 called" \
+  || bad "compose up calls: $(grep -E '^compose up' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
+! grep -q create_connection <<<"${dlog//compose up --help/}" && ok "no TCP readiness loop" || bad "TCP readiness loop still runs"
+[ "$(grep -oE '^compose (up -d|exec -T server python -m app.cli create-admin)' <<<"$dlog" | tr '\n' ' ')" = "compose up -d compose exec -T server python -m app.cli create-admin " ] \
+  && ok "create-admin runs after up --wait" || bad "order: $(grep -E '^compose (up|exec)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
+# (b) up --wait fails: abort before create-admin, the message names docker compose ps
+start_run inst13b AH_TEST_UP_FAIL=1
+{ [ $rc -ne 0 ] && grep -q 'docker compose ps' <<<"$out" && grep -q 'docker compose logs' <<<"$out"; } \
+  && ok "failed up --wait aborts and names docker compose ps/logs" || { echo "$out" | sed 's/^/    │ /'; bad "failed up --wait: rc=$rc"; }
+! grep -q create-admin <<<"$dlog" && ok "failed up --wait: no create-admin" || bad "failed up --wait: create-admin ran"
+# (c) the server logs a refused Postgres password: the stale-volume message
+start_run inst13c AH_TEST_UP_FAIL=1 AH_TEST_PG_AUTH=1
+{ [ $rc -ne 0 ] && grep -q 'Postgres lehnt das Passwort ab' <<<"$out"; } \
+  && ok "failed up --wait with a refused password names the stale volume" || { echo "$out" | sed 's/^/    │ /'; bad "refused password: rc=$rc"; }
+# (d) compose without up --wait: abort before anything changes
+start_run inst13d AH_TEST_NO_WAIT=1
+{ [ $rc -ne 0 ] && grep -q "lacks 'up --wait'" <<<"$out" && grep -q 2.16.0 <<<"$out"; } \
+  && ok "compose without up --wait aborts and names its version" || { echo "$out" | sed 's/^/    │ /'; bad "compose without up --wait: rc=$rc"; }
+cmp -s "$WORK/inst13d.env.orig" "$INST/.env" && ok "compose without up --wait: .env byte-identical" \
+  || bad "compose without up --wait: .env changed: $(tr '\n' ' ' < "$INST/.env")"
+! grep -qE '^compose (pull|up -d|down)' <<<"$dlog" && ok "compose without up --wait: no compose pull/up/down" \
+  || bad "compose without up --wait: $(grep -E '^compose' <<<"$dlog" | tr '\n' ' ')"
+
 echo
 echo "──────────────────────────────────────────"
 echo "  install_test: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ] || exit 1
 [ -z "$LOCALE_SKIP" ] || echo "SKIP: $LOCALE_SKIP"
 [ -z "$TTY_SKIP" ] || echo "SKIP: $TTY_SKIP"
-[ -z "$LOCALE_SKIP$TTY_SKIP" ] || exit 75
+[ -z "$RESET_SKIP" ] || echo "SKIP: $RESET_SKIP"
+[ -z "$LOCALE_SKIP$TTY_SKIP$RESET_SKIP" ] || exit 75

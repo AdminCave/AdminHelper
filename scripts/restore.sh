@@ -12,8 +12,8 @@
 # DESTRUCTIVE: replaces the contents of the ca-pki / monitoring-data /
 # victoria-data volumes and both databases. The script stops the stack first.
 #
-# The compose project name (volume prefix) defaults to the directory name; set
-# COMPOSE_PROJECT_NAME to override (must match what `docker compose up` uses).
+# The compose project name (volume prefix) is the one docker compose uses:
+# COMPOSE_PROJECT_NAME from the environment or .env, else the directory name.
 
 set -euo pipefail
 
@@ -25,8 +25,6 @@ if [ ! -f "$ARCHIVE" ]; then
     echo "[restore] FEHLER: Backup nicht gefunden: $ARCHIVE" >&2
     exit 1
 fi
-
-PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$PWD" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9_-]//g')}"
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
@@ -51,28 +49,98 @@ tar xzf "$ARCHIVE" -C "$STAGE" --no-same-owner --no-same-permissions
 
 [ -f "$STAGE/MANIFEST.txt" ] && { echo "--- MANIFEST ---"; cat "$STAGE/MANIFEST.txt"; echo "----------------"; }
 
+# Without a .env (a fresh host) the backup's env.sanitized can become the .env,
+# with an empty CA_ROOT_PASSPHRASE= (compose needs the line; the restored
+# hierarchy does not need the value to start). Staged here, written after the
+# confirmation and before postgres starts: postgres initialises a new volume with
+# the POSTGRES_PASSWORD it finds then.
+if [ -f "$STAGE/env.sanitized" ]; then
+    { cat "$STAGE/env.sanitized"; [ -z "$(tail -c 1 "$STAGE/env.sanitized")" ] || echo; echo "CA_ROOT_PASSPHRASE="; } > "$STAGE/env.new"
+fi
+NEW_ENV=""
+[ -f .env ] || [ ! -f "$STAGE/env.new" ] || NEW_ENV="$STAGE/env.new"
+
 # The databases go back as the service roles that own them (db-init sets them up from
 # these passwords), never as the superuser. Read them the way compose interpolates
-# ${VAR}: the environment first, then .env. Checked before the stack is stopped.
+# ${VAR}: the environment first, then the env file compose will read (.env, or the
+# staged one above). Checked before the stack is stopped.
+ENV_FILE=.env
+[ -z "$NEW_ENV" ] || ENV_FILE="$NEW_ENV"
 role_password() {
     local key="$1" value="${!1:-}"
-    if [ -z "$value" ] && [ -f .env ]; then
-        value=$( { LC_ALL=C grep -a -E "^${key}=" .env || true; } | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"\$//")
+    if [ -z "$value" ] && [ -f "$ENV_FILE" ]; then
+        value=$( { LC_ALL=C grep -a -E "^${key}=" "$ENV_FILE" || true; } | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"\$//")
     fi
     printf '%s' "$value"
 }
-missing=()
-for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
-    [ -n "$(role_password "$key")" ] || missing+=("$key")
-done
-if [ "${#missing[@]}" -gt 0 ]; then
-    echo "[restore] ERROR: .env lacks ${missing[*]} — run ./scripts/init-secrets.sh first. The stack keeps running unchanged." >&2
-    exit 1
+check_role_passwords() {
+    local key missing=()
+    for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
+        [ -n "$(role_password "$key")" ] || missing+=("$key")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        if [ "$ENV_FILE" = .env ]; then
+            echo "[restore] ERROR: .env lacks ${missing[*]} — run ./scripts/init-secrets.sh first. The stack keeps running unchanged." >&2
+        else
+            echo "[restore] ERROR: the .env of the backup lacks ${missing[*]} (a backup from before the per-service roles) — set them in the environment or create .env with ./scripts/init-secrets.sh first. Nothing was changed." >&2
+        fi
+        exit 1
+    fi
+}
+check_role_passwords
+
+# Compose alone knows the project name (the volume prefix: it reads
+# COMPOSE_PROJECT_NAME from .env too) and the pinned postgres image, which the
+# helper containers below use instead of an unpinned alpine.
+compose_names() {
+    local compose_cfg
+    if ! compose_cfg=$(docker compose "$@" config </dev/null 2>"$STAGE/.compose-err"); then
+        echo "[restore] ERROR: docker compose config failed; nothing was changed:" >&2
+        cat "$STAGE/.compose-err" >&2
+        exit 1
+    fi
+    PROJECT=$(sed -n '1s/^name: //p' <<<"$compose_cfg")
+    HELPER_IMAGE=$(docker compose "$@" config --images postgres </dev/null 2>"$STAGE/.compose-err") || HELPER_IMAGE=""
+    if [ -z "$PROJECT" ] || [ -z "$HELPER_IMAGE" ]; then
+        echo "[restore] ERROR: docker compose names no project or no postgres image; nothing was changed." >&2
+        cat "$STAGE/.compose-err" >&2
+        exit 1
+    fi
+    rm -f "$STAGE/.compose-err"
+}
+pg_volume_exists() { docker volume inspect "${PROJECT}_postgres-data" </dev/null >/dev/null 2>&1; }
+
+# The staged .env counts only where its project has no database volume yet;
+# otherwise everything runs as today, against the environment and the .env.
+FRESH=0
+if [ -n "$NEW_ENV" ]; then
+    compose_names --env-file "$NEW_ENV"
+    pg_volume_exists || FRESH=1
+fi
+if [ "$FRESH" = 0 ]; then
+    if [ "$ENV_FILE" != .env ]; then ENV_FILE=.env; check_role_passwords; fi
+    compose_names
+    PGVOL=0; pg_volume_exists && PGVOL=1
+    # Without a volume postgres initialises one with POSTGRES_PASSWORD, from the
+    # environment (backup_restore_test.sh exports it) or from .env.
+    if [ "$PGVOL" = 0 ] && [ ! -f .env ] && [ -z "$(role_password POSTGRES_PASSWORD)" ]; then
+        if [ -n "$NEW_ENV" ]; then
+            echo "[restore] ERROR: no .env here and no POSTGRES_PASSWORD in the environment; the .env of the backup belongs to a project whose database volume exists, not to ${PROJECT}. Nothing was changed." >&2
+        else
+            echo "[restore] ERROR: no .env here, no POSTGRES_PASSWORD in the environment and no env.sanitized in the backup: postgres cannot initialise a new volume; nothing was changed." >&2
+        fi
+        exit 1
+    fi
+    if [ "$PGVOL" = 1 ] && [ -z "$(role_password POSTGRES_PASSWORD)" ]; then
+        echo "[restore] ERROR: the volume ${PROJECT}_postgres-data exists, but POSTGRES_PASSWORD is set neither in the environment nor in .env; pg_restore could not log in. Nothing was changed." >&2
+        exit 1
+    fi
 fi
 SERVER_PW=$(role_password SERVER_DB_PASSWORD)
 MONITOR_PW=$(role_password MONITOR_DB_PASSWORD)
 
 echo "[restore] Ziel-Compose-Projekt: $PROJECT"
+[ "$FRESH" = 0 ] || echo "[restore] No .env and no database volume here: the .env of the backup becomes .env before postgres starts."
 echo "[restore] DIES ÜBERSCHREIBT ca-pki, monitoring-data, victoria-data und beide DBs."
 if [ "$ASSUME_YES" != 1 ]; then
     printf "Fortfahren? [y/N] "
@@ -80,14 +148,23 @@ if [ "$ASSUME_YES" != 1 ]; then
     case "$ans" in y|Y|yes|j|J) ;; *) echo "Abgebrochen."; exit 0 ;; esac
 fi
 
+if [ "$FRESH" = 1 ]; then
+    env_tmp=$(mktemp ./.env.restore.XXXXXX)
+    cat "$NEW_ENV" > "$env_tmp"
+    mv -f "$env_tmp" .env
+    echo "[restore] .env created from the backup (CA_ROOT_PASSPHRASE= empty)."
+fi
+
 # Restore a volume from a staged tarball: wipe then extract, with the stack down.
 # `docker run` creates the volume if it does not exist (fresh-host DR works).
+# The helpers run as root (the files keep their owners) with sh, not the
+# postgres entrypoint, and without a network.
 restore_volume() {
     vol="$1"; tarball="$2"
     [ -f "$STAGE/$tarball" ] || { echo "[restore] $tarball nicht im Backup — überspringe $vol"; return; }
     echo "[restore] Volume ${PROJECT}_${vol} <- $tarball"
-    docker run --rm -v "${PROJECT}_${vol}:/dst" -v "$STAGE:/src:ro" alpine \
-        sh -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf "/src/'"$tarball"'" -C /dst'
+    docker run --rm --network none --entrypoint sh -v "${PROJECT}_${vol}:/dst" -v "$STAGE:/src:ro" "$HELPER_IMAGE" \
+        -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf "/src/'"$tarball"'" -C /dst'
 }
 
 echo "[restore] Stoppe den Stack (Volumes bleiben erhalten)..."
@@ -120,8 +197,8 @@ if [ -f "$STAGE/server-data.tar.gz" ]; then
     # ("Cannot utime" / "Cannot mkdir: Permission denied"), breaking DR exactly
     # when it is needed. The escape guard above still applies (defense in
     # depth); the extraction is now jailed to /dst as well.
-    docker run --rm -v "$PWD/data:/dst" -v "$STAGE:/src:ro" alpine \
-        sh -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf /src/server-data.tar.gz -C /dst' \
+    docker run --rm --network none --entrypoint sh -v "$PWD/data:/dst" -v "$STAGE:/src:ro" "$HELPER_IMAGE" \
+        -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf /src/server-data.tar.gz -C /dst' \
         || { echo "[restore] FEHLER: ./data konnte nicht wiederhergestellt werden." >&2; exit 1; }
 else
     echo "[restore] server-data.tar.gz nicht im Backup — überspringe ./data"
@@ -188,13 +265,14 @@ echo "[restore] Starte den kompletten Stack..."
 docker compose up -d
 
 # .env: never clobber an existing one (it may hold the live CA_ROOT_PASSPHRASE).
-if [ -f "$STAGE/env.sanitized" ]; then
-    cp "$STAGE/env.sanitized" ./.env.restored
+if [ "$FRESH" = 0 ] && [ -f "$STAGE/env.sanitized" ]; then
+    ( umask 077; cat "$STAGE/env.new" > ./.env.restored )
     chmod 600 ./.env.restored
-    echo "[restore] .env aus dem Backup nach ./.env.restored geschrieben (OHNE CA_ROOT_PASSPHRASE)."
-    echo "[restore]   -> on a fresh host: move it to .env and add the line CA_ROOT_PASSPHRASE= (empty or with"
-    echo "[restore]      the separately kept passphrase); without that line docker compose up aborts."
-    echo "[restore]      The restored hierarchy does not need the value to start."
+    echo "[restore] .env aus dem Backup nach ./.env.restored geschrieben (mit leerer Zeile CA_ROOT_PASSPHRASE=)."
+    if [ "$PGVOL" = 0 ]; then
+        echo "[restore]   -> the database volume was initialised with POSTGRES_PASSWORD of the current .env:"
+        echo "[restore]      keep that one when you take values over from .env.restored."
+    fi
 fi
 
 echo "[restore] Fertig. Der ca-issuer lädt die wiederhergestellte Hierarchie — Agenten bleiben vertraut."

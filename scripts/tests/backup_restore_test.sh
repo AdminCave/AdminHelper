@@ -104,6 +104,61 @@ CA_AFTER=$(ca_fingerprint)
     && ok "CA chain identical after restore ($CA_AFTER) — agents stay trusted" \
     || bad "CA chain changed across restore: '$CA_BEFORE' -> '$CA_AFTER'"
 
+# ── Restore on an empty host, COMPOSE_PROJECT_NAME only in the .env (R-0665) ──
+# An install directory of its own named unlike the project: restore.sh must take the
+# project (the volume prefix) and the .env from the backup, with nothing exported.
+INST="$E2E_WORK/dr-host"
+# Created up front so docker does not create them as root; the restore still hands
+# ./data to the container user, so the section empties it in a container at its end.
+mkdir -p "$INST/scripts" "$INST/data" "$INST/repo"
+cp "$E2E_REPO_ROOT/docker-compose.yml" "$E2E_REPO_ROOT/docker-compose.test.yml" "$INST/"
+cp "$E2E_REPO_ROOT/scripts/backup.sh" "$E2E_REPO_ROOT/scripts/restore.sh" "$INST/scripts/"
+{ cat "$E2E_WORK/.env"; echo "COMPOSE_PROJECT_NAME=$E2E_PROJECT"; echo "COMPOSE_FILE=docker-compose.yml:docker-compose.test.yml"; } > "$INST/.env"
+chmod 600 "$INST/.env"
+# in_inst <cmd…> — run in $INST with none of the variables this test exported.
+in_inst() {
+    (cd "$INST" && env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
+        ${DOCKER_CONTEXT:+DOCKER_CONTEXT="$DOCKER_CONTEXT"} "$@")
+}
+mkdir -p "$E2E_WORK/bk2"
+in_inst ./scripts/backup.sh --output "$E2E_WORK/bk2" >"$E2E_WORK/backup2.log" 2>&1 \
+    && ok "empty host: backup.sh from the install directory completed" \
+    || { bad "empty host: backup.sh failed"; tail -15 "$E2E_WORK/backup2.log" >&2; }
+BK2=$(ls "$E2E_WORK"/bk2/*.tar.gz 2>/dev/null | head -1)
+in_inst docker compose down -v >/dev/null 2>&1
+rm -f "$INST/.env"
+if [ -n "$BK2" ] && in_inst ./scripts/restore.sh "$BK2" --yes >"$E2E_WORK/restore2.log" 2>&1; then
+    ok "empty host: restore.sh without .env completed"
+else
+    bad "empty host: restore.sh failed"; tail -20 "$E2E_WORK/restore2.log" >&2
+fi
+{ [ -n "$BK2" ] && tar xzf "$BK2" -O ./env.sanitized; echo 'CA_ROOT_PASSPHRASE='; } > "$E2E_WORK/expected.env" 2>/dev/null
+{ [ -f "$INST/.env" ] && [ "$(stat -c '%a' "$INST/.env")" = 600 ] && cmp -s "$E2E_WORK/expected.env" "$INST/.env"; } \
+    && ok "empty host: .env is env.sanitized of the backup plus CA_ROOT_PASSPHRASE=, 0600" \
+    || bad "empty host: .env missing, not 0600 or not the one of the backup"
+! docker volume inspect "dr-host_ca-pki" >/dev/null 2>&1 \
+    && ok "empty host: no volume named after the directory (dr-host_ca-pki)" \
+    || bad "empty host: restore.sh wrote volumes of the directory name"
+code=000
+for _ in $(seq 1 60); do
+    code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "$E2E_SERVER_URL/" 2>/dev/null || echo 000)
+    [ "$code" != "000" ] && break
+    sleep 2
+done
+TOKEN3=$(e2e_admin_token)
+curl -k -s -H "Authorization: Bearer $TOKEN3" "$E2E_SERVER_URL/api/servers" 2>/dev/null | grep -q "dr-probe" \
+    && ok "empty host: server record back (dr-probe present)" \
+    || bad "empty host: server record LOST"
+CA_EMPTY=$(ca_fingerprint)
+[ -n "$CA_BEFORE" ] && [ "$CA_BEFORE" = "$CA_EMPTY" ] \
+    && ok "empty host: CA chain identical ($CA_EMPTY)" \
+    || bad "empty host: CA chain changed: '$CA_BEFORE' -> '$CA_EMPTY'"
+docker volume rm "dr-host_ca-pki" >/dev/null 2>&1 || true
+HELPER_IMAGE=$(in_inst docker compose -f docker-compose.yml config --images postgres </dev/null 2>/dev/null)
+docker run --rm --network none --entrypoint find -v "$INST/data:/dst" "$HELPER_IMAGE" /dst -mindepth 1 -delete >/dev/null 2>&1
+[ -z "$(ls -A "$INST/data" 2>/dev/null)" ] && ok "empty host: ./data emptied for the teardown" \
+    || bad "empty host: ./data of the restore could not be emptied (the teardown leaves $INST)"
+
 echo ""
 echo "backup_restore_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

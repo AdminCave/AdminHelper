@@ -52,10 +52,13 @@ done
 command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
 
-# Compose-Projektname (= Volume-/Netzwerk-Präfix bzw. -Label). Default ist der
-# Verzeichnisname; identisch zu restore.sh, damit der Label-Sweep dieselben
-# Ressourcen trifft, die `docker compose up` angelegt hat.
-PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$PWD" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9_-]//g')}"
+# Compose-Projektname (= Volume-/Netzwerk-Präfix bzw. -Label), wie Compose ihn
+# auflöst (COMPOSE_PROJECT_NAME aus Umgebung oder .env, sonst Verzeichnisname;
+# wie restore.sh), damit der Label-Sweep trifft, was `docker compose up` angelegt
+# hat. Scheitert `compose config` (eine defekte Compose-Datei, genau der Fall für
+# den Sweep), gilt die alte Ableitung: Umgebung, sonst Verzeichnisname.
+PROJECT=$(docker compose config </dev/null 2>/dev/null | sed -n '1s/^name: //p') || PROJECT=""
+[ -n "$PROJECT" ] || PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$PWD" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9_-]//g')}"
 
 # Rückfragen müssen vom kontrollierenden Terminal lesen (analog install.sh):
 # unter `curl | bash` wäre stdin die Skript-Pipe. ACHTUNG: `[ -r /dev/tty ]`
