@@ -6,36 +6,70 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_admin
+from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
+from app.modules.connections.models import Connection
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.schemas import FrpTunnelCreate, FrpTunnelUpdate
+from app.modules.frp.schemas import (
+    PORT_MAX,
+    PORT_MIN,
+    FrpTunnelCreate,
+    FrpTunnelOut,
+    FrpTunnelUpdate,
+    TunnelListItem,
+)
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
+# The keys of a tunnel a non-admin reads: what the desktop deserialises it into (TunnelMapping in
+# apps/desktop/src-tauri/src/tunnel.rs, pinned by tests/test_frp_tunnel_access.py).
+_MAPPING_FIELDS = (
+    "id",
+    "serverId",
+    "tunnelType",
+    "protocol",
+    "localPort",
+    "visitorPort",
+    "customDomains",
+    "connectionId",
+    "enabled",
+    "name",
+)
 
-@router.get("/tunnels")
+
+@router.get("/tunnels", response_model=list[TunnelListItem])
 def list_tunnels(
     server_id: str | None = Query(None),
     frp_config_id: str | None = Query(None),
     db: Session = Depends(get_db),
-    _admin=Depends(get_current_admin),
+    current_user=Depends(get_current_user),
 ):
     query = db.query(FrpTunnel)
+    if not current_user.is_admin:
+        # The desktop resolves a non-admin's connections through these mappings, so he reads the
+        # enabled tunnels of his assigned servers, nothing beyond TunnelMapping: the same split as
+        # _visible_stcp_tunnels. The query parameters below only narrow this further.
+        server_ids = [s.id for s in current_user.servers]
+        if not server_ids:
+            return []
+        query = query.filter(FrpTunnel.server_id.in_(server_ids), FrpTunnel.enabled.is_(True))
     if server_id:
         query = query.filter(FrpTunnel.server_id == server_id)
     if frp_config_id:
         query = query.filter(FrpTunnel.frp_config_id == frp_config_id)
-    tunnels = query.order_by(FrpTunnel.name).all()
-    return [t.to_dict(mask_secrets=True) for t in tunnels]
+    listed = [t.to_dict(mask_secrets=True) for t in query.order_by(FrpTunnel.name).all()]
+    if current_user.is_admin:
+        return listed
+    return [{key: t[key] for key in _MAPPING_FIELDS} for t in listed]
 
 
 def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:
@@ -52,6 +86,43 @@ def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:
     )
 
 
+def _reject_bad_local_port(value: int | None) -> None:
+    """frpc refuses the whole config of a host for a localPort outside 0-65535, and 0 is no
+    target. Checked here, not in the schema, so the published OpenAPI contract stays as it is;
+    RequestValidationError keeps the 422 in the declared shape."""
+    if value is not None and PORT_MIN <= value <= PORT_MAX:
+        return
+    raise RequestValidationError(
+        [
+            {
+                "type": "value_error",
+                "loc": ("body", "local_port"),
+                "msg": "local_port must be a port from 1 to 65535",
+                "input": value,
+            }
+        ]
+    )
+
+
+def _reject_unknown_connection(db: Session, connection_id: str | None) -> None:
+    """A connection_id no row matches reached the INSERT and failed on its foreign key.
+    RequestValidationError, not HTTPException, so the 422 keeps the shape the OpenAPI
+    schema declares (as _reject_unknown_server in connections/router.py)."""
+    if connection_id is None:
+        return
+    if db.query(Connection.id).filter(Connection.id == connection_id).first() is None:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "connection_id"),
+                    "msg": "connection not found",
+                    "input": connection_id,
+                }
+            ]
+        )
+
+
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
@@ -63,13 +134,14 @@ def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None
         tunnel.connection_id = auto_conn.id
 
 
-@router.post("/tunnels", status_code=status.HTTP_201_CREATED)
+@router.post("/tunnels", status_code=status.HTTP_201_CREATED, response_model=FrpTunnelOut)
 def create_tunnel(
     data: FrpTunnelCreate,
     request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    _reject_bad_local_port(data.local_port)
     server = db.query(Server).filter(Server.id == data.server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
@@ -77,6 +149,7 @@ def create_tunnel(
     config = db.query(FrpServerConfig).filter(FrpServerConfig.id == data.frp_config_id).first()
     if not config:
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
+    _reject_unknown_connection(db, data.connection_id)
 
     existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
     if existing:
@@ -121,12 +194,10 @@ def create_tunnel(
         tags=json.dumps(data.tags) if data.tags else None,
     )
     db.add(tunnel)
-    db.flush()
-
-    if data.auto_create_connection:
-        _attach_auto_connection(db, tunnel, data.auto_connection_username)
-
     try:
+        db.flush()
+        if data.auto_create_connection:
+            _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
     except IntegrityError:
         # Lost a race against a concurrent create on the same proxy name or
@@ -149,7 +220,7 @@ def create_tunnel(
     return tunnel.to_dict(mask_secrets=True)
 
 
-@router.get("/tunnels/{tunnel_id}")
+@router.get("/tunnels/{tunnel_id}", response_model=FrpTunnelOut)
 def get_tunnel(tunnel_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
@@ -157,7 +228,7 @@ def get_tunnel(tunnel_id: str, db: Session = Depends(get_db), _admin=Depends(get
     return tunnel.to_dict(mask_secrets=True)
 
 
-@router.put("/tunnels/{tunnel_id}")
+@router.put("/tunnels/{tunnel_id}", response_model=FrpTunnelOut)
 def update_tunnel(
     tunnel_id: str,
     data: FrpTunnelUpdate,
@@ -165,11 +236,15 @@ def update_tunnel(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    sent = data.model_fields_set
+    if "local_port" in sent:
+        _reject_bad_local_port(data.local_port)
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
-    sent = data.model_fields_set
+    if "connection_id" in sent:
+        _reject_unknown_connection(db, data.connection_id)
     # Responses never carry the secret, so an editor sends the field back
     # empty: on update, null or "" means "keep the stored secret".
     if "secret_key" in sent and not data.secret_key:
@@ -217,10 +292,15 @@ def update_tunnel(
         if (
             tunnel.visitor_port
             and "visitor_port" not in sent
-            and _port_taken(db, tunnel.visitor_port, tunnel_id)
+            and (
+                not PORT_MIN <= tunnel.visitor_port <= PORT_MAX
+                or _port_taken(db, tunnel.visitor_port, tunnel_id)
+            )
         ):
             # A stored port another stcp tunnel took meanwhile (rows from before https
-            # cleared it) is replaced; only a port the client sends is a 409.
+            # cleared it) is replaced, and so is one outside 1-65535 stored before R-0533:
+            # the auto-connection would point at it, and no visitor ever binds it. Only a
+            # port the client sends is a 409 (or a 422 from the schema).
             tunnel.visitor_port = None
         if not tunnel.visitor_port:
             tunnel.visitor_port = next_visitor_port(db, exclude_tunnel_id=tunnel_id)
@@ -233,10 +313,9 @@ def update_tunnel(
     if "tags" in sent:
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
-    if data.auto_create_connection and not tunnel.connection_id:
-        _attach_auto_connection(db, tunnel, data.auto_connection_username)
-
     try:
+        if data.auto_create_connection and not tunnel.connection_id:
+            _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
     except IntegrityError:
         db.rollback()

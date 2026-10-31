@@ -21,7 +21,13 @@ from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
 from app.modules.users.models import User
-from app.modules.users.schemas import DeviceResponse, UserCreate, UserResponse, UserUpdate
+from app.modules.users.schemas import (
+    DeviceResponse,
+    MyServerOut,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -102,9 +108,17 @@ def update_user(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    query = db.query(User).filter(User.id == user_id)
+    if data.is_admin:
+        # Two concurrent promotions would otherwise both read is_admin = false, add two
+        # baseline rules and fire user.promoted twice. Only on promotion: locking the target
+        # before the admin rows of a demotion would reverse that lock order (A/B deadlock).
+        query = query.with_for_update().populate_existing()
+    user = query.first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
+    was_admin = user.is_admin
+    old_server_ids = {s.id for s in user.servers}
     if data.password is not None:
         user.hashed_password = hash_password(data.password)
         # Revoke all existing JWTs for this user (password reset invalidates
@@ -141,6 +155,16 @@ def update_user(
         user.servers = servers
     db.commit()
     db.refresh(user)
+    if user.is_admin and not was_admin:
+        fire_event("user.promoted", {"id": user.id, "username": user.username})
+    # detail names the changed fields and carries no value but the new admin flag.
+    changed = []
+    if data.password is not None:
+        changed.append("password")
+    if user.is_admin != was_admin:
+        changed.append(f"is_admin={str(user.is_admin).lower()}")
+    if {s.id for s in user.servers} != old_server_ids:
+        changed.append("server_ids")
     audit.record(
         db,
         "user.updated",
@@ -148,6 +172,7 @@ def update_user(
         object_type="user",
         object_id=user.id,
         object_label=user.username,
+        detail=", ".join(changed) or None,
     )
     return _user_response(user)
 
@@ -239,6 +264,6 @@ def revoke_device(
     )
 
 
-@router.get("/me/servers")
+@router.get("/me/servers", response_model=list[MyServerOut])
 def my_servers(current_user=Depends(get_current_user)):
     return [{"id": s.id, "name": s.name, "hostname": s.hostname} for s in current_user.servers]

@@ -83,14 +83,18 @@ pub fn generate_diagnostics(app: tauri::AppHandle) -> Result<String, AppError> {
 /// workspace: only the server or sync source of this workspace
 /// ([`workspace::own_url`]), never that of another one.
 #[tauri::command]
-pub fn reset_server_cert_pin(app: tauri::AppHandle, server_url: String) -> Result<(), AppError> {
-    reset_server_cert_pin_in(&storage::app_data_dir(&app)?, &server_url)
+pub async fn reset_server_cert_pin(
+    app: tauri::AppHandle,
+    server_url: String,
+) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || reset_server_cert_pin_in(&base, &server_url)).await
 }
 
 /// [`reset_server_cert_pin`] in the app data dir `base`.
 fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
     let (_, meta) = own_meta(base)?;
-    tofu::forget_pin(&workspace::own_url(&meta, sent)?);
+    tofu::forget_pin(&workspace::own_url(&meta, sent)?)?;
     Ok(())
 }
 
@@ -98,23 +102,23 @@ fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
 /// intermediate). The provisioning tab embeds it as the agent's `--ca-fp`, so
 /// the agent's first contact is verified instead of TOFU. None until enrolled.
 #[tauri::command]
-pub fn pinned_ca_fingerprint() -> Option<String> {
-    enrollment::pinned_ca_fingerprint()
+pub async fn pinned_ca_fingerprint() -> Result<Option<String>, AppError> {
+    blocking(|| Ok(enrollment::pinned_ca_fingerprint())).await
 }
 
 /// Name (CN) and expiry of this device's enrolled certificate, for the identity
 /// line in the settings. None until enrolled; an error when the stored
 /// certificate is unreadable — the UI then shows a fixed text, never the error.
 #[tauri::command]
-pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
-    enrollment::device_identity()
+pub async fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
+    blocking(enrollment::device_identity).await
 }
 
 /// Whether this device currently holds an enrolled mTLS identity. Drives the
 /// visibility of the "reset device identity" action in the settings UI.
 #[tauri::command]
-pub fn is_device_enrolled() -> bool {
-    enrollment::is_enrolled()
+pub async fn is_device_enrolled() -> Result<bool, AppError> {
+    blocking(|| Ok(enrollment::is_enrolled())).await
 }
 
 /// Reset this device's enrolled mTLS identity AND forget the TOFU pin for the
@@ -126,23 +130,44 @@ pub fn is_device_enrolled() -> bool {
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
 /// UI whether that happened. Only at the server of this workspace
-/// ([`sign_in_target`]), where its purge would revoke it too.
+/// ([`sign_in_target`]), where its purge would revoke it too. An `Err` when the
+/// identity could not be deleted on this device (the message names a revoke that
+/// happened; the pin then stays) or the pin could not be forgotten. The reset can be
+/// repeated (without an identity it ends as `NotEnrolled` and forgets the pin again).
 #[tauri::command]
 pub async fn reset_device_identity(
     app: tauri::AppHandle,
     server_url: String,
 ) -> Result<enrollment::ResetOutcome, AppError> {
-    reset_device_identity_in(&storage::app_data_dir(&app)?, &server_url).await
+    let base = storage::app_data_dir(&app)?;
+    reset_device_identity_in(&base, &server_url, |url| {
+        blocking(move || tofu::forget_pin(&url))
+    })
+    .await
 }
 
-/// [`reset_device_identity`] in the app data dir `base`.
-async fn reset_device_identity_in(
+/// [`reset_device_identity`] in the app data dir `base`, `forget` forgetting the pin of the
+/// server it is given.
+async fn reset_device_identity_in<F, Fut>(
     base: &Path,
     sent: &str,
-) -> Result<enrollment::ResetOutcome, AppError> {
+    forget: F,
+) -> Result<enrollment::ResetOutcome, AppError>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<(), AppError>>,
+{
     let server_url = sign_in_target(base, sent, None)?;
-    let outcome = enrollment::reset_identity(&server_url).await;
-    tofu::forget_pin(&server_url);
+    let outcome = enrollment::reset_identity(&server_url).await?;
+    forget(server_url).await.map_err(|err| {
+        AppError::Keyring(match outcome {
+            enrollment::ResetOutcome::LocalOnly => format!(
+                "resetting the device identity: it was deleted on this device only, the server \
+                 could not be asked to revoke it; {err}"
+            ),
+            _ => format!("resetting the device identity: {err}"),
+        })
+    })?;
     Ok(outcome)
 }
 
@@ -207,13 +232,20 @@ where
     E: FnOnce(String) -> EnrollFut,
     EnrollFut: Future<Output = Result<(), AppError>>,
     R: FnOnce(String) -> ResetFut,
-    ResetFut: Future<Output = enrollment::ResetOutcome>,
+    ResetFut: Future<Output = Result<enrollment::ResetOutcome, AppError>>,
 {
     let server_url = sign_in_target(base, sent, None)?;
     enroll(server_url.clone()).await?;
     if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
-        reset(server_url).await;
-        return Err(e);
+        // The registration fails with `e` either way; the message says whether the identity
+        // went or stays for the user's own reset.
+        return Err(AppError::Validation(match reset(server_url).await {
+            Ok(_) => format!("{e}; the new device identity is reset, register again"),
+            Err(not_reset) => format!(
+                "{e}; resetting it failed, the device identity stays, reset it in the \
+                 settings: {not_reset}"
+            ),
+        }));
     }
     Ok(())
 }
@@ -251,23 +283,33 @@ pub fn load_connections(app: tauri::AppHandle) -> Result<Vec<Connection>, AppErr
 
 /// What the webview reads is the base against which `save_settings` tells what it changed.
 #[tauri::command]
-pub fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
-    storage::load_settings_for_webview(&app)
+pub async fn load_settings(app: tauri::AppHandle) -> Result<Settings, AppError> {
+    blocking(move || storage::load_settings_for_webview(&app)).await
 }
 
 #[tauri::command]
-pub fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), AppError> {
-    storage::save_settings(&app, &settings)
+pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), AppError> {
+    blocking(move || storage::save_settings(&app, &settings)).await
 }
 
+/// Loads the connections of the sync workspace of this process from the source it keeps
+/// ([`sync_source`]), never with the device identity, and keeps them as its own.
 #[tauri::command]
 pub async fn sync_connections(
     app: tauri::AppHandle,
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
+    let source = sync_source(&storage::app_data_dir(&app)?, &url)?;
     let allow_self_signed = self_signed_setting(&app, None);
-    let server_url = storage::load_settings(&app).ok().and_then(|s| s.server_url);
-    sync::sync_connections(app, url, allow_self_signed, server_url).await
+    sync::sync_connections(app, source, allow_self_signed).await
+}
+
+/// The source a sync of the workspace of this process loads, in the app data dir `base`,
+/// `sent` being the one the webview names ([`workspace::sync_url`]). The launcher syncs
+/// nothing.
+fn sync_source(base: &Path, sent: &str) -> Result<String, AppError> {
+    let (_, meta) = own_meta(base)?;
+    workspace::sync_url(&meta, sent)
 }
 
 #[tauri::command]
@@ -286,18 +328,26 @@ pub fn save_connections(
 /// enables the "time" feature, not "rt", so tokio::task::spawn_blocking isn't available.
 const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Runs `work` with a [`connection::Deadline`] of `timeout`. Past it, the command gives up
+/// only if the work has not started anything yet; a start that came first is waited for and
+/// its outcome returned, so no window opens after the timeout message.
 async fn run_with_deadline<F>(timeout: Duration, work: F) -> Result<(), AppError>
 where
-    F: FnOnce() -> Result<(), AppError> + Send + 'static,
+    F: FnOnce(&connection::Deadline) -> Result<(), AppError> + Send + 'static,
 {
-    let handle = tauri::async_runtime::spawn_blocking(work);
-    match tokio::time::timeout(timeout, handle).await {
-        Ok(joined) => joined
-            .map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?,
-        Err(_) => Err(AppError::Connection(
-            "Verbindungsaufbau: Zeitueberschreitung (Server nicht erreichbar oder haengt)".into(),
-        )),
-    }
+    let deadline = std::sync::Arc::new(connection::Deadline::new(timeout));
+    let theirs = std::sync::Arc::clone(&deadline);
+    let mut handle = tauri::async_runtime::spawn_blocking(move || work(&theirs));
+    let joined = match tokio::time::timeout(timeout, &mut handle).await {
+        Ok(joined) => joined,
+        Err(_) if deadline.expire() => {
+            return Err(AppError::Connection(
+                connection::TIMEOUT_MESSAGE.to_string(),
+            ))
+        }
+        Err(_) => handle.await,
+    };
+    joined.map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?
 }
 
 /// Rejects `connection` if it goes to a loopback port of another workspace's tunnel
@@ -330,7 +380,7 @@ pub async fn open_connection(
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
         None => Vec::new(),
     };
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
@@ -343,6 +393,7 @@ pub async fn open_connection(
             settings.language.as_deref(),
             &cid,
             &app,
+            deadline,
         )
     })
     .await
@@ -370,7 +421,7 @@ pub async fn open_connection_stored(
         }
         None => Default::default(),
     };
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
@@ -389,28 +440,34 @@ pub async fn open_connection_stored(
             rdp,
             settings.language.as_deref(),
             &cid,
+            deadline,
         )
     })
     .await
 }
 
 #[tauri::command]
-pub fn password_state(connection: Connection) -> Result<PasswordState, AppError> {
-    password::password_state(&connection)
+pub async fn password_state(connection: Connection) -> Result<PasswordState, AppError> {
+    blocking(move || password::password_state(&connection)).await
 }
 
 #[tauri::command]
-pub fn save_password(
+pub async fn save_password(
     app: tauri::AppHandle,
     connection: Connection,
     password: String,
 ) -> Result<(), AppError> {
-    password::save_password(&storage::app_data_dir(&app)?, &connection, &password)
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || password::save_password(&base, &connection, &password)).await
 }
 
 #[tauri::command]
-pub fn delete_password(app: tauri::AppHandle, connection: Connection) -> Result<(), AppError> {
-    password::delete_password(&storage::app_data_dir(&app)?, &connection)
+pub async fn delete_password(
+    app: tauri::AppHandle,
+    connection: Connection,
+) -> Result<(), AppError> {
+    let base = storage::app_data_dir(&app)?;
+    blocking(move || password::delete_password(&base, &connection)).await
 }
 
 /// Signs in at the server of this workspace, as a user no other workspace signs in to it as
@@ -521,7 +578,8 @@ pub async fn resolve_connection(
     };
     let resolved = tunnel::resolve_connection(&connection, &tunnels, &bindings);
     let target = resolved.connection.clone();
-    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+    // Nothing opens here, so nothing claims the deadline's start.
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |_| {
         reject_foreign_port(&storage::app_data_dir(&app)?, &target, &bindings)
     })
     .await?;
@@ -633,30 +691,55 @@ pub fn open_launcher() -> Result<(), AppError> {
     open_launcher_with(&launcher::AppSpawner::new()?)
 }
 
+/// Workspace only: runs the playbook `playbook_id` of the signed-in server on `targets` in a
+/// terminal. File name and content come from the server, not from the webview
+/// ([`ansible::fetch_playbook`], [`ansible_run_with`]).
 #[tauri::command]
-pub fn ansible_generate_inventory(
-    servers: Vec<ansible::AnsibleTarget>,
-) -> Result<String, AppError> {
-    ansible::generate_inventory(&servers)
+pub async fn ansible_run(
+    session: State<'_, SessionState>,
+    playbook_id: String,
+    targets: Vec<ansible::AnsibleTarget>,
+) -> Result<(), AppError> {
+    let session = session.inner();
+    ansible_run_with(
+        &playbook_id,
+        targets,
+        |id| async move { ansible::fetch_playbook(session, &id).await },
+        ansible::launch_ansible,
+    )
+    .await
 }
 
-#[tauri::command]
-pub fn ansible_write_playbook(filename: String, content: String) -> Result<String, AppError> {
-    ansible::write_playbook_temp(&filename, &content)
-}
-
-#[tauri::command]
-pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
-    ansible::launch_ansible(&inventory_path, &playbook_path)
+/// [`ansible_run`] with the fetch of the playbook and the launch passed in. The id is checked
+/// before anything goes to the server ([`ansible::check_playbook_id`]); the files are written
+/// and launched on a blocking thread, and a step that fails takes the files written so far
+/// with it ([`ansible::run`]).
+async fn ansible_run_with<F, Fut, L>(
+    playbook_id: &str,
+    targets: Vec<ansible::AnsibleTarget>,
+    fetch: F,
+    launch: L,
+) -> Result<(), AppError>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<ansible::Playbook, AppError>>,
+    L: FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+{
+    only(Side::Workspace)?;
+    ansible::check_playbook_id(playbook_id)?;
+    let playbook = fetch(playbook_id.to_string()).await?;
+    blocking(move || ansible::run(&targets, &playbook, launch)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        check_server_cert_in, delete_workspace_in, enroll_with_token_in, list_workspaces_in,
-        open_launcher_with, open_workspace_in, reject_foreign_port, reset_device_identity_in,
-        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target,
+        ansible_run_with, check_server_cert_in, delete_workspace_in, enroll_with_token_in,
+        list_workspaces_in, open_launcher_with, open_workspace_in, reject_foreign_port,
+        reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
+        sign_in_target, sync_source,
     };
+    use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
     use crate::keyring_store;
@@ -665,15 +748,16 @@ mod tests {
     use crate::port_registry::PortRegistry;
     use crate::storage;
     use crate::workspace::{self, Meta, Registry, RegistryEntry, PALETTE};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::path::{Path, PathBuf};
     use std::process::ExitStatus;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use std::{fs, io};
 
     #[tokio::test]
     async fn run_with_deadline_returns_ok_for_fast_work() {
-        assert!(run_with_deadline(Duration::from_secs(5), || Ok(()))
+        assert!(run_with_deadline(Duration::from_secs(5), |_| Ok(()))
             .await
             .is_ok());
     }
@@ -682,7 +766,7 @@ mod tests {
     async fn run_with_deadline_maps_a_hung_task_to_a_timeout_error() {
         // 4.3: a blocking task that overruns the deadline surfaces a Connection error (the
         // user gets a message, not a frozen webview) instead of hanging.
-        let r = run_with_deadline(Duration::from_millis(50), || {
+        let r = run_with_deadline(Duration::from_millis(50), |_| {
             std::thread::sleep(Duration::from_millis(500));
             Ok(())
         })
@@ -691,8 +775,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_with_deadline_starts_nothing_after_the_timeout() {
+        // The work reaches its start only past the deadline: it must not start, and the
+        // command has already answered with the timeout.
+        let started = Arc::new(Mutex::new(None));
+        let seen = Arc::clone(&started);
+        let r = run_with_deadline(Duration::from_millis(50), move |deadline| {
+            std::thread::sleep(Duration::from_millis(200));
+            *seen.lock().unwrap() = Some(deadline.start().is_ok());
+            Ok(())
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(*started.lock().unwrap(), Some(false), "the late start ran");
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_waits_for_work_that_started_in_time() {
+        // Started before the deadline, finished after it: its outcome counts, not a timeout.
+        // A second leaves a loaded runner time to start the blocking thread before it.
+        let r = run_with_deadline(Duration::from_secs(1), |deadline| {
+            deadline.start()?;
+            std::thread::sleep(Duration::from_millis(1500));
+            Err(AppError::Connection("the started work's own error".into()))
+        })
+        .await;
+        match r {
+            Err(AppError::Connection(message)) => {
+                assert_eq!(message, "the started work's own error")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn run_with_deadline_passes_through_work_errors() {
-        let r = run_with_deadline(Duration::from_secs(5), || {
+        let r = run_with_deadline(Duration::from_secs(5), |_| {
             Err(AppError::Connection("boom".into()))
         })
         .await;
@@ -911,6 +1030,269 @@ mod tests {
         assert_eq!(*starts.0.borrow(), [Vec::<String>::new()]);
     }
 
+    /// The files of the ansible run directories (`adminhelper_ansible_…` in the temp dir) whose
+    /// name or content holds `marker`; each directory with such a file is removed by its full
+    /// path. Other tests write run directories at the same time; the marker tells this test's
+    /// apart.
+    fn remove_ansible_files_with(marker: &str) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        for entry in fs::read_dir(std::env::temp_dir()).unwrap().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.starts_with("adminhelper_ansible_") {
+                continue;
+            }
+            let dir = entry.path();
+            let Ok(files) = fs::read_dir(&dir) else {
+                continue;
+            };
+            let marked: Vec<PathBuf> = files
+                .flatten()
+                .filter(|file| {
+                    file.file_name().to_string_lossy().contains(marker)
+                        || fs::read_to_string(file.path()).is_ok_and(|text| text.contains(marker))
+                })
+                .map(|file| file.path())
+                .collect();
+            if !marked.is_empty() {
+                let _ = fs::remove_dir_all(&dir);
+                found.extend(marked);
+            }
+        }
+        found
+    }
+
+    const PLAYBOOK_ID: &str = "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6f";
+
+    /// The target `<marker>.example` in the group `web`: the inventory of a run holds `marker`.
+    fn marked_targets(marker: &str) -> Vec<AnsibleTarget> {
+        vec![AnsibleTarget {
+            hostname: format!("{marker}.example"),
+            groups: vec!["web".to_string()],
+        }]
+    }
+
+    /// A playbook `site.yml` whose content holds `marker`.
+    fn marked_playbook(marker: &str) -> Playbook {
+        Playbook {
+            filename: "site.yml".to_string(),
+            content: format!("# {marker}\n- hosts: all\n"),
+        }
+    }
+
+    /// What every launch got: inventory path and content, playbook path and content.
+    type Launches = Arc<Mutex<Vec<[String; 4]>>>;
+
+    /// A launch that notes what it gets (see [`Launches`]), then answers `answer`.
+    fn noting_launch(
+        answer: Result<(), AppError>,
+    ) -> (
+        Launches,
+        impl FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+    ) {
+        let launches = Launches::default();
+        let noted = Arc::clone(&launches);
+        let launch = move |inventory: &str, playbook: &str| {
+            let read = |path: &str| fs::read_to_string(path).unwrap_or_default();
+            noted.lock().unwrap().push([
+                inventory.to_string(),
+                read(inventory),
+                playbook.to_string(),
+                read(playbook),
+            ]);
+            answer
+        };
+        (launches, launch)
+    }
+
+    #[tokio::test]
+    async fn ansible_run_launches_the_fetched_playbook_on_the_targets() {
+        let marker = format!("run-fetched-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+        let asked = RefCell::new(Vec::new());
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |id| {
+                asked.borrow_mut().push(id);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let mut written = remove_ansible_files_with(&marker);
+        written.sort();
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(*asked.borrow(), [PLAYBOOK_ID]);
+        let launches = launches.lock().unwrap().clone();
+        assert_eq!(launches.len(), 1, "{launches:?}");
+        let [inventory, inventory_text, playbook, playbook_text] = &launches[0];
+        assert_eq!(playbook_text, &marked_playbook(&marker).content);
+        assert!(playbook.ends_with("_site.yml"), "{playbook}");
+        assert!(
+            inventory_text.contains(&format!("[all]\n{marker}.example\n"))
+                && inventory_text.contains(&format!("[web]\n{marker}.example\n")),
+            "{inventory_text}"
+        );
+        // A launch that succeeded leaves both files to the run.
+        let mut handed = vec![PathBuf::from(inventory), PathBuf::from(playbook)];
+        handed.sort();
+        assert_eq!(written, handed);
+    }
+
+    #[tokio::test]
+    async fn ansible_run_writes_no_file_when_the_fetch_fails() {
+        let marker = format!("run-fetch-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async {
+                Err::<Playbook, _>(AppError::Validation(
+                    "the playbook could not be loaded (404 Not Found)".to_string(),
+                ))
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert_refused(result, "could not be loaded", "fetch");
+        assert_eq!(
+            written,
+            Vec::<PathBuf>::new(),
+            "a failed fetch wrote a file"
+        );
+        assert_eq!(
+            launches.lock().unwrap().len(),
+            0,
+            "launched without a playbook"
+        );
+    }
+
+    #[tokio::test]
+    async fn ansible_run_removes_both_files_when_the_launch_fails() {
+        let marker = format!("run-launch-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) =
+            noting_launch(Err(AppError::Connection("no terminal found".to_string())));
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async { Ok(marked_playbook(&marker)) },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(matches!(result, Err(AppError::Connection(_))), "{result:?}");
+        let launches = launches.lock().unwrap().clone();
+        assert_eq!(launches.len(), 1, "{launches:?}");
+        let [inventory, _, playbook, playbook_text] = &launches[0];
+        assert_eq!(playbook_text, &marked_playbook(&marker).content);
+        assert_eq!(
+            written,
+            Vec::<PathBuf>::new(),
+            "files left after a failed launch"
+        );
+        assert!(!Path::new(inventory).exists() && !Path::new(playbook).exists());
+    }
+
+    #[tokio::test]
+    async fn ansible_run_removes_the_inventory_when_the_playbook_cannot_be_written() {
+        let marker = format!("run-write-fails-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+
+        // No file system takes a name of 300 bytes (ENAMETOOLONG).
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| async {
+                Ok(Playbook {
+                    filename: "a".repeat(300),
+                    ..marked_playbook(&marker)
+                })
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(written, Vec::<PathBuf>::new(), "the inventory was left");
+        assert_eq!(
+            launches.lock().unwrap().len(),
+            0,
+            "launched without a playbook"
+        );
+    }
+
+    #[tokio::test]
+    async fn ansible_run_never_fetches_for_an_id_that_is_no_uuid() {
+        let marker = format!("run-bad-id-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let fetches = Cell::new(0);
+        let path_behind = format!("{PLAYBOOK_ID}/content");
+        let traversal = format!("../{PLAYBOOK_ID}");
+
+        for id in [
+            "",
+            "pb1",
+            &PLAYBOOK_ID[..35],
+            &path_behind,
+            &traversal,
+            "0b6f2c1e-8a4d-4c3b-9e7f-1a2b3c4d5e6g",
+        ] {
+            let (launches, launch) = noting_launch(Ok(()));
+            let result = ansible_run_with(
+                id,
+                marked_targets(&marker),
+                |_| {
+                    fetches.set(fetches.get() + 1);
+                    async { Ok(marked_playbook(&marker)) }
+                },
+                launch,
+            )
+            .await;
+            assert_refused(result, "invalid playbook id", id);
+            assert_eq!(launches.lock().unwrap().len(), 0, "{id}");
+        }
+
+        assert_eq!(fetches.get(), 0, "fetched for an id that is no UUID");
+        assert_eq!(remove_ansible_files_with(&marker), Vec::<PathBuf>::new());
+    }
+
+    #[tokio::test]
+    async fn ansible_run_runs_only_in_a_workspace() {
+        let marker = format!("run-only-in-a-workspace-{}", std::process::id());
+        let fetches = Cell::new(0);
+        let (launches, launch) = noting_launch(Ok(()));
+
+        // The launcher has no workspace.
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| {
+                fetches.set(fetches.get() + 1);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert_refused(result, "only the process of a workspace", "ansible_run");
+        assert_eq!(fetches.get(), 0, "the launcher fetched a playbook");
+        assert_eq!(launches.lock().unwrap().len(), 0, "the launcher launched");
+        assert_eq!(written, Vec::<PathBuf>::new(), "the launcher wrote a file");
+    }
+
     #[test]
     fn the_commands_of_the_launcher_refuse_a_bad_workspace_id_and_start_nothing() {
         let scratch = Scratch::new("bad-id");
@@ -1085,7 +1467,7 @@ mod tests {
     }
 
     /// The reset of a registration the workspace does not keep: none comes in these cases.
-    fn no_reset(url: String) -> std::future::Ready<ResetOutcome> {
+    fn no_reset(url: String) -> std::future::Ready<Result<ResetOutcome, AppError>> {
         panic!("the registration at {url} was reset")
     }
 
@@ -1207,16 +1589,55 @@ mod tests {
         )
         .await;
 
-        assert_refused(
-            result,
+        let Err(AppError::Validation(msg)) = result else {
+            panic!("taken: {result:?}");
+        };
+        for says in [
             "this workspace took the URL of another server while this device registered",
-            "taken",
-        );
+            "the new device identity is reset, register again",
+        ] {
+            assert!(msg.contains(says), "{says:?} missing in {msg:?}");
+        }
         // Revoked where it was issued, and gone here; the workspace keeps the URL it took.
         assert_eq!(*reset_at.borrow(), [registered_at]);
         assert!(!enrollment::is_enrolled());
         assert!(!enrollment::holds_identity(&prefix).unwrap());
         assert_eq!(url_of(base, "w-0000000c").as_deref(), Some(other));
+    }
+
+    #[tokio::test]
+    async fn enroll_not_kept_whose_reset_fails_says_the_identity_stays() {
+        let scratch = Scratch::new("enroll-taken-reset-fails");
+        let base = &scratch.0;
+        server_workspaces(base, &[("w-0000000d", "Neu", None, None)]);
+        let _c = entered("w-0000000d");
+
+        let result = enroll_with_token_in(
+            base,
+            "https://ah.example.com",
+            |_| async {
+                let settings = Settings {
+                    server_url: Some("https://other.example.com".to_string()),
+                    ..Settings::default()
+                };
+                storage::save_settings_at(base, &settings)?;
+                Ok(())
+            },
+            |_| async { Err(AppError::Keyring("the keyring is locked".to_string())) },
+        )
+        .await;
+
+        let Err(AppError::Validation(msg)) = result else {
+            panic!("not refused as it should be: {result:?}");
+        };
+        for says in [
+            "this workspace took the URL of another server while this device registered",
+            "the device identity stays, reset it in the settings",
+            "the keyring is locked",
+        ] {
+            assert!(msg.contains(says), "{says:?} missing in {msg:?}");
+        }
+        assert!(!msg.contains("is reset"), "{msg:?}");
     }
 
     // ── Reset, pins and the cert check at the server of the workspace ──
@@ -1264,7 +1685,9 @@ mod tests {
 
         // The launcher has no identity to reset.
         let no_workspace = workspace::current().unwrap_err().to_string();
-        let refused = reset_device_identity_in(base, &kept).await.unwrap_err();
+        let refused = reset_device_identity_in(base, &kept, forget_here)
+            .await
+            .unwrap_err();
         assert_eq!(refused.to_string(), no_workspace);
 
         let _a = entered("w-0000000a");
@@ -1275,7 +1698,7 @@ mod tests {
             format!("http://127.0.0.1:{port}"),
         ] {
             assert_refused(
-                reset_device_identity_in(base, &other).await,
+                reset_device_identity_in(base, &other, forget_here).await,
                 &format!("this workspace belongs to the server {kept};"),
                 &other,
             );
@@ -1285,13 +1708,45 @@ mod tests {
             }
         }
         // Its own server, however the webview spells it.
-        let outcome = reset_device_identity_in(base, &format!("https://127.0.0.1:{port}/x"))
-            .await
-            .unwrap();
+        let outcome =
+            reset_device_identity_in(base, &format!("https://127.0.0.1:{port}/x"), forget_here)
+                .await
+                .unwrap();
         assert_eq!(outcome, ResetOutcome::LocalOnly);
         assert!(!enrollment::is_enrolled());
         assert_eq!(keyring_store::get(&own_pin), None);
         assert!(keyring_store::get(&other_pin).is_some());
+    }
+
+    /// Forgets the pin on the test's own thread, where its in-memory keyring lives; the
+    /// command does it through `blocking`.
+    async fn forget_here(server_url: String) -> Result<(), AppError> {
+        crate::tofu::forget_pin(&server_url)
+    }
+
+    #[tokio::test]
+    async fn a_reset_revoked_here_only_whose_pin_stays_names_both() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("reset-identity-both");
+        let base = &scratch.0;
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let kept = format!("https://127.0.0.1:{port}");
+        server_workspaces(
+            base,
+            &[("w-0000000a", "Kunde A", Some(kept.as_str()), None)],
+        );
+        let _a = entered("w-0000000a");
+        enrolled(&workspace::current().unwrap().keyring_prefix());
+
+        let failed = reset_device_identity_in(base, &kept, |_| async {
+            Err(AppError::Keyring("the pin stayed".to_string()))
+        })
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(failed.contains("deleted on this device only"), "{failed}");
+        assert!(failed.contains("the pin stayed"), "{failed}");
+        assert!(!enrollment::is_enrolled());
     }
 
     #[tokio::test]
@@ -1376,6 +1831,139 @@ mod tests {
             let _c = entered("w-0000000c");
             reset_server_cert_pin_in(base, "https://other.example.com").unwrap();
             assert_eq!(pinned(), [false, false, false]);
+        }
+    }
+
+    // ── Where the sync of the workspace of this process loads from ──
+
+    /// The source of the sync workspace below; its query carries a key.
+    const SYNC_SOURCE: &str = "https://sync.example/c.json?api_key=k1";
+
+    /// Lays out `base` with a workspace of each kind: `w-0000000a` at the server
+    /// `https://ah.example`, `w-0000000b` syncing from [`SYNC_SOURCE`], `w-0000000c` syncing
+    /// without a source yet, `w-0000000e` local.
+    fn sync_workspaces(base: &Path) {
+        for (id, kind, url) in [
+            ("w-0000000a", SyncMode::Server, Some("https://ah.example")),
+            ("w-0000000b", SyncMode::Sync, Some(SYNC_SOURCE)),
+            ("w-0000000c", SyncMode::Sync, None),
+            ("w-0000000e", SyncMode::Local, None),
+        ] {
+            Meta {
+                kind,
+                name: id.to_string(),
+                color: PALETTE[0].to_string(),
+                url: url.map(String::from),
+                interval_minutes: 1,
+                allow_self_signed_certs: false,
+                last_username: None,
+                legacy_keys: false,
+            }
+            .store(&base.join("workspaces").join(id))
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn sync_binding_loads_the_source_the_sync_workspace_keeps() {
+        let scratch = Scratch::new("sync-source");
+        let base = &scratch.0;
+        sync_workspaces(base);
+        let _b = entered("w-0000000b");
+        for sent in [SYNC_SOURCE, "  https://sync.example/c.json?api_key=k1 \n"] {
+            assert_eq!(sync_source(base, sent).unwrap(), SYNC_SOURCE, "{sent:?}");
+        }
+    }
+
+    #[test]
+    fn sync_binding_refuses_another_source_of_the_same_server_and_names_none() {
+        let scratch = Scratch::new("sync-other-source");
+        let base = &scratch.0;
+        sync_workspaces(base);
+        let _b = entered("w-0000000b");
+        for other in [
+            "https://sync.example/d.json?api_key=k1",
+            "https://sync.example/c.json?api_key=k2",
+            "https://sync.example/c.json",
+            "https://sync.example/c.json?api_key=k1&page=2",
+        ] {
+            let refused = sync_source(base, other).unwrap_err();
+            assert!(
+                matches!(&refused, AppError::Validation(_)),
+                "{other}: {refused:?}"
+            );
+            let says = refused.to_string();
+            assert!(
+                says.contains("syncs only from the sync URL it keeps"),
+                "{other}: {says}"
+            );
+            for secret in ["api_key", "k1", "c.json"] {
+                assert!(!says.contains(secret), "{other}: {says}");
+            }
+        }
+    }
+
+    #[test]
+    fn sync_binding_syncs_only_in_a_sync_workspace_with_a_source() {
+        let scratch = Scratch::new("sync-where");
+        let base = &scratch.0;
+        sync_workspaces(base);
+
+        // The launcher syncs nothing.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = sync_source(base, SYNC_SOURCE).unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        {
+            // A server workspace, not even from the URL of its own server.
+            let _a = entered("w-0000000a");
+            for sent in ["https://ah.example", SYNC_SOURCE] {
+                assert_refused(sync_source(base, sent), "only a sync workspace syncs", sent);
+            }
+        }
+        {
+            let _e = entered("w-0000000e");
+            assert_refused(
+                sync_source(base, SYNC_SOURCE),
+                "only a sync workspace syncs",
+                "local",
+            );
+        }
+        {
+            let _c = entered("w-0000000c");
+            assert_refused(
+                sync_source(base, SYNC_SOURCE),
+                "this sync workspace has no sync URL yet",
+                "no source",
+            );
+        }
+    }
+
+    /// A synchronous command runs on the main thread: the window stands still while the
+    /// keyring or the settings lock keeps it waiting. These wait on either, so each is async
+    /// and does its work through `blocking`.
+    #[test]
+    fn commands_that_wait_run_on_a_blocking_thread() {
+        // A Windows checkout carries CRLF line ends.
+        let source = include_str!("commands.rs").replace("\r\n", "\n");
+        for name in [
+            "reset_server_cert_pin",
+            "reset_device_identity",
+            "pinned_ca_fingerprint",
+            "device_identity",
+            "is_device_enrolled",
+            "load_settings",
+            "save_settings",
+            "password_state",
+            "save_password",
+            "delete_password",
+        ] {
+            let head = format!("#[tauri::command]\npub async fn {name}(");
+            let start = source
+                .find(&head)
+                .unwrap_or_else(|| panic!("{name} is not an async command"));
+            let body = &source[start..];
+            let body = &body[..body.find("\n}\n").expect("end of the command")];
+            assert!(body.contains("blocking("), "{name} does not use blocking");
         }
     }
 }

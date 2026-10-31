@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
@@ -19,6 +19,15 @@ from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
 # for a stored template definition without the key, of template_sync. Has to match
 # the column default (models.MonitorCheck, migration 3c66308d11a7).
 DEFAULT_CONSECUTIVE_OKS = 2
+
+
+def _no_control_characters(name: str | None) -> str | None:
+    # C0 and DEL, the boundary of the server's FRP fields. C1 and U+2028/U+2029 pass:
+    # the alert subject turns them into spaces itself, as it does for a name stored
+    # before this rule (alerter._SUBJECT_TO_SPACE).
+    if name is not None and any(ord(c) < 0x20 or c == "\x7f" for c in name):
+        raise ValueError("must not contain control characters")
+    return name
 
 
 class CheckCreate(RequestModel):
@@ -32,6 +41,11 @@ class CheckCreate(RequestModel):
     severity: str = "critical"
     consecutive_fails: IntColumn = 3
     consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = DEFAULT_CONSECUTIVE_OKS
+
+    @field_validator("name")
+    @classmethod
+    def _name_valid(cls, v: str) -> str:
+        return _no_control_characters(v)
 
     # Per-type config validation (T4): a typo'd key or out-of-range threshold
     # must fail here, not surface as a permanently-unknown check at runtime.
@@ -53,6 +67,11 @@ class CheckUpdate(RequestModel):
     severity: str | None = None
     consecutive_fails: IntColumn | None = None
     consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_valid(cls, v: str | None) -> str | None:
+        return _no_control_characters(v)
 
     # Leaving the key out leaves the value unchanged; an explicit null would reach
     # the NOT NULL column and fail there as a 500.
@@ -95,6 +114,11 @@ class TemplateCheckDef(RequestModel):
     consecutive_fails: IntColumn = 3
     consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = DEFAULT_CONSECUTIVE_OKS
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_valid(cls, v: str) -> str:
+        return _no_control_characters(v)
 
     # Same boundary the /checks router enforces for CheckCreate — so a template
     # check goes through identical validation instead of failing only later at
@@ -266,3 +290,203 @@ VALID_CHANNELS = {"webhook", "email"}
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"}
 
 VALID_SEVERITIES = {"info", "warning", "critical"}
+
+
+# Response models (R-0685): key for key what the to_dict methods and dict literals of the
+# routes hand out. A stored JSON column (config, details) passes through as Any: older rows
+# hold shapes no schema of today describes, and one of them must not turn a listing into a 500.
+
+
+class MonitorStateOut(BaseModel):
+    checkId: str
+    status: str
+    since: str | None
+    lastCheck: str | None
+    failCount: int | None
+    message: str | None
+    details: Any
+    notifiedStatus: str | None
+
+
+class MonitorCheckOut(BaseModel):
+    id: str
+    serverId: str | None
+    name: str
+    description: str | None
+    checkType: str
+    config: Any
+    enabled: bool | None
+    interval: str
+    severity: str
+    consecutiveFails: int | None
+    consecutiveOks: int
+    templateId: str | None
+    templateDefId: str | None
+    overriddenFields: list[str]
+    createdAt: str | None
+    updatedAt: str | None
+    # Only with a state row; the routes drop it unset (response_model_exclude_unset).
+    state: MonitorStateOut | None = None
+
+
+class StatusSummaryOut(BaseModel):
+    total: int
+    ok: int
+    warning: int
+    critical: int
+    unknown: int
+    pending: int
+
+
+class CheckMetricsOut(BaseModel):
+    checkId: str
+    checkType: str
+    period: str
+    # VictoriaMetrics query_range series, passed through as they come.
+    data: Any
+    statusHistory: Any
+
+
+class AlertRuleOut(BaseModel):
+    id: str
+    name: str
+    matchSeverity: str | None
+    matchServerId: str | None
+    channel: str
+    # masked_channel_config hands a stored non-dict back as it is.
+    channelConfig: Any
+    cooldownMinutes: int | None
+    enabled: bool | None
+    templateId: str | None
+    createdAt: str | None
+    updatedAt: str | None
+
+
+class AlertLogOut(BaseModel):
+    id: int
+    alertRuleId: str
+    checkId: str
+    oldStatus: str
+    newStatus: str
+    sentAt: str
+    success: bool
+    error: str | None
+
+
+class MaintenanceOut(BaseModel):
+    id: str
+    serverId: str | None
+    note: str | None
+    kind: str
+    startsAt: str | None
+    endsAt: str | None
+    weekdays: list[Any]
+    startTime: str | None
+    durationMinutes: int | None
+    timezone: str
+    enabled: bool | None
+    createdAt: str | None
+
+
+class AgentKeyOut(BaseModel):
+    """apiKey is the raw key on creation, else the masked hash tail."""
+
+    id: str
+    serverId: str
+    apiKey: str
+    createdAt: str | None
+
+
+class AgentKeyDeletedOut(BaseModel):
+    deleted: bool
+
+
+class ServerCleanupOut(BaseModel):
+    checksDeleted: int
+    alertsDeleted: int
+
+
+class TemplateAssignmentOut(BaseModel):
+    id: str
+    templateId: str
+    serverId: str
+    serverHostname: str
+    serverName: str
+    source: str
+
+
+class TagAssignmentOut(BaseModel):
+    id: str
+    templateId: str
+    tag: str
+
+
+class ServerAssignmentOut(TemplateAssignmentOut):
+    """An assignment of a server; templateName None when its template is gone."""
+
+    templateName: str | None
+    removedChecks: int
+
+
+class TemplateSuggestionOut(BaseModel):
+    slug: str
+    templateId: str
+    templateName: str
+    reason: str
+
+
+class ApplyResultOut(BaseModel):
+    """The IDs of the checks and alert rules an assignment created."""
+
+    checksCreated: list[str]
+    alertsCreated: list[str]
+
+
+class RestoreOut(BaseModel):
+    restored: int
+
+
+class TagSyncOut(BaseModel):
+    created: int
+    removed: int
+    refreshed: int
+
+
+class SyncResultOut(BaseModel):
+    created: int
+    updated: int
+    deleted: int
+    servers: int
+
+
+class TemplateOut(BaseModel):
+    """assignments and tagAssignments come with the list and a single template,
+    syncResult with a change that rolled the template out."""
+
+    id: str
+    name: str
+    description: str | None
+    builtinSlug: str | None
+    builtinVersion: int | None
+    builtinEdited: bool
+    builtinUpdateAvailable: bool
+    # Their keys vary per definition and check type.
+    checkDefinitions: list[dict[str, Any]]
+    alertDefinitions: list[dict[str, Any]]
+    createdAt: str | None
+    updatedAt: str | None
+    assignments: list[TemplateAssignmentOut] | None = None
+    tagAssignments: list[TagAssignmentOut] | None = None
+    syncResult: SyncResultOut | None = None
+
+
+class TemplateDefinitionsOut(BaseModel):
+    checkDefinitions: list[dict[str, Any]]
+    alertDefinitions: list[dict[str, Any]]
+
+
+class BuiltinUpdateOut(BaseModel):
+    currentVersion: int | None
+    shippedVersion: int
+    current: TemplateDefinitionsOut
+    shipped: TemplateDefinitionsOut

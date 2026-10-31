@@ -7,6 +7,7 @@
 package frpc
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func TestSyncFailsWhenTheDataRootCannotBeSecured(t *testing.T) {
 	t.Setenv("ADMINHELPER_FRP_DIR", frpDir)
 	pointSyncAt(t, srv.URL)
 
-	err := Sync()
+	err := Sync(context.Background())
 	if err == nil || !strings.Contains(err.Error(), frpDir) {
 		t.Fatalf("Sync = %v, want the failure to secure %s, naming it", err, frpDir)
 	}
@@ -74,7 +75,7 @@ func TestSyncIsNotStoppedByTheOpenLogFile(t *testing.T) {
 	}
 	pointSyncAt(t, srv.URL)
 
-	if err := Sync(); err != nil {
+	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the log file open: %v", err)
 	}
 	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {

@@ -51,6 +51,27 @@ tar xzf "$ARCHIVE" -C "$STAGE" --no-same-owner --no-same-permissions
 
 [ -f "$STAGE/MANIFEST.txt" ] && { echo "--- MANIFEST ---"; cat "$STAGE/MANIFEST.txt"; echo "----------------"; }
 
+# The databases go back as the service roles that own them (db-init sets them up from
+# these passwords), never as the superuser. Read them the way compose interpolates
+# ${VAR}: the environment first, then .env. Checked before the stack is stopped.
+role_password() {
+    local key="$1" value="${!1:-}"
+    if [ -z "$value" ] && [ -f .env ]; then
+        value=$( { LC_ALL=C grep -a -E "^${key}=" .env || true; } | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"\$//")
+    fi
+    printf '%s' "$value"
+}
+missing=()
+for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
+    [ -n "$(role_password "$key")" ] || missing+=("$key")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+    echo "[restore] ERROR: .env lacks ${missing[*]} — run ./scripts/init-secrets.sh first. The stack keeps running unchanged." >&2
+    exit 1
+fi
+SERVER_PW=$(role_password SERVER_DB_PASSWORD)
+MONITOR_PW=$(role_password MONITOR_DB_PASSWORD)
+
 echo "[restore] Ziel-Compose-Projekt: $PROJECT"
 echo "[restore] DIES ÜBERSCHREIBT ca-pki, monitoring-data, victoria-data und beide DBs."
 if [ "$ASSUME_YES" != 1 ]; then
@@ -120,18 +141,21 @@ done
 # not-ready postgres and fail confusingly mid-restore — abort clearly (4.54).
 [ "$ready" = 1 ] || { echo "[restore] FEHLER: postgres nach 60s nicht bereit — Abbruch." >&2; exit 1; }
 
+# db-init creates the roles and, on a fresh host, adminhelper_monitor, and hands the
+# schema with everything already in it to its role: only the owner may drop what
+# --clean drops, and a restore as the superuser would leave objects the service
+# roles cannot touch.
+echo "[restore] db-init: roles, monitoring DB, ownership..."
+docker compose run --rm -T db-init
+
+# restore_db <db> <role> <password>: the password goes in through the environment of
+# docker compose (-e without a value), never through an argv.
 restore_db() {
-    db="$1"
+    db="$1"; role="$2"
     [ -f "$STAGE/$db.dump" ] || { echo "[restore] $db.dump nicht im Backup — überspringe"; return; }
-    # On a fresh host postgres only inits the default DB (POSTGRES_DB=adminhelper);
-    # adminhelper_monitor is normally created by the monitoring entrypoint, which is
-    # not running during restore. Ensure the target DB exists first, else pg_restore
-    # connects to a missing DB and set -e aborts fresh-host DR mid-way (2.4).
-    docker compose exec -T postgres sh -c \
-        "export PGPASSWORD=\$POSTGRES_PASSWORD; psql -h 127.0.0.1 -U adminhelper -tc \"SELECT 1 FROM pg_database WHERE datname='$db'\" | grep -q 1 || createdb -h 127.0.0.1 -U adminhelper \"$db\""
-    echo "[restore] pg_restore $db"
-    docker compose exec -T postgres sh -c \
-        "PGPASSWORD=\$POSTGRES_PASSWORD pg_restore -h 127.0.0.1 -U adminhelper --clean --if-exists --no-owner -d \"$db\"" \
+    echo "[restore] pg_restore $db as $role"
+    PGPASSWORD="$3" docker compose exec -T -e PGPASSWORD postgres \
+        pg_restore -h 127.0.0.1 -U "$role" --clean --if-exists --no-owner --no-privileges -d "$db" \
         < "$STAGE/$db.dump"
 }
 
@@ -143,8 +167,8 @@ restore_db() {
 reopen_register_transition() {
     [ -f "$STAGE/adminhelper.dump" ] || return 0
     echo "[restore] certificate register: transition reopened as of now (90 days)"
-    docker compose exec -T postgres sh -c \
-        "PGPASSWORD=\$POSTGRES_PASSWORD psql -h 127.0.0.1 -U adminhelper -d adminhelper -v ON_ERROR_STOP=1 -q" \
+    PGPASSWORD="$SERVER_PW" docker compose exec -T -e PGPASSWORD postgres \
+        psql -h 127.0.0.1 -U ah_server -d adminhelper -v ON_ERROR_STOP=1 -q \
         <<'SQL'
 DO $$
 BEGIN
@@ -156,9 +180,9 @@ $$;
 SQL
 }
 
-restore_db adminhelper
+restore_db adminhelper ah_server "$SERVER_PW"
 reopen_register_transition
-restore_db adminhelper_monitor
+restore_db adminhelper_monitor ah_monitor "$MONITOR_PW"
 
 echo "[restore] Starte den kompletten Stack..."
 docker compose up -d
@@ -168,8 +192,9 @@ if [ -f "$STAGE/env.sanitized" ]; then
     cp "$STAGE/env.sanitized" ./.env.restored
     chmod 600 ./.env.restored
     echo "[restore] .env aus dem Backup nach ./.env.restored geschrieben (OHNE CA_ROOT_PASSPHRASE)."
-    echo "[restore]   -> mit der getrennt aufbewahrten CA_ROOT_PASSPHRASE ergänzen und nach .env übernehmen,"
-    echo "[restore]      falls dies ein frischer Host ist. Der Stack läuft auch ohne die Passphrase."
+    echo "[restore]   -> on a fresh host: move it to .env and add the line CA_ROOT_PASSPHRASE= (empty or with"
+    echo "[restore]      the separately kept passphrase); without that line docker compose up aborts."
+    echo "[restore]      The restored hierarchy does not need the value to start."
 fi
 
 echo "[restore] Fertig. Der ca-issuer lädt die wiederhergestellte Hierarchie — Agenten bleiben vertraut."

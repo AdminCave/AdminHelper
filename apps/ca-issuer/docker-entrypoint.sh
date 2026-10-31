@@ -9,7 +9,15 @@ if [ "$(id -u)" = "0" ]; then
     chown -R app:app /app/data
     [ -d /app/gateway-certs ] && chown -R app:app /app/gateway-certs
     [ -d /app/frps-certs ] && chown -R app:app /app/frps-certs
+    [ -d /app/ca-trust ] && chown -R app:app /app/ca-trust
     exec gosu app:app sh "$0" "$@"
+fi
+
+# Arguments run instead of the service, as app after the chown above: that is how
+# `docker compose run --rm --no-deps ca-issuer python -m app.cli …` works, also
+# while the service itself does not start (an expired intermediate).
+if [ "$#" -gt 0 ]; then
+    exec "$@"
 fi
 
 # The PKI hierarchy (Root + intermediates) is created/loaded by the app's

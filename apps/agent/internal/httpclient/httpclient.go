@@ -73,7 +73,8 @@ func New(cacert string, insecure bool, timeout time.Duration) (*http.Client, err
 // key PEM files) and trusts ONLY the given CA bundle — system roots are NOT
 // added (ADR 0001 D2: validate every leaf against our pinned CA, so even a
 // compromised public CA is rejected). Used for all server pushes once the agent
-// is enrolled.
+// is enrolled; those all go to the gateway, so the server certificate must also
+// be issued by the access intermediate (verifyGatewayIssuer).
 func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Client, error) {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
@@ -88,15 +89,35 @@ func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Cli
 		return nil, fmt.Errorf("CA-Zertifikat ungueltig")
 	}
 	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      pool,
-		MinVersion:   tls.VersionTLS12,
+		Certificates:     []tls.Certificate{cert},
+		RootCAs:          pool,
+		MinVersion:       tls.VersionTLS12,
+		VerifyConnection: verifyGatewayIssuer,
 	}
 	return &http.Client{
 		Timeout:       timeout,
 		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
 		CheckRedirect: noRedirect,
 	}, nil
+}
+
+// verifyGatewayIssuer runs after the default chain verification. The agent's CA
+// bundle holds the root and its tunnel intermediate, so a leaf of any scope under
+// the root verifies, the frps leaf among them; only the gateway's leaf is issued
+// by the access intermediate.
+func verifyGatewayIssuer(cs tls.ConnectionState) error {
+	for _, chain := range cs.VerifiedChains {
+		if len(chain) > 1 && isAccessIntermediate(chain[1]) {
+			return nil
+		}
+	}
+	issuer := "none"
+	if len(cs.PeerCertificates) > 0 {
+		issuer = cs.PeerCertificates[0].Issuer.CommonName
+	}
+	return fmt.Errorf(
+		"the presented server certificate is not issued by the access intermediate "+
+			"(issuer %q) — not the gateway of this server", issuer)
 }
 
 // ParseCAFingerprint normalizes a user-supplied SHA-256 certificate fingerprint
@@ -119,21 +140,23 @@ func ParseCAFingerprint(s string) ([sha256.Size]byte, error) {
 }
 
 // NewCAFingerprint builds a client that accepts a server ONLY if the presented
-// chain contains a certificate with the given SHA-256 fingerprint AND the leaf
-// cryptographically chains to it (anchor verify). The check runs INSIDE the TLS
-// handshake, so not a single request byte — in particular the one-time
-// provision token — leaves the host before the server proved its identity.
-// Hostname is intentionally not enforced: the pin IS the identity (same model
-// as the desktop's CaPinVerifier), so reaching the server via IP or an alt
-// name keeps working and gateway leaf rotation under the same CA survives.
-func NewCAFingerprint(fp [sha256.Size]byte, timeout time.Duration) *http.Client {
+// chain contains a certificate with the given SHA-256 fingerprint, the leaf
+// cryptographically chains to it (anchor verify) AND the leaf names host. The
+// check runs INSIDE the TLS handshake, so not a single request byte — in
+// particular the one-time provision token — leaves the host before the server
+// proved its identity. The hostname is enforced because every later call
+// (enrollment, monitor push, frpc sync) verifies it against the pinned CA: a
+// first contact that took a leaf without the host would spend the token on an
+// agent whose every run then fails. Gateway leaf rotation under the same CA
+// survives, the pin is the CA.
+func NewCAFingerprint(fp [sha256.Size]byte, host string, timeout time.Duration) *http.Client {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		// Disables only the DEFAULT verification (system roots + hostname);
 		// VerifyPeerCertificate below is the actual, stricter gate.
 		InsecureSkipVerify: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			return verifyAnchorFingerprint(rawCerts, fp)
+			return verifyAnchorFingerprint(rawCerts, fp, host)
 		},
 	}
 	return &http.Client{
@@ -144,11 +167,12 @@ func NewCAFingerprint(fp [sha256.Size]byte, timeout time.Duration) *http.Client 
 }
 
 // verifyAnchorFingerprint implements the NewCAFingerprint gate: find the
-// fingerprint-matched certificate in the presented chain and verify the leaf
-// against it as the ONLY trust anchor. A chain that merely CONTAINS the pinned
-// cert but whose leaf does not chain to it (an attacker appending the public CA
-// cert to its own leaf) is rejected by the Verify step.
-func verifyAnchorFingerprint(rawCerts [][]byte, fp [sha256.Size]byte) error {
+// fingerprint-matched certificate in the presented chain, verify the leaf
+// against it as the ONLY trust anchor, then check that the leaf names host. A
+// chain that merely CONTAINS the pinned cert but whose leaf does not chain to it
+// (an attacker appending the public CA cert to its own leaf) is rejected by the
+// Verify step.
+func verifyAnchorFingerprint(rawCerts [][]byte, fp [sha256.Size]byte, host string) error {
 	if len(rawCerts) == 0 {
 		return fmt.Errorf("server presented no certificates")
 	}
@@ -170,22 +194,66 @@ func verifyAnchorFingerprint(rawCerts [][]byte, fp [sha256.Size]byte) error {
 				"(possible MITM — or a wrong/outdated --ca-fp value)")
 	}
 	leaf := certs[0]
-	if leaf.Equal(anchor) {
-		return nil // the pinned certificate IS the leaf — direct pin, nothing to chain
-	}
 	roots := x509.NewCertPool()
 	roots.AddCert(anchor)
+	if leaf.Equal(anchor) {
+		// The pinned certificate IS the leaf — direct pin, nothing to chain. Verify against
+		// itself as the only root still enforces its validity and EKU, as the chain does.
+		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots}); err != nil {
+			return fmt.Errorf("the pinned certificate the server presented does not verify: %w", err)
+		}
+		return verifyLeafNamesHost(leaf, host)
+	}
 	intermediates := x509.NewCertPool()
 	for _, c := range certs[1:] {
 		if !c.Equal(anchor) {
 			intermediates.AddCert(c)
 		}
 	}
-	// No DNSName on purpose (see NewCAFingerprint); expiry/EKU stay enforced.
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates}); err != nil {
+	// No DNSName here: the hostname is checked after the chain (verifyLeafNamesHost);
+	// expiry/EKU stay enforced.
+	chains, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
+	if err != nil {
 		return fmt.Errorf("server leaf does not verify against the pinned CA fingerprint: %w", err)
 	}
-	return nil
+	// A pin on the root would otherwise accept a server leaf of any scope under it
+	// (the frps leaf of the tunnel intermediate, too). A pin on the issuer itself is
+	// an older --ca-fp of the access intermediate and needs no name check.
+	if issuer := chains[0][1]; !issuer.Equal(anchor) && !isAccessIntermediate(issuer) {
+		return fmt.Errorf(
+			"the presented server certificate is not issued by the access intermediate "+
+				"(issuer %q) — not the gateway of this server", issuer.Subject.CommonName)
+	}
+	return verifyLeafNamesHost(leaf, host)
+}
+
+// accessIntermediateCN is the CN the ca-issuer gives the access intermediate; a
+// rotation appends " <label>" (apps/ca-issuer/app/pki.py, build_intermediate_ca).
+const accessIntermediateCN = "AdminHelper Access Intermediate"
+
+func isAccessIntermediate(c *x509.Certificate) bool {
+	cn := c.Subject.CommonName
+	return cn == accessIntermediateCN || strings.HasPrefix(cn, accessIntermediateCN+" ")
+}
+
+// verifyLeafNamesHost checks that the leaf names host, as every later call does. It
+// runs only on a leaf that already proved the pin: its error tells the operator to
+// use one of the leaf's names, advice that must never point at a foreign leaf.
+func verifyLeafNamesHost(leaf *x509.Certificate, host string) error {
+	if leaf.VerifyHostname(host) == nil {
+		return nil
+	}
+	names := append([]string{}, leaf.DNSNames...)
+	for _, ip := range leaf.IPAddresses {
+		names = append(names, ip.String())
+	}
+	named := "none"
+	if len(names) > 0 {
+		named = strings.Join(names, ", ")
+	}
+	return fmt.Errorf(
+		"the server certificate does not name %s (it names: %s): provision with one of these names in --url, "+
+			"or have the server issue its certificate with %s in EXTRA_SANS", host, named, host)
 }
 
 // MaxResponseBytes caps how much of a response body is read into memory, so a

@@ -50,14 +50,20 @@ from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
+from app.modules.provisioning.schemas import (
+    ActivateOut,
+    ProvisionTokenCreatedOut,
+    ProvisionTokenOut,
+)
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/servers", tags=["provisioning"])
 
 
-@router.post("/{server_id}/provision/token")
+@router.post("/{server_id}/provision/token", response_model=ProvisionTokenCreatedOut)
 def create_provision_token(
     server_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
     _scope=Depends(require_scope(SCOPE_ACCESS)),
@@ -79,6 +85,15 @@ def create_provision_token(
     db.add(token)
     db.commit()
     db.refresh(token)
+    audit.record(
+        db,
+        "provision.token.minted",
+        object_type="server",
+        object_id=server_id,
+        object_label=server.name,
+        detail="ttl=24h",
+        actor=actor_from_request(request),
+    )
 
     return {
         "token": raw_token,
@@ -88,7 +103,7 @@ def create_provision_token(
     }
 
 
-@router.get("/{server_id}/provision/tokens")
+@router.get("/{server_id}/provision/tokens", response_model=list[ProvisionTokenOut])
 def list_provision_tokens(
     server_id: str,
     db: Session = Depends(get_db),
@@ -105,7 +120,7 @@ def list_provision_tokens(
     return [t.to_dict() for t in tokens]
 
 
-@router.post("/{server_id}/provision/activate")
+@router.post("/{server_id}/provision/activate", response_model=ActivateOut)
 def activate_provision(
     server_id: str,
     request: Request,

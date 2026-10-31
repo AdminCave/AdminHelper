@@ -7,6 +7,8 @@
 //! spawning processes. Compiled on all platforms by design — some helpers are
 //! only *called* from the Unix code path, hence the `allow(dead_code)` there.
 
+use std::io::{ErrorKind, Read};
+
 use crate::error::AppError;
 use crate::models::ClientInfo;
 
@@ -86,6 +88,76 @@ pub fn buffer_has_connected(buffer: &[u8]) -> bool {
     let output = String::from_utf8_lossy(buffer);
     let lower = output.to_lowercase();
     lower.contains("connected to") || lower.contains("connection established")
+}
+
+/// The last `cap` bytes of one xfreerdp output stream, and whether
+/// `buffer_has_connected` was ever true for it. The flag sticks: in a long
+/// session the marker leaves the tail long before xfreerdp exits.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub struct OutputTail {
+    bytes: Vec<u8>,
+    cap: usize,
+    connected: bool,
+}
+
+#[cfg_attr(not(unix), allow(dead_code))]
+impl OutputTail {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            cap,
+            connected: false,
+        }
+    }
+
+    fn push(&mut self, chunk: &[u8]) {
+        self.bytes.extend_from_slice(chunk);
+        // Checked before trimming: a chunk as long as `cap` would otherwise cut
+        // off the first half of a marker split over two reads.
+        if !self.connected && buffer_has_connected(&self.bytes) {
+            self.connected = true;
+        }
+        if self.bytes.len() > self.cap {
+            self.bytes.drain(..self.bytes.len() - self.cap);
+        }
+    }
+
+    fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    fn connected(&self) -> bool {
+        self.connected
+    }
+}
+
+/// Reads `reader` up to EOF or a read error into an `OutputTail`. It never
+/// stops earlier: xfreerdp blocks once the pipe it writes to is full.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub fn drain_into_tail(mut reader: impl Read, cap: usize) -> OutputTail {
+    let mut tail = OutputTail::new(cap);
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(count) => tail.push(&chunk[..count]),
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+    tail
+}
+
+/// The message for the end of an interactive xfreerdp run: the first known
+/// error line, stderr before stdout; else the connect failure if neither
+/// stream ever showed the connection; else none.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub fn interactive_exit_message(stderr: &OutputTail, stdout: &OutputTail) -> Option<String> {
+    parse_freerdp_error(stderr.bytes())
+        .or_else(|| parse_freerdp_error(stdout.bytes()))
+        .or_else(|| {
+            (!stderr.connected() && !stdout.connected()).then(|| CONNECT_FAILED_MESSAGE.to_string())
+        })
 }
 
 pub fn parse_custom_size(raw: Option<&str>) -> Result<(u32, u32), AppError> {
@@ -266,6 +338,156 @@ mod tests {
             b"[INFO][com.freerdp.core] - starting"
         ));
         assert!(!buffer_has_connected(b""));
+    }
+
+    const CAP: usize = 8192;
+    const MARKER: &str = "[INFO][com.freerdp.client.x11] - Connected to 192.0.2.10:3389\n";
+    const LOGON_FAILURE: &str = "[ERROR][com.freerdp.core] - freerdp_set_last_error_ex ERRCONNECT_LOGON_FAILURE [0x00020014]\n";
+    const TRANSPORT_FAILURE: &str =
+        "[ERROR][com.freerdp.core.transport] - transport layer failed to connect\n";
+
+    /// 4 MiB of lines that are neither the marker nor an error.
+    fn filler() -> Vec<u8> {
+        let line = "[INFO][com.freerdp.gdi] - frame update\n";
+        line.repeat(4 * 1024 * 1024 / line.len() + 1).into_bytes()
+    }
+
+    fn tail_of(input: &[u8]) -> OutputTail {
+        drain_into_tail(input, CAP)
+    }
+
+    /// Hands out one byte per read.
+    struct OneByteReader<'a>(&'a [u8]);
+
+    impl Read for OneByteReader<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            match (self.0.split_first(), buf.first_mut()) {
+                (Some((byte, rest)), Some(slot)) => {
+                    *slot = *byte;
+                    self.0 = rest;
+                    Ok(1)
+                }
+                _ => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn drain_into_tail_keeps_only_the_end_of_a_long_stream() {
+        let input = filler();
+        let tail = tail_of(&input);
+        assert!(
+            tail.bytes().len() <= CAP,
+            "held {} bytes of {}",
+            tail.bytes().len(),
+            input.len()
+        );
+        assert!(
+            tail.bytes() == &input[input.len() - CAP..],
+            "the tail is the end of the stream"
+        );
+        assert!(!tail.connected());
+    }
+
+    #[test]
+    fn drain_into_tail_remembers_a_connection_whose_marker_left_the_tail() {
+        let mut input = MARKER.as_bytes().to_vec();
+        input.extend(filler());
+        let stdout = tail_of(&input);
+        assert!(
+            stdout.bytes().len() <= CAP,
+            "held {} bytes",
+            stdout.bytes().len()
+        );
+        assert!(
+            !buffer_has_connected(stdout.bytes()),
+            "the marker is out of the tail"
+        );
+        assert!(stdout.connected());
+        assert_eq!(
+            interactive_exit_message(&OutputTail::new(CAP), &stdout),
+            None
+        );
+    }
+
+    #[test]
+    fn interactive_exit_message_finds_an_error_line_at_the_end_of_a_long_stream() {
+        let mut input = filler();
+        input.extend_from_slice(LOGON_FAILURE.as_bytes());
+        let stderr = tail_of(&input);
+        assert_eq!(
+            interactive_exit_message(&stderr, &OutputTail::new(CAP)).as_deref(),
+            Some(AUTH_FAILED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn interactive_exit_message_without_marker_or_error_is_the_connect_failure() {
+        let stderr = tail_of(b"[INFO][com.freerdp.core] - starting\n");
+        let stdout = tail_of(b"");
+        assert_eq!(
+            interactive_exit_message(&stderr, &stdout).as_deref(),
+            Some(CONNECT_FAILED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn interactive_exit_message_takes_the_error_line_of_stderr_first() {
+        let auth = tail_of(LOGON_FAILURE.as_bytes());
+        let transport = tail_of(TRANSPORT_FAILURE.as_bytes());
+        assert_eq!(
+            interactive_exit_message(&auth, &transport).as_deref(),
+            Some(AUTH_FAILED_MESSAGE)
+        );
+        assert_eq!(
+            interactive_exit_message(&transport, &auth).as_deref(),
+            Some(CONNECT_FAILED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn interactive_exit_message_finds_an_error_line_only_on_stdout() {
+        // An auth line: its message differs from the connect-failure fallback,
+        // so the result shows that stdout was parsed at all.
+        assert_eq!(
+            interactive_exit_message(&OutputTail::new(CAP), &tail_of(LOGON_FAILURE.as_bytes()))
+                .as_deref(),
+            Some(AUTH_FAILED_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn interactive_exit_message_counts_a_marker_only_on_stderr() {
+        let stderr = tail_of(MARKER.as_bytes());
+        assert!(stderr.connected());
+        assert_eq!(
+            interactive_exit_message(&stderr, &OutputTail::new(CAP)),
+            None
+        );
+    }
+
+    #[test]
+    fn drain_into_tail_sees_a_marker_read_one_byte_at_a_time() {
+        let stdout = drain_into_tail(OneByteReader(MARKER.as_bytes()), CAP);
+        assert!(stdout.connected());
+        assert_eq!(
+            interactive_exit_message(&OutputTail::new(CAP), &stdout),
+            None
+        );
+    }
+
+    #[test]
+    fn output_tail_sees_a_marker_split_before_a_chunk_that_fills_the_tail() {
+        let mut tail = OutputTail::new(CAP);
+        tail.push(b"[INFO][com.freerdp.client.x11] - Conn");
+        let mut rest = b"ected to 192.0.2.10:3389\n".to_vec();
+        rest.resize(CAP, b'.');
+        tail.push(&rest);
+        assert!(
+            !buffer_has_connected(tail.bytes()),
+            "the kept tail alone no longer holds the marker"
+        );
+        assert!(tail.connected());
     }
 
     #[test]

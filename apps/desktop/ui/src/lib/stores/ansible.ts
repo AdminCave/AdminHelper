@@ -141,10 +141,7 @@ export async function runPlaybook(): Promise<void> {
 
   _state.update((s) => ({ ...s, running: true }));
   try {
-    const { content } = await ansibleApi.fetchContent(session, playbook.id);
-    const inventoryPath = await bridge.ansibleGenerateInventory(targets);
-    const playbookPath = await bridge.ansibleWritePlaybook(playbook.filename, content);
-    await bridge.ansibleLaunch(inventoryPath, playbookPath);
+    await bridge.ansibleRun(playbook.id, targets);
     showStatus(tNow('status.ansibleStarted', { name: playbook.name }));
   } catch (err) {
     reportError(errMsg(err));

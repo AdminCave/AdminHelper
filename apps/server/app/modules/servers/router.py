@@ -24,7 +24,13 @@ from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
 from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
-from app.modules.servers.schemas import ServerCreate, ServerUpdate
+from app.modules.servers.schemas import (
+    InternalServerOut,
+    ServerCreate,
+    ServerOut,
+    ServerSummary,
+    ServerUpdate,
+)
 
 logger = logging.getLogger("adminhelper.servers")
 
@@ -66,7 +72,7 @@ def _do_notify_tag_sync(reason: str) -> None:
 internal_router = APIRouter(prefix="/api/internal", tags=["internal"])
 
 
-@internal_router.get("/servers")
+@internal_router.get("/servers", response_model=list[InternalServerOut])
 def list_servers_internal(
     db: Session = Depends(get_db),
     _internal: None = Depends(require_internal_key),
@@ -86,7 +92,7 @@ def list_servers_internal(
     ]
 
 
-@router.get("")
+@router.get("", response_model=list[ServerOut], response_model_exclude_unset=True)
 def list_servers(
     response: Response,
     db: Session = Depends(get_db),
@@ -99,7 +105,12 @@ def list_servers(
     return [s.to_dict() for s in servers]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ServerOut,
+    response_model_exclude_unset=True,
+)
 def create_server(
     data: ServerCreate,
     request: Request,
@@ -132,7 +143,16 @@ def create_server(
     return server.to_dict()
 
 
-@router.get("/{server_id}")
+# Declared before /{server_id}, else FastAPI reads "summary" as a server id. The user
+# dialog only needs these three fields to assign servers; GET /api/servers loads every
+# connection and tunnel of every server for them.
+@router.get("/summary", response_model=list[ServerSummary])
+def list_server_summaries(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    rows = db.query(Server.id, Server.name, Server.hostname).order_by(Server.name, Server.id)
+    return [ServerSummary(id=r.id, name=r.name, hostname=r.hostname) for r in rows]
+
+
+@router.get("/{server_id}", response_model=ServerOut, response_model_exclude_unset=True)
 def get_server(server_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
@@ -140,7 +160,7 @@ def get_server(server_id: str, db: Session = Depends(get_db), _admin=Depends(get
     return server.to_dict()
 
 
-@router.put("/{server_id}")
+@router.put("/{server_id}", response_model=ServerOut, response_model_exclude_unset=True)
 def update_server(
     server_id: str,
     data: ServerUpdate,

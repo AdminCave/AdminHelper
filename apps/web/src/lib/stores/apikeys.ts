@@ -2,44 +2,36 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { writable } from 'svelte/store';
 import type { ApiKey, ApiKeyCreate, ApiKeyCreateResult } from '$lib/api/types';
 import * as api from '$lib/api/apikeys';
+import { listStore } from './listStore';
 
-const _apikeys = writable<ApiKey[]>([]);
-
-// Stale-response guard (see users.ts): a slow refresh() list() must not overwrite state a mutation
-// already changed — else e.g. a just-removed key reappears (4.145).
-let refreshGen = 0;
+const list = listStore<ApiKey>(api.list);
 
 export const apikeys = {
-  subscribe: _apikeys.subscribe,
+  subscribe: list.subscribe,
+  refresh: list.refresh,
+  reset: list.reset,
 
-  async refresh(): Promise<void> {
-    const gen = ++refreshGen;
-    const list = await api.list();
-    if (gen === refreshGen) _apikeys.set(list);
+  create(data: ApiKeyCreate): Promise<ApiKeyCreateResult> {
+    return list.mutate(
+      () => api.create(data),
+      (keys, created) => [
+        ...keys,
+        {
+          id: created.id,
+          name: created.name,
+          permission: created.permission,
+          created_at: created.created_at,
+        },
+      ],
+    );
   },
 
-  // Logout empties the store (see users.ts).
-  reset(): void {
-    refreshGen++;
-    _apikeys.set([]);
-  },
-
-  async create(data: ApiKeyCreate): Promise<ApiKeyCreateResult> {
-    const created = await api.create(data);
-    refreshGen++;
-    _apikeys.update((list) => [
-      ...list,
-      { id: created.id, name: created.name, permission: created.permission },
-    ]);
-    return created;
-  },
-
-  async remove(id: number): Promise<void> {
-    await api.remove(id);
-    refreshGen++;
-    _apikeys.update((list) => list.filter((k) => k.id !== id));
+  remove(id: number): Promise<void> {
+    return list.mutate(
+      () => api.remove(id),
+      (keys) => keys.filter((k) => k.id !== id),
+    );
   },
 };

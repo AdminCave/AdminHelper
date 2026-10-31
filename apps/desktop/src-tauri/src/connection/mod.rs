@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// Passwords flow through here to child processes. Memory that held one is overwritten here only
+// by safe means (`zeroize`), so that no code here claims more about it than Rust upholds.
+#![forbid(unsafe_code)]
+
 pub mod rdp;
 pub mod rdp_logic;
 pub mod ssh;
@@ -11,7 +15,65 @@ use crate::error::AppError;
 use crate::models::{ClientInfo, Connection, ConnectionKind, RdpOptions, VisitorBinding};
 use crate::tunnel::{mapping_of, resolve_connection, TunnelMapping};
 use crate::validation::validate_connection_input;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::{Duration, Instant};
 
+/// What the user reads when opening a connection ran out of time.
+pub const TIMEOUT_MESSAGE: &str =
+    "Verbindungsaufbau: Zeitueberschreitung (Server nicht erreichbar oder haengt)";
+
+/// The deadline of opening one connection, shared by the command that waits and the work that
+/// opens. The work claims the start right before its first visible effect (a window, a
+/// process); the command gives up only while nothing has started. So after the timeout
+/// message no window opens any more, and a start that won the race is waited for.
+pub struct Deadline {
+    at: Instant,
+    state: AtomicU8,
+}
+
+const OPEN: u8 = 0;
+const STARTED: u8 = 1;
+const EXPIRED: u8 = 2;
+
+impl Deadline {
+    pub fn new(timeout: Duration) -> Self {
+        Self {
+            at: Instant::now() + timeout,
+            state: AtomicU8::new(OPEN),
+        }
+    }
+
+    /// Claims the start: `Ok` while open and in time (and again once started), the timeout
+    /// error once expired or past the deadline.
+    pub fn start(&self) -> Result<(), AppError> {
+        if Instant::now() >= self.at {
+            let _ = self.expire();
+        }
+        match self
+            .state
+            .compare_exchange(OPEN, STARTED, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) | Err(STARTED) => Ok(()),
+            Err(_) => Err(AppError::Connection(TIMEOUT_MESSAGE.to_string())),
+        }
+    }
+
+    /// Expires an open deadline; false once the work has started.
+    pub(crate) fn expire(&self) -> bool {
+        self.state
+            .compare_exchange(OPEN, EXPIRED, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+            || self.state.load(Ordering::Acquire) == EXPIRED
+    }
+
+    /// The time left, zero once past. Only the xfreerdp credential check (Unix) reads it.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub fn remaining(&self) -> Duration {
+        self.at.saturating_duration_since(Instant::now())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn open_connection(
     connection: &Connection,
     password: Option<&str>,
@@ -20,6 +82,7 @@ pub fn open_connection(
     ui_language: Option<&str>,
     correlation_id: &str,
     app: &tauri::AppHandle,
+    deadline: &Deadline,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
     // On Windows a typed password goes to no store, not even for the start, and mstsc asks for
@@ -30,7 +93,10 @@ pub fn open_connection(
         None
     };
     match connection.kind {
-        ConnectionKind::Ssh => ssh::open_ssh(connection),
+        ConnectionKind::Ssh => {
+            deadline.start()?;
+            ssh::open_ssh(connection)
+        }
         ConnectionKind::Rdp => rdp::open_rdp(
             connection,
             password,
@@ -39,8 +105,12 @@ pub fn open_connection(
             ui_language,
             correlation_id,
             app,
+            deadline,
         ),
-        ConnectionKind::Web => web::open_web(connection),
+        ConnectionKind::Web => {
+            deadline.start()?;
+            web::open_web(connection)
+        }
     }
 }
 
@@ -55,6 +125,7 @@ pub struct CredentialConnection<'a> {
     pub bindings: &'a [VisitorBinding],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn open_connection_stored(
     app: &tauri::AppHandle,
     connection: &Connection,
@@ -63,6 +134,7 @@ pub fn open_connection_stored(
     rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
+    deadline: &Deadline,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
     let source = checked_password_source(connection, &credential)?;
@@ -78,6 +150,7 @@ pub fn open_connection_stored(
             rdp,
             ui_language,
             correlation_id,
+            deadline,
         ),
         _ => open_connection(
             connection,
@@ -87,6 +160,7 @@ pub fn open_connection_stored(
             ui_language,
             correlation_id,
             app,
+            deadline,
         ),
     }
 }
@@ -179,6 +253,7 @@ fn open_rdp_with_stored_password(
     rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
+    deadline: &Deadline,
 ) -> Result<(), AppError> {
     // Both connections are already validated and matched by the sole caller,
     // open_connection_stored. xfreerdp reads the password from its stdin; mstsc finds it in a
@@ -203,12 +278,39 @@ fn open_rdp_with_stored_password(
         ui_language,
         correlation_id,
         app,
+        deadline,
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deadline_start_in_time_is_ok_and_holds_after_the_time() {
+        let deadline = Deadline::new(Duration::from_millis(50));
+        assert!(deadline.start().is_ok());
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(deadline.start().is_ok(), "a started deadline stays started");
+        assert!(!deadline.expire(), "a started deadline does not expire");
+    }
+
+    #[test]
+    fn deadline_start_after_the_time_fails_and_expires() {
+        let deadline = Deadline::new(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(matches!(deadline.start(), Err(AppError::Connection(m)) if m == TIMEOUT_MESSAGE));
+        assert!(deadline.expire());
+        assert_eq!(deadline.remaining(), Duration::ZERO);
+    }
+
+    #[test]
+    fn deadline_expired_refuses_a_start_in_time() {
+        let deadline = Deadline::new(Duration::from_secs(5));
+        assert!(deadline.expire());
+        assert!(deadline.start().is_err());
+        assert!(deadline.remaining() > Duration::from_secs(4));
+    }
     use crate::password::rdp_storage_key;
 
     fn rdp(host: &str, port: u16) -> Connection {
@@ -468,8 +570,8 @@ mod tests {
 
     #[test]
     fn stored_password_key_accepts_the_literal_resolution() {
-        // Without a mapping (a non-admin reads none) the listed target names the server port
-        // of a visitor on loopback.
+        // Without a mapping (a non-admin reads only those of the servers assigned to them) the
+        // listed target names the server port of a visitor on loopback.
         let held = Held {
             tunnels: Vec::new(),
             ..Held::admin()

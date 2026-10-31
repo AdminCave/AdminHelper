@@ -10,8 +10,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { showToast, showError } from '$lib/stores/notifications';
   import { hooks } from '$lib/stores/hooks';
-  import { HOOK_EVENTS, HOOK_INTERVAL_PRESETS } from '$lib/utils/hooks';
-  import type { HookCreate, HookDetail, HookType, HookUpdate } from '$lib/api/types';
+  import { HOOK_EVENTS } from '$lib/utils/hooks';
+  import {
+    hookCreatePayload,
+    hookFormFrom,
+    hookUpdatePayload,
+    validateHookForm,
+    type HookForm,
+  } from '$lib/utils/hookForm';
+  import type { HookDetail, HookType } from '$lib/api/types';
 
   interface Props {
     open: boolean;
@@ -32,19 +39,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   $effect(() => {
     if (open) {
-      name = editing?.name ?? '';
-      description = editing?.description ?? '';
-      hookType = editing?.hook_type ?? 'webhook';
-      script = editing?.script ?? '';
-      events = new Set(editing?.event_triggers ?? []);
-      const iv = editing?.schedule_interval ?? '1h';
-      if (HOOK_INTERVAL_PRESETS.includes(iv as (typeof HOOK_INTERVAL_PRESETS)[number])) {
-        interval = iv;
-        cron = '';
-      } else {
-        interval = 'custom';
-        cron = iv;
-      }
+      const form = hookFormFrom(editing);
+      name = form.name;
+      description = form.description;
+      hookType = form.hookType;
+      script = form.script;
+      events = new Set(form.events);
+      interval = form.interval;
+      cron = form.cron;
     }
   });
 
@@ -71,38 +73,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
-    if (isEvent && events.size === 0) {
-      showToast($t('modal.hook.selectEvent'), 'error');
-      return;
-    }
-    const intervalValue = isSchedule ? (interval === 'custom' ? cron.trim() : interval) : '';
-    if (isSchedule && !intervalValue) {
-      showToast($t('modal.hook.selectInterval'), 'error');
+    const form: HookForm = {
+      name,
+      description,
+      hookType,
+      script,
+      events: [...events],
+      interval,
+      cron,
+    };
+    const missing = validateHookForm(form);
+    if (missing) {
+      showToast($t(missing), 'error');
       return;
     }
     submitting = true;
     try {
       if (editing) {
-        const payload: HookUpdate = {
-          name: name.trim(),
-          description: description.trim() || null,
-          script,
-        };
-        if (isEvent) payload.event_triggers = [...events];
-        if (isSchedule) payload.schedule_interval = intervalValue;
-        await hooks.update(editing.id, payload);
+        await hooks.update(editing.id, hookUpdatePayload(form));
         showToast($t('toast.hook.saved'));
         onClose();
       } else {
-        const payload: HookCreate = {
-          name: name.trim(),
-          description: description.trim() || null,
-          hook_type: hookType,
-          script,
-        };
-        if (isEvent) payload.event_triggers = [...events];
-        if (isSchedule) payload.schedule_interval = intervalValue;
-        const created = await hooks.create(payload);
+        const created = await hooks.create(hookCreatePayload(form));
         if (hookType === 'webhook' && created.token) {
           onClose({ token: created.token });
         } else {

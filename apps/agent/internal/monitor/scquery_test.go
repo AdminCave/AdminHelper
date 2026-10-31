@@ -5,6 +5,7 @@
 package monitor
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -100,7 +101,7 @@ func TestScServiceHealthTimedOut(t *testing.T) {
 	pluginTimeout = 100 * time.Millisecond
 	t.Setenv(dockerHelperEnv, "hang")
 	start := time.Now()
-	out, err := runWithTimeout(os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	out, err := runWithTimeout(context.Background(), os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
 		t.Errorf("runWithTimeout returned after %s, the timeout did not stop the hung call", elapsed)
 	}

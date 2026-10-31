@@ -189,7 +189,7 @@ def test_two_writers_do_not_lose_an_increment_or_double_alert(pg_sessionmaker, m
     # The hub emit runs after the dispatch; without DATA_DIR/SERVER_HUB_URL set it
     # would reach for the network. Patched by its real name — with raising=False a
     # typo here would silently patch nothing.
-    monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **kw: None)
+    monkeypatch.setattr(alerter, "emit_to_hub", lambda *a, **kw: None)
     pool = _InlinePool()
     monkeypatch.setattr(check_engine, "_alert_pool", pool)
 
@@ -302,7 +302,7 @@ def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypa
         return True, None
 
     monkeypatch.setattr(alerter, "_dispatch", _record_send)
-    monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **kw: None)
+    monkeypatch.setattr(alerter, "emit_to_hub", lambda *a, **kw: None)
 
     real_resolve = alerter.resolve_notification
 
@@ -363,13 +363,13 @@ _BELL_NOW = datetime(2026, 10, 20, 12, 0, 0, 123456)
 
 def test_bell_recovery_during_the_alarm_post_reaches_the_bell(pg_sessionmaker, monkeypatch):
     from app import alerter
-    from app.check_engine import _dispatch_alert_bg
+    from app.check_engine import dispatch_alert_bg
 
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: _BELL_NOW)
     cid = seed_bell_check(pg_sessionmaker, status="critical", notified_status="ok")
     posted = overlap_first_hub_post(monkeypatch, pg_sessionmaker, cid, "ok")
 
-    _dispatch_alert_bg(cid, "ok", "critical")
+    dispatch_alert_bg(cid, "ok", "critical")
 
     assert posted == ["critical", "ok"]
     assert bell_record(pg_sessionmaker, cid) == ("ok", _BELL_NOW)
@@ -378,7 +378,7 @@ def test_bell_recovery_during_the_alarm_post_reaches_the_bell(pg_sessionmaker, m
 @pytest.mark.parametrize("first_code", [202, 403])
 def test_bell_newer_reservation_outlives_the_first_post(pg_sessionmaker, monkeypatch, first_code):
     from app import alerter
-    from app.check_engine import _dispatch_alert_bg
+    from app.check_engine import dispatch_alert_bg
 
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: _BELL_NOW)
     shown_at = _BELL_NOW - timedelta(minutes=40)
@@ -391,7 +391,7 @@ def test_bell_newer_reservation_outlives_the_first_post(pg_sessionmaker, monkeyp
     )
     posted = overlap_first_hub_post(monkeypatch, pg_sessionmaker, cid, "critical", first_code)
 
-    _dispatch_alert_bg(cid, "critical", "ok")
+    dispatch_alert_bg(cid, "critical", "ok")
 
     assert posted == ["ok", "critical"]
     assert bell_record(pg_sessionmaker, cid) == ("critical", _BELL_NOW)
@@ -411,7 +411,7 @@ def test_bell_failed_post_without_a_newer_dispatch_changes_nothing(
     pg_sessionmaker, monkeypatch, status, notified, hub_before
 ):
     from app import alerter
-    from app.check_engine import _dispatch_alert_bg
+    from app.check_engine import dispatch_alert_bg
 
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: _BELL_NOW)
     cid = seed_bell_check(
@@ -423,7 +423,7 @@ def test_bell_failed_post_without_a_newer_dispatch_changes_nothing(
     )
     posted = overlap_first_hub_post(monkeypatch, pg_sessionmaker, cid, status, first_code=403)
 
-    _dispatch_alert_bg(cid, notified, status)
+    dispatch_alert_bg(cid, notified, status)
 
     assert posted == [status]
     assert bell_record(pg_sessionmaker, cid) == hub_before

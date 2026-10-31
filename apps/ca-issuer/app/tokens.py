@@ -107,8 +107,8 @@ def kind_of(grant: EnrollmentGrant) -> str:
 
 # Signs the leaf for a consumed grant and returns it with the response body.
 Signer = Callable[[EnrollmentGrant], tuple[x509.Certificate, dict[str, str]]]
-# Signs the successor of a renewed certificate.
-RenewSigner = Callable[[], tuple[x509.Certificate, dict[str, str]]]
+# Signs the successor of a renewed certificate, for the kind of its device line.
+RenewSigner = Callable[[str], tuple[x509.Certificate, dict[str, str]]]
 
 
 class TokenStore(Protocol):
@@ -275,7 +275,7 @@ class InMemoryTokenStore:
                 scope,
             ):
                 raise RenewalRefused("the device line is revoked")
-        leaf, response = sign()
+        leaf, response = sign(line.kind)
         with self._lock:
             # Once more after signing: a deprovisioning that came in meanwhile wins.
             if not self._active(subject_id, scope, current.not_before):

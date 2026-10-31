@@ -76,7 +76,7 @@ class Connection(Base):
             "keyPath": self.key_path or "",
             "url": self.url or "",
             "notes": self.notes or "",
-            "tags": json.loads(self.tags) if self.tags else [],
+            "tags": self._tags(),
             "trustCert": self.trust_cert or False,
             "lastUsed": self.last_used,
         }
@@ -88,6 +88,20 @@ class Connection(Base):
             if key not in result and key not in _KNOWN_FIELDS:
                 result[key] = value
         return result
+
+    def _tags(self) -> list:
+        """The tags, or none if the column holds no JSON list: from_dict keeps a value that is
+        no list as it came (old imports, hook scripts), and reading must not fail the list."""
+        if not self.tags:
+            return []
+        try:
+            tags = json.loads(self.tags)
+        except ValueError:
+            tags = None
+        if not isinstance(tags, list):
+            logger.warning("connection %s: tags is not a JSON list, left out", self.id)
+            return []
+        return tags
 
     def _extra(self) -> dict[str, Any]:
         """The extra fields, or none if extra_data is not a JSON object.

@@ -10,7 +10,6 @@ Core functions:
   sync_assignment() — The same for one assignment, i.e. one server
   apply_template()  — Assigns a template to a server + creates checks
   remove_template() — Removes the assignment + deletes the associated checks
-  cleanup_server()  — Deletes all monitoring data of a server
   mark_overrides()  — Records which fields of a template check a user changed
   record_override_baseline() — Once: marks the fields changed before the update
   tombstone_check() — Keeps a deleted template check from being created again
@@ -26,18 +25,13 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models import (
-    MonitorAgentKey,
-    MonitorAgentLiveness,
     MonitorAlertRule,
     MonitorCheck,
     MonitorCheckTombstone,
-    MonitorHostFacts,
-    MonitorMaintenance,
     MonitorSeedState,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
-    MonitorTemplateSuggestionDismissal,
 )
 from app.scheduler import add_check, remove_check
 from app.schemas import DEFAULT_CONSECUTIVE_OKS
@@ -49,7 +43,7 @@ logger = logging.getLogger("monitor.template_sync")
 SchedulerAction = tuple[str, str, str | None, str | None]
 
 
-def _apply_scheduler_actions(actions: list[SchedulerAction]) -> None:
+def apply_scheduler_actions(actions: list[SchedulerAction]) -> None:
     """Apply collected scheduler mutations AFTER the DB commit succeeded.
 
     Mutating the running APScheduler before the rows are persisted (the old
@@ -83,11 +77,16 @@ def substitute_variables(obj, variables: dict):
     return obj
 
 
+# C0 and DEL, the boundary of _no_control_characters (schemas.py): the substituted
+# values reach check names past that validator, from the assignment and the inventory sync.
+_CONTROL_TO_SPACE = {**{c: " " for c in range(0x20)}, 0x7F: " "}
+
+
 def _build_variables(assignment: MonitorTemplateAssignment) -> dict:
     """Builds the variable map from an assignment."""
     return {
-        "hostname": assignment.server_hostname,
-        "server_name": assignment.server_name,
+        "hostname": (assignment.server_hostname or "").translate(_CONTROL_TO_SPACE),
+        "server_name": (assignment.server_name or "").translate(_CONTROL_TO_SPACE),
         "server_id": assignment.server_id,
     }
 
@@ -375,7 +374,7 @@ def sync_template(db: Session, template: MonitorTemplate) -> dict:
         total_deleted += da
 
     db.commit()
-    _apply_scheduler_actions(actions)
+    apply_scheduler_actions(actions)
 
     logger.info(
         "Template '%s' sync: %d erstellt, %d aktualisiert, %d geloescht (ueber %d Server)",
@@ -407,7 +406,7 @@ def sync_assignment(
     _sync_checks_for_server(db, template.id, assignment.server_id, check_defs, variables, actions)
     _sync_alerts_for_server(db, template.id, assignment.server_id, alert_defs, variables)
     db.commit()
-    _apply_scheduler_actions(actions)
+    apply_scheduler_actions(actions)
 
 
 def _sync_checks_for_server(
@@ -601,7 +600,7 @@ def apply_template(
         alert_ids.append(rule.id)
 
     db.commit()
-    _apply_scheduler_actions(actions)
+    apply_scheduler_actions(actions)
     logger.info(
         "Template '%s' applied to server %s: %d checks, %d alerts",
         template.name,
@@ -653,7 +652,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
     ).delete()
 
     db.commit()
-    _apply_scheduler_actions(actions)
+    apply_scheduler_actions(actions)
     logger.info(
         "Template %s removed from server %s: %d checks, %d alerts deleted",
         template_id,
@@ -691,53 +690,3 @@ def restore_checks(
         restored,
     )
     return restored
-
-
-# ---------------------------------------------------------------------------
-# Cleanup: completely clean up a server
-# ---------------------------------------------------------------------------
-
-
-def cleanup_server(db: Session, server_id: str) -> dict:
-    """Deletes all monitoring data of a server (on server deletion)."""
-    actions: list[SchedulerAction] = []
-    # Delete checks (incl. states via CASCADE)
-    checks = db.query(MonitorCheck).filter(MonitorCheck.server_id == server_id).all()
-    for check in checks:
-        actions.append(("remove", check.id, None, None))
-        db.delete(check)
-
-    # Delete alerts with match_server_id
-    alerts = db.query(MonitorAlertRule).filter(MonitorAlertRule.match_server_id == server_id).all()
-    for alert in alerts:
-        db.delete(alert)
-
-    # Delete assignments, and their tombstones: those have no foreign key to the
-    # server, which lives in the server's database
-    db.query(MonitorTemplateAssignment).filter(
-        MonitorTemplateAssignment.server_id == server_id,
-    ).delete()
-    db.query(MonitorCheckTombstone).filter(MonitorCheckTombstone.server_id == server_id).delete()
-
-    # Delete agent key
-    db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
-
-    # Server-scoped maintenance windows would otherwise become orphans no UI
-    # can reach (the only maintenance view is the per-server tab), and a stale
-    # liveness row would be re-hydrated on every restart (T42). Global windows
-    # (server_id NULL) stay.
-    db.query(MonitorMaintenance).filter(MonitorMaintenance.server_id == server_id).delete()
-    db.query(MonitorAgentLiveness).filter(MonitorAgentLiveness.server_id == server_id).delete()
-
-    # Host facts and ignored template suggestions: no foreign key to the server either
-    db.query(MonitorHostFacts).filter(MonitorHostFacts.server_id == server_id).delete()
-    db.query(MonitorTemplateSuggestionDismissal).filter(
-        MonitorTemplateSuggestionDismissal.server_id == server_id,
-    ).delete()
-
-    db.commit()
-    _apply_scheduler_actions(actions)
-    logger.info(
-        "Server %s cleanup: %d checks, %d alerts deleted", server_id, len(checks), len(alerts)
-    )
-    return {"checksDeleted": len(checks), "alertsDeleted": len(alerts)}

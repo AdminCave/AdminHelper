@@ -11,7 +11,8 @@ the certificate register — a device line and a certificate row per issued leaf
 the revocation of a line that ``replaces`` names, and a ``legacy`` line for a
 certificate from before the register that it takes over on renewal (R-0224). What
 it only reads: identity revocations and the register's install time. It never
-mints a token.
+mints a token. On every start it replaces its snapshot of the infrastructure
+certificates (``infra_certificates``, app/inventory.py), which the server shows.
 """
 
 from __future__ import annotations
@@ -107,6 +108,17 @@ certificate_register_state = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=False),
     Column("installed_at", DateTime, nullable=False),
+)
+
+infra_certificates = Table(
+    "infra_certificates",
+    metadata,
+    Column("name", String, primary_key=True),
+    Column("subject", String, nullable=False),
+    Column("fingerprint", String(64), nullable=False),
+    Column("not_before", DateTime, nullable=False),
+    Column("not_after", DateTime, nullable=False),
+    Column("recorded_at", DateTime, nullable=False),
 )
 
 
@@ -291,6 +303,7 @@ class DbTokenStore:
                         device_lines.c.id,
                         device_lines.c.subject_id,
                         device_lines.c.scope,
+                        device_lines.c.kind,
                         device_lines.c.revoked_at,
                     )
                     .join(issued_certificates, issued_certificates.c.line_id == device_lines.c.id)
@@ -299,14 +312,15 @@ class DbTokenStore:
                 ).first()
                 if line is None:
                     line_id = self._take_over(conn, current, subject_id, scope, legacy_kind, now)
+                    kind = legacy_kind
                 elif line.revoked_at is not None or (line.subject_id, line.scope) != (
                     subject_id,
                     scope,
                 ):
                     raise RenewalRefused("the device line is revoked")
                 else:
-                    line_id = line.id
-                leaf, response = sign()
+                    line_id, kind = line.id, line.kind
+                leaf, response = sign(kind)
                 # Once more after signing: a deprovisioning committed meanwhile is not held
                 # off by the line lock, and the successor's later notBefore would pass it.
                 if not self._active(conn, subject_id, scope, current.not_before):

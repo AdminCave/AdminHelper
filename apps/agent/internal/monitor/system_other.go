@@ -6,7 +6,9 @@
 
 package monitor
 
+import "context"
+
 // collectSystemState has no system_state block outside Linux; the state passes through unchanged.
-func collectSystemState(st reportState) (map[string]any, reportState) {
+func collectSystemState(_ context.Context, st reportState) (map[string]any, reportState) {
 	return nil, st
 }

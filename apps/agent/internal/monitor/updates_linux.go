@@ -8,6 +8,7 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,20 +28,24 @@ const updatesLeftOut = "security_updates left out until the next hourly count"
 
 // updatesCalls indirects the clock of the hourly count and its calls so tests can drive the cache and
 // every outcome without apt-get or dnf (same reason as cpuCalls). run runs one call under timeout
-// with env added to the agent's environment.
+// and ctx with env added to the agent's environment.
 var updatesCalls = struct {
 	now func() time.Time
-	run func(timeout time.Duration, env []string, name string, args ...string) ([]byte, error)
+	run func(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error)
 }{time.Now, runTimedEnv}
 
 // runTimedEnv is runTimed with env added to the environment; a later entry of the same key wins
 // (os/exec), so the agent's own LC_ALL is overridden.
-func runTimedEnv(timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func runTimedEnv(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), env...)
+	cmd.WaitDelay = commandWaitDelay
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return out, nil
+	}
 	if err != nil && ctx.Err() != nil {
 		return out, ctx.Err()
 	}
@@ -51,8 +56,9 @@ func runTimedEnv(timeout time.Duration, env []string, name string, args ...strin
 // else a new count from the local package cache, never the network (apt-get -s, dnf -C). A count
 // that failed is saved without a number, so the field stays out until the next hourly count instead
 // of the tool running on every report. A host with neither apt-get nor dnf has nothing to count and
-// gets nil, which is no failure and stays out of the log.
-func securityUpdates(saved *updatesCheck) *updatesCheck {
+// gets nil, which is no failure and stays out of the log. A count that ctx ended fails like one that
+// timed out.
+func securityUpdates(ctx context.Context, saved *updatesCheck) *updatesCheck {
 	now := updatesCalls.now()
 	if saved != nil {
 		// A count from the future (the clock was set back) is due as well, or counting would stop until
@@ -64,9 +70,9 @@ func securityUpdates(saved *updatesCheck) *updatesCheck {
 	var count int
 	var ok bool
 	if _, err := systemCLI.lookPath("apt-get"); err == nil {
-		count, ok = aptSecurityUpdates()
+		count, ok = aptSecurityUpdates(ctx)
 	} else if _, err := systemCLI.lookPath("dnf"); err == nil {
-		count, ok = dnfSecurityUpdates()
+		count, ok = dnfSecurityUpdates(ctx)
 	} else {
 		return nil
 	}
@@ -79,8 +85,8 @@ func securityUpdates(saved *updatesCheck) *updatesCheck {
 
 // aptSecurityUpdates counts the security updates a simulated dist-upgrade would install. -s needs no
 // lock (apt-get(8)); LC_ALL=C runs it untranslated, the form countAptSecurity reads.
-func aptSecurityUpdates() (int, bool) {
-	out, err := updatesCalls.run(updatesTimeout, []string{"LC_ALL=C"}, "apt-get", "-s", "dist-upgrade")
+func aptSecurityUpdates(ctx context.Context) (int, bool) {
+	out, err := updatesCalls.run(ctx, updatesTimeout, []string{"LC_ALL=C"}, "apt-get", "-s", "dist-upgrade")
 	if err != nil {
 		logger.Warnf("system state: apt-get -s dist-upgrade failed: %s, %s",
 			commandFailure("apt-get", updatesTimeout, err), updatesLeftOut)
@@ -92,8 +98,8 @@ func aptSecurityUpdates() (int, bool) {
 // dnfSecurityUpdates counts the packages with a security advisory in dnf's cache; -C keeps dnf to the
 // cache, off the network. It keeps the agent's locale: countDNFSecurity reads no translated word, and
 // a translation that splits a column makes the output unreadable, not the count wrong.
-func dnfSecurityUpdates() (int, bool) {
-	out, err := updatesCalls.run(updatesTimeout, nil, "dnf", "-C", "-q", "updateinfo", "list", "--security")
+func dnfSecurityUpdates(ctx context.Context) (int, bool) {
+	out, err := updatesCalls.run(ctx, updatesTimeout, nil, "dnf", "-C", "-q", "updateinfo", "list", "--security")
 	if err != nil {
 		logger.Warnf("system state: dnf updateinfo list --security failed: %s, %s",
 			commandFailure("dnf", updatesTimeout, err), updatesLeftOut)

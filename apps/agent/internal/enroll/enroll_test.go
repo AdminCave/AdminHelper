@@ -6,6 +6,7 @@ package enroll
 
 import (
 	"bytes"
+	"context"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
@@ -70,7 +71,7 @@ func TestSubmitParsesIssueResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := Submit(srv.Client(), srv.URL, Request{Token: "tok", CSR: "csr-pem"})
+	got, err := Submit(context.Background(), srv.Client(), srv.URL, Request{Token: "tok", CSR: "csr-pem"})
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestSubmitRejectsHTTPError(t *testing.T) {
 		http.Error(w, "bad token", http.StatusForbidden)
 	}))
 	defer srv.Close()
-	if _, err := Submit(srv.Client(), srv.URL, Request{}); err == nil {
+	if _, err := Submit(context.Background(), srv.Client(), srv.URL, Request{}); err == nil {
 		t.Fatal("erwartet Fehler bei HTTP 403")
 	}
 }
@@ -95,7 +96,7 @@ func TestSubmitRejectsIncompleteResponse(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(IssueResponse{Cert: "leaf"})
 	}))
 	defer srv.Close()
-	if _, err := Submit(srv.Client(), srv.URL, Request{}); err == nil {
+	if _, err := Submit(context.Background(), srv.Client(), srv.URL, Request{}); err == nil {
 		t.Fatal("erwartet Fehler bei unvollstaendiger Antwort")
 	}
 }
@@ -417,5 +418,56 @@ func TestRemoveIdentityRemovesKeyCertAndCA(t *testing.T) {
 	}
 	if err := RemoveIdentity(dir); err != nil {
 		t.Fatalf("ein zweites RemoveIdentity ohne Dateien: %v", err)
+	}
+}
+
+// R-0385: an interrupted Store or CheckStorable leaves its staged copies behind; the
+// next run under the identity lock removes exactly those.
+func TestStaleTempsAreRemoved(t *testing.T) {
+	dir := t.TempDir()
+	stale := []string{"agent.key.123.tmp", "agent.crt.9.tmp", "ca.crt.4294967295.tmp"}
+	kept := []string{
+		"agent.key", "agent.crt", "ca.crt", "agent.lock",
+		"agent.key.abc.tmp", "agent.key..tmp", "agent.key.12a.tmp", "agent.key.123.tmp.bak",
+		"other.123.tmp", "ca.123.tmp", "xagent.key.123.tmp",
+	}
+	for _, n := range append(append([]string{}, stale...), kept...) {
+		mustWrite(t, filepath.Join(dir, n), []byte("x"))
+	}
+	// A directory of a staged name is no staged file.
+	if err := os.Mkdir(filepath.Join(dir, "agent.crt.5.tmp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	kept = append(kept, "agent.crt.5.tmp")
+
+	RemoveStaleTemps(dir)
+
+	for _, n := range stale {
+		if _, err := os.Lstat(filepath.Join(dir, n)); !os.IsNotExist(err) {
+			t.Errorf("%s is still there (err %v)", n, err)
+		}
+	}
+	for _, n := range kept {
+		if _, err := os.Lstat(filepath.Join(dir, n)); err != nil {
+			t.Errorf("%s is gone: %v", n, err)
+		}
+	}
+}
+
+// The names RemoveStaleTemps removes are the ones writeTemp gives.
+func TestStaleTempsMatchWhatWriteTempNames(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{KeyFileName, CertFileName, CAFileName} {
+		p, err := writeTemp(dir, name, []byte("x"), 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !isStagedName(filepath.Base(p)) {
+			t.Errorf("writeTemp named %s, which RemoveStaleTemps would keep", filepath.Base(p))
+		}
+	}
+	RemoveStaleTemps(dir)
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("left %d file(s) of writeTemp", len(entries))
 	}
 }

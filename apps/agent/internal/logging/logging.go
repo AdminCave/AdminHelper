@@ -10,10 +10,12 @@
 // attach to a bug report — independent of the service manager. If the log
 // directory cannot be secured (config.EnsureLogDir, Windows only, e.g. a run
 // without administrator rights), the agent logs to stdout only; as a Windows
-// service, it also says so once in the Windows event log. On Linux, as before,
-// stdout is written first in the MultiWriter so a non-writable log directory (e.g.
-// an interactive non-root run) never suppresses console output; the file write
-// just fails silently then.
+// service, it also says so once in the Windows event log. Each line goes to both
+// targets, and a target that fails holds up neither the other nor the caller: a
+// non-writable log directory (e.g. an interactive non-root run) never suppresses
+// console output, the file write just fails silently then; and a stdout that
+// cannot be written (a Windows service has none) never keeps a line out of the
+// file.
 //
 // Format is slog's human-readable text (key=value with an RFC3339 timestamp),
 // not JSON: the agent logs sparsely and operators read this directly.
@@ -54,12 +56,12 @@ var (
 func Init(level string) {
 	var writer io.Writer = os.Stdout
 	if err := ensureLogDir(); err == nil {
-		writer = io.MultiWriter(os.Stdout, &lumberjack.Logger{
+		writer = fanOut{os.Stdout, &lumberjack.Logger{
 			Filename:   config.LogFile(),
 			MaxSize:    10, // megabytes per file
 			MaxBackups: 5,  // keep 5 rotated files
 			Compress:   true,
-		})
+		}}
 	} else if report := serviceReporter(); report != nil {
 		// If the report fails too, stdout is all that is left, as in an interactive run.
 		_ = report(fmt.Sprintf("The AdminHelper agent cannot secure its log directory %s: %v. "+
@@ -69,6 +71,33 @@ func Init(level string) {
 	}
 	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{Level: parseLevel(level)})
 	slog.SetDefault(slog.New(handler))
+}
+
+// fanOut hands each write to every target, also after one of them failed:
+// io.MultiWriter stops at the first error, and under a Windows service, whose
+// stdout cannot be written, no line would then reach agent.log. A write that one
+// target took in full counts as done; only when none did does the first error
+// come back.
+type fanOut []io.Writer
+
+func (f fanOut) Write(p []byte) (int, error) {
+	var firstErr error
+	done := false
+	for _, w := range f {
+		n, err := w.Write(p)
+		if err == nil && n < len(p) {
+			err = io.ErrShortWrite
+		}
+		if err == nil {
+			done = true
+		} else if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if !done && firstErr != nil {
+		return 0, firstErr
+	}
+	return len(p), nil
 }
 
 func parseLevel(s string) slog.Level {

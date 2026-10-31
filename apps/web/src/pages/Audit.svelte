@@ -118,6 +118,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <th>{$t('page.audit.col.actor')}</th>
             <th>{$t('page.audit.col.action')}</th>
             <th>{$t('page.audit.col.object')}</th>
+            <th>{$t('page.audit.col.detail')}</th>
             <th>{$t('page.audit.col.ip')}</th>
             <th>{$t('page.audit.col.status')}</th>
           </tr>
@@ -132,6 +133,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
               </td>
               <td class="mono">{e.action}</td>
               <td>{objectLabel(e)}</td>
+              <td class="detail">{e.detail ?? '–'}</td>
               <td class="mono">{e.sourceIp ?? '–'}</td>
               <td>
                 <span class="status" class:status-bad={e.status !== 'success'}>{e.status}</span>
@@ -166,6 +168,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mono {
     font-family: var(--font-mono, monospace);
     font-size: 0.9em;
+  }
+  .detail {
+    overflow-wrap: anywhere;
   }
   .status-bad {
     color: var(--danger);

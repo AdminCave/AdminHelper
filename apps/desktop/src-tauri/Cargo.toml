@@ -17,9 +17,10 @@ tauri = { version = "2", features = ["image-png"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 # StreamExt::next() over the SSE byte stream.
 futures-util = { version = "0.3", default-features = false }
-# Reconnect backoff (sleep) for the SSE client and the async session lock
-# (session.rs); tauri provides the runtime.
-tokio = { version = "1", default-features = false, features = ["sync", "time"] }
+# Reconnect backoff (sleep) for the SSE client, the async session lock
+# (session.rs) and the wait for the admin port of a stopped frpc (frpc.rs);
+# tauri provides the runtime. `net` is in the build through reqwest already.
+tokio = { version = "1", default-features = false, features = ["sync", "time", "net"] }
 url = "2"
 open = "5"
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "async-io", "crypto-rust"] }
@@ -56,9 +57,16 @@ p12 = "0.6"
 # Parse the server-supplied visitor TOML to allow-list its structure before frpc
 # executes it (3.59) — a compromised server must not inject arbitrary frpc config.
 toml = "0.8"
+# Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
+# Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
+zeroize = "1.8.2"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
+# Threading + SystemInformation: without Windows Terminal, the cmd console starts through
+# CreateProcessW from the system directory (terminal.rs, spawn_in_new_console).
+# JobObjects (Security for CreateJobObjectW, Threading for OpenProcess and the limit struct): frpc
+# ends with the desktop process (frpc.rs, end_with_this_process).
+windows = { version = "0.61", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects"] }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.

@@ -73,16 +73,16 @@ run_case() {
 
 # ── 1: every site correct ────────────────────────────────────────────────────
 GOOD="$WORK/good"; fixture "$GOOD" 1.2.3 38
-run_case "all six sites at 1.2.3 -> exit 0" 0 "6 ok, 0 missing" -- 1.2.3 --root "$GOOD"
+run_case "all six sites at 1.2.3 -> exit 0" 0 "7 ok, 0 missing" -- 1.2.3 --root "$GOOD"
 # The same tree against another version must be red at all six — otherwise a
 # green above would only prove the script prints "ok" unconditionally.
-run_case "same tree, version 1.2.4 -> six missing" 1 "0 ok, 6 missing" -- 1.2.4 --root "$GOOD"
+run_case "same tree, version 1.2.4 -> six missing" 1 "1 ok, 6 missing" -- 1.2.4 --root "$GOOD"
 
 # ── 2: one stale footer, named ───────────────────────────────────────────────
 STALE="$WORK/stale"; fixture "$STALE" 1.2.3 38
 printf '<html><div class="sidebar-footer"><span>v1.2.2</span></div></html>\n' > "$STALE/docs/admin/page7.html"
 run_case "one stale footer -> exit 1" 1 "docs/admin/page7.html" -- 1.2.3 --root "$STALE"
-run_case "one stale footer -> the other five stay ok" 1 "5 ok, 1 missing" -- 1.2.3 --root "$STALE"
+run_case "one stale footer -> the other five stay ok" 1 "6 ok, 1 missing" -- 1.2.3 --root "$STALE"
 
 # ── 2b: a stale MULTI-LINE footer ────────────────────────────────────────────
 # The real regression: docs/index.html and docs/en/index.html write the footer
@@ -98,6 +98,13 @@ NOCL="$WORK/nochangelog"; fixture "$NOCL" 1.2.3 38
 printf '# Changelog\n\n## [Unreleased]\n\n## [1.2.2] - 2025-12-01\n' > "$NOCL/CHANGELOG.md"
 run_case "CHANGELOG section missing -> exit 1" 1 "no section '## [1.2.3]'" -- 1.2.3 --root "$NOCL"
 
+# ── 3b: a changelog.d fragment the release did not fold ──────────────────────
+FRAG="$WORK/fragment"; fixture "$FRAG" 1.2.3 38; mkdir -p "$FRAG/changelog.d"
+printf '# Wie\n' > "$FRAG/changelog.d/README.md"
+run_case "changelog.d with only its README -> exit 0" 0 "7 ok, 0 missing" -- 1.2.3 --root "$FRAG"
+printf '### Fixed\n\n- x\n' > "$FRAG/changelog.d/a-branch.md"
+run_case "a fragment left in changelog.d -> exit 1" 1 "not folded: a-branch.md" -- 1.2.3 --root "$FRAG"
+
 # ── 4: too few footers (a page that LOST its footer) ─────────────────────────
 FEW="$WORK/few"; fixture "$FEW" 1.2.3 10
 run_case "only 10 footer files -> below the floor" 1 "only 10 of >= 38" -- 1.2.3 --root "$FEW"
@@ -106,7 +113,7 @@ run_case "only 10 footer files -> below the floor" 1 "only 10 of >= 38" -- 1.2.3
 run_case "no version -> usage, exit 2" 2 "usage:" --
 run_case "unknown flag -> exit 2" 2 "unknown flag" -- 1.2.3 --nope
 # Tags are written vX.Y.Z; the sites carry X.Y.Z. Both spellings must work.
-run_case "a leading v is accepted" 0 "6 ok, 0 missing" -- v1.2.3 --root "$GOOD"
+run_case "a leading v is accepted" 0 "7 ok, 0 missing" -- v1.2.3 --root "$GOOD"
 # '.' in the version must not be a regex wildcard. Checked in the direction that
 # actually discriminates: a tree literally carrying "1X2X3" must NOT satisfy a
 # check for "1.2.3" (without the escaping it does).

@@ -1,5 +1,5 @@
 # Risk paths. A diff that touches one of them gets the `security` sub-agent next
-# to the reviewer (CLAUDE.md §6). Read by `review.sh risk`.
+# to the reviewer (CLAUDE.md §6, /feature-build). Read by `review.sh risk`.
 # Shell `case` patterns, one per line: `*` crosses `/`, an entry ending in `/` is
 # a directory. Every line has to match something in the tree
 # (review_scripts_test.sh checks it), so a rename cannot drop a path out of this

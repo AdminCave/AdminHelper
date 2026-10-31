@@ -15,11 +15,13 @@
 #       [--desktop] [--moncheck] [--enforce] [--capstone] [--keep] [--strict]
 #   --strict   a guard that could not run fails the capstone (release gate)
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
-#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel); the
-#              tunnel comes after the provisioning, a second one by a reload while the
-#              visitor holds an SSH session over the first (R-0398); then a change of the
-#              FRP config restarts frps once, and the agent's frpc and a new visitor
-#              connection come back without a hand on them (R-0411)
+#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel); frps
+#              reaches no other host from its network frpedge, the server container
+#              reaches the tunnel box's sshd; the tunnel comes after the provisioning, a
+#              second one by a reload while the visitor holds an SSH session over the
+#              first (R-0398); then a change of the FRP config restarts frps once, and
+#              the agent's frpc and a new visitor connection come back without a hand on
+#              them (R-0411)
 #   --docker   + the Docker Host template on the agent's host and real Docker on its
 #              box: a running container -> ok, a container with exit 1 -> critical,
 #              the daemon stopped -> warning (R-0419); no box of its own
@@ -201,7 +203,7 @@ AGENT_GO="$(mb MB_AGENT_GO)"
 # means the dogfooded agent-install.sh flow silently degrades, so fail loudly.
 [ -n "$REPO_FP" ] && ok "signed test repo live on :8445 (gpg $REPO_FP)" \
   || bad "signed repo missing on :8445 (serverbox package/repo build failed — agents fall back to the local .deb path)"
-[ -n "$CAFP" ] && ok "gateway intermediate fingerprint extracted (--ca-fp $CAFP)" \
+[ -n "$CAFP" ] && ok "internal CA root fingerprint extracted (--ca-fp $CAFP)" \
   || bad "MB_CA_FP missing — agents fall back to TOFU first contact"
 # Old-Debian regression guard: the .deb must install AND its binary must run on
 # debian:9 (dpkg 1.18 + glibc 2.24 = Stretch / UniFi firmware). "0" is either the
@@ -430,6 +432,13 @@ if [ "$TUNNEL" = 1 ]; then
   FRPS_MAX_PORTS=32
   if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && [ -n "$TUN_CFG" ] && read -r T_VM T_IP < <(lease tunnel linux-server); then
     ok "tunnel-agent-box $T_VM @ $T_IP"
+    # frpedge runs without IP masquerading: frps reaches no host beyond the server box, while
+    # the server container does reach this box's sshd (box_serverbox.sh frps-egress).
+    EOUT="$(ask "$SRV_VM" 300 bash scripts/tests/box_serverbox.sh frps-egress "$T_IP" 22 2>&1)"
+    EGRESS="$(vm_marker MB_FRPS_EGRESS "$EOUT")"
+    [ "$EGRESS" = frps:blocked,server:open ] \
+      && ok "frps reaches no second host from frpedge, the server container does ($T_IP:22)" \
+      || { echo "$EOUT" | tail -5; bad "frps egress to $T_IP:22: ${EGRESS:-no marker} (want frps:blocked,server:open)"; }
     # R-0398, goal 2: the host is provisioned BEFORE its tunnel exists, and its own agent
     # run has to set frpc up for the tunnel created afterwards. box_serverbox.sh seeds a
     # tunnel with the host, so that one goes first.

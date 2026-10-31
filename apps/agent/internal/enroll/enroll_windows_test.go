@@ -7,6 +7,7 @@
 package enroll
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,7 +59,7 @@ func TestIdentitySecuresTheDataRootFirst(t *testing.T) {
 		run  func(dir string) error
 	}{
 		{"LockIdentity", func(dir string) error {
-			unlock, err := LockIdentity(dir)
+			unlock, err := LockIdentity(context.Background(), dir)
 			if err == nil {
 				unlock()
 			}

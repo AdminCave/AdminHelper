@@ -8,20 +8,23 @@ from the grant not the CSR, tokens are one-time, deprovisioned identities
 cannot renew."""
 
 import datetime
+import logging
 import urllib.parse
 import uuid
 
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
 from app import config, db, pki
+from app.issuer import Issuer
 from app.main import app
+from app.storage import Intermediate
 from app.tokens import (
     CertRecord,
     EnrollmentGrant,
@@ -552,6 +555,12 @@ def _unrecorded_leaf(
 ) -> str:
     """A leaf of this CA that the register never saw, as from before the register."""
     inter = client.app.state.issuer._intermediate(signer or scope)
+    return _signed_leaf(inter, cn, scope, not_before=not_before, days=days)
+
+
+def _signed_leaf(
+    inter: Intermediate, cn: str, scope: str, *, not_before: datetime.datetime, days: int
+) -> str:
     key = pki.generate_key()
     subject = x509.Name(
         [
@@ -635,6 +644,11 @@ def test_an_unrecorded_certificate_from_before_the_register_is_taken_over(
     line = store.line_of(_fp(old))
     assert (line.legacy, line.kind, line.subject_id) == (True, kind, "old-device")
     assert store.line_of(_fp(r.json()["cert"])).line_id == line.line_id
+    # The successor's lifetime follows the kind read from the taken-over certificate.
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    want = pki.LEAF_DAYS_BROWSER if kind == "browser" else pki.LEAF_DAYS_NATIVE
+    assert abs(span.days - want) <= 1
 
 
 def test_an_unrecorded_certificate_is_refused_once_the_transition_ends(register_client):
@@ -686,7 +700,7 @@ def test_a_deprovisioning_while_signing_refuses_the_renewal(client):
     current = CertRecord.of(_leaf(pem))
     successor = _leaf(_enroll(client, "agent-12b", "tunnel"))
 
-    def sign():
+    def sign(_kind):
         store.deprovision("agent-12", "tunnel", at=current.not_before)
         return successor, {}
 
@@ -755,7 +769,7 @@ def _taken_over_store() -> tuple[InMemoryTokenStore, CertRecord]:
 def test_a_failed_signing_takes_nothing_over():
     store, current = _taken_over_store()
 
-    def sign():
+    def sign(_kind):
         raise RuntimeError("signing failed")
 
     with pytest.raises(RuntimeError):
@@ -767,7 +781,7 @@ def test_a_renewal_refused_after_signing_takes_nothing_over():
     store, current = _taken_over_store()
     successor = _leaf(_self_signed_leaf("old-device", "tunnel"))
 
-    def sign():
+    def sign(_kind):
         store.deprovision("old-device", "tunnel", at=current.not_before)
         return successor, {}
 
@@ -782,7 +796,7 @@ def test_a_successful_renewal_takes_the_certificate_over():
     successor = _leaf(_self_signed_leaf("old-device", "tunnel"))
 
     response = store.renew(
-        current, "old-device", "tunnel", "agent", lambda: (successor, {"a": "b"})
+        current, "old-device", "tunnel", "agent", lambda _kind: (successor, {"a": "b"})
     )
     assert response == {"a": "b"}
     line = store.line_of(current.fingerprint)
@@ -800,9 +814,9 @@ def test_of_two_renewals_taking_one_certificate_over_the_later_is_refused():
     earlier = _leaf(_self_signed_leaf("old-device", "tunnel"))
     later = _leaf(_self_signed_leaf("old-device", "tunnel"))
 
-    def sign():
+    def sign(_kind):
         # Another renewal of the same certificate completes while this one signs.
-        store.renew(current, "old-device", "tunnel", "agent", lambda: (earlier, {}))
+        store.renew(current, "old-device", "tunnel", "agent", lambda _kind: (earlier, {}))
         return later, {}
 
     with pytest.raises(RenewalRefused):
@@ -810,3 +824,252 @@ def test_of_two_renewals_taking_one_certificate_over_the_later_is_refused():
     line = store.line_of(current.fingerprint)
     assert store.line_of(CertRecord.of(earlier).fingerprint).line_id == line.line_id
     assert store.line_of(CertRecord.of(later).fingerprint) is None
+
+
+# R-0666: an intermediate past its end signs nothing (503, the token stays), a renewal
+# gets the full policy of its audience, and one near its end warns once a UTC day.
+
+
+def _issuer_with(client, monkeypatch, scope: str, days_left: float) -> Intermediate:
+    """Swap in an issuer whose only intermediate, of `scope`, has `days_left` left on
+    the real clock (negative = expired, above pki.VALIDITY_DAYS_INTERMEDIATE = not yet
+    valid): minted on a PKI clock shifted by that much."""
+    then = pki._now() + datetime.timedelta(days=days_left - pki.VALIDITY_DAYS_INTERMEDIATE)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: then)
+        root_cert, root_key = pki.build_root_ca()
+        cert, key = pki.build_intermediate_ca(scope, root_cert, root_key)
+    inter = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root_cert))
+    client.app.state.issuer = Issuer({scope: inter}, client.app.state.token_store)
+    return inter
+
+
+def _issuer_records(caplog, level: int) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "ca-issuer.issuer" and r.levelno == level
+    ]
+
+
+def test_enroll_under_an_expired_intermediate_is_a_503_and_spends_no_token(
+    register_client, monkeypatch, caplog
+):
+    _issuer_with(register_client, monkeypatch, "access", days_left=-1)
+    _mint(register_client, "t1", EnrollmentGrant("alice", "access"))
+
+    r = register_client.post("/enroll", json={"token": "t1", "csr": _csr_pem("alice")})
+
+    assert r.status_code == 503, r.text
+    assert "'access'" in r.json()["detail"]
+    assert "app.cli rotate-intermediates" in r.json()["detail"]
+    errors = _issuer_records(caplog, logging.ERROR)
+    assert len(errors) == 1 and "'access'" in errors[0] and "expired" in errors[0]
+    assert "app.cli rotate-intermediates" in errors[0]
+    store = register_client.app.state.token_store
+    assert store.consume("t1") == EnrollmentGrant("alice", "access")
+
+
+def test_renew_under_an_expired_intermediate_is_a_503(register_client, monkeypatch):
+    _issuer_with(register_client, monkeypatch, "tunnel", days_left=-1)
+    now = _now_naive()
+    _installed(register_client, now + datetime.timedelta(days=1))
+    # Still valid itself, as a leaf signed before the cut that outlives its intermediate.
+    old = _unrecorded_leaf(
+        register_client, "agent-13", "tunnel", not_before=now - datetime.timedelta(hours=1), days=30
+    )
+
+    r = _renew(register_client, old)
+
+    assert r.status_code == 503, r.text
+    assert "'tunnel'" in r.json()["detail"]
+    assert "app.cli rotate-intermediates" in r.json()["detail"]
+    assert register_client.app.state.token_store.line_of(_fp(old)) is None
+
+
+def test_enroll_under_a_not_yet_valid_intermediate_names_the_clock_not_the_rotation(
+    register_client, monkeypatch, caplog
+):
+    # Valid from its issuing, ten days ahead: this clock is behind, and the cure is the
+    # clock; a rotation refuses to run under it.
+    _issuer_with(
+        register_client, monkeypatch, "access", days_left=pki.VALIDITY_DAYS_INTERMEDIATE + 10
+    )
+    _mint(register_client, "t1", EnrollmentGrant("alice", "access"))
+
+    r = register_client.post("/enroll", json={"token": "t1", "csr": _csr_pem("alice")})
+
+    assert r.status_code == 503, r.text
+    detail = r.json()["detail"]
+    assert "'access'" in detail and "not yet valid" in detail and "NTP" in detail
+    assert "expired" not in detail
+    assert "app.cli rotate-intermediates" not in detail
+    errors = _issuer_records(caplog, logging.ERROR)
+    assert len(errors) == 1 and "NTP" in errors[0]
+    assert "app.cli rotate-intermediates" not in errors[0]
+
+
+def test_a_short_native_leaf_renews_at_the_full_native_lifetime(client, monkeypatch):
+    # 30 days, as sign_leaf cuts a leaf shortly before its intermediate's end: the
+    # successor must not inherit the cut.
+    with monkeypatch.context() as m:
+        m.setattr(pki, "LEAF_DAYS_NATIVE", 30)
+        old_pem = _enroll(client, "agent-14", "tunnel")
+    old = _leaf(old_pem)
+    assert abs((old.not_valid_after_utc - old.not_valid_before_utc).days - 30) <= 1
+
+    r = _renew(client, old_pem)
+
+    assert r.status_code == 200, r.text
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    assert abs(span.days - pki.LEAF_DAYS_NATIVE) <= 1
+
+
+def test_a_short_browser_leaf_renews_at_the_full_browser_lifetime(register_client, monkeypatch):
+    # A browser leaf cut to native length or below (sign_leaf before its intermediate's
+    # end) is still a browser leaf: the register's line says so, not the span.
+    with monkeypatch.context() as m:
+        m.setattr(pki, "LEAF_DAYS_BROWSER", 30)
+        old_pem = _enroll_pem(
+            register_client, "b1", EnrollmentGrant("admin-b", "access", browser=True)
+        )
+    old = _leaf(old_pem)
+    assert abs((old.not_valid_after_utc - old.not_valid_before_utc).days - 30) <= 1
+
+    r = _renew(register_client, old_pem)
+
+    assert r.status_code == 200, r.text
+    new = _leaf(r.json()["cert"])
+    span = new.not_valid_after_utc - new.not_valid_before_utc
+    assert abs(span.days - pki.LEAF_DAYS_BROWSER) <= 1
+
+
+def test_an_intermediate_near_its_end_warns_once_a_utc_day(client, monkeypatch, caplog):
+    inter = _issuer_with(client, monkeypatch, "access", days_left=10)
+    caplog.set_level(logging.WARNING, logger="ca-issuer.issuer")
+    store = client.app.state.token_store
+
+    for token in ("t1", "t2"):
+        store.mint(token, EnrollmentGrant("alice", "access"))
+        r = client.post("/enroll", json={"token": token, "csr": _csr_pem("alice")})
+        assert r.status_code == 200, r.text
+
+    warnings = _issuer_records(caplog, logging.WARNING)
+    assert len(warnings) == 1, warnings
+    assert "'access'" in warnings[0]
+    assert inter.cert.not_valid_after_utc.isoformat() in warnings[0]
+    assert "app.cli rotate-intermediates" in warnings[0]
+
+    # The next UTC day warns again.
+    tomorrow = pki._now() + datetime.timedelta(days=1)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: tomorrow)
+        store.mint("t3", EnrollmentGrant("alice", "access"))
+        r = client.post("/enroll", json={"token": "t3", "csr": _csr_pem("alice")})
+        assert r.status_code == 200, r.text
+    assert len(_issuer_records(caplog, logging.WARNING)) == 2
+
+
+def test_a_fresh_intermediate_does_not_warn(client, caplog):
+    caplog.set_level(logging.WARNING, logger="ca-issuer.issuer")
+
+    _enroll(client, "alice", "access")
+
+    assert _issuer_records(caplog, logging.WARNING) == []
+
+
+# R-0667: after a rotation /renew still takes a leaf of a retired intermediate of the
+# leaf's own scope, and signs its successor with the current intermediate.
+
+
+def _old_root(monkeypatch) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """A root old enough to outlive an intermediate whose full lifetime has ended."""
+    then = pki._now() - datetime.timedelta(days=pki.VALIDITY_DAYS_INTERMEDIATE + 10)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: then)
+        return pki.build_root_ca()
+
+
+def _inter_of(
+    root: tuple[x509.Certificate, ec.EllipticCurvePrivateKey],
+    scope: str,
+    monkeypatch,
+    *,
+    days_ago: float = 0,
+    retired: tuple[x509.Certificate, ...] = (),
+) -> Intermediate:
+    """An intermediate of `scope` under `root`, minted `days_ago` on a shifted PKI clock."""
+    root_cert, root_key = root
+    then = pki._now() - datetime.timedelta(days=days_ago)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: then)
+        cert, key = pki.build_intermediate_ca(scope, root_cert, root_key)
+    return Intermediate(
+        scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root_cert), retired=retired
+    )
+
+
+def _serve(client, *intermediates: Intermediate) -> None:
+    client.app.state.issuer = Issuer(
+        {inter.scope: inter for inter in intermediates}, client.app.state.token_store
+    )
+
+
+def test_a_leaf_of_a_retired_intermediate_renews_under_the_current_one(
+    register_client, monkeypatch
+):
+    root = _old_root(monkeypatch)
+    before = _inter_of(root, "access", monkeypatch, days_ago=100)
+    _serve(register_client, before)
+    old = _enroll_pem(register_client, "t1", EnrollmentGrant("alice", "access"))
+    # The rotation: a new intermediate signs, the one before is retired.
+    after = _inter_of(root, "access", monkeypatch, retired=(before.cert,))
+    _serve(register_client, after)
+
+    r = _renew(register_client, old)
+
+    assert r.status_code == 200, r.text
+    _leaf(r.json()["cert"]).verify_directly_issued_by(after.cert)
+    assert r.json()["chain"] == after.chain.decode()
+    store = register_client.app.state.token_store
+    assert store.line_of(_fp(r.json()["cert"])).line_id == store.line_of(_fp(old)).line_id
+
+
+@pytest.mark.parametrize(
+    "signer, status",
+    [
+        ("retired access", 200),
+        ("retired tunnel", 403),  # another scope's, though retired under the same root
+        ("unknown access", 403),  # same scope and root, but neither current nor retired
+        ("ended retired access", 403),  # retired, but past its end while the issuer runs
+    ],
+)
+def test_only_a_valid_retired_intermediate_of_its_own_scope_vouches_for_a_leaf(
+    register_client, monkeypatch, signer, status
+):
+    root = _old_root(monkeypatch)
+    old = {
+        "retired access": _inter_of(root, "access", monkeypatch, days_ago=100),
+        "retired tunnel": _inter_of(root, "tunnel", monkeypatch, days_ago=100),
+        "unknown access": _inter_of(root, "access", monkeypatch, days_ago=50),
+        "ended retired access": _inter_of(
+            root, "access", monkeypatch, days_ago=pki.VALIDITY_DAYS_INTERMEDIATE + 1
+        ),
+    }
+    assert pki.days_left(old["ended retired access"].cert) < 0
+    access_retired = (old["retired access"].cert, old["ended retired access"].cert)
+    _serve(
+        register_client,
+        _inter_of(root, "access", monkeypatch, retired=access_retired),
+        _inter_of(root, "tunnel", monkeypatch, retired=(old["retired tunnel"].cert,)),
+    )
+    now = _now_naive()
+    # Before the register's install an unrecorded leaf is taken over once its
+    # signature holds: the signer alone decides here.
+    _installed(register_client, now + datetime.timedelta(days=1))
+    leaf = _signed_leaf(
+        old[signer], "admin", "access", not_before=now - datetime.timedelta(hours=1), days=90
+    )
+
+    assert _renew(register_client, leaf).status_code == status

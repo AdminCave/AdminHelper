@@ -5,11 +5,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/diagnostics"
@@ -23,6 +27,7 @@ import (
 var version = "dev"
 
 func main() {
+	frpc.SetAgentVersion(version)
 	root := &cobra.Command{
 		Use:   "adminhelper-agent",
 		Short: "AdminHelper Agent — FRPC Sync + Monitoring (Linux & Windows)",
@@ -81,26 +86,81 @@ func diagnosticsCmd() *cobra.Command {
 
 // --- Provision subcommand (server-centric, replaces frpc init since v0.23.0) ---
 
+// runProvision is provision.Run; tests swap it to see what the command hands over.
+var runProvision = provision.Run
+
+// maxStdinToken bounds what --token-stdin reads: a stdin that never sends a newline
+// must not hold the command or grow its memory.
+const maxStdinToken = 4 << 10
+
+// stdinTerminal reports the descriptor of in if in is a terminal; tests swap it.
+var stdinTerminal = func(in io.Reader) (int, bool) {
+	f, ok := in.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return 0, false
+	}
+	return int(f.Fd()), true
+}
+
+// readTerminal reads a line from the terminal fd without echo; tests swap it.
+var readTerminal = term.ReadPassword
+
+// readStdinSecret returns the first line of in, trimmed, so a secret (what: "provision
+// token", "API key") does not have to be a program argument (visible in the process
+// list). On a terminal it prompts on prompt and reads without echo, so the secret stays
+// off the screen. Its errors never quote what was read.
+func readStdinSecret(in io.Reader, prompt io.Writer, what string) (string, error) {
+	var line string
+	if fd, ok := stdinTerminal(in); ok {
+		fmt.Fprintf(prompt, "%s%s: ", strings.ToUpper(what[:1]), what[1:])
+		b, err := readTerminal(fd)
+		fmt.Fprintln(prompt)
+		if err != nil {
+			return "", fmt.Errorf("read the %s from the terminal: %w", what, err)
+		}
+		line = string(b[:min(len(b), maxStdinToken)])
+	} else {
+		var err error
+		line, err = bufio.NewReader(io.LimitReader(in, maxStdinToken)).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return "", fmt.Errorf("read the %s from stdin: %w", what, err)
+		}
+	}
+	if token := strings.TrimSpace(line); token != "" {
+		return token, nil
+	}
+	return "", fmt.Errorf("no %s on stdin", what)
+}
+
 func provisionCmd() *cobra.Command {
 	var url, token, serverID, cacert, caFP string
-	var insecure bool
+	var insecure, tokenStdin bool
 
 	cmd := &cobra.Command{
 		Use:   "provision",
 		Short: "Provision this host against an AdminHelper server (server API key + optional monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return provision.Run(url, token, serverID, cacert, insecure, caFP)
+			if tokenStdin {
+				t, err := readStdinSecret(cmd.InOrStdin(), cmd.ErrOrStderr(), "provision token")
+				if err != nil {
+					return err
+				}
+				token = t
+			}
+			return runProvision(url, token, serverID, cacert, insecure, caFP)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "AdminHelper server URL (required)")
-	cmd.Flags().StringVar(&token, "token", "", "provision token (required)")
+	cmd.Flags().StringVar(&token, "token", "", "provision token (or --token-stdin)")
+	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the provision token from stdin")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "server ID (required)")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA certificate for a self-signed server")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.Flags().StringVar(&caFP, "ca-fp", "",
 		"SHA-256 fingerprint of the internal CA (shown in the provisioning tab) — verifies the first contact instead of TOFU")
 	cmd.MarkFlagRequired("url")
-	cmd.MarkFlagRequired("token")
+	cmd.MarkFlagsOneRequired("token", "token-stdin")
+	cmd.MarkFlagsMutuallyExclusive("token", "token-stdin")
 	cmd.MarkFlagRequired("server-id")
 	return cmd
 }
@@ -121,7 +181,7 @@ func frpcSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Einmaliger Config-Sync",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return frpc.Sync()
+			return frpc.Sync(context.Background())
 		},
 	}
 }
@@ -140,13 +200,20 @@ func monitorCmd() *cobra.Command {
 
 func monitorInitCmd() *cobra.Command {
 	var url, apiKey, serverID, services, cacert string
-	var insecure bool
+	var insecure, apiKeyStdin bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Ersteinrichtung des Monitor-Agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return monitor.Init(monitor.InitParams{
+			if apiKeyStdin {
+				k, err := readStdinSecret(cmd.InOrStdin(), cmd.ErrOrStderr(), "API key")
+				if err != nil {
+					return err
+				}
+				apiKey = k
+			}
+			return initMonitor(monitor.InitParams{
 				URL:      url,
 				APIKey:   apiKey,
 				ServerID: serverID,
@@ -156,15 +223,37 @@ func monitorInitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Basis-URL: AdminHelper-Server + /api/monitoring (z.B. https://srm.example.com/api/monitoring) (erforderlich)")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "API-Key (erforderlich)")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key (or --api-key-stdin)")
+	cmd.Flags().BoolVar(&apiKeyStdin, "api-key-stdin", false, "read the API key from stdin")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
 	cmd.Flags().StringVar(&services, "services", "", "Kommagetrennte Service-Namen")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "SSL-Verifikation deaktivieren")
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.MarkFlagRequired("url")
-	cmd.MarkFlagRequired("api-key")
+	cmd.MarkFlagsOneRequired("api-key", "api-key-stdin")
+	cmd.MarkFlagsMutuallyExclusive("api-key", "api-key-stdin")
 	cmd.MarkFlagRequired("server-id")
 	return cmd
+}
+
+// monitorInit and enableTimer are monitor.Init and service.EnableTimer; tests swap them, the real
+// ones write the monitor config and run systemctl.
+var (
+	monitorInit = monitor.Init
+	enableTimer = service.EnableTimer
+)
+
+// initMonitor sets the monitor up and only then enables the agent timer (R-0641): a setup that
+// failed enables nothing, and a timer that cannot be enabled is a warning, the setup stands.
+func initMonitor(p monitor.InitParams) error {
+	if err := monitorInit(p); err != nil {
+		return err
+	}
+	if err := enableTimer(); err != nil {
+		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
+		logger.Warnf("Bitte manuell aktivieren")
+	}
+	return nil
 }
 
 func monitorPushCmd() *cobra.Command {

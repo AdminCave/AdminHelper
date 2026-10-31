@@ -21,7 +21,7 @@ const allBytes = ^uint32(0)
 // only if SYSTEM or the Administrators own it. It creates the file owned by the
 // Administrators: the default owner of a token depends on the account and on local
 // policy, and the provisioning and the service may run as different accounts. The
-// DACL is inherited from the identity directory, as with os.OpenFile.
+// DACL is inherited from the directory of path, as with os.OpenFile.
 func openLockFile(path string) (*os.File, error) {
 	sd, err := windows.SecurityDescriptorFromString("O:BA")
 	if err != nil {

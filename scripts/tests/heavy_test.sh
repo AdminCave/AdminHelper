@@ -643,9 +643,11 @@ grep -q 'auf dem letzten PASS-Commit' "$REG_LEDGER" 2>/dev/null \
   || bad "no proof paragraph"
 # The shape of /feature-plan --kurz (R-0100): the head fields and the proof lines
 # of tasks/README.md, so --kurz completes the draft instead of rewriting it.
-grep -q '^Status: .* · Review: am Ende · Modell: Opus$' "$REG_LEDGER" 2>/dev/null \
+# No model in the head: who builds and with which model is CLAUDE.md's, not the ledger's.
+grep -q '^Status: geplant · Branch: feature/reg-[^ ]* · Review: am Ende$' "$REG_LEDGER" 2>/dev/null \
+  && ! grep -q 'Modell:' "$REG_LEDGER" \
   && grep -q '^Heavy: linux-full — ' "$REG_LEDGER" && grep -q '^DoD je Task: CLAUDE.md' "$REG_LEDGER" \
-  && ok "the reg ledger head: Review: am Ende, Modell, Heavy: linux-full, DoD" \
+  && ok "the reg ledger head: Review: am Ende, no Modell:, Heavy: linux-full, DoD" \
   || bad "reg ledger head: $(sed -n '/^# Regression/,/^Task-Status/p' "$REG_LEDGER" 2>/dev/null)"
 grep -q '^Dedup-Key: reg:web-vitest$' "$REG_LEDGER" 2>/dev/null \
   && grep -qx "HEAD: $(git -C "$FIX" rev-parse HEAD)" "$REG_LEDGER" \
@@ -701,7 +703,7 @@ report_of | grep -q 'Dedup-Key reg:web-vitest is already on open row R-0018 — 
   && ok "dedup key: the report names the row that holds it" || bad "report: $(report_of | grep -i roadmap)"
 ls "$FIX"/tasks/reg-*.md >/dev/null 2>&1 && bad "dedup key: a second ledger was written" || ok "dedup key: no second ledger"
 
-# ── 4i-c: a full `neu` cap loses no finding quietly ───────────────────────────
+# ── 4i-c: twenty open `neu` rows hold no finding back ─────────────────────────
 candidate_case
 seed_pass_history
 python3 - "$AH_PRIVATE_DIR/ROADMAP.md" <<'PY'
@@ -714,9 +716,13 @@ PY
 touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$(roadmap_of | grep -c '^| R-')" = 20 ] && ok "cap: no 21st neu row" || bad "$(roadmap_of | grep -c '^| R-') R rows"
-report_of | grep -q "ROADMAP FULL: the neu cap is reached (20/20) — triage first — the REG finding 'web vitest rot im Wochenlauf" \
-  && ok "cap: the report says the finding got no row" || bad "report: $(report_of | grep -i roadmap)"
+rm_text=$(roadmap_of); report=$(report_of)
+[ "$(grep -c '^| R-' <<<"$rm_text")" = 21 ] \
+  && grep -q '^| R-0120 | REG | web vitest rot im Wochenlauf [^|]* | neu | ' <<<"$rm_text" \
+  && ok "no cap: the REG finding comes in as the 21st neu row" \
+  || bad "$(grep -c '^| R-' <<<"$rm_text") R rows: $(grep '^| R-0120' <<<"$rm_text")"
+grep -q '^- roadmap: R-0120 (' <<<"$report" && ! grep -q 'ROADMAP FULL' <<<"$report" \
+  && ok "no cap: the report names the new row, no ROADMAP FULL" || bad "report: $(grep -i roadmap <<<"$report")"
 
 # ── 4i-d: roadmap.py commits its own row; the weekly commit leaves ROADMAP.md be ─
 candidate_case
@@ -811,7 +817,9 @@ out=$(bash "$HEAVY" all 2>&1)
 report_of | grep -q 'Dedup-Key rel:deps-audit is already on open row R-0018' \
   && ok "the report names the open REL row" || bad "report: $(report_of | grep -i roadmap)"
 # … and once it is closed, the next red phase is a new row again.
-sed -i 's/^\(| R-0018 | REL | .*\) | neu | /\1 | abgeschlossen 2026-09-22 | /' "$AH_PRIVATE_DIR/ROADMAP.md"
+# Closed today: heavy.sh writes with the real date, and roadmap.py drops a row
+# closed more than 7 days before it.
+sed -i "s/^\(| R-0018 | REL | .*\) | neu | /\1 | abgeschlossen $(date +%F) | /" "$AH_PRIVATE_DIR/ROADMAP.md"
 touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
 out=$(bash "$HEAVY" all 2>&1)
 [ "$(roadmap_of | grep -c '^| R-')" = 3 ] \

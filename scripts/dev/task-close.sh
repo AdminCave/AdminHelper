@@ -7,7 +7,7 @@
 #
 #   bash scripts/dev/task-close.sh <ledger> <id> [--stage] (-m "<message>" | --message-file <file>)
 #
-# The builder sub-agent builds, the reviewer sub-agent judges; this script runs
+# The session builds, the reviewer sub-agent judges; this script runs
 # outside the model and turns that into one mechanical sequence:
 #
 #    1. input             a ledger under tasks/*.md (not the README or the
@@ -24,7 +24,9 @@
 #                         its summary line is the evidence
 #    7. verdict           .ah-out/review/<slug>/<id>.verdict.json of the reviewer,
 #                         newer than every staged file, `"verdict": "approve"`
-#                         (exit 3); not with `Review: am Ende` in the ledger head
+#                         (exit 3); not with `Review: am Ende` in the ledger head,
+#                         nor for a task marked `Task-Review: am Ende` whose
+#                         staged files are all documentation (else as above)
 #    8. index unchanged   since step 3 (exit 2)
 #    9. ledger            ledger.sh mark-done with the evidence; the last open task
 #                         moves an `aktiv` head to `bereit`
@@ -145,7 +147,7 @@ TREE_HASH="$(bash scripts/dev/tree-hash.sh)" || infra "tree-hash.sh failed"
 INDEX_TREE="$(git write-tree)" || infra "git write-tree failed"
 
 # ── 4. deleted test files ────────────────────────────────────────────────────
-# The declaration as committed (HEAD), never the worktree: a builder must not be
+# The declaration as committed (HEAD), never the worktree: whoever builds must not be
 # able to grant itself the exception in the same run.
 COMMITTED_TASK="$(git show "HEAD:$LEDGER" 2>/dev/null | awk -v id="$ID" '
   $0 ~ "^###[ \t]+" id "([ \t]|$)" { insec = 1; next }
@@ -266,8 +268,29 @@ fi
 # ── 7. the reviewer's verdict ────────────────────────────────────────────────
 SLUG="$(basename "$LEDGER" .md)"
 VERDICT=".ah-out/review/$SLUG/$ID.verdict.json"
+# A docs-only task leaves its review to the branch review (CLAUDE.md §6). The
+# mark is the plan's, so the files decide: anything but Markdown or the HTML of
+# docs/, a harness text at any depth (Claude Code loads a nested CLAUDE.md or
+# .claude/ too), or a symlink still needs the reviewer's verdict below. Without
+# --no-renames a moved CLAUDE.md would show only its new name under docs/.
+DOCS_ONLY=0
+if grep -qE '^Task-Review:[[:space:]]*am Ende' <<<"$TASK"; then
+  DOCS_ONLY=1
+  mapfile -d '' -t PLAIN < <(git diff --staged --name-only --no-renames -z)
+  for f in "${PLAIN[@]}"; do
+    [ "$f" = "$LEDGER" ] && continue
+    case "$f" in
+      .claude/*|*/.claude/*|CLAUDE.md|*/CLAUDE.md|tasks/*) ;;
+      *.md|docs/*.html) [ -L "$f" ] || continue ;;
+    esac
+    echo "task-close: Task-Review: am Ende covers documentation only, and $f is not — the reviewer judges this task" >&2
+    DOCS_ONLY=0; break
+  done
+fi
 if sed '/^###[[:space:]]/,$d' "$LEDGER" | grep -qE 'Review:[[:space:]]*am Ende'; then
   REVIEW_TEXT="am Ende (Branch-Review)"
+elif [ "$DOCS_ONLY" = 1 ]; then
+  REVIEW_TEXT="am Ende (nur Doku, Branch-Review)"
 else
   [ -f "$VERDICT" ] || { echo "task-close: no verdict at $VERDICT — the reviewer has not judged this task" >&2; exit 3; }
   # Older than a staged file is a verdict on something else; the ledger is

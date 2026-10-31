@@ -20,8 +20,10 @@ pub struct TunnelMapping {
     pub server_id: String,
     pub tunnel_type: String,
     pub protocol: String,
-    pub local_port: u16,
-    pub visitor_port: Option<u16>,
+    // Wider than a port: the server may still list a row stored before it checked the range,
+    // and one such row must not fail the whole list. Only a value that is a port resolves.
+    pub local_port: i64,
+    pub visitor_port: Option<i64>,
     pub custom_domains: Option<String>,
     pub connection_id: Option<String>,
     pub enabled: bool,
@@ -66,10 +68,11 @@ pub async fn fetch_tunnels(session: &SessionState) -> Result<Vec<TunnelMapping>,
 /// running frpc listen, empty while none runs; an STCP target resolves only to the local port of
 /// one of them and otherwise stays as it is.
 ///
-/// A mapping of the connection decides first (only admins read mappings); its visitor port is the
-/// server port of a visitor. Without one, a target of `127.0.0.1` or `localhost` at the server port
-/// of a visitor resolves to that visitor: the server's automatic connections name it so. The
-/// allow-list admits every server port once, so the visitor is never ambiguous.
+/// A mapping of the connection decides first (admins read all, other users those of the enabled
+/// tunnels on the servers assigned to them); its visitor port is the server port of a visitor.
+/// Without one, a target of `127.0.0.1` or `localhost` at the server port of a visitor resolves to
+/// that visitor: the server's automatic connections name it so. The allow-list admits every server
+/// port once, so the visitor is never ambiguous.
 pub fn resolve_connection(
     connection: &Connection,
     tunnels: &[TunnelMapping],
@@ -80,7 +83,10 @@ pub fn resolve_connection(
             let mut resolved = connection.clone();
             match t.tunnel_type.as_str() {
                 "stcp" => {
-                    let visitor = t.visitor_port.and_then(|vport| visitor_at(bindings, vport));
+                    let visitor = t
+                        .visitor_port
+                        .and_then(|vport| u16::try_from(vport).ok())
+                        .and_then(|vport| visitor_at(bindings, vport));
                     if let Some(visitor) = visitor {
                         to_visitor(&mut resolved, visitor.local_port, t.protocol == "web");
                     }
@@ -402,8 +408,8 @@ mod tests {
         ]
     }
 
-    /// A connection to `host`:`port` with no tunnel of its own, as a non-admin sees an automatic
-    /// one.
+    /// A connection to `host`:`port` with no tunnel of its own, as an automatic one looks without
+    /// its mapping.
     fn literal(kind: ConnectionKind, host: &str, port: u16) -> Connection {
         Connection {
             kind,
@@ -471,6 +477,24 @@ mod tests {
         assert!(resolved.via_tunnel);
         assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
         assert_eq!(resolved.connection.port, Some(3389));
+    }
+
+    #[test]
+    fn stcp_with_a_visitor_port_outside_the_range_keeps_original_target() {
+        // 78925 is 13389 + 65536: a cast to u16 would have found the visitor at 13389.
+        for vport in [78925, -1] {
+            let conn = connection("c1");
+            let mut mapping = tunnel("c1", "stcp", "rdp");
+            mapping.visitor_port = Some(vport);
+            let resolved = resolve_connection(&conn, &[mapping], &same_ports());
+            assert!(resolved.via_tunnel, "{vport}");
+            assert_eq!(
+                resolved.connection.host.as_deref(),
+                Some("server.internal"),
+                "{vport}"
+            );
+            assert_eq!(resolved.connection.port, Some(3389), "{vport}");
+        }
     }
 
     #[test]
@@ -570,8 +594,9 @@ mod tests {
 
     #[test]
     fn literal_loopback_target_resolves_without_a_mapping() {
-        // A non-admin reads no mappings; the server's automatic connection names the visitor's
-        // server port on loopback. A mapping of another connection changes nothing.
+        // A non-admin reads only the mappings of the servers assigned to them; without one, the
+        // server's automatic connection names the visitor's server port on loopback. A mapping of
+        // another connection changes nothing.
         let other = [tunnel("other", "stcp", "rdp")];
         for tunnels in [&[][..], &other[..]] {
             for (host, port, visitor, local) in [
@@ -1037,6 +1062,25 @@ mod tests {
             assert_eq!(held(&session).await, listed(), "{case}");
             assert_eq!(*log.lock().unwrap(), [FETCH, FETCH], "{case}");
         }
+    }
+
+    #[tokio::test]
+    async fn fetch_tunnels_takes_mappings_with_ports_outside_the_range() {
+        let mut far = serde_json::to_value(tunnel("c2", "stcp", "rdp")).unwrap();
+        far["id"] = "t-far".into();
+        far["localPort"] = 70000.into();
+        far["visitorPort"] = 70000.into();
+        let mut low = serde_json::to_value(tunnel("c3", "stcp", "ssh")).unwrap();
+        low["id"] = "t-low".into();
+        low["localPort"] = (-1).into();
+        low["visitorPort"] = 0.into();
+        let listed = serde_json::json!([tunnel("c1", "stcp", "rdp"), far, low]);
+        let (server, _) = serve(vec![Some(("200 OK", listed.to_string()))]).await;
+        let session = signed_in(server).await;
+
+        let fetched = fetch_tunnels(&session).await.unwrap();
+        assert_eq!(serde_json::to_value(&fetched).unwrap(), listed);
+        assert_eq!(held(&session).await, listed);
     }
 
     #[tokio::test]

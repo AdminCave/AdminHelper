@@ -21,13 +21,14 @@ import (
 // BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
 // with the 1s sample; monitor init's test push neither reads nor writes the state.
 func BuildReport(serviceNames []string) map[string]any {
-	report, _ := buildReportWithState(serviceNames, reportState{}, time.Now())
+	report, _ := buildReportWithState(context.Background(), serviceNames, reportState{}, time.Now())
 	return report
 }
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
-// saved. It also returns the state to save once this report has been pushed.
-func buildReportWithState(serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
+// saved. It also returns the state to save once this report has been pushed. ctx ends the tool calls
+// of the system state, service (systemctl, sc), docker, proxmox, zfs and smart collectors.
+func buildReportWithState(ctx context.Context, serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
 	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
 	resources := map[string]any{
 		"cpu_percent": cpuPercent,
@@ -64,35 +65,35 @@ func buildReportWithState(serviceNames []string, prev reportState, now time.Time
 
 	// The collector hands prev on with what it measured replaced, so a value it could not read this
 	// time stays the base for the next report.
-	systemState, next := systemStateCollector(prev)
+	systemState, next := systemStateCollector(ctx, prev)
 	next.CPU = cpuNow
 	if len(systemState) > 0 {
 		report["system_state"] = systemState
 	}
 
 	// Service health (platform-specific)
-	svcHealth := serviceHealthCollector()
+	svcHealth := serviceHealthCollector(ctx)
 	if len(serviceNames) > 0 {
 		// Collect once and reuse for both the "watched" sub-key and the legacy
 		// top-level "services" key: avoids double systemctl/sc subprocess spawns
 		// per cycle and two snapshots that could disagree if a service flips.
-		watched := collectWatchedServices(serviceNames)
+		watched := collectWatchedServices(ctx, serviceNames)
 		svcHealth["watched"] = watched
 		report["services"] = watched
 	}
 	report["systemd"] = svcHealth
 
 	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
-	if docker := pluginCollectors.docker(); docker != nil {
+	if docker := pluginCollectors.docker(ctx); docker != nil {
 		report["docker"] = docker
 	}
-	if proxmox := pluginCollectors.proxmox(); proxmox != nil {
+	if proxmox := pluginCollectors.proxmox(ctx); proxmox != nil {
 		report["proxmox"] = proxmox
 	}
-	if zfs := pluginCollectors.zfs(); zfs != nil {
+	if zfs := pluginCollectors.zfs(ctx); zfs != nil {
 		report["zfs"] = zfs
 	}
-	if smart, absent := pluginCollectors.smart(); smart != nil {
+	if smart, absent := pluginCollectors.smart(ctx); smart != nil {
 		report["smart"] = smart
 	} else {
 		report["smart_absent"] = map[string]string{"reason": absent}
@@ -107,10 +108,10 @@ var pushRetryDelay = 10 * time.Second
 // pluginCollectors indirects the auto-detected plugin collectors so tests can stub the real
 // docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
 var pluginCollectors = struct {
-	docker  func() map[string]any
-	proxmox func() map[string]any
-	zfs     func() map[string]any
-	smart   func() ([]SmartDisk, string)
+	docker  func(context.Context) map[string]any
+	proxmox func(context.Context) map[string]any
+	zfs     func(context.Context) map[string]any
+	smart   func(context.Context) ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 
 // serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).

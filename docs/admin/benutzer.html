@@ -44,7 +44,7 @@
             <thead><tr><th>Rolle</th><th>Darf</th></tr></thead>
             <tbody>
               <tr><td><span class="badge badge-info">admin</span></td><td>Alles: im Web-Panel Benutzer verwalten, API-Keys erstellen, Hooks definieren, FRP-Server-Konfiguration und globale Einstellungen; im Desktop-Client (Server-Workspace) Server registrieren, Verbindungen, Tunnel, Monitoring und Ansible pflegen.</td></tr>
-              <tr><td><span class="badge">user</span></td><td>Eigene Verbindungen pflegen, Server und Monitoring lesen. Keine Admin-Aktionen.</td></tr>
+              <tr><td><span class="badge">user</span></td><td>Eigene Verbindungen pflegen, Server und Monitoring lesen. Keine Admin-Aktionen. Im Web-Panel sieht die Rolle nur einen Hinweis auf den Desktop-Client.</td></tr>
             </tbody>
           </table>
 
@@ -64,6 +64,8 @@
             <li><strong>Access-Token</strong>: 8h gültig, wird bei jedem Request im <code>Authorization</code>-Header mitgeschickt.</li>
             <li><strong>Refresh-Token</strong>: 7 Tage gültig, rotiert bei jeder Verwendung (der alte wird sofort blacklisted).</li>
             <li><strong>Reuse-Detection</strong>: Wird ein geblacklisteter Refresh-Token erneut verwendet, werden <em>alle</em> Sessions des Users sofort invalidiert – ein Hinweis auf einen gestohlenen Token.</li>
+            <li><strong>Abmeldung nach Inaktivität</strong>: Das Web-Panel meldet in allen offenen Tabs ab, wenn in keinem davon 30 Minuten lang bedient wurde (Maus, Tastatur, Touch); ein Hinweis bleibt stehen, bis man ihn schließt. Die Dauer stellt <code>WEB_IDLE_TIMEOUT_MINUTES</code> ein, <code>0</code> schaltet ab (<a href="./installation.html#env">Umgebungsvariablen</a>). Das gilt auch nach Neuladen oder Wiederöffnen im selben Browser: Liegt die letzte Bedienung dort länger als diese Dauer zurück, endet die Sitzung beim Laden sofort mit demselben Hinweis, ebenso, wenn die gespeicherte Zeit nach der Uhr des Rechners liegt (Uhr zurückgestellt) oder unlesbar ist.</li>
+            <li><strong>Höchstdauer der Sitzung</strong>: Unabhängig von der Bedienung beendet der Server eine Sitzung im Web-Panel 24 Stunden nach der Anmeldung; danach ist eine neue Anmeldung nötig. Die Dauer stellt <code>WEB_SESSION_MAX_HOURS</code> ein, <code>0</code> schaltet ab (<a href="./installation.html#env">Umgebungsvariablen</a>). Die Desktop-App ist davon nicht betroffen.</li>
           </ul>
 
           <div class="callout callout-note" data-reveal>
@@ -110,6 +112,7 @@
             <li><strong>Workspace löschen</strong> (Desktop, im Picker): Hat ein Server-Workspace eine Geräte-Identität, widerruft der Desktop das Gerät zuerst am Server und löscht dann den Workspace auf dem Gerät. Widerruft der Server es nicht, meldet der Picker „Nur auf diesem Gerät“; das Gerät bleibt dann am Server gültig, bis ein Admin es über die Geräte-API widerruft, denn eine spätere Registrierung, auch eines neuen Workspace, löst es nicht ab.</li>
             <li><strong>Neu registrieren:</strong> Registriert ein Server-Workspace sich neu, löst das neue Zertifikat das vorige dieses Geräts ab. Eine <code>.p12</code> ist ein eigenes Gerät und löst nichts ab; eine, die nicht mehr gebraucht wird, widerrufst du über die Geräte-API.</li>
           </ul>
+          <p>Löschen und Widerrufen sperren die API sofort; einen Tunnel, dessen Visitor-Konfiguration der Benutzer schon hat, sperren sie nicht (siehe <a href="./frp-tunnel.html#revoke-access">FRP-Tunnel: Zugang zum Tunnel entziehen</a>).</p>
 
           <h2>API-Keys</h2>
           <p>API-Keys authentifizieren nicht-interaktive Clients (Go-Agent, Skripte, CI-Jobs). Unterschiede zu User-Credentials:</p>
@@ -132,6 +135,7 @@
           <p>Mit <code>ALLOWED_IPS</code> lassen sich alle Zugriffe auf eine Whitelist begrenzen. Beispiel:</p>
           <div class="code-header"><span>.env</span></div>
 <pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
+          <p><code>ALLOWED_IPS</code> gilt für alle Anfragen an den Server, also auch für Agents und Desktop-Clients, und prüft die Client-Adresse, die das Gateway sieht: Das Gateway übermittelt sie in <code>X-Forwarded-For</code>, und der Server wertet diesen Header nur vom Gateway aus (<code>TRUSTED_PROXIES</code>, siehe <a href="./installation.html#env">Installation</a>). Die Liste enthält also die Netze der Clients, nicht das Docker-Netz des Gateways; steht ein weiterer Proxy vor dem Gateway, zählt dessen Adresse. Ältere Versionen prüften hier die Adresse des Gateways: Wer <code>ALLOWED_IPS</code> darauf eingestellt hat, trägt vor dem Update die Netze der Clients ein, sonst weist der Server sie mit <code>403</code> ab. Bis der Server den Namen <code>gateway</code> aufgelöst hat — bei den ersten Anfragen nach seinem Start und bis zu 30&nbsp;s nach einem Neustart des Gateways mit neuer Adresse —, sieht er noch die Adresse des Gateways und weist eine solche Anfrage ab, wenn die Liste das Docker-Netz nicht enthält.</p>
           <p>Wird die Liste leer gelassen, ist der Zugriff offen (für Reverse-Proxy- oder VPN-geschützte Setups).</p>
 
           <div class="page-nav">

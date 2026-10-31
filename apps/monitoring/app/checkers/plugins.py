@@ -59,7 +59,9 @@ class ProxmoxBackupChecker:
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         return "unknown", "Waiting for agent data", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
         proxmox = report.get("proxmox")
         if not isinstance(proxmox, dict) or not proxmox:
             # An empty list, not None: the push path keeps the stored details of a
@@ -181,7 +183,9 @@ class ZfsHealthChecker:
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         return "unknown", "Waiting for agent data", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
         zfs = report.get("zfs")
         if not isinstance(zfs, dict) or not zfs:
             # An empty list, not None: the push path keeps the stored details of a

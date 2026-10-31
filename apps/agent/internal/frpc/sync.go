@@ -6,6 +6,7 @@ package frpc
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -36,11 +37,12 @@ var ensureDataDir = config.EnsureDataDir
 // localPreamble goes in front of the server's frpc.toml, followed by the admin API's head
 // (adminAPI.head). frp defaults loginFailExit to true: frpc then exits when frps is unreachable
 // at its first login, and systemd restarts it every 5 s. The head stands before every table, so
-// its keys land in the root; the server sets none of them (checkServerHead).
+// its keys land in the root; the server sets none of them (checkServerConfig).
 const localPreamble = "loginFailExit = false\n"
 
-// Sync checks for config changes and updates frpc (port of do_sync).
-func Sync() error {
+// Sync checks for config changes and updates frpc (port of do_sync). Its requests to the server
+// end with ctx.
+func Sync(ctx context.Context) error {
 	cfg, err := config.LoadFrpcConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -68,7 +70,7 @@ func Sync() error {
 
 	// Fetch the remote hash
 	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
-	hashBody, err := httpGet(client, hashURL, cfg.APIKey)
+	hashBody, err := httpGet(ctx, client, hashURL, cfg.APIKey)
 	if err != nil {
 		// Propagate like the config fetch below (same error class): a persistently
 		// broken sync (rotated API key, expired mTLS cert, wrong URL) must surface
@@ -83,7 +85,12 @@ func Sync() error {
 		if err := secureFrpDir(); err != nil {
 			return err
 		}
-		return syncWithoutFrpConfig()
+		unlock, err := lockFrpc(ctx)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		return syncWithoutFrpConfig(ctx)
 	}
 	if err != nil {
 		return fmt.Errorf("Hash-Antwort parsen: %w", err)
@@ -95,10 +102,23 @@ func Sync() error {
 		localHash = strings.TrimSpace(string(data))
 	}
 
-	// Checked whatever the hash says: a changed config does not free a held admin port.
-	stuck := frpcStuck()
+	// Checked whatever the hash says: a changed config does not free a held admin port. Without an
+	// answer from systemd a frpc that may run must not count as stuck, which would renew its admin
+	// API and restart it; a changed config then reaches it only by a reload (startFrpc), so the sync
+	// goes on only while frpc listens on its admin API, and otherwise changes nothing.
+	stuck, err := frpcStuck(ctx)
+	if err != nil {
+		if remoteHash == localHash || !adminAPIListens() {
+			return err
+		}
+		logger.Warnf("%v; frpc listens on its admin API, the sync tries a reload", err)
+	}
+	// After an agent update the text in place has not been through this agent's check yet: fetch
+	// and check it once, even with the same hash.
+	recheck := localHash != "" && checkedBy() != checkedByLine(localHash)
+	unchanged := remoteHash == localHash && !stuck && !configWithoutTunnel()
 	if remoteHash == localHash {
-		if !stuck && !configWithoutTunnel() {
+		if unchanged && !recheck {
 			return nil
 		}
 	} else {
@@ -107,7 +127,7 @@ func Sync() error {
 
 	// Fetch the new config
 	configURL := fmt.Sprintf("%s/api/frp/provision/%s/config", cfg.AdminHelperURL, cfg.ServerID)
-	newConfig, err := httpGet(client, configURL, cfg.APIKey)
+	newConfig, err := httpGet(ctx, client, configURL, cfg.APIKey)
 	if err != nil {
 		return fmt.Errorf("neue Config laden: %w", err)
 	}
@@ -123,6 +143,24 @@ func Sync() error {
 	if err := secureFrpDir(); err != nil {
 		return err
 	}
+	// Taken only on a change, and nothing above is checked again under it: what the sync applies
+	// is the server's config, checked against its hash, and should a provisioning have held the
+	// lock meanwhile, the next run compares the hashes again.
+	unlock, err := lockFrpc(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if unchanged {
+		// The check passes the text frpc runs on: nothing to write, reload or restart. A text
+		// without a tunnel runs nothing, and applyConfig never checks one either.
+		if hasProxies(newConfig) {
+			if err := checkServerConfig(newConfig); err != nil {
+				return refuseServerConfig(ctx, err)
+			}
+		}
+		return writeCheckedBy(remoteHash)
+	}
 	// Without a tunnel applyConfig stops frpc, which needs no admin API.
 	if stuck && hasProxies(newConfig) {
 		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
@@ -131,7 +169,7 @@ func Sync() error {
 			return err
 		}
 	}
-	return applyConfig(newConfig, true)
+	return applyConfig(ctx, newConfig, true)
 }
 
 // secureFrpDir secures the FRP directory, on Windows the data root first, before Sync changes
@@ -146,13 +184,35 @@ func secureFrpDir() error {
 	return nil
 }
 
+// frpcLockWait is how long a change to frpc's state waits for the frpc lock before it gives
+// up. The sync and the provisioning hold the lock for a few service calls, on Linux of 15 s at
+// most each (systemctlTimeout).
+var frpcLockWait = 60 * time.Second
+
+// frpcLockFile is the file in the FRP directory whose exclusive lock serializes the changes to
+// frpc's state: frpc.toml (staged under the fixed name frpc.toml.tmp), the hashes, admin.conf,
+// adminhelper.conf and the frpc service. A run of the agent (Sync) and a provisioning (Apply)
+// would otherwise change them at the same time.
+func frpcLockFile() string { return filepath.Join(config.FrpDir(), "frpc.lock") }
+
+// lockFrpc waits for the frpc lock, at most frpcLockWait or until ctx ends, and returns the
+// function that releases it. The lock file is created only in a directory the same call has
+// secured (secureFrpDir, EnsureDataDir), like every other file there.
+func lockFrpc(ctx context.Context) (unlock func(), err error) {
+	unlock, err = enroll.LockFile(ctx, frpcLockFile(), frpcLockWait)
+	if err != nil {
+		return nil, fmt.Errorf("lock the frpc state: %w; frpc and its files stay as they are", err)
+	}
+	return unlock, nil
+}
+
 // frpcStuck reports whether frpc should run but does not. It should run while frpc.toml is in
 // place: the sync removes it when no tunnel is left. frpc does not start without its admin port.
-func frpcStuck() bool {
+func frpcStuck(ctx context.Context) (bool, error) {
 	if _, err := os.Stat(config.FrpConfigFile()); err != nil {
-		return false
+		return false, nil
 	}
-	return isDown()
+	return isDown(ctx)
 }
 
 // configWithoutTunnel reports whether frpc.toml is in place without a tunnel. An older agent may
@@ -171,23 +231,26 @@ var errFrpcService = errors.New("frpc service action failed")
 // the provisioning (Apply) share it. The stored hash is the one of the server's text, not of the
 // file written (preamble, identity paths), so it matches the server's config-hash. mayReload lets
 // a running frpc take the new proxies by a reload (startFrpc).
-func applyConfig(serverToml []byte, mayReload bool) error {
+func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	remoteHash := hashConfig(serverToml)
 
 	// The server sends the common part also with no tunnel left; frpc must not run without one.
 	if !hasProxies(serverToml) {
-		if err := stopFrpc(); err != nil {
+		if err := stopFrpc(ctx); err != nil {
 			return err
 		}
 		if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 			return fmt.Errorf("write the config hash: %w", err)
 		}
+		if err := writeCheckedBy(remoteHash); err != nil {
+			return err
+		}
 		logger.Infof("No tunnel for this host, frpc stopped and disabled.")
 		return nil
 	}
 
-	if err := checkServerHead(serverToml); err != nil {
-		return err
+	if err := checkServerConfig(serverToml); err != nil {
+		return refuseServerConfig(ctx, err)
 	}
 	api, err := loadAdminAPI()
 	if err != nil {
@@ -210,7 +273,7 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 	// provisioning output for it, and its container has no systemctl to start frpc.
 	logger.Infof("frpc.toml geschrieben")
 
-	started, err := startFrpc(frpcToml, api.port, mayReload)
+	started, err := startFrpc(ctx, frpcToml, api.port, mayReload)
 	if err != nil {
 		return err
 	}
@@ -221,8 +284,71 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 	if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 		return fmt.Errorf("Hash schreiben: %w", err)
 	}
+	if err := writeCheckedBy(remoteHash); err != nil {
+		return err
+	}
 	logger.Infof("frpc.toml updated, frpc %s.", started)
 	return nil
+}
+
+// agentVersion is the version of this agent, set by main. A text stored under another version
+// (or none: every agent before this file existed) is checked once more by the next sync.
+var agentVersion = "dev"
+
+// SetAgentVersion records the agent's version for the check after an update.
+func SetAgentVersion(v string) { agentVersion = v }
+
+// checkedByFile holds the agent version that last checked the stored text, with that text's
+// hash: a text another agent wrote under the same version's marker (a downgrade in between)
+// does not count as checked.
+func checkedByFile() string { return filepath.Join(config.FrpDir(), ".checked-by") }
+
+// checkedByLine is what checkedByFile holds once this agent checked the text with hash.
+func checkedByLine(hash string) string { return agentVersion + " " + hash }
+
+// checkedBy is what checkedByFile records, "" without one.
+func checkedBy() string {
+	data, err := os.ReadFile(checkedByFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeCheckedBy(hash string) error {
+	if err := config.WriteFile(checkedByFile(), []byte(checkedByLine(hash)), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", checkedByFile(), err)
+	}
+	return nil
+}
+
+func removeCheckedBy() error {
+	if err := os.Remove(checkedByFile()); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", checkedByFile(), err)
+	}
+	return nil
+}
+
+// refuseServerConfig stops frpc on a server text the check refuses: what frpc runs on must be a
+// text the check accepted, and the frpc.toml in place may predate the check or this server's
+// text. Without the hash the next run fetches and checks again; with nothing left (frpcGone) a
+// former run already stopped frpc, which keeps systemctl out of every timer run.
+func refuseServerConfig(ctx context.Context, refusal error) error {
+	if frpcGone() {
+		return refusal
+	}
+	// Not wrapped: the provisioning turns an errFrpcService failure into a warning, and a
+	// refusal must stay an error even when stopping frpc failed as well.
+	if err := stopFrpc(ctx); err != nil {
+		return fmt.Errorf("%w; stopping frpc failed as well: %v", refusal, err)
+	}
+	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
+		return errors.Join(refusal, fmt.Errorf("remove the config hash: %w", err))
+	}
+	if err := removeCheckedBy(); err != nil {
+		return errors.Join(refusal, err)
+	}
+	return fmt.Errorf("frpc stopped until the server sends a config that passes: %w", refusal)
 }
 
 // startFrpc puts frpc onto the frpc.toml just written and says how. frpc is stopped on the first
@@ -231,25 +357,38 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 // connections; frp takes only the proxies from a reload, so it stands in for a restart only while
 // the common part is the one frpc started on. The reload goes only to the agent's own frpc
 // (ownsAdminPort). The provisioning (mayReload false) always restarts: it may have enrolled a new
-// identity, and a reload does not connect to frps anew, only a restart does.
-func startFrpc(frpcToml []byte, adminPort int, mayReload bool) (string, error) {
+// identity, and a reload does not connect to frps anew, only a restart does. Without an answer
+// from systemd the reload is the only way to drop a removed tunnel while others remain.
+func startFrpc(ctx context.Context, frpcToml []byte, adminPort int, mayReload bool) (string, error) {
 	common := hashConfig(commonPart(frpcToml))
-	if !isActive() {
-		if err := startedOn(common, enableService, "enable and start frpc"); err != nil {
+	reloadable := mayReload && startedCommon() == common
+	active, err := isActive(ctx)
+	if err != nil {
+		// Fails like a start: the hash stays for the next run, the provisioning only warns.
+		if !reloadable || !ownsAdminPort(adminPort) {
+			return "", fmt.Errorf("%w: %w", errFrpcService, err)
+		}
+		if reloadErr := reloadService(ctx); reloadErr != nil {
+			return "", fmt.Errorf("%w: %w; the reload over the admin API failed too: %v", errFrpcService, err, reloadErr)
+		}
+		return "reloaded without an answer from systemd", nil
+	}
+	if !active {
+		if err := startedOn(ctx, common, enableService, "enable and start frpc"); err != nil {
 			return "", err
 		}
 		return "enabled and started", nil
 	}
-	if mayReload && startedCommon() == common {
+	if reloadable {
 		if !ownsAdminPort(adminPort) {
 			logger.Warnf("frpc does not listen on its admin port 127.0.0.1:%d, restarting frpc instead of a reload", adminPort)
-		} else if err := reloadService(); err != nil {
+		} else if err := reloadService(ctx); err != nil {
 			logger.Warnf("frpc reload failed, restarting frpc instead: %v", err)
 		} else {
 			return "reloaded", nil
 		}
 	}
-	if err := startedOn(common, restartService, "restart frpc"); err != nil {
+	if err := startedOn(ctx, common, restartService, "restart frpc"); err != nil {
 		return "", err
 	}
 	return "restarted", nil
@@ -260,12 +399,16 @@ func startedHashFile() string { return filepath.Join(config.FrpDir(), ".started-
 
 // startedOn runs start (enable or restart) and records the common part frpc started on. The old
 // record goes first: after a failed start frpc may still run on the old common part, and the next
-// run must restart it rather than reload.
-func startedOn(common string, start func() error, what string) error {
+// run must restart it rather than reload. A run that has ended starts nothing and keeps the record:
+// nothing was started, so frpc still runs on the common part recorded.
+func startedOn(ctx context.Context, common string, start func(context.Context) error, what string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %s: %w", errFrpcService, what, err)
+	}
 	if err := os.Remove(startedHashFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove %s: %w", startedHashFile(), err)
 	}
-	if err := start(); err != nil {
+	if err := start(ctx); err != nil {
 		return fmt.Errorf("%w: %s: %w", errFrpcService, what, err)
 	}
 	if err := config.WriteFile(startedHashFile(), []byte(common), 0600); err != nil {
@@ -297,38 +440,21 @@ func commonPart(toml []byte) []byte {
 	return toml
 }
 
-// localHeadKeys are the keys of the local head, lowercase: the agent alone sets them.
-var localHeadKeys = []string{"webserver", "loginfailexit"}
-
-// checkServerHead refuses a server text that sets a key or table of the local head: the server
-// sets none of them, the agent puts them in front. frp reads keys without regard to case, and a
-// table header after the proxies is a root table again, so every line counts. A line counts when
-// it starts with such a key after blanks, quotes and brackets: that covers the forms the server's
-// generator writes, in upper or lower case.
-func checkServerHead(serverToml []byte) error {
-	for _, line := range strings.Split(string(serverToml), "\n") {
-		key := strings.ToLower(strings.TrimLeft(line, "[\"' \t"))
-		for _, head := range localHeadKeys {
-			if strings.HasPrefix(key, head) {
-				return fmt.Errorf("the server's frpc.toml sets %q, which only the agent sets; not applied", strings.TrimSpace(line))
-			}
-		}
-	}
-	return nil
-}
-
 // syncWithoutFrpConfig stops frpc and removes frpc.toml and the hash, on a null hash and for a
 // provisioning without an FRP bundle. Neither file left (frpcGone) means a former run already
 // stopped it; returning early keeps systemctl out of every timer run.
-func syncWithoutFrpConfig() error {
+func syncWithoutFrpConfig(ctx context.Context) error {
 	if frpcGone() {
 		return nil
 	}
-	if err := stopFrpc(); err != nil {
+	if err := stopFrpc(ctx); err != nil {
 		return err
 	}
 	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove the config hash: %w", err)
+	}
+	if err := removeCheckedBy(); err != nil {
+		return err
 	}
 	logger.Infof("No FRP config or tunnel for this host on the server, frpc stopped and disabled.")
 	return nil
@@ -343,14 +469,53 @@ func frpcGone() bool {
 }
 
 // stopFrpc stops and disables frpc, then removes frpc.toml: it holds the frps token. The
-// order keeps the file for the retry when the stop fails.
-func stopFrpc() error {
-	if err := disableService(); err != nil {
-		return fmt.Errorf("%w: stop and disable frpc: %w", errFrpcService, err)
+// order keeps the file for the retry when the stop fails. A stop that fails still drops the
+// tunnels over the admin API (dropTunnels): frpc must not keep a tunnel the server no longer
+// sends for as long as systemd does not answer.
+func stopFrpc(ctx context.Context) error {
+	if err := disableService(ctx); err != nil {
+		stopErr := fmt.Errorf("%w: stop and disable frpc: %w", errFrpcService, err)
+		if dropErr := dropTunnels(ctx); dropErr != nil {
+			return fmt.Errorf("%w; dropping the tunnels over the admin API failed as well: %v", stopErr, dropErr)
+		}
+		return stopErr
 	}
 	if err := os.Remove(config.FrpConfigFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove frpc.toml: %w", err)
 	}
+	return nil
+}
+
+// dropTunnels puts frpc onto its frpc.toml without the [[proxies]] tables and reloads it: frp
+// stops every proxy a reload no longer names, and frpc keeps running without one. Only the
+// agent's own frpc gets the reload (adminAPIListens). The common part stays, so the next run,
+// which stops frpc over systemd again, may still reload instead of restart. A file without
+// proxies is no proof that frpc runs without them (a reload may have failed before), so every
+// run reloads again; a reload without proxies changes nothing.
+func dropTunnels(ctx context.Context) error {
+	current, err := os.ReadFile(config.FrpConfigFile())
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read frpc.toml: %w", err)
+	}
+	if !adminAPIListens() {
+		return errors.New("frpc does not listen on its admin port")
+	}
+	if hasProxies(current) {
+		tmp := config.FrpConfigFile() + ".tmp"
+		if err := config.WriteFile(tmp, commonPart(current), 0600); err != nil {
+			return fmt.Errorf("write frpc.toml without tunnels: %w", err)
+		}
+		if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
+			return fmt.Errorf("activate frpc.toml without tunnels: %w", err)
+		}
+	}
+	if err := reloadService(ctx); err != nil {
+		return err
+	}
+	logger.Warnf("systemd did not stop frpc: its tunnels are dropped over the admin API, the next run stops frpc again")
 	return nil
 }
 

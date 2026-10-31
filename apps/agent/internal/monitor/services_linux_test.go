@@ -11,11 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestParseWatchedServices(t *testing.T) {
@@ -219,7 +222,7 @@ func stubShow(t *testing.T, props string, fn func(units []string) ([]byte, error
 	t.Cleanup(func() { runSystemctl = old })
 	calls := &[][]string{}
 	prefix := []string{"show", "-p", props, "--"}
-	runSystemctl = func(args ...string) ([]byte, error) {
+	runSystemctl = func(_ context.Context, args ...string) ([]byte, error) {
 		if len(args) <= len(prefix) || !reflect.DeepEqual(args[:len(prefix)], prefix) {
 			t.Fatalf("unexpected systemctl call %q", args)
 		}
@@ -300,7 +303,7 @@ func TestFilterEnabledInactiveBatch(t *testing.T) {
 	// One batched call for all candidates; its blocks decide.
 	calls := stubSystemctl(t, func(units []string) ([]byte, error) { return []byte(showBlocks257), nil })
 	candidates := []string{"anacron.service", "cron.service", "e2scrub_reap.service"}
-	got := filterEnabledInactive(candidates)
+	got := filterEnabledInactive(context.Background(), candidates)
 	if !reflect.DeepEqual(got, []string{"cron.service"}) {
 		t.Errorf("kept = %q, want [cron.service]", got)
 	}
@@ -311,7 +314,7 @@ func TestFilterEnabledInactiveBatch(t *testing.T) {
 
 func TestFilterEnabledInactiveNoCandidates(t *testing.T) {
 	calls := stubSystemctl(t, func(units []string) ([]byte, error) { return nil, nil })
-	got := filterEnabledInactive([]string{})
+	got := filterEnabledInactive(context.Background(), []string{})
 	if got == nil || len(got) != 0 {
 		t.Errorf("want an empty, non-nil list (JSON []), got %#v", got)
 	}
@@ -335,7 +338,7 @@ func TestFilterEnabledInactiveBatchErrorQueriesSingly(t *testing.T) {
 		return showBlockFor(units[0]), nil
 	})
 	candidates := []string{"broken.service", "cron.service", "e2scrub_reap.service", "systemd-pstore.service"}
-	got := filterEnabledInactive(candidates)
+	got := filterEnabledInactive(context.Background(), candidates)
 	if !reflect.DeepEqual(got, []string{"broken.service", "cron.service"}) {
 		t.Errorf("kept = %q, want [broken.service cron.service]", got)
 	}
@@ -363,7 +366,7 @@ func TestFilterEnabledInactiveSingleQueryCap(t *testing.T) {
 	for i := range candidates {
 		candidates[i] = fmt.Sprintf("unit-%02d.service", i)
 	}
-	got := filterEnabledInactive(candidates)
+	got := filterEnabledInactive(context.Background(), candidates)
 	if singles != 50 {
 		t.Errorf("single queries = %d, want 50", singles)
 	}
@@ -388,7 +391,7 @@ func TestFilterEnabledInactiveSingleKilledStops(t *testing.T) {
 	})
 	candidates := []string{"e2scrub_reap.service", "cron.service", "grub-common.service",
 		"systemd-pstore.service"}
-	got := filterEnabledInactive(candidates)
+	got := filterEnabledInactive(context.Background(), candidates)
 	if !reflect.DeepEqual(got, candidates[1:]) {
 		t.Errorf("kept = %q, want %q", got, candidates[1:])
 	}
@@ -410,7 +413,7 @@ func TestFilterEnabledInactiveBatchKilledKeepsAll(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			calls := stubSystemctl(t, func(units []string) ([]byte, error) { return nil, batchErr })
 			candidates := []string{"cron.service", "e2scrub_reap.service"}
-			if got := filterEnabledInactive(candidates); !reflect.DeepEqual(got, candidates) {
+			if got := filterEnabledInactive(context.Background(), candidates); !reflect.DeepEqual(got, candidates) {
 				t.Errorf("kept = %q, want all %q", got, candidates)
 			}
 			if len(*calls) != 1 {
@@ -494,7 +497,7 @@ func stubCollector(t *testing.T, replies map[string]systemctlReply) *[]string {
 	old := runSystemctl
 	t.Cleanup(func() { runSystemctl = old })
 	calls := &[]string{}
-	runSystemctl = func(args ...string) ([]byte, error) {
+	runSystemctl = func(_ context.Context, args ...string) ([]byte, error) {
 		call := strings.Join(args, " ")
 		*calls = append(*calls, call)
 		key := call
@@ -531,7 +534,7 @@ func TestServiceHealthCollector(t *testing.T) {
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
 	})
-	got := collectServiceHealth()
+	got := collectServiceHealth(context.Background())
 
 	wantUnits := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
 		"getty@tty1.service", "smartd.service", "smartmontools.service", "ssh.service", "sshd.service",
@@ -605,7 +608,7 @@ func TestServiceHealthSystemctlError(t *testing.T) {
 				listFailedArgs:    {},
 				aliasShow:         {out: aliasBlocks},
 			})
-			got := collectServiceHealth()
+			got := collectServiceHealth(context.Background())
 			if got["error"] != tc.want {
 				t.Errorf("error = %q, want %q", got["error"], tc.want)
 			}
@@ -644,7 +647,7 @@ func TestAliasAndWatchAliasOf(t *testing.T) {
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks + "\nId=ghost.service\nNames=ghost.service\n"},
 	})
-	got := collectServiceHealth()
+	got := collectServiceHealth(context.Background())
 
 	want := map[string]string{"smartd.service": "smartmontools.service", "sshd.service": "ssh.service"}
 	if a := aliasOf(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(a, want) {
@@ -678,7 +681,7 @@ func TestAliasAndWatchAliasShowFails(t *testing.T) {
 				recheckShow:       {out: showBlocks257},
 				aliasShow:         {out: partial, err: err},
 			})
-			got := collectServiceHealth()
+			got := collectServiceHealth(context.Background())
 			if a := aliasOf(got["all_services"].([]ServiceEntry)); len(a) != 0 {
 				t.Errorf("alias_of = %v, want none after a failed show", a)
 			}
@@ -708,7 +711,7 @@ func TestAliasAndWatchCountsSkipUnloaded(t *testing.T) {
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
 	})
-	got := collectServiceHealth()
+	got := collectServiceHealth(context.Background())
 	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
 		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got["counts"])
 	}
@@ -742,7 +745,7 @@ func TestServiceHealthNotFoundInactiveDropped(t *testing.T) {
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
 	})
-	got := collectServiceHealth()
+	got := collectServiceHealth(context.Background())
 
 	all := got["all_services"].([]ServiceEntry)
 	wantUnits := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
@@ -793,7 +796,7 @@ func TestServiceHealthNotFoundActiveOrFailedKept(t *testing.T) {
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
 	})
-	got := collectServiceHealth()
+	got := collectServiceHealth(context.Background())
 
 	byUnit := map[string]ServiceEntry{}
 	for _, e := range got["all_services"].([]ServiceEntry) {
@@ -824,7 +827,7 @@ func TestServiceHealthNotFoundListUnitsFails(t *testing.T) {
 		listFailedArgs:    {},
 		aliasShow:         {out: aliasBlocks},
 	})
-	got := collectServiceHealth()
+	got := collectServiceHealth(context.Background())
 	all := got["all_services"].([]ServiceEntry)
 	want := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
 		"smartd.service", "smartmontools.service", "ssh.service", "sshd.service", "systemd-pstore.service"}
@@ -872,7 +875,7 @@ func TestAliasAndWatchTemplateSingly(t *testing.T) {
 		}
 		return []byte(watchedBlocks[units[0]]), nil
 	})
-	got := collectWatchedServices(names)
+	got := collectWatchedServices(context.Background(), names)
 	want := []map[string]any{
 		{"name": "sshd", "running": true, "pid": "1022"},
 		{"name": "getty@.service", "running": false, "pid": nil},
@@ -901,7 +904,7 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 			calls := stubShow(t, "Id,Names,ActiveState,MainPID", func(units []string) ([]byte, error) {
 				return nil, batchErr
 			})
-			got := collectWatchedServices([]string{"sshd", "cron.service"})
+			got := collectWatchedServices(context.Background(), []string{"sshd", "cron.service"})
 			if want := []map[string]any{down("sshd"), down("cron.service")}; !reflect.DeepEqual(got, want) {
 				t.Errorf("watched = %v, want %v", got, want)
 			}
@@ -922,7 +925,7 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 			}
 			return []byte(watchedBlocks[units[0]]), nil
 		})
-		got := collectWatchedServices([]string{"cron.service", "sshd", "nginx"})
+		got := collectWatchedServices(context.Background(), []string{"cron.service", "sshd", "nginx"})
 		want := []map[string]any{{"name": "cron.service", "running": true, "pid": "912"}, down("sshd"), down("nginx")}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("watched = %v, want %v", got, want)
@@ -946,7 +949,7 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 		for i := range names {
 			names[i] = fmt.Sprintf("unit-%02d.service", i)
 		}
-		got := collectWatchedServices(names)
+		got := collectWatchedServices(context.Background(), names)
 		if singles != 50 {
 			t.Errorf("single queries = %d, want 50", singles)
 		}
@@ -956,4 +959,157 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 			}
 		}
 	})
+}
+
+// fakeSystemctl puts a systemctl that runs script on the PATH, and nothing else there: no test
+// reaches the host's systemd. script calls other programs by absolute path.
+func fakeSystemctl(t *testing.T, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// endsWithin runs call and fails the test when it does not return within d.
+func endsWithin(t *testing.T, d time.Duration, call func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		call()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatalf("the call did not return within %s", d)
+	}
+}
+
+// R-0638: a systemctl that does not answer (hung systemd or D-Bus) costs the service collector the
+// rest of the run's context, not pluginTimeout per call: once the context has ended, every further
+// call returns unstarted. The call the deadline ended reports like the timeout it is.
+func TestServiceHealthEndsAtTheEndOfTheContext(t *testing.T) {
+	fakeSystemctl(t, "exec /bin/sleep 30")
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	var got map[string]any
+	endsWithin(t, 3*time.Second, func() { got = collectServiceHealth(ctx) })
+	if want := "systemctl list-units failed: timed out after 15s"; got["error"] != want {
+		t.Errorf("error = %q, want %q", got["error"], want)
+	}
+}
+
+// R-0638: the per-unit fallbacks end with the context too. systemctl answers the batch with exit 1
+// and hangs on the single query, which the context ends: it does not count as answered, and no
+// further query starts.
+func TestServiceFallbackEndsAtTheEndOfTheContext(t *testing.T) {
+	down := func(name string) map[string]any { return map[string]any{"name": name, "running": false, "pid": nil} }
+	for name, tc := range map[string]struct {
+		collect func(context.Context) any
+		want    any
+	}{
+		"enabled inactive": {
+			func(ctx context.Context) any {
+				return filterEnabledInactive(ctx, []string{"cron.service", "e2scrub_reap.service", "ssh.service"})
+			},
+			[]string{"cron.service", "e2scrub_reap.service", "ssh.service"},
+		},
+		"watched": {
+			func(ctx context.Context) any { return collectWatchedServices(ctx, []string{"sshd", "cron.service"}) },
+			[]map[string]any{down("sshd"), down("cron.service")},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			log := filepath.Join(t.TempDir(), "calls")
+			// A single query is `show -p <props> -- <unit>`, five arguments; the batch has more.
+			fakeSystemctl(t, "echo \"$*\" >> '"+log+"'\ncase $# in 5) exec /bin/sleep 30;; esac\nexit 1")
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			var got any
+			endsWithin(t, 3*time.Second, func() { got = tc.collect(ctx) })
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+			calls, err := os.ReadFile(log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n := strings.Count(string(calls), "\n"); n != 2 {
+				t.Errorf("systemctl ran %d times, want the batch and one single query:\n%s", n, calls)
+			}
+		})
+	}
+}
+
+// Every systemctl call of the service collector runs under the collector's context, the batch, the
+// per-unit fallback and the alias lookup included: a call under a fresh context would outlast the end
+// of the run (R-0883).
+func TestServiceCollectorPassesItsContextToEverySystemctlCall(t *testing.T) {
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	var calls []string
+	old := runSystemctl
+	t.Cleanup(func() { runSystemctl = old })
+	setup := func(fail error) {
+		calls = nil
+		runSystemctl = func(c context.Context, args ...string) ([]byte, error) {
+			if c.Value(ctxKey{}) != t.Name() {
+				t.Errorf("systemctl %v ran without the collector's context", args)
+			}
+			calls = append(calls, strings.Join(args, " "))
+			switch args[0] {
+			case "list-units":
+				return []byte("cron.service loaded inactive dead Cron\n"), nil
+			case "list-unit-files":
+				return []byte("cron.service enabled enabled\nsshd.service alias enabled\n"), nil
+			case "show":
+				return nil, fail
+			}
+			return nil, nil
+		}
+	}
+
+	// An enabled-inactive candidate and an alias make the collector itself ask for both show calls.
+	setup(nil)
+	collectServiceHealth(ctx)
+	if len(calls) != 5 {
+		t.Errorf("collectServiceHealth ran %v, want the three lists, the candidate batch and the alias lookup", calls)
+	}
+
+	setup(exec.Command("false").Run()) // a batch that answers with exit 1 gets the per-unit fallback
+	filterEnabledInactive(ctx, []string{"cron.service", "ssh.service"})
+	if len(calls) != 3 {
+		t.Errorf("filterEnabledInactive ran %v, want the batch and one query per unit", calls)
+	}
+
+	setup(nil)
+	resolveAliases(ctx, []ServiceEntry{{"unit": "sshd.service", "enabled_state": "alias"}})
+	if len(calls) != 1 {
+		t.Errorf("resolveAliases ran %v, want one show call", calls)
+	}
+}
+
+func TestBuildReportPassesItsContextToTheServiceCollectors(t *testing.T) {
+	type ctxKey struct{}
+	stubReportHost(t)
+	var health, watched context.Context
+	serviceHealthCollector = func(ctx context.Context) map[string]any {
+		health = ctx
+		return map[string]any{}
+	}
+	old := runSystemctl
+	t.Cleanup(func() { runSystemctl = old })
+	runSystemctl = func(ctx context.Context, _ ...string) ([]byte, error) {
+		watched = ctx
+		return []byte(watchedBlocks["sshd"]), nil
+	}
+	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
+	buildReportWithState(ctx, []string{"sshd"}, reportState{}, time.Now())
+	for name, got := range map[string]context.Context{"service health": health, "watched services": watched} {
+		if got == nil || got.Value(ctxKey{}) != t.Name() {
+			t.Errorf("%s collector got context %v, want the report's", name, got)
+		}
+	}
 }

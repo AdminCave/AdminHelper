@@ -99,5 +99,14 @@ export function validateTunnelForm(form: TunnelForm): ValidationResult {
   if (!form.localPort || form.localPort <= 0) {
     return { ok: false, message: tNow('infra.tun.validation.portRequired') };
   }
+  // An empty field (null) lets the server assign a port; https never sends one (formToInput).
+  const vp = form.visitorPort;
+  if (
+    form.tunnelType === 'stcp' &&
+    vp !== null &&
+    !(Number.isInteger(vp) && vp >= 1 && vp <= 65535)
+  ) {
+    return { ok: false, message: tNow('infra.tun.validation.visitorPortRange') };
+  }
   return { ok: true };
 }

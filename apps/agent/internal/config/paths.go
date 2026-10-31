@@ -18,7 +18,6 @@ func FrpConfigFile() string      { return filepath.Join(FrpDir(), "frpc.toml") }
 func LogFile() string            { return filepath.Join(LogDir(), "agent.log") }
 func FrpAdminHelperConf() string { return filepath.Join(FrpDir(), "adminhelper.conf") }
 func FrpHashFile() string        { return filepath.Join(FrpDir(), ".config-hash") }
-func FrpPkiDir() string          { return filepath.Join(FrpDir(), "pki") }
 func FrpCACert() string          { return filepath.Join(FrpDir(), "ca.crt") }
 func MonitorConfFile() string    { return filepath.Join(MonitorDir(), "monitor.conf") }
 func MonitorCACert() string      { return filepath.Join(MonitorDir(), "ca.crt") }

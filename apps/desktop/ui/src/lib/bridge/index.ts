@@ -13,7 +13,8 @@
 //   3. Update ./types.ts if the payload changes
 //   4. Add/adjust the function here
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke, type InvokeArgs } from '@tauri-apps/api/core';
+import { fromIpc } from '$lib/utils/errors';
 import type {
   AnsibleTarget,
   AuthSession,
@@ -32,6 +33,16 @@ import type {
   WorkspaceDraft,
   WorkspaceList,
 } from './types';
+
+// Every refusal reaches the UI as an Error (R-0709): Tauri rejects with whatever the command
+// serialised, an object or a string, and a raw object showed as "[object Object]".
+async function invoke<T>(cmd: string, args?: InvokeArgs): Promise<T> {
+  try {
+    return await tauriInvoke<T>(cmd, args);
+  } catch (raw) {
+    throw fromIpc(raw);
+  }
+}
 
 // ─────────────────────────── Persistence ──────────────────────────
 
@@ -262,16 +273,9 @@ export function fetchTunnels(): Promise<TunnelMapping[]> {
 
 // ─────────────────────────── Ansible ──────────────────────────────
 
-export function ansibleGenerateInventory(servers: AnsibleTarget[]): Promise<string> {
-  return invoke<string>('ansible_generate_inventory', { servers });
-}
-
-export function ansibleWritePlaybook(filename: string, content: string): Promise<string> {
-  return invoke<string>('ansible_write_playbook', { filename, content });
-}
-
-export function ansibleLaunch(inventoryPath: string, playbookPath: string): Promise<void> {
-  return invoke('ansible_launch', { inventoryPath, playbookPath });
+// The backend loads file name and content of the playbook from the signed-in server itself.
+export function ansibleRun(playbookId: string, targets: AnsibleTarget[]): Promise<void> {
+  return invoke('ansible_run', { playbookId, targets });
 }
 
 // ─────────────────────────── Notifications (SSE) ──────────────────

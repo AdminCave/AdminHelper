@@ -5,6 +5,7 @@
 package enroll
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -13,7 +14,9 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,6 +49,63 @@ func selfSigned(t *testing.T, cn string, notBefore, notAfter time.Time) (certPEM
 	keyDER, _ := x509.MarshalPKCS8PrivateKey(key)
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	return certPEM, keyPEM
+}
+
+// gatewayCert is a server identity of the gateway's shape: a leaf for 127.0.0.1 under
+// the access intermediate, which the agent's mTLS client demands (httpclient.NewMTLS).
+type gatewayCert struct {
+	cert  tls.Certificate // leaf + access intermediate, as the gateway presents them
+	caPEM []byte          // the root, for the agent's CA bundle
+}
+
+func gatewayServerCert(t *testing.T) gatewayCert {
+	t.Helper()
+	newKey := func() *ecdsa.PrivateKey {
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	issue := func(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, signer *ecdsa.PrivateKey) (*x509.Certificate, []byte) {
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, signer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c, der
+	}
+	ca := func(serial int64, cn string) *x509.Certificate {
+		return &x509.Certificate{
+			SerialNumber:          big.NewInt(serial),
+			Subject:               pkix.Name{CommonName: cn},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			IsCA:                  true,
+			KeyUsage:              x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+		}
+	}
+	rootKey, interKey, leafKey := newKey(), newKey(), newKey()
+	rootTmpl := ca(1, "AdminHelper Root CA")
+	root, rootDER := issue(rootTmpl, rootTmpl, &rootKey.PublicKey, rootKey)
+	inter, interDER := issue(ca(2, "AdminHelper Access Intermediate"), root, &interKey.PublicKey, rootKey)
+	_, leafDER := issue(&x509.Certificate{
+		SerialNumber: big.NewInt(3),
+		Subject:      pkix.Name{CommonName: "gateway"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+	}, inter, &leafKey.PublicKey, interKey)
+	return gatewayCert{
+		cert:  tls.Certificate{Certificate: [][]byte{leafDER, interDER}, PrivateKey: leafKey},
+		caPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER}),
+	}
 }
 
 func TestNeedsRenewal(t *testing.T) {
@@ -139,15 +199,17 @@ func TestRenewSwapsIdentity(t *testing.T) {
 			Cert: "new-leaf", Fullchain: "new-leaf+int", Chain: "int+root",
 		})
 	}))
-	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	gw := gatewayServerCert(t)
+	srv.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{gw.cert},
+	}
 	srv.StartTLS()
 	defer srv.Close()
 
-	// Trust the test server's own cert (so the client verifies it under custom-root).
-	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	mustWrite(t, CAPath(dir), srvCertPEM)
+	// The agent's CA bundle holds the root; the server presents a gateway leaf under it.
+	mustWrite(t, CAPath(dir), gw.caPEM)
 
-	if err := Renew(dir, srv.URL, 5*time.Second); err != nil {
+	if err := Renew(context.Background(), dir, srv.URL, 5*time.Second); err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
 
@@ -156,6 +218,78 @@ func TestRenewSwapsIdentity(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(KeyPath(dir)); string(got) == string(keyPEM) {
 		t.Fatal("Key wurde nicht rotiert")
+	}
+}
+
+// The ctx of a run ends a renewal whose request the issuer holds, long before the
+// client's timeout, and the stored identity stays as it was.
+func TestRenewEndsWithTheContext(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		t.Fatal("agent cert not loadable as a client CA")
+	}
+	arrived := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case arrived <- struct{}{}:
+		default:
+		}
+		// Released when the test ends; the empty answer is no identity to store.
+		<-release
+	}))
+	gw := gatewayServerCert(t)
+	srv.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{gw.cert},
+	}
+	srv.StartTLS()
+	defer srv.Close()
+	defer close(release) // runs first: Close waits for the held handler
+	mustWrite(t, CAPath(dir), gw.caPEM)
+
+	files := []string{KeyPath(dir), CertPath(dir), CAPath(dir)}
+	before := make([][]byte, len(files))
+	for i, p := range files {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[i] = data
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	res := make(chan error, 1)
+	go func() { res <- Renew(ctx, dir, srv.URL, 30*time.Second) }()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the renewal request did not reach the issuer")
+	}
+	cancel()
+	select {
+	case err := <-res:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want an error that wraps context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Renew did not end with its ctx (client timeout 30s)")
+	}
+
+	for i, p := range files {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(before[i]) {
+			t.Errorf("%s changed by a renewal that ended with its ctx", filepath.Base(p))
+		}
 	}
 }
 
@@ -177,11 +311,13 @@ func TestServerClientMTLSPresentationVsFallback(t *testing.T) {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	gw := gatewayServerCert(t)
+	srv.TLS = &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool, Certificates: []tls.Certificate{gw.cert},
+	}
 	srv.StartTLS()
 	defer srv.Close()
-	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	mustWrite(t, CAPath(dir), srvCertPEM)
+	mustWrite(t, CAPath(dir), gw.caPEM)
 
 	// Provisioned client presents the agent cert -> accepted.
 	client, err := ServerClient(dir, "", false, 5*time.Second)
@@ -218,11 +354,11 @@ func mustWrite(t *testing.T, path string, data []byte) {
 func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
 	orig := renewFunc
 	called := false
-	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	dir := filepath.Join(t.TempDir(), "identity")
-	done, err := MaybeRenew(dir, "https://x", time.Second)
+	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 	if err != nil || done {
 		t.Fatalf("not provisioned -> (false, nil), got (%v, %v)", done, err)
 	}
@@ -238,7 +374,7 @@ func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
 func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 	orig := renewFunc
 	called := false
-	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	dir := t.TempDir()
@@ -248,7 +384,7 @@ func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 	mustWrite(t, CertPath(dir), certPEM)
 	mustWrite(t, KeyPath(dir), keyPEM)
 
-	done, err := MaybeRenew(dir, "https://x", time.Second)
+	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 	if err != nil || done {
 		t.Fatalf("not due -> (false, nil), got (%v, %v)", done, err)
 	}
@@ -260,7 +396,7 @@ func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 	orig := renewFunc
 	called := false
-	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	dir := t.TempDir()
@@ -270,7 +406,7 @@ func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 	mustWrite(t, CertPath(dir), certPEM)
 	mustWrite(t, KeyPath(dir), keyPEM)
 
-	done, err := MaybeRenew(dir, "https://x", time.Second)
+	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 	if err != nil || !done {
 		t.Fatalf("due -> (true, nil), got (%v, %v)", done, err)
 	}
@@ -294,7 +430,7 @@ func maybeRenewBehindLock(t *testing.T, dir string) (<-chan renewResult, <-chan 
 	t.Helper()
 	orig := renewFunc
 	renewed := make(chan struct{}, 1)
-	renewFunc = func(string, string, time.Duration) error { renewed <- struct{}{}; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { renewed <- struct{}{}; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
 	now := time.Now()
@@ -303,13 +439,13 @@ func maybeRenewBehindLock(t *testing.T, dir string) (<-chan renewResult, <-chan 
 	mustWrite(t, CertPath(dir), certPEM)
 	mustWrite(t, KeyPath(dir), keyPEM)
 
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("LockIdentity: %v", err)
 	}
 	res := make(chan renewResult, 1)
 	go func() {
-		done, err := MaybeRenew(dir, "https://x", time.Second)
+		done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 		res <- renewResult{done, err}
 	}()
 	select {
@@ -395,7 +531,7 @@ func recordRenewals(t *testing.T) *int {
 	t.Helper()
 	orig := renewFunc
 	calls := new(int)
-	renewFunc = func(string, string, time.Duration) error { *calls++; return nil }
+	renewFunc = func(context.Context, string, string, time.Duration) error { *calls++; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 	return calls
 }
@@ -419,14 +555,14 @@ func TestMaybeRenewDoesNotLockAnIdentityThatIsNotDue(t *testing.T) {
 	renewals := recordRenewals(t)
 	dir := t.TempDir()
 	storeIdentityAt(t, dir, false)
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("LockIdentity: %v", err)
 	}
 	defer unlock()
 
 	// Had it waited for the held lock, it would return the error of LockIdentity.
-	done, err := MaybeRenew(dir, "https://x", time.Second)
+	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 	if err != nil || done {
 		t.Fatalf("not due, lock held -> (false, nil), got (%v, %v)", done, err)
 	}
@@ -440,7 +576,7 @@ func TestMaybeRenewGivesUpOnAnIdentityLockThatIsNotReleased(t *testing.T) {
 	renewals := recordRenewals(t)
 	dir := t.TempDir()
 	storeIdentityAt(t, dir, true)
-	unlock, err := LockIdentity(dir)
+	unlock, err := LockIdentity(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("LockIdentity: %v", err)
 	}
@@ -448,7 +584,7 @@ func TestMaybeRenewGivesUpOnAnIdentityLockThatIsNotReleased(t *testing.T) {
 
 	res := make(chan renewResult, 1)
 	go func() {
-		done, err := MaybeRenew(dir, "https://x", time.Second)
+		done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 		res <- renewResult{done, err}
 	}()
 	select {
@@ -475,9 +611,44 @@ func TestMaybeRenewReportsAnIdentityLockItCannotTake(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	done, err := MaybeRenew(dir, "https://x", time.Second)
+	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
 	if err == nil || done {
 		t.Fatalf("lock file unusable -> (false, error), got (%v, %v)", done, err)
+	}
+	if *renewals != 0 {
+		t.Errorf("renewFunc ran %d times without the identity lock", *renewals)
+	}
+}
+
+// The ctx of a run ends MaybeRenew's wait for a held lock, long before the wait of
+// LockIdentity, and nothing is renewed.
+func TestMaybeRenewLockEndsWithTheContext(t *testing.T) {
+	renewals := recordRenewals(t)
+	dir := t.TempDir()
+	storeIdentityAt(t, dir, true)
+	unlock, err := LockIdentity(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	defer unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	res := make(chan renewResult, 1)
+	go func() {
+		done, err := MaybeRenew(ctx, dir, "https://x", time.Second)
+		res <- renewResult{done, err}
+	}()
+	select {
+	case r := <-res:
+		if r.err == nil || r.done {
+			t.Fatalf("ctx ended, lock held -> (false, error), got (%v, %v)", r.done, r.err)
+		}
+		if !errors.Is(r.err, context.DeadlineExceeded) {
+			t.Fatalf("want an error that wraps context.DeadlineExceeded, got %v", r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("MaybeRenew did not end with its ctx (identityLockWait %s)", identityLockWait)
 	}
 	if *renewals != 0 {
 		t.Errorf("renewFunc ran %d times without the identity lock", *renewals)
@@ -503,5 +674,36 @@ func TestLeafExpired(t *testing.T) {
 
 	if _, _, err := leafExpired([]byte("kein PEM")); err == nil {
 		t.Error("Muell-PEM: want error, got nil")
+	}
+}
+
+// R-0385: a due renewal holds the identity lock and removes what an interrupted one left;
+// an identity that is not due takes no lock and touches nothing.
+func TestStaleTempsRemovedByMaybeRenew(t *testing.T) {
+	orig := renewFunc
+	renewFunc = func(context.Context, string, string, time.Duration) error { return nil }
+	t.Cleanup(func() { renewFunc = orig })
+	now := time.Now()
+	day := 24 * time.Hour
+	for name, c := range map[string]struct {
+		notBefore, notAfter time.Time
+		removed             bool
+	}{
+		"due":     {now.Add(-80 * day), now.Add(10 * day), true},
+		"not due": {now.Add(-1 * day), now.Add(89 * day), false},
+	} {
+		dir := t.TempDir()
+		certPEM, keyPEM := selfSigned(t, "agent", c.notBefore, c.notAfter)
+		mustWrite(t, CertPath(dir), certPEM)
+		mustWrite(t, KeyPath(dir), keyPEM)
+		stale := filepath.Join(dir, "agent.key.77.tmp")
+		mustWrite(t, stale, []byte("x"))
+
+		if _, err := MaybeRenew(context.Background(), dir, "https://x", time.Second); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := os.Lstat(stale); os.IsNotExist(err) != c.removed {
+			t.Errorf("%s: stale staged file removed %v, want %v", name, os.IsNotExist(err), c.removed)
+		}
 	}
 }

@@ -13,6 +13,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { session, settings } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
   import { t, language } from '$lib/i18n';
+  import { shellQuote } from '$lib/utils/shell';
+
+  // The forms the server issues: `adminhelper_prov_` + token_urlsafe, and a uuid4. Only the
+  // character class for the token, so another prefix on the server would not break the tab.
+  // No leading `-`: the token must never be a value a shell or the script reads as an option.
+  const TOKEN_FORM = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+  const UUID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   interface Props {
     server: Server;
@@ -23,21 +30,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let loading = $state(false);
   let scriptCommand = $state('');
   let command = $state('');
-  // The desktop's pinned CA fingerprint (access intermediate): handed to the
+  // Shown beside the one-liner, which carries no token: agent-install.sh asks
+  // for it on /dev/tty, so it stays out of shell history and the process list.
+  let token = $state('');
+  // The desktop's pinned CA fingerprint (root of the internal CA): handed to the
   // agent as --ca-fp so its first contact is VERIFIED instead of TOFU. The
   // desktop is the trusted courier here — it talks to the server over its own
   // pinned channel, so embedding the value in the command closes the
   // trust-on-first-use gap. Null while this device is not enrolled.
   let caFp = $state<string | null>(null);
 
-  // The commands embed a one-time token that's redeemable until it expires, so
-  // don't leave them on screen indefinitely — auto-hide (3.64).
+  // The token is redeemable until it expires, so don't leave it on screen indefinitely — auto-hide (3.64).
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleHide(ms: number): void {
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
       scriptCommand = '';
       command = '';
+      token = '';
       hideTimer = null;
     }, ms);
   }
@@ -65,26 +75,43 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!s) return;
     try {
       const result = await provisioningApi.createToken(s, server.id);
+      // Both commands run as root on the target host: a value in another form
+      // yields no command. The token exists on the server anyway, so the list
+      // is reloaded all the same. typeof first: test() would read a missing
+      // token as the word "undefined".
+      if (
+        typeof result.token !== 'string' ||
+        !TOKEN_FORM.test(result.token) ||
+        !UUID_FORM.test(server.id)
+      ) {
+        scriptCommand = '';
+        command = '';
+        token = '';
+        reportError($t('infra.prov.badResponse'));
+        await loadTokens();
+        return;
+      }
       // The agent fetches its API key, optional monitor key and optional FRP
       // bundle from the activate response in this single provision call.
-      const fpArg = caFp ? ` \\\n  --ca-fp ${caFp}` : '';
+      const fpArg = caFp ? ` \\\n  --ca-fp ${shellQuote(caFp)}` : '';
       // Recommended path: the install script sets up the signed package repo,
       // installs the agent and provisions it in one go.
       scriptCommand =
         `curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \\\n` +
         `  | sudo bash -s -- \\\n` +
-        `  --server ${s.serverUrl} \\\n` +
-        `  --token ${result.token} \\\n` +
-        `  --server-id ${server.id}${fpArg}`;
-      // Provision-only variant for hosts that already carry the package.
+        `  --server ${shellQuote(s.serverUrl)} \\\n` +
+        `  --server-id ${shellQuote(server.id)}${fpArg}`;
+      token = result.token;
+      // Provision-only variant for hosts that already carry the package. The
+      // token is read from stdin, never an argument (process list, shell history).
       // --ca-fp supersedes --insecure; without an enrolled identity fall back
       // to the previous TOFU behaviour (only when the user opted in).
       const trust = caFp ? fpArg : $settings?.allowSelfSignedCerts ? ' \\\n  --insecure' : '';
       command =
         `sudo adminhelper-agent provision \\\n` +
-        `  --url ${s.serverUrl} \\\n` +
-        `  --token ${result.token} \\\n` +
-        `  --server-id ${server.id}${trust}`;
+        `  --url ${shellQuote(s.serverUrl)} \\\n` +
+        `  --token-stdin \\\n` +
+        `  --server-id ${shellQuote(server.id)}${trust}`;
       showStatus($t('infra.prov.created'));
       scheduleHide(60_000); // auto-hide the token after a minute if left untouched
       await loadTokens();
@@ -93,12 +120,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  async function copyText(text: string): Promise<void> {
+  async function copyText(
+    text: string,
+    copied = 'infra.prov.commandCopied',
+    secret = true,
+  ): Promise<void> {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      showStatus($t('infra.prov.commandCopied'));
-      scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
+      showStatus($t(copied));
+      // Neither command carries the secret, and both ask for the token only once
+      // they run: copying one must leave the token on screen.
+      if (secret) scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
     } catch {
       reportError($t('infra.prov.copyError'));
     }
@@ -147,7 +180,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div class="cmd-box" data-testid="script-command">
       <div class="cmd-head">
         <strong>{$t('infra.prov.installScript')}</strong>
-        <button class="btn small" onclick={() => copyText(scriptCommand)}>
+        <button
+          class="btn small"
+          onclick={() => copyText(scriptCommand, 'infra.prov.commandCopied', false)}
+        >
           {$t('action.copy')}
         </button>
       </div>
@@ -155,11 +191,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </div>
   {/if}
 
+  {#if token}
+    <div class="cmd-box" data-testid="prov-token">
+      <div class="cmd-head">
+        <span class="prov-token-hint">{$t('infra.prov.tokenPrompt')}</span>
+        <button class="btn small" onclick={() => copyText(token, 'infra.prov.tokenCopied')}>
+          {$t('action.copy')}
+        </button>
+      </div>
+      <code>{token}</code>
+    </div>
+  {/if}
+
   {#if command}
     <div class="cmd-box" data-testid="provision-command">
       <div class="cmd-head">
         <strong>{$t('infra.prov.runOnTarget')}</strong>
-        <button class="btn small" onclick={() => copyText(command)}>{$t('action.copy')}</button>
+        <button
+          class="btn small"
+          onclick={() => copyText(command, 'infra.prov.commandCopied', false)}
+          >{$t('action.copy')}</button
+        >
       </div>
       <pre>{command}</pre>
     </div>
@@ -236,6 +288,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--sp-2);
+  }
+  .prov-token-hint {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .cmd-box code {
+    font-size: var(--text-xs);
+    word-break: break-all;
   }
   .cmd-box pre {
     margin: 0;

@@ -34,16 +34,17 @@ const ADMIN_USER = {
   server_ids: [],
 };
 
-// GET /api/auth/me answers UserMe — three fields, not the full user row. The
+// GET /api/auth/me answers UserMe — four fields, not the full user row. The
 // mock used to hand back ADMIN_USER here, so the suite could not have caught a
 // UI that reads created_at/server_ids from a place that never sends them.
-/** A UserMe body — three fields, the shape GET /api/auth/me declares. Exported so
+/** A UserMe body — four fields, the shape GET /api/auth/me declares. Exported so
  * a spec that overrides the route describes it once, here, and not a second time
  * beyond the reach of mocks.contract.test.ts. */
 export const userMe = (id: number, username: string, isAdmin: boolean) => ({
   id,
   username,
   is_admin: isAdmin,
+  idle_timeout_minutes: 30,
 });
 
 const ADMIN_ME = userMe(ADMIN_USER.id, ADMIN_USER.username, ADMIN_USER.is_admin);
@@ -54,24 +55,74 @@ const TOKENS = {
   token_type: 'bearer',
 };
 
+// One certificate per traffic light, and an agent whose server is gone (R-1022).
+const CERTIFICATES = {
+  infrastructure: [
+    {
+      name: 'gateway',
+      subject: 'CN=gateway',
+      fingerprint: 'aa'.repeat(32),
+      not_after: '2026-01-20T00:00:00Z',
+      days_left: 20,
+      status: 'warning',
+    },
+    {
+      name: 'root',
+      subject: 'CN=AdminHelper Root CA',
+      fingerprint: 'bb'.repeat(32),
+      not_after: '2036-01-01T00:00:00Z',
+      days_left: 3650,
+      status: 'ok',
+    },
+  ],
+  agents: [
+    {
+      server_id: 's1',
+      server_name: 'web-01',
+      fingerprint: 'cc'.repeat(32),
+      not_after: '2026-01-04T00:00:00Z',
+      days_left: 3,
+      status: 'critical',
+    },
+    {
+      server_id: 's-gone',
+      server_name: null,
+      fingerprint: 'dd'.repeat(32),
+      not_after: '2026-03-01T00:00:00Z',
+      days_left: 59,
+      status: 'ok',
+    },
+  ],
+};
+
 const AUDIT_ROWS: Record<string, unknown>[] = [
   {
     id: 2,
     timestamp: '2026-01-02T00:00:00Z',
     actorType: 'user',
+    actorId: null,
     actorLabel: 'admin',
     action: 'server.created',
     objectType: 'server',
+    objectId: null,
     objectLabel: 'srv-a',
+    sourceIp: null,
+    status: 'success',
+    detail: null,
   },
   {
     id: 1,
     timestamp: '2026-01-01T00:00:00Z',
     actorType: 'user',
+    actorId: null,
     actorLabel: 'admin',
     action: 'user.created',
     objectType: 'user',
+    objectId: null,
     objectLabel: 'bob',
+    sourceIp: null,
+    status: 'success',
+    detail: null,
   },
 ];
 
@@ -249,6 +300,7 @@ export const MOCK_FIXTURES: MockFixture[] = [
     body: frpPub(FRP_EXAMPLE),
   },
   { method: 'GET', path: 'audit', status: 200, body: AUDIT_ROWS },
+  { method: 'GET', path: 'enrollment/certificates', status: 200, body: CERTIFICATES },
   { method: 'GET', path: 'frp/status', status: 200, body: { proxies: [], total: 0 } },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(false) },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(true) },
@@ -257,6 +309,12 @@ export const MOCK_FIXTURES: MockFixture[] = [
     path: 'enrollment/token/for',
     status: 200,
     body: makeEnrollmentGrant({ username: 'bob', ttl_minutes: 10 }),
+  },
+  {
+    method: 'GET',
+    path: 'servers/summary',
+    status: 200,
+    body: [{ id: 's1', name: 'web-01', hostname: 'web-01.example' }],
   },
 ];
 
@@ -294,9 +352,9 @@ export async function mockApi(page: Page): Promise<void> {
   await page.route(api('auth/me'), async (route) => route.fulfill(json({ body: ADMIN_ME })));
   await page.route(api('auth/logout'), async (route) => route.fulfill({ status: 204, body: '' }));
 
-  // The user modal fetches the servers list; empty is fine for the current suites.
+  // The user modal fetches the server summary; empty is fine for the current suites.
   // Any other unmocked /api call now 500s loudly instead of silently returning [] (6.93).
-  await page.route(api('servers'), async (route) => route.fulfill(json({ body: [] })));
+  await page.route(api('servers/summary'), async (route) => route.fulfill(json({ body: [] })));
 
   await page.route(api('users'), async (route) => {
     if (route.request().method() === 'POST') {
@@ -401,6 +459,9 @@ export async function mockApi(page: Page): Promise<void> {
   );
   await page.route(api('frp/supervisor-status'), async (route) =>
     route.fulfill(json({ body: makeSupervisorStatus(db.frp.length > 0) })),
+  );
+  await page.route(api('enrollment/certificates'), async (route) =>
+    route.fulfill(json({ body: CERTIFICATES })),
   );
   await page.route(api('enrollment/token/for'), async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;

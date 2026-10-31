@@ -31,8 +31,6 @@ from app.core import database
 from app.core.time import utcnow_naive
 from app.maintenance import is_in_maintenance
 from app.models import (
-    MonitorAlertLog,
-    MonitorAlertRule,
     MonitorCheck,
     MonitorMaintenance,
     MonitorState,
@@ -122,13 +120,13 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
     of its own and a restart loses nothing. Per kind, BUNDLE_MIN or more open
     heartbeats are claimed and bundled, whatever their age; fewer wait until they
     are _alone_wait old and then go out one by one on the single path
-    (_dispatch_alert_bg, which claims each itself). A heartbeat muted by a
+    (dispatch_alert_bg, which claims each itself). A heartbeat muted by a
     maintenance window or a Host Ping does not count and stays open, as in
     process_alert, and once the muting is over only after its next evaluation
     (_awaits_check).
 
     The session is reached as ``database.SessionLocal``, the one patch point it
-    shares with _dispatch_alert_bg. Errors are logged and rolled back; a claim
+    shares with dispatch_alert_bg. Errors are logged and rolled back; a claim
     committed before them stands (at most once, as in process_alert)."""
     now = now if now is not None else utcnow_naive()
     db = database.SessionLocal()
@@ -146,7 +144,7 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
                 continue
             for c in found:
                 if c.since <= now - _alone_wait(c.interval):
-                    check_engine._dispatch_alert_bg(c.check_id, c.notified_status, c.status)
+                    check_engine.dispatch_alert_bg(c.check_id, c.notified_status, c.status)
     except Exception:
         db.rollback()
         logger.exception("Agent alert bundle failed")
@@ -302,7 +300,7 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
     (hub_status, hub_sent_at) follows each event the hub accepted. Log rows and
     records are flushed; the caller commits them."""
     spec = _KINDS[kind]
-    members = [Entry(check, state, _reported(old)) for check, state, old in entries]
+    members = [Entry(check, state, alerter.reported_status(old)) for check, state, old in entries]
     names = _server_names(db, members)
     singles: dict[str, dict] = {}
 
@@ -310,7 +308,7 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
         # Built once per member and shared by the rules and the bell, as in
         # process_alert.
         if entry.check.id not in singles:
-            singles[entry.check.id] = alerter._build_message(
+            singles[entry.check.id] = alerter.build_message(
                 db, entry.check, entry.old_status, spec.status
             )
         return singles[entry.check.id]
@@ -318,12 +316,6 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
     _send_rules(db, spec, members, names, single, now)
     _send_bell(spec, members, single, now)
     db.flush()
-
-
-def _reported(old_status: str | None) -> str:
-    # As process_alert: nothing reported before (None, pending; unknown only via
-    # the migration backfill) reads as ok.
-    return old_status if old_status not in (None, "pending", "unknown") else "ok"
 
 
 def _server_names(db: Session, members: list[Entry]) -> dict[str, str]:
@@ -353,13 +345,9 @@ def _send_rules(
     now: datetime,
 ) -> None:
     is_recovery = kind.status == "ok"
-    rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
-    for rule in rules:
+    for rule in alerter.enabled_rules(db):
         matched = [
-            m
-            for m in members
-            if alerter._rule_matches(rule, m.check)
-            and (is_recovery or not alerter._is_in_cooldown(db, rule, m.check))
+            m for m in members if alerter.rule_applies(db, rule, m.check, is_recovery=is_recovery)
         ]
         # The messages are built before the rule's first send.
         if len(matched) >= BUNDLE_MIN:
@@ -367,45 +355,21 @@ def _send_rules(
         else:
             sends = [([m], single(m)) for m in matched]
         for group, msg in sends:
-            # The first member stands in as the check the channel names in its
-            # service log; _send_webhook and _send_email stay as they are.
-            success, error = _dispatch_isolated(rule, group[0].check, msg)
-            # One row per member, so the rule's cooldown per check holds.
-            for m in group:
-                db.add(
-                    MonitorAlertLog(
-                        alert_rule_id=rule.id,
-                        check_id=m.check.id,
-                        old_status=m.old_status,
-                        new_status=kind.status,
-                        sent_at=now,
-                        success=success,
-                        error=error,
-                    )
-                )
-
-
-def _dispatch_isolated(
-    rule: MonitorAlertRule, check: MonitorCheck, msg: dict
-) -> tuple[bool, str | None]:
-    # Isolated as in process_alert: a misconfigured rule must not stop the others.
-    try:
-        return alerter._dispatch(rule, check, msg)
-    except Exception as exc:
-        logger.exception("Bundled alert dispatch failed for rule %s", rule.id)
-        return False, f"Dispatch failed ({type(exc).__name__})"
+            alerter.send_to_rule(
+                db, rule, [(m.check, m.old_status) for m in group], msg, kind.status, now
+            )
 
 
 def _bundle_message(kind: _Kind, members: list[Entry], names: dict[str, str]) -> dict:
-    """The message of a bundle in the shape of _build_message, plus ``members``.
+    """The message of a bundle in the shape of build_message, plus ``members``.
     The label is capped like a single subject, at the highest severity of the
     members; the text keeps the real status."""
     is_recovery = kind.status == "ok"
-    level = max(alerter._severity_level(m.check.severity) for m in members)
+    severity = alerter.highest_severity(m.check.severity for m in members)
     if is_recovery:
         label = head = "RECOVERY"
     else:
-        label = alerter._LEVEL_SEVERITY[min(alerter._STATUS_LEVEL[kind.status], level)].upper()
+        label = alerter.capped_label(kind.status, severity)
         head = kind.status.upper()
     count = f"{len(members)} {kind.wording}"
     lines = [_line(m, names) for m in members[:MAX_TEXT_LINES]]
@@ -416,7 +380,7 @@ def _bundle_message(kind: _Kind, members: list[Entry], names: dict[str, str]) ->
         "check_name": None,
         "check_type": members[0].check.check_type,
         "server_id": None,
-        "severity": alerter._LEVEL_SEVERITY[level],
+        "severity": severity,
         "old_status": kind.old_status,
         "new_status": kind.status,
         "is_recovery": is_recovery,
@@ -462,7 +426,10 @@ def _send_bell(
     # servers whose own check is critical, and min_severity applies per server.
     levels: dict[str, list[Entry]] = {}
     for m in emit:
-        levels.setdefault(_bell_severity(kind, m), []).append(m)
+        severity = alerter.bell_severity(
+            m.state.hub_status, m.old_status, kind.status, m.check.severity
+        )
+        levels.setdefault(severity, []).append(m)
     singles: list[tuple[Entry, dict, str]] = []
     bundles: list[tuple[list[Entry], dict]] = []
     for severity, group in levels.items():
@@ -482,21 +449,16 @@ def _send_bell(
 
     accepted: list[Entry] = []
     for m, msg, severity in singles:
-        if alerter._emit_to_hub(m.check, m.old_status, kind.status, msg, severity=severity):
+        if alerter.emit_to_hub(m.check, m.old_status, kind.status, msg, severity=severity):
             accepted.append(m)
     for chunk, payload in bundles:
-        if alerter._post_hub_event(payload, "agent bundle"):
+        if alerter.post_hub_event(payload, "agent bundle"):
             accepted += chunk
+    # What the bell now shows of each member, as process_alert records it.
     for m in accepted:
-        _record_bell(m, kind.status, now)
-
-
-def _bell_severity(kind: _Kind, entry: Entry) -> str:
-    """The level the member reaches the bell with, as in process_alert: capped at
-    the check's severity, a recovery at the level its alarm reached the bell with."""
-    if kind.status == "ok":
-        return entry.state.hub_status
-    return alerter._hub_severity(entry.old_status, kind.status, entry.check.severity)
+        m.state.hub_status, m.state.hub_sent_at = alerter.bell_record(
+            kind.status, m.check.severity, m.state.hub_sent_at, now
+        )
 
 
 def _bundle_payload(kind: _Kind, severity: str, server_ids: list[str]) -> dict:
@@ -510,11 +472,3 @@ def _bundle_payload(kind: _Kind, severity: str, server_ids: list[str]) -> dict:
         "source_ids": server_ids,
         "new_status": kind.status,
     }
-
-
-def _record_bell(entry: Entry, status: str, now: datetime) -> None:
-    """What the bell now shows of the member, as process_alert records it: a
-    problem starts the cooldown, a recovery leaves hub_sent_at as it was."""
-    entry.state.hub_status = alerter._capped_status(status, entry.check.severity)
-    if status != "ok":
-        entry.state.hub_sent_at = now

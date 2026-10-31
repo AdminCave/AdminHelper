@@ -30,7 +30,8 @@ jobs:
   server:
     name: Server (pytest, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The 3.13 leg pulls the base images and runs the image tests on top of the suite.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -81,17 +82,45 @@ jobs:
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
         # hashed requirements.txt lock the image ships is python-lock-server's.
         run: pip install -r requirements-dev.txt
-      # The tests that run the frps image build it from apps/frps and skip without its
-      # base image at hand. They do not depend on the Python version, so one leg runs them.
-      - name: Pull the base of the frps image
+      # The tests that build or start an image skip without its base image at hand: those
+      # of frps, of the gateway and of the Python images, whose last stage builds on the
+      # base of apps/ca-issuer. They do not depend on the Python version, so one leg runs them.
+      - name: Pull the base images of the image tests
         if: matrix.python-version == '3.13'
-        run: docker pull "$(sed -n 's/^FROM //p' apps/frps/Dockerfile)"
+        run: |
+          for dockerfile in apps/frps/Dockerfile apps/gateway/Dockerfile apps/ca-issuer/Dockerfile; do
+            docker pull "$(sed -n 's/^FROM //p' "$dockerfile")"
+          done
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.
         # -m "not schemathesis": the fuzz suite has its own budget and its own
         # run.sh step; collected here it would run a second time inside this job.
-        run: pytest -q -m "not schemathesis" --cov=app --cov-report=term
+        # -rs names each skip in the log; the next step reads the skips from the JUnit XML.
+        run: pytest -q -rs -m "not schemathesis" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
+      # A test whose precondition is missing skips, and pytest stays green. This leg has them
+      # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
+      # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
+      - name: No test skipped
+        if: matrix.python-version == '3.13'
+        run: |
+          python3 - "$RUNNER_TEMP/pytest-server.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          try:
+              cases = list(ET.parse(sys.argv[1]).iter("testcase"))
+          except (OSError, ET.ParseError) as err:
+              print(f"::error::no readable JUnit XML from Run pytest: {err}")
+              sys.exit(1)
+          skips = [(case, skip) for case in cases for skip in case.findall("skipped")]
+          for case, skip in skips:
+              print(f"{case.get('classname')}::{case.get('name')}: {skip.get('message')}")
+          if skips:
+              print(f"::error::{len(skips)} of {len(cases)} tests skipped in the leg that has what they need")
+              sys.exit(1)
+          print(f"{len(cases)} tests, none skipped")
+          PY
 
   python-lint:
     name: Python (ruff check + format)
@@ -157,6 +186,22 @@ jobs:
     name: CA-Issuer (pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -172,7 +217,9 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run pytest
         working-directory: apps/ca-issuer
-        # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
+        # The suite runs on the in-memory token store (no DATABASE_URL, 6.3/6.4). The pg_engine
+        # tests of test_db_token_store.py (TOCTOU, concurrency) need the Postgres service
+        # through AH_TEST_DB and skip without it.
         run: python -m pytest -q -m "not schemathesis"
 
   # The images install the hashed lock on python:3.12-slim; the three jobs above
@@ -188,7 +235,7 @@ jobs:
   python-lock-server:
     name: Server (pytest, image lock)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine
@@ -279,6 +326,23 @@ jobs:
     name: CA-Issuer (pytest, image lock)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # As in ca-issuer: Postgres only for the pg_engine tests, through AH_TEST_DB.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -378,8 +442,9 @@ jobs:
         run: go vet ./...
       - name: go vet (windows)
         working-directory: apps/agent
-        # The ubuntu runner's default `go vet` never sees the //go:build windows files (the sc-query
-        # collector). Vet them explicitly so a Windows-only parser bug is caught in CI (6.20).
+        # The ubuntu runner's default `go vet` never sees the //go:build windows files (service,
+        # event log, config paths and secure dir, enroll lock, frpc platform, the sc-query
+        # collector). Vet them explicitly so a Windows-only bug is caught in CI (6.20).
         run: GOOS=windows go vet ./...
       - name: go test
         working-directory: apps/agent
@@ -407,11 +472,9 @@ jobs:
           go-version: "1.27"
           check-latest: true
           cache-dependency-path: apps/agent/go.sum
-      # Nothing in apps/agent has ever RUN on Windows: `GOOS=windows go vet` on the
-      # ubuntu runner compiles and executes nothing. Seven files are windows-tagged
-      # (sc-query collector, ACL hardening, service install, path resolution) and
-      # exactly one of them has a test — so the day-one value here is the
-      # cross-platform code finally executing on Windows, not the tagged files.
+      # `GOOS=windows go vet` on the ubuntu runner only compiles; it executes nothing.
+      # This job runs the agent's cross-platform tests on Windows and the windows-only
+      # tests (*_windows_test.go), which no other job executes.
       # Hard on purpose (no continue-on-error): a red run here is a finding, not noise.
       - name: go test
         working-directory: apps/agent
@@ -429,8 +492,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # The four types both api/types.ts files describe (FrpConfig, FrpStatus,
-      # FrpStatusProxy, Server) are maintained twice. Every line the web file
+      # The three types both api/types.ts files describe (FrpConfig, FrpStatus,
+      # FrpStatusProxy) are maintained twice. Every line the web file
       # declares has to exist in the desktop one — the desktop may carry more,
       # since it projects the same payload further (harness 8a, T14).
       - name: Shared API types in lockstep with the web frontend
@@ -501,9 +564,15 @@ jobs:
       - name: npm ci
         working-directory: apps/web
         run: npm ci --no-audit --no-fund
+      # Chromium alone: every project in playwright.config.ts runs it. Without a browser
+      # argument --with-deps apt-installs the packages of every browser (the gstreamer/ffmpeg
+      # chain of webkit and firefox), and run 39767066088 hung there on a stalled mirror until
+      # the job timed out. A browser cache would not help: the hang was in apt, which no cache
+      # covers. The step's own limit makes a stalled mirror cost 10 minutes, not the job.
       - name: Install Playwright browsers
         working-directory: apps/web
-        run: npx playwright install --with-deps
+        timeout-minutes: 10
+        run: npx playwright install --with-deps chromium
       - name: Playwright test
         working-directory: apps/web
         run: npx playwright test
@@ -522,7 +591,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # A slow apt mirror held this step in tauri-build-smoke until that job's limit
+      # (run 39776102278). The step normally takes under a minute; its own limit makes a
+      # bad mirror cost 10 minutes, not the job.
       - name: Tauri system dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -592,7 +665,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # A slow apt mirror held this step until the job's 45-minute limit
+      # (run 39776102278). The step normally takes under a minute; its own limit makes a
+      # bad mirror cost 10 minutes, not the job.
       - name: Tauri system dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -848,6 +925,13 @@ jobs:
       # the point: this job must not go green on a signature path that never ran.
       - name: Install minisign
         run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+      # gnome-keyring lets lib_e2e_stack_test.sh run its keyring cases against a
+      # real daemon in a D-Bus session of the test's own. Without it the test exits
+      # 75 = SKIP, and --strict below turns that into a failure. The runner has
+      # dbus-run-session, dbus-send, python3 and pgrep already; the package lists
+      # come from the apt-get update of the step above.
+      - name: Install gnome-keyring
+        run: sudo apt-get install -y -qq --no-install-recommends gnome-keyring
       # The unit layer's `vm-pytest` step runs scripts/vm/tests here. Without
       # pytest the step SKIPs, and --strict turns that into a failure — which is
       # the point: this job must not go green on a suite that never ran.

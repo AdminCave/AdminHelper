@@ -18,21 +18,18 @@ stays dumpable even when its user cannot read it. They skip when Docker or the p
 image is not at hand.
 
 The PostgreSQL clients cannot read their own program: pg_isready warns on stderr and runs on,
-psql stops. So no entrypoint runs psql, and monitoring creates its database through psycopg;
-the last test runs that program of its entrypoint against the test database."""
+psql stops. So no entrypoint runs psql; the monitoring database comes from db-init
+(app.db_roles, through psycopg)."""
 
 import json
-import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
 
 _ROOT = Path(__file__).resolve().parents[3]
 _DOCKERFILES = ("Dockerfile", "apps/ca-issuer/Dockerfile", "apps/monitoring/Dockerfile")
@@ -300,61 +297,3 @@ def test_no_entrypoint_runs_psql():
         lines = (_ROOT / path).read_text(encoding="utf-8").splitlines()
         code = [line for line in lines if not line.lstrip().startswith("#")]
         assert not [line for line in code if re.search(r"\bpsql\b", line)], path
-
-
-def _database_program() -> str:
-    """The Python program with which the entrypoint of monitoring creates its database."""
-    path = _ENTRYPOINTS[2]
-    found = re.findall(
-        r"python - <<'PY'\n(.*?\n)PY\n", (_ROOT / path).read_text(encoding="utf-8"), re.S
-    )
-    assert len(found) == 1, path
-    return found[0]
-
-
-def test_the_entrypoint_of_monitoring_creates_its_database_once(pg_engine):
-    url = pg_engine.url
-    # Quoted as an identifier, or the hyphens fail and the capital M is folded.
-    name = f"ah-test-Monitor-{uuid.uuid4().hex[:12]}"
-    env = {
-        **os.environ,
-        "PGHOST": url.host,
-        "PGPORT": str(url.port or 5432),
-        "PGUSER": url.username,
-        "PGPASSWORD": url.password or "",
-        "ADMIN_DB": url.database,
-        "MONITOR_DB": name,
-    }
-
-    def run(**changed: str) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            [sys.executable, "-"],
-            input=_database_program(),
-            env={**env, **changed},
-            capture_output=True,
-            text=True,
-        )
-
-    def exists() -> bool:
-        with pg_engine.connect() as conn:
-            query = text("SELECT count(*) FROM pg_database WHERE datname = :name")
-            return conn.execute(query, {"name": name}).scalar() == 1
-
-    try:
-        assert not exists()
-        first = run()
-        assert (first.returncode, first.stderr) == (0, ""), first.stderr
-        assert first.stdout == f"[entrypoint] Lege Datenbank {name} an...\n"
-        assert exists()
-        again = run()
-        assert (again.returncode, again.stdout, again.stderr) == (0, "", ""), again.stderr
-        # A database it cannot reach ends the entrypoint, with a line that names no password.
-        # Checked first and without the values, so a failure prints no password either.
-        failed = run(ADMIN_DB=f"{name}-missing")
-        leaked = bool(url.password) and url.password in failed.stdout + failed.stderr
-        assert not leaked, "the output of the failed run names the password"
-        assert failed.returncode == 1, failed.stderr
-        assert failed.stderr.startswith(f"[entrypoint] FEHLER: Datenbank {name}: "), failed.stderr
-    finally:
-        with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))

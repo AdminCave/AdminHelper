@@ -7,17 +7,19 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"sort"
 	"strings"
 )
 
-// collectServiceHealth collects systemd service status (port of collect_systemd_health).
-func collectServiceHealth() map[string]any {
+// collectServiceHealth collects systemd service status (port of collect_systemd_health). ctx ends
+// every systemctl call.
+func collectServiceHealth(ctx context.Context) map[string]any {
 	// 1) All service units with load state (col 1) and active_state (col 2 = UNIT LOAD ACTIVE SUB)
 	unitStates, loadStates := map[string]string{}, map[string]string{}
-	listUnits, unitsErr := runSystemctl("list-units", "--type=service", "--all",
+	listUnits, unitsErr := runSystemctl(ctx, "list-units", "--type=service", "--all",
 		"--no-legend", "--plain", "--no-pager")
 	if unitsErr == nil {
 		unitStates = parseSystemctlColumnsOutput(string(listUnits), 2)
@@ -34,12 +36,12 @@ func collectServiceHealth() map[string]any {
 	}
 
 	// 2) Enabled state for all unit files (col 1 = UNIT STATE)
-	enabledStates, _ := parseSystemctlColumns(1, "list-unit-files", "--type=service",
+	enabledStates, _ := parseSystemctlColumns(ctx, 1, "list-unit-files", "--type=service",
 		"--no-legend", "--no-pager")
 
 	// 3) Failed units
 	failed := []string{}
-	out, err := runSystemctl("list-units", "--state=failed", "--no-legend", "--plain")
+	out, err := runSystemctl(ctx, "list-units", "--state=failed", "--no-legend", "--plain")
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if parts := strings.Fields(line); len(parts) > 0 && parts[0] != "" {
@@ -51,8 +53,8 @@ func collectServiceHealth() map[string]any {
 	// The failed/enabled_inactive/all_services derivation lives in assembleServiceHealth (pure) so
 	// it is unit-tested without running systemctl (6.19).
 	health := assembleServiceHealth(unitStates, enabledStates, failed)
-	health["enabled_inactive"] = filterEnabledInactive(health["enabled_inactive"].([]string))
-	resolveAliases(health["all_services"].([]ServiceEntry))
+	health["enabled_inactive"] = filterEnabledInactive(ctx, health["enabled_inactive"].([]string))
+	resolveAliases(ctx, health["all_services"].([]ServiceEntry))
 	// Without list-units every active state is unknown and no unit is a candidate: counts would
 	// claim zero active units, and without the error the server would report "all OK".
 	if unitsErr != nil {
@@ -82,7 +84,7 @@ const aliasProps = "Id,Names"
 // (ssh.service). Templates (name@.service) stay out: systemctl rejects a template name and fails the
 // whole call. A failed call resolves nothing, since a call killed by the timeout can end in a
 // truncated Id; an alias whose Id is its own name (no target) gets no alias_of.
-func resolveAliases(entries []ServiceEntry) {
+func resolveAliases(ctx context.Context, entries []ServiceEntry) {
 	aliases := map[string]ServiceEntry{}
 	names := []string{}
 	for _, e := range entries {
@@ -94,7 +96,7 @@ func resolveAliases(entries []ServiceEntry) {
 	if len(names) == 0 {
 		return
 	}
-	out, err := runSystemctl(append([]string{"show", "-p", aliasProps, "--"}, names...)...)
+	out, err := runSystemctl(ctx, append([]string{"show", "-p", aliasProps, "--"}, names...)...)
 	if err != nil {
 		return
 	}
@@ -164,19 +166,19 @@ const maxSingleUnitChecks = 50
 
 // runSystemctl indirects every systemctl call of this file so tests can drive the collector, the
 // batch and the per-unit paths without systemctl (same reason as serviceHealthCollector, 6.18).
-var runSystemctl = func(args ...string) ([]byte, error) {
-	return runWithTimeout("systemctl", args...)
+var runSystemctl = func(ctx context.Context, args ...string) ([]byte, error) {
+	return runWithTimeout(ctx, "systemctl", args...)
 }
 
 // filterEnabledInactive re-checks the enabled-but-inactive candidates with one batched
 // `systemctl show` and drops the units that are inactive by design (inactiveByDesign). If systemctl
 // answers the batch with a non-zero exit (one bad name spoils it), up to maxSingleUnitChecks
 // candidates are asked one by one; a unit whose query fails, or beyond the cap, stays a candidate.
-func filterEnabledInactive(candidates []string) []string {
+func filterEnabledInactive(ctx context.Context, candidates []string) []string {
 	if len(candidates) == 0 {
 		return candidates
 	}
-	out, err := runSystemctl(append([]string{"show", "-p", enabledInactiveProps, "--"}, candidates...)...)
+	out, err := runSystemctl(ctx, append([]string{"show", "-p", enabledInactiveProps, "--"}, candidates...)...)
 	if err == nil {
 		return parseEnabledInactive(out, candidates)
 	}
@@ -190,7 +192,7 @@ func filterEnabledInactive(candidates []string) []string {
 	asking := true
 	for i, unit := range candidates {
 		if asking && i < maxSingleUnitChecks {
-			out, err := runSystemctl("show", "-p", enabledInactiveProps, "--", unit)
+			out, err := runSystemctl(ctx, "show", "-p", enabledInactiveProps, "--", unit)
 			if err == nil {
 				kept = append(kept, parseEnabledInactive(out, []string{unit})...)
 				continue
@@ -203,8 +205,9 @@ func filterEnabledInactive(candidates []string) []string {
 }
 
 // answered reports whether a failed systemctl call still answered, i.e. exited non-zero on its own,
-// rather than being ended by the timeout (context.DeadlineExceeded from runWithTimeout), killed by a
-// signal (exit code -1) or never started.
+// rather than being ended by the timeout or the end of ctx (context.DeadlineExceeded or
+// context.Canceled from runWithTimeout), killed by a signal (exit code -1) or never started. So the
+// per-unit fallbacks also end with ctx: once it has ended, the next call returns its error unstarted.
 func answered(err error) bool {
 	var exitErr *exec.ExitError
 	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0
@@ -263,8 +266,8 @@ func inactiveByDesign(props map[string]string) bool {
 
 // parseSystemctlColumns runs `systemctl <args>` and maps each unit (field 0) to
 // its column `col`, skipping lines too short to hold it. Empty map and the error if systemctl failed.
-func parseSystemctlColumns(col int, args ...string) (map[string]string, error) {
-	out, err := runSystemctl(args...)
+func parseSystemctlColumns(ctx context.Context, col int, args ...string) (map[string]string, error) {
+	out, err := runSystemctl(ctx, args...)
 	if err != nil {
 		return map[string]string{}, err
 	}
@@ -284,7 +287,7 @@ func parseSystemctlColumnsOutput(out string, col int) map[string]string {
 }
 
 // collectWatchedServices checks the status of specific systemd services.
-func collectWatchedServices(names []string) []map[string]any {
+func collectWatchedServices(ctx context.Context, names []string) []map[string]any {
 	if len(names) == 0 {
 		return nil
 	}
@@ -292,7 +295,7 @@ func collectWatchedServices(names []string) []map[string]any {
 	// process spawns + D-Bus roundtrips per cycle become one (5.7). `--` terminates option parsing
 	// so a server-supplied name beginning with '-' is treated as an operand, not a systemctl flag
 	// (argument/flag-confusion hardening; runWithTimeout runs exec directly, no shell).
-	out, err := runSystemctl(append([]string{"show", "-p", watchedProps, "--"}, names...)...)
+	out, err := runSystemctl(ctx, append([]string{"show", "-p", watchedProps, "--"}, names...)...)
 	if err == nil {
 		return parseWatchedServices(out, names)
 	}
@@ -303,7 +306,7 @@ func collectWatchedServices(names []string) []map[string]any {
 	asking := answered(err)
 	for i, name := range names {
 		if asking && i < maxSingleUnitChecks {
-			out, err := runSystemctl("show", "-p", watchedProps, "--", name)
+			out, err := runSystemctl(ctx, "show", "-p", watchedProps, "--", name)
 			if err == nil {
 				services = append(services, parseWatchedServices(out, []string{name})...)
 				continue

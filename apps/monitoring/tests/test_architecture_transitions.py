@@ -106,8 +106,8 @@ def test_alert_dispatch_is_defined_once():
     definitions = [
         str(path.relative_to(_APP.parent))
         for path, source in _app_sources().items()
-        if re.search(r"^def _dispatch_alert_bg\(", source, re.M)
+        if re.search(r"^def dispatch_alert_bg\(", source, re.M)
     ]
     assert definitions == ["app/check_engine.py"], (
-        f"_dispatch_alert_bg must exist exactly once, found in: {definitions}"
+        f"dispatch_alert_bg must exist exactly once, found in: {definitions}"
     )

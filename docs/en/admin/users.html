@@ -38,7 +38,7 @@
             <thead><tr><th>Role</th><th>Can</th></tr></thead>
             <tbody>
               <tr><td><span class="badge badge-info">admin</span></td><td>Everything: in the web panel manage users, create API keys, define hooks, the FRP server configuration and global settings; in the desktop client (server workspace) register servers and maintain connections, tunnels, monitoring, and Ansible.</td></tr>
-              <tr><td><span class="badge">user</span></td><td>Manage own connections, read servers and monitoring. No admin actions.</td></tr>
+              <tr><td><span class="badge">user</span></td><td>Manage own connections, read servers and monitoring. No admin actions. In the web panel the role only sees a pointer to the desktop client.</td></tr>
             </tbody>
           </table>
 
@@ -58,6 +58,8 @@
             <li><strong>Access token</strong>: valid for 8 h, sent on every request in the <code>Authorization</code> header.</li>
             <li><strong>Refresh token</strong>: valid for 7 days, rotated on every use (the old one is blacklisted immediately).</li>
             <li><strong>Reuse detection</strong>: if a blacklisted refresh token is submitted again, the request is rejected and the event is logged as a possible token theft.</li>
+            <li><strong>Sign-out after inactivity</strong>: the web panel signs out in all open tabs once none of them has seen any input (mouse, keyboard, touch) for 30 minutes; a notice stays until you close it. <code>WEB_IDLE_TIMEOUT_MINUTES</code> sets the duration, <code>0</code> turns it off (<a href="./installation.html#env">environment variables</a>). This also holds after a reload or reopening in the same browser: if the last input there lies further back than that duration, the session ends right on load with the same notice, and so it does when the stored time lies after the computer's clock (clock set back) or cannot be read.</li>
+            <li><strong>Maximum session length</strong>: regardless of input, the server ends a web panel session 24 hours after sign-in; then a new sign-in is needed. <code>WEB_SESSION_MAX_HOURS</code> sets the duration, <code>0</code> turns it off (<a href="./installation.html#env">environment variables</a>). The desktop app is not affected.</li>
           </ul>
 
           <div class="callout callout-note" data-reveal>
@@ -104,6 +106,7 @@
             <li><strong>Deleting a workspace</strong> (desktop, in the picker): if a server workspace has a device identity, the desktop first revokes the device at the server and then deletes the workspace on the device. If the server does not revoke it, the picker reports “On this device only”; the device then stays valid at the server until an administrator revokes it through the device API, because a later registration, of a new workspace too, does not replace it.</li>
             <li><strong>Registering again:</strong> when a server workspace registers again, the new certificate replaces the previous one of this device. A <code>.p12</code> is a device of its own and replaces nothing; you revoke one that is no longer needed through the device API.</li>
           </ul>
+          <p>Deleting and revoking lock the API at once; they do not lock a tunnel whose visitor configuration the user already has (see <a href="./frp-tunnel.html#revoke-access">FRP tunnel: revoking tunnel access</a>).</p>
 
           <h2>API keys</h2>
           <p>API keys authenticate non-interactive clients (Go agent, scripts, CI jobs). Differences from user credentials:</p>
@@ -126,6 +129,7 @@
           <p>With <code>ALLOWED_IPS</code> all access can be limited to a whitelist. Example:</p>
           <div class="code-header"><span>.env</span></div>
 <pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
+          <p><code>ALLOWED_IPS</code> applies to every request to the server, agents and desktop clients included, and checks the client address the gateway sees: the gateway passes it on in <code>X-Forwarded-For</code>, and the server evaluates that header only from the gateway (<code>TRUSTED_PROXIES</code>, see <a href="./installation.html#env">Installation</a>). So the list holds the networks of the clients, not the Docker network of the gateway; with another proxy in front of the gateway, that proxy's address counts. Earlier versions checked the gateway's address here: if you set <code>ALLOWED_IPS</code> to it, add the networks of the clients before the update, or the server rejects them with <code>403</code>. Until the server has resolved the name <code>gateway</code> — on the first requests after it starts, and up to 30&nbsp;s after a restart of the gateway with a new address — it still sees the gateway's address and rejects such a request unless the list holds the Docker network.</p>
           <p>If the list is left empty, access is open (for reverse-proxy- or VPN-protected setups).</p>
 
           <div class="page-nav">

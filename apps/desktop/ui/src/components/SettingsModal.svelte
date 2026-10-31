@@ -15,7 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     logoutAndReload,
   } from '$lib/stores/settings';
   import { context, reloadContextForUrl } from '$lib/stores/workspace';
-  import { t, currentLocale } from '$lib/i18n';
+  import { t, currentLocale, resolveLanguage, type Language } from '$lib/i18n';
   import {
     resetServerCertPin,
     resetDeviceIdentity,
@@ -55,7 +55,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Rust refused (a device identity, but no URL) they have none, and the reset is the way out.
   let resetTarget = $derived($session?.serverUrl ?? workspace?.url ?? '');
   let intervalMinutes = $state(1);
-  let language = $state<'de' | 'en'>('de');
+  let language = $state<Language>('de');
   let storePasswords = $state(false);
   let allowSelfSignedCerts = $state(false);
   let rdpScalingMode = $state<RdpScalingMode>('auto');
@@ -89,7 +89,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!$settingsModalOpen) return;
     const s = $settings ?? getSettingsDefaults();
     intervalMinutes = getIntervalMinutes(s);
-    language = s.language === 'en' ? 'en' : 'de';
+    language = resolveLanguage(s.language);
     storePasswords = Boolean(s.storePasswords);
     allowSelfSignedCerts = Boolean(s.allowSelfSignedCerts);
     rdpScalingMode = s.rdpScalingMode ?? 'auto';
@@ -201,6 +201,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       deviceResetMsgKey = 'settings.resetDeviceId.done';
     } catch (err) {
       deviceResetMsgKey = '';
+      // A failed reset may still have deleted the identity: show what is there now.
+      void refreshDeviceEnrolled();
+      void refreshDeviceIdentity();
       reportError(errMsg(err));
     }
   }

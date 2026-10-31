@@ -15,16 +15,20 @@
                                 --ledger and --pr fill their columns, also on the same status
     approve <id> [--revoke]     geplant -> freigegeben, or back; the note stays
     show [<id>] [--wip]         one row, the WIP counters, or the overview
-    next [--status S] [--exclude-components C …]
+    next [--status S] [--exclude-components C …] [--stufe klein|kern|arch]
                                 the next row to build; exit 1 when there is none
+    zuege [--stufe klein|kern|arch]  the trains: open rows grouped by their ledger, waiting ones
+                                first (highest class, then the fullest); exit 1 when none
     sync                        rows in `pr` whose PRs are merged (gh) -> abgeschlossen
     stats [--days N]            tasks/day, Kevin-min/PR, wait per state, stale, dedup
 
 The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
 Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min); everything
-else — prose, "Als Nächstes", blank lines, a row it cannot read — passes
-through byte for byte.
+else — prose, blank lines, a row it cannot read — passes through byte for
+byte. "Als Nächstes" is the script's: every write rewrites it from the rows
+(what is in progress, the next waiting train of each stage, the open REL rows,
+the blocked rows that wait on Kevin); nobody keeps it by hand.
 
 The file is --file, else $AH_ROADMAP, else tasks/private/ROADMAP.md. Tests
 always name a fixture: the real file is Kevin's. --today pins the date that
@@ -43,8 +47,9 @@ directory is the root of that repository, and never in this public one. A file c
 differs from the one the lock file remembers) is refused: an editor may hold
 it. The ID is the highest R-nnnn of all rows plus one — or of all IDs this
 lock file has seen issued, so an ID a hand edit took out does not come back. A closed row
-(abgeschlossen, abgelehnt) carries the day it closed; more than 30 days later
-the next write moves it from "Abgeschlossen" to the top of "Archiv".
+(abgeschlossen, abgelehnt) carries the day it closed; more than 7 days later
+the next write drops it from the file (the private git keeps it), unless an
+open row names it under "Hängt ab von": that one moves to the top of "Archiv".
 
 next picks by class (SEC > REG > REL > BUG > FEAT > REF > IDEE), then by the
 order of the rows (Kevin's), and skips a row whose "Hängt ab von" names an
@@ -61,7 +66,7 @@ Setting a row's own status again is always allowed: it files a row left in
 the wrong section into its own, and turns an alias into the real word.
 
 Exit codes: 0 ok · 1 lint findings · 2 usage (no such file, bad arguments) ·
-3 the `neu` cap (20) is reached · 4 an open row already carries the Dedup-Key
+4 an open row already carries the Dedup-Key
 (recorded as an empty commit `roadmap: dedup <key> -> R-nnnn`, for stats) ·
 5 the file was just changed by hand · 6 the row count came out wrong (restored) ·
 74 gh could not list the merged PRs (sync). next: 1 when no row is ready.
@@ -119,7 +124,7 @@ STATE_ORDER = (
 # Ablauf of a new row (roadmap document 3.3.2); every other class never expires.
 EXPIRY_DAYS = {"IDEE": 60, "REF": 90}
 QUIET_SECONDS = 5
-ARCHIVE_AFTER_DAYS = 30
+KEEP_CLOSED_DAYS = 7
 
 SECTIONS = (
     "Als Nächstes",
@@ -132,7 +137,7 @@ SECTIONS = (
     "Archiv",
 )
 # Where a row with this status belongs. A closed row may also sit in the
-# archive: it moves there by age, not by status.
+# archive: it moves there by age, not by status, when an open row depends on it.
 SECTION_OF = {
     "neu": "Neu",
     "geplant": "Geplant",
@@ -147,10 +152,10 @@ SECTION_OF = {
 }
 CLOSED = frozenset({"abgeschlossen", "abgelehnt"})
 ALIASES = {"geparkt": "zurückgestellt", "erledigt": "abgeschlossen"}
-# The header's counters, in the order it prints them. Only `add` enforces one (neu); the
-# others are shown, not held: CLAUDE.md section 2 runs in parallel wherever it can.
+# The header's counters, in the order it prints them. They are shown, not held:
+# CLAUDE.md section 2 runs in parallel wherever it can, and `add` takes every new
+# row, so no finding waits for a triage to get one (Kevin 2026-10-22).
 WIP_CAPS = (("aktiv", 2), ("bereit", 2), ("pr", 3), ("neu", 20))
-NEU_CAP = dict(WIP_CAPS)["neu"]
 # Which status may follow which (the Ledger chain of the spec, plus the ways
 # out: zurückgestellt, blockiert, abgelehnt). A closed row only turns
 # abgelehnt — a throwaway row that must not count as done.
@@ -172,6 +177,7 @@ TRANSITIONS = {
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 SEPARATOR = re.compile(r"^\|(\s*:?-+:?\s*\|)+\s*$")
 ROW_ID = re.compile(r"R-\d{4,}")
+CLOSED_HEADING = re.compile(r"## Abgeschlossen \(letzte \d+ Tage\)")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 DEDUP = re.compile(r"Dedup-Key:\s*(\S+)")
 WIP_FIELD = re.compile(r"\b(aktiv|bereit|pr|neu)\s+(\d+)\s*/\s*\d+")
@@ -421,18 +427,35 @@ class Roadmap:
             self.remove(row)
             self.insert_row(home, row, top=home == "Abgeschlossen")
 
-    def archive(self, today: dt.date) -> None:
-        """Closed rows more than ARCHIVE_AFTER_DAYS past their date leave
-        "Abgeschlossen" for the top of "Archiv", in the order they stood."""
-        old = []
-        for section, row in self.rows():
+    def prune(self, today: dt.date) -> int:
+        """Closed rows more than KEEP_CLOSED_DAYS past their date leave the
+        file; it returns how many. One an open row names under "Hängt ab von"
+        stays, at the top of "Archiv" in the order they stood: `next` counts a
+        dependency as met only while its row stands abgeschlossen here."""
+        rows = self.rows()
+        needed = {
+            dep
+            for _, r in rows
+            if r.well_formed and r.is_open
+            for dep in ROW_ID.findall(r.cells[DEPENDS])
+        }
+        gone, kept = [], []
+        for section, row in rows:
             day = parse_day(row.cells[STATUS]) if row.well_formed else None
-            if section == "Abgeschlossen" and row.state in CLOSED and day:
-                if (today - day).days > ARCHIVE_AFTER_DAYS:
-                    old.append(row)
-        for row in reversed(old):
+            if row.state in CLOSED and day and (today - day).days > KEEP_CLOSED_DAYS:
+                if row.id not in needed:
+                    gone.append(row)
+                elif section != "Archiv":
+                    kept.append(row)
+        for row in gone:
+            self.remove(row)
+        for row in reversed(kept):
             self.remove(row)
             self.insert_row("Archiv", row, top=True)
+        for i, item in enumerate(self.items):
+            if isinstance(item, str) and CLOSED_HEADING.fullmatch(item):
+                self.items[i] = f"## Abgeschlossen (letzte {KEEP_CLOSED_DAYS} Tage)"
+        return len(gone)
 
     def highest(self) -> int:
         """The highest ID number in the rows, or issued before (write() sets it)."""
@@ -441,6 +464,14 @@ class Roadmap:
 
     def next_id(self) -> str:
         return f"R-{self.highest() + 1:04d}"
+
+    def set_next_up(self) -> None:
+        """ "Als Nächstes" from the rows, between its heading and the next one."""
+        try:
+            start, end = self.section_bounds("Als Nächstes")
+        except UsageError:
+            return
+        self.items[start + 1 : end] = [*next_up_lines(self), ""]
 
     def set_header(self, today: dt.date) -> None:
         """`Stand: <today> · WIP: …` computed from the rows, above the first section."""
@@ -628,18 +659,20 @@ def write(
             # Still under the lock: this record must not race another writer's commit.
             commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
             raise
-        roadmap.archive(today)
+        pruned = roadmap.prune(today)
+        roadmap.set_next_up()
         roadmap.set_header(today)
         bak = sibling(path, ".bak")
         bak.write_bytes(before_text.encode("utf-8"))
         write_text(path, roadmap.render())
         after = len(Roadmap(path.read_bytes().decode("utf-8")).rows())
-        if after != before + delta:
+        if after != before + delta - pruned:
             replace_file(path, bak.read_bytes())
             remember(lock, path, issued)
             raise Refused(
                 6,
-                f"{before} rows {delta:+d} should make {before + delta}, the written file "
+                f"{before} rows {delta:+d} and {pruned} pruned should make "
+                f"{before + delta - pruned}, the written file "
                 f"has {after} — restored from {bak}",
             )
         remember(lock, path, roadmap.highest())
@@ -754,9 +787,6 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     def change(roadmap: Roadmap) -> str:
         rows = [r for _, r in roadmap.rows() if r.well_formed]
-        neu = sum(r.state == "neu" for r in rows)
-        if neu >= NEU_CAP:
-            raise Refused(3, f"the neu cap is reached ({neu}/{NEU_CAP}) — triage first")
         if args.dedup_key:
             owner = next((r.id for r in rows if r.is_open and r.dedup_key == args.dedup_key), None)
             if owner:
@@ -807,7 +837,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def next_up(roadmap: Roadmap) -> list[str]:
-    """The "Als Nächstes" section as Kevin wrote it, heading included."""
+    """The "Als Nächstes" section as the last write left it, heading included."""
     try:
         start, end = roadmap.section_bounds("Als Nächstes")
     except UsageError:
@@ -918,6 +948,8 @@ def cmd_next(args: argparse.Namespace) -> int:
             continue
         if components_of(r) & excluded:
             continue
+        if args.stufe and train_stage(r.cells[LEDGER]) != args.stufe:
+            continue
         # Fail-closed, but only where a list asks for disjoint rows: a ledger
         # nobody can read may touch any component.
         if excluded and ledger_nowhere(r):
@@ -935,6 +967,92 @@ def cmd_next(args: argparse.Namespace) -> int:
     ledger = f" ({r.cells[LEDGER]})" if r.cells[LEDGER] not in ("", "—", "-") else ""
     print(f"{r.id} {r.cells[KLASSE]} {r.cells[TITEL]}{ledger}")
     return 0
+
+
+# A train (Zug) is the set of rows whose Ledger column names the same ledger:
+# triage assigns a row to one when Kevin accepts it, /feature-plan --zug plans
+# them together. A `klein-` ledger belongs to the Sonnet session (small rows), an
+# `arch-` ledger to its own architecture session, every other one to the Opus
+# session (CLAUDE.md section 2) — so no session picks up another one's project.
+TRAIN_WAITING = ("geplant", "freigegeben")
+TRAIN_MOVING = ("aktiv", "bereit", "pr")
+STAGES = ("klein", "kern", "arch")
+
+
+def train_stage(ledger: str) -> str:
+    name = pathlib.PurePosixPath(ledger).name
+    return next((s for s in ("klein", "arch") if name.startswith(f"{s}-")), "kern")
+
+
+def trains(roadmap: Roadmap, stufe: str | None = None) -> list[tuple[str, list[Row], int]]:
+    """(ledger, rows, moving) per train, in the order `zuege` prints them: a
+    moving train takes no new row; of the waiting ones the highest class goes
+    first, then the fullest."""
+    found: dict[str, list[Row]] = {}
+    for _, r in roadmap.rows():
+        if not r.well_formed or r.state not in TRAIN_WAITING + TRAIN_MOVING:
+            continue
+        ledger = r.cells[LEDGER]
+        if ledger in ("", "—", "-") or (stufe and train_stage(ledger) != stufe):
+            continue
+        found.setdefault(ledger, []).append(r)
+    keyed = []
+    for ledger, rs in found.items():
+        waiting = [r for r in rs if r.state in TRAIN_WAITING]
+        moving = len(rs) - len(waiting)
+        top = min(CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)) for r in waiting or rs)
+        keyed.append(((moving > 0, top, -len(waiting), ledger), (ledger, rs, moving)))
+    return [t for _, t in sorted(keyed)]
+
+
+def cmd_zuege(args: argparse.Namespace) -> int:
+    found = trains(Roadmap.load(roadmap_path(args.file)), args.stufe)
+    if not found:
+        print("zuege: no train", file=sys.stderr)
+        return 1
+    for ledger, rs, moving in found:
+        state = f"unterwegs ({moving} von {len(rs)})" if moving else "wartet"
+        ids = " ".join(f"{r.id}:{r.cells[KLASSE]}" for r in rs)
+        print(f"{ledger} · {train_stage(ledger)} · {state} · {len(rs)} Zeilen · {ids}")
+    return 0
+
+
+NEXT_UP_NOTE = "_Erzeugt von roadmap.py bei jedem Schreiben aus den Zeilen; nicht von Hand ändern._"
+STAGE_LABEL = {"kern": "Kern", "klein": "Klein", "arch": "Architektur"}
+
+
+def short(title: str, width: int = 60) -> str:
+    return title if len(title) <= width else title[: width - 1] + "…"
+
+
+def next_up_lines(roadmap: Roadmap) -> list[str]:
+    """The points of "Als Nächstes", one line each (the session-start hook
+    prints every point as its line)."""
+    rows = [r for _, r in roadmap.rows() if r.well_formed]
+    moving = [r for r in rows if r.state in TRAIN_MOVING]
+    in_progress = [
+        f"{r.id} {r.state}" + (f" {r.cells[PR]}" if "#" in r.cells[PR] else "") for r in moving
+    ]
+    points = [f"In Arbeit: {' · '.join(in_progress) or '—'}"]
+    waiting = [(ledger, rs) for ledger, rs, m in trains(roadmap) if not m]
+    for stage in ("kern", "klein", "arch"):
+        mine = [(ledger, rs) for ledger, rs in waiting if train_stage(ledger) == stage]
+        if mine:
+            ledger, rs = mine[0]
+            top = min((r.cells[KLASSE] for r in rs), key=lambda k: CLASS_RANK.get(k, len(CLASSES)))
+            more = f"; danach {len(mine) - 1} weitere" if len(mine) > 1 else ""
+            points.append(
+                f"Nächster Zug {STAGE_LABEL[stage]}: {ledger} ({len(rs)} Zeilen, ab {top}){more}"
+            )
+    rel = [r for r in rows if r.is_open and r.cells[KLASSE] == "REL"]
+    if rel:
+        points.append("Vor dem Release: " + " · ".join(f"{r.id} {r.state}" for r in rel))
+    blocked = [r for r in rows if r.state == "blockiert"]
+    if blocked:
+        points.append(
+            "Wartet auf Kevin: " + " · ".join(f"{r.id} {short(r.cells[TITEL])}" for r in blocked)
+        )
+    return [NEXT_UP_NOTE, *(f"{n}. {p}" for n, p in enumerate(points, 1))]
 
 
 def merged_prs() -> dict[int, dt.date]:
@@ -1167,7 +1285,11 @@ def main(argv: list[str] | None = None) -> int:
     nx = sub.add_parser("next", help="the next row to build")
     nx.add_argument("--status", default="freigegeben", choices=sorted(SECTION_OF))
     nx.add_argument("--exclude-components", nargs="+", metavar="C", help="skip rows touching these")
+    nx.add_argument("--stufe", choices=STAGES, help="only rows of this session's trains")
     nx.set_defaults(func=cmd_next)
+    zu = sub.add_parser("zuege", help="the trains: rows grouped by their ledger, waiting first")
+    zu.add_argument("--stufe", choices=STAGES, help="only the trains of this session")
+    zu.set_defaults(func=cmd_zuege)
     sub.add_parser("sync", help="close rows in pr whose PRs are merged").set_defaults(func=cmd_sync)
     sa = sub.add_parser("stats", help="tasks/day, Kevin-min/PR, wait per state, stale, dedup")
     sa.add_argument("--days", type=int, default=30, help="the window for tasks/day (default 30)")

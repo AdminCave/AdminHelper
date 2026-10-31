@@ -16,7 +16,7 @@ storageRemove('adminhelper_token');
 storageRemove('adminhelper_refresh_token');
 
 let accessToken: string | null = null;
-let refreshInFlight: Promise<boolean> | null = null;
+let refreshInFlight: { session: number; promise: Promise<boolean> } | null = null;
 let onAuthFailure: (() => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -47,11 +47,19 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+// A session starts with every setAccessToken() (a login, also one while a token is still held) and
+// ends with clearTokens(); a refresh keeps it. A request answered 401 after its session ended must
+// not refresh, retry or run the auth-failure handler: the handler ends the session that is current
+// by then, refresh cookie included (stores/auth.ts).
+let session = 0;
+
 export function setAccessToken(access: string): void {
+  session++;
   accessToken = access;
 }
 
 export function clearTokens(): void {
+  session++;
   accessToken = null;
   // The refresh token lives in an HttpOnly cookie, cleared server-side by
   // POST /api/auth/logout.
@@ -69,30 +77,64 @@ export function registerAuthFailureHandler(handler: () => void): void {
   onAuthFailure = handler;
 }
 
-async function tryRefresh(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
+// refreshInFlight bundles only within this tab, but all tabs share the refresh cookie. The server
+// rotates the refresh token and treats a second refresh with the same token as reuse: every
+// session of the user ends (R-0649). A logout blocks the cookie, so a refresh that still sends it
+// counts as reuse too. A Web Lock holds per origin across all tabs: the refreshes and the logout
+// (auth.ts) run under it one after another, and a tab that gets the lock after another one
+// already sends the new cookie. Web Locks exist only in secure contexts (HTTPS, localhost);
+// without them nothing orders the tabs, but the calls of this tab still run one after another
+// (localAuthQueue), or a refresh of an ended session could overlap one of the current session.
+// Neither is reentrant: fn must never wait for tryRefresh, which would wait for the lock fn holds.
+// A request to an /auth/ path never calls tryRefresh.
+let localAuthQueue: Promise<unknown> = Promise.resolve();
 
-  refreshInFlight = (async () => {
+export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
+  if ('locks' in navigator) {
+    return await navigator.locks.request('adminhelper-auth-refresh', fn);
+  }
+  const run = localAuthQueue.then(fn);
+  localAuthQueue = run.catch(() => undefined);
+  return await run;
+}
+
+async function tryRefresh(): Promise<boolean> {
+  // A refresh started in an earlier session answers for that session only (refresh() returns false
+  // once it ended): a request of the current one must not take its answer.
+  if (refreshInFlight?.session === session) return refreshInFlight.promise;
+
+  const started = session;
+  const refresh = async (): Promise<boolean> => {
+    // The refresh token rides along as the HttpOnly cookie (same-origin
+    // request → sent automatically); the body is intentionally empty.
+    const res = await fetchWithTimeout('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as RefreshResponse;
+    // A refresh renews the session that asked for it, also one without a token yet: no new session.
+    // One answered after that session ended (also one that waited for the lock across a login) sets
+    // no token: it would replace the token of the session current by then.
+    if (started !== session) return false;
+    accessToken = data.access_token;
+    return true;
+  };
+
+  const promise = (async () => {
     try {
-      // The refresh token rides along as the HttpOnly cookie (same-origin
-      // request → sent automatically); the body is intentionally empty.
-      const res = await fetchWithTimeout('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      if (!res.ok) return false;
-      const data = (await res.json()) as RefreshResponse;
-      setAccessToken(data.access_token);
-      return true;
+      return await withAuthLock(refresh);
     } catch {
       return false;
     } finally {
-      refreshInFlight = null;
+      // session only grows, so at most one refresh per session is in flight: a later session's
+      // stays.
+      if (refreshInFlight?.session === started) refreshInFlight = null;
     }
   })();
-
-  return refreshInFlight;
+  refreshInFlight = { session: started, promise };
+  return promise;
 }
 
 async function request<T>(
@@ -105,10 +147,12 @@ async function request<T>(
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const jsonBody = body !== undefined ? JSON.stringify(body) : undefined;
 
+  const started = session;
   let res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
 
   if (res.status === 401 && !path.includes('/auth/')) {
-    const refreshed = await tryRefresh();
+    const refreshed = started === session && (await tryRefresh());
+    if (started !== session) throw new ApiError(401, 'Session expired');
     if (refreshed && accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
       res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
@@ -130,7 +174,9 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, errorDetail(data) ?? `HTTP ${res.status}`, data);
+    const code = errorCode(data);
+    const message = withoutCodePrefix(errorDetail(data), code);
+    throw new ApiError(res.status, message ?? `HTTP ${res.status}`, data, code);
   }
 
   // A 2xx promises a T. A body that could not be read — cut off by a reload
@@ -157,6 +203,23 @@ function errorDetail(data: unknown): string | null {
   return msgs.length ? msgs.join('; ') : null;
 }
 
+// The stable code of an error body (R-0664), only in the form the server promises.
+const ERROR_CODE = /^ERR_[A-Z0-9_]{1,64}$/;
+
+function errorCode(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object' || !('code' in data)) return undefined;
+  const { code } = data;
+  return typeof code === 'string' && ERROR_CODE.test(code) ? code : undefined;
+}
+
+// The server keeps the code as prefix of the detail for clients that read the text; with
+// the code at hand the message is the text alone.
+function withoutCodePrefix(message: string | null, code: string | undefined): string | null {
+  if (message === null || code === undefined) return message;
+  const prefix = `${code}: `;
+  return message.startsWith(prefix) ? message.slice(prefix.length) : message;
+}
+
 // Raw GET that shares the same 401 -> tryRefresh -> retry path as request(), but
 // returns the Response so callers can read text()/blob() (frps.toml preview, bulk
 // ZIP). Without this those endpoints bypassed the transparent refresh and surfaced
@@ -167,9 +230,11 @@ export async function requestRaw(path: string): Promise<Response> {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
 
+  const started = session;
   let res = await doFetch();
   if (res.status === 401 && !path.includes('/auth/')) {
-    const refreshed = await tryRefresh();
+    const refreshed = started === session && (await tryRefresh());
+    if (started !== session) throw new ApiError(401, 'Session expired');
     if (refreshed && accessToken) {
       res = await doFetch();
     } else {

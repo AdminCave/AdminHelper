@@ -5,10 +5,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # tasks/ — Task-Ledger
 
-Dieses Verzeichnis ist der **eine Ort für alle Task-Ledger**. Ein Ledger = eine kleine,
-von oben nach unten abarbeitbare Liste mit einem `Verify:`-Ziel pro Aufgabe. `/feature-plan`
-schreibt hier eine Datei pro Vorhaben; `/feature-build` arbeitet sie ab. Der Ablauf steht in
-[`../CLAUDE.md`](../CLAUDE.md) §4–§8.
+Dieses Verzeichnis ist der **eine Ort für alle Task-Ledger**. Ein Ledger = eine von oben nach
+unten abarbeitbare Liste mit einem `Verify:`-Ziel pro Aufgabe. `/feature-plan` schreibt hier eine
+Datei pro Vorhaben und schneidet die Tasks (`.claude/skills/feature-plan/SKILL.md` §3);
+`/feature-build` arbeitet sie ab. Der Ablauf steht in [`../CLAUDE.md`](../CLAUDE.md) §4–§8. Dieses
+Dokument ist die Referenz für das **Format**.
 
 **Eine Datei pro Vorhaben:** `tasks/<slug>.md` (z. B. `connection-note.md`). Kein Anhängen
 an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
@@ -20,8 +21,8 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 |---|---|
 | `geplant` | von `/feature-plan` erstellt. Die Freigabe ist `roadmap.py approve` für die Roadmap-Zeile, die die Session gleich nach dem Plan-Commit selbst setzt; erst dann setzt `/feature-build` den Kopf im Worktree auf `aktiv` (CLAUDE.md §4). |
 | `freigegeben` | Form älterer Ledger, deren Kopf die Freigabe trug; `/feature-build` behandelt sie wie `geplant` mit freigegebener Roadmap-Zeile. |
-| `aktiv` | wird gebaut, in einem eigenen Worktree — **nie zwei Bauer auf demselben Ledger**. |
-| `bereit` | alle Tasks sind zu; Abschluss (`tester`, Branch-Review) und PR stehen aus. |
+| `aktiv` | wird gebaut, in einem eigenen Worktree — **je Ledger und Worktree baut ein Akteur**. |
+| `bereit` | alle Tasks sind zu (auch die Doku-Task); Abschlussprüfung (`reviewer`, Einsatzart `branch`) und PR stehen aus. |
 | `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
@@ -40,7 +41,20 @@ Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.
 
 **Task-Felder:** `Komponente:` (der Name aus `verify.sh`, etwa `server`, kein Pfad), `Dateien:` (die
 Pfade, die `task-close.sh --stage` stagt, durch Komma getrennt), `Verify:` (Flag-Form ohne Env-Präfix:
-`bash scripts/dev/verify.sh <komp> --strict [-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten).
+`bash scripts/dev/verify.sh <komp> --strict [-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten) und
+`Task-Review: am Ende` (eine reine Doku-Task: `task-close.sh` verlangt dann kein Task-Urteil, solange sie nur
+Markdown oder HTML unter `docs/` stagt, keinen Symlink und keinen Harness-Text — `CLAUDE.md`, `.claude/` in jeder
+Tiefe, `tasks/`; der Inhalt geht in die Abschlussprüfung).
+
+**Züge:** Ein Ledger `tasks/<zug>.md` nimmt alle Roadmap-Zeilen auf, deren Spalte `Ledger` ihn nennt
+(`roadmap.py zuege`, CLAUDE.md §2); `klein-<…>` baut die Klein-Session, jedes andere die Kern-Session. Eine Zeile,
+die nicht mitfahren kann, wird `[~] verschoben in <nächster-zug>: <Grund>` und wechselt dort hin
+(`/feature-build` §3).
+
+**`Doku:`** hat drei Formen: die Dateien, die diese Task selbst nachzieht (`docs/… DE+EN`, `README`,
+`changelog.d/<slug>.md`); `→ T<n>`, wenn die Doku-Task `T<n>` desselben Ledgers sie gebündelt nachzieht (offen, bis
+`T<n>` `[x]` ist; `ledger.sh lint` prüft, dass es `T<n>` gibt); oder `keine (<Grund>)` für Änderungen
+ohne dokumentierten Einfluss. Wann Doku fällig ist, regelt `.claude/rules/docs.md`.
 
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
 `[?]` braucht menschliche Entscheidung.
@@ -67,6 +81,13 @@ bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Prä
 `<ledger>` ist der Pfad oder der reine Slug, `<id>` die Task-Kennung aus der Überschrift
 (`### T3 — …` ⇒ `T3`). Neue Tasks entstehen aus [`templates/task.md`](templates/task.md); die
 Vorlage trägt nur die Pflichtfelder.
+
+## `## Entscheidungen` — was die Session unterwegs festlegt
+
+Am Ende des Ledgers sammelt ein Abschnitt `## Entscheidungen` die Implementierungsentscheidungen der
+bauenden Session, eine Zeile je Entscheidung: `- <JJJJ-MM-TT> T<n>: <Entscheidung> — <Grund>`. Er ist
+mit dem Ledger committet und damit nach einer Unterbrechung, einem `compact` oder in einer neuen Session
+lesbar. Was Kevins Bereich ist (CLAUDE.md §2), steht nicht hier, sondern als `[?]` an der Task.
 
 **`set-files` statt stiller Zusatzdateien:** braucht eine Task eine Datei, die nicht in ihrem
 `Dateien:` steht, wird die Liste **sichtbar** erweitert — `task-close.sh --stage` stagt genau
@@ -96,7 +117,7 @@ Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die Beschreibung au
    `task-close.sh` nicht durch (Exit 3).
 
 Ob ein Test schwächer geworden ist (`|| true`, `skip`, eine gestrichene oder triviale Assertion),
-prüft der `reviewer` (Kriterium 3 in `.claude/agents/reviewer.md`), kein Skript.
+prüft der `reviewer` (Kriterium „Tests“ in `.claude/agents/reviewer.md`), kein Skript.
 
 **Passt:** toter Code geht samt seinem Test; ein Test wird durch einen genaueren ersetzt, der
 im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das ist ein Befund
@@ -144,9 +165,7 @@ führt die Zeilen im Kopfkommentar auf.
 
 ## Aktueller Stand
 
-Die Ledger bis Team v3 sind gelöscht (2026-10-15); ihre Geschichte steht in git und in den
-abgeschlossenen Roadmap-Zeilen. Neben denen aus `/feature-plan` entsteht eine Art von Ledger
-durch ein Skript:
+Neben den Ledgern aus `/feature-plan` entsteht eine Art von Ledger durch ein Skript:
 
 - **`reg-<datum>-<schritt>.md`** — von `scripts/tests/heavy.sh` geschrieben, nicht von
   `/feature-plan`: eine bestätigte Regression aus einem Wochenlauf (Schritt auf zwei

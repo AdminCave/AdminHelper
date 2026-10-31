@@ -124,7 +124,7 @@ PID="$(val PID)"
   && ok "without a key: project ah-e2e-<pid>, ports from the pid, the URL on localhost" \
   || bad "without a key: pid '$PID', project '$(val PROJECT)', https=$HTTPS_PORT pg=$PG_PORT redis=$REDIS_PORT, URL '$(val URL)'"
 ENV_KEYS="$(sed 's/=.*//' "$STUB_LOG/env" 2>/dev/null | tr '\n' ' ')"
-[ "$ENV_KEYS" = "DOMAIN SECRET_KEY POSTGRES_PASSWORD CA_ROOT_PASSPHRASE MONITOR_API_KEY ADMIN_PASSWORD MTLS_ENFORCE ITEST_HTTPS_PORT ITEST_ENROLL_PORT ITEST_REPO_PORT ITEST_PG_PORT ITEST_REDIS_PORT " ] \
+[ "$ENV_KEYS" = "DOMAIN SECRET_KEY POSTGRES_PASSWORD SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD CA_ROOT_PASSPHRASE MONITOR_API_KEY ADMIN_PASSWORD MTLS_ENFORCE ITEST_HTTPS_PORT ITEST_ENROLL_PORT ITEST_REPO_PORT ITEST_PG_PORT ITEST_REDIS_PORT " ] \
   && ok "without a key: the .env names no bind address and no FRP ports (gateway with no host address, frps on 7000/7443)" \
   || bad "without a key, the .env names: $ENV_KEYS"
 
@@ -881,6 +881,43 @@ LINT_OUT=$(kr_require "$LINT")
   && ok "lint, counter-check: the copy is reported for the e2e_require without dbus-send, nothing else" \
   || bad "lint, counter-check: e2e_require in the copy, reported: '${LINT_OUT//$'\n'/, }'"
 
+# ── e2e_wait_enroll_plane ────────────────────────────────────────────────────
+# :8444 answered 502 right after e2e_up until the ca-issuer listened, and the enroll step
+# of the stack suite failed flaky (R-0935, R-0955). curl is a stub that answers the codes
+# of STUB_SEQ one call at a time and then repeats the last; 000 is a refused connection.
+WAIT="$WORK/wait"; mkdir -p "$WAIT"
+cat > "$WAIT/curl" <<'EOF'
+#!/usr/bin/env bash
+seq_file="$STUB_LOG/wait.seq"; calls="$STUB_LOG/wait.calls"
+printf '%s\n' "$*" >> "$calls"
+read -r code rest < "$seq_file"
+[ -z "$rest" ] || echo "$rest" > "$seq_file"
+printf '%s' "$code"
+[ "$code" != 000 ] || exit 7
+EOF
+chmod +x "$WAIT/curl"
+wait_plane() {  # wait_plane <seconds> <codes...> — e2e_wait_enroll_plane against the stub
+  local secs=$1; shift
+  echo "$*" > "$STUB_LOG/wait.seq"; : > "$STUB_LOG/wait.calls"
+  PATH="$WAIT:$PATH" bash -c '. "$1/scripts/tests/lib_e2e_stack.sh"; E2E_ENROLL_PORT=8444; e2e_wait_enroll_plane "$2"' \
+    _ "$REPO_ROOT" "$secs" > "$WORK/wait.out" 2>&1
+}
+wait_plane 10 000 502 503 405; rc=$?
+[ "$rc" = 0 ] && [ "$(wc -l < "$STUB_LOG/wait.calls")" = 4 ] \
+  && ok "enroll plane: refused, 502 and 503 are waited out, the 405 of the live issuer ends the wait (4 curl calls)" \
+  || bad "enroll plane: rc=$rc, $(wc -l < "$STUB_LOG/wait.calls") calls: $(cat "$WORK/wait.out")"
+grep -qF -- "https://localhost:8444/enroll" "$STUB_LOG/wait.calls" \
+  && ok "enroll plane: asks https://localhost:<E2E_ENROLL_PORT>/enroll (the only path nginx proxies to the issuer)" || bad "enroll plane: curl args $(head -1 "$STUB_LOG/wait.calls")"
+wait_plane 2 502; rc=$?
+[ "$rc" = 1 ] && grep -q "never reached the ca-issuer (last HTTP '502')" "$WORK/wait.out" \
+  && ok "enroll plane: a 502 that stays is rc 1 and names the last status" \
+  || bad "enroll plane: always 502 gave rc=$rc: $(cat "$WORK/wait.out")"
+wait_plane 10 200; rc=$?
+[ "$rc" = 0 ] && [ "$(wc -l < "$STUB_LOG/wait.calls")" = 1 ] \
+  && ok "enroll plane: an issuer that answers at once costs one call" || bad "enroll plane: 200 gave rc=$rc, $(wc -l < "$STUB_LOG/wait.calls") calls"
+
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed, $SKIP skipped"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+# Keyring cases that did not run are not verified: 75, so --strict sees a SKIP, not a green test.
+[ -z "$KR_MISSING" ] || { echo "SKIP: the keyring cases need:$KR_MISSING"; exit 75; }

@@ -1,0 +1,702 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""R-0685: the JSON routes declare a response model that maps today's answer key for key.
+
+Pydantic drops a key the model does not declare without a word, so (a) the operation's 2xx
+schema in the live OpenAPI names the model, and (b) the body over the real route equals what
+the producer hands out, for a full row and a sparse one; (c) covers each conditional key."""
+
+import copy
+import json
+from datetime import datetime
+
+import pytest
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy import update
+
+from app import builtin_templates
+from app.models import (
+    MonitorAgentKey,
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorHostFacts,
+    MonitorMaintenance,
+    MonitorState,
+    MonitorTemplate,
+    MonitorTemplateAssignment,
+    MonitorTemplateTagAssignment,
+)
+from app.routers import templates as templates_router
+
+
+def _response_schema(path: str, method: str) -> dict:
+    from app.main import app
+
+    op = app.openapi()["paths"][path][method]
+    status = next(code for code in op["responses"] if code.startswith("2"))
+    return op["responses"][status]["content"]["application/json"]["schema"]
+
+
+def _ref_name(schema: dict) -> str:
+    if schema.get("type") == "array":
+        schema = schema["items"]
+    return schema["$ref"].rsplit("/", 1)[-1]
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "model"),
+    [
+        ("/checks", "get", "MonitorCheckOut"),
+        ("/checks", "post", "MonitorCheckOut"),
+        ("/checks/{check_id}", "get", "MonitorCheckOut"),
+        ("/checks/{check_id}", "put", "MonitorCheckOut"),
+        ("/checks/{check_id}/toggle", "post", "MonitorCheckOut"),
+        ("/checks/{check_id}/reset", "post", "MonitorCheckOut"),
+        ("/checks/{check_id}/run", "post", "MonitorCheckOut"),
+        ("/status", "get", "MonitorCheckOut"),
+        ("/status/server/{server_id}", "get", "MonitorCheckOut"),
+        ("/status/summary", "get", "StatusSummaryOut"),
+        ("/checks/{check_id}/metrics", "get", "CheckMetricsOut"),
+        ("/alerts", "get", "AlertRuleOut"),
+        ("/alerts", "post", "AlertRuleOut"),
+        ("/alerts/log", "get", "AlertLogOut"),
+        ("/alerts/{rule_id}", "get", "AlertRuleOut"),
+        ("/alerts/{rule_id}", "put", "AlertRuleOut"),
+        ("/alerts/{rule_id}/toggle", "post", "AlertRuleOut"),
+        ("/maintenance", "get", "MaintenanceOut"),
+        ("/maintenance", "post", "MaintenanceOut"),
+        ("/maintenance/{maintenance_id}", "put", "MaintenanceOut"),
+        ("/agent-keys/{server_id}", "post", "AgentKeyOut"),
+        ("/agent-keys/{server_id}", "delete", "AgentKeyDeletedOut"),
+        ("/servers/{server_id}/cleanup", "delete", "ServerCleanupOut"),
+        ("/templates", "get", "TemplateOut"),
+        ("/templates", "post", "TemplateOut"),
+        ("/templates/{template_id}", "get", "TemplateOut"),
+        ("/templates/{template_id}", "put", "TemplateOut"),
+        ("/templates/{template_id}/builtin-update", "get", "BuiltinUpdateOut"),
+        ("/templates/{template_id}/builtin-update", "post", "TemplateOut"),
+        ("/templates/assignments/{server_id}", "get", "ServerAssignmentOut"),
+        ("/templates/suggestions/{server_id}", "get", "TemplateSuggestionOut"),
+        ("/templates/{template_id}/assign", "post", "ApplyResultOut"),
+        ("/templates/{template_id}/assign/{server_id}/restore", "post", "RestoreOut"),
+        ("/templates/{template_id}/assign-tag", "post", "TagAssignmentOut"),
+        ("/templates/tag-sync", "post", "TagSyncOut"),
+    ],
+)
+def test_routes_declare_their_response_model(path, method, model):
+    assert _ref_name(_response_schema(path, method)) == model
+
+
+def _seed_checks(factory):
+    """chk-full: every nullable column set, a state row with JSON details; chk-sparse: every
+    nullable column NULL and no state row, so the key state is absent (c)."""
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-full",
+                server_id="srv-1",
+                name="a-full",
+                description="full row",
+                check_type="ping",
+                config='{"target": "192.0.2.10", "count": 3, "timeout": 1.5}',
+                enabled=True,
+                interval="1m",
+                severity="warning",
+                consecutive_fails=4,
+                consecutive_oks=1,
+                template_id="tpl-1",
+                template_def_id="def-1",
+                overridden_fields='["interval"]',
+                created_at=datetime(2026, 10, 1, 12, 0, 0),
+                updated_at=datetime(2026, 10, 2, 12, 0, 0),
+            )
+        )
+        db.add(
+            MonitorState(
+                check_id="chk-full",
+                status="warning",
+                since=datetime(2026, 10, 3, 8, 0, 0),
+                last_check=datetime(2026, 10, 3, 8, 5, 0),
+                fail_count=2,
+                message="slow",
+                details='{"rtt_ms": 12.5, "lost": 1, "hops": ["a", "b"]}',
+                notified_status="ok",
+            )
+        )
+        db.add(
+            MonitorCheck(
+                id="chk-sparse",
+                server_id=None,
+                name="b-sparse",
+                description=None,
+                check_type="ping",
+                config='{"target": "192.0.2.11"}',
+                enabled=None,
+                interval="5m",
+                severity="critical",
+                consecutive_fails=None,
+                template_id=None,
+                template_def_id=None,
+            )
+        )
+        db.commit()
+        # None in the constructor takes the column's Python default; only an UPDATE stores NULL.
+        db.execute(
+            update(MonitorCheck)
+            .where(MonitorCheck.id == "chk-sparse")
+            .values(enabled=None, consecutive_fails=None)
+        )
+        db.commit()
+
+
+def _produced(factory, check_id: str) -> dict:
+    with factory() as db:
+        check = db.get(MonitorCheck, check_id)
+        state = db.get(MonitorState, check_id)
+        return jsonable_encoder(check.to_dict(state=state))
+
+
+class TestCheckShape:
+    def test_listings_equal_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        want = [_produced(factory, "chk-full"), _produced(factory, "chk-sparse")]
+        assert "state" in want[0] and "state" not in want[1]
+        assert want[1]["enabled"] is None and want[1]["consecutiveFails"] is None
+
+        for path in ("/checks", "/status"):
+            r = client.get(path)
+            assert r.status_code == 200, r.text
+            assert r.json() == want, path
+
+        r = client.get("/status/server/srv-1")
+        assert r.status_code == 200, r.text
+        assert r.json() == want[:1]
+
+    def test_single_check_equals_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        for check_id in ("chk-full", "chk-sparse"):
+            r = client.get(f"/checks/{check_id}")
+            assert r.status_code == 200, r.text
+            assert r.json() == _produced(factory, check_id), check_id
+
+    def test_stored_numbers_stay_numbers(self, client_db):
+        # Counter-check to test_stored_json_numbers: the model passes config and details
+        # through as Any, no number becomes a string or a rounded value.
+        client, factory = client_db
+        _seed_checks(factory)
+        body = client.get("/checks/chk-full").json()
+        assert body["config"] == {"target": "192.0.2.10", "count": 3, "timeout": 1.5}
+        assert body["state"]["details"] == {"rtt_ms": 12.5, "lost": 1, "hops": ["a", "b"]}
+
+    def test_writes_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        r = client.post(
+            "/checks",
+            json={
+                "name": "c",
+                "check_type": "ping",
+                "interval": "5m",
+                "severity": "critical",
+                "config": {"target": "192.0.2.12"},
+            },
+        )
+        assert r.status_code == 201, r.text
+        check_id = r.json()["id"]
+        assert r.json() == _produced(factory, check_id)
+
+        r = client.put(f"/checks/{check_id}", json={"description": "changed"})
+        assert r.status_code == 200, r.text
+        assert r.json() == _produced(factory, check_id)
+
+        r = client.post(f"/checks/{check_id}/toggle")
+        assert r.status_code == 200, r.text
+        assert r.json() == _produced(factory, check_id)
+
+    def test_reset_answers_as_the_producer(self, client_db):
+        # Reset only takes a check a template rolled out.
+        client, factory = client_db
+        ping = {"def_id": "def-ping", "name": "Ping", "check_type": "ping"}
+        ping["config"] = {"target": "{{hostname}}"}
+        r = client.post("/templates", json={"name": "T", "check_definitions": [ping]})
+        assert r.status_code == 201, r.text
+        body = {"server_id": "srv-1", "hostname": "srv-1.example", "server_name": "srv-1"}
+        assert client.post(f"/templates/{r.json()['id']}/assign", json=body).status_code == 200
+        check_id = client.get("/checks", params={"server_id": "srv-1"}).json()[0]["id"]
+
+        r = client.post(f"/checks/{check_id}/reset")
+        assert r.status_code == 200, r.text
+        assert r.json() == _produced(factory, check_id)
+
+
+def test_status_summary_equals_the_producer(client_db):
+    client, factory = client_db
+    _seed_checks(factory)
+    r = client.get("/status/summary")
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "total": 1,
+        "ok": 0,
+        "warning": 1,
+        "critical": 0,
+        "unknown": 0,
+        "pending": 0,
+    }
+
+
+def test_metrics_pass_the_series_through(client_db, monkeypatch):
+    from app.core import victoria as victoria_mod
+
+    client, factory = client_db
+    _seed_checks(factory)
+    # Two different answers, so a route that swapped data and statusHistory, or answered
+    # both from one query, shows.
+    metric = [{"metric": {"__name__": "rtt"}, "values": [[1761800000, "12.5"]]}]
+    history = [
+        {"metric": {"__name__": "monitor_check_status_value"}, "values": [[1761800000, "1"]]}
+    ]
+
+    def query_range(**kw):
+        result = history if "monitor_check_status_value" in kw["query"] else metric
+        return {"status": "success", "data": {"result": result}}
+
+    monkeypatch.setattr(victoria_mod.victoria, "query_range", query_range)
+    r = client.get("/checks/chk-full/metrics", params={"period": "6h"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert set(body) == {"checkId", "checkType", "period", "data", "statusHistory"}
+    assert body["checkId"] == "chk-full" and body["period"] == "6h"
+    assert body["checkType"] == "ping"
+    assert body["data"] == metric
+    assert body["statusHistory"] == history
+
+
+def test_check_with_a_thin_state_row_equals_the_producer(client_db):
+    # A state row with only what the table requires: every nullable column NULL, so
+    # the nested state carries null where chk-full's carries values.
+    client, factory = client_db
+    _seed_checks(factory)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-thin",
+                name="c-thin",
+                check_type="ping",
+                config='{"target": "192.0.2.13"}',
+                interval="5m",
+                severity="critical",
+            )
+        )
+        db.add(MonitorState(check_id="chk-thin", since=datetime(2026, 10, 3, 8, 0, 0)))
+        db.commit()
+        db.execute(
+            update(MonitorState).where(MonitorState.check_id == "chk-thin").values(fail_count=None)
+        )
+        db.commit()
+    want = _produced(factory, "chk-thin")
+    assert want["state"]["lastCheck"] is None and want["state"]["failCount"] is None
+    assert want["state"]["message"] is None and want["state"]["details"] is None
+
+    r = client.get("/checks/chk-thin")
+    assert r.status_code == 200, r.text
+    assert r.json() == want
+    listed = {c["id"]: c for c in client.get("/checks").json()}
+    assert listed["chk-thin"] == want
+
+
+def test_run_answers_as_the_producer(client_db, monkeypatch):
+    # The run itself is stubbed; what the route answers afterwards is the stored row.
+    from app import check_engine
+
+    client, factory = client_db
+    _seed_checks(factory)
+    ran = []
+    monkeypatch.setattr(check_engine, "execute_check", ran.append)
+    r = client.post("/checks/chk-full/run")
+    assert r.status_code == 200, r.text
+    assert ran == ["chk-full"]
+    assert r.json() == _produced(factory, "chk-full")
+
+
+def _seed_alerts(factory):
+    """rule-full: email with a stored SMTP password (masked in every answer), every nullable
+    column set; rule-sparse: an empty channel_config and the nullable columns NULL; rule-legacy:
+    a stored channel_config that is no object, handed out as it is."""
+    with factory() as db:
+        db.add(
+            MonitorAlertRule(
+                id="rule-full",
+                name="a-mail",
+                match_severity="critical",
+                match_server_id="srv-1",
+                channel="email",
+                channel_config='{"to": "ops@example.com", "smtp_password": "smtp-secret-value"}',
+                cooldown_minutes=15,
+                enabled=True,
+                template_id="tpl-1",
+                created_at=datetime(2026, 10, 1, 12, 0, 0),
+                updated_at=datetime(2026, 10, 2, 12, 0, 0),
+            )
+        )
+        db.add(
+            MonitorAlertRule(
+                id="rule-sparse",
+                name="b-hook",
+                channel="webhook",
+                channel_config="",
+                cooldown_minutes=None,
+                enabled=None,
+            )
+        )
+        db.add(
+            MonitorAlertRule(
+                id="rule-legacy", name="c-legacy", channel="webhook", channel_config='["x"]'
+            )
+        )
+        db.add(
+            MonitorAlertLog(
+                alert_rule_id="rule-full",
+                check_id="chk-full",
+                old_status="ok",
+                new_status="critical",
+                sent_at=datetime(2026, 10, 3, 8, 0, 0),
+                success=False,
+                error="relay refused",
+            )
+        )
+        db.add(
+            MonitorAlertLog(
+                alert_rule_id="rule-sparse",
+                check_id="chk-full",
+                old_status="critical",
+                new_status="ok",
+                sent_at=datetime(2026, 10, 3, 9, 0, 0),
+                success=True,
+                error=None,
+            )
+        )
+        db.commit()
+        db.execute(
+            update(MonitorAlertRule)
+            .where(MonitorAlertRule.id == "rule-sparse")
+            .values(cooldown_minutes=None, enabled=None)
+        )
+        db.commit()
+
+
+def _rule(factory, rule_id: str) -> dict:
+    with factory() as db:
+        return jsonable_encoder(db.get(MonitorAlertRule, rule_id).to_dict())
+
+
+class TestAlertShape:
+    def test_rules_equal_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        _seed_alerts(factory)
+        r = client.get("/alerts")
+        assert r.status_code == 200, r.text
+        by_id = {rule["id"]: rule for rule in r.json()}
+        for rule_id in ("rule-full", "rule-sparse", "rule-legacy"):
+            assert by_id[rule_id] == _rule(factory, rule_id), rule_id
+            got = client.get(f"/alerts/{rule_id}")
+            assert got.status_code == 200, got.text
+            assert got.json() == _rule(factory, rule_id), rule_id
+        assert by_id["rule-full"]["channelConfig"]["smtp_password"] == "***"
+        assert "smtp-secret-value" not in r.text
+        assert by_id["rule-sparse"]["channelConfig"] == {}
+        assert by_id["rule-sparse"]["cooldownMinutes"] is None
+        assert by_id["rule-sparse"]["enabled"] is None
+        assert by_id["rule-legacy"]["channelConfig"] == ["x"]
+
+    def test_log_equals_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        _seed_alerts(factory)
+        r = client.get("/alerts/log")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = [
+                jsonable_encoder(e.to_dict())
+                for e in db.query(MonitorAlertLog).order_by(MonitorAlertLog.sent_at.desc())
+            ]
+        assert r.json() == want
+        assert {e["error"] for e in want} == {"relay refused", None}
+
+    def test_writes_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        r = client.post(
+            "/alerts",
+            json={
+                "name": "made",
+                "channel": "email",
+                "channel_config": {"to": "ops@example.com", "smtp_password": "smtp-secret-value"},
+            },
+        )
+        assert r.status_code == 201, r.text
+        rule_id = r.json()["id"]
+        assert r.json() == _rule(factory, rule_id)
+        assert r.json()["channelConfig"]["smtp_password"] == "***"
+
+        r = client.put(f"/alerts/{rule_id}", json={"cooldown_minutes": 5})
+        assert r.status_code == 200, r.text
+        assert r.json() == _rule(factory, rule_id)
+
+        r = client.post(f"/alerts/{rule_id}/toggle")
+        assert r.status_code == 200, r.text
+        assert r.json() == _rule(factory, rule_id)
+
+
+def _maintenance(factory, maintenance_id: str) -> dict:
+    with factory() as db:
+        return jsonable_encoder(db.get(MonitorMaintenance, maintenance_id).to_dict())
+
+
+class TestMaintenanceShape:
+    def test_list_equals_the_producer(self, client_db):
+        # m-weekly: every weekly column set; m-sparse: a once window with the nullable columns
+        # NULL, weekdays NULL handed out as [].
+        client, factory = client_db
+        with factory() as db:
+            db.add(
+                MonitorMaintenance(
+                    id="m-weekly",
+                    server_id="srv-1",
+                    note="patch night",
+                    kind="weekly",
+                    weekdays="[0, 6]",
+                    start_time="02:00",
+                    duration_minutes=120,
+                    timezone="Europe/Berlin",
+                    enabled=True,
+                    created_at=datetime(2026, 10, 1, 12, 0, 0),
+                )
+            )
+            db.add(
+                MonitorMaintenance(
+                    id="m-sparse",
+                    kind="once",
+                    starts_at=datetime(2026, 10, 5, 1, 0, 0),
+                    ends_at=datetime(2026, 10, 5, 3, 0, 0),
+                    created_at=datetime(2026, 10, 2, 12, 0, 0),
+                )
+            )
+            db.commit()
+            db.execute(
+                update(MonitorMaintenance)
+                .where(MonitorMaintenance.id == "m-sparse")
+                .values(enabled=None)
+            )
+            db.commit()
+        r = client.get("/maintenance")
+        assert r.status_code == 200, r.text
+        assert r.json() == [_maintenance(factory, "m-weekly"), _maintenance(factory, "m-sparse")]
+        assert r.json()[1]["weekdays"] == [] and r.json()[1]["enabled"] is None
+
+    def test_writes_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        body = {"kind": "weekly", "weekdays": [6], "start_time": "02:00", "duration_minutes": 60}
+        r = client.post("/maintenance", json=body)
+        assert r.status_code == 201, r.text
+        mid = r.json()["id"]
+        assert r.json() == _maintenance(factory, mid)
+
+        once = {
+            "kind": "once",
+            "starts_at": "2026-10-05T01:00:00",
+            "ends_at": "2026-10-05T03:00:00",
+        }
+        r = client.put(f"/maintenance/{mid}", json=once)
+        assert r.status_code == 200, r.text
+        assert r.json() == _maintenance(factory, mid)
+
+
+class TestAdminShape:
+    def test_agent_key_answers_with_the_raw_key_once(self, client_db):
+        client, factory = client_db
+        r = client.post("/agent-keys/srv-1")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        with factory() as db:
+            key = db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == "srv-1").one()
+            want = jsonable_encoder(key.to_dict())
+            assert MonitorAgentKey.hash_key(body["apiKey"]) == key.hashed_key
+        # The raw key replaces the masked one; every other key is the producer's.
+        assert want["apiKey"].startswith("***")
+        assert body == {**want, "apiKey": body["apiKey"]}
+
+        r = client.delete("/agent-keys/srv-1")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"deleted": True}
+
+    def test_cleanup_counts(self, client_db):
+        client, factory = client_db
+        _seed_checks(factory)
+        _seed_alerts(factory)
+        r = client.delete("/servers/srv-1/cleanup")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"checksDeleted": 1, "alertsDeleted": 1}
+
+
+def _template(factory, template_id: str, *, listed: bool = True) -> dict:
+    """What the router hands out for a template; with listed, with its assignments."""
+    with factory() as db:
+        template = db.get(MonitorTemplate, template_id)
+        if not listed:
+            return jsonable_encoder(templates_router._template_dict(template))
+        assignments = db.query(MonitorTemplateAssignment).filter_by(template_id=template_id).all()
+        tags = db.query(MonitorTemplateTagAssignment).filter_by(template_id=template_id).all()
+        return jsonable_encoder(
+            templates_router._template_dict(template, assignments=assignments, tag_assignments=tags)
+        )
+
+
+def _seed_builtin(factory, slug: str = "linux-base") -> str:
+    with factory() as db:
+        builtin_templates.seed_builtin_templates(db)
+        return db.query(MonitorTemplate).filter_by(builtin_slug=slug).one().id
+
+
+class TestTemplateShape:
+    def test_list_and_get_equal_the_producer(self, client_db):
+        # tpl-full: definitions, a server and a tag assignment; tpl-sparse: the nullable
+        # columns NULL, no assignments; a standard template carries the builtin columns.
+        client, factory = client_db
+        builtin_id = _seed_builtin(factory)
+        ping = {"def_id": "def-ping", "name": "Ping", "check_type": "ping"}
+        alert = {"def_id": "def-mail", "name": "Mail", "channel": "email"}
+        alert["channel_config"] = {"smtp_host": "mail.example", "smtp_password": "secret"}
+        with factory() as db:
+            db.add(
+                MonitorTemplate(
+                    id="tpl-full",
+                    name="Full",
+                    description="all set",
+                    check_definitions=json.dumps([ping]),
+                    alert_definitions=json.dumps([alert]),
+                )
+            )
+            db.add(MonitorTemplate(id="tpl-sparse", name="Sparse"))
+            db.add(
+                MonitorTemplateAssignment(
+                    id="as-1",
+                    template_id="tpl-full",
+                    server_id="srv-1",
+                    server_hostname="srv-1.example",
+                    server_name="srv-1",
+                )
+            )
+            db.add(MonitorTemplateTagAssignment(id="ta-1", template_id="tpl-full", tag="web"))
+            db.commit()
+        r = client.get("/templates")
+        assert r.status_code == 200, r.text
+        by_id = {t["id"]: t for t in r.json()}
+        for tid in ("tpl-full", "tpl-sparse", builtin_id):
+            assert by_id[tid] == _template(factory, tid)
+            got = client.get(f"/templates/{tid}")
+            assert got.status_code == 200, got.text
+            assert got.json() == _template(factory, tid)
+            assert "syncResult" not in got.json()
+        full = by_id["tpl-full"]
+        assert full["assignments"][0]["source"] == "manual"
+        assert full["tagAssignments"] == [{"id": "ta-1", "templateId": "tpl-full", "tag": "web"}]
+        assert full["alertDefinitions"][0]["channel_config"]["smtp_password"] == "***"
+        sparse = by_id["tpl-sparse"]
+        assert sparse["description"] is None and sparse["builtinSlug"] is None
+        assert sparse["checkDefinitions"] == [] and sparse["assignments"] == []
+        assert by_id[builtin_id]["builtinVersion"] is not None
+
+    def test_create_and_update_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        r = client.post("/templates", json={"name": "Made"})
+        assert r.status_code == 201, r.text
+        tid = r.json()["id"]
+        # A new template answers without assignments and without a sync result.
+        assert r.json() == _template(factory, tid, listed=False)
+
+        r = client.put(f"/templates/{tid}", json={"description": "changed"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body["syncResult"]) == {"created", "updated", "deleted", "servers"}
+        assert body == {**_template(factory, tid, listed=False), "syncResult": body["syncResult"]}
+
+    def test_builtin_update_answers_as_the_producer(self, client_db, monkeypatch):
+        client, factory = client_db
+        tid = _seed_builtin(factory)
+        shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
+        tpl = next(t for t in shipped if t["slug"] == "linux-base")
+        tpl["version"] += 1
+        tpl["check_definitions"] = [
+            {**d, "interval": "1m"} if d["def_id"] == "system-resources" else d
+            for d in tpl["check_definitions"]
+        ]
+        monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
+
+        r = client.get(f"/templates/{tid}/builtin-update")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = jsonable_encoder(templates_router.get_builtin_update(tid, db))
+        assert r.json() == want
+        assert set(r.json()["current"]) == {"checkDefinitions", "alertDefinitions"}
+
+        r = client.post(f"/templates/{tid}/builtin-update")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body["syncResult"]) == {"created", "updated", "deleted", "servers"}
+        assert body == {**_template(factory, tid, listed=False), "syncResult": body["syncResult"]}
+
+
+class TestTemplateLinkShape:
+    def test_assign_listing_and_restore_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        ping = {"def_id": "def-ping", "name": "Ping", "check_type": "ping"}
+        ping["config"] = {"target": "{{hostname}}"}
+        r = client.post("/templates", json={"name": "T", "check_definitions": [ping]})
+        assert r.status_code == 201, r.text
+        tid = r.json()["id"]
+        body = {"server_id": "srv-1", "hostname": "srv-1.example", "server_name": "srv-1"}
+        r = client.post(f"/templates/{tid}/assign", json=body)
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            check_ids = [c.id for c in db.query(MonitorCheck).filter_by(template_id=tid)]
+        assert r.json() == {"checksCreated": check_ids, "alertsCreated": []}
+
+        assert client.delete(f"/checks/{check_ids[0]}").status_code == 204
+        r = client.get("/templates/assignments/srv-1")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = jsonable_encoder(templates_router.get_server_assignments("srv-1", db))
+        assert r.json() == want
+        assert r.json()[0]["templateName"] == "T" and r.json()[0]["removedChecks"] == 1
+
+        r = client.post(f"/templates/{tid}/assign/srv-1/restore")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"restored": 1}
+
+    def test_suggestions_answer_as_the_producer(self, client_db):
+        client, factory = client_db
+        _seed_builtin(factory)
+        with factory() as db:
+            db.add(MonitorHostFacts(server_id="srv-1", os="linux", subsystems='["docker"]'))
+            db.commit()
+        r = client.get("/templates/suggestions/srv-1")
+        assert r.status_code == 200, r.text
+        with factory() as db:
+            want = jsonable_encoder(templates_router.suggest_templates(db, "srv-1"))
+        assert r.json() == want
+        assert {s["slug"] for s in r.json()} == {"linux-base", "docker-host"}
+
+    def test_assign_tag_answers_with_the_row(self, client_db, monkeypatch):
+        client, factory = client_db
+        monkeypatch.setattr(templates_router, "_tag_sync_best_effort", lambda db: None)
+        tid = client.post("/templates", json={"name": "T"}).json()["id"]
+        r = client.post(f"/templates/{tid}/assign-tag", json={"tag": "web"})
+        assert r.status_code == 201, r.text
+        with factory() as db:
+            row = db.query(MonitorTemplateTagAssignment).filter_by(template_id=tid).one()
+            assert r.json() == jsonable_encoder(row.to_dict())
+        assert r.json()["tag"] == "web"

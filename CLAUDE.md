@@ -23,121 +23,127 @@ Doku nachlesen. Die Dev-Box hat Docker, aber kein Display; schwere Suiten laufen
 ## 2. Betriebsmodell
 Kevin startet jede Session und entscheidet: Reihenfolge und Inhalt der Roadmap, sichtbares Verhalten,
 API-Verträge und Datenmigrationen, hingenommenes Restrisiko, Geld- und Zeitdeckel, Release, Tag, Ruleset,
-Repo-Einstellungen, sudo, Tokens, Passwörter. Den Plan eines Vorhabens gibt die Session selbst frei (§4, Kevin
-2026-10-21). Alles andere innerhalb eines freigegebenen Vorhabens
-entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt und mit Empfehlung.
-Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut die Task im Worktree des Vorhabens,
-ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
-Ledger. Parallel, wo es geht (Kevin 2026-10-20): Die Session hält so viele unabhängige Stränge gleichzeitig am Laufen,
-wie Dateien, Ressourcen (RAM, Platte, VMs) und die Regeln zulassen: freigegebene, disjunkte Vorhaben je in eigenem
-Worktree (Kriterien `/feature-plan` §4), Bauer verschiedener Ledger, Reviewer und `security` gleichzeitig, CI- und
-VM-Läufe, sobald ihr Gegenstand steht. Je Ledger baut höchstens ein Bauer, seine Tasks nacheinander; hat ein großes
-Vorhaben disjunkte Blöcke, teilt die Session es auf Kevins Wort in Teil-Ledger mit Teil-Branches, die in den
-Vorhabens-Branch gemergt werden. Seriell bleibt, was sich Contract-Dateien, eine Test-DB oder eine Abhängigkeit teilt:
-Parallelität darf keine Prüfung kosten. Jeden eigenen
-PR merged die Session selbst, auch einen, der `CLAUDE.md`, `.claude/` oder `scripts/` ändert, sobald er grün ist und
-alle Prüfer `approve` gesagt haben (Kevin, 2026-10-17). Grün heißt: die CI im ersten Anlauf grün und die Läufe, die §5
-vor dem Merge verlangt, grün; eine Ersatzprüfung der Session (§6, auch in einem Task-Commit) ist kein `approve`. Die
-Session merged einen je CI-Zyklus, und nur, wenn der Branch `origin/main` enthält (`git fetch`,
-`merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination nicht, die PR-CI testet
-dann genau `main` + PR (Kevin, 2026-10-15). Kevin merged fremde PRs und PRs, die `.github/workflows/`,
-`scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern: Diese wirken ohne Release auf Nutzer
-oder Secrets. Ist `main` rot, wird der letzte Merge
-revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
-Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn Minuten) laufen in einem tmux-Fenster ohne Modell mit
-`( . ./.devenv.sh; … ) > log; echo $? > rc`; die Session wartet mit einem Hintergrund-Wächter auf die `rc`-Datei
-und liest das Log, nie durch `tail` gepipt.
+Repo-Einstellungen, sudo, Tokens, Passwörter. Den Plan eines Vorhabens gibt die Session selbst frei (§4). Alles andere
+innerhalb eines freigegebenen Vorhabens entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt (ein
+Block je Zug) und mit Empfehlung.
+
+**Wer baut:** die Session selbst, Task für Task (`/feature-build`); Prüfer und gezielte Unterstützung sind Sub-Agenten
+(§6). Zwei feste Sessions, gestartet mit `bash scripts/dev/start-session.sh kern|klein` (Kevin 2026-10-29): die
+**Kern-Session** (Opus) baut SEC, REG, BUG mit Datenpfad, FEAT, Install/Update/Restore und Release; die
+**Klein-Session** (Sonnet) baut die `klein-`-Züge (Doku-Drift, Kommentare, Test-Lücken, kleine REF und UI-Fehler).
+Ein Architektur-Vorhaben über Komponenten startet Kevin als eigene Session (`start-session.sh arch R-nnnn`, Ledger
+`arch-<…>`).
+**Gebaut wird in Zügen:** ein Ledger nimmt alle Zeilen auf, die die Triage ihm zuordnet (Spalte `Ledger`, `roadmap.py
+zuege`); einzeln fahren nur REG, ein BUG mit Nutzerwirkung und Architektur. Je Ledger und Worktree baut ein Akteur.
+Jede Session nimmt nur Züge ihrer Stufe (`--stufe`), wechselt zwischen ihren Vorhaben, während Prüfer, CI oder VMs
+laufen (Kriterien `/feature-plan` §4), und lässt Zeilen aus, deren Dateien ein offener Branch der anderen ändert
+(`scripts/dev/overlap.sh`). Seriell bleibt, was sich Contract-Dateien, eine Test-DB oder eine Abhängigkeit teilt:
+Parallelität darf keine Prüfung kosten.
+
+**Merge:** Eigene PRs merged die Session selbst, auch zu `CLAUDE.md`, `.claude/`, `scripts/` (Kevin 2026-10-17), sobald
+die Bedingungen aus `/feature-build` §4.7 erfüllt sind. Kevin merged fremde PRs und PRs, die
+`.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern (sie wirken
+ohne Release auf Nutzer oder Secrets). Ist `main` rot, wird der letzte Merge revertiert, und bis `main` grün ist, wird
+nichts gemergt; flaky heißt Rerun plus Roadmap-Zeile.
 
 ## 3. Vor jeder Arbeit
 Der SessionStart-Hook druckt `AH-STATUS` (Checkout, Tag, Roadmap, Ledger, PRs, VMs). Fehlt er: `git status --short
 --branch`, `git tag --sort=-v:refname | head -1`, „Als Nächstes“ in `tasks/private/ROADMAP.md`, `Status:` des
-Ledgers. Nach `compact` oder `resume` dasselbe; offene `[ ]` aus der Ledger-Datei lesen, nicht aus der Erinnerung.
-Eine `Warnung:`-Zeile, einmal, vor der Arbeit, genau dann: (1) ein Vorhaben soll starten, dessen `Hängt ab von`
-nicht gemergt ist, oder eine `freigegeben`-Zeile höherer Klasse würde übersprungen; (2) ein Commit, Push, Tag oder
-Merge direkt auf `main` steht bevor, oder ein Release ohne grünen Wochenlauf; (3) ein Feature-Branch würde
+Ledgers. Eine `Warnung:`-Zeile, einmal, vor der Arbeit, genau dann: (1) ein Vorhaben soll starten, dessen `Hängt ab
+von` nicht gemergt ist, oder eine `freigegeben`-Zeile höherer Klasse würde übersprungen; (2) ein Commit, Push, Tag
+oder Merge direkt auf `main` steht bevor, oder ein Release ohne grünen Wochenlauf; (3) ein Feature-Branch würde
 Harness-Pfade mitändern; (4) Kevin will planen, mergen oder rebasen, und der Haupt-Checkout ist nicht auf `main`
-oder nicht sauber. Sonst keine Warnung und keine Bestätigungsfrage für Routine.
+oder nicht sauber. Sonst keine Warnung und keine Bestätigungsfrage für Routine. Dazu: ist der Sammellauf fällig
+(`/feature-build` §5)?
 
 ## 4. Lebenslauf eines Vorhabens
-Zeile in `tasks/private/ROADMAP.md` (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE) → `/feature-plan` schreibt
-`docs/features/<slug>.md` und `tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → die
-Session gibt sofort danach selbst frei, wenn Kevin die Zeile angenommen (`/roadmap triage`) oder das Vorhaben
-diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21; die Notiz der Zeile bleibt); die
-Freigabe ist dieser Roadmap-Status →
-`/feature-build` setzt beim Start im Worktree den Ledger-Kopf von `geplant` auf `aktiv` (`chore(ledger)`, nur wenn
-die Roadmap-Zeile `freigegeben` ist) und baut Task für Task → Abschluss (§5, §6) → PR → Merge → `roadmap.py sync`.
-Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in dieser Session oder in der
-Notiz der Zeile) schon trifft, stellt das Gate als Frage mit Empfehlung; die Task, die an ihr hängt, steht auf `[?]`,
-bis er antwortet, die übrigen baut die Session. Hängt jede Task an einer solchen Frage, bleibt die Zeile `geplant`.
-Die Roadmap ist die einzige Reihenfolge-Wahrheit, das Ledger die einzige Fortschritts-Wahrheit
-(`[ ]`/`[x]`/`[~]`/`[?]`, Format `tasks/README.md`). Keine Session sucht sich Arbeit außerhalb dieser zwei Dateien.
+Roadmap-Zeile (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE; Status neu → geplant → freigegeben → aktiv → bereit →
+pr → abgeschlossen) → `/feature-plan` (ein Zug: `--zug tasks/<slug>.md`) committet `docs/features/<slug>.md` und
+`tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → die Session gibt sofort selbst frei, wenn
+Kevin die Zeile angenommen (`/roadmap triage`) oder das Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve
+R-nnnn` (Kevin 2026-10-21) → `/feature-build` (Kopf `aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
+Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in der Session oder in der
+Notiz der Zeile) trifft, stellt das Gate als Frage mit Empfehlung; ihre Task steht auf `[?]`, die übrigen baut die
+Session; hängt jede Task an einer Frage, bleibt die Zeile `geplant`. Die Roadmap ist die einzige Reihenfolge-Wahrheit,
+das Ledger die einzige Fortschritts-Wahrheit (Format `tasks/README.md`); keine Session sucht sich Arbeit außerhalb.
 Harness-Pfade ändert eine Session nur auf Kevins Wort oder bei belegtem Produktschaden (roter Produkttest, falscher
-Merge, Datenverlust, Leak), als eigene Task, nie nebenbei. Funde an der Harness aus Reviews werden Roadmap-Zeilen
-`zurückgestellt`, keine Ledger.
+Merge, Datenverlust, Leak), als eigene Task, nie nebenbei; Harness-Funde aus Reviews werden Roadmap-Zeilen
+`zurückgestellt`.
 
 ## 5. Tests sind Beweis
-- Je Task nur das `Verify:` der Task mit gezieltem Testpfad (`bash scripts/dev/verify.sh <komp> --strict -- <test>`;
-  `verify.sh` sourct `.devenv.sh` selbst, `run.sh` nicht). Die Komponenten-Suiten fährt nur die PR-CI;
-  `bash scripts/tests/run.sh quick --strict` lokal vor einem Release. Verify-Zeilen in Flag-Form ohne Env-Präfix.
+Vor dem ersten Lauf eines Vorhabens `.claude/rules/testing.md` lesen (Ebenen, SKIP, VMs, Form der `Verify:`-Zeile).
+- Je Task nur ihr `Verify:` mit gezieltem Testpfad (`bash scripts/dev/verify.sh <komp> --strict -- <test>`; es sourct
+  `.devenv.sh` selbst, `run.sh` nicht). Komponenten-Suiten fährt die PR-CI, `run.sh quick --strict` lokal vor einem
+  Release.
 - Die Summary-Zeile (`N passed, M failed, K skipped`) ist die Evidenz und steht neben jedem `[x]`. Ein SKIP, ein
-  fehlendes Werkzeug, ein abgebrochener Lauf oder ein Befehl ohne Ausgabe ist rot. Erst rot, dann grün ist `flaky`.
-- Ein Server-Lauf zur Zeit je Test-DB; jeder Worktree hat seine eigene (§8). Revert-Proben nie im Bau-Worktree,
-  sondern in einem eigenen.
-- Berührt der Branch-Diff `apps/server`-API, Gateway, CA-Issuer, Agent, Desktop-Tunnel/Enrollment, Compose,
-  Install/Update, FRP oder PKI: `linux-full` im Sammellauf über `main` (`/test all`; ob er fällig ist, prüft die
-  Session beim Start und nach jedem Merge und startet ihn selbst, `/feature-build` §5, Kevin 2026-10-15), `scenario`
-  und `windows` vor dem Merge, Multibox nur nach Kevins Ja. VM-Läufe dürfen parallel laufen, je Vorhaben in seiner
-  Lane; `vm.py` prüft vor jedem Klon den RAM des Hosts. Im Pool `adminhelper-ci` darf die Session VMs klonen, baken
-  und zerstören (Kevin, 2026-09-08); danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler.
-  Proxmox-Zugang: Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
-- Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test, dann grün; Feature → Test dazu; Refactor →
-  Suite grün vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O,
-  echte SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.
-- CI nach Push begleiten (`gh pr checks <n> --watch --fail-fast`), nach einem Merge den `ci.yml`-Lauf des
-  Merge-Commits auf `main` (`gh run watch <id> --exit-status`); nicht „fertig“ melden, solange CI läuft oder rot ist.
+  fehlendes Werkzeug, ein abgebrochener Lauf oder ein Befehl ohne Ausgabe ist rot; erst rot, dann grün ist `flaky`.
+- **Ausgaben:** `verify.sh` legt die volle Ausgabe unter `.ah-out/logs/` ab und zeigt den Digest (jeder Schritt, rote
+  und übersprungene mit Auszug und Zeilenbereich, Summary, Exit, Logpfad); mehr nur gezielt (`sed -n <a>,<b>p`).
+  Andere lange Ausgaben erst in eine Datei, dann `bash scripts/dev/log-digest.sh <log> <rc>` oder `grep`; nie durch
+  `tail` gepipt, nie ein ganzes Log ins Modell.
+- **Lange Läufe** (`/test`, Wochenlauf, Multibox, über zehn Minuten) in tmux ohne Modell:
+  `( . ./.devenv.sh; … ) > log; echo $? > rc`; ein Hintergrund-Wächter wartet auf `rc`, keine Modellaufrufe zum Warten.
+- Ein Server-Lauf zur Zeit je Test-DB (jeder Worktree hat seine, §8); Gegenproben nur in einem Probe-Worktree.
+- **Heavy:** `Heavy:` im Ledger-Kopf (Zuordnung `/feature-plan` §3): `linux-full` im Sammellauf über `main`, den
+  die Session selbst startet (`/feature-build` §5, Kevin 2026-10-15); `scenario` und `windows` vor dem Merge;
+  Multibox nur nach Kevins Ja. VMs nur im Pool `adminhelper-ci` (klonen, baken, zerstören erlaubt, Kevin 2026-09-08),
+  je Vorhaben in seiner Lane (`/vm`); danach `python3 scripts/vm/vm.py list`, eine geleakte VM ist ein Fehler.
+- Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test; Feature → Test dazu; Refactor → Suite grün
+  vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O, echte
+  SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.
+- Nicht „fertig“ melden, solange CI läuft oder rot ist (PR und Merge-Commit, `/feature-build` §4.7–§4.8).
 
-## 6. Prüfer: Sub-Agenten mit festem Auftrag (`.claude/agents/`)
-Aufruf immer über das Agent-Werkzeug mit `subagent_type` (`builder`, `reviewer`, `tester`, `security`), nie über
-automatische Wahl; Kevin tippt `@agent-<name>`. Jeder Aufruf nennt den **absoluten Worktree-Pfad**; Sub-Agenten
-laufen im Arbeitsverzeichnis der Session und müssen `git -C <wt>` und `bash <wt>/scripts/…` nutzen.
-- Bauen: `builder` je Task mit Worktree-Pfad, Ledger, Task-ID, Spec-Stelle. Er baut, fährt das `Verify:`,
-  hinterlässt die Commit-Nachricht und committet nicht. Fragen beendet er mit `[?]` im Ledger; die Session fragt
-  Kevin und setzt ihn mit der Antwort fort (SendMessage an denselben Agenten).
-- Vor jedem Commit: `reviewer` (Opus) mit Diff-Pfaden, Slug, Task-ID, Summary-Zeile, eigenem Scratch-Verzeichnis.
-  Die Session schreibt keinen Prüfprompt; der Auftrag ist die Agent-Datei. `approve` → `task-close.sh`.
-  `request_changes` mit `blocker` oder belegtem `wichtig` → `builder` mit den Funden einmal, Tests erneut, einmal
-  re-reviewen; danach Commit oder `[?]`. Nits blockieren nie. Zwei Runden sind das Maximum.
-- Berührt der Diff einen Risikopfad (`scripts/dev/review-risk.txt`: Auth, Enrollment, PKI, FRP, Gateway, Alembic,
-  Release-Dateien, Harness-Pfade): zusätzlich `security`.
-- Vor dem Abschluss: `tester` über den Branch (Tests da, echt, rot ohne den Fix?) und `reviewer` über
-  `git -C <wt> diff main...`. Beide Urteile stehen im PR-Text.
-- Sub-Agenten haben keine Uhr, `maxTurns` ist Notbremse. Turn-Limit → einmal fortsetzen („Ergebnis jetzt“); erneut
-  oder 20 min ohne Wachstum der `output_file` (`stat -L -c %Y`, nie lesen) → stoppen, einmal enger neu starten (tester:
-  Probe-Worktree vorher weg), dann prüft die Session selbst (Commit-Body), beim builder `[~]`. Keine vollen Suiten.
+## 6. Rollen, Prüfer, Modelle (`.claude/agents/`)
+| Rolle | Modell | Aufgabe |
+|---|---|---|
+| Kern-Session | Opus, medium (`start-session.sh kern`) | plant, implementiert, korrigiert, schließt Tasks, Doku, Übersetzung |
+| Klein-Session | Sonnet, medium (`start-session.sh klein`) | dasselbe für die `klein-`-Züge |
+| `reviewer` | Opus, high; Task-Prüfer der Klein-Session Sonnet (`model: "sonnet"`) | `task`: jede Task vor ihrem Commit (nicht bei `Review: am Ende`); `branch`: Abschlussprüfung von Code und Tests |
+| `security` | Opus, high | dazu bei Risikopfad (`scripts/dev/review-risk.txt`, `review.sh risk`) |
+| `advisor` | Opus, high; per Aufruf `xhigh` | schwierige Architektur, festgefahrene Fehlersuche, Sicherheitsfragen; implementiert nicht |
+
+- Aufruf über das Agent-Werkzeug mit `subagent_type` und dem **absoluten Worktree-Pfad** (Sub-Agenten laufen im
+  Arbeitsverzeichnis der Session: `git -C <wt>`, `bash <wt>/scripts/…`); Kevin tippt `@agent-<name>`. Den Auftrag
+  trägt die Agent-Datei; die Session gibt nur Eingaben (Einsatzart, Slug, Task-ID, Diff-Pfade, Summary-Zeile,
+  Scratch-Verzeichnis), keine Bewertung.
+- **Ein Task-Prüfer je Zug** (Kevin 2026-10-29): die erste Task startet ihn, jede weitere setzt ihn fort (SendMessage,
+  neue Task-ID), nach fünf Tasks oder einer eigenen Kompaktierung startet ein frischer. Eine reine Doku-Task
+  (`Task-Review: am Ende`; `task-close.sh` lässt das nur für Doku-Dateien gelten) prüft erst die Abschlussprüfung.
+  `security`, die Abschlussprüfung und `advisor` laufen in jeder Session auf Opus.
+- **Mehr Effort nur gezielt:** Nach zwei ähnlichen Versuchen ohne Fortschritt fragt die Session den `advisor`, statt
+  weiter zu probieren; `xhigh` nur für die schwersten Fragen, `max` nur mit Begründung in `## Entscheidungen`.
+  Fehlende Infrastruktur (Werkzeug, VM, Netz, Rechte) ist kein Grund für mehr Modell oder Effort, sondern STOPP und
+  Bericht. Modell und Effort der eigenen Session schaltet die Session nicht um; welche Session was baut, legt
+  `start-session.sh` fest, ein Architektur-Vorhaben empfiehlt sie Kevin als `start-session.sh arch` (Kevin 2026-10-29).
+- **Urteile:** `<wt>/.ah-out/review/<slug>/<id>.verdict.json` bzw. `branch.verdict.json` (Form in
+  `.claude/agents/reviewer.md`). Kann ein Prüfer nicht schreiben, schreibt die Session das gemeldete JSON wörtlich
+  (Kevin 2026-10-21).
+- **Grenzen:** `request_changes` mit `blocker` oder belegtem `wichtig` → korrigieren, denselben Prüfer fortsetzen;
+  höchstens zwei Runden, Nits blockieren nie. Turn-Limit → einmal fortsetzen („Ergebnis jetzt“); erneut oder 20 min
+  ohne Wachstum der `output_file` (`stat -L -c %Y`, nie lesen) → stoppen, einmal enger neu starten (Probe-Worktree
+  vorher weg), dann prüft die Session selbst: Ersatzprüfung im Commit-Body, kein `approve`.
 
 ## 7. Commit
-Nur `bash <wt>/scripts/dev/task-close.sh <ledger> <id> --stage -m "<msg>"` (im Worktree) committet eine Task: es
-fährt das `Verify:`, prüft das Reviewer-Urteil und den Token-Scan, stagt genau die `Dateien:` der Task, setzt den
-Haken mit der Summary-Zeile und committet Code und Ledger in einem Commit. Exit 2: nicht (voll) gestagt oder
-Eingabe kaputt; 3: Suite rot, Urteil fehlt oder Testdatei ohne `Test-Löschung:` gelöscht; 4: Token im Diff oder
-Deklarationszeile im Commit geändert; 74: Suite konnte nicht laufen, STOPP. Plan- und Ledger-Commits
-(`chore(plan)`, `chore(ledger)`) macht die Session selbst. Conventional Commits auf Englisch, ein Commit je Task.
-Die Git-Hooks fahren den Token-Scan; `--no-verify` gibt es nicht. Nie einen roten Stand committen: ein Fix, der in
-zwei Versuchen nicht grün wird, wird zurückgenommen (`git -C <wt> restore --source=HEAD --staged --worktree --
-<datei>`) und die Task `[~] verworfen: <Grund>`. `git checkout --`, `git restore` und `git stash` löschen ungestagte
-Arbeit: nur nach `git add` oder wenn Verwerfen der Zweck ist.
+Eine Task committet nur `bash <wt>/scripts/dev/task-close.sh <ledger> <id> --stage -m "<msg>"`: es fährt das
+`Verify:`, prüft Reviewer-Urteil (vorhanden, jünger als jede gestagte Datei, `approve`) und Token-Scan, stagt genau die
+`Dateien:`, setzt den Haken mit der Summary-Zeile, ein Commit für Code und Ledger (Exit-Codes im Skriptkopf, Reaktion
+in `/feature-build` §3). `chore(plan)`- und `chore(ledger)`-Commits macht die Session selbst. Conventional Commits
+englisch, einer je Task; die Git-Hooks fahren den Token-Scan, `--no-verify` gibt es nicht. Nie einen roten Stand
+committen: ein Fix, der in zwei Versuchen nicht grün wird, wird zurückgenommen (`git -C <wt> restore --source=HEAD
+--staged --worktree -- <datei>`), die Task `[~] verworfen: <Grund>`. `git checkout --`, `git restore` und `git stash`
+löschen ungestagte Arbeit: nur nach `git add` oder wenn Verwerfen der Zweck ist.
 
 ## 8. Roadmap, Ledger, Worktrees
-`tasks/private/` ist ein eigenes privates Repo (Sicherheitsfunde, Homelab-Namen): nie im öffentlichen Baum. Die
-Roadmap schreibt nur `python3 scripts/dev/roadmap.py` (`add`, `status`, `approve`, `sync`, `lint`), nie ein Edit; „Als
-Nächstes“ pflegt Kevin von Hand. Statuswechsel: neu → geplant → freigegeben (die Session nach dem Plan-Commit, §4) →
-aktiv → bereit → pr → abgeschlossen (`sync`); `zurückgestellt`/`blockiert` mit `--note` und Datum.
-Jedes Vorhaben baut in einem eigenen Worktree: `git worktree add ../AdminHelper-<slug> feature/<slug>` und
-`bash scripts/dev/worktree-setup.sh ../AdminHelper-<slug> <slug>` (eigene Test-DB, Venv, `node_modules`, Sidecar,
-`.vm/lane`); erst danach den Ledger-Kopf im Worktree ändern (das Ledger liegt nur auf dem Branch). Nach dem Merge
-`bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>` (reapt zuerst die VMs der Lane). Nie zwei
-Bauer auf demselben Ledger. Temp-Verzeichnisse nur `mktemp -d -p <eigenes Verzeichnis>`, gelöscht nur mit vollem
-Pfad, nie per Glob. Nach jedem Vorhaben `git worktree list` und `vm.py list` sauber.
+`tasks/private/` ist ein eigenes privates Repo (Sicherheitsfunde, Homelab-Namen), nie im öffentlichen Baum. Die Roadmap
+schreibt nur `python3 scripts/dev/roadmap.py` (`add`, `status`, `approve`, `sync`, `lint`), nie ein Edit; „Als Nächstes“
+erzeugt es bei jedem Schreiben aus den Zeilen (Kevin 2026-10-30), Handarbeit für Kevin ist eine `blockiert`-Zeile;
+`zurückgestellt`/`blockiert` mit `--note` und Datum. Die Triage ordnet jede angenommene Zeile einem Zug zu
+(`status R-nnnn geplant --ledger tasks/<zug>.md`, `klein-` für die Klein-Session; `/roadmap`). Jedes Vorhaben baut in
+`git worktree add ../AdminHelper-<slug> feature/<slug>` plus `bash scripts/dev/worktree-setup.sh ../AdminHelper-<slug>
+<slug>` (eigene Test-DB, Venv, `node_modules`, Sidecar, `.vm/lane`); erst danach den Ledger-Kopf im Worktree ändern (das
+Ledger liegt nur auf dem Branch). Nach dem Merge `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`
+(reapt zuerst die VMs der Lane), dann `git worktree list` und `vm.py list` sauber. Temp-Verzeichnisse nur `mktemp -d -p
+<eigenes Verzeichnis>`, gelöscht nur mit vollem Pfad, nie per Glob.
 
 ## 9. Arbeitsweise
 Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Python, Go und verteilten Systemen.
@@ -160,35 +166,41 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
 ## 10. Konventionen
 - **Conventional Commits** (`feat: fix: chore: refactor: docs: test: perf: tune:`), englisch, ein Commit je logischem
   Schritt; Release-Tags `vX.Y.Z`. Die Ledger-Datei `tasks/<slug>.md` wird im Task-Commit mitgestaged.
-- **Toolchains nur nach `source .devenv.sh`** (gitignored; setzt PATH für `go`/`ruff` und `AH_TEST_DB`). Fehlt es, sind
-  `go` und `ruff` unsichtbar — dann ist die Umgebung falsch, nicht der Code.
-- **Formatierung und Lint sind Gates:** Rust `cargo fmt` + `clippy -D warnings`; TypeScript strict, kein `any`, ESLint +
-  Prettier; Go `gofmt` + `go vet`; Python `ruff check` + `ruff format` (`ruff.toml` im Root).
+- **Toolchains nur nach `source .devenv.sh`** (gitignored; setzt PATH für `go` und `AH_TEST_DB`; `ruff`, `go` und
+  `reuse` liegen zusätzlich als Links in `~/.local/bin`, DEVELOPMENT.md). Fehlt eins davon, ist die Umgebung falsch,
+  nicht der Code.
+- **Formatierung und Lint sind Gates** (Befehle in der Tabelle §1; TypeScript strict ohne `any`, ESLint + Prettier;
+  `ruff.toml` im Root).
 - **SPDX-Header in jeder neuen Quelldatei** (`.py .go .rs .ts .svelte .js .mjs .sh`): `reuse annotate --copyright
   "Kevin Stenzel" --license GPL-3.0-or-later <datei>`. Drittanbieter stehen in `THIRD_PARTY_LICENSES.md`.
 - **Kommentare nur fürs nicht-offensichtliche Warum** (versteckte Constraints, Invarianten, Workarounds für konkrete Bugs).
-- **Doku im selben Commit** (DE + EN, README, DEVELOPMENT, CHANGELOG; Regeln in `.claude/rules/docs.md`).
-- **Release-Kanäle** (von Hand): `beta` ist der Tag `vX.Y.Z` ohne Suffix nach jedem grünen Wochenlauf, veröffentlicht
-  als „Pre-release“; `stable` setzt Kevin dasselbe Release ohne neuen Tag auf „Latest“, frühestens 7 Tage nach dem Beta
-  ohne Fix und ohne Rückmeldung, `hotfix` als einziger Weg daran vorbei. Release-Bump: zuerst
-  `.claude/rules/release.md` lesen.
+- **Doku** (DE + EN, README, DEVELOPMENT, CHANGELOG über `changelog.d/<slug>.md`): in der Task oder gebündelt in einer
+  Doku-Task desselben Ledgers, vor der Abschlussprüfung vollständig; Regeln in `.claude/rules/docs.md` (vor Plan,
+  Doku-Task und Abschluss lesen).
+- **Release** (Bump, Kanäle `beta`/`stable`/`hotfix`, Signatur): zuerst `.claude/rules/release.md` lesen.
 
 ## 11. Claude tut nie
 Pushen auf `main` des öffentlichen Repos, taggen, publizieren, Ruleset oder Repo-Einstellungen ändern (das private
 Roadmap-Repo pusht die Session nach jeder Änderung) · einen Harness-Pfad nebenbei ändern · eine Zeile freigeben, die
-Kevin nicht angenommen oder diktiert hat oder die keinen committeten Plan hat ·
-einen Haken ohne Summary-Zeile · einen Test abschalten oder schwächen, um grün zu werden · VMs außerhalb des Pools
-`adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
-Dateien schreiben · `env` ausgeben · in geteilten Temp-Verzeichnissen per Glob löschen · einen zweiten Bauer auf
-dasselbe Ledger setzen.
+Kevin nicht angenommen oder diktiert hat oder die keinen committeten Plan hat · einen Haken ohne Summary-Zeile · ein
+Prüfurteil erfinden oder umschreiben · einen Test abschalten oder schwächen, um grün zu werden · VMs außerhalb des
+Pools `adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
+Dateien schreiben · `env` ausgeben · in geteilten Temp-Verzeichnissen per Glob löschen · einen zweiten Akteur auf
+dasselbe Ledger oder denselben Worktree setzen.
 
 ## 12. Wo steht was
-`.claude/agents/` die vier Prüfer · `.claude/skills/` `/feature-plan`, `/feature-build`, `/test`, `/vm`, `/roadmap` ·
-`.claude/rules/` `testing.md`, `docs.md`, `release.md` (pfadgebunden) · `scripts/dev/` `task-close.sh`,
-`worktree-setup.sh`, `roadmap.py`, `ledger.sh`, `review.sh sec`, Hooks · `docs/developer/` Architektur, CI/CD (DE+EN) ·
-`DEVELOPMENT.md` Dev-Setup · `tasks/README.md` Ledger-Format · `tasks/private/` Roadmap und Funde · `CHANGELOG.md`.
+`.claude/agents/` (`reviewer`, `security`, `advisor`) · `.claude/skills/` (`/feature-plan`, `/feature-build`, `/test`,
+`/vm`, `/roadmap`) · `.claude/rules/` (`testing.md`, `docs.md`, `release.md`; pfadgebunden, für Worktree-Pfade
+ausdrücklich lesen) · `.claude/settings.json` (Modell, Effort, Rechte, Hooks) · `scripts/dev/` (`task-close.sh`,
+`verify.sh`, `log-digest.sh`, `review.sh sec|risk|pr-body|final`, `ledger.sh`, `roadmap.py`, `overlap.sh`,
+`start-session.sh`, Worktree-Skripte, Hooks) · `changelog.d/` · `docs/developer/` (Architektur, CI/CD, DE+EN) ·
+`DEVELOPMENT.md` · `tasks/README.md` (Ledger-Format) · `tasks/private/` · `CHANGELOG.md`.
 
-## 13. Beim Kompaktieren
-Nach `compact` oder `resume`: §3 erneut; offene `[ ]` des aktiven Ledgers aus der Datei; laufende Sub-Agenten und
-tmux-Läufe anhand ihrer Dateien (`.ah-out/review/`, `rc`-Dateien) prüfen; nichts als erledigt behandeln, was nicht
-`[x]` im Ledger ist.
+## 13. Unterbrechung, Kompaktieren, Übergabe
+Nach `compact`, `resume` oder in einer neuen Session: §3 erneut; offene `[ ]`/`[?]` und `## Entscheidungen` aus der
+Ledger-Datei, nicht aus der Erinnerung; `git -C <wt> status` und `log`; laufende Sub-Agenten und tmux-Läufe anhand
+ihrer Dateien (`.ah-out/review/`, `rc`-Dateien); erledigt ist nur, was `[x]` im Ledger ist. Zusammenhängende Tasks
+baut eine Session am Stück. Vor einem fachlichen Wechsel oder bei vollem Kontext übergibt sie: laufende Task
+committet oder zurückgenommen, Entscheidungen in `## Entscheidungen`, Fragen als `[?]`, dann höchstens fünf Zeilen
+Übergabe mit Belegen (Vorhaben, Worktree, letzter Commit, nächste Task, laufende Läufe mit `rc`-Pfad) und der
+Vorschlag an Kevin für `/compact` oder eine neue Session.

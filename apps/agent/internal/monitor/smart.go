@@ -5,6 +5,7 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -48,22 +49,23 @@ type SmartDisk struct {
 // smartctl (same reason as dockerCLI).
 var smartctlCLI = struct {
 	lookPath func(file string) (string, error)
-	run      func(timeout time.Duration, name string, args ...string) ([]byte, error)
+	run      func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error)
 }{exec.LookPath, runTimed}
 
 // collectSmart collects SMART data of all detected devices via smartctl. Without a single disk it
 // returns why instead, which the report sends as smart_absent, so a host without smartctl does not
 // pass for one without disks: not_installed (no smartctl, e.g. on VMs), scan_failed (the scan failed,
 // hung or printed no JSON, or no device it found gave readable SMART data) or no_devices (the scan
-// found none).
-func collectSmart() ([]SmartDisk, string) {
+// found none). ctx ends every smartctl call; once it has ended, no further device is queried, and the
+// disks read before stay in the result.
+func collectSmart(ctx context.Context) ([]SmartDisk, string) {
 	smartctl, err := smartctlCLI.lookPath("smartctl")
 	if err != nil {
 		return nil, "not_installed"
 	}
 
 	// Scan all SMART-capable devices (with a timeout in case the controller hangs)
-	scanOut, err := smartctlCLI.run(15*time.Second, smartctl, "--scan", "--json=c")
+	scanOut, err := smartctlCLI.run(ctx, 15*time.Second, smartctl, "--scan", "--json=c")
 	if err != nil {
 		return nil, "scan_failed"
 	}
@@ -92,10 +94,13 @@ func collectSmart() ([]SmartDisk, string) {
 		disks []SmartDisk
 	)
 	for _, dev := range scanResult.Devices {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		go func(name, id, devType, proto string) {
 			defer wg.Done()
-			if d := querySmartDevice(smartctl, name, devType, proto); d != nil {
+			if d := querySmartDevice(ctx, smartctl, name, devType, proto); d != nil {
 				d.Device = id
 				mu.Lock()
 				disks = append(disks, *d)
@@ -127,7 +132,7 @@ func smartDiskID(name, infoName, devType string) string {
 	return name
 }
 
-func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {
+func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol string) *SmartDisk {
 	// The scan type goes along as -d: some types only the scan knows (megaraid,N on /dev/bus/N, which
 	// a query without -d cannot detect), the others it detects from the name as the query would. Not
 	// scsi: the scan names every /dev/sdX without a USB bridge scsi without opening it, a SATA disk
@@ -137,7 +142,7 @@ func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {
 	if devType != "" && devType != "scsi" {
 		args = append(args, "-d", devType)
 	}
-	out, err := smartctlCLI.run(30*time.Second, smartctl, append(args, device)...)
+	out, err := smartctlCLI.run(ctx, 30*time.Second, smartctl, append(args, device)...)
 
 	// smartctl uses bit flags in the exit code. We keep the full code
 	// so the server can evaluate bit 0x10 (prefail) as critical.

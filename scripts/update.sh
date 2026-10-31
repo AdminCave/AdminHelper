@@ -24,8 +24,12 @@
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
 # runtime files + .env before the swap; on a failed swap, .env migration, agent-repo
-# refresh, image pull, recreate or health check it auto-rolls-back the runtime files
-# + image pins (use --no-rollback to inspect the broken state). The updater updates
+# refresh, image pull, or `docker compose up --wait` (recreate plus the health
+# check of every service that has one), and on SIGINT, SIGTERM or SIGHUP (Ctrl-C,
+# kill, a dropped SSH session) once the snapshot exists, it auto-rolls-back the
+# runtime files + image pins and says "zurueckgerollt" only when the old state comes
+# up healthy again (use --no-rollback to inspect the broken state). The image pins
+# reach .env only after the pull. The updater updates
 # ITSELF: if the release ships a newer update.sh it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
@@ -122,45 +126,115 @@ read_quoted() {
     return 1
 }
 
+# Leaves $1 in TRIMMED without the white space compose skips in front of it: in
+# front of a value (and after "export ") compose-go's isSpace, the ASCII blanks,
+# U+0085 and U+00A0; in front of a statement ($2 = statement) Go's
+# unicode.IsSpace, also U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F and
+# U+3000. Spelled out in UTF-8 bytes, so the caller's locale does not decide.
+trim_blanks() {
+    local s="$1" b blanks=(' ' $'\t' $'\v' $'\f' $'\r' $'\xc2\x85' $'\xc2\xa0')
+    [ "$2" != statement ] || blanks+=($'\xe1\x9a\x80' $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82'
+        $'\xe2\x80\x83' $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' $'\xe2\x80\x87' $'\xe2\x80\x88'
+        $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe2\x80\xa8' $'\xe2\x80\xa9' $'\xe2\x80\xaf' $'\xe2\x81\x9f'
+        $'\xe3\x80\x80')
+    while :; do
+        for b in "${blanks[@]}"; do
+            case $s in "$b"*) s=${s#"$b"}; continue 2 ;; esac
+        done
+        break
+    done
+    TRIMMED=$s
+}
+
+# 0 if $1, the text in front of '=' or ':' or a line without either, is a key
+# compose takes (compose-go dotenv, locateKeyName): letters, digits and _ . - [ ];
+# blanks are skipped, but a space between two of its characters is an error ("key
+# cannot contain a space"), unless $2 is 0: the last line of .env, without a line
+# break and without '=' or ':', is a value to compose, not a key. Letters and
+# digits beyond ASCII are told by [[:alpha:]] and [[:digit:]] under C.UTF-8, whose
+# classes come close to Go's unicode.IsLetter and IsNumber (a '²' is a number to
+# Go only). Without a UTF-8 locale such a character passes: better compose stop an
+# update than this check stop one that compose would run.
+env_key_ok() {
+    local k="$1" spaced="$2" c n i=0 seen=0 gap=0 utf8=0 probe=$'\xc3\x84'
+    local LC_ALL=C.UTF-8 2>/dev/null
+    [ "${#probe}" -ne 1 ] || utf8=1
+    while [ "$i" -lt "${#k}" ]; do
+        c=${k:i:1}; i=$((i + 1))
+        case $c in
+            ' ') [ "$seen" -eq 0 ] || gap=$spaced; continue ;;
+            $'\t'|$'\v'|$'\f'|$'\r') continue ;;
+            []_.[-]|[0123456789]|[abcdefghijklmnopqrstuvwxyz]|[ABCDEFGHIJKLMNOPQRSTUVWXYZ]) ;;
+            *)
+                printf -v n '%d' "'$c"
+                [ "$n" -ge 128 ] || return 1
+                [ "$utf8" -eq 1 ] || continue
+                # U+0085 and U+00A0 are blanks to compose.
+                case $n in 133|160) continue ;; esac
+                [[ $c == [[:alpha:][:digit:]] ]] || return 1 ;;
+        esac
+        [ "$gap" -eq 0 ] || return 1
+        seen=1
+    done
+}
+
 # compose reads the values in .env as templates, and a '${' that starts no valid
 # placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
-# template". Checked before the first one, so such a value stops the update before
-# backup, swap and re-pin rather than after. Reads .env as compose does: blank and
-# '#' lines drop, "export " may lead, '=' or ':' separates; a quoted value runs to
-# its closing quote, over several lines if need be, and is literal in single
-# quotes, and the text after that quote is read as a line of its own; an unquoted
-# value ends at " #". The message names
-# the key, never the value: it may be a secret.
+# template"; so do a quote that never closes and a key compose does not take
+# (env_key_ok), text after a closing quote included. Checked before the first
+# call, so such a .env stops the update before backup, swap and re-pin rather than
+# after. Reads .env as compose does: a BOM at its start drops, blank and '#' lines
+# drop, "export " may lead, '=' or ':' separates, a line without either is a key
+# without a value; a quoted value runs to its closing quote, over several lines if
+# need be, and is literal in single quotes, and the text after that quote is read
+# as a line of its own; an unquoted value ends at " #". The message names the
+# first key of the line or the line number, never a value or the line: either may
+# hold a secret, and compose's own message quotes them. Not a later key of the
+# line either: the text after a closing quote may be meant as part of the value.
 check_env_templates() {
-    local line key val more q rest QUOTED QUOTED_REST
+    local line key name val more q rest eol spaced n=0 QUOTED QUOTED_REST TRIMMED
     [ -f .env ] || return 0
-    while IFS= read -r line || [ -n "$line" ]; do
+    while :; do
+        # eol=0: the line ends .env without a line break.
+        eol=1; IFS= read -r line || { eol=0; [ -n "$line" ] || break; }
+        n=$((n + 1)); name=""
+        [ "$n" -gt 1 ] || line=${line#$'\xef\xbb\xbf'}
         # One assignment per pass: after a closing quote, compose reads on.
         while [ -n "$line" ]; do
-            line=${line#"${line%%[![:space:]]*}"}
+            trim_blanks "$line" statement; line=$TRIMMED
             case $line in ''|'#'*) break ;; esac
+            # compose's ^export\s+: RE2's \s is ASCII only and without \v.
             case $line in
-                export[[:space:]]*) line=${line#export}; line=${line#"${line%%[![:space:]]*}"} ;;
+                export[$' \t\f\r']*) trim_blanks "${line#export}" value; line=$TRIMMED ;;
             esac
-            case $line in *[=:]*) ;; *) break ;; esac
-            key=${line%%[=:]*}; key=${key%"${key##*[![:space:]]}"}
-            val=${line#*[=:]}; val=${val#"${val%%[![:space:]]*}"}
+            key=${line%%[=:]*}; spaced=1
+            [ "$key" != "$line" ] || spaced=$eol
+            if ! env_key_ok "$key" "$spaced"; then
+                [ -z "$name" ] || die ".env: der Wert von ${name} hat hinter dem schliessenden Anfuehrungszeichen Text, den docker compose als Schluessel liest und nicht annimmt — compose bricht damit jeden Aufruf ab. Ein Anfuehrungszeichen im Wert als \\\" bzw. \\' schreiben oder den Text entfernen. Abbruch (nichts veraendert)."
+                die ".env: der Eintrag in Zeile ${n} hat einen Schluessel, den docker compose nicht annimmt (erlaubt: Buchstaben, Ziffern und _ . - [ ], kein Leerzeichen) — compose bricht damit jeden Aufruf ab. Den Schluessel korrigieren oder die Zeile mit '#' auskommentieren. Abbruch (nichts veraendert)."
+            fi
+            [ "$key" != "$line" ] || break
+            key=${key%"${key##*[![:space:]]}"}; name=${name:-$key}
+            trim_blanks "${line#*[=:]}" value; val=$TRIMMED
             rest=""
             case $val in
                 "'"*|'"'*)
                     # The lines up to the closing quote are part of this value, not
-                    # keys of their own. A quote never closed is compose's to report.
+                    # keys of their own.
                     q=${val:0:1}; val=${val:1}
                     until read_quoted "$q" "$val"; do
-                        IFS= read -r more || [ -n "$more" ] || return 0
-                        val+=$'\n'$more
+                        IFS= read -r more || {
+                            eol=0
+                            [ -n "$more" ] || die ".env: der Wert von ${name} hat ein nicht geschlossenes Anfuehrungszeichen — docker compose bricht damit jeden Aufruf ab. Das Anfuehrungszeichen schliessen. Abbruch (nichts veraendert)."
+                        }
+                        n=$((n + 1)); val+=$'\n'$more
                     done
                     rest=$QUOTED_REST
                     if [ "$q" = '"' ]; then val=$QUOTED; else val=""; fi ;;
                 *) val=${val%% #*} ;;
             esac
             env_template_ok "$val" \
-                || die ".env: der Wert von ${key} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+                || die ".env: der Wert von ${name} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
             line=$rest
         done
     done < .env
@@ -168,10 +242,35 @@ check_env_templates() {
 
 # --- Preflight --------------------------------------------------------------
 [ -f docker-compose.yml ] || die "aus dem Install-Verzeichnis ausfuehren (docker-compose.yml fehlt)."
+# The services run as UID 10001 (app) and Postgres as UID/GID 70: a host account that has
+# one of these IDs reaches the data of the containers. The install directory is closed to
+# others (at most 0750, the owner stays who installs), and such an account is named, not refused.
+# Tighten only: g-w,o-rwx turns 0755/0775 into 0750 and leaves a stricter 0700 alone.
+close_install_dir() {
+    chmod g-w,o-rwx . 2>/dev/null \
+        || echo "WARNING: could not close $(pwd) to other accounts; they may read the install directory." >&2
+    return 0
+}
+warn_host_uids() {
+    command -v getent >/dev/null 2>&1 || return 0
+    local uid name
+    for uid in 10001 70; do
+        # getent ends with 2 for no such account; under pipefail that must not end the run.
+        name=$(getent passwd "$uid" 2>/dev/null | cut -d: -f1) || name=""
+        [ -z "$name" ] || echo "WARNING: host account '$name' has UID $uid, which a container uses; it can read the data of the services (see docs/admin/betrieb.html)." >&2
+    done
+    return 0
+}
+warn_host_uids
 check_env_templates
 command -v docker >/dev/null 2>&1 || die "docker fehlt."
 docker compose version >/dev/null 2>&1 || die "'docker compose' fehlt."
+compose_up_help=$(docker compose up --help 2>&1 || true)
+{ grep -qE -- '--wait([[:space:]]|$)' <<<"$compose_up_help" && grep -q -- '--wait-timeout' <<<"$compose_up_help"; } \
+    || die "docker compose $(docker compose version --short 2>/dev/null || echo '?') lacks 'up --wait' and '--wait-timeout' (Compose v2.17 or newer) — nothing changed."
 command -v curl >/dev/null 2>&1 || die "curl fehlt."
+# After the checks that stop with "nothing changed"; --check changes nothing, the mode included.
+[ "$CHECK" = 1 ] || close_install_dir
 
 # Set or replace KEY=value in .env (idempotent), un-commenting if needed. Returns 1,
 # with .env unchanged, if the new file cannot be written.
@@ -341,18 +440,12 @@ update_agent_repo() {
     cp -a "$staging"/. repo/ || return 1
 }
 
-# Wait until the server accepts connections (migrations done, uvicorn up).
-# Retries/interval are tunable (default 120×2s = 240s) for slow hosts and tests.
-wait_for_server() {
-    local attempt=0 max="${AH_HEALTH_RETRIES:-120}" iv="${AH_HEALTH_INTERVAL:-2}"
-    log "Warte auf den Server (Alembic laeuft beim Start)..."
-    until docker compose exec -T server \
-            python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" >/dev/null 2>&1; do
-        attempt=$((attempt + 1))
-        [ "$attempt" -ge "$max" ] && return 1
-        sleep "$iv"
-    done
-    return 0
+# Start the stack and wait. --wait waits for every service with a healthcheck to
+# turn healthy and fails on an unhealthy or exited container; a service without
+# one counts as soon as it runs (probed with Compose v5.5.1, docs/features/update-rollback.md).
+stack_up() {
+    log "Starting the stack and waiting for the health checks (Alembic runs at startup)..."
+    docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}"
 }
 
 # ---------------------------------------------------------------------------
@@ -363,9 +456,7 @@ if [ "$REDEPLOY" = 1 ]; then
     if [ "$SKIP_BACKUP" != 1 ]; then log "Backup-first..."; ./scripts/backup.sh "${BACKUP_ARGS[@]}"; fi
     log "Ziehe die gepinnten Images neu..."
     docker compose pull || die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit?) — Re-Deploy abgebrochen, Container unveraendert."
-    log "Starte den Stack neu..."
-    docker compose up -d
-    wait_for_server || die "Server nicht rechtzeitig bereit. Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    stack_up || die "stack start or health check failed (docker compose up --wait). Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
     log "Re-Deploy fertig (Version unveraendert: $(installed_label))."
     exit 0
 fi
@@ -433,12 +524,28 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
 fi
 
 # --- Backup-first (data) + snapshot the current runtime files ---------------
+# The archive goes into a rollback's message once the database may be migrated.
+BACKUP_ARCHIVE=""
 if [ "$SKIP_BACKUP" != 1 ]; then
     log "Backup-first..."
-    ./scripts/backup.sh "${BACKUP_ARGS[@]}"
+    ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out"
+    BACKUP_ARCHIVE=$(sed -n 's/^\[backup\] OK -> \(.*\) ([^)]*)$/\1/p' "${TMP}/backup.out")
 else
     log "Backup uebersprungen (--skip-backup)."
 fi
+
+# The Alembic revisions of both databases, one line each, "unknown" for a query
+# that fails. The new images migrate at startup, and the old ones do not start on
+# a newer revision, so a rollback after the start compares against these.
+db_revisions() {
+    local db rev
+    for db in adminhelper adminhelper_monitor; do
+        rev=$(docker compose exec -T postgres psql -U adminhelper -d "$db" -tAc \
+            'SELECT version_num FROM alembic_version ORDER BY 1' </dev/null 2>/dev/null) || rev=unknown
+        printf '%s=%s\n' "$db" "$rev"
+    done
+}
+REVS_BEFORE=$(db_revisions)
 
 mkdir -p backups
 SNAP="backups/runtime-prev-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
@@ -479,12 +586,12 @@ restore_snapshot() {
 # limit, an image the release did not publish) comes before the recreate, so
 # nothing of the new version ever ran: the installed state is the snapshot plus the
 # old .env as a whole, pins of a floating tag included. No recreate needed. $1 says
-# what failed, $2 is the way on that --no-rollback names: once .env is pinned on
-# the target, a bare re-run would call the install current. $3 replaces what
-# --no-rollback says stays: a failed swap comes before the re-pin.
+# what failed, $2 is the way on that --no-rollback names: the new runtime files
+# stay, so --ref applies the release again. $3 replaces what --no-rollback says
+# stays: the pins reach .env only after the pull (pin_images).
 rollback_before_deploy() {
     if [ "$NO_ROLLBACK" = 1 ]; then
-        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien + Image-Pins bleiben stehen}, Container unveraendert. $2"
+        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien bleiben stehen, Image-Pins unveraendert}, Container unveraendert. $2"
     fi
     local incomplete=0
     echo >&2
@@ -533,11 +640,34 @@ swap_runtime_files() {
         fi
     done
 }
+# --- Abort by signal: roll back like a failure at the same point ------------
+# From here on files change. bash runs a trap only once the foreground command
+# ends; a dropped SSH session sends SIGHUP to the whole foreground process group,
+# so docker compose ends too. Before the recreate the containers are untouched,
+# after it they may run the new version. The rollback itself ignores further
+# signals. After SIGHUP the terminal is gone, so its messages go to a log file.
+DEPLOY_STARTED=0
+on_signal() {
+    trap '' INT TERM HUP
+    if [ "$1" = HUP ]; then
+        local logf
+        logf="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
+        ( umask 077; : >> "$logf" ) && exec >> "$logf" 2>&1
+    fi
+    if [ "$DEPLOY_STARTED" = 1 ]; then
+        rollback_after_deploy "interrupted by SIG$1"
+    fi
+    rollback_before_deploy "interrupted by SIG$1" \
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+}
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'on_signal HUP' HUP
 swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlgeschlagen" \
     "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
     "teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
 
-# --- .env migration: add new keys, fill new secrets, re-pin images ----------
+# --- .env migration: add new keys, fill new secrets --------------------------
 # One step: the caller tests the status, which turns set -e off in here, so every
 # part that can fail returns 1 itself, and the caller rolls the whole .env back.
 # Additive only: append active KEY=value from the new .env.example that .env is
@@ -561,15 +691,6 @@ migrate_env() {
     fi
     # Fill any newly-added empty secrets (idempotent — leaves set values alone).
     ./scripts/init-secrets.sh >/dev/null || return 1
-
-    # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
-    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}" || return 1
-    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}" || return 1
-    upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}" || return 1
-    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}" || return 1
-    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}" || return 1
-    chmod 600 .env 2>/dev/null || true
-    log "Images gepinnt auf :${TARGET_VER}"
 }
 migrate_env || rollback_before_deploy ".env-Migration fehlgeschlagen" \
     ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
@@ -593,6 +714,14 @@ rollback_after_deploy() {
     fi
     local incomplete=0
     echo >&2
+    # server, scheduler and monitoring may still be migrating behind a failed or
+    # interrupted `up --wait`: until that transaction commits, the query sees the old
+    # revision. Stopped, every migration has committed or rolled back; if the stop
+    # fails, the revision read below is not trusted. Before the snapshot goes back:
+    # the target's compose file knows all three (scheduler exists since 0.38.0).
+    local settled=1
+    docker compose stop server scheduler monitoring \
+        || { log "WARN: Stoppen von server/scheduler/monitoring fehlgeschlagen — Migrationsstand unbestaetigt."; settled=0; }
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..." >&2
     # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
@@ -610,7 +739,21 @@ rollback_after_deploy() {
             && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
       ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
-    docker compose up -d >/dev/null \
+    local revs_after; revs_after=$(db_revisions)
+    if [ "$settled" = 0 ] || [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; then
+        log "Alembic revisions before: $(tr '\n' ' ' <<<"$REVS_BEFORE")now: $(tr '\n' ' ' <<<"$revs_after")" >&2
+        docker compose stop \
+            || { log "WARN: Stoppen des Stacks fehlgeschlagen — bitte manuell pruefen."; incomplete=1; }
+        local restore="./scripts/restore.sh ${BACKUP_ARCHIVE:-./backups/<neuestes>.tar.gz}"
+        if [ "$SKIP_BACKUP" = 1 ]; then
+            local last=""; local f
+            for f in backups/adminhelper-backup-*.tar.gz; do [ -e "$f" ] && last="$f"; done
+            restore="./scripts/restore.sh ${last:-<backup>} (this run made no backup, --skip-backup; that is the last backup before it)"
+        fi
+        [ "$incomplete" = 0 ] || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. The database may already be migrated by ${TARGET_VER}. Back: ${restore}; forward again: ./scripts/update.sh --ref ${TARGET}"
+        die "$1. The database was already migrated by ${TARGET_VER} (or its revision is unreadable or unconfirmed); the images of ${INSTALLED_LABEL} do not start on it. Runtime files and image pins are back on ${INSTALLED_LABEL}, the stack is stopped. Back: ${restore} (restores the state before the update and starts ${INSTALLED_LABEL}); forward again: ./scripts/update.sh --ref ${TARGET}"
+    fi
+    stack_up >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
         || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
@@ -618,15 +761,30 @@ rollback_after_deploy() {
 }
 
 # --- Deploy + health check, with automatic rollback on failure --------------
+# The target images, KEY=image, for the pull and the pins (vX.Y.Z -> :X.Y.Z).
+TARGET_IMAGES=()
+for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+    TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
+done
+# The pull gets the target images from the environment, which Compose ranks above
+# .env (docs/features/update-rollback.md): .env keeps the old pins until every image
+# is here, so an abort during the pull leaves nothing to undo in it.
 log "Ziehe die Images..."
-docker compose pull \
+env "${TARGET_IMAGES[@]}" docker compose pull \
     || rollback_before_deploy "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit/Image nicht veroeffentlicht?)" \
-        "Weiter mit ./scripts/update.sh --redeploy (gepinnte Images erneut ziehen und starten) oder --ref ${TARGET} (Release erneut anwenden)."
-log "Starte den Stack neu..."
-docker compose up -d || rollback_after_deploy "Stack-Neustart fehlgeschlagen"
-
-if wait_for_server; then
-    log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
-else
-    rollback_after_deploy "Server nicht rechtzeitig bereit"
-fi
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+# One step, like migrate_env: the caller tests the status.
+pin_images() {
+    local kv
+    for kv in "${TARGET_IMAGES[@]}"; do
+        upsert_env "${kv%%=*}" "${kv#*=}" || return 1
+    done
+    chmod 600 .env 2>/dev/null || true
+    log "Images gepinnt auf :${TARGET_VER}"
+}
+pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \
+    ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
+    "neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
+DEPLOY_STARTED=1
+stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
+log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"

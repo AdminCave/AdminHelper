@@ -20,7 +20,7 @@ about the suites.
 
 | `/test …`  | What happens |
 |---|---|
-| `quick`    | run it here and now: `bash scripts/dev/verify.sh all --strict` |
+| `quick`    | run it here and now: `bash scripts/dev/verify.sh all --strict` (a digest on stdout, the whole output in the log it names) |
 | `all`      | START `heavy.sh all` supervised (below), watch it to the report, quote the verdict |
 | `capstone` | same for `heavy.sh capstone` |
 | `weekly`   | same for `heavy.sh weekly` |
@@ -55,7 +55,7 @@ timer, no cron, no "while I'm at it". But once Kevin says
    (must be empty — a leak is a finding, not a footnote; a GUI box kept after a red part `gui`
    is no leak, see below). `heavy.sh` has already written
    `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
-   through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
+   through `roadmap.py add`, which commits it itself (a refused row — an open
    duplicate — is in the report's notes). Nothing is left to commit; the session pushes the
    private repo (`git -C tasks/private push`, CLAUDE.md §11).
 5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A

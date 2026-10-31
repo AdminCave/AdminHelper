@@ -25,8 +25,8 @@ from app.models import (
     MonitorTemplateAssignment,
     MonitorTemplateSuggestionDismissal,
 )
+from app.server_cleanup import cleanup_server
 from app.template_suggestions import SUGGESTED_SLUGS
-from app.template_sync import cleanup_server
 
 
 @pytest.fixture()

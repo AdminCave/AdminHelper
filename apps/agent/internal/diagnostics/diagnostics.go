@@ -12,7 +12,6 @@ package diagnostics
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -31,7 +30,7 @@ var (
 	reAPIKey = regexp.MustCompile(`ah_[A-Za-z0-9_-]{8,}`)
 )
 
-// Run builds the report, redacts it, writes it to a temp file and prints the path.
+// Run builds the report, redacts it, writes it to a new temp file and prints the path.
 func Run(version string) error {
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	host, _ := os.Hostname()
@@ -67,8 +66,19 @@ func Run(version string) error {
 	b.WriteString(tailFile(config.LogFile(), logTailLines))
 
 	report := redactGeneric(b.String())
-	out := filepath.Join(os.TempDir(), "adminhelper-agent-diagnostics-"+ts+".txt")
-	if err := os.WriteFile(out, []byte(report), 0o600); err != nil {
+	// CreateTemp opens a new file (O_EXCL, 0600) under a random name: the report
+	// never lands in a file that already exists in the shared temp dir.
+	f, err := os.CreateTemp("", "adminhelper-agent-diagnostics-"+ts+"-*.txt")
+	if err != nil {
+		return fmt.Errorf("Bericht schreiben: %w", err)
+	}
+	out := f.Name()
+	_, err = f.WriteString(report)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(out)
 		return fmt.Errorf("Bericht schreiben: %w", err)
 	}
 

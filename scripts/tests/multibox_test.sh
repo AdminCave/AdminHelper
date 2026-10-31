@@ -59,6 +59,9 @@ case "${1:-}" in
         echo "MB_FRPS_SEEN=events:applied/none/false,pid:101-202-202,starts:1,exits:0"
         [ "${FAKE_FRPS_RESTART:-OK}" = NONE ] || echo "MB_FRPS_RESTART=${FAKE_FRPS_RESTART:-OK}"
         [ "${FAKE_FRPS_BACK:-OK}" = NONE ] || echo "MB_FRPS_TUNNELS=${FAKE_FRPS_BACK:-OK}" ;;
+      # frps' way out of frpedge (--tunnel), seen from the server box; NONE: no marker.
+      *"box_serverbox.sh frps-egress "*)
+        [ "${FAKE_FRPS_EGRESS:-}" = NONE ] || echo "MB_FRPS_EGRESS=${FAKE_FRPS_EGRESS:-frps:blocked,server:open}" ;;
       *box_serverbox.sh*)
         [ "${FAKE_SERVER_RC:-0}" = 0 ] || exit "$FAKE_SERVER_RC"
         echo "MB_SID=s1 MB_PTOK=p1 MB_ADMIN_PW=pw1 MB_MONITOR_KEY=k1"
@@ -194,8 +197,8 @@ done
 [ $rc -eq 0 ] && [ -z "$missing" ] \
   && ok "a green --tunnel run has an ok of its own for the late tunnel, the reload and the session" \
   || bad "--tunnel: rc=$rc, missing:$missing"
-[ "$(tunnel_steps)" = "clear tunnel:10.0.0.1 add:mb-ssh-late tunnel:late visitor:10.0.0.1 tunnel:mark visitor:hold add:mb-ssh-reload tunnel:reload visitor:check frps-mark frps-config frps-restart visitor:hold visitor:check " ] \
-  && ok "delete the seeded tunnel, provision, add, agent run, visitor, session, add, reload, check, then mark frps, change its config, watch the restart, a new session, check" \
+[ "$(tunnel_steps)" = "frps-egress clear tunnel:10.0.0.1 add:mb-ssh-late tunnel:late visitor:10.0.0.1 tunnel:mark visitor:hold add:mb-ssh-reload tunnel:reload visitor:check frps-mark frps-config frps-restart visitor:hold visitor:check " ] \
+  && ok "frps' way out, delete the seeded tunnel, provision, add, agent run, visitor, session, add, reload, check, then mark frps, change its config, watch the restart, a new session, check" \
   || bad "tunnel order: $(tunnel_steps)"
 grep -qE '^run 3001 --timeout 300 -- printf %s [[:alnum:]+/=]+ \| base64 -d \| python3 -I - clear pw1 t1$' "$FAKE_LOG" \
   && grep -qE '^run 3001 --timeout 300 -- printf %s [[:alnum:]+/=]+ \| base64 -d \| python3 -I - add pw1 t1 c1 mb-ssh-late$' "$FAKE_LOG" \
@@ -285,7 +288,7 @@ expect_fail "a login watch without a verdict fails the run" \
 expect_fail "a new session that broke off fails the run" \
   "the new SSH session through mb-ssh-late broke off: VIS_SESSION_LOST" FAKE_VIS_CHECK_AFTER=VIS_SESSION_LOST
 # frps_calls — the steps of the frps stage the run made, in order.
-frps_calls() { tunnel_steps | grep -oE 'frps-[a-z]+|visitor:(hold|check)' | paste -sd' ' -; }
+frps_calls() { tunnel_steps | grep -oE 'frps-(mark|config|restart)|visitor:(hold|check)' | paste -sd' ' -; }
 reset_state
 OUT=$(FAKE_FRPS_MARK=NONE bash "$MB" --tunnel 2>&1); rc=$?
 [ $rc -ne 0 ] && grep -q '^  FAIL frps: no supervisor mark before the config change' <<<"$OUT" \
@@ -316,9 +319,30 @@ OUT=$(FAKE_VIS_HOLD_AFTER=VIS_SESSION_NOT_OPEN bash "$MB" --tunnel 2>&1); rc=$?
 reset_state
 OUT=$(FAKE_VIS_SSH=VIS_TUNNEL_SSH_FAIL bash "$MB" --tunnel 2>&1); rc=$?
 [ $rc -ne 0 ] && grep -q '^  SKIP the frps restart for a config change (the visitor never got through before it)' <<<"$OUT" \
-  && ! grep -q 'frps-' "$FAKE_LOG" \
+  && ! grep -qE 'frps-(mark|config|restart)' "$FAKE_LOG" \
   && ok "without a visitor that got through, frps is not touched, and the restart is named unverified" \
   || bad "no first visitor: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT"); $(grep frps- "$FAKE_LOG")"
+
+echo "── --tunnel: frps reaches no second host from frpedge ──"
+reset_state
+OUT=$(bash "$MB" --tunnel 2>&1); rc=$?
+# The tunnel box is the third clone: 3003 at 10.0.0.3.
+[ $rc -eq 0 ] && grep -qF '  ok   frps reaches no second host from frpedge, the server container does (10.0.0.3:22)' <<<"$OUT" \
+  && grep -q '^run 3001 --timeout 300 -- bash scripts/tests/box_serverbox.sh frps-egress 10.0.0.3 22$' "$FAKE_LOG" \
+  && ok "the check runs on the server box against the tunnel box's sshd, an ok of its own" \
+  || bad "egress: rc=$rc; $(grep -aE 'frps egress|frps reaches' <<<"$OUT"); $(grep frps-egress "$FAKE_LOG")"
+expect_fail "frps reaching the tunnel box fails the run and names both results" \
+  "frps egress to 10.0.0.3:22: frps:open,server:open (want frps:blocked,server:open)" FAKE_FRPS_EGRESS=frps:open,server:open
+expect_fail "a target the server container cannot reach either fails the run" \
+  "frps egress to 10.0.0.3:22: frps:blocked,server:closed" FAKE_FRPS_EGRESS=frps:blocked,server:closed
+expect_fail "an nc that could not run in the frps container fails the run" \
+  "frps egress to 10.0.0.3:22: frps:error,server:open" FAKE_FRPS_EGRESS=frps:error,server:open
+expect_fail "a check without a marker fails the run" \
+  "frps egress to 10.0.0.3:22: no marker" FAKE_FRPS_EGRESS=NONE
+reset_state
+bash "$MB" --agents 1 >/dev/null 2>&1
+[ -s "$FAKE_LOG" ] && ! grep -q 'frps-egress' "$FAKE_LOG" \
+  && ok "without --tunnel there is no egress check" || bad "egress without the flag: $(grep frps-egress "$FAKE_LOG")"
 
 echo "── the API program on the server box ──"
 # srv_api ships it base64-encoded. Taken from a recorded call and run against a fake
@@ -495,6 +519,14 @@ case "$*" in
     done
     printf '{"v":1,"boot":"%s","heartbeat":"2026-10-17T11:%02d:%02dZ","state":"%s","reason":"none","since":"2026-10-17T10:00:00Z","appliedHash":null,"rejectedHash":null,"events":[%s]}\n' \
       "${SV_BOOT:-0123456789abcdef}" $((hb / 60 % 60)) $((hb % 60)) "${SV_STATE:-running}" "$events" ;;
+  # frps-egress: the container's sh runs here with the nc of $SB_ROOT/bin, the server's python
+  # with python3; EG_EXEC=frps|server: that exec fails.
+  "exec -T frps sh -c "*"nc -z"*)
+    [ "${EG_EXEC:-}" = frps ] && exit 1
+    shift 3; exec "$@" ;;
+  "exec -T server python -c "*)
+    [ "${EG_EXEC:-}" = server ] && exit 1
+    shift 4; exec python3 -I "$@" ;;
   # SV_PID: <pid>,… — the n-th query gets the n-th, the last one repeats; "-": no frps.
   "exec -T frps sh -c "*)
     k=$(( $(cat "$SV_PIDN" 2>/dev/null || echo 0) + 1 )); echo "$k" > "$SV_PIDN"
@@ -518,7 +550,20 @@ esac
 exit 0
 FAKE
 printf '#!/bin/sh\nexit 0\n' > "$SB_ROOT/bin/sleep"
-chmod +x "$SB_ROOT/bin/mb-dc" "$SB_ROOT/bin/sleep"
+# The nc of the frps image (OpenBSD, probed): -z without -v says nothing on a failed connect,
+# "succeeded!" on stderr for an open one, its usage on bad flags. EG_NC picks the answer.
+export EG_NC_LOG="$WORK/nc.log"
+cat > "$SB_ROOT/bin/nc" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$EG_NC_LOG"
+case "${EG_NC:-blocked}" in
+  open) echo "Connection to $3 $4 port [tcp/*] succeeded!" >&2 ;;
+  blocked) exit 1 ;;
+  usage) echo "usage: nc [-46CDdFhklNnrStUuvZz] [-I length] [-i interval] [-M ttl]" >&2; exit 1 ;;
+  missing) echo "sh: nc: not found" >&2; exit 127 ;;
+esac
+FAKE
+chmod +x "$SB_ROOT/bin/mb-dc" "$SB_ROOT/bin/sleep" "$SB_ROOT/bin/nc"
 # sb <events> <pids> <supervisor lines> <tunnels> <mode> <args…> — one mode of the copy, as
 # multibox.sh calls it, the reads and queries counted from 1; "-" for none.
 sb() {
@@ -592,6 +637,46 @@ for mark in not-a-mark 0123456789abcdeg:3:101 0123456789abcdef:x:101; do
     || wrong="$wrong [$mark: $(grep '^MB_FRPS' <<<"$out")]"
 done
 [ -z "$wrong" ] && ok "frps-restart: a broken mark is a verdict of its own" || bad "bad mark:$wrong"
+
+echo "── frps without a way out (box_serverbox.sh frps-egress) ──"
+# The server's python connects for real: to a port that listens, and to one bound without a
+# listener (refused). Detached from this script's output, so that no reader waits on it.
+python3 -I -c '
+import socket, time
+lis = socket.create_server(("127.0.0.1", 0))
+shut = socket.socket()
+shut.bind(("127.0.0.1", 0))
+print(lis.getsockname()[1], shut.getsockname()[1], flush=True)
+time.sleep(60)' </dev/null >"$WORK/eg.ports" 2>/dev/null &
+EG_PID=$!
+for _ in $(seq 1 50); do [ -s "$WORK/eg.ports" ] && break; sleep 0.1; done
+read -r OPEN SHUT < "$WORK/eg.ports" || true
+[ -n "${OPEN:-}" ] && [ -n "${SHUT:-}" ] && ok "frps-egress: a listening and a refusing port for the server's side" \
+  || bad "frps-egress: no ports from the listener: $(cat "$WORK/eg.ports")"
+# eg <ip> <port> — the mode as multibox.sh calls it; EG_NC and EG_EXEC from the caller.
+eg() { : > "$EG_NC_LOG"; sb - - - - frps-egress "$@"; }
+OUT=$(eg 127.0.0.1 "${OPEN:-0}"); rc=$?
+[ $rc -eq 0 ] && [ "$OUT" = "MB_FRPS_EGRESS=frps:blocked,server:open" ] \
+  && [ "$(cat "$EG_NC_LOG")" = "-z -w3 127.0.0.1 ${OPEN:-0}" ] \
+  && ok "frps-egress: nc -z from frps fails without a word, the server connects: one line, exit 0" \
+  || bad "frps-egress: rc=$rc out=[$OUT] nc=[$(cat "$EG_NC_LOG")]"
+# Each case: the line it must print, then nc's answer, the exec that fails and the port.
+wrong=""
+while read -r want nc fails port; do
+  out="$(EG_NC="$nc" EG_EXEC="${fails#-}" eg 127.0.0.1 "$port")"; rc=$?
+  [ $rc -ne 0 ] && [ "$out" = "MB_FRPS_EGRESS=$want" ] || wrong="$wrong [$nc $fails $port: rc=$rc $out, want $want]"
+done <<CASES
+frps:open,server:open open - ${OPEN:-0}
+frps:error,server:open usage - ${OPEN:-0}
+frps:error,server:open missing - ${OPEN:-0}
+frps:error,server:open blocked frps ${OPEN:-0}
+frps:blocked,server:closed blocked - ${SHUT:-0}
+frps:blocked,server:error blocked server ${OPEN:-0}
+CASES
+[ -z "$wrong" ] \
+  && ok "frps-egress: exit 1 for an open frps, a closed target, and for an nc or a python that could not run" \
+  || bad "frps-egress:$wrong"
+kill "$EG_PID" 2>/dev/null; wait "$EG_PID" 2>/dev/null
 
 echo "── the agent run on a host without a tunnel ──"
 reset_state

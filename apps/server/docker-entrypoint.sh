@@ -43,12 +43,17 @@ fi
 echo "[entrypoint] Postgres ready, fuehre Alembic-Migration aus..."
 alembic upgrade head
 echo "[entrypoint] Alembic-Migration abgeschlossen."
+# The ca-issuer's rights on its tables, granted by their owner after the migrations, so a
+# migration that recreates one of them does not leave the ca-issuer without them.
+python -m app.db_roles grant-ca
 
 # --- Plain-HTTP, intern -----------------------------------------------------
 # TLS is terminated by the gateway (nginx), not here (ADR 0001 D11). The server
-# listens plain-HTTP on the compose network with no host port, so the gateway's
-# X-Client-* identity header is unforgeable (nobody can reach this socket
-# directly). The gateway's own TLS leaf is provisioned by the ca-issuer.
+# listens plain-HTTP on the compose network with no host port. That keeps out
+# only the outside; the other compose services reach this socket too. The
+# gateway's X-Client-* identity header counts because app/core/identity.py takes
+# it only from the gateway as the direct peer. The gateway's own TLS leaf is
+# provisioned by the ca-issuer.
 # WEB_CONCURRENCY=N enables multi-worker; default 1 keeps the single-worker
 # behaviour. Long-lived SSE streams need a bounded graceful shutdown.
 exec uvicorn app.main:app \

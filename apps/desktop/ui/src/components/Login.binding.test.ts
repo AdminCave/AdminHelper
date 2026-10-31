@@ -10,11 +10,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
-import { withoutErrorCodes } from '$lib/utils/errors';
+import { IpcError, withoutErrorCodes } from '$lib/utils/errors';
 import type { ResetOutcome } from '$lib/bridge';
 
-// What auth.rs makes of the server's 403: the status and the body around the code.
-const MISMATCH =
+// What auth.rs makes of the server's 403: the status, the code and the text after it.
+const MISMATCH = new IpcError(
+  'The client certificate belongs to another user. Sign in as that user, or register this device for yourself.',
+  'ERR_CERT_USER_MISMATCH',
+  403,
+);
+// The text of the 403 with the code in it, as a client without `code` showed it.
+const MISMATCH_TEXT =
   'Login fehlgeschlagen (403 Forbidden): {"detail":"ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. Sign in as that user, or register this device for yourself."}';
 
 const h = vi.hoisted(() => ({
@@ -66,7 +72,7 @@ async function submitLogin(container: HTMLElement): Promise<void> {
 
 describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)', () => {
   it('names the cause and offers the reset, without the code', async () => {
-    h.login.mockRejectedValueOnce(new Error(MISMATCH));
+    h.login.mockRejectedValueOnce(MISMATCH);
     const { container } = render(Login);
     await submitLogin(container);
 
@@ -80,7 +86,7 @@ describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)'
   });
 
   it('the reset drops the device identity of this server after confirming', async () => {
-    h.login.mockRejectedValueOnce(new Error(MISMATCH));
+    h.login.mockRejectedValueOnce(MISMATCH);
     const { container } = render(Login);
     await submitLogin(container);
     const reset = await waitFor(() => {
@@ -98,7 +104,7 @@ describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)'
   });
 
   it('a declined confirmation resets nothing and keeps the hint', async () => {
-    h.login.mockRejectedValueOnce(new Error(MISMATCH));
+    h.login.mockRejectedValueOnce(MISMATCH);
     h.confirmDialog.mockResolvedValueOnce(false);
     const { container } = render(Login);
     await submitLogin(container);
@@ -125,6 +131,24 @@ describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)'
   });
 
   it('the code never reaches a message the user reads', () => {
-    expect(withoutErrorCodes(MISMATCH)).not.toContain('ERR_');
+    expect(withoutErrorCodes(MISMATCH_TEXT)).not.toContain('ERR_');
+  });
+});
+
+describe('Login — a text that only names ERR_CERT_USER_MISMATCH', () => {
+  it('shows the text, without the hint', async () => {
+    h.login.mockRejectedValueOnce(
+      new IpcError('Login fehlgeschlagen: ERR_CERT_USER_MISMATCH: x', 'ERR_HTTP', 403),
+    );
+    const { container } = render(Login);
+    await submitLogin(container);
+
+    await waitFor(() =>
+      expect(container.querySelector('.login-error')?.textContent).toContain(
+        'Login fehlgeschlagen',
+      ),
+    );
+    expect(container.querySelector('[data-msg="cert-user-mismatch"]')).toBeNull();
+    expect(container.querySelector('[data-action="cert-user-reset"]')).toBeNull();
   });
 });

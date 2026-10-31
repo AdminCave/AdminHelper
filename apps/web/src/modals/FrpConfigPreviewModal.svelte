@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
-  import { showToast } from '$lib/stores/notifications';
+  import { copyToClipboard } from '$lib/utils/clipboard';
 
   interface Props {
     open: boolean;
@@ -19,13 +19,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { open, title, content, onClose }: Props = $props();
 
-  async function copyContent() {
-    try {
-      await navigator.clipboard.writeText(content);
-      showToast($t('toast.frp.copied'));
-    } catch {
-      showToast($t('error.generic'), 'error');
-    }
+  function copyContent() {
+    void copyToClipboard(content, 'toast.copied');
   }
 </script>
 

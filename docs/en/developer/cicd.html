@@ -37,7 +37,7 @@
           <table>
             <thead><tr><th>Workflow</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13; on 3.13 the job pulls the base image of <code>apps/frps/Dockerfile</code>, so the tests that build and start the frps image run instead of skipping), monitoring <code>pytest</code> (Postgres service for the tests that need a real Postgres: the migration chain, the <code>FOR UPDATE</code> row lock, the session time zone), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: the server, monitoring and CA issuer suites a second time against the hashed lock the images install (jobs <code>python-lock-server</code>/<code>-monitoring</code>/<code>-ca-issuer</code>, on the Python of the Dockerfiles&rsquo; <code>FROM</code>; the other test jobs install the loose <code>requirements.in</code>, which runs ahead of the lock, and <code>scripts/dev/lock-pins.py</code> turns the job red as soon as the dev dependencies have moved a lock pin), <code>cargo test --locked</code> on Windows, the Go suite running natively on Windows (job <code>agent-windows</code>: <code>go test -v ./...</code>, a build and a <code>version</code> smoke of the <code>.exe</code>), a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of every image (<code>server</code>, <code>monitoring</code>, <code>ca-issuer</code>, <code>gateway</code>, <code>frps</code>) without push, an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>bootstrap_linux.sh</code> and the version of the base image in <code>apps/frps/Dockerfile</code>), and &ndash; in the same job &ndash; the toolchain lockstep check (<code>scripts/dev/toolchain-lockstep.sh</code>): every <code>go-version</code> in <code>ci.yml</code>/<code>release.yml</code>/<code>audit.yml</code> must be the same one, and the <code>go</code> directive of the <code>govulncheck</code> release pinned in <code>audit.yml</code> must not exceed it &ndash; otherwise the audit job fails while installing the tool under <code>GOTOOLCHAIN=local</code> and reports nothing about our dependencies (if the module proxy is unreachable the check ends in 75/SKIP and reddens the job rather than waving through a check that never ran &ndash; that one is a re-run, not a fix); every <code>go-version</code> also needs <code>check-latest: true</code> in the same <code>with:</code> block (without it <code>setup-go</code> takes the patch from the runner image&rsquo;s toolcache, and the release can ship a stdlib other than the one the audit checks); the default of <code>GO_VERSION</code> in <code>scripts/vm/bootstrap_linux.sh</code>, the test boxes&rsquo; Go, must have the same minor (the patch is free); it also requires the <code>ruff</code> pinned in <code>ci.yml</code> to be the default in <code>scripts/vm/bootstrap_linux.sh</code>, and <code>apps/server/requirements-dev.txt</code> to pin the same version (<code>ruff==</code>, not a floor), as must <code>required-version</code> in <code>ruff.toml</code> &ndash; checked offline before the proxy fetch, so a drift stays red even when the proxy is down. The job <code>public-repo-guard</code> (&ldquo;Public repo guard (review.sh sec)&rdquo;) runs the same block as the local hooks over every commit of a pull request or push (<code>review.sh sec --range</code>, R-0123): the private plan, a security ledger, a security finding&rsquo;s Dedup-Key, <code>.devenv.sh</code>, <code>settings.local.json</code> and an added line with a token pattern (a Proxmox API token, also in its PBS or URL-encoded form or as a secret behind a key name, a GitHub token, an <code>sk-ant-</code> key; R-0183, R-0196) or a commit message with such a pattern turn it red; it needs no secret, so it runs for pull requests from forks too, and it names a path, file:line or the commit only, never content. It checks twice: with the base&rsquo;s <code>review.sh</code> (a worktree of <code>origin/&lt;base&gt;</code>, for a push the state before it) and with the changed one; both have to be green (R-0174), so a pull request that changes <code>sec</code> is checked with the logic that held before it, and a base without a <code>review.sh</code> that reads a span turns the job red. The limit: a pull request that fixes a false alarm of the base&rsquo;s logic cannot get past it, that one goes in by admin merge. A run on a push to <code>main</code> is never cancelled and never pushed out by a later one (a concurrency group of its own per commit), since it is the only run that reads that push&rsquo;s commits; pull requests still cancel the older run of the same ref. A <code>workflow_dispatch</code> on <code>main</code> has no commit in its span and says so as a notice (<code>sec: empty span (&hellip;) &mdash; nothing read</code>), not as &ldquo;clean&rdquo;. Three older lines describe the rule itself and match it (commits <code>86128f52</code>, 2026-09-18, and <code>5bb32570</code>, 2026-09-08). A pull request and a <code>workflow_dispatch</code> read from the merge base with <code>main</code> and never take them in; a span over the whole history (the pre-push hook to a remote without tracking refs or to a URL) is red, as is a pull request against a base older than those commits. Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>ephemeral Proxmox VMs</strong> &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13; on 3.13 the job pulls the base images of frps, the gateway and the Python images, taken from the <code>FROM</code> lines of <code>apps/frps/Dockerfile</code>, <code>apps/gateway/Dockerfile</code> and <code>apps/ca-issuer/Dockerfile</code>, so the image tests, which build an image or start a container of it, run instead of skipping; if a test skips in that leg all the same, the leg is red: the step after <code>pytest</code> reads its JUnit XML and names each skip with its test ID and reason), monitoring <code>pytest</code> (Postgres service for the tests that need a real Postgres: the migration chain, the <code>FOR UPDATE</code> row lock, the session time zone), CA issuer <code>pytest</code> (Postgres service for the concurrency tests in <code>test_db_token_store.py</code>; the rest of the suite uses the in-memory token store), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E with Chromium only; the install step has a time limit of 10&nbsp;min, so a stalled apt mirror does not block the whole job), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>; the apt step for the Tauri system packages has a time limit of 10&nbsp;min here and in the tauri build smoke too). Additional PR gates against &ldquo;green but broken&rdquo;: the server, monitoring and CA issuer suites a second time against the hashed lock the images install (jobs <code>python-lock-server</code>/<code>-monitoring</code>/<code>-ca-issuer</code>, on the Python of the Dockerfiles&rsquo; <code>FROM</code>; the other test jobs install the loose <code>requirements.in</code>, which runs ahead of the lock, and <code>scripts/dev/lock-pins.py</code> turns the job red as soon as the dev dependencies have moved a lock pin), <code>cargo test --locked</code> on Windows, the Go suite running natively on Windows (job <code>agent-windows</code>: <code>go test -v ./...</code>, a build and a <code>version</code> smoke of the <code>.exe</code>), a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of every image (<code>server</code>, <code>monitoring</code>, <code>ca-issuer</code>, <code>gateway</code>, <code>frps</code>) without push, an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>bootstrap_linux.sh</code> and the version of the base image in <code>apps/frps/Dockerfile</code>), and &ndash; in the same job &ndash; the toolchain lockstep check (<code>scripts/dev/toolchain-lockstep.sh</code>): every <code>go-version</code> in <code>ci.yml</code>/<code>release.yml</code>/<code>audit.yml</code> must be the same one, and the <code>go</code> directive of the <code>govulncheck</code> release pinned in <code>audit.yml</code> must not exceed it &ndash; otherwise the audit job fails while installing the tool under <code>GOTOOLCHAIN=local</code> and reports nothing about our dependencies (if the module proxy is unreachable the check ends in 75/SKIP and reddens the job rather than waving through a check that never ran &ndash; that one is a re-run, not a fix); every <code>go-version</code> also needs <code>check-latest: true</code> in the same <code>with:</code> block (without it <code>setup-go</code> takes the patch from the runner image&rsquo;s toolcache, and the release can ship a stdlib other than the one the audit checks); the default of <code>GO_VERSION</code> in <code>scripts/vm/bootstrap_linux.sh</code>, the test boxes&rsquo; Go, must have the same minor (the patch is free); it also requires the <code>ruff</code> pinned in <code>ci.yml</code> to be the default in <code>scripts/vm/bootstrap_linux.sh</code>, and <code>apps/server/requirements-dev.txt</code> to pin the same version (<code>ruff==</code>, not a floor), as must <code>required-version</code> in <code>ruff.toml</code> &ndash; checked offline before the proxy fetch, so a drift stays red even when the proxy is down. The job <code>public-repo-guard</code> (&ldquo;Public repo guard (review.sh sec)&rdquo;) runs the same block as the local hooks over every commit of a pull request or push (<code>review.sh sec --range</code>, R-0123): the private plan, a security ledger, a security finding&rsquo;s Dedup-Key, <code>.devenv.sh</code>, <code>settings.local.json</code> and an added line with a token pattern (a Proxmox API token, also in its PBS or URL-encoded form or as a secret behind a key name, a GitHub token, an <code>sk-ant-</code> key; R-0183, R-0196) or a commit message with such a pattern turn it red; it needs no secret, so it runs for pull requests from forks too, and it names a path, file:line or the commit only, never content. It checks twice: with the base&rsquo;s <code>review.sh</code> (a worktree of <code>origin/&lt;base&gt;</code>, for a push the state before it) and with the changed one; both have to be green (R-0174), so a pull request that changes <code>sec</code> is checked with the logic that held before it, and a base without a <code>review.sh</code> that reads a span turns the job red. The limit: a pull request that fixes a false alarm of the base&rsquo;s logic cannot get past it, that one goes in by admin merge. A run on a push to <code>main</code> is never cancelled and never pushed out by a later one (a concurrency group of its own per commit), since it is the only run that reads that push&rsquo;s commits; pull requests still cancel the older run of the same ref. A <code>workflow_dispatch</code> on <code>main</code> has no commit in its span and says so as a notice (<code>sec: empty span (&hellip;) &mdash; nothing read</code>), not as &ldquo;clean&rdquo;. Three older lines describe the rule itself and match it (commits <code>86128f52</code>, 2026-09-18, and <code>5bb32570</code>, 2026-09-08). A pull request and a <code>workflow_dispatch</code> read from the merge base with <code>main</code> and never take them in; a span over the whole history (the pre-push hook to a remote without tracking refs or to a URL) is red, as is a pull request against a base older than those commits. Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>ephemeral Proxmox VMs</strong> &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Build &amp; push the <code>server</code>, <code>monitoring</code>, <code>ca-issuer</code>, <code>gateway</code> and <code>frps</code> images to <code>ghcr.io/admincave/adminhelper/{server,monitoring,ca-issuer,gateway,frps}</code>; sign each digest keylessly with cosign (+ SLSA provenance/SBOM)</td></tr>
               <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code> (+ minisign signature), draft release. Jobs: <code>desktop-linux</code>, <code>agent</code>, <code>agent-windows-smoke</code> (hard &ndash; runs the built <code>.exe</code> once), <code>desktop-windows</code> (best-effort, installs and uninstalls the MSI), <code>release</code>. The assertions are listed below under &ldquo;Release assertions&rdquo;.</td></tr>
               <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
@@ -85,7 +85,10 @@
           PASS although nothing ran &ndash; which is how the seven desktop GUI suites and
           <code>agent_install_test.sh</code> stayed invisible for months. The minisign branches in
           <code>install_test.sh</code> / <code>update_test.sh</code> were the sharper case: they reported
-          <em>PASS</em> after neutralising the signature path. <strong>SKIP does not mean
+          <em>PASS</em> after neutralising the signature path. Likewise the keyring cases of
+          <code>lib_e2e_stack_test.sh</code>: without <code>gnome-keyring-daemon</code>,
+          <code>dbus-run-session</code> or <code>dbus-send</code> the test exits 75 instead of an inner SKIP
+          at exit 0, and the <code>ops-scripts</code> job installs gnome-keyring. <strong>SKIP does not mean
           verified.</strong></p>
           <p><strong>test-skips.</strong> Even inside a green pytest suite a single test can be skipped
           silently. Under <code>--strict</code> the Python suites run with <code>-rs</code> and
@@ -96,7 +99,11 @@
           Postgres in <code>AH_TEST_DB</code> for <code>test_db_token_store</code>, a reachable database
           (or Docker) for <code>test_auth_token_lifecycle</code>. The database URL is the one the step gives
           its suite: the server step takes <code>DATABASE_URL</code>, else <code>AH_TEST_DB</code>. On a box
-          that genuinely cannot run a test it stays a visible SKIP.</p>
+          that genuinely cannot run a test it stays a visible SKIP. In CI the 3.13 leg of the server job
+          checks every skip, not just the required tests: it has every precondition (Postgres, Redis, the
+          base images), so any skipped test there turns the job red (step <code>No test skipped</code>,
+          which reads the JUnit XML of <code>pytest</code>). The 3.12 leg and <code>python-lock-server</code>
+          pull no images and skip the image tests on purpose.</p>
           <p>The summary line is therefore
           <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> stays 0 on
           purpose: the weekly run re-runs a red step itself and classifies it, rather than letting the suites
@@ -126,11 +133,11 @@
           of the compose stack, which the test overlay publishes on <code>127.0.0.1</code> only. There a skip
           is a failure, because the service is up: the verdict comes from each test&rsquo;s JUnit XML
           (<code>junit/stack-*.xml</code>), and a skip, a run without a test or a missing file turns the step
-          red. In the PR CI the migration smoke, <code>test_db_session_utc</code> and <code>test_stream_redis</code> keep running against their
-          jobs&rsquo; service containers (Postgres, Redis on 6380): that catches a break at the PR already,
-          without an image build or a stack. The PR CI does not run the issuer&rsquo;s Postgres tests with
-          Postgres &ndash; the <code>ca-issuer</code> job uses the in-memory token store &ndash;, so this is the
-          only place they run against a real Postgres. The second step, <code>web-live</code>
+          red. In the PR CI they also run against their jobs&rsquo; service containers (Postgres, Redis on
+          6380): that catches a break at the PR already, without an image build or a stack. The jobs
+          <code>ca-issuer</code> and <code>python-lock-ca-issuer</code> hand their Postgres to the
+          issuer&rsquo;s Postgres tests only, through <code>AH_TEST_DB</code>; the rest of the suite uses
+          the in-memory token store. The second step, <code>web-live</code>
           (<code>scripts/tests/web_live.sh</code>), runs the Playwright project <code>live</code> without mocks
           against the gateway: login as the seed admin, every admin page, creating and deleting a user. The
           <code>chromium</code> project stays in the PR CI against the mocks; <code>live</code> only exists
@@ -234,7 +241,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           <h2>Verify convention (<code>scripts/dev/verify.sh</code>)</h2>
           <p>A task&rsquo;s <code>Verify:</code> line always calls a component suite in this form:</p>
           <div class="code-header"><span>bash</span></div>
-          <pre><code>bash scripts/dev/verify.sh &lt;component&gt; [&lt;component&gt; &hellip;] [--strict] [--tree &lt;path&gt;] [-- &lt;args&gt;]</code></pre>
+          <pre><code>bash scripts/dev/verify.sh &lt;component&gt; [&lt;component&gt; &hellip;] [--strict] [--full] [--tree &lt;path&gt;] [-- &lt;args&gt;]</code></pre>
           <p>The script sources <code>.devenv.sh</code> (or <code>$AH_DEVENV</code>), resolves
           <code>AH_TEST_DB</code>, delegates to <code>run.sh quick --only &lt;component&gt; &hellip;</code>
           (the lint <em>and</em> unit steps of those components, several in one run; <code>-- &lt;args&gt;</code>
@@ -247,6 +254,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           rule never matches across an env prefix, so <code>source .devenv.sh &amp;&amp; DATABASE_URL=&hellip;
           pytest</code> cannot be allowlisted. The script resolves what the environment needs; the caller
           writes flags only.</p>
+          <p>The suite&rsquo;s whole output goes to <code>.ah-out/logs/verify-&lt;time&gt;-&lt;pid&gt;.log</code> (the
+          newest 30 stay, <code>last-verify.json</code> names the path under <code>log</code>); stdout carries the
+          digest of <code>scripts/dev/log-digest.sh</code>: one line per step (those left out by <code>--only</code>
+          or <code>--</code> only as a count), for each red or self-skipped step its error lines and its end with line
+          numbers, the closing block of <code>run.sh</code> (summary, <code>strict-failed</code> and
+          <code>failed</code> list), exit code and log path; without a closing block at the end of the log, the end of
+          the log. Captured <code>run.sh</code> output of a red test sets no boundaries: each step shows its worst
+          result, and disagreeing lines are named. No step line is ever cut, only the excerpts are bounded. On a terminal or with
+          <code>--full</code> the whole output streams as well. <code>bash scripts/dev/log-digest.sh &lt;log&gt;
+          [&lt;exit&gt;]</code> condenses any other <code>run.sh</code> log the same way.</p>
 
           <h2>Proof convention (ledgers)</h2>
           <p>A task that acts on a <em>finding</em> (from Kevin, from the weekly run, later from the finder
@@ -274,11 +291,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           ledgers, in the <code>scripts</code> suite and in the CI job <code>ops-scripts</code>. The reviewer checks
           the content.</p>
 
-          <h2>Review and closing a task</h2>
-          <p>Reviews are done by sub-agents with a fixed brief (<code>.claude/agents/</code>): <code>reviewer</code>
-          per task and over the branch, <code>tester</code> before a project closes, <code>security</code> on a risk
-          path. The reviewer leaves its verdict as JSON at
-          <code>.ah-out/review/&lt;slug&gt;/&lt;id&gt;.verdict.json</code>. Three checks stay without a model:</p>
+          <h2>Review and closing</h2>
+          <p>The session builds every task itself; reviews are done by sub-agents with a fixed brief
+          (<code>.claude/agents/</code>, roles and models in <code>CLAUDE.md</code> &sect;6): <code>reviewer</code> in
+          mode <code>task</code> before each task commit and in mode <code>branch</code> before the PR &ndash; then
+          over the code <em>and</em> the tests (coverage per changed product file, real assertions, error paths, at
+          most three probes in a probe worktree whether a test turns red without the fix) &ndash;, and
+          <code>security</code> on a risk path as well. The reviewer leaves its verdict as JSON at
+          <code>.ah-out/review/&lt;slug&gt;/&lt;id&gt;.verdict.json</code> or <code>branch.verdict.json</code>; the
+          branch verdict names the commit it judged and carries a code part and a test part, each with evidence.
+          Four checks stay without a model:</p>
           <table>
             <thead><tr><th>Check</th><th>Question</th><th>Result</th></tr></thead>
             <tbody>
@@ -294,6 +316,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               ledger with evidence and review; without evidence &ldquo;unverifiziert&rdquo;; addresses, host names of
               private networks (<code>.lan</code>, <code>.local</code>, &hellip;) and VMIDs after <code>vm</code>,
               <code>template</code>, &hellip; removed</td></tr>
+              <tr><td><code>review.sh final</code></td><td>May the branch go to a PR and be merged? All tasks closed,
+              the branch verdict present, <code>approve</code> overall, for the code and for the tests, each with
+              evidence, a coverage list, at most three probes, no <code>blocker</code>, and since the judged commit
+              only ledger-only commits and merges without changes of their own (<code>CHANGELOG.md</code> aside) on
+              the branch&rsquo;s own line?</td><td>exit&nbsp;0 with the PR
+              section (cleaned like <code>pr-body</code>), exit&nbsp;3 with every reason</td></tr>
             </tbody>
           </table>
           <p><code>task-close.sh</code> closes a task in ten stages: input, a manual task (exit&nbsp;74), staging
@@ -326,10 +354,13 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>Documentation paths</td><td><code>&lt;code&gt;</code> fragments in <code>docs/**/*.html</code></td><td>the repository tree</td><td>job <code>ops-scripts</code></td></tr>
               <tr><td>Environment parity</td><td><code>docker-compose.yml</code>, <code>.env.example</code></td><td>the three Python services' <code>config.py</code></td><td>job <code>server</code></td></tr>
               <tr><td>Shared API types</td><td><code>apps/web/src/lib/api/types.ts</code></td><td><code>apps/desktop/ui/src/lib/api/types.ts</code></td><td>job <code>desktop-ui</code></td></tr>
+              <tr><td>Web types against the server snapshot</td><td>the interfaces in <code>apps/web/src/lib/api/types.ts</code> (mapping table in <code>apps/web/src/lib/api/types.contract.test.ts</code>)</td><td>the component schemas in <code>apps/server/tests/openapi.snapshot.json</code>: response &ndash; every field declared, every schema field described or in <code>omit</code> with a reason, not required &rarr; <code>?</code>, nullable &rarr; <code>| null</code>, the same primitive kind; request &ndash; every required schema field described or in <code>omit</code> with a reason, required without <code>?</code>, <code>null</code> only where the schema allows it. Every interface is mapped or explicitly exempt</td><td>job <code>frontend</code></td></tr>
+              <tr><td>Desktop types against both snapshots</td><td>the interfaces in <code>apps/desktop/ui/src/lib/api/types.ts</code> (mapping table in <code>apps/desktop/ui/src/lib/api/types.contract.test.ts</code>, naming the snapshot per interface)</td><td>the component schemas in <code>apps/server/tests/openapi.snapshot.json</code> and <code>apps/monitoring/tests/openapi.snapshot.json</code>, by the same rules as the web types</td><td>job <code>desktop-ui</code></td></tr>
             </tbody>
           </table>
           <p>The <strong>snapshot</strong> is the contract the web frontend, the desktop UI and the agent rely
-          on without ever being compiled against it. Re-record it <em>in the same commit</em> as the API
+          on without ever being compiled against it. The contract tests of the web frontend and the desktop
+          UI hold their types against it (rows above), the agent's are not checked. Re-record it <em>in the same commit</em> as the API
           change &ndash; otherwise the job is red:</p>
           <div class="code-header"><span>bash</span></div>
           <pre><code>cd apps/server      &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot
@@ -407,16 +438,17 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           a valid value); an <code>environment:</code> key has to be read by that service's code (otherwise it is a
           leftover, or a rename that landed on one side only); and every <code>${VAR}</code> substitution has to
           appear in <code>.env.example</code> and the other way round &ndash; a documented knob compose never passes
-          on does nothing when set. No exception list: where a rule would have needed one, the rule was wrong.</p>
+          on does nothing when set. The source of a compose secret (<code>secrets.*.environment</code>) counts as
+          passed on, too. No exception list: where a rule would have needed one, the rule was wrong.</p>
 
           <p><strong>Shared API types</strong> (<code>sync-from-web.sh --check</code>): the two
           <code>api/types.ts</code> files stopped being one shared file long ago &ndash; the web one describes the
-          admin panel API (25 exports), the desktop one the client API (58). Four symbols are common to both, and
+          admin panel API (25 exports), the desktop one the client API (58). Three symbols are common to both, and
           only those can drift. The check therefore covers the intersection, and as a subset rather than equality:
-          every line the web file declares must exist in the desktop one, which may carry more. <code>Server</code>
-          legitimately does &ndash; <code>to_dict()</code> returns <code>connections</code>, the admin panel just
-          ignores it. The rule is blind in one direction: if the web file drops a field, the subset still holds and
-          the desktop keeps the corpse. The four expected shared symbols are named in the script, so a single one
+          every line the web file declares must exist in the desktop one, which may carry more (until R-0723 the shared
+          <code>Server</code> did, with <code>connections</code> the admin panel just ignored; since then the web
+          knows only <code>ServerSummary</code>). The rule is blind in one direction: if the web file drops a field, the subset still holds and
+          the desktop keeps the corpse. The three expected shared symbols are named in the script, so a single one
           going missing is a failure rather than a smaller green set.</p>
 
           <h2>Container Images (ghcr.io)</h2>
@@ -547,7 +579,7 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
           <ol>
             <li>Bump the versions in the files listed above to the target value.</li>
             <li>Update the footer versions in <code>docs/**/*.html</code> (footer span + landing &ldquo;What's new&rdquo; + code samples). Filter on the <em>class</em> (<code>grep -rl 'class="sidebar-footer"'</code>), not on the one-line markup: the two landing pages write the footer across two lines and therefore hung from 0.43.2 through 0.45.0.</li>
-            <li>Update <code>CHANGELOG.md</code> (Keep a Changelog: new section + link ref).</li>
+            <li>Update <code>CHANGELOG.md</code>: first <code>python3 scripts/release/changelog-assemble.py</code> &ndash; every branch writes its entries to <code>changelog.d/&lt;slug&gt;.md</code>, the script folds them into <code>## [Unreleased]</code> and deletes them; then Keep a Changelog: new section + link ref. <code>check-versions.sh</code> reports a fragment left unfolded.</li>
             <li><code>bash scripts/release/check-versions.sh X.Y.Z</code> &ndash; must report <code>0 missing</code>. The same call runs in the release workflow on the tag.</li>
             <li>Commit &amp; tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>

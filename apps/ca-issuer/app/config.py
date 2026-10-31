@@ -47,10 +47,17 @@ def root_passphrase() -> bytes | None:
     Prefer the ``_FILE`` variant (a Docker/compose file secret) over the plain env
     var: an env var is readable via ``docker inspect`` / ``/proc/<pid>/environ`` by
     anyone with host/Docker-socket access, and whoever holds the passphrase AND the
-    ``ca-pki`` volume can decrypt the Root key (3.47)."""
+    ``ca-pki`` volume can decrypt the Root key (3.47).
+
+    Compose hands the passphrase over as a secret file. An empty value creates no
+    file at all, and after the first boot an empty value is intended, so a missing
+    file falls through to the env var (empty -> None); any other read error raises."""
     path = os.environ.get("CA_ROOT_PASSPHRASE_FILE", "").strip()
     if path:
-        return Path(path).read_bytes().strip() or None
+        try:
+            return Path(path).read_bytes().strip() or None
+        except FileNotFoundError:
+            pass
     return os.environ.get("CA_ROOT_PASSPHRASE", "").encode() or None
 
 
@@ -76,6 +83,13 @@ def frps_cert_dir() -> str:
     return os.environ.get("CA_FRPS_CERT_DIR", "").strip()
 
 
+def trust_dir() -> str:
+    """When set, the issuer writes the listed intermediates of each scope here on boot
+    (app.trust, R-1009); the server mounts it ro to check who issued a client cert.
+    Empty -> nothing written (tests/dev)."""
+    return os.environ.get("CA_TRUST_DIR", "").strip()
+
+
 def frps_server_addr() -> str:
     """CN + primary SAN of the frps leaf = the public frps address frpc connects
     to. Defaults to DOMAIN; set CA_FRPS_SERVER_ADDR if frps is reached under a
@@ -91,10 +105,11 @@ def frps_extra_sans() -> str:
 
 
 # Headers the gateway sets from the verified client cert (ADR 0001 §3.2). The
-# issuer trusts these only because the internal listener is reachable solely from
-# the gateway — enforced by the `pki` compose network (the issuer is off the default
-# net, so no other container, e.g. the internet-facing frps, can reach :8090 to forge
-# these headers — 1.1), not merely by the absence of a host port. Contract with
+# issuer trusts these only because the internal listener is reachable solely over
+# the `pki` compose network, whose only other members are the gateway and postgres
+# (the issuer is off the default net, so neither the internet-facing frps nor the
+# other services of the default net can reach :8090 to forge these headers — 1.1),
+# not merely by the absence of a host port. Contract with
 # apps/gateway/nginx.conf and apps/server/app/core/identity.py — change only together
 # with both (the old env
 # knobs let the issuer drift from the gateway's hardcoded names and 401 every

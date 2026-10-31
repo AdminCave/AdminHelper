@@ -51,6 +51,61 @@ def loads_readable(text: str):
     )
 
 
+def masked_channel_config(cfg):
+    """A copy of an alert channel_config with a set smtp_password shown as "***", for an
+    API response: the secret is never reflected to callers (3.27). The update handlers of
+    alert rules and templates read the mask back with keep_smtp_password. Anything but a
+    dict comes back as it is."""
+    if not isinstance(cfg, dict):
+        return cfg
+    cfg = dict(cfg)
+    if cfg.get("smtp_password"):
+        cfg["smtp_password"] = "***"
+    return cfg
+
+
+def _smtp_relay(cfg: dict) -> tuple[str, str]:
+    """The relay a channel_config names, as compared on update: smtp_host stripped and in
+    lower case, smtp_port as stripped text (587 is "587"), a missing key as empty."""
+    host, port = cfg.get("smtp_host"), cfg.get("smtp_port")
+    return (
+        "" if host is None else str(host).strip().lower(),
+        "" if port is None else str(port).strip(),
+    )
+
+
+def keep_smtp_password(cfg: dict, stored) -> None:
+    """Resolves the smtp_password of a channel_config sent on update against stored, the
+    channel_config it replaces (None if there is none). A masked ("***"), empty or missing
+    password means "unchanged" and keeps the stored secret, but only for the relay it was
+    stored for: with smtp_host or smtp_port changed, the mask raises ValueError (the
+    handler answers 422) and an empty or missing one drops the secret, so it never goes
+    to another relay. A new password is taken as sent."""
+    password = cfg.get("smtp_password")
+    if password not in ("***", "", None):
+        return
+    stored_password = stored.get("smtp_password") if isinstance(stored, dict) else None
+    if stored_password and _smtp_relay(cfg) == _smtp_relay(stored):
+        cfg["smtp_password"] = stored_password
+    elif stored_password and password == "***":
+        raise ValueError("smtp_password must be entered again when smtp_host or smtp_port changes")
+    else:
+        cfg.pop("smtp_password", None)
+
+
+def masked_alert_definitions(definitions):
+    """Template alert definitions with masked_channel_config applied to each; a definition
+    that is not a dict or has no channel_config stays as it is."""
+    if not isinstance(definitions, list):
+        return definitions
+    return [
+        {**d, "channel_config": masked_channel_config(d["channel_config"])}
+        if isinstance(d, dict) and "channel_config" in d
+        else d
+        for d in definitions
+    ]
+
+
 class MonitorCheck(Base):
     __tablename__ = "monitor_checks"
 
@@ -152,12 +207,9 @@ class MonitorAlertRule(Base):
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self) -> dict:
-        cfg = loads_readable(self.channel_config) if self.channel_config else {}
-        # Never reflect the SMTP password in an API response — mask a set secret so
-        # it does not leak into GET /alerts and the admin frontend (3.27). The
-        # update handler treats the mask as "unchanged".
-        if cfg.get("smtp_password"):
-            cfg["smtp_password"] = "***"
+        cfg = masked_channel_config(
+            loads_readable(self.channel_config) if self.channel_config else {}
+        )
         return {
             "id": self.id,
             "name": self.name,
@@ -229,22 +281,26 @@ class MonitorTemplate(Base):
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
-    def to_dict(self, assignments: list | None = None, tag_assignments: list | None = None) -> dict:
-        # Imported here: builtin_templates imports this module.
-        from app.builtin_templates import builtin_edited, builtin_update_available
-
+    def to_dict(
+        self,
+        assignments: list | None = None,
+        tag_assignments: list | None = None,
+        *,
+        builtin_edited: bool,
+        builtin_update_available: bool,
+    ) -> dict:
         d = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
             "builtinSlug": self.builtin_slug,
             "builtinVersion": self.builtin_version,
-            "builtinEdited": builtin_edited(self),
-            "builtinUpdateAvailable": builtin_update_available(self),
+            "builtinEdited": builtin_edited,
+            "builtinUpdateAvailable": builtin_update_available,
             "checkDefinitions": loads_readable(self.check_definitions)
             if self.check_definitions
             else [],
-            "alertDefinitions": loads_readable(self.alert_definitions)
+            "alertDefinitions": masked_alert_definitions(loads_readable(self.alert_definitions))
             if self.alert_definitions
             else [],
             "createdAt": iso_utc(self.created_at),

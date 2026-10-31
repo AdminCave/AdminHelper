@@ -7,8 +7,10 @@ package diagnostics
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRedactConfigLine(t *testing.T) {
@@ -82,5 +84,94 @@ func TestTailFile(t *testing.T) {
 	write("x\ny")
 	if got := tailFile(path, 5); got != "x\ny\n" {
 		t.Errorf("no trailing newline: got %q, want %q", got, "x\ny\n")
+	}
+}
+
+// TestDiagnosticsReportIsANewFile plants an entry at every report name a fixed
+// scheme (prefix + UTC second) could pick during the run: on Linux a symlink to
+// a file outside the temp dir, on Windows a file. The report must land in a new
+// file of its own and leave all of them untouched.
+func TestDiagnosticsReportIsANewFile(t *testing.T) {
+	tmp := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("TMP", tmp)
+	} else {
+		t.Setenv("TMPDIR", tmp)
+	}
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	t.Setenv("ADMINHELPER_LOG_DIR", t.TempDir())
+
+	const prefix = "adminhelper-agent-diagnostics-"
+	const planted = "planted content\n"
+	outside := t.TempDir()
+	plantedNames := map[string]bool{}
+	var keep []string // files whose content must not change
+	now := time.Now().UTC()
+	for i := -1; i <= 10; i++ {
+		name := prefix + now.Add(time.Duration(i)*time.Second).Format("20060102T150405Z") + ".txt"
+		plantedNames[name] = true
+		at := filepath.Join(tmp, name)
+		if runtime.GOOS == "windows" {
+			if err := os.WriteFile(at, []byte(planted), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			keep = append(keep, at)
+			continue
+		}
+		target := filepath.Join(outside, name)
+		if err := os.WriteFile(target, []byte(planted), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, at); err != nil {
+			t.Fatal(err)
+		}
+		keep = append(keep, target)
+	}
+
+	if err := Run("test"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, p := range keep {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("planted %s: %v", p, err)
+		}
+		if string(got) != planted {
+			t.Errorf("planted %s was overwritten (%d bytes now)", p, len(got))
+		}
+	}
+
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fresh []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) && !plantedNames[e.Name()] {
+			fresh = append(fresh, e.Name())
+		}
+	}
+	if len(fresh) != 1 {
+		t.Fatalf("want exactly one new report in %s, got %v", tmp, fresh)
+	}
+	out := filepath.Join(tmp, fresh[0])
+	info, err := os.Lstat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Fatalf("report %s is not a regular file: %v", out, info.Mode())
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("report mode = %v, want 0600", info.Mode().Perm())
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "AdminHelper agent diagnostics") {
+		t.Errorf("report %s lacks the header line: %q", out, data)
 	}
 }

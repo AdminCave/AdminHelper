@@ -113,6 +113,8 @@ docker-compose.override.yml
 
 # Server-Datendverzeichnis (bind mount statt Docker-Volume)
 /data/
+# Dev-Server aus apps/server mit DATA_DIR=../data (DEVELOPMENT.md): .secret_key, .bootstrap_token
+/apps/data/
 
 # Agent-Paket-Repo (apt/rpm): vom Updater befuellter bind mount, kein Quellcode
 /repo/

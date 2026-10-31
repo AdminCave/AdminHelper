@@ -2,9 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import fcntl
 import json
 import logging
 import math
+import os
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,14 +22,17 @@ from sqlalchemy.exc import IntegrityError
 # Every ORM model before the first query (the lifespan's), see app/model_registry.py.
 # Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
 from app import model_registry  # noqa: F401
+from app.core import identity, middleware
 from app.core.auth import hash_api_key, hash_password
 from app.core.config import (
     ADMIN_PASSWORD,
     BOOTSTRAP_SETUP_FILE,
     BOOTSTRAP_TOKEN_FILE,
     FRP_BIND_PORT,
+    write_private_file,
 )
 from app.core.database import SessionLocal
+from app.core.errors import install_coded_errors
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
@@ -59,6 +64,7 @@ from app.modules.servers.router import router as servers_router
 from app.modules.users.auth_router import router as auth_router
 from app.modules.users.models import User
 from app.modules.users.router import router as users_router
+from app.modules.users.schemas import PASSWORD_MAX_LEN
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +100,16 @@ def _ensure_admin(db):
         _emit_bootstrap_token()
         return
 
+    if len(ADMIN_PASSWORD) > PASSWORD_MAX_LEN:
+        # Sign-in takes at most PASSWORD_MAX_LEN characters: such an admin could never
+        # sign in (R-0957).
+        logger.warning(
+            "ADMIN_PASSWORD is longer than %d characters, ignored; using the bootstrap token.",
+            PASSWORD_MAX_LEN,
+        )
+        _emit_bootstrap_token()
+        return
+
     admin = User(
         username="admin",
         hashed_password=hash_password(ADMIN_PASSWORD),
@@ -122,30 +138,55 @@ def _ensure_admin(db):
 
 def _purge_bootstrap_files():
     for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
-        if f.exists():
-            try:
-                f.unlink()
-            except OSError:
-                pass
+        try:
+            f.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("bootstrap file %s not removed (%s)", f, type(exc).__name__)
+
+
+# Every uvicorn worker runs the lifespan, so without a lock each would write its own token and
+# hash. The lock belongs to the process until it ends: exactly one worker of a start writes, and
+# a restart draws anew. The file is never deleted (a second lock file and a worker still holding
+# the old one would give two leaders). A constant, not derived from BOOTSTRAP_TOKEN_FILE at call
+# time.
+_BOOTSTRAP_LOCK_FILE = BOOTSTRAP_TOKEN_FILE.with_name(".bootstrap.lock")
+_bootstrap_lock_fd: int | None = None
+
+
+def _hold_bootstrap_lock() -> bool:
+    global _bootstrap_lock_fd
+    if _bootstrap_lock_fd is not None:
+        return True
+    fd = None
+    try:
+        fd = os.open(_BOOTSTRAP_LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        logger.info("bootstrap token left to another worker of this start")
+        return False
+    except OSError as exc:
+        if fd is not None:
+            os.close(fd)
+        logger.warning(
+            "bootstrap lock unavailable (%s); writing the token anyway", type(exc).__name__
+        )
+        return True
+    _bootstrap_lock_fd = fd
+    return True
 
 
 def _emit_bootstrap_token():
     """Generates a one-time bootstrap token: hash to disk for verification, raw token to
     a 0600 file for the operator to read — never logged in cleartext (3.91)."""
+    if not _hold_bootstrap_lock():
+        return
     token = secrets.token_urlsafe(32)
-    BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(token))
-    try:
-        BOOTSTRAP_TOKEN_FILE.chmod(0o600)
-    except OSError:
-        pass
+    write_private_file(BOOTSTRAP_TOKEN_FILE, hash_api_key(token))
     # Raw token to a 0600 file, NOT the log: docker keeps logs (json-file, 5x10MB) and
     # central shipping would carry the token off-box, where it survives even after the
     # token is used. The operator reads it from the file instead (3.91).
-    BOOTSTRAP_SETUP_FILE.write_text(token)
-    try:
-        BOOTSTRAP_SETUP_FILE.chmod(0o600)
-    except OSError:
-        pass
+    write_private_file(BOOTSTRAP_SETUP_FILE, token)
 
     bar = "=" * 78
     logger.warning(bar)
@@ -335,8 +376,8 @@ def _ensure_frps_config(db):
             return
         write_frps_config(config)
         logger.info("frps.toml neu geschrieben")
-    except Exception:
-        logger.exception("frps.toml schreiben fehlgeschlagen")
+    except Exception as exc:
+        logger.warning("frps.toml not written at startup (%s)", type(exc).__name__)
 
 
 def _run_startup_tasks():
@@ -365,6 +406,10 @@ async def lifespan(app: FastAPI):
 
     _run_startup_tasks()
     monitoring_proxy_mod.open_client()
+    # Looked up before the first request: it would otherwise find no address of a proxy name
+    # yet, and wait for one of the gateway.
+    middleware._PROXY_NAMES.start()
+    identity._GATEWAY.start()
     # The APScheduler runs in a DEDICATED process (app.scheduler_main), NOT in the
     # web workers: with uvicorn --workers N each worker would start its own
     # scheduler and every job would run N times (duplicate e-mails from the outbox
@@ -373,12 +418,14 @@ async def lifespan(app: FastAPI):
     # The SSE fan-out subscription IS per web worker (each holds its own streams).
     try:
         await stream_hub.start(REDIS_URL)
-    except Exception:
+    except Exception as exc:
         # Redis carries only the optional SSE push fan-out — rate-limit already degrades to
         # in-memory and SSE has a polling fallback. A brief Redis outage at boot (compose race,
         # a Redis restart during a server redeploy) must not crash-loop the whole API; start
         # best-effort and let push stay disabled until the next boot (4.68).
-        logger.exception("SSE-Fan-out-Start fehlgeschlagen — Push deaktiviert (Polling-Fallback)")
+        logger.warning(
+            "SSE fan-out not started (%s); push disabled, clients poll", type(exc).__name__
+        )
     fire_event("server.startup", {})
     yield
     await stream_hub.stop()
@@ -388,6 +435,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 install_exact_int_bounds(app)
+install_coded_errors(app)
 
 
 def _non_finite_as_null(detail: list) -> list:
@@ -482,7 +530,9 @@ app.include_router(monitoring_proxy_router)
 # the event ingress is service-to-service (X-Internal-Key, no router-level scope).
 app.include_router(notifications_feed_router, dependencies=_access)
 app.include_router(notifications_prefs_router, dependencies=_access)
-app.include_router(notifications_stream_router, dependencies=_access)
+# The stream checks the access scope itself on a short session: a router dependency would
+# hold its get_db session open for as long as the stream runs.
+app.include_router(notifications_stream_router)
 app.include_router(notifications_internal_router)
 app.include_router(servers_internal_router)
 app.include_router(ansible_router, dependencies=_access)

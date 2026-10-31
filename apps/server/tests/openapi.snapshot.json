@@ -1,6 +1,142 @@
 {
   "components": {
     "schemas": {
+      "ActivateEnrollmentOut": {
+        "properties": {
+          "enrollPort": {
+            "title": "Enrollport",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "subjectId": {
+            "title": "Subjectid",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "subjectId",
+          "scope",
+          "enrollPort"
+        ],
+        "title": "ActivateEnrollmentOut",
+        "type": "object"
+      },
+      "ActivateOut": {
+        "properties": {
+          "apiKey": {
+            "title": "Apikey",
+            "type": "string"
+          },
+          "enrollment": {
+            "$ref": "#/components/schemas/ActivateEnrollmentOut"
+          },
+          "frp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FrpBundleOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "monitorApiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitorapikey"
+          },
+          "monitorUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitorurl"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverName",
+          "apiKey",
+          "monitorApiKey",
+          "monitorUrl",
+          "frp",
+          "enrollment"
+        ],
+        "title": "ActivateOut",
+        "type": "object"
+      },
+      "AgentCertificateOut": {
+        "description": "The newest certificate of an agent line that is not revoked.",
+        "properties": {
+          "days_left": {
+            "title": "Days Left",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "not_after": {
+            "format": "date-time",
+            "title": "Not After",
+            "type": "string"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Name"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_id",
+          "fingerprint",
+          "not_after",
+          "days_left",
+          "status"
+        ],
+        "title": "AgentCertificateOut",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "properties": {
           "name": {
@@ -98,6 +234,131 @@
         "title": "ApiKeyResponse",
         "type": "object"
       },
+      "AuditLogOut": {
+        "description": "One audit entry, as AuditLog.to_dict writes it.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actorid"
+          },
+          "actorLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actorlabel"
+          },
+          "actorType": {
+            "title": "Actortype",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "objectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectid"
+          },
+          "objectLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectlabel"
+          },
+          "objectType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objecttype"
+          },
+          "sourceIp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceip"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "actorType",
+          "actorId",
+          "actorLabel",
+          "action",
+          "objectType",
+          "objectId",
+          "objectLabel",
+          "sourceIp",
+          "status",
+          "detail"
+        ],
+        "title": "AuditLogOut",
+        "type": "object"
+      },
       "BootstrapRequest": {
         "description": "Creates the first admin user using the bootstrap token from the server logs.",
         "properties": {
@@ -125,6 +386,50 @@
           "password"
         ],
         "title": "BootstrapRequest",
+        "type": "object"
+      },
+      "CertificateOverviewOut": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentCertificateOut"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "infrastructure": {
+            "items": {
+              "$ref": "#/components/schemas/InfraCertificateOut"
+            },
+            "title": "Infrastructure",
+            "type": "array"
+          }
+        },
+        "required": [
+          "infrastructure",
+          "agents"
+        ],
+        "title": "CertificateOverviewOut",
+        "type": "object"
+      },
+      "ConfigHashOut": {
+        "properties": {
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hash"
+          }
+        },
+        "required": [
+          "hash"
+        ],
+        "title": "ConfigHashOut",
         "type": "object"
       },
       "ConnectionCreate": {
@@ -285,6 +590,123 @@
           "kind"
         ],
         "title": "ConnectionCreate",
+        "type": "object"
+      },
+      "ConnectionImportResult": {
+        "properties": {
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imported",
+          "mode"
+        ],
+        "title": "ConnectionImportResult",
+        "type": "object"
+      },
+      "ConnectionOut": {
+        "additionalProperties": true,
+        "description": "Connection.to_dict. The extra fields a client stored ride along as further keys.",
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "keyPath": {
+            "title": "Keypath",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "lastUsed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastused"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "tags": {
+            "title": "Tags"
+          },
+          "trustCert": {
+            "title": "Trustcert",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "host",
+          "port",
+          "username",
+          "domain",
+          "keyPath",
+          "url",
+          "notes",
+          "tags",
+          "trustCert",
+          "lastUsed"
+        ],
+        "title": "ConnectionOut",
         "type": "object"
       },
       "ConnectionUpdate": {
@@ -525,6 +947,52 @@
         "title": "DeviceResponse",
         "type": "object"
       },
+      "EnrollmentGrantOut": {
+        "description": "A one-time enrollment token, redeemable at the ca-issuer's enroll plane.",
+        "properties": {
+          "browser": {
+            "title": "Browser",
+            "type": "boolean"
+          },
+          "enrollPort": {
+            "title": "Enrollport",
+            "type": "integer"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "subjectId": {
+            "title": "Subjectid",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "subjectId",
+          "scope",
+          "browser",
+          "enrollPort",
+          "expiresAt"
+        ],
+        "title": "EnrollmentGrantOut",
+        "type": "object"
+      },
       "EnrollmentTokenForRequest": {
         "properties": {
           "browser": {
@@ -548,6 +1016,38 @@
           "username"
         ],
         "title": "EnrollmentTokenForRequest",
+        "type": "object"
+      },
+      "EventsAcceptedOut": {
+        "description": "How many recipients the event reached.",
+        "properties": {
+          "notified": {
+            "title": "Notified",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notified"
+        ],
+        "title": "EventsAcceptedOut",
+        "type": "object"
+      },
+      "FrpBundleOut": {
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "pkiBundle": {
+            "title": "Pkibundle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "pkiBundle"
+        ],
+        "title": "FrpBundleOut",
         "type": "object"
       },
       "FrpServerConfigCreate": {
@@ -2138,6 +2638,19 @@
         "title": "HookResponse",
         "type": "object"
       },
+      "HookTokenOut": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "HookTokenOut",
+        "type": "object"
+      },
       "HookUpdate": {
         "properties": {
           "description": {
@@ -2344,6 +2857,83 @@
         "title": "IncomingEvent",
         "type": "object"
       },
+      "InfraCertificateOut": {
+        "description": "A certificate of the infrastructure, as the ca-issuer recorded it at its last start.",
+        "properties": {
+          "days_left": {
+            "title": "Days Left",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "not_after": {
+            "format": "date-time",
+            "title": "Not After",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "subject",
+          "fingerprint",
+          "not_after",
+          "days_left",
+          "status"
+        ],
+        "title": "InfraCertificateOut",
+        "type": "object"
+      },
+      "InternalServerOut": {
+        "description": "One server as the monitoring service's tag-sync reads it.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "hostname",
+          "name",
+          "tags"
+        ],
+        "title": "InternalServerOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "password": {
@@ -2366,6 +2956,19 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "LogoutOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "LogoutOut",
+        "type": "object"
+      },
       "LogoutRequest": {
         "properties": {
           "refresh_token": {
@@ -2381,6 +2984,19 @@
           }
         },
         "title": "LogoutRequest",
+        "type": "object"
+      },
+      "MarkReadOut": {
+        "properties": {
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated"
+        ],
+        "title": "MarkReadOut",
         "type": "object"
       },
       "MarkReadRequest": {
@@ -2404,6 +3020,169 @@
           }
         },
         "title": "MarkReadRequest",
+        "type": "object"
+      },
+      "MyServerOut": {
+        "description": "A server assigned to the caller.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname"
+        ],
+        "title": "MyServerOut",
+        "type": "object"
+      },
+      "NotificationOut": {
+        "description": "A feed row as Notification.to_dict hands it out.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "eventType": {
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "readAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readat"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceid"
+          },
+          "sourceType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetype"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "severity",
+          "category",
+          "eventType",
+          "title",
+          "body",
+          "sourceType",
+          "sourceId",
+          "read",
+          "readAt"
+        ],
+        "title": "NotificationOut",
+        "type": "object"
+      },
+      "NotificationPrefsOut": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "subscriptions": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationSubscriptionOut"
+            },
+            "title": "Subscriptions",
+            "type": "array"
+          },
+          "telegramChatId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegramchatid"
+          }
+        },
+        "required": [
+          "email",
+          "telegramChatId",
+          "subscriptions"
+        ],
+        "title": "NotificationPrefsOut",
         "type": "object"
       },
       "NotificationPrefsUpdate": {
@@ -2443,6 +3222,87 @@
           "subscriptions"
         ],
         "title": "NotificationPrefsUpdate",
+        "type": "object"
+      },
+      "NotificationSubscriptionOut": {
+        "description": "A rule as NotificationSubscription.to_dict hands it out.",
+        "properties": {
+          "categories": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
+          "channelEmail": {
+            "title": "Channelemail",
+            "type": "boolean"
+          },
+          "channelTelegram": {
+            "title": "Channeltelegram",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "minSeverity": {
+            "title": "Minseverity",
+            "type": "string"
+          },
+          "scopeRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoperef"
+          },
+          "scopeType": {
+            "title": "Scopetype",
+            "type": "string"
+          },
+          "userId": {
+            "title": "Userid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "scopeType",
+          "scopeRef",
+          "minSeverity",
+          "categories",
+          "channelEmail",
+          "channelTelegram",
+          "enabled"
+        ],
+        "title": "NotificationSubscriptionOut",
+        "type": "object"
+      },
+      "PlaybookContentOut": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "PlaybookContentOut",
         "type": "object"
       },
       "PlaybookCreate": {
@@ -2486,6 +3346,67 @@
           "content"
         ],
         "title": "PlaybookCreate",
+        "type": "object"
+      },
+      "PlaybookOut": {
+        "description": "A playbook as Playbook.to_dict hands it out.",
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "filename",
+          "description",
+          "tags",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PlaybookOut",
         "type": "object"
       },
       "PlaybookUpdate": {
@@ -2552,6 +3473,102 @@
         "title": "PlaybookUpdate",
         "type": "object"
       },
+      "ProvisionTokenCreatedOut": {
+        "description": "A new provision token; token is the raw value, handed out only here.",
+        "properties": {
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt",
+          "serverId",
+          "serverName"
+        ],
+        "title": "ProvisionTokenCreatedOut",
+        "type": "object"
+      },
+      "ProvisionTokenOut": {
+        "description": "A provision token as ProvisionToken.to_dict hands it out.",
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isValid": {
+            "title": "Isvalid",
+            "type": "boolean"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "usedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usedat"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "expiresAt",
+          "usedAt",
+          "isValid",
+          "createdAt"
+        ],
+        "title": "ProvisionTokenOut",
+        "type": "object"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -2616,6 +3633,106 @@
           "hostname"
         ],
         "title": "ServerCreate",
+        "type": "object"
+      },
+      "ServerOut": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOut"
+            },
+            "title": "Connections",
+            "type": "array"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "frpTunnels": {
+            "items": {
+              "$ref": "#/components/schemas/FrpTunnelOut"
+            },
+            "title": "Frptunnels",
+            "type": "array"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "osType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ostype"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname",
+          "osType",
+          "tags",
+          "notes",
+          "createdAt",
+          "connections",
+          "frpTunnels"
+        ],
+        "title": "ServerOut",
+        "type": "object"
+      },
+      "ServerSummary": {
+        "description": "One server as GET /api/servers/summary lists it.",
+        "properties": {
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hostname"
+        ],
+        "title": "ServerSummary",
         "type": "object"
       },
       "ServerUpdate": {
@@ -2773,6 +3890,106 @@
         "title": "TokenResponse",
         "type": "object"
       },
+      "TunnelMappingOut": {
+        "description": "A tunnel as a non-admin lists it: the keys of _MAPPING_FIELDS (tunnel_router.py).",
+        "properties": {
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectionid"
+          },
+          "customDomains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customdomains"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "localPort": {
+            "title": "Localport",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "tunnelType": {
+            "title": "Tunneltype",
+            "type": "string"
+          },
+          "visitorPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visitorport"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "tunnelType",
+          "protocol",
+          "localPort",
+          "visitorPort",
+          "customDomains",
+          "connectionId",
+          "enabled",
+          "name"
+        ],
+        "title": "TunnelMappingOut",
+        "type": "object"
+      },
+      "UnreadCountOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "UnreadCountOut",
+        "type": "object"
+      },
       "UserCreate": {
         "properties": {
           "is_admin": {
@@ -2815,6 +4032,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "idle_timeout_minutes": {
+            "title": "Idle Timeout Minutes",
+            "type": "integer"
+          },
           "is_admin": {
             "title": "Is Admin",
             "type": "boolean"
@@ -2827,7 +4048,8 @@
         "required": [
           "id",
           "username",
-          "is_admin"
+          "is_admin",
+          "idle_timeout_minutes"
         ],
         "title": "UserMe",
         "type": "object"
@@ -2958,6 +4180,25 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VisitorBundleOut": {
+        "properties": {
+          "pki": {
+            "additionalProperties": true,
+            "title": "Pki",
+            "type": "object"
+          },
+          "toml": {
+            "title": "Toml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "toml",
+          "pki"
+        ],
+        "title": "VisitorBundleOut",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -2990,7 +4231,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlaybookOut"
+                  },
+                  "title": "Response List Playbooks Api Ansible Playbooks Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -3022,7 +4269,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3105,7 +4354,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3158,7 +4409,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3203,7 +4456,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookContentOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3480,8 +4735,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/AuditLogOut"
                   },
                   "title": "Response List Audit Api Audit Get",
                   "type": "array"
@@ -3620,7 +4874,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3763,8 +5019,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/ConnectionOut"
                   },
                   "title": "Response Get Connections Api Connections Get",
                   "type": "array"
@@ -3814,9 +5069,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Create Connection Api Connections Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionOut"
                 }
               }
             },
@@ -3883,7 +5136,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionImportResult"
+                }
               }
             },
             "description": "Successful Response"
@@ -3977,9 +5232,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Update Connection Api Connections  Conn Id  Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionOut"
                 }
               }
             },
@@ -4030,9 +5283,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Touch Connection Api Connections  Conn Id  Touch Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionOut"
                 }
               }
             },
@@ -4060,6 +5311,33 @@
         "summary": "Touch Connection",
         "tags": [
           "connections"
+        ]
+      }
+    },
+    "/api/enrollment/certificates": {
+      "get": {
+        "description": "When the certificates run out (R-1022): the infrastructure certificates as the\nca-issuer recorded them at its last start, and the newest certificate of each agent\nthat is not revoked. Status `warning` below 30 days left, `critical` below 7.",
+        "operationId": "certificate_overview_api_enrollment_certificates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateOverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Certificate Overview",
+        "tags": [
+          "enrollment"
         ]
       }
     },
@@ -4098,7 +5376,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentGrantOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -4143,7 +5423,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentGrantOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -4346,7 +5628,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorBundleOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -4511,7 +5795,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigHashOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -4850,7 +6136,20 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/FrpTunnelOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/TunnelMappingOut"
+                      }
+                    ]
+                  },
+                  "title": "Response List Tunnels Api Frp Tunnels Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -4892,7 +6191,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpTunnelOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -4975,7 +6276,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpTunnelOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5028,7 +6331,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpTunnelOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5182,6 +6487,18 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "X-Hook-Token header missing"
+          },
+          "403": {
+            "description": "Hook is disabled"
+          },
+          "404": {
+            "description": "No webhook hook with this token"
+          },
+          "429": {
+            "description": "Rate limit exceeded for this client IP"
           }
         },
         "summary": "Trigger Webhook Header",
@@ -5213,6 +6530,12 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "Hook is disabled"
+          },
+          "404": {
+            "description": "No webhook hook with this token"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5222,6 +6545,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Rate limit exceeded for this client IP"
           }
         },
         "summary": "Trigger Webhook",
@@ -5388,7 +6714,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HookTokenOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5525,7 +6853,9 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EventsAcceptedOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5560,7 +6890,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InternalServerOut"
+                  },
+                  "title": "Response List Servers Internal Api Internal Servers Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -5848,8 +7184,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/NotificationOut"
                   },
                   "title": "Response List Notifications Api Notifications Get",
                   "type": "array"
@@ -5898,7 +7233,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -5952,7 +7289,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6008,7 +7347,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerOut"
+                  },
+                  "title": "Response List Servers Api Servers Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -6050,7 +7395,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6072,6 +7419,36 @@
           }
         ],
         "summary": "Create Server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/summary": {
+      "get": {
+        "operationId": "list_server_summaries_api_servers_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerSummary"
+                  },
+                  "title": "Response List Server Summaries Api Servers Summary Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Server Summaries",
         "tags": [
           "servers"
         ]
@@ -6133,7 +7510,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6186,7 +7565,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6232,7 +7613,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActivateOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6273,7 +7656,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionTokenCreatedOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6319,7 +7704,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProvisionTokenOut"
+                  },
+                  "title": "Response List Provision Tokens Api Servers  Server Id  Provision Tokens Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -6427,7 +7818,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6460,7 +7853,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6494,7 +7889,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyServerOut"
+                  },
+                  "title": "Response My Servers Api Users Me Servers Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"

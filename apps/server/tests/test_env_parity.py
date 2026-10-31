@@ -26,6 +26,8 @@ one in a warning message, and that is not a missing default.
 import re
 from pathlib import Path
 
+import yaml
+
 _ROOT = Path(__file__).resolve().parents[3]
 _COMPOSE = _ROOT / "docker-compose.yml"
 _ENV_EXAMPLE = _ROOT / ".env.example"
@@ -164,9 +166,31 @@ def test_compose_gives_no_service_a_key_it_does_not_read():
     )
 
 
+def _secret_sources() -> set[str]:
+    """Variables compose hands on as secrets (`secrets.<name>.environment`): a knob
+    that reaches its service as a file under /run/secrets instead of a `${VAR}`."""
+    secrets = yaml.safe_load(_COMPOSE.read_text(encoding="utf-8")).get("secrets") or {}
+    return {spec["environment"] for spec in secrets.values() if "environment" in (spec or {})}
+
+
+def test_secret_sources_lists_only_environment_backed_secrets(tmp_path, monkeypatch):
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text(
+        "secrets:\n"
+        "  from_env:\n"
+        "    environment: FROM_ENV_VAR\n"
+        "  from_file:\n"
+        "    file: ./secret.txt\n"
+        "  empty:\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(f"{__name__}._COMPOSE", compose)
+    assert _secret_sources() == {"FROM_ENV_VAR"}
+
+
 def _substituted_and_documented() -> tuple[set[str], set[str]]:
     return (
-        set(_SUBSTITUTION.findall(_COMPOSE.read_text(encoding="utf-8"))),
+        set(_SUBSTITUTION.findall(_COMPOSE.read_text(encoding="utf-8"))) | _secret_sources(),
         set(_EXAMPLE_KEY.findall(_ENV_EXAMPLE.read_text(encoding="utf-8"))),
     )
 
@@ -203,3 +227,54 @@ def test_both_services_of_the_server_image_share_the_pool_knobs():
             f"{knob} reaches only {carriers} — both services run the server image and "
             f"each opens its own pool"
         )
+
+
+# One Postgres role per service (apps/server/app/db_roles.py): only postgres and db-init see
+# the superuser's password, every other service connects with its own role, and waits for
+# db-init to have set the roles up.
+_DB_ROLES = {
+    "server": "ah_server",
+    "scheduler": "ah_scheduler",
+    "ca-issuer": "ah_ca",
+    "monitoring": "ah_monitor",
+}
+
+
+def test_only_postgres_and_db_init_see_the_superuser_password():
+    services = yaml.safe_load(_COMPOSE.read_text(encoding="utf-8"))["services"]
+    holders = sorted(
+        name
+        for name, spec in services.items()
+        if any(
+            re.search(r"\$\{POSTGRES_PASSWORD\b", entry) for entry in spec.get("environment") or []
+        )
+    )
+    assert holders == ["db-init", "postgres"]
+
+
+def test_each_service_connects_with_its_role_after_db_init():
+    services = yaml.safe_load(_COMPOSE.read_text(encoding="utf-8"))["services"]
+    for name, role in _DB_ROLES.items():
+        env = dict(entry.split("=", 1) for entry in services[name]["environment"])
+        assert env["DATABASE_URL"].startswith(f"postgresql+psycopg://{role}:"), name
+        password_var = {
+            "ah_server": "SERVER_DB_PASSWORD",
+            "ah_scheduler": "SCHEDULER_DB_PASSWORD",
+            "ah_ca": "CA_DB_PASSWORD",
+            "ah_monitor": "MONITOR_DB_PASSWORD",
+        }[role]
+        assert f"${{{password_var}}}@" in env["DATABASE_URL"], name
+        if "PGUSER" in env:
+            assert env["PGUSER"] == role, name
+        assert services[name]["depends_on"]["db-init"] == {
+            "condition": "service_completed_successfully"
+        }, name
+    assert services["db-init"]["depends_on"]["postgres"]["condition"] == "service_healthy"
+    init_env = dict(entry.split("=", 1) for entry in services["db-init"]["environment"])
+    for var in (
+        "SERVER_DB_PASSWORD",
+        "SCHEDULER_DB_PASSWORD",
+        "MONITOR_DB_PASSWORD",
+        "CA_DB_PASSWORD",
+    ):
+        assert init_env[var] == f"${{{var}}}", var

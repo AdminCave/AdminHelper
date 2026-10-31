@@ -5,12 +5,82 @@
 import logging
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger("adminhelper.config")
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def fsync_dir(path: Path) -> None:
+    """Syncs the directory path; a failure is logged with its type and not raised."""
+    # The directory entry an os.replace wrote is durable only after an fsync of the directory
+    # (fsync(2)). The file is already in place at that point: raising would make the caller
+    # treat a swap that worked as failed.
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        logger.warning("directory %s not synced (%s)", path, type(exc).__name__)
+
+
+def write_private_file(path: Path, text: str) -> None:
+    """Writes text (UTF-8) to path, readable and writable by its owner only, atomically."""
+    # mkstemp creates the temp file 0600, never wider whatever the umask: no window with wider
+    # rights and no chmod afterwards whose error could get lost. os.replace swaps it in
+    # atomically and replaces a symlink at the target name instead of writing through it. Same
+    # form as write_frps_config (app/modules/frp/docker_manager.py), which config.py cannot
+    # import.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(text.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    fsync_dir(path.parent)
+
+
+def publish_private_file_once(path: Path, text: str) -> str:
+    """Publishes text at path unless another process did first; returns what path holds."""
+    # link creates the name atomically and only once, and the name points to a complete file
+    # from the start, unlike O_EXCL, where a reader could see the file before it is written.
+    # Server workers and the scheduler start at the same time.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(text.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
+            try:
+                existing = path.read_text().strip()
+            except FileNotFoundError:
+                existing = ""
+            if existing:
+                return existing
+            write_private_file(path, text)
+            return text
+        except OSError as exc:
+            logger.warning(
+                "%s not published exclusively (%s); writing it in place", path, type(exc).__name__
+            )
+            write_private_file(path, text)
+            return text
+        fsync_dir(path.parent)
+        return text
+    finally:
+        Path(tmp).unlink(missing_ok=True)
 
 
 def _resolve_secret_key() -> str:
@@ -23,6 +93,13 @@ def _resolve_secret_key() -> str:
     if key_file.exists():
         stored = key_file.read_text().strip()
         if stored:
+            mode = key_file.stat().st_mode & 0o777
+            if mode & 0o077:
+                logger.warning(
+                    "%s has mode %o, group or others may read the key; chmod 600 it",
+                    key_file,
+                    mode,
+                )
             return stored
 
     if env_key == "change-me-in-production":
@@ -30,16 +107,68 @@ def _resolve_secret_key() -> str:
             "SECRET_KEY ist der unsichere Default! Generiere automatisch einen sicheren Key."
         )
     generated = secrets.token_urlsafe(64)
-    key_file.write_text(generated)
-    key_file.chmod(0o600)
-    logger.info("SECRET_KEY auto-generiert und in %s gespeichert", key_file)
-    return generated
+    key = publish_private_file_once(key_file, generated)
+    if key == generated:
+        logger.info("SECRET_KEY auto-generiert und in %s gespeichert", key_file)
+    else:
+        logger.info("SECRET_KEY of another process adopted from %s", key_file)
+    return key
 
 
 SECRET_KEY = _resolve_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7
+
+WEB_IDLE_TIMEOUT_DEFAULT_MINUTES = 30
+
+
+def parse_web_idle_timeout(raw: str | None) -> int:
+    """Minutes without user input after which the web panel signs out (0 = off)."""
+    value = (raw or "").strip()
+    if not value:
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    try:
+        minutes = int(value)
+    except ValueError:
+        minutes = -1
+    if minutes < 0:
+        # Fall back instead of refusing to start: a typo in this knob should not take the
+        # whole panel down.
+        logger.warning(
+            "WEB_IDLE_TIMEOUT_MINUTES=%r is not a whole number >= 0, using %d",
+            raw,
+            WEB_IDLE_TIMEOUT_DEFAULT_MINUTES,
+        )
+        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
+    return minutes
+
+
+WEB_IDLE_TIMEOUT_MINUTES = parse_web_idle_timeout(os.environ.get("WEB_IDLE_TIMEOUT_MINUTES", ""))
+
+WEB_SESSION_MAX_DEFAULT_HOURS = 24
+
+
+def parse_web_session_max_hours(raw: str | None) -> int:
+    """Hours after its sign-in at which a browser session ends, active or not (0 = off)."""
+    value = (raw or "").strip()
+    if not value:
+        return WEB_SESSION_MAX_DEFAULT_HOURS
+    try:
+        hours = int(value)
+    except ValueError:
+        hours = -1
+    if hours < 0:
+        logger.warning(
+            "WEB_SESSION_MAX_HOURS=%r is not a whole number >= 0, using %d",
+            raw,
+            WEB_SESSION_MAX_DEFAULT_HOURS,
+        )
+        return WEB_SESSION_MAX_DEFAULT_HOURS
+    return hours
+
+
+WEB_SESSION_MAX_HOURS = parse_web_session_max_hours(os.environ.get("WEB_SESSION_MAX_HOURS", ""))
 
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see server/alembic/), no longer by
@@ -101,7 +230,8 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 # Ignored if TRUSTED_PROXIES is set.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
 
-# Comma-separated list of IPs/CIDRs of the trusted reverse proxies.
+# Comma-separated list of IPs/CIDRs or host names of the trusted reverse proxies
+# (a name counts with the addresses it resolved to, looked up every 30 s).
 # X-Forwarded-For / X-Real-IP are evaluated ONLY if the direct connection
 # comes from one of these IPs. Recommended over TRUST_PROXY_HEADERS.
 # Example: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
@@ -133,6 +263,24 @@ if WEB_CONCURRENCY > 1 and not REDIS_URL:
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
 DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
 
+
+def parse_mtls_enforce(raw: str | None) -> bool:
+    """MTLS_ENFORCE as the gateway entrypoint reads it: unset or empty enforces,
+    1/true/yes/on enforce, 0/false/no/off are permissive (any case, no trimming), and
+    any other value enforces with a warning (fail-closed)."""
+    if not raw:
+        return True
+    value = raw.lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    logger.warning(
+        "MTLS_ENFORCE=%r is not a known value — fail-closed, per-route scope enforced.", raw
+    )
+    return True
+
+
 # mTLS scope enforcement (ADR 0001 D3/D8). The gateway forwards the verified client
 # identity as headers; per-route scope guards (app.core.identity) read it. Enforced by
 # default (true), matching compose (MTLS_ENFORCE:-true) and the docs' "enforced by default
@@ -141,13 +289,22 @@ DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
 # central trust boundary with no warning. MTLS_ENFORCE=false is the permissive rollout
 # (scope mismatches logged but allowed), needed only for a manual first bootstrap. The
 # startup log makes the effective stance observable (no split-brain guessing) (3.89).
-MTLS_ENFORCE = os.environ.get("MTLS_ENFORCE", "true").lower() in ("1", "true", "yes")
+# parse_mtls_enforce uses the table of the gateway entrypoint (apps/gateway/
+# docker-entrypoint.sh), so a value like `on` cannot leave the server permissive while
+# the gateway enforces; tests/test_mtls_enforce_parse.py keeps the two equal.
+MTLS_ENFORCE = parse_mtls_enforce(os.environ.get("MTLS_ENFORCE", "true"))
 if MTLS_ENFORCE:
     logger.info("MTLS_ENFORCE=true — Datenebene erzwingt Per-Route-Scope.")
 else:
     logger.warning(
         "MTLS_ENFORCE=false — Datenebene laeuft PERMISSIV (Scope-Mismatch wird nur geloggt)."
     )
+
+# Directory of the listed intermediates per scope (<scope>.pem, current + retired), written
+# by the ca-issuer at its start. nginx anchors client certs at the root, so a certificate of
+# a withdrawn intermediate still passes the gateway; the server accepts one only if a listed
+# intermediate of its scope issued it (R-1009). A missing file refuses its scope (fail-closed).
+CA_TRUST_DIR = os.environ.get("CA_TRUST_DIR", "/app/ca-trust").strip()
 
 # Public port of the gateway's enrollment plane (ADR 0001 §3.2). The server has
 # no reliable view of its own public address, so it only returns this port hint
@@ -169,6 +326,10 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Optional path inside the container to a PEM file with the relay's CA (self-signed
+# or company CA). Loaded in addition to the system CAs and used only for SMTP, so
+# certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
+SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
 # Bell-feed retention in days. A daily system job prunes notification rows older

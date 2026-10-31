@@ -18,8 +18,8 @@ services:
       - TZ=${TZ:-Europe/Berlin}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # The monitoring DB (adminhelper_monitor) is created by the monitoring
-      # service's entrypoint, not a bind-mounted init script — this keeps
+      # The monitoring DB (adminhelper_monitor) and the service roles come from the
+      # db-init service below, not a bind-mounted init script — this keeps
       # docker-compose.yml free of repo-file bind mounts (single self-contained
       # file, distributable on its own).
     healthcheck:
@@ -29,17 +29,53 @@ services:
       retries: 10
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes: one per connection (max_connections defaults to 100) next to the background workers.
+    pids_limit: 512
+    # Memory: shared buffers, one backend per connection and the work memory of large sorts.
+    mem_limit: 8g
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
     # In pki (so the ca-issuer reaches it without sharing the default net with frps)
     # + default (server/scheduler/monitoring). No host port either way (1.1).
     networks: [default, pki]
 
+  # One Postgres role per service (apps/server/app/db_roles.py): creates the roles or resets
+  # their passwords, the monitoring DB, ownership and CONNECT, on every `up`, idempotently,
+  # then exits. Besides postgres the only service that holds the superuser's password.
+  db-init:
+    image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
+    entrypoint: ["python", "-m", "app.db_roles", "setup"]
+    user: "10001:10001"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=adminhelper
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - SERVER_DB_PASSWORD=${SERVER_DB_PASSWORD}
+      - SCHEDULER_DB_PASSWORD=${SCHEDULER_DB_PASSWORD}
+      - MONITOR_DB_PASSWORD=${MONITOR_DB_PASSWORD}
+      - CA_DB_PASSWORD=${CA_DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    # One Python process for a few seconds.
+    pids_limit: 128
+    mem_limit: 256m
+
   server:
     image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
     # No host port: the server listens plain-HTTP on the compose network only.
-    # The gateway is the single public TLS edge and proxies to server:8080. This
-    # is what makes the gateway's X-Client-* identity header unforgeable — there
-    # is no direct path to this socket from the host (ADR 0001 §3.2).
+    # The gateway is the single public TLS edge and proxies to server:8080. The
+    # missing host port keeps out only the outside; the other services of this
+    # network reach server:8080 too. What makes the gateway's X-Client-* identity
+    # header trustworthy is the server checking the request's direct peer
+    # (app/core/identity.py, _peer_is_gateway), not the socket (ADR 0001 §3.2).
     expose:
       - "8080"
     volumes:
@@ -50,6 +86,8 @@ services:
       - frp-config:/app/frp-config
       # Status file of the frps supervisor, read-only (FRPS_STATE_DIR below).
       - frps-state:/app/frps-state:ro
+      # The listed intermediates of each scope, written by the ca-issuer (CA_TRUST_DIR below).
+      - ca-trust:/app/ca-trust:ro
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
@@ -72,6 +110,9 @@ services:
       # window (e.g. a manual first-admin bootstrap). Flipped together with the
       # gateway. scripts/install.sh mints the first cert out-of-band; see docs (Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+      # A client cert counts only if a listed intermediate of its scope issued it; a missing
+      # trust file refuses that scope (R-1009).
+      - CA_TRUST_DIR=/app/ca-trust
       # The server stamps <host>:ENROLL_PORT/enroll into every enrollment grant, so it MUST match the
       # gateway's published enroll-plane port below — otherwise agent/desktop enrollment dials a closed
       # port (4.50).
@@ -81,29 +122,37 @@ services:
       # The host port compose publishes for frps (below), reported with the supervisor status.
       - FRP_BIND_PORT=${FRP_BIND_PORT:-7000}
       # Postgres
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - DATABASE_URL=postgresql+psycopg://ah_server:${SERVER_DB_PASSWORD}@postgres:5432/adminhelper
       # libpq variables for the entrypoint's pg_isready wait. No PGPASSWORD:
       # pg_isready does not authenticate, and the password already travels in
-      # DATABASE_URL. Only the monitoring entrypoint runs psql and needs it.
+      # DATABASE_URL.
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=adminhelper
+      - PGUSER=ah_server
       # Monitoring-Proxy
       - MONITOR_SERVICE_URL=http://monitoring:8080
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       # IP-Zugangsbeschränkung (leer = kein Filter)
       # Beispiel: ALLOWED_IPS=192.168.1.0/24,10.0.0.5
       - ALLOWED_IPS=${ALLOWED_IPS:-}
-      # Auf true setzen wenn hinter Reverse-Proxy (X-Forwarded-For auswerten)
-      # Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
+      # Wirkt in Compose nicht: TRUSTED_PROXIES ist hier immer gesetzt (siehe unten) und
+      # hat Vorrang. Ausserhalb von Compose: true = X-Forwarded-For von jeder Gegenstelle.
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
-      # Empfohlen statt TRUST_PROXY_HEADERS: IPs/CIDRs der Reverse-Proxies
-      # Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      # The gateway service is always trusted, by its name (the server resolves it every 30 s):
+      # the server takes the client address from the X-Forwarded-For the gateway sets.
+      # TRUSTED_PROXIES in .env adds further direct peers of the server (addresses, networks or
+      # host names), e.g. TRUSTED_PROXIES=192.0.2.10,198.51.100.0/24. A proxy in front of the
+      # gateway does not belong there: the gateway does not read its X-Forwarded-For. With
+      # TRUSTED_PROXIES always set, TRUST_PROXY_HEADERS above has no effect under compose.
+      - TRUSTED_PROXIES=gateway${TRUSTED_PROXIES:+,${TRUSTED_PROXIES}}
       # Redis fuer Rate-Limit ueber mehrere Worker hinweg
       - REDIS_URL=redis://redis:6379/0
       # Audit-Log-Aufbewahrung in Tagen (0 = unbegrenzt); taeglicher Prune-Job.
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
+      # Web panel signs out after this many minutes without input in any tab (0 = off).
+      - WEB_IDLE_TIMEOUT_MINUTES=${WEB_IDLE_TIMEOUT_MINUTES:-30}
+      # Server ends a browser session this many hours after sign-in (0 = off).
+      - WEB_SESSION_MAX_HOURS=${WEB_SESSION_MAX_HOURS:-24}
       # SMTP-Relay fuer E-Mail-Benachrichtigungen (Notification-Hub). Leerer
       # SMTP_HOST = E-Mail-Kanal deaktiviert (Outbox-Eintraege scheitern dann und
       # werden nach NOTIFICATION_MAX_ATTEMPTS verworfen). Kein lokaler MTA: auf
@@ -115,6 +164,15 @@ services:
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: per uvicorn worker (WEB_CONCURRENCY, rule of thumb 2×cores+1, see
+    # .env.example) a thread pool of up to 40 and up to eight hook processes. Raise it together
+    # with a large WEB_CONCURRENCY.
+    pids_limit: 4096
+    # Memory: per uvicorn worker an interpreter, its requests and up to eight hook processes.
+    mem_limit: 6g
     # TCP-readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
     # 8080, so a successful connect means migrations are done — lets dependants wait on service_healthy
     # instead of racing Alembic (the gateway otherwise serves 502s to fresh clients) (1.22).
@@ -125,6 +183,8 @@ services:
       retries: 48
       start_period: 60s
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       postgres:
@@ -144,10 +204,10 @@ services:
       # Same pool knobs as the web service: the scheduler holds its own engine.
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - DATABASE_URL=postgresql+psycopg://ah_scheduler:${SCHEDULER_DB_PASSWORD}@postgres:5432/adminhelper
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=adminhelper
+      - PGUSER=ah_scheduler
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       - REDIS_URL=redis://redis:6379/0
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
@@ -169,7 +229,16 @@ services:
       - frps-state:/app/frps-state:ro
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: the job thread pools and up to eight hook processes.
+    pids_limit: 1024
+    # Memory: one interpreter with its jobs and up to eight hook processes.
+    mem_limit: 2g
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -178,7 +247,7 @@ services:
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/admincave/adminhelper/gateway:latest}
     # The single public TLS/mTLS edge for the HTTP planes (ADR 0001 D11).
-    #   :443   data plane  -> server  (permissive mTLS this phase; CERT_REQUIRED in A8)
+    #   :443   data plane  -> server  (mTLS enforced by default: CERT_REQUIRED)
     #   :8444  enroll plane -> ca-issuer (certless, token-gated)
     #   :8445  repo plane   -> static GPG-signed apt/rpm repo (certless, ./repo)
     # TLS material (access-signed leaf + CA bundle) is provisioned by the
@@ -194,12 +263,42 @@ services:
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Default true → data plane :443 is CERT_REQUIRED (ssl_verify_client on);
-      # set false for a permissive window (optional). Flip together with the
-      # server's MTLS_ENFORCE. scripts/install.sh sets up the first admin's cert
-      # before arming, so a fresh install is usable enforced (see docs/Betrieb).
+      # false is permissive, only for a manual first-admin bootstrap. Flip
+      # together with the server's MTLS_ENFORCE. scripts/install.sh sets up the
+      # first admin's cert out-of-band, so a fresh install is enforced from the
+      # start (see docs/Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+    # A listener on 127.0.0.1 that only nginx.conf knows: healthy once nginx has loaded its
+    # whole configuration. start_period covers the entrypoint's wait of up to 120 s for the
+    # TLS material from the ca-issuer.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 150s
     logging: *default-logging
     restart: unless-stopped
+    # The nginx master runs as root and starts its workers as the image's user nginx, which
+    # keeps no capability. The master's: CHOWN to hand its temp directories under
+    # /var/cache/nginx to that user; SETUID and SETGID to switch the workers to it;
+    # DAC_OVERRIDE to read gateway.key, which the ca-issuer writes 0600 under its own UID. No
+    # KILL: on QUIT, the image's stop signal, the master tells its workers to stop through a
+    # channel of its own, not by signal.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    # Ports 443, 8444 and 8445 inside without NET_BIND_SERVICE: every port of the container's
+    # own network namespace is open to unprivileged processes. Docker's default since 20.10,
+    # set here so that it does not depend on the engine (as for frps).
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes: the nginx master and one worker per core (worker_processes auto).
+    pids_limit: 512
+    # Memory: the nginx master and its workers with their buffers per connection.
+    mem_limit: 1g
     depends_on:
       # nginx resolves the upstream names at startup, so both must already exist.
       ca-issuer:
@@ -212,8 +311,9 @@ services:
   ca-issuer:
     image: ${CA_ISSUER_IMAGE:-ghcr.io/admincave/adminhelper/ca-issuer:latest}
     # Internal-only PKI plane: the single signing capability (D6). Reachable only
-    # via the gateway's enroll listener — now ENFORCED by the `pki` network below,
-    # not merely asserted (1.1); never from the host (no port mapping).
+    # from its peers on the `pki` network below, the gateway (its enroll listener)
+    # and postgres — ENFORCED by that network, not merely asserted (1.1); never from
+    # frps, the other services of the default net, or the host (no port mapping).
     expose:
       - "8090"
     volumes:
@@ -224,13 +324,22 @@ services:
       - gateway-certs:/app/gateway-certs
       # Outbound drop for the frps TLS material (tunnel-signed leaf + key + chain).
       - frps-certs:/app/frps-certs
+      # Outbound drop for the server: the listed intermediates of each scope (certificates only).
+      - ca-trust:/app/ca-trust
     environment:
       - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
       - EXTRA_SANS=${EXTRA_SANS:-}
-      # Encrypts the cold Root key at rest (D7). Required on first boot to create
-      # the hierarchy. Set via ./scripts/init-secrets.sh; keep it OUT of backups.
-      - CA_ROOT_PASSPHRASE=${CA_ROOT_PASSPHRASE:-}
+      # Encrypts the cold Root key at rest (D7). Only the first boot needs it, to create
+      # the hierarchy. Set via ./scripts/init-secrets.sh; keep it OUT of backups. It
+      # arrives as a file (the secret ca_root_passphrase, top-level `secrets:` below),
+      # not as an environment variable, so it stays out of the container's environment
+      # (docker inspect, /proc/<pid>/environ). After the first boot the value in .env may
+      # be empty: `docker compose up -d` then recreates the ca-issuer (label below) and
+      # the file is gone. The line CA_ROOT_PASSPHRASE= has to stay: without it
+      # `docker compose up` aborts (a secret with the source `environment` needs
+      # Compose v2.6.0 or later).
+      - CA_ROOT_PASSPHRASE_FILE=/run/secrets/ca_root_passphrase
       - CA_GATEWAY_CERT_DIR=/app/gateway-certs
       # frps server cert under the tunnel intermediate (A7). SERVER_ADDR must match
       # the public frps address frpc connects to (the DB's server_addr); defaults
@@ -239,10 +348,11 @@ services:
       - CA_FRPS_SERVER_ADDR=${FRP_SERVER_ADDR:-${DOMAIN:-localhost}}
       # Extra SANs for the frps leaf; empty falls back to EXTRA_SANS (the gateway's).
       - CA_FRPS_EXTRA_SANS=${CA_FRPS_EXTRA_SANS:-}
+      - CA_TRUST_DIR=/app/ca-trust
       # Works on the server's tables in the shared DB: consumes enrollment tokens and
       # keeps the certificate register (device lines, issued certificates); it reads
       # identity revocations and never mints a token.
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - DATABASE_URL=postgresql+psycopg://ah_ca:${CA_DB_PASSWORD}@postgres:5432/adminhelper
     healthcheck:
       test:
         - "CMD"
@@ -254,7 +364,24 @@ services:
       retries: 5
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: one uvicorn process and its thread pool.
+    pids_limit: 512
+    # Memory: one uvicorn process that signs certificates and holds no large data.
+    mem_limit: 512m
+    # Mounted as /run/secrets/ca_root_passphrase (CA_ROOT_PASSPHRASE_FILE above).
+    secrets: [ca_root_passphrase]
+    # Compose leaves a secret's content out of the hash it compares on `up`, so emptying
+    # the value alone would keep the container and the old file in it. This label holds
+    # only whether a value is set (never the value): emptying it changes the label, and
+    # `up -d` recreates the container without the file.
+    labels:
+      com.admincave.adminhelper.ca-root-passphrase-present: "${CA_ROOT_PASSPHRASE:+yes}"
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       # The server's Alembic migration creates the tables this service works on, and the
@@ -275,6 +402,14 @@ services:
       - "6379"
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: redis-server and its few background threads; with persistence off
+    # it forks no snapshot child.
+    pids_limit: 256
+    # Memory: rate-limit counters and the notification pub/sub; nothing is persisted.
+    mem_limit: 512m
     healthcheck:
       # A wedged-but-running process shows unhealthy (not just Up); dependants that
       # wait on service_healthy then hold until redis actually answers (4.49).
@@ -343,6 +478,11 @@ services:
       start_period: 10s
     logging: *default-logging
     restart: unless-stopped
+    # Processes and threads: the supervisor, frps with the threads of the Go runtime, and the
+    # dashboard requests under way.
+    pids_limit: 512
+    # Memory: the buffers of frps grow with the tunnels and their connections.
+    mem_limit: 2g
     depends_on:
       server:
         condition: service_started
@@ -373,6 +513,12 @@ services:
       # Alert-log retention (days). Independent of the VictoriaMetrics metric
       # retention below (VM_RETENTION) — changing one does NOT change the other.
       - ALERT_LOG_RETENTION_DAYS=${ALERT_LOG_RETENTION_DAYS:-90}
+      # SMTP: e-mail alert rules send through the hub's relay unless a rule sets its own.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
       # Notification hub: push check-status transitions to the server, which
       # resolves which users to notify (best-effort; auth via MONITOR_API_KEY as
       # X-Internal-Key). No depends_on — the push tolerates the server being down
@@ -382,22 +528,42 @@ services:
       - SERVER_HUB_URL=http://server:8080
       - ALLOW_INSECURE_HUB=1
       # Postgres
-      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper_monitor
+      - DATABASE_URL=postgresql+psycopg://ah_monitor:${MONITOR_DB_PASSWORD}@postgres:5432/adminhelper_monitor
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=adminhelper
-      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - PGUSER=ah_monitor
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes and threads: the check scheduler's pool of 30, one ping process per running ping
+    # check, and uvicorn's thread pool.
+    pids_limit: 1024
+    # Memory: the check scheduler, the ping processes and uvicorn.
+    mem_limit: 4g
+    # The ping checks run `ping` as the image's user app. Under no-new-privileges a setuid or
+    # file-capability ping gains nothing and opens an ICMP datagram socket, which the kernel
+    # grants only to the groups in this range. Docker's default, set here so that it does not
+    # depend on the engine (like frps's sysctl).
+    sysctls:
+      net.ipv4.ping_group_range: "0 2147483647"
     healthcheck:
-      # /health exists (app.main); a wedged-but-running monitoring shows unhealthy, not
-      # just Up (4.49). Same TCP-connect probe as the server (python is in the image).
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      # A wedged-but-running monitoring shows unhealthy, not just Up (4.49). An HTTP GET on
+      # /health (app.main), not a TCP connect: the kernel completes a connect from the listen
+      # backlog even while the process hangs, only a running process answers the request.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()"
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 30s
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       victoria:
         condition: service_started
       postgres:
@@ -417,8 +583,24 @@ services:
       - "-storageDataPath=/victoria-metrics-data"
     expose:
       - "8428"
+    healthcheck:
+      # /health answers once the storage is open; opening a large data set takes a while,
+      # hence the longer start period and more retries than the other services.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8428/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 60s
     logging: *default-logging
     restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Threads: one Go process whose threads grow with the cores and the queries under way.
+    pids_limit: 1024
+    # Memory: VictoriaMetrics sizes its caches to 60% of the memory it sees: of this limit when it is
+    # below the host's RAM, otherwise of the RAM.
+    mem_limit: 8g
 
   # Optionaler Postgres-Backup-Container.
   # Aktivieren mit: docker compose up -d pg-backup
@@ -438,14 +620,21 @@ services:
   #     - RETENTION_DAYS=7
   #   entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
   #   restart: unless-stopped
+  #   # No process gains privileges on exec (setuid bits, file capabilities).
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   # Processes: the loop shell, then one pg_dump or find at a time.
+  #   pids_limit: 128
+  #   # Memory: pg_dump streams to the file, nothing is held.
+  #   mem_limit: 256m
   #   depends_on:
   #     postgres:
   #       condition: service_healthy
 
-# Two planes. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
+# Three networks. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
 # plane is NOT on the shared default net — a compromised internet-facing frps could
 # otherwise reach ca-issuer:8090 and forge the gateway's mTLS headers to /renew, minting
-# client certs (1.1). Everything else stays on `default`.
+# client certs (1.1). frps sits alone on `frpedge`; everything else is on `default`.
 networks:
   default: {}
   pki:
@@ -453,7 +642,18 @@ networks:
   # The internet-facing frps tunnel edge, fenced off the internal default net so a
   # compromised frps can't reach the auth-less redis/victoria (3.28). Not `internal`:
   # frps IS the public edge and needs its published ports.
-  frpedge: {}
+  # No IP masquerading: frps only accepts connections, and its published ports keep
+  # working. It needs no outbound traffic, and the supervisor admits no entries that
+  # would make it connect out (server plugins; TOP_KEYS and the single table
+  # [transport.tls] in frps-supervisor.sh). Packets frps sends itself leave the host
+  # with the container's address, and Docker 28 and later drop packets addressed to a
+  # container from outside its network, answers included (unless the daemon runs with
+  # allow-direct-routing or the network in gateway mode nat-unprotected or routed): no
+  # connection beyond the host comes about. Services of the host itself stay reachable
+  # from this network.
+  frpedge:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
 
 volumes:
   frp-config:
@@ -464,6 +664,9 @@ volumes:
   gateway-certs:
   # frps TLS material the issuer provisions (tunnel-signed) and frps consumes (ro).
   frps-certs:
+  # The listed intermediates of each scope the issuer writes and the server reads (ro);
+  # public material, rewritten at every start of the issuer, not backed up.
+  ca-trust:
   # The frps supervisor's status file (frps writes, server and scheduler read) and the
   # checked copy frps runs from (frps only). Not backed up: the supervisor rewrites the
   # status at every poll and takes the copy again from frp-config and frps-certs.
@@ -472,3 +675,11 @@ volumes:
   monitoring-data:
   victoria-data:
   postgres-data:
+
+# The CA root passphrase for the ca-issuer. Compose takes the value from CA_ROOT_PASSPHRASE
+# in the environment or the project's .env and writes it into the container as
+# /run/secrets/ca_root_passphrase; an empty value creates no file (see the label of the
+# ca-issuer for what happens to a container that already has one).
+secrets:
+  ca_root_passphrase:
+    environment: CA_ROOT_PASSPHRASE

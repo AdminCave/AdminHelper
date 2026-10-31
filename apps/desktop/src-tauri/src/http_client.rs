@@ -13,12 +13,51 @@ use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 /// Process-wide client cache. Rebuilding the client per request means an empty connection pool —
-/// every request pays a fresh TCP+TLS handshake and keep-alive is useless — plus up to 5 synchronous
-/// keyring reads. The cached client (a cheap Arc clone) keeps a warm pool. The key covers the
+/// every request pays a fresh TCP+TLS handshake and keep-alive is useless. The device identity it
+/// needs comes from what `enrollment` read once (R-0644), not from the keyring. The cached client (a cheap Arc clone) keeps a warm pool. The key covers the
 /// trust-anchor inputs; an identity/pin change invalidates it explicitly via
 /// [`invalidate_client_cache`], because `is_enrolled()` alone can't see a client-cert swap (5.1).
-static CLIENT_CACHE: LazyLock<Mutex<Option<(String, reqwest::Client)>>> =
-    LazyLock::new(|| Mutex::new(None));
+static CLIENT_CACHE: LazyLock<ClientCache> = LazyLock::new(ClientCache::default);
+
+/// One cached client and the count of invalidations. A client is built outside the lock, from
+/// trust material read before; an invalidation while it is built makes that material stale, so
+/// the client then serves its own call only and is not kept.
+#[derive(Default)]
+struct ClientCache(Mutex<CacheSlot>);
+
+#[derive(Default)]
+struct CacheSlot {
+    generation: u64,
+    entry: Option<(String, reqwest::Client)>,
+}
+
+impl ClientCache {
+    /// Read before the trust material a client is built from, for [`ClientCache::keep`].
+    fn generation(&self) -> u64 {
+        self.0.lock().unwrap().generation
+    }
+
+    fn cached(&self, key: &str) -> Option<reqwest::Client> {
+        match self.0.lock().unwrap().entry.as_ref() {
+            Some((cached_key, client)) if cached_key == key => Some(client.clone()),
+            _ => None,
+        }
+    }
+
+    /// Keep `client` under `key`, unless the cache was invalidated since `generation`.
+    fn keep(&self, generation: u64, key: String, client: &reqwest::Client) {
+        let mut slot = self.0.lock().unwrap();
+        if slot.generation == generation {
+            slot.entry = Some((key, client.clone()));
+        }
+    }
+
+    fn invalidate(&self) {
+        let mut slot = self.0.lock().unwrap();
+        slot.generation += 1;
+        slot.entry = None;
+    }
+}
 
 /// Connect timeout: cap the TCP/TLS handshake so a DROP firewall / SYN blackhole can't
 /// make login/enroll/proxy await forever (4.2).
@@ -47,8 +86,9 @@ pub fn build_client(
 
 /// Like [`build_client`], but never with the device identity: no mTLS client
 /// certificate and no enrollment CA pin, the client of a device that isn't
-/// enrolled (TOFU on the self-signed path, public CA otherwise). For a host that
-/// isn't the user's own server, such as a sync URL on another origin.
+/// enrolled (TOFU on the self-signed path, public CA otherwise). For the sync
+/// source of a sync workspace: every sync loads without the identity, which is
+/// for the server of a workspace only.
 pub fn build_client_without_identity(
     server_url: &str,
     allow_self_signed: bool,
@@ -66,15 +106,15 @@ fn client_for(
     // credentials to a non-TLS server. The scheme is never relaxed.
     crate::validation::validate_server_url_secure(server_url)?;
 
-    // One is_enrolled() read, reused for both the cache key and the trust-anchor choice below.
+    let generation = CLIENT_CACHE.generation();
+    // One is_enrolled() check (the held identity, no keyring read), for both the cache key and the
+    // trust-anchor choice below.
     // The key carries the choice, so a client built without the identity never answers a call
     // that wants it (and the other way round).
     let mtls = with_identity && crate::enrollment::is_enrolled();
     let key = format!("{server_url}|{allow_self_signed}|{mtls}");
-    if let Some((cached_key, client)) = CLIENT_CACHE.lock().unwrap().as_ref() {
-        if *cached_key == key {
-            return Ok(client.clone());
-        }
+    if let Some(client) = CLIENT_CACHE.cached(&key) {
+        return Ok(client);
     }
 
     // Once this device is enrolled (A5) and the call wants its identity, present
@@ -96,7 +136,7 @@ fn client_for(
             .map_err(AppError::from)?
     };
 
-    *CLIENT_CACHE.lock().unwrap() = Some((key, client.clone()));
+    CLIENT_CACHE.keep(generation, key, &client);
     Ok(client)
 }
 
@@ -104,12 +144,12 @@ fn client_for(
 /// the trust material the client bakes in: the enrollment identity (store/clear) or a TOFU pin reset
 /// — `is_enrolled()` in the cache key can't distinguish a cert swap on its own (5.1).
 pub fn invalidate_client_cache() {
-    *CLIENT_CACHE.lock().unwrap() = None;
+    CLIENT_CACHE.invalidate();
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_client, build_client_without_identity, with_timeouts};
+    use super::{build_client, build_client_without_identity, with_timeouts, ClientCache};
     use crate::keyring_store;
 
     #[test]
@@ -117,6 +157,28 @@ mod tests {
         // 4.2: the shared connect/read timeouts must produce a buildable client — a guard
         // that the read_timeout/connect_timeout config stays valid across reqwest bumps.
         assert!(with_timeouts(reqwest::Client::builder()).build().is_ok());
+    }
+
+    #[test]
+    fn a_client_built_across_an_invalidation_is_not_kept() {
+        let cache = ClientCache::default();
+        let client = with_timeouts(reqwest::Client::builder()).build().unwrap();
+        let key = "https://server.example|true|true";
+
+        // Built from trust material read before the invalidation: it must not answer later calls.
+        let generation = cache.generation();
+        cache.invalidate();
+        cache.keep(generation, key.to_string(), &client);
+        assert!(cache.cached(key).is_none());
+
+        // Built after it: kept.
+        let generation = cache.generation();
+        cache.keep(generation, key.to_string(), &client);
+        assert!(cache.cached(key).is_some());
+        assert!(cache.cached("https://other.example|true|true").is_none());
+
+        cache.invalidate();
+        assert!(cache.cached(key).is_none());
     }
 
     #[test]

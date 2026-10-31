@@ -38,8 +38,11 @@ def row(
     title: str = "Etwas",
     source: str = "kevin 2026-09-01",
     ablauf: str = "—",
+    depends: str = "—",
 ) -> str:
-    return f"| {rid} | {klasse} | {title} | {status} | {source} | — | — | — | {ablauf} | — |"
+    return (
+        f"| {rid} | {klasse} | {title} | {status} | {source} | — | {depends} | — | {ablauf} | — |"
+    )
 
 
 def doc(
@@ -51,8 +54,9 @@ def doc(
         "Klassen: SEC(P0) > REG(P1) > REL(P2) > BUG(P3) > FEAT(P4) > REF(P5) > IDEE(P6)",
         "",
         "## Als Nächstes",
-        "1. R-0003 erst das, dann das",
-        "2. Kevin, Handarbeit: irgendwas",
+        # What a write generates from the clean sections (Roadmap.set_next_up).
+        roadmap.NEXT_UP_NOTE,
+        "1. In Arbeit: R-0004 aktiv",
     ]
     for heading, rows in sections.items():
         out += ["", f"## {heading}"]
@@ -76,11 +80,12 @@ def clean_sections() -> dict[str, list[str]]:
             row("R-0005", "neu", "BUG", "Ein Fehler", "hunt 2026-09-18", ablauf="nie"),
         ],
         "Geplant (Stufen in Reihenfolge)": [row("R-0003", "geplant"), row("R-0007", "freigegeben")],
-        "Zurückgestellt": [row("R-0009", "zurückgestellt", "IDEE")],
+        # R-0009 holds R-0001 in the archive (Roadmap.prune).
+        "Zurückgestellt": [row("R-0009", "zurückgestellt", "IDEE", depends="R-0001")],
         "Blockiert": [],
-        "Abgeschlossen (letzte 30 Tage)": [
-            row("R-0002", "abgeschlossen 2026-09-15 (PR #3, Merge abc1234)", "BUG"),
-            row("R-0008", "abgelehnt 2026-09-14 (kein Bedarf)", "IDEE"),
+        "Abgeschlossen (letzte 7 Tage)": [
+            row("R-0002", "abgeschlossen 2026-09-20 (PR #3, Merge abc1234)", "BUG"),
+            row("R-0008", "abgelehnt 2026-09-19 (kein Bedarf)", "IDEE"),
         ],
         "Archiv": [row("R-0001", "abgeschlossen 2026-07-01")],
     }
@@ -273,7 +278,7 @@ def test_a_dedup_key_two_open_rows_share() -> None:
 
 def test_a_dedup_key_on_a_closed_row_does_not_count() -> None:
     s = clean_sections()
-    s["Abgeschlossen (letzte 30 Tage)"].append(
+    s["Abgeschlossen (letzte 7 Tage)"].append(
         row(
             "R-0010",
             "abgeschlossen 2026-09-10",
@@ -296,7 +301,7 @@ def test_a_wip_header_the_rows_do_not_add_up_to() -> None:
 def test_alt_counts_open_rows_past_their_expiry() -> None:
     s = clean_sections()
     s["Neu (untriagiert)"][1] = row("R-0005", "neu", "BUG", "Ein Fehler", ablauf="2026-09-24")
-    s["Abgeschlossen (letzte 30 Tage)"][0] = row(
+    s["Abgeschlossen (letzte 7 Tage)"][0] = row(
         "R-0002", "abgeschlossen 2026-09-15", ablauf="2026-01-01"
     )
     assert findings(doc(s)) == ["header line 2: WIP says ALT 0, the rows say 1"]
@@ -324,7 +329,7 @@ def test_a_roadmap_in_the_style_of_today_reports_exactly_its_faults() -> None:
     s["Neu (untriagiert)"].insert(
         0, row("R-0047", "neu", "REF", "Von heavy.sh", "weekly 2026-09-19")
     )
-    s["Abgeschlossen (letzte 30 Tage)"].insert(
+    s["Abgeschlossen (letzte 7 Tage)"].insert(
         0, row("R-0047", "abgeschlossen 2026-09-20", "BUG", "Von Hand gezählt")
     )
     s["Archiv"] += [
@@ -483,17 +488,20 @@ def test_a_neu_section_without_a_table_gets_one(tmp_path: pathlib.Path) -> None:
     assert findings(text) == []
 
 
-def test_the_neu_cap_refuses_the_21st(
+def test_add_takes_a_21st_neu_row(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     s = clean_sections()
     s["Neu (untriagiert)"] = [row(f"R-01{n:02d}", "neu", "BUG") for n in range(20)]
-    text = doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")
-    p = aged(write(tmp_path, text))
-    assert add(p, *ADD) == 3
-    assert "neu cap is reached (20/20)" in capsys.readouterr().err
-    assert p.read_text(encoding="utf-8") == text
-    assert not (tmp_path / "ROADMAP.md.bak").exists()
+    p = aged(write(tmp_path, doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")))
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.strip() == "R-0120"
+    text = p.read_text(encoding="utf-8")
+    neu = [r.id for _, r in roadmap.Roadmap(text).rows() if r.state == "neu"]
+    assert len(neu) == 21 and neu[-1] == "R-0120"
+    # The 20 stays in the header as a mark to read, like aktiv's 2.
+    assert "Stand: 2026-09-25 · WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 21/20 · ALT: 0" in text
+    assert findings(text) == []
 
 
 def test_an_open_dedup_key_is_refused_and_named(
@@ -507,7 +515,7 @@ def test_an_open_dedup_key_is_refused_and_named(
 
 def test_the_dedup_key_of_a_closed_row_is_free(tmp_path: pathlib.Path) -> None:
     s = clean_sections()
-    s["Abgeschlossen (letzte 30 Tage)"].append(
+    s["Abgeschlossen (letzte 7 Tage)"].append(
         row(
             "R-0010",
             "abgeschlossen 2026-09-10",
@@ -800,12 +808,12 @@ def test_a_closed_alias_keeps_its_day_note_and_place(tmp_path: pathlib.Path) -> 
     """The cleanup of the real file turns `erledigt` into `abgeschlossen`: the
     day it closed and its note are history, not something to overwrite."""
     s = clean_sections()
-    s["Archiv"].insert(0, row("R-0010", "erledigt 2026-06-01 (PR #12)", "BUG", "Alt"))
+    s["Archiv"].insert(0, row("R-0010", "erledigt 2026-09-20 (PR #12)", "BUG", "Alt"))
     p = aged(write(tmp_path, doc(s)))
     assert status(p, "R-0010", "abgeschlossen") == 0
     rows = roadmap.Roadmap(p.read_text(encoding="utf-8")).rows()
     assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0010", "R-0001"]
-    assert placed(p, "R-0010")[1].cells[roadmap.STATUS] == "abgeschlossen 2026-06-01 (PR #12)"
+    assert placed(p, "R-0010")[1].cells[roadmap.STATUS] == "abgeschlossen 2026-09-20 (PR #12)"
 
 
 def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> None:
@@ -813,7 +821,7 @@ def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> Non
     assert status(p, "R-0002", "abgeschlossen", "--note", "PR #3, nachgetragen") == 0
     assert (
         placed(p, "R-0002")[1].cells[roadmap.STATUS]
-        == "abgeschlossen 2026-09-15 (PR #3, nachgetragen)"
+        == "abgeschlossen 2026-09-20 (PR #3, nachgetragen)"
     )
 
 
@@ -931,28 +939,59 @@ def test_the_header_follows_the_move(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_closed_rows_older_than_30_days_go_to_the_top_of_the_archive(
-    tmp_path: pathlib.Path,
-) -> None:
+def test_closed_rows_older_than_7_days_leave_the_file(tmp_path: pathlib.Path) -> None:
+    """Every write drops what closed more than 7 days ago; the private git keeps it."""
     s = clean_sections()
     kept, older = (
-        row("R-0011", "abgeschlossen 2026-08-26 (30 Tage)", "BUG"),
-        row("R-0012", "abgeschlossen 2026-08-25 (31 Tage)", "BUG"),
+        row("R-0011", "abgeschlossen 2026-09-18 (7 Tage)", "BUG"),
+        row("R-0012", "abgeschlossen 2026-09-17 (8 Tage)", "BUG"),
     )
-    s["Abgeschlossen (letzte 30 Tage)"] = [
-        row("R-0002", "abgeschlossen 2026-09-15", "BUG"),
+    s["Abgeschlossen (letzte 7 Tage)"] = [
+        row("R-0002", "abgeschlossen 2026-09-20", "BUG"),
         kept,
         older,
         row("R-0013", "abgelehnt 2026-08-01", "IDEE"),
         row("R-0014", "abgeschlossen (Datum fehlt)", "BUG"),
     ]
+    s["Archiv"].append(row("R-0017", "abgeschlossen 2026-07-01"))
     p = aged(write(tmp_path, doc(s)))
-    assert status(p, "R-0003", "freigegeben") == 0  # any write archives
+    assert status(p, "R-0003", "freigegeben") == 0  # any write prunes
     text = p.read_text(encoding="utf-8")
     rows = roadmap.Roadmap(text).rows()
     assert [r.id for sec, r in rows if sec == "Abgeschlossen"] == ["R-0002", "R-0011", "R-0014"]
-    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0012", "R-0013", "R-0001"]
-    assert older in text.split("\n")  # moved byte for byte
+    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0001"]
+    assert older not in text.split("\n")
+    assert findings(text) == []
+
+
+def test_an_old_closed_row_an_open_row_depends_on_moves_to_the_archive(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`next` counts a dependency as met only while its row stands abgeschlossen
+    in the file: the row an open row names under "Hängt ab von" stays."""
+    s = clean_sections()
+    needed = row("R-0015", "abgeschlossen 2026-08-20", "BUG")
+    s["Abgeschlossen (letzte 7 Tage)"].append(needed)
+    s["Neu (untriagiert)"].append(row("R-0016", "neu", "BUG", depends="R-0015", ablauf="nie"))
+    p = aged(write(tmp_path, doc(s)))
+    assert status(p, "R-0003", "freigegeben") == 0
+    text = p.read_text(encoding="utf-8")
+    rows = roadmap.Roadmap(text).rows()
+    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0015", "R-0001"]
+    assert needed in text.split("\n")  # moved byte for byte
+    # Once nothing open names it, the next write drops it.
+    assert status(p, "R-0016", "abgelehnt", "--note", "kein Bedarf") == 0
+    rows = roadmap.Roadmap(p.read_text(encoding="utf-8")).rows()
+    assert "R-0015" not in [r.id for _, r in rows]
+
+
+def test_the_closed_heading_names_the_days_rows_are_kept(tmp_path: pathlib.Path) -> None:
+    text = CLEAN.replace("## Abgeschlossen (letzte 7 Tage)", "## Abgeschlossen (letzte 30 Tage)")
+    assert "letzte 30 Tage" in text
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "freigegeben") == 0
+    out = p.read_text(encoding="utf-8")
+    assert "## Abgeschlossen (letzte 7 Tage)" in out and "letzte 30 Tage" not in out
 
 
 def test_approve_and_revoke(tmp_path: pathlib.Path) -> None:
@@ -1041,16 +1080,60 @@ def test_show_one_row(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     assert "  Ablauf: 2026-12-18" in out
 
 
+def test_every_write_rewrites_als_naechstes_from_the_rows(tmp_path: pathlib.Path) -> None:
+    """Nobody keeps "Als Nächstes": a write replaces whatever stands there with
+    what is in progress, the next waiting train of each stage, the open REL
+    rows and the blocked ones."""
+    s = clean_sections()
+    s["In Arbeit"].append(
+        "| R-0020 | SEC | Unterwegs | pr | kevin 2026-09-01 | tasks/kern-a-1.md | — | #12 | — | — |"
+    )
+    s["Geplant (Stufen in Reihenfolge)"] += [
+        train_row("R-0021", "geplant", "REF", "tasks/kern-b-1.md"),
+        train_row("R-0022", "geplant", "BUG", "tasks/kern-c-1.md"),
+        train_row("R-0023", "freigegeben", "REF", "tasks/kern-c-1.md"),
+        train_row("R-0024", "geplant", "REF", "tasks/klein-doku-1.md"),
+        row("R-0025", "geplant", "REL", "Szenario-Lauf vor dem Release"),
+    ]
+    s["Blockiert"] = [
+        row("R-0026", "blockiert (Kevin, Handarbeit)", "SEC", "Kevin: Passwort wechseln")
+    ]
+    text = doc(s).replace("1. In Arbeit: R-0004 aktiv", "1. Kevin, von Hand: alt")
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "freigegeben") == 0
+    assert roadmap.next_up(roadmap.Roadmap(p.read_text(encoding="utf-8"))) == [
+        "## Als Nächstes",
+        roadmap.NEXT_UP_NOTE,
+        "1. In Arbeit: R-0004 aktiv · R-0020 pr #12",
+        "2. Nächster Zug Kern: tasks/kern-c-1.md (2 Zeilen, ab BUG); danach 1 weitere",
+        "3. Nächster Zug Klein: tasks/klein-doku-1.md (1 Zeilen, ab REF)",
+        "4. Vor dem Release: R-0025 geplant",
+        "5. Wartet auf Kevin: R-0026 Kevin: Passwort wechseln",
+    ]
+    # Generated again from the same rows, it is the same section.
+    before = p.read_text(encoding="utf-8")
+    assert status(p, "R-0003", "freigegeben", "--note", "nur die Notiz") == 0
+    after = p.read_text(encoding="utf-8")
+    assert roadmap.next_up(roadmap.Roadmap(after)) == roadmap.next_up(roadmap.Roadmap(before))
+    assert findings(after) == []
+
+
+def test_a_file_without_als_naechstes_gets_none(tmp_path: pathlib.Path) -> None:
+    text = CLEAN.replace(
+        f"## Als Nächstes\n{roadmap.NEXT_UP_NOTE}\n1. In Arbeit: R-0004 aktiv\n\n", ""
+    )
+    assert "Als Nächstes" not in text
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "freigegeben") == 0
+    assert "Als Nächstes" not in p.read_text(encoding="utf-8")
+
+
 def test_show_the_overview(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     long = "Ein Titel, der so lang ist, dass ihn die Übersicht kürzen muss, damit eine Zeile eine Zeile bleibt"
     p = write(tmp_path, CLEAN.replace("| Etwas Großes |", f"| {long} |"))
     assert run(p, "show") == 0
     out = capsys.readouterr().out.splitlines()
-    assert out[:3] == [
-        "## Als Nächstes",
-        "1. R-0003 erst das, dann das",
-        "2. Kevin, Handarbeit: irgendwas",
-    ]
+    assert out[:3] == ["## Als Nächstes", roadmap.NEXT_UP_NOTE, "1. In Arbeit: R-0004 aktiv"]
     assert "WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0" in out
     assert "  R-0004  FEAT  aktiv (T2/5)  " + long[:89] + "…" in out
     assert "  R-0005  BUG   neu  Ein Fehler" in out
@@ -1128,6 +1211,78 @@ def test_next_with_nothing_ready_is_exit_1(
     assert "no freigegeben row is ready" in capsys.readouterr().err
 
 
+def train_row(rid: str, status: str, klasse: str, ledger: str) -> str:
+    return f"| {rid} | {klasse} | Zeile {rid} | {status} | kevin 2026-09-01 | {ledger} | — | — | — | — |"
+
+
+TRAINS = {
+    "In Arbeit": [
+        train_row("R-0030", "aktiv", "BUG", "tasks/klein-doku-1.md"),
+        train_row("R-0040", "aktiv", "REF", "tasks/arch-api-1.md"),
+    ],
+    "Neu (untriagiert)": [row("R-0031", "neu", "REF")],
+    "Geplant (Stufen in Reihenfolge)": [
+        train_row("R-0032", "geplant", "BUG", "tasks/klein-doku-1.md"),
+        train_row("R-0033", "geplant", "REF", "tasks/klein-tests-web-1.md"),
+        train_row("R-0034", "geplant", "REF", "tasks/klein-tests-web-1.md"),
+        train_row("R-0035", "freigegeben", "BUG", "tasks/klein-ui-desktop-1.md"),
+        train_row("R-0036", "geplant", "SEC", "tasks/ops-install-1.md"),
+        row("R-0037", "geplant", "FEAT"),
+    ],
+    "Zurückgestellt": [train_row("R-0038", "zurückgestellt", "REF", "tasks/klein-doku-2.md")],
+    "Blockiert": [],
+    "Abgeschlossen (letzte 7 Tage)": [
+        train_row("R-0039", "abgeschlossen 2026-09-15", "REF", "tasks/klein-alt-1.md")
+    ],
+    "Archiv": [],
+}
+
+
+def test_zuege_lists_waiting_trains_by_class_then_size_and_moving_ones_last(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = write(tmp_path, doc(TRAINS))
+    assert run(p, "zuege") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "tasks/ops-install-1.md · kern · wartet · 1 Zeilen · R-0036:SEC",
+        "tasks/klein-ui-desktop-1.md · klein · wartet · 1 Zeilen · R-0035:BUG",
+        "tasks/klein-tests-web-1.md · klein · wartet · 2 Zeilen · R-0033:REF R-0034:REF",
+        "tasks/klein-doku-1.md · klein · unterwegs (1 von 2) · 2 Zeilen · R-0030:BUG R-0032:BUG",
+        "tasks/arch-api-1.md · arch · unterwegs (1 von 1) · 1 Zeilen · R-0040:REF",
+    ]
+    assert p.read_text(encoding="utf-8") == doc(TRAINS)  # read only
+
+
+def test_zuege_by_stage(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    p = write(tmp_path, doc(TRAINS))
+    assert run(p, "zuege", "--stufe", "kern") == 0
+    assert (
+        capsys.readouterr().out
+        == "tasks/ops-install-1.md · kern · wartet · 1 Zeilen · R-0036:SEC\n"
+    )
+    assert run(p, "zuege", "--stufe", "klein") == 0
+    assert "ops-install" not in capsys.readouterr().out
+    # An architecture project is its own session's: never a kern train.
+    assert run(p, "zuege", "--stufe", "arch") == 0
+    assert capsys.readouterr().out.startswith("tasks/arch-api-1.md · arch")
+
+
+def test_next_by_stage(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    p = write(tmp_path, doc(TRAINS))
+    # R-0036 (SEC, ops- ledger) is kern; R-0037 has no ledger and is kern as well.
+    assert run(p, "next", "--status", "geplant", "--stufe", "kern") == 0
+    assert capsys.readouterr().out.startswith("R-0036 SEC")
+    assert run(p, "next", "--status", "geplant", "--stufe", "klein") == 0
+    assert capsys.readouterr().out.startswith("R-0032 BUG")
+
+
+def test_zuege_without_a_train_is_exit_1(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(write(tmp_path, CLEAN), "zuege") == 1
+    assert "no train" in capsys.readouterr().err
+
+
 def fake_gh(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, body: str, rc: int = 0
 ) -> None:
@@ -1173,7 +1328,7 @@ def test_sync_closes_the_rows_whose_prs_are_all_merged(
     assert placed(p, "R-0010")[1].status == "pr"  # PR #9 is not merged
     assert (
         placed(p, "R-0002")[1].cells[roadmap.STATUS]
-        == "abgeschlossen 2026-09-15 (PR #3, Merge abc1234)"
+        == "abgeschlossen 2026-09-20 (PR #3, Merge abc1234)"
     )
     assert git(p.parent, "log", "-1", "--format=%s").strip() == "roadmap: sync R-0004"
     assert findings(p.read_text(encoding="utf-8")) == []
@@ -1227,7 +1382,7 @@ def test_stats_on_a_repository_of_three_commits(
         s["Geplant (Stufen in Reihenfolge)"] += (
             [row("R-0011", r11, "FEAT", "Elf")] if r11 != "aktiv" else []
         )
-        s["Abgeschlossen (letzte 30 Tage)"] = [
+        s["Abgeschlossen (letzte 7 Tage)"] = [
             "| R-0002 | BUG | Etwas | abgeschlossen 2026-09-15 | kevin | — | — | #3 | — | 12 |",
             "| R-0008 | FEAT | Etwas | abgeschlossen 2026-09-14 | kevin | — | — | #5 | — | 20 |",
             "| R-0012 | REF | Ohne PR | abgeschlossen 2026-09-14 | kevin | — | — | — | — | 99 |",

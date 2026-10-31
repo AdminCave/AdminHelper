@@ -219,7 +219,7 @@ func stubSmartctl(t *testing.T, scan dockerReply, devices map[string]dockerReply
 		calls []smartctlCall
 	)
 	smartctlCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
-	smartctlCLI.run = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	smartctlCLI.run = func(_ context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
 		mu.Lock()
 		calls = append(calls, smartctlCall{timeout, args})
 		mu.Unlock()
@@ -249,7 +249,7 @@ func assertSmartAbsent(t *testing.T, disks []SmartDisk, reason, want string) {
 func TestCollectSmartNotInstalled(t *testing.T) {
 	calls := stubSmartctl(t, dockerReply{}, nil)
 	smartctlCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
-	disks, reason := collectSmart()
+	disks, reason := collectSmart(context.Background())
 	assertSmartAbsent(t, disks, reason, "not_installed")
 	if len(*calls) != 0 {
 		t.Errorf("smartctl was called without a smartctl binary: %v", *calls)
@@ -267,7 +267,7 @@ func TestCollectSmartScanFailed(t *testing.T) {
 	for name, scan := range cases {
 		t.Run(name, func(t *testing.T) {
 			calls := stubSmartctl(t, scan, nil)
-			disks, reason := collectSmart()
+			disks, reason := collectSmart(context.Background())
 			assertSmartAbsent(t, disks, reason, "scan_failed")
 			if len(*calls) != 1 {
 				t.Errorf("calls = %v, want only the scan", *calls)
@@ -285,7 +285,7 @@ func TestCollectSmartNoDevices(t *testing.T) {
 	for name, out := range cases {
 		t.Run(name, func(t *testing.T) {
 			calls := stubSmartctl(t, dockerReply{out: out}, nil)
-			disks, reason := collectSmart()
+			disks, reason := collectSmart(context.Background())
 			assertSmartAbsent(t, disks, reason, "no_devices")
 			if len(*calls) != 1 {
 				t.Errorf("calls = %v, want only the scan", *calls)
@@ -301,7 +301,7 @@ func TestCollectSmartNoDeviceReadable(t *testing.T) {
 		"/dev/sda":   {err: context.DeadlineExceeded},
 		"/dev/nvme0": {out: "not json"},
 	})
-	disks, reason := collectSmart()
+	disks, reason := collectSmart(context.Background())
 	assertSmartAbsent(t, disks, reason, "scan_failed")
 }
 
@@ -310,7 +310,7 @@ func TestCollectSmartDisks(t *testing.T) {
 		"/dev/sda":   {out: ataFixture},
 		"/dev/nvme0": {out: nvmeFixture},
 	})
-	disks, reason := collectSmart()
+	disks, reason := collectSmart(context.Background())
 	if reason != "" {
 		t.Errorf("reason = %q, want none with disks", reason)
 	}
@@ -345,10 +345,109 @@ func TestCollectSmartSomeDisksReadable(t *testing.T) {
 		"/dev/sda":   {err: context.DeadlineExceeded},
 		"/dev/nvme0": {out: nvmeFixture},
 	})
-	disks, reason := collectSmart()
+	disks, reason := collectSmart(context.Background())
 	if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/nvme0" {
 		t.Errorf("collectSmart() = %v, %q; want only /dev/nvme0 and no reason", disks, reason)
 	}
+}
+
+func TestCollectSmartPassesItsContextToEveryCall(t *testing.T) {
+	// The scan and each device query run under the collector's context, not a fresh one: that
+	// is what lets the end of the run's context stop them.
+	type ctxKey struct{}
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda": {out: ataFixture}, "/dev/nvme0": {out: nvmeFixture},
+	})
+	fake := smartctlCLI.run
+	var mu sync.Mutex
+	got := map[string]bool{}
+	smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+		mu.Lock()
+		got[args[len(args)-1]] = c.Value(ctxKey{}) == t.Name()
+		mu.Unlock()
+		return fake(c, timeout, name, args...)
+	}
+	collectSmart(context.WithValue(context.Background(), ctxKey{}, t.Name()))
+	if len(got) != 3 {
+		t.Fatalf("smartctl calls = %v, want the scan and two devices", got)
+	}
+	for call, ok := range got {
+		if !ok {
+			t.Errorf("the call ending in %s did not get the collector's context", call)
+		}
+	}
+}
+
+func TestCollectSmartStopsAtTheEndOfTheContext(t *testing.T) {
+	// The queries run in parallel, so the loop checks the context before it starts each one, and every
+	// query that runs ends with it: a disk read before stays, a query the context ended drops out.
+	// nvme0 comes first, so its query has started before the hanging ones the cancel waits for.
+	const scan = `{"json_format_version":[1,0],"devices":[` +
+		`{"name":"/dev/nvme0","info_name":"/dev/nvme0","type":"nvme","protocol":"NVMe"},` +
+		`{"name":"/dev/sda","info_name":"/dev/sda [SAT]","type":"sat","protocol":"ATA"},` +
+		`{"name":"/dev/sdb","info_name":"/dev/sdb [SAT]","type":"sat","protocol":"ATA"}]}`
+
+	t.Run("ended by the scan", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		calls := stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+			"/dev/nvme0": {out: nvmeFixture}, "/dev/sda": {out: ataFixture}, "/dev/sdb": {out: ataFixture},
+		})
+		fake := smartctlCLI.run
+		smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+			out, err := fake(c, timeout, name, args...)
+			if args[0] == "--scan" {
+				cancel() // the scan still answers, but no device query may start after it
+			}
+			return out, err
+		}
+		disks, reason := collectSmart(ctx)
+		assertSmartAbsent(t, disks, reason, "scan_failed")
+		if len(*calls) != 1 {
+			t.Errorf("calls = %v, want only the scan", *calls)
+		}
+	})
+
+	t.Run("ended during the queries", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		calls := stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+			"/dev/nvme0": {out: nvmeFixture}, "/dev/sda": {}, "/dev/sdb": {},
+		})
+		fake := smartctlCLI.run
+		hanging := make(chan string, 2)
+		smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+			out, err := fake(c, timeout, name, args...)
+			if dev := args[len(args)-1]; dev != "/dev/nvme0" && args[0] != "--scan" {
+				// A hanging disk: its query ends only with its context, as runTimed's does.
+				hanging <- dev
+				select {
+				case <-c.Done():
+					return nil, c.Err()
+				case <-time.After(5 * time.Second):
+					t.Errorf("the query of %s did not end with the collector's context", dev)
+					return nil, context.DeadlineExceeded
+				}
+			}
+			return out, err
+		}
+		go func() {
+			for range 2 {
+				select {
+				case <-hanging:
+				case <-time.After(5 * time.Second):
+				}
+			}
+			cancel()
+		}()
+		disks, reason := collectSmart(ctx)
+		if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/nvme0" {
+			t.Errorf("collectSmart() = %v, %q; want only /dev/nvme0 and no reason", disks, reason)
+		}
+		if len(*calls) != 4 {
+			t.Errorf("calls = %v, want the scan and three queries", *calls)
+		}
+	})
 }
 
 // What smartctl 7.4 prints for a disk it cannot open (here: run without root), with exit status 2:
@@ -375,7 +474,7 @@ func TestHelperSmartctlProcess(t *testing.T) {
 func smartctlExit(t *testing.T, code int) error {
 	t.Helper()
 	t.Setenv(smartctlHelperEnv, strconv.Itoa(code))
-	_, err := runTimed(time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
+	_, err := runTimed(context.Background(), time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
 		t.Fatalf("helper process: err = %v, want an ExitError with status %d", err, code)
@@ -405,7 +504,7 @@ func TestCollectSmartOpenFailed(t *testing.T) {
 				"/dev/sda":   {out: c.sda, err: smartctlExit(t, c.code)},
 				"/dev/nvme0": {out: nvmeFixture},
 			})
-			disks, reason := collectSmart()
+			disks, reason := collectSmart(context.Background())
 			var got []string
 			for _, d := range disks {
 				got = append(got, fmt.Sprintf("%s %d", d.Device, d.SmartctlStatus))
@@ -424,7 +523,7 @@ func TestCollectSmartOpenFailed(t *testing.T) {
 		stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
 			"/dev/sda": {out: smartOpenFailedFixture, err: smartctlExit(t, 2)},
 		})
-		disks, reason := collectSmart()
+		disks, reason := collectSmart(context.Background())
 		assertSmartAbsent(t, disks, reason, "scan_failed")
 	})
 }
@@ -444,7 +543,7 @@ func TestCollectSmartPassesScanType(t *testing.T) {
 		"/dev/sda":   {out: ataFixture},
 		"/dev/nvme0": {out: nvmeFixture},
 	})
-	disks, reason := collectSmart()
+	disks, reason := collectSmart(context.Background())
 	if reason != "" || len(disks) != 4 {
 		t.Errorf("collectSmart() = %v, %q; want four disks and no reason", disks, reason)
 	}
@@ -484,7 +583,7 @@ func TestCollectSmartControllerDiskIDs(t *testing.T) {
 		"/dev/sda":          {out: ataFixture},
 		"/dev/nvme0":        {out: nvmeFixture},
 	})
-	disks, reason := collectSmart()
+	disks, reason := collectSmart(context.Background())
 	var devices []string
 	for _, d := range disks {
 		devices = append(devices, d.Device)
@@ -525,7 +624,7 @@ func TestCollectSmartControllerDiskIDs(t *testing.T) {
 		const scan = `{"json_format_version":[1,0],"devices":[` +
 			`{"name":"/dev/bus/0","type":"megaraid,0","protocol":"SCSI"}]}`
 		stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{"/dev/bus/0": {out: ataFixture}})
-		disks, reason := collectSmart()
+		disks, reason := collectSmart(context.Background())
 		if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/bus/0" {
 			t.Errorf("collectSmart() = %v, %q; want only /dev/bus/0 and no reason", disks, reason)
 		}

@@ -64,6 +64,12 @@ def generate_api_key() -> str:
     return secrets.token_urlsafe(32)
 
 
+def token_claims(user: User) -> dict:
+    """The identity claims of a user's tokens: `uid` names the account, `sub` its name for
+    logs. A name can come back after its account was deleted; the id cannot."""
+    return {"sub": user.username, "uid": user.id}
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     now = datetime.now(timezone.utc)
@@ -85,8 +91,10 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type", "access") != expected_type:
             return None
-        username: str = payload.get("sub")
-        if not username:
+        # The account by its id: a token without one (issued before tokens carried it) does
+        # not hold.
+        uid = payload.get("uid")
+        if not isinstance(uid, int) or isinstance(uid, bool):
             return None
         # Blacklist check: reject revoked tokens
         jti = payload.get("jti")
@@ -94,12 +102,12 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
             return None
     except InvalidTokenError:
         return None
-    user = db.query(User).filter(User.username == username).first()
+    user = db.get(User, uid)
     if user is None:
         return None
-    # Credential-invalidation watermark: reject tokens issued before a password
-    # reset. A token without an `iat` (issued before this claim existed) is also
-    # rejected once a watermark is set.
+    # Credential-invalidation watermark: reject tokens issued before the user was
+    # created or before a password reset. A token without an `iat` (issued before
+    # this claim existed) is also rejected once a watermark is set.
     if user.tokens_valid_after is not None:
         iat = payload.get("iat")
         if iat is None:
@@ -162,6 +170,31 @@ def is_token_blacklisted(token: str, db: Session) -> bool:
     if not jti:
         return False
     return db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first() is not None
+
+
+def user_id_from_token_unverified(token: str) -> Optional[int]:
+    """Decode a token's account id ignoring expiry and the validity watermark, None
+    without one. Used for refresh-reuse containment, like username_from_token_unverified."""
+    try:
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False}
+        )
+    except InvalidTokenError:
+        return None
+    uid = payload.get("uid")
+    return uid if isinstance(uid, int) and not isinstance(uid, bool) else None
+
+
+def web_session_start(token: str, from_cookie: bool) -> Optional[int]:
+    """Sign-in time of the browser session a valid refresh token belongs to, None for a
+    desktop, CLI or script token. A cookie token without the `web` claim was issued before
+    R-0887; its own `iat` stands in for the sign-in."""
+    # No second expiry check: the caller has just validated the token, and one that ran out
+    # in between would raise here (500) instead of the caller's 401.
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+    if payload.get("web") is True:
+        return int(payload["auth_time"])
+    return int(payload["iat"]) if from_cookie else None
 
 
 def username_from_token_unverified(token: str) -> Optional[str]:

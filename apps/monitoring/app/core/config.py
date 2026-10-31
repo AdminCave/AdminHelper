@@ -78,6 +78,10 @@ except ValueError:
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Optional path inside the container to a PEM file with the relay's CA (self-signed
+# or company CA). Loaded in addition to the system CAs and used only for SMTP, so
+# certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
+SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 
 # Alert-log retention in days (periodic cleanup job in scheduler.py). NOTE:
 # VictoriaMetrics has its own, independent retention knob (`VM_RETENTION` /

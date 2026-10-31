@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
-  import { showToast } from '$lib/stores/notifications';
+  import { copyToClipboard } from '$lib/utils/clipboard';
 
   interface Props {
     open: boolean;
@@ -27,13 +27,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return `curl -X POST -H "X-Hook-Token: ${token}" ${window.location.origin}/api/hooks/trigger`;
   });
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(token);
-      showToast($t('toast.hook.tokenCopied'));
-    } catch {
-      showToast('Clipboard error', 'error');
-    }
+  function copy() {
+    void copyToClipboard(token, 'toast.hook.tokenCopied');
   }
 </script>
 

@@ -57,6 +57,7 @@ mk_tree() {
 [ -d "\${TMPDIR-}" ] && mkdir -p "\$TMPDIR/pytest-of-x/p0" && : > "\$TMPDIR/pytest-of-x/p0/f"
 out="\${AH_OUT_DIR:-$dir/.ah-out}"
 mkdir -p "\$out"
+[ -z "\${FIXTURE_OUTPUT:-}" ] || cat "\$FIXTURE_OUTPUT"
 if [ -n "\${FIXTURE_TRUNCATE:-}" ]; then
   printf '{\n  "layer": "%s"' "\$1" > "\$out/last-\$1.json"
 elif [ -z "\${FIXTURE_NO_ARTIFACT:-}" ]; then
@@ -119,8 +120,11 @@ run_v server --tree "$WORK/notacheckout"
 OUT=$(AH_OUT_DIR="$WORK/real-tree-out" bash "$VERIFY" nixkomponente 2>&1); rc=$?
 [ $rc -eq 2 ] && grep -q "unknown AH_ONLY key: 'nixkomponente'" <<<"$OUT" \
   && ok "no --tree targets the wrapper's own checkout" || bad "default tree: rc=$rc out=$OUT"
-[ -z "$(ls "$WORK/real-tree-out" 2>/dev/null)" ] \
+# Its log is the one thing it leaves: no artifact, nothing beside logs/.
+[ -z "$(find "$WORK/real-tree-out" -mindepth 1 -maxdepth 1 ! -name logs 2>/dev/null)" ] \
   && ok "a refused run leaves the target tree's artifacts alone" || bad "artifact written by a refused run"
+[ "$(find "$WORK/real-tree-out/logs" -name 'verify-*.log' 2>/dev/null | wc -l)" = 1 ] \
+  && ok "... and keeps its log" || bad "log of the refused run: $(ls -R "$WORK/real-tree-out" 2>/dev/null)"
 
 # ══ what reaches run.sh ═══════════════════════════════════════════════════════
 echo "── the call verify.sh builds ──"
@@ -261,6 +265,40 @@ OUT=$(FIXTURE_TRUNCATE=1 bash "$VERIFY" scripts --tree "$A" 2>&1)
 run_v scripts --tree "$A" -- "$(printf 'tests/x.py\t-k\tfoo')"
 python3 -c "import json;json.load(open('$ART'))" 2>/dev/null \
   && ok "a tab in the args keeps the artifact valid JSON" || bad "invalid JSON from a tab in args"
+
+# ══ the whole output in a log, a digest on stdout ══════════════════════════════
+echo "── log and digest ──"
+{
+  printf '\n\033[1m### scripts (hermetic)\033[0m\n'
+  for i in $(seq 1 200); do echo "  ok   case $i"; done
+  echo "  FAIL bad case: expected 3, got 0"
+  echo "  FAIL  scripts (hermetic)"
+  echo "  SKIP  server pytest (AH_ONLY)"
+  echo "  run.sh[quick]: 0 passed, 1 failed, 1 skipped, 0 test-skips, 0 reruns"
+} > "$WORK/suite-out.txt"
+rm -rf "$A/.ah-out/logs"
+OUT=$(FIXTURE_OUTPUT="$WORK/suite-out.txt" FIXTURE_RC=1 bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
+LOGF="$(python3 -c "import json;print(json.load(open('$ART')).get('log',''))" 2>/dev/null)"
+[ $rc -eq 1 ] && ok "a red suite stays exit 1 behind the digest" || bad "rc=$rc"
+case "$LOGF" in "$A/.ah-out/logs/verify-"*.log) ok "last-verify.json names the log" ;; *) bad "log field: '$LOGF'" ;; esac
+[ -f "$LOGF" ] && cmp -s "$LOGF" "$WORK/suite-out.txt" && ok "the log holds the suite's whole output" || bad "log content differs"
+grep -q 'case 100$' <<<"$OUT" && bad "the whole output reached stdout" || ok "stdout does not carry the whole output"
+grep -qx '  FAIL  scripts (hermetic)' <<<"$OUT" && grep -q ': *  FAIL bad case: expected 3, got 0' <<<"$OUT" \
+  && grep -qx "  exit 1 · log: $LOGF ($(wc -l < "$WORK/suite-out.txt") lines)" <<<"$OUT" \
+  && ok "stdout carries the digest: the red step, its error line, exit and log" || bad "digest: $OUT"
+OUT=$(FIXTURE_OUTPUT="$WORK/suite-out.txt" bash "$VERIFY" scripts --full --tree "$A" 2>&1); rc=$?
+grep -q 'case 100$' <<<"$OUT" && grep -q '^  exit 0 · log: ' <<<"$OUT" \
+  && ok "--full streams the whole output, the digest follows" || bad "--full: rc=$rc $(tail -n 3 <<<"$OUT")"
+[ "$(called args)" = "quick --only scripts" ] && ok "--full is the wrapper's, not the suite's" || bad "args=$(called args)"
+# Bounded: 35 older logs, one more run, the newest 30 stay — the new one among them.
+for i in $(seq 10 44); do : > "$A/.ah-out/logs/verify-20260101-0000$i-1.log"; done
+: > "$A/.ah-out/logs/keep-me.txt"
+run_v scripts --tree "$A"
+NEW="$(python3 -c "import json;print(json.load(open('$ART')).get('log',''))" 2>/dev/null)"
+[ "$(find "$A/.ah-out/logs" -name 'verify-*.log' | wc -l)" = 30 ] && [ -f "$NEW" ] \
+  && [ ! -e "$A/.ah-out/logs/verify-20260101-000010-1.log" ] && [ -e "$A/.ah-out/logs/keep-me.txt" ] \
+  && ok "the newest 30 logs stay, the oldest go, other files are left alone" \
+  || bad "prune: $(find "$A/.ah-out/logs" -name 'verify-*.log' | wc -l) logs"
 
 # A run that never produced an artifact must not fabricate one.
 rm -f "$A/.ah-out/last-quick.json" "$ART"

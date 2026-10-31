@@ -173,8 +173,9 @@ curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/
 It prints the admin login and an **enrollment token**. Redeem the token in the
 desktop client in a server workspace under *"Enroll this device with a token"* (server URL + token) — the client
 generates its mTLS cert **on-device** — then log in normally; export the browser
-`.p12` afterwards from the desktop. Flags: `--admin-password … --yes`
-(non-interactive), `--permissive` (opt out of enforced mTLS). Updates:
+`.p12` afterwards from the desktop. Flags: `--admin-password-file <file> … --yes`
+(non-interactive; the admin password is the first line of the file, keep the file
+readable only by you), `--permissive` (opt out of enforced mTLS). Updates:
 `./scripts/update.sh` inside the created `adminhelper/` directory — release-bound
 (moves to the latest published release, backup-first, verified bundle, automatic
 rollback on a failed health check; `--ref vX.Y.Z` pins, `--check` is a dry run).
@@ -201,8 +202,11 @@ cp .env.example .env
 
 docker compose pull
 docker compose up -d
-# Then create the first admin + a token via the in-container CLI:
-docker compose exec server python -m app.cli create-admin --username admin --password '<pw>'
+# Then create the first admin + a token via the in-container CLI
+# (the password goes over stdin, not into a command line):
+read -rsp 'Admin password: ' ADMIN_PASSWORD; echo
+printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec -T server python -m app.cli create-admin \
+    --username admin --password-stdin
 docker compose exec server python -m app.cli mint-enroll-token --username admin
 ```
 
@@ -231,11 +235,11 @@ curl -k -X POST https://localhost/api/auth/bootstrap \
 
 The response directly contains `access_token` + `refresh_token` — no additional login required. The token file is automatically deleted after the bootstrap.
 
-> **Why `init-secrets.sh`?** The server and monitoring containers share a `MONITOR_API_KEY` as an internal shared secret. If the value in `.env` is empty, the monitoring container generates its own random one — and the server-to-monitoring calls fail with 401, which makes the monitoring page in the web UI appear dead. The init script fixes that.
+> **Why `init-secrets.sh`?** The server and monitoring containers share a `MONITOR_API_KEY` as an internal shared secret. If the value in `.env` is empty, the monitoring container generates its own random one — and the server-to-monitoring calls fail with 401, which makes the monitoring page in the web UI appear dead. The init script fixes that. It also fills the four role passwords `SERVER_DB_PASSWORD`, `SCHEDULER_DB_PASSWORD`, `MONITOR_DB_PASSWORD` and `CA_DB_PASSWORD`; without them no service starts.
 
 ### Persistent data
 
-The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the monitoring service's first start, by its entrypoint). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
+The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently by the one-shot service `db-init` on every start of the stack). Each service connects with a Postgres role of its own without superuser rights (`ah_server`, `ah_scheduler`, `ah_monitor`, `ah_ca`); `db-init` creates the roles. The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
 
 File-based server data is stored in the `./data/` directory in the project root (bind mount). This directory is listed in `.gitignore` and is created automatically.
 
@@ -280,7 +284,7 @@ GET    /api/servers              # Server list (admin)
 POST   /api/servers              # Create server (admin)
 DELETE /api/servers/{id}         # Delete server (admin)
 
-GET    /api/frp/tunnels         # Tunnel list (admin)
+GET    /api/frp/tunnels         # Tunnel list (admin; user: enabled tunnels of assigned servers)
 GET    /api/frp/visitors        # Visitor list (admin)
 GET    /api/frp/generate/visitor-toml  # Generate visitor config
 GET    /api/frp/provision/{id}/config       # Current frpc.toml (sync agent)
@@ -303,9 +307,10 @@ Hit a bug? On the server host, generate a **redacted** diagnostics bundle and at
 ```bash
 ./scripts/diagnostics.sh            # writes adminhelper-diagnostics-<ts>.tar.gz
 ./scripts/diagnostics.sh --tail 1000   # more log lines per service
+./scripts/diagnostics.sh --mask-hosts  # also mask IP addresses, the .env host names and the machine name
 ```
 
-The bundle contains versions, service status, `compose.yml`, a sanitized `.env` (secret values masked) and recent per-service logs. Secrets (SECRET_KEY, passwords, API keys, JWT/Bearer tokens) are masked automatically — still, skim it before sending. Security- and change-relevant actions are additionally recorded in an append-only **audit log** (Web UI → *Audit log*, or `GET /api/audit`).
+The bundle contains versions, service status, `compose.yml`, a sanitized `.env` (secret values masked) and recent per-service logs. The secrets of the `.env` (SECRET_KEY, passwords, SMTP user), API keys and tokens (in the access logs too), JWT and Bearer tokens are masked automatically; host names and IP addresses (domain, SANs, client addresses, the machine name) stay unless you pass `--mask-hosts`. It turns IP addresses into `<ip>` by their form, and the names and addresses from the host settings of the `.env` (domain, SANs, allowed IPs, trusted proxies, FRP server, SMTP host and sender; of a sender with a display name only the address in angle brackets, not the name) and the machine name into `<host>`; other names, such as those of managed servers or webhook targets, stay — so skim the bundle before sending. Security- and change-relevant actions are additionally recorded in an append-only **audit log** (Web UI → *Audit log*, or `GET /api/audit`).
 
 ---
 
@@ -329,15 +334,17 @@ The **monitoring service** runs as a separate container alongside the server and
 |---|---|---|
 | `ALERT_LOG_RETENTION_DAYS` | `90` | Days the monitoring alert log is kept (daily cleanup job). |
 | `VM_RETENTION` | `90d` | VictoriaMetrics metric retention (`-retentionPeriod`). Independent of the alert-log knob — the two do not sync. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | empty / `587` / empty / empty / `adminhelper@localhost` | Relay for the e-mail alert channel; the same variables the server uses for notification e-mails. Empty `SMTP_HOST` = e-mail channel off. |
+| `SMTP_CA_FILE` | empty | Path inside the container to a PEM file with the relay's CA, in addition to the system CAs (not set by the default compose file; see the operations guide, "Relay with its own CA"). |
 
 ### Installing the agent
 
-The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows. The recommended rollout is the one-liner the desktop client generates in *Infrastructure → Server → Provisioning* — it sets up the server's signed package repo (GPG-fingerprint-checked), installs the agent and provisions it with a **verified first contact** (`--ca-fp`):
+The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows. The recommended rollout is the one-liner the desktop client generates in *Infrastructure → Server → Provisioning* — it sets up the server's signed package repo (GPG-fingerprint-checked), installs the agent and provisions it with a **verified first contact** (`--ca-fp`). The one-time token is not in the one-liner: the tab shows it beside it, and the script asks for it with the input hidden (unattended rollouts pass `--token`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \
   | sudo bash -s -- \
-  --server https://<server> --token <PROVISION-TOKEN> \
+  --server https://<server> \
   --server-id <SERVER-ID> --ca-fp <SHA256-FROM-THE-TAB>
 ```
 
@@ -348,10 +355,11 @@ Manual alternative (package from the [GitHub release](https://github.com/AdminCa
 sudo apt install ./adminhelper-agent_<version>_amd64.deb
 
 # Full provisioning in a single call (server API key + optional monitor + optional FRP);
-# --ca-fp (from the provisioning tab) verifies the first contact instead of TOFU:
+# --ca-fp (from the provisioning tab) verifies the first contact instead of TOFU;
+# --token-stdin keeps the token out of the process list (paste it, then Enter):
 sudo adminhelper-agent provision \
   --url https://<server> \
-  --token <PROVISION-TOKEN> \
+  --token-stdin \
   --server-id <SERVER-ID> \
   --ca-fp <SHA256-FROM-THE-TAB>
 
@@ -374,7 +382,7 @@ and installs, depending on the response:
 
 This means provisioning also works for servers **without** an FRP tunnel — up to v0.22.x
 the flow was coupled to FRP. Manual setups (e.g. monitoring only) still work
-via `adminhelper-agent monitor init --api-key ...`.
+via `adminhelper-agent monitor init --api-key-stdin ...`.
 
 **Agent subcommands:**
 

@@ -8,12 +8,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { Snippet } from 'svelte';
 
   type Variant = 'primary' | 'ghost' | 'danger';
-  type Size = 'normal' | 'small';
   type ButtonType = 'button' | 'submit' | 'reset';
 
   interface Props {
     variant?: Variant;
-    size?: Size;
     type?: ButtonType;
     // Associates a type="submit" button with a form by id, so a footer button
     // outside the <form> submits it natively — no document.getElementById (2.139).
@@ -27,7 +25,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let {
     variant = 'primary',
-    size = 'normal',
     type = 'button',
     form,
     disabled = false,
@@ -37,9 +34,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     class: extraClass = '',
   }: Props = $props();
 
-  const cls = $derived(
-    ['btn', variant, size === 'small' ? 'small' : '', extraClass].filter(Boolean).join(' '),
-  );
+  const cls = $derived(['btn', variant, extraClass].filter(Boolean).join(' '));
 </script>
 
 <button {type} {form} class={cls} {disabled} {title} {onclick}>

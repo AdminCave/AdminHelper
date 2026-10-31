@@ -14,6 +14,7 @@ package enroll
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -27,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/httpclient"
@@ -95,13 +97,14 @@ func encodeKeyPEM(key *ecdsa.PrivateKey) ([]byte, error) {
 // Submit POSTs a JSON body (a Request, or a {csr} renewal) to the issuer
 // endpoint via the given client and decodes the issued materials. The client
 // carries the TLS trust: a TOFU-pinned gateway cert on enroll, the persisted
-// pinned CA on renew.
-func Submit(client *http.Client, endpoint string, body any) (*IssueResponse, error) {
+// pinned CA on renew. The request ends with ctx or at the client's timeout,
+// whichever comes first.
+func Submit(ctx context.Context, client *http.Client, endpoint string, body any) (*IssueResponse, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +292,42 @@ func RemoveIdentity(dir string) error {
 		}
 	}
 	return nil
+}
+
+// RemoveStaleTemps removes the staged copies an interrupted Store or CheckStorable left in
+// dir: regular files <agent.key|agent.crt|ca.crt>.<digits>.tmp, the names writeTemp gives
+// them. The caller holds LockIdentity(dir): every writer of these files holds it too, so
+// none of them is still being written. Best effort: a file it cannot remove stays for the
+// next run.
+func RemoveStaleTemps(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.Type().IsRegular() || !isStagedName(e.Name()) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !os.IsNotExist(err) {
+			logger.Warnf("remove the stale staged file %s: %v", e.Name(), err)
+		}
+	}
+}
+
+// isStagedName reports whether name is <identity file>.<digits>.tmp, as os.CreateTemp
+// names the pattern writeTemp passes.
+func isStagedName(name string) bool {
+	for _, base := range []string{KeyFileName, CertFileName, CAFileName} {
+		rest, ok := strings.CutPrefix(name, base+".")
+		if !ok {
+			continue
+		}
+		digits, ok := strings.CutSuffix(rest, tmpSuffix)
+		if ok && digits != "" && strings.Trim(digits, "0123456789") == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // writeTemp writes data to a new file <name>.*.tmp in dir with the given mode and

@@ -334,6 +334,22 @@ case "$CMD" in
           printf "line %d: HEAD: \047%s\047 is not a commit SHA\n", NR, v
       }' "$LEDGER")
 
+    # `Doku: → T<n>` hands a task's documentation to the docs task of the same
+    # ledger (tasks/README.md); a reference to no task there would leave it open
+    # nowhere, and the docs would never be due.
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      /^###[ \t]/ { have[$2] = 1; id = $2; next }
+      /^## / { id = "" }
+      id != "" && /^Doku:[ \t]*→/ {
+        rest = $0; sub(/^Doku:[ \t]*→[ \t]*/, "", rest); split(rest, w, /[^A-Za-z0-9]+/)
+        ref[id] = w[1]; line[id] = NR
+      }
+      END { for (t in ref) if (!(ref[t] in have) || ref[t] == t)
+              printf "line %d: %s: Doku: → \047%s\047 names no other task of this ledger\n", line[t], t, ref[t] }' "$LEDGER")
+
     # What a planning agent wrapped around its output and left in the plan (R-0165):
     # the closing tag of content, invoke or parameter, the closing tag of the hull of
     # a tool call or of its returned output (function_calls, result, output; R-0195),

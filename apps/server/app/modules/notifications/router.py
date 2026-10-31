@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
@@ -29,9 +30,14 @@ from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.modules.notifications.models import Notification, NotificationSubscription
 from app.modules.notifications.schemas import (
+    EventsAcceptedOut,
     IncomingEvent,
+    MarkReadOut,
     MarkReadRequest,
+    NotificationOut,
+    NotificationPrefsOut,
     NotificationPrefsUpdate,
+    UnreadCountOut,
 )
 from app.modules.notifications.service import ingest_event
 from app.modules.users.models import User
@@ -44,7 +50,7 @@ internal_router = APIRouter(prefix="/api/internal", tags=["notifications"])
 # --- Bell feed (own scope) -------------------------------------------------
 
 
-@feed_router.get("", response_model=list[dict[str, Any]])
+@feed_router.get("", response_model=list[NotificationOut])
 def list_notifications(
     response: Response,
     db: Session = Depends(get_db),
@@ -62,7 +68,7 @@ def list_notifications(
     return [r.to_dict() for r in rows]
 
 
-@feed_router.get("/unread-count")
+@feed_router.get("/unread-count", response_model=UnreadCountOut)
 def unread_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -76,7 +82,7 @@ def unread_count(
     return {"count": count}
 
 
-@feed_router.post("/read")
+@feed_router.post("/read", response_model=MarkReadOut)
 def mark_read(
     data: MarkReadRequest,
     db: Session = Depends(get_db),
@@ -114,7 +120,7 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
     }
 
 
-@prefs_router.get("/notification-prefs")
+@prefs_router.get("/notification-prefs", response_model=NotificationPrefsOut)
 def get_prefs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -122,7 +128,7 @@ def get_prefs(
     return _prefs_response(db, current_user)
 
 
-@prefs_router.put("/notification-prefs")
+@prefs_router.put("/notification-prefs", response_model=NotificationPrefsOut)
 def put_prefs(
     data: NotificationPrefsUpdate,
     db: Session = Depends(get_db),
@@ -179,13 +185,36 @@ def require_internal_key(x_internal_key: str | None = Depends(_internal_key_sche
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")
 
 
-@internal_router.post("/events", status_code=status.HTTP_202_ACCEPTED)
+# The source types under which the server keeps notices of its own and by which it finds
+# them again: frp_config (main._report_rejected_fields, a field set already reported) and
+# frps (frp.supervisor_watch, an event already told and the hourly limit), certificate_expiry
+# (enrollment.expiry.notify_expiring, a level already reported). A row from this
+# ingress under one of them would count as such a notice. IncomingEvent keeps taking them:
+# the server builds its own notices with it.
+_SERVER_SOURCE_TYPES = frozenset({"frp_config", "frps", "certificate_expiry"})
+
+
+@internal_router.post(
+    "/events", status_code=status.HTTP_202_ACCEPTED, response_model=EventsAcceptedOut
+)
 def ingest(
     event: IncomingEvent,
     db: Session = Depends(get_db),
     _internal: None = Depends(require_internal_key),
 ):
     """Accept one event from an event source and fan it out to recipients."""
+    if event.source_type in _SERVER_SOURCE_TYPES:
+        # The 422 the schema declares (HTTPValidationError), as for a body it refuses.
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "source_type"),
+                    "msg": "reserved for notices of the server itself",
+                    "input": event.source_type,
+                }
+            ]
+        )
     notified = ingest_event(db, event)
     if (
         event.event_type == "monitoring.check.transition"

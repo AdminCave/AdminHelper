@@ -17,13 +17,20 @@ from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
-from app.models import MonitorAlertLog, MonitorAlertRule
-from app.schemas import VALID_CHANNELS, VALID_SEVERITIES, AlertRuleCreate, AlertRuleUpdate
+from app.models import MonitorAlertLog, MonitorAlertRule, keep_smtp_password
+from app.schemas import (
+    VALID_CHANNELS,
+    VALID_SEVERITIES,
+    AlertLogOut,
+    AlertRuleCreate,
+    AlertRuleOut,
+    AlertRuleUpdate,
+)
 
 router = APIRouter()
 
 
-@router.get("/alerts", dependencies=[Depends(require_internal)])
+@router.get("/alerts", response_model=list[AlertRuleOut], dependencies=[Depends(require_internal)])
 def list_alert_rules(
     response: Response,
     db: Session = Depends(get_db),
@@ -37,7 +44,10 @@ def list_alert_rules(
 
 
 @router.post(
-    "/alerts", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)]
+    "/alerts",
+    status_code=status.HTTP_201_CREATED,
+    response_model=AlertRuleOut,
+    dependencies=[Depends(require_internal)],
 )
 def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
     """Creates a new alert rule."""
@@ -45,6 +55,9 @@ def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
         raise HTTPException(400, f"Invalid channel. Allowed: {', '.join(sorted(VALID_CHANNELS))}")
     if data.match_severity and data.match_severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Invalid severity")
+    # GET shows a stored password as the mask; a new rule has none it could stand for.
+    if data.channel_config.get("smtp_password") == "***":
+        raise HTTPException(422, "smtp_password must be the password itself, not the mask '***'")
 
     rule = MonitorAlertRule(
         id=str(uuid.uuid4()),
@@ -62,14 +75,18 @@ def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
     return rule.to_dict()
 
 
-@router.get("/alerts/log", dependencies=[Depends(require_internal)])
+@router.get(
+    "/alerts/log", response_model=list[AlertLogOut], dependencies=[Depends(require_internal)]
+)
 def get_alert_log(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)):
     """Returns the alert history."""
     logs = db.query(MonitorAlertLog).order_by(MonitorAlertLog.sent_at.desc()).limit(limit).all()
     return [entry.to_dict() for entry in logs]
 
 
-@router.get("/alerts/{rule_id}", dependencies=[Depends(require_internal)])
+@router.get(
+    "/alerts/{rule_id}", response_model=AlertRuleOut, dependencies=[Depends(require_internal)]
+)
 def get_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     """Returns a single alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
@@ -78,7 +95,9 @@ def get_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     return rule.to_dict()
 
 
-@router.put("/alerts/{rule_id}", dependencies=[Depends(require_internal)])
+@router.put(
+    "/alerts/{rule_id}", response_model=AlertRuleOut, dependencies=[Depends(require_internal)]
+)
 def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends(get_db)):
     """Updates an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
@@ -107,16 +126,15 @@ def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends
             setattr(rule, field, getattr(data, field))
     if "channel_config" in sent:
         new_cfg = dict(data.channel_config or {})
-        # A masked ("***") or empty smtp_password means "unchanged": keep the stored
-        # secret rather than overwriting it with the mask to_dict returned, so
-        # editing an unrelated field never wipes or leaks the password (3.27).
-        if new_cfg.get("smtp_password") in ("***", "", None):
-            old_cfg = json.loads(rule.channel_config) if rule.channel_config else {}
-            old_pw = old_cfg.get("smtp_password")
-            if old_pw:
-                new_cfg["smtp_password"] = old_pw
-            else:
-                new_cfg.pop("smtp_password", None)
+        # A masked ("***") or empty smtp_password means "unchanged" for the same relay:
+        # keep the stored secret rather than overwriting it with the mask to_dict
+        # returned, so editing an unrelated field never wipes or leaks the password
+        # (3.27); a changed relay never gets the stored one.
+        old_cfg = json.loads(rule.channel_config) if rule.channel_config else {}
+        try:
+            keep_smtp_password(new_cfg, old_cfg)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
         rule.channel_config = json.dumps(new_cfg)
 
     db.commit()
@@ -138,7 +156,11 @@ def delete_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     db.commit()
 
 
-@router.post("/alerts/{rule_id}/toggle", dependencies=[Depends(require_internal)])
+@router.post(
+    "/alerts/{rule_id}/toggle",
+    response_model=AlertRuleOut,
+    dependencies=[Depends(require_internal)],
+)
 def toggle_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     """Enables/disables an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()

@@ -17,6 +17,7 @@ VALID_EVENTS = [
     "connections.imported",
     "user.created",
     "user.deleted",
+    "user.promoted",
     "server.created",
     "server.updated",
     "server.deleted",
@@ -73,3 +74,7 @@ class HookDetailResponse(HookResponse):
 
 class HookCreatedResponse(HookDetailResponse):
     token: Optional[str] = None  # Nur bei Webhook-Typ beim Erstellen / Token-Rotation
+
+
+class HookTokenOut(BaseModel):
+    token: str

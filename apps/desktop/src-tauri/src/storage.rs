@@ -334,8 +334,8 @@ fn meta_lock() -> MutexGuard<'static, ()> {
 }
 
 /// Why [`keep_enrolled_url`] fails for a workspace that took another server meanwhile.
-const URL_TAKEN: &str = "this workspace took the URL of another server while this device \
-     registered; the new device identity is reset, register again";
+const URL_TAKEN: &str =
+    "this workspace took the URL of another server while this device registered";
 
 /// Makes `url`, where a registration of this device just succeeded, the URL of the workspace of
 /// this process in the app data dir `base`, if it has none yet: the identity is that server's,
@@ -1567,15 +1567,17 @@ mod settings_tests {
             file.write_all(b"{torn").unwrap();
             file.set_modified(modified).unwrap();
         };
+        // The numbers are above u32::MAX, so none is a PID: a fixture named after the test
+        // process's PID would be the write's own temp file and gone after it.
         // What a process that ended between creating its temp and the rename left an hour ago.
-        leave("prefs.json.4242.tmp", now - hour);
+        leave("prefs.json.4294967296.tmp", now - hour);
         // Another process writing prefs.json right now.
-        leave("prefs.json.4243.tmp", now);
+        leave("prefs.json.4294967297.tmp", now);
         // A clock that went back: in doubt, kept.
-        leave("prefs.json.4244.tmp", now + hour);
+        leave("prefs.json.4294967298.tmp", now + hour);
         // Not a temp of a write of prefs.json.
-        leave("other.json.4242.tmp", now - hour);
-        leave("prefs.json.x4242.tmp", now - hour);
+        leave("other.json.4294967296.tmp", now - hour);
+        leave("prefs.json.x4294967296.tmp", now - hour);
         // The fixed name the migration clears.
         leave("prefs.json.tmp", now - hour);
 
@@ -1585,12 +1587,12 @@ mod settings_tests {
         assert_eq!(
             names_in(&scratch.0),
             [
-                "other.json.4242.tmp",
+                "other.json.4294967296.tmp",
                 PREFS_FILE,
-                "prefs.json.4243.tmp",
-                "prefs.json.4244.tmp",
+                "prefs.json.4294967297.tmp",
+                "prefs.json.4294967298.tmp",
                 "prefs.json.tmp",
-                "prefs.json.x4242.tmp",
+                "prefs.json.x4294967296.tmp",
             ]
         );
     }

@@ -23,6 +23,7 @@ import ipaddress
 from dataclasses import dataclass
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
@@ -42,6 +43,9 @@ LEAF_DAYS_BROWSER = 365
 # (storage._leaf_needs_remint, F4), so a stack restart refreshes it well before
 # expiry. Clients pin the Root, not the leaf, so the rotation is transparent (D2).
 LEAF_DAYS_GATEWAY = 365
+# Root and intermediates with fewer days left than this are logged as a WARNING:
+# half a year to rotate, which needs the separately kept root passphrase.
+EXPIRY_WARN_DAYS = 180
 
 SCOPES = ("tunnel", "access", "internal")
 
@@ -106,6 +110,36 @@ def chain_pem(*certs: x509.Certificate) -> bytes:
     return b"".join(cert_to_pem(c) for c in certs)
 
 
+# --- Validity ----------------------------------------------------------------
+
+
+class IssuerNotValid(ValueError):
+    """The issuing certificate is expired or not yet valid, so it must not sign."""
+
+
+def days_left(cert: x509.Certificate, now: datetime.datetime | None = None) -> int:
+    """Whole days until `cert` expires, rounded down; negative once it has."""
+    if now is None:
+        now = _now()
+    return (cert.not_valid_after_utc - now).days
+
+
+def _not_after(
+    issuer: x509.Certificate, lifetime_days: int, now: datetime.datetime
+) -> datetime.datetime:
+    """notAfter of a certificate `issuer` signs at `now`: the wanted lifetime, cut
+    to the issuer's own end, because no client accepts a certificate past the end
+    of one that signed it. An issuer outside its validity does not sign at all."""
+    start, end = issuer.not_valid_before_utc, issuer.not_valid_after_utc
+    if not start <= now < end:
+        state = "expired" if now >= end else "not yet valid"
+        raise IssuerNotValid(
+            f"issuer {read_identity(issuer)[0]!r} is {state} "
+            f"(notBefore {start.isoformat()}, notAfter {end.isoformat()})"
+        )
+    return min(now + datetime.timedelta(days=lifetime_days), end)
+
+
 # --- CA construction ---------------------------------------------------------
 
 
@@ -145,15 +179,27 @@ def build_root_ca(
     return cert, key
 
 
+def _intermediate_cn(scope: str) -> str:
+    return f"AdminHelper {scope.capitalize()} Intermediate"
+
+
 def build_intermediate_ca(
     scope: str,
     root_cert: x509.Certificate,
     root_key: ec.EllipticCurvePrivateKey,
+    label: str | None = None,
 ) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """`label` is appended to the CN ("AdminHelper Access Intermediate 2031-05-04"). A
+    rotation passes one so each generation of a scope has its own subject: a client
+    sending only its leaf is matched to its issuer by name in a trust bundle that
+    holds the current and the retired generations side by side."""
     if scope not in SCOPES:
         raise ValueError(f"Unbekannter Scope '{scope}'. Erlaubt: {', '.join(SCOPES)}")
     key = generate_key()
-    subject = _name(f"AdminHelper {scope.capitalize()} Intermediate")
+    common_name = _intermediate_cn(scope)
+    if label:
+        common_name = f"{common_name} {label}"
+    subject = _name(common_name)
     now = _now()
     cert = (
         x509.CertificateBuilder()
@@ -162,7 +208,7 @@ def build_intermediate_ca(
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=VALIDITY_DAYS_INTERMEDIATE))
+        .not_valid_after(_not_after(root_cert, VALIDITY_DAYS_INTERMEDIATE, now))
         # path_length=0: this intermediate may sign leaves but no further CAs.
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
         .add_extension(_ca_key_usage(), critical=True)
@@ -174,6 +220,35 @@ def build_intermediate_ca(
         .sign(root_key, _HASH)
     )
     return cert, key
+
+
+def intermediate_problem(
+    cert: x509.Certificate, scope: str, root_cert: x509.Certificate
+) -> str | None:
+    """Why `cert` is not an intermediate of `scope` as build_intermediate_ca issues one
+    under `root_cert` (the scope's CN with or without a label, a CA restricted to signing
+    leaves, signed by `root_cert`), or None if it is; its validity in time is left to the
+    caller. A signature check alone would let the self-signed root or another scope's
+    intermediate pass as one of `scope`'s."""
+    base = _intermediate_cn(scope)
+    name = read_identity(cert)[0] or ""
+    if name != base and not (name.startswith(f"{base} ") and name[len(base) + 1 :]):
+        return f"its CN is not {base!r}, with or without a label"
+    try:
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except (x509.ExtensionNotFound, x509.DuplicateExtension, ValueError):
+        constraints = None
+    if constraints is None or not constraints.ca or constraints.path_length != 0:
+        return "it is not a CA restricted to signing leaves (BasicConstraints ca, path_length=0)"
+    try:
+        cert.verify_directly_issued_by(root_cert)
+    except InvalidSignature:
+        detail = "the signature does not verify"
+    except (ValueError, TypeError) as exc:
+        detail = str(exc)
+    else:
+        return None
+    return f"it is not signed by root {read_identity(root_cert)[0]!r} ({detail})"
 
 
 # --- Leaf signing ------------------------------------------------------------
@@ -230,7 +305,10 @@ def sign_leaf(
 
     The subject comes from the CSR; the public key comes from the CSR (the
     private key never leaves the requesting device). EKU/KeyUsage and lifetime
-    are dictated by the issuer per `spec` — the CSR cannot widen them."""
+    are dictated by the issuer per `spec` — the CSR cannot widen them. The
+    lifetime is cut to the end of `issuer_cert`, so a leaf minted shortly before
+    its intermediate expires is shorter than `spec.lifetime_days`; an
+    intermediate that is expired or not yet valid raises IssuerNotValid."""
     if not csr.is_signature_valid:
         raise ValueError("CSR-Signatur ist ungültig")
 
@@ -250,7 +328,7 @@ def sign_leaf(
         .public_key(csr.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=spec.lifetime_days))
+        .not_valid_after(_not_after(issuer_cert, spec.lifetime_days, now))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(
             # ECDSA: digital_signature only (no key_encipherment — that's RSA).

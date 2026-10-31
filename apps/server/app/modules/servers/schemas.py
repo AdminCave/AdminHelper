@@ -4,10 +4,11 @@
 
 from typing import Optional
 
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 
 from app.core.bounds import RequestModel
-from app.modules.frp.schemas import _reject_toml_breakers, _validate_tags
+from app.modules.connections.schemas import ConnectionOut
+from app.modules.frp.schemas import FrpTunnelOut, _reject_toml_breakers, _validate_tags
 
 
 def _validate_server_name(v: Optional[str]) -> Optional[str]:
@@ -48,3 +49,32 @@ class ServerUpdate(RequestModel):
 
     _clean_name = field_validator("name")(_validate_server_name)
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
+
+
+class ServerSummary(BaseModel):
+    """One server as GET /api/servers/summary lists it."""
+
+    id: str
+    name: str
+    hostname: str
+
+
+class ServerOut(BaseModel):
+    id: str
+    name: str
+    hostname: str
+    osType: Optional[str]
+    tags: list[str]
+    notes: str
+    createdAt: Optional[str]
+    connections: list[ConnectionOut]
+    frpTunnels: list[FrpTunnelOut]
+
+
+class InternalServerOut(BaseModel):
+    """One server as the monitoring service's tag-sync reads it."""
+
+    id: str
+    hostname: str
+    name: str
+    tags: list[str]

@@ -230,6 +230,10 @@ e2e_init() {
 DOMAIN=localhost
 SECRET_KEY=$(e2e_rand)$(e2e_rand)
 POSTGRES_PASSWORD=$pg_pw
+SERVER_DB_PASSWORD=$(e2e_rand)
+SCHEDULER_DB_PASSWORD=$(e2e_rand)
+MONITOR_DB_PASSWORD=$(e2e_rand)
+CA_DB_PASSWORD=$(e2e_rand)
 CA_ROOT_PASSPHRASE=$(e2e_rand)
 MONITOR_API_KEY=$(e2e_rand)
 ADMIN_PASSWORD=$E2E_ADMIN_PW
@@ -281,6 +285,24 @@ e2e_up() {
         sleep 2
     done
     e2e_dc logs --tail 40 gateway
+    return 1
+}
+
+# e2e_wait_enroll_plane [seconds] — wait until :8444 reaches the ca-issuer. e2e_up waits
+# for :443 only, and the gateway hangs on the ca-issuer with service_started: right after a
+# fresh PKI the enroll plane answers 502 (or resets) until the issuer listens (R-0935).
+# Asks /enroll: the gateway answers every other path of :8444 with its own 404, only /enroll
+# is proxied. A GET there is 405 from a live issuer (POST-only route). Any status but
+# 000/502/503/504 counts as reached; rc 1 names the last one.
+e2e_wait_enroll_plane() {
+    local deadline=$(( $(date +%s) + ${1:-60} )) code=000
+    while :; do
+        code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "https://localhost:$E2E_ENROLL_PORT/enroll" 2>/dev/null) || code=000
+        case "$code" in 000|502|503|504) ;; *) return 0 ;; esac
+        [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep 1
+    done
+    echo "[e2e] enroll plane :$E2E_ENROLL_PORT never reached the ca-issuer (last HTTP '$code')" >&2
     return 1
 }
 

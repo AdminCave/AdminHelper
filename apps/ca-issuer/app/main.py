@@ -20,8 +20,8 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from app import config
-from app.issuer import IssuanceError, Issuer
+from app import config, trust
+from app.issuer import IssuanceError, Issuer, IssuerUnavailable
 from app.storage import Intermediate, ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
 
@@ -30,10 +30,15 @@ logger = logging.getLogger("ca-issuer")
 
 
 def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
-    """First-boot bootstrap: hand the gateway + frps their TLS material. Kept
-    separate from build_issuer so constructing the issuer has NO side effects on
-    foreign volumes — calling build_issuer in a test/script must not provision
-    certs into whatever CA_*_CERT_DIR happens to be set."""
+    """First-boot bootstrap: hand the gateway + frps their TLS material and the server
+    the listed intermediates. Kept separate from build_issuer so constructing the
+    issuer has NO side effects on foreign volumes — calling build_issuer in a
+    test/script must not provision certs into whatever CA_*_DIR happens to be set."""
+    # The server checks the issuer of a client cert against these (R-1009): the gateway
+    # anchors at the root and lets a dropped intermediate through. First, so a failing
+    # gateway or frps step after a rotation leaves no list with a dropped intermediate.
+    if config.trust_dir():
+        trust.write_trust(Path(config.trust_dir()), intermediates)
     # The gateway can't sign its own leaf (chicken-egg, D6): give it an
     # access-signed TLS leaf + trust bundle.
     if config.gateway_cert_dir():
@@ -55,6 +60,32 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
             # trust the access intermediate alongside tunnel.
             extra_trust=(intermediates["access"],),
         )
+
+
+def record_inventory() -> None:
+    """Write the snapshot of the infrastructure certificates (app.inventory) when the DB
+    store is configured. A failure is logged and the start goes on: the overview must not
+    cost the enrollment. Only the exception type is logged, a driver error may quote the
+    connection string with its password."""
+    if not config.database_url():
+        return
+    from app import inventory
+    from app.db import make_engine
+
+    def _dir(value: str) -> Path | None:
+        return Path(value) if value else None
+
+    try:
+        certs = inventory.collect(
+            config.pki_dir(), _dir(config.gateway_cert_dir()), _dir(config.frps_cert_dir())
+        )
+        engine = make_engine(config.database_url())
+        try:
+            inventory.record(engine, certs)
+        finally:
+            engine.dispose()
+    except Exception as exc:
+        logger.warning("Certificate overview not written (%s)", type(exc).__name__)
 
 
 def build_issuer(
@@ -89,6 +120,7 @@ def build_issuer(
 async def lifespan(app: FastAPI):
     intermediates = ensure_hierarchy(config.pki_dir(), config.root_passphrase())
     provision_boot_material(intermediates)
+    record_inventory()
     issuer = build_issuer(intermediates)  # auto-selects DB store or in-memory
     app.state.issuer = issuer
     app.state.token_store = issuer.tokens  # exposed for tests / the server mint flow
@@ -132,6 +164,10 @@ def enroll(body: EnrollRequest, issuer: Issuer = Depends(get_issuer)):
         return issuer.enroll(body.token, body.csr.encode(), body.replaces)
     except IssuanceError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except IssuerUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
 
 @app.post("/renew")
@@ -152,3 +188,7 @@ def renew(body: RenewRequest, request: Request, issuer: Issuer = Depends(get_iss
         return issuer.renew(cert_pem, body.csr.encode())
     except IssuanceError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except IssuerUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc

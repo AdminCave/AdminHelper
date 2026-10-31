@@ -67,12 +67,8 @@ pub async fn forward(
     }
 
     if !status.is_success() {
-        let text = crate::diagnostics::redact_body(&response.text().await.unwrap_or_default());
-        return Err(AppError::Validation(format!(
-            "HTTP {}: {}",
-            status.as_u16(),
-            text
-        )));
+        let text = response.text().await.unwrap_or_default();
+        return Err(AppError::http(status.as_u16(), &text));
     }
 
     // An empty 2xx body (no JSON payload) stays Null; an actually malformed
@@ -261,6 +257,44 @@ mod tests {
         }
         assert_eq!(session.current().await.unwrap().access, "renewed");
         assert_eq!(expired.load(Ordering::Relaxed), 0);
+    }
+
+    /// The refusal of `forward` to a request the server answers with `status` and `body`.
+    async fn refusal_of(status: &'static str, body: &'static str) -> serde_json::Value {
+        let (server, _log) = serve(move |_| reply(status, body)).await;
+        let session = signed_in(&server).await;
+        let err = forward(&session, "POST", "/api/servers", None)
+            .await
+            .expect_err("a non-2xx answer must be an error");
+        serde_json::to_value(err).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_refusal_carries_status_code_and_detail() {
+        assert_eq!(
+            refusal_of("409 Conflict", r#"{"detail":"Template already assigned"}"#).await,
+            serde_json::json!({
+                "code": "ERR_HTTP",
+                "message": "Template already assigned",
+                "status": 409
+            })
+        );
+        assert_eq!(
+            refusal_of(
+                "403 Forbidden",
+                r#"{"detail":"ERR_CERT_REVOKED: This device certificate is no longer valid.","code":"ERR_CERT_REVOKED"}"#
+            )
+            .await,
+            serde_json::json!({
+                "code": "ERR_CERT_REVOKED",
+                "message": "This device certificate is no longer valid.",
+                "status": 403
+            })
+        );
+        assert_eq!(
+            refusal_of("502 Bad Gateway", "<html><body>Bad Gateway</body></html>").await,
+            serde_json::json!({ "code": "ERR_HTTP", "message": "HTTP 502", "status": 502 })
+        );
     }
 
     #[tokio::test]
