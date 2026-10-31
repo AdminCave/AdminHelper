@@ -57,13 +57,13 @@ Neu geschrieben wird nur beim Start des `ca-issuer`: die Rotation verlangt ihn o
 Start nicht auf (Warnung im Log): die Übersicht darf das Enrollment nicht kosten. Mit In-Memory-Store (nur
 dev/tests) schreibt er nichts.
 
-**API** `GET /api/enrollment/certificates` → `{ "infrastructure": [...], "agents": [...] }`, je Eintrag `name` bzw.
-`server_id` und `server_name`, `subject`, `fingerprint`, `not_after`, `days_left` (ganze Tage, negativ wenn
+**API** `GET /api/enrollment/certificates` → `{ "infrastructure": [...], "agents": [...] }`, je Eintrag `name` und `subject` bzw.
+`server_id` und `server_name` (Agenten ohne `subject`), `fingerprint`, `not_after`, `days_left` (ganze Tage, negativ wenn
 abgelaufen), `status` (`ok` | `warning` | `critical`). Agenten: je nicht widerrufener `device_lines`-Zeile mit
 `kind = "agent"` das Zertifikat mit dem spätesten `not_after`, `subject_id` ist die Server-ID. Vertrags-Drift: Web
 (neu), Desktop und Agent unberührt.
 
-**Alarm:** täglich, an die Admins (`notify_users`), je Zertifikat und Stufe einmal: `source_type =
+**Alarm:** täglich, an die Admins über den Notification-Hub (`ingest_event`: Glocke und, je nach Abo, E-Mail), je Zertifikat und Stufe einmal: `source_type =
 "certificate_expiry"`, `source_id = "<fingerprint>:<stufe>"`. Ein erneuertes Zertifikat hat einen neuen Fingerprint
 und meldet sich erst wieder, wenn auch es in die Schwelle läuft. Löscht die Aufbewahrung der Benachrichtigungen eine
 Meldung, kommt sie einmal neu, solange das Zertifikat in der Stufe bleibt.

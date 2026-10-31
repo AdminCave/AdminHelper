@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-4 · Review: pro Task
 Spec: docs/features/kern-ca-4.md (Roadmap R-1022)
 Heavy: linux-full — `apps/ca-issuer` (Start mit DB-Store) und Server-API (Sammellauf: Stack mit Enrollment)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Certificates.test.t
 Doku: → T6
 Abhängt von: T3
 
-### T6 — Doku DE+EN und CHANGELOG-Fragment (R-1022)  [ ]
-Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/webui.html, docs/en/developer/webui.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-ca-4.md
+### T6 — Doku DE+EN und CHANGELOG-Fragment (R-1022)  [x]
+Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/webui.html, docs/en/developer/webui.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-ca-4.md, docs/features/kern-ca-4.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6748cd7c 2026-10-31T06:46:45+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: „Zertifikate erneuern“ um Seite und Alarm (Schwellen, Dedup, Schreiben beim Start), Web-UI-Seite und Endpunkt in der Entwickler-Doku, Fragment unter `### Added` umlautfrei. Baut nach dem Merge von #348 (dieselben Betriebsseiten).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
