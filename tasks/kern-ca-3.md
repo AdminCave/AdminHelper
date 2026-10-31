@@ -49,7 +49,15 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md
 Task-Review: am Ende
 
+### T6 — ca-issuer schreibt die Trust-Dateien vor dem übrigen Material (R-1009)  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_trust.py
+Änderung: `provision_boot_material` schreibt `CA_TRUST_DIR` als ersten Schritt: scheitert danach die Gateway- oder frps-Bereitstellung, liegt keine Liste mit einem gesperrten Zwischenzertifikat mehr im Volume (security-Nit zu T2). Test: ein Fehler in der Gateway-Bereitstellung lässt die neuen Trust-Dateien stehen.
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_trust.py tests/test_rotation.py
+Doku: keine (Reihenfolge beim Start)
+Abhängt von: T2
+
 ## Entscheidungen
 - 2026-10-31: R-1021 (Root-Erneuerung) fährt nicht mit — ändert Vertrauensanker von Agent und Desktop und den Erneuerungsvertrag (Kevins Bereich, Architektur); verschoben nach tasks/kern-ca-5.md, Frage am Gate.
 - 2026-10-31: Trust-Daten für den Server über ein Volume mit öffentlichem Material statt einer DB-Tabelle (keine Migration); fehlende Datei ist fail-closed wie R-0900.
 - 2026-10-31: T2 hängt `ca-trust` nur lesbar in den Server, setzt `CA_TRUST_DIR` dort aber erst in T3: `test_env_parity` verlangt, dass der Server jeden gesetzten Schlüssel liest.
+- 2026-10-31: T6 aus dem security-Nit zu T2 (Trust-Dateien zuerst schreiben), als eigene ca-issuer-Task vor T3 gebaut.
