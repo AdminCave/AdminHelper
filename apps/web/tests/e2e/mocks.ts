@@ -55,6 +55,46 @@ const TOKENS = {
   token_type: 'bearer',
 };
 
+// One certificate per traffic light, and an agent whose server is gone (R-1022).
+const CERTIFICATES = {
+  infrastructure: [
+    {
+      name: 'gateway',
+      subject: 'CN=gateway',
+      fingerprint: 'aa'.repeat(32),
+      not_after: '2026-01-20T00:00:00Z',
+      days_left: 20,
+      status: 'warning',
+    },
+    {
+      name: 'root',
+      subject: 'CN=AdminHelper Root CA',
+      fingerprint: 'bb'.repeat(32),
+      not_after: '2036-01-01T00:00:00Z',
+      days_left: 3650,
+      status: 'ok',
+    },
+  ],
+  agents: [
+    {
+      server_id: 's1',
+      server_name: 'web-01',
+      fingerprint: 'cc'.repeat(32),
+      not_after: '2026-01-04T00:00:00Z',
+      days_left: 3,
+      status: 'critical',
+    },
+    {
+      server_id: 's-gone',
+      server_name: null,
+      fingerprint: 'dd'.repeat(32),
+      not_after: '2026-03-01T00:00:00Z',
+      days_left: 59,
+      status: 'ok',
+    },
+  ],
+};
+
 const AUDIT_ROWS: Record<string, unknown>[] = [
   {
     id: 2,
@@ -260,6 +300,7 @@ export const MOCK_FIXTURES: MockFixture[] = [
     body: frpPub(FRP_EXAMPLE),
   },
   { method: 'GET', path: 'audit', status: 200, body: AUDIT_ROWS },
+  { method: 'GET', path: 'enrollment/certificates', status: 200, body: CERTIFICATES },
   { method: 'GET', path: 'frp/status', status: 200, body: { proxies: [], total: 0 } },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(false) },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(true) },
@@ -418,6 +459,9 @@ export async function mockApi(page: Page): Promise<void> {
   );
   await page.route(api('frp/supervisor-status'), async (route) =>
     route.fulfill(json({ body: makeSupervisorStatus(db.frp.length > 0) })),
+  );
+  await page.route(api('enrollment/certificates'), async (route) =>
+    route.fulfill(json({ body: CERTIFICATES })),
   );
   await page.route(api('enrollment/token/for'), async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;

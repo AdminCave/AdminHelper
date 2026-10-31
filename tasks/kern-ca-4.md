@@ -47,10 +47,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_exp
 Doku: → T6
 Abhängt von: T3
 
-### T5 — Web: Seite „Zertifikate“ (R-1022)  [ ]
-Komponente: web · Dateien: apps/web/src/pages/Certificates.svelte, apps/web/src/pages/Certificates.test.ts, apps/web/src/lib/api/certificates.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/api/types.contract.test.ts, apps/web/src/routes.ts, apps/web/src/lib/components/layout/Sidebar.svelte, apps/web/src/lib/i18n/dictionaries.ts
+### T5 — Web: Seite „Zertifikate“ (R-1022)  [x]
+Komponente: web · Dateien: apps/web/src/pages/Certificates.svelte, apps/web/src/pages/Certificates.test.ts, apps/web/src/lib/api/certificates.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/api/types.contract.test.ts, apps/web/src/routes.ts, apps/web/src/lib/components/layout/Sidebar.svelte, apps/web/src/lib/i18n/dictionaries.ts, apps/web/tests/e2e/smoke.spec.ts, apps/web/tests/e2e/mocks.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/certificates-chromium-linux.png, apps/web/src/lib/api/mocks.contract.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @bea5d3d6 2026-10-31T06:44:41+01:00
+Review: approve (.ah-out/review/kern-ca-4/T5.verdict.json)
 Änderung: Admin-Seite mit zwei Tabellen (Infrastruktur, Agenten), Restlaufzeit und Ampel, Route `/certificates`, Eintrag in der Sidebar, Texte DE+EN; Typ und Abbildung im Vertragstest gegen den Snapshot aus T3. Acht Dateien: Seite, API-Client, Typ, Route und Navigation gehören zu einer Funktion. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Certificates.test.ts src/lib/api/types.contract.test.ts
+Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Certificates.test.ts src/lib/api/types.contract.test.ts src/lib/i18n/i18n.test.ts src/lib/api/mocks.contract.test.ts
 Doku: → T6
 Abhängt von: T3
 
