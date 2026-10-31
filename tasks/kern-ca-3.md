@@ -37,15 +37,17 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_issuer
 Doku: → T5
 Abhängt von: T2
 
-### T4 — Stack-Probe: gesperrter Aussteller an frps und Server abgelehnt (R-1009)  [ ]
+### T4 — Stack-Probe: gesperrter Aussteller an frps und Server abgelehnt (R-1009)  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f64d42ef 2026-10-31T08:32:07+01:00
+Review: approve (.ah-out/review/kern-ca-3/T4.verdict.json)
 Änderung: Im echten Stack ein Zwischenzertifikat unter der echten Root ausstellen, das nicht geführt ist (im `ca-issuer`-Container mit der Passphrase des Testlaufs), damit ein Leaf signieren und mitschicken: frps lehnt den Handshake ab, über das Gateway bekommt der Server-Aufruf 403 `ERR_CERT_REVOKED`; ein echt enrolltes Zertifikat besteht beides weiter. Dazu `tls_probe` an das Bundle ohne Root aus T1 anpassen (OpenSSL braucht `VERIFY_X509_PARTIAL_CHAIN` oder die Root in der Probe-CA-Datei). Beweis im Stack-Job per `gh workflow run ci.yml --ref feature/kern-ca-3`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T5
 Abhängt von: T1, T3
 
 ### T5 — Doku DE+EN und Changelog (R-1009)  [ ]
-Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md
+Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md, docs/developer/index.html, docs/en/developer/index.html
 Änderung: Abschnitt `ca-rotation`: nach `--compromised` und Neustart nehmen frps und Server kein Zertifikat des gesperrten Zwischenzertifikats mehr an; was weiter erst eine neue Root schließt (die Prüfung des Servers durch die Clients). Architektur-Seite zu mTLS-Vertrauen per grep bestimmen und mitziehen (`ledger.sh set-files`). Changelog neutral unter `### Security`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md
