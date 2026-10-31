@@ -10,7 +10,8 @@
 # fail-closed abort when a release tag has no bundle (audit 3.29), tamper detection,
 # an .env write that hits a full disk (R-0496), an .env with bytes outside UTF-8
 # or a NUL byte (R-0530), a read-only .env with a terminal on stdin (R-0538), and
-# the admin password from --admin-password-file.
+# the admin password from --admin-password-file, and the abort over an
+# existing installation (R-0665).
 #
 # Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign,
 #      the locale C.UTF-8: without it test 6 cannot run, and the test ends with 75;
@@ -48,6 +49,9 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # then (exit 141 under pipefail). Only that branch reads — in the default branch
 # `cat` would hang on an inherited stdin. AH_TEST_DOCKER_LOG records every call,
 # one per line; AH_TEST_DOCKER_ENV the ADMIN_PASSWORD each call inherited.
+# The compose project is AH_TEST_PROJECT (default ahtest), its containers
+# AH_TEST_CONTAINERS (default none), the volumes that exist AH_TEST_VOLUMES
+# (space-separated, default none).
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -58,6 +62,11 @@ case "$*" in
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
   *logs*) exit 0 ;;
   *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
+  "compose config"*) echo "name: ${AH_TEST_PROJECT:-ahtest}"; echo "services: {}"; exit 0 ;;
+  "compose ps --all --quiet") [ -z "${AH_TEST_CONTAINERS:-}" ] || echo "$AH_TEST_CONTAINERS"; exit 0 ;;
+  "volume inspect "*)
+    for v in ${AH_TEST_VOLUMES:-}; do [ "$v" != "$3" ] || exit 0; done
+    echo "Error: No such volume: $3" >&2; exit 1 ;;
   *) exit 0 ;;
 esac
 EOF
@@ -406,6 +415,65 @@ out=$(cd "$INST" && PATH="$FAILCHMOD:$PATH" bash "$INSTALL" --domain t9.example 
 { [ $rc -eq 0 ] && grep -q "WARNING: could not close" <<<"$out"; } \
   && ok "a chmod that fails is a warning, the install goes on" \
   || bad "failing chmod: exit $rc, $(grep -i warn <<<"$out")"
+
+# ── 10. an existing installation: abort, nothing changed (R-0665) ────────────
+# Every .env carries the marker zz9, so a leak of a value into the output shows.
+# (a) bootstrap into a directory with a .env, or with only a docker-compose.yml
+entries() { find "$1" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' '; }
+INST="$WORK/inst10a"; mkdir -p "$INST"; printf 'SECRET_KEY=zz9secret\n' > "$INST/.env"
+cp "$INST/.env" "$WORK/env10a.orig"
+out=$(run_install --ref v0.34.0 --dir "$INST" --domain t10.example --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out"; } && ok "bootstrap over a .env aborts and names update.sh" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "bootstrap over a .env: rc=$rc"; }
+[ ! -e "$INST/docker-compose.yml" ] && [ ! -e "$INST/scripts" ] && ok "bootstrap over a .env: nothing extracted" \
+  || bad "bootstrap over a .env extracted: $(entries "$INST")"
+cmp -s "$WORK/env10a.orig" "$INST/.env" && ok "bootstrap over a .env: .env byte-identical" || bad "bootstrap over a .env: .env changed"
+! grep -q zz9 <<<"$out" && ok "bootstrap over a .env: no value of it in the output" || bad "bootstrap output names a .env value"
+INST="$WORK/inst10a2"; mkdir -p "$INST"; printf 'services: {zz9: 1}\n' > "$INST/docker-compose.yml"
+cp "$INST/docker-compose.yml" "$WORK/compose10a2.orig"
+out=$(run_install --ref v0.34.0 --dir "$INST" --domain t10.example --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out"; } && ok "bootstrap over a docker-compose.yml aborts and names update.sh" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "bootstrap over a docker-compose.yml: rc=$rc"; }
+{ cmp -s "$WORK/compose10a2.orig" "$INST/docker-compose.yml" && [ "$(entries "$INST")" = "docker-compose.yml " ]; } \
+  && ok "bootstrap over a docker-compose.yml: it stays byte-identical, nothing added" \
+  || bad "bootstrap over a docker-compose.yml: now $(entries "$INST")"
+# existing_install <name> <env assignments…> — a checkout-mode run like test 5 over a
+# .env with a secret; sets out, rc and dlog, and checks that nothing changed.
+existing_install() {
+  local name="$1"; shift
+  new_inst "$name"; printf 'SECRET_KEY=zz9secret\n' >> "$INST/.env"; cp "$INST/.env" "$WORK/$name.env.orig"
+  DLOG="$WORK/docker-$name.log"
+  out=$(cd "$INST" && env AH_TEST_DOCKER_LOG="$DLOG" "$@" bash "$INSTALL" --domain new.example \
+    --admin-password sikrit123 --yes 2>&1); rc=$?
+  dlog=$(cat "$DLOG" 2>/dev/null)
+}
+# unchanged <label> — .env byte-identical, no compose pull/up/down, no value in the output
+unchanged() {
+  cmp -s "$WORK/$1.env.orig" "$INST/.env" && ok "$1: .env byte-identical" || bad "$1: .env changed: $(tr '\n' ' ' < "$INST/.env")"
+  ! grep -qE '^compose (pull|up|down)' <<<"$dlog" && ok "$1: no compose pull/up/down" \
+    || bad "$1: stack touched: $(grep -E '^compose (pull|up|down)' <<<"$dlog" | tr '\n' ' ')"
+  ! grep -q zz9 <<<"$out" && ok "$1: no .env value in the output" || bad "$1: output names a .env value"
+}
+# (b) a data volume of the project
+existing_install inst10b AH_TEST_VOLUMES=ahtest_postgres-data
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'ahtest' <<<"$out"; } \
+  && ok "postgres-data volume: abort names update.sh and the project" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "postgres-data volume: rc=$rc"; }
+unchanged inst10b
+# (c) containers of the project
+existing_install inst10c AH_TEST_CONTAINERS=abc123
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'ahtest' <<<"$out"; } \
+  && ok "containers: abort names update.sh and the project" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "containers: rc=$rc"; }
+unchanged inst10c
+# (d) the project name comes from compose: its volume stops the run, another project's does not
+existing_install inst10d AH_TEST_PROJECT=ah-prod AH_TEST_VOLUMES=ah-prod_ca-pki
+{ [ $rc -ne 0 ] && grep -q 'ah-prod' <<<"$out"; } && ok "ca-pki volume of project ah-prod: abort names it" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "ca-pki volume of ah-prod: rc=$rc"; }
+unchanged inst10d
+existing_install inst10d2 AH_TEST_PROJECT=ah-prod AH_TEST_VOLUMES=adminhelper_ca-pki
+[ $rc -eq 0 ] && ok "a volume of another project (adminhelper) does not stop project ah-prod" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "volume of another project: rc=$rc"; }
 
 echo
 echo "──────────────────────────────────────────"

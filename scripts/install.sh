@@ -8,6 +8,12 @@
 #           | bash -s -- --domain srm.example.com
 #   * from a checkout/bundle (docker-compose.yml present) — setup only.
 #
+# install.sh sets up a NEW installation. Over an existing one it stops before it
+# changes anything and points to ./scripts/update.sh: in bootstrap mode when the
+# target directory already holds a .env or a docker-compose.yml, in both modes
+# when the compose project already has containers or a postgres-data or ca-pki
+# volume. A .env alone, written ahead of the install, is taken over.
+#
 # Since 0.29.0 mTLS is enforced by default. There is no "arm" step and no
 # permissive window: the first admin + a one-time enrollment token are created
 # via the in-container management CLI (which talks to Postgres directly, not the
@@ -170,6 +176,12 @@ fetch_repo_into() {
 # Mirrors scripts/update.sh: a release tag pulls ONE verified runtime bundle
 # (atomic + checksum); a branch ref or a pre-bundle release falls back to raw.
 if [ ! -f docker-compose.yml ]; then
+    if [ -f "$TARGET_DIR/.env" ] || [ -f "$TARGET_DIR/docker-compose.yml" ]; then
+        echo "ERROR: ${TARGET_DIR} already holds an installation or an aborted attempt (.env or docker-compose.yml); nothing was changed." >&2
+        echo "       Update it with:  cd ${TARGET_DIR} && ./scripts/update.sh" >&2
+        echo "       Start over after an aborted attempt with:  cd ${TARGET_DIR} && ./scripts/install.sh --reset ..." >&2
+        exit 1
+    fi
     command -v curl >/dev/null 2>&1 || { echo "FEHLER: curl fehlt." >&2; exit 1; }
 
     if [ -z "$REF" ]; then
@@ -219,6 +231,32 @@ warn_host_uids
 command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
 close_install_dir
+
+# --- Existing installation --------------------------------------------------
+# Over an existing installation the steps below would rewrite DOMAIN and the image
+# pins and start the stack, which migrates the database without a backup, and then
+# fail at create-admin. Compose gives the project name (it also reads
+# COMPOSE_PROJECT_NAME from .env); --no-interpolate needs no .env yet.
+existing_install() {
+    local cfg err="$_TMPROOT/compose-config.err" project containers found="" vol
+    cfg=$(docker compose config --no-interpolate </dev/null 2>"$err") \
+        || { echo "ERROR: docker compose config failed, the compose project is unknown:" >&2; cat "$err" >&2; exit 1; }
+    project=$(awk '$1 == "name:" {print $2; exit}' <<<"$cfg")
+    [ -n "$project" ] || { echo "ERROR: docker compose config names no project." >&2; exit 1; }
+    containers=$(docker compose ps --all --quiet </dev/null 2>"$err") \
+        || { echo "ERROR: cannot list the containers of compose project '${project}':" >&2; cat "$err" >&2; exit 1; }
+    [ -z "$containers" ] || found="containers"
+    for vol in "${project}_postgres-data" "${project}_ca-pki"; do
+        docker volume inspect "$vol" </dev/null >/dev/null 2>&1 && found="${found:+$found, }volume $vol"
+    done
+    [ -n "$found" ] || return 0
+    [ "$RESET" = 1 ] && return 0
+    echo "ERROR: compose project '${project}' is already installed here (${found}); nothing was changed." >&2
+    echo "       install.sh sets up a new installation. Update with:  ./scripts/update.sh  (the data stays)" >&2
+    echo "       --reset is only for an aborted first attempt: it deletes the containers and volumes." >&2
+    exit 1
+}
+existing_install
 
 upsert_env() {
     local key="$1" value="$2"
