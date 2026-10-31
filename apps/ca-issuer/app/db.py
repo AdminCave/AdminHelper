@@ -11,7 +11,8 @@ the certificate register — a device line and a certificate row per issued leaf
 the revocation of a line that ``replaces`` names, and a ``legacy`` line for a
 certificate from before the register that it takes over on renewal (R-0224). What
 it only reads: identity revocations and the register's install time. It never
-mints a token.
+mints a token. On every start it replaces its snapshot of the infrastructure
+certificates (``infra_certificates``, app/inventory.py), which the server shows.
 """
 
 from __future__ import annotations
@@ -107,6 +108,17 @@ certificate_register_state = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=False),
     Column("installed_at", DateTime, nullable=False),
+)
+
+infra_certificates = Table(
+    "infra_certificates",
+    metadata,
+    Column("name", String, primary_key=True),
+    Column("subject", String, nullable=False),
+    Column("fingerprint", String(64), nullable=False),
+    Column("not_before", DateTime, nullable=False),
+    Column("not_after", DateTime, nullable=False),
+    Column("recorded_at", DateTime, nullable=False),
 )
 
 

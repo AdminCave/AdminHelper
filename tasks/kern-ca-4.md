@@ -20,10 +20,12 @@ Review: approve (.ah-out/review/kern-ca-4/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py tests/test_migrations_smoke.py
 Doku: keine (internes Schema; die Übersicht dokumentiert T6)
 
-### T2 — ca-issuer schreibt die Infrastruktur-Zertifikate beim Start (R-1022)  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/app/inventory.py, apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_inventory.py
+### T2 — ca-issuer schreibt die Infrastruktur-Zertifikate beim Start (R-1022)  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/app/inventory.py, apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_inventory.py, apps/server/tests/test_certificate_register_view.py
+Evidenz: run.sh[quick] ca-issuer server: 5 passed, 0 failed, 13 skipped @6b239a91 2026-10-31T06:18:54+01:00
+Review: approve (.ah-out/review/kern-ca-4/T2.verdict.json)
 Änderung: Core-Table `infra_certificates` in `db.py`; `inventory.py` liest Root, die Zwischenzertifikate je Scope, Gateway- und frps-Leaf (wo vorhanden) und ersetzt die Zeilen in einer Transaktion; `lifespan` ruft es nach `provision_boot_material` auf, nur mit DB-Store; ein Fehler wird geloggt und hält den Start nicht auf. Test gegen die Test-DB: Zeilen nach dem Lauf, fehlendes frps-Zertifikat ohne Zeile, DB-Fehler ohne Abbruch. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_inventory.py
+Verify: bash scripts/dev/verify.sh ca-issuer server --strict
 Doku: → T6
 Abhängt von: T1
 
@@ -60,3 +62,4 @@ Abhängt von: T2, T4, T5
 - 2026-10-31: Endpunkt im Modul `enrollment` (`/api/enrollment/certificates`) statt eines neuen Moduls — die Daten (`device_lines`, `issued_certificates`) liegen dort.
 - 2026-10-31: Geschrieben wird nur beim Start des ca-issuer; die Rotation verlangt den Neustart, Gateway/frps werden nur beim Start neu ausgestellt (Spec).
 - 2026-10-31: T1 ohne eigene Testdatei: `test_migrations_smoke.py` prüft Migration gegen Model und den Downgrade der Kette, `test_db_roles.py` die Rechte.
+- 2026-10-31: T2 prüft auch die Server-Suite: `apps/server/tests/test_certificate_register_view.py` vergleicht die Core-Tabellen des ca-issuer mit den Models, die neue Tabelle gehört in seine Liste.

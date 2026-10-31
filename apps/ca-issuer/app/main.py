@@ -57,6 +57,32 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
         )
 
 
+def record_inventory() -> None:
+    """Write the snapshot of the infrastructure certificates (app.inventory) when the DB
+    store is configured. A failure is logged and the start goes on: the overview must not
+    cost the enrollment. Only the exception type is logged, a driver error may quote the
+    connection string with its password."""
+    if not config.database_url():
+        return
+    from app import inventory
+    from app.db import make_engine
+
+    def _dir(value: str) -> Path | None:
+        return Path(value) if value else None
+
+    try:
+        certs = inventory.collect(
+            config.pki_dir(), _dir(config.gateway_cert_dir()), _dir(config.frps_cert_dir())
+        )
+        engine = make_engine(config.database_url())
+        try:
+            inventory.record(engine, certs)
+        finally:
+            engine.dispose()
+    except Exception as exc:
+        logger.warning("Certificate overview not written (%s)", type(exc).__name__)
+
+
 def build_issuer(
     intermediates: dict[str, Intermediate], token_store: TokenStore | None = None
 ) -> Issuer:
@@ -89,6 +115,7 @@ def build_issuer(
 async def lifespan(app: FastAPI):
     intermediates = ensure_hierarchy(config.pki_dir(), config.root_passphrase())
     provision_boot_material(intermediates)
+    record_inventory()
     issuer = build_issuer(intermediates)  # auto-selects DB store or in-memory
     app.state.issuer = issuer
     app.state.token_store = issuer.tokens  # exposed for tests / the server mint flow
