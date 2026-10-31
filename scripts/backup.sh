@@ -99,126 +99,191 @@ fi
 dump_db adminhelper
 dump_db adminhelper_monitor
 
+# >>> dotenv tokenizer: diagnostics.sh and backup.sh hold the same text, a test keeps it so
+# The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
+# bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
+# whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
+# LINE and PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC
+# SPACE; compose trims it from the end of an unquoted value. In front of a key it skips
+# that and a BOM: ENV_SP. Between key and separator, and between separator and value,
+# it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
+ENV_WS="([[:space:]]|"$'\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
+ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
+ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
+
+# ENV_TOK: awk functions that find the statements of a .env, for LC_ALL=C awk (byte
+# for byte: a NUL byte or a byte outside UTF-8 passes). The program appends every line
+# with a newline to S, defines want(k) (1 for a key whose values it needs) and
+# hit(k, ks, vs, ve, q, closed, cs) (called for such a key only: a statement of k from
+# ks, its value from vs to ve:
+# q is its quote, "" for an unquoted value that ends before its newline; closed is 0
+# for a quoted value without its closing quote; cs is the place of the "#" in front of
+# a commented-out statement, 0 outside a comment), and calls tok_init(sp, sep,
+# cmt) in BEGIN and tok_run() in END. A statement may be found more than once.
+# tok_exact reads the file as compose does (compose-go dotenv: parse,
+# getStatementStart, locateKeyName, extractVarValue): a quoted value runs on to its
+# closing quote over any number of lines, whatever key it belongs to, and behind it
+# the next statement begins. compose refuses a file with a key it cannot read; such a
+# line is passed over here and the next one read. tok_alone then reads every line
+# start and the place behind every quote as if it began a line, statements one behind
+# the other while each quoted value closes on its line: the text may be a value of
+# another key that only looks like an assignment, or a file compose refuses, and a
+# secret there must still go. A quoted value of a wanted key runs on to its closing
+# quote; with cmt also behind any "#" among the whitespace in front of a statement,
+# and there over the commented-out lines that follow, to its closing quote or to the
+# first line that is no comment.
+ENV_TOK='
+    function tok_init(sp, sep, cmt) {
+        tsp = "^(" sp ")*"
+        tspl = tok_nonl(sp)
+        hs = tok_nonl(sep)
+        tlead = "^(" tspl (cmt ? "|#" : "") ")*"
+        tcre = "^(" tspl ")*#"
+        tgre = "^(export(" tspl ")+)?[^[:space:]=:#\"\047]+(" hs ")*[=:]"
+        tkey = "^(" hs "|[][A-Za-z0-9_.-]|[\200-\377])*"
+        tcmt = cmt
+    }
+    # tok_nonl(re): re without the newline: a statement ends at its line.
+    function tok_nonl(re) { gsub(/\[\[:space:\]\]/, "[ \t\v\f\r]", re); return re }
+    # tok_eol(p): the place of the newline that ends the line of p.
+    function tok_eol(p) { return p + index(substr(S, p), "\n") - 1 }
+    # tok_close(s, c): the place of the quote c that closes a quoted value in s, 0
+    # without one; a quote behind a backslash does not.
+    function tok_close(s, c,    i, e, x) {
+        for (i = 1; i <= length(s); i++) {
+            x = substr(s, i, 1)
+            if (e) e = 0
+            else if (x == "\\") e = 1
+            else if (x == c) return i
+        }
+        return 0
+    }
+    function tok_exact(    p, t, k, c, i, ks) {
+        p = 1
+        while (p <= N) {
+            t = substr(S, p)
+            match(t, tsp)
+            p += RLENGTH
+            if (p > N) return
+            if (substr(S, p, 1) == "#") { p = tok_eol(p) + 1; continue }
+            ks = p
+            t = substr(S, p)
+            if (match(t, "^export[ \t\f\r]")) { match(t, "^export(" hs ")*"); p += RLENGTH }
+            match(substr(S, p), tkey)
+            k = substr(S, p, RLENGTH)
+            c = substr(S, p + RLENGTH, 1)
+            p += RLENGTH + 1
+            sub("(" hs ")+$", "", k)
+            if (k == "" || index(k, " ") || (c != "=" && c != ":" && c != "\n")) { p = tok_eol(ks) + 1; continue }
+            if (c == "\n") continue
+            match(substr(S, p), "^(" hs ")*")
+            p += RLENGTH
+            c = substr(S, p, 1)
+            if (c == "\"" || c == "\047") {
+                i = tok_close(substr(S, p + 1), c)
+                if (want(k)) hit(k, ks, p, i ? p + i : N, c, i > 0, 0)
+                p = i ? p + i + 1 : N + 1
+                continue
+            }
+            i = tok_eol(p)
+            if (want(k)) hit(k, ks, p, i - 1, "", 1, 0)
+            p = i + 1
+        }
+    }
+    # tok_alone(p, h): the statements from p on as described above; h: p stands in a
+    # commented-out line.
+    function tok_alone(p, h,    t, k, c, i, j, e, ks, cs, x) {
+        while (1) {
+            t = substr(S, p)
+            match(t, tlead)
+            if (i = index(substr(t, 1, RLENGTH), "#")) { h = 1; if (!cs) cs = p + i - 1 }
+            p += RLENGTH
+            t = substr(S, p)
+            if (!match(t, tgre)) return
+            k = substr(t, 1, RLENGTH - 1)
+            sub("^export(" tspl ")+", "", k)
+            sub("(" hs ")+$", "", k)
+            ks = p
+            p += RLENGTH
+            match(substr(S, p), "^(" hs ")*")
+            p += RLENGTH
+            c = substr(S, p, 1)
+            e = tok_eol(p)
+            if (c != "\"" && c != "\047") { if (want(k)) hit(k, ks, p, e - 1, "", 1, cs); return }
+            i = tok_close(substr(S, p + 1), c)
+            if (i && p + i < e) {
+                if (want(k)) hit(k, ks, p, p + i, c, 1, cs)
+                p += i + 1
+                continue
+            }
+            if (!want(k)) return
+            if (!(h && tcmt)) { hit(k, ks, p, i ? p + i : N, c, i > 0, cs); return }
+            for (x = e + 1; x <= N && substr(S, x, tok_eol(x) - x) ~ tcre; x = tok_eol(x) + 1)
+                if (j = tok_close(substr(S, x, tok_eol(x) - x), c)) { hit(k, ks, p, x + j - 1, c, 1, cs); return }
+            hit(k, ks, p, x - 2, c, 0, cs)
+            return
+        }
+    }
+    function tok_run(    p, c, h) {
+        N = length(S)
+        tok_exact()
+        for (p = 1; p <= N; p++) {
+            if (p == 1 || substr(S, p - 1, 1) == "\n") {
+                h = substr(S, p, tok_eol(p) - p) ~ tcre
+                tok_alone(p, 0)
+            }
+            c = substr(S, p, 1)
+            if (c == "\"" || c == "\047") tok_alone(p + 1, h)
+        }
+    }
+'
+# <<< dotenv tokenizer
+
 # --- Secrets (passphrase stripped) -----------------------------------------
 if [ -f .env ]; then
-    # Drops every statement that sets CA_ROOT_PASSPHRASE in a form compose reads,
-    # and the commented-out ones: before the key any mix of whitespace, '#', a BOM
-    # and the Unicode spaces compose skips (Go's unicode.IsSpace; their UTF-8 bytes
-    # in sp), then an optional "export"; '=' or ':' separates, whitespace (NEL and
-    # NBSP too) may stand before it. As in compose, a line holds statements one
-    # behind the other while each quoted value closes; the passphrase may stand
-    # there or behind any quote (that quote may close a value of another key begun
-    # on an earlier line), and the other statements of the line stay. A quoted
-    # value that does not close on its line runs on to its closing quote (a quote
-    # after an odd number of backslashes does not close it), and without one to the
-    # end of the file: those lines go too, in a comment the commented lines that
-    # follow. In a comment the line goes from its '#' on; a line left with nothing
-    # but whitespace goes. CA_ROOT_PASSPHRASE_OLD and the like are other keys and
-    # stay. LC_ALL=C: awk reads bytes, so a NUL byte or a byte the caller's locale
-    # cannot decode passes unchanged (grep took such a file for binary and left
-    # lines out). Every other line is printed as is, the last with a newline; any
-    # awk error (a write error too) aborts the backup.
-    LC_ALL=C awk '
-        BEGIN {
-            sp = "([[:space:]]|\357\273\277|\302[\205\240]|\341\232\200|\342\200[\200\201\202\203\204\205\206\207\210\211\212\250\251\257]|\342\201\237|\343\200\200)"
-            sep = "([[:space:]]|\302[\205\240])"
-            kre = "^(export" sp "+)?CA_ROOT_PASSPHRASE" sep "*[=:]"
-            gre = "^(export" sp "+)?[^[:space:]=:#\"\047]+" sep "*[=:]"
-            lead = "^(" sp "|#)*"
-            cre = "^" sp "*#"
+    # Drops every statement of CA_ROOT_PASSPHRASE that ENV_TOK finds (as compose reads
+    # the file, and every line start and the place behind every quote read alone), the
+    # commented-out ones too: in a comment from its '#' to the end of the line its value
+    # ends on. A changed line keeps the bytes outside those statements without the
+    # whitespace at its end; a commented-out line or one left with whitespace only goes.
+    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. LC_ALL=C: awk reads
+    # bytes, so a NUL byte or a byte the caller's locale cannot decode passes unchanged
+    # (grep took such a file for binary and left lines out). Every other line is printed
+    # as is, the last with a newline; any awk error (a write error too) aborts the
+    # backup.
+    # shellcheck disable=SC2016 # an awk program, $0 is awk's
+    LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" "$ENV_TOK"'
+        BEGIN { tok_init(sp, sep, 1) }
+        function want(k) { return k == "CA_ROOT_PASSPHRASE" }
+        function hit(k, ks, vs, ve, q, closed, cs) {
+            n++
+            A[n] = cs ? cs : ks
+            B[n] = (cs || q == "") ? tok_eol(ve) - 1 : ve
         }
-        # closeat(s, c): the place of the quote c that closes a quoted value in s, 0
-        # without one; a quote behind a backslash does not.
-        function closeat(s, c,    i, e, x) {
-            for (i = 1; i <= length(s); i++) {
-                x = substr(s, i, 1)
-                if (e) e = 0
-                else if (x == "\\") e = 1
-                else if (x == c) return i
-            }
-            return 0
-        }
-        # walk(s): where in s a statement of the passphrase begins, s read as statements
-        # one behind the other; a statement of another key is passed over when its
-        # value is quoted and closes, anything else ends s. 0 without one. A "#" starts
-        # a comment: wc = 1, the place is that of the "#", the statement wk bytes on.
-        function walk(s,    n, c, i) {
-            n = 0
-            while (1) {
-                match(s, lead)
-                if (i = index(substr(s, 1, RLENGTH), "#")) {
-                    wc = 1
-                    wk = RLENGTH - i + 1
-                    return substr(s, RLENGTH + 1) ~ kre ? n + i : 0
+        { S = S $0 "\n" }
+        END {
+            tok_run()
+            for (ls = 1; ls <= N; ls = le + 1) {
+                le = tok_eol(ls)
+                o = ""
+                ch = 0
+                p = ls
+                while (p < le) {
+                    c = 0
+                    for (j = 1; j <= n; j++) if (A[j] <= p && B[j] >= p && (!c || B[j] > B[c])) c = j
+                    if (c) { ch = 1; p = B[c] + 1; continue }
+                    x = le
+                    for (j = 1; j <= n; j++) if (A[j] > p && A[j] < x) x = A[j]
+                    o = o substr(S, p, x - p)
+                    p = x
                 }
-                n += RLENGTH
-                s = substr(s, RLENGTH + 1)
-                wc = wk = 0
-                if (s ~ kre) return n + 1
-                if (!match(s, gre)) return 0
-                n += RLENGTH
-                s = substr(s, RLENGTH + 1)
-                match(s, "^" sep "*")
-                n += RLENGTH
-                s = substr(s, RLENGTH + 1)
-                c = substr(s, 1, 1)
-                if ((c != "\"" && c != "\047") || !(i = closeat(substr(s, 2), c))) return 0
-                n += i + 1
-                s = substr(s, i + 2)
-            }
-        }
-        # find(s): the first place where a statement of the passphrase begins in s, read
-        # from its start and behind each of its quotes (any quote may close the value
-        # of another key); 0 without one.
-        # fc and fk are wc and wk of that place.
-        function find(s,    p, i, c, w) {
-            if (p = walk(s)) { fc = wc; fk = wk }
-            for (i = 1; i <= length(s) && (!p || i < p); i++) {
-                c = substr(s, i, 1)
-                if ((c == "\"" || c == "\047") && (w = walk(substr(s, i + 1))) && (!p || i + w < p)) {
-                    p = i + w
-                    fc = wc
-                    fk = wk
+                if (!ch) print substr(S, ls, le - ls)
+                else if (substr(S, ls, le - ls) !~ tcre && o !~ ("^(" sp ")*$")) {
+                    sub("(" sp ")+$", "", o)
+                    print o
                 }
             }
-            return p
         }
-        # cut(s): s without its passphrase statements; an unquoted value takes the rest
-        # of s, a quoted one that runs on past s leaves q set (and cmt in a comment).
-        # A comment that holds one goes from its "#" on.
-        function cut(s,    out, p, v, c, i) {
-            out = ""
-            while (p = find(s)) {
-                out = out substr(s, 1, p - 1)
-                v = substr(s, p + fk)
-                match(v, kre)
-                v = substr(v, RLENGTH + 1)
-                sub("^" sep "*", "", v)
-                c = substr(v, 1, 1)
-                if (c != "\"" && c != "\047") return out
-                if (!(i = closeat(substr(v, 2), c))) { q = c; cmt = fc; return out }
-                if (fc) return out
-                s = substr(v, i + 2)
-            }
-            return out s
-        }
-        # keep(s): what is left of a line, unless only whitespace is.
-        function keep(s) {
-            if (s ~ ("^" sp "*$")) return
-            sub("(" sp ")+$", "", s)
-            print s
-        }
-        q != "" && cmt && $0 ~ cre { if (i = closeat($0, q)) { q = ""; cut(substr($0, i + 1)); cmt = 1 }; next }
-        q != "" && cmt { q = "" }
-        q != "" { if (i = closeat($0, q)) { q = ""; keep(cut(substr($0, i + 1))) }; next }
-        $0 ~ cre {
-            match($0, lead)
-            s = substr($0, RLENGTH + 1)
-            if (cut(s) == s) print
-            else cmt = 1
-            next
-        }
-        { cmt = 0; o = cut($0); if (o == $0) print; else keep(o) }
     ' .env > "$STAGE/env.sanitized" \
         || { echo "[backup] ERROR: could not copy .env without CA_ROOT_PASSPHRASE — backup aborted." >&2; exit 1; }
     echo "[backup] .env gesichert (CA_ROOT_PASSPHRASE entfernt — getrennt aufbewahren!)"
