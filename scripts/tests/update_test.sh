@@ -69,12 +69,14 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # AH_TEST_REV_SERVER / AH_TEST_REV_MONITOR (default r1) for -d adminhelper /
 # adminhelper_monitor, after the install dir's first `compose up` the *_AFTER
 # value if set, and fails with AH_TEST_REV_FAIL=1; AH_TEST_STOP_FAIL=1 fails the
-# stop of the migrating services (`compose stop server …`), and so does
+# stop of the migrating services (`compose stop server …`), AH_TEST_STACK_STOP_FAIL=1
+# the stop of the whole stack (`compose stop`), and so does
 # AH_TEST_NO_SCHEDULER_IN=<ver> while the compose file of <ver> is in place (no
 # scheduler service before 0.38.0); AH_TEST_PULL_LOG
 # records, per pull, SERVER_IMAGE from the environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
 # AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
-# and wait up to 30 s for <marker> ---
+# and wait up to 30 s for <marker>, AH_TEST_STOP_BLOCK=<marker> the same at the
+# stop of the migrating services ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
@@ -90,6 +92,8 @@ case "$*" in
       || printf 'env=%s dotenv=%s\n' "${SERVER_IMAGE:-}" "$(grep -m1 '^SERVER_IMAGE=' .env)" >> "$AH_TEST_PULL_LOG"
     [ -z "${AH_TEST_PULL_BLOCK:-}" ] || [ -e "$AH_TEST_PULL_BLOCK" ] || block "$AH_TEST_PULL_BLOCK" ;;
   "compose up -d"*) [ -z "${AH_TEST_UP_BLOCK:-}" ] || [ -e "$AH_TEST_UP_BLOCK" ] || block "$AH_TEST_UP_BLOCK" ;;
+  "compose stop server "*)
+    [ -z "${AH_TEST_STOP_BLOCK:-}" ] || [ -e "$AH_TEST_STOP_BLOCK" ] || block "$AH_TEST_STOP_BLOCK" ;;
 esac
 case "$*" in
   "compose up --help")
@@ -104,6 +108,8 @@ case "$*" in
       [ -z "${AH_TEST_NO_SCHEDULER_IN:-}" ] || ! grep -q "marker: ${AH_TEST_NO_SCHEDULER_IN}\$" docker-compose.yml \
         || { echo "no such service: scheduler" >&2; exit 1; } ;;
     esac ;;
+  "compose stop")
+    [ "${AH_TEST_STACK_STOP_FAIL:-}" != 1 ] || { echo "stub: stop failed" >&2; exit 1; } ;;
   "compose exec -T postgres psql "*)
     [ "${AH_TEST_REV_FAIL:-}" != 1 ] || { echo "stub: psql failed" >&2; exit 1; }
     case "$*" in
@@ -158,7 +164,7 @@ cat > "$BIN/grep" <<'EOF'
 case "$*" in
   *"-vE ^#?[[:space:]]*SERVER_IMAGE="*)
     [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
-  *"-qE ^#?[[:space:]]*NEW_FEATURE_FLAG="*)
+  *"-qE ^[[:space:]]*(export[[:space:]]+)?NEW_FEATURE_FLAG"*)
     [ "${AH_TEST_GREP_KEY_FAIL:-}" != 1 ] || { echo "stub: grep failed" >&2; exit 2; } ;;
 esac
 exec "$AH_TEST_REAL_GREP" "$@"
@@ -412,6 +418,18 @@ grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && ok "rolled back compose t
 INST="$WORK/inst7"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q '^NEW_FEATURE_FLAG=on' "$INST/.env"; } && ok "new .env key migrated" || bad "env migration missing"
+# A key there only as a comment is missing to compose (an empty CA_ROOT_PASSPHRASE=
+# has to stay, .env.example says): the migration appends it. An active line counts
+# as compose reads it, with blanks, "export " or ':' too, and gets no second one.
+for pre in '# NEW_FEATURE_FLAG=off' '#NEW_FEATURE_FLAG=off' '  NEW_FEATURE_FLAG=off' 'export NEW_FEATURE_FLAG=off' \
+    'NEW_FEATURE_FLAG = off' 'NEW_FEATURE_FLAG: off'; do
+  INST="$WORK/inst7-$(printf '%s' "$pre" | tr -c 'A-Za-z' _)"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  printf '%s\n' "$pre" >> "$INST/.env"
+  out=$(run_update "$INST" 2>&1); rc=$?
+  case $pre in '#'*) want=1 ;; *) want=0 ;; esac
+  { [ $rc -eq 0 ] && [ "$(grep -c '^NEW_FEATURE_FLAG=on$' "$INST/.env")" = "$want" ] && grep -qxF "$pre" "$INST/.env"; } \
+    && ok "[$pre] in .env: the migration appends NEW_FEATURE_FLAG=on $want time(s)" || bad "[$pre]: rc=$rc $(grep NEW_FEATURE "$INST/.env") $out"
+done
 
 # ── 8. self-update: on-disk update.sh differs → re-exec into the release's one ─
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -850,18 +868,21 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
 # compose ends every call that reads .env with "Invalid template" when a value
 # holds a '${' that starts no valid placeholder. update.sh ran on through backup,
 # swap and re-pin and failed only at the pull; now it stops before the first
-# compose call, names the key and keeps the value (it may be a secret) out.
+# compose call, names the line and keeps the key and the value (either may be a
+# secret) out: zz9pasted is a secret pasted by mistake, read as a key.
 make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
 # The '${' is the point: literal .env lines, not expansions.
 # shellcheck disable=SC2016
 ENV_BAD=('SMTP_PASSWORD=zz9probe${q' 'SMTP_PASSWORD=zz9probe${}cd' 'SMTP_PASSWORD=zz9probe${1x}cd'
-  'SMTP_PASSWORD=zz9probe${cd}${' 'SMTP_PASSWORD=zz9probe#${' 'export X=zz9probe${' 'X: zz9probe${')
+  'SMTP_PASSWORD=zz9probe${cd}${' 'SMTP_PASSWORD=zz9probe#${' 'export X=zz9probe${' 'X: zz9probe${'
+  'zz9pasted=zz9probe${q')
 # The line goes at the end of a fresh 0.33.0 install, the update runs in $2 mode;
-# leaves out=, rc=, msg= (the FEHLER line) and DLOG= for the assertions.
+# leaves out=, rc=, msg= (the FEHLER line), lineno= (the line's number) and DLOG=
+# for the assertions.
 run_env_case() {
   local line="$1" dir="$2"; shift 2
   INST="$dir"; make_install 0.33.0 "$SRC_OLD" "$INST"
-  printf '%s\n' "$line" >> "$INST/.env"; cp "$INST/.env" "$INST.env"
+  printf '%s\n' "$line" >> "$INST/.env"; cp "$INST/.env" "$INST.env"; lineno=$(wc -l < "$INST/.env")
   DLOG="$INST.docker"; : > "$DLOG"
   out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" "$@" 2>&1); rc=$?
   msg=$(grep 'FEHLER: ' <<<"$out")
@@ -869,11 +890,11 @@ run_env_case() {
 # Exit, message (the one about '${', or the pattern $4), nothing of the value,
 # nothing changed, no backup or snapshot, no docker call but `compose version`.
 assert_env_stop() {
-  local line="$1" key="$2" what="$3" re="${4:-}"
+  local line="$1" what="$2" re="${3:-}"
   [ -n "$re" ] \
-    || re="FEHLER: \.env: der Wert von $key enthaelt ein '\\\${' ohne gueltigen Platzhalter.*Invalid template"
+    || re="FEHLER: \.env: the value starting in line $lineno holds a '\\\${' that starts no valid placeholder.*Invalid template"
   { [ $rc -ne 0 ] && grep -q "$re" <<<"$msg"; } \
-    && ok "$what [$line] stops with the key in the message" || bad "$what [$line]: rc=$rc $out"
+    && ok "$what [$line] stops with the line number in the message" || bad "$what [$line]: rc=$rc $out"
   ! grep -q zz9 <<<"$out" \
     && ok "$what [$line] keeps the value out of the output" || bad "$what [$line] printed the value: $out"
   { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
@@ -883,19 +904,19 @@ assert_env_stop() {
 }
 n=0
 for line in "${ENV_BAD[@]}"; do
-  n=$((n + 1)); key=${line#export }; key=${key%%[=:]*}
+  n=$((n + 1))
   run_env_case "$line" "$WORK/inst30-$n"
-  assert_env_stop "$line" "$key" "update"
+  assert_env_stop "$line" "update"
 done
 for mode in --redeploy --check; do
   run_env_case "${ENV_BAD[0]}" "$WORK/inst30${mode#-}" "$mode"
-  assert_env_stop "${ENV_BAD[0]}" SMTP_PASSWORD "$mode"
+  assert_env_stop "${ENV_BAD[0]}" "$mode"
 done
 # A quote that never closes ends every compose call as well, and compose's message
-# quotes the value: update.sh stops the same way and names the key.
+# quotes the value: update.sh stops the same way and names the line.
 run_env_case 'SMTP_PASSWORD="zz9secret' "$WORK/inst30-quote"
-assert_env_stop 'SMTP_PASSWORD="zz9secret' SMTP_PASSWORD "update" \
-  'FEHLER: \.env: der Wert von SMTP_PASSWORD hat ein nicht geschlossenes Anfuehrungszeichen'
+assert_env_stop 'SMTP_PASSWORD="zz9secret' "update" \
+  "FEHLER: \.env: the value starting in line $lineno has a quote that is never closed"
 
 # ── 31. a '$' compose can read does not stop the update ─────────────────────
 # shellcheck disable=SC2016
@@ -944,7 +965,7 @@ env_differential() {
     >/dev/null 2>"$INST.compose"; theirs=$?
   # A refusal has to be the check's own, not --check failing for another reason.
   { [ "$((ours != 0))" = "$((theirs != 0))" ] \
-      && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: der (Wert von|Eintrag in Zeile)' <<<"$out"; }; } \
+      && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: the (value starting|entry) in line' <<<"$out"; }; } \
     && ok "[$shown]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
     || bad "[$shown]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
 }
@@ -955,14 +976,15 @@ for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}";
   # after it shows up in the output.
   case $line in
     *zz9frag*)
-      { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q 'der Wert von P enthaelt' <<<"$out"; }; } \
+      { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q "the value starting in line $((base + 1)) holds" <<<"$out"; }; } \
         && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
   esac
 done
 # Quotes and keys: a quote never closed, text after a closing quote that is no key,
 # and a key compose does not take end every compose call too, and compose's message
-# quotes the line. A refusal names the line's first key (SMTP_PASSWORD, P), also
-# for an error after a closing quote, else the line, and nothing marked zz9. Then:
+# quotes the line. A refusal of a value (SMTP_PASSWORD, P) names the line it starts
+# in, also for an error after a closing quote, else the line of the entry, and
+# nothing marked zz9. Then:
 # a key line after a value over two lines (its number counts them), text after a
 # quote closed one line down, a tab in a key (skipped like a blank), and blanks
 # beyond ASCII that compose skips in front of a statement, after "export" and in
@@ -985,8 +1007,8 @@ for line in "${ENV_KEYS[@]}"; do
   env_differential "$line"
   [ "$ours" -ne 0 ] || continue
   case $line in
-    SMTP_PASSWORD=*|P=*) want="der Wert von ${line%%=*} " ;;
-    *) want="der Eintrag in Zeile $((base + $(grep -c '' <<<"$line"))) " ;;
+    SMTP_PASSWORD=*|P=*) want="the value starting in line $((base + 1)) " ;;
+    *) want="the entry in line $((base + $(grep -c '' <<<"$line"))) " ;;
   esac
   { grep -qF "$want" <<<"$out" && ! grep -q zz9 <<<"$out"; } \
     && ok "[$shown]: the refusal names '${want% }' and nothing of the value" || bad "[$shown]: $out"
@@ -1396,12 +1418,12 @@ out=$(AH_TEST_PULL_LOG="$PLOG" run_update "$INST" 2>&1); rc=$?
   && ok "the pull takes the target images from the environment, .env is pinned after it" \
   || bad "pull env/pins: rc=$rc $(cat "$PLOG")"
 # Run update.sh in its own process group, as a login shell runs the foreground
-# job; $1 install dir, $2 marker, $3 the env var that blocks, $4 the signal.
-# Sets rc and leaves stdout/stderr in $1.out.
+# job; $1 install dir, $2 marker, $3 the env var that blocks, $4 the signal, the
+# rest goes to update.sh. Sets rc and leaves stdout/stderr in $1.out.
 interrupt_update() {
   local inst="$1" marker="$2" var="$3" sig="$4" pid pgid
-  ( cd "$inst" && exec env "$var=$marker" AH_TEST_DOCKER_LOG="$inst.docker" AH_TEST_HEALTH=0 \
-      setsid bash ./scripts/update.sh ) > "$inst.out" 2>&1 &
+  ( cd "$inst" && exec env "$var=$marker" AH_TEST_DOCKER_LOG="$inst.docker" AH_TEST_HEALTH="${AH_TEST_HEALTH:-0}" \
+      setsid bash ./scripts/update.sh "${@:5}" ) > "$inst.out" 2>&1 &
   pid=$!
   for _ in $(seq 300); do [ -e "$marker.started" ] && break; sleep 0.1; done
   pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
@@ -1438,6 +1460,65 @@ interrupt_update "$INST" "$WORK/inst44d.block" AH_TEST_UP_BLOCK TERM
     && grep -q 'FEHLER: interrupted by SIGTERM.*zurueckgerollt auf 0\.33\.0\.' "$INST.out"; } \
   && ok "SIGTERM during compose up: rolled back after the deploy and started again" \
   || bad "SIGTERM during compose up: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
+# A signal while a failed health check is being rolled back started the rollback
+# again from the top; it now runs to its end, and so does the stop it hit.
+INST="$WORK/inst44e"; make_install 0.33.0 "$SRC_OLD" "$INST"
+AH_TEST_HEALTH=1 interrupt_update "$INST" "$WORK/inst44e.block" AH_TEST_STOP_BLOCK TERM
+{ [ $rc -ne 0 ] && pinned_on "$INST" 0.33.0 && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && [ "$(grep -c '^compose stop server ' "$INST.docker")" = 1 ] \
+    && grep -q 'FEHLER: stack start or health check failed.*zurueckgerollt auf 0\.33\.0\.' "$INST.out" \
+    && ! grep -q 'interrupted by SIG' "$INST.out"; } \
+  && ok "SIGTERM during a rollback after a failed health check: the rollback runs once to its end" \
+  || bad "SIGTERM during the rollback: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
+# cp blocks in the swap (-T) and in the .env restore of rollback_before_deploy
+# (-pT), mktemp in pin_images (upsert_env is its only user of .env.ah-XXXXXX).
+BLOCKBIN="$WORK/blockbin"; mkdir -p "$BLOCKBIN"
+for _t in "cp:-T:AH_TEST_SWAP_BLOCK" "cp:-pT:AH_TEST_RESTORE_BLOCK" "mktemp:.env.ah-XXXXXX:AH_TEST_PIN_BLOCK"; do
+  IFS=: read -r _cmd _arg _var <<<"$_t"
+  [ -e "$BLOCKBIN/$_cmd" ] || echo '#!/usr/bin/env bash' > "$BLOCKBIN/$_cmd"
+  cat >> "$BLOCKBIN/$_cmd" <<EOF
+if [ "\$1" = "$_arg" ] && [ -n "\${$_var:-}" ] && [ ! -e "\$$_var" ]; then
+  : > "\$$_var.started"
+  for _ in \$(seq 300); do [ -e "\$$_var" ] && break; sleep 0.1; done
+fi
+EOF
+done
+for _cmd in cp mktemp; do
+  echo "exec $(command -v "$_cmd") \"\$@\"" >> "$BLOCKBIN/$_cmd"; chmod +x "$BLOCKBIN/$_cmd"
+done
+# A signal while a failed pull is being rolled back does not restart that rollback.
+INST="$WORK/inst44h"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+AH_TEST_PULL=1 PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44h.block" AH_TEST_RESTORE_BLOCK TERM
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] \
+    && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' "$INST.out" \
+    && ! grep -q 'interrupted by SIG' "$INST.out"; } \
+  && ok "SIGTERM during a rollback after a failed pull: the rollback runs once to its end" \
+  || bad "SIGTERM during the pull rollback: rc=$rc $(cat "$INST.out")"
+# SIGHUP there ends the running cp too: the rollback starts again, once, and
+# tells its end in the log, as the terminal is gone.
+INST="$WORK/inst44i"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+AH_TEST_PULL=1 PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44i.block" AH_TEST_RESTORE_BLOCK HUP
+hup_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] && [ -n "$hup_log" ] \
+    && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' "$hup_log" \
+    && ! grep -q 'interrupted by SIG' "$hup_log" "$INST.out"; } \
+  && ok "SIGHUP during a rollback after a failed pull: rolled back, told in a 0600 log" \
+  || bad "SIGHUP during the pull rollback: rc=$rc log=${hup_log:-none} $(cat "$INST.out")"
+# --no-rollback names what stays where the signal came.
+INST="$WORK/inst44f"; make_install 0.33.0 "$SRC_OLD" "$INST"
+PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44f.block" AH_TEST_SWAP_BLOCK TERM --no-rollback
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: interrupted by SIGTERM. --no-rollback gesetzt: teils getauschte Laufzeit-Dateien bleiben stehen, \.env unveraendert, Container unveraendert\.' "$INST.out" \
+    && ! grep -q '^compose up -d' "$INST.docker"; } \
+  && ok "--no-rollback, SIGTERM during the swap: partly swapped files stay, .env unchanged" \
+  || bad "--no-rollback swap signal: rc=$rc $(cat "$INST.out")"
+INST="$WORK/inst44g"; make_install 0.33.0 "$SRC_OLD" "$INST"
+PATH="$BLOCKBIN:$PATH" interrupt_update "$INST" "$WORK/inst44g.block" AH_TEST_PIN_BLOCK TERM --no-rollback
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: interrupted by SIGTERM. --no-rollback gesetzt: neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen, Container unveraendert\.' "$INST.out" \
+    && ! grep -q '^compose up -d' "$INST.docker"; } \
+  && ok "--no-rollback, SIGTERM in pin_images: new files and partial pins stay" \
+  || bad "--no-rollback pin signal: rc=$rc $(cat "$INST.out")"
 
 # ── 45. a rollback after the start follows the Alembic revisions ────────────
 # The new images migrate both databases at startup; the old ones do not start on
@@ -1501,6 +1582,38 @@ msg=$(grep 'FEHLER: ' <<<"$out")
 { grep -q -- '--skip-backup' <<<"$msg" && ! grep -q 'adminhelper-backup-test' <<<"$msg" \
     && grep -qF './scripts/restore.sh backups/adminhelper-backup-2026-01-01_00-00-00.tar.gz' <<<"$msg"; } \
   && ok "--skip-backup: no archive of this run, names the last backup before it" || bad "--skip-backup migrated: $msg"
+# Migrated, and a part of the rollback fails: the message says incomplete and
+# still names both ways, back with restore.sh and forward with --ref.
+INST="$WORK/inst45i"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 AH_TEST_TAR_FAIL=1 --
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'WARN: Snapshot-Restore fehlgeschlagen' <<<"$out" \
+    && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && grep -q 'may already be migrated by 0\.34\.0' <<<"$msg" \
+    && grep -qF 'Back: ./scripts/restore.sh backups/adminhelper-backup-test.tar.gz' <<<"$msg" \
+    && grep -q -- 'forward again: \./scripts/update\.sh --ref v0\.34\.0' <<<"$msg" \
+    && grep -q '^compose stop$' "$INST.docker" && ! grep -q zurueckgerollt <<<"$msg"; } \
+  && ok "migrated, snapshot restore fails: incomplete, stack stopped, restore and --ref named" \
+  || bad "migrated + failed restore: rc=$rc $msg"
+INST="$WORK/inst45j"; make_install 0.33.0 "$SRC_OLD" "$INST"
+failed_update "$INST" AH_TEST_REV_SERVER_AFTER=r2 AH_TEST_STACK_STOP_FAIL=1 --
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'WARN: Stoppen des Stacks fehlgeschlagen' <<<"$out" \
+    && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && grep -qF 'Back: ./scripts/restore.sh backups/adminhelper-backup-test.tar.gz' <<<"$msg" \
+    && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && pinned_on "$INST" 0.33.0 \
+    && [ "$(grep -cE '^compose up -d' "$INST.docker")" = 1 ]; } \
+  && ok "migrated, the stack does not stop: incomplete, not restarted, files and pins on 0.33.0" \
+  || bad "migrated + failed stack stop: rc=$rc docker $(tr '\n' ';' < "$INST.docker") $msg"
+# SIGHUP while the rollback after the start stops the migrating services ends that
+# stop: the rollback starts again, once, and tells its end in the log.
+INST="$WORK/inst45k"; make_install 0.33.0 "$SRC_OLD" "$INST"
+AH_TEST_HEALTH=1 interrupt_update "$INST" "$WORK/inst45k.block" AH_TEST_STOP_BLOCK HUP
+hup_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ -n "$hup_log" ] && pinned_on "$INST" 0.33.0 && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && [ "$(grep -c '^compose stop server ' "$INST.docker")" = 2 ] \
+    && grep -q 'FEHLER: stack start or health check failed.*zurueckgerollt auf 0\.33\.0\.' "$hup_log" \
+    && ! grep -q 'interrupted by SIG' "$hup_log" "$INST.out"; } \
+  && ok "SIGHUP during the rollback after the start: rolled back again, told in a 0600 log" \
+  || bad "SIGHUP during the rollback after the start: rc=$rc log=${hup_log:-none} $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
 INST="$WORK/inst45f"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_REV_FAIL=1 run_update "$INST" --ref v0.34.0 2>&1); rc=$?
 { [ $rc -eq 0 ] && pinned_on "$INST" 0.34.0; } \
