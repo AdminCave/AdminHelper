@@ -102,8 +102,10 @@ Beweis: Code-Lesung scripts/restore.sh:109-121, :163-173; postgres-Image-Doku (S
 Dedup-Key: bug:ops:restore.sh:fresh-host-env-and-volume-prefix
 HEAD: e2304a8b
 
-### T7 — uninstall.sh: Projektname für den Label-Sweep von Compose  [ ]
+### T7 — uninstall.sh: Projektname für den Label-Sweep von Compose  [x]
 Komponente: scripts · Dateien: scripts/uninstall.sh, scripts/tests/uninstall_test.sh, changelog.d/install-restore.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ebf2516c 2026-10-31T11:18:10+01:00
+Review: approve (.ah-out/review/install-restore/T7.verdict.json)
 Änderung: `uninstall.sh:55-58`: der Projektname kommt aus `docker compose config` (erste Zeile), damit der Label-Sweep (`:130-135`) auch mit `COMPOSE_PROJECT_NAME` in der `.env` das Projekt trifft; scheitert `compose config` (eine defekte Compose-Datei, genau der Fall, für den der Sweep da ist), gilt die heutige Ableitung (Umgebung, sonst Verzeichnisname). Kommentar `:55-57` angepasst. `nuke_path` (`:146`) bleibt (Spec, Nicht-Ziele). Tests in `uninstall_test.sh`, Stub `:31-35`: `compose config` → `name: ${AH_TEST_PROJECT:-$COMPOSE_PROJECT_NAME}`, mit `AH_TEST_CONFIG_FAIL=1` Exit 1. (a) ohne `COMPOSE_PROJECT_NAME` in der Umgebung, `AH_TEST_PROJECT=ah-prod` → `label=com.docker.compose.project=ah-prod` im Aufruf-Log, die Kopfzeile nennt `ah-prod`; (b) `AH_TEST_CONFIG_FAIL=1` → Label aus dem Verzeichnisnamen. Bestehende Fälle bleiben grün. Zuerst rot: (a).
 Verify: bash scripts/dev/verify.sh scripts --strict -- uninstall_test
 Doku: changelog.d/install-restore.md (Fixed, umlautfrei)

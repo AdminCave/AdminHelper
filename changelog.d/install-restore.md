@@ -20,6 +20,9 @@
   postgres ohne `POSTGRES_PASSWORD` nicht. Eine vorhandene `.env` bleibt, `.env.restored` traegt jetzt die Zeile
   `CA_ROOT_PASSPHRASE=`. Fehlt die `.env` im Backup oder gibt es zu einem vorhandenen Volume kein
   `POSTGRES_PASSWORD`, bricht es ab, bevor es etwas aendert.
+- **Uninstall: Projektname von Compose:** `uninstall.sh` nimmt den Projektnamen fuer den Label-Sweep aus
+  `docker compose config`, damit er auch mit `COMPOSE_PROJECT_NAME` in der `.env` das Projekt trifft; scheitert
+  `compose config`, gilt wie bisher die Umgebung, sonst der Verzeichnisname.
 
 ### Changed
 
