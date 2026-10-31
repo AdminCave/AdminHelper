@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Install und Restore: bestehende Installation erkennen, `--reset` mit Bestätigung, Start mit `--wait`, Restore auf leerem Host — Task-Ledger
-Status: aktiv · Branch: feature/install-restore · Review: pro Task
+Status: bereit · Branch: feature/install-restore · Review: pro Task
 Spec: docs/features/install-restore.md (Roadmap R-0665, R-0668 und der install.sh-Teil von R-0614; der Rest von R-0614 in tasks/update-rollback.md auf feature/update-rollback)
 Hängt ab von: feature/ops-install-hardening, feature/ops-scripts-hardening, feature/compose-hardening (gemergt vor dem Bau; Überschneidungen je Funktion in der Spec)
 Heavy: linux-full — `scripts/install.sh` im Diff (Install, CLAUDE.md §5) und `scripts/restore.sh`, das `backup_restore_test.sh` (`run.sh integration`) real fährt, mit dem Abschnitt aus T8 (Restore auf einem leeren Host); auf PRs läuft der Stack-Job nicht, daher vor dem Merge `gh workflow run ci.yml --ref feature/install-restore`. Kein `scenario`: kein `multibox.sh`-Flag und kein `box_*.sh` ruft `install.sh`, `restore.sh` oder `uninstall.sh` auf; `install.sh` fährt keine Suite gegen echte Container (Spec, Offene Frage 2). Kein `windows`
@@ -113,8 +113,10 @@ Beweis: Code-Lesung scripts/uninstall.sh:58, :130-135; Probe wie T5
 Dedup-Key: bug:ops:restore.sh:fresh-host-env-and-volume-prefix
 HEAD: e2304a8b
 
-### T8 — Stack-Prüfung: Restore auf einem leeren Host mit `COMPOSE_PROJECT_NAME` in der `.env`  [ ]
+### T8 — Stack-Prüfung: Restore auf einem leeren Host mit `COMPOSE_PROJECT_NAME` in der `.env`  [x]
 Komponente: scripts · Dateien: scripts/tests/backup_restore_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @62efa19f 2026-10-31T12:00:54+01:00
+Review: approve (.ah-out/review/install-restore/T8.verdict.json)
 Änderung: Neuer Abschnitt nach dem bestehenden Restore, vor der Summary. In einem eigenen Install-Verzeichnis unter `$E2E_WORK` (Kopien von `docker-compose.yml`, `docker-compose.test.yml`, `scripts/backup.sh`, `scripts/restore.sh`) mit einer `.env` aus der E2E-`.env` plus `COMPOSE_PROJECT_NAME=<E2E_PROJECT>` und `COMPOSE_FILE=docker-compose.yml:docker-compose.test.yml`, in einer Subshell ohne die exportierten Variablen des Tests (`COMPOSE_PROJECT_NAME`, `COMPOSE_FILE` und die der E2E-`.env`, `:59-64`): `backup.sh` → `docker compose down -v` (kein Volume des Projekts mehr) → `.env` entfernen → `restore.sh <archiv> --yes`. Erwartet: Exit 0; `.env` 0600 und gleich `env.sanitized` des Archivs plus `CA_ROOT_PASSPHRASE=`; der Seed-Datensatz und der CA-Fingerprint wie vor dem Backup (Helfer des Tests); kein Volume `<verzeichnisname>_ca-pki`. Den echten Lauf fährt die Session (`/test` in der Lane bzw. Dispatch des Jobs mit `run.sh integration`); die Summary-Zeile kommt in den PR-Text.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
