@@ -29,7 +29,7 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_trust.py tes
 Doku: → T5
 
 ### T3 — Server prüft den Aussteller des Client-Zertifikats (R-1009)  [ ]
-Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/config.py, apps/server/tests/conftest.py, apps/server/tests/test_identity_issuer.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_identity_source.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_certificate_check.py, docker-compose.yml
+Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/config.py, apps/server/tests/conftest.py, apps/server/tests/test_identity_issuer.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_identity_source.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_certificate_check.py, docker-compose.yml, apps/server/tests/trust_ca.py
 Änderung: `get_client_identity` hält fest, ob ein Zwischenzertifikat aus `CA_TRUST_DIR/<scope>.pem` das Zertifikat direkt ausgestellt hat (Signaturprüfung, mtime-Cache je Datei); `_refused` lehnt sonst ab (403 `ERR_CERT_REVOKED`, beide Modi). Fehlt oder ist die Datei unlesbar: ablehnen und Fehler loggen (fail-closed). Die bestehenden Tests bekommen eine Fixture mit der Trust-Datei ihrer Test-CA (mehr als acht Dateien: jede Testdatei mit eigenem Zertifikatsbau braucht sie). Neue Testdatei mit SPDX-Header: aktuell und abgelöst angenommen, fremdes Zwischenzertifikat derselben Root abgelehnt, fehlende Datei abgelehnt, geänderte Datei neu gelesen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_issuer.py tests/test_mtls_scope.py tests/test_identity_source.py tests/test_identity_revocation.py tests/test_certificate_check.py tests/test_openapi_snapshot.py
 Doku: → T5
@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md
 Task-Review: am Ende
 
-### T6 — ca-issuer schreibt die Trust-Dateien vor dem übrigen Material (R-1009)  [ ]
+### T6 — ca-issuer schreibt die Trust-Dateien vor dem übrigen Material (R-1009)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_trust.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @310dbcc2 2026-10-31T07:34:50+01:00
+Review: approve (.ah-out/review/kern-ca-3/T6.verdict.json)
 Änderung: `provision_boot_material` schreibt `CA_TRUST_DIR` als ersten Schritt: scheitert danach die Gateway- oder frps-Bereitstellung, liegt keine Liste mit einem gesperrten Zwischenzertifikat mehr im Volume (security-Nit zu T2). Test: ein Fehler in der Gateway-Bereitstellung lässt die neuen Trust-Dateien stehen.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_trust.py tests/test_rotation.py
 Doku: keine (Reihenfolge beim Start)

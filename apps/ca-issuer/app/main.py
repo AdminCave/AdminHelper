@@ -34,6 +34,11 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
     the listed intermediates. Kept separate from build_issuer so constructing the
     issuer has NO side effects on foreign volumes — calling build_issuer in a
     test/script must not provision certs into whatever CA_*_DIR happens to be set."""
+    # The server checks the issuer of a client cert against these (R-1009): the gateway
+    # anchors at the root and lets a dropped intermediate through. First, so a failing
+    # gateway or frps step after a rotation leaves no list with a dropped intermediate.
+    if config.trust_dir():
+        trust.write_trust(Path(config.trust_dir()), intermediates)
     # The gateway can't sign its own leaf (chicken-egg, D6): give it an
     # access-signed TLS leaf + trust bundle.
     if config.gateway_cert_dir():
@@ -55,10 +60,6 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
             # trust the access intermediate alongside tunnel.
             extra_trust=(intermediates["access"],),
         )
-    # The server checks the issuer of a client cert against these (R-1009): the gateway
-    # anchors at the root and lets a dropped intermediate through.
-    if config.trust_dir():
-        trust.write_trust(Path(config.trust_dir()), intermediates)
 
 
 def record_inventory() -> None:

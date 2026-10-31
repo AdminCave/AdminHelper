@@ -7,6 +7,7 @@ in ``<scope>.pem``, a compromised one gone after the rotation, never a key."""
 
 import datetime
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
@@ -91,3 +92,18 @@ def test_boot_writes_the_trust_dir_only_when_configured(monkeypatch, tmp_path):
     monkeypatch.setenv("CA_TRUST_DIR", str(tmp_path / "trust"))
     main.provision_boot_material(inter)
     assert _der(_listed(tmp_path / "trust", "internal")) == _der([inter["internal"].cert])
+
+
+def test_boot_writes_the_trust_dir_before_a_failing_gateway_step(monkeypatch, tmp_path):
+    inter = storage.ensure_hierarchy(tmp_path / "pki", PW)
+    monkeypatch.setenv("CA_FRPS_CERT_DIR", "")
+    monkeypatch.setenv("CA_GATEWAY_CERT_DIR", str(tmp_path / "gw"))
+    monkeypatch.setenv("CA_TRUST_DIR", str(tmp_path / "trust"))
+
+    def _fail(*_args, **_kwargs):
+        raise OSError("gateway volume not writable")
+
+    monkeypatch.setattr(main, "ensure_gateway_cert", _fail)
+    with pytest.raises(OSError):
+        main.provision_boot_material(inter)
+    assert _der(_listed(tmp_path / "trust", "access")) == _der([inter["access"].cert])
