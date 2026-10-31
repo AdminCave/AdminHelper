@@ -86,6 +86,57 @@
         "title": "ActivateOut",
         "type": "object"
       },
+      "AgentCertificateOut": {
+        "description": "The newest certificate of an agent line that is not revoked.",
+        "properties": {
+          "days_left": {
+            "title": "Days Left",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "not_after": {
+            "format": "date-time",
+            "title": "Not After",
+            "type": "string"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Name"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_id",
+          "fingerprint",
+          "not_after",
+          "days_left",
+          "status"
+        ],
+        "title": "AgentCertificateOut",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "properties": {
           "name": {
@@ -335,6 +386,30 @@
           "password"
         ],
         "title": "BootstrapRequest",
+        "type": "object"
+      },
+      "CertificateOverviewOut": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentCertificateOut"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "infrastructure": {
+            "items": {
+              "$ref": "#/components/schemas/InfraCertificateOut"
+            },
+            "title": "Infrastructure",
+            "type": "array"
+          }
+        },
+        "required": [
+          "infrastructure",
+          "agents"
+        ],
+        "title": "CertificateOverviewOut",
         "type": "object"
       },
       "ConfigHashOut": {
@@ -2782,6 +2857,51 @@
         "title": "IncomingEvent",
         "type": "object"
       },
+      "InfraCertificateOut": {
+        "description": "A certificate of the infrastructure, as the ca-issuer recorded it at its last start.",
+        "properties": {
+          "days_left": {
+            "title": "Days Left",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "not_after": {
+            "format": "date-time",
+            "title": "Not After",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "subject",
+          "fingerprint",
+          "not_after",
+          "days_left",
+          "status"
+        ],
+        "title": "InfraCertificateOut",
+        "type": "object"
+      },
       "InternalServerOut": {
         "description": "One server as the monitoring service's tag-sync reads it.",
         "properties": {
@@ -5191,6 +5311,33 @@
         "summary": "Touch Connection",
         "tags": [
           "connections"
+        ]
+      }
+    },
+    "/api/enrollment/certificates": {
+      "get": {
+        "description": "When the certificates run out (R-1022): the infrastructure certificates as the\nca-issuer recorded them at its last start, and the newest certificate of each agent\nthat is not revoked. Status `warning` below 30 days left, `critical` below 7.",
+        "operationId": "certificate_overview_api_enrollment_certificates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateOverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Certificate Overview",
+        "tags": [
+          "enrollment"
         ]
       }
     },

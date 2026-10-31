@@ -38,7 +38,7 @@
 <pre><code>apps/web/
 &#9500;&#9472;&#9472; src/
 &#9474;   &#9500;&#9472;&#9472; lib/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; api/           client.ts + domain wrappers (auth, users, apikeys, hooks, frp, servers, audit) + types.ts
+&#9474;   &#9474;   &#9500;&#9472;&#9472; api/           client.ts + domain wrappers (auth, users, apikeys, hooks, frp, servers, audit, certificates) + types.ts
 &#9474;   &#9474;   &#9500;&#9472;&#9472; components/    layout/ (Router, Sidebar), ui/ (Button, ConfirmDialog, EmptyState, Modal, Toast)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; stores/        <code>writable</code> stores (auth, users, apikeys, hooks, frp, notifications, theme)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/          DE/EN dictionaries (localStorage <code>adminhelper_language</code>)
@@ -46,7 +46,7 @@
 &#9474;   &#9474;   &#9500;&#9472;&#9472; routeGuard.ts  route resolution incl. <code>adminOnly</code>
 &#9474;   &#9474;   &#9500;&#9472;&#9472; idle.ts        sign-out after inactivity (localStorage <code>adminhelper_last_activity</code>)
 &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
-&#9474;   &#9500;&#9472;&#9472; pages/           Users, ApiKeys, Hooks, Frp, Audit + Login + Placeholder
+&#9474;   &#9500;&#9472;&#9472; pages/           Users, ApiKeys, Hooks, Frp, Audit, Certificates + Login + Placeholder
 &#9474;   &#9500;&#9472;&#9472; modals/          modal components
 &#9474;   &#9500;&#9472;&#9472; styles/
 &#9474;   &#9500;&#9472;&#9472; App.svelte
@@ -59,7 +59,7 @@
 
           <h2>Routing</h2>
           <p>Hash router (no SSR, no SvelteKit client router): paths are <code>#/users</code>, <code>#/apikeys</code>, etc. This works reliably behind any reverse proxy without SPA fallback support on the server side. Implementation in <code>src/lib/router.ts</code> &ndash; a <code>writable</code> <code>_path</code> with a <code>hashchange</code> listener; exports the readable store <code>path</code> and <code>replace()</code>.</p>
-          <p>Production routes since v0.32.0: <code>#/users</code> (default landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP <em>server</em> configuration), since v0.35.0 also <code>#/audit</code> (audit log). The former operational routes (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, tunnels) have moved to the desktop client.</p>
+          <p>Production routes since v0.32.0: <code>#/users</code> (default landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP <em>server</em> configuration), since v0.35.0 also <code>#/audit</code> (audit log), plus <code>#/certificates</code> (certificate expiry, admins only). The former operational routes (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, tunnels) have moved to the desktop client.</p>
 
           <h2>Stores</h2>
           <p>Stores in <code>src/lib/stores/</code>. Each is a <code>writable</code> from <code>svelte/store</code>, exposed only through an object with <code>subscribe</code>; for the data stores that object carries methods that talk to the matching API wrapper. The list stores <code>users</code>, <code>hooks</code> and <code>apikeys</code> come from <code>listStore.ts</code>: a list response that arrives after a newer change or a newer load, and any response that arrives after logging out, leave the list as it is. The data stores hold only what the list or read response carries: a value shown once from a create response (API key, webhook token) goes to the caller only, and <code>frp</code> holds <code>authToken</code> and <code>dashboardPassword</code> of the FRP server configuration as <code>null</code>, the way <code>GET</code> returns them. Since v0.32.0 only instance management remains &ndash; the operational stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, tunnels) now live in the desktop client.</p>
@@ -78,7 +78,7 @@
 
           <h2>API Wrapper</h2>
           <p>All HTTP calls go through <code>src/lib/api/client.ts</code>. The client owns the access token, holds an in-flight-deduplicated <code>tryRefresh()</code> promise and automatically refreshes on 401. If that fails, <code>registerAuthFailureHandler()</code> calls into the <code>auth</code> store, which navigates to login. A 401 on a request that started before its session ended (logout, then a new login) triggers no refresh, no retry and no logout; the request ends with <code>Session expired</code>. A 2xx whose body cannot be read (cut off by a reload mid-transfer, or not JSON) throws <code>ApiError(status, 'Invalid response body')</code> instead of quietly returning <code>null</code>; only a 204 and a valid JSON <code>null</code> yield <code>null</code>. Every other non-2xx throws <code>ApiError(status, message, detail, code)</code>: <code>message</code> is <code>detail</code>, for a 422 the <code>msg</code> texts, without the prefix <code>&lt;code&gt;: </code> when the server sends <code>code</code>; <code>code</code> is for code to branch on, not for display. Every request has a 15&nbsp;s deadline, only the manual hook run <code>hooks.run</code> waits 75&nbsp;s: the server runs the hook synchronously (up to 30&nbsp;s of script), and the gateway cuts at 60&nbsp;s. When the deadline passes, the client throws <code>ApiError(0, &hellip;)</code> with a translated message (<code>error.timeout</code>).</p>
-          <p>Domain wrappers sit alongside: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (only for the user&harr;server assignment), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP server configuration), <code>audit.ts</code> (reads the audit log, with filters) &ndash; all typed via <code>types.ts</code>.</p>
+          <p>Domain wrappers sit alongside: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (only for the user&harr;server assignment), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP server configuration), <code>audit.ts</code> (reads the audit log, with filters), <code>certificates.ts</code> (certificate expiry) &ndash; all typed via <code>types.ts</code>.</p>
 
           <h2>i18n</h2>
           <p>Languages: DE and EN. Active language is persisted in <code>localStorage.adminhelper_language</code>; browser detection only supplies the initial fallback. The <code>t()</code> function is a store &ndash; this avoids i18n leaks in reactive components.</p>

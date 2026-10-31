@@ -93,6 +93,9 @@ const MAPPINGS: Mapping[] = [
   },
   { ts: 'FrpStatus', schema: 'FrpStatus', direction: 'response' },
   { ts: 'AuditEntry', schema: 'AuditLogOut', direction: 'response' },
+  { ts: 'InfraCertificate', schema: 'InfraCertificateOut', direction: 'response' },
+  { ts: 'AgentCertificate', schema: 'AgentCertificateOut', direction: 'response' },
+  { ts: 'CertificateOverview', schema: 'CertificateOverviewOut', direction: 'response' },
   { ts: 'UserCreate', schema: 'UserCreate', direction: 'request' },
   { ts: 'UserUpdate', schema: 'UserUpdate', direction: 'request' },
   { ts: 'ApiKeyCreate', schema: 'ApiKeyCreate', direction: 'request' },
@@ -333,7 +336,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the server OpenAPI snapshot', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(21);
+    expect(MAPPINGS.length).toBe(24);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap(names).filter((n) => !SCHEMAS[n])).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);
