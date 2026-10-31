@@ -121,12 +121,17 @@ def _ca_trust_dir(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def _ca_trust(_ca_trust_dir, monkeypatch):
+def _ca_trust(_ca_trust_dir):
     # The server accepts a gateway-forwarded client cert only from a listed intermediate
     # of its scope (R-1009); tests/trust_ca.py signs the suite's leaves with those.
+    # A context of its own, not the shared monkeypatch: requested here, that one would be
+    # set up before _no_event_threads and undone after it, and a test's setattr of
+    # events._executor would then put the stand-in back for the rest of the session.
     from app.core import config
 
-    monkeypatch.setattr(config, "CA_TRUST_DIR", str(_ca_trust_dir))
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(config, "CA_TRUST_DIR", str(_ca_trust_dir))
+        yield
 
 
 @pytest.fixture(autouse=True)

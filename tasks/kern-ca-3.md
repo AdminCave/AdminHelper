@@ -73,6 +73,14 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
 Task-Review: am Ende
 
+### T8 — Test-Fixture `_ca_trust` ohne geteiltes monkeypatch (R-1009)  [x]
+Komponente: server · Dateien: apps/server/tests/conftest.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @efbddb65 2026-10-31T09:26:29+01:00
+Review: approve (.ah-out/review/kern-ca-3/T8.verdict.json)
+Änderung: `_ca_trust` (T3) zog die geteilte `monkeypatch`-Fixture vor `_no_event_threads`; ein Test, der `events._executor` per monkeypatch setzt, stellte beim Abbau den Platzhalter für den Rest der Session wieder her, und `pg_engine` scheiterte im Teardown (CI-Dispatch 41180996565, alle drei Server-Jobs). Eigener `MonkeyPatch.context` wie die Nachbar-Fixtures.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_users_promotion_event.py tests/test_cli.py tests/test_web_session_max.py
+Doku: keine (Test-Fixture)
+
 ## Entscheidungen
 - 2026-10-31: R-1021 (Root-Erneuerung) fährt nicht mit — ändert Vertrauensanker von Agent und Desktop und den Erneuerungsvertrag (Kevins Bereich, Architektur); verschoben nach tasks/kern-ca-5.md, Frage am Gate.
 - 2026-10-31: Trust-Daten für den Server über ein Volume mit öffentlichem Material statt einer DB-Tabelle (keine Migration); fehlende Datei ist fail-closed wie R-0900.
