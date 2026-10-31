@@ -12,10 +12,12 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — Tabelle infra_certificates: Migration, Model, Rechte des ca-issuer (R-1022)  [ ]
-Komponente: server · Dateien: apps/server/alembic/versions/b4d6f8a0c2e1_add_infra_certificates.py, apps/server/app/modules/enrollment/models.py, apps/server/app/db_roles.py, apps/server/tests/test_db_roles.py, apps/server/tests/test_infra_certificates.py
-Änderung: Additive Migration (down_revision `a7c9e1b3d5f2`) für `infra_certificates` (Spalten laut Spec), Model `InfraCertificate`, `CA_TABLE_PRIVILEGES["infra_certificates"] = "SELECT, INSERT, DELETE"`. Test: Upgrade/Downgrade und die Rechte des ca-issuer an der Tabelle. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_infra_certificates.py tests/test_db_roles.py tests/test_migrations_smoke.py
+### T1 — Tabelle infra_certificates: Migration, Model, Rechte des ca-issuer (R-1022)  [x]
+Komponente: server · Dateien: apps/server/alembic/versions/b4d6f8a0c2e1_add_infra_certificates.py, apps/server/app/modules/enrollment/models.py, apps/server/app/db_roles.py, apps/server/tests/test_db_roles.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c3904d31 2026-10-31T05:14:44+01:00
+Review: approve (.ah-out/review/kern-ca-4/T1.verdict.json)
+Änderung: Additive Migration (down_revision `a7c9e1b3d5f2`) für `infra_certificates` (Spalten laut Spec), Model `InfraCertificate`, `CA_TABLE_PRIVILEGES["infra_certificates"] = "SELECT, INSERT, DELETE"`. Test: Upgrade/Downgrade (`test_migrations_smoke.py` vergleicht Kette und Models) und die Rechte des ca-issuer an der Tabelle. Neue Dateien mit SPDX-Header.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py tests/test_migrations_smoke.py
 Doku: keine (internes Schema; die Übersicht dokumentiert T6)
 
 ### T2 — ca-issuer schreibt die Infrastruktur-Zertifikate beim Start (R-1022)  [ ]
@@ -57,3 +59,4 @@ Abhängt von: T2, T4, T5
 ## Entscheidungen
 - 2026-10-31: Endpunkt im Modul `enrollment` (`/api/enrollment/certificates`) statt eines neuen Moduls — die Daten (`device_lines`, `issued_certificates`) liegen dort.
 - 2026-10-31: Geschrieben wird nur beim Start des ca-issuer; die Rotation verlangt den Neustart, Gateway/frps werden nur beim Start neu ausgestellt (Spec).
+- 2026-10-31: T1 ohne eigene Testdatei: `test_migrations_smoke.py` prüft Migration gegen Model und den Downgrade der Kette, `test_db_roles.py` die Rechte.
