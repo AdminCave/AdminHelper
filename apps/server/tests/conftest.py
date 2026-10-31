@@ -5,8 +5,10 @@
 """Shared test fixtures: Postgres via testcontainers (local) or GitLab services (CI),
 SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
+import argparse
 import os
 import sys
+from collections import Counter
 from concurrent.futures import Future
 from datetime import timedelta
 from pathlib import Path
@@ -466,6 +468,54 @@ def pytest_addoption(parser):
         default=False,
         help="rewrite tests/openapi.snapshot.json from the live app schema",
     )
+    # CI runs the suite in parallel jobs, each with its own database (ci.yml).
+    parser.addoption(
+        "--shard",
+        type=parse_shard,
+        default=None,
+        metavar="K/N",
+        help="run only the K-th of N disjoint parts of the collected tests",
+    )
+
+
+def parse_shard(value):
+    k, sep, n = value.partition("/")
+    try:
+        index, count = int(k), int(n)
+    except ValueError:
+        index = count = 0
+    if not sep or not 1 <= index <= count:
+        raise argparse.ArgumentTypeError(f"--shard wants K/N with 1 <= K <= N, not {value!r}")
+    return index, count
+
+
+def shard_of_each_file(tests_per_file, count):
+    """0-based shard of each test file: largest files first, each to the least loaded shard.
+
+    Whole files, so module fixtures and the container tests of one file stay in one job.
+    """
+    load = [0] * count
+    shard = {}
+    for path in sorted(tests_per_file, key=lambda p: (-tests_per_file[p], p)):
+        target = load.index(min(load))
+        shard[path] = target
+        load[target] += tests_per_file[path]
+    return shard
+
+
+# trylast: split what is left after -m and -k, so the shards carry equal shares of it.
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--shard") is None:
+        return
+    index, count = config.getoption("--shard")
+    files = [item.nodeid.split("::", 1)[0] for item in items]
+    shard = shard_of_each_file(Counter(files), count)
+    keep = [item for item, f in zip(items, files, strict=True) if shard[f] == index - 1]
+    drop = [item for item, f in zip(items, files, strict=True) if shard[f] != index - 1]
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
 
 
 @pytest.fixture(autouse=True, scope="session")
