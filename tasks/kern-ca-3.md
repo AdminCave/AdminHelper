@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-3 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ca-3 · Review: pro Task
 Spec: docs/features/kern-ca-3.md (Roadmap R-1009)
 Heavy: linux-full — `apps/ca-issuer`, Server-mTLS und `docker-compose.yml` (Sammellauf; dazu vor dem Merge der Stack-Job per Dispatch mit der frps- und Gateway-Probe aus T4)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
