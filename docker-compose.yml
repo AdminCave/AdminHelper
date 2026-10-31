@@ -86,7 +86,7 @@ services:
       - frp-config:/app/frp-config
       # Status file of the frps supervisor, read-only (FRPS_STATE_DIR below).
       - frps-state:/app/frps-state:ro
-      # The listed intermediates of each scope, written by the ca-issuer.
+      # The listed intermediates of each scope, written by the ca-issuer (CA_TRUST_DIR below).
       - ca-trust:/app/ca-trust:ro
     environment:
       - TZ=${TZ:-Europe/Berlin}
@@ -110,6 +110,9 @@ services:
       # window (e.g. a manual first-admin bootstrap). Flipped together with the
       # gateway. scripts/install.sh mints the first cert out-of-band; see docs (Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+      # A client cert counts only if a listed intermediate of its scope issued it; a missing
+      # trust file refuses that scope (R-1009).
+      - CA_TRUST_DIR=/app/ca-trust
       # The server stamps <host>:ENROLL_PORT/enroll into every enrollment grant, so it MUST match the
       # gateway's published enroll-plane port below — otherwise agent/desktop enrollment dials a closed
       # port (4.50).

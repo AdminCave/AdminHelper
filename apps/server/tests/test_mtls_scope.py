@@ -12,6 +12,7 @@ and the integration level (real routes), and the default itself."""
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import os
 import subprocess
@@ -20,10 +21,7 @@ import urllib.parse
 from pathlib import Path
 
 import pytest
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import serialization
 from fastapi import HTTPException
 from starlette.requests import Request
 
@@ -36,6 +34,7 @@ from app.core.identity import (
     get_client_identity,
     require_scope,
 )
+from tests import trust_ca
 from tests.token_claims import claims_for
 
 # --- helpers -----------------------------------------------------------------
@@ -47,25 +46,10 @@ def _client_cert_pem(
     not_before: datetime.datetime | None = None,
     days: int = 1,
 ) -> str:
-    """A leaf as the gateway would forward it (URL-escaped PEM). Self-signed is
-    fine — get_client_identity only parses the subject, the gateway already
-    verified the chain. ``not_before`` (UTC) defaults to now."""
-    key = ec.generate_private_key(ec.SECP256R1())
-    attrs = [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
-    if ou is not None:
-        attrs.append(x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, ou))
-    name = x509.Name(attrs)
-    start = not_before or datetime.datetime.now(datetime.timezone.utc)
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(start)
-        .not_valid_after(start + datetime.timedelta(days=days))
-        .sign(key, hashes.SHA256())
-    )
+    """A leaf as the gateway would forward it (URL-escaped PEM), signed by the test
+    intermediate of its scope (tests/trust_ca.py), which the suite's trust directory
+    lists. ``not_before`` (UTC) defaults to now."""
+    cert = trust_ca.leaf(cn, ou, not_before, days)
     return urllib.parse.quote(cert.public_bytes(serialization.Encoding.PEM).decode())
 
 
@@ -127,7 +111,11 @@ def _permissive(monkeypatch):
 
 def _check(dep, ident: ClientIdentity, db=None):
     """Invoke the dependency directly with a pre-resolved identity (and optional
-    db session for the revocation check; None = no revocation, pure scope logic)."""
+    db session for the revocation check; None = no revocation, pure scope logic).
+    A hand-built verified identity counts as from a listed issuer: these tests are
+    about the scope, the issuer check has tests/test_identity_issuer.py."""
+    if ident.verified:
+        ident = dataclasses.replace(ident, issuer_listed=True)
     return dep(_req({}), ident, db)
 
 

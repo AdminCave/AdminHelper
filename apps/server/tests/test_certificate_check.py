@@ -206,7 +206,10 @@ def test_a_hand_built_identity_without_fingerprint_is_refused(db_session):
     # Fail closed: an identity the gateway headers did not produce cannot be looked up.
     from app.core.identity import _is_revoked
 
-    identity = ClientIdentity(True, "u", SCOPE_ACCESS, not_before=utcnow_naive())
+    # issuer_listed=True: only the missing fingerprint may decide here.
+    identity = ClientIdentity(
+        True, "u", SCOPE_ACCESS, not_before=utcnow_naive(), issuer_listed=True
+    )
     assert _is_revoked(db_session, "u", SCOPE_ACCESS, identity=identity) is True
 
 

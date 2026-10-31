@@ -113,6 +113,22 @@ def _utc_engine(url: str):
     return engine
 
 
+@pytest.fixture(scope="session")
+def _ca_trust_dir(tmp_path_factory):
+    from tests.trust_ca import write_trust_dir
+
+    return write_trust_dir(tmp_path_factory.mktemp("ca-trust"))
+
+
+@pytest.fixture(autouse=True)
+def _ca_trust(_ca_trust_dir, monkeypatch):
+    # The server accepts a gateway-forwarded client cert only from a listed intermediate
+    # of its scope (R-1009); tests/trust_ca.py signs the suite's leaves with those.
+    from app.core import config
+
+    monkeypatch.setattr(config, "CA_TRUST_DIR", str(_ca_trust_dir))
+
+
 @pytest.fixture(autouse=True)
 def _fresh_rate_limit_backend():
     # The rate-limit backend is a process-global in-memory singleton; without a per-test reset,
