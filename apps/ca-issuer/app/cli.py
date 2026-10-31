@@ -123,9 +123,10 @@ def _line(role: str, cert: x509.Certificate, now: datetime.datetime) -> str:
     )
 
 
-def rotate(pki_dir: Path) -> int:
-    """Rotate the intermediates of every scope (rotation.rotate_intermediates); 0 done,
-    1 no passphrase or the rotation failed, with the reason on stderr."""
+def rotate(pki_dir: Path, compromised: frozenset[str] = frozenset()) -> int:
+    """Rotate the intermediates of every scope (rotation.rotate_intermediates), keeping
+    nothing replaced of the `compromised` ones; 0 done, 1 no passphrase or the rotation
+    failed, with the reason on stderr."""
     try:
         passphrase = config.root_passphrase()
     except OSError as exc:
@@ -141,7 +142,7 @@ def rotate(pki_dir: Path) -> int:
         )
         return 1
     try:
-        rotated = rotation.rotate_intermediates(pki_dir, passphrase)
+        rotated = rotation.rotate_intermediates(pki_dir, passphrase, compromised)
     except rotation.RotationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -149,6 +150,10 @@ def rotate(pki_dir: Path) -> int:
         print(f"{r.scope}:")
         print(f"  old: {_name_and_end(r.old)}")
         print(f"  new: {_name_and_end(r.new)}")
+        if r.scope in compromised:
+            print("  compromised: no replaced intermediate is renewed or in a trust bundle; a")
+            print("  client sending it along still passes TLS, so revoke the devices of this")
+            print("  scope and set them up anew; only a new root closes the leak")
     print(_RESTART)
     return 0
 
@@ -177,15 +182,25 @@ def main(argv: list[str] | None = None) -> int:
         f"1 fewer than {pki.EXPIRY_WARN_DAYS} days left or a retired entry the boot skips, "
         "3 expired or unreadable)",
     )
-    commands.add_parser(
+    rotate_parser = commands.add_parser(
         "rotate-intermediates",
         help="issue new intermediates for all scopes under the same root; "
         "the replaced ones stay trusted until they expire",
     )
+    rotate_parser.add_argument(
+        "--compromised",
+        action="append",
+        choices=pki.SCOPES,
+        default=[],
+        metavar="SCOPE",
+        help=f"a scope whose intermediate key leaked ({', '.join(pki.SCOPES)}; repeatable): "
+        "neither its replaced intermediate nor an earlier one is renewed or kept in a trust "
+        "bundle (revoke its devices too, see the operations docs)",
+    )
     args = parser.parse_args(argv)
     if args.command == "status":
         return status(config.pki_dir())
-    return rotate(config.pki_dir())
+    return rotate(config.pki_dir(), frozenset(args.compromised))
 
 
 if __name__ == "__main__":

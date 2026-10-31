@@ -200,6 +200,33 @@ def test_rotate_with_the_secret_file(monkeypatch, pki_dir, tmp_path, capsys):
     assert len(retired) == len(pki.SCOPES)
 
 
+def test_rotate_compromised_keeps_nothing_of_that_scope(monkeypatch, pki_dir, capsys):
+    before = storage.ensure_hierarchy(pki_dir, None)
+    _stdin(monkeypatch, "pw\n")
+
+    rc = cli.main(["rotate-intermediates", "--compromised", "tunnel"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    after = storage.ensure_hierarchy(pki_dir, None)
+    assert after["tunnel"].retired == ()
+    assert after["access"].retired == (before["access"].cert,)
+    tunnel = out[out.index("tunnel:") : out.index("access:")]
+    assert "compromised" in tunnel and "compromised" not in out[out.index("access:") :]
+
+
+def test_rotate_refuses_an_unknown_compromised_scope(monkeypatch, pki_dir, capsys):
+    before = _snapshot(pki_dir)
+    _stdin(monkeypatch, "pw\n")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["rotate-intermediates", "--compromised", "acces"])
+
+    assert exc.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+    assert _snapshot(pki_dir) == before
+
+
 def test_rotate_reads_the_passphrase_from_stdin(monkeypatch, pki_dir):
     before = storage.ensure_hierarchy(pki_dir, None)
     _stdin(monkeypatch, "pw\nnext line\n")
