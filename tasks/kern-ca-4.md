@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh ca-issuer server --strict
 Doku: → T6
 Abhängt von: T1
 
-### T3 — GET /api/enrollment/certificates: Infrastruktur und Agenten mit Ampel (R-1022)  [ ]
+### T3 — GET /api/enrollment/certificates: Infrastruktur und Agenten mit Ampel (R-1022)  [x]
 Komponente: server · Dateien: apps/server/app/modules/enrollment/expiry.py, apps/server/app/modules/enrollment/router.py, apps/server/app/modules/enrollment/schemas.py, apps/server/tests/test_certificate_expiry.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @689af02e 2026-10-31T06:23:28+01:00
+Review: approve (.ah-out/review/kern-ca-4/T3.verdict.json)
 Änderung: `expiry.py` berechnet je Eintrag `days_left` und `status` (`warning` unter 30, `critical` unter 7 Tagen) aus `infra_certificates` und dem jüngsten Zertifikat jeder nicht widerrufenen Agent-Linie (mit Servername); Route nur für Admins, Schema und Snapshot. Test: Ampel an den Grenzen 30/7/0, widerrufene Linie fehlt, Nicht-Admin 403. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_expiry.py tests/test_openapi_snapshot.py
 Doku: → T6
@@ -63,3 +65,4 @@ Abhängt von: T2, T4, T5
 - 2026-10-31: Geschrieben wird nur beim Start des ca-issuer; die Rotation verlangt den Neustart, Gateway/frps werden nur beim Start neu ausgestellt (Spec).
 - 2026-10-31: T1 ohne eigene Testdatei: `test_migrations_smoke.py` prüft Migration gegen Model und den Downgrade der Kette, `test_db_roles.py` die Rechte.
 - 2026-10-31: T2 prüft auch die Server-Suite: `apps/server/tests/test_certificate_register_view.py` vergleicht die Core-Tabellen des ca-issuer mit den Models, die neue Tabelle gehört in seine Liste.
+- 2026-10-31: Agent-Einträge der API ohne `subject`: `issued_certificates` speichert keins, und der CN einer Agent-Linie ist die Server-ID, die schon als `server_id` im Eintrag steht. Eine Linie, deren Server gelöscht ist, bleibt mit `server_name: null` stehen, ihr Zertifikat gilt am Gateway weiter.
