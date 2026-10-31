@@ -20,14 +20,16 @@ Review: approve (.ah-out/review/kern-ca-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_frps_cert.py tests/test_gateway_cert.py
 Doku: → T5
 
-### T2 — ca-issuer veröffentlicht die geführten Zwischenzertifikate je Scope (R-1009)  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/trust.py, apps/ca-issuer/app/main.py, apps/ca-issuer/app/config.py, apps/ca-issuer/tests/test_trust.py, docker-compose.yml
+### T2 — ca-issuer veröffentlicht die geführten Zwischenzertifikate je Scope (R-1009)  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/trust.py, apps/ca-issuer/app/main.py, apps/ca-issuer/app/config.py, apps/ca-issuer/tests/test_trust.py, docker-compose.yml, apps/ca-issuer/docker-entrypoint.sh
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @6bc826c5 2026-10-31T07:32:08+01:00
+Review: approve (.ah-out/review/kern-ca-3/T2.verdict.json)
 Änderung: Neues Modul `trust.py` (SPDX-Header) schreibt bei jedem Start nach `provision_boot_material` je Scope `<scope>.pem` (aktuelles + abgelöste Zwischenzertifikate, nur Zertifikate) atomar in `CA_TRUST_DIR`; ohne gesetztes Verzeichnis nichts. Compose: Volume `ca-trust`, im `ca-issuer` schreibbar, im `server` nur lesbar, Env `CA_TRUST_DIR` in beiden. Test: Dateien nach dem Lauf, nach einer Rotation mit `--compromised` ohne das gesperrte, kein Schlüssel im Verzeichnis.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_trust.py tests/test_rotation.py
 Doku: → T5
 
 ### T3 — Server prüft den Aussteller des Client-Zertifikats (R-1009)  [ ]
-Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/config.py, apps/server/tests/conftest.py, apps/server/tests/test_identity_issuer.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_identity_source.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_certificate_check.py
+Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/config.py, apps/server/tests/conftest.py, apps/server/tests/test_identity_issuer.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_identity_source.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_certificate_check.py, docker-compose.yml
 Änderung: `get_client_identity` hält fest, ob ein Zwischenzertifikat aus `CA_TRUST_DIR/<scope>.pem` das Zertifikat direkt ausgestellt hat (Signaturprüfung, mtime-Cache je Datei); `_refused` lehnt sonst ab (403 `ERR_CERT_REVOKED`, beide Modi). Fehlt oder ist die Datei unlesbar: ablehnen und Fehler loggen (fail-closed). Die bestehenden Tests bekommen eine Fixture mit der Trust-Datei ihrer Test-CA (mehr als acht Dateien: jede Testdatei mit eigenem Zertifikatsbau braucht sie). Neue Testdatei mit SPDX-Header: aktuell und abgelöst angenommen, fremdes Zwischenzertifikat derselben Root abgelehnt, fehlende Datei abgelehnt, geänderte Datei neu gelesen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_issuer.py tests/test_mtls_scope.py tests/test_identity_source.py tests/test_identity_revocation.py tests/test_certificate_check.py tests/test_openapi_snapshot.py
 Doku: → T5
@@ -50,3 +52,4 @@ Task-Review: am Ende
 ## Entscheidungen
 - 2026-10-31: R-1021 (Root-Erneuerung) fährt nicht mit — ändert Vertrauensanker von Agent und Desktop und den Erneuerungsvertrag (Kevins Bereich, Architektur); verschoben nach tasks/kern-ca-5.md, Frage am Gate.
 - 2026-10-31: Trust-Daten für den Server über ein Volume mit öffentlichem Material statt einer DB-Tabelle (keine Migration); fehlende Datei ist fail-closed wie R-0900.
+- 2026-10-31: T2 hängt `ca-trust` nur lesbar in den Server, setzt `CA_TRUST_DIR` dort aber erst in T3: `test_env_parity` verlangt, dass der Server jeden gesetzten Schlüssel liest.

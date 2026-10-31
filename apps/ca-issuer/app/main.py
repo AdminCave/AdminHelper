@@ -20,7 +20,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from app import config
+from app import config, trust
 from app.issuer import IssuanceError, Issuer, IssuerUnavailable
 from app.storage import Intermediate, ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
@@ -30,10 +30,10 @@ logger = logging.getLogger("ca-issuer")
 
 
 def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
-    """First-boot bootstrap: hand the gateway + frps their TLS material. Kept
-    separate from build_issuer so constructing the issuer has NO side effects on
-    foreign volumes — calling build_issuer in a test/script must not provision
-    certs into whatever CA_*_CERT_DIR happens to be set."""
+    """First-boot bootstrap: hand the gateway + frps their TLS material and the server
+    the listed intermediates. Kept separate from build_issuer so constructing the
+    issuer has NO side effects on foreign volumes — calling build_issuer in a
+    test/script must not provision certs into whatever CA_*_DIR happens to be set."""
     # The gateway can't sign its own leaf (chicken-egg, D6): give it an
     # access-signed TLS leaf + trust bundle.
     if config.gateway_cert_dir():
@@ -55,6 +55,10 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
             # trust the access intermediate alongside tunnel.
             extra_trust=(intermediates["access"],),
         )
+    # The server checks the issuer of a client cert against these (R-1009): the gateway
+    # anchors at the root and lets a dropped intermediate through.
+    if config.trust_dir():
+        trust.write_trust(Path(config.trust_dir()), intermediates)
 
 
 def record_inventory() -> None:

@@ -86,6 +86,8 @@ services:
       - frp-config:/app/frp-config
       # Status file of the frps supervisor, read-only (FRPS_STATE_DIR below).
       - frps-state:/app/frps-state:ro
+      # The listed intermediates of each scope, written by the ca-issuer.
+      - ca-trust:/app/ca-trust:ro
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
@@ -319,6 +321,8 @@ services:
       - gateway-certs:/app/gateway-certs
       # Outbound drop for the frps TLS material (tunnel-signed leaf + key + chain).
       - frps-certs:/app/frps-certs
+      # Outbound drop for the server: the listed intermediates of each scope (certificates only).
+      - ca-trust:/app/ca-trust
     environment:
       - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
@@ -341,6 +345,7 @@ services:
       - CA_FRPS_SERVER_ADDR=${FRP_SERVER_ADDR:-${DOMAIN:-localhost}}
       # Extra SANs for the frps leaf; empty falls back to EXTRA_SANS (the gateway's).
       - CA_FRPS_EXTRA_SANS=${CA_FRPS_EXTRA_SANS:-}
+      - CA_TRUST_DIR=/app/ca-trust
       # Works on the server's tables in the shared DB: consumes enrollment tokens and
       # keeps the certificate register (device lines, issued certificates); it reads
       # identity revocations and never mints a token.
@@ -656,6 +661,9 @@ volumes:
   gateway-certs:
   # frps TLS material the issuer provisions (tunnel-signed) and frps consumes (ro).
   frps-certs:
+  # The listed intermediates of each scope the issuer writes and the server reads (ro);
+  # public material, rewritten at every start of the issuer, not backed up.
+  ca-trust:
   # The frps supervisor's status file (frps writes, server and scheduler read) and the
   # checked copy frps runs from (frps only). Not backed up: the supervisor rewrites the
   # status at every poll and takes the copy again from frp-config and frps-certs.
