@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-3 · Review: pro Task
 Spec: docs/features/kern-ca-3.md (Roadmap R-1009)
 Heavy: linux-full — `apps/ca-issuer`, Server-mTLS und `docker-compose.yml` (Sammellauf; dazu vor dem Merge der Stack-Job per Dispatch mit der frps- und Gateway-Probe aus T4)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T5
 Abhängt von: T1, T3
 
-### T5 — Doku DE+EN und Changelog (R-1009)  [ ]
+### T5 — Doku DE+EN und Changelog (R-1009)  [x]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md, docs/developer/index.html, docs/en/developer/index.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @23470360 2026-10-31T08:40:23+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt `ca-rotation`: nach `--compromised` und Neustart nehmen frps und Server kein Zertifikat des gesperrten Zwischenzertifikats mehr an; was weiter erst eine neue Root schließt (die Prüfung des Servers durch die Clients). Architektur-Seite zu mTLS-Vertrauen per grep bestimmen und mitziehen (`ledger.sh set-files`). Changelog neutral unter `### Security`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-3.md
