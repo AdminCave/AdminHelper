@@ -14,11 +14,19 @@ from sqlalchemy.orm import Session
 
 from app.core.time import utcnow_naive
 from app.modules.enrollment.models import DeviceLine, InfraCertificate, IssuedCertificate
+from app.modules.notifications.models import Notification
+from app.modules.notifications.schemas import IncomingEvent
+from app.modules.notifications.service import ingest_event
 from app.modules.servers.models import Server
 
 # Kevin 2026-10-30: yellow below 30 days, red below 7 days (and once expired).
 WARNING_DAYS = 30
 CRITICAL_DAYS = 7
+
+SOURCE_TYPE = "certificate_expiry"
+# Notices per daily run: a fleet whose agents were all enrolled on one day reaches the
+# threshold together; the rest follow on the next runs instead of flooding the bell.
+LIMIT = 20
 
 
 def days_left(not_after: datetime.datetime, now: datetime.datetime) -> int:
@@ -87,3 +95,55 @@ def agents(db: Session, now: datetime.datetime) -> list[dict]:
 def overview(db: Session, now: datetime.datetime | None = None) -> dict:
     now = now or utcnow_naive()
     return {"infrastructure": infrastructure(db, now), "agents": agents(db, now)}
+
+
+def _notice(label: str, days: int) -> tuple[str, str]:
+    if days < 0:
+        return f"Certificate {label} has expired", f"It expired {-days} day(s) ago."
+    return f"Certificate {label} expires in {days} day(s)", "Renew it before it runs out."
+
+
+def notify_expiring(db: Session, now: datetime.datetime | None = None) -> int:
+    """Report every certificate that entered yellow or red once per level, through the
+    notification hub: the bell and, where a subscription asks for it, e-mail. The event
+    names no server, so only admins receive it. Returns the number of certificates reported
+    to at least one admin."""
+    entries = overview(db, now)
+    due = [
+        (f"{e['fingerprint']}:{e['status']}", e["name"], e)
+        for e in entries["infrastructure"]
+        if e["status"] != "ok"
+    ] + [
+        (f"{e['fingerprint']}:{e['status']}", e["server_name"] or e["server_id"], e)
+        for e in entries["agents"]
+        if e["status"] != "ok"
+    ]
+    if not due:
+        return 0
+    seen = {
+        source_id
+        for (source_id,) in db.query(Notification.source_id).filter(
+            Notification.source_type == SOURCE_TYPE,
+            Notification.source_id.in_([source_id for source_id, _, _ in due]),
+        )
+    }
+    fresh = [d for d in due if d[0] not in seen]
+    fresh.sort(key=lambda d: (d[2]["status"] != "critical", d[2]["not_after"]))
+    sent = 0
+    for source_id, label, entry in fresh[:LIMIT]:
+        title, body = _notice(label, entry["days_left"])
+        reached = ingest_event(
+            db,
+            IncomingEvent(
+                event_type=f"lifecycle.certificate.expiry.{entry['status']}",
+                severity=entry["status"],
+                category="lifecycle",
+                title=title,
+                body=body,
+                source_type=SOURCE_TYPE,
+                source_id=source_id,
+            ),
+        )
+        # Nobody reached (no matching subscription) writes no row: the next run tries again.
+        sent += bool(reached)
+    return sent

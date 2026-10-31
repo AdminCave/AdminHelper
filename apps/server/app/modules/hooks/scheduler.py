@@ -488,3 +488,25 @@ def schedule_frps_supervisor_watch(seconds: int = 15) -> None:
     """Register the periodic frps supervisor watch (idempotent). Runs once at
     start and then every `seconds` seconds."""
     _register_system_job(_run_frps_supervisor_watch, _FRPS_SUPERVISOR_WATCH_JOB_ID, seconds=seconds)
+
+
+_CERTIFICATE_EXPIRY_WATCH_JOB_ID = "system:certificate-expiry-watch"
+
+
+def _run_certificate_expiry_watch() -> None:
+    """Notify the admins of certificates that entered the yellow or red level."""
+    from app.modules.enrollment.expiry import notify_expiring
+
+    def work(db):
+        sent = notify_expiring(db)
+        return f"certificate expiry watch: {sent} notices sent" if sent else None
+
+    _run_in_session("certificate expiry watch", work)
+
+
+def schedule_certificate_expiry_watch(hours: int = 24) -> None:
+    """Register the daily certificate expiry watch (idempotent). Runs once at start
+    and then every `hours` hours."""
+    _register_system_job(
+        _run_certificate_expiry_watch, _CERTIFICATE_EXPIRY_WATCH_JOB_ID, hours=hours
+    )

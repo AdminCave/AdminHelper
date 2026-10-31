@@ -38,10 +38,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_exp
 Doku: → T6
 Abhängt von: T1
 
-### T4 — Täglicher Ablauf-Alarm über die Benachrichtigungen (R-1022)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/enrollment/expiry.py, apps/server/app/modules/hooks/scheduler.py, apps/server/app/scheduler_main.py, apps/server/tests/test_certificate_expiry_watch.py
+### T4 — Täglicher Ablauf-Alarm über die Benachrichtigungen (R-1022)  [x]
+Komponente: server · Dateien: apps/server/app/modules/enrollment/expiry.py, apps/server/app/modules/hooks/scheduler.py, apps/server/app/scheduler_main.py, apps/server/tests/test_certificate_expiry_watch.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notifications.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @13216282 2026-10-31T06:32:43+01:00
+Review: approve (.ah-out/review/kern-ca-4/T4.verdict.json)
 Änderung: `notify_expiring(db)` meldet den Admins je Zertifikat und Stufe einmal (`source_type="certificate_expiry"`, `source_id="<fingerprint>:<stufe>"`, warning/critical), höchstens eine feste Zahl je Lauf; System-Job `system:certificate-expiry-watch` täglich, in `scheduler_main` registriert. Test: Meldung beim Eintritt in gelb und in rot, keine Wiederholung am nächsten Lauf, erneuertes Zertifikat ohne Meldung, Höchstzahl. Neue Datei mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_expiry_watch.py tests/test_certificate_expiry.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_expiry_watch.py tests/test_certificate_expiry.py tests/test_notifications.py
 Doku: → T6
 Abhängt von: T3
 
@@ -66,3 +68,5 @@ Abhängt von: T2, T4, T5
 - 2026-10-31: T1 ohne eigene Testdatei: `test_migrations_smoke.py` prüft Migration gegen Model und den Downgrade der Kette, `test_db_roles.py` die Rechte.
 - 2026-10-31: T2 prüft auch die Server-Suite: `apps/server/tests/test_certificate_register_view.py` vergleicht die Core-Tabellen des ca-issuer mit den Models, die neue Tabelle gehört in seine Liste.
 - 2026-10-31: Agent-Einträge der API ohne `subject`: `issued_certificates` speichert keins, und der CN einer Agent-Linie ist die Server-ID, die schon als `server_id` im Eintrag steht. Eine Linie, deren Server gelöscht ist, bleibt mit `server_name: null` stehen, ihr Zertifikat gilt am Gateway weiter.
+- 2026-10-31: T4 meldet über `ingest_event` statt `notify_users`: nur der Hub bedient die Abos (Glocke und, je nach Abo, E-Mail, Spec „Alarmweg“); das Ereignis nennt keinen Server, also erreicht es nur Admins. Erreicht es niemanden (kein passendes Abo), entsteht keine Zeile und der nächste Lauf versucht es erneut.
+- 2026-10-31: `certificate_expiry` ist für den internen Ingress reserviert wie `frp_config` und `frps` (`_SERVER_SOURCE_TYPES`), weil `notify_expiring` seine Meldungen am `source_type` wiederfindet; T4 nimmt dafür `notifications/router.py` und `tests/test_notifications.py` auf, das Verify fährt `tests/test_notifications.py` mit.

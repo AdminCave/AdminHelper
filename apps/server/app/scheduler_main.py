@@ -73,6 +73,7 @@ def main() -> None:
         reconcile_scheduled_hooks,
         schedule_audit_cleanup,
         schedule_blacklist_cleanup,
+        schedule_certificate_expiry_watch,
         schedule_certificate_register_cleanup,
         schedule_enrollment_token_cleanup,
         schedule_frps_supervisor_watch,
@@ -87,6 +88,7 @@ def main() -> None:
     schedule_blacklist_cleanup()
     schedule_enrollment_token_cleanup()
     schedule_certificate_register_cleanup()
+    schedule_certificate_expiry_watch()
     schedule_provision_token_cleanup()
     schedule_audit_cleanup()
     schedule_outbox_drain()
