@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# harness-guard.sh — PreToolUse hook for Bash calls. Two rules on the command
+# harness-guard.sh — PreToolUse hook for Bash calls. Three rules on the command
 # text, in every session:
 #   1. No glob delete in a shared temp directory (R-0098): a command line that
 #      deletes (rm, rmdir, unlink, shred, also behind xargs or in a loop) and
@@ -16,6 +16,14 @@
 #   2. No way past the git hooks (R-0102): `git commit --no-verify`/`-n` (also
 #      inside `-qn`), core.hooksPath set by a git option (`-c`, `--config-env`),
 #      a `git config` that writes core.hooksPath.
+#   3. No branch switch in the main checkout: every session plans and merges
+#      from it at once, so a `git switch`/`git checkout` there moves the files
+#      under another session's staged plan. Plans and builds go to their own
+#      worktree (/feature-plan §4); `git switch main` and a restore with `--`
+#      stay free. The directory is followed through cd/pushd and `git -C`
+#      (literal paths only); the main checkout is the one whose git dir is the
+#      common git dir of $CLAUDE_PROJECT_DIR (else the hook cwd), so a nested
+#      repo, a linked worktree or a test fixture passes.
 # Every other tool passes untouched, so an edit to a file whose text says
 # --no-verify stays free whatever matcher a running session still holds. A hit
 # prints the documented deny JSON; the exit is 0 either way (exit 2 would block
@@ -24,14 +32,14 @@
 # here-doc body counts like any other word, and `rm -rf build && ls /tmp/x*` is
 # refused although the glob deletes nothing. Not seen: a path built at runtime
 # (`rm -rf "$D"/*`), eval, a command substitution (`…` or "$(…)"), a git alias,
-# GIT_CONFIG_* and `git am -n`.
+# GIT_CONFIG_* and `git am -n`; for rule 3 also a directory held in a variable.
 #
 # Run (manually): echo '{"tool_name":"Bash","tool_input":{"command":"…"}}' \
 #                   | bash scripts/dev/hooks/harness-guard.sh
 set -uo pipefail
 command -v python3 >/dev/null 2>&1 || exit 0
 python3 -I -c '
-import fnmatch, json, os, re, shlex, sys
+import fnmatch, json, os, re, shlex, subprocess, sys
 
 TMPDIR = os.environ.get("TMPDIR", "").rstrip("/")
 ROOTS = ["/tmp", "/var/tmp", "/dev/shm"] + ([TMPDIR] if TMPDIR.startswith("/") else [])
@@ -98,7 +106,62 @@ def git_bypass(args):
         return "git config core.hooksPath"
     return ""
 
-def scan(cmd, depth=0):
+def git_dirs(path):
+    """(git dir, common git dir) of the repo at path, or None."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        out = subprocess.run(["git", "-C", path, "rev-parse", "--path-format=absolute", "--git-dir",
+                              "--git-common-dir"], capture_output=True, text=True, timeout=5, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    dirs = [os.path.realpath(x) for x in out.stdout.split()]
+    return dirs if out.returncode == 0 and len(dirs) == 2 else None
+
+def moved(here, to):
+    if here is None or not to or "$" in to or "`" in to:
+        return None
+    return os.path.normpath(os.path.join(here, os.path.expanduser(to)))
+
+def main_switch(args, here):
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        a = args[i]
+        if a in ("-C", "-c", "--git-dir", "--work-tree", "--config-env", "--namespace") and i + 1 < len(args):
+            if a == "-C":
+                here = moved(here, args[i + 1])
+            i += 2
+        else:
+            i += 1
+    if i >= len(args) or args[i] not in ("switch", "checkout"):
+        return ""
+    sub, rest = args[i], args[i + 1:]
+    new = "cCd" if sub == "switch" else "bB"
+    creates = lambda a: a in ("--create", "--force-create", "--orphan", "--detach") \
+        or a.startswith(("--create=", "--force-create=", "--orphan=")) or bool(re.match(r"-[A-Za-z]+$", a) and set(a[1:]) & set(new))
+    if sub == "checkout" and "--" in rest:
+        k = rest.index("--")
+        # A restore names paths after --; without one, git checkout <branch> -- still switches.
+        if rest[k + 1:] and not any(creates(a) for a in rest[:k]):
+            return ""
+        rest = rest[:k]
+    target = None
+    for a in rest:
+        if creates(a):
+            target = "a new or detached HEAD"
+            break
+        if a == "-" or not a.startswith("-"):  # - is the previous branch, like @{-1}
+            target = a
+            break
+    if target in (None, "main") or here is None:
+        return ""
+    there, project = git_dirs(here), git_dirs(os.environ.get("CLAUDE_PROJECT_DIR") or HOOK_CWD)
+    if not there or not project or there[0] != there[1] or there[1] != project[1]:
+        return ""
+    return ("branch switch in the main checkout (git " + sub + " to " + target + "): all sessions share it; "
+            "plan and build in your own worktree, git worktree add --no-track -b feature/<slug> "
+            "../AdminHelper-<slug> origin/main (/feature-plan 4); back to main and restores with -- stay free")
+
+def scan(cmd, depth=0, here=None):
     segs, in_tmp, globs = list(segments(cmd)), False, []
     names = [command(seg) for seg, _ in segs]
     deletes = [n in ("rm", "rmdir", "unlink", "shred") or (n == "find" and ("-delete" in a or any(
@@ -107,13 +170,17 @@ def scan(cmd, depth=0):
         hit = git_bypass(args) if name == "git" else ""
         if hit:
             return "pre-commit bypass (" + hit + "): the hooks run review.sh sec --staged; fix what it reports instead (R-0102)"
+        hit = main_switch(args, here) if name == "git" else ""
+        if hit:
+            return hit
         shell_c = [k for k, a in enumerate(args[:-1]) if re.match(r"-[A-Za-z]*c[A-Za-z]*$", a)]
         if name in ("bash", "sh", "dash", "zsh") and shell_c and depth < 3:
-            hit = scan(args[shell_c[0] + 1], depth + 1)
+            hit = scan(args[shell_c[0] + 1], depth + 1, here)
             if hit:
                 return hit
         if name in ("cd", "pushd"):
             in_tmp = bool(args) and under_tmp(args[-1])
+            here = moved(here, args[-1] if args else "~")
         globs += [w for w in seg if re.search(r"[*?\[]", w) and w not in ("[", "[[")
                   and (under_tmp(w) or (in_tmp and not w.startswith("/")))]
         if deleting and name == "find":
@@ -128,7 +195,8 @@ except ValueError:
     sys.exit(0)
 tool_input = call.get("tool_input") if isinstance(call, dict) and call.get("tool_name") == "Bash" else None
 cmd = tool_input.get("command") if isinstance(tool_input, dict) else None
-why = scan(cmd) if isinstance(cmd, str) else ""
+HOOK_CWD = call.get("cwd") if isinstance(call, dict) and isinstance(call.get("cwd"), str) else os.getcwd()
+why = scan(cmd, here=HOOK_CWD) if isinstance(cmd, str) else ""
 if why:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                       "permissionDecision": "deny", "permissionDecisionReason": why}}))
