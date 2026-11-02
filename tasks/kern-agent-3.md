@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-3 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-3 · Review: am Ende
 Spec: docs/features/kern-agent-3.md (Roadmap R-1007, R-1036)
 Heavy: linux-full — `apps/agent` (Abhängigkeiten und Go-Version des Agent-Binaries)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,8 +21,10 @@ Beweis: reviewer kern-agent-2 T3 (Nit), 2026-10-30 · `main.go:106` `var readTer
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: changelog.d/kern-agent-3.md
 
-### T2 — go.mod auf Go 1.27, Abhängigkeiten aktuell (R-1036)  [ ]
+### T2 — go.mod auf Go 1.27, Abhängigkeiten aktuell (R-1036)  [x]
 Komponente: agent · Dateien: apps/agent/go.mod, apps/agent/go.sum, docs/developer/agent.html, docs/en/developer/agent.html, DEVELOPMENT.md, changelog.d/kern-agent-3.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0cebc154 2026-11-02T12:43:59+01:00
+Review: am Ende (Branch-Review)
 Änderung: `go 1.27.0` mit `toolchain go1.27.3` (`apps/agent/go.mod:3`), gopsutil v4.26.10, x/sys v0.49.0, x/term v0.47.0 (`go get`, `go mod tidy`); Doku-Baum `go.mod Go 1.27` DE+EN (`docs/developer/agent.html:55`, `docs/en/developer/agent.html:55`), `DEVELOPMENT.md:740` „go.mod verlangt 1.27“.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html, docs/en/developer/agent.html, DEVELOPMENT.md, changelog.d/kern-agent-3.md
