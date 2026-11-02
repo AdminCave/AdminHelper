@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-rdp-embedded — Task-Ledger
-Status: aktiv · Branch: feature/arch-rdp-embedded · Review: pro Task
+Status: bereit · Branch: feature/arch-rdp-embedded · Review: pro Task
 Spec: docs/features/arch-rdp-embedded.md (Roadmap R-1074)
 Heavy: none — Machbarkeitsstudie, ändert nur Spec und Ledger; Prototypen laufen außerhalb des Baums (Spec „Prototypen“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,8 +61,10 @@ Doku: keine (das Ergebnis ist die Spec selbst; kein Produktverhalten)
 Task-Review: am Ende
 Abhängt von: T2
 
-### T5 — Entscheidung und Bauplan für R-1075 (R-1074)  [ ]
+### T5 — Entscheidung und Bauplan für R-1075 (R-1074)  [x]
 Komponente: scripts · Dateien: docs/features/arch-rdp-embedded.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4b5115d3 2026-11-02T16:39:28+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt „Ergebnis: Entscheidung“: gewählte Variante mit Begründung und Restrisiken, Bauplan für R-1075
 (Stufen und Tasks, Abhängigkeiten R-1069/R-1070, Heavy, Lizenzen und `THIRD_PARTY_LICENSES.md`, CSP und
 Capabilities, Mockup-Funktionen je Stufe), offene Fragen an Kevin mit Empfehlung. Prototyp-Quellen und Rohdaten
@@ -80,3 +82,8 @@ Abhängt von: T2, T3
   Inhalt und Belege.
 - 2026-11-02 (Kevin): T4 nimmt als Windows-Host einen GitHub-Windows-Runner über einen temporären Workflow auf einem
   eigenen Wegwerf-Branch, der nie gemergt und danach gelöscht wird (Spec, Offene Fragen 1).
+- 2026-11-02: Einzelheiten zum Absturz im Kanal-Lauf (T4) stehen nur im privaten Archiv, bis sie geklärt und, wo
+  nötig, gemeldet sind; dafür den noch nicht gepushten T4-Commit nachgebessert (`--amend`, nur die Spec). Das Verify
+  läuft mit T5 auf dem Endstand.
+- 2026-11-02: Folgezeilen aus T5 als `neu` für Kevins Triage: R-1090 (Abnahme auf echter Hardware), R-1091 (IronRDP
+  upstream melden), R-1092 (Absturz klären); R-1075 zurück auf `neu` mit Verweis auf „Ergebnis: Entscheidung“.

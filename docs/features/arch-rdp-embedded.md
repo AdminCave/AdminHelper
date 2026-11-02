@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Eingebettetes RDP: Machbarkeit
 
 Architektur-Vorhaben `arch-rdp-embedded` (Roadmap R-1074; die Bau-Zeile R-1075 ist bis zur Entscheidung
-zurückgestellt). Stand: `origin/main@b2edbbf8`.
+zurückgestellt). Stand: `origin/main@b2edbbf8`, Zeilenangaben in T5 auf `origin/main@1c313156` nachgeprüft.
 
 ## Problem / Motivation
 
@@ -221,6 +221,12 @@ stehen in der zweiten Tabelle.
   Expat „compatible with the GNU GPL“.
 - [Q16] crates.io-Suche „freerdp“: `freerdp-sys` 0.1.0 (2026-07-24), `freerdp2` und `freerdp2-sys` 0.2.0
   (2022-11-02, FreeRDP 2).
+- [Q17] IronRDP-Issue #447 „Devilish resize bug“ (offen seit 2024-04-24): nach einem Resize über Display Control
+  sinkt der Bildtakt auf dem RemoteFX-Pfad, FreeRDP ist nicht betroffen; dazu `FIXME(#447)` in
+  `crates/ironrdp-connector/src/connection_activation.rs:685` @`37ce7d1b`.
+- [Q18] @`37ce7d1b`: `crates/ironrdp-tls/Cargo.toml` `rustls = ["rustls-aws-lc-rs"]`, `rustls-ring` getrennt
+  wählbar; `crates/ironrdp-client/Cargo.toml` `rustls = ["ironrdp-tls/rustls", …]` und
+  `udp = [… "ironrdp-rdpeudp-tokio/rustls-aws-lc-rs"]`.
 
 ## Ergebnis: xrdp
 
@@ -450,12 +456,140 @@ Stand 2026-11-02 (T4). **Aufbau:**
   - Lesen und Schreiben auf dem Laufwerk;
   - Zwischenablage-Inhalte.
 
+## Ergebnis: Entscheidung
+
+Stand 2026-11-02 (T5). Empfehlung an Kevin, der über Variante, Restrisiko und Umfang entscheidet (Offene Fragen 2).
+
+**Variante: V2.** IronRDP läuft nativ im Rust-Prozess des Desktops. Das Bild geht über einen lokalen WebSocket mit
+Gegendruck an den Webview, gezeichnet wird mit WebGL, Rückfall Canvas2D. V3a bleibt Rückfall, falls V2 im Bau an
+Protokoll oder Stabilität scheitert. V1, V2b, V3b und V3c entfallen.
+
+**Begründung:**
+- **Protokoll trägt.** Gegen xrdp liegt die Probe bei Bandbreite und Client-CPU gleichauf mit FreeRDP 3 (T2).
+  Gegen Windows (T4) meldet sie sich mit NLA an, bekommt AVC420 in voller Qualität bei rund 4 Mbit/s und braucht
+  dafür 40 % eines Kerns; Resize und Monitor-Layout setzt Windows live um.
+- **Sicherheit.** Passwort und CredSSP bleiben im Rust-Prozess wie heute (`rdp.rs:488`, Keyring). Die CSP braucht kein
+  `wasm-unsafe-eval`. Der Dekoder ist Rust mit eigener Fuzzing-Crate und ohne veröffentlichte Advisories; V3a holte
+  einen C-Dekoder mit 243 Advisories seit 2026-01-01 in den App-Prozess (K13).
+- **Kanäle nativ.** Zwischenablage, Audio und Laufwerke gibt es als native Crates für Linux und Windows (K4–K6); V1
+  fehlen Audio und Laufwerke.
+- **Sitzung im Backend.** Sie überlebt das Abdocken (R-1070) und folgt dem Muster von R-1069 (Prozess in Rust, Daten
+  an den Webview).
+- **Bildweg.** Der Transport über einen lokalen WebSocket trägt 50 % Fläche bei 30 Hz ohne wachsenden Rückstau (T3).
+  Engpass ist das Zeichnen ohne GPU; ob der Weg mit GPU unter 33 ms bleibt, ist nicht verifiziert (GPU-Gate,
+  Bedingung 4).
+
+**Bedingungen für R-1075** (aus T2 bis T4; jede wird eine Task oder ein Abnahmekriterium):
+1. **Bulk-Kompression aus** (`ConfigBuilder::with_compression(false)`), bis IronRDP die Verbindungs-Finalisierung
+   dekomprimiert. Sonst scheitern Resize und Monitor-Layout gegen xrdp (T2). Gegen Windows ändert die Kompression
+   nichts, weil Windows nicht reaktiviert (T4).
+2. **Watchdog.** Eine Sitzung, die bei offener Verbindung keine Bilder mehr bekommt, erkennt das Backend und baut sie
+   neu auf (Stillstand in einem von acht GFX-Läufen, T2).
+3. **Bildweg.** Lokaler WebSocket statt Tauri-Channel, nur auf 127.0.0.1, mit einem zufälligen Token je Sitzung;
+   Gegendruck wie in „Ergebnis: Webview“ beschrieben. Die CSP bekommt `connect-src … ws://127.0.0.1:*`, denn der Port
+   wird zur Laufzeit gewählt. Eingaben gehen über denselben Socket zurück.
+4. **GPU-Gate.** Bevor „AdminHelper“ der Standard der Einstellung wird, misst R-1090 den Bildweg auf echter Hardware
+   unter Linux (WebKitGTK) und Windows (WebView2) gegen die Schwelle aus T3. Bis dahin bleibt der OS-Client der
+   Standard.
+5. **Zertifikat.** Eigener rustls-Prüfer mit TOFU-Pin je Host und Port nach dem Muster von `tofu.rs:314`
+   (`TofuVerifier`, Pin im Keyring) und einem Fingerprint-Dialog beim ersten Kontakt. `trust_cert`
+   (`models.rs:80`) bedeutet danach: ohne Dialog annehmen. IronRDP prüft im Default nicht (K3, [Q5]).
+6. **Tastatur.** Ein Tastatur-Fang für die fokussierte Sitzung, Strg+Alt+Pos1 gibt frei; Strg+Alt+Entf als Menüpunkt,
+   weil das System es vor dem Webview abfängt (T3). Ob Windows die Scancode-Folge als Secure Attention Sequence
+   annimmt, ist nicht verifiziert (T4 hat es nicht gemessen); Stufe 2 prüft es.
+7. **H.264 unter Linux aus.** Kein gebündeltes OpenH264 (aus Quellen gebaut, ohne Patentdeckung, [Q2]); AVC nur unter
+   Windows über Media Foundation (`ironrdp-egfx-native`, [Q3]). Linux fällt auf RemoteFX Progressive zurück (T2);
+   gegen Windows kostet das bei 50 % Fläche Qualität und CPU (65 statt 100 %, 67 statt 40 % eines Kerns, T4).
+8. **TLS-Provider ring.** Der Desktop hält `aws-lc-rs` heute heraus (`Cargo.toml`: reqwest `rustls-no-provider`,
+   rustls mit `ring`). Das Feature `rustls` von `ironrdp-client` zieht es über `ironrdp-tls/rustls`
+   (= `rustls-aws-lc-rs`), `udp` ebenso. R-1075 nimmt `ironrdp-client` ohne beide und wählt `ironrdp-tls` direkt mit
+   `rustls-ring` [Q18]. Ob `ironrdp-client` so baut, ist nicht verifiziert: Stufe 1 prüft es zuerst. Gate im Build:
+   `cargo tree -i aws-lc-rs` bleibt leer.
+9. **GFX gegen Windows.** Ohne EGFX schickt Windows nur 16-bpp-Bitmaps mit unter einem Bild/s (T4). Der Desktop
+   bietet EGFX immer an.
+10. **Resize-Abschluss über `ResetGraphics`.** Mit GFX schließt Windows einen Resize per `ResetGraphics` ab, ohne
+    Reaktivierung. `ironrdp-client` wartet auf eine Reaktivierung und verbindet nach 3 s neu (T4). R-1075 wertet
+    `ResetGraphics` als Abschluss (Patch upstream oder eigene Sitzungsschleife); Abnahme: ein Resize gegen Windows
+    ohne Neuverbindung.
+11. **Anmelde-Infos sind keine Fehler.** `LOGON_MSG_SESSION_CONTINUE` und andere Logon-Infos (MS-RDPBCGR) brechen die
+    Sitzung nicht ab (T4).
+12. **Audio unter Windows erst nach Klärung des Absturzes** (T4, Restrisiken). Bis dahin bleibt Audio dort aus; jeder
+    Kanal hat ohnehin einen eigenen Schalter (Mockup). Abnahme auf einem Windows mit Audiogerät.
+
+**Restrisiken** (für Kevin, Offene Fragen 2):
+- **Patente.** AdminHelper verteilte erstmals eine eigene RDP-Implementierung. Microsofts Open Specifications Promise
+  nennt keine RDP-Spezifikation, MS-RDPEDISP verweist auf mögliche Patente [Q12]. Nicht juristisch geprüft.
+- **Abhängigkeit vor 1.0.** `ironrdp-client` mit EGFX gibt es nur auf `main` [Q4]; R-1075 pinnt eine Git-Revision und
+  wechselt auf crates.io, sobald eine Version mit EGFX erscheint. Die Low-Level-Crates sind 0.x mit häufigen
+  Breaking-Bumps [Q1].
+- **Dekoder im App-Prozess.** Ein Fehler im Dekoder trifft den ganzen Desktop-Prozess, nicht wie heute einen
+  Kindprozess. Im sicheren Rust bleibt das bei Panics und Logikfehlern, und Panics fängt die Sitzungsaufgabe ab
+  (Bauplan Stufe 1). Code hinter FFI (Media Foundation, Audio über CPAL) kann den Prozess aber auch ohne Panic
+  beenden.
+- **Resize-Leistung.** IronRDP-Issue #447 [Q17]: nach einem Resize bricht die Leistung auf dem RemoteFX-Pfad ein,
+  FreeRDP ist nicht betroffen; bei uns nicht verifiziert.
+- **Stillstand.** Ursache nicht verifiziert (T2); der Watchdog macht ihn zur Neuverbindung, nicht zum Fehler.
+- **Absturz mit Audio unter Windows.** Im Kanal-Lauf endete die Probe mit einem Absturz, den kein Abfangen von Panics
+  verhindert hätte (T4). Im Desktop beendete so ein Fehler die App mit allen offenen Tabs. Die Ursache ist nicht
+  verifiziert (Bedingung 12).
+- **Kanäle unter Windows.** Die Zwischenablage brachte keinen Inhalt, der Laufwerksname kam verkürzt an, Lesen und
+  Schreiben sind nicht geprüft (T4). Stufe 3 klärt das und nimmt es auf einem interaktiven Windows ab.
+- **Erstes Bild.** In den Messläufen gegen Windows kam es erst nach 4–5 s, in den Aufwärmläufen nach unter 1 s; nicht
+  geklärt (T4).
+
+**Bauplan für R-1075.** Empfehlung: R-1075 bei der Triage je Stufe in eigene Zeilen teilen; jede Stufe ist für sich
+nutzbar und einzeln zurücknehmbar.
+
+| Stufe | Inhalt | Hängt ab von | Heavy | Merger |
+|---|---|---|---|---|
+| 1 Backend | Abhängigkeit (Git-Revision, Features nur `clipboard`, `sound`, `rdpdr`, TLS ring; Windows dazu Media Foundation), Lizenz-Gates; Sitzung über `resolve_connection` (`commands.rs:568`, `tunnel.rs:76`) mit dem Passwort aus dem Keyring (`connection/mod.rs:247`); TLS-Prüfer mit TOFU (Risikopfad, `security`); Watchdog; WebSocket-Server mit Token und Gegendruck; Phasen-Events; Integrationstest gegen einen xrdp-Container | — | linux-full | Session; ein neuer CI-Job für den xrdp-Test ändert `.github/workflows/` und geht an Kevin |
+| 2 Tab | Canvas mit WebGL, Rückfall 2d; Scancodes und Tastatur-Fang; Statuszeile (Auflösung, Codec, fps, Mbit/s); Phasen verbinden/verbunden/getrennt; Neu verbinden; Screenshot (`dialog:allow-save` ist schon erlaubt); Leistungsprofil; Einstellung `rdp_client` in `Settings` (`models.rs:91`, `#[serde(default)]`, Wire-Vertrag, Risikopfad) und Split-Button | Stufe 1; die Tab-Leiste aus R-1069 | linux-full | Session |
+| 3 Kanäle | Zwischenablage Text; Audio (CPAL braucht unter Linux `libasound2-dev` in `ci.yml` und `release.yml`; unter Windows nach Bedingung 12); Laufwerke (Freigabe eines Ordners, `security`) | Stufe 1 | linux-full, windows | Kevin (Workflows) |
+| 4 Anzeige | dynamische Auflösung mit Entprellen und Resize-Abschluss über `ResetGraphics` (Bedingung 10), Fest mit Zoom/1:1/Einpassen, Vollbild, HiDPI-Skalierung | Stufe 2 | linux-full | Session |
+| 5 Fenster | Abdocken, Multi-Monitor als zwei Fenster | Stufe 2; R-1070 | linux-full, windows | Session |
+| später | RD-Gateway (`gateway`, ohne Gateway im Pool nicht prüfbar), H.264 unter Linux, Dateien über die Zwischenablage | — | — | — |
+
+**Mockup-Funktionen je Stufe:**
+- Stufe 2: Tab, Phasen, Neu verbinden, Strg+Alt+Entf (Menü), Screenshot, Verbindungsinfo, Leistungsprofil,
+  Tastatur-Fang mit Strg+Alt+Pos1. Die RTT meldet `ironrdp-client` als `RdpOutputEvent::NetworkCharacteristics`
+  (`src/rdp.rs:245`), wenn der Server Auto-Detect-Ergebnisse schickt (MS-RDPBCGR 2.2.14.1.5) [Q4]; die Probe hat es
+  weder gegen xrdp (T2) noch gegen Windows (T4) bekommen. Die Statuszeile zeigt die RTT deshalb nur, wenn das
+  Ereignis kommt, sonst „—“.
+- Stufe 3: Schalter Zwischenablage, Laufwerke, Audio.
+- Stufe 4: Skalierung (Auto, 100 %, HiDPI), Eingepasst mit dynamischer Auflösung, Vollbild, Fest mit Zoom 25–200 %.
+- Stufe 5: Abdocken, Multi-Monitor.
+- Entfällt bis auf Weiteres: Codec-Anzeige „AVC444“ unter Linux (dort kein H.264, Bedingung 7); unter Windows zeigt
+  die Statuszeile den ausgehandelten Codec.
+
+**Lizenzen.** Die Probe zieht unter Linux 362 Pakete, alle mit permissiven Lizenzen (MIT, Apache-2.0, BSD, ISC,
+Zlib, Unicode); 166 davon fehlen heute im Desktop-Lock, darunter 31 `ironrdp-*`. OpenH264 (BSD-2-Clause) entfällt
+unter Linux (Bedingung 7). Stufe 1 erzeugt `THIRD_PARTY_LICENSES.md` neu (`scripts/gen-third-party-licenses.sh`)
+und setzt Gates in den Build: `cargo tree -i aws-lc-rs` und `cargo tree -i openh264-sys2` leer unter Linux,
+`cargo audit` läuft schon (`audit.yml`). Das Release-Binary der Probe ist 26 MB groß; um wie viel der Desktop
+wächst, misst Stufe 1.
+
+**CSP und Capabilities.**
+- CSP (`tauri.conf.json:16`): `connect-src` um `ws://127.0.0.1:*` erweitern; `script-src` bleibt ohne
+  `wasm-unsafe-eval`.
+- Capabilities (`capabilities/default.json`): Stufe 1 bis 4 brauchen nichts Neues (`dialog:allow-save` für den
+  Screenshot ist da). Stufe 5 legt Fensterrechte je Label fest, nach dem Plan von R-1070.
+
+**Folgezeilen** (als `neu`, Triage durch Kevin; R-1075 geht zurück auf `neu`):
+- R-1090: Abnahme auf echter Hardware als Gate vor dem Standardwechsel: der Bildweg mit GPU unter Linux
+  (WebKitGTK) und Windows (WebView2) gegen p95 33 ms, dazu unter Windows mit Audiogerät und interaktivem Desktop
+  Audio, Zwischenablage und Laufwerk.
+- R-1091: IronRDP upstream melden (nach außen, Kevins Wort): komprimierte PDU in der Verbindungs-Finalisierung (T2),
+  Resize gegen Windows mit GFX ohne `ResetGraphics`-Abschluss (T4), verkürzter RDPDR-Gerätename (T4, Ursache
+  offen).
+- R-1092: den Absturz mit Audio unter Windows klären (T4, Bedingung 12).
+
 ## Datenmodell / API / Migrationen
 
-Keine in diesem Vorhaben. Für R-1075 bewertet T5: Erweiterung von `RdpOptions` (`models.rs:57`, Wire-Vertrag
-Desktop-UI ↔ Backend), neue Tauri-Commands und ein Channel für den Bildweg, die globale Einstellung „RDP: AdminHelper
-| OS-Client“ und wo sie liegt, die CSP (`tauri.conf.json:16`) und die Capabilities. Server, Web, Agent und Datenbank
-sind nach heutigem Stand nicht betroffen (keine Migration).
+Keine in diesem Vorhaben. Für R-1075 (Bauplan in „Ergebnis: Entscheidung“): `RdpOptions` (`models.rs:57`,
+Wire-Vertrag Desktop-UI ↔ Backend) bekommt voraussichtlich die Kanal-Schalter und das Leistungsprofil, `Settings`
+(`models.rs:91`) die Einstellung `rdp_client` mit `#[serde(default)]`. Dazu kommen Tauri-Commands zum Starten und
+Trennen einer Sitzung, ein lokaler WebSocket für Bild und Eingaben, die CSP (`tauri.conf.json:16`) und ab Stufe 5
+Fensterrechte je Label. Server, Web, Agent und Datenbank sind nicht betroffen (keine Migration).
 
 ## Externe Integrationen
 
@@ -473,13 +607,13 @@ sind nach heutigem Stand nicht betroffen (keine Migration).
 
 ## Trade-offs & Alternativen
 
-Vorläufige Empfehlung (Hypothese, T5 entscheidet): **V2**. Das Passwort bleibt im Rust-Prozess wie heute
-(`spawn_rdp_with_password`, Keyring), die CSP bleibt ohne `wasm-unsafe-eval`, die Kanäle laufen nativ, Linux und
-Windows teilen einen Code-Weg, und das Muster passt zu R-1069 (PTY in Rust, Daten über einen Tauri-Channel). Das
-Risiko liegt in der Bildstrecke Rust → Webview; T3 misst genau das. V1 ist der Weg, den Devolutions selbst für den
-Browser geht, verlagert aber Anmeldedaten und Protokoll in den Webview. V3a ist am reifsten, kostet aber eine
-C-Abhängigkeit mit eigener Paketierung, eigene Bindings und einen C-Dekoder im App-Prozess. V3b und V3c sind
-ausgeschlossen (Wayland bzw. ein Dienst mehr über FreeRDP). Stand nach T1: „Ergebnis: Matrix“.
+Empfehlung nach T1–T4: **V2**; Begründung, Bedingungen und Restrisiken stehen in „Ergebnis: Entscheidung“. Das
+Passwort bleibt im Rust-Prozess wie heute (`spawn_rdp_with_password`, Keyring), die CSP bleibt ohne
+`wasm-unsafe-eval`, die Kanäle laufen nativ, Linux und Windows teilen einen Code-Weg, und die Sitzung lebt im Backend
+wie das PTY von R-1069. Das Bild geht über einen lokalen WebSocket statt über einen Tauri-Channel (T3). V1 ist der
+Weg, den Devolutions selbst für den Browser geht, verlagert aber Anmeldedaten und Protokoll in den Webview. V3a ist am
+reifsten, kostet aber eine C-Abhängigkeit mit eigener Paketierung, eigene Bindings und einen C-Dekoder im
+App-Prozess; es bleibt Rückfall. V3b und V3c sind ausgeschlossen (Wayland bzw. ein Dienst mehr über FreeRDP).
 
 ## Risiken & Rollback
 
@@ -490,7 +624,7 @@ ausgeschlossen (Wayland bzw. ein Dienst mehr über FreeRDP). Stand nach T1: „E
   Kerns, T4). xrdp sendet ohnehin kein H.264 (T2).
 - **Windows-Host:** T4 lief auf einem GitHub-Windows-Runner (Kevin 2026-11-02), Windows nahm RDP über Loopback an.
   Was dort nicht prüfbar war (Zwischenablage, Laufwerk, Audio hörbar, GPU), steht in „Ergebnis: Windows“ unter
-  „Nicht gemessen“.
+  „Nicht gemessen“ und wird R-1090.
 - **Ressourcen:** Ein Desktop-Build braucht 4–6 GiB, die Dev-Box ist oft über der Lastgrenze. T3 lief deshalb auf
   der Desktop-VM der Lane, T4 auf dem Runner; die Build-Verzeichnisse der Probe gehen mit dem Worktree beim Teardown.
 - **Fremdcode:** Prototyp-Abhängigkeiten aus crates.io und npm laufen nur in der Wegwerf-Umgebung, nie im Produkt.
@@ -509,6 +643,13 @@ Keine Produkt-Doku: kein Verhalten ändert sich. Das Ergebnis steht in dieser Sp
    temporären Workflow auf einem eigenen Wegwerf-Branch, der nie gemergt und danach gelöscht wird: RDP aktivieren,
    Wegwerf-Benutzer mit zufälligem Passwort, Probe-Client gegen den eigenen Loopback, Logs ohne Geheimnisse (sie sind
    öffentlich).
-2. **Nach T5 (Kevin):** die gewählte Variante, das Restrisiko (z. B. Passwort im Webview bei V1), die Mockup-Funktionen,
-   die entfallen oder später kommen (AVC444, RD-Gateway, Multi-Monitor), und der Standard der Einstellung
-   „RDP: AdminHelper | OS-Client“. Diese Fragen stellt T5 mit Empfehlung; R-1075 wird danach neu triagiert.
+2. **Nach T5 (Kevin), je mit Empfehlung** (Grundlage „Ergebnis: Entscheidung“); R-1075 wird danach neu triagiert:
+   - Variante: **V2**, V3a als Rückfall.
+   - Restrisiko Patente einer eigenen RDP-Implementierung: hinnehmen (nicht juristisch geprüft); der OS-Client
+     bleibt wählbar.
+   - H.264 unter Linux: aus, kein gebündeltes OpenH264; unter Windows über Media Foundation.
+   - Standard der Einstellung „RDP: AdminHelper | OS-Client“: OS-Client, bis die Abnahme auf echter Hardware
+     (R-1090) grün ist.
+   - Mockup-Funktionen: nach den Bauplan-Stufen, R-1075 je Stufe in eigene Zeilen geteilt; RD-Gateway, H.264 unter
+     Linux und Dateien über die Zwischenablage später.
+   - IronRDP-Fehler upstream melden (nach außen): ja (R-1091).
