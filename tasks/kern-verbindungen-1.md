@@ -26,8 +26,10 @@ Review: approve (.ah-out/review/kern-verbindungen-1/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T9
 
-### T3 — Erreichbarkeit: Tauri-Befehl probe_targets  [ ]
+### T3 — Erreichbarkeit: Tauri-Befehl probe_targets  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/probe.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @d18a4fb5 2026-11-02T22:59:55+01:00
+Review: approve (.ah-out/review/kern-verbindungen-1/T3.verdict.json)
 Änderung: Neues Modul (SPDX-Header): TCP-Connect je `{host, port}`, Zeitlimit 1,5 s inkl. DNS, höchstens 16 gleichzeitig, höchstens 256 Ziele (sonst Validierungsfehler), Ergebnis Latenz in ms oder `null`; Befehl registrieren. Tests: lokaler Listener → Wert, geschlossener Port → `null`, 257 Ziele → Fehler, Port 0 → Fehler. Erst nach dem Merge von kern-monitoring-3 bauen (dieselben Dateien commands.rs/main.rs). R-1067.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- probe
 Doku: → T9

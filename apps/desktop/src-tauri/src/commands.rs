@@ -21,6 +21,7 @@ use crate::models::{
 };
 use crate::password;
 use crate::port_registry::PortRegistry;
+use crate::probe::{self, ProbeTarget};
 use crate::proxy;
 use crate::session::SessionState;
 use crate::storage;
@@ -268,6 +269,12 @@ pub async fn export_browser_p12(
 #[tauri::command]
 pub async fn write_export_csv(dest_path: String, content: String) -> Result<String, AppError> {
     blocking(move || storage::write_export_csv(&dest_path, &content)).await
+}
+
+/// TCP reachability of the given targets: connect time in ms, or null.
+#[tauri::command]
+pub async fn probe_targets(targets: Vec<ProbeTarget>) -> Result<Vec<Option<u64>>, AppError> {
+    probe::probe_all(targets).await
 }
 
 /// Generic API proxy: forwards requests to the signed-in server via reqwest.
