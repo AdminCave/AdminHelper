@@ -83,6 +83,13 @@ def frps_cert_dir() -> str:
     return os.environ.get("CA_FRPS_CERT_DIR", "").strip()
 
 
+def trust_dir() -> str:
+    """When set, the issuer writes the listed intermediates of each scope here on boot
+    (app.trust, R-1009); the server mounts it ro to check who issued a client cert.
+    Empty -> nothing written (tests/dev)."""
+    return os.environ.get("CA_TRUST_DIR", "").strip()
+
+
 def frps_server_addr() -> str:
     """CN + primary SAN of the frps leaf = the public frps address frpc connects
     to. Defaults to DOMAIN; set CA_FRPS_SERVER_ADDR if frps is reached under a

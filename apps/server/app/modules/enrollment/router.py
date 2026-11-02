@@ -30,8 +30,9 @@ from app.core.middleware import resolve_client_ip
 from app.core.request_context import Actor, actor_from_request
 from app.core.time import iso_utc
 from app.modules.audit import service as audit
+from app.modules.enrollment import expiry
 from app.modules.enrollment.models import line_of, revoke_line
-from app.modules.enrollment.schemas import EnrollmentGrantOut
+from app.modules.enrollment.schemas import CertificateOverviewOut, EnrollmentGrantOut
 from app.modules.enrollment.service import DEFAULT_TTL, mint_enrollment_grant
 from app.modules.users.models import User
 
@@ -168,3 +169,11 @@ def revoke_own_device(
         object_label=identity.cn,
         detail="reason=self",
     )
+
+
+@router.get("/certificates", response_model=CertificateOverviewOut)
+def certificate_overview(db: Session = Depends(get_db), _admin: User = Depends(get_current_admin)):
+    """When the certificates run out (R-1022): the infrastructure certificates as the
+    ca-issuer recorded them at its last start, and the newest certificate of each agent
+    that is not revoked. Status `warning` below 30 days left, `critical` below 7."""
+    return expiry.overview(db)

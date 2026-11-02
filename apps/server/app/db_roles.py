@@ -37,13 +37,15 @@ ROLES = {
 
 # What the ca-issuer does on the tables of the server's database it works on
 # (apps/ca-issuer/app/db.py): it reads revocations and the register's install time, it never
-# changes them; it deletes nothing and changes no schema.
+# changes them; it deletes only its own snapshot of the infrastructure certificates, which it
+# replaces on every start, and changes no schema.
 CA_TABLE_PRIVILEGES = {
     "enrollment_tokens": "SELECT, UPDATE",
     "device_lines": "SELECT, INSERT, UPDATE",
     "issued_certificates": "SELECT, INSERT",
     "revoked_identities": "SELECT",
     "certificate_register_state": "SELECT",
+    "infra_certificates": "SELECT, INSERT, DELETE",
 }
 CA_TABLES = tuple(CA_TABLE_PRIVILEGES)
 SCHEDULER_TABLE_PRIVILEGES = sql.SQL("SELECT, INSERT, UPDATE, DELETE")

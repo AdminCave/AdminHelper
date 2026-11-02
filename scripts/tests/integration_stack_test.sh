@@ -493,14 +493,16 @@ else:
 sv_has_new() { LAST=$(sv_file since "$1"); [ -n "$LAST" ] && [ "$LAST" != "=" ]; }
 
 # tls_probe <port> — "ok <sha256 of the leaf>" when a TLS handshake on the port completes with a
-# certificate that chains to frps-certs/ca.crt; "no <error>" when the connection is refused,
-# reset, closed or times out; "bad <error>" for a handshake that fails otherwise.
+# certificate that a listed intermediate of frps-certs/ca.crt issued; "no <error>" when the
+# connection is refused, reset, closed or times out; "bad <error>" for a handshake that fails
+# otherwise. ca.crt holds no root (R-1009), so its intermediates are the anchors (partial chain).
 tls_probe() {
     python3 - "$1" "$E2E_WORK/frps-ca.crt" "$E2E_WORK/client3-fullchain.pem" "$E2E_WORK/client3.key" <<'PY'
 import hashlib, socket, ssl, sys
 port, ca, chain, key = sys.argv[1:5]
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 ctx.check_hostname = False
+ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
 ctx.load_verify_locations(ca)
 ctx.load_cert_chain(chain, key)
 try:
@@ -515,6 +517,134 @@ PY
 }
 tls_answers() { LAST=$(tls_probe "$FRPS_PORT"); [ "$LAST" = "ok $FRPS_LEAF" ]; }
 tls_silent()  { LAST=$(tls_probe "$FRPS_PORT"); [ "${LAST%% *}" = no ]; }
+
+# frps_takes <chain> <key> — "taken" when frps keeps a TLS connection with this client cert open
+# (it waits for the frpc login), "refused <error>" when it ends it. Under TLS 1.3 the client's
+# handshake completes before the server checks the client cert, so the refusal shows only as
+# the alert on the first read.
+frps_takes() {
+    python3 - "$FRPS_PORT" "$E2E_WORK/frps-ca.crt" "$1" "$2" <<'PY'
+import socket, ssl, sys
+port, ca, chain, key = sys.argv[1:5]
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ctx.check_hostname = False
+ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+ctx.load_verify_locations(ca)
+ctx.load_cert_chain(chain, key)
+try:
+    with socket.create_connection(("127.0.0.1", int(port)), timeout=5) as raw:
+        with ctx.wrap_socket(raw) as conn:
+            conn.settimeout(3)
+            try:
+                data = conn.recv(1)
+            except socket.timeout:
+                print("taken")
+            else:
+                print("refused", "closed" if not data else "data")
+except (ssl.SSLError, ConnectionError) as e:
+    print("refused", type(e).__name__, getattr(e, "reason", ""))
+except OSError as e:
+    print("bad", type(e).__name__)
+PY
+}
+
+# unlisted_leaf — an access leaf for admin under an intermediate the ca-issuer mints right now
+# under the real root and lists nowhere (in a one-off ca-issuer with the run's passphrase):
+# E2E_WORK/unlisted-fullchain.pem (leaf + that intermediate) and unlisted.key. The gateway
+# (anchored at the root) lets it through; frps and the server must not (R-1009).
+unlisted_leaf() {
+    e2e_dc run --rm --no-deps -T ca-issuer python - <<'PY' >"$E2E_WORK/unlisted.json" 2>"$E2E_WORK/unlisted.err" \
+        && python3 - "$E2E_WORK" <<'PY2'
+import json
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from app import config, pki
+
+root_dir = config.pki_dir()
+root = pki.cert_from_pem((root_dir / "root.crt").read_bytes())
+root_key = pki.key_from_pem((root_dir / "root.key.enc").read_bytes(), config.root_passphrase())
+inter, inter_key = pki.build_intermediate_ca("access", root, root_key, label="itest-unlisted")
+key = pki.generate_key()
+csr = (
+    x509.CertificateSigningRequestBuilder()
+    .subject_name(x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "admin")]))
+    .sign(key, pki._HASH)
+)
+leaf = pki.sign_leaf(csr, inter, inter_key, pki.LeafSpec(lifetime_days=1, subject_cn="admin", scope="access"))
+print(json.dumps({"chain": pki.chain_pem(leaf, inter).decode(), "key": pki.key_to_pem(key).decode()}))
+PY
+import json, os, sys
+work = sys.argv[1]
+data = json.load(open(f"{work}/unlisted.json"))
+open(f"{work}/unlisted-fullchain.pem", "w").write(data["chain"])
+fd = os.open(f"{work}/unlisted.key", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.write(fd, data["key"].encode()); os.close(fd)
+PY2
+}
+
+# record_unlisted — record the unlisted leaf (first PEM of unlisted-fullchain.pem) in the
+# register on a device line of admin, so the register admits it and only the issuer check of the
+# server can refuse it: unrecorded, a leaf issued after the register was installed is refused
+# anyway, and the gateway step below would pass without that check.
+record_unlisted() {
+    e2e_dc exec -T server python -c '
+import sys, uuid
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from app.core.database import SessionLocal
+from app.modules.enrollment.models import DeviceLine, IssuedCertificate
+cert = x509.load_pem_x509_certificate(sys.stdin.buffer.read())
+try:
+    db = SessionLocal()
+    line = DeviceLine(id=str(uuid.uuid4()), subject_id="admin", scope="access", kind="desktop")
+    db.add(line)
+    db.flush()
+    db.add(IssuedCertificate(
+        fingerprint=cert.fingerprint(hashes.SHA256()).hex(),
+        line_id=line.id,
+        serial=format(cert.serial_number, "x"),
+        not_before=cert.not_valid_before_utc.replace(tzinfo=None),
+        not_after=cert.not_valid_after_utc.replace(tzinfo=None),
+    ))
+    db.commit()
+except Exception as e:
+    # The type only: a driver error quotes the whole conninfo, password included.
+    print(type(e).__name__, file=sys.stderr)
+    sys.exit(1)' <"$E2E_WORK/unlisted-fullchain.pem" 2>"$E2E_WORK/record.err" >/dev/null
+}
+
+# gateway_status <chain> <key> — "<status> <body>" of GET /api/servers with this client cert and
+# the device's JWT through the gateway.
+gateway_status() {
+    curl -k -s --cert "$1" --key "$2" -H "Authorization: Bearer $JWT3" -w ' %{http_code}' \
+        --max-time 10 "$E2E_SERVER_URL/api/servers" 2>/dev/null | awk '{ code = $NF; $NF = ""; print code, $0 }'
+}
+
+# unlisted_issuer — R-1009 in the real stack: a client cert of an unlisted intermediate under the
+# real root is refused by frps (whose anchors are the listed intermediates) and by the server
+# behind the gateway (403 ERR_CERT_REVOKED); the enrolled device passes both.
+unlisted_issuer() {
+    local out
+    if ! unlisted_leaf; then
+        bad "unlisted issuer: could not mint the test leaf: $(tail -3 "$E2E_WORK/unlisted.err")"; return
+    fi
+    out=$(frps_takes "$E2E_WORK/client3-fullchain.pem" "$E2E_WORK/client3.key")
+    [ "$out" = taken ] && ok "frps keeps the TLS connection of the enrolled device" \
+        || bad "frps with the enrolled device's cert: '$out', expected taken"
+    out=$(frps_takes "$E2E_WORK/unlisted-fullchain.pem" "$E2E_WORK/unlisted.key")
+    [ "${out%% *}" = refused ] && ok "frps refuses a cert of an unlisted intermediate under the root ($out)" \
+        || bad "frps with a cert of an unlisted intermediate: '$out', expected refused"
+    out=$(gateway_status "$E2E_WORK/client3-fullchain.pem" "$E2E_WORK/client3.key")
+    [ "${out%% *}" = 200 ] && ok "through the gateway the enrolled device's cert -> 200" \
+        || bad "through the gateway with the enrolled device's cert: '$out', expected 200"
+    if ! record_unlisted; then
+        bad "unlisted issuer: could not record the test leaf: $(tail -3 "$E2E_WORK/record.err")"; return
+    fi
+    out=$(gateway_status "$E2E_WORK/unlisted-fullchain.pem" "$E2E_WORK/unlisted.key")
+    [ "${out%% *}" = 403 ] && grep -q ERR_CERT_REVOKED <<<"$out" \
+        && ok "through the gateway a cert of an unlisted intermediate -> 403 ERR_CERT_REVOKED" \
+        || bad "through the gateway with a cert of an unlisted intermediate: '$out', expected 403 ERR_CERT_REVOKED"
+}
 
 # frps_pid — the pid of frps in its container, empty when none runs (pidof exits 1); non-zero
 # when pidof fails otherwise or the exec does, so that "no process" never rests on an error.
@@ -713,6 +843,7 @@ frps_takeover() {
         || bad "new token: new frps notifications '$new'"
     until_ok 10 tls_answers && ok "frps answers TLS again after the restart" \
         || bad "frps does not answer TLS after the restart ('$LAST')"
+    unlisted_issuer
 
     # e. An invalid certificate file in frps-certs: rejected, frps runs on from its last valid
     #    copy (degraded), still answers TLS with that leaf, as the same process.

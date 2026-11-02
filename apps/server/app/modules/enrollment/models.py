@@ -196,6 +196,22 @@ class IssuedCertificate(Base):
     created_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
 
 
+class InfraCertificate(Base):
+    """An infrastructure certificate of the ca-issuer (root, an intermediate, the gateway's
+    or frps' server certificate). The ca-issuer replaces all rows on every start: the server
+    cannot read the PKI volume, it reads this table. ``name`` is ``root``,
+    ``intermediate:<scope>``, ``gateway`` or ``frps``; times are naive UTC."""
+
+    __tablename__ = "infra_certificates"
+
+    name = Column(String, primary_key=True)
+    subject = Column(String, nullable=False)
+    fingerprint = Column(String(64), nullable=False)
+    not_before = Column(DateTime, nullable=False)
+    not_after = Column(DateTime, nullable=False)
+    recorded_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+
+
 class CertificateRegisterState(Base):
     """The one row (id 1) the migration writes: when the register was installed.
     A certificate issued before then is not recorded and is taken over at first

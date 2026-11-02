@@ -33,8 +33,10 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
 from fastapi import Depends, HTTPException, Request, status
@@ -74,6 +76,15 @@ _IGNORED_LOG_INTERVAL = 60.0  # one warning per peer and minute
 _ignored_logged: dict[str | None, float] = {}
 _ignored_lock = threading.Lock()
 
+# The scopes the ca-issuer writes a trust file for (pki.SCOPES there). Only these name a
+# file, so a certificate's OU never reaches the path.
+_TRUST_SCOPES = ("tunnel", "access", "internal")
+# Per file: (mtime_ns, size, inode) of the read copy and its certificates; a rewrite by the
+# ca-issuer (atomic rename) changes the key and is read again.
+_trust_cache: dict[Path, tuple[tuple[int, int, int], list[x509.Certificate]]] = {}
+_trust_lock = threading.Lock()
+_trust_logged: dict[Path, float] = {}
+
 
 @dataclass(frozen=True)
 class ClientIdentity:
@@ -88,6 +99,9 @@ class ClientIdentity:
     fingerprint: str | None = None  # SHA-256 over DER, lowercase hex
     serial: str | None = None  # hex
     not_after: datetime | None = None  # naive UTC
+    # A listed intermediate of the scope issued the certificate (R-1009). False unless
+    # get_client_identity checked it: a hand-built identity is refused (fail-closed).
+    issuer_listed: bool = False
 
     def __bool__(self) -> bool:
         return self.verified
@@ -142,6 +156,52 @@ def _peer_is_gateway(request: Request) -> bool:
     return False
 
 
+def _trust_error(path: Path, reason: str) -> None:
+    now = time.monotonic()
+    with _trust_lock:
+        if now - _trust_logged.get(path, -_IGNORED_LOG_INTERVAL) < _IGNORED_LOG_INTERVAL:
+            return
+        _trust_logged[path] = now
+    logger.error(
+        "mTLS: trust file %s %s — client certificates of this scope are refused", path, reason
+    )
+
+
+def _listed_intermediates(scope: str | None) -> list[x509.Certificate]:
+    """The listed intermediates of ``scope`` from CA_TRUST_DIR, read again when the file
+    changed; empty for an unknown scope or a missing or unreadable file."""
+    if scope not in _TRUST_SCOPES:
+        return []
+    path = Path(config.CA_TRUST_DIR) / f"{scope}.pem"
+    try:
+        st = path.stat()
+        key = (st.st_mtime_ns, st.st_size, st.st_ino)
+        with _trust_lock:
+            cached = _trust_cache.get(path)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        certs = x509.load_pem_x509_certificates(path.read_bytes())
+    except OSError:
+        _trust_error(path, "is missing or unreadable")
+        return []
+    except ValueError:
+        _trust_error(path, "holds no readable certificate")
+        return []
+    with _trust_lock:
+        _trust_cache[path] = (key, certs)
+    return certs
+
+
+def _issuer_listed(cert: x509.Certificate, scope: str | None) -> bool:
+    for intermediate in _listed_intermediates(scope):
+        try:
+            cert.verify_directly_issued_by(intermediate)
+        except (ValueError, TypeError, InvalidSignature, UnsupportedAlgorithm):
+            continue
+        return True
+    return False
+
+
 def get_client_identity(request: Request) -> ClientIdentity:
     """Parse the gateway-forwarded client identity from the verified cert.
 
@@ -167,14 +227,16 @@ def get_client_identity(request: Request) -> ClientIdentity:
     except ValueError:
         logger.warning("Vom Gateway weitergereichtes Client-Cert nicht parsebar")
         return _UNVERIFIED
+    scope = _first(cert, NameOID.ORGANIZATIONAL_UNIT_NAME)
     return ClientIdentity(
         verified=True,
         cn=_first(cert, NameOID.COMMON_NAME),
-        scope=_first(cert, NameOID.ORGANIZATIONAL_UNIT_NAME),
+        scope=scope,
         not_before=cert.not_valid_before_utc.replace(tzinfo=None),
         fingerprint=cert.fingerprint(hashes.SHA256()).hex(),
         serial=format(cert.serial_number, "x"),
         not_after=cert.not_valid_after_utc.replace(tzinfo=None),
+        issuer_listed=_issuer_listed(cert, scope),
     )
 
 
@@ -276,8 +338,11 @@ def _is_revoked(
     immediate data-plane cut-off, not waiting for cert expiry): a revocation of its
     CN and scope at or after its ``not_before``, and with the full ``identity`` the
     certificate register as well — its device line revoked, or not recorded once the
-    transition is over (R-0224). ``db`` is the request session; it is None only in
-    pure-logic unit tests, where there is no revocation to check."""
+    transition is over (R-0224), and with the full ``identity`` an issuer that is not a
+    listed intermediate of its scope (R-1009). ``db`` is the request session; it is None
+    only in pure-logic unit tests, where there is no revocation to check."""
+    if identity is not None and identity.verified and not identity.issuer_listed:
+        return True
     if db is None or cn is None or scope is None:
         return False
     from app.modules.enrollment.models import admit_certificate, is_identity_revoked

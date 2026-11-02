@@ -26,11 +26,17 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# docker stub: append every call to $DOCKER_LOG, succeed at everything.
+# docker stub: append every call to $DOCKER_LOG, succeed at everything. compose
+# config names AH_TEST_PROJECT (else COMPOSE_PROJECT_NAME) and fails with
+# AH_TEST_CONFIG_FAIL=1.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$DOCKER_LOG"
+if [ "$*" = "compose config" ]; then
+  [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || exit 1
+  echo "name: ${AH_TEST_PROJECT:-${COMPOSE_PROJECT_NAME:-}}"; echo "services: {}"
+fi
 exit 0
 EOF
 chmod +x "$BIN/docker"
@@ -133,6 +139,20 @@ else
   { [ -f "$ENV_COPY" ] && [ -f "$WORK/inst7/.env.ah-new" ]; } \
     && ok "no to secrets: copies kept" || bad "no to secrets: a copy deleted"
 fi
+
+# ── 8. the project name comes from docker compose config ────────────────────
+# (a) COMPOSE_PROJECT_NAME only in the .env (compose names ah-prod): the sweep hits it
+seed "$WORK/inst8a"; : > "$WORK/docker.log"
+out=$(cd "$WORK/inst8a" && env -u COMPOSE_PROJECT_NAME DOCKER_LOG="$WORK/docker.log" AH_TEST_PROJECT=ah-prod bash "$UNINSTALL" --yes 2>&1)
+{ grep -q 'label=com.docker.compose.project=ah-prod' "$WORK/docker.log" && grep -q 'Compose-Projekt: ah-prod' <<<"$out"; } \
+  && ok "project name from compose config: the label sweep hits ah-prod" \
+  || bad "project from compose config: $(grep -o 'label=[^ ]*' "$WORK/docker.log" | sort -u | tr '\n' ' ')"
+# (b) compose config fails: the directory name, as before
+seed "$WORK/inst8b"; : > "$WORK/docker.log"
+(cd "$WORK/inst8b" && env -u COMPOSE_PROJECT_NAME DOCKER_LOG="$WORK/docker.log" AH_TEST_PROJECT=ah-prod AH_TEST_CONFIG_FAIL=1 bash "$UNINSTALL" --yes >/dev/null 2>&1)
+{ grep -q 'label=com.docker.compose.project=inst8b' "$WORK/docker.log" && ! grep -q 'project=ah-prod' "$WORK/docker.log"; } \
+  && ok "compose config fails: the label comes from the directory name" \
+  || bad "config fails: $(grep -o 'label=[^ ]*' "$WORK/docker.log" | sort -u | tr '\n' ' ')"
 
 echo
 echo "──────────────────────────────────────────"

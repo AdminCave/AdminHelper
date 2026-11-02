@@ -187,10 +187,11 @@ def require_internal_key(x_internal_key: str | None = Depends(_internal_key_sche
 
 # The source types under which the server keeps notices of its own and by which it finds
 # them again: frp_config (main._report_rejected_fields, a field set already reported) and
-# frps (frp.supervisor_watch, an event already told and the hourly limit). A row from this
+# frps (frp.supervisor_watch, an event already told and the hourly limit), certificate_expiry
+# (enrollment.expiry.notify_expiring, a level already reported). A row from this
 # ingress under one of them would count as such a notice. IncomingEvent keeps taking them:
 # the server builds its own notices with it.
-_SERVER_SOURCE_TYPES = frozenset({"frp_config", "frps"})
+_SERVER_SOURCE_TYPES = frozenset({"frp_config", "frps", "certificate_expiry"})
 
 
 @internal_router.post(

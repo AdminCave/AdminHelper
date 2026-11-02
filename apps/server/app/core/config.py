@@ -300,6 +300,12 @@ else:
         "MTLS_ENFORCE=false — Datenebene laeuft PERMISSIV (Scope-Mismatch wird nur geloggt)."
     )
 
+# Directory of the listed intermediates per scope (<scope>.pem, current + retired), written
+# by the ca-issuer at its start. nginx anchors client certs at the root, so a certificate of
+# a withdrawn intermediate still passes the gateway; the server accepts one only if a listed
+# intermediate of its scope issued it (R-1009). A missing file refuses its scope (fail-closed).
+CA_TRUST_DIR = os.environ.get("CA_TRUST_DIR", "/app/ca-trust").strip()
+
 # Public port of the gateway's enrollment plane (ADR 0001 §3.2). The server has
 # no reliable view of its own public address, so it only returns this port hint
 # in the provision response — the agent derives the host from the URL it already

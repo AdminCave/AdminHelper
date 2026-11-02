@@ -22,7 +22,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 _CA_DB = _ROOT / "apps" / "ca-issuer" / "app" / "db.py"
 
 # The tables the ca-issuer inserts into, as opposed to only reading or updating.
-_WRITTEN = ("device_lines", "issued_certificates")
+_WRITTEN = ("device_lines", "issued_certificates", "infra_certificates")
 
 
 def _name(node: ast.AST) -> str | None:
@@ -50,6 +50,7 @@ def test_the_view_covers_the_register_and_the_token_tables():
         "device_lines",
         "issued_certificates",
         "certificate_register_state",
+        "infra_certificates",
     }
 
 
