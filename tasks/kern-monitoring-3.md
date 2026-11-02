@@ -15,8 +15,10 @@ Der Server-Proxy (`apps/server/app/modules/monitoring_proxy/router.py`) reicht `
 durch und bleibt unverändert. Desktop-Tasks bauen auf dem gemergten kern-design-2 auf (vorher `origin/main` in den
 Branch mergen).
 
-### T1 — Agent-Push schreibt Swap und CPU-Anzahl (R-1076)  [ ]
+### T1 — Agent-Push schreibt Swap und CPU-Anzahl (R-1076)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @27cbae5c 2026-11-02T20:24:40+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T1.verdict.json)
 Änderung: `_report_lines` (`app/routers/agent.py:149`) schreibt zusätzlich `swap_percent` und `cpu_count` aus `resources` als `monitor_agent_<key>` (gelesen wie die übrigen über `agent_number`); fehlt ein Feld, entsteht keine Zeile. Test: Report mit und ohne die Felder, Zeilen wörtlich.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py
 Doku: → T12
