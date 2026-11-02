@@ -25,6 +25,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import RdpSection from './RdpSection.svelte';
   import NotificationsSection from './NotificationsSection.svelte';
   import DiagnosticsSection from './DiagnosticsSection.svelte';
+  import CertificateSection from './CertificateSection.svelte';
+  import ScopePill from './ScopePill.svelte';
+  import { nextIndex } from '../ui/roving';
 
   // The kind of the workspace of this window: fixed, as are its name, colour and URL, which the
   // workspace list changes while the workspace is closed.
@@ -53,6 +56,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // would close the settings under the question. A count, not a flag: a second click replaces
   // the open question, and the first one's end must not lift the guard the second one holds.
   let asking = 0;
+
+  const SECTIONS = ['general', 'workspace', 'rdp', 'notifications', 'device'] as const;
+  type Section = (typeof SECTIONS)[number];
+  const NAV_LABEL: Record<Section, string> = {
+    general: 'settings.nav.general',
+    workspace: 'settings.nav.workspace',
+    rdp: 'settings.nav.rdp',
+    notifications: 'settings.nav.notifications',
+    device: 'settings.nav.device',
+  };
+  // Every pane stays mounted and only the active one shows: what is typed in one survives a
+  // switch to the next, saving takes all of them, and the device section reads the
+  // registration on opening as before.
+  let active = $state<Section>('general');
+  let navButtons: HTMLButtonElement[] = $state([]);
+
+  function onNavKey(e: KeyboardEvent, i: number): void {
+    const to = nextIndex(e.key, i, SECTIONS.length);
+    if (to === undefined) return;
+    e.preventDefault();
+    active = SECTIONS[to];
+    navButtons[to]?.focus();
+  }
 
   async function ask(message: string, confirmLabel: string): Promise<boolean> {
     asking += 1;
@@ -101,37 +127,101 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button class="btn ghost small" onclick={closeSettings}>{$t('editor.close')}</button>
     </div>
 
-    <section class="sm-group" data-group="workspace">
-      <h3 class="sm-group-title">{$t('settings.group.workspace')}</h3>
-      <WorkspaceSection
-        {mode}
-        {workspace}
-        {resetTarget}
-        {ask}
-        bind:intervalMinutes
-        bind:allowSelfSignedCerts
-      />
-      <DeviceSection {mode} {resetTarget} {allowSelfSignedCerts} {ask} />
-      {#if $session}
-        <div class="sm-section">
-          <div class="sm-section-title">{$t('settings.section.notificationRules')}</div>
-          <NotificationPrefs />
-        </div>
-      {/if}
-    </section>
+    <div class="sm-body">
+      <div
+        class="sm-nav"
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label={$t('settings.title')}
+      >
+        {#each SECTIONS as id, i (id)}
+          <button
+            bind:this={navButtons[i]}
+            type="button"
+            role="tab"
+            class="sm-nav-item"
+            id="sm-tab-{id}"
+            data-section={id}
+            aria-selected={active === id}
+            aria-controls="sm-pane-{id}"
+            tabindex={active === id ? 0 : -1}
+            onclick={() => (active = id)}
+            onkeydown={(e) => onNavKey(e, i)}>{$t(NAV_LABEL[id])}</button
+          >
+        {/each}
+      </div>
 
-    <section class="sm-group" data-group="device">
-      <h3 class="sm-group-title">{$t('settings.group.device')}</h3>
-      <GeneralSection bind:language bind:storePasswords />
-      <RdpSection
-        bind:rdpScalingMode
-        bind:rdpWindowMode
-        bind:rdpCustomSize
-        bind:rdpPerformanceProfile
-      />
-      <NotificationsSection bind:osNotifications />
-      <DiagnosticsSection />
-    </section>
+      <div class="sm-content">
+        <div
+          class="sm-pane"
+          role="tabpanel"
+          id="sm-pane-general"
+          aria-labelledby="sm-tab-general"
+          data-pane="general"
+          hidden={active !== 'general'}
+        >
+          <GeneralSection {mode} bind:language bind:storePasswords bind:allowSelfSignedCerts />
+        </div>
+        <div
+          class="sm-pane"
+          role="tabpanel"
+          id="sm-pane-workspace"
+          aria-labelledby="sm-tab-workspace"
+          data-pane="workspace"
+          hidden={active !== 'workspace'}
+        >
+          <WorkspaceSection {mode} {workspace} bind:intervalMinutes />
+        </div>
+        <div
+          class="sm-pane"
+          role="tabpanel"
+          id="sm-pane-rdp"
+          aria-labelledby="sm-tab-rdp"
+          data-pane="rdp"
+          hidden={active !== 'rdp'}
+        >
+          <div data-scope="device">
+            <RdpSection
+              bind:rdpScalingMode
+              bind:rdpWindowMode
+              bind:rdpCustomSize
+              bind:rdpPerformanceProfile
+            />
+          </div>
+        </div>
+        <div
+          class="sm-pane"
+          role="tabpanel"
+          id="sm-pane-notifications"
+          aria-labelledby="sm-tab-notifications"
+          data-pane="notifications"
+          hidden={active !== 'notifications'}
+        >
+          <div data-scope="device"><NotificationsSection bind:osNotifications /></div>
+          {#if $session}
+            <div class="sm-section" data-scope="workspace">
+              <div class="sm-section-title">
+                {$t('settings.section.notificationRules')}
+                <ScopePill />
+              </div>
+              <NotificationPrefs />
+            </div>
+          {/if}
+        </div>
+        <div
+          class="sm-pane"
+          role="tabpanel"
+          id="sm-pane-device"
+          aria-labelledby="sm-tab-device"
+          data-pane="device"
+          hidden={active !== 'device'}
+        >
+          <DeviceSection {mode} {resetTarget} {allowSelfSignedCerts} {ask} />
+          <CertificateSection {mode} {resetTarget} {ask} />
+          <div data-scope="device"><DiagnosticsSection /></div>
+        </div>
+      </div>
+    </div>
 
     <div class="panel-actions">
       <div style="flex: 1;"></div>
@@ -159,7 +249,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     width: 100%;
-    max-width: 560px;
+    max-width: 860px;
     max-height: 90vh;
     overflow-y: auto;
     padding: var(--sp-5);
@@ -178,26 +268,55 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-size: 16px;
     font-weight: 600;
   }
-  .sm-group {
+  .sm-body {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: var(--sp-4);
+    min-height: 0;
+  }
+  .sm-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: var(--sp-3);
+    border-right: 1px solid var(--border);
+  }
+  .sm-nav-item {
+    text-align: left;
+    padding: var(--sp-2) var(--sp-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .sm-nav-item:hover {
+    color: var(--text);
+    background: var(--bg-subtle);
+  }
+  .sm-nav-item[aria-selected='true'] {
+    color: var(--text-strong);
+    background: var(--bg-subtle);
+    font-weight: 600;
+  }
+  .sm-content {
+    min-width: 0;
+  }
+  .sm-pane {
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);
   }
-  .sm-group + .sm-group {
-    padding-top: var(--sp-3);
-    border-top: 1px solid var(--border);
-  }
-  .sm-group-title {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+  .sm-pane[hidden] {
+    display: none;
   }
   /* The building blocks every section shares; the sections keep their own rules. */
   .sm-panel :global(.sm-section) {
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    margin-top: var(--sp-2);
   }
   .sm-panel :global(.sm-section-title) {
     font-size: 12px;

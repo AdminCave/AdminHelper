@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/bridge';
   import { startIfServerMode, stop as stopTunnel } from '$lib/stores/tunnel';
   import type { DeviceIdentity, SyncMode } from '$lib/bridge/types';
+  import ScopePill from './ScopePill.svelte';
 
   interface Props {
     mode: SyncMode;
@@ -151,72 +152,74 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <!-- With a session only: without one an enrollment has no session URL and no
    tunnel to start. A sync workspace has no device identity (Rust refuses its reset). -->
 {#if mode === 'server' && $session}
-  {#if deviceEnrolled}
-    <!-- One inline sentence, not a flex row: a gap would tear the comma off the name. -->
-    {#if identityLine}
-      <div class="sm-identity-row" data-msg="device-identity" data-state={identityLine.status}>
-        {#if identityLine.status === 'unreadable'}
-          {$t('settings.deviceIdentity.unreadable')}
-        {:else if identityLine.status === 'expired'}
-          {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>,
-          {$t('settings.deviceIdentity.expired', { date: identityLine.date })}
-        {:else}
-          {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>
-          {$t('settings.deviceIdentity.until', {
-            date: identityLine.date,
-          })}{#if identityLine.status === 'soon'},
-            <span class="sm-identity-soon">{$t('settings.deviceIdentity.expiresSoon')}</span>{/if}
-        {/if}
+  <div class="sm-section" data-scope="workspace">
+    <div class="sm-section-title">{$t('settings.section.deviceIdentity')} <ScopePill /></div>
+    {#if deviceEnrolled}
+      <!-- One inline sentence, not a flex row: a gap would tear the comma off the name. -->
+      {#if identityLine}
+        <div class="sm-identity-row" data-msg="device-identity" data-state={identityLine.status}>
+          {#if identityLine.status === 'unreadable'}
+            {$t('settings.deviceIdentity.unreadable')}
+          {:else if identityLine.status === 'expired'}
+            {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>,
+            {$t('settings.deviceIdentity.expired', { date: identityLine.date })}
+          {:else}
+            {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>
+            {$t('settings.deviceIdentity.until', {
+              date: identityLine.date,
+            })}{#if identityLine.status === 'soon'},
+              <span class="sm-identity-soon">{$t('settings.deviceIdentity.expiresSoon')}</span>{/if}
+          {/if}
+        </div>
+      {/if}
+      <div class="sm-reset-pin">
+        <button
+          class="btn ghost small danger"
+          data-action="device-reset"
+          onclick={onResetDeviceIdentity}>{$t('settings.resetDeviceId')}</button
+        >
+        <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
+      </div>
+    {:else}
+      <div class="sm-enroll">
+        <span class="field-label">{$t('settings.enroll.hint')}</span>
+        <div class="sm-enroll-row">
+          <input
+            type="text"
+            data-action="enroll-token"
+            aria-label={$t('login.enroll.token')}
+            bind:value={enrollToken}
+            placeholder={$t('login.enroll.token.placeholder')}
+            autocomplete="off"
+          />
+          <button
+            class="btn ghost small"
+            data-action="enroll-submit"
+            onclick={onEnroll}
+            disabled={enrollBusy}
+          >
+            {enrollBusy ? $t('login.enroll.working') : $t('login.enroll.submit')}
+          </button>
+        </div>
       </div>
     {/if}
-    <div class="sm-reset-pin">
-      <button
-        class="btn ghost small danger"
-        data-action="device-reset"
-        onclick={onResetDeviceIdentity}>{$t('settings.resetDeviceId')}</button
-      >
-      <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
-    </div>
-  {:else}
-    <div class="sm-enroll">
-      <span class="field-label">{$t('settings.enroll.hint')}</span>
-      <div class="sm-enroll-row">
-        <input
-          type="text"
-          data-action="enroll-token"
-          aria-label={$t('login.enroll.token')}
-          bind:value={enrollToken}
-          placeholder={$t('login.enroll.token.placeholder')}
-          autocomplete="off"
-        />
-        <button
-          class="btn ghost small"
-          data-action="enroll-submit"
-          onclick={onEnroll}
-          disabled={enrollBusy}
-        >
-          {enrollBusy ? $t('login.enroll.working') : $t('login.enroll.submit')}
-        </button>
-      </div>
-    </div>
-  {/if}
-  <!-- Outside the two branches: the reset message used to sit in the
+    <!-- Outside the two branches: the reset message used to sit in the
      enrolled branch, which disappears the moment the reset succeeds. -->
-  {#if deviceResetMsgKey}<span class="sm-reset-msg" data-msg="device-reset"
-      >{$t(
-        deviceResetMsgKey,
-      )}{#if deviceResetLocal && deviceResetMsgKey === 'settings.resetDeviceId.done'}
-        <span data-msg="device-reset-local">{$t('settings.resetDeviceId.localOnly')}</span
-        >{/if}</span
-    >{/if}
-  {#if enrollMsg}<span class="sm-reset-msg" data-msg="enroll">{enrollMsg}</span>{/if}
+    {#if deviceResetMsgKey}<span class="sm-reset-msg" data-msg="device-reset"
+        >{$t(
+          deviceResetMsgKey,
+        )}{#if deviceResetLocal && deviceResetMsgKey === 'settings.resetDeviceId.done'}
+          <span data-msg="device-reset-local">{$t('settings.resetDeviceId.localOnly')}</span
+          >{/if}</span
+      >{/if}
+    {#if enrollMsg}<span class="sm-reset-msg" data-msg="enroll">{enrollMsg}</span>{/if}
+  </div>
 {/if}
 
 <style>
   .sm-identity-row {
     font-size: 12px;
     color: var(--text-muted);
-    padding-top: var(--sp-2);
   }
   .sm-identity-row strong {
     color: var(--text);
@@ -239,7 +242,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    padding-top: var(--sp-2);
   }
   .sm-enroll-row {
     display: flex;

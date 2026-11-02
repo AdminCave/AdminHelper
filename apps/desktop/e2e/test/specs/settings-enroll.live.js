@@ -40,6 +40,9 @@ async function openSettings() {
   // The gear in the sidebar footer opens the settings.
   await $('.sidebar-bottom .sidebar-item').click();
   await $('.sm-panel').waitForExist({ timeout: 10000 });
+  // Registration, identity and reset live in the section "Device" (R-1063).
+  await $('.sm-panel [data-section="device"]').click();
+  await $('.sm-panel [data-pane="device"]').waitForDisplayed({ timeout: 10000 });
 }
 
 async function registerInSettings(token) {

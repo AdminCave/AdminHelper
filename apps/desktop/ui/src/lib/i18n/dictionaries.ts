@@ -222,7 +222,18 @@ export const translations: Translations = {
     // ── Desktop: SettingsModal ────────────────────────────────────────
     'settings.title': 'Einstellungen',
     'settings.group.workspace': 'Dieser Workspace',
-    'settings.group.device': 'Alle Workspaces auf diesem Gerät',
+    'settings.nav.general': 'Allgemein',
+    'settings.nav.workspace': 'Workspace & Sync',
+    'settings.nav.rdp': 'RDP',
+    'settings.nav.notifications': 'Benachrichtigungen',
+    'settings.nav.device': 'Gerät',
+    'settings.section.theme': 'Design',
+    'settings.theme.dark': 'Dunkel',
+    'settings.theme.light': 'Hell',
+    'settings.section.trust': 'Serverzertifikate',
+    'settings.section.workspace': 'Workspace',
+    'settings.section.certificates': 'Zertifikate',
+    'settings.section.deviceIdentity': 'Geräteregistrierung',
     'settings.workspace.noUrl': 'Noch keine URL',
     'settings.workspace.fixed':
       'Name, Farbe und URL änderst du in der Workspace-Liste („Workspaces…“), solange dieser Workspace geschlossen ist.',
@@ -423,9 +434,6 @@ export const translations: Translations = {
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Verbindungen gesamt',
-    'dashboard.ssh': 'SSH',
-    'dashboard.rdp': 'RDP',
-    'dashboard.web': 'Web',
     'dashboard.recent': 'Zuletzt genutzt',
     'dashboard.empty': 'Noch keine Verbindungen genutzt',
     'dashboard.toList': 'Zur Liste',
@@ -1058,7 +1066,18 @@ export const translations: Translations = {
     // ── Desktop: SettingsModal ────────────────────────────────────────
     'settings.title': 'Settings',
     'settings.group.workspace': 'This workspace',
-    'settings.group.device': 'All workspaces on this device',
+    'settings.nav.general': 'General',
+    'settings.nav.workspace': 'Workspace & sync',
+    'settings.nav.rdp': 'RDP',
+    'settings.nav.notifications': 'Notifications',
+    'settings.nav.device': 'Device',
+    'settings.section.theme': 'Theme',
+    'settings.theme.dark': 'Dark',
+    'settings.theme.light': 'Light',
+    'settings.section.trust': 'Server certificates',
+    'settings.section.workspace': 'Workspace',
+    'settings.section.certificates': 'Certificates',
+    'settings.section.deviceIdentity': 'Device registration',
     'settings.workspace.noUrl': 'No URL yet',
     'settings.workspace.fixed':
       'You change the name, colour and URL in the workspace list (“Workspaces…”) while this workspace is closed.',
@@ -1257,9 +1276,6 @@ export const translations: Translations = {
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Connections total',
-    'dashboard.ssh': 'SSH',
-    'dashboard.rdp': 'RDP',
-    'dashboard.web': 'Web',
     'dashboard.recent': 'Recently used',
     'dashboard.empty': 'No connections used yet',
     'dashboard.toList': 'Go to list',
