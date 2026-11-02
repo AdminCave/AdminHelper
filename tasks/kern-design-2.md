@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-design-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.shell.test.ts src/components/ui/Avatar.test.ts src/components/AppShell.notifications.test.ts src/components/AppShell.workspace.test.ts
 Doku: → T8
 
-### T2 — Toast-Stapel statt Einzel-Toast (R-1062)  [ ]
+### T2 — Toast-Stapel statt Einzel-Toast (R-1062)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/statusBar.ts, apps/desktop/ui/src/lib/stores/statusBar.test.ts, apps/desktop/ui/src/components/StatusBar.svelte, apps/desktop/ui/src/components/StatusBar.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2837cddf 2026-11-02T19:08:52+01:00
+Review: approve (.ah-out/review/kern-design-2/T2.verdict.json)
 Änderung: `statusBar.ts` führt eine Queue (je Meldung id, Text, Art, eigener Timer 6 s bzw. 10 s), höchstens drei sichtbar, die älteste fällt zuerst; `showStatus`, `reportError`, `clearStatus` bleiben in Signatur und Wirkung für die Aufrufer (`clearStatus` leert alle). `StatusBar.svelte` rendert den Stapel mit `ui/Toast`, jede Meldung einzeln schließbar, `role="status"` bzw. `role="alert"` für Fehler. Tests mit Fake-Timern: zwei Meldungen stehen gleichzeitig, Ablauf je Meldung, Obergrenze, Schließen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/statusBar.test.ts src/components/StatusBar.test.ts
 Doku: → T8
