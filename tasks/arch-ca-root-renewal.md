@@ -131,8 +131,10 @@ Review: approve (.ah-out/review/arch-ca-root-renewal/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestNewMTLS|TestCAFingerprint
 Doku: keine (nur Tests)
 
-### T8 — Desktop: Tests für den Vertrag über den Wechsel  [ ]
+### T8 — Desktop: Tests für den Vertrag über den Wechsel  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @89350ba5 2026-11-02T14:01:37+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T8.verdict.json)
 Änderung: Nur Tests (rcgen), kein Produktivcode.
 - `root_fingerprint_of_chain` (`enrollment.rs:374`) mit drei PEMs, Pin = letztes PEM.
 - `build_mtls_client` (`:924`) mit Ankern aus Phase 1 gegen die Kette aus Phase 2 und nach `finish`.
