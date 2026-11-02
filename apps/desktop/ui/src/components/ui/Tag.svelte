@@ -40,7 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <!-- Two sibling controls, never one inside the other: children of role=button are
      presentational, so a nested remove button would vanish for screen readers. -->
-<span class="tag tag-{tone} tag-{size}" class:mono class:clickable={!!onClick}>
+<span class="ui-tag ui-tag-{tone} ui-tag-{size}" class:mono class:clickable={!!onClick}>
   {#if onClick}
     <button type="button" class="main" onclick={onClick}>{@render children()}</button>
   {:else}
@@ -57,7 +57,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </span>
 
 <style>
-  .tag {
+  .ui-tag {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -66,12 +66,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-weight: 500;
     white-space: nowrap;
   }
-  .tag-sm {
+  .ui-tag-sm {
     height: 20px;
     padding: 0 var(--space-2);
     font-size: 11px;
   }
-  .tag-md {
+  .ui-tag-md {
     height: 24px;
     padding: 0 10px;
     font-size: var(--text-xs);
@@ -79,17 +79,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mono {
     font-family: var(--font-mono);
   }
-  .tag-accent {
+  .ui-tag-accent {
     background: var(--accent-muted);
     border-color: var(--accent-border);
     color: var(--accent);
   }
-  .tag-neutral {
+  .ui-tag-neutral {
     background: var(--surface-raised);
     border-color: var(--border);
     color: var(--text-muted);
   }
-  .tag-outline {
+  .ui-tag-outline {
     border-color: var(--border-strong);
     color: var(--text-muted);
   }

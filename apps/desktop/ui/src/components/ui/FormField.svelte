@@ -45,7 +45,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 </script>
 
-<div class="field">
+<div class="ui-field">
   {#if label}
     <label class="label" id={labelId} for={group ? undefined : id}>
       {label}
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 
 <style>
-  .field {
+  .ui-field {
     display: flex;
     flex-direction: column;
     gap: 7px;

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-design-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-design-1 · Review: pro Task
 Spec: docs/features/kern-design-1.md (Roadmap R-1061)
 Heavy: linux-full — Token-Wechsel und Icons in AppShell, Login und Connections ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -82,8 +82,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-design-1.md
 Task-Review: am Ende
 
-### T9 — ui-Wurzelklassen ohne globale Kollision: FormField, Button, Tag (R-1061, Abschlussprüfung)  [ ]
+### T9 — ui-Wurzelklassen ohne globale Kollision: FormField, Button, Tag (R-1061, Abschlussprüfung)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/FormField.svelte, apps/desktop/ui/src/components/ui/Button.svelte, apps/desktop/ui/src/components/ui/Tag.svelte, apps/desktop/ui/src/components/ui/core.test.ts, apps/desktop/ui/src/components/ui/globalcss.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @39a6cd31 2026-11-02T18:30:01+01:00
+Review: approve (.ah-out/review/kern-design-1/T9.verdict.json)
 Änderung: Die Wurzelklassen `field`, `btn` und `tag` der Bibliothek tragen globale Regeln aus `app.css` (`.field label`/`input`/`select`, `.btn:hover`, `.tag`), die im Bundle nach dem Komponenten-CSS stehen; sie heißen jetzt `ui-field`, `ui-btn`, `ui-tag`. Neuer Test (SPDX) spielt die globalen Regeln ein und prüft, dass kein Wurzelelement der Bibliothek einen globalen Klassennamen trägt und das FormField-Label nicht in Versalien steht.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/
 Doku: keine (Klassennamen sind intern)
@@ -95,3 +97,4 @@ Doku: keine (Klassennamen sind intern)
 - T6: Anfangsfokus in Modal: erstes Steuerelement im Body, dann im Footer, dann der Schließen-Knopf, sonst das Panel (`tabindex=-1`); ein Element, das der Inhalt selbst fokussiert hat, behält den Fokus. Die Falle greift nur am Rand (erstes/letztes Element oder Fokus außerhalb), dazwischen bewegt die Plattform den Fokus. Die Breite bleibt ein CSS-String (`width`), nicht Zahl wie im DS, damit die Nutzer unverändert bleiben. Volle Desktop-UI-Suite lokal grün (1247 Tests), weil der Fokuswechsel jede Dialog-Seite trifft.
 - T7: EmptyState nimmt den DS-Vertrag (Icon, Titel, Beschreibung, Aktion) und behält `message`/`children` als ältere Form; `framed` steht wie im DS auf true, deshalb bekommt MonitoringOverview (einziger Nutzer) den gestrichelten Rahmen. Callout ist ein Inline-Banner ohne Live-Rolle; CodeBlock meldet „Kopiert“ über eine eigene `role=status`-Zeile und zeigt bei verweigerter Zwischenablage keinen Erfolg. Neuer i18n-Schlüssel `ui.copied` (DE+EN), Datei per set-files in T7.
 - T2: Lucide (`@lucide/svelte` 1.66.0, ISC, Einzel-Importe je Icon) ersetzt die Inline-Pfade in AppShell, NotificationBell, Connections, Picker und MonSectionIcon; das Markenlogo (Login, AppShell) bleibt Inline-SVG, die Glyphen der ui-Bibliothek aus T4 (Checkbox, SearchField, Select) bleiben unberührt, Login.svelte daher ungeändert. Zuordnung Nav: Dashboard→LayoutDashboard, Verbindungen→Cable, Infrastruktur→Server, Monitoring→CircleCheck, Ansible→Layers; Monitoring-Abschnitte 18 px, Aktionen 14 px wie zuvor. Die `fill: currentColor`-Regeln auf Icon-SVGs in `app.css` fallen weg (Lucide zeichnet Striche, `fill` würde sie füllen), `.search-icon` färbt über `color`. Picker-Icon über `:global` im Scope von `.picker-item`, weil die Klasse an einer Kindkomponente hängt. Im Lockfile verlieren die Svelte-Abhängigkeiten den `dev`-Marker (svelte ist jetzt Peer einer Laufzeit-Abhängigkeit). `MonSectionIcon.test.ts` ist ein Charakterisierungstest (Größe, `aria-hidden`, unbekannter Name), gegen die alte Komponente ebenfalls grün.
+- T9: Die Wurzelklassen der Bibliothek tragen das Präfix `ui-` (`ui-field`, `ui-btn*`, `ui-tag*`), weil app.css die alten Seiten über gleichnamige globale Klassen stylt und im Bundle nach dem Komponenten-CSS steht. `globalcss.test.ts` prüft per `Element.matches`, dass keine klassengeführte globale Regel ein Element der Bibliothek trifft; Gegenprobe mit den alten Komponenten rot (20 Treffer). `ConfirmDialog` nutzt `btn`/`btn danger` weiter bewusst global.

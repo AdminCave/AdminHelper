@@ -42,7 +42,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <button
   {...rest}
   {type}
-  class={['btn', `btn-${variant}`, `btn-${size}`, cls]}
+  class={['ui-btn', `ui-btn-${variant}`, `ui-btn-${size}`, cls]}
   class:full={fullWidth}
   disabled={disabled || loading}
   aria-busy={loading || undefined}
@@ -59,7 +59,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </button>
 
 <style>
-  .btn {
+  .ui-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -76,66 +76,66 @@ SPDX-License-Identifier: GPL-3.0-or-later
       color var(--dur-fast) var(--ease-standard),
       transform var(--dur-instant) var(--ease-standard);
   }
-  .btn:active:not(:disabled) {
+  .ui-btn:active:not(:disabled) {
     transform: scale(0.97);
   }
-  .btn:disabled {
+  .ui-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
   }
   .full {
     width: 100%;
   }
-  .btn-sm {
+  .ui-btn-sm {
     height: 32px;
     padding: 0 14px;
     font-size: var(--text-xs);
   }
-  .btn-md {
+  .ui-btn-md {
     height: 40px;
     padding: 0 18px;
     font-size: var(--text-sm);
   }
-  .btn-lg {
+  .ui-btn-lg {
     height: 48px;
     padding: 0 24px;
     font-size: var(--text-base);
   }
-  .btn-primary {
+  .ui-btn-primary {
     background: var(--fill-solid);
     color: var(--fill-solid-text);
   }
-  .btn-primary:hover:not(:disabled) {
+  .ui-btn-primary:hover:not(:disabled) {
     background: var(--fill-solid-hover);
   }
-  .btn-secondary {
+  .ui-btn-secondary {
     background: transparent;
     border-color: var(--border-strong);
     color: var(--text);
   }
-  .btn-secondary:hover:not(:disabled) {
+  .ui-btn-secondary:hover:not(:disabled) {
     background: var(--surface-hover);
   }
-  .btn-ghost {
+  .ui-btn-ghost {
     background: transparent;
     color: var(--text);
   }
-  .btn-ghost:hover:not(:disabled) {
+  .ui-btn-ghost:hover:not(:disabled) {
     background: var(--surface-hover);
   }
-  .btn-accent {
+  .ui-btn-accent {
     background: var(--accent);
     color: var(--text-inverse);
   }
-  .btn-accent:hover:not(:disabled) {
+  .ui-btn-accent:hover:not(:disabled) {
     background: var(--accent-hover);
   }
-  .btn-danger {
+  .ui-btn-danger {
     background: var(--danger-bg);
     border-color: var(--danger-border);
     color: var(--danger);
   }
-  .btn-danger:hover:not(:disabled) {
+  .ui-btn-danger:hover:not(:disabled) {
     border-color: var(--danger);
   }
 </style>

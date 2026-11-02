@@ -33,8 +33,8 @@ describe('Button', () => {
     const onclick = vi.fn();
     const { getByRole } = render(Button, { onclick, children: text('Speichern') });
     const btn = getByRole('button', { name: 'Speichern' });
-    expect(btn.className).toContain('btn-primary');
-    expect(btn.className).toContain('btn-md');
+    expect(btn.className).toContain('ui-btn-primary');
+    expect(btn.className).toContain('ui-btn-md');
     expect(btn.getAttribute('type')).toBe('button');
     await fireEvent.click(btn);
     expect(onclick).toHaveBeenCalledTimes(1);
@@ -44,8 +44,8 @@ describe('Button', () => {
     'variant %s sets its class',
     (variant) => {
       const { getByRole } = render(Button, { variant, size: 'lg', children: text('x') });
-      expect(getByRole('button').className).toContain(`btn-${variant}`);
-      expect(getByRole('button').className).toContain('btn-lg');
+      expect(getByRole('button').className).toContain(`ui-btn-${variant}`);
+      expect(getByRole('button').className).toContain('ui-btn-lg');
     },
   );
 
@@ -85,7 +85,7 @@ describe('Button', () => {
       children: text('Los'),
     });
     const cls = getByRole('button').className;
-    expect(cls).toContain('btn-primary');
+    expect(cls).toContain('ui-btn-primary');
     expect(cls).toContain('extra');
     expect(cls).toContain('picked');
     expect(cls).not.toContain('dropped');
@@ -132,9 +132,9 @@ describe('Badge', () => {
 describe('Tag', () => {
   it('defaults to accent md and is not interactive without handlers', () => {
     const { container, queryByRole } = render(Tag, { children: text('prod') });
-    const tag = container.querySelector('.tag')!;
-    expect(tag.className).toContain('tag-accent');
-    expect(tag.className).toContain('tag-md');
+    const tag = container.querySelector('.ui-tag')!;
+    expect(tag.className).toContain('ui-tag-accent');
+    expect(tag.className).toContain('ui-tag-md');
     expect(queryByRole('button')).toBeNull();
   });
 
@@ -191,14 +191,14 @@ describe('Tag', () => {
     // A native button gives Enter and Space without a key handler of our own.
     expect(btn.tagName).toBe('BUTTON');
     expect((btn as HTMLButtonElement).type).toBe('button');
-    expect(container.querySelector('.tag')!.className).toContain('mono');
+    expect(container.querySelector('.ui-tag')!.className).toContain('mono');
     await fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('mono can be switched off', () => {
     const { container } = render(Tag, { mono: false, children: text('x') });
-    expect(container.querySelector('.tag')!.className).not.toContain('mono');
+    expect(container.querySelector('.ui-tag')!.className).not.toContain('mono');
   });
 });
 
