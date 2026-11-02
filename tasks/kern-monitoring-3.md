@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-3 · Review: pro Task
 Spec: docs/features/kern-monitoring-3.md (Roadmap R-1076, R-1077)
 Heavy: linux-full — neue Monitoring-Routen und Agent-Push-Serien hinter dem Gateway, Agent-Collector, Desktop-Journey Monitoring; der Sammellauf fährt Stack, Agent-Monitoring und die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -121,8 +121,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die genannten Dateien
 Task-Review: am Ende
 
-### T14 — Contract-Test: History-Typen auf die OpenAPI-Schemas (R-1076, R-1077)  [ ]
+### T14 — Contract-Test: History-Typen auf die OpenAPI-Schemas (R-1076, R-1077)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @b4a9702a 2026-11-02T22:20:35+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T14.verdict.json)
 Änderung: Die PR-CI (#375, vitest) fand HistorySeries, ServerHistory und ServerCompare aus T9/T10 ohne Zuordnung im Contract-Test; drei Mappings auf HistorySeriesOut, ServerHistoryOut, ServerCompareOut des Monitoring-Snapshots, Zähler 37 → 40.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts
 Doku: keine (Testcode)
