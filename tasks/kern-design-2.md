@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-design-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-design-2 · Review: pro Task
 Spec: docs/features/kern-design-2.md (Roadmap R-1062, R-1063)
 Heavy: linux-full — Shell, Einstellungen und Dashboard ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,8 +71,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Setting
 Doku: → T8
 Abhängt von: T6
 
-### T8 — Doku DE+EN und Changelog (R-1062, R-1063)  [ ]
-Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/index.html, docs/en/index.html, changelog.d/kern-design-2.md
+### T8 — Doku DE+EN und Changelog (R-1062, R-1063)  [x]
+Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/index.html, docs/en/index.html, changelog.d/kern-design-2.md, docs/admin/index.html, docs/en/admin/index.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @4697c853 2026-11-02T20:09:47+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Entwickler-Doku: Shell (Statusleiste, Palette, Toast-Stapel), `components/settings/`. Nutzer-Doku: Pfade „Einstellungen → Gerät → Diagnose“ und Browser-Zertifikat unter „Gerät“, Strg/⌘+K. Changelog umlautfrei.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.shell.test.ts
 Doku: diese Task
@@ -86,3 +88,4 @@ Task-Review: am Ende
 - T5: Dashboard-Stile scoped in `Dashboard.svelte`; die verwaisten globalen Regeln (`.dash-stats`, `.stat-*`, `.dash-grid`, `.dash-panel*`, `.dash-list*`, `.dash-actions`) aus `app.css` entfernt, `.dash-empty` bleibt (Connections). Monitoring lädt beim Öffnen einmal (`loadServers` → `loadMonitoring`), ohne Polling; `Dashboard.load.test.ts` mockt Monitoring als geladen, damit sein Laden-Text nur die Verbindungen meint.
 - T6: Das Gate `{#if $settingsModalOpen}` bleibt in `SettingsModal.svelte` (AppShell und die Tests rendern es dauerhaft), Formularzustand, Speichern und Overlay liegen im neuen `settings/SettingsDialog.svelte`, das bei jedem Oeffnen mountet; gemeinsame Feld-Stile per `:global` unter `.sm-panel`. Diagnose ist eine sechste Sektion (`DiagnosticsSection.svelte`), die Fuenf-Gruppen-Liste der Task hatte sie bei Geraet; T7 ordnet sie dort ein. DeviceSection fragt Registrierung und Identitaet in jedem Modus ab wie zuvor das Modal.
 - T7: Alle fuenf Sektionen bleiben gemountet, nur die aktive zeigt sich (`hidden`): Eingaben ueberleben den Wechsel, Speichern nimmt alle, die Tests ausser `nav` brauchen keine Sektionswahl. Die Trennung Workspace/Geraet (R-0431) bleibt als Markierung: was zum Workspace gehoert, traegt `data-scope="workspace"` und die Pille „Dieser Workspace“, der Rest `data-scope="device"`; `SettingsModal.workspace.test.ts` prueft die Zuordnung ueber diese Markierung statt ueber die zwei Gruppen (gleichwertiger Ersatz, gewollte Verhaltensaenderung). Browser-Zertifikat und PIN-Reset ziehen aus WorkspaceSection in die neue `CertificateSection` (Sektion Geraet), selbstsignierte Zertifikate nach Allgemein. Design als Auswahl Dunkel/Hell, wirkt sofort wie der Schalter in der Seitenleiste (localStorage, kein Settings-Feld). Nebenbei: der i18n-Test „no unused keys“ war seit T4/T5 rot (`palette.kind.*` dynamisch → DYNAMIC_PREFIXES; `dashboard.ssh/rdp/web` seit T5 verwaist → entfernt); Verify nimmt `i18n.test.ts` dazu. Elf Dateien, eine Komponente: der Umbau trifft jede Sektion.
+- T8: Die Bedienpfade der Admin-Seiten (index, troubleshooting, benutzer/users, monitoring) nannten noch die alte Zweiteilung „Dieser Workspace / Alle Workspaces auf diesem Geraet"; falsche Doku ist ein Bug, darum zieht T8 sie mit (Dateiliste erweitert). `docs/index.html` bleibt unveraendert: dort stehen nur Release-Hinweise frueherer Versionen.
