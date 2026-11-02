@@ -242,6 +242,19 @@
           </ul>
           <p>If servers exist that have no check at all, the overview shows a banner ("N servers without monitoring") with a direct <strong>bulk-assign dialog</strong>: servers preselected, template selectable (standard templates first). The view refreshes automatically every 30 seconds.</p>
 
+          <h3 id="history">History of a server</h3>
+          <p>When the selected server has agent data (an <code>agent_resources</code> check), its dashboard shows the <strong>history</strong> at the top, with the tabs <em>CPU &amp; RAM</em> (plus swap once the agent reports it), <em>Storage</em> (one line per mount), <em>Latency</em> (only with ping, TCP or HTTP checks, one line per check) and <em>Load</em> (load per CPU, <code>load_5m</code> divided by the CPU count, as the check's load thresholds). Periods: 1 h, 24 h (default), 7 days and 30 days. Each point is the average over its grid step (1 min, 15 min, 1 h or 6 h; at least 5 min, the agent's push interval).</p>
+          <ul>
+            <li>The <strong>previous period</strong> dashed for comparison (can be turned off), the checks' warning and critical thresholds as lines, status changes of the checks as marks and maintenance windows as bands.</li>
+            <li><strong>Zoom</strong>: drag a range in the chart; "Reset zoom" shows the whole period again. Clicking a legend entry hides the series from chart and table.</li>
+            <li>The <strong>table</strong> gives the average, P95, max and current value of each series in the shown window.</li>
+            <li><strong>Storage forecast</strong>: when a mount grows, a line carries its trend a quarter of the period further, and a note says "full in ~N days".</li>
+            <li><strong>Export CSV</strong> saves the shown tab (time and one column per series) to a <code>.csv</code> file of your choice.</li>
+          </ul>
+
+          <h3 id="compare-servers">Compare servers (History tab)</h3>
+          <p>The <strong>History</strong> tab of the monitoring page compares one metric across all servers with agent data: CPU, RAM, storage (the fullest mount of each server) or load per CPU, over the same periods as above. The <strong>ranking</strong> sorts the servers by their average in the shown window, with a bar, a sparkline, average and max; zooming in the chart reorders it. Up to four servers are in the chart, at first the four with the highest average; the checkbox or a click on the name selects a server, a fifth replaces the one chosen first. The choice stays when metric or period change.</p>
+
           <h2 id="templates">Templates</h2>
           <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
           <ol>

@@ -242,6 +242,19 @@
           </ul>
           <p>Gibt es Server, für die noch kein einziger Check existiert, zeigt die Übersicht ein Banner („N Server ohne Monitoring") mit direktem <strong>Bulk-Zuweisungs-Dialog</strong>: Server vorausgewählt, Template wählbar (Standard-Templates zuerst). Die Ansicht aktualisiert sich automatisch alle 30 Sekunden.</p>
 
+          <h3 id="verlauf">Verlauf eines Servers</h3>
+          <p>Hat der gewählte Server Agent-Daten (einen <code>agent_resources</code>-Check), zeigt sein Dashboard oben den <strong>Verlauf</strong> mit den Reitern <em>CPU &amp; RAM</em> (dazu Swap, sobald der Agent ihn meldet), <em>Speicher</em> (eine Linie je Mount), <em>Latenz</em> (nur mit Ping-, TCP- oder HTTP-Checks, eine Linie je Check) und <em>Load</em> (Load je CPU, <code>load_5m</code> geteilt durch die CPU-Zahl, wie die Load-Schwellen des Checks). Zeiträume: 1 Std., 24 Std. (Standard), 7 Tage und 30 Tage. Jeder Punkt ist der Mittelwert über seinen Rasterschritt (1 min, 15 min, 1 h bzw. 6 h, mindestens 5 min, das Push-Intervall des Agents).</p>
+          <ul>
+            <li><strong>Vorperiode</strong> gestrichelt zum Vergleich (abschaltbar), die Warn- und Kritisch-Schwellen der Checks als Linien, Statuswechsel der Checks als Marken und Wartungsfenster als Bänder.</li>
+            <li><strong>Zoom</strong>: im Chart einen Bereich ziehen; „Zoom zurücksetzen“ zeigt wieder den ganzen Zeitraum. Ein Klick auf einen Legendeneintrag blendet die Serie aus Chart und Tabelle aus.</li>
+            <li>Die <strong>Tabelle</strong> nennt je Serie Ø, P95, Max und den aktuellen Wert im gezeigten Ausschnitt.</li>
+            <li><strong>Speicher-Prognose</strong>: wächst ein Mount, führt eine Linie seinen Trend ein Viertel des Zeitraums weiter, und ein Hinweis nennt „voll in ~N Tagen“.</li>
+            <li><strong>CSV exportieren</strong> speichert den gezeigten Reiter (Zeit und je Serie eine Spalte) in eine <code>.csv</code>-Datei nach Wahl.</li>
+          </ul>
+
+          <h3 id="server-vergleichen">Server vergleichen (Reiter Verlauf)</h3>
+          <p>Der Reiter <strong>Verlauf</strong> der Monitoring-Seite vergleicht eine Metrik über alle Server mit Agent-Daten: CPU, RAM, Speicher (je Server der vollste Mount) oder Load je CPU, in denselben Zeiträumen wie oben. Die <strong>Rangliste</strong> sortiert die Server nach ihrem Ø im gezeigten Ausschnitt, mit Balken, Sparkline, Ø und Max; ein Zoom im Chart ordnet sie neu. Bis zu vier Server stehen im Chart, zu Beginn die vier mit dem höchsten Ø; Checkbox oder Klick auf den Namen wählt einen Server, ein fünfter ersetzt den zuerst gewählten. Die Auswahl bleibt beim Wechsel von Metrik und Zeitraum.</p>
+
           <h2 id="templates">Templates</h2>
           <p>Ein <strong>Monitoring-Template</strong> bündelt mehrere Check- und Alert-Definitionen und wird einem Server zugewiesen, statt jeden Check einzeln anzulegen. Beim Zuweisen werden aus den Definitionen echte Checks und Alert-Regeln für den Server erzeugt.</p>
           <ol>
