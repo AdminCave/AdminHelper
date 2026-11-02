@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-laufzeit-1 — Task-Ledger
-Status: erledigt · Branch: feature/kern-laufzeit-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-laufzeit-1 · Review: pro Task
 Spec: docs/features/kern-laufzeit-1.md (Roadmap R-1029, R-1030, R-1031, R-1033)
 Heavy: linux-full — Basis-Images von Gateway, Server, Monitoring, CA-Issuer und das VictoriaMetrics-Image in `docker-compose.yml`; der Sammellauf baut und startet den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,6 +44,18 @@ Review: approve (.ah-out/review/kern-laufzeit-1/T4.verdict.json)
 Änderung: `victoriametrics/victoria-metrics:v1.155.0@sha256:<Digest>` (`docker-compose.yml:573`). Vorher die Update-Notes im VictoriaMetrics-CHANGELOG von v1.145 bis v1.155 auf Flags und Datenformat prüfen, die unser Compose-Kommando nutzt; Befund unter `## Entscheidungen`.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: changelog.d/kern-laufzeit-1.md
+
+### T5 — Web-vitest unter Node 26: Node-eigenes localStorage abschalten (R-1031)  [ ]
+Komponente: web · Dateien: apps/web/vitest.config.ts
+Änderung: Seit Node v25.0.0 ist Web Storage eingebaut und standardmäßig an (nodejs.org/api/cli.html, `--no-experimental-webstorage`); ohne `--localstorage-file` verdeckt es das `localStorage` von jsdom, `localStorage.clear()` wirft (PR #370, Job Web-Frontend: 11 Tests rot in `App.idle.test.ts`, `theme-init.test.ts`). `test.execArgv: ['--no-experimental-webstorage']` (vitest.dev/config/execargv) für die Worker. Gegenprobe in `node:26-alpine`: ohne Flag 11 failed, mit Flag 13 passed.
+Verify: bash scripts/dev/verify.sh web --strict
+Doku: keine (Testkonfiguration)
+
+### T6 — Desktop-UI-vitest unter Node 26: dasselbe (R-1031)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/vitest.config.ts
+Änderung: wie T5 für `apps/desktop/ui` (PR #370, Job Desktop-UI rot).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: keine (Testkonfiguration)
 
 ## Entscheidungen
 - 2026-11-02 Plan: R-1031 ändert `DEVELOPMENT.md:759`. Der offene PR #363 (feature/plan-worktree) ändert dort nur die Hunks bei 602 und 1342, deshalb fährt R-1031 trotz der Überlappung auf Dateiebene mit.
