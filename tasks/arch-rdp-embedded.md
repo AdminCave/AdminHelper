@@ -36,8 +36,10 @@ Doku: keine (das Ergebnis ist die Spec selbst; kein Produktverhalten)
 Task-Review: am Ende
 Abhängt von: T1
 
-### T3 — Bildweg im Webview (R-1074)  [ ]
+### T3 — Bildweg im Webview (R-1074)  [x]
 Komponente: scripts · Dateien: docs/features/arch-rdp-embedded.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fd00c4cc 2026-11-02T15:26:17+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Wegwerf-Tauri-2-App auf der Desktop-VM der Lane (Xvfb): synthetische Rechteck-Last 1920×1080 (10/50/100 %,
 30/60 Hz) über Tauri-Channel (rohe Bytes) und lokalen WebSocket auf Canvas2D `putImageData` und WebGL
 `texSubImage2D`; Durchsatz, Latenz, CPU, Tastatur-Fang; V1-WASM-Komponente, falls T1 sie nicht ausschließt.

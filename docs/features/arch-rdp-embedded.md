@@ -287,6 +287,83 @@ Stand 2026-11-02 (T2). **Aufbau:**
   - FreeRDP mit Ton, Zwischenablage und Resize.
   - Die reine Dekodierzeit je Frame: die CPU-Zeit des Prozesses ist eine Näherung.
 
+## Ergebnis: Webview
+
+Stand 2026-11-02 (T3). **Aufbau:**
+- **Umgebung:** die Desktop-VM der Lane, 6 vCPU und 6 GB RAM, Ubuntu 24.04 mit WebKitGTK 2.52.6 und Mesa 25.2.8.
+  Sie hat keine GPU. Xvfb läuft mit 1920×1080×24 ohne Fenstermanager, WebGL rendert also in Software (WebKit meldet
+  den Renderer maskiert).
+- **App:** eine Wegwerf-Tauri-App auf `tauri` 2.11.5 wie der Desktop, Fenster 1920×1080 ohne Rahmen. Rust erzeugt
+  je Takt ein RGBA-Rechteck über die volle Breite und 10, 50 oder 100 % der Höhe, mit einem 32-Byte-Kopf aus
+  Nummer und Sendezeit. Zwei Wege bringen es zum Webview:
+  - roh über einen Tauri-Channel (`InvokeResponseBody::Raw`);
+  - über einen lokalen WebSocket (`tokio-tungstenite` auf 127.0.0.1, Token in der URL).
+
+  Der Webview zeichnet mit Canvas2D `putImageData` oder mit WebGL `texSubImage2D`.
+- **Datenrate:** Der Bildweg trägt dekodierte Pixel, also ein Vielfaches der RDP-Bandbreite aus T2. Bei 10 % und
+  30 Hz sind es 25 MB/s, bei 50 % 125 MB/s, bei 100 % 250 MB/s; bei 60 Hz das Doppelte. Zum Vergleich: half aus T2
+  mit 24 Bildern/s wären rund 100 MB/s.
+- **Messung:** je Fall 10 s, mit derselben Wanduhr in Rust und im Webview.
+  - Ankunft: vom Senden in Rust bis zur Ankunft im Webview.
+  - Bild: bis zum ersten `requestAnimationFrame` nach dem Zeichnen; daran hängt die Schwelle.
+  - Rückstau: Anstieg der Ankunftszeit vom ersten zum letzten Viertel des Laufs; er „wächst“, wenn der Anstieg
+    über einer Taktlänge liegt.
+  - CPU je Prozess aus `/proc`.
+- **Tastatur:** Nach der Matrix sendet `xdotool` 24 Tastenkombinationen an das Fenster. Der Webview hört `keydown`
+  in der Capture-Phase und ruft `preventDefault`.
+
+**Bildweg** (Ankunft p50/p95 · Bild p50/p95 in ms · Bilder/s im Webview · Rückstau; „Stau“ heißt: der Rückstau
+wächst um Sekunden):
+
+| Weg, Zeichnen | 10 %, 30 Hz | 10 %, 60 Hz | 50 %, 30 Hz | 50 %, 60 Hz | 100 %, 30 Hz | 100 %, 60 Hz |
+|---|---|---|---|---|---|---|
+| Channel, 2d | 47/100 · 79/148 · 17 · stabil | 65/122 · 106/178 · 13 · stabil | Stau | übersprungen | übersprungen | übersprungen |
+| Channel, WebGL | 52/115 · 90/177 · 15 · stabil | 355/475 · 411/548 · 10 · wächst | Stau | übersprungen | übersprungen | übersprungen |
+| WS, 2d | 11/22 · 33/59 · 23 · stabil | 12/30 · 40/71 · 23 · stabil | 48/109 · 75/158 · 18 · stabil | 143/354 · 175/391 · 15 · wächst leicht | 121/380 · 144/420 · 15 · wächst leicht | Stau, 128 von 600 Bildern nicht zugestellt |
+| WS, WebGL | verfälscht (s. u.) | 247/852 · 297/897 · 12 · wächst | 39/96 · 79/171 · 15 · stabil | Stau | 147/269 · 196/337 · 11 · stabil | übersprungen |
+
+„Übersprungen“ heißt: dieselbe Kombination hatte bei kleinerer Last schon gestaut. In allen anderen Fällen kam jedes
+Bild in Reihenfolge an. Die CPU des `WebKitWebProcess` lag in jedem Fall bei 1,8–4,1 Kernen, Xvfb bei bis zu 0,8 Kernen.
+
+**Befunde:**
+- **Schwelle verfehlt.** Kein Fall bleibt bis zum Bild unter p95 33 ms, auch nicht bei 10 %.
+- **Engpass ist das Zeichnen ohne GPU, nicht der Transport.** Über den WebSocket kommt ein 10-%-Bild nach p95 22 ms
+  an. Die Bildschleife des Webviews läuft unter Last aber nur mit 10–23 Bildern/s, und der `WebKitWebProcess`
+  belegt schon bei 10 % rund drei der sechs Kerne. `putImageData` selbst kostet 1–12 ms (p50), `texSubImage2D`
+  10–16 ms.
+- **Der Channel taugt nicht.** Er ist schon bei 10 % langsamer als der WebSocket (Ankunft p95 bei 30 Hz 100–115 ms gegen
+  22 ms) und staut ab 50 %/30 Hz; der Rust-Teil braucht dabei 1,3 Kerne, beim WebSocket 0,4. Ohne Gegendruck puffert
+  er unbegrenzt: der erste Lauf endete im OOM der VM. Rohe Nachrichten ab 1024 Byte holt der Webview je Nachricht
+  mit einem eigenen IPC-Abruf [Q11].
+- **Der WebSocket trägt** 50 %/30 Hz mit beiden Zeichenwegen und 100 %/30 Hz mit WebGL ohne wachsenden Rückstau.
+  Bei 60 Hz staut er ab 50 % (WebGL) bzw. 100 % (2d). Unter Xvfb ohne GPU ist das eine untere Schranke.
+- **Verfälscht:** WebGL 10 %/30 Hz über den WebSocket. Reste des gestauten Vorlaufs (2d, 100 %/60 Hz) kamen in
+  diesem Lauf an: 402 Bilder empfangen bei 300 gesendeten. Auch WebGL 10 %/60 Hz liegt schlechter als 50 %/30 Hz;
+  die Ursache ist nicht verifiziert.
+- **Folgerung für V2:**
+  - Das Bild läuft über einen lokalen WebSocket statt über einen Channel.
+  - Gegendruck: Rust hält das aktuelle Bild und schickt die geänderten Bereiche erst, wenn der Webview das vorige
+    Bild quittiert hat. Bereiche, die sich inzwischen geändert haben, fasst es zusammen statt sie zu puffern. So wird
+    aus Überlast ein niedrigerer Bildtakt statt wachsender Verzögerung.
+  - Der Port braucht ein Token je Sitzung. Die CSP braucht `connect-src ws://127.0.0.1:<port>`; heute erlaubt sie
+    nur `ipc:` und `http://ipc.localhost` (`tauri.conf.json:16`).
+- **V2b bekommt keinen Prototyp**, obwohl die Schwelle verfehlt ist. V2b spart Bytes auf dem Transport, und der ist
+  hier nicht der Engpass. Das Zeichnen derselben Pixel bliebe, dazu käme die Dekodierung im Webview.
+- **GPU:** Ob der Weg mit GPU die Schwelle hält, ist nicht verifiziert, denn der Pool hat keine GPU. R-1075 bekommt
+  dafür ein Gate: eine Messung auf echter Hardware unter Linux (WebKitGTK) und Windows (WebView2), bevor der
+  eingebettete Weg zum Standard wird.
+- **V1** hat keinen Prototyp (T1).
+- **Tastatur.**
+  - 23 von 24 Kombinationen kommen als `keydown` im Webview an, darunter Strg+W, Strg+Q, Strg+R, F5, F11, F12,
+    Strg+Umschalt+I, Alt+F4, Alt+Tab, Super und Strg+Alt+Entf. Mit `preventDefault` lud die Seite nie neu, und das
+    Fenster blieb offen.
+  - Bei Strg+Alt+F2 kamen nur Strg und Alt an. Vermutlich belegt die Xvfb-Tastaturbelegung diese Kombination mit dem
+    Konsolenwechsel; nicht verifiziert.
+  - Ohne Fenstermanager sagt das nur etwas über den Webview selbst. Mit Fenstermanager oder unter Windows fängt das
+    System Alt+Tab, Super und Strg+Alt+Entf vorher ab. R-1075 braucht deshalb einen Tastatur-Fang für die
+    fokussierte Sitzung und für Strg+Alt+Entf einen Ersatz (Menüpunkt). Welche Wege Tauri unter X11, Wayland und
+    Windows dafür bietet, ist nicht verifiziert.
+
 ## Datenmodell / API / Migrationen
 
 Keine in diesem Vorhaben. Für R-1075 bewertet T5: Erweiterung von `RdpOptions` (`models.rs:57`, Wire-Vertrag
