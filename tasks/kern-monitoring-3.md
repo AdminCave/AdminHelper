@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-3 — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-3 · Review: pro Task
 Spec: docs/features/kern-monitoring-3.md (Roadmap R-1076, R-1077)
 Heavy: linux-full — neue Monitoring-Routen und Agent-Push-Serien hinter dem Gateway, Agent-Collector, Desktop-Journey Monitoring; der Sammellauf fährt Stack, Agent-Monitoring und die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -127,6 +127,12 @@ Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @b4a9702a 2026
 Review: approve (.ah-out/review/kern-monitoring-3/T14.verdict.json)
 Änderung: Die PR-CI (#375, vitest) fand HistorySeries, ServerHistory und ServerCompare aus T9/T10 ohne Zuordnung im Contract-Test; drei Mappings auf HistorySeriesOut, ServerHistoryOut, ServerCompareOut des Monitoring-Snapshots, Zähler 37 → 40.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts
+Doku: keine (Testcode)
+
+### T15 — Schema-Fuzzing: VictoriaMetrics-Abfragen im Fuzz-Fixture stubben (R-1076, R-1077)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_schemathesis.py
+Änderung: Die PR-CI (#375, Job Schema fuzzing) fand 502 „Metrics store unavailable“ auf `GET /status/server/{id}/history` und `GET /status/compare`: die neuen Routen fragen VictoriaMetrics auch für unbekannte Server, und das Fixture stubbt nur `write`/`write_check_result`, nicht `query_range`. Das Fixture stubbt `query_range` mit einer leeren, erfolgreichen Antwort (Netzabhängigkeit, wie der Kommentar dort sagt); das 502-Verhalten bleibt in den Router-Tests belegt.
+Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (Testcode)
 
 ## Entscheidungen
