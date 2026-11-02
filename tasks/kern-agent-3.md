@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-3 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-3 · Review: am Ende
 Spec: docs/features/kern-agent-3.md (Roadmap R-1007, R-1036)
 Heavy: linux-full — `apps/agent` (Abhängigkeiten und Go-Version des Agent-Binaries)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
