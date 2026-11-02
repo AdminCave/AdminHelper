@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-3 · Review: pro Task
 Spec: docs/features/kern-monitoring-3.md (Roadmap R-1076, R-1077)
 Heavy: linux-full — neue Monitoring-Routen und Agent-Push-Serien hinter dem Gateway, Agent-Collector, Desktop-Journey Monitoring; der Sammellauf fährt Stack, Agent-Monitoring und die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -108,6 +108,13 @@ Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monito
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6dc3a843 2026-11-02T21:52:04+01:00
 Review: am Ende (nur Doku, Branch-Review)
 Änderung: Bedienung Verlauf und Vergleich, Zeiträume (`docs/admin/monitoring.html:240` nennt schon „30d“, das die API bisher nicht kennt), neue Serien und Routen, CSV-Export; Changelog-Fragment umlautfrei.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: die genannten Dateien
+Task-Review: am Ende
+
+### T13 — Doku-Funde der Abschlussprüfung (R-1076, R-1077)  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-3.md
+Änderung: Liste nennt nur die Zeitfenster der UI (1h, 6h, 24h, 7d; ExpandChart.svelte:22), Changelog sagt, dass das Monitoring Swap und CPU-Zahl aus dem Agent-Report speichert (der Agent meldete sie schon), Developer-Doku nennt TimeChart für Verlauf und Vergleich neben uPlot.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die genannten Dateien
 Task-Review: am Ende
