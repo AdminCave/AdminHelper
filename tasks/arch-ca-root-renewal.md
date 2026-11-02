@@ -99,8 +99,10 @@ Abhängt von: T3
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py tests/test_inventory.py tests/test_config.py tests/test_storage.py
 Doku: → T10
 
-### T5 — Server: eigene Ampel-Schwellen für die Root  [ ]
+### T5 — Server: eigene Ampel-Schwellen für die Root  [x]
 Komponente: server · Dateien: apps/server/app/modules/enrollment/expiry.py, apps/server/tests/test_certificate_expiry.py, apps/server/tests/test_certificate_expiry_watch.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @cd7ae11e 2026-11-02T13:25:26+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T5.verdict.json)
 Änderung: Für den Namen `root` gilt gelb < 365 und rot < 120 Tage (`expiry.py:23`), alle anderen Zertifikate bleiben
 bei 30/7, auch `root:retired` und `root:cross`. Der Alarm (`notify_expiring`) folgt derselben Ampel.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_expiry.py tests/test_certificate_expiry_watch.py
