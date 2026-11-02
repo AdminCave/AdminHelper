@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Zeilenangaben `origin/main@5bbfc896`.
 
-### T1 — Gesamtfrist für Listen-, Bundle- und Playbook-Antworten (R-1012)  [ ]
+### T1 — Gesamtfrist für Listen-, Bundle- und Playbook-Antworten (R-1012)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/http_client.rs, apps/desktop/src-tauri/src/sync.rs, apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/ansible.rs, changelog.d/kern-desktop-4.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @581212ab 2026-11-02T13:31:28+01:00
+Review: approve (.ah-out/review/kern-desktop-4/T1.verdict.json)
 Beweis: security kern-desktop-3 T1 (Nit), 2026-10-30 · `sync.rs:48` `read_list`, `frpc.rs:273` `bundle_from`, `ansible.rs:71` `fetch_json`: Schleife über `response.chunk()` nur mit Bytegrenze · Dedup-Key: ref:desktop:read-bounds-no-total-deadline
 Änderung: Ein Leser `read_bounded(response, max_bytes)` in `http_client.rs` mit Bytegrenze (Content-Length vorab, dann je Chunk) und Gesamtfrist 120 s (`tokio::time::timeout` über die Schleife), Fehler `TooLarge`/`TimedOut` ohne Zitat der Antwort; die drei Aufrufer nutzen ihn und behalten ihre Texte (Frist: „… (answer took longer than 120 s)“). Test (erst rot): ein Testserver, der unterhalb von `READ_TIMEOUT` tropft, endet nach der (im Test verkürzten) Frist mit Fehler; die vorhandenen 16-MiB-Tests bleiben grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
