@@ -274,13 +274,17 @@ def refresh_token(
     try:
         require_cert_if_enforced(request)
     except HTTPException:
-        # Audited like a refused login; the name is the token's claim, unverified.
+        # Counted and audited like a refused login, in the login's counter: over the
+        # limit the answer is 429 and no audit row is written.
+        ip = resolve_client_ip(request)
+        _check_rate_limit(ip)
+        # The name is the token's claim, unverified.
         label = username_from_token_unverified(token) if token else None
         audit.record(
             db,
             "auth.refresh_failed",
             status="failure",
-            actor=Actor("anonymous", None, label, resolve_client_ip(request)),
+            actor=Actor("anonymous", None, label, ip),
             object_type="user",
             object_label=label,
         )

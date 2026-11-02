@@ -340,6 +340,39 @@ class TestTrustedProxyNameThread:
         gateway = [ipaddress.ip_network("192.0.2.10")]
         assert seen == [gateway, [], gateway]
 
+    def test_an_unexpected_error_clears_before_a_round_out_of_turn_publishes(self, monkeypatch):
+        # The failed round drops the addresses while it still holds the round lock: a
+        # round out of turn (has_address) that runs right after it keeps its answer.
+        calls = []
+
+        def getaddrinfo(host, port, *args, **kwargs):
+            calls.append(host)
+            if len(calls) == 1:
+                raise RuntimeError("unexpected")
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.20", 0))]
+
+        resolver = mw._NameResolver(["gateway"], getaddrinfo)
+        resolver._networks = [ipaddress.ip_network("192.0.2.10")]
+        out_of_turn = threading.Thread(target=resolver.refresh, daemon=True)
+
+        def log_exception(*args, **kwargs):
+            # The round out of turn runs to its end before _run handles the error.
+            out_of_turn.start()
+            out_of_turn.join(timeout=5)
+
+        class _Stop(Exception):
+            pass
+
+        def sleep(_delay):
+            raise _Stop
+
+        monkeypatch.setattr(mw.logger, "exception", log_exception)
+        monkeypatch.setattr(mw.time, "sleep", sleep)
+        with pytest.raises(_Stop):
+            resolver._run()
+        assert not out_of_turn.is_alive()
+        assert resolver._networks == [ipaddress.ip_network("192.0.2.20")]
+
     def test_the_thread_survives_an_unexpected_error(self, monkeypatch):
         # A round that raises something refresh() does not catch must not end the thread: the
         # names would keep their last addresses for good.
