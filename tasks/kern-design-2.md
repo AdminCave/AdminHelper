@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Vorlage `AdminCave/DesignSystem@244e890` (`ui_kits/adminhelper/chrome.jsx`, `dashboard.jsx`, `settings.jsx`). Zeilenangaben `origin/main@594a0af5`. Pfade unter `apps/desktop/ui/`, soweit nicht anders genannt. Bausteine aus `src/components/ui/` (kern-design-1); E2E-tragende Klassen bleiben (Spec, Ziel).
 
-### T1 — Sidebar und Header nach Mockup (R-1062)  [ ]
+### T1 — Sidebar und Header nach Mockup (R-1062)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/components/ui/Avatar.svelte, apps/desktop/ui/src/components/ui/Avatar.test.ts, apps/desktop/ui/src/components/AppShell.shell.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6c801f52 2026-11-02T19:02:21+01:00
+Review: approve (.ah-out/review/kern-design-2/T1.verdict.json)
 Änderung: Sidebar (`src/components/AppShell.svelte:217-299`) nach Mockup: 232/68 px, aktiver Eintrag mit `aria-current="page"`, fett und 3-px-Balken, Workspace-Chip, Fuß mit Einstellungen, Workspace wechseln, Theme, Version. Header (`AppShell.svelte:301-316`): Titel, Palette-Knopf mit `Kbd` (öffnet in T4; bis dahin ohne Ziel nicht rendern, T4 schaltet ihn ein), Glocke, `ui/Avatar` (Initialen) mit Namen, Abmelden bleibt `btn ghost small`. Die Verbindungssuche bleibt auf der Seite connections. Neue Dateien mit SPDX. Test: aktiver Eintrag, eingeklappte Breite per Klasse, Avatar-Initialen, E2E-Klassen vorhanden.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.shell.test.ts src/components/ui/Avatar.test.ts src/components/AppShell.notifications.test.ts src/components/AppShell.workspace.test.ts
 Doku: → T8

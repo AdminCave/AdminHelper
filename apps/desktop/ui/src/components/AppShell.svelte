@@ -9,6 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
   import Cable from '@lucide/svelte/icons/cable';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import Layers from '@lucide/svelte/icons/layers';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
@@ -40,6 +41,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import StatusBar from './StatusBar.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
+  import Avatar from './ui/Avatar.svelte';
   import {
     openSettings,
     logoutAndReload,
@@ -225,10 +227,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           />
         </svg>
       </div>
-      <div class="sidebar-brand-text">
-        <div class="sidebar-title" style="font-weight:600">Admin</div>
-        <div class="sidebar-subtitle" style="font-weight:300">Helper</div>
-      </div>
+      <div class="sidebar-brand-text">Admin<span class="sidebar-brand-light">Helper</span></div>
     </div>
 
     {#if workspace}
@@ -240,6 +239,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >
         <span class="workspace-dot" style:background={workspace.color}></span>
         <span class="workspace-chip-name">{workspace.name}</span>
+        <ChevronsUpDown class="workspace-chip-caret" size={13} />
       </button>
     {/if}
 
@@ -248,6 +248,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button
           class="sidebar-item"
           class:active={currentId === item.id}
+          aria-current={currentId === item.id ? 'page' : undefined}
           data-nav={item.id}
           onclick={() => go(item)}
           title={$t(item.labelKey)}
@@ -311,8 +312,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
       {#if $session}
         <NotificationBell />
-        <span style="color: var(--text-muted); margin: 0 var(--sp-3);">
-          {$session.username}
+        <span class="header-user">
+          <Avatar name={$session.username} size="sm" />
+          <span class="header-user-name">{$session.username}</span>
         </span>
         <button class="btn ghost small" onclick={() => logoutAndReload()}>{$t('nav.logout')}</button
         >

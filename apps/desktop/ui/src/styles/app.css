@@ -124,7 +124,7 @@
   --text-2xl: 1.5rem;
 
   /* Layout */
-  --sidebar-width: 240px;
+  --sidebar-width: 232px;
   --header-height: 56px;
 }
 
@@ -233,7 +233,7 @@ body {
 }
 
 .app-shell.sidebar-collapsed {
-  --sidebar-width: 64px;
+  --sidebar-width: 68px;
 }
 
 /* The window of a workspace carries its colour along the top edge (R-0431). */
@@ -245,13 +245,13 @@ body {
 .sidebar {
   grid-row: 1 / -1;
   grid-column: 1;
-  background: var(--bg-sidebar);
+  background: var(--bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  transition: width 0.2s ease;
+  transition: width var(--dur-base) var(--ease-out);
   z-index: 10;
 }
 
@@ -277,19 +277,14 @@ body {
 .sidebar-brand-text {
   overflow: hidden;
   white-space: nowrap;
+  color: var(--text-strong);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
 }
 
-.sidebar-title {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.sidebar-subtitle {
-  font-size: var(--text-xs);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+.sidebar-brand-light {
+  font-weight: 300;
 }
 
 /* Sidebar Navigation */
@@ -325,20 +320,25 @@ body {
   color: var(--text);
 }
 
+/* Active: bold text and a bar at the sidebar's edge, no fill (DS mockup). */
 .sidebar-item.active {
-  background: var(--accent-bg);
-  color: var(--text);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.sidebar-item.active:hover {
+  background: transparent;
 }
 
 .sidebar-item.active::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
+  left: calc(-1 * var(--sp-2));
+  top: 9px;
+  bottom: 9px;
   width: 3px;
-  background: var(--accent);
-  border-radius: 0 3px 3px 0;
+  background: var(--text-strong);
+  border-radius: var(--radius-pill);
 }
 
 .sidebar-item.disabled {
@@ -391,9 +391,15 @@ body {
 }
 
 .workspace-chip-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-chip-caret {
+  flex: none;
+  color: var(--text-subtle);
 }
 
 .sidebar-spacer {
@@ -444,6 +450,7 @@ body {
 .app-shell.sidebar-collapsed .sidebar-brand-text,
 .app-shell.sidebar-collapsed .sidebar-label,
 .app-shell.sidebar-collapsed .workspace-chip-name,
+.app-shell.sidebar-collapsed .workspace-chip-caret,
 .app-shell.sidebar-collapsed .sidebar-version,
 .app-shell.sidebar-collapsed .tunnel-label {
   display: none;
@@ -466,8 +473,7 @@ body {
 }
 
 .app-shell.sidebar-collapsed .sidebar-item.active::before {
-  top: 8px;
-  bottom: 8px;
+  left: calc(-1 * var(--sp-1));
 }
 
 .app-shell.sidebar-collapsed .sidebar-nav,
@@ -504,6 +510,17 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+}
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-user-name {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 /* Search */

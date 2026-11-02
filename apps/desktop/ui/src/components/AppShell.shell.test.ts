@@ -1,0 +1,198 @@
+// SPDX-FileCopyrightText: 2026 Kevin Stenzel
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/// <reference types="node" />
+
+// The shell after the DS mockup (R-1062): the active page is marked for assistive tech and
+// by weight and a bar, the sidebar is 232 px and 68 px collapsed, the header shows an avatar
+// with the user name. The classes the live specs drive stay in place. Bridge and stores are
+// mocked as in AppShell.workspace.test.ts; the pages and panels are stubs.
+
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import type { Writable } from 'svelte/store';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import type { AuthSession, Settings, WorkspaceContext } from '$lib/bridge/types';
+import { setLanguage, tNow } from '$lib/i18n';
+
+const h = vi.hoisted(() => ({
+  workspaceContext: vi.fn<() => Promise<WorkspaceContext>>(),
+  logoutAndReload: vi.fn(),
+}));
+
+vi.mock('$lib/bridge', () => ({
+  workspaceContext: h.workspaceContext,
+  openLauncher: vi.fn(async () => {}),
+}));
+vi.mock('$lib/stores/session', async () => {
+  const { writable } = await import('svelte/store');
+  return { settings: writable(null), session: writable(null) };
+});
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.0.0') }));
+vi.mock('$lib/stores/settings', () => ({
+  openSettings: vi.fn(),
+  logoutAndReload: h.logoutAndReload,
+  listenForSessionExpiry: vi.fn(async () => () => {}),
+  startSyncTimer: vi.fn(),
+  stopSyncTimer: vi.fn(),
+}));
+vi.mock('$lib/stores/notifications', () => ({
+  activateNotifications: vi.fn(async () => {}),
+  deactivateNotifications: vi.fn(),
+  setNewNotificationHandler: vi.fn(),
+}));
+vi.mock('$lib/stores/tunnel', () => ({
+  markTerminated: vi.fn(),
+  markError: vi.fn(),
+  startIfServerMode: vi.fn(async () => {}),
+}));
+vi.mock('$lib/stores/connectFlow', () => ({ markRdpError: vi.fn() }));
+vi.mock('$lib/stores/connections', async () => {
+  const { writable } = await import('svelte/store');
+  return { searchTerm: writable('') };
+});
+vi.mock('$lib/osNotify', () => ({ notifyOs: vi.fn() }));
+vi.mock('../pages/Dashboard.svelte', () => ({ default: vi.fn() }));
+vi.mock('../pages/Connections.svelte', () => ({ default: vi.fn() }));
+vi.mock('../pages/Infrastructure.svelte', () => ({ default: vi.fn() }));
+vi.mock('../pages/Monitoring.svelte', () => ({ default: vi.fn() }));
+vi.mock('../pages/Ansible.svelte', () => ({ default: vi.fn() }));
+vi.mock('./ConnectionEditor.svelte', () => ({ default: vi.fn() }));
+vi.mock('./PasswordPrompt.svelte', () => ({ default: vi.fn() }));
+vi.mock('./SettingsModal.svelte', () => ({ default: vi.fn() }));
+vi.mock('./StatusBar.svelte', () => ({ default: vi.fn() }));
+vi.mock('./TunnelIndicator.svelte', () => ({ default: vi.fn() }));
+vi.mock('./NotificationBell.svelte', () => ({ default: vi.fn() }));
+
+import { settings, session } from '$lib/stores/session';
+import { loadContext } from '$lib/stores/workspace';
+import { replace } from '$lib/router';
+import AppShell from './AppShell.svelte';
+
+const settingsState = settings as unknown as Writable<Partial<Settings> | null>;
+const sessionState = session as unknown as Writable<AuthSession | null>;
+
+const APP_CSS = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'styles', 'app.css'),
+  'utf-8',
+);
+
+// The declarations of a top-level rule with exactly this selector.
+function rule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm').exec(APP_CSS);
+  expect(m, `rule ${selector} in app.css`).not.toBeNull();
+  return m![1];
+}
+
+async function serverSession(): Promise<void> {
+  h.workspaceContext.mockResolvedValue({
+    launcher: false,
+    workspace: {
+      id: 'w-0a1b2c3d',
+      name: 'Kunde A',
+      color: '#3b82f6',
+      kind: 'server',
+      url: 'https://ah.example.com',
+      host: 'ah.example.com',
+      open: true,
+    },
+  });
+  await loadContext();
+  settingsState.set({ mode: 'server' });
+  sessionState.set({
+    serverUrl: 'https://ah.example.com',
+    username: 'Kevin Stenzel',
+    isAdmin: true,
+  });
+}
+
+beforeAll(() => {
+  setLanguage('en');
+});
+
+beforeEach(async () => {
+  vi.clearAllMocks();
+  replace('/dashboard');
+  settingsState.set({ mode: 'local' });
+  sessionState.set(null);
+  h.workspaceContext.mockResolvedValue({ launcher: true, workspace: null });
+  await loadContext();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe('AppShell: sidebar', () => {
+  it('marks the active page with aria-current and the active class, and only that one', () => {
+    replace('/connections');
+    const view = render(AppShell);
+    const items = [...view.container.querySelectorAll<HTMLElement>('.sidebar-nav .sidebar-item')];
+    const active = items.filter((el) => el.getAttribute('aria-current') === 'page');
+    expect(active.map((el) => el.dataset.nav)).toEqual(['connections']);
+    expect(items.filter((el) => el.classList.contains('active'))).toEqual(active);
+  });
+
+  it('follows the route: the dashboard is active on a page the mode does not show', () => {
+    replace('/monitoring');
+    const view = render(AppShell);
+    const current = view.container.querySelector('.sidebar-nav [aria-current="page"]');
+    expect((current as HTMLElement | null)?.dataset.nav).toBe('dashboard');
+  });
+
+  it('collapses and expands with the button, which says what it will do', async () => {
+    const view = render(AppShell);
+    const shell = view.container.querySelector<HTMLElement>('.app-shell')!;
+    await fireEvent.click(view.getByRole('button', { name: tNow('sidebar.collapse') }));
+    expect(shell.classList.contains('sidebar-collapsed')).toBe(true);
+    await fireEvent.click(view.getByRole('button', { name: tNow('sidebar.expand') }));
+    expect(shell.classList.contains('sidebar-collapsed')).toBe(false);
+  });
+
+  it('is 232 px wide and 68 px collapsed; the active item is bold with a bar, without a fill', () => {
+    expect(rule(':root')).toMatch(/--sidebar-width:\s*232px;/);
+    expect(rule('.app-shell.sidebar-collapsed')).toMatch(/--sidebar-width:\s*68px;/);
+    const active = rule('.sidebar-item.active');
+    expect(active).toMatch(/font-weight:\s*600;/);
+    expect(active).not.toMatch(/background/);
+    expect(rule('.sidebar-item.active::before')).toMatch(/width:\s*3px;/);
+  });
+
+  it('keeps the classes the live specs drive', () => {
+    const view = render(AppShell);
+    const c = view.container;
+    expect(c.querySelectorAll('.sidebar-nav .sidebar-item').length).toBeGreaterThan(0);
+    // The first item at the bottom opens the settings, the one with an aria-label is the theme.
+    const bottom = [...c.querySelectorAll<HTMLElement>('.sidebar-bottom .sidebar-item')];
+    expect(bottom[0].textContent?.trim()).toBe(tNow('settings.label'));
+    const labelled = c.querySelectorAll('.sidebar-bottom .sidebar-item[aria-label]');
+    expect(labelled.length).toBe(1);
+    expect(labelled[0].getAttribute('aria-label')).toBe(tNow('theme.toggle'));
+  });
+});
+
+describe('AppShell: header', () => {
+  it('without a session neither avatar nor sign-out', () => {
+    const view = render(AppShell);
+    expect(view.container.querySelector('.content-header .ui-avatar')).toBeNull();
+    expect(view.container.querySelector('.content-header-right .btn.ghost.small')).toBeNull();
+  });
+
+  it('with a server session shows the avatar, the user name and the sign-out button', async () => {
+    await serverSession();
+    const view = render(AppShell);
+    const header = view.container.querySelector<HTMLElement>('.content-header')!;
+    expect(header.querySelector('.ui-avatar')?.textContent).toBe('KS');
+    expect(header.querySelector('.header-user-name')?.textContent).toBe('Kevin Stenzel');
+
+    const logout = header.querySelector<HTMLElement>('.content-header-right .btn.ghost.small')!;
+    expect(logout.textContent?.trim()).toBe(tNow('nav.logout'));
+    await fireEvent.click(logout);
+    expect(h.logoutAndReload).toHaveBeenCalledOnce();
+  });
+});
