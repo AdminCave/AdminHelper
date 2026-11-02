@@ -142,7 +142,7 @@ def test_a_line_it_cannot_read_is_refused_not_skipped(tmp_path, line):
 
 def test_the_running_environment_is_read_by_default(tmp_path):
     installed = pytest.__version__
-    # Reading every installed distribution is slow on a loaded box; 30 s timed out at load ~8.
+    # 30 s timed out once on a busy box (load ~8, R-1005); the run itself takes well under a second.
     r = run(tmp_path, f"pytest=={installed}\n", freeze=None, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "1 pins installed as locked" in r.stdout

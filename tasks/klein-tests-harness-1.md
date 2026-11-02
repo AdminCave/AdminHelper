@@ -16,6 +16,6 @@ Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @974fceae 2026-11
 Review: am Ende (Branch-Review)
 Beweis: Session klein 2026-10-30 · task-close klein-tests-stack-2 T2, erster Lauf verify-red (Timeout), zweiter Lauf grün bei Last ~8
 Dedup-Key: bug:scripts-dev:test_lock_pins.py:running-environment-timeout
-Änderung: `run()` bekommt einen `timeout`-Parameter (Default 30); `test_the_running_environment_is_read_by_default` übergibt 120, weil sie die ganze Umgebung über `importlib.metadata` liest. Beide Assertions bleiben. Der Fund zeigt sich nur unter Last; der Nachweis ist der Lauf unter künstlicher Last (Gegenprobe mit Timeout 30 rot, mit 120 grün).
+Änderung: `run()` bekommt einen `timeout`-Parameter (Default 30); `test_the_running_environment_is_read_by_default` übergibt 120, weil sie die ganze Umgebung über `importlib.metadata` liest. Beide Assertions bleiben. Der Fund zeigt sich nur unter Last und ließ sich nicht erzeugen; Nachweis ist nur der grüne Lauf (Gegenprobe des Prüfers mit Timeout 30 ebenfalls grün, nicht reproduziert).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (interne Testkonstante)
