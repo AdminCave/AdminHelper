@@ -71,7 +71,9 @@ Keine neuen Wire-Formate. Tauri-Befehl nach dem Muster der bestehenden (`#[tauri
   Monitoring. Kosten: Netzverkehr vom Gerät (ein SYN je Ziel und Minute). Verbindungen mit Tunnel werden nicht
   geprobt (Ziel liegt hinter FRP), sie zeigen „über Tunnel“.
 - Host und Port kommen aus der UI (im Server-Modus kennt Rust die Verbindungen nicht). Grenze gegen Missbrauch aus
-  einem kompromittierten Webview: nur TCP-Connect, Obergrenzen wie oben; ein Webview kann ohnehin `fetch` absetzen.
+  einem kompromittierten Webview: nur TCP-Connect, Obergrenzen wie oben. Der Befehl öffnet dem Webview damit einen
+  Weg ins Netz, den die CSP sonst sperrt (`connect-src 'self' ipc: http://ipc.localhost`): er erfährt, welche
+  Host-Port-Paare vom Gerät aus erreichbar sind, aber keine Inhalte.
 
 ## Risiken & Rollback
 - Großer UI-Umbau der meistgenutzten Seite: E2E-Specs, die Selektoren der alten Karten nutzen

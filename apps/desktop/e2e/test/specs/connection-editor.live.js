@@ -13,7 +13,7 @@ describe('Connection editor via the Connections page', () => {
   it('creates a connection through the top-level editor', async () => {
     await login();
     await $('.sidebar-nav [data-nav="connections"]').click();
-    await $('.toolbar-right .btn.primary').click(); // "New connection"
+    await $('[data-action="connection-new"]').click(); // "New connection"
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
 
     // ssh kind by default → name + host, selected by field name (not index).
