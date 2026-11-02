@@ -132,7 +132,7 @@ function parseUrlHost(rawUrl: string | null | undefined): string {
   }
 }
 
-function connectionGroupingHost(c: Connection): string {
+export function connectionGroupingHost(c: Connection): string {
   const host = String(c.host ?? '').trim();
   if (host) return host;
   if (c.kind === 'web') return parseUrlHost(c.url);

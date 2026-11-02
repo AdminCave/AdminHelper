@@ -10,8 +10,10 @@ Heavy: linux-full — Umbau der Verbindungsseite und neuer Tauri-Befehl; die Des
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Listenlogik: Filter, Sortierung, Gruppierung, Schnellzugriff, Kommando-Vorschau  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/connectionList.ts, apps/desktop/ui/src/lib/models/connectionList.test.ts
+### T1 — Listenlogik: Filter, Sortierung, Gruppierung, Schnellzugriff, Kommando-Vorschau  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/connectionList.ts, apps/desktop/ui/src/lib/models/connectionList.test.ts, apps/desktop/ui/src/lib/models/connection.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a7d47810 2026-11-02T22:12:44+01:00
+Review: approve (.ah-out/review/kern-verbindungen-1/T1.verdict.json)
 Änderung: Neue reine Funktionen (SPDX-Header): Bibliothek (alle, favoriten, recent24h, tunnel), Typ, Ordner (Tag), Suche, Zähler je Eintrag; Sortierung nach Name, Ping, Zuletzt (auf-/absteigend); Gruppierung host/tag/kind/none; Schnellzugriff (Favoriten, dann zuletzt genutzt, höchstens 4); Kommando-Vorschau je Typ (ssh, xfreerdp, URL). R-1065.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/connectionList.test.ts
 Doku: → T9
