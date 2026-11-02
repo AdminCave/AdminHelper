@@ -87,8 +87,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T12
 Abhängt von: T2, T3, T7, T8
 
-### T10 — Reiter Verlauf: Server vergleichen (R-1077)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CompareView.svelte, apps/desktop/ui/src/components/monitoring/CompareView.test.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/components/monitoring/MonitoringOverview.svelte, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T10 — Reiter Verlauf: Server vergleichen (R-1077)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CompareView.svelte, apps/desktop/ui/src/components/monitoring/CompareView.test.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/components/monitoring/MonitoringOverview.svelte, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/lib/i18n/i18n.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ebb59c87 2026-11-02T21:28:58+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T10.verdict.json)
 Änderung: `MonitoringTab` (`lib/stores/monitoring.ts:32`) um `history`; `CompareView`: Metrik-Umschalter, Zeitraum, Chart mit bis zu vier Servern (der fünfte verdrängt den ältesten), Rangliste aller Agent-Server nach Ø im Ausschnitt mit Balken, Sparkline, Ø, Max; Klick oder Checkbox wählt; Servernamen aus dem Server-Store. Test: Auswahl-Grenze, Rangfolge, Zoom wirkt auf Rangliste.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/CompareView.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T12
@@ -115,3 +117,4 @@ Task-Review: am Ende
 - T4: `/status/compare` nimmt cpu, ram, disk (der vollste Mount je Server, `max by (server_id)`) und load (`load_5m / cpu_count` wie T2); `net` fehlt, bis der Agent Netzwerkdaten liefert (T5/T6, Frage an Kevin). Server ohne Agent-Daten erscheinen nicht; die Liste ist nach `serverId` sortiert, Namen löst der Desktop auf.
 - T9: Der Reiter Netzwerk fehlt, bis der Agent Netzwerkdaten liefert (T5/T6, Frage an Kevin). Latenz: je Check `fetchMetrics` mit dem Zeitraum der History, Punkte per Rundung auf deren Raster gelegt (gleiche Schrittweiten), gemessener Wert vor der Check-Dauer. Die Speicher-Prognose läuft ein Viertel des Zeitraums weiter. „Agent-Daten“ heißt: der Server hat einen `agent_resources`-Check.
 - T9: Dazu zwei Nachzüge aus T8: `svelte-ignore` im Runes-Modus trennt mehrere Codes per Komma (sonst gilt der zweite als Beschreibung und svelte-check warnt), und der i18n-Test kennt die dynamischen Präfixe `monitoring.history.tab.`/`.period.`.
+- T10: Die Reiterleiste steht in `pages/Monitoring.svelte`, nicht in `MonitoringOverview.svelte` (Dateiliste angepasst). Die erste Antwort wählt die vier Server mit dem höchsten Ø; danach gehört die Auswahl dem Nutzer, auch leer, und bleibt beim Metrik- oder Zeitraumwechsel. Die Metrik Netzwerk fehlt wie in T9. Balken und Sparkline skalieren bei % auf 100, bei Load auf den größten Wert.

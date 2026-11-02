@@ -531,6 +531,16 @@ export interface HistorySeries {
   disks: Record<string, HistoryPoint[]>;
 }
 
+/** One metric of every server with agent data on one grid (`GET /status/compare`). */
+export interface ServerCompare {
+  metric: string;
+  period: string;
+  step: number;
+  start: number;
+  end: number;
+  servers: { serverId: string; points: HistoryPoint[] }[];
+}
+
 export interface ServerHistory {
   serverId: string;
   period: string;

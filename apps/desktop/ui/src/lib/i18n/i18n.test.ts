@@ -26,6 +26,7 @@ const DYNAMIC_PREFIXES = [
   // Tab and period labels of the history panel (HistoryPanel.svelte, monitoring.history.tab.${name}).
   'monitoring.history.tab.',
   'monitoring.history.period.',
+  'monitoring.compare.metric.',
 ];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {
