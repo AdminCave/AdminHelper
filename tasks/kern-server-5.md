@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Zeilenangaben `origin/main@8c4fe2f5`, vor dem Bauen neu greppen. Neue Code-Strings englisch, CHANGELOG umlautfrei.
 `security` bei T1 und T2; Details zu R-1000 und R-1010 nur in `tasks/private/`.
 
-### T1 — Refresh ohne Zertifikat zählt gegen das Rate-Limit (R-1000)  [ ]
+### T1 — Refresh ohne Zertifikat zählt gegen das Rate-Limit (R-1000)  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/auth_router.py, apps/server/tests/test_cert_user_binding.py, docs/admin/benutzer.html, docs/en/admin/users.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-5.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0155c7ab 2026-11-02T10:58:05+01:00
+Review: am Ende (Branch-Review)
 Änderung: Im `except` von `refresh_token` (`auth_router.py:276`) zählt `_check_rate_limit(ip)` den abgewiesenen Refresh im Zähler des Logins, vor `audit.record`; über dem Limit antwortet er `429`. Test: sechs Refreshs ohne Zertifikat aus einer IP, der sechste `429`, höchstens fünf `auth.refresh_failed`; ein Refresh mit Zertifikat zählt nicht.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py tests/test_auth.py
 Doku: docs/admin/benutzer.html, docs/en/admin/users.html (Login-Rate-Limit), docs/developer/api-reference.html, docs/en/developer/api-reference.html (Refresh), changelog.d/kern-server-5.md (neutral)

@@ -366,3 +366,31 @@ def test_logout_with_a_revoked_certificate_ends_the_presented_token(
     assert resp.status_code == 200, resp.text
     me = test_client.get("/api/auth/me", headers={**admin, **fresh_headers})
     assert me.status_code == 401, me.text
+
+
+def test_refused_refreshes_count_against_the_login_rate_limit(test_client, db_session, admin_user):
+    refresh = create_refresh_token(claims_for("admin"))
+    codes = [
+        test_client.post("/api/auth/refresh", json={"refresh_token": refresh}).status_code
+        for _ in range(6)
+    ]
+    assert codes == [403] * 5 + [429], codes
+    assert db_session.query(AuditLog).filter(AuditLog.action == "auth.refresh_failed").count() == 5
+    # The same counter as the login: the next login from this address is refused as well.
+    login = test_client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "x"},
+        headers=_gateway_headers(cn="admin"),
+    )
+    assert login.status_code == 429, login.text
+
+
+def test_a_refresh_with_a_certificate_does_not_count(test_client, admin_user):
+    for _ in range(6):
+        refresh = create_refresh_token(claims_for("admin"))
+        resp = test_client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh},
+            headers=_gateway_headers(cn="admin"),
+        )
+        assert resp.status_code == 200, resp.text
