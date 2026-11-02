@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-design-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-design-1 · Review: pro Task
 Spec: docs/features/kern-design-1.md (Roadmap R-1061)
 Heavy: linux-full — Token-Wechsel und Icons in AppShell, Login und Connections ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -81,6 +81,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-design-1.md
 Task-Review: am Ende
+
+### T9 — ui-Wurzelklassen ohne globale Kollision: FormField, Button, Tag (R-1061, Abschlussprüfung)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/FormField.svelte, apps/desktop/ui/src/components/ui/Button.svelte, apps/desktop/ui/src/components/ui/Tag.svelte, apps/desktop/ui/src/components/ui/core.test.ts, apps/desktop/ui/src/components/ui/globalcss.test.ts
+Änderung: Die Wurzelklassen `field`, `btn` und `tag` der Bibliothek tragen globale Regeln aus `app.css` (`.field label`/`input`/`select`, `.btn:hover`, `.tag`), die im Bundle nach dem Komponenten-CSS stehen; sie heißen jetzt `ui-field`, `ui-btn`, `ui-tag`. Neuer Test (SPDX) spielt die globalen Regeln ein und prüft, dass kein Wurzelelement der Bibliothek einen globalen Klassennamen trägt und das FormField-Label nicht in Versalien steht.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/
+Doku: keine (Klassennamen sind intern)
 
 ## Entscheidungen
 - T1: Alias-Zuordnung: `--bg-surface`→`--surface`, `--bg-elevated`/`--bg-panel`→`--surface-raised`, `--bg-sidebar`→`--bg-subtle`, `--bg-input`→`--surface-inset`, `--shadow`→`--shadow-md`, `--sp-5/6/7`→`--space-6/8/12` (wertgleich zu den alten 24/32/48 px). Fokus-Ring als `:where(:focus-visible)` (Spezifität 0), damit die bestehenden `:focus-visible`-Regeln der Seiten weiter gelten; gezeichnet als `outline` mit `--ring-width`/`--ring` statt `--ring-shadow`, weil Klassen mit eigenem `box-shadow` (`.ws-swatch.selected`) den Ring sonst verdecken (Reviewer T1). Die undefinierten Altnamen `--bg-elev`, `--radius`, `--bg-hover`, `--bg-accent` (Ansible, NotificationBell) bleiben unberührt, Roadmap-Zeile.
