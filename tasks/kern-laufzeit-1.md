@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-laufzeit-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-laufzeit-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-laufzeit-1 · Review: pro Task
 Spec: docs/features/kern-laufzeit-1.md (Roadmap R-1029, R-1030, R-1031, R-1033)
 Heavy: linux-full — Basis-Images von Gateway, Server, Monitoring, CA-Issuer und das VictoriaMetrics-Image in `docker-compose.yml`; der Sammellauf baut und startet den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
