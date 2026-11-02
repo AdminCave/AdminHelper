@@ -64,7 +64,7 @@
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">Login rate limit</div><p>5 failed login attempts per IP within 60 seconds → further attempts are rejected with <code>429</code>. A successful login resets the counter. Implemented via Redis (fixed-window), with an in-memory fallback for single-worker setups.</p></div>
+            <div><div class="callout-title">Login rate limit</div><p>5 failed login attempts per IP within 60 seconds → further attempts are rejected with <code>429</code>. Under <code>MTLS_ENFORCE=true</code> a token refresh without a client certificate counts as a failed attempt as well. A successful login resets the counter. Implemented via Redis (fixed-window), with an in-memory fallback for single-worker setups.</p></div>
           </div>
 
           <h2>Browser access (client certificate)</h2>
