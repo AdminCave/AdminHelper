@@ -4,7 +4,15 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { status, showStatus, reportError, clearStatus } from './statusBar';
+import {
+  status,
+  toasts,
+  showStatus,
+  reportError,
+  clearStatus,
+  dismissStatus,
+  MAX_TOASTS,
+} from './statusBar';
 
 describe('statusBar store', () => {
   beforeEach(() => {
@@ -102,5 +110,44 @@ describe('statusBar store', () => {
     // The timer of the second message fires only another 3000ms later.
     vi.advanceTimersByTime(3000);
     expect(get(status)).toBeNull();
+  });
+
+  // R-1062: messages stack as toasts instead of replacing each other.
+  it('keeps several messages at once, oldest first', () => {
+    showStatus('a');
+    reportError('b');
+    expect(get(toasts).map((m) => [m.text, m.isError])).toEqual([
+      ['a', false],
+      ['b', true],
+    ]);
+  });
+
+  it('keeps at most MAX_TOASTS and drops the oldest together with its timer', () => {
+    for (const text of ['a', 'b', 'c', 'd']) showStatus(text);
+    expect(MAX_TOASTS).toBe(3);
+    expect(get(toasts).map((m) => m.text)).toEqual(['b', 'c', 'd']);
+    vi.advanceTimersByTime(6000);
+    expect(get(toasts)).toEqual([]);
+  });
+
+  it('expires each message on its own timer', () => {
+    reportError('err');
+    vi.advanceTimersByTime(1000);
+    showStatus('ok');
+    vi.advanceTimersByTime(6000);
+    expect(get(toasts).map((m) => m.text)).toEqual(['err']);
+    vi.advanceTimersByTime(3000);
+    expect(get(toasts)).toEqual([]);
+  });
+
+  it('dismissStatus removes exactly that message and its timer', () => {
+    showStatus('a');
+    showStatus('b');
+    const [first] = get(toasts);
+    dismissStatus(first.id);
+    expect(get(toasts).map((m) => m.text)).toEqual(['b']);
+    expect(get(status)?.text).toBe('b');
+    dismissStatus(first.id);
+    expect(get(toasts).map((m) => m.text)).toEqual(['b']);
   });
 });

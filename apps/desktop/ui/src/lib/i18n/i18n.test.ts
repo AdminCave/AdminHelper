@@ -21,6 +21,8 @@ const DYNAMIC_PREFIXES = [
   'settings.mode.',
   // Weekday labels resolved via template literal (monitoring.maint.day.${d}).
   'monitoring.maint.day.',
+  // The kind of a palette entry (CommandPalette.svelte, palette.kind.${entry.kind}).
+  'palette.kind.',
 ];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {
