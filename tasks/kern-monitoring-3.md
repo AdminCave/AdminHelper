@@ -49,13 +49,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_comp
 Doku: → T12
 Abhängt von: T2
 
-### T5 — Agent meldet Netzwerk-Zähler (R-1076)  [?] (Netzwerk-Daten: Agent-Report additiv um Byte-Zähler je Interface erweitern? Empfehlung ja)
+### T5 — Agent meldet Netzwerk-Zähler (R-1076)  [~] (verschoben in R-1105: wartet auf Kevins Antwort (Netzwerk über den Agent))
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go
 Änderung: `resources.net` = Summe `bytes_recv`/`bytes_sent` über alle Interfaces außer Loopback (`net.IOCounters(true)`, gopsutil, Linux und Windows), über `resourceCalls` testbar wie Swap; ein Fehler lässt nur das Feld weg.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestCollect
 Doku: → T12
 
-### T6 — Netzwerk im Push, Verlauf und Vergleich (R-1076, R-1077)  [?] (wie T5)
+### T6 — Netzwerk im Push, Verlauf und Vergleich (R-1076, R-1077)  [~] (verschoben in R-1105: wartet auf Kevins Antwort (Netzwerk über den Agent))
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/history.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_status_compare.py
 Änderung: Push schreibt `monitor_agent_net_rx_bytes_total`/`…_tx_…`; Verlauf liefert `netIn`/`netOut` als `rate(…[step])*8/1e6` (Mbit/s), Vergleich nimmt `metric=net`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_status_history.py tests/test_status_compare.py
