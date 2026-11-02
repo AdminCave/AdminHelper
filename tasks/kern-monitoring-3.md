@@ -23,10 +23,12 @@ Review: approve (.ah-out/review/kern-monitoring-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py
 Doku: → T12
 
-### T2 — Verlaufs-Endpunkt je Server, 30 Tage (R-1076)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/history.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_checks_metrics.py
+### T2 — Verlaufs-Endpunkt je Server, 30 Tage (R-1076)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/history.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_checks_metrics.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @17786838 2026-11-02T20:30:02+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T2.verdict.json)
 Änderung: `GET /checks/{id}/metrics` nimmt `period=30d` (Schritt 6h, `app/routers/checks.py:498`, `:510`). Neu `GET /status/server/{server_id}/history?period=1h|24h|7d|30d&previous=` (Schritte 1m/15m/1h/6h): Serien cpu, ram, swap, loadPerCpu (`load_1m / cpu_count`), Disks je Mount auf festem Raster mit `null`-Lücken, mit `previous=true` dieselben um eine Periode verschoben (`offset`), Schwellen aus der `agent_resources`-Konfiguration des Servers bzw. den Checker-Defaults; Abfragen mit Agent-Filter `check_id=""` wie `get_check_metrics`, Fehler über `_series_or_502`. Neue Datei `app/history.py` (Raster, Abfragen) mit SPDX-Header. Tests mit gemocktem `victoria.query_range`: Abfragen wörtlich, Raster, Lücken, previous, Schwellen, Server ohne Daten → leere Serien, VictoriaMetrics-Fehler → 502.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_checks_metrics.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_checks_metrics.py tests/test_openapi_snapshot.py
 Doku: → T12
 
 ### T3 — Ereignisse und Wartungsfenster im Verlauf (R-1076)  [ ]
@@ -97,3 +99,5 @@ Doku: die genannten Dateien
 Task-Review: am Ende
 
 ## Entscheidungen
+- T2: `loadPerCpu` ist `load_5m / cpu_count` (nicht `load_1m` wie in der Spec), weil die Load-Schwellen des Checkers (`_grade_load`) auf `load_5m` je CPU stehen; so gelten die Schwellenlinien für die gezeigte Linie.
+- T2: Jeder Punkt ist `avg_over_time(…[step])` mit `keep_metric_names` (MetricsQL-Doku: alle Rollups nehmen den Modifier), nicht der letzte Rohwert; bei 6 h je Punkt stünde sonst ein Sample für sechs Stunden. Die Vorperiode wird als eigener Zeitraum abgefragt und auf das Raster verschoben, ohne `offset`.

@@ -658,6 +658,142 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistorySeriesOut": {
+        "properties": {
+          "cpu": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Cpu",
+            "type": "array"
+          },
+          "disks": {
+            "additionalProperties": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Disks",
+            "type": "object"
+          },
+          "loadPerCpu": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Loadpercpu",
+            "type": "array"
+          },
+          "ram": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Ram",
+            "type": "array"
+          },
+          "swap": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Swap",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cpu",
+          "ram",
+          "swap",
+          "loadPerCpu",
+          "disks"
+        ],
+        "title": "HistorySeriesOut",
+        "type": "object"
+      },
       "MaintenanceInput": {
         "description": "Create/full-update payload for a maintenance window. kind-dependent\nrequired fields are enforced in the model validator; aware datetimes are\nnormalized to the service's naive-UTC convention.",
         "properties": {
@@ -1210,6 +1346,62 @@
           "alertsDeleted"
         ],
         "title": "ServerCleanupOut",
+        "type": "object"
+      },
+      "ServerHistoryOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistorySeriesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "$ref": "#/components/schemas/HistorySeriesOut"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          },
+          "thresholds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ThresholdOut"
+            },
+            "title": "Thresholds",
+            "type": "object"
+          }
+        },
+        "required": [
+          "serverId",
+          "period",
+          "step",
+          "start",
+          "end",
+          "series",
+          "previous",
+          "thresholds"
+        ],
+        "title": "ServerHistoryOut",
         "type": "object"
       },
       "StatusSummaryOut": {
@@ -1837,6 +2029,24 @@
           }
         },
         "title": "TemplateUpdate",
+        "type": "object"
+      },
+      "ThresholdOut": {
+        "properties": {
+          "crit": {
+            "title": "Crit",
+            "type": "number"
+          },
+          "warn": {
+            "title": "Warn",
+            "type": "number"
+          }
+        },
+        "required": [
+          "warn",
+          "crit"
+        ],
+        "title": "ThresholdOut",
         "type": "object"
       },
       "ValidationError": {
@@ -2580,7 +2790,7 @@
             "required": false,
             "schema": {
               "default": "1h",
-              "pattern": "^(1h|6h|24h|7d)$",
+              "pattern": "^(1h|6h|24h|7d|30d)$",
               "title": "Period",
               "type": "string"
             }
@@ -3035,6 +3245,67 @@
           }
         },
         "summary": "Get Server Status"
+      }
+    },
+    "/status/server/{server_id}/history": {
+      "get": {
+        "description": "Resource history of one server from its agent: CPU, RAM, swap, load per CPU and\ndisks on one time grid, optionally the previous period, and the warn/crit thresholds.",
+        "operationId": "get_server_history_status_server__server_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "24h",
+              "pattern": "^(1h|24h|7d|30d)$",
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "previous",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Previous",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Server History"
       }
     },
     "/status/summary": {

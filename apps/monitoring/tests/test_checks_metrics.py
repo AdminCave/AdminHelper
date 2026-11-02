@@ -264,3 +264,28 @@ def test_metrics_accept_a_period_from_the_list(client_db, monkeypatch):
 
     assert r.status_code == 200, r.text
     assert r.json()["period"] == "7d"
+
+
+def test_metrics_accept_30_days_at_a_6h_step(client_db, monkeypatch):
+    # R-1076: VictoriaMetrics keeps 90 days, the chart offered at most 7.
+    from app.core import victoria as victoria_mod
+
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(id="chk-p", server_id="srv-1", name="Ping", check_type="ping", config="{}")
+        )
+        db.commit()
+    asked: list[tuple[str, str]] = []
+
+    def fake_query_range(query, start, end, step):
+        asked.append((start, step))
+        return {"status": "success", "data": {"result": []}}
+
+    monkeypatch.setattr(victoria_mod.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/chk-p/metrics?period=30d")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["period"] == "30d"
+    assert asked and set(asked) == {("now-30d", "6h")}

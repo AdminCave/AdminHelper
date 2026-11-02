@@ -347,6 +347,34 @@ class CheckMetricsOut(BaseModel):
     statusHistory: Any
 
 
+# [unix seconds, value]; value None where the grid point has no sample.
+HistoryPoints = list[tuple[int, float | None]]
+
+
+class HistorySeriesOut(BaseModel):
+    cpu: HistoryPoints
+    ram: HistoryPoints
+    swap: HistoryPoints
+    loadPerCpu: HistoryPoints
+    disks: dict[str, HistoryPoints]
+
+
+class ThresholdOut(BaseModel):
+    warn: float
+    crit: float
+
+
+class ServerHistoryOut(BaseModel):
+    serverId: str
+    period: str
+    step: int
+    start: int
+    end: int
+    series: HistorySeriesOut
+    previous: HistorySeriesOut | None
+    thresholds: dict[str, ThresholdOut]
+
+
 class AlertRuleOut(BaseModel):
     id: str
     name: str
