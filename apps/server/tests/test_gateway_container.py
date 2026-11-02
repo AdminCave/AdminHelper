@@ -167,6 +167,20 @@ def test_the_certless_planes_cap_concurrent_requests_and_close_idle_connections_
     assert data_plane == set()
 
 
+def test_only_the_enrollment_plane_presents_the_new_root_beside_the_cross_certificate():
+    # R-1021: after a root switch gateway-enroll-fullchain.pem also carries the new root,
+    # so `--ca-fp` finds either root on :8444; GnuTLS clients (apt) refuse it beside X.
+    servers = _servers()
+    certificates = {
+        port: _args(servers[port], "ssl_certificate") for port in ("443", "8444", "8445")
+    }
+    assert certificates == {
+        "443": [["/etc/nginx/certs/gateway-fullchain.pem"]],
+        "8444": [["/etc/nginx/certs/gateway-enroll-fullchain.pem"]],
+        "8445": [["/etc/nginx/certs/gateway-fullchain.pem"]],
+    }
+
+
 def _run_args(gateway: dict) -> list[str]:
     """docker run arguments for the capabilities, security options, sysctls and the process
     limit compose gives the gateway."""
@@ -193,7 +207,8 @@ def _issuer_uid() -> int:
 
 
 def _tls_material(directory: Path) -> None:
-    """A throwaway self-signed leaf, its key and the leaf again as the client CA."""
+    """A throwaway self-signed leaf, its key and the leaf again as the client CA and as the
+    fullchain of :8444."""
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "gateway test")])
     now = datetime.now(timezone.utc)
@@ -209,6 +224,7 @@ def _tls_material(directory: Path) -> None:
     )
     pem = cert.public_bytes(serialization.Encoding.PEM)
     (directory / "gateway-fullchain.pem").write_bytes(pem)
+    (directory / "gateway-enroll-fullchain.pem").write_bytes(pem)
     (directory / "client-ca.pem").write_bytes(pem)
     (directory / "gateway.key").write_bytes(
         key.private_bytes(

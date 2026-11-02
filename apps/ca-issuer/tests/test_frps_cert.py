@@ -18,6 +18,7 @@ from cryptography.x509.verification import PolicyBuilder, Store, VerificationErr
 
 from app import pki
 from app.storage import Intermediate, ensure_frps_cert
+from tests import renewal
 
 
 def _tunnel_intermediate() -> tuple[Intermediate, x509.Certificate]:
@@ -245,3 +246,76 @@ def test_ca_accepts_only_what_a_listed_intermediate_issued(tmp_path):
     foreign = _client_leaf(dropped_cert, dropped_key, "tunnel")
     with pytest.raises(VerificationError):
         verifier.verify(foreign, [dropped_cert, root_cert])
+
+
+# --- R-1021: what frps holds in each phase of a root renewal ------------------
+# T/A: the current tunnel/access intermediates, T0/A0: those from before the switch,
+# R: the old root, N: the new root, X: the cross certificate (N signed by R).
+
+_FRPS_TAILS = {
+    # (phase, compromised scope): (after the leaf in frps.crt, ca.crt)
+    ("staged", "access"): (["T"], ["T", "A"]),
+    ("switched", "access"): (["T", "X"], ["T", "T0", "A", "A0"]),
+    ("no-cross", "access"): (["T"], ["T", "T0", "A", "A0"]),
+    ("compromised", "tunnel"): (["T", "X"], ["T", "A", "A0"]),
+    ("compromised", "access"): (["T", "X"], ["T", "T0", "A"]),
+    ("expired", "access"): (["T"], ["T", "A"]),
+    ("finished", "access"): (["T"], ["T", "A"]),
+}
+
+
+def _frps_named(r, names) -> list[x509.Certificate]:
+    certs = {"R": r.old_root, "N": r.new_root, "X": r.cross}
+    for name, scope in (("T", "tunnel"), ("A", "access")):
+        certs[name] = r.after[scope].cert
+        certs[f"{name}0"] = r.before[scope].cert
+    return [certs[name] for name in names]
+
+
+def _frps_renewed(monkeypatch, tmp_path, phase, compromised="access"):
+    r = renewal.renewed(monkeypatch, tmp_path / "pki", phase, compromised=compromised)
+    out = tmp_path / "frps"
+    ensure_frps_cert(out, r.after["tunnel"], "frp.example", extra_trust=(r.after["access"],))
+    return r, out
+
+
+@pytest.mark.parametrize(("phase", "compromised"), list(_FRPS_TAILS))
+def test_the_frps_material_follows_the_phase_of_a_root_renewal(
+    monkeypatch, tmp_path, phase, compromised
+):
+    r, out = _frps_renewed(monkeypatch, tmp_path, phase, compromised)
+
+    presented, anchors = _FRPS_TAILS[(phase, compromised)]
+    certs = x509.load_pem_x509_certificates((out / "frps.crt").read_bytes())
+    assert _der(certs[1:]) == _der(_frps_named(r, presented))
+    certs[0].verify_directly_issued_by(r.after["tunnel"].cert)
+    bundle = x509.load_pem_x509_certificates((out / "ca.crt").read_bytes())
+    assert _der(bundle) == _der(_frps_named(r, anchors))
+
+
+def _frpc_reaches(anchors, frps_crt) -> bool:
+    # Like Go's crypto/tls in frpc: every certificate in trustedCaFile is an anchor.
+    chain = x509.load_pem_x509_certificates(frps_crt.read_bytes())
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=1)
+    verifier = (
+        PolicyBuilder()
+        .store(Store(list(anchors)))
+        .time(now)
+        .build_server_verifier(x509.DNSName("frp.example"))
+    )
+    try:
+        verifier.verify(chain[0], chain[1:])
+    except VerificationError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(("phase", "old_frpc"), [("switched", True), ("no-cross", False)])
+def test_after_the_switch_an_frpc_enrolled_under_the_old_root_reaches_frps_over_x(
+    monkeypatch, tmp_path, phase, old_frpc
+):
+    r, out = _frps_renewed(monkeypatch, tmp_path, phase)
+
+    # The chain an frpc got at its enrollment before the stage: [T0, R].
+    assert _frpc_reaches([r.before["tunnel"].cert, r.old_root], out / "frps.crt") is old_frpc
+    assert _frpc_reaches([r.new_root], out / "frps.crt")

@@ -724,3 +724,88 @@ def test_a_staged_or_retired_root_that_is_no_root_aborts_the_boot(
     with pytest.raises(RuntimeError, match=f"{name}: {what}, it is not self-signed") as exc:
         storage.ensure_hierarchy(tmp_path, None)
     assert hint in str(exc.value)
+
+
+def _forged_cross(new_root, issuer, issuer_key, key=None, path_length=1) -> x509.Certificate:
+    """A CA certificate with the new root's name, `key` (default: the new root's),
+    `path_length` and `issuer`'s name, signed by `issuer_key`."""
+    now = pki._now()
+    return (
+        x509.CertificateBuilder()
+        .subject_name(new_root.subject)
+        .issuer_name(issuer.subject)
+        .public_key(key if key is not None else new_root.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=30))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=path_length), critical=True)
+        .sign(issuer_key, hashes.SHA256())
+    )
+
+
+@pytest.mark.parametrize(
+    ("forge", "reason"),
+    [
+        (lambda n, r, r_key: n, "it is not a CA with path_length=1"),
+        (lambda n, r, r_key: r, "it does not carry the name and key of root"),
+        (
+            lambda n, r, r_key: _forged_cross(n, r, r_key, pki.generate_key().public_key()),
+            "it does not carry the name and key of root",
+        ),
+        (
+            # Signed by R, but without path_length=1 it admits longer chains below N.
+            lambda n, r, r_key: _forged_cross(n, r, r_key, path_length=None),
+            "it is not a CA with path_length=1",
+        ),
+        (
+            # A foreign root of the same name as R: only the signature tells them apart.
+            lambda n, r, r_key: _forged_cross(n, r, pki.generate_key()),
+            "(the signature does not verify)",
+        ),
+    ],
+    ids=["new-root", "old-root", "other-key", "path-length", "other-signer"],
+)
+def test_a_cross_certificate_that_is_not_the_new_root_under_the_old_aborts_the_boot(
+    tmp_path, forge, reason
+):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    old_root, old_key = _root(tmp_path)
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    (tmp_path / root_rollover.CROSS).write_bytes(
+        pki.cert_to_pem(forge(new_root, old_root, old_key))
+    )
+
+    with pytest.raises(
+        RuntimeError, match="root-cross.pem: not the cross certificate of root.crt, it "
+    ) as exc:
+        storage.ensure_hierarchy(tmp_path, None)
+    assert reason in str(exc.value)
+    assert str(exc.value).endswith("; restore the PKI volume from the backup of the last step")
+
+
+def test_after_the_switch_the_cross_certificate_and_the_old_root_go_to_the_servers(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    old_root = _root(tmp_path)[0]
+    rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    cross = pki.cert_from_pem((tmp_path / root_rollover.CROSS).read_bytes())
+
+    for inter in storage.ensure_hierarchy(tmp_path, None).values():
+        assert (inter.old_root, inter.cross) == (old_root, cross)
+
+
+def test_an_old_intermediate_written_back_for_a_compromised_scope_is_skipped(tmp_path, caplog):
+    before = storage.ensure_hierarchy(tmp_path, b"pw")
+    rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw", compromised=frozenset({"access"}))
+    # A partial restore puts the replaced intermediate under R back into the file.
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(before["access"].cert))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == ()
+    assert inter["tunnel"].retired == (before["tunnel"].cert,)
+    assert "not signed by root" in _skip_warning(caplog, "access", before["access"].cert)

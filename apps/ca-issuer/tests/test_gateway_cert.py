@@ -6,6 +6,7 @@
 server leaf + trust bundle into a shared volume for the nginx gateway, since the
 gateway holds no signing key (D6) and there is no on-device CSR for it."""
 
+import datetime
 import ipaddress
 import os
 
@@ -13,10 +14,13 @@ import pytest
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
+from cryptography.x509 import DNSName
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
-from app import pki
+from app import pki, rotation, storage
 from app.storage import Intermediate, ensure_gateway_cert
+from tests import renewal
 
 
 def _access_intermediate() -> tuple[Intermediate, x509.Certificate]:
@@ -103,6 +107,7 @@ def test_a_failed_bundle_write_keeps_the_old_bundle(tmp_path, monkeypatch):
     assert bundle.read_bytes() == before
     assert sorted(p.name for p in tmp_path.iterdir()) == [
         "client-ca.pem",
+        "gateway-enroll-fullchain.pem",
         "gateway-fullchain.pem",
         "gateway.key",
     ]
@@ -336,3 +341,107 @@ def test_remints_a_fresh_fullchain_without_the_root(tmp_path):
     assert _der(certs[1:]) == _der([access.cert, root_cert])
     certs[0].verify_directly_issued_by(access.cert)
     assert key_path.read_bytes() != key_before
+
+
+# --- R-1021: what the gateway holds in each phase of a root renewal ----------
+# A: the current access intermediate, A0: the one from before the switch, R: the old
+# root, N: the new root, X: the cross certificate (N signed by R).
+
+_GATEWAY_TAILS = {
+    # phase: (after the leaf in gateway-fullchain.pem, in gateway-enroll-fullchain.pem,
+    #         client-ca.pem)
+    "none": (["A", "R"], ["A", "R"], ["A", "R"]),
+    "staged": (["A", "R"], ["A", "R"], ["A", "R"]),
+    "switched": (["A", "X", "R"], ["A", "X", "R", "N"], ["A", "N", "A0", "R"]),
+    "no-cross": (["A", "N"], ["A", "N"], ["A", "N", "A0", "R"]),
+    "compromised": (["A", "X", "R"], ["A", "X", "R", "N"], ["A", "N"]),
+    "expired": (["A", "N"], ["A", "N"], ["A", "N"]),
+    "finished": (["A", "N"], ["A", "N"], ["A", "N"]),
+}
+
+
+def _named(r, names) -> list[x509.Certificate]:
+    certs = {
+        "A": r.after["access"].cert,
+        "A0": r.before["access"].cert,
+        "R": r.old_root,
+        "N": r.new_root,
+        "X": r.cross,
+    }
+    return [certs[name] for name in names]
+
+
+def _pems(path) -> list[x509.Certificate]:
+    return x509.load_pem_x509_certificates(path.read_bytes())
+
+
+@pytest.mark.parametrize("phase", renewal.PHASES)
+def test_the_gateway_material_follows_the_phase_of_a_root_renewal(monkeypatch, tmp_path, phase):
+    r = renewal.renewed(monkeypatch, tmp_path / "pki", phase)
+    out = tmp_path / "gateway"
+
+    ensure_gateway_cert(out, r.after["access"], "localhost")
+
+    full, enroll, client_ca = _GATEWAY_TAILS[phase]
+    # GnuTLS clients (apt before 3.0) refuse N beside X: never so on :443 and :8445.
+    assert not {"X", "N"} <= set(full)
+    fullchain = _pems(out / "gateway-fullchain.pem")
+    enroll_chain = _pems(out / "gateway-enroll-fullchain.pem")
+    assert _der(fullchain[1:]) == _der(_named(r, full))
+    assert _der(enroll_chain) == _der(fullchain[:1] + _named(r, enroll))
+    assert _der(_pems(out / "client-ca.pem")) == _der(_named(r, client_ca))
+    fullchain[0].verify_directly_issued_by(r.after["access"].cert)
+
+
+def _server_verifies(anchors, chain) -> bool:
+    store = Store(list(anchors))
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=1)
+    verifier = PolicyBuilder().store(store).time(now).build_server_verifier(DNSName("localhost"))
+    try:
+        verifier.verify(chain[0], chain[1:])
+    except VerificationError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(
+    ("phase", "old_root_client"),
+    [("switched", True), ("compromised", True), ("no-cross", False)],
+)
+def test_after_the_switch_a_client_of_either_root_reaches_the_gateway_unless_no_cross(
+    monkeypatch, tmp_path, phase, old_root_client
+):
+    r = renewal.renewed(monkeypatch, tmp_path / "pki", phase)
+    out = tmp_path / "gateway"
+    ensure_gateway_cert(out, r.after["access"], "localhost")
+
+    for name in ("gateway-fullchain.pem", "gateway-enroll-fullchain.pem"):
+        chain = _pems(out / name)
+        assert _server_verifies([r.new_root], chain)
+        assert _server_verifies([r.old_root], chain) is old_root_client
+
+
+def test_each_phase_change_of_a_root_renewal_remints_what_changed(monkeypatch, tmp_path):
+    pki_dir, out = tmp_path / "pki", tmp_path / "gateway"
+    access = storage.ensure_hierarchy(pki_dir, renewal.PW)["access"]
+    ensure_gateway_cert(out, access, "localhost")
+    keys = [(out / "gateway.key").read_bytes()]
+
+    rotation.stage_root(pki_dir, renewal.NEXT_PW)
+    ensure_gateway_cert(out, storage.ensure_hierarchy(pki_dir, None)["access"], "localhost")
+    keys.append((out / "gateway.key").read_bytes())
+    rotation.switch_root(pki_dir, renewal.NEXT_PW, renewal.PW)
+    switched = storage.ensure_hierarchy(pki_dir, None)["access"]
+    ensure_gateway_cert(out, switched, "localhost")
+    keys.append((out / "gateway.key").read_bytes())
+    rotation.finish_root(pki_dir)
+    finished = storage.ensure_hierarchy(pki_dir, None)["access"]
+    ensure_gateway_cert(out, finished, "localhost")
+    keys.append((out / "gateway.key").read_bytes())
+
+    # staged keeps the leaf; the switch moves it under the new access intermediate,
+    # the finish takes X and R out of what follows it.
+    assert keys[1] == keys[0]
+    assert len({keys[0], keys[2], keys[3]}) == 3
+    new_root = pki.cert_from_pem((pki_dir / "root.crt").read_bytes())
+    assert _der(_pems(out / "gateway-fullchain.pem")[1:]) == _der([finished.cert, new_root])

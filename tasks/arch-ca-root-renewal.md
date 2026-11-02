@@ -64,8 +64,10 @@ Abhängt von: T1
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_enroll_renew.py tests/test_root_rollover.py tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: → T10
 
-### T3 — Server-Material je Phase und Gateway :8444  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/app/trust.py, apps/gateway/nginx.conf, apps/gateway/docker-entrypoint.sh, apps/ca-issuer/tests/test_gateway_cert.py, apps/ca-issuer/tests/test_frps_cert.py, apps/ca-issuer/tests/test_trust.py
+### T3 — Server-Material je Phase und Gateway :8444  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/app/trust.py, apps/gateway/nginx.conf, apps/gateway/docker-entrypoint.sh, apps/ca-issuer/tests/test_gateway_cert.py, apps/ca-issuer/tests/test_frps_cert.py, apps/ca-issuer/tests/test_trust.py, apps/ca-issuer/tests/test_storage.py, apps/server/tests/test_gateway_container.py, apps/ca-issuer/tests/renewal.py, .github/workflows/ci.yml
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @2017822a 2026-11-02T12:20:18+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T3.verdict.json)
 Abhängt von: T2
 Änderung:
 - `_provision_server_material`/`ensure_gateway_cert`/`ensure_frps_cert` (`storage.py:420`, `:499`, `:537`) schreiben
@@ -77,7 +79,7 @@ Abhängt von: T2
   - Ein Phasenwechsel stellt das Material neu aus.
 - `nginx.conf:158` (:8444) nutzt die neue Datei, `docker-entrypoint.sh:9` wartet auf sie.
 - Tests, tabellengetrieben je Phase. Invariante: Auf :443/:8445 steht nie N neben X.
-Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py tests/test_trust.py
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py tests/test_trust.py tests/test_storage.py
 Doku: → T10
 
 ### T4 — CLI `rotate-root`, `status`, Sperre von `finish`, Warnung und Inventar  [ ]
@@ -203,3 +205,25 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
 - 2026-11-02 T2, Nits der Prüfer: `Verify:` nimmt alle fünf berührten Testdateien auf (reviewer). In `switched`
   nimmt der Boot ein `<scope>-retired.pem` unter R auch für einen Scope aus `--compromised` an (security). Das
   schließt T3 mit, weil T3 die Bündel je Scope ohnehin neu baut: unter R nur, was nicht `compromised` ist.
+- 2026-11-02 T3: `ensure_hierarchy` liest X (`root-cross.pem`) und prüft es: Name und Schlüssel von `root.crt`,
+  signiert von R, sonst bricht der Boot mit Restore-Hinweis ab. `Intermediate` trägt dazu `old_root` und `cross`,
+  solange R gilt. Für einen Scope aus `compromised` zählt im `<scope>-retired.pem` nur, was N signiert hat; ein
+  teilweise zurückgespieltes Intermediate unter R wird mit WARNING übersprungen (Nit von `security` zu T2).
+- 2026-11-02 T3: `client-ca.pem` nimmt R nur dann auf, wenn ein gelistetes Intermediate darunter steht. nginx ist
+  nicht die Grenze gegen ein ausgetauschtes Intermediate unter R: R im Bündel lässt jedes mitgeschickte durch, wie
+  vor der Erneuerung. Die Grenze ist die Aussteller-Prüfung des Servers über `ca-trust/<scope>.pem` (R-1009).
+- 2026-11-02 T3: `trust.py` bleibt unverändert. `write_trust` schreibt I + retired, und die retired je Phase kommen
+  schon aus `ensure_hierarchy`. Die Datei bleibt in `Dateien:`, weil `set-files` nur ergänzt.
+- 2026-11-02 T3: 10 Dateien statt 8: `test_storage.py` für die Prüfung von X, das neue Hilfsmodul
+  `tests/renewal.py` (die Phasen über die echten Übergänge, wie `apps/server/tests/trust_ca.py`) für drei
+  Testdateien, `apps/server/tests/test_gateway_container.py`, weil der Entrypoint auf die neue Datei wartet.
+  `test_a_failed_bundle_write_keeps_the_old_bundle` führt `gateway-enroll-fullchain.pem` als vierte Datei, eine
+  gewollte Verhaltensänderung.
+- 2026-11-02 T3: Die Server-Datei steht nicht im `Verify:` (task-close fährt eine Komponente) und lief einzeln:
+  `verify.sh server --strict -- tests/test_gateway_container.py` → `run.sh[quick]: 3 passed, 0 failed, 15 skipped,
+  0 test-skips, 0 reruns` (pytest `12 passed`, mit Docker), exit 0.
+- 2026-11-02 T3, Runde 2 (reviewer): Der CI-Job `gateway-config` legt für `nginx -t` nur Stub-Zertifikate an; ohne
+  `gateway-enroll-fullchain.pem` bricht er ab (nachgestellt: rc 1 ohne, rc 0 mit der Zeile). `ci.yml` bekommt die
+  Stub-Datei. Damit ändert der PR `.github/workflows/`, Kevin merged ihn (CLAUDE.md §2). Die Prüfung von X nutzt
+  jetzt `pki.cross_problem` aus T1 statt einer zweiten Fassung, damit auch `path_length=1` gilt (Nit), mit eigenem
+  Testfall.

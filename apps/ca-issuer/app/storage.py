@@ -27,7 +27,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import NamedTuple, TypeVar
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
@@ -93,6 +93,12 @@ class Intermediate:
     # Earlier intermediates of this scope from <scope>-retired.pem, newest first: valid,
     # of this scope under the root, never the current one. Verify only — no key here.
     retired: tuple[x509.Certificate, ...] = ()
+    # After a root switch, while the old root R is valid (ensure_hierarchy): R, and the
+    # cross certificate X (root.crt signed by R) unless the switch ran with --no-cross.
+    # The gateway and frps present X after the intermediate, so a client that trusts
+    # only R still reaches them.
+    old_root: x509.Certificate | None = None
+    cross: x509.Certificate | None = None
 
     @property
     def trust_bundle(self) -> bytes:
@@ -142,9 +148,12 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     A root renewal (app.root_rollover) sets Intermediate.roots: with a staged new root N
     it comes before root.crt (R, which signs); after the switch the old root R comes
     before root.crt (N) and retired intermediates under R count too, until R expires
-    (a WARNING that the finish is due) or a --compromised scope took R out. A switch or
-    a finish that stopped part way raises with the command that ends it, as do files no
-    transition leaves and a staged N or a retired R that is no root."""
+    (a WARNING that the finish is due) or a --compromised scope took R out. Retired
+    intermediates under R never count for a scope the switch named --compromised. Until
+    R expires, Intermediate.old_root is R and Intermediate.cross the cross certificate.
+    A switch or a finish that stopped part way raises with the command that ends it, as
+    do files no transition leaves, a staged N or a retired R that is no root and a cross
+    certificate that is not root.crt signed by R."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     try:
         pki_dir.chmod(0o700)
@@ -211,10 +220,15 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
         raise _invalid_hierarchy(f"{root_crt}: the root certificate is not self-signed ({problem})")
     if problem := _validity_problem(root, now):
         raise _invalid_hierarchy(f"{root_crt}: the root certificate is {problem}")
-    roots, signers = _renewal_roots(pki_dir, renewal, root, now)
+    trust = _renewal_trust(pki_dir, renewal, root, now)
 
     out: dict[str, Intermediate] = {}
     for scope in pki.SCOPES:
+        signers = trust.signers
+        if renewal.switch is not None and scope in renewal.switch.compromised:
+            # The switch emptied this retired file; an intermediate under R written back
+            # into it (a partial restore) must not be trusted again.
+            signers = (root,)
         cert_path = pki_dir / f"{scope}.crt"
         key_path = pki_dir / f"{scope}.key"
         chain_path = pki_dir / f"{scope}-chain.pem"
@@ -249,8 +263,10 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             cert=cert,
             key=key,
             chain=pki.chain_pem(cert, root),
-            roots=roots,
+            roots=trust.roots,
             retired=_load_retired(pki_dir / f"{scope}-retired.pem", scope, cert, signers, now),
+            old_root=trust.old_root,
+            cross=trust.cross,
         )
 
     _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
@@ -259,11 +275,18 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     return out
 
 
-def _renewal_roots(
+class _RenewalTrust(NamedTuple):
+    roots: tuple[x509.Certificate, ...]  # Intermediate.roots
+    signers: tuple[x509.Certificate, ...]  # the roots retired intermediates may come from
+    old_root: x509.Certificate | None  # Intermediate.old_root
+    cross: x509.Certificate | None  # Intermediate.cross
+
+
+def _renewal_trust(
     pki_dir: Path, renewal: root_rollover.State, root: x509.Certificate, now: datetime.datetime
-) -> tuple[tuple[x509.Certificate, ...], tuple[x509.Certificate, ...]]:
-    """(Intermediate.roots, the roots retired intermediates may come from) in the phase
-    of `renewal`, none, staged or switched; `root` is root.crt, already checked."""
+) -> _RenewalTrust:
+    """What the phase of `renewal` (none, staged or switched) adds to the trust of every
+    scope; `root` is root.crt, already checked."""
     if renewal.phase == "staged":
         new_root = renewal.next_root
         problem = pki.root_problem(new_root) or _validity_problem(new_root, now)
@@ -273,15 +296,21 @@ def _renewal_roots(
                 f"{problem}",
                 hint=f"remove it with: {root_rollover.ROTATE_ROOT} abort, then stage again",
             )
-        return (new_root, root), (root,)
+        return _RenewalTrust((new_root, root), (root,), None, None)
     if renewal.phase == "switched":
-        old_root, switch = renewal.retired_root, renewal.switch
+        old_root, switch, cross = renewal.retired_root, renewal.switch, renewal.cross
         if problem := pki.root_problem(old_root):
             raise _invalid_hierarchy(
                 f"{pki_dir / root_rollover.RETIRED}: the old root is no root, {problem}",
                 hint="restore the PKI volume from the backup of the last step",
             )
+        if cross is not None and (problem := pki.cross_problem(cross, root, old_root)):
+            raise _invalid_hierarchy(
+                f"{pki_dir / root_rollover.CROSS}: not the cross certificate of root.crt, {problem}",
+                hint="restore the PKI volume from the backup of the last step",
+            )
         if now >= old_root.not_valid_after_utc:
+            # X ends no later than R (pki.build_cross_cert): neither goes out any more.
             logger.warning(
                 "the old root %r expired on %s and left `chain`; the root renewal is not "
                 "finished, end it with: %s finish",
@@ -289,11 +318,10 @@ def _renewal_roots(
                 old_root.not_valid_after_utc.isoformat(),
                 root_rollover.ROTATE_ROOT,
             )
-            return (root,), (root, old_root)
-        if switch.drop_retired_root:
-            return (root,), (root, old_root)
-        return (old_root, root), (root, old_root)
-    return (root,), (root,)
+            return _RenewalTrust((root,), (root, old_root), None, None)
+        roots = (root,) if switch.drop_retired_root else (old_root, root)
+        return _RenewalTrust(roots, (root, old_root), old_root, cross)
+    return _RenewalTrust((root,), (root,), None, None)
 
 
 def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
@@ -513,8 +541,9 @@ def _provision_server_material(
     the leaf is kept across restarts but re-minted once past half its life (F4) so
     it never expires under a long-running stack, once the current intermediate
     did not sign it (the first boot after a rotation), once the file does not
-    present what follows the leaf now (a fullchain from before send_root), or once
-    its names differ from primary + extra_sans (a changed DOMAIN or EXTRA_SANS)."""
+    present what follows the leaf now (a fullchain from before send_root or from
+    another phase of a root renewal), or once its names differ from primary +
+    extra_sans (a changed DOMAIN or EXTRA_SANS)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Trust bundle = the signing intermediate's chain (with trust_root the root too) and its
     # retired intermediates, plus any extra trust intermediates (e.g. frps also
@@ -530,6 +559,15 @@ def _provision_server_material(
     trusted = list(inter.retired)
     for extra in extra_trust:
         trusted += [extra.cert, *extra.retired]
+    # After a root switch the retired intermediates under the old root need it as nginx's
+    # anchor, and only then: a root in the bundle lets through any intermediate under it
+    # that the client sends along.
+    if (
+        trust_root
+        and inter.old_root is not None
+        and any(_signature_problem(c, inter.old_root) is None for c in trusted)
+    ):
+        trusted.append(inter.old_root)
     head = inter.chain if trust_root else pki.cert_to_pem(inter.cert)
     bundle = head + pki.chain_pem(*trusted)
     _write_atomic(out_dir / bundle_name, bundle)
@@ -537,8 +575,14 @@ def _provision_server_material(
     cert_path = out_dir / cert_name
     key_path = out_dir / key_name
     # What the server presents after its leaf: the signing intermediate, with send_root the
-    # root too (inter.chain is exactly the two).
-    presented = inter.chain if send_root else pki.cert_to_pem(inter.cert)
+    # root too (inter.chain is exactly the two). After a root switch the cross certificate
+    # takes the root's place, with send_root followed by the old root: a client that trusts
+    # only the old root builds the path over X to it.
+    if inter.cross is None:
+        presented = inter.chain if send_root else pki.cert_to_pem(inter.cert)
+    else:
+        tail = (inter.cross, inter.old_root) if send_root else (inter.cross,)
+        presented = pki.chain_pem(inter.cert, *tail)
     # Also require the leaf and key to be a matching pair: a crash between writing the leaf and
     # the key leaves a NEW leaf beside the OLD key, which _leaf_needs_remint (0% aged) would pass
     # — nginx then fails with 'key values mismatch' and crash-loops for up to half the leaf life
@@ -575,11 +619,15 @@ def ensure_gateway_cert(
 ) -> None:
     """Provision the gateway's TLS material into a shared volume (ADR 0001 §3.2).
 
-    Writes three files the gateway mounts read-only:
+    Writes four files the gateway mounts read-only:
         client-ca.pem            access intermediate + root + retired access
-                                 intermediates (verify client certs)
-        gateway-fullchain.pem    server leaf + access intermediate + root
-                                 (TLS terminate)
+                                 intermediates (verify client certs), after a root
+                                 switch + the old root if one of them is under it
+        gateway-fullchain.pem    server leaf + access intermediate + root, after a
+                                 root switch + X + the old root in the root's place
+                                 (TLS terminate on :443 and :8445)
+        gateway-enroll-fullchain.pem
+                                 the same, after a root switch + root.crt (:8444)
         gateway.key              the leaf's private key (0600)
 
     The leaf chains to the pinned Root so native clients (which pin the Root and
@@ -606,6 +654,12 @@ def ensure_gateway_cert(
         label="Gateway-Cert",
         send_root=True,
     )
+    # :8444 alone also presents the new root after a switch, so `--ca-fp` finds either
+    # root there; beside X it would break GnuTLS clients (apt) on :443 and :8445.
+    fullchain = (out_dir / "gateway-fullchain.pem").read_bytes()
+    if access.cross is not None:
+        fullchain += pki.cert_to_pem(access.roots[-1])
+    _write_atomic(out_dir / "gateway-enroll-fullchain.pem", fullchain)
 
 
 def ensure_frps_cert(
@@ -620,7 +674,8 @@ def ensure_frps_cert(
         ca.crt    tunnel intermediate + retired tunnel intermediates
                   (+ extra_trust intermediates, each with its retired ones);
                   no root, so the listed intermediates are frps's only anchors
-        frps.crt  server leaf + tunnel intermediate (server_auth, SAN=server_addr)
+        frps.crt  server leaf + tunnel intermediate (server_auth, SAN=server_addr),
+                  after a root switch + X, which frpc anchors at the old root
         frps.key  the leaf's private key (0600)
 
     ``extra_trust`` widens the client-cert trust beyond the tunnel scope: the
