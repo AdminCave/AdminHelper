@@ -8,7 +8,7 @@
 // xfreerdp3 as an external process, so the orchestrator (desktop_e2e_connect.sh)
 // verifies from the target side via the xrdp log.
 
-import { login, clickItemByName, jsClick } from '../lib/live.js';
+import { login, connectByName, CONN_ROW, jsClick } from '../lib/live.js';
 
 describe('Open an RDP connection through the GUI', () => {
   it('launches xfreerdp3 to the target after the password prompt', async () => {
@@ -16,9 +16,9 @@ describe('Open an RDP connection through the GUI', () => {
 
     const nav = await $$('.sidebar-nav .sidebar-item'); // dashboard / connections / infrastructure
     await nav[1].click();
-    await $('.card').waitForExist({ timeout: 15000 });
+    await $(CONN_ROW).waitForExist({ timeout: 15000 });
 
-    await clickItemByName('.card', '.card-title', 'rdp-direct'); // -> RDP password prompt
+    await connectByName('rdp-direct'); // -> RDP password prompt
 
     await $('.pw-panel').waitForExist({ timeout: 10000 });
     await $('.pw-panel input[type="password"]').setValue('e2e');
