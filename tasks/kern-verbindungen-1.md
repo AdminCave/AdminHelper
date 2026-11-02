@@ -19,9 +19,9 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/connect
 Doku: → T9
 
 ### T2 — Favoriten in den Settings  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs
-Änderung: `Settings.favorite_connections: Vec<String>` mit `#[serde(default)]` (Wire `favoriteConnections`); Test: eine Settings-Datei ohne das Feld lädt mit leerer Liste, Round-Trip behält die IDs. R-1065.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- models
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts
+Änderung: `Settings.favorite_connections: Vec<String>` mit `#[serde(default)]` (Wire `favoriteConnections`), gespeichert in der Meta des Workspace (`workspace.json`), nicht in den geräteweiten Prefs; die Struct-Literale von `Meta` ziehen mit, der Bridge-Typ und die Defaults der UI auch (Paritätstest). Test: eine Meta ohne das Feld lädt mit leerer Liste, Round-Trip behält die IDs, ein anderer Workspace sieht sie nicht. R-1065.
+Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T9
 
 ### T3 — Erreichbarkeit: Tauri-Befehl probe_targets  [ ]
@@ -75,4 +75,5 @@ Task-Review: am Ende
 ## Entscheidungen
 - 2026-11-02: Favoriten lokal in den Settings je Workspace, Erreichbarkeit per TCP-Probe vom Gerät (Spec, Trade-offs); beide Zeilen überlassen die Wahl dem Plan.
 - 2026-11-02: Ohne „Verbunden“, „In Tabs öffnen“ und Split-Button: hängen an eingebetteten Sitzungen (R-1069/R-1070).
+- 2026-11-02: T2: Favoriten in `Meta` (je Workspace), nicht in `Prefs` (geräteweit, alle Workspaces); `Settings` ist das Bridge-Struct, deshalb ziehen `bridge/types.ts` und die UI-Defaults in T2 mit (Paritätstest), die Stores bleiben T4. Mehr als acht Dateien nur durch die Pflicht-Initialisierer der Meta-Literale.
 - 2026-11-02: overlap.sh: kern-monitoring-3 ändert commands.rs, main.rs, bridge/index.ts, dictionaries.ts; T3 und T7 erst nach dessen Merge, davor `git merge origin/main`.
