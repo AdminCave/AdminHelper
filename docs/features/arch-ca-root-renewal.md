@@ -28,7 +28,8 @@ Ziel (Entscheidungen Kevin 2026-11-02, siehe Ledger `## Entscheidungen`):
     gelöscht, nachdem X geschrieben ist. `--compromised` leert die retired-Liste des Scopes und nimmt R aus `chain`.
   - `finish [--force]`: R, X und die Zwischenzertifikate unter R verlassen alle Bündel. Ohne `--force` verweigert
     `finish`, solange das Register (`issued_certificates`/`device_lines`) gültige, nicht widerrufene Leaves zeigt, die
-    vor `switch` ausgestellt wurden. Ohne erreichbare DB verweigert es ebenfalls.
+    vor dem ersten Start des ca-issuer unter N ausgestellt wurden. Ohne erreichbare DB verweigert es
+    ebenfalls.
 - **Vertrag `chain`** (Kevin): Der Name bleibt, der Inhalt wird neu festgelegt. Zuerst kommt das ausstellende
   Zwischenzertifikat, dann jede weitere vertraute Root, zuletzt die Root, die :8444 selbstsigniert ausliefert.
   Heutige Agents (`apps/agent/internal/enroll/enroll.go`, ersetzt `ca.crt` ganz) und Desktops (`enroll|ca`)
