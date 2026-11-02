@@ -52,24 +52,31 @@ def root_passphrase() -> bytes | None:
     Compose hands the passphrase over as a secret file. An empty value creates no
     file at all, and after the first boot an empty value is intended, so a missing
     file falls through to the env var (empty -> None); any other read error raises."""
-    return _secret("CA_ROOT_PASSPHRASE")
+    return _secret(
+        os.environ.get("CA_ROOT_PASSPHRASE_FILE", ""), os.environ.get("CA_ROOT_PASSPHRASE", "")
+    )
 
 
 def next_root_passphrase() -> bytes | None:
     """Passphrase of the new root of a renewal (``rotate-root``, R-1021), read like
     root_passphrase from CA_NEXT_ROOT_PASSPHRASE_FILE, else CA_NEXT_ROOT_PASSPHRASE. After
     the switch the new root is root.crt, and its passphrase is the root passphrase."""
-    return _secret("CA_NEXT_ROOT_PASSPHRASE")
+    return _secret(
+        os.environ.get("CA_NEXT_ROOT_PASSPHRASE_FILE", ""),
+        os.environ.get("CA_NEXT_ROOT_PASSPHRASE", ""),
+    )
 
 
-def _secret(name: str) -> bytes | None:
-    path = os.environ.get(f"{name}_FILE", "").strip()
+# The callers spell out the variable names: test_env_parity finds the reads by their literal
+# names, and a name built at runtime would make compose's keys look unread.
+def _secret(path: str, value: str) -> bytes | None:
+    path = path.strip()
     if path:
         try:
             return Path(path).read_bytes().strip() or None
         except FileNotFoundError:
             pass
-    return os.environ.get(name, "").encode() or None
+    return value.encode() or None
 
 
 def gateway_cert_dir() -> str:

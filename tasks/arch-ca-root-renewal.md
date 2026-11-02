@@ -189,8 +189,10 @@ Nach `abort` wird das Backup von nach dem `stage` verworfen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
 
-### T12 — ca-issuer: Passphrase-Variablen wörtlich lesen (nach dem Basis-Merge)  [ ]
+### T12 — ca-issuer: Passphrase-Variablen wörtlich lesen (nach dem Basis-Merge)  [x]
 Komponente: server · Dateien: apps/ca-issuer/app/config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @29f20ecc 2026-11-02T17:46:59+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T12.verdict.json)
 Änderung: Der Dispatch-Lauf auf 8f50d71a ist rot in `test_env_parity.py::test_compose_gives_no_service_a_key_it_does_not_read`:
 `main` setzt seit dem Merge `CA_ROOT_PASSPHRASE_FILE` in compose, und `_secret()` (T4) baut den Namen zur Laufzeit,
 der Scan findet ihn nicht. `root_passphrase()` und `next_root_passphrase()` lesen die vier Variablen mit ihrem Namen;
