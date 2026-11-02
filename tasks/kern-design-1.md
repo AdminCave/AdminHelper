@@ -26,8 +26,10 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/package.json, apps/desktop/ui
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.notifications.test.ts src/components/AppShell.workspace.test.ts src/components/Picker.test.ts src/components/Login.dialog.test.ts src/mount.smoke.test.ts
 Doku: → T8
 
-### T3 — Kernkomponenten: Button, IconButton, Tag, Badge, Pill, Dot, Kbd, Spinner, Panel (R-1061)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/Button.svelte, apps/desktop/ui/src/components/ui/IconButton.svelte, apps/desktop/ui/src/components/ui/Tag.svelte, apps/desktop/ui/src/components/ui/Badge.svelte, apps/desktop/ui/src/components/ui/Pill.svelte, apps/desktop/ui/src/components/ui/Dot.svelte, apps/desktop/ui/src/components/ui/Kbd.svelte, apps/desktop/ui/src/components/ui/Spinner.svelte, apps/desktop/ui/src/components/ui/Panel.svelte, apps/desktop/ui/src/components/ui/core.test.ts
+### T3 — Kernkomponenten: Button, IconButton, Tag, Badge, Pill, Dot, Kbd, Spinner, Panel (R-1061)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/Button.svelte, apps/desktop/ui/src/components/ui/IconButton.svelte, apps/desktop/ui/src/components/ui/Tag.svelte, apps/desktop/ui/src/components/ui/Badge.svelte, apps/desktop/ui/src/components/ui/Pill.svelte, apps/desktop/ui/src/components/ui/Dot.svelte, apps/desktop/ui/src/components/ui/Kbd.svelte, apps/desktop/ui/src/components/ui/Spinner.svelte, apps/desktop/ui/src/components/ui/Panel.svelte, apps/desktop/ui/src/components/ui/core.test.ts, apps/desktop/ui/src/components/ui/__fixtures__/TestIcon.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c35501fe 2026-11-02T16:59:59+01:00
+Review: approve (.ah-out/review/kern-design-1/T3.verdict.json)
 Änderung: Neun Komponenten nach den Verträgen in `components/core/*.d.ts` (Pill, Dot, Panel nach `kit.jsx`): Varianten, Größen, Töne als Props, Pill-Radius, Press-Scale, `loading` sperrt den Button, IconButton verlangt `label` (aria-label). Ein Test je Komponente (Rendern, Varianten-Klasse, Ereignisse, Sperren, aria). SPDX-Header in jeder neuen Datei. Zehn Dateien: neun kleine Komponenten mit einem gemeinsamen Test.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/core.test.ts
 Doku: → T8
