@@ -261,6 +261,7 @@ if [ -f .env ]; then
         function hit(k, ks, vs, ve, q, closed, cs) {
             if (k != "CA_ROOT_PASSPHRASE") {
                 if (ex && q != "" && closed) { m++; QS[m] = vs; QE[m] = ve }
+                if (ex) { ne++; ES[ne] = ks; EE[ne] = ve }
                 return
             }
             n++
@@ -276,13 +277,20 @@ if [ -f .env ]; then
             for (j = 1; j <= n0; j++)
                 for (i = 1; i <= m; i++)
                     if (QS[i] < A[j] && A[j] < QE[i] && B[j] >= QE[i]) {
-                        if (B[j] > QE[i]) { n++; A[n] = QE[i] + 1; B[n] = B[j] }
+                        if (B[j] > QE[i]) {
+                            n++; A[n] = QE[i] + 1; B[n] = B[j]
+                            do {
+                                g = 0
+                                for (r = 1; r <= ne; r++)
+                                    if (ES[r] <= B[n] && EE[r] > B[n] && EE[r] >= A[n]) { B[n] = EE[r]; g = 1 }
+                            } while (g)
+                        }
                         B[j] = QE[i] - 1
                     }
             for (ls = 1; ls <= N; ls = le + 1) {
                 le = tok_eol(ls)
                 o = ""
-                ch = 0
+                ch = kq = 0
                 p = ls
                 while (p < le) {
                     c = 0
@@ -291,10 +299,11 @@ if [ -f .env ]; then
                     x = le
                     for (j = 1; j <= n; j++) if (A[j] > p && A[j] < x) x = A[j]
                     o = o substr(S, p, x - p)
+                    for (i = 1; i <= m; i++) if (p <= QE[i] && QE[i] < x) kq = 1
                     p = x
                 }
                 if (!ch) print substr(S, ls, le - ls)
-                else if (substr(S, ls, le - ls) !~ tcre && o !~ ("^(" sp ")*$")) {
+                else if (kq || (substr(S, ls, le - ls) !~ tcre && o !~ ("^(" sp ")*$"))) {
                     sub("(" sp ")+$", "", o)
                     print o
                 }

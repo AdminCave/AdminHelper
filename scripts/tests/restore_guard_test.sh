@@ -31,7 +31,8 @@
 # that closes that other value stays.
 # 15d: a passphrase statement read behind a quote inside the closed value of another
 # key goes, but that value's closing quote stays; the bytes behind it go too (15e:
-# there the passphrase's own value may begin).
+# there the passphrase's own value may begin). 15f: a commented line that holds that
+# closing quote stays with it; 15g: a statement compose reads behind it goes whole.
 # 16: backup.sh, against the same stubs and a date stub that fixes the archive
 # name: a directory under that name fails the backup and takes no archive, and no
 # temp file stays; a symlink under it is replaced by the archive, its target
@@ -466,6 +467,31 @@ sanitized=$(bk_env "$WORK/bk/f5")
 { [ $rc -eq 0 ] && [ -f "$sanitized" ] && ! grep -q pp10 "$sanitized" && grep -qx 'A="x' "$sanitized"; } \
   && ok "env.sanitized keeps nothing behind the kept closing quote" \
   || bad "bytes behind the kept quote: rc=$rc env.sanitized=[$(sed 's/pp10/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+
+# --- 15f. backup.sh: a commented line that closes another key's value stays ─────
+# Compose reads A's value on to the quote at the end of the commented line; the
+# statement read alone from its '#' goes, the quote stays, else A would run on over B.
+mkdir -p "$WORK/bk/f6"
+printf 'A="l1\n# CA_ROOT_PASSPHRASE=pp11"\nB=1\n' > "$WORK/bk/run/.env"
+printf 'A="l1\n"\nB=1\n' > "$WORK/bk/f6/expected"
+out=$(bk_run "$WORK/bk/f6" "$WORK/bk/f6/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f6")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f6/expected" "$sanitized"; } \
+  && ok "env.sanitized keeps the closing quote on a commented line" \
+  || bad "closing quote on a commented line: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# --- 15g. backup.sh: the cut behind the kept quote takes a statement whole ───────
+# Behind A's closing quote compose reads C, whose value runs over two lines: a cut
+# that ended at the end of the line took C's opening quote and left 'w"' open, so
+# compose read on over B. The cut takes C whole.
+mkdir -p "$WORK/bk/f7"
+printf 'A="x \x27CA_ROOT_PASSPHRASE=pp12" C="z\nw"\nB=1\n' > "$WORK/bk/run/.env"
+printf 'A="x \x27"\nB=1\n' > "$WORK/bk/f7/expected"
+out=$(bk_run "$WORK/bk/f7" "$WORK/bk/f7/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f7")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f7/expected" "$sanitized"; } \
+  && ok "env.sanitized cuts a statement behind the kept quote whole" \
+  || bad "statement behind the kept quote: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
 
 # --- 16. backup.sh: the archive lands under its name as a file ───────────────
 # Without -T, mv takes a directory under the archive name (or a symlink to one)
