@@ -5,7 +5,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Component } from 'svelte';
+  import Monitor from '@lucide/svelte/icons/monitor';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+  import Server from '@lucide/svelte/icons/server';
   import type { SyncMode, WorkspaceInfo } from '$lib/bridge/types';
   import { list, listError, open, refresh, remove } from '$lib/stores/workspace';
   import { errMsg } from '$lib/utils/errors';
@@ -13,13 +16,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { confirmDialog } from './ui/ConfirmDialog.svelte';
   import WorkspaceEditor from './WorkspaceEditor.svelte';
 
-  const KINDS: Record<SyncMode, { label: string; icon: string }> = {
-    server: { label: 'settings.mode.server', icon: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01' },
-    sync: {
-      label: 'settings.mode.sync',
-      icon: 'M20 12a8 8 0 0 0-14.3-4.9M4 12a8 8 0 0 0 14.3 4.9M5 3v4h4M19 21v-4h-4',
-    },
-    local: { label: 'settings.mode.local', icon: 'M3 4h18v12H3zM8 20h8M12 16v4' },
+  const KINDS: Record<SyncMode, { label: string; icon: Component<Record<string, unknown>> }> = {
+    server: { label: 'settings.mode.server', icon: Server },
+    sync: { label: 'settings.mode.sync', icon: RefreshCw },
+    local: { label: 'settings.mode.local', icon: Monitor },
   };
   const DELETE_CONFIRM: Record<SyncMode, string> = {
     server: 'workspace.picker.delete.confirm.server',
@@ -193,6 +193,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       onclick={onListClick}
     >
       {#each workspaces as ws (ws.id)}
+        {@const KindIcon = KINDS[ws.kind].icon}
         <li
           id={optionId(ws.id)}
           class="picker-item"
@@ -202,14 +203,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
           data-id={ws.id}
         >
           <span class="picker-dot" style:background={ws.color}></span>
-          <svg
+          <KindIcon
             class="picker-kind"
-            viewBox="0 0 24 24"
+            size={16}
             role="img"
             aria-label={$t(KINDS[ws.kind].label)}
-          >
-            <path d={KINDS[ws.kind].icon} />
-          </svg>
+          />
           <span class="picker-name">{ws.name}</span>
           <span class="picker-host"
             >{ws.kind === 'local' ? $t('settings.mode.local') : (ws.host ?? '')}</span
@@ -341,15 +340,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     height: 12px;
     border-radius: 50%;
   }
-  .picker-kind {
+  .picker-item :global(.picker-kind) {
     flex: none;
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: var(--text-muted);
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    color: var(--text-muted);
   }
   .picker-name {
     font-weight: 500;

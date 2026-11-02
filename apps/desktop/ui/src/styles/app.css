@@ -349,7 +349,6 @@ body {
 .sidebar-icon {
   width: 20px;
   height: 20px;
-  fill: currentColor;
   flex-shrink: 0;
 }
 
@@ -431,16 +430,11 @@ body {
   justify-content: center;
   z-index: 11;
   transition: all 0.15s ease;
-  fill: currentColor;
 }
 
 .sidebar-collapse-btn:hover {
   background: var(--bg-elevated);
   color: var(--text);
-}
-
-.sidebar-collapse-btn svg {
-  fill: currentColor;
 }
 
 .app-shell.sidebar-collapsed .sidebar-collapse-btn svg {
@@ -529,7 +523,7 @@ body {
 }
 
 .search-icon {
-  fill: var(--text-muted);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -711,7 +705,6 @@ body {
 .btn.icon svg {
   width: 16px;
   height: 16px;
-  fill: currentColor;
 }
 
 .btn.icon.large {
