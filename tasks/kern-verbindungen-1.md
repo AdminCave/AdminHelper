@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-1 · Review: pro Task
 Spec: docs/features/kern-verbindungen-1.md (Roadmap R-1065, R-1067)
 Heavy: linux-full — Umbau der Verbindungsseite und neuer Tauri-Befehl; die Desktop-Journeys (ssh/rdp/web/tunnel-connect, connection-editor, two-installations) laufen im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testcode)
 Abhängt von: T6
 
-### T9 — Doku: Verbindungsliste und probe_targets  [ ]
-Komponente: scripts · Dateien: docs/index.html, docs/en/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-verbindungen-1.md
+### T9 — Doku: Verbindungsliste und probe_targets  [x]
+Komponente: scripts · Dateien: docs/index.html, docs/en/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-verbindungen-1.md, docs/admin/index.html, docs/en/admin/index.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c9e8b0e9 2026-11-03T00:30:55+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Bedienung der Verbindungsliste (Leiste, Favoriten lokal je Workspace, Schnellzugriff, Tastatur, Sammelaktionen, Erreichbarkeit vom Gerät) an der maßgeblichen Stelle DE+EN (Ort beim Bauen per grep festlegen), Befehl `probe_targets` in der Befehlstabelle, CHANGELOG-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
