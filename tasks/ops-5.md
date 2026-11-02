@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagno
 Doku: docs/admin/betrieb.html:107 + docs/en/admin/operations.html:74 (frischer Host: übernommen werden die Schlüssel der Anwendung, Images vor der Rückfrage) · changelog.d/ops-5.md (neutral)
 Abhängt von: T1
 
-### T3 — init-secrets.sh: Schlüssel lesen und ersetzen wie Compose (R-1002)  [ ]
+### T3 — init-secrets.sh: Schlüssel lesen und ersetzen wie Compose (R-1002)  [x]
 Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, changelog.d/ops-5.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5cbd26cd 2026-11-02T09:55:45+01:00
+Review: approve (.ah-out/review/ops-5/T3.verdict.json)
 Beweis: Code-Lesung `scripts/init-secrets.sh:41` (`grep -E "^${var}="`) und `:72` (`^#?[[:space:]]*${key}=`); `.env` mit `export POSTGRES_PASSWORD=alt` → zweite Zeile `POSTGRES_PASSWORD=<neu>` · Dedup-Key: bug:scripts:init-secrets.sh:env-read-not-like-compose
 Änderung: `is_set_safely` erkennt `KEY` in jeder Form, die Compose liest (`^[[:space:]]*(export[[:space:]]+)?KEY[[:space:]]*[=:]`, wie `migrate_env` in `update.sh`), und liest den Wert danach; `upsert` entfernt dieselben Formen (und die auskommentierte) vor dem Anhängen. Tests (erst rot): `export POSTGRES_PASSWORD=alt`, `POSTGRES_PASSWORD = alt` und `POSTGRES_PASSWORD: alt` bleiben unverändert und einzig; ein leeres `export SECRET_KEY=` wird ersetzt, ohne zweite Zeile.
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test
