@@ -17,8 +17,10 @@ Reihenfolge: T1 → T2 → T3 → T4 bauen aufeinander auf. T5–T8 sind unabhä
 
 ## Tasks
 
-### T1 — Root-Wechsel: Zertifikate und Dateiübergänge  [ ]
+### T1 — Root-Wechsel: Zertifikate und Dateiübergänge  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/pki.py, apps/ca-issuer/app/rotation.py, apps/ca-issuer/app/root_rollover.py (neu, SPDX), apps/ca-issuer/tests/test_pki.py, apps/ca-issuer/tests/test_rotation.py, apps/ca-issuer/tests/test_root_rollover.py (neu, SPDX)
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @f5dc150d 2026-11-02T11:28:56+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T1.verdict.json)
 Änderung:
 - `pki.py`:
   - `build_root_ca` (`:160`) bekommt ein optionales Label im CN, damit N ein eigenes Subject hat. Der CN der
@@ -168,3 +170,16 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
   - Dateilayout im Volume `ca-pki` und die Env `CA_NEXT_ROOT_PASSPHRASE(_FILE)` wie in der Spec.
   - N nur auf :8444 neben X, wegen GnuTLS (Probe des Advisors).
   - Agent, Desktop und Server-Identitätsprüfung ohne Code-Änderung, nur Tests.
+- 2026-11-02 T1: Die Übergänge (`stage_root`, `abort_root`, `switch_root`, `finish_root`) stehen in `rotation.py`,
+  `root_rollover.py` liest nur die Phase — sie teilen Lock und atomares Schreiben mit `rotate_intermediates`, und
+  der Boot (T2) braucht die Phase ohne den Rotationscode.
+- 2026-11-02 T1: Phasen `none · staged · switching · switched · finishing` allein aus den Dateien;
+  `root-switch.json` hält die Optionen des Switch, ein fortgesetzter Switch mit anderen Optionen wird verweigert —
+  sonst entschiede ein zweiter Lauf still anders als der erste.
+- 2026-11-02 T1: Die Passphrase von R braucht der Switch nur, solange X fehlt; ist R abgelaufen, geht nur
+  `--no-cross` — ein Fortsetzen nach geschriebenem X braucht R nicht mehr, und ein abgelaufenes R signiert nichts.
+- 2026-11-02 T1: `rotate_intermediates` verweigert in `switching`/`finishing`, rotiert in `staged` unter R und in
+  `switched` unter N (retired behält, was unter R oder N steht); `--compromised` in `switched` schreibt
+  `drop_retired_root` vor der ersten retired-Datei — ein halber Lauf lässt R sonst in `chain`.
+- 2026-11-02 T1: Ein zweiter `stage` mit demselben CN wie `root.crt` (gleicher Tag) wird verweigert — Clients
+  finden den Aussteller über den Namen, und R und N stehen bis `finish` nebeneinander.
