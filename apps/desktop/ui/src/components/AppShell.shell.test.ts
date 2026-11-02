@@ -65,6 +65,7 @@ vi.mock('./ConnectionEditor.svelte', () => ({ default: vi.fn() }));
 vi.mock('./PasswordPrompt.svelte', () => ({ default: vi.fn() }));
 vi.mock('./SettingsModal.svelte', () => ({ default: vi.fn() }));
 vi.mock('./StatusBar.svelte', () => ({ default: vi.fn() }));
+vi.mock('./StatusFooter.svelte', () => ({ default: vi.fn() }));
 vi.mock('./TunnelIndicator.svelte', () => ({ default: vi.fn() }));
 vi.mock('./NotificationBell.svelte', () => ({ default: vi.fn() }));
 
@@ -72,6 +73,7 @@ import { settings, session } from '$lib/stores/session';
 import { loadContext } from '$lib/stores/workspace';
 import { replace } from '$lib/router';
 import AppShell from './AppShell.svelte';
+import StatusFooter from './StatusFooter.svelte';
 
 const settingsState = settings as unknown as Writable<Partial<Settings> | null>;
 const sessionState = session as unknown as Writable<AuthSession | null>;
@@ -194,5 +196,19 @@ describe('AppShell: header', () => {
     expect(logout.textContent?.trim()).toBe(tNow('nav.logout'));
     await fireEvent.click(logout);
     expect(h.logoutAndReload).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AppShell: status footer', () => {
+  it('renders the footer in a third grid row under the content', () => {
+    render(AppShell);
+    expect(StatusFooter).toHaveBeenCalledOnce();
+    expect(rule('.app-shell')).toMatch(
+      /grid-template-rows:\s*var\(--header-height\)\s+1fr\s+var\(--footer-height\);/,
+    );
+    const footer = rule('.status-footer');
+    expect(footer).toMatch(/grid-row:\s*3;/);
+    expect(footer).toMatch(/font-family:\s*var\(--font-mono\);/);
+    expect(footer).toMatch(/font-size:\s*11px;/);
   });
 });

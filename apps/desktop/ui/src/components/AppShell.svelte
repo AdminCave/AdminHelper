@@ -39,6 +39,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import PasswordPrompt from './PasswordPrompt.svelte';
   import SettingsModal from './SettingsModal.svelte';
   import StatusBar from './StatusBar.svelte';
+  import StatusFooter from './StatusFooter.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
   import Avatar from './ui/Avatar.svelte';
@@ -337,6 +338,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
     </section>
   </main>
+
+  <StatusFooter />
 </div>
 
 <ConnectionEditor />

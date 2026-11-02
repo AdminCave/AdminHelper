@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/kern-design-2/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/statusBar.test.ts src/components/StatusBar.test.ts
 Doku: → T8
 
-### T3 — Statusleiste mit vorhandenen Daten (R-1062)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/StatusFooter.svelte, apps/desktop/ui/src/components/StatusFooter.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T3 — Statusleiste mit vorhandenen Daten (R-1062)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/StatusFooter.svelte, apps/desktop/ui/src/components/StatusFooter.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/components/AppShell.shell.test.ts, apps/desktop/ui/src/components/AppShell.workspace.test.ts, apps/desktop/ui/src/components/AppShell.notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7fc71d26 2026-11-02T19:20:07+01:00
+Review: approve (.ah-out/review/kern-design-2/T3.verdict.json)
 Änderung: Neue `StatusFooter.svelte` (mono 11 px, SPDX) unter dem Inhalt: Modus und Hub-Host, Tunnelzustand, Probleme (nur Servermodus, Zahl aus dem Monitoring-Store), letzter Sync (nur Sync-Modus), Gerätezertifikat (registriert/nicht registriert, Ablauf). Keine Felder ohne Datenquelle (Spec, Nicht-Ziele). Texte DE+EN in `dictionaries.ts`. Test je Modus: welche Felder erscheinen, welche nicht.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/StatusFooter.test.ts src/components/AppShell.shell.test.ts
 Doku: → T8
@@ -71,3 +73,4 @@ Task-Review: am Ende
 ## Entscheidungen
 - Mockup-Elemente ohne Datenquelle (Sitzungen, Nicht stören, Aktive Sitzungen, Terminal-Sektion, Wiederherstellen, Zwischenablage) baut dieser Zug nicht; sie kommen mit R-1069/R-1070ff und R-1078 (Spec, offene Frage 1, Empfehlung an Kevin am Gate).
 - Sektionen als Tabs nach Mockup; die E2E-Spec wählt „Gerät“ (Spec, Trade-offs).
+- T3: „Letzter Sync“ hatte keine Quelle; der connections-Store merkt sich die Zeit der letzten erfolgreichen Sync-Antwort (`lastSyncedAt`, nur im Speicher). Probleme zählen aktivierte Checks mit warning/critical aus der letzten Monitoring-Ladung, erst nach der ersten Ladung sichtbar; Gerätezertifikat nur im Servermodus, unlesbar → Feld entfällt.

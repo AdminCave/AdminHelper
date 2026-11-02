@@ -66,6 +66,7 @@ vi.mock('./ConnectionEditor.svelte', () => ({ default: vi.fn() }));
 vi.mock('./PasswordPrompt.svelte', () => ({ default: vi.fn() }));
 vi.mock('./SettingsModal.svelte', () => ({ default: vi.fn() }));
 vi.mock('./StatusBar.svelte', () => ({ default: vi.fn() }));
+vi.mock('./StatusFooter.svelte', () => ({ default: vi.fn() }));
 vi.mock('./TunnelIndicator.svelte', () => ({ default: vi.fn() }));
 vi.mock('./NotificationBell.svelte', () => ({ default: vi.fn() }));
 
