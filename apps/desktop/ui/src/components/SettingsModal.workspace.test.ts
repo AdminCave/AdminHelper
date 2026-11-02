@@ -2,9 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The settings in the window of a workspace (R-0431): "This workspace" shows its name, colour
-// and URL and holds what belongs to it, by its kind; "All workspaces on this device" holds what
-// every window shares. There is no mode to switch: the kind and the URL of a workspace are
+// The settings in the window of a workspace (R-0431): what belongs to this workspace carries
+// its mark (data-scope="workspace") and shows its name, colour and URL and what its kind
+// holds; the rest (data-scope="device") is what every window shares. The sections of the
+// dialog cut across both (R-1063). There is no mode to switch: the kind and the URL of a workspace are
 // fixed, so a save neither signs out nor touches the tunnel. The bridge is mocked; the settings
 // and workspace stores are the real ones, the session store a stand-in each test sets.
 
@@ -166,18 +167,36 @@ function open(): HTMLElement {
   return render(SettingsModal).container;
 }
 
-function group(container: HTMLElement, name: 'workspace' | 'device'): HTMLElement {
-  const found = container.querySelector<HTMLElement>(`[data-group="${name}"]`);
-  expect(found).not.toBeNull();
-  return found!;
+// The settings of one scope, gathered from every section that holds some of them.
+interface Scope {
+  readonly textContent: string | null;
+  querySelector(selector: string): Element | null;
+  querySelectorAll(selector: string): Iterable<Element>;
 }
 
-function el(container: HTMLElement, selector: string): HTMLElement | null {
-  return container.querySelector<HTMLElement>(selector);
+function group(container: HTMLElement, name: 'workspace' | 'device'): Scope {
+  const parts = () => [...container.querySelectorAll<HTMLElement>(`[data-scope="${name}"]`)];
+  expect(parts().length).toBeGreaterThan(0);
+  return {
+    get textContent() {
+      return parts()
+        .map((p) => p.textContent ?? '')
+        .join(' ');
+    },
+    querySelector: (selector) =>
+      parts()
+        .map((p) => p.querySelector(selector))
+        .find((found) => found !== null) ?? null,
+    querySelectorAll: (selector) => parts().flatMap((p) => [...p.querySelectorAll(selector)]),
+  };
 }
 
-function button(container: HTMLElement, label: string): HTMLButtonElement | undefined {
-  return [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+function el(root: Scope, selector: string): HTMLElement | null {
+  return root.querySelector(selector) as HTMLElement | null;
+}
+
+function button(root: Scope, label: string): HTMLButtonElement | undefined {
+  return ([...root.querySelectorAll('button')] as HTMLButtonElement[]).find(
     (b) => b.textContent?.trim() === label,
   );
 }
@@ -191,7 +210,7 @@ const rgb = (hex: string) => {
 /** The device half is the same in every kind of workspace. */
 function expectDeviceGroup(container: HTMLElement): void {
   const device = group(container, 'device');
-  expect(device.textContent).toContain(tNow('settings.group.device'));
+  expect(device.textContent).not.toContain(tNow('settings.group.workspace'));
   for (const key of [
     'settings.section.language',
     'settings.storePasswords',
@@ -201,7 +220,9 @@ function expectDeviceGroup(container: HTMLElement): void {
   ]) {
     expect(device.textContent).toContain(tNow(key));
   }
-  expect([...device.querySelectorAll('option')].map((o) => o.value)).toContain('en');
+  expect(
+    ([...device.querySelectorAll('option')] as HTMLOptionElement[]).map((o) => o.value),
+  ).toContain('en');
   // Nothing of a workspace on the device half.
   expect(device.textContent).not.toContain(tNow('settings.allowSelfSigned'));
   expect(device.textContent).not.toContain(tNow('settings.section.notificationRules'));
@@ -262,9 +283,9 @@ describe('SettingsModal in a server workspace', () => {
     const stored = settingsOf('server', KEPT);
     const container = open();
 
-    const language = [...group(container, 'device').querySelectorAll('select')].find((s) =>
-      [...s.options].some((o) => o.value === 'en'),
-    )!;
+    const language = (
+      [...group(container, 'device').querySelectorAll('select')] as HTMLSelectElement[]
+    ).find((s) => [...s.options].some((o) => o.value === 'en'))!;
     await fireEvent.change(language, { target: { value: 'en' } });
     await fireEvent.click(el(container, '[data-action="settings-save"]')!);
 
@@ -296,9 +317,9 @@ describe('SettingsModal in a server workspace that kept no URL', () => {
     const stored = settingsOf('server', null);
     const container = open();
 
-    const language = [...group(container, 'device').querySelectorAll('select')].find((s) =>
-      [...s.options].some((o) => o.value === 'en'),
-    )!;
+    const language = (
+      [...group(container, 'device').querySelectorAll('select')] as HTMLSelectElement[]
+    ).find((s) => [...s.options].some((o) => o.value === 'en'))!;
     await fireEvent.change(language, { target: { value: 'en' } });
     await fireEvent.click(el(container, '[data-action="settings-save"]')!);
 

@@ -9,6 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
   import Cable from '@lucide/svelte/icons/cable';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import Layers from '@lucide/svelte/icons/layers';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
@@ -21,8 +22,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings } from '$lib/stores/session';
-  import { searchTerm } from '$lib/stores/connections';
-  import { markRdpError } from '$lib/stores/connectFlow';
+  import { connections, searchTerm } from '$lib/stores/connections';
+  import { initiateConnect, markRdpError } from '$lib/stores/connectFlow';
+  import { openEditor } from '$lib/stores/editor';
+  import { buildEntries } from '$lib/palette';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import { context, openLauncher } from '$lib/stores/workspace';
   import { reportError } from '$lib/stores/statusBar';
@@ -38,8 +41,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import PasswordPrompt from './PasswordPrompt.svelte';
   import SettingsModal from './SettingsModal.svelte';
   import StatusBar from './StatusBar.svelte';
+  import CommandPalette from './CommandPalette.svelte';
+  import StatusFooter from './StatusFooter.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
+  import Avatar from './ui/Avatar.svelte';
+  import Kbd from './ui/Kbd.svelte';
   import {
     openSettings,
     logoutAndReload,
@@ -120,6 +127,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function toLauncher(): void {
     openLauncher().catch((err) => reportError(errMsg(err)));
+  }
+
+  let paletteOpen = $state(false);
+  const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
+  // Pages as in the sidebar, so the palette never offers what this mode cannot show.
+  let paletteEntries = $derived(
+    buildEntries({
+      connections: $connections,
+      pages: visibleNav.map((n) => ({ id: n.id, label: $t(n.labelKey), href: n.href })),
+      actions: [
+        { id: 'newConnection', label: $t('connections.new'), run: () => openEditor(null) },
+        { id: 'settings', label: $t('settings.label'), run: openSettings },
+        { id: 'theme', label: $t('theme.toggle'), run: toggleTheme },
+        { id: 'workspace', label: $t('workspace.openLauncher'), run: toLauncher },
+      ],
+      connect: (c) => void initiateConnect(c),
+      navigate,
+    }),
+  );
+
+  // Ctrl+K / Cmd+K works from inside input fields too: it is the way out of one. Not over another
+  // dialog: the palette would open beneath it and take the typing (a password) out of view.
+  // e.code keeps the shortcut on layouts whose K key types another letter.
+  function onWindowKeydown(e: KeyboardEvent): void {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    if (e.code !== 'KeyK' && e.key.toLowerCase() !== 'k') return;
+    if (document.querySelector('[aria-modal="true"]')) return;
+    e.preventDefault();
+    paletteOpen = true;
   }
 
   // Poll the notification feed app-wide while a server session is active. The
@@ -208,6 +244,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div
   class="app-shell"
   class:sidebar-collapsed={collapsed}
@@ -225,10 +263,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           />
         </svg>
       </div>
-      <div class="sidebar-brand-text">
-        <div class="sidebar-title" style="font-weight:600">Admin</div>
-        <div class="sidebar-subtitle" style="font-weight:300">Helper</div>
-      </div>
+      <div class="sidebar-brand-text">Admin<span class="sidebar-brand-light">Helper</span></div>
     </div>
 
     {#if workspace}
@@ -240,6 +275,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >
         <span class="workspace-dot" style:background={workspace.color}></span>
         <span class="workspace-chip-name">{workspace.name}</span>
+        <ChevronsUpDown class="workspace-chip-caret" size={13} />
       </button>
     {/if}
 
@@ -248,6 +284,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button
           class="sidebar-item"
           class:active={currentId === item.id}
+          aria-current={currentId === item.id ? 'page' : undefined}
           data-nav={item.id}
           onclick={() => go(item)}
           title={$t(item.labelKey)}
@@ -303,6 +340,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <h1 class="page-title">{title}</h1>
     </div>
     <div class="content-header-right">
+      <!-- Not .btn.ghost.small: the live specs take the first of those for the sign-out. -->
+      <button
+        class="header-palette-btn"
+        onclick={() => (paletteOpen = true)}
+        title={$t('palette.open')}
+        aria-label={$t('palette.open')}
+        aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
+      >
+        <Search size={14} />
+        <Kbd>{isMac ? '⌘K' : $t('palette.shortcut')}</Kbd>
+      </button>
       {#if currentId === 'connections'}
         <label class="search-box">
           <Search class="search-icon" size={16} />
@@ -311,8 +359,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
       {#if $session}
         <NotificationBell />
-        <span style="color: var(--text-muted); margin: 0 var(--sp-3);">
-          {$session.username}
+        <span class="header-user">
+          <Avatar name={$session.username} size="sm" />
+          <span class="header-user-name">{$session.username}</span>
         </span>
         <button class="btn ghost small" onclick={() => logoutAndReload()}>{$t('nav.logout')}</button
         >
@@ -335,9 +384,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
     </section>
   </main>
+
+  <StatusFooter />
 </div>
 
 <ConnectionEditor />
 <PasswordPrompt />
 <SettingsModal />
 <StatusBar />
+<CommandPalette open={paletteOpen} entries={paletteEntries} onClose={() => (paletteOpen = false)} />

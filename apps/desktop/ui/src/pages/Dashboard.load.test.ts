@@ -29,6 +29,25 @@ vi.mock('$lib/stores/session', async () => {
   };
 });
 
+vi.mock('$lib/stores/monitoring', async () => {
+  const { writable } = await import('svelte/store');
+  return {
+    loadServers: vi.fn(async () => {}),
+    loadMonitoring: vi.fn(async () => {}),
+    setSelectedServer: vi.fn(),
+    setOverviewView: vi.fn(),
+    monitoringChecks: writable([]),
+    monitoringServers: writable([]),
+    // Loaded: the monitoring panel shows no loading text of its own here.
+    monitoringHasLoaded: writable(true),
+    monitoringError: writable(null),
+  };
+});
+vi.mock('$lib/stores/tunnel', async () => {
+  const { writable } = await import('svelte/store');
+  return { tunnel: writable({ ui: 'idle' }), tunnelMappings: writable([]) };
+});
+
 import { setLanguage, tNow } from '$lib/i18n';
 import { clearInMemory } from '$lib/stores/connections';
 import Dashboard from './Dashboard.svelte';

@@ -30,6 +30,10 @@ const initial: ConnectionsState = { items: [], loading: false, error: null };
 const _state = writable<ConnectionsState>(initial);
 
 export const connectionsStore = { subscribe: _state.subscribe };
+
+// When the sync URL last answered with a list (ISO 8601), for the status footer; null until then.
+const _lastSyncedAt = writable<string | null>(null);
+export const lastSyncedAt = { subscribe: _lastSyncedAt.subscribe };
 export const connections = derived(_state, ($s) => $s.items);
 export const loading = derived(_state, ($s) => $s.loading);
 
@@ -131,11 +135,16 @@ export async function reloadForMode(
     }
     if (gen !== loadGen) return;
     loadedFrom = source;
+    if (settings.mode === 'sync' && settings.url) _lastSyncedAt.set(new Date().toISOString());
     _state.set({ items, loading: false, error: null });
   } catch (err) {
     if (gen !== loadGen) return;
     const keep = loadedFrom === source;
-    if (!keep) loadedFrom = null;
+    if (!keep) {
+      loadedFrom = null;
+      // The time belonged to the list just dropped, not to the source that failed.
+      _lastSyncedAt.set(null);
+    }
     _state.update((s) => ({ items: keep ? s.items : [], loading: false, error: errMsg(err) }));
   }
 }

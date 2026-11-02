@@ -92,12 +92,16 @@ Notes:
 
 ### Settings
 
-- **This workspace**: name, colour and URL (shown; the workspace list changes them while the workspace is closed),
-  sign-out, self-signed certificates and the pinned certificate, device identity and enrollment token, browser
-  certificate, notification rules, and the **interval** of a sync workspace
-- **All workspaces on this device**: **language** (German/English), **store passwords locally** (optional, OS
-  keychain, RDP only), RDP options (**scaling mode** `auto`, `normal`, `hdpi`, window, performance), OS notifications,
-  diagnostics
+Five sections; a pill marks what applies to **this workspace** only, the rest applies to every workspace on this
+device:
+- **General**: **language** (German/English), **theme** (dark/light), **store passwords locally** (optional, OS
+  keychain, RDP only), and self-signed certificates of this workspace
+- **Workspace & sync**: name, colour and URL (shown; the workspace list changes them while the workspace is closed),
+  sign-out, and the **interval** of a sync workspace
+- **RDP**: **scaling mode** `auto`, `normal`, `hdpi`, window, performance
+- **Notifications**: OS notifications, and the notification rules of this workspace
+- **Device**: device identity and enrollment token, the pinned certificate and the browser certificate of this
+  workspace, diagnostics
 
 ### Workspaces
 
