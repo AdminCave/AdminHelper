@@ -23,6 +23,7 @@ import type {
   MaintenanceWindow,
   MaintenanceInput,
   Server,
+  ServerHistory,
   TemplateAssignment,
   TemplateSuggestion,
 } from '$lib/api/types';
@@ -50,6 +51,18 @@ export const monitoringApi = {
       session,
       'GET',
       `/api/monitoring/checks/${encodeURIComponent(checkId)}/metrics?period=${period}`,
+    );
+  },
+
+  fetchServerHistory(
+    session: AuthSession,
+    serverId: string,
+    period: string,
+  ): Promise<ServerHistory> {
+    return apiRequest<ServerHistory>(
+      session,
+      'GET',
+      `/api/monitoring/status/server/${encodeURIComponent(serverId)}/history?period=${period}&previous=true`,
     );
   },
 

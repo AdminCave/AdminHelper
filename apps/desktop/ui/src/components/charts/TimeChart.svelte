@@ -221,7 +221,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <!-- The chart is one focusable widget that the keyboard and the mouse drive; aria-query counts
      role="application" as non-interactive, so Svelte warns although focus and keys are the point. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={host}
   class="time-chart"
