@@ -7,6 +7,7 @@ import type { Connection } from '$lib/bridge/types';
 import { emptyConnection } from './connection';
 import {
   commandPreview,
+  connectionsCsv,
   filterConnections,
   groupConnections,
   kindCounts,
@@ -192,5 +193,26 @@ describe('probeTarget', () => {
     expect(probeTarget(conn('a', { kind: 'web', url: 'https://h.example:0/' }))).toBeNull();
     expect(probeTarget(conn('a', { kind: 'web', url: 'ftp://h.example/' }))).toBeNull();
     expect(probeTarget(conn('a', { kind: 'web', url: 'https://' }))).toBeNull();
+  });
+});
+
+describe('connectionsCsv', () => {
+  it('writes one row per connection under a header', () => {
+    expect(
+      connectionsCsv([
+        conn('a', { port: 2222, username: 'root', tags: ['prod', 'db'] }),
+        conn('b', { kind: 'web', host: null, url: 'https://x.example/?a=1,2' }),
+      ]),
+    ).toBe(
+      'name,type,host,port,user,url,tags\n' +
+        'a,ssh,a.example,2222,root,,prod db\n' +
+        'b,web,,,,"https://x.example/?a=1,2",\n',
+    );
+  });
+
+  it('quotes cells a spreadsheet would run as a formula', () => {
+    expect(connectionsCsv([conn('=HYPERLINK("x")', { host: '+cmd' })]).split('\n')[1]).toBe(
+      '"\'=HYPERLINK(""x"")",ssh,\'+cmd,,,,',
+    );
   });
 });

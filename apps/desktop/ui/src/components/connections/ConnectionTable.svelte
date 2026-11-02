@@ -46,6 +46,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { timeAgo } from '$lib/utils/timeAgo';
   import { t } from '$lib/i18n';
   import Button from '../ui/Button.svelte';
+  import Checkbox from '../ui/Checkbox.svelte';
   import Dot from '../ui/Dot.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import Pill from '../ui/Pill.svelte';
@@ -67,6 +68,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     onConnect: (c: Connection) => void;
     onEdit: (c: Connection) => void;
     onFavorite: (c: Connection) => void;
+    checked: ReadonlySet<string>;
+    allChecked: boolean;
+    onCheck: (c: Connection, on: boolean) => void;
+    onCheckAll: (on: boolean) => void;
   }
 
   let {
@@ -85,6 +90,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     onConnect,
     onEdit,
     onFavorite,
+    checked,
+    allChecked,
+    onCheck,
+    onCheckAll,
   }: Props = $props();
 
   const KIND_ICONS: Record<ConnectionKind, Component<{ size?: number }>> = {
@@ -131,7 +140,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // ↑/↓ walk the rows in their visible order (folded groups skipped), Esc drops the selection.
   let wrap: HTMLElement | undefined = $state();
   function onListKey(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLInputElement) return;
+    // A text field keeps its keys; a row checkbox does not need ↑/↓ or Esc.
+    if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') return;
     if (e.key === 'Escape') {
       onClear();
       return;
@@ -146,6 +156,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!next || !c) return;
     next.focus();
     onSelect(c);
+  }
+
+  // A click on the row checkbox (its label or box) only checks; it neither selects nor connects.
+  function fromCheck(e: MouseEvent): boolean {
+    return e.target instanceof Element && e.target.closest('.cell-check') !== null;
   }
 
   // Clicks on the row's own buttons must neither select nor connect the row.
@@ -206,6 +221,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
   >
 {/snippet}
 
+{#snippet check(c: Connection)}
+  <span class="cell-check">
+    <Checkbox
+      checked={checked.has(c.id)}
+      ariaLabel={$t('connections.bulk.check', { name: c.name || $t('list.noName') })}
+      onChange={(on) => onCheck(c, on)}
+    />
+  </span>
+{/snippet}
+
+{#snippet checkAll()}
+  <span class="cell-check">
+    <Checkbox
+      checked={allChecked}
+      ariaLabel={$t('connections.bulk.checkAll')}
+      onChange={(on) => onCheckAll(on)}
+    />
+  </span>
+{/snippet}
+
 {#snippet kindTile(c: Connection, size: number)}
   {@const Icon = KIND_ICONS[c.kind]}
   <span class="kind-tile kind-{c.kind}" style:width="{size}px" style:height="{size}px">
@@ -223,10 +258,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     aria-selected={selectedId === c.id}
     data-testid="conn-row"
     data-id={c.id}
-    onclick={() => onSelect(c)}
-    ondblclick={() => onConnect(c)}
+    onclick={(e) => {
+      if (!fromCheck(e)) onSelect(c);
+    }}
+    ondblclick={(e) => {
+      if (!fromCheck(e)) onConnect(c);
+    }}
     onkeydown={(e) => onRowKey(e, c)}
   >
+    {@render check(c)}
     <div class="cell-name">
       {@render kindTile(c, 32)}
       <div class="name-block">
@@ -278,11 +318,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     aria-selected={selectedId === c.id}
     data-testid="conn-row"
     data-id={c.id}
-    onclick={() => onSelect(c)}
-    ondblclick={() => onConnect(c)}
+    onclick={(e) => {
+      if (!fromCheck(e)) onSelect(c);
+    }}
+    ondblclick={(e) => {
+      if (!fromCheck(e)) onConnect(c);
+    }}
     onkeydown={(e) => onRowKey(e, c)}
   >
     <div class="card-head">
+      {@render check(c)}
       {@render kindTile(c, 34)}
       <div class="name-block">
         <div class="name-line">
@@ -324,12 +369,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 >
   {#if view === 'table'}
     <div class="row head" role="presentation">
+      {@render checkAll()}
       {@render sortHead('name', $t('connections.col.name'))}
       <span class="col-head cell-target">{$t('connections.col.target')}</span>
       {@render sortHead('ping', $t('connections.col.ping'))}
       <span class="col-head cell-tags">{$t('connections.col.tags')}</span>
       {@render sortHead('lastUsed', $t('connections.col.lastUsed'))}
       <span></span>
+    </div>
+  {:else}
+    <div class="cards-head" role="presentation">
+      {@render checkAll()}
+      <span>{$t('connections.bulk.checkAll')}</span>
     </div>
   {/if}
   {#each groups as g (g.key)}
@@ -376,7 +427,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .row {
     display: grid;
     grid-template-columns:
-      minmax(190px, 1.4fr) minmax(170px, 1.3fr) 110px minmax(110px, 1fr)
+      20px minmax(190px, 1.4fr) minmax(170px, 1.3fr) 110px minmax(110px, 1fr)
       92px 150px;
     align-items: center;
     gap: 12px;
@@ -385,6 +436,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border: 1px solid transparent;
     border-radius: var(--radius-md);
     cursor: pointer;
+  }
+  .cell-check {
+    display: inline-flex;
+    align-items: center;
+  }
+  .cards-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: var(--sp-2);
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text-subtle);
   }
   .row:hover {
     background: var(--surface-hover);
@@ -601,7 +665,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
      target moves under the name. */
   @container (max-width: 819px) {
     .row {
-      grid-template-columns: minmax(170px, 1fr) 110px 92px 150px;
+      grid-template-columns: 20px minmax(170px, 1fr) 110px 92px 150px;
     }
     .cell-target,
     .cell-tags {

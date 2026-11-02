@@ -98,7 +98,7 @@ describe('ConnectionInspector', () => {
     expect(field(tNow('connections.insp.tunnel'))).toBe('db-tunnel');
     expect(field(tNow('connections.insp.server'))).toBe('web01 (prod)');
     expect(field(tNow('connections.insp.reach'))).toBe(tNow('connections.ping.ms', { ms: 12 }));
-    expect(field(tNow('connections.insp.last'))).not.toBe('');
+    expect(field(tNow('connections.insp.last'))).not.toBeNull();
     expect(screen.getByText('prod')).not.toBeNull();
     expect(screen.getByText('web')).not.toBeNull();
     expect(

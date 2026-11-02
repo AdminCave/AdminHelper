@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { LayoutGrid, Plus, Rows3, SearchX } from '@lucide/svelte';
   import {
     connections,
@@ -14,11 +15,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     loadForCurrentMode as loadConnections,
     loading,
     reachability,
+    remove,
     searchTerm,
     startReachability,
     toggleFavorite,
+    upsert,
   } from '$lib/stores/connections';
+  import { save } from '@tauri-apps/plugin-dialog';
+  import { deletePassword, writeExportCsv } from '$lib/bridge';
+  import { reportError, showStatus } from '$lib/stores/statusBar';
+  import { errMsg } from '$lib/utils/errors';
   import {
+    connectionsCsv,
     filterConnections,
     groupConnections,
     kindCounts,
@@ -40,11 +48,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { accelerateScroll, LIST_FACTOR } from '$lib/utils/scrollAcceleration';
   import ConnectionsLoadError from '../components/ConnectionsLoadError.svelte';
+  import BulkBar from '../components/connections/BulkBar.svelte';
   import ConnectionInspector from '../components/connections/ConnectionInspector.svelte';
   import ConnectionSidebar from '../components/connections/ConnectionSidebar.svelte';
   import ConnectionTable from '../components/connections/ConnectionTable.svelte';
   import QuickAccess from '../components/connections/QuickAccess.svelte';
   import Button from '../components/ui/Button.svelte';
+  import { confirmDialog } from '../components/ui/ConfirmDialog.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
   import SearchField from '../components/ui/SearchField.svelte';
   import Segmented from '../components/ui/Segmented.svelte';
@@ -73,6 +83,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let sortKey = $state<SortKey>('lastUsed');
   let sortDir = $state<SortDir>('desc');
   let selectedId = $state<string | null>(null);
+  const checkedIds = new SvelteSet<string>();
+  let busy = $state(false);
 
   let tunnelByConn = $derived(
     new Map(
@@ -102,6 +114,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   let quick = $derived(filtered ? [] : quickAccess($connections, ctx));
   let selected = $derived($connections.find((c) => c.id === selectedId) ?? null);
+  // Derived from the store, so a connection deleted elsewhere drops out of the selection.
+  let checkedConns = $derived($connections.filter((c) => checkedIds.has(c.id)));
+  let allChecked = $derived(shown.length > 0 && shown.every((c) => checkedIds.has(c.id)));
   // Only a server the inventory already holds gets a name; the page does not load the inventory.
   let selectedServer = $derived(
     selected?.serverId
@@ -137,6 +152,75 @@ SPDX-License-Identifier: GPL-3.0-or-later
       sortKey = key;
       sortDir = DEFAULT_DIR[key];
     }
+  }
+
+  function check(c: Connection, on: boolean): void {
+    if (on) checkedIds.add(c.id);
+    else checkedIds.delete(c.id);
+  }
+
+  // "All" means the visible rows: a filter narrows what the bulk actions touch.
+  function checkAll(on: boolean): void {
+    for (const c of shown) check(c, on);
+  }
+
+  async function bulk(run: () => Promise<void>): Promise<void> {
+    busy = true;
+    try {
+      await run();
+    } catch (err) {
+      reportError(errMsg(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  function retag(tagName: string, add: boolean): Promise<void> {
+    return bulk(async () => {
+      const changed = checkedConns.filter((c) => c.tags.includes(tagName) !== add);
+      for (const c of changed) {
+        const tags = add ? [...c.tags, tagName] : c.tags.filter((x) => x !== tagName);
+        await upsert({ ...c, tags });
+      }
+      showStatus($t('connections.bulk.updated', { count: changed.length }));
+    });
+  }
+
+  function exportChecked(): Promise<void> {
+    return bulk(async () => {
+      const dest = await save({
+        defaultPath: 'adminhelper-connections.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (!dest) return;
+      const path = await writeExportCsv(dest, connectionsCsv(checkedConns));
+      showStatus($t('connections.bulk.saved', { path }));
+    });
+  }
+
+  async function deleteChecked(): Promise<void> {
+    const targets = checkedConns;
+    const ok = await confirmDialog(
+      $t('connections.bulk.deleteConfirm', { count: targets.length }),
+      {
+        confirmLabel: $t('action.delete'),
+      },
+    );
+    if (!ok) return;
+    await bulk(async () => {
+      for (const c of targets) {
+        await remove(c.id);
+        if (c.kind === 'rdp') {
+          try {
+            await deletePassword(c);
+          } catch {
+            // non-fatal, as in the editor: a missing keyring entry must not stop the rest
+          }
+        }
+      }
+      checkedIds.clear();
+      showStatus($t('connections.bulk.deleted', { count: targets.length }));
+    });
   }
 
   function connect(c: Connection): void {
@@ -246,6 +330,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </div>
     {/if}
 
+    {#if checkedConns.length > 0}
+      <BulkBar
+        count={checkedConns.length}
+        {busy}
+        onAddTag={(x) => void retag(x, true)}
+        onRemoveTag={(x) => void retag(x, false)}
+        onExport={() => void exportChecked()}
+        onDelete={() => void deleteChecked()}
+        onClear={() => checkedIds.clear()}
+      />
+    {/if}
+
     <ConnectionsLoadError />
 
     <div class="conn-scroll" use:accelerateScroll={LIST_FACTOR}>
@@ -286,6 +382,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {onSort}
             onSelect={(c) => (selectedId = c.id)}
             onClear={() => (selectedId = null)}
+            checked={checkedIds}
+            {allChecked}
+            onCheck={check}
+            onCheckAll={checkAll}
             onConnect={connect}
             onEdit={(c) => openEditor(c)}
             onFavorite={(c) => void toggleFavorite(c.id)}
@@ -380,8 +480,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     padding: var(--sp-5);
   }
 
-  /* From 1180 px the filters live in the rail, and the kind switch in the toolbar goes. A
-     container query only reaches descendants, hence nothing on .conn-page itself here. */
+  /* A container query only reaches descendants, hence nothing on .conn-page itself here. */
   @container (min-width: 900px) {
     .conn-insp {
       display: block;
@@ -392,6 +491,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       flex-basis: 380px;
     }
   }
+  /* From 1180 px the filters live in the rail, and the kind switch in the toolbar goes. */
   @container (min-width: 1180px) {
     .conn-rail {
       display: block;

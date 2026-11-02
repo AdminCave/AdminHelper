@@ -6,6 +6,7 @@
 // command preview, as pure functions over the loaded connections.
 
 import type { Connection, ConnectionKind } from '$lib/bridge/types';
+import { csvCell } from '$lib/charts';
 import { DEFAULT_PORTS, connectionGroupingHost } from './connection';
 
 export type Library = 'all' | 'favorites' | 'recent' | 'tunnel';
@@ -224,4 +225,23 @@ export function probeTarget(c: Connection): { host: string; port: number } | nul
   const host = c.host?.trim();
   const port = c.port ?? DEFAULT_PORTS[c.kind];
   return host && port > 0 ? { host, port } : null;
+}
+
+/** The connections as CSV for a spreadsheet; cells that would run as a formula are quoted. */
+export function connectionsCsv(conns: readonly Connection[]): string {
+  const header = 'name,type,host,port,user,url,tags';
+  const rows = conns.map((c) =>
+    [
+      c.name,
+      c.kind,
+      c.host ?? '',
+      c.port == null ? '' : String(c.port),
+      c.username ?? '',
+      c.url ?? '',
+      c.tags.join(' '),
+    ]
+      .map(csvCell)
+      .join(','),
+  );
+  return [header, ...rows].join('\n') + '\n';
 }

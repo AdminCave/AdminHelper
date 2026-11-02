@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The connections page (R-1065, R-1067): library, kind and folder filters, search, chips, sorting,
-// grouping, table and cards, selection, keyboard, inspector, favorites, quick access and the
-// reachability column.
+// grouping, table and cards, selection, keyboard, inspector, favorites, quick access, the
+// reachability column and the bulk actions.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
@@ -19,6 +19,12 @@ const h = vi.hoisted(() => ({
   setFavorites: vi.fn(),
   stop: vi.fn(),
   visible: null as null | (() => { conns: readonly unknown[]; tunneled: ReadonlySet<string> }),
+  upsert: vi.fn(async (_c: unknown) => {}),
+  remove: vi.fn(async (_id: string) => {}),
+  deletePassword: vi.fn(async (_c: unknown) => {}),
+  save: vi.fn(async (): Promise<string | null> => null),
+  writeCsv: vi.fn(async (path: string) => path),
+  confirm: vi.fn(async () => true),
 }));
 
 vi.mock('$lib/bridge', () => ({
@@ -27,6 +33,13 @@ vi.mock('$lib/bridge', () => ({
   loadConnections: vi.fn(async () => []),
   saveConnections: vi.fn(async () => {}),
   probeTargets: h.probe,
+  deletePassword: h.deletePassword,
+  writeExportCsv: h.writeCsv,
+}));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: h.save }));
+vi.mock('../components/ui/ConfirmDialog.svelte', async (orig) => ({
+  ...(await orig<typeof import('../components/ui/ConfirmDialog.svelte')>()),
+  confirmDialog: h.confirm,
 }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
@@ -52,6 +65,8 @@ vi.mock('$lib/stores/connections', async (orig) => ({
     h.visible = visible;
     return h.stop;
   },
+  upsert: h.upsert,
+  remove: h.remove,
 }));
 
 import { setLanguage, tNow } from '$lib/i18n';
@@ -332,6 +347,99 @@ describe('Connections page', () => {
       .getAllByTestId('conn-row')
       .find((r) => r.getAttribute('aria-selected') === 'true');
     expect(sel?.textContent).not.toContain('db01');
+  });
+
+  it('checks rows without selecting them and checks all visible rows', async () => {
+    await renderPage();
+    expect(screen.queryByTestId('bulk-bar')).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('checkbox', { name: tNow('connections.bulk.check', { name: 'web01' }) }),
+    );
+    const bar = screen.getByTestId('bulk-bar');
+    expect(within(bar).getByText(tNow('connections.bulk.selected', { count: 1 }))).not.toBeNull();
+    expect(screen.getByText(tNow('connections.insp.empty'))).not.toBeNull();
+
+    searchTerm.set('db01');
+    await waitFor(() => expect(names()).toEqual(['db01']));
+    await fireEvent.click(
+      screen.getByRole('checkbox', { name: tNow('connections.bulk.checkAll') }),
+    );
+    expect(within(bar).getByText(tNow('connections.bulk.selected', { count: 2 }))).not.toBeNull();
+
+    await fireEvent.click(
+      within(bar).getByRole('button', { name: tNow('connections.bulk.clear') }),
+    );
+    expect(screen.queryByTestId('bulk-bar')).toBeNull();
+  });
+
+  async function checkAllRows() {
+    await fireEvent.click(
+      screen.getByRole('checkbox', { name: tNow('connections.bulk.checkAll') }),
+    );
+    return screen.getByTestId('bulk-bar');
+  }
+
+  it('adds and removes a tag only where it changes something', async () => {
+    await renderPage();
+    const bar = await checkAllRows();
+    const field = within(bar).getByRole('textbox', { name: tNow('connections.bulk.tag') });
+    await fireEvent.input(field, { target: { value: 'prod' } });
+    await fireEvent.click(
+      within(bar).getByRole('button', { name: tNow('connections.bulk.addTag') }),
+    );
+    await waitFor(() => expect(h.upsert).toHaveBeenCalledTimes(1));
+    expect(h.upsert).toHaveBeenCalledWith({ ...B, tags: ['prod'] });
+
+    h.upsert.mockClear();
+    await fireEvent.input(field, { target: { value: 'prod' } });
+    await fireEvent.click(
+      within(bar).getByRole('button', { name: tNow('connections.bulk.removeTag') }),
+    );
+    await waitFor(() => expect(h.upsert).toHaveBeenCalledTimes(2));
+    expect(h.upsert).toHaveBeenCalledWith({ ...A, tags: [] });
+    expect(h.upsert).toHaveBeenCalledWith({ ...C, tags: [] });
+  });
+
+  it('exports the checked connections as CSV to the chosen file', async () => {
+    await renderPage();
+    await fireEvent.click(
+      screen.getByRole('checkbox', { name: tNow('connections.bulk.check', { name: 'db01' }) }),
+    );
+    const bar = screen.getByTestId('bulk-bar');
+    await fireEvent.click(
+      within(bar).getByRole('button', { name: tNow('connections.bulk.export') }),
+    );
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.writeCsv).not.toHaveBeenCalled();
+
+    h.save.mockResolvedValueOnce('/home/me/conns.csv');
+    await fireEvent.click(
+      within(bar).getByRole('button', { name: tNow('connections.bulk.export') }),
+    );
+    await waitFor(() => expect(h.writeCsv).toHaveBeenCalledTimes(1));
+    expect(h.writeCsv).toHaveBeenCalledWith(
+      '/home/me/conns.csv',
+      'name,type,host,port,user,url,tags\ndb01,rdp,db01.example,,,,\n',
+    );
+  });
+
+  it('deletes the checked connections after the confirmation, with the RDP password', async () => {
+    await renderPage();
+    const bar = await checkAllRows();
+    h.confirm.mockResolvedValueOnce(false);
+    await fireEvent.click(within(bar).getByRole('button', { name: tNow('action.delete') }));
+    await waitFor(() => expect(h.confirm).toHaveBeenCalledTimes(1));
+    expect(h.confirm).toHaveBeenCalledWith(tNow('connections.bulk.deleteConfirm', { count: 3 }), {
+      confirmLabel: tNow('action.delete'),
+    });
+    expect(h.remove).not.toHaveBeenCalled();
+
+    h.deletePassword.mockRejectedValueOnce(new Error('no entry'));
+    await fireEvent.click(within(bar).getByRole('button', { name: tNow('action.delete') }));
+    await waitFor(() => expect(screen.queryByTestId('bulk-bar')).toBeNull());
+    expect(h.remove.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b', 'c']);
+    expect(h.deletePassword).toHaveBeenCalledTimes(1);
+    expect(h.deletePassword).toHaveBeenCalledWith(B);
   });
 
   it('stops the probe when the page goes', async () => {
