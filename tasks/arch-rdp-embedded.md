@@ -49,8 +49,10 @@ Doku: keine (das Ergebnis ist die Spec selbst; kein Produktverhalten)
 Task-Review: am Ende
 Abhängt von: T1
 
-### T4 — Windows-Probe (R-1074)  [ ]
+### T4 — Windows-Probe (R-1074)  [x]
 Komponente: scripts · Dateien: docs/features/arch-rdp-embedded.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3add73e1 2026-11-02T16:26:51+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Probe-Client aus T2 gegen einen echten Windows-Host: NLA/CredSSP, Codec-Aushandlung ohne AVC, Resize,
 Zwischenablage, Audio, Laufwerke, Monitor-Layout. Abschnitt „Ergebnis: Windows“; ohne Host „nicht verifiziert“ mit
 Grund. Keine Adressen, Hostnamen oder Zugangsdaten in der Spec.

@@ -364,6 +364,92 @@ Bild in Reihenfolge an. Die CPU des `WebKitWebProcess` lag in jedem Fall bei 1,8
     fokussierte Sitzung und für Strg+Alt+Entf einen Ersatz (Menüpunkt). Welche Wege Tauri unter X11, Wayland und
     Windows dafür bietet, ist nicht verifiziert.
 
+## Ergebnis: Windows
+
+Stand 2026-11-02 (T4). **Aufbau:**
+- **Host:** ein GitHub-Runner `windows-latest` mit Windows Server 2025 Datacenter (Build 26100) und 4 vCPU. Die
+  Grafik ist Hyper-V Video, eine GPU gibt es nicht. Der Workflow lag auf einem Wegwerf-Branch, der nie gemergt wurde.
+  Branch und Läufe sind nach der Auswertung gelöscht, die Rohdaten liegen im Archiv (T5).
+- **Server:** die Remotedesktopdienste des Runners, verbunden wird über Loopback. Der Server verlangt TLS mit NLA
+  (`SecurityLayer` 2, `UserAuthentication` 1). Angemeldet wird ein Wegwerf-Benutzer mit Zufallspasswort; in den
+  öffentlichen Logs ist das Passwort maskiert, und im Artefakt liegt es nicht.
+- **Bildlast:** Ein Skript in der Sitzung zeichnet 50 % oder 100 % der Fläche im 33-ms-Takt neu, einen Verlauf plus
+  Zufallsrechtecke. Es läuft in PowerShell und kommt dort auf 16–20 Bilder/s (Server-Zähler `Input Frames/Second`).
+- **Clients:** dieselbe Probe wie in T2, zweimal gebaut: einmal mit gebündeltem OpenH264, einmal mit dem
+  H.264-Dekoder von Media Foundation. Einen Gegenclient gibt es nicht, denn `mstsc` misst nicht kopflos.
+- **Messung:** 20 s je Lauf nach 25 s Anlauf, für jeden Lauf eine frische Anmeldung. Die Bandbreite kommt aus dem
+  Server-Zähler `Total Sent Bytes` (RemoteFX Network), die CPU je Prozess aus zwei Schnappschüssen, der Codec aus
+  den Traces der Probe.
+
+**Leistung** (1920×1080; Bilder/s und Qualität laut Server-Zählern `Output Frames/Second` und `Frame Quality`):
+
+| Lauf | Codec | Mbit/s | Bilder/s | Qualität | Probe, % eines Kerns |
+|---|---|---|---|---|---|
+| idle | — | 0 | 0 | — | < 1 % |
+| 50 %, AVC, OpenH264 | AVC420, dazu ClearCodec | 4,1 | 20,1 | 100 % | 40 % |
+| 50 %, AVC, Media Foundation | AVC420, dazu ClearCodec | 3,8 | 19,6 | 100 % | 53 % |
+| 100 %, AVC, OpenH264 | AVC420, dazu ClearCodec | 4,5 | 16,3 | 100 % | 42 % |
+| 50 %, ohne AVC | RemoteFX Progressive, dazu ClearCodec | 4,5 | 16,3 | 65 % | 67 % |
+| 100 %, ohne AVC | RemoteFX Progressive, dazu ClearCodec | 4,9 | 9,5 | 36 % | 79 % |
+| 50 %, ohne GFX | 16-bpp-RLE-Bitmaps | 0,2 | 0,7 | — | 3 % |
+
+**Befunde:**
+- **Codec.** Mit AVC wählt Windows AVC420, obwohl die Probe auch AVC444 anbietet. Ohne AVC kommt RemoteFX
+  Progressive. Text und Kanten gehen in beiden Fällen zusätzlich über ClearCodec.
+- **AVC ist gegen Windows der bessere Weg.** Bei gleicher Bandbreite liefert AVC volle Qualität, und die Probe
+  braucht rund 40 % eines Kerns. Ohne AVC braucht sie 67–79 %. Windows senkt dabei die Qualität auf 36–65 % und
+  überspringt Bilder (Zähler „Insufficient Network Resources“).
+  - Der Server-Zähler `Current TCP Bandwidth` stand in allen Läufen auf 10 000, `Base TCP RTT` auf 5 ms. Ob Windows
+    die Netzerkennung (Auto-Detect) gegen die Probe überhaupt gefahren hat, ist nicht verifiziert.
+  - Media Foundation dekodiert hier ohne GPU und braucht mehr CPU als OpenH264 (53 % gegen 40 %). Wie es mit GPU
+    aussieht, ist nicht verifiziert.
+- **Ohne GFX ist der Weg unbrauchbar.** Windows schickt dann nur 16-bpp-RLE-Bitmaps statt klassischem RemoteFX wie
+  xrdp. Laut eigenem Zähler überspringt es 20 Bilder/s („Insufficient Client Resources“), in der Probe kommen 0,7
+  Bilder/s an. Die Ursache ist nicht verifiziert. Gegen Windows fährt R-1075 nur mit GFX.
+- **Anmeldung.**
+  - NLA: CredSSP (`HYBRID_EX`) mit einem lokalen Konto gelingt. Die Verbindung steht nach 0,1–0,4 s. Das erste Bild
+    kam in den Aufwärmläufen nach 0,5–0,9 s, in den Messläufen nach 4,3–5,5 s; den Unterschied habe ich nicht
+    geklärt. Die allererste Anmeldung eines Profils dauerte 20 s.
+  - Windows meldet während der Anmeldung `LOGON_MSG_SESSION_CONTINUE` (Logon Errors Info, MS-RDPBCGR). Das ist eine
+    Information, kein Fehler. Der Treiber hielt die Meldung für einen Fehlschlag und fuhr die Messläufe deshalb mit
+    TLS ohne NLA. Die Messwerte betrifft das nicht, R-1075 darf die Meldung aber nicht als Fehler werten.
+- **Resize und Monitor-Layout.**
+  - Windows setzt beide live um. Nach dem `MonitorLayout` (Display Control) kommt binnen 0,1 s ein EGFX-`ResetGraphics`
+    mit 1280×720 bzw. 2560×720. Beim Zwei-Monitor-Layout sind es zwei Surfaces, die zweite bei x = 1280. Die Sitzung
+    sieht spätestens 1,5 s später zwei Monitore (2560×720 virtuell).
+  - `ironrdp-client` wertet einen Resize aber erst nach einer Deaktivierung und Reaktivierung als fertig
+    (`src/rdp.rs:5746`). Die schickt Windows mit GFX nicht. Nach 3 s (`DISPLAY_CONTROL_READY_TIMEOUT`,
+    `src/rdp.rs:1100`) fällt der Client deshalb auf eine Neuverbindung mit der neuen Größe zurück
+    (`ReactivationTimedOut`). Ein Resize kostet so rund 4 s statt 0,1 s, und am Ende hat die Sitzung die angefragte
+    Größe.
+  - Mit und ohne Bulk-Kompression verhält sich das gleich. Der Fehler aus T2, eine komprimierte PDU in der
+    Reaktivierung, tritt gegen Windows nicht auf, weil Windows nicht reaktiviert.
+- **Kanäle.** Ein Lauf mit nativer Zwischenablage, Laufwerk und Audio:
+  - **Audio:** RDPSND läuft über den dynamischen Kanal. Windows bietet AAC an (44,1 kHz, Stereo), die Probe dekodiert
+    mit dem AAC-Dekoder von Media Foundation, und die Sitzung spielte drei Töne ab. Ob sie hörbar waren, ist nicht
+    verifiziert, denn der Runner hat kein Audiogerät (CPAL: „device not found“).
+  - **Absturz:** Im selben Lauf endete die Probe mit einem Absturz des Prozesses, der Server protokollierte in
+    derselben Sekunde den Verbindungsabbruch. Ein Abfangen von Panics hätte das nicht verhindert; im Desktop endet so
+    die ganze App. Die Ursache ist nicht verifiziert. Die Einzelheiten bleiben im privaten Archiv, bis sie geklärt
+    und, wo nötig, gemeldet sind.
+  - **Zwischenablage:** In keiner Richtung kam Inhalt an, die Probe protokollierte nur den Start des nativen Backends.
+    Die Ursache ist nicht verifiziert; ein Kandidat ist, dass der Runner-Prozess keinen interaktiven Desktop hat.
+  - **Laufwerk:** Es ist angemeldet und in der Sitzung sichtbar. Windows fragte Attribute ab, und die Probe antwortete
+    mit `STATUS_SUCCESS`.
+    - Der Name kommt verkürzt an: aus „spike“ wird `\\TSCLIENT\s`. Die Ursache ist nicht verifiziert (Kandidat: die
+      Kodierung des Gerätenamens).
+    - Das Sitzungsskript suchte deshalb unter dem vollen Namen, Lesen und Schreiben sind nicht verifiziert.
+  - Ein Gegenlauf mit Stub-Zwischenablage startete wegen eines Fehlers im Wegwerf-Treiber nicht. Einen dritten
+    Anlauf gab es nicht (Abbruchkriterium).
+- **RTT.** Ein `NetworkCharacteristics`-Ereignis kam in keinem Lauf an.
+- **Nicht gemessen:**
+  - Strg+Alt+Entf als Scancode-Folge;
+  - NLA mit Domänenkonto oder Kerberos;
+  - eine GPU;
+  - ein Gegenclient;
+  - Lesen und Schreiben auf dem Laufwerk;
+  - Zwischenablage-Inhalte.
+
 ## Datenmodell / API / Migrationen
 
 Keine in diesem Vorhaben. Für R-1075 bewertet T5: Erweiterung von `RdpOptions` (`models.rs:57`, Wire-Vertrag
@@ -399,13 +485,14 @@ ausgeschlossen (Wayland bzw. ein Dienst mehr über FreeRDP). Stand nach T1: „E
 
 - **AVC unter Linux:** IronRDP dekodiert H.264 unter Windows über Media Foundation, unter Linux nur mit OpenH264
   (Cisco-Binary vom Nutzer oder aus Quellen gebaut, Patentfrage) [Q2][Q3]. Ohne OpenH264 fällt die Linux-Seite auf
-  RemoteFX, Progressive oder Planar zurück: mehr Bandbreite. T2/T4 messen, wie viel.
-- **Windows-Host:** T4 läuft auf einem GitHub-Windows-Runner (Kevin 2026-11-02); dass Windows RDP auf Loopback
-  annimmt, ist nicht verifiziert. Scheitert das, bleibt die Windows-Seite „nicht verifiziert“ und wird die erste
-  Task von R-1075.
-- **Ressourcen:** `/` hat rund 32 GiB frei, ein Desktop-Build braucht 4–6 GiB, die Dev-Box ist oft über der
-  Lastgrenze. T3 läuft deshalb auf der Desktop-VM der Lane, Läufe starten erst bei Last unter ~10, Build-Verzeichnisse
-  werden nach der Messung gelöscht.
+  RemoteFX, Progressive oder Planar zurück. Gegen Windows kostet das bei 50 % Fläche kaum Bandbreite (4,5 statt
+  4,1 Mbit/s), aber Qualität (65 statt 100 %), Bildtakt (16 statt 20 Bilder/s) und Client-CPU (67 statt 40 % eines
+  Kerns, T4). xrdp sendet ohnehin kein H.264 (T2).
+- **Windows-Host:** T4 lief auf einem GitHub-Windows-Runner (Kevin 2026-11-02), Windows nahm RDP über Loopback an.
+  Was dort nicht prüfbar war (Zwischenablage, Laufwerk, Audio hörbar, GPU), steht in „Ergebnis: Windows“ unter
+  „Nicht gemessen“.
+- **Ressourcen:** Ein Desktop-Build braucht 4–6 GiB, die Dev-Box ist oft über der Lastgrenze. T3 lief deshalb auf
+  der Desktop-VM der Lane, T4 auf dem Runner; die Build-Verzeichnisse der Probe gehen mit dem Worktree beim Teardown.
 - **Fremdcode:** Prototyp-Abhängigkeiten aus crates.io und npm laufen nur in der Wegwerf-Umgebung, nie im Produkt.
 - **Öffentlichkeit:** Diese Spec nennt keine Lab-Adressen, Hostnamen, VM-IDs oder Zugangsdaten; Rohdaten mit solchen
   Angaben bleiben unter `tasks/private/`.
