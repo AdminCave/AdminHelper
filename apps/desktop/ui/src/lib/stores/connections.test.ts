@@ -11,6 +11,7 @@ import type { Connection } from '$lib/bridge/types';
 vi.mock('$lib/bridge', () => ({
   saveConnections: vi.fn(async () => {}),
   loadConnections: vi.fn(async () => []),
+  probeTargets: vi.fn(async (targets: unknown[]) => targets.map(() => 5)),
 }));
 
 // Mock the session (mode) + status bar so the sync-mode volatility path (4.40) is testable.
@@ -18,6 +19,7 @@ vi.mock('$lib/bridge', () => ({
 const h = vi.hoisted(() => ({
   sess: { settings: null as unknown, session: null as unknown },
   showStatus: vi.fn(),
+  setFavoriteConnections: vi.fn(),
 }));
 vi.mock('./session', () => ({
   sessionStore: {
@@ -26,6 +28,7 @@ vi.mock('./session', () => ({
       return () => {};
     },
   },
+  setFavoriteConnections: h.setFavoriteConnections,
 }));
 vi.mock('./statusBar', () => ({ showStatus: h.showStatus, reportError: vi.fn() }));
 vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k, setLanguage: vi.fn() }));
@@ -45,6 +48,12 @@ import {
   kindCounts,
   recentConnections,
   load,
+  favorites,
+  toggleFavorite,
+  reachability,
+  probeVisible,
+  startReachability,
+  PROBE_INTERVAL_MS,
 } from './connections';
 
 const conn = (over: Partial<Connection>): Connection => ({
@@ -335,5 +344,160 @@ describe('sync-mode edits are volatile (4.40)', () => {
     expect(get(connections).find((c) => c.id === 'a')).toBeUndefined();
     expect(bridge.saveConnections).not.toHaveBeenCalled();
     expect(h.showStatus).toHaveBeenCalledWith('status.syncEditVolatile');
+  });
+});
+
+describe('favorites (R-1065)', () => {
+  beforeEach(() => {
+    h.sess.settings = { mode: 'local', favoriteConnections: ['a'] };
+    h.setFavoriteConnections.mockReset();
+    // As the session store does: the saved list becomes the current settings.
+    h.setFavoriteConnections.mockImplementation(async (ids: string[]) => {
+      await Promise.resolve();
+      h.sess.settings = { ...(h.sess.settings as object), favoriteConnections: ids };
+    });
+  });
+  afterEach(() => {
+    h.sess.settings = null;
+  });
+
+  it('reads the starred ids from the settings', () => {
+    expect([...get(favorites)]).toEqual(['a']);
+  });
+
+  it('adds and removes an id and always saves the whole list', async () => {
+    await toggleFavorite('b');
+    expect(h.setFavoriteConnections).toHaveBeenLastCalledWith(['a', 'b']);
+    await toggleFavorite('a');
+    expect(h.setFavoriteConnections).toHaveBeenLastCalledWith(['b']);
+  });
+
+  it('keeps both of two quick toggles', async () => {
+    await Promise.all([toggleFavorite('b'), toggleFavorite('c')]);
+    expect(h.setFavoriteConnections).toHaveBeenLastCalledWith(['a', 'b', 'c']);
+  });
+
+  it('a failed save does not block the next toggle', async () => {
+    h.setFavoriteConnections.mockRejectedValueOnce(new Error('disk'));
+    await expect(toggleFavorite('b')).rejects.toThrow('disk');
+    await toggleFavorite('c');
+    expect(h.setFavoriteConnections).toHaveBeenLastCalledWith(['a', 'c']);
+  });
+});
+
+describe('reachability (R-1067)', () => {
+  const probe = () => vi.mocked(bridge.probeTargets);
+  beforeEach(() => {
+    probe().mockReset();
+    probe().mockImplementation(async (targets) => targets.map((_, i) => 10 + i));
+  });
+
+  it('dials ssh/rdp host and port and web URLs, marks tunneled ones, skips the rest', async () => {
+    await probeVisible(
+      [
+        conn({ id: 's', kind: 'ssh', host: 'srv.example', port: null }),
+        conn({ id: 'r', kind: 'rdp', host: 'win.example', port: 3390 }),
+        conn({ id: 'w', kind: 'web', url: 'https://web.example:8443/x' }),
+        conn({ id: 't', kind: 'ssh', host: 'behind.frp', port: 22 }),
+        conn({ id: 'n', kind: 'ssh', host: null }),
+      ],
+      new Set(['t']),
+    );
+    expect(probe()).toHaveBeenCalledTimes(1);
+    expect(probe().mock.calls[0][0]).toEqual([
+      { host: 'srv.example', port: 22 },
+      { host: 'win.example', port: 3390 },
+      { host: 'web.example', port: 8443 },
+    ]);
+    const r = get(reachability);
+    expect([r.s, r.r, r.w, r.t]).toEqual([10, 11, 12, 'tunnel']);
+    expect(r.n).toBeUndefined();
+  });
+
+  it('dials a shared host and port once and gives every connection its answer', async () => {
+    probe().mockResolvedValueOnce([null]);
+    await probeVisible(
+      [
+        conn({ id: 'x1', host: 'same.example', port: 22 }),
+        conn({ id: 'x2', host: 'same.example', port: 22 }),
+      ],
+      new Set(),
+    );
+    expect(probe().mock.calls[0][0]).toHaveLength(1);
+    const r = get(reachability);
+    expect([r.x1, r.x2]).toEqual([null, null]);
+  });
+
+  it('splits more than 256 targets into several calls', async () => {
+    const many = Array.from({ length: 300 }, (_, i) =>
+      conn({ id: `m${i}`, host: `h${i}.example` }),
+    );
+    await probeVisible(many, new Set());
+    expect(probe().mock.calls.map((c) => c[0].length)).toEqual([256, 44]);
+    expect(get(reachability).m299).toBe(10 + 43);
+  });
+
+  it('forgets the last value of a connection that lost its target', async () => {
+    await probeVisible([conn({ id: 'g', host: 'gone.example', port: 22 })], new Set());
+    expect(get(reachability).g).toBe(10);
+    await probeVisible([conn({ id: 'g', host: null })], new Set());
+    expect(get(reachability).g).toBeUndefined();
+  });
+
+  describe('startReachability', () => {
+    let hidden = false;
+    let visibility: { mockRestore: () => void };
+    beforeEach(() => {
+      vi.useFakeTimers();
+      hidden = false;
+      visibility = vi
+        .spyOn(document, 'visibilityState', 'get')
+        .mockImplementation(() => (hidden ? 'hidden' : 'visible'));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      visibility.mockRestore();
+    });
+    const visible = () => ({
+      conns: [conn({ id: 'v', host: 'v.example' })],
+      tunneled: new Set<string>(),
+    });
+
+    it('probes at once and then every interval, not while hidden, and stops', async () => {
+      const stop = startReachability(visible);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(probe()).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS);
+      expect(probe()).toHaveBeenCalledTimes(2);
+      hidden = true;
+      await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS);
+      expect(probe()).toHaveBeenCalledTimes(2);
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(probe()).toHaveBeenCalledTimes(3);
+      stop();
+      await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS * 3);
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(probe()).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not probe again on a visibility change within the interval', async () => {
+      const stop = startReachability(visible);
+      await vi.advanceTimersByTimeAsync(0);
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(probe()).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    it('keeps the last values when a probe fails', async () => {
+      await probeVisible(visible().conns, new Set());
+      probe().mockRejectedValueOnce(new Error('ipc'));
+      const stop = startReachability(visible);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(get(reachability).v).toBe(10);
+      stop();
+    });
   });
 });

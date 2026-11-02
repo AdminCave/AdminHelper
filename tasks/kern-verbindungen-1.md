@@ -34,10 +34,12 @@ Review: approve (.ah-out/review/kern-verbindungen-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- probe
 Doku: → T9
 
-### T4 — Stores: Favoriten und Ping-Werte  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts
+### T4 — Stores: Favoriten und Ping-Werte  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/bridge/types.parity.test.ts, apps/desktop/ui/src/lib/stores/session.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e27095fb 2026-11-02T23:10:21+01:00
+Review: approve (.ah-out/review/kern-verbindungen-1/T4.verdict.json)
 Änderung: `favoriteConnections` im Settings-Typ, `toggleFavorite(id)` speichert über die Settings; Store `reachability` (id → ms | null | 'tunnel'), `probeVisible(conns)` ruft `probeTargets` für Verbindungen ohne Tunnel (Web: Host/Port aus der URL), Intervall 60 s nur bei sichtbarer Seite. Tests mit gemockter Bridge. Abhängt von T2, T3. R-1065, R-1067.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.test.ts src/lib/stores/session.test.ts src/lib/bridge/types.parity.test.ts
 Doku: → T9
 Abhängt von: T2, T3
 
@@ -81,3 +83,4 @@ Task-Review: am Ende
 - 2026-11-02: Ohne „Verbunden“, „In Tabs öffnen“ und Split-Button: hängen an eingebetteten Sitzungen (R-1069/R-1070).
 - 2026-11-02: T2: Favoriten in `Meta` (je Workspace), nicht in `Prefs` (geräteweit, alle Workspaces); `Settings` ist das Bridge-Struct, deshalb ziehen `bridge/types.ts` und die UI-Defaults in T2 mit (Paritätstest), die Stores bleiben T4. Mehr als acht Dateien nur durch die Pflicht-Initialisierer der Meta-Literale.
 - 2026-11-02: overlap.sh: kern-monitoring-3 ändert commands.rs, main.rs, bridge/index.ts, dictionaries.ts; T3 und T7 erst nach dessen Merge, davor `git merge origin/main`.
+- 2026-11-02: T4: `ProbeTarget` (probe.rs, T3) kreuzt die Bridge, deshalb probe.rs in die Scan-Liste des Paritätstests und der Typ nach `bridge/types.ts`; Verify zusätzlich mit `types.parity.test.ts` gefahren. Favoriten speichert `setFavoriteConnections` in `stores/session.ts` (wie `setAllowSelfSignedCerts`), Toggles laufen nacheinander. Gleiche Host/Port-Ziele werden einmal geprobt; Verbindungen ohne Ziel bleiben unbekannt, nicht `null`.

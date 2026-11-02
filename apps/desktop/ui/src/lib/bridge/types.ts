@@ -58,6 +58,12 @@ export interface Settings {
   favoriteConnections?: string[];
 }
 
+// One reachability probe: probe_targets answers with the connect time in ms or null per target.
+export interface ProbeTarget {
+  host: string;
+  port: number;
+}
+
 // Who signed in where. The tokens stay in the Rust process (session.rs), never here.
 export interface AuthSession {
   serverUrl: string;
