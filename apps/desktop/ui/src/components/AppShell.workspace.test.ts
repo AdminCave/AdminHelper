@@ -51,10 +51,10 @@ vi.mock('$lib/stores/tunnel', () => ({
   markError: vi.fn(),
   startIfServerMode: vi.fn(async () => {}),
 }));
-vi.mock('$lib/stores/connectFlow', () => ({ markRdpError: vi.fn() }));
+vi.mock('$lib/stores/connectFlow', () => ({ markRdpError: vi.fn(), initiateConnect: vi.fn() }));
 vi.mock('$lib/stores/connections', async () => {
   const { writable } = await import('svelte/store');
-  return { searchTerm: writable('') };
+  return { searchTerm: writable(''), connections: writable([]) };
 });
 vi.mock('$lib/osNotify', () => ({ notifyOs: vi.fn() }));
 vi.mock('../pages/Dashboard.svelte', () => ({ default: h.Dashboard }));
@@ -67,6 +67,7 @@ vi.mock('./PasswordPrompt.svelte', () => ({ default: vi.fn() }));
 vi.mock('./SettingsModal.svelte', () => ({ default: vi.fn() }));
 vi.mock('./StatusBar.svelte', () => ({ default: vi.fn() }));
 vi.mock('./StatusFooter.svelte', () => ({ default: vi.fn() }));
+vi.mock('./CommandPalette.svelte', () => ({ default: vi.fn() }));
 vi.mock('./TunnelIndicator.svelte', () => ({ default: vi.fn() }));
 vi.mock('./NotificationBell.svelte', () => ({ default: vi.fn() }));
 

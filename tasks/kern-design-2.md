@@ -37,8 +37,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/StatusF
 Doku: → T8
 Abhängt von: T1
 
-### T4 — Befehlspalette mit Strg/⌘+K (R-1062)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/palette.ts, apps/desktop/ui/src/lib/palette.test.ts, apps/desktop/ui/src/components/CommandPalette.svelte, apps/desktop/ui/src/components/CommandPalette.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T4 — Befehlspalette mit Strg/⌘+K (R-1062)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/palette.ts, apps/desktop/ui/src/lib/palette.test.ts, apps/desktop/ui/src/components/CommandPalette.svelte, apps/desktop/ui/src/components/CommandPalette.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/components/AppShell.shell.test.ts, apps/desktop/ui/src/components/AppShell.workspace.test.ts, apps/desktop/ui/src/components/AppShell.notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e0804ed9 2026-11-02T19:34:36+01:00
+Review: approve (.ah-out/review/kern-design-2/T4.verdict.json)
 Änderung: `lib/palette.ts` (rein, SPDX): Einträge aus Verbindungen, Seiten (je Modus wie die Sidebar) und Aktionen (neue Verbindung, Einstellungen, Theme, Workspace wechseln), Filter ohne Groß/Klein, höchstens neun Treffer. `CommandPalette.svelte` (SPDX): Overlay, Suchfeld, Pfeiltasten, Enter führt aus (Verbindung → vorhandener Connect-Weg), Esc schließt und gibt den Fokus zurück, „Nichts gefunden“. AppShell: `keydown` Strg+K/⌘K öffnet auch aus Eingabefeldern; der Header-Knopf aus T1 öffnet sie. Tests: Filter und Grenze, Tastatur, Kürzel aus einem Input, Fokus-Rückgabe.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/palette.test.ts src/components/CommandPalette.test.ts src/components/AppShell.shell.test.ts
 Doku: → T8
@@ -74,3 +76,4 @@ Task-Review: am Ende
 - Mockup-Elemente ohne Datenquelle (Sitzungen, Nicht stören, Aktive Sitzungen, Terminal-Sektion, Wiederherstellen, Zwischenablage) baut dieser Zug nicht; sie kommen mit R-1069/R-1070ff und R-1078 (Spec, offene Frage 1, Empfehlung an Kevin am Gate).
 - Sektionen als Tabs nach Mockup; die E2E-Spec wählt „Gerät“ (Spec, Trade-offs).
 - T3: „Letzter Sync“ hatte keine Quelle; der connections-Store merkt sich die Zeit der letzten erfolgreichen Sync-Antwort (`lastSyncedAt`, nur im Speicher). Probleme zählen aktivierte Checks mit warning/critical aus der letzten Monitoring-Ladung, erst nach der ersten Ladung sichtbar; Gerätezertifikat nur im Servermodus, unlesbar → Feld entfällt.
+- T4: Palette-Knopf im Header mit eigener Klasse `header-palette-btn` statt `.btn.ghost.small` (logout/tunnel-start-Specs greifen den ersten solchen Knopf als Abmelden); Aktionen nutzen vorhandene Texte (`connections.new`, `settings.label`, `theme.toggle`, `workspace.openLauncher`); Strg/⌘+K greift auch in Eingabefeldern, ohne Alt.

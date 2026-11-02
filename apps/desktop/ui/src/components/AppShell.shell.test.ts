@@ -10,7 +10,8 @@
 // mocked as in AppShell.workspace.test.ts; the pages and panels are stubs.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { Writable } from 'svelte/store';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -21,6 +22,8 @@ import { setLanguage, tNow } from '$lib/i18n';
 const h = vi.hoisted(() => ({
   workspaceContext: vi.fn<() => Promise<WorkspaceContext>>(),
   logoutAndReload: vi.fn(),
+  initiateConnect: vi.fn(),
+  openSettings: vi.fn(),
 }));
 
 vi.mock('$lib/bridge', () => ({
@@ -34,7 +37,7 @@ vi.mock('$lib/stores/session', async () => {
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.0.0') }));
 vi.mock('$lib/stores/settings', () => ({
-  openSettings: vi.fn(),
+  openSettings: h.openSettings,
   logoutAndReload: h.logoutAndReload,
   listenForSessionExpiry: vi.fn(async () => () => {}),
   startSyncTimer: vi.fn(),
@@ -50,10 +53,25 @@ vi.mock('$lib/stores/tunnel', () => ({
   markError: vi.fn(),
   startIfServerMode: vi.fn(async () => {}),
 }));
-vi.mock('$lib/stores/connectFlow', () => ({ markRdpError: vi.fn() }));
+vi.mock('$lib/stores/connectFlow', () => ({
+  markRdpError: vi.fn(),
+  initiateConnect: h.initiateConnect,
+}));
 vi.mock('$lib/stores/connections', async () => {
   const { writable } = await import('svelte/store');
-  return { searchTerm: writable('') };
+  return {
+    searchTerm: writable(''),
+    connections: writable([
+      {
+        id: 'c1',
+        name: 'Backup NAS',
+        kind: 'ssh',
+        host: 'nas.example',
+        tags: [],
+        trustCert: false,
+      },
+    ]),
+  };
 });
 vi.mock('$lib/osNotify', () => ({ notifyOs: vi.fn() }));
 vi.mock('../pages/Dashboard.svelte', () => ({ default: vi.fn() }));
@@ -210,5 +228,125 @@ describe('AppShell: status footer', () => {
     expect(footer).toMatch(/grid-row:\s*3;/);
     expect(footer).toMatch(/font-family:\s*var\(--font-mono\);/);
     expect(footer).toMatch(/font-size:\s*11px;/);
+  });
+});
+
+describe('AppShell: command palette', () => {
+  function paletteLabels(): string[] {
+    return [...document.querySelectorAll('.palette-item .palette-label')].map(
+      (el) => el.textContent ?? '',
+    );
+  }
+
+  it('opens with Ctrl+K from inside an input and hands the focus back on Escape', async () => {
+    replace('/connections');
+    const view = render(AppShell);
+    const search = view.container.querySelector<HTMLInputElement>('.search-box input')!;
+    search.focus();
+    await fireEvent.keyDown(search, { key: 'k', ctrlKey: true });
+    await tick();
+    const input = document.querySelector<HTMLInputElement>('.palette-input');
+    expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await tick();
+    expect(document.querySelector('.palette')).toBeNull();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('opens with Cmd+K and from the header button, but not on a plain k', async () => {
+    const view = render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k' });
+    await tick();
+    expect(document.querySelector('.palette')).toBeNull();
+
+    await fireEvent.keyDown(window, { key: 'K', metaKey: true });
+    await tick();
+    expect(document.querySelector('.palette')).not.toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await tick();
+
+    const button = view.container.querySelector<HTMLElement>('.header-palette-btn')!;
+    expect(button.getAttribute('aria-label')).toBe(tNow('palette.open'));
+    await fireEvent.click(button);
+    await tick();
+    expect(document.querySelector('.palette')).not.toBeNull();
+  });
+
+  it('stays shut over another dialog and follows the K key on other layouts', async () => {
+    render(AppShell);
+    const other = document.createElement('div');
+    other.setAttribute('role', 'dialog');
+    other.setAttribute('aria-modal', 'true');
+    document.body.appendChild(other);
+    await fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
+    await tick();
+    expect(document.querySelector('.palette')).toBeNull();
+    other.remove();
+
+    await fireEvent.keyDown(window, { key: '\u043b', code: 'KeyK', ctrlKey: true });
+    await tick();
+    expect(document.querySelector('.palette')).not.toBeNull();
+  });
+
+  it('lists connections, the pages of this mode and the actions', async () => {
+    render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    expect(paletteLabels()).toEqual([
+      'Backup NAS',
+      tNow('nav.dashboard'),
+      tNow('nav.connections'),
+      tNow('connections.new'),
+      tNow('settings.label'),
+      tNow('theme.toggle'),
+      tNow('workspace.openLauncher'),
+    ]);
+  });
+
+  it('server mode adds its pages; at most nine entries show', async () => {
+    await serverSession();
+    render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    const labels = paletteLabels();
+    expect(labels).toHaveLength(9);
+    expect(labels).toContain(tNow('nav.monitoring'));
+  });
+
+  it('Enter on a connection connects through the usual path, on a page navigates', async () => {
+    const view = render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    const input = document.querySelector<HTMLInputElement>('.palette-input')!;
+    await fireEvent.input(input, { target: { value: 'nas' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await tick();
+    expect(h.initiateConnect).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }));
+    expect(document.querySelector('.palette')).toBeNull();
+
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    const again = document.querySelector<HTMLInputElement>('.palette-input')!;
+    await fireEvent.input(again, { target: { value: tNow('nav.connections') } });
+    await fireEvent.keyDown(again, { key: 'Enter' });
+    await tick();
+    // navigate() sets the hash; the route follows on the hashchange event.
+    await waitFor(() =>
+      expect(
+        view.container.querySelector('[data-nav="connections"]')?.getAttribute('aria-current'),
+      ).toBe('page'),
+    );
+  });
+
+  it('an action runs on Enter', async () => {
+    render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    const input = document.querySelector<HTMLInputElement>('.palette-input')!;
+    await fireEvent.input(input, { target: { value: tNow('settings.label') } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(h.openSettings).toHaveBeenCalledOnce();
   });
 });
