@@ -27,7 +27,11 @@
 # 15b: env.sanitized drops the passphrase behind another statement of the line and
 # keeps that statement, and a commented-out value over lines with all its lines.
 # 15c: env.sanitized drops the passphrase whose statement begins behind the quote
-# of another key's value over lines, and the line its value runs on to.
+# of another key's value over lines, and the line its value runs on to; the quote
+# that closes that other value stays.
+# 15d: a passphrase statement read behind a quote inside the closed value of another
+# key goes, but that value's closing quote stays; the bytes behind it go too (15e:
+# there the passphrase's own value may begin).
 # 16: backup.sh, against the same stubs and a date stub that fixes the archive
 # name: a directory under that name fails the backup and takes no archive, and no
 # temp file stays; a symlink under it is replaced by the archive, its target
@@ -417,14 +421,40 @@ sanitized=$(bk_env "$WORK/bk/f2")
 # Compose reads A's value on to the quote on the next line, then a second statement
 # of the passphrase that runs over a line of its own: read line by line, the first
 # statement took the rest of its line, and the line the second runs on to stayed.
+# The quote that closes A stays (15d), else A would run on over F.
 mkdir -p "$WORK/bk/f3"
 printf 'A="x\nCA_ROOT_PASSPHRASE=pp8a" CA_ROOT_PASSPHRASE=\x27pp8b\npp8c\x27\nF=6\n' > "$WORK/bk/run/.env"
-printf 'A="x\nF=6\n' > "$WORK/bk/f3/expected"
+printf 'A="x\n"\nF=6\n' > "$WORK/bk/f3/expected"
 out=$(bk_run "$WORK/bk/f3" "$WORK/bk/f3/out"); rc=$?
 sanitized=$(bk_env "$WORK/bk/f3")
 { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f3/expected" "$sanitized"; } \
   && ok "env.sanitized drops the passphrase behind the quote of another key over lines" \
   || bad "passphrase behind a quote over lines: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# --- 15d. backup.sh: the closing quote of another key's value stays ─────────────
+# Read alone behind the single quote, CA_ROOT_PASSPHRASE= runs to the end of the line
+# and took A's closing quote with it: compose then read A on over B. Compose reads
+# all of it as A's value; the statement goes up to the end of the line, the quote
+# stays.
+mkdir -p "$WORK/bk/f4"
+printf 'A="x \x27CA_ROOT_PASSPHRASE=pp9" C=3\nB=1\n' > "$WORK/bk/run/.env"
+printf 'A="x \x27"\nB=1\n' > "$WORK/bk/f4/expected"
+out=$(bk_run "$WORK/bk/f4" "$WORK/bk/f4/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f4")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f4/expected" "$sanitized"; } \
+  && ok "env.sanitized keeps the closing quote of another key's value" \
+  || bad "closing quote of another value: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] expected=[$(cat -A "$WORK/bk/f4/expected" | tr '\n' ' ')] out=[$out]"
+
+# --- 15e. backup.sh: nothing behind the kept quote ──────────────────────────────
+# Read alone, the passphrase's value begins at the quote that closes A for compose:
+# the quote stays, the bytes behind it are that value read alone and go.
+mkdir -p "$WORK/bk/f5"
+printf 'A="x\nCA_ROOT_PASSPHRASE="pp10\nB=1\n' > "$WORK/bk/run/.env"
+out=$(bk_run "$WORK/bk/f5" "$WORK/bk/f5/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f5")
+{ [ $rc -eq 0 ] && [ -f "$sanitized" ] && ! grep -q pp10 "$sanitized" && grep -qx 'A="x' "$sanitized"; } \
+  && ok "env.sanitized keeps nothing behind the kept closing quote" \
+  || bad "bytes behind the kept quote: rc=$rc env.sanitized=[$(sed 's/pp10/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
 
 # --- 16. backup.sh: the archive lands under its name as a file ───────────────
 # Without -T, mv takes a directory under the archive name (or a symlink to one)

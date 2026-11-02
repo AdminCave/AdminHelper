@@ -246,7 +246,10 @@ if [ -f .env ]; then
     # commented-out ones too: in a comment from its '#' to the end of the line its value
     # ends on. A changed line keeps the bytes outside those statements without the
     # whitespace at its end; a commented-out line or one left with whitespace only goes.
-    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. LC_ALL=C: awk reads
+    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. A statement that
+    # starts inside the closed quoted value of another key (as compose reads the file:
+    # the first tok_exact run notes those values) keeps that closing quote and drops
+    # the rest: cut with it, the value would run on over the lines below. LC_ALL=C: awk reads
     # bytes, so a NUL byte or a byte the caller's locale cannot decode passes unchanged
     # (grep took such a file for binary and left lines out). Every other line is printed
     # as is, the last with a newline; any awk error (a write error too) aborts the
@@ -254,15 +257,28 @@ if [ -f .env ]; then
     # shellcheck disable=SC2016 # an awk program, $0 is awk's
     LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" "$ENV_TOK"'
         BEGIN { tok_init(sp, sep, 1) }
-        function want(k) { return k == "CA_ROOT_PASSPHRASE" }
+        function want(k) { return 1 }
         function hit(k, ks, vs, ve, q, closed, cs) {
+            if (k != "CA_ROOT_PASSPHRASE") {
+                if (ex && q != "" && closed) { m++; QS[m] = vs; QE[m] = ve }
+                return
+            }
             n++
             A[n] = cs ? cs : ks
             B[n] = (cs || q == "") ? tok_eol(ve) - 1 : ve
         }
         { S = S $0 "\n" }
         END {
+            N = length(S)
+            ex = 1; tok_exact(); ex = 0
             tok_run()
+            n0 = n
+            for (j = 1; j <= n0; j++)
+                for (i = 1; i <= m; i++)
+                    if (QS[i] < A[j] && A[j] < QE[i] && B[j] >= QE[i]) {
+                        if (B[j] > QE[i]) { n++; A[n] = QE[i] + 1; B[n] = B[j] }
+                        B[j] = QE[i] - 1
+                    }
             for (ls = 1; ls <= N; ls = le + 1) {
                 le = tok_eol(ls)
                 o = ""

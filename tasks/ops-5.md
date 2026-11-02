@@ -14,8 +14,10 @@ Zeilenangaben `origin/main@f03bbf14`, vor dem Bauen neu greppen. Neue Meldungen 
 Der PR ändert `scripts/update.sh`, `scripts/install.sh` und `scripts/agent-install.sh`: Kevin merged. `security` bei
 T1, T2, T4, T5. T2 neutral: Titel, Commit, Doku und `changelog.d/ops-5.md` ohne Angriffspfad.
 
-### T1 — backup.sh: Passphrase-Filter lässt den Quote eines anderen Schlüssels stehen (R-1017)  [ ]
+### T1 — backup.sh: Passphrase-Filter lässt den Quote eines anderen Schlüssels stehen (R-1017)  [x]
 Komponente: scripts · Dateien: scripts/backup.sh, scripts/diagnostics.sh, scripts/tests/restore_guard_test.sh, scripts/tests/diagnostics_test.sh, changelog.d/ops-5.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9a6ba030 2026-11-02T09:48:11+01:00
+Review: approve (.ah-out/review/ops-5/T1.verdict.json)
 Beweis: `.env` mit `A="x 'CA_ROOT_PASSPHRASE=geheim"` und `B=1` durch den Filter (`scripts/backup.sh:254-287`) → `env.sanitized` `A="x '` / `B=1`, der Quote von `A` bleibt offen (Probe 2026-11-02 auf `origin/main@f03bbf14`) · Dedup-Key: ref:scripts:backup.sh:filter-cuts-closing-quote
 Änderung: Ein Treffer, den der Filter nur hinter einem Quote liest und der im geschlossenen Wert eines anderen Schlüssels liegt (wie compose ihn liest), endet vor dessen schließendem Quote; die Passphrase geht weiter in jeder Form, die Tests 15–19 prüfen. Ändert das den gemeinsamen Tokenizer-Text, zieht `diagnostics.sh` byte-gleich mit (Test (r)). Test (erst rot) in `restore_guard_test.sh`: obige `.env` → `A="x '"` oder ohne den Wertrest, aber mit geschlossenem Quote, `B=1` unverändert, kein Byte von `geheim`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagnostics_test
