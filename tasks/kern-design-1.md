@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Vorlage `AdminCave/DesignSystem@244e890`: `tokens/*.css`, `components/*/*.d.ts` (Verträge), `ui_kits/adminhelper/kit.jsx` (Pill, Dot, Segmented, Panel, MetaList). Zeilenangaben `origin/main@1c313156`. Alle Pfade unter `apps/desktop/ui/`, soweit nicht anders genannt. Svelte 5 (Runes), TypeScript strict ohne `any`; Snippet statt ReactNode, Icons als Lucide-Komponente.
 
-### T1 — DS-Tokens in app.css, alte Namen als Aliase (R-1061)  [ ]
+### T1 — DS-Tokens in app.css, alte Namen als Aliase (R-1061)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/styles/tokens.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0062ae35 2026-11-02T16:36:10+01:00
+Review: approve (.ah-out/review/kern-design-1/T1.verdict.json)
 Änderung: `:root` und `:root[data-theme='light']` (`src/styles/app.css:1-125`) auf DS-Stand: Farben aus `tokens/colors.css` (`--bg` #17181b, `--bg-subtle`, `--surface`, `--surface-raised`, `--surface-inset`, `--surface-hover`/`-active`, `--border`/`-strong`/`-faint`, `--text`/`-strong`/`-muted`/`-subtle`/`-inverse`, Akzent, `--fill-solid*`, Status mit `-bg`/`-border`, `--ring`), Radius, Schatten (dark und light), Motion (`--dur-*`, `--ease-*`), `--ring-shadow`, Spacing `--space-*`. Die bisherigen AH-Namen (`--bg-surface`, `--bg-elevated`, `--bg-sidebar`, `--bg-panel`, `--bg-input`, `--border-hover`, `--hover`, `--text-faint`, `--accent-bg`, `--green`, `--sp-*`, `--shadow`) werden `var()`-Aliase auf DS-Namen. Basisregeln: `:focus-visible` mit `--ring-shadow`, `prefers-reduced-motion` setzt die Dauern auf 0. Neuer Test liest `app.css` und prüft, dass jeder DS-Token in beiden Blöcken steht und jeder Alt-Name auf einen definierten Namen zeigt (gegen Tippfehler, die sonst still auf den Browser-Default fallen).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts
 Doku: → T8
@@ -67,3 +69,4 @@ Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/k
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: Alias-Zuordnung: `--bg-surface`→`--surface`, `--bg-elevated`/`--bg-panel`→`--surface-raised`, `--bg-sidebar`→`--bg-subtle`, `--bg-input`→`--surface-inset`, `--shadow`→`--shadow-md`, `--sp-5/6/7`→`--space-6/8/12` (wertgleich zu den alten 24/32/48 px). Fokus-Ring als `:where(:focus-visible)` (Spezifität 0), damit die bestehenden `:focus-visible`-Regeln der Seiten weiter gelten; gezeichnet als `outline` mit `--ring-width`/`--ring` statt `--ring-shadow`, weil Klassen mit eigenem `box-shadow` (`.ws-swatch.selected`) den Ring sonst verdecken (Reviewer T1). Die undefinierten Altnamen `--bg-elev`, `--radius`, `--bg-hover`, `--bg-accent` (Ansible, NotificationBell) bleiben unberührt, Roadmap-Zeile.
