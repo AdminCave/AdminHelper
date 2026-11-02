@@ -52,8 +52,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Connections.
 Doku: → T9
 Abhängt von: T1, T4
 
-### T6 — Inspector und Tastatur  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/connections/ConnectionInspector.test.ts, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T6 — Inspector und Tastatur  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/connections/ConnectionInspector.test.ts, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/connections/ConnectionTable.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @bac68d82 2026-11-02T23:51:56+01:00
+Review: approve (.ah-out/review/kern-verbindungen-1/T6.verdict.json)
 Änderung: Inspector ab 900 px für die gewählte Verbindung (Felder laut Spec, Erreichbar, Kommando-Vorschau mit Kopieren, Notizen; Verbinden, Bearbeiten, Favorit); ↑/↓ wählt, ↵ verbindet, Esc hebt die Auswahl auf. Tests. Abhängt von T5. R-1065, R-1067.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/connections/ConnectionInspector.test.ts src/pages/Connections.test.ts
 Doku: → T9
@@ -87,3 +89,4 @@ Task-Review: am Ende
 - 2026-11-02: overlap.sh: kern-monitoring-3 ändert commands.rs, main.rs, bridge/index.ts, dictionaries.ts; T3 und T7 erst nach dessen Merge, davor `git merge origin/main`.
 - 2026-11-02: T4: `ProbeTarget` (probe.rs, T3) kreuzt die Bridge, deshalb probe.rs in die Scan-Liste des Paritätstests und der Typ nach `bridge/types.ts`; Verify zusätzlich mit `types.parity.test.ts` gefahren. Favoriten speichert `setFavoriteConnections` in `stores/session.ts` (wie `setAllowSelfSignedCerts`), Toggles laufen nacheinander. Gleiche Host/Port-Ziele werden einmal geprobt; Verbindungen ohne Ziel bleiben unbekannt, nicht `null`.
 - 2026-11-02: T5: Layout per CSS-Container-Query (Leiste ab 1180 px Seitenbreite, kompakte Tabelle unter 820 px Listenbreite), nicht per gemessener Breite: jsdom misst 0, der Zustand bliebe ungetestet und die Seite bräuchte einen ResizeObserver. Filter, Sortierung, Gruppierung und Ansicht sind Seitenzustand (wie im Mockup), die alten Store-Exporte `kindFilter`, `groupFilter`, `viewMode`, `filteredConnections`, `groupedConnections` nutzt danach nur noch `connections.test.ts`; sie bleiben, weil `connections.ts` nicht zu T5 gehört (Fund für die Abschlussprüfung). Mehrfachauswahl (Checkboxen) kommt mit T7. Ungenutzte Schlüssel `filters.single/grouped`, `view.list/tree`, `tree.*`, `grouped.connections` raus.
+- 2026-11-02: T6: Inspector ab 900 px Seitenbreite (340 px, ab 1380 px 380 px) per Container-Query wie T5. Tastatur am Listbox der Tabelle (`ConnectionTable.svelte` in die Dateien): ↑/↓ gehen über die Zeilen in DOM-Reihenfolge (eingeklappte Gruppen fallen weg) und fokussieren sie, ↵ verbindet weiter über die Zeile, Esc hebt die Auswahl auf. „Server“ zeigt nur einen Namen, den das Inventar (`infraServers`) schon hält; die Seite lädt das Inventar nicht nach. Notizen sind die der Verbindung (das Mockup zeigte Server-Notizen).

@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The connections page (R-1065, R-1067): library, kind and folder filters, search, chips, sorting,
-// grouping, table and cards, selection, favorites, quick access and the reachability column.
+// grouping, table and cards, selection, keyboard, inspector, favorites, quick access and the
+// reachability column.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
@@ -278,6 +279,59 @@ describe('Connections page', () => {
         .textContent?.trim();
     await waitFor(() => expect(ping('web01')).toBe(tNow('connections.ping.ms', { ms: 12 })));
     expect(ping('db01')).toBe(tNow('connections.ping.down'));
+  });
+
+  it('shows the selected connection in the inspector', async () => {
+    await renderPage();
+    const insp = within(screen.getByTestId('conn-inspector'));
+    expect(insp.getByText(tNow('connections.insp.empty'))).not.toBeNull();
+    const row = screen.getAllByTestId('conn-row').find((r) => r.textContent?.includes('db01'))!;
+    await fireEvent.click(row);
+    expect(insp.getByText('db01')).not.toBeNull();
+    expect(insp.getByText(/^xfreerdp \/v:db01\.example:3389/)).not.toBeNull();
+  });
+
+  it('walks the rows with the arrow keys, connects with Enter and clears with Escape', async () => {
+    await renderPage();
+    await selectGrouping('none');
+    const list = screen.getByRole('listbox');
+    const selected = () =>
+      screen
+        .getAllByTestId('conn-row')
+        .filter((r) => r.getAttribute('aria-selected') === 'true')
+        .map((r) => r.querySelector('.conn-name')?.textContent);
+
+    await fireEvent.keyDown(list, { key: 'ArrowDown' });
+    expect(selected()).toEqual(['web01']);
+    await fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(selected()).toEqual(['portal']);
+    expect(document.activeElement?.textContent).toContain('portal');
+    await fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    await fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(selected()).toEqual(['db01']);
+    await fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(selected()).toEqual(['portal']);
+
+    await fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+    expect(h.connect).toHaveBeenCalledWith(C);
+
+    await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(selected()).toEqual([]);
+    expect(
+      within(screen.getByTestId('conn-inspector')).getByText(tNow('connections.insp.empty')),
+    ).not.toBeNull();
+  });
+
+  it('skips the rows of a folded group', async () => {
+    await renderPage();
+    const heads = screen.getAllByRole('button', { expanded: true });
+    await fireEvent.click(heads.find((b) => b.textContent?.includes('db01.example'))!);
+    const list = screen.getByRole('listbox');
+    for (let i = 0; i < 4; i++) await fireEvent.keyDown(list, { key: 'ArrowDown' });
+    const sel = screen
+      .getAllByTestId('conn-row')
+      .find((r) => r.getAttribute('aria-selected') === 'true');
+    expect(sel?.textContent).not.toContain('db01');
   });
 
   it('stops the probe when the page goes', async () => {

@@ -63,6 +63,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     sortDir: SortDir;
     onSort: (key: SortKey) => void;
     onSelect: (c: Connection) => void;
+    onClear: () => void;
     onConnect: (c: Connection) => void;
     onEdit: (c: Connection) => void;
     onFavorite: (c: Connection) => void;
@@ -80,6 +81,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     sortDir,
     onSort,
     onSelect,
+    onClear,
     onConnect,
     onEdit,
     onFavorite,
@@ -124,6 +126,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
       e.preventDefault();
       onSelect(c);
     }
+  }
+
+  // ↑/↓ walk the rows in their visible order (folded groups skipped), Esc drops the selection.
+  let wrap: HTMLElement | undefined = $state();
+  function onListKey(e: KeyboardEvent): void {
+    if (e.target instanceof HTMLInputElement) return;
+    if (e.key === 'Escape') {
+      onClear();
+      return;
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const rows = [...(wrap?.querySelectorAll<HTMLElement>('[data-testid="conn-row"]') ?? [])];
+    const i = rows.findIndex((r) => r.dataset.id === selectedId);
+    const next =
+      rows[e.key === 'ArrowDown' ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1)];
+    const c = next && groups.flatMap((g) => g.connections).find((x) => x.id === next.dataset.id);
+    if (!next || !c) return;
+    next.focus();
+    onSelect(c);
   }
 
   // Clicks on the row's own buttons must neither select nor connect the row.
@@ -292,7 +314,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </div>
 {/snippet}
 
-<div class="table-wrap" role="listbox" aria-label={$t('page.connections')}>
+<div
+  class="table-wrap"
+  role="listbox"
+  aria-label={$t('page.connections')}
+  tabindex="-1"
+  bind:this={wrap}
+  onkeydown={onListKey}
+>
   {#if view === 'table'}
     <div class="row head" role="presentation">
       {@render sortHead('name', $t('connections.col.name'))}

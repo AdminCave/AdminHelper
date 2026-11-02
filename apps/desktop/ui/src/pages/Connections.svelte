@@ -34,11 +34,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/models/connectionList';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
   import { tunnelMappings } from '$lib/stores/tunnel';
+  import { infraServers } from '$lib/stores/infra';
   import { openEditor } from '$lib/stores/editor';
   import { initiateConnect } from '$lib/stores/connectFlow';
   import { t } from '$lib/i18n';
   import { accelerateScroll, LIST_FACTOR } from '$lib/utils/scrollAcceleration';
   import ConnectionsLoadError from '../components/ConnectionsLoadError.svelte';
+  import ConnectionInspector from '../components/connections/ConnectionInspector.svelte';
   import ConnectionSidebar from '../components/connections/ConnectionSidebar.svelte';
   import ConnectionTable from '../components/connections/ConnectionTable.svelte';
   import QuickAccess from '../components/connections/QuickAccess.svelte';
@@ -99,6 +101,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     library !== 'all' || kind != null || tag != null || $searchTerm.trim() !== '',
   );
   let quick = $derived(filtered ? [] : quickAccess($connections, ctx));
+  let selected = $derived($connections.find((c) => c.id === selectedId) ?? null);
+  // Only a server the inventory already holds gets a name; the page does not load the inventory.
+  let selectedServer = $derived(
+    selected?.serverId
+      ? ($infraServers.find((s) => s.id === selected?.serverId)?.name ?? null)
+      : null,
+  );
 
   let stopProbe: (() => void) | null = null;
   let destroyed = false;
@@ -276,6 +285,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {sortDir}
             {onSort}
             onSelect={(c) => (selectedId = c.id)}
+            onClear={() => (selectedId = null)}
             onConnect={connect}
             onEdit={(c) => openEditor(c)}
             onFavorite={(c) => void toggleFavorite(c.id)}
@@ -283,6 +293,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/if}
       {/if}
     </div>
+  </div>
+
+  <div class="conn-insp">
+    <ConnectionInspector
+      conn={selected}
+      favorite={selected ? $favorites.has(selected.id) : false}
+      reach={selected ? $reachability[selected.id] : undefined}
+      tunnel={selected ? (tunnelByConn.get(selected.id) ?? null) : null}
+      server={selectedServer}
+      onConnect={connect}
+      onEdit={(c) => openEditor(c)}
+      onFavorite={(c) => void toggleFavorite(c.id)}
+    />
   </div>
 </div>
 
@@ -304,6 +327,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+  }
+  .conn-insp {
+    display: none;
+    flex: 0 0 340px;
+    min-height: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
   }
   .conn-toolbar {
     display: flex;
@@ -352,6 +382,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   /* From 1180 px the filters live in the rail, and the kind switch in the toolbar goes. A
      container query only reaches descendants, hence nothing on .conn-page itself here. */
+  @container (min-width: 900px) {
+    .conn-insp {
+      display: block;
+    }
+  }
+  @container (min-width: 1380px) {
+    .conn-insp {
+      flex-basis: 380px;
+    }
+  }
   @container (min-width: 1180px) {
     .conn-rail {
       display: block;
