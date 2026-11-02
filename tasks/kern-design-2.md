@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-design-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-design-2 · Review: pro Task
 Spec: docs/features/kern-design-2.md (Roadmap R-1062, R-1063)
 Heavy: linux-full — Shell, Einstellungen und Dashboard ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -80,8 +80,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShel
 Doku: diese Task
 Task-Review: am Ende
 
-### T9 — Statusleiste: keine Problemzahl nach gescheiterter Monitoring-Ladung (R-1062)  [ ]
+### T9 — Statusleiste: keine Problemzahl nach gescheiterter Monitoring-Ladung (R-1062)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/StatusFooter.svelte, apps/desktop/ui/src/components/StatusFooter.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @1490f96a 2026-11-02T20:13:51+01:00
+Review: approve (.ah-out/review/kern-design-2/T9.verdict.json)
 Änderung: Scheitert `loadMonitoring`, setzt der Store `checks: []`, `hasLoaded: true` und `error`; die Statusleiste zeigte dann „Keine Probleme“. Mit `monitoringError` entfällt das Feld. Test: Fehler nach einer Ladung blendet es aus, die nächste erfolgreiche zeigt es wieder.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/StatusFooter.test.ts
 Doku: keine (die Doku nennt die Probleme als Zahl der letzten Ladung)

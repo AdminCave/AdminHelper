@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { DeviceIdentity } from '$lib/bridge/types';
   import { settings, session } from '$lib/stores/session';
   import { tunnel } from '$lib/stores/tunnel';
-  import { monitoringChecks, monitoringHasLoaded } from '$lib/stores/monitoring';
+  import { monitoringChecks, monitoringHasLoaded, monitoringError } from '$lib/stores/monitoring';
   import { lastSyncedAt } from '$lib/stores/connections';
   import { settingsModalOpen } from '$lib/stores/settings';
   import { timeAgo } from '$lib/utils/timeAgo';
@@ -45,7 +45,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return $t('tunnel.inactive');
   });
 
-  // The count of the last monitoring load; before the first one there is no number to show.
+  // The count of the last monitoring load; before the first one there is no number to show, and
+  // after a failed one neither: the store empties the checks then, which would read as none.
   let problems = $derived(
     $monitoringChecks.filter(
       (c) =>
@@ -106,7 +107,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="status-footer-item" data-field="tunnel" data-status={$tunnel.ui}>
       <span class="status-footer-dot" aria-hidden="true"></span>{tunnelLabel}
     </span>
-    {#if $monitoringHasLoaded}
+    {#if $monitoringHasLoaded && !$monitoringError}
       <span class="status-footer-item" data-field="problems" class:has-problems={problems > 0}>
         {problems > 0 ? $t('footer.problems', { count: problems }) : $t('footer.problemsNone')}
       </span>

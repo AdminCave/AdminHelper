@@ -48,7 +48,11 @@ vi.mock('$lib/stores/settings', async () => {
 
 vi.mock('$lib/stores/monitoring', async () => {
   const { writable: w } = await import('svelte/store');
-  return { monitoringChecks: w([]), monitoringHasLoaded: w(false) };
+  return {
+    monitoringChecks: w([]),
+    monitoringHasLoaded: w(false),
+    monitoringError: w<string | null>(null),
+  };
 });
 
 import * as sessionMod from '$lib/stores/session';
@@ -67,6 +71,7 @@ const sessionState = sessionMod.sessionStore as unknown as W<{
 const tunnelState = tunnelMod.tunnel as unknown as W<{ ui: string }>;
 const checks = monitoringMod.monitoringChecks as unknown as W<Partial<MonitorCheck>[]>;
 const hasLoaded = monitoringMod.monitoringHasLoaded as unknown as W<boolean>;
+const loadError = monitoringMod.monitoringError as unknown as W<string | null>;
 const modalOpen = settingsMod.settingsModalOpen as unknown as W<boolean>;
 
 const base: Settings = {
@@ -103,6 +108,7 @@ describe('StatusFooter', () => {
     tunnelState.set({ ui: 'idle' });
     checks.set([]);
     hasLoaded.set(false);
+    loadError.set(null);
     modalOpen.set(false);
   });
 
@@ -178,6 +184,21 @@ describe('StatusFooter', () => {
     checks.set([{ enabled: true, state: { status: 'ok' } }] as Partial<MonitorCheck>[]);
     await tick();
     expect(text(container, 'problems')).toBe('Keine Probleme');
+
+    // A failed load empties the checks: that is no count, so the field goes, not "no problems".
+    checks.set([]);
+    loadError.set('HTTP 502');
+    await tick();
+    expect(fields(container)).toEqual(['mode', 'tunnel', 'cert']);
+
+    // The next load that works brings it back.
+    checks.set([
+      { enabled: true, state: { status: 'critical' } },
+      { enabled: true, state: { status: 'warning' } },
+    ] as Partial<MonitorCheck>[]);
+    loadError.set(null);
+    await tick();
+    expect(text(container, 'problems')).toBe('2 Probleme');
   });
 
   it('server mode names a missing or expired certificate and hides an unreadable one', async () => {
