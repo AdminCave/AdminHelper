@@ -267,10 +267,10 @@ async fn fetch_visitor_bundle(session: &SessionState) -> Result<(BundleReply, Si
 /// The most a visitor bundle may hold, as for the connection list (sync.rs).
 const MAX_BUNDLE_BYTES: usize = 16 * 1024 * 1024;
 
-/// What a visitor-bundle reply carries (see [`carries_bundle`]). A bundle over
-/// [`MAX_BUNDLE_BYTES`] is refused by its declared length before any of the body is read, else
-/// as soon as more has arrived; no error quotes the answer.
-async fn bundle_from(mut response: reqwest::Response) -> Result<BundleReply, AppError> {
+/// What a visitor-bundle reply carries (see [`carries_bundle`]). The bundle is read within
+/// [`MAX_BUNDLE_BYTES`] and the body deadline ([`crate::http_client::read_bounded`]); no error
+/// quotes the answer.
+async fn bundle_from(response: reqwest::Response) -> Result<BundleReply, AppError> {
     let status = response.status();
     if !carries_bundle(status)? {
         let refused = (status == reqwest::StatusCode::FORBIDDEN).then_some(status.as_u16());
@@ -280,25 +280,7 @@ async fn bundle_from(mut response: reqwest::Response) -> Result<BundleReply, App
         });
     }
 
-    let too_large = || {
-        AppError::Validation(format!(
-            "the tunnel list could not be loaded (answer larger than {} MiB)",
-            MAX_BUNDLE_BYTES / (1024 * 1024)
-        ))
-    };
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_BUNDLE_BYTES as u64)
-    {
-        return Err(too_large());
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        if body.len() + chunk.len() > MAX_BUNDLE_BYTES {
-            return Err(too_large());
-        }
-        body.extend_from_slice(&chunk);
-    }
+    let body = crate::http_client::read_bounded(response, MAX_BUNDLE_BYTES, "tunnel list").await?;
     let bundle: VisitorBundle = serde_json::from_slice(&body).map_err(|_| {
         AppError::Validation("the tunnel list could not be loaded (unexpected answer)".to_string())
     })?;
@@ -4118,7 +4100,10 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_bundle_reply_404_is_no_tunnels_200_the_toml() {
-        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .no_proxy()
+            .build()
+            .unwrap();
         let get = |port: u16| client.get(format!("http://127.0.0.1:{port}/")).send();
 
         let (port, _request) = serve_one(reply("404 Not Found", "")).await;
@@ -4138,7 +4123,10 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_bundle_over_the_bound_is_refused_without_quoting_it() {
-        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .no_proxy()
+            .build()
+            .unwrap();
         let get = |port: u16| client.get(format!("http://127.0.0.1:{port}/")).send();
 
         // A bundle one byte over the bound.
@@ -4181,7 +4169,10 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_bundle_reply_403_is_no_tunnels_and_names_the_refusal() {
-        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .no_proxy()
+            .build()
+            .unwrap();
         let (port, _request) = serve_one(reply("403 Forbidden", "")).await;
         let response = client
             .get(format!("http://127.0.0.1:{port}/"))
