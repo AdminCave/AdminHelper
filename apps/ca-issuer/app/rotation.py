@@ -224,6 +224,13 @@ def _switch(
             f"cannot switch: no new root beside {_root_name(old_root)}; restore the PKI "
             "volume from the backup of the last step"
         )
+    # root.crt becomes N and root.key.enc its key: a file that is no root would leave the
+    # PKI without one, the key of R gone.
+    if problem := pki.root_problem(new_root):
+        raise RotationError(
+            f"cannot switch: the new root {_root_name(new_root)} is no root, {problem}; "
+            f"remove it with: {ROTATE_ROOT} abort, then stage again"
+        )
     next_key_pem = _read_bytes(pki_dir / NEXT_KEY)
     new_key = _decrypt(pki_dir / NEXT_KEY, next_key_pem, next_passphrase, new_root)
     start, end = new_root.not_valid_before_utc, new_root.not_valid_after_utc
@@ -397,7 +404,7 @@ def _plan_scope(
     # would trust the leaves it signed: the cure is the clock (storage.CLOCK_HINT).
     # A certificate that is no intermediate of this scope is never kept as retired
     # (_retired_after), so the clock costs it nothing and the rotation replaces it.
-    if now < old.not_valid_before_utc and _problem(old, scope, roots) is None:
+    if now < old.not_valid_before_utc and pki.intermediate_problem_among(old, scope, roots) is None:
         raise RotationError(
             f"{crt}: {pki.read_identity(old)[0]!r} is not valid before "
             f"{old.not_valid_before_utc.isoformat()}, the host clock says "
@@ -515,15 +522,6 @@ def _read_retired(path: Path) -> list[x509.Certificate]:
         raise RotationError(f"cannot read {path} as PEM certificates: {exc}") from exc
 
 
-def _problem(cert: x509.Certificate, scope: str, roots: tuple[x509.Certificate, ...]) -> str | None:
-    """None if `cert` is an intermediate of `scope` under one of `roots`
-    (pki.intermediate_problem), else why it is under none of them."""
-    problems = [pki.intermediate_problem(cert, scope, root) for root in roots]
-    if None in problems:
-        return None
-    return "; ".join(dict.fromkeys(p for p in problems if p))
-
-
 def _retired_after(
     path: Path,
     scope: str,
@@ -543,7 +541,7 @@ def _retired_after(
     silently, and that is the operator's call."""
     earlier = _read_retired(path)
     for cert in earlier:
-        if problem := _problem(cert, scope, roots):
+        if problem := pki.intermediate_problem_among(cert, scope, roots):
             name = pki.read_identity(cert)[0]
             raise RotationError(
                 f"{path}: {name!r} is not a retired {scope!r} intermediate, {problem}; "
@@ -552,7 +550,7 @@ def _retired_after(
 
     keep = [c for c in earlier if now < c.not_valid_after_utc]
     if (
-        _problem(old, scope, roots) is None
+        pki.intermediate_problem_among(old, scope, roots) is None
         and old.not_valid_before_utc <= now < old.not_valid_after_utc
     ):
         keep.append(old)
@@ -573,7 +571,7 @@ def _retired_under(
     for cert in _read_retired(path):
         if pki.intermediate_problem(cert, scope, root) is None:
             keep.append(cert)
-        elif problem := _problem(cert, scope, (root, *old_roots)):
+        elif problem := pki.intermediate_problem_among(cert, scope, (root, *old_roots)):
             name = pki.read_identity(cert)[0]
             raise RotationError(
                 f"{path}: {name!r} is not a retired {scope!r} intermediate, {problem}; "

@@ -24,7 +24,10 @@ def _access_intermediate() -> tuple[Intermediate, x509.Certificate]:
     root_cert, root_key = pki.build_root_ca()
     inter_cert, inter_key = pki.build_intermediate_ca("access", root_cert, root_key)
     chain = pki.chain_pem(inter_cert, root_cert)
-    return Intermediate(scope="access", cert=inter_cert, key=inter_key, chain=chain), root_cert
+    inter = Intermediate(
+        scope="access", cert=inter_cert, key=inter_key, chain=chain, roots=(root_cert,)
+    )
+    return inter, root_cert
 
 
 # --- build_server_leaf (pki) -------------------------------------------------
@@ -247,9 +250,10 @@ def _rotated_access() -> tuple[Intermediate, Intermediate, x509.Certificate]:
     root_cert, root_key = pki.build_root_ca()
     old_cert, old_key = pki.build_intermediate_ca("access", root_cert, root_key)
     new_cert, new_key = pki.build_intermediate_ca("access", root_cert, root_key)
-    old = Intermediate("access", old_cert, old_key, pki.chain_pem(old_cert, root_cert))
+    roots = (root_cert,)
+    old = Intermediate("access", old_cert, old_key, pki.chain_pem(old_cert, root_cert), roots)
     chain = pki.chain_pem(new_cert, root_cert)
-    current = Intermediate("access", new_cert, new_key, chain, retired=(old_cert,))
+    current = Intermediate("access", new_cert, new_key, chain, roots, retired=(old_cert,))
     return old, current, root_cert
 
 

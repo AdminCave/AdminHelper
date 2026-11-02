@@ -24,7 +24,10 @@ def _tunnel_intermediate() -> tuple[Intermediate, x509.Certificate]:
     root_cert, root_key = pki.build_root_ca()
     inter_cert, inter_key = pki.build_intermediate_ca("tunnel", root_cert, root_key)
     chain = pki.chain_pem(inter_cert, root_cert)
-    return Intermediate(scope="tunnel", cert=inter_cert, key=inter_key, chain=chain), root_cert
+    inter = Intermediate(
+        scope="tunnel", cert=inter_cert, key=inter_key, chain=chain, roots=(root_cert,)
+    )
+    return inter, root_cert
 
 
 def test_provisions_serverauth_leaf_under_tunnel(tmp_path):
@@ -70,8 +73,13 @@ def test_ca_trusts_access_visitor_certs_with_extra_trust(tmp_path):
     root_cert, root_key = pki.build_root_ca()
     tunnel_cert, tunnel_key = pki.build_intermediate_ca("tunnel", root_cert, root_key)
     access_cert, access_key = pki.build_intermediate_ca("access", root_cert, root_key)
-    tunnel = Intermediate("tunnel", tunnel_cert, tunnel_key, pki.chain_pem(tunnel_cert, root_cert))
-    access = Intermediate("access", access_cert, access_key, pki.chain_pem(access_cert, root_cert))
+    roots = (root_cert,)
+    tunnel = Intermediate(
+        "tunnel", tunnel_cert, tunnel_key, pki.chain_pem(tunnel_cert, root_cert), roots
+    )
+    access = Intermediate(
+        "access", access_cert, access_key, pki.chain_pem(access_cert, root_cert), roots
+    )
 
     ensure_frps_cert(tmp_path, tunnel, "frp.example", extra_trust=(access,))
 
@@ -143,9 +151,10 @@ def _generations(scope: str, root_cert, root_key) -> tuple[Intermediate, Interme
     the retired one like ensure_hierarchy does."""
     old_cert, old_key = pki.build_intermediate_ca(scope, root_cert, root_key)
     new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key)
-    old = Intermediate(scope, old_cert, old_key, pki.chain_pem(old_cert, root_cert))
+    roots = (root_cert,)
+    old = Intermediate(scope, old_cert, old_key, pki.chain_pem(old_cert, root_cert), roots)
     chain = pki.chain_pem(new_cert, root_cert)
-    return old, Intermediate(scope, new_cert, new_key, chain, retired=(old_cert,))
+    return old, Intermediate(scope, new_cert, new_key, chain, roots, retired=(old_cert,))
 
 
 def _der(certs) -> list[bytes]:

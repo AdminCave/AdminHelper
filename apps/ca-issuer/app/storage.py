@@ -11,6 +11,8 @@ Layout under PKI_DIR:
     <scope>-chain.pem     <scope> intermediate + root (trust bundle)
     <scope>-retired.pem   optional: earlier <scope> intermediates, certificates
                           only (no keys), still trusted until they expire
+    root-next.*, root-retired.pem, root-cross.pem, root-switch.json
+                          during a root renewal (app.root_rollover, R-1021)
 
 Normal leaf signing only ever loads an intermediate (cert + key) — the root is
 decrypted solely to create/rotate intermediates.
@@ -32,7 +34,7 @@ from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from app import pki
+from app import pki, root_rollover
 
 _T = TypeVar("_T")
 
@@ -83,10 +85,19 @@ class Intermediate:
     scope: str
     cert: x509.Certificate
     key: ec.EllipticCurvePrivateKey
-    chain: bytes  # intermediate + root (PEM), for trust distribution / fullchain
+    chain: bytes  # intermediate + root (PEM), what the gateway and frps present
+    # The roots after the intermediate in `chain` of /enroll and /renew (trust_bundle):
+    # every root a client is to trust, root.crt last, the one :8444 serves. More than
+    # one only during a root renewal (ensure_hierarchy).
+    roots: tuple[x509.Certificate, ...]
     # Earlier intermediates of this scope from <scope>-retired.pem, newest first: valid,
     # of this scope under the root, never the current one. Verify only — no key here.
     retired: tuple[x509.Certificate, ...] = ()
+
+    @property
+    def trust_bundle(self) -> bytes:
+        """`chain` of /enroll and /renew (PEM): the intermediate, then `roots`."""
+        return pki.chain_pem(self.cert, *self.roots)
 
 
 def _write_private(path: Path, pem: bytes) -> None:
@@ -126,7 +137,14 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     Intermediate.retired. An entry that is not an intermediate of the scope under
     root.crt (pki.intermediate_problem) is left out with a WARNING (file, scope, CN,
     reason) and does not stop the boot; one that is outside its validity (INFO line) or
-    equal to the current one is left out too. A file that is no PEM bundle raises."""
+    equal to the current one is left out too. A file that is no PEM bundle raises.
+
+    A root renewal (app.root_rollover) sets Intermediate.roots: with a staged new root N
+    it comes before root.crt (R, which signs); after the switch the old root R comes
+    before root.crt (N) and retired intermediates under R count too, until R expires
+    (a WARNING that the finish is due) or a --compromised scope took R out. A switch or
+    a finish that stopped part way raises with the command that ends it, as do files no
+    transition leaves and a staged N or a retired R that is no root."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     try:
         pki_dir.chmod(0o700)
@@ -168,6 +186,23 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             (pki_dir / f"{scope}-chain.pem").write_bytes(pki.chain_pem(inter_cert, root_cert))
         logger.info("PKI erzeugt: Root + %s", ", ".join(pki.SCOPES))
 
+    # Before root.crt and the intermediates: a switch that stopped part way leaves them
+    # under two roots, and what helps then is the command that ends it.
+    try:
+        renewal = root_rollover.load_state(pki_dir)
+    except root_rollover.RolloverError as exc:
+        raise _invalid_hierarchy(str(exc)) from exc
+    if renewal.phase == "switching":
+        raise _invalid_hierarchy(
+            "a root switch stopped part way",
+            hint=f"end it with: {root_rollover.ROTATE_ROOT} switch, with the same options",
+        )
+    if renewal.phase == "finishing":
+        raise _invalid_hierarchy(
+            "a root finish stopped part way",
+            hint=f"end it with: {root_rollover.ROTATE_ROOT} finish",
+        )
+
     # Checked on every boot, the first included: an intermediate past its end, from another
     # root or beside a foreign key or chain would otherwise sign leaves no client accepts.
     now = pki._now()
@@ -176,6 +211,7 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
         raise _invalid_hierarchy(f"{root_crt}: the root certificate is not self-signed ({problem})")
     if problem := _validity_problem(root, now):
         raise _invalid_hierarchy(f"{root_crt}: the root certificate is {problem}")
+    roots, signers = _renewal_roots(pki_dir, renewal, root, now)
 
     out: dict[str, Intermediate] = {}
     for scope in pki.SCOPES:
@@ -213,13 +249,51 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             cert=cert,
             key=key,
             chain=pki.chain_pem(cert, root),
-            retired=_load_retired(pki_dir / f"{scope}-retired.pem", scope, cert, root, now),
+            roots=roots,
+            retired=_load_retired(pki_dir / f"{scope}-retired.pem", scope, cert, signers, now),
         )
 
     _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
     for scope, inter in out.items():
         _warn_if_ending(f"intermediate {scope!r}", inter.cert, now, f"; {ROTATE_HINT}")
     return out
+
+
+def _renewal_roots(
+    pki_dir: Path, renewal: root_rollover.State, root: x509.Certificate, now: datetime.datetime
+) -> tuple[tuple[x509.Certificate, ...], tuple[x509.Certificate, ...]]:
+    """(Intermediate.roots, the roots retired intermediates may come from) in the phase
+    of `renewal`, none, staged or switched; `root` is root.crt, already checked."""
+    if renewal.phase == "staged":
+        new_root = renewal.next_root
+        problem = pki.root_problem(new_root) or _validity_problem(new_root, now)
+        if problem:
+            raise _invalid_hierarchy(
+                f"{pki_dir / root_rollover.NEXT_CRT}: the new root is no root to hand out, "
+                f"{problem}",
+                hint=f"remove it with: {root_rollover.ROTATE_ROOT} abort, then stage again",
+            )
+        return (new_root, root), (root,)
+    if renewal.phase == "switched":
+        old_root, switch = renewal.retired_root, renewal.switch
+        if problem := pki.root_problem(old_root):
+            raise _invalid_hierarchy(
+                f"{pki_dir / root_rollover.RETIRED}: the old root is no root, {problem}",
+                hint="restore the PKI volume from the backup of the last step",
+            )
+        if now >= old_root.not_valid_after_utc:
+            logger.warning(
+                "the old root %r expired on %s and left `chain`; the root renewal is not "
+                "finished, end it with: %s finish",
+                pki.read_identity(old_root)[0],
+                old_root.not_valid_after_utc.isoformat(),
+                root_rollover.ROTATE_ROOT,
+            )
+            return (root,), (root, old_root)
+        if switch.drop_retired_root:
+            return (root,), (root, old_root)
+        return (old_root, root), (root, old_root)
+    return (root,), (root,)
 
 
 def _invalid_hierarchy(detail: str, hint: str = "") -> RuntimeError:
@@ -256,11 +330,11 @@ def _load_retired(
     path: Path,
     scope: str,
     current: x509.Certificate,
-    root: x509.Certificate,
+    roots: tuple[x509.Certificate, ...],
     now: datetime.datetime,
 ) -> tuple[x509.Certificate, ...]:
-    """The scope's retired intermediates from `path` (see ensure_hierarchy), newest first.
-    A missing file or one without any text means none."""
+    """The scope's retired intermediates from `path` under one of `roots` (see
+    ensure_hierarchy), newest first. A missing file or one without any text means none."""
     if not path.exists():
         return ()
     data = path.read_bytes()
@@ -277,7 +351,7 @@ def _load_retired(
     retired: list[x509.Certificate] = []
     for cert in certs:
         name = pki.read_identity(cert)[0]
-        if problem := pki.intermediate_problem(cert, scope, root):
+        if problem := pki.intermediate_problem_among(cert, scope, roots):
             logger.warning("scope %r, %s: skipping retired %r, %s", scope, path.name, name, problem)
             continue
         if problem := _validity_problem(cert, now):

@@ -46,8 +46,10 @@ Review: approve (.ah-out/review/arch-ca-root-renewal/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_pki.py tests/test_rotation.py tests/test_root_rollover.py
 Doku: → T10
 
-### T2 — Boot lädt die Phase, `chain` nach dem neuen Vertrag  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_storage.py, apps/ca-issuer/tests/test_enroll_renew.py
+### T2 — Boot lädt die Phase, `chain` nach dem neuen Vertrag  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/storage.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_storage.py, apps/ca-issuer/tests/test_enroll_renew.py, apps/ca-issuer/app/pki.py, apps/ca-issuer/app/rotation.py, apps/ca-issuer/tests/test_root_rollover.py, apps/ca-issuer/tests/test_gateway_cert.py, apps/ca-issuer/tests/test_frps_cert.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @e6a6263b 2026-11-02T11:45:40+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T2.verdict.json)
 Abhängt von: T1
 Änderung:
 - `ensure_hierarchy` (`storage.py:110`) erkennt Phase 0/1/2 an den Dateien.
@@ -59,7 +61,7 @@ Abhängt von: T1
 - `issuer._sign` (`issuer.py:127`) gibt `chain` in dieser Reihenfolge zurück.
 - Tests: `chain` je Phase (auch `--compromised`) aus `/enroll` und `/renew`. Das letzte PEM ist die Root, die :8444
   ausliefert. Dazu der Zwischenstand und der abgelaufene R.
-Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_enroll_renew.py
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_storage.py tests/test_enroll_renew.py tests/test_root_rollover.py tests/test_gateway_cert.py tests/test_frps_cert.py
 Doku: → T10
 
 ### T3 — Server-Material je Phase und Gateway :8444  [ ]
@@ -183,3 +185,21 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
   `drop_retired_root` vor der ersten retired-Datei — ein halber Lauf lässt R sonst in `chain`.
 - 2026-11-02 T1: Ein zweiter `stage` mit demselben CN wie `root.crt` (gleicher Tag) wird verweigert — Clients
   finden den Aussteller über den Namen, und R und N stehen bis `finish` nebeneinander.
+- 2026-11-02 T2: `Intermediate` bekommt das Pflichtfeld `roots` (die Roots hinter dem Intermediate, `root.crt`
+  zuletzt) und `trust_bundle` für `chain` aus `/enroll` und `/renew`. Das Feld `chain`, `<scope>-chain.pem` und
+  `_chain_is` bleiben [I, `root.crt`]: Gateway und frps liefern das bis T3 aus, und ein Boot mitten in der
+  Erneuerung prüft dieselben Dateien wie davor.
+- 2026-11-02 T2: Boot und `switch` prüfen, dass N bzw. das retired R eine selbstsignierte CA ist
+  (`pki.root_problem`, Nit von `security` zu T1). `root.crt` wird sonst ein Zertifikat, das keine Root ist, und
+  der Schlüssel von R ist weg. `_problem` aus `rotation.py` wandert als `pki.intermediate_problem_among` nach
+  `pki`, weil `storage` es für die retired-Intermediates unter R oder N braucht.
+- 2026-11-02 T2: Ist R nach dem Switch abgelaufen, fällt es aus `roots` mit einer WARNING „finish“. Retired
+  Intermediates unter R gelten weiter bis zu ihrem eigenen Ende, das spätestens mit R kommt.
+- 2026-11-02 T2: 9 statt 8 Dateien. `pki.py`/`rotation.py`/`test_root_rollover.py` für die Root-Prüfung,
+  `test_gateway_cert.py`/`test_frps_cert.py` nur für das neue Pflichtfeld in ihren `Intermediate(...)`.
+- 2026-11-02 T2, fürs Runbook (T10, Nits zu T1): Bei einem Leak `switch --compromised` ohne Rotation davor
+  (`rotate --compromised` in `staged` hält nichts fest). Backups von vor dem Switch tragen den Schlüssel von R
+  weiter verschlüsselt. Bricht der Switch vor `root-cross.pem` ab und läuft R danach ab, hilft nur ein Restore.
+- 2026-11-02 T2, Nits der Prüfer: `Verify:` nimmt alle fünf berührten Testdateien auf (reviewer). In `switched`
+  nimmt der Boot ein `<scope>-retired.pem` unter R auch für einen Scope aus `--compromised` an (security). Das
+  schließt T3 mit, weil T3 die Bündel je Scope ohnehin neu baut: unter R nur, was nicht `compromised` ist.

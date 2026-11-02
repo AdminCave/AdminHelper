@@ -298,6 +298,46 @@ def test_a_refused_switch_changes_nothing(now, tmp_path, stage, kwargs, match):
     assert _snapshot(tmp_path) == before
 
 
+@pytest.mark.parametrize(
+    ("signed_by", "ca", "match"),
+    [
+        ("old root", True, "it is not self-signed"),  # N's name and key, but R signed it
+        ("new root", False, "it is not a CA"),
+    ],
+)
+def test_a_switch_to_a_new_root_that_is_no_root_changes_nothing(
+    now, tmp_path, signed_by, ca, match
+):
+    _staged(tmp_path)
+    staged = _cert(tmp_path, NEXT_CRT)
+    new_key = pki.key_from_pem((tmp_path / NEXT_KEY).read_bytes(), NEXT_PW)
+    old_key = pki.key_from_pem((tmp_path / "root.key.enc").read_bytes(), PW)
+    issuer, key = (
+        (_cert(tmp_path, "root.crt").subject, old_key)
+        if signed_by == "old root"
+        else (staged.subject, new_key)
+    )
+    forged = (
+        x509.CertificateBuilder()
+        .subject_name(staged.subject)
+        .issuer_name(issuer)
+        .public_key(new_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(staged.not_valid_before_utc)
+        .not_valid_after(staged.not_valid_after_utc)
+        .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    (tmp_path / NEXT_CRT).write_bytes(pki.cert_to_pem(forged))
+    before = _snapshot(tmp_path)
+
+    with pytest.raises(rotation.RotationError, match=f"is no root, {match}") as exc:
+        rotation.switch_root(tmp_path, NEXT_PW, PW)
+
+    assert "abort, then stage again" in str(exc.value)
+    assert _snapshot(tmp_path) == before
+
+
 def test_an_expired_old_root_switches_only_without_cross(monkeypatch, tmp_path):
     _at(monkeypatch, pki.VALIDITY_DAYS_ROOT + 1, lambda: storage.ensure_hierarchy(tmp_path, PW))
     old_root = _cert(tmp_path, "root.crt")

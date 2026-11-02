@@ -321,6 +321,37 @@ def intermediate_problem(
     return f"it is not signed by root {read_identity(root_cert)[0]!r} ({detail})"
 
 
+def intermediate_problem_among(
+    cert: x509.Certificate, scope: str, roots: tuple[x509.Certificate, ...]
+) -> str | None:
+    """None if `cert` is an intermediate of `scope` under one of `roots`
+    (intermediate_problem), else why it is under none of them."""
+    problems = [intermediate_problem(cert, scope, root) for root in roots]
+    if None in problems:
+        return None
+    return "; ".join(dict.fromkeys(p for p in problems if p))
+
+
+def root_problem(cert: x509.Certificate) -> str | None:
+    """Why `cert` is not a root as build_root_ca issues one (a CA, signed by itself), or
+    None if it is; its validity in time is left to the caller."""
+    try:
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except (x509.ExtensionNotFound, x509.DuplicateExtension, ValueError):
+        constraints = None
+    if constraints is None or not constraints.ca:
+        return "it is not a CA"
+    try:
+        cert.verify_directly_issued_by(cert)
+    except InvalidSignature:
+        detail = "the signature does not verify"
+    except (ValueError, TypeError) as exc:
+        detail = str(exc)
+    else:
+        return None
+    return f"it is not self-signed ({detail})"
+
+
 # --- Leaf signing ------------------------------------------------------------
 
 
