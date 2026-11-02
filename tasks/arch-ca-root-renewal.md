@@ -142,8 +142,10 @@ Review: approve (.ah-out/review/arch-ca-root-renewal/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
 Doku: keine (nur Tests)
 
-### T9 — Stack-Test fährt den Wechsel  [ ]
+### T9 — Stack-Test fährt den Wechsel  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f53d2916 2026-11-02T15:36:04+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T9.verdict.json)
 Abhängt von: T4
 Änderung: Der Stack-Test führt im laufenden Stack `rotate-root stage` aus, dann ein Renew, dann `switch --compromised`
 für einen Scope. Danach prüft er:
@@ -267,3 +269,21 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
   `rotate-root` zeigt (`pki.ROOT_WARN_DAYS` = 365). `test_a_root_near_its_end_warns_that_clients_must_enroll_again`
   heißt jetzt `…_warns_to_stage_a_new_root` und prüft den neuen Hinweis: eine gewollte Verhaltensänderung.
   `rotation.py` kommt hinzu, weil `refusal` öffentlich wurde.
+- 2026-11-02 T9: Der Stack hat kein frpc-Binary. `frpc_takes` ersetzt es durch einen TLS-Client in Python mit dem
+  Leaf eines Visitors (access) oder Agenten (tunnel), ohne partielle Kette, also verankert nur eine Root. Er prüft die
+  TLS-Ebene von frps: Vertrauen über X, ein Agent-Leaf unter R vor dem `switch` und unter N danach wird angenommen,
+  das des kompromittierten Scopes abgelehnt. Den Datenpfad eines Tunnels nach einem Root-Wechsel fährt kein Lauf,
+  denn `scenario` und der Capstone wechseln die Root nicht (Kopf: kein `scenario`). frps prüft das Zertifikat im
+  Handshake, vor jedem Datenpfad.
+- 2026-11-02 T9: `gnutls-cli` kommt per `apk` in einen Wegwerf-Container aus dem Image des Gateways, weil weder die
+  Runner noch die VMs es haben. GnuTLS baut Ketten anders als OpenSSL (apt < 3.0). Kann `apk` es nicht installieren,
+  wird die Prüfung rot, nicht SKIP.
+- 2026-11-02 T9: Abschnitt 19 legt eine neue FRP-Config an, weil 11b seine gelöscht hat. frps startet damit neu,
+  vor dem `stage`.
+- 2026-11-02 T9: Der Prüfer von T8 berichtete eine Kompaktierung, für T9 startet deshalb ein frischer Prüfer
+  (CLAUDE.md §6).
+- 2026-11-02 T9: Lokaler Stack-Lauf 1 war rot an einer falschen Erwartung des Tests. Nach `switch --compromised`
+  enthält `chain` laut Spec-Tabelle nur I(N) N, der Test verlangte noch R. Erwartung korrigiert, Lauf 2:
+  `integration_stack_test: 128 passed, 0 failed`, rc 0. Nach der Runde des Prüfers (positive Gegenprobe: frps nimmt
+  das Agent-Leaf unter R vor dem `switch` an, ein Agent-Leaf unter N danach bei frps und Server) Lauf 3:
+  `integration_stack_test: 131 passed, 0 failed`, rc 0.

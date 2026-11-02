@@ -548,13 +548,26 @@ except OSError as e:
 PY
 }
 
+# store_leaf <name> — E2E_WORK/<name>.json ({"chain", "key"}, as a one-off ca-issuer prints it)
+# into <name>-fullchain.pem and <name>.key (0600).
+store_leaf() {
+    python3 - "$E2E_WORK" "$1" <<'PY'
+import json, os, sys
+work, name = sys.argv[1:3]
+data = json.load(open(f"{work}/{name}.json"))
+open(f"{work}/{name}-fullchain.pem", "w").write(data["chain"])
+fd = os.open(f"{work}/{name}.key", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.write(fd, data["key"].encode()); os.close(fd)
+PY
+}
+
 # unlisted_leaf — an access leaf for admin under an intermediate the ca-issuer mints right now
 # under the real root and lists nowhere (in a one-off ca-issuer with the run's passphrase):
 # E2E_WORK/unlisted-fullchain.pem (leaf + that intermediate) and unlisted.key. The gateway
 # (anchored at the root) lets it through; frps and the server must not (R-1009).
 unlisted_leaf() {
     e2e_dc run --rm --no-deps -T ca-issuer python - <<'PY' >"$E2E_WORK/unlisted.json" 2>"$E2E_WORK/unlisted.err" \
-        && python3 - "$E2E_WORK" <<'PY2'
+        && store_leaf unlisted
 import json
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -573,30 +586,22 @@ csr = (
 leaf = pki.sign_leaf(csr, inter, inter_key, pki.LeafSpec(lifetime_days=1, subject_cn="admin", scope="access"))
 print(json.dumps({"chain": pki.chain_pem(leaf, inter).decode(), "key": pki.key_to_pem(key).decode()}))
 PY
-import json, os, sys
-work = sys.argv[1]
-data = json.load(open(f"{work}/unlisted.json"))
-open(f"{work}/unlisted-fullchain.pem", "w").write(data["chain"])
-fd = os.open(f"{work}/unlisted.key", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-os.write(fd, data["key"].encode()); os.close(fd)
-PY2
 }
 
-# record_unlisted — record the unlisted leaf (first PEM of unlisted-fullchain.pem) in the
-# register on a device line of admin, so the register admits it and only the issuer check of the
-# server can refuse it: unrecorded, a leaf issued after the register was installed is refused
-# anyway, and the gateway step below would pass without that check.
-record_unlisted() {
+# record_leaf <fullchain> <subject_id> <scope> <kind> — record the leaf (first PEM of the file) in
+# the register on a new device line of that subject.
+record_leaf() {
     e2e_dc exec -T server python -c '
 import sys, uuid
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from app.core.database import SessionLocal
 from app.modules.enrollment.models import DeviceLine, IssuedCertificate
+subject_id, scope, kind = sys.argv[1:4]
 cert = x509.load_pem_x509_certificate(sys.stdin.buffer.read())
 try:
     db = SessionLocal()
-    line = DeviceLine(id=str(uuid.uuid4()), subject_id="admin", scope="access", kind="desktop")
+    line = DeviceLine(id=str(uuid.uuid4()), subject_id=subject_id, scope=scope, kind=kind)
     db.add(line)
     db.flush()
     db.add(IssuedCertificate(
@@ -610,8 +615,14 @@ try:
 except Exception as e:
     # The type only: a driver error quotes the whole conninfo, password included.
     print(type(e).__name__, file=sys.stderr)
-    sys.exit(1)' <"$E2E_WORK/unlisted-fullchain.pem" 2>"$E2E_WORK/record.err" >/dev/null
+    sys.exit(1)' "$2" "$3" "$4" <"$1" 2>"$E2E_WORK/record.err" >/dev/null
 }
+
+# record_unlisted — record the unlisted leaf in the register on a device line of admin, so the
+# register admits it and only the issuer check of the server can refuse it: unrecorded, a leaf
+# issued after the register was installed is refused anyway, and the gateway step below would
+# pass without that check.
+record_unlisted() { record_leaf "$E2E_WORK/unlisted-fullchain.pem" admin access desktop; }
 
 # gateway_status <chain> <key> — "<status> <body>" of GET /api/servers with this client cert and
 # the device's JWT through the gateway.
@@ -1531,6 +1542,335 @@ ca_rotation() {
     fi
 }
 ca_rotation
+
+# ── 19. Renewing the root in the running stack (R-1021) ──────────────────────
+# After 18, under today's intermediates and the root R. stage puts a new root N beside R;
+# switch moves the intermediates under N and has R sign the cross certificate X (N's name and
+# key), and with --compromised tunnel the tunnel intermediates under R leave every bundle;
+# finish takes R and X out. In between, a client that trusts only R keeps :443 and frps (over
+# X), an apt client (GnuTLS) that trusts only N reaches :8445, the server takes an old access
+# leaf and refuses an old tunnel leaf, and finish refuses while the register knows devices that
+# may still need R. After finish --force the gateway refuses a leaf under R.
+
+# pem_at <file> <n|last> — the n-th (or the last) PEM certificate of the file.
+pem_at() {
+    awk -v n="$2" -v last="$(grep -c -e '-----BEGIN CERTIFICATE-----' "$1")" '
+        BEGIN { n = (n == "last") ? last + 0 : n + 0 }
+        /-----BEGIN CERTIFICATE-----/ { i++ }
+        i == n { print }
+        i == n && /-----END CERTIFICATE-----/ { exit }' "$1"
+}
+# cns_of <file> — the subject CNs of the certificates in the file, joined by ";".
+cns_of() { chain_cns <"$1" | paste -sd';'; }
+
+# renew_into <fullchain> <key> <csr> <out> — /ca/renew with this certificate: the new leaf with
+# its intermediate into E2E_WORK/<out>-fullchain.pem, the chain field (what the device trusts
+# from now on) into <out>-chain.pem. Non-zero, the error in <out>-renew.err, when it fails.
+renew_into() {
+    python3 - "$E2E_SERVER_URL" "$E2E_WORK" "$@" <<'PY' 2>"$E2E_WORK/$4-renew.err"
+import json, ssl, sys, urllib.request
+base, work, chain, key, csr, out = sys.argv[1:7]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+ctx.load_cert_chain(chain, key)
+req = urllib.request.Request(f"{base}/ca/renew", data=json.dumps({"csr": open(csr).read()}).encode(),
+    headers={"Content-Type": "application/json"})
+body = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))
+fullchain, trust = body["fullchain"], body["chain"]
+open(f"{work}/{out}-fullchain.pem", "w").write(fullchain)
+open(f"{work}/{out}-chain.pem", "w").write(trust)
+PY
+}
+
+# tunnel_leaf [name] — an agent leaf for itest-agent under the current tunnel intermediate,
+# minted in a one-off ca-issuer: E2E_WORK/<name>-fullchain.pem (leaf + intermediate) and
+# <name>.key, name "tunnel" by default.
+tunnel_leaf() {
+    local name=${1:-tunnel}
+    e2e_dc run --rm --no-deps -T ca-issuer python - <<'PY' >"$E2E_WORK/$name.json" 2>"$E2E_WORK/$name.err" \
+        && store_leaf "$name"
+import json
+from cryptography import x509
+from app import config, pki
+
+pki_dir = config.pki_dir()
+inter = pki.cert_from_pem((pki_dir / "tunnel.crt").read_bytes())
+inter_key = pki.key_from_pem((pki_dir / "tunnel.key").read_bytes())
+key = pki.generate_key()
+csr = (
+    x509.CertificateSigningRequestBuilder()
+    .subject_name(x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "itest-agent")]))
+    .sign(key, pki._HASH)
+)
+leaf = pki.sign_leaf(csr, inter, inter_key, pki.LeafSpec(lifetime_days=1, subject_cn="itest-agent", scope="tunnel"))
+print(json.dumps({"chain": pki.chain_pem(leaf, inter).decode(), "key": pki.key_to_pem(key).decode()}))
+PY
+}
+
+# provision_status <chain> <key> — "<status> <body>" of the agent's config download for
+# itest-agent with this client cert and no credentials: 401 means the server took the cert.
+provision_status() {
+    curl -k -s --cert "$1" --key "$2" -w ' %{http_code}' --max-time 10 \
+        "$E2E_SERVER_URL/api/frp/provision/itest-agent/config" 2>/dev/null | awk '{ code = $NF; $NF = ""; print code, $0 }'
+}
+
+# frpc_takes <ca> <chain> <key> — what a frpc sees of frps: "taken" when it verifies frps against
+# <ca> alone (no partial chain, so only a root in it anchors) and frps keeps the connection with
+# this client cert open; "unverified <reason>" when frps's chain does not lead to <ca>;
+# "refused <error>" when frps ends the connection.
+frpc_takes() {
+    python3 - "$FRPS_PORT" "$@" <<'PY'
+import socket, ssl, sys
+port, ca, chain, key = sys.argv[1:5]
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ctx.check_hostname = False
+ctx.load_verify_locations(ca)
+ctx.load_cert_chain(chain, key)
+try:
+    with socket.create_connection(("127.0.0.1", int(port)), timeout=5) as raw:
+        with ctx.wrap_socket(raw) as conn:
+            conn.settimeout(3)
+            try:
+                data = conn.recv(1)
+            except socket.timeout:
+                print("taken")
+            else:
+                print("refused", "closed" if not data else "data")
+except ssl.SSLCertVerificationError as e:
+    print("unverified", e.verify_message)
+except (ssl.SSLError, ConnectionError) as e:
+    print("refused", type(e).__name__, getattr(e, "reason", ""))
+except OSError as e:
+    print("bad", type(e).__name__)
+PY
+}
+frpc_ok() { LAST=$(frpc_takes "$@"); [ "$LAST" = taken ]; }
+
+# gateway_cns / frps_cns <chain> <key> — the subject CNs of what the gateway on :443 / frps
+# presents after its leaf, joined by ";".
+gateway_cns() {
+    openssl s_client -connect "localhost:$E2E_HTTPS_PORT" -servername localhost -showcerts \
+        -cert "$1" -key "$2" </dev/null 2>/dev/null | chain_cns | sed 1d | paste -sd';'
+}
+frps_cns() {
+    openssl s_client -connect "127.0.0.1:$FRPS_PORT" -showcerts -cert "$1" -key "$2" </dev/null 2>/dev/null \
+        | chain_cns | sed 1d | paste -sd';'
+}
+# cns_are <gateway_cns|frps_cns> <chain> <key> <expected>
+cns_are() { LAST=$("$1" "$2" "$3"); [ "$LAST" = "$4" ]; }
+
+# gnutls_probe <file in E2E_WORK…> — "<file>=<exit of gnutls-cli> " for each CA file: a TLS
+# connection to :8445 that GnuTLS verifies against that file alone, as apt < 3.0 does; "apk
+# failed" when gnutls-cli could not be installed. In a throwaway container of the gateway's
+# image, as the runners and the VMs have no gnutls-cli.
+gnutls_probe() {
+    local image
+    image=$(docker inspect --format '{{.Image}}' "$(e2e_dc ps -q gateway 2>/dev/null)" 2>/dev/null) || return 1
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    docker run --rm --network host --user 0 --entrypoint sh -e PORT="$E2E_REPO_PORT" -v "$E2E_WORK:/w:ro" "$image" -c '
+        apk add -q --no-cache gnutls-utils >/dev/null 2>&1 || { echo "apk failed"; exit 0; }
+        for ca in "$@"; do
+            rc=0
+            gnutls-cli --x509cafile "/w/$ca" -p "$PORT" localhost </dev/null >/dev/null 2>&1 || rc=$?
+            printf "%s=%s " "$ca" "$rc"
+        done' _ "$@" 2>/dev/null
+}
+
+# restart_issuer — restart the ca-issuer and wait until it is healthy; 1 after 90 s.
+restart_issuer() {
+    e2e_dc restart ca-issuer >/dev/null 2>&1
+    until_ok 90 eval '[ "$(health_of ca-issuer)" = healthy ]'
+}
+
+root_renewal() {
+    local today next_pw a_cn t_cn r_cn n_cn bind out rc code
+    today=$(date -u +%Y-%m-%d)
+    next_pw=$(e2e_rand)
+    a_cn="AdminHelper Access Intermediate $today"; t_cn="AdminHelper Tunnel Intermediate $today"
+    r_cn="AdminHelper Root CA"; n_cn="AdminHelper Root CA $today"
+    # A CA none of the stack's certificates leads to, for the counter-checks.
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 1 -subj "/CN=itest other CA" \
+        -keyout "$E2E_WORK/other-ca.key" -out "$E2E_WORK/other-ca.pem" 2>/dev/null \
+        || { bad "root renewal: could not create the unrelated CA"; return; }
+
+    # a. Before the stage the chain field anchors at R alone, and frps runs again (11b deleted
+    #    its config) for a client that trusts only R.
+    if ! renew_into "$E2E_WORK/client6-fullchain.pem" "$E2E_WORK/client6.key" "$E2E_WORK/client6.csr" pre; then
+        bad "root renewal: renewing before the stage failed: $(tail -1 "$E2E_WORK/pre-renew.err")"; return
+    fi
+    out=$(cns_of "$E2E_WORK/pre-chain.pem")
+    [ "$out" = "$a_cn;$r_cn" ] && ok "root renewal: before the stage the chain field is the intermediate and R" \
+        || bad "root renewal: chain field before the stage: '$out', expected '$a_cn;$r_cn'"
+    pem_at "$E2E_WORK/pre-chain.pem" last >"$E2E_WORK/root-old.pem"
+    [ -n "$FRPS_PORT" ] || { bad "root renewal: no frps port (11b did not get that far)"; return; }
+    bind=$(api GET /api/frp/supervisor-status | json_get publishedBindPort)
+    api POST /api/frp/server-config "{\"name\":\"itest-frps-root\",\"server_addr\":\"localhost\",\"bind_port\":${bind:-0}}" \
+        >/dev/null || { bad "root renewal: creating the FRP config failed"; return; }
+    until_ok 30 frpc_ok "$E2E_WORK/root-old.pem" "$E2E_WORK/pre-fullchain.pem" "$E2E_WORK/client6.key" \
+        && ok "root renewal: frps runs again and keeps the connection of a client that trusts only R" \
+        || { bad "root renewal: frps with a client that trusts only R: '$LAST'"; return; }
+
+    # b. stage, with the new root's passphrase as the one line on stdin, then the ca-issuer anew.
+    rc=0
+    out=$(printf '%s\n' "$next_pw" | e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli rotate-root stage 2>&1) \
+        || rc=$?
+    if [ "$rc" = 0 ] && grep -qF "new root: $n_cn (" <<<"$out"; then
+        ok "root renewal: stage exits 0 with the new root '$n_cn'"
+    else
+        bad "root renewal: stage (exit $rc): $(tail -3 <<<"$out")"; return
+    fi
+    restart_issuer || { bad "root renewal: ca-issuer not healthy within 90 s after the stage"; return; }
+
+    # c. A renewal now brings N before R in the chain field: a device keeps R as its last
+    #    certificate (the desktop's pin) and trusts N already.
+    if ! until_ok 30 renew_into "$E2E_WORK/pre-fullchain.pem" "$E2E_WORK/client6.key" "$E2E_WORK/client6.csr" staged; then
+        bad "root renewal: renewing after the stage failed: $(tail -1 "$E2E_WORK/staged-renew.err")"; return
+    fi
+    out=$(cns_of "$E2E_WORK/staged-chain.pem")
+    [ "$out" = "$a_cn;$n_cn;$r_cn" ] && ok "root renewal: after the stage the chain field holds N before R" \
+        || bad "root renewal: chain field after the stage: '$out', expected '$a_cn;$n_cn;$r_cn'"
+    pem_at "$E2E_WORK/staged-chain.pem" 2 >"$E2E_WORK/root-new.pem"
+    if [ "$(cns_of "$E2E_WORK/root-new.pem")" != "$n_cn" ] \
+        || ! openssl verify -CAfile "$E2E_WORK/root-new.pem" "$E2E_WORK/root-new.pem" >/dev/null 2>&1; then
+        bad "root renewal: the second certificate of the chain field is not the self-signed '$n_cn'"; return
+    fi
+
+    # d. Before the switch: GnuTLS on :8445 verifies against R, not yet against N, and the
+    #    server and frps take a recorded agent leaf of today's tunnel intermediate under R.
+    out=$(gnutls_probe root-new.pem root-old.pem)
+    [ "$out" = "root-new.pem=1 root-old.pem=0 " ] \
+        && ok "root renewal: before the switch GnuTLS reaches :8445 with R and not with N alone" \
+        || bad "root renewal: GnuTLS on :8445 before the switch: '$out', expected 'root-new.pem=1 root-old.pem=0 '"
+    tunnel_leaf || { bad "root renewal: could not mint the tunnel leaf: $(tail -3 "$E2E_WORK/tunnel.err")"; return; }
+    record_leaf "$E2E_WORK/tunnel-fullchain.pem" itest-agent tunnel agent \
+        || { bad "root renewal: could not record the tunnel leaf: $(tail -3 "$E2E_WORK/record.err")"; return; }
+    out=$(provision_status "$E2E_WORK/tunnel-fullchain.pem" "$E2E_WORK/tunnel.key")
+    [ "${out%% *}" = 401 ] && ok "root renewal: before the switch the server takes the agent leaf (401 without credentials)" \
+        || bad "root renewal: the agent leaf before the switch: '$out', expected 401"
+    out=$(frpc_takes "$E2E_WORK/root-old.pem" "$E2E_WORK/tunnel-fullchain.pem" "$E2E_WORK/tunnel.key")
+    [ "$out" = taken ] && ok "root renewal: before the switch frps keeps the connection of the agent leaf" \
+        || bad "root renewal: frps with the agent leaf before the switch: '$out', expected taken"
+
+    # e. switch --compromised tunnel: R's passphrase from the secret file, N's from stdin; then
+    #    the ca-issuer and after it the gateway anew.
+    rc=0
+    out=$(printf '%s\n' "$next_pw" | e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli rotate-root switch \
+        --compromised tunnel 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && grep -qF "cross certificate: $n_cn (" <<<"$out"; then
+        ok "root renewal: switch --compromised tunnel exits 0 with a cross certificate '$n_cn'"
+    else
+        bad "root renewal: switch (exit $rc): $(tail -3 <<<"$out")"; return
+    fi
+    restart_issuer || { bad "root renewal: ca-issuer not healthy within 90 s after the switch"; return; }
+    e2e_dc restart gateway >/dev/null 2>&1
+    until_ok 60 cns_are gateway_cns "$E2E_WORK/client3-fullchain.pem" "$E2E_WORK/client3.key" "$a_cn;$n_cn;$r_cn" \
+        && ok "root renewal: after the switch the gateway presents its leaf, the intermediate, X and R" \
+        || { bad "root renewal: the gateway's chain after the switch: '$LAST', expected '$a_cn;$n_cn;$r_cn'"; return; }
+
+    # f. A renewal now gives a leaf under N and a chain field that ends with N; after a switch
+    # with --compromised R is no longer in it, so the device trusts only N from here on.
+    if ! renew_into "$E2E_WORK/staged-fullchain.pem" "$E2E_WORK/client6.key" "$E2E_WORK/client6.csr" switched; then
+        bad "root renewal: renewing after the switch failed: $(tail -1 "$E2E_WORK/switched-renew.err")"; return
+    fi
+    out=$(cns_of "$E2E_WORK/switched-chain.pem")
+    [ "$out" = "$a_cn;$n_cn" ] && [ "$(pem_at "$E2E_WORK/switched-chain.pem" last)" = "$(cat "$E2E_WORK/root-new.pem")" ] \
+        && ok "root renewal: after the switch with --compromised the chain field is the intermediate and N" \
+        || bad "root renewal: chain field after the switch: '$out', expected '$a_cn;$n_cn' ending with N"
+    pem_at "$E2E_WORK/switched-fullchain.pem" 1 >"$E2E_WORK/switched-leaf.pem"
+    if openssl verify -CAfile "$E2E_WORK/root-new.pem" -untrusted "$E2E_WORK/switched-fullchain.pem" \
+            "$E2E_WORK/switched-leaf.pem" >/dev/null 2>&1 \
+        && ! openssl verify -CAfile "$E2E_WORK/root-old.pem" -untrusted "$E2E_WORK/switched-fullchain.pem" \
+            "$E2E_WORK/switched-leaf.pem" >/dev/null 2>&1; then
+        ok "root renewal: the leaf renewed after the switch is under N, not under R"
+    else
+        bad "root renewal: the leaf renewed after the switch does not lead to N alone"
+    fi
+
+    # g. A client that trusts only R reaches :443 over X; one that trusts an unrelated CA does not.
+    rc=0
+    code=$(curl -s --cacert "$E2E_WORK/root-old.pem" "${CERT3[@]}" -o /dev/null -w '%{http_code}' --max-time 10 \
+        "$E2E_SERVER_URL/api/servers" 2>/dev/null) || rc=$?
+    [ "$rc" = 0 ] && [ "$code" = 401 ] && ok "root renewal: a client that trusts only R verifies :443 (401 without JWT)" \
+        || bad "root renewal: a client that trusts only R on :443: curl exit $rc, HTTP '$code'"
+    rc=0
+    curl -s --cacert "$E2E_WORK/other-ca.pem" "${CERT3[@]}" -o /dev/null --max-time 10 \
+        "$E2E_SERVER_URL/api/servers" 2>/dev/null || rc=$?
+    [ "$rc" = 60 ] && ok "root renewal: ... one that trusts an unrelated CA does not (curl exit 60)" \
+        || bad "root renewal: a client that trusts an unrelated CA on :443: curl exit $rc, expected 60"
+
+    # h. GnuTLS reaches :8445 with N alone and with R alone, not with an unrelated CA.
+    out=$(gnutls_probe root-new.pem root-old.pem other-ca.pem)
+    [ "$out" = "root-new.pem=0 root-old.pem=0 other-ca.pem=1 " ] \
+        && ok "root renewal: after the switch GnuTLS reaches :8445 with N alone and with R alone" \
+        || bad "root renewal: GnuTLS on :8445 after the switch: '$out', expected" \
+            "'root-new.pem=0 root-old.pem=0 other-ca.pem=1 '"
+
+    # i. frps restarts by itself on the new chain; a visitor (frpc with an access leaf) and an
+    #    agent with a leaf under the new tunnel intermediate (as after its renewal), both
+    #    trusting only R, keep their connection; the old tunnel leaf is refused.
+    until_ok 120 cns_are frps_cns "$E2E_WORK/switched-fullchain.pem" "$E2E_WORK/client6.key" "$t_cn;$n_cn" \
+        && ok "root renewal: frps restarted by itself and presents the tunnel intermediate under N and X" \
+        || bad "root renewal: frps's chain 120 s after the switch: '$LAST', expected '$t_cn;$n_cn'"
+    out=$(frpc_takes "$E2E_WORK/root-old.pem" "$E2E_WORK/switched-fullchain.pem" "$E2E_WORK/client6.key")
+    [ "$out" = taken ] && ok "root renewal: a frpc that trusts only R keeps its connection to frps over X" \
+        || bad "root renewal: a frpc that trusts only R after the switch: '$out', expected taken"
+    out=$(frpc_takes "$E2E_WORK/other-ca.pem" "$E2E_WORK/switched-fullchain.pem" "$E2E_WORK/client6.key")
+    [ "${out%% *}" = unverified ] && ok "root renewal: ... one that trusts an unrelated CA does not verify frps" \
+        || bad "root renewal: a frpc that trusts an unrelated CA: '$out', expected unverified"
+    tunnel_leaf tunnel-n \
+        || { bad "root renewal: could not mint the tunnel leaf under N: $(tail -3 "$E2E_WORK/tunnel-n.err")"; return; }
+    record_leaf "$E2E_WORK/tunnel-n-fullchain.pem" itest-agent tunnel agent \
+        || { bad "root renewal: could not record the tunnel leaf under N: $(tail -3 "$E2E_WORK/record.err")"; return; }
+    out=$(frpc_takes "$E2E_WORK/root-old.pem" "$E2E_WORK/tunnel-n-fullchain.pem" "$E2E_WORK/tunnel-n.key")
+    [ "$out" = taken ] && ok "root renewal: an agent with a leaf under N that trusts only R keeps its connection to frps" \
+        || bad "root renewal: frps with an agent leaf under N: '$out', expected taken"
+    out=$(frpc_takes "$E2E_WORK/root-old.pem" "$E2E_WORK/tunnel-fullchain.pem" "$E2E_WORK/tunnel.key")
+    [ "${out%% *}" = refused ] && ok "root renewal: frps refuses the agent leaf of the compromised scope ($out)" \
+        || bad "root renewal: frps with the agent leaf of the compromised scope: '$out', expected refused"
+
+    # j. The server takes the access leaf from before the renewal and the agent leaf under N,
+    #    and refuses the agent leaf under R.
+    out=$(gateway_status "$E2E_WORK/client3-fullchain.pem" "$E2E_WORK/client3.key")
+    [ "${out%% *}" = 200 ] && ok "root renewal: the server takes an access leaf from before the renewal (200)" \
+        || bad "root renewal: an access leaf from before the renewal: '$out', expected 200"
+    out=$(provision_status "$E2E_WORK/tunnel-fullchain.pem" "$E2E_WORK/tunnel.key")
+    [ "${out%% *}" = 403 ] && grep -q ERR_CERT_REVOKED <<<"$out" \
+        && ok "root renewal: the server refuses the agent leaf of the compromised scope (403 ERR_CERT_REVOKED)" \
+        || bad "root renewal: the agent leaf of the compromised scope: '$out', expected 403 ERR_CERT_REVOKED"
+    out=$(provision_status "$E2E_WORK/tunnel-n-fullchain.pem" "$E2E_WORK/tunnel-n.key")
+    [ "${out%% *}" = 401 ] && ok "root renewal: ... and takes the agent leaf under N (401 without credentials)" \
+        || bad "root renewal: the agent leaf under N: '$out', expected 401"
+
+    # k. finish refuses while the register knows devices that may need R; --force goes ahead.
+    rc=0
+    out=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli rotate-root finish </dev/null 2>&1) || rc=$?
+    if [ "$rc" = 1 ] && grep -qE \
+        'cannot finish: (the register does not know every device|[0123456789]+ active device\(s\) still hold)' <<<"$out"; then
+        ok "root renewal: finish without --force refuses ($(grep -o 'cannot finish: [^(]*' <<<"$out"))"
+    else
+        bad "root renewal: finish without --force (exit $rc): $(tail -3 <<<"$out")"
+    fi
+    rc=0
+    out=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli rotate-root finish --force </dev/null 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && grep -qF "the root renewal is finished" <<<"$out"; then
+        ok "root renewal: finish --force exits 0"
+    else
+        bad "root renewal: finish --force (exit $rc): $(tail -3 <<<"$out")"; return
+    fi
+    restart_issuer || { bad "root renewal: ca-issuer not healthy within 90 s after finish"; return; }
+    e2e_dc restart gateway >/dev/null 2>&1
+    until_ok 60 cns_are gateway_cns "$E2E_WORK/switched-fullchain.pem" "$E2E_WORK/client6.key" "$a_cn;$n_cn" \
+        && ok "root renewal: after finish the gateway presents its leaf, the intermediate and N" \
+        || { bad "root renewal: the gateway's chain after finish: '$LAST', expected '$a_cn;$n_cn'"; return; }
+
+    # l. The gateway refuses a leaf under R (400) and takes the one renewed under N (401).
+    code=$(reach --cert "$E2E_WORK/client3-fullchain.pem" --key "$E2E_WORK/client3.key")
+    [ "$code" = 400 ] && ok "root renewal: after finish the gateway refuses a leaf under R (400)" \
+        || bad "root renewal: a leaf under R after finish: HTTP '$code', expected 400"
+    code=$(reach --cert "$E2E_WORK/switched-fullchain.pem" --key "$E2E_WORK/client6.key")
+    [ "$code" = 401 ] && ok "root renewal: ... and takes the leaf renewed under N (401 without JWT)" \
+        || bad "root renewal: the leaf renewed under N after finish: HTTP '$code', expected 401"
+}
+root_renewal
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
