@@ -138,6 +138,7 @@ export const translations: Translations = {
     'ui.search': 'Suchen',
     'ui.clear': 'Leeren',
     'ui.select': 'Auswählen …',
+    'ui.copied': 'Kopiert',
     'action.copy': 'Kopieren',
     'action.run': 'Ausführen',
 
@@ -944,6 +945,7 @@ export const translations: Translations = {
     'ui.search': 'Search',
     'ui.clear': 'Clear',
     'ui.select': 'Choose …',
+    'ui.copied': 'Copied',
     'action.copy': 'Copy',
     'action.run': 'Run',
 
