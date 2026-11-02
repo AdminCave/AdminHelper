@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-verbindungen-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-1 · Review: pro Task
 Spec: docs/features/kern-verbindungen-1.md (Roadmap R-1065, R-1067)
 Heavy: linux-full — Umbau der Verbindungsseite und neuer Tauri-Befehl; die Desktop-Journeys (ssh/rdp/web/tunnel-connect, connection-editor, two-installations) laufen im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -87,6 +87,20 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
+
+### T10 — Abschlussprüfung: Pfeiltasten bei doppelten Zeilen, Anker für „Neu“, eigene Waisen  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/connections/ConnectionTable.svelte, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/lib/models/connection.ts, apps/desktop/ui/src/styles/app.css
+Änderung: ↑/↓ gehen von der fokussierten Zeile aus (`document.activeElement`), nur ohne Zeilenfokus von `selectedId`; so erreicht die Tastatur bei Gruppierung nach Ordner auch die Zeilen nach einer doppelt gelisteten Verbindung (Test in `Connections.test.ts`). Der Knopf „Neue Verbindung“ bekommt `data-action="connection-new"` als E2E-Anker. Eigene Waisen seit T5 raus: Store-Exporte `kindFilter`, `groupFilter`, `viewMode`, `filteredConnections`, `groupedConnections` samt Typen, `groupConnectionsByHost`/`groupedTagKeys`/`ConnectionGroup` in `models/connection.ts`, die CSS-Regeln der alten Seite ohne Nutzer (`.toolbar-left/-right`, `.tree*`, `.card-main/-title/-meta/-tag/-tags`, `.tunnel-badge`, nach grep).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Connections.test.ts src/lib/stores/connections.test.ts src/components/connections
+Doku: keine (Fehlerbehebung und Aufräumen ohne dokumentierte Änderung)
+Test-Löschung: apps/desktop/ui/src/lib/stores/connections.test.ts::filteredConnections (derived) — der Store-Export ist seit T5 ohne Nutzer und fällt weg, die Filterlogik testet `connectionList.test.ts`; apps/desktop/ui/src/lib/stores/connections.test.ts::groupedConnections (derived) — ebenso, die Gruppierung testet `connectionList.test.ts`
+
+### T11 — Abschlussprüfung: connection-editor-Spec auf den neuen Knopf, Spec-Begründung der Probe  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/connection-editor.live.js, docs/features/kern-verbindungen-1.md
+Änderung: Der Spec öffnet den Editor über `[data-action="connection-new"]` statt `.toolbar-right .btn.primary`. In der Spec (Trade-offs) die falsche Begründung „ein Webview kann ohnehin fetch absetzen“ ersetzen: die CSP erlaubt `connect-src` nur `'self'`/IPC, `probe_targets` gibt einem kompromittierten Webview also erstmals TCP-Connects mit lesbarer Latenz; Voraussetzung bleibt XSS (Security-Nit der Abschlussprüfung).
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Testcode und Spec)
+Abhängt von: T10
 
 ## Entscheidungen
 - 2026-11-02: Favoriten lokal in den Settings je Workspace, Erreichbarkeit per TCP-Probe vom Gerät (Spec, Trade-offs); beide Zeilen überlassen die Wahl dem Plan.
