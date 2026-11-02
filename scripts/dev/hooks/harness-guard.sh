@@ -135,16 +135,21 @@ def main_switch(args, here):
     if i >= len(args) or args[i] not in ("switch", "checkout"):
         return ""
     sub, rest = args[i], args[i + 1:]
-    if sub == "checkout" and "--" in rest:
-        return ""
     new = "cCd" if sub == "switch" else "bB"
+    creates = lambda a: a in ("--create", "--force-create", "--orphan", "--detach") \
+        or a.startswith(("--create=", "--force-create=", "--orphan=")) or bool(re.match(r"-[A-Za-z]+$", a) and set(a[1:]) & set(new))
+    if sub == "checkout" and "--" in rest:
+        k = rest.index("--")
+        # A restore names paths after --; without one, git checkout <branch> -- still switches.
+        if rest[k + 1:] and not any(creates(a) for a in rest[:k]):
+            return ""
+        rest = rest[:k]
     target = None
     for a in rest:
-        if a in ("--create", "--force-create", "--orphan", "--detach") or a.startswith(("--create=", "--force-create=", "--orphan=")) \
-                or (re.match(r"-[A-Za-z]+$", a) and set(a[1:]) & set(new)):
+        if creates(a):
             target = "a new or detached HEAD"
             break
-        if not a.startswith("-"):
+        if a == "-" or not a.startswith("-"):  # - is the previous branch, like @{-1}
             target = a
             break
     if target in (None, "main") or here is None:

@@ -114,6 +114,12 @@ expect deny Bash 'git switch -qc feature/x'
 expect deny Bash 'git switch --detach HEAD'
 expect deny Bash 'git -C . switch wt'
 expect deny Bash "bash -c 'git switch -c q'"
+expect deny Bash 'git switch -'
+expect deny Bash 'git checkout -'
+expect deny Bash 'git checkout @{-1}'
+expect deny Bash 'git checkout wt --'
+expect deny Bash 'git checkout -b x origin/main --'
+expect deny Bash 'git checkout -b x -- a.txt'
 expect pass Bash 'git switch main'
 expect pass Bash 'git switch -q main'
 expect pass Bash 'git checkout -- a.txt'
@@ -129,7 +135,11 @@ expect pass Bash 'git switch -c x'
 expect deny Bash "git -C $T/main switch -c x"
 expect deny Bash "cd $T/main && git switch -c x"
 expect deny Bash 'cd ../main && git checkout -b x'
-unset GUARD_CWD GUARD_PROJECT
+unset GUARD_PROJECT
+export GUARD_CWD="$T/main"  # no CLAUDE_PROJECT_DIR: the hook cwd names the project
+expect deny Bash 'git switch -c x'
+expect pass Bash 'git -C ../wt switch -c x'
+unset GUARD_CWD
 
 echo "── other tools and input"
 expect pass Edit 'git commit --no-verify && rm -rf /tmp/*'
