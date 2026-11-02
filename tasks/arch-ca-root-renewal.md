@@ -108,8 +108,10 @@ bei 30/7, auch `root:retired` und `root:cross`. Der Alarm (`notify_expiring`) fo
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_expiry.py tests/test_certificate_expiry_watch.py
 Doku: → T10
 
-### T6 — Web: Erklärtext der Ampel  [ ]
+### T6 — Web: Erklärtext der Ampel  [x]
 Komponente: web · Dateien: apps/web/src/lib/i18n/dictionaries.ts, apps/web/src/pages/Certificates.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @12e12554 2026-11-02T13:30:20+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T6.verdict.json)
 Abhängt von: T5
 Änderung: Der Text zur Ampel (`dictionaries.ts:131` DE, `:451` EN) nennt die Schwellen der Root. Der Test prüft den
 Text auf der Seite.
