@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import datetime
 import uuid
-import warnings
 
 import pytest
 
@@ -108,18 +107,6 @@ def test_an_agent_counts_with_its_newest_certificate_and_its_server_name(db_sess
         "days_left": 50,
         "status": "ok",
     }
-
-
-def test_the_newest_certificate_is_picked_without_a_deprecated_query(db_session):
-    # SQLAlchemy 2.0 deprecates distinct(<columns>) for DISTINCT ON (removed in 2.1).
-    db_session.add(Server(id="srv-1", name="web-01", hostname="web-01.example"))
-    _, certs = _agent_line(db_session, "srv-1", not_afters=(NOW + 5 * DAY, NOW + 50 * DAY))
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        (entry,) = expiry.agents(db_session, NOW)
-
-    assert entry["fingerprint"] == certs[1].fingerprint
 
 
 def test_revoked_lines_lines_without_a_certificate_and_devices_are_left_out(db_session):

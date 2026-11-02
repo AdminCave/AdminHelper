@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow_naive
@@ -66,7 +65,7 @@ def agents(db: Session, now: datetime.datetime) -> list[dict]:
     without a name: its certificate is still valid at the gateway."""
     newest = (
         db.query(IssuedCertificate)
-        .ext(distinct_on(IssuedCertificate.line_id))
+        .distinct(IssuedCertificate.line_id)
         .order_by(
             IssuedCertificate.line_id,
             IssuedCertificate.not_after.desc(),
