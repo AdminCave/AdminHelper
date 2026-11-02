@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-design-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-design-2 · Review: pro Task
 Spec: docs/features/kern-design-2.md (Roadmap R-1062, R-1063)
 Heavy: linux-full — Shell, Einstellungen und Dashboard ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -87,6 +87,13 @@ Review: approve (.ah-out/review/kern-design-2/T9.verdict.json)
 Änderung: Scheitert `loadMonitoring`, setzt der Store `checks: []`, `hasLoaded: true` und `error`; die Statusleiste zeigte dann „Keine Probleme“. Mit `monitoringError` entfällt das Feld. Test: Fehler nach einer Ladung blendet es aus, die nächste erfolgreiche zeigt es wieder.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/StatusFooter.test.ts
 Doku: keine (die Doku nennt die Probleme als Zahl der letzten Ladung)
+
+### T10 — Doku: Ortsangaben der Einstellungen in troubleshooting und README (R-1062)  [ ]
+Komponente: desktop-ui · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, README.md
+Änderung: Die Abschlussprüfung fand in troubleshooting DE/EN noch „Dieser Workspace“ für „Selbstsignierte Zertifikate erlauben“ (jetzt Allgemein), „Gepinntes Zertifikat zurücksetzen“ und „Geräte-Identität zurücksetzen“ (jetzt Gerät); der README-Abschnitt „Settings“ beschreibt noch die zwei alten Gruppen statt der fünf Bereiche.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.shell.test.ts
+Doku: diese Task
+Task-Review: am Ende
 
 ## Entscheidungen
 - Mockup-Elemente ohne Datenquelle (Sitzungen, Nicht stören, Aktive Sitzungen, Terminal-Sektion, Wiederherstellen, Zwischenablage) baut dieser Zug nicht; sie kommen mit R-1069/R-1070ff und R-1078 (Spec, offene Frage 1, Empfehlung an Kevin am Gate).
