@@ -22,6 +22,9 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Node >= 25 ships its own localStorage, which without --localstorage-file
+    // shadows the one jsdom installs and throws on clear() (Node 26 in CI).
+    execArgv: ['--no-experimental-webstorage'],
     include: ['src/**/*.test.ts'],
     setupFiles: ['./vitest.setup.ts'],
   },

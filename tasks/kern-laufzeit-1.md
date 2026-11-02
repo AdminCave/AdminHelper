@@ -45,8 +45,10 @@ Review: approve (.ah-out/review/kern-laufzeit-1/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: changelog.d/kern-laufzeit-1.md
 
-### T5 — Web-vitest unter Node 26: Node-eigenes localStorage abschalten (R-1031)  [ ]
+### T5 — Web-vitest unter Node 26: Node-eigenes localStorage abschalten (R-1031)  [x]
 Komponente: web · Dateien: apps/web/vitest.config.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @ba482517 2026-11-02T16:17:14+01:00
+Review: approve (.ah-out/review/kern-laufzeit-1/T5.verdict.json)
 Änderung: Seit Node v25.0.0 ist Web Storage eingebaut und standardmäßig an (nodejs.org/api/cli.html, `--no-experimental-webstorage`); ohne `--localstorage-file` verdeckt es das `localStorage` von jsdom, `localStorage.clear()` wirft (PR #370, Job Web-Frontend: 11 Tests rot in `App.idle.test.ts`, `theme-init.test.ts`). `test.execArgv: ['--no-experimental-webstorage']` (vitest.dev/config/execargv) für die Worker. Gegenprobe in `node:26-alpine`: ohne Flag 11 failed, mit Flag 13 passed.
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (Testkonfiguration)
