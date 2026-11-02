@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-4 — Task-Ledger
-Status: geplant · Branch: feature/kern-desktop-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-desktop-4 · Review: pro Task
 Spec: docs/features/kern-desktop-4.md (Roadmap R-1012, R-1013, R-1041)
 Heavy: linux-full — Desktop-Journeys (Login, Tunnel-Abgleich, Keyring, mTLS) nach Crate-Majors; Windows über die CI-Jobs rust-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
