@@ -6,3 +6,5 @@
   gehashten Locks sind unter 3.14 neu erzeugt (dieselben Versionen), die CI testet 3.14 und 3.15.
 - **Node.js 26 LTS:** Web-Frontend und Desktop-UI bauen im Image und in der CI mit Node.js 26 statt 22;
   `@types/node` steht auf 26.
+- **VictoriaMetrics v1.155.0:** die Metrik-Datenbank laeuft auf v1.155.0 statt v1.144.0; Flags und gespeicherte
+  Daten bleiben unveraendert.

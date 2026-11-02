@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-laufzeit-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-laufzeit-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-laufzeit-1 · Review: pro Task
 Spec: docs/features/kern-laufzeit-1.md (Roadmap R-1029, R-1030, R-1031, R-1033)
 Heavy: linux-full — Basis-Images von Gateway, Server, Monitoring, CA-Issuer und das VictoriaMetrics-Image in `docker-compose.yml`; der Sammellauf baut und startet den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,8 +37,10 @@ Verify: bash scripts/dev/verify.sh web desktop-ui --strict
 Doku: DEVELOPMENT.md, changelog.d/kern-laufzeit-1.md
 Abhängt von: T2
 
-### T4 — VictoriaMetrics v1.155.0 (R-1033)  [ ]
+### T4 — VictoriaMetrics v1.155.0 (R-1033)  [x]
 Komponente: monitoring · Dateien: docker-compose.yml, changelog.d/kern-laufzeit-1.md
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped @b82e0373 2026-11-02T15:21:13+01:00
+Review: approve (.ah-out/review/kern-laufzeit-1/T4.verdict.json)
 Änderung: `victoriametrics/victoria-metrics:v1.155.0@sha256:<Digest>` (`docker-compose.yml:573`). Vorher die Update-Notes im VictoriaMetrics-CHANGELOG von v1.145 bis v1.155 auf Flags und Datenformat prüfen, die unser Compose-Kommando nutzt; Befund unter `## Entscheidungen`.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: changelog.d/kern-laufzeit-1.md
@@ -49,3 +51,4 @@ Doku: changelog.d/kern-laufzeit-1.md
 - 2026-11-02 T2: `ruff.toml` `target-version` geht auf `py313`, nicht `py314`. Unter `py314` formatiert ruff 23 Dateien auf `except A, B:` ohne Klammern um (PEP 758), und das läuft unter dem 3.13 der Dev-Box (Debian 13) für die Skripte unter `scripts/` nicht. `py313` ist ohne Umbau grün (check und format).
 - 2026-11-02 T2: Die Locks sind unter python:3.14-slim aus dem bestehenden Lock neu kompiliert. Die Pins und Hashes bleiben gleich, es ändern sich nur Kopf und via-Kommentare.
 - 2026-11-02 T2: Die volle Leg mit Image-Pull und „No test skipped“ ist 3.14 (die Python-Version der Images). `test_release_images.py` und `test_images_exec_only.py` (Interpreterpfad im Image) ziehen deshalb mit. Verify ist auf `scripts server` erweitert.
+- 2026-11-02 T4: Die Update-Notes von v1.145 bis v1.155 betreffen unser Compose-Kommando nicht. `-retentionPeriod` und `-storageDataPath` bleiben unverändert, ein neues Datenformat oder eine Migration gibt es nicht. Die übrigen Notes betreffen den Cluster (vmselect/vmstorage), vmauth, vmalert und `delete_series` (jetzt nur POST, wir nutzen nur `/write` und `/api/v1/query_range`). Der Pure-Go-Lesefehler aus v1.153 betrifft amd64/arm64 nicht und ist in v1.154 behoben, der Long-Range-OOM aus v1.154 in v1.155. Probe v1.155.0 mit unseren Flags: `wget /health` → `OK`, `/write` → 0, `query_range` → `success`; Gegenprobe auf einen unbekannten Pfad → 400.
