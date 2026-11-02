@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-5 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-5 · Review: am Ende
+Status: erledigt · Branch: feature/kern-ca-5 · Review: am Ende
 Spec: docs/features/kern-ca-5.md (Roadmap R-1026)
 Heavy: linux-full — Server-Identität hinter dem Gateway (mTLS); der Stack-Test öffnet den Stream mit Zertifikat
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
