@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-server-3 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ref-server-3 · Review: am Ende
+Status: bereit · Branch: feature/klein-ref-server-3 · Review: am Ende
 Spec: docs/features/klein-ref-server-3.md (Roadmap R-1011, R-1025)
 Heavy: none — Warn-Schlüssel, Doku und ein SQLAlchemy-Aufruf mit gleicher Menge; keine API, kein Gateway
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -20,8 +20,10 @@ Dedup-Key: ref:server:config_generator.py:warn-reason-collision
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py
 Doku: docs/developer/server.html, docs/en/developer/server.html (die Änderung selbst)
 
-### T2 — R-1025: DISTINCT ON über postgresql.distinct_on  [ ]
+### T2 — R-1025: DISTINCT ON über postgresql.distinct_on  [x]
 Komponente: server · Dateien: apps/server/app/modules/enrollment/expiry.py, apps/server/tests/test_certificate_expiry.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @20ab6fbd 2026-11-02T10:19:50+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer branch kern-ca-4 2026-10-31, apps/server/app/modules/enrollment/expiry.py:68
 Änderung: `.distinct(IssuedCertificate.line_id)` durch `postgresql.distinct_on` ersetzen, gleiche Sortierung. Test: `agents()` liefert je Linie den neuesten Eintrag (besteht ggf. schon) und der Aufruf löst keine `SADeprecationWarning` aus (`pytest.warns`-Gegenstück, `warnings.catch_warnings(error)`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_expiry.py
