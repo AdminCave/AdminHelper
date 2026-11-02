@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Connections store. Loads, caches and saves connections via the
-// Tauri bridge. Filter + search are derived stores - the UI reads them directly.
+// Tauri bridge.
 
 import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
@@ -16,16 +16,11 @@ import type {
   Settings,
 } from '$lib/bridge/types';
 import type { Connection as ServerConnection } from '$lib/api/types';
-import { groupConnectionsByHost, type ConnectionGroup } from '$lib/models/connection';
 import { connectionsApi } from '$lib/api/connections';
 import { probeTarget, type Reach } from '$lib/models/connectionList';
 import { sessionStore, setFavoriteConnections } from './session';
 import { showStatus } from './statusBar';
 import { tNow } from '$lib/i18n';
-
-export type KindFilter = 'all' | 'ssh' | 'rdp' | 'web';
-export type GroupFilter = 'single' | 'grouped';
-export type ViewMode = 'list' | 'tree';
 
 interface ConnectionsState {
   items: Connection[];
@@ -45,46 +40,6 @@ export const connections = derived(_state, ($s) => $s.items);
 export const loading = derived(_state, ($s) => $s.loading);
 
 export const searchTerm = writable<string>('');
-export const kindFilter = writable<KindFilter>('all');
-export const groupFilter = writable<GroupFilter>('single');
-export const viewMode = writable<ViewMode>('list');
-
-export const filteredConnections = derived(
-  [_state, searchTerm, kindFilter],
-  ([$s, $term, $kind]) => {
-    const q = $term.trim().toLowerCase();
-    return $s.items
-      .filter((c) => {
-        if ($kind !== 'all' && c.kind !== $kind) return false;
-        if (!q) return true;
-        const haystack = [
-          c.name,
-          c.host ?? '',
-          c.url ?? '',
-          c.username ?? '',
-          c.domain ?? '',
-          ...(c.tags ?? []),
-        ]
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(q);
-      })
-      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
-  },
-);
-
-// Group once per items change — the expensive part (URL parsing, sorting, haystack building) — then
-// let the search filter cheaply on the prebuilt haystack, instead of re-grouping on every keystroke
-// (5.13).
-const allGroups = derived(_state, ($s): ConnectionGroup[] => groupConnectionsByHost($s.items, ''));
-
-export const groupedConnections = derived(
-  [allGroups, searchTerm],
-  ([$groups, $term]): ConnectionGroup[] => {
-    const q = $term.trim().toLowerCase();
-    return q ? $groups.filter((g) => g.haystack.includes(q)) : $groups;
-  },
-);
 
 // Shared request generation: load() (cache read) and reloadForMode() (network fetch) both write
 // _state, and the pages mount a load while login() runs a reloadForMode in parallel. Without a

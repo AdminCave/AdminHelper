@@ -149,7 +149,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
     const rows = [...(wrap?.querySelectorAll<HTMLElement>('[data-testid="conn-row"]') ?? [])];
-    const i = rows.findIndex((r) => r.dataset.id === selectedId);
+    // A connection with two tags is listed twice under folder grouping: start from the focused
+    // row, not from the first row carrying the selected id, or ↓ would jump back to that copy.
+    const focused = rows.indexOf(document.activeElement as HTMLElement);
+    const i = focused >= 0 ? focused : rows.findIndex((r) => r.dataset.id === selectedId);
     const next =
       rows[e.key === 'ArrowDown' ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1)];
     const c = next && groups.flatMap((g) => g.connections).find((x) => x.id === next.dataset.id);

@@ -337,6 +337,48 @@ describe('Connections page', () => {
     ).not.toBeNull();
   });
 
+  it('walks past a connection listed twice under folder grouping', async () => {
+    const X = conn({
+      id: 'x',
+      name: 'xx',
+      kind: 'ssh',
+      host: 'x',
+      tags: ['g1', 'g2'],
+      lastUsed: ago(HOUR),
+    });
+    const Y = conn({
+      id: 'y',
+      name: 'yy',
+      kind: 'ssh',
+      host: 'y',
+      tags: ['g1'],
+      lastUsed: ago(2 * HOUR),
+    });
+    const Z = conn({
+      id: 'z',
+      name: 'zz',
+      kind: 'ssh',
+      host: 'z',
+      tags: ['g2'],
+      lastUsed: ago(3 * HOUR),
+    });
+    await renderPage([X, Y, Z]);
+    await selectGrouping('tag');
+    expect(names()).toEqual(['xx', 'yy', 'xx', 'zz']);
+    const list = screen.getByRole('listbox');
+    const visited: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      await fireEvent.keyDown(
+        document.activeElement === document.body ? list : document.activeElement!,
+        {
+          key: 'ArrowDown',
+        },
+      );
+      visited.push(document.activeElement?.querySelector('.conn-name')?.textContent ?? '');
+    }
+    expect(visited).toEqual(['xx', 'yy', 'xx', 'zz']);
+  });
+
   it('skips the rows of a folded group', async () => {
     await renderPage();
     const heads = screen.getAllByRole('button', { expanded: true });

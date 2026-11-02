@@ -36,9 +36,6 @@ vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k, setLanguage: vi.fn() }));
 import * as bridge from '$lib/bridge';
 import {
   searchTerm,
-  kindFilter,
-  filteredConnections,
-  groupedConnections,
   connections,
   saveAll,
   upsert,
@@ -80,7 +77,6 @@ async function seed(items: Connection[]): Promise<void> {
 describe('connections store', () => {
   beforeEach(async () => {
     searchTerm.set('');
-    kindFilter.set('all');
     await saveAll([]);
   });
 
@@ -149,105 +145,6 @@ describe('connections store', () => {
       // in-memory (server-mode) view via clearInMemory and must NOT overwrite
       // that file — otherwise the user's locally saved connections are lost.
       expect(bridge.saveConnections).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('filteredConnections (derived)', () => {
-    beforeEach(async () => {
-      await seed([
-        conn({
-          id: '1',
-          name: 'Web Server',
-          kind: 'web',
-          url: 'https://prod.example.com',
-        }),
-        conn({
-          id: '2',
-          name: 'Alpha',
-          kind: 'ssh',
-          host: 'alpha.internal',
-          username: 'root',
-        }),
-        conn({
-          id: '3',
-          name: 'Beta',
-          kind: 'rdp',
-          host: 'beta.internal',
-          domain: 'CORP',
-        }),
-        conn({
-          id: '4',
-          name: 'Gamma',
-          kind: 'ssh',
-          host: 'gamma.internal',
-          tags: ['db', 'prod'],
-        }),
-      ]);
-    });
-
-    it('sorts by name with empty search and "all" filter', () => {
-      expect(get(filteredConnections).map((c) => c.name)).toEqual([
-        'Alpha',
-        'Beta',
-        'Gamma',
-        'Web Server',
-      ]);
-    });
-
-    it('filters by kind', () => {
-      kindFilter.set('ssh');
-      expect(
-        get(filteredConnections)
-          .map((c) => c.id)
-          .sort(),
-      ).toEqual(['2', '4']);
-    });
-
-    it('matches search against host (case-insensitive)', () => {
-      searchTerm.set('ALPHA.INTERNAL');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['2']);
-    });
-
-    it('matches search against url, username, domain and tags', () => {
-      searchTerm.set('prod.example.com');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['1']);
-      searchTerm.set('root');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['2']);
-      searchTerm.set('corp');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['3']);
-      searchTerm.set('db');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['4']);
-    });
-
-    it('combines kind filter and search', () => {
-      kindFilter.set('ssh');
-      searchTerm.set('gamma');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['4']);
-    });
-
-    it('returns empty when nothing matches', () => {
-      searchTerm.set('nonexistent-xyz');
-      expect(get(filteredConnections)).toEqual([]);
-    });
-
-    it('ignores surrounding whitespace in the search term', () => {
-      searchTerm.set('   beta   ');
-      expect(get(filteredConnections).map((c) => c.id)).toEqual(['3']);
-    });
-  });
-
-  describe('groupedConnections (derived)', () => {
-    it('groups connections that share a host', async () => {
-      await seed([
-        conn({ id: 's', name: 'box-ssh', kind: 'ssh', host: 'box.internal' }),
-        conn({ id: 'r', name: 'box-rdp', kind: 'rdp', host: 'box.internal' }),
-        conn({ id: 'o', name: 'other', kind: 'ssh', host: 'other.internal' }),
-      ]);
-      const groups = get(groupedConnections);
-      const boxGroup = groups.find((g) => g.host === 'box.internal');
-      expect(boxGroup?.connections.map((c) => c.id).sort()).toEqual(['r', 's']);
-      expect(Object.keys(boxGroup?.byKind ?? {}).sort()).toEqual(['rdp', 'ssh']);
-      expect(groups).toHaveLength(2);
     });
   });
 

@@ -88,8 +88,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T10 — Abschlussprüfung: Pfeiltasten bei doppelten Zeilen, Anker für „Neu“, eigene Waisen  [ ]
+### T10 — Abschlussprüfung: Pfeiltasten bei doppelten Zeilen, Anker für „Neu“, eigene Waisen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/connections/ConnectionTable.svelte, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/lib/models/connection.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @bddd214d 2026-11-03T00:54:30+01:00
+Review: approve (.ah-out/review/kern-verbindungen-1/T10.verdict.json)
 Änderung: ↑/↓ gehen von der fokussierten Zeile aus (`document.activeElement`), nur ohne Zeilenfokus von `selectedId`; so erreicht die Tastatur bei Gruppierung nach Ordner auch die Zeilen nach einer doppelt gelisteten Verbindung (Test in `Connections.test.ts`). Der Knopf „Neue Verbindung“ bekommt `data-action="connection-new"` als E2E-Anker. Eigene Waisen seit T5 raus: Store-Exporte `kindFilter`, `groupFilter`, `viewMode`, `filteredConnections`, `groupedConnections` samt Typen, `groupConnectionsByHost`/`groupedTagKeys`/`ConnectionGroup` in `models/connection.ts`, die CSS-Regeln der alten Seite ohne Nutzer (`.toolbar-left/-right`, `.tree*`, `.card-main/-title/-meta/-tag/-tags`, `.tunnel-badge`, nach grep).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Connections.test.ts src/lib/stores/connections.test.ts src/components/connections
 Doku: keine (Fehlerbehebung und Aufräumen ohne dokumentierte Änderung)

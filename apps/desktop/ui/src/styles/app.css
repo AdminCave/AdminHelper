@@ -618,19 +618,6 @@ body {
   flex-wrap: wrap;
 }
 
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  flex-wrap: wrap;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-}
-
 /* ── Chips / Filter Buttons ────────────────────────────────────────── */
 .filters {
   display: flex;
@@ -774,15 +761,6 @@ body {
   scrollbar-gutter: stable;
 }
 
-.tree {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
 .card {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
@@ -821,54 +799,6 @@ body {
   border-color: rgba(77, 159, 255, 0.35);
 }
 
-.card-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.card-title {
-  font-weight: 600;
-  font-size: var(--text-base);
-}
-
-.card-meta {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  margin-top: 2px;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
-
-.card-tag {
-  display: inline-block;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  margin-top: 4px;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.card-actions {
-  display: flex;
-  gap: var(--sp-2);
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.card-actions .btn.accent {
-  min-width: 72px;
-  justify-content: center;
-}
-
-.card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
 .tag {
   font-size: 10px;
   padding: 2px 8px;
@@ -876,77 +806,6 @@ body {
   border: 1px solid var(--border);
   background: var(--hover);
   color: var(--text-muted);
-}
-
-/* ── Tree View ─────────────────────────────────────────────────────── */
-.tree-group {
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  overflow: hidden;
-}
-
-.tree-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.tree-header:hover {
-  background: var(--hover);
-}
-
-.tree-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  font-weight: 600;
-  font-size: var(--text-sm);
-}
-
-.tree-count {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.tree-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.tree-toggle::before {
-  content: '▸';
-  display: inline-block;
-  transition: transform 0.2s ease;
-}
-
-.tree-group.open .tree-toggle::before {
-  transform: rotate(90deg);
-}
-
-.tree-group .tree-list {
-  display: none;
-}
-.tree-group.open .tree-list {
-  display: flex;
-}
-
-.tree-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-4) var(--sp-3);
-}
-
-.tree-node {
-  position: relative;
 }
 
 /* ── Eyebrow ───────────────────────────────────────────────────────── */
@@ -1276,15 +1135,6 @@ body {
 
 .tunnel-label {
   color: var(--text-muted);
-}
-
-.tunnel-badge {
-  background: rgba(34, 197, 94, 0.12);
-  color: #86efac;
-  border: 1px solid rgba(34, 197, 94, 0.25);
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
 }
 
 /* ── Login Screen ──────────────────────────────────────────────────── */
@@ -2818,10 +2668,6 @@ body {
 @media (max-width: 720px) {
   .card {
     grid-template-columns: 1fr;
-  }
-  .card-actions {
-    flex-direction: row;
-    justify-content: flex-start;
   }
   .mon-summary-cards {
     grid-template-columns: repeat(2, 1fr);

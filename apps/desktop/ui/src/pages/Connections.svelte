@@ -293,8 +293,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <span class="counter" data-testid="conn-counter"
         >{$t('connections.count', { shown: shown.length, total: $connections.length })}</span
       >
-      <Button size="sm" iconLeft={Plus} onclick={() => openEditor(null)}
-        >{$t('connections.new')}</Button
+      <Button
+        size="sm"
+        iconLeft={Plus}
+        data-action="connection-new"
+        onclick={() => openEditor(null)}>{$t('connections.new')}</Button
       >
     </div>
 
