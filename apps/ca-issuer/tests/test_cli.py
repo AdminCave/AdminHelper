@@ -5,7 +5,9 @@
 """The operator CLI of the ca-issuer (R-0667): `status` shows root, current and retired
 intermediates with their end, its exit code says whether one needs attention;
 `rotate-intermediates` takes the root passphrase from the secret file, the terminal or
-stdin and changes nothing when it has none or a wrong one."""
+stdin and changes nothing when it has none or a wrong one. `rotate-root` (R-1021) runs the
+steps of a root renewal, refuses a step its phase does not allow before it asks for a
+passphrase, and `finish` waits for the certificate register; `status` shows the phase."""
 
 import datetime
 import getpass
@@ -20,10 +22,14 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
+from sqlalchemy import create_engine, insert, select
+from sqlalchemy.pool import StaticPool
 
-from app import cli, pki, rotation, storage
+from app import cli, db, inventory, pki, root_rollover, rotation, storage
+from tests import renewal
 
 PW = b"pw"
+NEXT_PW = renewal.NEXT_PW
 
 
 @pytest.fixture
@@ -32,6 +38,9 @@ def pki_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("CA_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", "")
     monkeypatch.setenv("CA_ROOT_PASSPHRASE", "")
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE_FILE", "")
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE", "")
+    monkeypatch.setenv("DATABASE_URL", "")
     d = tmp_path / "pki"
     storage.ensure_hierarchy(d, PW)
     return d
@@ -294,3 +303,673 @@ def test_rotate_with_a_wrong_passphrase_changes_nothing(pki_dir, tmp_path):
     assert "wrong passphrase" in done.stderr
     assert "Traceback" not in done.stdout + done.stderr
     assert _snapshot(pki_dir) == before
+
+
+# rotate-root and the status of a root renewal (R-1021).
+
+
+class _Terminal(io.StringIO):
+    def isatty(self):
+        return True
+
+
+def _terminal(monkeypatch, *entries: str) -> list[str]:
+    """A terminal whose getpass returns `entries` in turn; returns the prompts asked."""
+    prompts: list[str] = []
+    answers = iter(entries)
+    monkeypatch.setattr(sys, "stdin", _Terminal("not read\n"))
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: prompts.append(prompt) or next(answers))
+    return prompts
+
+
+def _no_prompt(monkeypatch) -> None:
+    def _asked(prompt):
+        raise AssertionError(f"asked for {prompt!r}")
+
+    monkeypatch.setattr(sys, "stdin", _Terminal(""))
+    monkeypatch.setattr(getpass, "getpass", _asked)
+
+
+def _secret_file(tmp_path: Path, name: str, value: bytes) -> Path:
+    path = tmp_path / name
+    path.write_bytes(value + b"\n")
+    return path
+
+
+def _phase(d: Path) -> str:
+    return root_rollover.load_state(d).phase
+
+
+def _decrypts(path: Path, passphrase: bytes) -> bool:
+    try:
+        pki.key_from_pem(path.read_bytes(), passphrase)
+    except ValueError:
+        return False
+    return True
+
+
+def _register(monkeypatch, installed_at=datetime.datetime(2020, 1, 1)):
+    """An sqlite register behind DATABASE_URL as the server's migration leaves it, from
+    `installed_at` (naive UTC) on; empty, and no ca-issuer start recorded yet."""
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    db.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(db.certificate_register_state), [{"id": 1, "installed_at": installed_at}]
+        )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://ca:s3cret-pw@db.invalid/ah")
+    monkeypatch.setattr(db, "make_engine", lambda url: engine)
+    monkeypatch.setattr(engine, "dispose", lambda: None)
+    return engine
+
+
+def _start(engine, d: Path) -> None:
+    """What a ca-issuer start writes: the snapshot of its certificates (main.record_inventory)."""
+    inventory.record(engine, inventory.collect(d, None, None))
+
+
+def _naive(at: datetime.datetime) -> datetime.datetime:
+    return at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+
+
+def _line(engine, subject: str, *, revoked: bool = False) -> str:
+    """A device line of an agent; `revoked` as a replaced line."""
+    line_id = os.urandom(16).hex()
+    created = datetime.datetime(2025, 1, 1)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(db.device_lines),
+            [
+                {
+                    "id": line_id,
+                    "subject_id": subject,
+                    "scope": "tunnel",
+                    "kind": "agent",
+                    "legacy": False,
+                    "created_at": created,
+                    "revoked_at": created if revoked else None,
+                    "revoked_reason": "replaced" if revoked else None,
+                }
+            ],
+        )
+    return line_id
+
+
+def _issue(engine, line_id: str, not_before: datetime.datetime, days: int = 30) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            insert(db.issued_certificates),
+            [
+                {
+                    "fingerprint": os.urandom(32).hex(),
+                    "line_id": line_id,
+                    "serial": os.urandom(8).hex(),
+                    "not_before": _naive(not_before),
+                    "not_after": _naive(not_before + datetime.timedelta(days=days)),
+                    "renewed_from": None,
+                    "created_at": _naive(not_before),
+                }
+            ],
+        )
+
+
+def _revoke_identity(engine, subject: str, at: datetime.datetime) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            insert(db.revoked_identities),
+            [{"id": subject, "subject_id": subject, "scope": "tunnel", "revoked_at": _naive(at)}],
+        )
+
+
+def _started_at(engine) -> datetime.datetime:
+    """The ca-issuer's first start under the current root, as the inventory keeps it."""
+    c = db.infra_certificates.c
+    with engine.connect() as conn:
+        at = conn.execute(select(c.recorded_at).where(c.name == "root")).scalar_one()
+    return at.replace(tzinfo=datetime.timezone.utc)
+
+
+def _switched(monkeypatch, d: Path, **register) -> tuple:
+    """Phase switched with a register, the ca-issuer started under the new root; returns
+    the engine and the time of that start."""
+    renewal.renewed(monkeypatch, d, "switched")
+    engine = _register(monkeypatch, **register)
+    _start(engine, d)
+    return engine, _started_at(engine)
+
+
+def _stopped(monkeypatch, d: Path, name: str, target: str) -> None:
+    """Let rotation.`name` raise when it reaches the file `target`, as a step that stops
+    part way."""
+    real = getattr(rotation, name)
+
+    def _stop(path, *args):
+        if path.name == target:
+            raise rotation.RotationError("stopped")
+        return real(path, *args)
+
+    monkeypatch.setattr(rotation, name, _stop)
+
+
+def test_rotate_root_stage_with_the_secret_file(monkeypatch, pki_dir, tmp_path, capsys):
+    next_secret = _secret_file(tmp_path, "next", NEXT_PW)
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE_FILE", str(next_secret))
+    _no_prompt(monkeypatch)
+
+    assert cli.main(["rotate-root", "stage"]) == 0
+
+    state = root_rollover.load_state(pki_dir)
+    assert state.phase == "staged"
+    assert _decrypts(pki_dir / root_rollover.NEXT_KEY, NEXT_PW)
+    out = capsys.readouterr().out
+    assert pki.read_identity(state.next_root)[0] in out
+    assert f"{root_rollover.ROTATE_ROOT} switch" in out
+    assert "./scripts/backup.sh" in out
+    # Only what enroll and renew hand out changed: gateway and frps keep theirs.
+    assert cli._RESTART_ISSUER in out and "restart gateway" not in out
+
+
+def test_rotate_root_stage_asks_twice_on_a_terminal(monkeypatch, pki_dir):
+    prompts = _terminal(monkeypatch, "next-pw", "next-pw")
+
+    assert cli.main(["rotate-root", "stage"]) == 0
+
+    assert prompts == ["New root CA passphrase: ", "Repeat it: "]
+    assert _decrypts(pki_dir / root_rollover.NEXT_KEY, NEXT_PW)
+
+
+def test_rotate_root_stage_with_two_different_entries_changes_nothing(monkeypatch, pki_dir, capsys):
+    before = _snapshot(pki_dir)
+    _terminal(monkeypatch, "next-pw", "next-pv")
+
+    assert cli.main(["rotate-root", "stage"]) == 1
+
+    assert "the two passphrases entered differ" in capsys.readouterr().err
+    assert _snapshot(pki_dir) == before
+
+
+def test_rotate_root_stage_reads_the_first_line_of_stdin(monkeypatch, pki_dir):
+    _stdin(monkeypatch, "next-pw\nnot read\n")
+
+    assert cli.main(["rotate-root", "stage"]) == 0
+
+    assert _decrypts(pki_dir / root_rollover.NEXT_KEY, NEXT_PW)
+
+
+def test_rotate_root_stage_without_a_passphrase_changes_nothing(monkeypatch, pki_dir, capsys):
+    # The root's passphrase is no stand-in for the new root's.
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE", "pw")
+    before = _snapshot(pki_dir)
+    _stdin(monkeypatch, "")
+
+    assert cli.main(["rotate-root", "stage"]) == 1
+
+    err = capsys.readouterr().err
+    assert "no passphrase of the new root" in err and "CA_NEXT_ROOT_PASSPHRASE_FILE" in err
+    assert _snapshot(pki_dir) == before
+
+
+@pytest.mark.parametrize(
+    ("phase", "step"),
+    [
+        ("none", "switch"),
+        ("none", "finish"),
+        ("staged", "stage"),
+        ("staged", "finish"),
+        ("switched", "stage"),
+        ("switched", "switch"),
+    ],
+)
+def test_rotate_root_refuses_a_step_of_another_phase_before_asking(
+    monkeypatch, pki_dir, capsys, phase, step
+):
+    renewal.renewed(monkeypatch, pki_dir, phase)
+    before = _snapshot(pki_dir)
+    _no_prompt(monkeypatch)
+
+    assert cli.main(["rotate-root", step]) == 1
+
+    assert f"Error: {rotation.refusal(phase, step)}" in capsys.readouterr().err
+    assert _snapshot(pki_dir) == before
+
+
+def test_rotate_root_abort_removes_the_staged_root(pki_dir, capsys):
+    before = _snapshot(pki_dir)
+    rotation.stage_root(pki_dir, NEXT_PW)
+
+    assert cli.main(["rotate-root", "abort"]) == 0
+
+    assert _snapshot(pki_dir) == before
+    assert cli._RESTART_ISSUER in capsys.readouterr().out
+
+
+def test_rotate_root_abort_without_a_staged_root(pki_dir, capsys):
+    assert cli.main(["rotate-root", "abort"]) == 1
+    assert "cannot abort: no new root is staged" in capsys.readouterr().err
+
+
+def test_rotate_root_switch_reads_the_root_then_the_new_root_from_stdin(
+    monkeypatch, pki_dir, capsys
+):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    old_root = _root_of(pki_dir)
+    _stdin(monkeypatch, "pw\nnext-pw\n")
+
+    assert cli.main(["rotate-root", "switch"]) == 0
+
+    state = root_rollover.load_state(pki_dir)
+    assert state.phase == "switched" and state.cross is not None
+    assert state.retired_root == old_root
+    assert _decrypts(pki_dir / "root.key.enc", NEXT_PW)
+    out = capsys.readouterr().out
+    assert f"cross certificate: {pki.read_identity(state.cross)[0]}" in out
+    assert out.count("  new: ") == len(pki.SCOPES)
+    assert "compromised" not in out
+    assert "rotate-intermediates needs its" in out
+    assert "restart the ca-issuer right away" in out
+    assert f"renewed since the restart: {root_rollover.ROTATE_ROOT} finish" in out
+    assert "./scripts/backup.sh" in out and cli._RESTART in out
+
+
+def test_rotate_root_switch_with_the_passphrases_swapped_changes_nothing(
+    monkeypatch, pki_dir, capsys
+):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    before = _snapshot(pki_dir)
+    _stdin(monkeypatch, "next-pw\npw\n")
+
+    assert cli.main(["rotate-root", "switch"]) == 1
+
+    assert "wrong passphrase" in capsys.readouterr().err
+    assert _snapshot(pki_dir) == before
+
+
+def test_rotate_root_switch_asks_on_a_terminal_once_each(monkeypatch, pki_dir):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    prompts = _terminal(monkeypatch, "pw", "next-pw")
+
+    assert cli.main(["rotate-root", "switch"]) == 0
+
+    assert prompts == ["Root CA passphrase: ", "New root CA passphrase: "]
+
+
+def test_rotate_root_switch_with_the_secret_files(monkeypatch, pki_dir, tmp_path):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(_secret_file(tmp_path, "root", PW)))
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE", "next-pw")
+    _no_prompt(monkeypatch)
+
+    assert cli.main(["rotate-root", "switch"]) == 0
+
+    assert _phase(pki_dir) == "switched"
+
+
+def test_rotate_root_switch_without_cross_asks_only_for_the_new_root(monkeypatch, pki_dir, capsys):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    _stdin(monkeypatch, "next-pw\n")
+
+    assert cli.main(["rotate-root", "switch", "--no-cross"]) == 0
+
+    state = root_rollover.load_state(pki_dir)
+    assert state.phase == "switched" and state.cross is None and not state.switch.cross
+    assert "no cross certificate: a client that trusts only" in capsys.readouterr().out
+
+
+def test_rotate_root_switch_compromised(monkeypatch, pki_dir, capsys):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    _stdin(monkeypatch, "pw\nnext-pw\n")
+
+    assert cli.main(["rotate-root", "switch", "--compromised", "access"]) == 0
+
+    switch = root_rollover.load_state(pki_dir).switch
+    assert switch.compromised == ("access",) and switch.drop_retired_root
+    out = capsys.readouterr().out
+    assert out.count("  compromised: ") == 1
+    assert "revoke the devices of this scope" in out
+
+
+def test_rotate_root_switch_refuses_compromised_without_cross(pki_dir, capsys):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    before = _snapshot(pki_dir)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["rotate-root", "switch", "--no-cross", "--compromised", "access"])
+
+    assert exc.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+    assert _snapshot(pki_dir) == before
+
+
+def test_rotate_root_switch_ends_a_switch_that_stopped_without_the_old_root(
+    monkeypatch, pki_dir, capsys
+):
+    rotation.stage_root(pki_dir, NEXT_PW)
+    with monkeypatch.context() as m:
+        _stopped(m, pki_dir, "_replace", "root.key.enc")
+        with pytest.raises(rotation.RotationError):
+            rotation.switch_root(pki_dir, NEXT_PW, PW)
+    assert _phase(pki_dir) == "switching"
+
+    assert cli.main(["status"]) == 3
+    out = capsys.readouterr().out
+    assert "root renewal: a switch stopped part way" in out
+    assert f"{root_rollover.ROTATE_ROOT} switch, with the same options" in out
+
+    _stdin(monkeypatch, "next-pw\n")  # no line for the old root: the cross certificate is there
+    assert cli.main(["rotate-root", "switch"]) == 0
+    assert _phase(pki_dir) == "switched"
+
+
+def test_rotate_root_finish_once_every_device_renewed_since_the_restart(
+    monkeypatch, pki_dir, capsys
+):
+    engine, started_at = _switched(monkeypatch, pki_dir)
+    old, new = started_at - datetime.timedelta(days=1), started_at + datetime.timedelta(seconds=1)
+    renewed = _line(engine, "renewed")
+    _issue(engine, renewed, old)
+    _issue(engine, renewed, new)
+    _issue(engine, _line(engine, "fresh"), new)
+    # Not counted: a replaced line, a revoked identity, a certificate that has run out.
+    _issue(engine, _line(engine, "replaced", revoked=True), old)
+    _issue(engine, _line(engine, "gone"), old)
+    _revoke_identity(engine, "gone", old + datetime.timedelta(hours=1))
+    _issue(engine, _line(engine, "expired"), old - datetime.timedelta(days=40))
+
+    assert cli.main(["status"]) == 0
+    assert (
+        "  devices: 2 active, 2 renewed since the stage, 2 since the restart under the new root"
+        in capsys.readouterr().out
+    )
+
+    assert cli.main(["rotate-root", "finish"]) == 0
+
+    assert _phase(pki_dir) == "none"
+    out = capsys.readouterr().out
+    assert "the root renewal is finished" in out
+    assert "./scripts/backup.sh" in out and cli._RESTART in out
+
+
+def test_rotate_root_finish_waits_for_devices_from_before_the_restart(monkeypatch, pki_dir, capsys):
+    engine, started_at = _switched(monkeypatch, pki_dir)
+    old = started_at - datetime.timedelta(days=1)
+    _issue(engine, _line(engine, "behind"), old, days=30)
+    _issue(engine, _line(engine, "ahead"), started_at + datetime.timedelta(seconds=1))
+    before = _snapshot(pki_dir)
+
+    assert cli.main(["rotate-root", "finish"]) == 1
+
+    err = capsys.readouterr().err
+    assert (
+        "1 active device(s) still hold a certificate from before the restart under the new root"
+        in err
+    )
+    assert f"the last ends on {(old + datetime.timedelta(days=30)).isoformat()}" in err
+    assert "browser certificates need a new enrollment" in err and "--force" in err
+    assert _snapshot(pki_dir) == before
+
+    assert cli.main(["rotate-root", "finish", "--force"]) == 0
+    assert _phase(pki_dir) == "none"
+
+
+@pytest.mark.parametrize("started", ["never", "under the old root"])
+def test_rotate_root_finish_waits_for_a_start_under_the_new_root(
+    monkeypatch, pki_dir, capsys, started
+):
+    # Until it restarts, the ca-issuer signs under the old root.
+    engine = _register(monkeypatch)
+    if started != "never":
+        _start(engine, pki_dir)
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+
+    assert cli.main(["status"]) == 0
+    assert "none under the new root yet: the ca-issuer has not restarted" in capsys.readouterr().out
+    assert cli.main(["rotate-root", "finish"]) == 1
+    assert "has not started under the new root since the switch" in capsys.readouterr().err
+
+    _start(engine, pki_dir)
+    assert cli.main(["rotate-root", "finish"]) == 0
+
+
+def test_rotate_root_finish_counts_a_device_from_the_first_restart_under_the_new_root_on(
+    monkeypatch, pki_dir, capsys
+):
+    # Between the switch and the restart the old process still signs under the old root; a
+    # later restart does not move that limit.
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    engine = _register(monkeypatch)
+    switched_at = root_rollover.load_state(pki_dir).switch.switched_at
+    restart = switched_at + datetime.timedelta(hours=1)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: restart)
+        _start(engine, pki_dir)
+    line = _line(engine, "in-between")
+    _issue(engine, line, switched_at + datetime.timedelta(minutes=1))
+
+    assert cli.main(["status"]) == 0
+    assert (
+        "  devices: 1 active, 1 renewed since the stage, 0 since the restart under the new root"
+        in (capsys.readouterr().out)
+    )
+    assert cli.main(["rotate-root", "finish"]) == 1
+    assert "1 active device(s) still hold a certificate from before the restart" in (
+        capsys.readouterr().err
+    )
+
+    _issue(engine, line, restart + datetime.timedelta(seconds=1))
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: restart + datetime.timedelta(days=1))
+        _start(engine, pki_dir)
+    assert _started_at(engine) == restart
+    assert cli.main(["rotate-root", "finish"]) == 0
+
+
+def test_rotate_root_finish_waits_while_the_register_may_miss_a_device(
+    monkeypatch, pki_dir, capsys
+):
+    # The register came after the old root: a certificate from before it may still renew
+    # (tokens.legacy_admitted) and the register then learns of its device.
+    installed_at = _root_of(pki_dir).not_valid_before_utc + datetime.timedelta(hours=1)
+    _switched(monkeypatch, pki_dir, installed_at=_naive(installed_at))
+    end = installed_at + cli.tokens.LEGACY_WINDOW
+
+    assert cli.main(["rotate-root", "finish"]) == 1
+    assert f"the register does not know every device until {end.isoformat()}" in (
+        capsys.readouterr().err
+    )
+
+    after = end + datetime.timedelta(seconds=1)
+    monkeypatch.setattr(pki, "_now", lambda: after)
+    assert cli.main(["rotate-root", "finish"]) == 0
+
+
+def test_rotate_root_finish_without_a_register_changes_nothing(monkeypatch, pki_dir, capsys):
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    before = _snapshot(pki_dir)
+
+    assert cli.main(["rotate-root", "finish"]) == 1
+
+    err = capsys.readouterr().err
+    assert "the certificate register is unknown (no DATABASE_URL)" in err
+    assert "finish --force goes ahead anyway" in err
+    assert _snapshot(pki_dir) == before
+
+
+def _connect_quoting_the_url(url):
+    raise RuntimeError(f"could not connect to {url}")
+
+
+@pytest.mark.parametrize(
+    ("engine", "error"),
+    [
+        (lambda url: create_engine("sqlite://", poolclass=StaticPool), "OperationalError"),
+        (_connect_quoting_the_url, "RuntimeError"),
+    ],
+    ids=["no tables", "no connection"],
+)
+def test_an_unreadable_register_is_named_without_the_url(
+    monkeypatch, pki_dir, capsys, engine, error
+):
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://ca:s3cret-pw@db.invalid/ah")
+    monkeypatch.setattr(db, "make_engine", engine)
+
+    assert cli.main(["rotate-root", "finish"]) == 1
+    assert cli.main(["status"]) == 0
+
+    captured = capsys.readouterr()
+    assert f"the certificate register is unknown (database error {error})" in captured.err
+    assert f"  devices: unknown (database error {error})" in captured.out
+    assert "s3cret-pw" not in captured.out + captured.err
+    assert "db.invalid" not in captured.out + captured.err
+
+
+def test_rotate_root_finish_ends_a_finish_that_stopped_without_the_register(
+    monkeypatch, pki_dir, capsys
+):
+    # It has taken the old root out of bundles already; waiting for devices is over.
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    with monkeypatch.context() as m:
+        _stopped(m, pki_dir, "_remove", root_rollover.RETIRED)
+        with pytest.raises(rotation.RotationError):
+            rotation.finish_root(pki_dir)
+    assert _phase(pki_dir) == "finishing"
+
+    assert cli.main(["status"]) == 3
+    out = capsys.readouterr().out
+    assert "root renewal: a finish stopped part way" in out
+
+    assert cli.main(["rotate-root", "finish"]) == 0
+    assert _phase(pki_dir) == "none"
+
+
+@pytest.mark.parametrize(("role", "code"), [("root", 1), ("access", 0)])
+def test_status_warns_of_the_root_a_year_ahead(monkeypatch, pki_dir, capsys, role, code):
+    # A new root reaches the clients only with their renewals (pki.ROOT_WARN_DAYS).
+    cert = _cert_with_days_left(monkeypatch, role, 200)
+    name = "root.crt" if role == "root" else f"{role}.crt"
+    (pki_dir / name).write_bytes(pki.cert_to_pem(cert))
+
+    assert cli.main(["status"]) == code
+    line = next(x for x in capsys.readouterr().out.splitlines() if x.startswith(f"{role} "))
+    assert line.endswith("WARNING") == (code == 1)
+
+
+def test_status_without_a_renewal_does_not_read_the_register(monkeypatch, pki_dir, capsys):
+    def _no_engine(url):
+        raise AssertionError("no register read in phase none")
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://ca:pw@db.invalid/ah")
+    monkeypatch.setattr(db, "make_engine", _no_engine)
+
+    assert cli.main(["status"]) == 0
+    assert "root renewal" not in capsys.readouterr().out
+
+
+def test_status_of_a_staged_renewal(monkeypatch, pki_dir, capsys):
+    new_root = rotation.stage_root(pki_dir, NEXT_PW)
+
+    assert cli.main(["status"]) == 0
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+    assert lines[1].startswith("root (next)") and pki.read_identity(new_root)[0] in lines[1]
+    staged_at = new_root.not_valid_before_utc.isoformat()
+    assert f"root renewal: staged on {staged_at}, the current root still signs" in out
+    assert "  devices: unknown (no DATABASE_URL)" in out
+    assert (
+        f"  next: once every device has renewed since the stage: {root_rollover.ROTATE_ROOT} switch"
+        in out
+    )
+
+
+def test_status_of_a_staged_renewal_counts_the_devices(monkeypatch, pki_dir, capsys):
+    new_root = rotation.stage_root(pki_dir, NEXT_PW)
+    staged_at = new_root.not_valid_before_utc
+    engine = _register(monkeypatch)
+    _issue(engine, _line(engine, "behind"), staged_at - datetime.timedelta(days=1))
+    _issue(engine, _line(engine, "ahead"), staged_at + datetime.timedelta(seconds=1))
+
+    assert cli.main(["status"]) == 0
+
+    assert "  devices: 2 active, 1 renewed since the stage\n" in capsys.readouterr().out
+
+
+def test_status_after_the_switch(monkeypatch, pki_dir, capsys):
+    engine, started_at = _switched(monkeypatch, pki_dir)
+    state = root_rollover.load_state(pki_dir)
+    switched_at = state.switch.switched_at
+    staged_at = _root_of(pki_dir).not_valid_before_utc
+    _issue(engine, _line(engine, "behind"), staged_at - datetime.timedelta(days=1))
+    _issue(engine, _line(engine, "ahead"), started_at + datetime.timedelta(seconds=1))
+
+    assert cli.main(["status"]) == 0
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+    assert lines[1].startswith("root (retired)") and "WARNING" not in lines[1]
+    assert pki.read_identity(state.retired_root)[0] in lines[1]
+    assert lines[2].startswith("root (cross)")
+    # The intermediates the switch replaced are under the old root, which the boot still trusts.
+    retired = [x for x in lines if " (retired)" in x and not x.startswith("root")]
+    assert len(retired) == len(pki.SCOPES) and not any("SKIPPED" in x for x in retired)
+    assert f"root renewal: switched on {switched_at.isoformat()} (cross certificate)" in out
+    assert (
+        "  devices: 2 active, 1 renewed since the stage, 1 since the restart under the new root"
+        in out
+    )
+    assert f"since the restart under the new root: {root_rollover.ROTATE_ROOT} finish" in out
+
+
+def test_status_after_a_compromised_switch_trusts_the_old_root_for_no_scope_of_it(
+    monkeypatch, pki_dir, capsys
+):
+    # The boot takes retired ones of a compromised scope from the new root only.
+    r = renewal.renewed(monkeypatch, pki_dir, "compromised", compromised="access")
+    (pki_dir / "access-retired.pem").write_bytes(pki.cert_to_pem(r.before["access"].cert))
+
+    assert cli.main(["status"]) == 1
+
+    out = capsys.readouterr().out
+    access = [x for x in out.splitlines() if x.startswith("access (retired)")]
+    assert len(access) == 1 and "SKIPPED" in access[0]
+    tunnel = [x for x in out.splitlines() if x.startswith("tunnel (retired)")]
+    assert tunnel and not any("SKIPPED" in x for x in tunnel)
+    assert "compromised: access; the old root is out of `chain`" in out
+
+
+def test_status_after_the_switch_without_cross(monkeypatch, pki_dir, capsys):
+    renewal.renewed(monkeypatch, pki_dir, "no-cross")
+
+    assert cli.main(["status"]) == 0
+
+    out = capsys.readouterr().out
+    assert "root (cross)" not in out
+    assert "(no cross certificate)" in out
+
+
+def test_status_of_an_old_root_that_ran_out_before_finish(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("CA_DATA_DIR", str(tmp_path / "late"))
+    for name in ("CA_ROOT_PASSPHRASE_FILE", "CA_ROOT_PASSPHRASE", "DATABASE_URL"):
+        monkeypatch.setenv(name, "")
+    renewal.renewed(monkeypatch, tmp_path / "late" / "pki", "expired")
+
+    assert cli.main(["status"]) == 1
+
+    retired_root = next(
+        x for x in capsys.readouterr().out.splitlines() if x.startswith("root (retired)")
+    )
+    assert retired_root.endswith("WARNING (finish pending)")
+
+
+def test_status_and_rotate_root_of_an_unreadable_renewal(monkeypatch, pki_dir, capsys):
+    # No switch or finish leaves a cross certificate without the record of the switch.
+    (pki_dir / root_rollover.CROSS).write_bytes(pki.cert_to_pem(_root_of(pki_dir)))
+    _no_prompt(monkeypatch)
+
+    assert cli.main(["status"]) == 3
+    assert "root renewal: unreadable, " in capsys.readouterr().out
+
+    assert cli.main(["rotate-root", "stage"]) == 1
+    assert f"without {root_rollover.STATE}" in capsys.readouterr().err

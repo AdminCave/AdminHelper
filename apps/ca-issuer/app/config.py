@@ -52,13 +52,24 @@ def root_passphrase() -> bytes | None:
     Compose hands the passphrase over as a secret file. An empty value creates no
     file at all, and after the first boot an empty value is intended, so a missing
     file falls through to the env var (empty -> None); any other read error raises."""
-    path = os.environ.get("CA_ROOT_PASSPHRASE_FILE", "").strip()
+    return _secret("CA_ROOT_PASSPHRASE")
+
+
+def next_root_passphrase() -> bytes | None:
+    """Passphrase of the new root of a renewal (``rotate-root``, R-1021), read like
+    root_passphrase from CA_NEXT_ROOT_PASSPHRASE_FILE, else CA_NEXT_ROOT_PASSPHRASE. After
+    the switch the new root is root.crt, and its passphrase is the root passphrase."""
+    return _secret("CA_NEXT_ROOT_PASSPHRASE")
+
+
+def _secret(name: str) -> bytes | None:
+    path = os.environ.get(f"{name}_FILE", "").strip()
     if path:
         try:
             return Path(path).read_bytes().strip() or None
         except FileNotFoundError:
             pass
-    return os.environ.get("CA_ROOT_PASSPHRASE", "").encode() or None
+    return os.environ.get(name, "").encode() or None
 
 
 def gateway_cert_dir() -> str:

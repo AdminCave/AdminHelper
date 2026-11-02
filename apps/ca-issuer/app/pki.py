@@ -43,9 +43,12 @@ LEAF_DAYS_BROWSER = 365
 # (storage._leaf_needs_remint, F4), so a stack restart refreshes it well before
 # expiry. Clients pin the Root, not the leaf, so the rotation is transparent (D2).
 LEAF_DAYS_GATEWAY = 365
-# Root and intermediates with fewer days left than this are logged as a WARNING:
-# half a year to rotate, which needs the separately kept root passphrase.
+# Intermediates with fewer days left than this are logged as a WARNING: half a year to
+# rotate, which needs the separately kept root passphrase.
 EXPIRY_WARN_DAYS = 180
+# The root's WARNING comes earlier (R-1021): a new root reaches the clients only with
+# their renewals, so a year leaves time to stage it, wait for them and switch.
+ROOT_WARN_DAYS = 365
 
 SCOPES = ("tunnel", "access", "internal")
 

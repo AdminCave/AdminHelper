@@ -291,7 +291,7 @@ def test_an_intermediate_near_its_end_loads_with_one_warning(monkeypatch, tmp_pa
     assert "app.cli rotate-intermediates" in warnings[0]
 
 
-def test_a_root_near_its_end_warns_that_clients_must_enroll_again(monkeypatch, tmp_path, caplog):
+def test_a_root_near_its_end_warns_to_stage_a_new_root(monkeypatch, tmp_path, caplog):
     # Intermediates minted now end with the root (pki caps them), so all four warn.
     _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 30)
     for scope in pki.SCOPES:
@@ -307,10 +307,51 @@ def test_a_root_near_its_end_warns_that_clients_must_enroll_again(monkeypatch, t
     root_warnings = [w for w in warnings if w.startswith("root ")]
     assert len(root_warnings) == 1, warnings
     assert root_cert.not_valid_after_utc.isoformat() in root_warnings[0]
-    assert "enroll" in root_warnings[0]
+    # R-1021: the root is renewed in phases, the clients do not enroll again.
+    assert f"renew it with: {root_rollover.ROTATE_ROOT} stage" in root_warnings[0]
+    assert "enroll" not in root_warnings[0]
     # The command renews the intermediates under the root, never the root itself.
     assert "app.cli rotate-intermediates" not in root_warnings[0]
     assert all("app.cli rotate-intermediates" in w for w in warnings if w not in root_warnings)
+
+
+def test_the_root_warns_a_year_before_its_end(monkeypatch, tmp_path, caplog):
+    # Its intermediates, minted now and capped at its end, have more than
+    # pki.EXPIRY_WARN_DAYS left: only the root warns (pki.ROOT_WARN_DAYS).
+    _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 200)
+    for scope in pki.SCOPES:
+        _reissue(monkeypatch, tmp_path, scope)
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    storage.ensure_hierarchy(tmp_path, None)
+
+    warnings = _storage_warnings(caplog)
+    assert len(warnings) == 1 and warnings[0].startswith("root "), warnings
+    assert f"{root_rollover.ROTATE_ROOT} stage" in warnings[0]
+
+
+def test_a_root_near_its_end_with_a_staged_one_warns_to_switch(monkeypatch, tmp_path, caplog):
+    _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 30)
+    for scope in pki.SCOPES:
+        _reissue(monkeypatch, tmp_path, scope)
+    rotation.stage_root(tmp_path, b"next")
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    storage.ensure_hierarchy(tmp_path, None)
+
+    root_warnings = [w for w in _storage_warnings(caplog) if w.startswith("root ")]
+    assert len(root_warnings) == 1, root_warnings
+    assert f"switch to it with: {root_rollover.ROTATE_ROOT} switch" in root_warnings[0]
+    assert f"{root_rollover.ROTATE_ROOT} stage" not in root_warnings[0]
+
+
+def test_a_switched_root_near_its_end_is_finished_before_it_is_renewed():
+    # root.crt is the new root already; a stage refuses while the renewal runs.
+    hint = storage._root_renewal_hint("switched")
+    finish = hint.index(f"{root_rollover.ROTATE_ROOT} finish")
+    assert finish < hint.index(f"{root_rollover.ROTATE_ROOT} stage")
 
 
 def test_a_fresh_hierarchy_does_not_warn(tmp_path, caplog):

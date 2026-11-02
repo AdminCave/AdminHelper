@@ -88,7 +88,7 @@ def rotate_intermediates(
 def _rotate(pki_dir: Path, passphrase: bytes, compromised: frozenset[str]) -> list[RotatedScope]:
     state = _state(pki_dir)
     if state.phase in ("switching", "finishing"):
-        raise RotationError(_refusal(state.phase, "rotate the intermediates"))
+        raise RotationError(refusal(state.phase, "rotate the intermediates"))
     now = pki._now()
     root_cert, root_key = _load_root(pki_dir, passphrase, now)
     roots = (root_cert,) if state.retired_root is None else (root_cert, state.retired_root)
@@ -128,7 +128,7 @@ def stage_root(pki_dir: Path, next_passphrase: bytes) -> x509.Certificate:
     with _locked(pki_dir):
         state = _state(pki_dir)
         if state.phase != "none":
-            raise RotationError(_refusal(state.phase, "stage"))
+            raise RotationError(refusal(state.phase, "stage"))
         root_cert = _read_cert(pki_dir / "root.crt")
         new_root, new_key = pki.build_root_ca(label=pki._now().strftime("%Y-%m-%d"))
         if new_root.subject == root_cert.subject:
@@ -198,7 +198,7 @@ def _switch(
 ) -> SwitchedRoot:
     state = _state(pki_dir)
     if state.phase not in ("staged", "switching"):
-        raise RotationError(_refusal(state.phase, "switch"))
+        raise RotationError(refusal(state.phase, "switch"))
     now = pki._now()
     switch = root_rollover.Switch(now, tuple(sorted(compromised)), cross, bool(compromised))
     if state.switch is not None:
@@ -297,7 +297,7 @@ def finish_root(pki_dir: Path) -> None:
     with _locked(pki_dir):
         state = _state(pki_dir)
         if state.phase not in ("switched", "finishing"):
-            raise RotationError(_refusal(state.phase, "finish"))
+            raise RotationError(refusal(state.phase, "finish"))
         root_cert = _read_cert(pki_dir / "root.crt")
         old_roots = () if state.retired_root is None else (state.retired_root,)
         if old_roots and _spki(old_roots[0]) == _spki(root_cert):
@@ -324,7 +324,9 @@ def _root_name(cert: x509.Certificate) -> str:
     return repr(pki.read_identity(cert)[0])
 
 
-def _refusal(phase: str, action: str) -> str:
+def refusal(phase: str, action: str) -> str:
+    """Why `action` does not run in renewal `phase`, with the command that moves the
+    renewal on; the CLI says it before asking for a passphrase."""
     reason = {
         "none": f"no new root is staged; stage one with: {ROTATE_ROOT} stage",
         "staged": f"a new root is staged; switch to it, or remove it with: {ROTATE_ROOT} abort",

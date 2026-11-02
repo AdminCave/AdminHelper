@@ -135,9 +135,10 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     reason) unless every file is readable, root.crt is self-signed and valid now and each
     intermediate is one of its scope under it (pki.intermediate_problem), valid now,
     matches its key and has the chain [intermediate, root].
-    A root or intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING. What
-    concerns an intermediate's end (abort or WARNING) ends with ROTATE_HINT, the abort
-    for one not valid yet with CLOCK_HINT.
+    An intermediate with less than pki.EXPIRY_WARN_DAYS left is a WARNING, the root
+    (root.crt) with less than pki.ROOT_WARN_DAYS. What concerns an intermediate's end
+    (abort or WARNING) ends with ROTATE_HINT, the abort for one not valid yet with
+    CLOCK_HINT, the root's WARNING with the `rotate-root` step of its renewal phase.
 
     The optional <scope>-retired.pem adds the scope's earlier intermediates as
     Intermediate.retired. An entry that is not an intermediate of the scope under
@@ -269,7 +270,7 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             cross=trust.cross,
         )
 
-    _warn_if_ending("root", root, now, "; renewing the root means enrolling every client again")
+    _warn_if_ending("root", root, now, _root_renewal_hint(renewal.phase), pki.ROOT_WARN_DAYS)
     for scope, inter in out.items():
         _warn_if_ending(f"intermediate {scope!r}", inter.cert, now, f"; {ROTATE_HINT}")
     return out
@@ -427,11 +428,28 @@ def _chain_is(chain_pem: bytes, certs: list[x509.Certificate]) -> bool:
     return [c.public_bytes(der) for c in parsed] == [c.public_bytes(der) for c in certs]
 
 
+def _root_renewal_hint(phase: str) -> str:
+    """The next `rotate-root` step for a root nearing its end, by renewal phase."""
+    if phase == "staged":
+        return f"; a new root is staged, switch to it with: {root_rollover.ROTATE_ROOT} switch"
+    if phase == "switched":
+        # root.crt is already the new root; its successor needs the renewal finished first.
+        return (
+            f"; finish the running renewal with: {root_rollover.ROTATE_ROOT} finish, "
+            f"then renew it with: {root_rollover.ROTATE_ROOT} stage"
+        )
+    return f"; renew it with: {root_rollover.ROTATE_ROOT} stage"
+
+
 def _warn_if_ending(
-    name: str, cert: x509.Certificate, now: datetime.datetime, note: str = ""
+    name: str,
+    cert: x509.Certificate,
+    now: datetime.datetime,
+    note: str = "",
+    days: int = pki.EXPIRY_WARN_DAYS,
 ) -> None:
     left = pki.days_left(cert, now)
-    if left < pki.EXPIRY_WARN_DAYS:
+    if left < days:
         logger.warning(
             "%s expires on %s (%d days left)%s",
             name,

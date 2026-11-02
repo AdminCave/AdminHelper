@@ -82,8 +82,10 @@ Abhängt von: T2
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_cert.py tests/test_frps_cert.py tests/test_trust.py tests/test_storage.py
 Doku: → T10
 
-### T4 — CLI `rotate-root`, `status`, Sperre von `finish`, Warnung und Inventar  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py, apps/ca-issuer/app/config.py, apps/ca-issuer/app/pki.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/app/inventory.py, apps/ca-issuer/tests/test_cli.py, apps/ca-issuer/tests/test_inventory.py, apps/ca-issuer/tests/test_config.py
+### T4 — CLI `rotate-root`, `status`, Sperre von `finish`, Warnung und Inventar  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py, apps/ca-issuer/app/config.py, apps/ca-issuer/app/pki.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/app/inventory.py, apps/ca-issuer/tests/test_cli.py, apps/ca-issuer/tests/test_inventory.py, apps/ca-issuer/tests/test_config.py, apps/ca-issuer/app/rotation.py, apps/ca-issuer/tests/test_storage.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @e9eb688a 2026-11-02T12:59:51+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T4.verdict.json)
 Abhängt von: T3
 Änderung:
 - `cli.py`: Unterbefehl `rotate-root stage|abort|switch [--compromised SCOPE …] [--no-cross]|finish [--force]`.
@@ -94,7 +96,7 @@ Abhängt von: T3
 - `pki.py`: `ROOT_WARN_DAYS = 365`. `storage.py:219`: Der Warntext zeigt auf `rotate-root`.
 - `inventory.py`: neue Zeilen `root:next`, `root:retired`, `root:cross`.
 - Tests: CLI je Unterbefehl und Passphrasen-Quelle, die Sperre gegen sqlite-Register, das Inventar je Phase.
-Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py tests/test_inventory.py tests/test_config.py
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py tests/test_inventory.py tests/test_config.py tests/test_storage.py
 Doku: → T10
 
 ### T5 — Server: eigene Ampel-Schwellen für die Root  [ ]
@@ -227,3 +229,33 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
   Stub-Datei. Damit ändert der PR `.github/workflows/`, Kevin merged ihn (CLAUDE.md §2). Die Prüfung von X nutzt
   jetzt `pki.cross_problem` aus T1 statt einer zweiten Fassung, damit auch `path_length=1` gilt (Nit), mit eigenem
   Testfall.
+- 2026-11-02 T4: Die Sperre von `finish` (Phase `switched`, ohne `--force`) fragt das Register und hält an vier
+  Gründen: (1) Register unbekannt (kein `DATABASE_URL`, oder ein DB-Fehler, gemeldet nur mit dem Typ der Exception);
+  (2) die letzte Start-Momentaufnahme in `infra_certificates` (`root`) ist nicht der Fingerprint von `root.crt` (N),
+  der ca-issuer läuft also noch nicht unter N; (3) das Register ist jünger als R und das Legacy-Fenster
+  (`tokens.LEGACY_WINDOW`) läuft noch, es kennt also eventuell nicht jedes Gerät; (4) aktive Geräte, deren jüngstes
+  Zertifikat vor `switched_at` liegt. Aktiv heißt: Line nicht widerrufen, Identität nach der Regel von
+  `DbTokenStore._active` aktiv, jüngstes Zertifikat noch gültig. `finishing` sperrt nicht, denn der abgebrochene
+  finish hat R schon aus Bündeln genommen.
+- 2026-11-02 T4: Grenze der Sperre ist der erste Start unter N, nicht der switch. Bis zum Neustart signiert der
+  laufende ca-issuer noch unter R. Das Inventar behält deshalb `recorded_at` einer Zeile, solange Name und
+  Fingerprint gleich bleiben (für `root` also der erste Start unter N), mit der Uhr `pki._now` der Leaves; der
+  Spec-Satz „vor `switch` ausgestellt“ wird damit „vor dem ersten Start unter N“ (strenger). Abgelehnt:
+  `switched_at` (zählt, was der alte Prozess bis zum Neustart unter R signiert, nach dem Hinweis von security)
+  und der letzte Start (jeder spätere Neustart verschöbe finish um bis zu eine Leaf-Laufzeit). `recorded_at` las
+  bisher niemand; keine Migration, die Rolle hat SELECT/INSERT/DELETE.
+- 2026-11-02 T4: Passphrasen. Die von N kommt aus `CA_NEXT_ROOT_PASSPHRASE_FILE`, sonst aus
+  `CA_NEXT_ROOT_PASSPHRASE`, sonst vom Terminal, sonst aus der nächsten stdin-Zeile; die von R ist nie ein Ersatz.
+  `stage` fragt auf dem Terminal zweimal, denn ein Tippfehler fiele erst beim switch auf. `switch` fragt zuerst R
+  (nur mit Cross und solange X fehlt), dann N; auf stdin also Zeile 1 R, Zeile 2 N. Die Phase wird vor jeder
+  Abfrage geprüft: `rotation.refusal` ist dafür öffentlich.
+- 2026-11-02 T4: `status` zeigt in `staged` die Zeile `root (next)` und in `switched` die Zeilen `root (retired)`
+  und `root (cross)`, dazu den Abschnitt `root renewal:` mit Abdeckung und nächstem Schritt. Retired-Intermediates
+  werden gegen die Roots geprüft, denen auch der Boot traut. Exit 1, wenn R vor dem finish abläuft; Exit 3, wenn ein
+  Schritt mittendrin abbrach oder die Phase unlesbar ist. In Phase `none` gibt es keine DB-Abfrage und die Ausgabe
+  bleibt wie bisher. Das Inventar schreibt `root:next`, `root:retired` und `root:cross` über
+  `root_rollover.load_state`.
+- 2026-11-02 T4: 10 Dateien statt 8. `test_storage.py` kommt hinzu, weil die Root-Warnung des Boots jetzt auf
+  `rotate-root` zeigt (`pki.ROOT_WARN_DAYS` = 365). `test_a_root_near_its_end_warns_that_clients_must_enroll_again`
+  heißt jetzt `…_warns_to_stage_a_new_root` und prüft den neuen Hinweis: eine gewollte Verhaltensänderung.
+  `rotation.py` kommt hinzu, weil `refusal` öffentlich wurde.
