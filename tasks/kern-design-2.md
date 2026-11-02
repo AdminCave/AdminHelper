@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-design-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-design-2 · Review: pro Task
 Spec: docs/features/kern-design-2.md (Roadmap R-1062, R-1063)
 Heavy: linux-full — Shell, Einstellungen und Dashboard ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
