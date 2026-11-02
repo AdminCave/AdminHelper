@@ -212,6 +212,179 @@ if [ ! -f docker-compose.yml ]; then
     cd "$TARGET_DIR"
 fi
 
+die() { echo "FEHLER: $*" >&2; exit 1; }
+
+# A .env written ahead of the install is taken over; compose quotes a line it cannot
+# read, a value included. So .env is checked as update.sh checks it, before the
+# first compose call, and the message names only a line number.
+# >>> env check: update.sh and install.sh hold the same text, a test keeps it so
+# 0 if every '${' in $1 that is not part of a '$$' starts a placeholder compose
+# accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}' on
+# the same line, nested ones included. The classes are spelled out: under
+# de_DE.UTF-8 a range like [A-Z] in =~ matches umlauts too, and compose takes ASCII
+# names only.
+env_template_ok() {
+    local s="$1" open=0
+    local name='^[_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ][_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]*'
+    while [ -n "$s" ]; do
+        case $s in
+            '$$'*) s=${s:2} ;;
+            "\${"*)
+                s=${s:2}
+                [[ $s =~ $name ]] || return 1
+                s=${s:${#BASH_REMATCH[0]}}
+                case $s in
+                    '}'*) s=${s:1} ;;
+                    ':-'*|':?'*|':+'*) open=$((open + 1)); s=${s:2} ;;
+                    '-'*|'?'*|'+'*) open=$((open + 1)); s=${s:1} ;;
+                    *) return 1 ;;
+                esac ;;
+            '}'*) [ "$open" -eq 0 ] || open=$((open - 1)); s=${s:1} ;;
+            $'\n'*) [ "$open" -eq 0 ] || return 1; s=${s:1} ;;
+            *) s=${s:1} ;;
+        esac
+    done
+    [ "$open" -eq 0 ]
+}
+
+# A quoted value as compose reads it: $2 is the text after the opening quote $1. A
+# backslash escapes the next character, and in double quotes \$ is a literal '$'
+# (passed on as '$$'). Leaves the text up to the closing quote in QUOTED and the
+# text after it in QUOTED_REST; returns 1 if $2 holds no closing quote.
+read_quoted() {
+    local q="$1" s="$2" c i=0
+    QUOTED=""
+    while [ "$i" -lt "${#s}" ]; do
+        c=${s:i:1}
+        if [ "$c" = "$q" ]; then QUOTED_REST=${s:i+1}; return 0; fi
+        if [ "$c" = "\\" ]; then
+            i=$((i + 1)); c=${s:i:1}
+            case $c in
+                '$') c='$$' ;;
+                "\\"|"$q") ;;
+                *) c="\\$c" ;;
+            esac
+        fi
+        QUOTED+=$c; i=$((i + 1))
+    done
+    return 1
+}
+
+# Leaves $1 in TRIMMED without the white space compose skips in front of it: in
+# front of a value (and after "export ") compose-go's isSpace, the ASCII blanks,
+# U+0085 and U+00A0; in front of a statement ($2 = statement) Go's
+# unicode.IsSpace, also U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F and
+# U+3000. Spelled out in UTF-8 bytes, so the caller's locale does not decide.
+trim_blanks() {
+    local s="$1" b blanks=(' ' $'\t' $'\v' $'\f' $'\r' $'\xc2\x85' $'\xc2\xa0')
+    [ "$2" != statement ] || blanks+=($'\xe1\x9a\x80' $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82'
+        $'\xe2\x80\x83' $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' $'\xe2\x80\x87' $'\xe2\x80\x88'
+        $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe2\x80\xa8' $'\xe2\x80\xa9' $'\xe2\x80\xaf' $'\xe2\x81\x9f'
+        $'\xe3\x80\x80')
+    while :; do
+        for b in "${blanks[@]}"; do
+            case $s in "$b"*) s=${s#"$b"}; continue 2 ;; esac
+        done
+        break
+    done
+    TRIMMED=$s
+}
+
+# 0 if $1, the text in front of '=' or ':' or a line without either, is a key
+# compose takes (compose-go dotenv, locateKeyName): letters, digits and _ . - [ ];
+# blanks are skipped, but a space between two of its characters is an error ("key
+# cannot contain a space"), unless $2 is 0: the last line of .env, without a line
+# break and without '=' or ':', is a value to compose, not a key. Letters and
+# digits beyond ASCII are told by [[:alpha:]] and [[:digit:]] under C.UTF-8, whose
+# classes come close to Go's unicode.IsLetter and IsNumber (a '²' is a number to
+# Go only). Without a UTF-8 locale such a character passes: better compose stop an
+# update than this check stop one that compose would run.
+env_key_ok() {
+    local k="$1" spaced="$2" c n i=0 seen=0 gap=0 utf8=0 probe=$'\xc3\x84'
+    local LC_ALL=C.UTF-8 2>/dev/null
+    [ "${#probe}" -ne 1 ] || utf8=1
+    while [ "$i" -lt "${#k}" ]; do
+        c=${k:i:1}; i=$((i + 1))
+        case $c in
+            ' ') [ "$seen" -eq 0 ] || gap=$spaced; continue ;;
+            $'\t'|$'\v'|$'\f'|$'\r') continue ;;
+            []_.[-]|[0123456789]|[abcdefghijklmnopqrstuvwxyz]|[ABCDEFGHIJKLMNOPQRSTUVWXYZ]) ;;
+            *)
+                printf -v n '%d' "'$c"
+                [ "$n" -ge 128 ] || return 1
+                [ "$utf8" -eq 1 ] || continue
+                # U+0085 and U+00A0 are blanks to compose.
+                case $n in 133|160) continue ;; esac
+                [[ $c == [[:alpha:][:digit:]] ]] || return 1 ;;
+        esac
+        [ "$gap" -eq 0 ] || return 1
+        seen=1
+    done
+}
+
+# compose reads the values in .env as templates, and a '${' that starts no valid
+# placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
+# template"; so do a quote that never closes and a key compose does not take
+# (env_key_ok), text after a closing quote included. Checked before the first
+# call, so such a .env stops the script before it changes anything (update.sh:
+# before backup, swap and re-pin). Reads .env as compose does: a BOM at its start drops, blank and '#' lines
+# drop, "export " may lead, '=' or ':' separates, a line without either is a key
+# without a value; a quoted value runs to its closing quote, over several lines if
+# need be, and is literal in single quotes, and the text after that quote is read
+# as a line of its own; an unquoted value ends at " #". The message names only a
+# line number, never a key, a value or the line: a secret pasted by mistake reads as
+# a key once it holds '=' or ':', and compose's own message quotes them all. For a
+# value it is the line its entry starts in.
+check_env_templates() {
+    local line key name val more q rest eol spaced n=0 start QUOTED QUOTED_REST TRIMMED
+    [ -f .env ] || return 0
+    while :; do
+        # eol=0: the line ends .env without a line break.
+        eol=1; IFS= read -r line || { eol=0; [ -n "$line" ] || break; }
+        n=$((n + 1)); name=""; start=$n
+        [ "$n" -gt 1 ] || line=${line#$'\xef\xbb\xbf'}
+        # One assignment per pass: after a closing quote, compose reads on.
+        while [ -n "$line" ]; do
+            trim_blanks "$line" statement; line=$TRIMMED
+            case $line in ''|'#'*) break ;; esac
+            # compose's ^export\s+: RE2's \s is ASCII only and without \v.
+            case $line in
+                export[$' \t\f\r']*) trim_blanks "${line#export}" value; line=$TRIMMED ;;
+            esac
+            key=${line%%[=:]*}; spaced=1
+            [ "$key" != "$line" ] || spaced=$eol
+            if ! env_key_ok "$key" "$spaced"; then
+                [ -z "$name" ] || die ".env: the value starting in line ${start} has text after its closing quote that docker compose reads as a key and rejects, which makes every compose call fail. Write a quote inside the value as \\\" or \\', or remove the text. Aborting (nothing changed)."
+                die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
+            fi
+            [ "$key" != "$line" ] || break
+            key=${key%"${key##*[![:space:]]}"}; name=${name:-$key}
+            trim_blanks "${line#*[=:]}" value; val=$TRIMMED
+            rest=""
+            case $val in
+                "'"*|'"'*)
+                    # The lines up to the closing quote are part of this value, not
+                    # keys of their own.
+                    q=${val:0:1}; val=${val:1}
+                    until read_quoted "$q" "$val"; do
+                        IFS= read -r more || {
+                            eol=0
+                            [ -n "$more" ] || die ".env: the value starting in line ${start} has a quote that is never closed, which makes every compose call fail. Close the quote. Aborting (nothing changed)."
+                        }
+                        n=$((n + 1)); val+=$'\n'$more
+                    done
+                    rest=$QUOTED_REST
+                    if [ "$q" = '"' ]; then val=$QUOTED; else val=""; fi ;;
+                *) val=${val%% #*} ;;
+            esac
+            env_template_ok "$val" \
+                || die ".env: the value starting in line ${start} holds a '\${' that starts no valid placeholder, which makes every compose call fail with 'Invalid template'. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
+            line=$rest
+        done
+    done < .env
+}
+# <<< env check
+
 # --- Preflight --------------------------------------------------------------
 # The services run as UID 10001 (app) and Postgres as UID/GID 70: a host account that has
 # one of these IDs reaches the data of the containers. The install directory is closed to
@@ -233,6 +406,7 @@ warn_host_uids() {
     return 0
 }
 warn_host_uids
+check_env_templates
 command -v docker >/dev/null 2>&1 || { echo "FEHLER: docker fehlt." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
 # The start waits with up --wait (like update.sh); without it, stop before anything changes.

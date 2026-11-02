@@ -51,8 +51,10 @@ Beweis: Code-Lesung `scripts/update.sh:74-75` (`log`/`die` schreiben auf stderr 
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: docs/admin/installation.html:227 + docs/en/admin/installation.html:180 (getrennte Sitzung auch ohne Terminal) · changelog.d/ops-5.md
 
-### T5 — install.sh: vorhandene .env vor dem ersten Compose-Aufruf prüfen (R-1027)  [ ]
+### T5 — install.sh: vorhandene .env vor dem ersten Compose-Aufruf prüfen (R-1027)  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/update.sh, scripts/tests/install_test.sh, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/ops-5.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d7b07f1b 2026-11-02T10:40:52+01:00
+Review: approve (.ah-out/review/ops-5/T5.verdict.json)
 Beweis: Code-Lesung `scripts/install.sh:262-263` (`cat "$err"` der Compose-Ausgabe) und `:414`; `install_test.sh` mit vorab geschriebener `.env`, deren Zeile `GEHEIM-WERT` ohne `=` hält, und einem Compose-Stub, der sie wie Compose zitiert → heute erscheint `GEHEIM-WERT` auf stderr · Dedup-Key: BUG:scripts:install.sh:compose_stderr
 Änderung: `check_env_templates` und seine Helfer (`scripts/update.sh:82-247`) stehen als markierter Block (`# >>> env check` … `# <<< env check`) byte-gleich in `install.sh`; `install.sh` ruft die Prüfung vor `install_state`, wenn eine `.env` da ist. Ein Test in `install_test.sh` hält beide Blöcke gleich. Tests (erst rot): obige `.env` → Abbruch mit Zeilennummer, kein Byte des Werts, Compose-Stub nicht aufgerufen; gültige vorab geschriebene `.env` → Lauf wie bisher.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
@@ -69,3 +71,4 @@ Doku: keine (Kommentar; die Doku beschreibt den Weg schon)
 - 2026-11-02 T3: `is_set_safely` liest die letzte Anweisung eines Schlüssels — Compose nimmt die letzte (am echten `docker compose config` gesehen)
 - 2026-11-02 T4: ein gescheitertes Schreiben (`say`/`out_lost`) schickt dem Skript selbst SIGHUP — so gelten die bestehenden HUP-Wege (vor dem Tausch Ende, danach Rollback, im Rollback Neustart/Ignorieren) unverändert; `| tee` beim Backup endet mit `die`, weil pipefail sonst ohne Meldung beendet
 - 2026-11-02 T2: `COMPOSE_PROJECT_NAME` bleibt in der übernommenen `.env` (Test 27a verlangt die Volumes des gesicherten Projekts), alle übrigen `COMPOSE_*`/`DOCKER_*` gehen (Großschreibung egal); geschnitten wie `backup.sh` die Passphrase schneidet (tok_exact + tok_alone, ohne Kommentare); die Images nennt `docker compose --env-file env.new config --images` (das, was wirklich startet, mit Defaults); der Tokenizer-Kopfsatz nennt jetzt alle drei Dateien, daher `backup.sh`/`diagnostics.sh` in `Dateien:`
+- 2026-11-02 T5: der Test nimmt `GEHEIM WERT` (Leerzeichen im Schlüssel) statt `GEHEIM-WERT` aus dem Beweis — Compose nimmt `-` im Schlüssel an, die Zeile wäre gültig; `check_env_templates` läuft vor der ersten docker-Abfrage, dafür bekommt install.sh ein eigenes `die`

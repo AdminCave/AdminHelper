@@ -12,3 +12,6 @@
 - **restore.sh auf einem frischen Host:** die aus dem Backup angelegte `.env` uebernimmt nur die Schluessel der
   Anwendung (ohne `COMPOSE_*` und `DOCKER_*`, ausser `COMPOSE_PROJECT_NAME`); vor der Rueckfrage nennt das Skript die
   Images, mit denen der Stack startet.
+- **install.sh mit vorab angelegter .env:** der Installer prueft eine vorhandene `.env` vor dem ersten
+  docker-compose-Aufruf wie `update.sh` und bricht bei einer Zeile, die docker compose ablehnt, mit deren
+  Zeilennummer ab, ohne ihren Inhalt auszugeben.

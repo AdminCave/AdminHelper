@@ -91,6 +91,7 @@ say() { printf '%s\n' "$*" >&2 || out_lost "$*"; }
 log() { say "[update] $*"; }
 die() { say "FEHLER: $*"; exit 1; }
 
+# >>> env check: update.sh and install.sh hold the same text, a test keeps it so
 # 0 if every '${' in $1 that is not part of a '$$' starts a placeholder compose
 # accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}' on
 # the same line, nested ones included. The classes are spelled out: under
@@ -199,8 +200,8 @@ env_key_ok() {
 # placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
 # template"; so do a quote that never closes and a key compose does not take
 # (env_key_ok), text after a closing quote included. Checked before the first
-# call, so such a .env stops the update before backup, swap and re-pin rather than
-# after. Reads .env as compose does: a BOM at its start drops, blank and '#' lines
+# call, so such a .env stops the script before it changes anything (update.sh:
+# before backup, swap and re-pin). Reads .env as compose does: a BOM at its start drops, blank and '#' lines
 # drop, "export " may lead, '=' or ':' separates, a line without either is a key
 # without a value; a quoted value runs to its closing quote, over several lines if
 # need be, and is literal in single quotes, and the text after that quote is read
@@ -256,6 +257,7 @@ check_env_templates() {
         done
     done < .env
 }
+# <<< env check
 
 # --- Preflight --------------------------------------------------------------
 [ -f docker-compose.yml ] || die "aus dem Install-Verzeichnis ausfuehren (docker-compose.yml fehlt)."
