@@ -35,8 +35,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/core
 Doku: → T8
 Abhängt von: T1
 
-### T4 — Formulare: Input, SearchField, Select, Switch, Checkbox, RadioGroup, Slider, FormField (R-1061)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/Input.svelte, apps/desktop/ui/src/components/ui/SearchField.svelte, apps/desktop/ui/src/components/ui/Select.svelte, apps/desktop/ui/src/components/ui/Switch.svelte, apps/desktop/ui/src/components/ui/Checkbox.svelte, apps/desktop/ui/src/components/ui/RadioGroup.svelte, apps/desktop/ui/src/components/ui/Slider.svelte, apps/desktop/ui/src/components/ui/FormField.svelte, apps/desktop/ui/src/components/ui/forms.test.ts
+### T4 — Formulare: Input, SearchField, Select, Switch, Checkbox, RadioGroup, Slider, FormField (R-1061)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/Input.svelte, apps/desktop/ui/src/components/ui/SearchField.svelte, apps/desktop/ui/src/components/ui/Select.svelte, apps/desktop/ui/src/components/ui/Switch.svelte, apps/desktop/ui/src/components/ui/Checkbox.svelte, apps/desktop/ui/src/components/ui/RadioGroup.svelte, apps/desktop/ui/src/components/ui/Slider.svelte, apps/desktop/ui/src/components/ui/FormField.svelte, apps/desktop/ui/src/components/ui/forms.test.ts, apps/desktop/ui/src/components/ui/field.ts, apps/desktop/ui/src/components/ui/__fixtures__/FormsHarness.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f148bbc4 2026-11-02T17:12:35+01:00
+Review: approve (.ah-out/review/kern-design-1/T4.verdict.json)
 Änderung: Acht Formular-Komponenten nach `components/forms/*.d.ts`, als Svelte-`bind:value`/`bind:checked` statt `onChange`-Paar; native Elemente darunter (Tastatur und Formular-Submit wie gewohnt), FormField verknüpft Label, Hinweis und Fehler per `for`/`aria-describedby`/`aria-invalid`; SearchField mit Löschen-Knopf und Kürzel-Anzeige. Tests: Bindung, Tastatur (Space/Pfeile), aria-Verknüpfung, `disabled`. SPDX-Header.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/forms.test.ts
 Doku: → T8
@@ -72,3 +74,4 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - T1: Alias-Zuordnung: `--bg-surface`→`--surface`, `--bg-elevated`/`--bg-panel`→`--surface-raised`, `--bg-sidebar`→`--bg-subtle`, `--bg-input`→`--surface-inset`, `--shadow`→`--shadow-md`, `--sp-5/6/7`→`--space-6/8/12` (wertgleich zu den alten 24/32/48 px). Fokus-Ring als `:where(:focus-visible)` (Spezifität 0), damit die bestehenden `:focus-visible`-Regeln der Seiten weiter gelten; gezeichnet als `outline` mit `--ring-width`/`--ring` statt `--ring-shadow`, weil Klassen mit eigenem `box-shadow` (`.ws-swatch.selected`) den Ring sonst verdecken (Reviewer T1). Die undefinierten Altnamen `--bg-elev`, `--radius`, `--bg-hover`, `--bg-accent` (Ansible, NotificationBell) bleiben unberührt, Roadmap-Zeile.
+- T4: Select ist ein natives `<select>` im Pill-Stil statt des DS-Dropdowns (Tastatur, Type-ahead, Formular-Submit vom System; ein eigenes Listbox-Muster kommt erst, wenn eine Seite Einträge mit Icons braucht). Tastatur aller Formular-Elemente ist nativ (input, select, radio mit einem `name`, range, button); jsdom emuliert sie nicht, die Tests prüfen daher die nativen Elemente und gemeinsamen Namen statt Tastendrücke. FormField reicht id, Label-id, `aria-describedby` und invalid per Kontext (`field.ts`) an das Steuerelement. Neue i18n-Schlüssel `ui.search`, `ui.clear`, `ui.select` (DE+EN).

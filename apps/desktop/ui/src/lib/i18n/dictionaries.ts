@@ -135,6 +135,9 @@ export const translations: Translations = {
     'action.delete': 'Löschen',
     'action.edit': 'Bearbeiten',
     'action.close': 'Schließen',
+    'ui.search': 'Suchen',
+    'ui.clear': 'Leeren',
+    'ui.select': 'Auswählen …',
     'action.copy': 'Kopieren',
     'action.run': 'Ausführen',
 
@@ -938,6 +941,9 @@ export const translations: Translations = {
     'action.delete': 'Delete',
     'action.edit': 'Edit',
     'action.close': 'Close',
+    'ui.search': 'Search',
+    'ui.clear': 'Clear',
+    'ui.select': 'Choose …',
     'action.copy': 'Copy',
     'action.run': 'Run',
 
