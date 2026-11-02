@@ -1250,3 +1250,58 @@ def test_server_route_answers_422_not_500(tags, test_client, db_session, admin_u
     )
     assert r.status_code == 422, r.text
     assert r.json()["detail"][0]["loc"][-1] == "tags"
+
+
+# Rows from before the name checks: a name the API refuses today as a server name
+# (servers/schemas._validate_server_name) or a username (users/schemas._USERNAME_PATTERN)
+# names no entry of the bulk-ZIP; the other entries stay.
+REFUSED_PATH_NAMES = ["..", ".", "a/b", "/abs", "", "..  ", " "]
+REFUSED_USER_NAMES = [*REFUSED_PATH_NAMES, "x:y", "a b", "a*b"]
+
+
+@pytest.mark.parametrize("name", REFUSED_PATH_NAMES, ids=repr)
+def test_bulk_zip_leaves_out_a_stored_server_name_refused_as_a_path(
+    name, test_client, db_session, admin_user
+):
+    _seed_stcp_tunnel(db_session)
+    db_session.add(Server(id="srv-b", name="serverB", hostname="b.example.test"))
+    db_session.add(
+        FrpTunnel(
+            id="t-b",
+            server_id="srv-b",
+            frp_config_id="cfg-1",
+            name="b-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+            visitor_port=6001,
+            enabled=True,
+        )
+    )
+    db_session.get(Server, "srv-a").name = name
+    db_session.commit()
+    r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+    assert r.status_code == 200, r.text
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert [n for n in names if n.startswith("clients/")] == ["clients/serverB/frpc.toml"], names
+    assert all(".." not in n.split("/") and not n.startswith("/") for n in names), names
+
+
+@pytest.mark.parametrize("name", REFUSED_USER_NAMES, ids=repr)
+def test_bulk_zip_leaves_out_a_stored_user_name_refused_as_a_path(
+    name, test_client, db_session, admin_user, normal_user
+):
+    from app.modules.users.models import User
+
+    _seed_stcp_tunnel(db_session)
+    legacy = User(username=name, hashed_password="x", is_admin=False)
+    db_session.add(legacy)
+    db_session.commit()
+    for user in (legacy, normal_user):
+        user.servers.append(db_session.get(Server, "srv-a"))
+    db_session.commit()
+    r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+    assert r.status_code == 200, r.text
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert [n for n in names if n.startswith("visitors/")] == ["visitors/viewer.toml"], names

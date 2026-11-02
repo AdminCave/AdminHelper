@@ -81,12 +81,12 @@ class _NameResolver:
     gateway whose requests may carry a client certificate (app.core.identity).
 
     A read never waits on DNS: a daemon thread, started with the app (start) or on
-    the first read, looks the names up every _NAME_TTL seconds (_NAME_RETRY after
-    a failure) and publishes the result, and a read returns the last one. Until the first
-    lookup, and while a lookup fails, a name adds no address, so the direct
-    address counts. A failed name loses its old addresses: after a restart of
-    its container they may belong to another one. Only has_address waits, on a
-    miss and for a bounded time."""
+    the first read, looks the names up every `ttl` seconds of the instance (default
+    _NAME_TTL; _NAME_RETRY after a failure) and publishes the result, and a read
+    returns the last one. Until the first lookup, and while a lookup fails, a name
+    adds no address, so the direct address counts. A failed name loses its old
+    addresses: after a restart of its container they may belong to another one.
+    Only has_address waits, on a miss and for a bounded time."""
 
     def __init__(
         self,
@@ -147,30 +147,40 @@ class _NameResolver:
     def refresh(self) -> float:
         """Looks every name up once; returns the seconds until the next round."""
         with self._round:
-            found = set()
-            for name in self.names:
-                try:
-                    # As an absolute name: it counts as written, no search domain is
-                    # appended. glibc then skips /etc/hosts (documented limit).
-                    infos = self._getaddrinfo(f"{name}.", None, type=socket.SOCK_STREAM)
-                    networks = {ipaddress.ip_network(info[4][0]) for info in infos}
-                except (OSError, ValueError) as exc:
-                    if name not in self._failing:
-                        self._failing.add(name)
-                        logger.warning(
-                            "%s: cannot resolve %r (%s); "
-                            "its forwarded headers are ignored until it resolves",
-                            self._label,
-                            name,
-                            exc,
-                        )
-                    continue
-                self._failing.discard(name)
-                found |= networks
-            self._networks = list(found)
-            if self._failing:
-                return _NAME_RETRY
-            return _NAME_TTL if self._ttl is None else self._ttl
+            try:
+                return self._lookup()
+            except Exception:
+                # Fail closed like a failed name: the last addresses may no longer be
+                # its. Under the round lock, so a round out of turn that follows keeps
+                # its answer.
+                self._networks = []
+                raise
+
+    def _lookup(self) -> float:
+        found = set()
+        for name in self.names:
+            try:
+                # As an absolute name: it counts as written, no search domain is
+                # appended. glibc then skips /etc/hosts (documented limit).
+                infos = self._getaddrinfo(f"{name}.", None, type=socket.SOCK_STREAM)
+                networks = {ipaddress.ip_network(info[4][0]) for info in infos}
+            except (OSError, ValueError) as exc:
+                if name not in self._failing:
+                    self._failing.add(name)
+                    logger.warning(
+                        "%s: cannot resolve %r (%s); "
+                        "its forwarded headers are ignored until it resolves",
+                        self._label,
+                        name,
+                        exc,
+                    )
+                continue
+            self._failing.discard(name)
+            found |= networks
+        self._networks = list(found)
+        if self._failing:
+            return _NAME_RETRY
+        return _NAME_TTL if self._ttl is None else self._ttl
 
     def _start(self) -> None:
         with self._lock:
@@ -188,8 +198,6 @@ class _NameResolver:
                 delay = self.refresh()
             except Exception:
                 logger.exception("%s: name lookup failed", self._label)
-                # Fail closed like a failed name: the last addresses may no longer be its.
-                self._networks = []
                 delay = _NAME_RETRY
             time.sleep(delay)
 

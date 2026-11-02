@@ -602,8 +602,8 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
   `review.sh sec --staged`, `commit-msg` prueft die Nachricht, `pre-push` jeden Commit, den ein Push
   nach draussen bringt. Gemeldet werden Pfad oder Datei:Zeile, nie der Inhalt. Was an den Hooks
   vorbeigeht, faengt der CI-Job „Public repo guard (review.sh sec)“. Der PreToolUse-Hook
-  `scripts/dev/hooks/harness-guard.sh` verweigert `git commit --no-verify` und Loeschen per Glob in
-  geteilten Temp-Verzeichnissen.
+  `scripts/dev/hooks/harness-guard.sh` verweigert `git commit --no-verify`, Loeschen per Glob in
+  geteilten Temp-Verzeichnissen und einen Branch-Wechsel im Hauptcheckout.
 - **AH-STATUS** druckt `scripts/dev/hooks/session-status.sh` beim Start (Abschnitt „Session-Status-Hook“).
 - **Roadmap:** `tasks/private/ROADMAP.md` liegt in einem eigenen privaten Repo (Sicherheitsfunde,
   Homelab-Details) und wird nur ueber `roadmap.py` geschrieben (Abschnitt „Die Roadmap als Skript“).
@@ -737,11 +737,11 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 ### Go Toolchain (Agent)
 
 ```bash
-# Go 1.27.2 oder neuer installieren (https://go.dev/dl/). go.mod verlangt nur 1.25, CI und
-# Release bauen aber mit dem neuesten 1.27.x: ein aelterer Patch traegt stdlib-Luecken, die
-# erst der neueste schliesst, und 1.26 faellt mit Go 1.28 aus dem Support. Das Debian-Paket
-# golang-go ist dafuer zu alt (trixie: 1.24), also manuell (Version von https://go.dev/dl/
-# einsetzen):
+# Go 1.27.3 oder neuer installieren (https://go.dev/dl/). go.mod verlangt 1.27 (toolchain
+# go1.27.3; ein aelteres lokales Go laedt sie per GOTOOLCHAIN=auto nach), CI und Release bauen
+# mit dem neuesten 1.27.x: ein aelterer Patch traegt stdlib-Luecken, die erst der neueste
+# schliesst. Das Debian-Paket golang-go ist dafuer zu alt (trixie: 1.24), also manuell
+# (Version von https://go.dev/dl/ einsetzen):
 # wget https://go.dev/dl/go1.27.x.linux-amd64.tar.gz
 # sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.27.x.linux-amd64.tar.gz
 ```
@@ -1342,11 +1342,13 @@ Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Tes
   (beim Server auch die Zugangsdaten); die anderen Slots bleiben stehen. Bei Fehler
   bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
   landen automatisch lokal unter `.ah-out/`.
-- **Parallele Lanes.** Jedes Vorhaben baut in einem eigenen Git-Worktree
+- **Parallele Lanes.** Jedes Vorhaben plant und baut in einem eigenen Git-Worktree
   `../AdminHelper-<slug>` (`git worktree add`, dann `bash scripts/dev/worktree-setup.sh
   <pfad> <slug>`: eigene Test-DB und `.devenv.sh`, Sidecar und Venv-Links,
   `node_modules` als Hardlinks, `.claude/settings.local.json` als **Kopie**, solange
-  `~/.config/adminhelper/pve.env` fehlt). Jede Lane bekommt ihre **eigene Lane-Kennung**:
+  `~/.config/adminhelper/pve.env` fehlt). Der Hauptcheckout bleibt auf `main` und wechselt nie den
+  Branch, weil alle Sessions ihn teilen (`harness-guard.sh` lehnt `git switch`/`git checkout` dort
+  ab). Jede Lane bekommt ihre **eigene Lane-Kennung**:
   das Setup schreibt den Slug nach `.vm/lane`, jede VM traegt den Tag `lane-<slug>`, und
   `reap`, der Auto-Sweep am Ende jedes Verbs und die Leak-Pruefung in `list` arbeiten
   auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert

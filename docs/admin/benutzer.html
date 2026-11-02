@@ -70,7 +70,7 @@
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">Login-Rate-Limit</div><p>5 fehlgeschlagene Login-Versuche pro IP innerhalb von 60 Sekunden → weitere Versuche werden mit <code>429</code> abgewiesen. Ein erfolgreicher Login setzt den Zähler zurück. Implementierung via Redis (fixed-window), mit In-Memory-Fallback für Single-Worker-Setups.</p></div>
+            <div><div class="callout-title">Login-Rate-Limit</div><p>5 fehlgeschlagene Login-Versuche pro IP innerhalb von 60 Sekunden → weitere Versuche werden mit <code>429</code> abgewiesen. Unter <code>MTLS_ENFORCE=true</code> zählt auch ein Token-Refresh ohne Client-Zertifikat als Fehlversuch. Ein erfolgreicher Login setzt den Zähler zurück. Implementierung via Redis (fixed-window), mit In-Memory-Fallback für Single-Worker-Setups.</p></div>
           </div>
 
           <h2>Browser-Zugriff (Client-Zertifikat)</h2>

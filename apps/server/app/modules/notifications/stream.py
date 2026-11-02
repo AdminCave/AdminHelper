@@ -52,16 +52,19 @@ def _stream_reauth_ok(
 ) -> bool:
     """Re-check a live stream's authorization: the bearer JWT must still be valid
     (not blacklisted / expired / pre-password-reset) and the mTLS identity must not
-    have been revoked. Sync SQLAlchemy, so callers run it via run_in_threadpool to
+    have been revoked, nor its issuer dropped from the trust file since the connect.
+    Sync SQLAlchemy, so callers run it via run_in_threadpool to
     keep the async stream from blocking the event loop."""
     from app.core.auth import _get_user_from_token
     from app.core.database import SessionLocal
-    from app.core.identity import _is_revoked
+    from app.core.identity import _is_revoked, recheck_issuer
 
     db = SessionLocal()
     try:
         if not token or _get_user_from_token(token, db) is None:
             return False
+        if identity is not None:
+            identity = recheck_issuer(identity)
         if verified and _is_revoked(db, cn, scope, not_before=not_before, identity=identity):
             return False
         return True

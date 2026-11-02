@@ -12,7 +12,7 @@ Prüfer, Modelle), §7 (Commit), §8 (Worktrees), §13 (Unterbrechung, Übergabe
 ## 1. Worktree
 
 ```bash
-git worktree add ../AdminHelper-<slug> feature/<slug>          # existenz-tolerant: steht er schon, weiter
+git worktree add ../AdminHelper-<slug> feature/<slug>          # meist legt /feature-plan ihn an: steht er schon, weiter
 bash scripts/dev/worktree-setup.sh ../AdminHelper-<slug> <slug>
 ```
 
