@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ca-root-renewal — Task-Ledger
-Status: aktiv · Branch: feature/arch-ca-root-renewal · Review: pro Task
+Status: bereit · Branch: feature/arch-ca-root-renewal · Review: pro Task
 Spec: docs/features/arch-ca-root-renewal.md (Roadmap R-1021)
 Heavy: linux-full — `apps/ca-issuer`, Gateway-Konfiguration und Server-Ampel (Sammellauf). Vor dem Merge außerdem der Stack-Job per Dispatch (`gh workflow run ci.yml --ref feature/arch-ca-root-renewal`); er fährt den Root-Wechsel aus T9. Kein `scenario`: Der Wechsel läuft in einem Stack, Agent und Desktop ändern keinen Code. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -177,8 +177,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/adr/0001-unified-pki-and-secure-deployment.md, changelog.d/arch-ca-root-renewal.md
 
-### T11 — Doku: `--ca-fp` nach `switch --compromised` gleich umstellen  [ ]
+### T11 — Doku: `--ca-fp` nach `switch --compromised` gleich umstellen  [x]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @553d79c0 2026-11-02T17:33:34+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Task-Review: am Ende
 Änderung: Aus der Abschlussprüfung (`security`, wichtig; ein Nit): Nach einem Leck stellt das Runbook gespeicherte
 `--ca-fp`-Werte und Install-Befehle gleich nach `switch --compromised` auf die neue Root um, bevor Geräte neu

@@ -183,7 +183,7 @@ sudo adminhelper-agent provision \
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Ansible / cloud-init</div><p>For rollouts to many hosts the <a href="#quick-rollout">quick-rollout one-liner</a> is the right building block: one <code>command:</code>/<code>runcmd:</code> step with <code>agent-install.sh --server … --token … --server-id … --ca-fp …</code> per host (mint the token once per host). Idempotent: without a token/server ID the same call only updates the package. After the <code>switch</code> of a root renewal, renew the stored <code>--ca-fp</code> from the provisioning tab before the <code>finish</code>.</p></div>
+            <div><div class="callout-title">Ansible / cloud-init</div><p>For rollouts to many hosts the <a href="#quick-rollout">quick-rollout one-liner</a> is the right building block: one <code>command:</code>/<code>runcmd:</code> step with <code>agent-install.sh --server … --token … --server-id … --ca-fp …</code> per host (mint the token once per host). Idempotent: without a token/server ID the same call only updates the package. After the <code>switch</code> of a root renewal, renew the stored <code>--ca-fp</code> from the provisioning tab before the <code>finish</code>, after a <code>switch --compromised</code> right away (<a href="./operations.html#root-renewal">Operations → Renewing the root</a>).</p></div>
           </div>
 
           <h2>Subcommand reference</h2>

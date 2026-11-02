@@ -185,7 +185,7 @@ sudo adminhelper-agent provision \
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Ansible / cloud-init</div><p>Für Rollouts auf viele Hosts ist der <a href="#schnell-rollout">Schnell-Rollout-Einzeiler</a> der passende Baustein: ein <code>command:</code>-/<code>runcmd:</code>-Schritt mit <code>agent-install.sh --server … --token … --server-id … --ca-fp …</code> pro Host (Token je Host einmalig erzeugen). Idempotent: ohne Token/Server-ID aktualisiert derselbe Aufruf nur das Paket. Nach dem <code>switch</code> einer Root-Erneuerung den gespeicherten <code>--ca-fp</code> vor dem <code>finish</code> aus dem Provisionierungs-Tab erneuern.</p></div>
+            <div><div class="callout-title">Ansible / cloud-init</div><p>Für Rollouts auf viele Hosts ist der <a href="#schnell-rollout">Schnell-Rollout-Einzeiler</a> der passende Baustein: ein <code>command:</code>-/<code>runcmd:</code>-Schritt mit <code>agent-install.sh --server … --token … --server-id … --ca-fp …</code> pro Host (Token je Host einmalig erzeugen). Idempotent: ohne Token/Server-ID aktualisiert derselbe Aufruf nur das Paket. Nach dem <code>switch</code> einer Root-Erneuerung den gespeicherten <code>--ca-fp</code> vor dem <code>finish</code> aus dem Provisionierungs-Tab erneuern, nach einem <code>switch --compromised</code> sofort (<a href="./betrieb.html#root-renewal">Betrieb → Root erneuern</a>).</p></div>
           </div>
 
           <h2>Subcommand-Referenz</h2>
