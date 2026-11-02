@@ -222,6 +222,71 @@ stehen in der zweiten Tabelle.
 - [Q16] crates.io-Suche „freerdp“: `freerdp-sys` 0.1.0 (2026-07-24), `freerdp2` und `freerdp2-sys` 0.2.0
   (2022-11-02, FreeRDP 2).
 
+## Ergebnis: xrdp
+
+Stand 2026-11-02 (T2). **Aufbau:**
+- **Server:** xrdp 0.10.1 mit xorgxrdp 0.10.2 (Debian 13) in einem Docker-Container auf der Dev-Box (8 Kerne). Der
+  Port liegt nur auf Loopback, angemeldet wird ein Wegwerf-Benutzer mit Zufallspasswort.
+- **Bildlast:** ffplay spielt im Container ein Testvideo auf 10 %, 50 % oder 100 % von 1920×1080 („tenth“, „half“,
+  „full“); bei „idle“ bewegt sich nichts.
+- **Clients:** V2-Probe, also `ironrdp-client` auf Git-Revision `37ce7d1b`, kopflos; sie zählt dekodierte
+  Bildänderungen und ihre CPU-Zeit. Ein lokaler Patch fügt nur eine trace-Zeile für den Codec hinzu. Als Referenz
+  läuft FreeRDP 3.15 (`xfreerdp3`) unter Xvfb.
+- **Messung:** 20 s nach 12 s Anlauf, jeder Lauf mit einem frischen Container. Gemessen werden die gesendeten Bytes
+  des Containers und die CPU je Prozess aus `/proc`, für beide Clients gleich.
+- **Unschärfe:** Die Host-Last lag zeitweise bei 11–15. Die Zahlen sind deshalb Größenordnungen, keine Benchmarks.
+
+**Bandbreite und Client-CPU** (Mbit/s vom Server / % eines Kerns; FreeRDP ohne die 2–7 % für Xvfb):
+
+| Last | IronRDP, GFX an | IronRDP, GFX aus | FreeRDP, Default (GFX) | FreeRDP, GFX aus (`/network:lan +rfx`) |
+|---|---|---|---|---|
+| idle | 0 / < 1 % | 0 / < 1 % | 0 / < 1 % | 0 / < 1 % |
+| tenth | 5,6 / 26 % | 7,2 / 13 % | 6,1 / 23 % | 7,2 / 19 % |
+| half | 16,5 / 59 % | 17,0 / 31 % | 15,8 / 57 % | 18,2 / 36 % |
+| full | 19,3 / 65 % | 16,8 / 37 % | 18,1 / 71 % | 19,5 / 44 % |
+
+**Befunde:**
+- **Codec.** Mit GFX handelt xrdp für die Sitzung RemoteFX Progressive aus (nur `WireToSurface2`, unter Last 19–24
+  EGFX-Frames/s), den Anmeldebildschirm überträgt es planar. Ohne GFX kommt klassisches RemoteFX als Fast-Path-Update,
+  bulk-komprimiert. Diese xrdp-Fassung hat keinen H.264-Encoder [Q10]: den AVC-Pfad von IronRDP misst erst T4. Ohne
+  H.264-Dekoder (`--avc off`) bleibt die Sitzung auf Progressive, half 14,5 Mbit/s, die Probe bei 51 %.
+- **Leistung.** Bei der Bandbreite liegen IronRDP und FreeRDP gleichauf. Bei der CPU gilt: mit GFX gleichauf, ohne
+  GFX braucht die Probe weniger, zeichnet aber auch nicht, FreeRDP schreibt zusätzlich in Xvfb. Progressive kostet
+  den Client etwa das Doppelte von klassischem RemoteFX. 1080p bei 50–100 % bewegter Fläche dekodiert die Probe mit
+  rund 0,6 Kernen. Die Pixel-Zählung der Probe ist mit GFX nicht mit der ohne GFX vergleichbar; maßgeblich sind
+  dort die EGFX-Frames/s.
+- **Anlauf.** Die Verbindung steht nach 0,2–0,4 s. Das erste Bild kommt mit GFX nach 0,4–0,7 s, ohne GFX nach
+  1,5–1,9 s.
+- **Stillstand.** In einem von acht GFX-Läufen unter Last blieb das Bild nach dem ersten Frame stehen: der Server
+  sendete danach nichts mehr (0,01 Mbit/s), die Probe meldete keinen Fehler. Die Ursache ist nicht verifiziert
+  (Kandidat: die Frame-Bestätigung, MS-RDPEGFX `FrameAcknowledge`). R-1075 braucht einen Watchdog, der eine stehende
+  Sitzung erkennt und neu aufbaut.
+- **Resize und Monitor-Layout.** Im Default scheitern beide immer, mit und ohne GFX. Die Probe kündigt per Default
+  Bulk-Kompression an (MPPC 64K, `INFO_COMPRESSION`). xrdp schickt daraufhin in der Reaktivierung nach dem Resize die
+  Font-Map-PDU komprimiert. Die `connection_finalization` von `ironrdp-connector` dekomprimiert nicht (das tut nur
+  `ironrdp-session` im laufenden Betrieb) und bricht mit „unexpected server message“ ab. Ohne GFX meldete xrdp dabei
+  zusätzlich einen SIGSEGV seines Sitzungsprozesses. Gegenprobe mit abgeschalteter Bulk-Kompression
+  (`ConfigBuilder::with_compression(false)`):
+  - Resize 1920×1080 → 1280×720 fertig nach 299 ms (GFX an) bzw. 135 ms (GFX aus), ohne Neuverbindung und ohne
+    SIGSEGV;
+  - das Zwei-Monitor-Layout (2× 1280×720) kommt als `MonitorLayout` mit 2560×720 an;
+  - die Bandbreite ohne Bulk-Kompression: half, GFX an, 12,6 Mbit/s bei 18 EGFX-Frames/s, also je Frame so viel wie
+    im Default (0,69 Mbit). Die Host-Last lag dabei bei 14–17.
+
+  Das ist ein Fehler in IronRDP, kein Grund gegen V2: R-1075 schaltet die Bulk-Kompression ab, bis er upstream behoben
+  ist, und meldet ihn dort (Folgezeile).
+- **Kanäle.**
+  - Zwischenablage: Fähigkeiten und Formatliste werden ausgetauscht; mit der nativen Zwischenablage (`enable`) bricht
+    die kopflose Probe unter Linux nicht ab, Inhalte prüft erst T4.
+  - Audio: RDPSND handelt aus, die Probe wählt 2 von 3 angebotenen Formaten. Ob Ton ankommt, misst erst T4.
+  - Laufwerk: RDPDR meldet das Laufwerk an (`ServerDeviceAnnounceResponse` mit `STATUS_SUCCESS`). xrdp hängt es per
+    FUSE unter `thinclient_drives` ein, und das geht im Container nicht: der Ordner blieb leer, Lesen und Schreiben
+    prüft erst T4.
+- **Nicht gemessen:**
+  - H.264 und NLA: xrdp bietet beides nicht, also T4.
+  - FreeRDP mit Ton, Zwischenablage und Resize.
+  - Die reine Dekodierzeit je Frame: die CPU-Zeit des Prozesses ist eine Näherung.
+
 ## Datenmodell / API / Migrationen
 
 Keine in diesem Vorhaben. Für R-1075 bewertet T5: Erweiterung von `RdpOptions` (`models.rs:57`, Wire-Vertrag

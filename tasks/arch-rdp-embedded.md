@@ -23,8 +23,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: keine (das Ergebnis ist die Spec selbst; kein Produktverhalten)
 Task-Review: am Ende
 
-### T2 — Protokoll-Prototyp gegen xrdp (R-1074)  [ ]
+### T2 — Protokoll-Prototyp gegen xrdp (R-1074)  [x]
 Komponente: scripts · Dateien: docs/features/arch-rdp-embedded.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ffa153a0 2026-11-02T15:18:32+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: xrdp im Docker-Container (nur Loopback), kopfloser IronRDP-Probe-Client in Rust unter
 `.ah-out/arch-rdp-embedded/`; gemessen Codec, fps, Mbit/s, Dekodierzeit, CPU unter fester Bildlast, dazu Resize,
 Zwischenablage, Laufwerk und Audio soweit xrdp sie anbietet; Gegenmessung FreeRDP 3 unter Xvfb. Abschnitt
