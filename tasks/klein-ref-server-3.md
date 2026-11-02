@@ -10,8 +10,10 @@ Heavy: none — Warn-Schlüssel, Doku und ein SQLAlchemy-Aufruf mit gleicher Men
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1011: Warn-Grund der extra_config-Keys präfixen, Kommentar und Sync-Absatz richtigstellen  [ ]
+### T1 — R-1011: Warn-Grund der extra_config-Keys präfixen, Kommentar und Sync-Absatz richtigstellen  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_config_generator.py, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b5e5c966 2026-11-02T10:18:59+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer+security kern-frp-2 T3 (Nits), 2026-10-30 · feature/kern-frp-2@ecd1b16a apps/server/app/modules/frp/config_generator.py:142, docs/developer/server.html:101
 Dedup-Key: ref:server:config_generator.py:warn-reason-collision
 Änderung: Erst ein roter Test: ein Tunnel mit `extra_config` `{"no secret": 1}` (Key mit Leerzeichen, wird abgelehnt) neben einem stcp-Tunnel ohne Secret gleichen Namens warnt zweimal (heute einmal). Dann `_first_warning(tunnel.name, ("extra_config", *refused))` und den Kommentar Z. 142–146 auf die Präfix-Regel umstellen. Den Sync-Absatz in server.html (DE+EN, Z. 101) um den abgelehnten Servernamen und die frpc-toml-Gleichheit ergänzen, nach dem Code gelesen.
