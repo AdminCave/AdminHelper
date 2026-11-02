@@ -27,7 +27,10 @@ futures-util = { version = "0.3", default-features = false }
 tokio = { version = "1", default-features = false, features = ["sync", "time", "net"] }
 url = "2"
 open = "5"
-keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "async-io", "crypto-rust"] }
+# The OS keyring through keyring-core and one store crate per platform (keyring_store.rs), not the
+# `keyring` 4 facade: its default store connects once per process and keeps a failed or stale
+# Secret Service connection until restart; keyring 3 connected per call. Windows uses wincred directly.
+keyring-core = "1"
 tauri-plugin-shell = "2"
 # Native "save as" dialog so the user picks where the browser .p12 is written.
 tauri-plugin-dialog = "2"
@@ -64,6 +67,12 @@ toml = "0.8"
 # Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
 # Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
 zeroize = "1.8.2"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(windows)'.dependencies]
 # Threading + SystemInformation: without Windows Terminal, the cmd console starts through

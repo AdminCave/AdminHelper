@@ -8,3 +8,6 @@
 - **Desktop: reqwest 0.13:** Der HTTP-Client der Desktop-App laeuft auf reqwest 0.13. Die Vertrauensanker bleiben
   gleich (Mozilla-Wurzeln fuer oeffentliche Zertifikate, TOFU-Pin und gepinnte CA wie bisher), die Kryptografie
   weiter auf ring.
+- **Desktop: keyring 4:** Unter Linux und macOS spricht die App den Schluesselbund ueber keyring-core und die
+  Store-Crates von keyring 4 an. Gespeicherte Passwoerter, Geraete-Identitaet und TOFU-Pins bleiben unter denselben
+  Eintraegen lesbar; die Verbindung zum Secret Service entsteht weiter je Zugriff.
