@@ -15,6 +15,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // first) — without this check, Escape under a stacked ConfirmDialog would
   // close the editor modal underneath and leave the dialog orphaned.
   const modalStack: symbol[] = [];
+
+  const FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), ' +
+    'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 </script>
 
 <script lang="ts">
@@ -24,21 +28,63 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     open: boolean;
     title?: string;
+    description?: string;
     width?: string;
     onClose?: () => void;
     children: Snippet;
     footer?: Snippet;
   }
 
-  let { open, title = '', width = '520px', onClose, children, footer }: Props = $props();
+  let {
+    open,
+    title = '',
+    description,
+    width = '520px',
+    onClose,
+    children,
+    footer,
+  }: Props = $props();
 
   const instance = Symbol();
+  const uid = $props.id();
+  let panel: HTMLElement | undefined = $state();
+  let returnTo: Element | null = null;
+
+  function focusables(): HTMLElement[] {
+    return panel ? [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)] : [];
+  }
+
+  // Tab and Shift+Tab stay inside the top-most dialog; the page behind it is inert.
+  function trapTab(e: KeyboardEvent) {
+    if (!panel) return;
+    const all = focusables();
+    if (all.length === 0) {
+      e.preventDefault();
+      panel.focus();
+      return;
+    }
+    const first = all[0];
+    const last = all[all.length - 1];
+    const at = document.activeElement;
+    const inside = at instanceof Node && panel.contains(at);
+    if (e.shiftKey && (!inside || at === first || at === panel)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (!inside || at === last)) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 
   function close() {
     onClose?.();
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Tab' && open) {
+      if (modalStack[modalStack.length - 1] === instance) trapTab(e);
+      return;
+    }
     if (e.key === 'Escape' && open) {
       // Only the top-most open modal reacts (see modalStack above).
       if (modalStack[modalStack.length - 1] !== instance) return;
@@ -67,6 +113,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     };
   });
 
+  // Remember who had focus before the dialog took it; runs before the panel mounts.
+  $effect.pre(() => {
+    if (open) returnTo = document.activeElement;
+  });
+
+  // Initial focus: the first control of body, then footer, then the header close
+  // button, else the panel. A control the content focused itself keeps its focus.
+  // On close focus goes back where it came from.
+  $effect(() => {
+    if (!open || !panel) return;
+    const el = panel;
+    if (!el.contains(document.activeElement)) {
+      const pick = (sel: string) =>
+        el.querySelector<HTMLElement>(sel)?.querySelector<HTMLElement>(FOCUSABLE);
+      (pick('.modal-body') ?? pick('.modal-footer') ?? focusables()[0] ?? el).focus();
+    }
+    const back = returnTo;
+    return () => {
+      if (back instanceof HTMLElement && back.isConnected) back.focus();
+    };
+  });
+
   $effect(() => {
     if (!open) return;
     // Body-scroll lock while open; teardown runs on close AND destroy-while-
@@ -84,16 +152,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 {#if open}
   <div class="modal-backdrop" onclick={onBackdropClick} role="presentation">
-    <div class="modal-panel" role="dialog" aria-modal="true" style:max-width={width}>
+    <div
+      bind:this={panel}
+      class="modal-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={title ? `${uid}-title` : undefined}
+      aria-describedby={description ? `${uid}-desc` : undefined}
+      tabindex="-1"
+      style:max-width={width}
+    >
       {#if title}
         <div class="modal-header">
-          <h3 class="modal-title">{title}</h3>
+          <h3 class="modal-title" id="{uid}-title">{title}</h3>
           <button class="btn ghost small" onclick={close} aria-label={$t('editor.close')}
             >&times;</button
           >
         </div>
       {/if}
       <div class="modal-body">
+        {#if description}<p class="modal-desc" id="{uid}-desc">{description}</p>{/if}
         {@render children()}
       </div>
       {#if footer}
@@ -106,12 +184,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 {/if}
 
 <style>
-  /* Visuals mirror the established .editor-overlay/.editor-panel look so
-     migrated modals stay visually seamless (AdminCave design tokens). */
+  /* DS dialog (AdminCave/DesignSystem components/feedback/Dialog): blurred scrim,
+     raised panel with --radius-2xl, fade in and rise by 8px. */
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(6px);
+    animation: modal-fade var(--dur-base) var(--ease-out);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -119,9 +199,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     padding: var(--sp-4);
   }
   .modal-panel {
-    background: var(--bg-panel);
+    background: var(--surface-raised);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-lg);
+    animation: modal-rise var(--dur-base) var(--ease-out);
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
@@ -139,6 +221,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
     margin: 0;
     font-size: 16px;
     font-weight: 600;
+  }
+  .modal-panel:focus {
+    outline: none;
+  }
+  .modal-desc {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  @keyframes modal-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes modal-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
   }
   .modal-body {
     padding: var(--sp-5);
