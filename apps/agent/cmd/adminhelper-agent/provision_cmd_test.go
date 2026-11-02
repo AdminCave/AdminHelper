@@ -11,6 +11,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/term"
 )
 
 // provisionCall is what the provision command handed to provision.Run.
@@ -223,6 +226,94 @@ func TestReadStdinTokenTerminalBounded(t *testing.T) {
 	}
 	if len(calls) != 1 || len(calls[0].token) != maxStdinToken {
 		t.Errorf("calls %d, want one with a token of %d bytes", len(calls), maxStdinToken)
+	}
+}
+
+// interruptHooks swaps the terminal-state and signal hooks of the no-echo read;
+// sig is the channel the read registered for interrupts, restored the states
+// handed to termRestore, exits the codes handed to exitProcess.
+type interruptHooks struct {
+	state    *term.State
+	sig      chan<- os.Signal
+	stopped  bool
+	restored []*term.State
+	exits    chan int
+}
+
+func fakeInterruptHooks(t *testing.T) *interruptHooks {
+	t.Helper()
+	origState, origRestore, origNotify, origStop, origExit := termState, termRestore, notifyInterrupt, stopInterrupt, exitProcess
+	t.Cleanup(func() {
+		termState, termRestore, notifyInterrupt, stopInterrupt, exitProcess = origState, origRestore, origNotify, origStop, origExit
+	})
+	h := &interruptHooks{state: &term.State{}, exits: make(chan int, 1)}
+	termState = func(fd int) (*term.State, error) {
+		if fd != 7 {
+			t.Errorf("state of fd %d, want the terminal's 7", fd)
+		}
+		return h.state, nil
+	}
+	termRestore = func(fd int, s *term.State) error {
+		h.restored = append(h.restored, s)
+		return nil
+	}
+	notifyInterrupt = func(c chan<- os.Signal) { h.sig = c }
+	stopInterrupt = func(c chan<- os.Signal) {
+		if c != h.sig {
+			t.Error("stopped another channel than the one registered")
+		}
+		h.stopped = true
+	}
+	exitProcess = func(code int) { h.exits <- code }
+	return h
+}
+
+// Ctrl-C ends the process inside the no-echo read, before x/term puts the echo
+// back: the read must restore the terminal itself and leave with 130.
+func TestReadStdinTokenTerminalInterruptRestores(t *testing.T) {
+	h := fakeInterruptHooks(t)
+	reads := fakeTerminal(t, nil, nil)
+	readTerminal = func(fd int) ([]byte, error) {
+		*reads++
+		if h.sig == nil {
+			t.Error("no interrupt registered during the read")
+			return nil, io.ErrUnexpectedEOF
+		}
+		h.sig <- os.Interrupt
+		select {
+		case code := <-h.exits:
+			if code != 130 {
+				t.Errorf("exit %d, want 130", code)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("no exit after the interrupt")
+		}
+		return nil, io.ErrUnexpectedEOF
+	}
+	_, _, err := runProvisionCmd(t, &untouchedStdin{}, provisionArgs("--token-stdin")...)
+	if err == nil {
+		t.Error("the interrupted read returned no error")
+	}
+	if len(h.restored) != 1 || h.restored[0] != h.state {
+		t.Errorf("restored %v, want the saved state once", h.restored)
+	}
+	if !h.stopped {
+		t.Error("the interrupt stays caught after the read")
+	}
+}
+
+func TestReadStdinTokenTerminalNoInterruptNoRestore(t *testing.T) {
+	h := fakeInterruptHooks(t)
+	fakeTerminal(t, []byte("adminhelper_prov_test9"), nil)
+	calls, _, err := runProvisionCmd(t, &untouchedStdin{}, provisionArgs("--token-stdin")...)
+	if err != nil || len(calls) != 1 {
+		t.Fatalf("err %v, calls %+v; want one provision", err, calls)
+	}
+	if h.sig == nil || !h.stopped {
+		t.Errorf("interrupt registered %v, stopped %v; want both", h.sig != nil, h.stopped)
+	}
+	if len(h.restored) != 0 || len(h.exits) != 0 {
+		t.Errorf("restored %v, exits %d; want neither without an interrupt", h.restored, len(h.exits))
 	}
 }
 
