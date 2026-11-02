@@ -36,13 +36,12 @@
           <h2>Installation bricht ab</h2>
           <div class="card-grid">
             <div class="card" data-reveal>
-              <h3><code>password authentication failed for user "adminhelper"</code></h3>
-              <p>Der Install wartet 240&nbsp;s und bricht ab; im Server-Log steht <code>FATAL: password authentication failed</code>. Ursache: ein <strong>altes <code>postgres-data</code>-Volume</strong> aus einem früheren (abgebrochenen) Versuch. Postgres setzt das Passwort nur beim <em>ersten</em> Init des Volumes — ein neu generiertes <code>.env</code>-Passwort (z.&nbsp;B. nachdem der Ordner gelöscht wurde) passt also nicht mehr. Lösung — Volumes wegwerfen (gefahrlos, solange kein echter Datenbestand drin ist):</p>
+              <h3><code>compose project '…' is already installed here</code></h3>
+              <p>Der Installer findet vor dem Start Container oder ein Volume <code>postgres-data</code> bzw. <code>ca-pki</code> des Compose-Projekts und bricht ab, ohne Stack und Daten zu ändern. Ist es eine laufende Installation: <code>./scripts/update.sh</code> im Install-Verzeichnis. Ist es der Rest eines abgebrochenen Versuchs, passt sein <strong>altes <code>postgres-data</code>-Volume</strong> nicht zur neuen <code>.env</code> (Postgres setzt das Passwort nur beim <em>ersten</em> Init, sonst endet der Start mit <code>password authentication failed</code>). Dann neu aufsetzen — das löscht die Daten der Volumes:</p>
               <pre><code>cd adminhelper
-docker compose down -v
-# oder direkt beim Install:
 ./scripts/install.sh … --reset</code></pre>
-              <p>Stolperfalle: Der Compose-Projektname ist der <em>Verzeichnisname</em>. Zwei Installs in verschiedenen Pfaden mit gleichem Ordnernamen (<code>adminhelper</code>) teilen sich dasselbe Volume <code>adminhelper_postgres-data</code> — daher kann ein „frischer" Ordner trotzdem auf ein altes Volume treffen.</p>
+              <p><code>--reset</code> nennt die Volumes des Projekts und löscht sie erst, wenn am Terminal der Projektname eingetippt wurde, auch mit <code>--yes</code>; ohne Terminal bricht es ab, ebenso, wenn die Container des Projekts zu einem anderen Verzeichnis gehören.</p>
+              <p>Stolperfalle: Der Compose-Projektname ist der <em>Verzeichnisname</em> (außer <code>COMPOSE_PROJECT_NAME</code> in der <code>.env</code> setzt ihn). Zwei Installs in verschiedenen Pfaden mit gleichem Ordnernamen (<code>adminhelper</code>) teilen sich dasselbe Volume <code>adminhelper_postgres-data</code> — daher kann ein „frischer" Ordner trotzdem auf ein altes Volume treffen.</p>
             </div>
           </div>
 
