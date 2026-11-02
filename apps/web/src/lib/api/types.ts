@@ -207,6 +207,32 @@ export interface AuditEntry {
   detail?: string | null;
 }
 
+// ── Certificates (R-1022) ──────────────────────────────────────────────
+export type ExpiryStatus = 'ok' | 'warning' | 'critical';
+
+export interface InfraCertificate {
+  name: string;
+  subject: string;
+  fingerprint: string;
+  not_after: string;
+  days_left: number;
+  status: ExpiryStatus;
+}
+
+export interface AgentCertificate {
+  server_id: string;
+  server_name?: string | null;
+  fingerprint: string;
+  not_after: string;
+  days_left: number;
+  status: ExpiryStatus;
+}
+
+export interface CertificateOverview {
+  infrastructure: InfraCertificate[];
+  agents: AgentCertificate[];
+}
+
 export interface AuditQuery {
   action?: string;
   actorType?: string;

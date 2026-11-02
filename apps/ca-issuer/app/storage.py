@@ -429,10 +429,12 @@ def _provision_server_material(
     label: str,
     extra_trust: tuple[Intermediate, ...] = (),
     send_root: bool = False,
+    trust_root: bool = True,
 ) -> None:
     """Shared core for the gateway + frps server-cert provisioning (audit 2.9):
-    they differ only in file names, the signing intermediate, any extra trust and
-    whether the server presents the root after the intermediate (send_root).
+    they differ only in file names, the signing intermediate, any extra trust,
+    whether the server presents the root after the intermediate (send_root) and
+    whether the trust bundle carries the root (trust_root).
     Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
     the leaf is kept across restarts but re-minted once past half its life (F4) so
     it never expires under a long-running stack, once the current intermediate
@@ -440,16 +442,22 @@ def _provision_server_material(
     present what follows the leaf now (a fullchain from before send_root), or once
     its names differ from primary + extra_sans (a changed DOMAIN or EXTRA_SANS)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Trust bundle = the signing intermediate's chain (root already in it) and its
+    # Trust bundle = the signing intermediate's chain (with trust_root the root too) and its
     # retired intermediates, plus any extra trust intermediates (e.g. frps also
     # trusting the access chain for the STCP visitor) with theirs: a client cert from
     # before a rotation, sent without its chain (a browser .p12), still finds its
     # issuer until the retired one expires. Always (re)written so it follows the
     # current hierarchy.
+    # Without trust_root the intermediates themselves are the anchors: a verifier that
+    # takes any certificate in its pool as an anchor (Go's crypto/tls in frps) then
+    # accepts only what a listed intermediate issued, so one dropped from the bundle
+    # (rotate --compromised) is refused even when the client sends it along under the
+    # same root. nginx (OpenSSL) needs the self-signed root as its anchor and keeps it.
     trusted = list(inter.retired)
     for extra in extra_trust:
         trusted += [extra.cert, *extra.retired]
-    bundle = inter.chain + pki.chain_pem(*trusted)
+    head = inter.chain if trust_root else pki.cert_to_pem(inter.cert)
+    bundle = head + pki.chain_pem(*trusted)
     _write_atomic(out_dir / bundle_name, bundle)
 
     cert_path = out_dir / cert_name
@@ -535,8 +543,9 @@ def ensure_frps_cert(
 ) -> None:
     """Provision the frps server TLS material under the tunnel intermediate
     (ADR 0001 §3.1 / A7). frps mounts these read-only:
-        ca.crt    tunnel intermediate + root + retired tunnel intermediates
-                  (+ extra_trust intermediates, each with its retired ones)
+        ca.crt    tunnel intermediate + retired tunnel intermediates
+                  (+ extra_trust intermediates, each with its retired ones);
+                  no root, so the listed intermediates are frps's only anchors
         frps.crt  server leaf + tunnel intermediate (server_auth, SAN=server_addr)
         frps.key  the leaf's private key (0600)
 
@@ -562,4 +571,5 @@ def ensure_frps_cert(
         key_name="frps.key",
         label="frps-Cert",
         extra_trust=extra_trust,
+        trust_root=False,
     )

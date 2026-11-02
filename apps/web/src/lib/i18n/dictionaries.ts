@@ -25,6 +25,7 @@ export const translations: Translations = {
     'nav.apikeys': 'API-Keys',
     'nav.hooks': 'Hooks',
     'nav.frp': 'FRP Tunnels',
+    'nav.certificates': 'Zertifikate',
     'nav.audit': 'Audit-Log',
     'nav.logout': 'Abmelden',
     'theme.toggle': 'Design umschalten',
@@ -123,6 +124,27 @@ export const translations: Translations = {
     'page.audit.col.ip': 'IP',
     'page.audit.col.status': 'Status',
     'page.audit.truncated': 'Nur die neuesten {n} Einträge — Filter verfeinern für ältere.',
+
+    // ── Certificates ───────────────────────────────────────────────────
+    'page.certificates.title': 'Zertifikate',
+    'page.certificates.subtitle':
+      'Wann die Zertifikate der Infrastruktur und der Agenten ablaufen — gelb unter 30, rot unter 7 Tagen.',
+    'page.certificates.loading': 'Lädt …',
+    'page.certificates.infra': 'Infrastruktur',
+    'page.certificates.agents': 'Agenten',
+    'page.certificates.infra.empty':
+      'Keine Daten — der ca-issuer hat bei seinem letzten Start keine Zertifikate eingetragen.',
+    'page.certificates.agents.empty': 'Kein Agent mit gültigem Zertifikat.',
+    'page.certificates.col.name': 'Name',
+    'page.certificates.col.subject': 'Subject',
+    'page.certificates.col.server': 'Server',
+    'page.certificates.col.notAfter': 'Gültig bis',
+    'page.certificates.col.daysLeft': 'Resttage',
+    'page.certificates.col.status': 'Status',
+    'page.certificates.status.ok': 'OK',
+    'page.certificates.status.warning': 'Bald fällig',
+    'page.certificates.status.critical': 'Kritisch',
+    'page.certificates.expired': 'abgelaufen',
 
     // ── API-Keys Page ─────────────────────────────────────────────────
     'page.apikeys.title': 'API-Keys',
@@ -325,6 +347,7 @@ export const translations: Translations = {
     'nav.apikeys': 'API Keys',
     'nav.hooks': 'Hooks',
     'nav.frp': 'FRP Tunnels',
+    'nav.certificates': 'Certificates',
     'nav.audit': 'Audit log',
     'nav.logout': 'Sign out',
     'theme.toggle': 'Toggle theme',
@@ -421,6 +444,27 @@ export const translations: Translations = {
     'page.audit.col.ip': 'IP',
     'page.audit.col.status': 'Status',
     'page.audit.truncated': 'Showing the latest {n} entries — narrow the filters for older ones.',
+
+    // ── Certificates ───────────────────────────────────────────────────
+    'page.certificates.title': 'Certificates',
+    'page.certificates.subtitle':
+      'When the certificates of the infrastructure and the agents run out — yellow below 30, red below 7 days.',
+    'page.certificates.loading': 'Loading …',
+    'page.certificates.infra': 'Infrastructure',
+    'page.certificates.agents': 'Agents',
+    'page.certificates.infra.empty':
+      'No data — the ca-issuer recorded no certificates at its last start.',
+    'page.certificates.agents.empty': 'No agent with a valid certificate.',
+    'page.certificates.col.name': 'Name',
+    'page.certificates.col.subject': 'Subject',
+    'page.certificates.col.server': 'Server',
+    'page.certificates.col.notAfter': 'Valid until',
+    'page.certificates.col.daysLeft': 'Days left',
+    'page.certificates.col.status': 'Status',
+    'page.certificates.status.ok': 'OK',
+    'page.certificates.status.warning': 'Due soon',
+    'page.certificates.status.critical': 'Critical',
+    'page.certificates.expired': 'expired',
 
     // ── API-Keys Page ─────────────────────────────────────────────────
     'page.apikeys.title': 'API Keys',

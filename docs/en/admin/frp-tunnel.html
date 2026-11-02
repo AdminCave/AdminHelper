@@ -51,7 +51,7 @@
           <ul>
             <li><strong>frps server cert</strong>: issued by the <code>ca-issuer</code> under <code>tunnel</code> (ECDSA P-256, SAN = the public frps address), provisioned into the frps volume on first start. The CA key never reaches the internet-facing frps.</li>
             <li><strong>Agent tunnel cert</strong>: the agent <em>enrolls</em> it on-device during provisioning (A4) — the same <code>tunnel</code> cert serves server pushes <em>and</em> the frp tunnel.</li>
-            <li><strong>trustedCaFile</strong>: frps trusts the <code>tunnel</code> chain and also the <code>access</code> intermediate, because the desktop visitor presents its <code>access</code> certificate. frpc (agent and desktop) checks the frps certificate against the chain file <code>ca.crt</code> from its enrollment.</li>
+            <li><strong>trustedCaFile</strong>: frps trusts only the listed <code>tunnel</code> and <code>access</code> intermediates (current and retired), not the root, so it takes no certificate of a revoked intermediate. <code>access</code> is in it because the desktop visitor presents its <code>access</code> certificate. frpc (agent and desktop) checks the frps certificate against the chain file <code>ca.crt</code> from its enrollment.</li>
           </ul>
 
           <div class="callout callout-note" data-reveal>

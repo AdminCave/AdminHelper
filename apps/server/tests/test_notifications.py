@@ -847,12 +847,12 @@ class TestIngress:
         ], res.text
 
     def test_a_source_type_of_the_server_is_refused(self, test_client, db_session, monkeypatch):
-        # Under frp_config and frps the server keeps notices of its own and finds them
+        # Under frp_config, frps and certificate_expiry the server keeps notices of its own and finds them
         # again by source_type: a row from the ingress would count as one of them.
         monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
         admin = _user(db_session, "boss", is_admin=True)
         _sub(db_session, admin, scope_type="all")
-        for source_type in ("frp_config", "frps"):
+        for source_type in ("frp_config", "frps", "certificate_expiry"):
             for source_id in ("cfg-1:auth_token", None):
                 payload = {**self._payload(), "source_type": source_type, "source_id": source_id}
                 if source_id is None:
@@ -877,6 +877,7 @@ class TestIngress:
         # Taken from the writers, not spelled out: a renamed source type on the
         # server's side turns this red instead of reopening the ingress for it.
         import app.main as m
+        from app.modules.enrollment import expiry
         from app.modules.frp import supervisor_watch
         from app.modules.frp.models import FrpServerConfig
 
@@ -899,6 +900,7 @@ class TestIngress:
         for source_type, source_id in (
             (told.source_type, told.source_id),
             (supervisor_watch.SOURCE_TYPE, "boot-1:1"),
+            (expiry.SOURCE_TYPE, f"{'ab' * 32}:critical"),
         ):
             payload = {**self._payload(), "source_type": source_type, "source_id": source_id}
             res = test_client.post(self._PATH, headers={"X-Internal-Key": "secret"}, json=payload)

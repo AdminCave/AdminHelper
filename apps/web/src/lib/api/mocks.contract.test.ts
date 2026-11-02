@@ -139,8 +139,8 @@ describe('playwright mocks vs. the server OpenAPI snapshot', () => {
     // route declares no response_model, or only an open dict. Without this
     // the checked set could drain to zero while the test stayed green, which is
     // exactly the kind of quiet green this whole stage exists to prevent.
-    // All 19 fixtures reach a key check today. Pinned at the real number, so a
+    // All 20 fixtures reach a key check today. Pinned at the real number, so a
     // fixture quietly dropping out is a failure rather than a smaller green.
-    expect(checked, 'too few fixtures actually reached a key check').toBe(19);
+    expect(checked, 'too few fixtures actually reached a key check').toBe(20);
   });
 });

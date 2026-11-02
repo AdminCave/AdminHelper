@@ -66,12 +66,13 @@ def test_ca_grants_follow_what_the_ca_issuer_does_per_table():
     stmts = [
         _text(s)
         for s in db_roles.ca_grant_statements(
-            ["device_lines", "revoked_identities", "users"], ["s1"]
+            ["device_lines", "revoked_identities", "infra_certificates", "users"], ["s1"]
         )
     ]
     assert stmts == [
         'GRANT SELECT, INSERT, UPDATE ON public."device_lines" TO "ah_ca"',
         'GRANT SELECT ON public."revoked_identities" TO "ah_ca"',
+        'GRANT SELECT, INSERT, DELETE ON public."infra_certificates" TO "ah_ca"',
         'GRANT USAGE, SELECT ON SEQUENCE public."s1" TO "ah_ca"',
     ]
 
@@ -134,7 +135,8 @@ def _seed_an_existing_install(port: str) -> None:
     # What a release before this one left: every object created by the superuser.
     with psycopg.connect(_dsn(port, SUPERUSER, SUPERPASS), autocommit=True) as conn:
         conn.execute(
-            "DROP TABLE IF EXISTS users, enrollment_tokens, revoked_identities, counters, later "
+            "DROP TABLE IF EXISTS users, enrollment_tokens, revoked_identities, infra_certificates, "
+            "counters, later "
             "CASCADE"
         )
         conn.execute("DROP TYPE IF EXISTS hook_kind")
@@ -144,6 +146,7 @@ def _seed_an_existing_install(port: str) -> None:
         conn.execute("CREATE TABLE enrollment_tokens (id text PRIMARY KEY, used_at timestamp)")
         conn.execute("CREATE TABLE revoked_identities (id text PRIMARY KEY, scope text)")
         conn.execute("INSERT INTO revoked_identities VALUES ('r1', 'agent')")
+        conn.execute("CREATE TABLE infra_certificates (name text PRIMARY KEY, subject text)")
         conn.execute("CREATE TABLE counters (id bigint GENERATED ALWAYS AS IDENTITY, n int)")
 
 
@@ -207,6 +210,11 @@ def test_the_ca_issuer_reaches_only_its_tables(as_superuser):
             conn.execute("SELECT * FROM users")
         with pytest.raises(errors.InsufficientPrivilege):
             conn.execute("DELETE FROM enrollment_tokens")
+        # Its snapshot of the infrastructure certificates it replaces, never edits.
+        conn.execute("INSERT INTO infra_certificates VALUES ('root', 'a')")
+        conn.execute("DELETE FROM infra_certificates")
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("UPDATE infra_certificates SET subject = 'b'")
     for db in (db_roles.MONITOR_DB, "postgres"):
         with pytest.raises(psycopg.OperationalError):
             _connect_as(port, "ca", db)

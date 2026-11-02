@@ -35,12 +35,11 @@
 
           <h2>Install aborts</h2>
           <ul>
-            <li><strong><code>password authentication failed for user "adminhelper"</code></strong> (install waits 240s, then aborts): a stale <code>postgres-data</code> volume from an earlier (aborted) attempt. Postgres only sets the password on the volume's <em>first</em> init, so a freshly generated <code>.env</code> password (e.g. after deleting the folder) no longer matches. Wipe the volumes — safe as long as there is no real data yet:
+            <li><strong><code>compose project '…' is already installed here</code></strong>: before the start the installer finds containers or a <code>postgres-data</code> or <code>ca-pki</code> volume of the compose project and stops without changing the stack or its data. For a running installation: <code>./scripts/update.sh</code> in the install directory. For the remains of an aborted attempt, its stale <code>postgres-data</code> volume does not match the new <code>.env</code> (Postgres only sets the password on the volume's <em>first</em> init, else the start ends in <code>password authentication failed</code>). Then start over — this deletes the data of the volumes:
               <pre><code>cd adminhelper
-docker compose down -v
-# or directly on install:
 ./scripts/install.sh … --reset</code></pre>
-              Gotcha: the compose project name is the <em>directory name</em>, so two installs in different paths sharing the basename <code>adminhelper</code> reuse the same <code>adminhelper_postgres-data</code> volume — a "fresh" folder can still hit an old one.</li>
+              <code>--reset</code> names the volumes of the project and deletes them only after the project name is typed on a terminal, <code>--yes</code> included; without a terminal it stops, and so it does when the containers of the project belong to another directory.
+              Gotcha: the compose project name is the <em>directory name</em> (unless <code>COMPOSE_PROJECT_NAME</code> in the <code>.env</code> sets it), so two installs in different paths sharing the basename <code>adminhelper</code> reuse the same <code>adminhelper_postgres-data</code> volume — a "fresh" folder can still hit an old one.</li>
           </ul>
 
           <h2>Login fails</h2>
