@@ -756,7 +756,7 @@ mkdir -p ~/.local/bin && ln -s ~/sdk/go/bin/go ~/sdk/go/bin/gofmt ~/.local/bin/
 ### Node.js + npm (Desktop-UI und Web-Frontend)
 
 Beide Svelte-Frontends (und `cargo tauri dev`, das den Vite-Dev-Server
-startet) brauchen Node.js 22+:
+startet) brauchen Node.js 26+:
 
 ```bash
 # Z. B. via NodeSource oder nvm; danach in beiden Projekten:

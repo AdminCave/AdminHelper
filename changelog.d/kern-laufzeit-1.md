@@ -4,3 +4,5 @@
   Konfiguration bleibt unveraendert.
 - **Python 3.14 in den Images:** Server, Monitoring und CA-Issuer laufen auf python:3.14-slim statt 3.12; die
   gehashten Locks sind unter 3.14 neu erzeugt (dieselben Versionen), die CI testet 3.14 und 3.15.
+- **Node.js 26 LTS:** Web-Frontend und Desktop-UI bauen im Image und in der CI mit Node.js 26 statt 22;
+  `@types/node` steht auf 26.

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
 # ---- Stage 1: Frontend-Build (Vite/Svelte) ----
-FROM node:22-alpine@sha256:9385cd9f3001dfc3431e8ead12c43e9e1f87cc1b9b5c6cfd0f73865d405b27c4 AS frontend-build
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS frontend-build
 WORKDIR /build
 
 COPY apps/web/package.json apps/web/package-lock.json ./

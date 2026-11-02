@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/kern-laufzeit-1/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts server --strict
 Doku: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html (Matrix-Namen, Python-Versionen), changelog.d/kern-laufzeit-1.md
 
-### T3 — Node 26 LTS (R-1031)  [ ]
+### T3 — Node 26 LTS (R-1031)  [x]
 Komponente: web · Dateien: Dockerfile, .github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/audit.yml, apps/web/package.json, apps/web/package-lock.json, apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, DEVELOPMENT.md, changelog.d/kern-laufzeit-1.md
+Evidenz: run.sh[quick] web desktop-ui: 2 passed, 0 failed, 16 skipped @820a8944 2026-11-02T15:13:12+01:00
+Review: approve (.ah-out/review/kern-laufzeit-1/T3.verdict.json)
 Änderung: `FROM node:26-alpine@sha256:<Digest>` im `frontend-build`, `node-version: "26"` an allen Stellen, `@types/node` auf ^26 in Web und Desktop-UI samt Lockfiles, `DEVELOPMENT.md` „Node.js 26+“. Abhängt von T2 nur über `Dockerfile` und `ci.yml` (Reihenfolge).
 Verify: bash scripts/dev/verify.sh web desktop-ui --strict
 Doku: DEVELOPMENT.md, changelog.d/kern-laufzeit-1.md
