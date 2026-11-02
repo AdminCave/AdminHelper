@@ -70,10 +70,12 @@ Review: approve (.ah-out/review/kern-monitoring-3/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage
 Doku: keine (interner Command; der Export ist in T12 beschrieben)
 
-### T8 — Chart-Baustein TimeChart (R-1076, R-1077)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/charts/TimeChart.svelte, apps/desktop/ui/src/components/charts/TimeChart.test.ts, apps/desktop/ui/src/lib/charts.ts, apps/desktop/ui/src/lib/charts.test.ts
+### T8 — Chart-Baustein TimeChart (R-1076, R-1077)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/charts/TimeChart.svelte, apps/desktop/ui/src/components/charts/TimeChart.test.ts, apps/desktop/ui/src/lib/charts.ts, apps/desktop/ui/src/lib/charts.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @b32f8bf4 2026-11-02T21:00:15+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T8.verdict.json)
 Änderung: SVG-Chart nach `TimeChart` im Mockup: Serien (Linie, Fläche, Strich), gespiegelte Achse, Schwellen, Ereignis-Marker, Bänder, Vorperiode, Prognose-Bereich ab „jetzt“, Crosshair-Tooltip, Ziehen zum Zoomen (≥ 3 Punkte), Doppelklick zurück, Tastatur: Fokus und Pfeiltasten bewegen das Crosshair. `lib/charts.ts`: `niceMax`, `stats` (Ø/P95/Max/Aktuell über Ausschnitt, `null` ignoriert), `linearSlope`, `daysUntilFull`, `toCsv`. Neue Dateien mit SPDX-Header; Tests für jede Funktion und für Tooltip, Zoom-Ereignis, ausgeblendete Serie.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/charts.test.ts src/components/charts/TimeChart.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/charts.test.ts src/components/charts/TimeChart.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T12
 
 ### T9 — Verlauf im Server-Dashboard (R-1076)  [ ]
