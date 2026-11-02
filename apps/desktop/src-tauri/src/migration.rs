@@ -117,6 +117,7 @@ impl Planned {
                 allow_self_signed_certs: settings.allow_self_signed_certs,
                 last_username,
                 legacy_keys: true,
+                favorite_connections: Vec::new(),
             },
             connections,
         })
@@ -668,6 +669,7 @@ mod tests {
             allow_self_signed_certs: true,
             last_username: last_username.map(String::from),
             legacy_keys: true,
+            favorite_connections: Vec::new(),
         }
     }
 

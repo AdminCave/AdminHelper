@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-verbindungen-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/connectionList.test.ts
 Doku: → T9
 
-### T2 — Favoriten in den Settings  [ ]
+### T2 — Favoriten in den Settings  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts
+Evidenz: run.sh[quick] desktop-rs desktop-ui: 2 passed, 0 failed, 16 skipped @4616c120 2026-11-02T22:37:20+01:00
+Review: approve (.ah-out/review/kern-verbindungen-1/T2.verdict.json)
 Änderung: `Settings.favorite_connections: Vec<String>` mit `#[serde(default)]` (Wire `favoriteConnections`), gespeichert in der Meta des Workspace (`workspace.json`), nicht in den geräteweiten Prefs; die Struct-Literale von `Meta` ziehen mit, der Bridge-Typ und die Defaults der UI auch (Paritätstest). Test: eine Meta ohne das Feld lädt mit leerer Liste, Round-Trip behält die IDs, ein anderer Workspace sieht sie nicht. R-1065.
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T9
