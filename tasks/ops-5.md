@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-5 — Task-Ledger
-Status: bereit · Branch: feature/ops-5 · Review: pro Task
+Status: aktiv · Branch: feature/ops-5 · Review: pro Task
 Spec: docs/features/ops-5.md (Roadmap R-1017, R-1028, R-1002, R-1003, R-1027, R-1008)
 Heavy: linux-full — `scripts/update.sh`, `scripts/install.sh`, `scripts/restore.sh` und `scripts/backup.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`: kein Cross-Host-, Agent- oder PKI-Pfad. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -67,6 +67,13 @@ Review: approve (.ah-out/review/ops-5/T6.verdict.json)
 Änderung: Der Einzeiler im Kopfkommentar (`scripts/agent-install.sh:9-11`) lässt `--token` weg und sagt, dass das Skript den Token dann verdeckt über `/dev/tty` abfragt; `--token` bleibt für unbeaufsichtigte Rollouts genannt (wie `docs/admin/agent-deployment.html:51`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: keine (Kommentar; die Doku beschreibt den Weg schon)
+
+### T7 — backup.sh: Schnitt am behaltenen Quote ohne fremde Statements (R-1017, Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh
+Beweis: reviewer branch ops-5 2026-11-02 — `A="l1\n# CA_ROOT_PASSPHRASE=x"\nB=1` → die `#`-Zeile geht samt dem schließenden Quote von `A`; `A="x 'CA_ROOT_PASSPHRASE=y" C="z\nw"\nB=1` → der Rest hinter dem Quote nimmt den öffnenden Quote von `C` mit (`scripts/backup.sh:279,297` @9deb0f39)
+Änderung: Eine geänderte Zeile, die den behaltenen schließenden Quote eines anderen Werts trägt, bleibt auch als `#`-Zeile stehen; der Schnitt hinter diesem Quote nimmt jedes Statement, das compose liest (tok_exact) und das er anschneidet, ganz. Tests 15f/15g (erst rot) in `restore_guard_test.sh`. `restore.sh` behält seine Kopie (bricht vor jeder Änderung ab).
+Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
+Doku: keine (changelog.d/ops-5.md nennt den Filter schon)
 
 ## Entscheidungen
 - 2026-11-02 T1: ein gekürztes Statement behält nur das schließende Quote, der Rest dahinter geht als eigener Schnitt — sonst blieb der Wert der Passphrase stehen, wenn er zeilenweise gelesen erst an diesem Quote beginnt (Prüfer Runde 1)
