@@ -18,7 +18,8 @@ const CHECK_EVERY_MS = 15_000;
  * Calls `onIdle` once when no tab of this origin has seen a pointer, keyboard, wheel or touch
  * event for `minutes` minutes. Anything but a positive finite number turns the watch off.
  * `restored` marks a session brought back on page load, not one from a login: if the last
- * activity stored in this browser lies `minutes` or more back, `onIdle` runs at once.
+ * activity stored in this browser lies `minutes` or more back, lies in the future, or is no
+ * number, `onIdle` runs at once; only a missing time counts as activity.
  * Returns the function that stops it.
  */
 export function watchIdle(

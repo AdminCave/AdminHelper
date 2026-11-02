@@ -83,7 +83,7 @@ curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o "$TMP/download.gpg"
 gpg --homedir "$TMP" --batch --no-autostart --import "$TMP/download.gpg"
 gpg --homedir "$TMP" --batch --no-autostart --export "$FPR" &gt; "$TMP/pinned.gpg"
 [ "$(gpg --homedir "$TMP" --batch --no-autostart --show-keys --with-colons "$TMP/pinned.gpg" \
-     | awk -F: 'p {print $10; p=0} $1=="pub" {p=1}')" = "$FPR" ] \
+     | awk -F: '$1=="pub" {p=1} p &amp;&amp; $1=="fpr" {print $10; p=0}')" = "$FPR" ] \
   || { echo "ERROR: no key with this fingerprint — aborting!"; rm -rf "$TMP"; exit 1; }
 sudo install -d -m 0755 /usr/share/keyrings
 sudo install -D -m 0644 "$TMP/pinned.gpg" /usr/share/keyrings/adminhelper-archive-keyring.gpg
@@ -96,7 +96,7 @@ FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
 CHK=$(mktemp -d)
 [ "$(gpg --homedir "$CHK" --batch --no-autostart --show-keys --with-colons \
        /usr/share/keyrings/adminhelper-archive-keyring.gpg \
-     | awk -F: 'p {f=$10; p=0} $1=="pub" {n++; p=1} END {print n ":" f}')" = "1:$FPR" ] \
+     | awk -F: '$1=="pub" {n++; p=1} p &amp;&amp; $1=="fpr" {f=$10; p=0} END {print n ":" f}')" = "1:$FPR" ] \
   &amp;&amp; echo "Keyring ok" \
   || echo "WARNING: the keyring does not carry exactly the key $FPR — run step 1 again!"
 rm -rf "$CHK"

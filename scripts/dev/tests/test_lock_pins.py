@@ -52,7 +52,7 @@ uvicorn==0.49.0
 
 
 def run(
-    tmp_path: pathlib.Path, lock: str, freeze: str | None = FREEZE
+    tmp_path: pathlib.Path, lock: str, freeze: str | None = FREEZE, timeout: int = 30
 ) -> subprocess.CompletedProcess[str]:
     lock_file = tmp_path / "requirements.txt"
     lock_file.write_text(lock, encoding="utf-8")
@@ -61,7 +61,7 @@ def run(
         freeze_file = tmp_path / "freeze.txt"
         freeze_file.write_text(freeze, encoding="utf-8")
         argv += ["--freeze", str(freeze_file)]
-    return subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
 
 
 def test_every_pin_installed_as_locked(tmp_path):
@@ -142,11 +142,12 @@ def test_a_line_it_cannot_read_is_refused_not_skipped(tmp_path, line):
 
 def test_the_running_environment_is_read_by_default(tmp_path):
     installed = pytest.__version__
-    r = run(tmp_path, f"pytest=={installed}\n", freeze=None)
+    # 30 s timed out once on a busy box (load ~8, R-1005); the run itself takes well under a second.
+    r = run(tmp_path, f"pytest=={installed}\n", freeze=None, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "1 pins installed as locked" in r.stdout
 
-    r = run(tmp_path, "pytest==0.0.1\n", freeze=None)
+    r = run(tmp_path, "pytest==0.0.1\n", freeze=None, timeout=120)
     assert r.returncode == 1, r.stdout + r.stderr
     assert f"drift    pytest: locked 0.0.1, installed {installed}" in r.stdout
 

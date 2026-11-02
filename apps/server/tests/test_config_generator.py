@@ -15,6 +15,7 @@ from app.modules.frp.config_generator import (
     generate_frps_toml,
     generate_visitor_toml,
     without_refused_extra_config,
+    without_secretless_stcp,
 )
 
 AGENT_FIXTURE = (
@@ -452,6 +453,18 @@ class TestRefusedExtraConfigWarning:
         assert "has plugin keys in extra_config" in by_tunnel["p"]
         assert "has entries the API refuses in extra_config" in by_tunnel["m"]
         assert "no JSON object" in by_tunnel["t"]
+
+    def test_a_key_named_like_another_filter_reason_does_not_swallow_its_warning(self, caplog):
+        # A refused key is one that is no bare TOML key, so it may carry a space and read like
+        # the reason of another filter ("no secret"): the two warnings must stay apart.
+        tunnel = _make_tunnel(name="clash", secret_key=None, extra_config='{"no secret": 1}')
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            assert without_secretless_stcp([tunnel]) == []
+            assert without_refused_extra_config([tunnel]) == []
+        warned = self._warnings(caplog)
+        assert len(warned) == 2, warned
+        assert any("without a secret" in m for m in warned)
+        assert any("'no secret'" in m and "extra_config" in m for m in warned)
 
     def test_a_row_the_api_takes_is_kept_without_a_warning(self, caplog):
         tunnel = _make_tunnel(name="ok", extra_config='{"bandwidth": "10MB"}')
