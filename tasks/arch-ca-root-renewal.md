@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ca-root-renewal — Task-Ledger
-Status: bereit · Branch: feature/arch-ca-root-renewal · Review: pro Task
+Status: aktiv · Branch: feature/arch-ca-root-renewal · Review: pro Task
 Spec: docs/features/arch-ca-root-renewal.md (Roadmap R-1021)
 Heavy: linux-full — `apps/ca-issuer`, Gateway-Konfiguration und Server-Ampel (Sammellauf). Vor dem Merge außerdem der Stack-Job per Dispatch (`gh workflow run ci.yml --ref feature/arch-ca-root-renewal`); er fährt den Root-Wechsel aus T9. Kein `scenario`: Der Wechsel läuft in einem Stack, Agent und Desktop ändern keinen Code. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -189,6 +189,23 @@ Nach `abort` wird das Backup von nach dem `stage` verworfen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
 
+### T12 — ca-issuer: Passphrase-Variablen wörtlich lesen (nach dem Basis-Merge)  [ ]
+Komponente: server · Dateien: apps/ca-issuer/app/config.py
+Änderung: Der Dispatch-Lauf auf 8f50d71a ist rot in `test_env_parity.py::test_compose_gives_no_service_a_key_it_does_not_read`:
+`main` setzt seit dem Merge `CA_ROOT_PASSPHRASE_FILE` in compose, und `_secret()` (T4) baut den Namen zur Laufzeit,
+der Scan findet ihn nicht. `root_passphrase()` und `next_root_passphrase()` lesen die vier Variablen mit ihrem Namen;
+`_secret()` bekommt die Werte. Verhalten unverändert; Gegenprobe der ca-issuer-Tests (`test_config.py`, `test_cli.py`).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py
+Doku: keine (Verhalten unverändert)
+
+### T13 — Desktop: Test-Helfer der Erneuerung auf rcgen 0.14 (nach dem Basis-Merge)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Änderung: Seit #369 (rcgen 0.14) kompilieren die Test-Helfer aus T8 nicht mehr: `Ca` trägt `params`, `signed_by`
+nimmt einen `rcgen::Issuer`. `make_renewal()` baut die Wurzeln, Intermediates und das Cross-Zertifikat wie
+`make_ca()`/`make_leaf()` auf `main` (`Issuer::from_params`). Nur Testcode.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enroll
+Doku: keine (nur Testcode)
+
 ## Entscheidungen
 - 2026-11-02 Kevin:
   - Ansatz: Phasen mit Cross-Zertifikat statt Phasen ohne X, neuem Root-Zertifikat mit altem Schlüssel oder einem
@@ -306,6 +323,9 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/agent-d
 - 2026-11-02 Basis-Merge 8f50d71a: Abschnitt 19 und der Wipe-Abschnitt von `main` (R-1006) bleiben beide, der Wipe
   als 20 und letzter. Das erste Gerät hängt nach 19 an der alten Root und wird schon vorher abgewiesen; der Wipe
   prüft deshalb mit dem unter N erneuerten Leaf und stellt vorher fest, dass das Gateway es nimmt. Bewiesen über den
-  Stack-Job des Dispatch-Laufs.
+  Stack-Job des Dispatch-Laufs 41478935020 („integration_stack_test: 135 passed, 0 failed“).
 - 2026-11-02 T11: Fund `wichtig` von `security` in der Abschlussprüfung (Doku): Details nur in `tasks/private/`.
   Der Nit zu `abort` ist mit drin; die übrigen Nits (`rotation.py:103`, `cli.py:419`) werden Roadmap-Zeilen.
+- 2026-11-02 T12, T13: Der Dispatch-Lauf auf 8f50d71a ist nur in zwei Stellen rot, die erst der Basis-Merge
+  auslöst (compose setzt `CA_ROOT_PASSPHRASE_FILE`, rcgen 0.14 aus #369). Beide werden je eine Task mit Prüfer;
+  die Abschlussprüfung läuft danach über den neuen Stand.
