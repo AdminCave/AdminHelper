@@ -187,17 +187,17 @@ env_key_ok() {
 # drop, "export " may lead, '=' or ':' separates, a line without either is a key
 # without a value; a quoted value runs to its closing quote, over several lines if
 # need be, and is literal in single quotes, and the text after that quote is read
-# as a line of its own; an unquoted value ends at " #". The message names the
-# first key of the line or the line number, never a value or the line: either may
-# hold a secret, and compose's own message quotes them. Not a later key of the
-# line either: the text after a closing quote may be meant as part of the value.
+# as a line of its own; an unquoted value ends at " #". The message names only a
+# line number, never a key, a value or the line: a secret pasted by mistake reads as
+# a key once it holds '=' or ':', and compose's own message quotes them all. For a
+# value it is the line its entry starts in.
 check_env_templates() {
-    local line key name val more q rest eol spaced n=0 QUOTED QUOTED_REST TRIMMED
+    local line key name val more q rest eol spaced n=0 start QUOTED QUOTED_REST TRIMMED
     [ -f .env ] || return 0
     while :; do
         # eol=0: the line ends .env without a line break.
         eol=1; IFS= read -r line || { eol=0; [ -n "$line" ] || break; }
-        n=$((n + 1)); name=""
+        n=$((n + 1)); name=""; start=$n
         [ "$n" -gt 1 ] || line=${line#$'\xef\xbb\xbf'}
         # One assignment per pass: after a closing quote, compose reads on.
         while [ -n "$line" ]; do
@@ -210,8 +210,8 @@ check_env_templates() {
             key=${line%%[=:]*}; spaced=1
             [ "$key" != "$line" ] || spaced=$eol
             if ! env_key_ok "$key" "$spaced"; then
-                [ -z "$name" ] || die ".env: der Wert von ${name} hat hinter dem schliessenden Anfuehrungszeichen Text, den docker compose als Schluessel liest und nicht annimmt — compose bricht damit jeden Aufruf ab. Ein Anfuehrungszeichen im Wert als \\\" bzw. \\' schreiben oder den Text entfernen. Abbruch (nichts veraendert)."
-                die ".env: der Eintrag in Zeile ${n} hat einen Schluessel, den docker compose nicht annimmt (erlaubt: Buchstaben, Ziffern und _ . - [ ], kein Leerzeichen) — compose bricht damit jeden Aufruf ab. Den Schluessel korrigieren oder die Zeile mit '#' auskommentieren. Abbruch (nichts veraendert)."
+                [ -z "$name" ] || die ".env: the value starting in line ${start} has text after its closing quote that docker compose reads as a key and rejects, which makes every compose call fail. Write a quote inside the value as \\\" or \\', or remove the text. Aborting (nothing changed)."
+                die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
             fi
             [ "$key" != "$line" ] || break
             key=${key%"${key##*[![:space:]]}"}; name=${name:-$key}
@@ -225,7 +225,7 @@ check_env_templates() {
                     until read_quoted "$q" "$val"; do
                         IFS= read -r more || {
                             eol=0
-                            [ -n "$more" ] || die ".env: der Wert von ${name} hat ein nicht geschlossenes Anfuehrungszeichen — docker compose bricht damit jeden Aufruf ab. Das Anfuehrungszeichen schliessen. Abbruch (nichts veraendert)."
+                            [ -n "$more" ] || die ".env: the value starting in line ${start} has a quote that is never closed, which makes every compose call fail. Close the quote. Aborting (nothing changed)."
                         }
                         n=$((n + 1)); val+=$'\n'$more
                     done
@@ -234,7 +234,7 @@ check_env_templates() {
                 *) val=${val%% #*} ;;
             esac
             env_template_ok "$val" \
-                || die ".env: der Wert von ${name} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+                || die ".env: the value starting in line ${start} holds a '\${' that starts no valid placeholder, which makes every compose call fail with 'Invalid template'. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
             line=$rest
         done
     done < .env
@@ -588,8 +588,10 @@ restore_snapshot() {
 # old .env as a whole, pins of a floating tag included. No recreate needed. $1 says
 # what failed, $2 is the way on that --no-rollback names: the new runtime files
 # stay, so --ref applies the release again. $3 replaces what --no-rollback says
-# stays: the pins reach .env only after the pull (pin_images).
+# stays: the pins reach .env only after the pull (pin_images). Signals: see
+# rollback_signals.
 rollback_before_deploy() {
+    rollback_signals rollback_before_deploy "$@"
     if [ "$NO_ROLLBACK" = 1 ]; then
         die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien bleiben stehen, Image-Pins unveraendert}, Container unveraendert. $2"
     fi
@@ -644,34 +646,59 @@ swap_runtime_files() {
 # From here on files change. bash runs a trap only once the foreground command
 # ends; a dropped SSH session sends SIGHUP to the whole foreground process group,
 # so docker compose ends too. Before the recreate the containers are untouched,
-# after it they may run the new version. The rollback itself ignores further
-# signals. After SIGHUP the terminal is gone, so its messages go to a log file.
+# after it they may run the new version. The rollback itself ignores further INT
+# and TERM. After SIGHUP the terminal is gone, so its messages go to a log file.
+# NO_ROLLBACK_STAYS is what --no-rollback leaves in place at this point, empty for
+# the default text of rollback_before_deploy.
 DEPLOY_STARTED=0
+HUP_LOG=""
+hup_to_log() {
+    [ -z "$HUP_LOG" ] || return 0
+    HUP_LOG="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
+    ( umask 077; : >> "$HUP_LOG" ) && exec >> "$HUP_LOG" 2>&1
+}
+# At the start of a rollback, $@ = the rollback call. INT and TERM would cut it
+# short, so the shell ignores them, and so does a command it starts unless it
+# sets a handler of its own. HUP cannot be ignored: a write to the dead terminal
+# would end the script before anything is back. The first HUP (it also ended the
+# running command) moves the output to the log and starts the rollback again;
+# from then on HUP is ignored. A second run of rollback_after_deploy stops the
+# migrating services on the old compose file: if that lacks one, the revision
+# counts as unconfirmed and the stack stops with the restore hint.
+ROLLBACK_CALL=()
+rollback_signals() {
+    trap '' INT TERM
+    if [ -n "$HUP_LOG" ]; then
+        trap '' HUP
+    else
+        ROLLBACK_CALL=("$@")
+        trap 'hup_to_log; "${ROLLBACK_CALL[@]}"' HUP
+    fi
+}
+NO_ROLLBACK_STAYS="teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
 on_signal() {
     trap '' INT TERM HUP
-    if [ "$1" = HUP ]; then
-        local logf
-        logf="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
-        ( umask 077; : >> "$logf" ) && exec >> "$logf" 2>&1
-    fi
+    if [ "$1" = HUP ]; then hup_to_log; fi
     if [ "$DEPLOY_STARTED" = 1 ]; then
         rollback_after_deploy "interrupted by SIG$1"
     fi
     rollback_before_deploy "interrupted by SIG$1" \
-        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+        "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." "$NO_ROLLBACK_STAYS"
 }
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 trap 'on_signal HUP' HUP
 swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlgeschlagen" \
-    "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
-    "teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
+    "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." "$NO_ROLLBACK_STAYS"
+NO_ROLLBACK_STAYS=""
 
 # --- .env migration: add new keys, fill new secrets --------------------------
 # One step: the caller tests the status, which turns set -e off in here, so every
 # part that can fail returns 1 itself, and the caller rolls the whole .env back.
 # Additive only: append active KEY=value from the new .env.example that .env is
 # missing — never overwrite an existing value (no clobbering of secrets/config).
+# Only an active line counts, as compose reads it: a key that is there only as a
+# comment is missing to compose, and the example's keys are the ones it needs.
 migrate_env() {
     local line key rc
     if [ -f .env.example ]; then
@@ -679,7 +706,7 @@ migrate_env() {
             case "$line" in
                 [A-Z_]*=*)
                     key="${line%%=*}"
-                    rc=0; LC_ALL=C grep -a -qE "^#?[[:space:]]*${key}=" .env || rc=$?
+                    rc=0; LC_ALL=C grep -a -qE "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" .env || rc=$?
                     case $rc in
                         0) ;;
                         1) printf '%s\n' "$line" >> .env || return 1; log ".env: neuen Key ${key} ergaenzt" ;;
@@ -706,7 +733,9 @@ update_agent_repo "$TARGET" "$TMP" \
 # says what failed. With --no-rollback, .env stays pinned on the target and a bare
 # re-run would call the install current; --ref is never stopped by the downgrade
 # guard, but it pins a release, so a floating tag only comes back by hand.
+# Signals: see rollback_signals.
 rollback_after_deploy() {
+    rollback_signals rollback_after_deploy "$@"
     if [ "$NO_ROLLBACK" = 1 ]; then
         local back="zurueck mit ./scripts/update.sh --ref v${INSTALLED}"
         [ "$INSTALLED" != "unknown" ] || back="zurueck auf den vorigen Floating-Tag nur von Hand (Image-Pins in .env)"
@@ -727,11 +756,12 @@ rollback_after_deploy() {
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # The containers ran, so only the pin lines of the old .env go back: a key the
-    # migration added or a secret init-secrets.sh filled (CA_ROOT_PASSPHRASE) may
-    # be in use already. Taken from env.prev, not rebuilt from INSTALLED, which is
-    # "unknown" for a floating tag (:latest/:main): pins left on the target make
-    # the next run call the install current. A pin the old .env lacked stays
-    # absent. grep exits 1 for "no line selected", which is fine on either side.
+    # migration added (CA_ROOT_PASSPHRASE= the compose file needs) or a secret
+    # init-secrets.sh filled may be in use already. Taken from env.prev, not
+    # rebuilt from INSTALLED, which is "unknown" for a floating tag (:latest/:main):
+    # pins left on the target make the next run call the install current. A pin
+    # the old .env lacked stays absent. grep exits 1 for "no line selected", which
+    # is fine on either side.
     # LC_ALL=C grep -a, as in upsert_env: a file grep takes for binary loses lines.
     local pins='^#?[[:space:]]*(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE='
     { ( umask 077
@@ -782,9 +812,10 @@ pin_images() {
     chmod 600 .env 2>/dev/null || true
     log "Images gepinnt auf :${TARGET_VER}"
 }
+NO_ROLLBACK_STAYS="neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
 pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \
     ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
-    "neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
+    "$NO_ROLLBACK_STAYS"
 DEPLOY_STARTED=1
 stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
 log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
