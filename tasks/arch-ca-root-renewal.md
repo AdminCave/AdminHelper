@@ -118,8 +118,10 @@ Text auf der Seite.
 Verify: bash scripts/dev/verify.sh web --strict -- Certificates
 Doku: → T10
 
-### T7 — Agent: Tests für den Vertrag über den Wechsel  [ ]
+### T7 — Agent: Tests für den Vertrag über den Wechsel  [x]
 Komponente: agent · Dateien: apps/agent/internal/httpclient/httpclient_test.go, apps/agent/internal/httpclient/cafp_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @08325205 2026-11-02T13:35:30+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T7.verdict.json)
 Änderung: Nur Tests, kein Produktivcode.
 - `NewMTLS`/`verifyGatewayIssuer` (`httpclient.go:78`, `:108`): Ein Agent mit dem Bündel aus Phase 0 oder 1
   verbindet sich gegen die Kette aus Phase 2 [leaf, A(N), X, R]. Ein Agent mit dem Bündel nach `finish` [I(N), N]

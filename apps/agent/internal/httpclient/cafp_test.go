@@ -139,51 +139,97 @@ type threeTier struct {
 	leafKey                    *ecdsa.PrivateKey
 }
 
-func makeThreeTier(t *testing.T, interCN string) threeTier {
+func issueCert(t *testing.T, tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, signer *ecdsa.PrivateKey) (*x509.Certificate, []byte) {
 	t.Helper()
-	issue := func(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, signer *ecdsa.PrivateKey) (*x509.Certificate, []byte) {
-		der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, signer)
-		if err != nil {
-			t.Fatal(err)
-		}
-		c, err := x509.ParseCertificate(der)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return c, der
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, signer)
+	if err != nil {
+		t.Fatal(err)
 	}
-	newKey := func() *ecdsa.PrivateKey {
-		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return k
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
 	}
-	caTmpl := func(serial int64, cn string) *x509.Certificate {
-		return &x509.Certificate{
-			SerialNumber:          big.NewInt(serial),
-			Subject:               pkix.Name{CommonName: cn},
-			NotBefore:             time.Now().Add(-time.Hour),
-			NotAfter:              time.Now().Add(time.Hour),
-			IsCA:                  true,
-			KeyUsage:              x509.KeyUsageCertSign,
-			BasicConstraintsValid: true,
-		}
+	return c, der
+}
+
+func newECKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
-	rootKey, interKey, leafKey := newKey(), newKey(), newKey()
-	rootTmpl := caTmpl(1, "AdminHelper Root CA")
-	root, rootDER := issue(rootTmpl, rootTmpl, &rootKey.PublicKey, rootKey)
-	inter, interDER := issue(caTmpl(2, interCN), root, &interKey.PublicKey, rootKey)
-	_, leafDER := issue(&x509.Certificate{
-		SerialNumber: big.NewInt(3),
+	return k
+}
+
+func caTemplate(serial int64, cn string) *x509.Certificate {
+	return &x509.Certificate{
+		SerialNumber:          big.NewInt(serial),
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+}
+
+// gatewayLeafTemplate is a ServerAuth leaf naming 127.0.0.1, the httptest host.
+func gatewayLeafTemplate(serial int64) *x509.Certificate {
+	return &x509.Certificate{
+		SerialNumber: big.NewInt(serial),
 		Subject:      pkix.Name{CommonName: "gateway"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
-	}, inter, &leafKey.PublicKey, interKey)
+	}
+}
+
+func makeThreeTier(t *testing.T, interCN string) threeTier {
+	t.Helper()
+	rootKey, interKey, leafKey := newECKey(t), newECKey(t), newECKey(t)
+	rootTmpl := caTemplate(1, "AdminHelper Root CA")
+	root, rootDER := issueCert(t, rootTmpl, rootTmpl, &rootKey.PublicKey, rootKey)
+	inter, interDER := issueCert(t, caTemplate(2, interCN), root, &interKey.PublicKey, rootKey)
+	_, leafDER := issueCert(t, gatewayLeafTemplate(3), inter, &leafKey.PublicKey, interKey)
 	return threeTier{rootDER: rootDER, interDER: interDER, leafDER: leafDER, leafKey: leafKey}
+}
+
+// renewal is the PKI of a root renewal (R-1021) after its switch, shaped as
+// apps/ca-issuer/app/pki.py builds it: the old root R with its tunnel intermediate, the
+// new root N with its access and tunnel intermediates (path length 0), the cross
+// certificate X (subject, key and SKI of N, signed by R, path length 1) and the gateway
+// leaf under N's access intermediate.
+type renewal struct {
+	oldRoot, oldTunnel, newRoot, newAccess, newTunnel, cross, leafDER []byte
+	leafKey                                                           *ecdsa.PrivateKey
+}
+
+func makeRenewal(t *testing.T) renewal {
+	t.Helper()
+	intermediate := func(serial int64, cn string) *x509.Certificate {
+		tmpl := caTemplate(serial, cn)
+		tmpl.MaxPathLenZero = true
+		return tmpl
+	}
+	oldKey, newKey, accessKey, leafKey := newECKey(t), newECKey(t), newECKey(t), newECKey(t)
+	oldTmpl := caTemplate(1, "AdminHelper Root CA")
+	oldRoot, oldRootDER := issueCert(t, oldTmpl, oldTmpl, &oldKey.PublicKey, oldKey)
+	_, oldTunnelDER := issueCert(t, intermediate(2, "AdminHelper Tunnel Intermediate"), oldRoot, &newECKey(t).PublicKey, oldKey)
+	newTmpl := caTemplate(3, "AdminHelper Root CA 2026-11-02")
+	newRoot, newRootDER := issueCert(t, newTmpl, newTmpl, &newKey.PublicKey, newKey)
+	crossTmpl := caTemplate(4, newRoot.Subject.CommonName)
+	crossTmpl.SubjectKeyId = newRoot.SubjectKeyId
+	crossTmpl.MaxPathLen = 1
+	_, crossDER := issueCert(t, crossTmpl, oldRoot, &newKey.PublicKey, oldKey)
+	access, accessDER := issueCert(t, intermediate(5, "AdminHelper Access Intermediate 2026-11-02"), newRoot, &accessKey.PublicKey, newKey)
+	_, newTunnelDER := issueCert(t, intermediate(6, "AdminHelper Tunnel Intermediate 2026-11-02"), newRoot, &newECKey(t).PublicKey, newKey)
+	_, leafDER := issueCert(t, gatewayLeafTemplate(7), access, &leafKey.PublicKey, accessKey)
+	return renewal{
+		oldRoot: oldRootDER, oldTunnel: oldTunnelDER, newRoot: newRootDER, newAccess: accessDER,
+		newTunnel: newTunnelDER, cross: crossDER, leafDER: leafDER, leafKey: leafKey,
+	}
 }
 
 func TestCAFingerprintRootPinAcceptsAnAccessIntermediateLeaf(t *testing.T) {
@@ -224,6 +270,38 @@ func TestCAFingerprintAccessIntermediatePinStillWorks(t *testing.T) {
 		t.Fatalf("aelterer Pin auf das access-Intermediate haette passen muessen: %v", err)
 	}
 	resp.Body.Close()
+}
+
+// After the switch :8444 presents [leaf, A(N), X, R, N]: a --ca-fp from before the
+// renewal pins R, a newer one N, and both reach the gateway.
+func TestCAFingerprintPinsEitherRootDuringARootRenewal(t *testing.T) {
+	r := makeRenewal(t)
+	srv, handled := serveChain(t, r.leafKey, r.leafDER, r.newAccess, r.cross, r.oldRoot, r.newRoot)
+	for name, pin := range map[string][]byte{"old root": r.oldRoot, "new root": r.newRoot} {
+		*handled = false
+		resp, err := NewCAFingerprint(fpOf(pin), hostOf(t, srv), 5*time.Second).Get(srv.URL)
+		if err != nil {
+			t.Fatalf("pin on the %s must reach the gateway: %v", name, err)
+		}
+		resp.Body.Close()
+		if !*handled {
+			t.Fatalf("pin on the %s: the request never reached the handler", name)
+		}
+	}
+}
+
+func TestCAFingerprintRejectsAForeignPinDuringARootRenewal(t *testing.T) {
+	r, foreign := makeRenewal(t), makeRenewal(t)
+	srv, handled := serveChain(t, r.leafKey, r.leafDER, r.newAccess, r.cross, r.oldRoot, r.newRoot)
+	for name, pin := range map[string][]byte{"old root": foreign.oldRoot, "new root": foreign.newRoot} {
+		_, err := NewCAFingerprint(fpOf(pin), hostOf(t, srv), 5*time.Second).Get(srv.URL)
+		if err == nil || !strings.Contains(err.Error(), "no presented certificate carries the expected CA fingerprint") {
+			t.Fatalf("pin on a foreign %s must be rejected: %v", name, err)
+		}
+	}
+	if *handled {
+		t.Fatal("a request reached the handler despite the rejection")
+	}
 }
 
 func TestCAFingerprintRejectsForeignChainBeforeAnyRequest(t *testing.T) {
