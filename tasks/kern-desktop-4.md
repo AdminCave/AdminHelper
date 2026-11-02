@@ -29,8 +29,10 @@ Review: approve (.ah-out/review/kern-desktop-4/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (nur Test und interne Struktur)
 
-### T3 — Kompatible Crate-Updates und Tauri-JS auf 2.12 (R-1041)  [ ]
-Komponente: desktop-rs, desktop-ui · Dateien: apps/desktop/src-tauri/Cargo.lock, apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, changelog.d/kern-desktop-4.md
+### T3 — Kompatible Crate-Updates und Tauri-JS auf 2.12 (R-1041)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.lock, apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, changelog.d/kern-desktop-4.md
+Evidenz: run.sh[quick] desktop-rs desktop-ui: 2 passed, 0 failed, 16 skipped @1df07b64 2026-11-02T14:10:41+01:00
+Review: approve (.ah-out/review/kern-desktop-4/T3.verdict.json)
 Änderung: `cargo update` (u. a. tauri 2.12.5, tokio 1.54); `@tauri-apps/api` und die Plugins (`plugin-dialog`, `plugin-notification`, `plugin-shell`) auf die zur Crate passende Minor (`apps/desktop/ui/package.json:44`), Lockfile per `npm install`. Major.Minor von `tauri` und `@tauri-apps/api` gleich.
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: changelog.d/kern-desktop-4.md
