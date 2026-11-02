@@ -96,7 +96,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T12
 Abhängt von: T4, T8
 
-### T11 — Live-E2E: Verlauf und Vergleich (R-1076, R-1077)  [ ]
+### T11 — Live-E2E: Verlauf und Vergleich (R-1076, R-1077)  [~] (verworfen: Prüfer-Blocker nach zwei Runden (Wartefunktion prüft nach dem Neuladen, Anzeige ist dann leer); Abdeckung als eigene Roadmap-Zeile)
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-check.live.js
 Änderung: Die Monitoring-Journey öffnet den Verlauf des Agent-Servers (Chart mit CPU-Serie, Zeitraum 24 Std., CSV-Knopf vorhanden) und den Reiter Verlauf (Rangliste nennt den Server). Beweis im Sammellauf (`desktop_e2e_monitoring.sh`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
