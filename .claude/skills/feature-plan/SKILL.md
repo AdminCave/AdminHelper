@@ -39,6 +39,12 @@ alles, was das *Was* oder das sichtbare Verhalten betrifft, wird gefragt.
   Wire-Protokoll (**FRP**, **Tauri**, **VictoriaMetrics**), die offizielle Doku per `WebFetch` lesen.
 
 ## 2. Spec schreiben → `docs/features/<slug>.md`
+**Worktree zuerst:** Spec und Ledger entstehen im eigenen Worktree des Vorhabens, nie im Haupt-Checkout. Den teilen
+sich alle Sessions, er bleibt auf `main` und wechselt nie den Branch (der Bash-Guard lehnt das ab). `git fetch
+origin`, dann `git worktree add --no-track -b feature/<slug> ../AdminHelper-<slug> origin/main`; steht der Branch
+schon: `git worktree add ../AdminHelper-<slug> feature/<slug>`; steht der Worktree schon: weiter. `WT` = sein
+absoluter Pfad; Spec und Ledger unter `WT/`, Lesen und `roadmap.py` weiter aus dem Haupt-Checkout.
+
 Slug = kurz, kebab-case. Abschnitte: **Problem / Motivation** · **Ziel & Nicht-Ziele** (YAGNI) ·
 **Betroffene Komponenten & Dateien** · **Datenmodell / API / Migrationen** (Alembic? Vertrags-Drift
 Server ↔ Web ↔ Desktop ↔ Agent?) · **Externe Integrationen** (mit Doku-Link) · **Trade-offs &
@@ -156,11 +162,12 @@ Bei Zug und Mitnehmen gilt jeder Roadmap-Schritt des Gates für jede enthaltene 
   wörtlich mit `--note` wieder mit (`status` ohne `--note` löscht sie). Beides nur für ein Vorhaben, das Kevin
   diktiert oder angenommen hat; ein eigener Fund bleibt `neu` bis zu Kevins Bestätigung. Nie ein Edit
   an der Datei.
-- **Plan auf den Branch:** `git switch --no-track -c feature/<slug> origin/main`, Spec und Ledger
-  stagen, `bash scripts/dev/ledger.sh lint tasks/<slug>.md` (Exit 1: beheben), `bash scripts/dev/review.sh
-  sec --staged` (Exit 4: nicht committen, melden), dann committen
-  (`chore(plan): add spec + ledger for <slug>`, ohne Spec `chore(plan): add ledger for <slug>`) und
-  zurück mit `git switch main`.
+- **Plan auf den Branch, im Worktree (2):** Spec und Ledger stagen (`git -C WT add …`), `bash
+  WT/scripts/dev/ledger.sh lint WT/tasks/<slug>.md` (Exit 1: beheben), `(cd WT && bash scripts/dev/review.sh sec
+  --staged)` (Exit 4: nicht committen, melden), dann `git -C WT commit` (`chore(plan): add spec + ledger for
+  <slug>`, ohne Spec `chore(plan): add ledger for <slug>`). Spätere Plan-Änderungen ebenso im Worktree. Der
+  Worktree bleibt für `/feature-build` stehen; wird der Plan verworfen, `bash scripts/dev/worktree-teardown.sh
+  ../AdminHelper-<slug> <slug>`.
 - **Parallel-Tauglichkeit:** gegen jede `aktiv`- und `freigegeben`-Zeile (`roadmap.py show`) prüfen, ob
   das Vorhaben disjunkt ist — Komponenten und geteilte Contract-Dateien (API-Routen/Schemas,
   Migrationen, FRP-Config, Tauri-Commands, `run.sh`/`ci.yml`, primäre `docs/`-Seiten). Das Ledger
