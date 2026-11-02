@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — Kriterienmatrix aus der Doku und Prototyp-Auswahl (R-1074)  [ ]
+### T1 — Kriterienmatrix aus der Doku und Prototyp-Auswahl (R-1074)  [x]
 Komponente: scripts · Dateien: docs/features/arch-rdp-embedded.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9ede2e22 2026-11-02T14:00:49+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt „Ergebnis: Matrix“ in der Spec: V1, V2, V2b, V3a, V3b, V3c gegen K1–K15 aus offiziellen Quellen
 (Repos, Crate-Doku, MS-Spezifikationen, Tauri-Doku), je Zelle Quelle oder „nicht verifiziert“; harte Ausschlüsse mit
 Grund; welche Varianten T2–T4 prototypisch prüfen.
