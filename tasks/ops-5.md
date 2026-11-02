@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-5 — Task-Ledger
-Status: bereit · Branch: feature/ops-5 · Review: pro Task
+Status: erledigt · Branch: feature/ops-5 · Review: pro Task
 Spec: docs/features/ops-5.md (Roadmap R-1017, R-1028, R-1002, R-1003, R-1027, R-1008)
 Heavy: linux-full — `scripts/update.sh`, `scripts/install.sh`, `scripts/restore.sh` und `scripts/backup.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`: kein Cross-Host-, Agent- oder PKI-Pfad. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
