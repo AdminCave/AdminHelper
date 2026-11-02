@@ -62,11 +62,11 @@ pip install -r requirements-dev.txt   # zieht requirements.in (lose) + Test-Deps
   Production-Container per `pip install --require-hashes` installiert
   (Supply-Chain-Integrität). **Nicht von Hand editieren.**
 
-Lock neu erzeugen (im passenden Python wie im Dockerfile, derzeit 3.12):
+Lock neu erzeugen (im passenden Python wie im Dockerfile, derzeit 3.14):
 
 ```bash
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$PWD/apps/server:/w" -w /w python:3.12-slim \
+  -v "$PWD/apps/server:/w" -w /w python:3.14-slim \
   sh -c "pip install -q --user pip-tools && \
          python -m piptools compile --generate-hashes \
            --output-file=requirements.txt requirements.in"
@@ -81,11 +81,11 @@ Extras), dann `scripts/dev/lock-pins.py`, das jeden Pin nennt, den die
 Dev-Dependencies verschoben haben. Lokal genauso nach `source .devenv.sh`, das Venv
 unter `~/.cache` (nie das geteilte `AH_VENV`, nie `/tmp`) und mit dem Python des
 Dockerfiles — `lock-pins.py` prüft den Interpreter nicht; unter 3.13 wäre es grün, ohne
-den Stand des Images zu zeigen. Fehlt `python3.12` im PATH (Debian 13 bringt 3.13 mit):
-erst ein 3.12 bereitstellen (Paketquelle, pyenv oder uv), dann das Rezept.
+den Stand des Images zu zeigen. Fehlt `python3.14` im PATH (Debian 13 bringt 3.13 mit):
+erst ein 3.14 bereitstellen (Paketquelle, pyenv oder uv), dann das Rezept.
 
 ```bash
-python3.12 -m venv ~/.cache/ah-venv-lock-server && . ~/.cache/ah-venv-lock-server/bin/activate
+python3.14 -m venv ~/.cache/ah-venv-lock-server && . ~/.cache/ah-venv-lock-server/bin/activate
 cd apps/server && pip install --require-hashes -r requirements.txt && pip install -r requirements-dev.txt
 python ../../scripts/dev/lock-pins.py requirements.txt && DATABASE_URL="$AH_TEST_DB" pytest -q -m "not schemathesis"
 ```

@@ -11,7 +11,7 @@ COPY apps/web/ ./
 RUN npm run build
 
 # ---- Stage 2: Runtime (Python + FastAPI) ----
-FROM python:3.12-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9 AS runtime
+FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966 AS runtime
 
 ARG VERSION=dev
 ENV APP_VERSION=$VERSION \

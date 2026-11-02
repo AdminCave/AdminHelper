@@ -32,12 +32,12 @@ jobs:
   server:
     name: Server (pytest, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    # The 3.13 leg pulls the base images and runs the image tests on top of the suite.
+    # The 3.14 leg pulls the base images and runs the image tests on top of the suite.
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.14", "3.15"]
         shard: [1, 2]
     services:
       postgres:
@@ -90,7 +90,7 @@ jobs:
       # of frps, of the gateway and of the Python images, whose last stage builds on the
       # base of apps/ca-issuer. They do not depend on the Python version, so one leg runs them.
       - name: Pull the base images of the image tests
-        if: matrix.python-version == '3.13'
+        if: matrix.python-version == '3.14'
         run: |
           for dockerfile in apps/frps/Dockerfile apps/gateway/Dockerfile apps/ca-issuer/Dockerfile; do
             docker pull "$(sed -n 's/^FROM //p' "$dockerfile")"
@@ -107,7 +107,7 @@ jobs:
       # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
       # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
       - name: No test skipped
-        if: matrix.python-version == '3.13'
+        if: matrix.python-version == '3.14'
         run: |
           python3 - "$RUNNER_TEMP/pytest-server.xml" <<'PY'
           import sys
@@ -138,7 +138,7 @@ jobs:
     timeout-minutes: 5
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.14", "3.15"]
     steps:
       - name: Every shard passed
         env:
@@ -155,7 +155,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - name: Install ruff
         # Pin ruff: a new release changes format rules / adds lints and would red every
         # open PR with no code change, and is unreproducible against a local ruff. Keep
@@ -194,7 +194,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: apps/monitoring/requirements*
       - name: Install dependencies
@@ -231,7 +231,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: apps/ca-issuer/requirements*
       - name: Install dependencies
@@ -247,7 +247,7 @@ jobs:
         # through AH_TEST_DB and skip without it.
         run: python -m pytest -q -m "not schemathesis"
 
-  # The images install the hashed lock on python:3.12-slim; the three jobs above
+  # The images install the hashed lock on python:3.14-slim; the three jobs above
   # test the loose requirements.in, which runs ahead of it (fastapi 0.138 broke
   # test_route_auth_gate only in the loose state). These three run the same suites
   # against what the image ships: the lock with --require-hashes as the Dockerfile
@@ -298,7 +298,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: apps/server/requirements*
       - name: Install the image lock, then the dev dependencies
@@ -352,7 +352,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: apps/monitoring/requirements*
       - name: Install the image lock, then the dev dependencies
@@ -392,7 +392,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: apps/ca-issuer/requirements*
       - name: Install the image lock, then the dev dependencies
@@ -445,7 +445,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: apps/*/requirements*
       - name: Install dev dependencies of all three services
