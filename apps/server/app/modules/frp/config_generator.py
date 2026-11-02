@@ -139,9 +139,10 @@ def _api_takes(extra: dict) -> bool:
 
 
 # The sync and the hash poll run the filters for every host, every few seconds; a row that
-# stays refused would warn each time. One warning per (name, reason): the reason of
-# without_refused_extra_config is its refused keys (bare TOML keys, no spaces), the other
-# filters use a phrase with a space, so the two never meet. Forgotten when the set grows past
+# stays refused would warn each time. One warning per (name, reason): a refused extra_config
+# key may be any text (a key with a space is refused for that), so it can read like another
+# filter's phrase ("no secret", "allowUsers"). without_refused_extra_config therefore leads
+# its reason with "extra_config", and no other filter does. Forgotten when the set grows past
 # the bound (the next poll then warns once more, which is harmless).
 _refused_warned: set[tuple[str, tuple[str, ...] | None]] = set()
 _REFUSED_WARNED_MAX = 1024
@@ -183,7 +184,7 @@ def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
             # Each key passes alone, the keys together clash.
             refused = sorted(extra)
         if refused:
-            if _first_warning(tunnel.name, tuple(refused)):
+            if _first_warning(tunnel.name, ("extra_config", *refused)):
                 logger.warning(
                     "FRP tunnel %r has %s in extra_config, left out of the config: %s",
                     tunnel.name,
