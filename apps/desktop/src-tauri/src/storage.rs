@@ -633,6 +633,58 @@ pub fn write_browser_p12(dest_path: &str, der: &[u8]) -> Result<String, AppError
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Writes a CSV export (the monitoring history) to the user-chosen destination from
+/// the frontend's save dialog and returns the path. The webview may name any path,
+/// so only a `.csv` file is written.
+pub fn write_export_csv(dest_path: &str, content: &str) -> Result<String, AppError> {
+    let path = PathBuf::from(dest_path);
+    let is_csv = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"));
+    if !is_csv {
+        return Err(AppError::Validation(
+            "export file must end in .csv".to_string(),
+        ));
+    }
+    ensure_parent(&path)?;
+    fs::write(&path, content)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod export_csv_tests {
+    use super::write_export_csv;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("ah-export-csv-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn writes_the_csv_and_creates_the_parent() {
+        let dir = scratch("write");
+        let dest = dir.join("sub").join("history.CSV");
+        let written = write_export_csv(dest.to_str().unwrap(), "time,cpu\n1,2\n").unwrap();
+        assert_eq!(written, dest.to_string_lossy());
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "time,cpu\n1,2\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_path_without_the_csv_extension() {
+        let dir = scratch("refuse");
+        for name in ["history.txt", "history", "history.csv.sh", ".bashrc"] {
+            let dest = dir.join(name);
+            let err = write_export_csv(dest.to_str().unwrap(), "x").unwrap_err();
+            assert!(
+                matches!(err, crate::error::AppError::Validation(_)),
+                "{name}: {err:?}"
+            );
+            assert!(!dest.exists(), "{name} was written");
+        }
+        assert!(!dir.exists());
+    }
+}
+
 #[cfg(unix)]
 pub fn harden_permissions(path: &Path) {
     use std::os::unix::fs::PermissionsExt;

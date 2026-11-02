@@ -28,22 +28,24 @@ def _once_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
     return window.starts_at <= now_utc < window.ends_at
 
 
-def _weekly_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
+def _weekly_parts(window: MonitorMaintenance):
+    """(weekdays, hour, minute, tz, duration) of a weekly window, or None if it can never
+    be active."""
     if not window.start_time or not window.duration_minutes:
-        return False
+        return None
     try:
         weekdays = set(json.loads(window.weekdays) if window.weekdays else [])
         hour, minute = (int(p) for p in window.start_time.split(":", 1))
     except (ValueError, TypeError):
         logger.warning("Malformed weekly maintenance window %s", window.id)
-        return False
+        return None
     if not (0 <= hour < 24 and 0 <= minute < 60):
         # "25:00" parses as ints but would blow up datetime() below — same
         # malformed-row semantics as the except above (warn, never mute).
         logger.warning("Out-of-range start_time on maintenance window %s", window.id)
-        return False
+        return None
     if not weekdays:
-        return False
+        return None
     try:
         tz = ZoneInfo(window.timezone or "UTC")
     except Exception:
@@ -51,9 +53,15 @@ def _weekly_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
         # of never muting — the window stays roughly where the user put it.
         logger.warning("Unknown timezone %r on maintenance window %s", window.timezone, window.id)
         tz = timezone.utc  # type: ignore[assignment]
+    return weekdays, hour, minute, tz, timedelta(minutes=window.duration_minutes)
 
+
+def _weekly_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
+    parts = _weekly_parts(window)
+    if parts is None:
+        return False
+    weekdays, hour, minute, tz, duration = parts
     local_now = now_utc.replace(tzinfo=timezone.utc).astimezone(tz)
-    duration = timedelta(minutes=window.duration_minutes)
 
     # Check today's and yesterday's occurrence: a window that started before
     # midnight can still be running (duration is capped at 24h by the API).
@@ -67,6 +75,45 @@ def _weekly_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
         if start <= local_now < start + duration:
             return True
     return False
+
+
+def _naive_utc(local: datetime) -> datetime:
+    return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def maintenance_intervals(
+    windows: list[MonitorMaintenance], server_id: str | None, start: datetime, end: datetime
+) -> list[tuple[datetime, datetime, str | None]]:
+    """(start, end, note) in naive UTC of every enabled window of this server (or of all
+    servers) that overlaps start..end, cut to it and sorted by start. A weekly
+    occurrence ends at the wall-clock time _weekly_active uses, so the bands show
+    exactly when alerts were muted, across DST too."""
+    out = []
+    for window in windows:
+        if not window.enabled:
+            continue
+        if window.server_id is not None and window.server_id != server_id:
+            continue
+        occurrences: list[tuple[datetime, datetime]] = []
+        if window.kind == "once" and window.starts_at and window.ends_at:
+            occurrences.append((window.starts_at, window.ends_at))
+        elif window.kind == "weekly":
+            parts = _weekly_parts(window)
+            if parts is None:
+                continue
+            weekdays, hour, minute, tz, duration = parts
+            first = start.replace(tzinfo=timezone.utc).astimezone(tz).date() - timedelta(days=1)
+            last = end.replace(tzinfo=timezone.utc).astimezone(tz).date()
+            day = first
+            while day <= last:
+                if day.weekday() in weekdays:
+                    local = datetime(day.year, day.month, day.day, hour, minute, tzinfo=tz)
+                    occurrences.append((_naive_utc(local), _naive_utc(local + duration)))
+                day += timedelta(days=1)
+        for begin, finish in occurrences:
+            if begin < end and finish > start:
+                out.append((max(begin, start), min(finish, end), window.note))
+    return sorted(out, key=lambda interval: interval[0])
 
 
 def is_in_maintenance(

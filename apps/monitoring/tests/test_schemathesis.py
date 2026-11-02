@@ -194,6 +194,13 @@ def auth_headers(monkeypatch) -> dict[str, dict[str, str]]:
 
     monkeypatch.setattr(victoria_mod.victoria, "write", lambda lines: None)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    # The history routes query it even for an unknown server; their 502 is tested in
+    # test_status_history.py and test_status_compare.py.
+    monkeypatch.setattr(
+        victoria_mod.victoria,
+        "query_range",
+        lambda **kw: {"status": "success", "data": {"resultType": "matrix", "result": []}},
+    )
 
     yield {
         "agent_key": {"X-API-Key": _AGENT_KEY},

@@ -264,6 +264,12 @@ pub async fn export_browser_p12(
     storage::write_browser_p12(&dest_path, &der)
 }
 
+/// Saves a CSV export to the path the user picked in the save dialog.
+#[tauri::command]
+pub async fn write_export_csv(dest_path: String, content: String) -> Result<String, AppError> {
+    blocking(move || storage::write_export_csv(&dest_path, &content)).await
+}
+
 /// Generic API proxy: forwards requests to the signed-in server via reqwest.
 /// Works around WebView TLS restrictions for self-signed certs.
 #[tauri::command]

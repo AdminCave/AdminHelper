@@ -28,6 +28,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import SecZfs from './section/SecZfs.svelte';
   import SecSmart from './section/SecSmart.svelte';
   import SecForecast from './section/SecForecast.svelte';
+  import HistoryPanel from './HistoryPanel.svelte';
   import { t } from '$lib/i18n';
 
   let selected = $derived($selectedServerId);
@@ -129,6 +130,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#if serverChecks.length === 0}
       <div class="mon-panel-empty-inline">{$t('monitoring.panel.noChecks')}</div>
     {:else}
+      {#if liveChecks.length > 0 && selected !== '__none'}
+        <HistoryPanel serverId={selected} {serverName} latencyChecks={networkChecks} />
+      {/if}
       {#if heartbeatChecks.length > 0}
         <SecHeartbeat checks={heartbeatChecks} />
       {/if}

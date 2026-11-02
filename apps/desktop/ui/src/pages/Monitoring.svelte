@@ -13,6 +13,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     setTab,
   } from '$lib/stores/monitoring';
   import MonitoringOverview from '../components/monitoring/MonitoringOverview.svelte';
+  import CompareView from '../components/monitoring/CompareView.svelte';
   import MonitoringAlerts from '../components/monitoring/MonitoringAlerts.svelte';
   import MonitoringTemplates from '../components/monitoring/MonitoringTemplates.svelte';
   import MonitoringLog from '../components/monitoring/MonitoringLog.svelte';
@@ -38,6 +39,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       onclick={() => setTab('overview')}
     >
       {$t('monitoring.tab.overview')}
+    </button>
+    <button
+      class="mon-tab"
+      class:active={tab === 'history'}
+      data-tab="history"
+      onclick={() => setTab('history')}
+    >
+      {$t('monitoring.tab.history')}
     </button>
     <button
       class="mon-tab"
@@ -68,6 +77,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <div class="mon-tab-content" data-tab="overview">
   {#if tab === 'overview'}<MonitoringOverview />{/if}
+</div>
+<div class="mon-tab-content" data-tab="history">
+  {#if tab === 'history'}<CompareView />{/if}
 </div>
 <div class="mon-tab-content" data-tab="alerts">
   {#if tab === 'alerts'}<MonitoringAlerts />{/if}
