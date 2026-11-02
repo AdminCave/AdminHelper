@@ -21,8 +21,10 @@ Beweis: security kern-desktop-3 T1 (Nit), 2026-10-30 · `sync.rs:48` `read_list`
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: changelog.d/kern-desktop-4.md
 
-### T2 — spawn_blocking-Pfad von off_worker im Test (R-1013)  [ ]
+### T2 — spawn_blocking-Pfad von off_worker im Test (R-1013)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f9ec0ca6 2026-11-02T13:41:00+01:00
+Review: approve (.ah-out/review/kern-desktop-4/T2.verdict.json)
 Änderung: Den `spawn_blocking`-Zweig von `off_worker` (`enrollment.rs:522`) als eigene Funktion `on_blocking_thread` herausziehen, die der Nicht-Test-Pfad aufruft; Tests fahren sie mit einer Funktion ohne Thread-lokale Fakes: der Wert kommt zurück und läuft auf einem anderen Thread, eine Panik wird `AppError::Io` mit „did not finish“. Der `#[cfg(test)]`-Kurzschluss bleibt (Fakes je Thread).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (nur Test und interne Struktur)

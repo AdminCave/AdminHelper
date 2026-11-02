@@ -527,6 +527,16 @@ where
     #[cfg(test)]
     return Ok(work());
     #[cfg(not(test))]
+    on_blocking_thread(work).await
+}
+
+/// The path of `off_worker` outside tests, apart so a test can run it with work that needs no
+/// per-thread fake.
+async fn on_blocking_thread<T, W>(work: W) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    W: FnOnce() -> T + Send + 'static,
+{
     tauri::async_runtime::spawn_blocking(work)
         .await
         .map_err(|e| {
@@ -1310,6 +1320,25 @@ mod tests {
         ));
         assert!(!revoked_by(409, "no device"));
         assert!(!revoked_by(502, ""));
+    }
+
+    #[tokio::test]
+    async fn on_blocking_thread_returns_the_value_from_another_thread() {
+        let caller = std::thread::current().id();
+        let (value, worker) = on_blocking_thread(|| (7, std::thread::current().id()))
+            .await
+            .unwrap();
+        assert_eq!(value, 7);
+        assert_ne!(worker, caller);
+    }
+
+    #[tokio::test]
+    async fn on_blocking_thread_turns_a_panic_into_an_error() {
+        let err = on_blocking_thread(|| -> u8 { panic!("keyring gone") })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Io(_)), "{err:?}");
+        assert!(err.to_string().contains("did not finish"), "{err}");
     }
 
     #[tokio::test]
