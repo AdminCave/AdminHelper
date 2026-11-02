@@ -17,7 +17,7 @@ Review: am Ende (Branch-Review)
 Beweis: security-branch kern-doku-2 2026-10-30 · feature/kern-doku-2@1c9f682f docs/admin/agent-deployment.html:98 (nit)
 Änderung: In Schritt 1 und 1b den awk-Satz auf `fpr` nach `pub` umstellen (wie `primary_fprs` in `scripts/agent-install.sh`), DE+EN gleich. Vorher mit Wegwerf-Schlüssel mit designiertem Widerrufer (eigenes gpg-Homedir) zeigen, dass der alte Satz abbricht und der neue `$FPR` liest; ohne Widerrufer bleibt es gleich.
 Verify: bash scripts/dev/verify.sh scripts --strict
-Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html (die Änderung selbst)
+Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html (die Änderung selbst), changelog.d/klein-doku-5.md
 Task-Review: am Ende
 
 ### T2 — R-1018: restored-Wächter nennt alle Abmeldefälle  [x]
