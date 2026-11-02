@@ -1872,6 +1872,61 @@ root_renewal() {
 }
 root_renewal
 
+# ── 20. Recreating the stack after a wipe: fresh PKI, fresh database (R-1006) ──
+# `down -v` is what install.sh --reset and every re-install do. Last, because it throws the
+# stack away: after it the root is a new one, a device enrolled before is a stranger to the
+# gateway, a fresh enrollment works, and the admin exists again from ADMIN_PASSWORD.
+root_fingerprint() {
+    e2e_dc exec -T ca-issuer python -c 'from app import config; print((config.pki_dir() / "root.crt").read_text())' \
+        2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null
+}
+recreate_after_wipe() {
+    local before after token code
+    # After 19 the first device hangs on the retired root and is refused already; the device
+    # whose refusal proves the wipe is the one renewed under the new root.
+    local device=(--cert "$E2E_WORK/switched-fullchain.pem" --key "$E2E_WORK/client6.key")
+    before=$(root_fingerprint)
+    [ -n "$before" ] || { bad "wipe: the root fingerprint before the wipe could not be read"; return; }
+    code=$(reach "${device[@]}")
+    [ "$code" = 401 ] || { bad "wipe: the device is not taken before the wipe: HTTP '$code', expected 401"; return; }
+    if ! e2e_dc down -v --remove-orphans >"$E2E_WORK/wipe-down.log" 2>&1; then
+        bad "wipe: docker compose down -v failed"; tail -10 "$E2E_WORK/wipe-down.log"; return
+    fi
+    e2e_up gateway || { bad "wipe: the gateway did not come up again"; return; }
+    e2e_wait_enroll_plane || { bad "wipe: the enroll plane never reached the ca-issuer"; return; }
+    after=$(root_fingerprint)
+    if [ -n "$after" ] && [ "$after" != "$before" ]; then
+        ok "wipe: the recreated stack runs a new PKI root"
+    else
+        bad "wipe: the root after the wipe is missing or the old one"
+    fi
+    code=$(reach "${device[@]}")
+    [ "$code" = 400 ] && ok "wipe: a device enrolled before the wipe is refused (400)" \
+        || bad "wipe: the old device expected 400, got '$code'"
+    token=""
+    for _ in $(seq 1 45); do
+        token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+        [ -n "$token" ] && break
+        sleep 2
+    done
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client7.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client7.key" -subj "/CN=itest" -out "$E2E_WORK/client7.csr" 2>/dev/null
+    if [ -n "$token" ] && enroll "$token" client7; then
+        code=$(reach --cert "$E2E_WORK/client7-fullchain.pem" --key "$E2E_WORK/client7.key")
+        [ "$code" = 401 ] && ok "wipe: a fresh enrollment gets a certificate the gateway takes" \
+            || bad "wipe: the fresh device expected 401, got '$code'"
+    else
+        bad "wipe: enrollment on the recreated stack failed"
+    fi
+    # The edge enforces mTLS, so the login carries the fresh device's certificate.
+    if e2e_login --cert "$E2E_WORK/client7-fullchain.pem" --key "$E2E_WORK/client7.key"; then
+        ok "wipe: the admin logs in with ADMIN_PASSWORD on the new database"
+    else
+        bad "wipe: the admin cannot log in on the new database ($E2E_LOGIN_ERR)"
+    fi
+}
+recreate_after_wipe
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"

@@ -527,6 +527,16 @@ where
     #[cfg(test)]
     return Ok(work());
     #[cfg(not(test))]
+    on_blocking_thread(work).await
+}
+
+/// The path of `off_worker` outside tests, apart so a test can run it with work that needs no
+/// per-thread fake.
+async fn on_blocking_thread<T, W>(work: W) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    W: FnOnce() -> T + Send + 'static,
+{
     tauri::async_runtime::spawn_blocking(work)
         .await
         .map_err(|e| {
@@ -954,7 +964,7 @@ fn build_mtls_client(
         .map_err(|e| AppError::Validation(format!("Client-Auth: {e}")))?;
 
     crate::http_client::with_timeouts(reqwest::Client::builder())
-        .use_preconfigured_tls(tls)
+        .tls_backend_preconfigured(tls)
         .build()
         .map_err(AppError::from)
 }
@@ -1084,9 +1094,9 @@ mod tests {
         use x509_parser::prelude::FromDer;
 
         let original = generate_key_and_csr("device").unwrap();
-        let want_spki = rcgen::KeyPair::from_pem(&original.key_pem)
-            .unwrap()
-            .public_key_der();
+        let want_spki = rcgen::PublicKeyData::subject_public_key_info(
+            &rcgen::KeyPair::from_pem(&original.key_pem).unwrap(),
+        );
 
         let csr_pem = csr_for_existing_key(&original.key_pem, "renew").unwrap();
         let (pem, _) =
@@ -1310,6 +1320,25 @@ mod tests {
         ));
         assert!(!revoked_by(409, "no device"));
         assert!(!revoked_by(502, ""));
+    }
+
+    #[tokio::test]
+    async fn on_blocking_thread_returns_the_value_from_another_thread() {
+        let caller = std::thread::current().id();
+        let (value, worker) = on_blocking_thread(|| (7, std::thread::current().id()))
+            .await
+            .unwrap();
+        assert_eq!(value, 7);
+        assert_ne!(worker, caller);
+    }
+
+    #[tokio::test]
+    async fn on_blocking_thread_turns_a_panic_into_an_error() {
+        let err = on_blocking_thread(|| -> u8 { panic!("keyring gone") })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Io(_)), "{err:?}");
+        assert!(err.to_string().contains("did not finish"), "{err}");
     }
 
     #[tokio::test]
@@ -1671,6 +1700,7 @@ mod tests {
 
         struct Ca {
             cert: rcgen::Certificate,
+            params: CertificateParams,
             key: KeyPair,
         }
 
@@ -1682,7 +1712,7 @@ mod tests {
                 .distinguished_name
                 .push(DnType::CommonName, "Test CA");
             let cert = params.self_signed(&key).unwrap();
-            Ca { cert, key }
+            Ca { cert, params, key }
         }
 
         /// (cert_pem, key_pem) for a leaf signed by `ca`.
@@ -1696,7 +1726,8 @@ mod tests {
             let mut params = CertificateParams::new(sans).unwrap();
             params.distinguished_name.push(DnType::CommonName, cn);
             params.extended_key_usages.push(eku);
-            let cert = params.signed_by(&key, &ca.cert, &ca.key).unwrap();
+            let issuer = rcgen::Issuer::from_params(&ca.params, &ca.key);
+            let cert = params.signed_by(&key, &issuer).unwrap();
             (cert.pem(), key.serialize_pem())
         }
 
@@ -2134,7 +2165,8 @@ mod tests {
         let mut ca = CertificateParams::new(vec![]).unwrap();
         ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca.distinguished_name.push(DnType::CommonName, "Access CA");
-        let ca = ca.self_signed(&ca_key).unwrap();
+        let ca_cert = ca.self_signed(&ca_key).unwrap();
+        let issuer = rcgen::Issuer::new(ca, ca_key);
 
         let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
         let mut params = CertificateParams::new(vec![]).unwrap();
@@ -2143,8 +2175,8 @@ mod tests {
             params.distinguished_name.push(DnType::CommonName, cn);
         }
         params.not_after = date_time_ymd(2027, 1, 13);
-        let leaf = params.signed_by(&key, &ca, &ca_key).unwrap();
-        format!("{}{}", leaf.pem(), ca.pem())
+        let leaf = params.signed_by(&key, &issuer).unwrap();
+        format!("{}{}", leaf.pem(), ca_cert.pem())
     }
 
     /// Store `cert` next to a key, as an enrollment does.
