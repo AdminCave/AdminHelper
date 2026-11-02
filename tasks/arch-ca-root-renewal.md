@@ -234,7 +234,7 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
   (2) die letzte Start-Momentaufnahme in `infra_certificates` (`root`) ist nicht der Fingerprint von `root.crt` (N),
   der ca-issuer läuft also noch nicht unter N; (3) das Register ist jünger als R und das Legacy-Fenster
   (`tokens.LEGACY_WINDOW`) läuft noch, es kennt also eventuell nicht jedes Gerät; (4) aktive Geräte, deren jüngstes
-  Zertifikat vor `switched_at` liegt. Aktiv heißt: Line nicht widerrufen, Identität nach der Regel von
+  Zertifikat vor dem ersten Start unter N liegt (siehe „Grenze der Sperre“). Aktiv heißt: Line nicht widerrufen, Identität nach der Regel von
   `DbTokenStore._active` aktiv, jüngstes Zertifikat noch gültig. `finishing` sperrt nicht, denn der abgebrochene
   finish hat R schon aus Bündeln genommen.
 - 2026-11-02 T4: Grenze der Sperre ist der erste Start unter N, nicht der switch. Bis zum Neustart signiert der
