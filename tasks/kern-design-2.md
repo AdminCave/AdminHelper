@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/palette.test.t
 Doku: → T8
 Abhängt von: T1
 
-### T5 — Dashboard nach Mockup (R-1062)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Dashboard.svelte, apps/desktop/ui/src/pages/Dashboard.load.test.ts, apps/desktop/ui/src/pages/Dashboard.layout.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T5 — Dashboard nach Mockup (R-1062)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Dashboard.svelte, apps/desktop/ui/src/pages/Dashboard.load.test.ts, apps/desktop/ui/src/pages/Dashboard.layout.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0c84f73f 2026-11-02T19:50:24+01:00
+Review: approve (.ah-out/review/kern-design-2/T5.verdict.json)
 Änderung: Stat-Karten (Verbindungen gesamt mit SSH/RDP/Web, Server mit Agent und Probleme nur im Servermodus), Panel „Zuletzt genutzt“ mit Verbinden-Knopf, Panel Monitoring (Pills nach Zustand, Problemserver mit `MonHeartbeatBar`, nur Servermodus), Panel Tunnel, Knöpfe „Neue Verbindung“ und „Zur Liste“; Bausteine `ui/Panel`, `ui/Pill`, `ui/Button`. Keine Karte „Aktive Sitzungen“ (Spec). Neuer Test: Karten und Panels je Modus, Verbinden ruft den Connect-Weg; `Dashboard.load.test.ts` bleibt grün.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard.load.test.ts src/pages/Dashboard.layout.test.ts
 Doku: → T8
@@ -77,3 +79,4 @@ Task-Review: am Ende
 - Sektionen als Tabs nach Mockup; die E2E-Spec wählt „Gerät“ (Spec, Trade-offs).
 - T3: „Letzter Sync“ hatte keine Quelle; der connections-Store merkt sich die Zeit der letzten erfolgreichen Sync-Antwort (`lastSyncedAt`, nur im Speicher). Probleme zählen aktivierte Checks mit warning/critical aus der letzten Monitoring-Ladung, erst nach der ersten Ladung sichtbar; Gerätezertifikat nur im Servermodus, unlesbar → Feld entfällt.
 - T4: Palette-Knopf im Header mit eigener Klasse `header-palette-btn` statt `.btn.ghost.small` (logout/tunnel-start-Specs greifen den ersten solchen Knopf als Abmelden); Aktionen nutzen vorhandene Texte (`connections.new`, `settings.label`, `theme.toggle`, `workspace.openLauncher`); Strg/⌘+K greift auch in Eingabefeldern, ohne Alt.
+- T5: Dashboard-Stile scoped in `Dashboard.svelte`; die verwaisten globalen Regeln (`.dash-stats`, `.stat-*`, `.dash-grid`, `.dash-panel*`, `.dash-list*`, `.dash-actions`) aus `app.css` entfernt, `.dash-empty` bleibt (Connections). Monitoring lädt beim Öffnen einmal (`loadServers` → `loadMonitoring`), ohne Polling; `Dashboard.load.test.ts` mockt Monitoring als geladen, damit sein Laden-Text nur die Verbindungen meint.
