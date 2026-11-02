@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-3 — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-3 · Review: pro Task
 Spec: docs/features/kern-monitoring-3.md (Roadmap R-1076, R-1077)
 Heavy: linux-full — neue Monitoring-Routen und Agent-Push-Serien hinter dem Gateway, Agent-Collector, Desktop-Journey Monitoring; der Sammellauf fährt Stack, Agent-Monitoring und die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -120,6 +120,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die genannten Dateien
 Task-Review: am Ende
+
+### T14 — Contract-Test: History-Typen auf die OpenAPI-Schemas (R-1076, R-1077)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts
+Änderung: Die PR-CI (#375, vitest) fand HistorySeries, ServerHistory und ServerCompare aus T9/T10 ohne Zuordnung im Contract-Test; drei Mappings auf HistorySeriesOut, ServerHistoryOut, ServerCompareOut des Monitoring-Snapshots, Zähler 37 → 40.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts
+Doku: keine (Testcode)
 
 ## Entscheidungen
 - T2: `loadPerCpu` ist `load_5m / cpu_count` (nicht `load_1m` wie in der Spec), weil die Load-Schwellen des Checkers (`_grade_load`) auf `load_5m` je CPU stehen; so gelten die Schwellenlinien für die gezeigte Linie.
