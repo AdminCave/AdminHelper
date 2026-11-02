@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-harness-1 — Task-Ledger
-Status: geplant · Branch: feature/klein-tests-harness-1 · Review: am Ende
+Status: aktiv · Branch: feature/klein-tests-harness-1 · Review: am Ende
 Spec: docs/features/klein-tests-harness-1.md (Roadmap R-1005)
 Heavy: none — reine Test-Änderung unter scripts/dev/tests
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
