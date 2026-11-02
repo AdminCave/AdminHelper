@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-rdp-embedded — Task-Ledger
-Status: geplant · Branch: feature/arch-rdp-embedded · Review: pro Task
+Status: aktiv · Branch: feature/arch-rdp-embedded · Review: pro Task
 Spec: docs/features/arch-rdp-embedded.md (Roadmap R-1074)
 Heavy: none — Machbarkeitsstudie, ändert nur Spec und Ledger; Prototypen laufen außerhalb des Baums (Spec „Prototypen“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -43,7 +43,7 @@ Doku: keine (das Ergebnis ist die Spec selbst; kein Produktverhalten)
 Task-Review: am Ende
 Abhängt von: T1
 
-### T4 — Windows-Probe (R-1074)  [?] (Woher kommt der Windows-Host? Empfehlung: GitHub-Windows-Runner über Wegwerf-Branch)
+### T4 — Windows-Probe (R-1074)  [ ]
 Komponente: scripts · Dateien: docs/features/arch-rdp-embedded.md
 Änderung: Probe-Client aus T2 gegen einen echten Windows-Host: NLA/CredSSP, Codec-Aushandlung ohne AVC, Resize,
 Zwischenablage, Audio, Laufwerke, Monitor-Layout. Abschnitt „Ergebnis: Windows“; ohne Host „nicht verifiziert“ mit
@@ -70,3 +70,5 @@ Abhängt von: T2, T3
   `.ah-out/arch-rdp-embedded/`, am Ende Archiv unter `tasks/private/spikes/` (Spec „Prototypen“).
 - 2026-11-02: Jede Task ändert nur die Spec und ist reine Doku (`Task-Review: am Ende`); die Abschlussprüfung prüft
   Inhalt und Belege.
+- 2026-11-02 (Kevin): T4 nimmt als Windows-Host einen GitHub-Windows-Runner über einen temporären Workflow auf einem
+  eigenen Wegwerf-Branch, der nie gemergt und danach gelöscht wird (Spec, Offene Fragen 1).
