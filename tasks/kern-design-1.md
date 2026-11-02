@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-design-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-design-1 · Review: pro Task
 Spec: docs/features/kern-design-1.md (Roadmap R-1061)
 Heavy: linux-full — Token-Wechsel und Icons in AppShell, Login und Connections ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -73,8 +73,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/data
 Doku: → T8
 Abhängt von: T1
 
-### T8 — Doku: Design-System im Desktop, Changelog (R-1061)  [ ]
+### T8 — Doku: Design-System im Desktop, Changelog (R-1061)  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-design-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1eb71a94 2026-11-02T18:09:50+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt Design-System (`docs/developer/desktop.html:278` und EN-Gegenstück) auf den neuen Stand: soft black statt True-Black, DS-Token-Namen samt Alt-Aliasen, Lucide, `components/ui` als Bibliothek mit Liste und Regel „neue Seiten nehmen sie“; der Satz „wertgleich zum Web-Panel“ entfällt. Changelog-Fragment (Changed: Desktop-Design-Fundament; umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-design-1.md
