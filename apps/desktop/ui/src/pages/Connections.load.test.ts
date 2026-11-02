@@ -18,6 +18,7 @@ vi.mock('$lib/bridge', () => ({
   syncConnections: vi.fn(async () => []),
   loadConnections: vi.fn(async () => []),
   saveConnections: vi.fn(async () => {}),
+  probeTargets: vi.fn(async () => []),
 }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');

@@ -542,41 +542,6 @@ body {
   color: var(--text-muted);
 }
 
-/* Search */
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  transition: border-color 0.15s ease;
-}
-
-.search-box:focus-within {
-  border-color: var(--accent);
-}
-
-.search-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.search-box input {
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-family: var(--font);
-  outline: none;
-  width: 200px;
-}
-
-.search-box input::placeholder {
-  color: var(--text-faint);
-}
-
 /* ── Status footer (R-1062) ────────────────────────────────────────── */
 .status-footer {
   grid-column: 2;
