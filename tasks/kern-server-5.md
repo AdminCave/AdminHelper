@@ -21,8 +21,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py tests/test_auth.py
 Doku: docs/admin/benutzer.html, docs/en/admin/users.html (Login-Rate-Limit), docs/developer/api-reference.html, docs/en/developer/api-reference.html (Refresh), changelog.d/kern-server-5.md (neutral)
 
-### T2 — Namensprüfung für Altzeilen in Bulk-ZIP und CLI vervollständigen (R-1010)  [ ]
+### T2 — Namensprüfung für Altzeilen in Bulk-ZIP und CLI vervollständigen (R-1010)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/app/cli.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/test_cli.py, changelog.d/kern-server-5.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @328e76a6 2026-11-02T11:10:47+01:00
+Review: am Ende (Branch-Review)
 Änderung: Das Bulk-ZIP (`generate_router.py:217`, `:236`) lässt Server- und Benutzernamen aus, die die API heute als Pfad-Bestandteil abweist (`servers/schemas._validate_server_name`), mit einer Warnung wie `name_refused`. `create_admin` (`cli.py:51`) prüft den Namen wie `UserCreate` (Länge, `_USERNAME_PATTERN`). Tests: Altzeile mit abgewiesenem Namen fehlt im ZIP, die übrigen bleiben; CLI weist einen solchen Namen mit Exit 1 ab und legt nichts an.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py tests/test_cli.py
 Doku: changelog.d/kern-server-5.md (neutral)

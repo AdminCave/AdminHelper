@@ -499,3 +499,10 @@ def test_main_create_admin_restart_with_stdin_closed_keeps_the_pipe_on_fd_0():
         "inheritable": True,
         "stdin": "arg-secret\n",
     }
+
+
+@pytest.mark.parametrize("name", ["..", "a/b", "ab", "x" * 65, "a b", "näme"])
+def test_create_admin_refuses_a_name_the_api_refuses(db_session, name, capsys):
+    assert create_admin(db_session, name, "supersecret") == 1
+    assert db_session.query(User).filter_by(username=name).first() is None
+    assert "username" in capsys.readouterr().err

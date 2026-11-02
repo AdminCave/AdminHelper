@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import io
+import logging
+import re
 import zipfile
 from typing import Annotated
 
@@ -31,6 +33,25 @@ from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import VisitorBundleOut
 from app.modules.servers.models import Server
 from app.modules.users.models import User
+from app.modules.users.schemas import _USERNAME_PATTERN
+
+logger = logging.getLogger(__name__)
+
+
+def _path_refused(name: str, pattern: str | None = None) -> bool:
+    """True for a name the API refuses today as a server name (servers/schemas: no '/',
+    '.' or '..') or, with `pattern`, as a username: the bulk-ZIP names an entry after it.
+    Rows from before stay as they are, so the ZIP leaves such a name out."""
+    if (
+        not name
+        or "/" in name
+        or name in {".", ".."}
+        or (pattern is not None and not re.fullmatch(pattern, name))
+    ):
+        logger.warning("bulk-zip: the stored name %r is no path component, left out", name)
+        return True
+    return False
+
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
@@ -210,7 +231,7 @@ def gen_bulk_zip(
         for server_id, tunnels in by_server.items():
             server = servers_by_id.get(server_id)
             # A refused name gets no tunnel (generate_frpc_toml).
-            if not server or name_refused(server.name):
+            if not server or name_refused(server.name) or _path_refused(server.name):
                 continue
             allow_users = get_allow_users(db, server_id)
             frpc = generate_frpc_toml(config, tunnels, server.name, allow_users)
@@ -227,7 +248,7 @@ def gen_bulk_zip(
             for user in users_with_servers:
                 # The generator cannot write a name the API refuses; filtered here, not
                 # above, so such a user does not turn the ZIP into the shared visitor.toml.
-                if name_refused(user.username):
+                if name_refused(user.username) or _path_refused(user.username, _USERNAME_PATTERN):
                     continue
                 u_server_ids = {s.id for s in user.servers}
                 u_tunnels = [t for t in stcp_tunnels if t.server_id in u_server_ids]
