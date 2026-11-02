@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Zeilenangaben `origin/main@8c4fe2f5`. Merge durch Kevin (`.github/workflows/` im Diff), dazu Anpassung der Pflicht-Checks im Ruleset (T2). Versionen und Digests vor dem Bauen neu auflösen (`docker buildx imagetools inspect`).
 
-### T1 — Gateway auf nginx 1.30-alpine (R-1029)  [ ]
-Komponente: server · Dateien: apps/gateway/Dockerfile, changelog.d/kern-laufzeit-1.md
+### T1 — Gateway auf nginx 1.30-alpine (R-1029)  [x]
+Komponente: server · Dateien: apps/gateway/Dockerfile, changelog.d/kern-laufzeit-1.md, .github/workflows/ci.yml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @033df0c4 2026-11-02T11:44:55+01:00
+Review: approve (.ah-out/review/kern-laufzeit-1/T1.verdict.json)
 Änderung: `FROM nginx:1.30.6-alpine@sha256:<Digest>` statt 1.29 (`apps/gateway/Dockerfile:1`). Vorher in den nginx-CHANGES 1.29 → 1.30 prüfen, ob eine Direktive der Gateway-Konfiguration betroffen ist, und `nginx -t` gegen das neue Image fahren.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py tests/test_images_exec_only.py
 Doku: changelog.d/kern-laufzeit-1.md

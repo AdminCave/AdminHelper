@@ -1021,11 +1021,13 @@ jobs:
           cp certs/gateway-fullchain.pem certs/client-ca.pem
           echo 'ssl_verify_client optional;' > snippets/data-plane-mtls.conf
           cp apps/gateway/identity-headers.conf snippets/identity-headers.conf
+          # The base image of the gateway Dockerfile, so the check runs the nginx it ships.
+          image=$(sed -n 's/^FROM //p' apps/gateway/Dockerfile)
           docker run --rm \
             -v "$PWD/apps/gateway/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$PWD/certs:/etc/nginx/certs:ro" \
             -v "$PWD/snippets:/etc/nginx/snippets:ro" \
-            nginx:1.29-alpine nginx -t
+            "$image" nginx -t
 
   # The ONE from-outside integration path. Every other test mocks at the DB/IPC
   # boundary; this boots the real multi-container stack (postgres, redis, server,
