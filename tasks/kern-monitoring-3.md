@@ -31,10 +31,12 @@ Review: approve (.ah-out/review/kern-monitoring-3/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_checks_metrics.py tests/test_openapi_snapshot.py
 Doku: → T12
 
-### T3 — Ereignisse und Wartungsfenster im Verlauf (R-1076)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/maintenance.py, apps/monitoring/app/history.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_maintenance.py, apps/monitoring/tests/test_status_history.py
+### T3 — Ereignisse und Wartungsfenster im Verlauf (R-1076)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/maintenance.py, apps/monitoring/app/history.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_maintenance.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @cb013fa8 2026-11-02T20:35:23+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T3.verdict.json)
 Änderung: `maintenance.py` bekommt `maintenance_intervals(windows, server_id, start, end)`: die Intervalle aller `once`- und `weekly`-Fenster (Server und global) im Zeitraum, in UTC, mit der Zeitzonen-Logik von `_weekly_active` (DST-Wechsel getestet). Der Verlauf liefert `maintenance` und `events` (Alert-Log der Checks des Servers im Zeitraum: Zeit, Check-ID, Check-Name, neuer Status; höchstens 200, neueste zuerst).
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_maintenance.py tests/test_status_history.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_maintenance.py tests/test_status_history.py tests/test_openapi_snapshot.py
 Doku: → T12
 Abhängt von: T2
 
@@ -100,4 +102,5 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - T2: `loadPerCpu` ist `load_5m / cpu_count` (nicht `load_1m` wie in der Spec), weil die Load-Schwellen des Checkers (`_grade_load`) auf `load_5m` je CPU stehen; so gelten die Schwellenlinien für die gezeigte Linie.
-- T2: Jeder Punkt ist `avg_over_time(…[step])` mit `keep_metric_names` (MetricsQL-Doku: alle Rollups nehmen den Modifier), nicht der letzte Rohwert; bei 6 h je Punkt stünde sonst ein Sample für sechs Stunden. Die Vorperiode wird als eigener Zeitraum abgefragt und auf das Raster verschoben, ohne `offset`.
+- T2: Jeder Punkt ist `avg_over_time(…[Fenster])` (Fenster = Schritt, mindestens 5m = Push-Intervall des Agents) mit `keep_metric_names` (MetricsQL-Doku: alle Rollups nehmen den Modifier), nicht der letzte Rohwert; bei 6 h je Punkt stünde sonst ein Sample für sechs Stunden. Die Vorperiode wird als eigener Zeitraum abgefragt und auf das Raster verschoben, ohne `offset`.
+- T3: Ereignisse sind die Zeilen des Alert-Logs (nur Statuswechsel, zu denen eine Alert-Regel passte); mehrere Regeln schreiben je Wechsel eine Zeile, gleiche Zeilen (Check, alter und neuer Status) binnen 60 s zählen einmal. Wartungsbänder in Unix-Sekunden, auf den Zeitraum zugeschnitten, globale Fenster eingeschlossen.

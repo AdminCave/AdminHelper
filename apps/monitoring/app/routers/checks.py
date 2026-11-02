@@ -26,6 +26,8 @@ from app.history import (
     build_series,
     history_queries,
     history_window,
+    server_events,
+    server_maintenance,
     server_thresholds,
 )
 from app.models import MonitorCheck, MonitorState
@@ -589,11 +591,14 @@ def get_server_history(
     db: Session = Depends(get_db),
 ):
     """Resource history of one server from its agent: CPU, RAM, swap, load per CPU and
-    disks on one time grid, optionally the previous period, and the warn/crit thresholds."""
+    disks on one time grid, optionally the previous period, the warn/crit thresholds,
+    the status changes of its checks and its maintenance windows."""
+    start, end, step = history_window(period, time.time())
     thresholds = server_thresholds(db, server_id)
+    events = server_events(db, server_id, start, end)
+    maintenance = server_maintenance(db, server_id, start, end)
     # Up to four query_range calls follow; the connection goes back to the pool first.
     db.rollback()
-    start, end, step = history_window(period, time.time())
     queries = history_queries(server_id, step)
 
     def period_series(shift: int) -> dict:
@@ -619,4 +624,6 @@ def get_server_history(
         "series": period_series(0),
         "previous": period_series(end - start) if previous else None,
         "thresholds": thresholds,
+        "events": events,
+        "maintenance": maintenance,
     }

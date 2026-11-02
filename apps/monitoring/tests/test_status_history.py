@@ -5,11 +5,12 @@
 """GET /status/server/{server_id}/history (R-1076): the agent series of one server on
 one grid, the previous period and the thresholds of its agent_resources check."""
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 
-from app.models import MonitorCheck
+from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorMaintenance
 
 NOW = 1_800_000_030  # 30 s past a minute: the grid ends at the full minute before
 END = 1_800_000_000
@@ -222,3 +223,164 @@ def test_history_needs_the_internal_key(client_db, monkeypatch):
     assert client.get("/status/server/srv-1/history").status_code == 401
     wrong = client.get("/status/server/srv-1/history", headers={"X-Internal-Key": "wrong"})
     assert wrong.status_code == 401
+
+
+def _at(ts):
+    return datetime.fromtimestamp(ts, timezone.utc).replace(tzinfo=None)
+
+
+def _seed_log(factory, rows):
+    """rows: (check_id, server_id, rule_id, sent_at unix, old, new)."""
+    with factory() as db:
+        for rule in {r[2] for r in rows}:
+            db.add(MonitorAlertRule(id=rule, name=rule, channel="webhook", channel_config="{}"))
+        for check in {(r[0], r[1]) for r in rows}:
+            db.add(
+                MonitorCheck(
+                    id=check[0],
+                    server_id=check[1],
+                    name=f"Check {check[0]}",
+                    check_type="ping",
+                    config="{}",
+                )
+            )
+        db.flush()
+        for check_id, _, rule_id, ts, old, new in rows:
+            db.add(
+                MonitorAlertLog(
+                    alert_rule_id=rule_id,
+                    check_id=check_id,
+                    old_status=old,
+                    new_status=new,
+                    sent_at=_at(ts),
+                    success=True,
+                )
+            )
+        db.commit()
+
+
+def test_events_are_the_status_changes_of_this_servers_checks(history):
+    start = END - 3600
+    _seed_log(
+        history.factory,
+        [
+            ("ping-1", "srv-1", "r1", END - 600, "ok", "critical"),
+            ("ping-1", "srv-1", "r2", END - 599, "ok", "critical"),  # same change, 2nd rule
+            ("ping-1", "srv-1", "r1", END - 60, "critical", "ok"),
+            ("http-1", "srv-1", "r1", END - 1800, "ok", "warning"),
+            ("ping-2", "srv-2", "r1", END - 300, "ok", "critical"),  # other server
+            ("ping-1", "srv-1", "r1", start - 1, "warning", "ok"),  # before the range
+        ],
+    )
+
+    body = history.get("/status/server/srv-1/history?period=1h").json()
+
+    assert body["events"] == [
+        {"at": END - 60, "checkId": "ping-1", "checkName": "Check ping-1", "status": "ok"},
+        {"at": END - 599, "checkId": "ping-1", "checkName": "Check ping-1", "status": "critical"},
+        {"at": END - 1800, "checkId": "http-1", "checkName": "Check http-1", "status": "warning"},
+    ]
+
+
+def test_the_same_change_a_minute_later_is_a_new_event(history):
+    _seed_log(
+        history.factory,
+        [
+            ("ping-1", "srv-1", "r1", END - 600, "ok", "critical"),
+            ("ping-1", "srv-1", "r1", END - 300, "ok", "critical"),
+        ],
+    )
+
+    events = history.get("/status/server/srv-1/history?period=1h").json()["events"]
+
+    assert [e["at"] for e in events] == [END - 300, END - 600]
+
+
+def test_events_stop_at_the_limit(history):
+    _seed_log(
+        history.factory,
+        [("ping-1", "srv-1", "r1", END - 61 * i, "ok", "critical") for i in range(1, 260)],
+    )
+
+    events = history.get("/status/server/srv-1/history?period=7d").json()["events"]
+
+    assert len(events) == 200
+    assert events[0]["at"] == END - 61
+
+
+def test_maintenance_bands_cover_this_server_and_all_servers(history):
+    start = END - 86400
+    with history.factory() as db:
+        db.add_all(
+            [
+                MonitorMaintenance(
+                    id="mine",
+                    server_id="srv-1",
+                    kind="once",
+                    note="Kernel",
+                    starts_at=_at(END - 7200),
+                    ends_at=_at(END + 3600),
+                    enabled=True,
+                ),
+                MonitorMaintenance(
+                    id="all",
+                    server_id=None,
+                    kind="once",
+                    note=None,
+                    starts_at=_at(start - 600),
+                    ends_at=_at(start + 600),
+                    enabled=True,
+                ),
+                MonitorMaintenance(
+                    id="other",
+                    server_id="srv-2",
+                    kind="once",
+                    starts_at=_at(END - 7200),
+                    ends_at=_at(END),
+                    enabled=True,
+                ),
+                MonitorMaintenance(
+                    id="off",
+                    server_id="srv-1",
+                    kind="once",
+                    starts_at=_at(END - 7200),
+                    ends_at=_at(END),
+                    enabled=False,
+                ),
+            ]
+        )
+        db.commit()
+
+    body = history.get("/status/server/srv-1/history?period=24h").json()
+
+    assert (body["start"], body["end"]) == (start, END)
+    assert body["maintenance"] == [
+        {"start": start, "end": start + 600, "note": None},
+        {"start": END - 7200, "end": END, "note": "Kernel"},
+    ]
+    assert body["events"] == []
+
+
+def test_weekly_bands_arrive_in_unix_seconds(history):
+    end_utc = datetime.fromtimestamp(END, timezone.utc)
+    weekday = (end_utc - timedelta(hours=3)).weekday()
+    begin = (end_utc - timedelta(hours=3)).strftime("%H:%M")
+    with history.factory() as db:
+        db.add(
+            MonitorMaintenance(
+                id="w",
+                server_id=None,
+                kind="weekly",
+                weekdays=f"[{weekday}]",
+                start_time=begin,
+                duration_minutes=60,
+                timezone="UTC",
+                enabled=True,
+            )
+        )
+        db.commit()
+
+    band = history.get("/status/server/srv-1/history?period=24h").json()["maintenance"]
+
+    start = END - 3 * 3600 - (END % 60)
+    assert band == [{"start": start, "end": start + 3600, "note": None}]

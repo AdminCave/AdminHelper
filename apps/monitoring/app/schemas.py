@@ -364,6 +364,19 @@ class ThresholdOut(BaseModel):
     crit: float
 
 
+class HistoryEventOut(BaseModel):
+    at: int
+    checkId: str
+    checkName: str
+    status: str
+
+
+class MaintenanceBandOut(BaseModel):
+    start: int
+    end: int
+    note: str | None
+
+
 class ServerHistoryOut(BaseModel):
     serverId: str
     period: str
@@ -373,6 +386,8 @@ class ServerHistoryOut(BaseModel):
     series: HistorySeriesOut
     previous: HistorySeriesOut | None
     thresholds: dict[str, ThresholdOut]
+    events: list[HistoryEventOut]
+    maintenance: list[MaintenanceBandOut]
 
 
 class AlertRuleOut(BaseModel):

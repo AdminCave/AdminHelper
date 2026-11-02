@@ -658,6 +658,34 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoryEventOut": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "integer"
+          },
+          "checkId": {
+            "title": "Checkid",
+            "type": "string"
+          },
+          "checkName": {
+            "title": "Checkname",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "checkId",
+          "checkName",
+          "status"
+        ],
+        "title": "HistoryEventOut",
+        "type": "object"
+      },
       "HistorySeriesOut": {
         "properties": {
           "cpu": {
@@ -792,6 +820,36 @@
           "disks"
         ],
         "title": "HistorySeriesOut",
+        "type": "object"
+      },
+      "MaintenanceBandOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "note"
+        ],
+        "title": "MaintenanceBandOut",
         "type": "object"
       },
       "MaintenanceInput": {
@@ -1354,6 +1412,20 @@
             "title": "End",
             "type": "integer"
           },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "maintenance": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceBandOut"
+            },
+            "title": "Maintenance",
+            "type": "array"
+          },
           "period": {
             "title": "Period",
             "type": "string"
@@ -1399,7 +1471,9 @@
           "end",
           "series",
           "previous",
-          "thresholds"
+          "thresholds",
+          "events",
+          "maintenance"
         ],
         "title": "ServerHistoryOut",
         "type": "object"
@@ -3249,7 +3323,7 @@
     },
     "/status/server/{server_id}/history": {
       "get": {
-        "description": "Resource history of one server from its agent: CPU, RAM, swap, load per CPU and\ndisks on one time grid, optionally the previous period, and the warn/crit thresholds.",
+        "description": "Resource history of one server from its agent: CPU, RAM, swap, load per CPU and\ndisks on one time grid, optionally the previous period, the warn/crit thresholds,\nthe status changes of its checks and its maintenance windows.",
         "operationId": "get_server_history_status_server__server_id__history_get",
         "parameters": [
           {

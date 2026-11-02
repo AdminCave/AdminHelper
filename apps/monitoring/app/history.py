@@ -13,11 +13,18 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.core.victoria import escape_label_value
-from app.models import MonitorCheck
+from app.maintenance import maintenance_intervals
+from app.models import MonitorAlertLog, MonitorCheck, MonitorMaintenance
+
+EVENT_LIMIT = 200
+# One status change of a check is logged once per matching alert rule; rows of the same
+# change lie within one dispatch, so a minute apart is a different change.
+_SAME_EVENT = timedelta(seconds=60)
 
 # period -> (duration seconds, step seconds). At most 169 grid points per series.
 PERIODS = {
@@ -143,3 +150,59 @@ def server_thresholds(db: Session, server_id: str) -> dict:
             "crit": crit_default if crit is None else crit,
         }
     return result
+
+
+def _naive_utc(ts: int) -> datetime:
+    return datetime.fromtimestamp(ts, timezone.utc).replace(tzinfo=None)
+
+
+def _epoch(value: datetime) -> int:
+    return int(value.replace(tzinfo=timezone.utc).timestamp())
+
+
+def server_events(db: Session, server_id: str, start: int, end: int) -> list[dict]:
+    """Status changes of the server's checks from the alert log in start..end, newest
+    first, at most EVENT_LIMIT; the rows several alert rules wrote for one change count once."""
+    rows = (
+        db.query(MonitorAlertLog, MonitorCheck.name)
+        .join(MonitorCheck, MonitorCheck.id == MonitorAlertLog.check_id)
+        .filter(
+            MonitorCheck.server_id == server_id,
+            MonitorAlertLog.sent_at >= _naive_utc(start),
+            MonitorAlertLog.sent_at <= _naive_utc(end),
+        )
+        .order_by(MonitorAlertLog.sent_at.desc(), MonitorAlertLog.id.desc())
+        .limit(EVENT_LIMIT * 5)
+        .all()
+    )
+    events: list[dict] = []
+    last_seen: dict[tuple, datetime] = {}
+    for log, check_name in rows:
+        key = (log.check_id, log.old_status, log.new_status)
+        seen = last_seen.get(key)
+        if seen is not None and seen - log.sent_at < _SAME_EVENT:
+            continue
+        last_seen[key] = log.sent_at
+        events.append(
+            {
+                "at": _epoch(log.sent_at),
+                "checkId": log.check_id,
+                "checkName": check_name,
+                "status": log.new_status,
+            }
+        )
+        if len(events) == EVENT_LIMIT:
+            break
+    return events
+
+
+def server_maintenance(db: Session, server_id: str, start: int, end: int) -> list[dict]:
+    """The maintenance windows of the server and of all servers in start..end as
+    {start, end, note} in unix seconds."""
+    windows = db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled.is_(True)).all()
+    return [
+        {"start": _epoch(begin), "end": _epoch(finish), "note": note}
+        for begin, finish, note in maintenance_intervals(
+            windows, server_id, _naive_utc(start), _naive_utc(end)
+        )
+    ]
