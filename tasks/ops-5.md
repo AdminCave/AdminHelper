@@ -40,8 +40,10 @@ Beweis: Code-Lesung `scripts/init-secrets.sh:41` (`grep -E "^${var}="`) und `:72
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test
 Doku: changelog.d/ops-5.md
 
-### T4 — update.sh: Schreibfehler ohne Terminal wie getrennte Sitzung (R-1003)  [ ]
+### T4 — update.sh: Schreibfehler ohne Terminal wie getrennte Sitzung (R-1003)  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/ops-5.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @70dc71bd 2026-11-02T10:08:36+01:00
+Review: approve (.ah-out/review/ops-5/T4.verdict.json)
 Beweis: Code-Lesung `scripts/update.sh:74-75` (`log`/`die` schreiben auf stderr ohne Fehlerbehandlung), `:655-690` (nur INT/TERM/HUP haben Traps); Test (erst rot): `update.sh` mit stdout/stderr in eine Pipe, deren Leser während des Tauschs endet → heute Ende ohne Rollback und ohne `backups/update-*.log` · Dedup-Key: bug:ops:update.sh:no-tty-sigpipe
 Änderung: SIGPIPE wird ignoriert. Scheitert ein Schreiben auf stdout/stderr, geht die Ausgabe in `backups/update-<zeit>.log` (`hup_to_log`), und ab dem Tausch läuft das Skript wie nach SIGHUP in den Rollback; davor endet es ohne Änderung, die Meldung im Log. Tests (erst rot): Leser endet während des Pulls → zurückgerollt, 0600-Log mit „interrupted“; Leser endet vor dem Tausch → nichts geändert, Log vorhanden.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
@@ -59,3 +61,8 @@ Komponente: scripts · Dateien: scripts/agent-install.sh
 Änderung: Der Einzeiler im Kopfkommentar (`scripts/agent-install.sh:9-11`) lässt `--token` weg und sagt, dass das Skript den Token dann verdeckt über `/dev/tty` abfragt; `--token` bleibt für unbeaufsichtigte Rollouts genannt (wie `docs/admin/agent-deployment.html:51`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: keine (Kommentar; die Doku beschreibt den Weg schon)
+
+## Entscheidungen
+- 2026-11-02 T1: ein gekürztes Statement behält nur das schließende Quote, der Rest dahinter geht als eigener Schnitt — sonst blieb der Wert der Passphrase stehen, wenn er zeilenweise gelesen erst an diesem Quote beginnt (Prüfer Runde 1)
+- 2026-11-02 T3: `is_set_safely` liest die letzte Anweisung eines Schlüssels — Compose nimmt die letzte (am echten `docker compose config` gesehen)
+- 2026-11-02 T4: ein gescheitertes Schreiben (`say`/`out_lost`) schickt dem Skript selbst SIGHUP — so gelten die bestehenden HUP-Wege (vor dem Tausch Ende, danach Rollback, im Rollback Neustart/Ignorieren) unverändert; `| tee` beim Backup endet mit `die`, weil pipefail sonst ohne Meldung beendet
