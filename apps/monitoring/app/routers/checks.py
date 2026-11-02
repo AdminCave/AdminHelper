@@ -24,6 +24,8 @@ from app.core.pagination import paginate
 from app.core.victoria import escape_label_value, victoria
 from app.history import (
     build_series,
+    compare_query,
+    compare_servers,
     history_queries,
     history_window,
     server_events,
@@ -39,6 +41,7 @@ from app.schemas import (
     CheckMetricsOut,
     CheckUpdate,
     MonitorCheckOut,
+    ServerCompareOut,
     ServerHistoryOut,
     StatusSummaryOut,
 )
@@ -626,4 +629,31 @@ def get_server_history(
         "thresholds": thresholds,
         "events": events,
         "maintenance": maintenance,
+    }
+
+
+@router.get(
+    "/status/compare",
+    response_model=ServerCompareOut,
+    dependencies=[Depends(require_internal)],
+)
+def get_status_compare(
+    metric: str = Query(..., pattern="^(cpu|ram|disk|load)$"),
+    period: str = Query("24h", pattern="^(1h|24h|7d|30d)$"),
+):
+    """One metric of every server with agent data on the history grid: CPU, RAM, the
+    fullest disk or load per CPU."""
+    start, end, step = history_window(period, time.time())
+    result = _series_or_502(
+        victoria.query_range(
+            query=compare_query(metric, step), start=str(start), end=str(end), step=f"{step}s"
+        )
+    )
+    return {
+        "metric": metric,
+        "period": period,
+        "step": step,
+        "start": start,
+        "end": end,
+        "servers": compare_servers(result, start, end, step),
     }

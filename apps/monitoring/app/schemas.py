@@ -390,6 +390,20 @@ class ServerHistoryOut(BaseModel):
     maintenance: list[MaintenanceBandOut]
 
 
+class CompareServerOut(BaseModel):
+    serverId: str
+    points: HistoryPoints
+
+
+class ServerCompareOut(BaseModel):
+    metric: str
+    period: str
+    step: int
+    start: int
+    end: int
+    servers: list[CompareServerOut]
+
+
 class AlertRuleOut(BaseModel):
     id: str
     name: str

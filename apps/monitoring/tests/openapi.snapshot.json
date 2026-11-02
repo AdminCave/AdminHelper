@@ -645,6 +645,44 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CompareServerOut": {
+        "properties": {
+          "points": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "points"
+        ],
+        "title": "CompareServerOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1404,6 +1442,47 @@
           "alertsDeleted"
         ],
         "title": "ServerCleanupOut",
+        "type": "object"
+      },
+      "ServerCompareOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/CompareServerOut"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "metric",
+          "period",
+          "step",
+          "start",
+          "end",
+          "servers"
+        ],
+        "title": "ServerCompareOut",
         "type": "object"
       },
       "ServerHistoryOut": {
@@ -3275,6 +3354,58 @@
           }
         },
         "summary": "Get All Status"
+      }
+    },
+    "/status/compare": {
+      "get": {
+        "description": "One metric of every server with agent data on the history grid: CPU, RAM, the\nfullest disk or load per CPU.",
+        "operationId": "get_status_compare_status_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "pattern": "^(cpu|ram|disk|load)$",
+              "title": "Metric",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "24h",
+              "pattern": "^(1h|24h|7d|30d)$",
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCompareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Status Compare"
       }
     },
     "/status/server/{server_id}": {

@@ -40,10 +40,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_maintenance
 Doku: → T12
 Abhängt von: T2
 
-### T4 — Vergleichs-Endpunkt über mehrere Server (R-1077)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/history.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_status_compare.py
+### T4 — Vergleichs-Endpunkt über mehrere Server (R-1077)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/history.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_status_compare.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @92d39a97 2026-11-02T20:38:43+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T4.verdict.json)
 Änderung: Neu `GET /status/compare?metric=cpu|ram|disk|load&period=…`: eine `query_range` je Metrik über alle Server (`by (server_id)`; disk = `max by (server_id)` über die Mounts, load = `load_1m / cpu_count`), Antwort je Server auf dem Raster aus T2. Route vor `/status/server/{server_id}` registriert, kein Konflikt mit `/status/summary`. Test mit Mock: Abfragen wörtlich, Zuordnung je Server, unbekannte Metrik 422.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_compare.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_compare.py tests/test_status_history.py tests/test_openapi_snapshot.py
 Doku: → T12
 Abhängt von: T2
 
@@ -104,3 +106,4 @@ Task-Review: am Ende
 - T2: `loadPerCpu` ist `load_5m / cpu_count` (nicht `load_1m` wie in der Spec), weil die Load-Schwellen des Checkers (`_grade_load`) auf `load_5m` je CPU stehen; so gelten die Schwellenlinien für die gezeigte Linie.
 - T2: Jeder Punkt ist `avg_over_time(…[Fenster])` (Fenster = Schritt, mindestens 5m = Push-Intervall des Agents) mit `keep_metric_names` (MetricsQL-Doku: alle Rollups nehmen den Modifier), nicht der letzte Rohwert; bei 6 h je Punkt stünde sonst ein Sample für sechs Stunden. Die Vorperiode wird als eigener Zeitraum abgefragt und auf das Raster verschoben, ohne `offset`.
 - T3: Ereignisse sind die Zeilen des Alert-Logs (nur Statuswechsel, zu denen eine Alert-Regel passte); mehrere Regeln schreiben je Wechsel eine Zeile, gleiche Zeilen (Check, alter und neuer Status) binnen 60 s zählen einmal. Wartungsbänder in Unix-Sekunden, auf den Zeitraum zugeschnitten, globale Fenster eingeschlossen.
+- T4: `/status/compare` nimmt cpu, ram, disk (der vollste Mount je Server, `max by (server_id)`) und load (`load_5m / cpu_count` wie T2); `net` fehlt, bis der Agent Netzwerkdaten liefert (T5/T6, Frage an Kevin). Server ohne Agent-Daten erscheinen nicht; die Liste ist nach `serverId` sortiert, Namen löst der Desktop auf.

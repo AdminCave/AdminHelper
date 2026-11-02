@@ -83,6 +83,41 @@ def history_queries(server_id: str, step: int) -> dict[str, str]:
     }
 
 
+_COMPARE_NAMES = {
+    "cpu": "monitor_agent_cpu_percent_value",
+    "ram": "monitor_agent_memory_percent_value",
+    "disk": "monitor_agent_disk_percent_value",
+}
+
+
+def compare_query(metric: str, step: int) -> str:
+    """One range query over all agent servers, one series per server_id. disk is the
+    fullest mount; load is load_5m per CPU like the history and the checker."""
+    window = _WINDOW[step]
+
+    def per_server(name: str) -> str:
+        return f'max by (server_id) (avg_over_time({name}{{check_id=""}}[{window}]))'
+
+    if metric == "load":
+        return (
+            f"{per_server('monitor_agent_load_5m_value')}"
+            f" / {per_server('monitor_agent_cpu_count_value')}"
+        )
+    return per_server(_COMPARE_NAMES[metric])
+
+
+def compare_servers(result: list, start: int, end: int, step: int) -> list[dict]:
+    servers = [
+        {
+            "serverId": series["metric"]["server_id"],
+            "points": _points(series.get("values", []), start, end, step, 0),
+        }
+        for series in result
+        if series.get("metric", {}).get("server_id")
+    ]
+    return sorted(servers, key=lambda server: server["serverId"])
+
+
 def _points(values: list, start: int, end: int, step: int, shift: int) -> list:
     grid: list[list] = [[ts, None] for ts in range(start, end + 1, step)]
     for raw_ts, raw_value in values:
