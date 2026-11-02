@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Zeilenangaben `origin/main@0294b3b1`.
 
-### T1 — Terminal nach Ctrl-C in der verdeckten Eingabe zurücksetzen (R-1007)  [ ]
+### T1 — Terminal nach Ctrl-C in der verdeckten Eingabe zurücksetzen (R-1007)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/provision_cmd_test.go, changelog.d/kern-agent-3.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f0a46b8a 2026-11-02T12:39:23+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer kern-agent-2 T3 (Nit), 2026-10-30 · `main.go:106` `var readTerminal = term.ReadPassword`, kein Restore bei Signal · Dedup-Key: bug:agent:main.go:readStdinSecret-sigint
 Änderung: Vor `readTerminal` den Zustand mit `term.GetState` sichern und `os.Interrupt` abfangen; im Signalfall `term.Restore`, Zeilenumbruch, Exit 130; nach dem Lesen `signal.Stop`. Signalkanal, Restore und Exit als austauschbare Variablen; der Test (erst rot) schickt ein Interrupt während eines blockierenden `readTerminal` und prüft Restore mit dem gesicherten Zustand und Exit 130, dazu dass ohne Signal kein Restore-Aufruf durch den Handler erfolgt.
 Verify: bash scripts/dev/verify.sh agent --strict
