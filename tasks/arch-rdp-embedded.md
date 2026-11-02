@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-rdp-embedded — Task-Ledger
-Status: bereit · Branch: feature/arch-rdp-embedded · Review: pro Task
+Status: erledigt · Branch: feature/arch-rdp-embedded · Review: pro Task
 Spec: docs/features/arch-rdp-embedded.md (Roadmap R-1074)
 Heavy: none — Machbarkeitsstudie, ändert nur Spec und Ledger; Prototypen laufen außerhalb des Baums (Spec „Prototypen“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
