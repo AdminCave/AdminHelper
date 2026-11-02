@@ -62,8 +62,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_repor
 Doku: → T12
 Abhängt von: T4, T5
 
-### T7 — CSV-Datei schreiben (R-1076)  [ ]
+### T7 — CSV-Datei schreiben (R-1076)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5a50f656 2026-11-02T20:45:26+01:00
+Review: approve (.ah-out/review/kern-monitoring-3/T7.verdict.json)
 Änderung: Command `write_export_csv(dest_path, content)` nach dem Muster `export_browser_p12` (`src/commands.rs:258`): nur Endung `.csv`, `ensure_parent`, Schreiben, Pfad zurück; registriert in `main.rs`. Unit-Test in `storage.rs`: Schreiben, Endung abgelehnt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage
 Doku: keine (interner Command; der Export ist in T12 beschrieben)
