@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ca-root-renewal — Task-Ledger
-Status: bereit · Branch: feature/arch-ca-root-renewal · Review: pro Task
+Status: aktiv · Branch: feature/arch-ca-root-renewal · Review: pro Task
 Spec: docs/features/arch-ca-root-renewal.md (Roadmap R-1021)
 Heavy: linux-full — `apps/ca-issuer`, Gateway-Konfiguration und Server-Ampel (Sammellauf). Vor dem Merge außerdem der Stack-Job per Dispatch (`gh workflow run ci.yml --ref feature/arch-ca-root-renewal`); er fährt den Root-Wechsel aus T9. Kein `scenario`: Der Wechsel läuft in einem Stack, Agent und Desktop ändern keinen Code. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -177,6 +177,16 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/adr/0001-unified-pki-and-secure-deployment.md, changelog.d/arch-ca-root-renewal.md
 
+### T11 — Doku: `--ca-fp` nach `switch --compromised` gleich umstellen  [ ]
+Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Task-Review: am Ende
+Änderung: Aus der Abschlussprüfung (`security`, wichtig; ein Nit): Nach einem Leck stellt das Runbook gespeicherte
+`--ca-fp`-Werte und Install-Befehle gleich nach `switch --compromised` auf die neue Root um, bevor Geräte neu
+eingerichtet werden, mit dem Befehl für den Fingerprint; der Ansible-Hinweis in agent-deployment verweist darauf.
+Nach `abort` wird das Backup von nach dem `stage` verworfen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+
 ## Entscheidungen
 - 2026-11-02 Kevin:
   - Ansatz: Phasen mit Cross-Zertifikat statt Phasen ohne X, neuem Root-Zertifikat mit altem Schlüssel oder einem
@@ -289,3 +299,11 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/trouble
   `integration_stack_test: 128 passed, 0 failed`, rc 0. Nach der Runde des Prüfers (positive Gegenprobe: frps nimmt
   das Agent-Leaf unter R vor dem `switch` an, ein Agent-Leaf unter N danach bei frps und Server) Lauf 3:
   `integration_stack_test: 131 passed, 0 failed`, rc 0.
+- 2026-11-02 T9: `review.sh risk` gab für die Task „standard“, deshalb kein Task-Urteil von `security` entgegen dem
+  Kopf. Den Diff von T9 deckt die Abschlussprüfung von `security` über den ganzen Branch (`approve` auf 8f50d71a).
+- 2026-11-02 Basis-Merge 8f50d71a: Abschnitt 19 und der Wipe-Abschnitt von `main` (R-1006) bleiben beide, der Wipe
+  als 20 und letzter. Das erste Gerät hängt nach 19 an der alten Root und wird schon vorher abgewiesen; der Wipe
+  prüft deshalb mit dem unter N erneuerten Leaf und stellt vorher fest, dass das Gateway es nimmt. Bewiesen über den
+  Stack-Job des Dispatch-Laufs.
+- 2026-11-02 T11: Fund `wichtig` von `security` in der Abschlussprüfung (Doku): Details nur in `tasks/private/`.
+  Der Nit zu `abort` ist mit drin; die übrigen Nits (`rotation.py:103`, `cli.py:419`) werden Roadmap-Zeilen.
