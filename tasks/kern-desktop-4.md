@@ -37,8 +37,10 @@ Review: approve (.ah-out/review/kern-desktop-4/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: changelog.d/kern-desktop-4.md
 
-### T4 — reqwest 0.13 bei gleichen Vertrauensankern (R-1041)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/http_client.rs, apps/desktop/src-tauri/src/tofu.rs, apps/desktop/src-tauri/src/enrollment.rs, changelog.d/kern-desktop-4.md
+### T4 — reqwest 0.13 bei gleichen Vertrauensankern (R-1041)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/http_client.rs, apps/desktop/src-tauri/src/tofu.rs, apps/desktop/src-tauri/src/enrollment.rs, changelog.d/kern-desktop-4.md, apps/desktop/src-tauri/src/proxy.rs, apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @a17affd4 2026-11-02T14:21:11+01:00
+Review: approve (.ah-out/review/kern-desktop-4/T4.verdict.json)
 Änderung: `reqwest = "0.13"` (`Cargo.toml:17`) mit `rustls-no-provider` statt `rustls-tls` und explizitem ring-Provider wie bei rustls (`Cargo.toml:44`), damit aws-lc draußen bleibt (`cargo tree -i aws-lc-rs` leer); Public-CA-Pfad (`http_client.rs`) weiter mit webpki-roots über `tls_certs_only`, TOFU- und mTLS-Pfad unverändert; umbenannte TLS-Methoden nachziehen. `src/test_tls.rs` bleibt unverändert grün; ein Test belegt, dass der Public-CA-Client ein selbstsigniertes Zertifikat ablehnt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: changelog.d/kern-desktop-4.md
@@ -58,3 +60,4 @@ Doku: changelog.d/kern-desktop-4.md
 ## Entscheidungen
 - 2026-11-02 Plan: Vertrauensanker bleiben bei reqwest 0.13 gleich (kein `rustls-platform-verifier` als Wurzelquelle); ein Wechsel auf den System-Truststore wäre sichtbares Verhalten und eine eigene Zeile.
 - 2026-11-02 Plan: `kern-laufzeit-1` T3 ändert ebenfalls `apps/desktop/ui/package.json`/Lockfile; wer später merged, erzeugt das Lockfile nach dem main-Merge neu.
+- 2026-11-02 T4: Statt `tls_certs_only` bekommt jeder Client in `http_client::with_timeouts` eine vorkonfigurierte rustls-Config (ring, `webpki_roots::TLS_SERVER_ROOTS`). Grund: Mit `rustls-no-provider` greift reqwest 0.13.5 beim Bauen zum Prozess-Default-Provider und bricht ohne einen mit panic ab (`default_rustls_crypto_provider`, async_impl/client.rs). Außerdem bräuchte `tls_certs_only` volle Zertifikate, keine TrustAnchors. TOFU und mTLS überschreiben die Config wie bisher; die Test-Clients in frpc.rs und proxy.rs laufen deshalb ebenfalls über `with_timeouts`. Den Beleg für die Ablehnung selbstsignierter Zertifikate liefert der bestehende Test `error.rs` (`ERR_TLS_UNKNOWN_ISSUER` über den Public-CA-Client).

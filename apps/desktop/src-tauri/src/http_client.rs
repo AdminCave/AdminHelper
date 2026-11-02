@@ -67,13 +67,28 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// this cap. A client-global `timeout()` would instead tear the stream down every cycle.
 const READ_TIMEOUT: Duration = Duration::from_secs(45);
 
-/// Apply the shared connect/read timeouts. Every client build path routes through this so
-/// no reqwest client is ever built without a timeout (4.2).
+/// Apply the shared connect/read timeouts and the public-CA TLS config. Every client build path
+/// routes through this so no reqwest client is ever built without a timeout (4.2), nor without a
+/// TLS config: reqwest runs without a crypto provider of its own. The TOFU and mTLS paths replace
+/// the TLS config with theirs afterwards.
 pub fn with_timeouts(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
     builder
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
+        .tls_backend_preconfigured(PUBLIC_CA_TLS.clone())
 }
+
+/// Full validation against the webpki roots, on ring.
+static PUBLIC_CA_TLS: LazyLock<rustls::ClientConfig> = LazyLock::new(|| {
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    rustls::ClientConfig::builder_with_provider(crate::tofu::ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring supports the default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth()
+});
 
 /// How long reading one body may take as a whole. [`READ_TIMEOUT`] bounds the wait for each
 /// chunk only, so an answer that drips stays under it and would hold the fetch open.
@@ -181,7 +196,7 @@ fn client_for(
         // on-path MITM. Pin the server's certificate on first use instead.
         crate::tofu::pinning_client(server_url)?
     } else {
-        // Public-CA path: reqwest's default full validation against webpki-roots.
+        // Public-CA path: full validation against the webpki roots from with_timeouts.
         with_timeouts(reqwest::Client::builder())
             .build()
             .map_err(AppError::from)?

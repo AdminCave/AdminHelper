@@ -4100,7 +4100,10 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_bundle_reply_404_is_no_tunnels_200_the_toml() {
-        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .no_proxy()
+            .build()
+            .unwrap();
         let get = |port: u16| client.get(format!("http://127.0.0.1:{port}/")).send();
 
         let (port, _request) = serve_one(reply("404 Not Found", "")).await;
@@ -4120,7 +4123,10 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_bundle_over_the_bound_is_refused_without_quoting_it() {
-        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .no_proxy()
+            .build()
+            .unwrap();
         let get = |port: u16| client.get(format!("http://127.0.0.1:{port}/")).send();
 
         // A bundle one byte over the bound.
@@ -4163,7 +4169,10 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_bundle_reply_403_is_no_tunnels_and_names_the_refusal() {
-        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .no_proxy()
+            .build()
+            .unwrap();
         let (port, _request) = serve_one(reply("403 Forbidden", "")).await;
         let response = client
             .get(format!("http://127.0.0.1:{port}/"))

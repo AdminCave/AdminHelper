@@ -5,3 +5,6 @@
   lange offen.
 - **Desktop: Tauri 2.12:** Die Desktop-App baut auf Tauri 2.12 und den passenden Plugins (Dialog 2.8, Notification
   2.8, Shell 2.6); die uebrigen Rust-Abhaengigkeiten sind auf ihren neuesten kompatiblen Stand gehoben.
+- **Desktop: reqwest 0.13:** Der HTTP-Client der Desktop-App laeuft auf reqwest 0.13. Die Vertrauensanker bleiben
+  gleich (Mozilla-Wurzeln fuer oeffentliche Zertifikate, TOFU-Pin und gepinnte CA wie bisher), die Kryptografie
+  weiter auf ring.

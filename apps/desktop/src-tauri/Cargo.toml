@@ -14,7 +14,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["image-png"] }
 # `stream` enables Response::bytes_stream() for the long-lived SSE client.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# `rustls-no-provider`: no aws-lc-rs. Every client therefore gets a preconfigured rustls config on
+# ring (http_client::with_timeouts); reqwest panics building a client without one.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "stream"] }
+# The public-CA trust anchors: the Mozilla roots reqwest 0.12's `rustls-tls` shipped.
+webpki-roots = "1"
 # StreamExt::next() over the SSE byte stream.
 futures-util = { version = "0.3", default-features = false }
 # Reconnect backoff (sleep) for the SSE client, the async session lock
@@ -38,7 +42,7 @@ chrono = "0.4"
 regex = "1"
 # TLS TOFU pinning (desktop self-signed path): a custom rustls ServerCertVerifier
 # needs rustls + an explicit ring provider (must match the version reqwest's
-# rustls-tls resolves — 0.23 — or use_preconfigured_tls's downcast fails at
+# rustls resolves — 0.23 — or tls_backend_preconfigured's downcast fails at
 # runtime). default-features=false keeps aws-lc-rs out; feature unification only
 # adds to what reqwest already enabled.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }

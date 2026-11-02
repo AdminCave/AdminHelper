@@ -964,7 +964,7 @@ fn build_mtls_client(
         .map_err(|e| AppError::Validation(format!("Client-Auth: {e}")))?;
 
     crate::http_client::with_timeouts(reqwest::Client::builder())
-        .use_preconfigured_tls(tls)
+        .tls_backend_preconfigured(tls)
         .build()
         .map_err(AppError::from)
 }
