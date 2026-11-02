@@ -41,11 +41,12 @@ logger = logging.getLogger(__name__)
 def _path_refused(name: str, pattern: str | None = None) -> bool:
     """True for a name the API refuses today as a server name (servers/schemas: no '/',
     '.' or '..') or, with `pattern`, as a username: the bulk-ZIP names an entry after it.
-    Rows from before stay as they are, so the ZIP leaves such a name out."""
+    Rows from before stay as they are, so the ZIP leaves such a name out. Compared
+    stripped, as the API compares it."""
     if (
-        not name
+        not name.strip()
         or "/" in name
-        or name in {".", ".."}
+        or name.strip() in {".", ".."}
         or (pattern is not None and not re.fullmatch(pattern, name))
     ):
         logger.warning("bulk-zip: the stored name %r is no path component, left out", name)

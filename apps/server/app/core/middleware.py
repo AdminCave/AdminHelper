@@ -84,9 +84,9 @@ class _NameResolver:
     the first read, looks the names up every `ttl` seconds of the instance (default
     _NAME_TTL; _NAME_RETRY after a failure) and publishes the result, and a read
     returns the last one. Until the first lookup, and while a lookup fails, a name
-    adds no address, so the direct address counts. A failed name loses its old addresses: after a restart of
-    its container they may belong to another one. Only has_address waits, on a
-    miss and for a bounded time."""
+    adds no address, so the direct address counts. A failed name loses its old
+    addresses: after a restart of its container they may belong to another one.
+    Only has_address waits, on a miss and for a bounded time."""
 
     def __init__(
         self,

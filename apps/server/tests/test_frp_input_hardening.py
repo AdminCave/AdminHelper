@@ -1255,7 +1255,7 @@ def test_server_route_answers_422_not_500(tags, test_client, db_session, admin_u
 # Rows from before the name checks: a name the API refuses today as a server name
 # (servers/schemas._validate_server_name) or a username (users/schemas._USERNAME_PATTERN)
 # names no entry of the bulk-ZIP; the other entries stay.
-REFUSED_PATH_NAMES = ["..", ".", "a/b", "/abs", ""]
+REFUSED_PATH_NAMES = ["..", ".", "a/b", "/abs", "", "..  ", " "]
 REFUSED_USER_NAMES = [*REFUSED_PATH_NAMES, "x:y", "a b", "a*b"]
 
 

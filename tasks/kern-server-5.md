@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-server-5 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-5 · Review: am Ende
+Status: bereit · Branch: feature/kern-server-5 · Review: am Ende
 Spec: docs/features/kern-server-5.md (Roadmap R-1000, R-1010, R-1001)
 Heavy: linux-full — Server-Auth (Refresh) und FRP-Ausgabe hinter dem Gateway; der Stack-Test prüft Login und Refresh
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,8 +37,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ip_filter.py tests/test_identity_source.py
 Doku: keine (internes Verhalten, fail-closed bleibt)
 
-### T4 — Bulk-ZIP: Doku der ausgelassenen Namen, Namen getrimmt prüfen (R-1010, Abschlussprüfung)  [ ]
+### T4 — Bulk-ZIP: Doku der ausgelassenen Namen, Namen getrimmt prüfen (R-1010, Abschlussprüfung)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/app/core/middleware.py, apps/server/tests/test_frp_input_hardening.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7079db2a 2026-11-02T11:25:16+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer branch kern-server-5 2026-11-02 — `api-reference.html:153` (DE+EN) zählt nur Namen mit TOML-Brechern als ausgelassen; `_path_refused` (`generate_router.py:41`) prüft ungetrimmt, `_validate_server_name` getrimmt
 Änderung: Die API-Referenz (DE+EN) nennt beim Bulk-ZIP auch Namen, die die API heute als Pfad- bzw. Benutzernamen abweist. `_path_refused` vergleicht wie `_validate_server_name` den getrimmten Namen; Test mit `"..  "` und `" "` (erst rot). Der umbrochene Docstring in `middleware.py` hält 100 Zeichen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py tests/test_ip_filter.py
