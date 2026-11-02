@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-design-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-design-2 · Review: pro Task
 Spec: docs/features/kern-design-2.md (Roadmap R-1062, R-1063)
 Heavy: linux-full — Shell, Einstellungen und Dashboard ändern das DOM der Desktop-Journeys; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -88,8 +88,10 @@ Review: approve (.ah-out/review/kern-design-2/T9.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/StatusFooter.test.ts
 Doku: keine (die Doku nennt die Probleme als Zahl der letzten Ladung)
 
-### T10 — Doku: Ortsangaben der Einstellungen in troubleshooting und README (R-1062)  [ ]
+### T10 — Doku: Ortsangaben der Einstellungen in troubleshooting und README (R-1062)  [x]
 Komponente: desktop-ui · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, README.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f77b3da1 2026-11-02T20:32:16+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Abschlussprüfung fand in troubleshooting DE/EN noch „Dieser Workspace“ für „Selbstsignierte Zertifikate erlauben“ (jetzt Allgemein), „Gepinntes Zertifikat zurücksetzen“ und „Geräte-Identität zurücksetzen“ (jetzt Gerät); der README-Abschnitt „Settings“ beschreibt noch die zwei alten Gruppen statt der fünf Bereiche.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.shell.test.ts
 Doku: diese Task
