@@ -17,7 +17,7 @@ Ein neuer letzter Abschnitt `recreate_after_wipe` in `scripts/tests/integration_
 - `e2e_dc down -v --remove-orphans`, dann `e2e_up gateway` und `e2e_wait_enroll_plane`,
 - belegen: (a) der Root hat einen anderen Fingerabdruck (frische PKI), (b) ein Gerät aus der Zeit vor dem Leeren wird vom
   Gateway abgewiesen (HTTP 400), (c) eine frische Anmeldung auf :8444 liefert ein Zertifikat, das das Gateway annimmt
-  (401 der App), (d) der Admin meldet sich mit `ADMIN_PASSWORD` an (frische Datenbank, Startup-Lifespan legt ihn an).
+  (401 der App), (d) der Admin meldet sich mit `ADMIN_PASSWORD` und dem Zertifikat aus (c) an (der Startup-Lifespan legt ihn an).
 Nicht: Änderungen an `docker-compose.yml`, `install.sh` oder produktivem Code; kein Test für `install.sh --reset` selbst.
 
 ## Betroffene Dateien
@@ -25,7 +25,7 @@ Nicht: Änderungen an `docker-compose.yml`, `install.sh` oder produktivem Code; 
 
 ## Datenmodell / API / Externes
 Keine Änderung. Genutzt werden die vorhandenen Helfer (`e2e_dc`, `e2e_up`, `e2e_wait_enroll_plane`, `enroll`, `reach`,
-`e2e_admin_token`).
+`e2e_login`, mit dem Zertifikat des frisch angemeldeten Geräts, weil der Rand mTLS erzwingt).
 
 ## Trade-offs
 Der Abschnitt steht ganz am Ende, weil er den Stack zerstört und neu baut (Abschnitt 18 verändert schon die Hierarchie);

@@ -1541,7 +1541,7 @@ root_fingerprint() {
         2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null
 }
 recreate_after_wipe() {
-    local before after token code jwt
+    local before after token code
     before=$(root_fingerprint)
     [ -n "$before" ] || { bad "wipe: the root fingerprint before the wipe could not be read"; return; }
     if ! e2e_dc down -v --remove-orphans >"$E2E_WORK/wipe-down.log" 2>&1; then
@@ -1573,9 +1573,12 @@ recreate_after_wipe() {
     else
         bad "wipe: enrollment on the recreated stack failed"
     fi
-    jwt=$(e2e_admin_token)
-    [ -n "$jwt" ] && ok "wipe: the admin logs in with ADMIN_PASSWORD on the new database" \
-        || bad "wipe: the admin cannot log in on the new database"
+    # The edge enforces mTLS, so the login carries the fresh device's certificate.
+    if e2e_login --cert "$E2E_WORK/client7-fullchain.pem" --key "$E2E_WORK/client7.key"; then
+        ok "wipe: the admin logs in with ADMIN_PASSWORD on the new database"
+    else
+        bad "wipe: the admin cannot log in on the new database ($E2E_LOGIN_ERR)"
+    fi
 }
 recreate_after_wipe
 
