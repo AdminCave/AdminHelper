@@ -187,6 +187,12 @@ export function exportBrowserP12(password: string, destPath: string): Promise<st
   return invoke<string>('export_browser_p12', { password, destPath });
 }
 
+// Writes a CSV export to `destPath` (chosen via the save dialog; must end in .csv);
+// resolves to the written path.
+export function writeExportCsv(destPath: string, content: string): Promise<string> {
+  return invoke<string>('write_export_csv', { destPath, content });
+}
+
 // ─────────────────────────── Server API proxy ────────────────────
 
 export function apiProxy<T = unknown>(method: HttpMethod, path: string, body?: string): Promise<T> {

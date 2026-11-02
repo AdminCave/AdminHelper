@@ -29,7 +29,7 @@ import type {
   Server,
 } from '$lib/api/types';
 
-export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
+export type MonitoringTab = 'overview' | 'history' | 'alerts' | 'templates' | 'log';
 export type OverviewView = 'list' | 'grid';
 
 // Persisted view choice for the overview (list+detail vs tile grid).
