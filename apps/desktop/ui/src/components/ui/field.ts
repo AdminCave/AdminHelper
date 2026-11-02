@@ -8,9 +8,12 @@ import { getContext, setContext } from 'svelte';
 // control without the page wiring ids by hand.
 export interface FieldContext {
   readonly id: string;
-  readonly labelId: string;
+  // Unset while the field has no visible label.
+  readonly labelId: string | undefined;
   readonly describedBy: string | undefined;
   readonly invalid: boolean;
+  // A group (radiogroup) is no labelable element: the label then names it by id only.
+  markGroup(): void;
 }
 
 const KEY = Symbol('ui-field');

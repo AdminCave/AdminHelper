@@ -29,6 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }: Props = $props();
 
   const field = getField();
+  field?.markGroup();
   const norm = $derived(options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o)));
 </script>
 

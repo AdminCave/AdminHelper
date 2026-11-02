@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { t } from '$lib/i18n';
   import Kbd from './Kbd.svelte';
+  import { getField } from './field';
 
   type Size = 'sm' | 'md' | 'lg';
 
@@ -37,6 +38,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     input = $bindable(),
   }: Props = $props();
 
+  const field = getField();
+
   function clear() {
     value = '';
     onClear?.();
@@ -62,7 +65,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     bind:value
     type="search"
     placeholder={placeholder ?? $t('ui.search')}
-    aria-label={label ?? placeholder ?? $t('ui.search')}
+    id={field?.id}
+    aria-label={label ?? (field ? undefined : (placeholder ?? $t('ui.search')))}
+    aria-describedby={field?.describedBy}
     {oninput}
     {onkeydown}
   />

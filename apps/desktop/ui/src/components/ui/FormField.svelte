@@ -24,24 +24,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   const labelId = `${uid}-label`;
   const msgId = `${uid}-msg`;
+  let group = $state(false);
 
   setField({
     get id() {
       return id;
     },
-    labelId,
+    get labelId() {
+      return label ? labelId : undefined;
+    },
     get describedBy() {
       return error || hint ? msgId : undefined;
     },
     get invalid() {
       return !!error;
     },
+    markGroup() {
+      group = true;
+    },
   });
 </script>
 
 <div class="field">
   {#if label}
-    <label class="label" id={labelId} for={id}>
+    <label class="label" id={labelId} for={group ? undefined : id}>
       {label}
       {#if required}<span class="req" aria-hidden="true">*</span>{/if}
     </label>

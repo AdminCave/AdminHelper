@@ -16,6 +16,7 @@ import SearchField from './SearchField.svelte';
 import Select from './Select.svelte';
 import Slider from './Slider.svelte';
 import Switch from './Switch.svelte';
+import FieldWiringHarness from './__fixtures__/FieldWiringHarness.svelte';
 import FormsHarness from './__fixtures__/FormsHarness.svelte';
 
 setLanguage('de');
@@ -145,7 +146,7 @@ describe('Switch and Checkbox', () => {
     expect(state(getByTestId).ok).toBe(true);
   });
 
-  it('a disabled checkbox reports nothing', () => {
+  it('a disabled checkbox is disabled natively', () => {
     const { getByRole } = render(Checkbox, { label: 'x', disabled: true });
     expect((getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
   });
@@ -196,5 +197,39 @@ describe('Slider', () => {
     const r = container.querySelector('input')!;
     expect([r.min, r.max, r.step, r.value]).toEqual(['5', '9', '2', '7']);
     expect(r.disabled).toBe(true);
+  });
+});
+
+describe('FormField context', () => {
+  it('names and describes a search field and a checkbox through the field label', () => {
+    const { getByRole, getByText } = render(FieldWiringHarness);
+    const search = getByRole('searchbox', { name: 'Begriff' });
+    expect(search.getAttribute('aria-describedby')).toBe(getByText('Filtert die Liste').id);
+    const box = getByRole('checkbox', { name: 'Bedingungen' });
+    expect(box.getAttribute('aria-describedby')).toBe(getByText('Bitte lesen').id);
+    // No name fallback from the name attribute: the label is the only name.
+    expect(box.hasAttribute('aria-label')).toBe(false);
+  });
+
+  it('a field without label points no control at a missing label', () => {
+    const { getByRole, getByText } = render(FieldWiringHarness);
+    const sw = getByRole('switch');
+    expect(sw.hasAttribute('aria-labelledby')).toBe(false);
+    expect(sw.getAttribute('aria-describedby')).toBe(getByText('Ohne Beschriftung').id);
+  });
+
+  it('a radio group is named by id, its label has no for', () => {
+    const { getByRole, getByText } = render(FieldWiringHarness);
+    getByRole('radiogroup', { name: 'Art' });
+    expect(getByText('Art').hasAttribute('for')).toBe(false);
+    for (const l of document.querySelectorAll('label[for]'))
+      expect(document.getElementById(l.getAttribute('for')!), l.textContent!).not.toBeNull();
+  });
+});
+
+describe('Checkbox without label', () => {
+  it('takes its name from ariaLabel', () => {
+    const { getByRole } = render(Checkbox, { ariaLabel: 'Zeile wählen' });
+    getByRole('checkbox', { name: 'Zeile wählen' });
   });
 });

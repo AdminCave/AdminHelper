@@ -5,12 +5,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { getField } from './field';
+
   interface Props {
     checked?: boolean;
     disabled?: boolean;
     label?: string;
     description?: string;
     name?: string;
+    // Name for a checkbox without visible label, e.g. a row selection.
+    ariaLabel?: string;
     onChange?: (checked: boolean) => void;
   }
 
@@ -20,8 +24,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     label,
     description,
     name,
+    ariaLabel,
     onChange,
   }: Props = $props();
+
+  const field = getField();
 </script>
 
 <!-- A native checkbox under the drawn box: Space and form submit are the platform's. -->
@@ -31,7 +38,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     bind:checked
     {name}
     {disabled}
-    aria-label={label ? undefined : name}
+    id={field?.id}
+    aria-label={ariaLabel}
+    aria-describedby={field?.describedBy}
     onchange={() => onChange?.(checked)}
   />
   <span class="box" aria-hidden="true">
