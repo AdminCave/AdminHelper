@@ -176,6 +176,36 @@ class TestStreamReauth:
         assert _stream_reauth_ok("tok", "cn", "access", True, not_before) is True
         assert seen == [not_before]
 
+    def test_ends_when_the_trust_file_no_longer_lists_the_issuer(self, monkeypatch, tmp_path):
+        # R-1026: the issuer check depends on the trust file, which can change while the
+        # stream is open; the re-check must run it again, not reuse the answer of the connect.
+        import app.core.identity as id_mod
+        from app.core import config
+        from app.modules.notifications.stream import _stream_reauth_ok
+        from tests import trust_ca
+        from tests.test_identity_issuer import _headers, _rewrite
+        from tests.test_mtls_scope import _req
+
+        trust_dir = trust_ca.write_trust_dir(tmp_path / "ca-trust")
+        monkeypatch.setattr(config, "CA_TRUST_DIR", str(trust_dir))
+        self._patch(monkeypatch, user=object(), revoked=False)
+        monkeypatch.setattr(
+            id_mod,
+            "_is_revoked",
+            lambda db, cn, scope, not_before=None, identity=None: not identity.issuer_listed,
+        )
+        identity = id_mod.get_client_identity(_req(_headers(trust_ca.leaf("admin", "access"))))
+        assert identity.issuer_listed is True
+
+        def reauth():
+            return _stream_reauth_ok(
+                "tok", identity.cn, identity.scope, True, identity.not_before, identity=identity
+            )
+
+        assert reauth() is True
+        _rewrite(trust_dir / "access.pem", trust_ca.intermediate_of("Other access intermediate")[0])
+        assert reauth() is False
+
     def test_the_open_stream_reauths_with_the_certificates_not_before(self, monkeypatch):
         from app.modules.notifications import stream as stream_mod
 

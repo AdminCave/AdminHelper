@@ -31,7 +31,7 @@ import logging
 import threading
 import time
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -102,6 +102,9 @@ class ClientIdentity:
     # A listed intermediate of the scope issued the certificate (R-1009). False unless
     # get_client_identity checked it: a hand-built identity is refused (fail-closed).
     issuer_listed: bool = False
+    # The certificate itself, so a later check can run the trust-file part again: the
+    # trust file may change while a stream of this identity is open (R-1026).
+    cert: x509.Certificate | None = field(default=None, repr=False, compare=False)
 
     def __bool__(self) -> bool:
         return self.verified
@@ -237,7 +240,16 @@ def get_client_identity(request: Request) -> ClientIdentity:
         serial=format(cert.serial_number, "x"),
         not_after=cert.not_valid_after_utc.replace(tzinfo=None),
         issuer_listed=_issuer_listed(cert, scope),
+        cert=cert,
     )
+
+
+def recheck_issuer(identity: ClientIdentity) -> ClientIdentity:
+    """The identity with its issuer check run again against the trust file as it is now.
+    One without its certificate (built by hand) keeps its answer."""
+    if identity.cert is None:
+        return identity
+    return replace(identity, issuer_listed=_issuer_listed(identity.cert, identity.scope))
 
 
 # The 403 for a certificate of another user. A client branches on its code, the
