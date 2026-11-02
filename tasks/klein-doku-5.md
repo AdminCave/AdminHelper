@@ -10,8 +10,10 @@ Heavy: none — Doku und ein Kommentar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1016: Keyring-Prüfsätze verlangen fpr ausdrücklich  [ ]
+### T1 — R-1016: Keyring-Prüfsätze verlangen fpr ausdrücklich  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9f7fe1f3 2026-11-02T10:09:11+01:00
+Review: am Ende (Branch-Review)
 Beweis: security-branch kern-doku-2 2026-10-30 · feature/kern-doku-2@1c9f682f docs/admin/agent-deployment.html:98 (nit)
 Änderung: In Schritt 1 und 1b den awk-Satz auf `fpr` nach `pub` umstellen (wie `primary_fprs` in `scripts/agent-install.sh`), DE+EN gleich. Vorher mit Wegwerf-Schlüssel mit designiertem Widerrufer (eigenes gpg-Homedir) zeigen, dass der alte Satz abbricht und der neue `$FPR` liest; ohne Widerrufer bleibt es gleich.
 Verify: bash scripts/dev/verify.sh scripts --strict
