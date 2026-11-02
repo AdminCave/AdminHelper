@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ca-root-renewal — Task-Ledger
-Status: aktiv · Branch: feature/arch-ca-root-renewal · Review: pro Task
+Status: bereit · Branch: feature/arch-ca-root-renewal · Review: pro Task
 Spec: docs/features/arch-ca-root-renewal.md (Roadmap R-1021)
 Heavy: linux-full — `apps/ca-issuer`, Gateway-Konfiguration und Server-Ampel (Sammellauf). Vor dem Merge außerdem der Stack-Job per Dispatch (`gh workflow run ci.yml --ref feature/arch-ca-root-renewal`); er fährt den Root-Wechsel aus T9. Kein `scenario`: Der Wechsel läuft in einem Stack, Agent und Desktop ändern keinen Code. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -200,8 +200,10 @@ der Scan findet ihn nicht. `root_passphrase()` und `next_root_passphrase()` lese
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py
 Doku: keine (Verhalten unverändert)
 
-### T13 — Desktop: Test-Helfer der Erneuerung auf rcgen 0.14 (nach dem Basis-Merge)  [ ]
+### T13 — Desktop: Test-Helfer der Erneuerung auf rcgen 0.14 (nach dem Basis-Merge)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @73783a73 2026-11-02T17:49:19+01:00
+Review: approve (.ah-out/review/arch-ca-root-renewal/T13.verdict.json)
 Änderung: Seit #369 (rcgen 0.14) kompilieren die Test-Helfer aus T8 nicht mehr: `Ca` trägt `params`, `signed_by`
 nimmt einen `rcgen::Issuer`. `make_renewal()` baut die Wurzeln, Intermediates und das Cross-Zertifikat wie
 `make_ca()`/`make_leaf()` auf `main` (`Issuer::from_params`). Nur Testcode.

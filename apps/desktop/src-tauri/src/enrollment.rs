@@ -1869,17 +1869,17 @@ mod tests {
         fn make_renewal() -> Renewal {
             let root = |cn: &str| {
                 let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-                let cert = ca_params(cn, BasicConstraints::Unconstrained)
-                    .self_signed(&key)
-                    .unwrap();
-                Ca { cert, key }
+                let params = ca_params(cn, BasicConstraints::Unconstrained);
+                let cert = params.self_signed(&key).unwrap();
+                Ca { cert, params, key }
             };
             let intermediate = |cn: &str, root: &Ca| {
                 let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-                let cert = ca_params(cn, BasicConstraints::Constrained(0))
-                    .signed_by(&key, &root.cert, &root.key)
+                let params = ca_params(cn, BasicConstraints::Constrained(0));
+                let cert = params
+                    .signed_by(&key, &rcgen::Issuer::from_params(&root.params, &root.key))
                     .unwrap();
-                Ca { cert, key }
+                Ca { cert, params, key }
             };
             let old_root = root("AdminHelper Root CA");
             let new_root = root("AdminHelper Root CA 2026-11-02");
@@ -1887,7 +1887,10 @@ mod tests {
                 "AdminHelper Root CA 2026-11-02",
                 BasicConstraints::Constrained(1),
             )
-            .signed_by(&new_root.key, &old_root.cert, &old_root.key)
+            .signed_by(
+                &new_root.key,
+                &rcgen::Issuer::from_params(&old_root.params, &old_root.key),
+            )
             .unwrap();
             let old_access = intermediate("AdminHelper Access Intermediate", &old_root);
             let new_access = intermediate("AdminHelper Access Intermediate 2026-11-02", &new_root);
