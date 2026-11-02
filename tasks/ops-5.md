@@ -23,8 +23,10 @@ Beweis: `.env` mit `A="x 'CA_ROOT_PASSPHRASE=geheim"` und `B=1` durch den Filter
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagnostics_test
 Doku: changelog.d/ops-5.md
 
-### T2 — restore.sh: übernommene .env nur mit Schlüsseln der Anwendung, Images vor der Rückfrage (R-1028)  [ ]
-Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/tests/diagnostics_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-5.md
+### T2 — restore.sh: übernommene .env nur mit Schlüsseln der Anwendung, Images vor der Rückfrage (R-1028)  [x]
+Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/tests/diagnostics_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-5.md, scripts/backup.sh, scripts/diagnostics.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @787f9377 2026-11-02T10:27:11+01:00
+Review: approve (.ah-out/review/ops-5/T2.verdict.json)
 Beweis: siehe `tasks/private/` (R-1028, Beleg `backup_restore_test` 2026-10-31) · Refuter: security install-restore T6 2026-10-31 · Dedup-Key: siehe Roadmap R-1028
 Änderung: Neutral nach Roadmap-Zeile R-1028: beim Bau von `env.new` (`scripts/restore.sh:57-59`) mit einer dritten, markierten Kopie des Tokenizer-Texts (Test (r) hält alle drei gleich); vor „Fortfahren?“ nennt `restore.sh` bei `FRESH=1` die Image-Werte der übernommenen `.env`. Externe Doku (Compose-Umgebungsvariablen) vor dem Bau lesen. Tests (erst rot) in `restore_guard_test.sh` nach der Zeile; `compose_names --env-file` sieht nur die bereinigte Datei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagnostics_test
@@ -66,3 +68,4 @@ Doku: keine (Kommentar; die Doku beschreibt den Weg schon)
 - 2026-11-02 T1: ein gekürztes Statement behält nur das schließende Quote, der Rest dahinter geht als eigener Schnitt — sonst blieb der Wert der Passphrase stehen, wenn er zeilenweise gelesen erst an diesem Quote beginnt (Prüfer Runde 1)
 - 2026-11-02 T3: `is_set_safely` liest die letzte Anweisung eines Schlüssels — Compose nimmt die letzte (am echten `docker compose config` gesehen)
 - 2026-11-02 T4: ein gescheitertes Schreiben (`say`/`out_lost`) schickt dem Skript selbst SIGHUP — so gelten die bestehenden HUP-Wege (vor dem Tausch Ende, danach Rollback, im Rollback Neustart/Ignorieren) unverändert; `| tee` beim Backup endet mit `die`, weil pipefail sonst ohne Meldung beendet
+- 2026-11-02 T2: `COMPOSE_PROJECT_NAME` bleibt in der übernommenen `.env` (Test 27a verlangt die Volumes des gesicherten Projekts), alle übrigen `COMPOSE_*`/`DOCKER_*` gehen (Großschreibung egal); geschnitten wie `backup.sh` die Passphrase schneidet (tok_exact + tok_alone, ohne Kommentare); die Images nennt `docker compose --env-file env.new config --images` (das, was wirklich startet, mit Defaults); der Tokenizer-Kopfsatz nennt jetzt alle drei Dateien, daher `backup.sh`/`diagnostics.sh` in `Dateien:`

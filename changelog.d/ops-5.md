@@ -9,3 +9,6 @@
 - **update.sh ohne Terminal:** laeuft `update.sh` ohne Terminal (`ssh host ./scripts/update.sh`) und bricht die
   Verbindung ab, endet das Skript nicht mehr beim naechsten Schreiben mitten im Tausch oder Rollback; es rollt wie
   nach einer getrennten Sitzung zurueck und schreibt die Ausgabe nach `backups/update-<zeit>.log`.
+- **restore.sh auf einem frischen Host:** die aus dem Backup angelegte `.env` uebernimmt nur die Schluessel der
+  Anwendung (ohne `COMPOSE_*` und `DOCKER_*`, ausser `COMPOSE_PROJECT_NAME`); vor der Rueckfrage nennt das Skript die
+  Images, mit denen der Stack startet.

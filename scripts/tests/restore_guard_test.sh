@@ -120,14 +120,19 @@ tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 # The compose stub: compose config names AH_TEST_PROJECT, else the
 # COMPOSE_PROJECT_NAME of an --env-file, else drproj, and the postgres image pinned
 # by digest (none with AH_TEST_NO_IMAGE=1); with AH_TEST_CONFIG_FAIL=1 compose config
-# fails. docker volume inspect finds a volume only with AH_TEST_PGVOL=1. With
-# STUB_DIR it logs every call and keeps the .env as compose up -d postgres finds it.
+# fails; compose config --services names postgres and server (fails with
+# AH_TEST_SERVICES_FAIL=1), compose config --images server names SERVER_IMAGE of the
+# --env-file (or the default), its backslash escapes expanded as compose expands those
+# of a double-quoted value. docker volume inspect finds a volume only with AH_TEST_PGVOL=1.
+# With STUB_DIR it logs every call, keeps the .env as compose up -d postgres finds it and
+# the last --env-file as compose read it (envfile.seen).
 mkdir -p "$WORK/cfg/bin"
 cat > "$WORK/cfg/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 [ -z "${STUB_DIR:-}" ] || echo "$*" >> "$STUB_DIR/calls.log"
 ef=""
 if [ "$1 ${2:-}" = "compose --env-file" ]; then ef="$3"; shift 3; set -- compose "$@"; fi
+[ -z "${STUB_DIR:-}" ] || [ -z "$ef" ] || cp "$ef" "$STUB_DIR/envfile.seen"
 case "$*" in
   "volume inspect "*) [ "${AH_TEST_PGVOL:-}" = 1 ] || exit 1 ;;
   "compose up -d postgres") [ -z "${STUB_DIR:-}" ] || [ ! -f .env ] || cp .env "$STUB_DIR/env.at-pg-start" ;;
@@ -137,6 +142,12 @@ case "$*" in
     [ -n "$p" ] || [ -z "$ef" ] || p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$ef" | tail -n 1)
     echo "name: ${p:-drproj}"; echo 'services: {}' ;;
   "compose config --images postgres") [ "${AH_TEST_NO_IMAGE:-}" = 1 ] || echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
+  "compose config --services")
+    [ "${AH_TEST_SERVICES_FAIL:-}" != 1 ] || { echo 'zz-services-failed' >&2; exit 1; }
+    echo postgres; echo server ;;
+  "compose config --images server")
+    i=""; [ -z "$ef" ] || i=$(sed -n 's/^SERVER_IMAGE=//p' "$ef" | tail -n 1)
+    printf '%b\n' "${i:-ghcr.io/admincave/adminhelper/server:latest}" ;;
   *pg_restore*|*ON_ERROR_STOP*) cat >/dev/null ;;
 esac
 exit 0
@@ -926,6 +937,78 @@ fresh_run "$WORK/fresh/g" "$WORK/fresh/g.tar.gz"
     && [ ! -e "$WORK/fresh/g/.env" ]; } \
   && ok "a backup .env without a role password: the message names the backup" || bad "backup without a role password: rc=$rc out=[$out]"
 untouched "a backup .env without a role password"
+# (h) the .env of the backup keeps the keys of the application only: COMPOSE_* and
+# DOCKER_* go in every form compose reads (COMPOSE_PROJECT_NAME stays), and compose
+# sees the cleaned file from its first call on; the images it starts stand in the output
+mkdir -p "$WORK/fresh/h/arch"
+{ printf 'POSTGRES_PASSWORD=zz9pg-old\nCOMPOSE_PROJECT_NAME=ah-prod\nCOMPOSE_FILE=qq-other.yml\n'
+  printf 'export DOCKER_HOST=tcp://198.51.100.7:2375\nCOMPOSE_PROFILES = qq-prof\ndocker_context: qq-ctx\n'
+  printf 'DOCKER_CONFIG="qq-a\nqq-b"\nB="y" COMPOSE_PATH_SEPARATOR=qq-sep\nSERVER_IMAGE=registry.example/srv:9\n%s\n' "$ROLE_ENV"
+} > "$WORK/fresh/h/arch/env.sanitized"
+printf 'POSTGRES_PASSWORD=zz9pg-old\nCOMPOSE_PROJECT_NAME=ah-prod\nB="y"\nSERVER_IMAGE=registry.example/srv:9\n%s\nCA_ROOT_PASSPHRASE=\n' \
+  "$ROLE_ENV" > "$WORK/fresh/h/expected.env"
+cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/h/arch/"
+tar czf "$WORK/fresh/h.tar.gz" -C "$WORK/fresh/h/arch" .
+mkdir -p "$WORK/fresh/h/run"
+fresh_run "$WORK/fresh/h/run" "$WORK/fresh/h.tar.gz"
+{ [ $rc -eq 0 ] && cmp -s "$WORK/fresh/h/expected.env" "$WORK/fresh/h/run/.env" \
+    && cmp -s "$WORK/fresh/h/expected.env" "$WORK/fresh/h/run/env.at-pg-start" \
+    && cmp -s "$WORK/fresh/h/expected.env" "$WORK/fresh/h/run/envfile.seen" && ! grep -q qq <<<"$out"; } \
+  && ok "fresh host: the .env of the backup keeps the keys of the application only, for compose too" \
+  || bad "application keys: rc=$rc .env=[$(cat -A "$WORK/fresh/h/run/.env" 2>/dev/null | tr '\n' ' ')] seen=[$(cat -A "$WORK/fresh/h/run/envfile.seen" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+img_at=$(grep -nF '[restore]   server: registry.example/srv:9' <<<"$out" | cut -d: -f1)
+warn_at=$(grep -n 'DIES ÜBERSCHREIBT' <<<"$out" | cut -d: -f1)
+{ [ -n "$img_at" ] && [ -n "$warn_at" ] && [ "$img_at" -lt "$warn_at" ]; } \
+  && ok "fresh host: the images of the backup's .env stand before the question" \
+  || bad "images before the question: img=$img_at warn=$warn_at out=[$out]"
+# (i) without --yes and no answer (read ends at EOF): the images stand before
+# "Fortfahren?", nothing changes
+mkdir -p "$WORK/fresh/i"
+out=$( cd "$WORK/fresh/i" && STUB_DIR="$WORK/fresh/i" PATH="$WORK/cfg/bin:$PATH" \
+    bash "$RESTORE" "$WORK/fresh/h.tar.gz" </dev/null 2>&1 ); rc=$?
+calls=$(cat "$WORK/fresh/i/calls.log" 2>/dev/null)
+{ [ ! -e "$WORK/fresh/i/.env" ] && grep -q 'Fortfahren?' <<<"$out" \
+    && grep -qF '[restore]   server: registry.example/srv:9' <<<"$out" \
+    && [ "$(grep -nF 'registry.example/srv:9' <<<"$out" | cut -d: -f1)" -lt "$(grep -n 'Fortfahren?' <<<"$out" | cut -d: -f1)" ]; } \
+  && ok "fresh host without --yes: the images stand before the question, no .env written" \
+  || bad "images without --yes: rc=$rc out=[$out]"
+untouched "fresh host without an answer"
+# (j) an image of the backup's .env that is no plain image reference (control
+# characters, a line break) stops the restore before the question; its bytes stay off
+# the terminal
+for v in j1 j2; do
+  case $v in
+    j1) img='ghcr.io/zz-evil:1\e[2K\r[restore]   ghcr.io/admincave/adminhelper/server:latest' ;;
+    j2) img='ghcr.io/zz-evil:1\nghcr.io/admincave/adminhelper/server:latest' ;;
+  esac
+  mkdir -p "$WORK/fresh/$v/arch" "$WORK/fresh/$v/run"
+  printf 'POSTGRES_PASSWORD=zz9pg-old\nCOMPOSE_PROJECT_NAME=ah-prod\nSERVER_IMAGE=%s\n%s\n' "$img" "$ROLE_ENV" \
+    > "$WORK/fresh/$v/arch/env.sanitized"
+  cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/$v/arch/"
+  tar czf "$WORK/fresh/$v.tar.gz" -C "$WORK/fresh/$v/arch" .
+  fresh_run "$WORK/fresh/$v/run" "$WORK/fresh/$v.tar.gz"
+  { [ $rc -ne 0 ] && grep -q 'image of service server' <<<"$out" && ! grep -q 'zz-evil' <<<"$out" \
+      && ! grep -q 'DIES ÜBERSCHREIBT' <<<"$out" && [ ! -e "$WORK/fresh/$v/run/.env" ]; } \
+    && ok "fresh host ($v): an image that is no plain reference stops the restore, unprinted" \
+    || bad "image no plain reference ($v): rc=$rc out=[$(cat -v <<<"$out")]"
+  untouched "fresh host ($v): image no plain reference"
+done
+# (k) compose cannot name the services: the restore stops, nothing changes
+mkdir -p "$WORK/fresh/k"
+fresh_run "$WORK/fresh/k" "$WORK/fresh/h.tar.gz" AH_TEST_SERVICES_FAIL=1
+{ [ $rc -ne 0 ] && grep -q 'zz-services-failed' <<<"$out" && [ ! -e "$WORK/fresh/k/.env" ]; } \
+  && ok "fresh host: compose config --services fails, the restore stops" \
+  || bad "config --services fails: rc=$rc out=[$out]"
+untouched "fresh host: config --services fails"
+# (l) the MANIFEST of a backup reaches the terminal without control characters
+mkdir -p "$WORK/fresh/l/arch" "$WORK/fresh/l/run"
+cp "$WORK/fresh/h/arch/env.sanitized" "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/l/arch/"
+printf 'zz-manifest\033[8m hidden\r\n' > "$WORK/fresh/l/arch/MANIFEST.txt"
+tar czf "$WORK/fresh/l.tar.gz" -C "$WORK/fresh/l/arch" .
+fresh_run "$WORK/fresh/l/run" "$WORK/fresh/l.tar.gz"
+{ grep -q 'zz-manifest' <<<"$out" && ! LC_ALL=C grep -q $'[\001-\010\013-\037\177]' <<<"$out"; } \
+  && ok "the MANIFEST of the backup reaches the terminal without control characters" \
+  || bad "MANIFEST control characters: out=[$(cat -v <<<"$out")]"
 
 echo
 echo "──────────────────────────────────────────"
