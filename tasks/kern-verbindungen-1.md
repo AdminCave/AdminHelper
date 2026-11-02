@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-1 — Task-Ledger
-Status: geplant · Branch: feature/kern-verbindungen-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-1 · Review: pro Task
 Spec: docs/features/kern-verbindungen-1.md (Roadmap R-1065, R-1067)
 Heavy: linux-full — Umbau der Verbindungsseite und neuer Tauri-Befehl; die Desktop-Journeys (ssh/rdp/web/tunnel-connect, connection-editor, two-installations) laufen im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
