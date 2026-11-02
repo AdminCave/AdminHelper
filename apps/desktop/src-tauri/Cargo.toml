@@ -49,10 +49,10 @@ regex = "1"
 # runtime). default-features=false keeps aws-lc-rs out; feature unification only
 # adds to what reqwest already enabled.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
-sha2 = "0.10"
+sha2 = "0.11"
 # On-device ECDSA keypair + CSR for mTLS enrollment (A5). ring backend to match
 # rustls above and keep aws-lc-rs out (feature unification only adds to ring).
-rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 # Parse the enrolled cert/key/CA PEM into the rustls types for the mTLS client.
 # rustls-pemfile is archived (Aug 2025); its PEM parsing moved into rustls-pki-types' PemObject API,
 # already in the graph via rustls. Parses the enrolled mTLS material (7.5).
@@ -63,7 +63,7 @@ x509-parser = "0.18"
 p12 = "0.6"
 # Parse the server-supplied visitor TOML to allow-list its structure before frpc
 # executes it (3.59) — a compromised server must not inject arbitrary frpc config.
-toml = "0.8"
+toml = "1"
 # Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
 # Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
 zeroize = "1.8.2"
@@ -79,7 +79,7 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # CreateProcessW from the system directory (terminal.rs, spawn_in_new_console).
 # JobObjects (Security for CreateJobObjectW, Threading for OpenProcess and the limit struct): frpc
 # ends with the desktop process (frpc.rs, end_with_this_process).
-windows = { version = "0.61", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects"] }
+windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects"] }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.

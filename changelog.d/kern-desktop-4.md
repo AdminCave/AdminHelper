@@ -11,3 +11,5 @@
 - **Desktop: keyring 4:** Unter Linux und macOS spricht die App den Schluesselbund ueber keyring-core und die
   Store-Crates von keyring 4 an. Gespeicherte Passwoerter, Geraete-Identitaet und TOFU-Pins bleiben unter denselben
   Eintraegen lesbar; die Verbindung zum Secret Service entsteht weiter je Zugriff.
+- **Desktop: rcgen 0.14, sha2 0.11, toml 1, windows 0.62:** Weitere Rust-Abhaengigkeiten der Desktop-App sind auf
+  ihre neuen Hauptversionen gehoben; das Verhalten bleibt gleich.

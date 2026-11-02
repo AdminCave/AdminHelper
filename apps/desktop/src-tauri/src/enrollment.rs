@@ -1094,9 +1094,9 @@ mod tests {
         use x509_parser::prelude::FromDer;
 
         let original = generate_key_and_csr("device").unwrap();
-        let want_spki = rcgen::KeyPair::from_pem(&original.key_pem)
-            .unwrap()
-            .public_key_der();
+        let want_spki = rcgen::PublicKeyData::subject_public_key_info(
+            &rcgen::KeyPair::from_pem(&original.key_pem).unwrap(),
+        );
 
         let csr_pem = csr_for_existing_key(&original.key_pem, "renew").unwrap();
         let (pem, _) =
@@ -1700,6 +1700,7 @@ mod tests {
 
         struct Ca {
             cert: rcgen::Certificate,
+            params: CertificateParams,
             key: KeyPair,
         }
 
@@ -1711,7 +1712,7 @@ mod tests {
                 .distinguished_name
                 .push(DnType::CommonName, "Test CA");
             let cert = params.self_signed(&key).unwrap();
-            Ca { cert, key }
+            Ca { cert, params, key }
         }
 
         /// (cert_pem, key_pem) for a leaf signed by `ca`.
@@ -1725,7 +1726,8 @@ mod tests {
             let mut params = CertificateParams::new(sans).unwrap();
             params.distinguished_name.push(DnType::CommonName, cn);
             params.extended_key_usages.push(eku);
-            let cert = params.signed_by(&key, &ca.cert, &ca.key).unwrap();
+            let issuer = rcgen::Issuer::from_params(&ca.params, &ca.key);
+            let cert = params.signed_by(&key, &issuer).unwrap();
             (cert.pem(), key.serialize_pem())
         }
 
@@ -1948,7 +1950,8 @@ mod tests {
         let mut ca = CertificateParams::new(vec![]).unwrap();
         ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca.distinguished_name.push(DnType::CommonName, "Access CA");
-        let ca = ca.self_signed(&ca_key).unwrap();
+        let ca_cert = ca.self_signed(&ca_key).unwrap();
+        let issuer = rcgen::Issuer::new(ca, ca_key);
 
         let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
         let mut params = CertificateParams::new(vec![]).unwrap();
@@ -1957,8 +1960,8 @@ mod tests {
             params.distinguished_name.push(DnType::CommonName, cn);
         }
         params.not_after = date_time_ymd(2027, 1, 13);
-        let leaf = params.signed_by(&key, &ca, &ca_key).unwrap();
-        format!("{}{}", leaf.pem(), ca.pem())
+        let leaf = params.signed_by(&key, &issuer).unwrap();
+        format!("{}{}", leaf.pem(), ca_cert.pem())
     }
 
     /// Store `cert` next to a key, as an enrollment does.

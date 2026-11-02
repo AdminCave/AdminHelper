@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-4 · Review: pro Task
 Spec: docs/features/kern-desktop-4.md (Roadmap R-1012, R-1013, R-1041)
 Heavy: linux-full — Desktop-Journeys (Login, Tunnel-Abgleich, Keyring, mTLS) nach Crate-Majors; Windows über die CI-Jobs rust-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,10 @@ Review: approve (.ah-out/review/kern-desktop-4/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: changelog.d/kern-desktop-4.md
 
-### T6 — rcgen 0.14, sha2 0.11, toml 1, windows 0.62 (R-1041)  [ ]
+### T6 — rcgen 0.14, sha2 0.11, toml 1, windows 0.62 (R-1041)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/password.rs, apps/desktop/src-tauri/src/terminal.rs, apps/desktop/src-tauri/src/launcher.rs, changelog.d/kern-desktop-4.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @4da99694 2026-11-02T14:46:55+01:00
+Review: approve (.ah-out/review/kern-desktop-4/T6.verdict.json)
 Änderung: Die vier Majors (`Cargo.toml:45`, `:48`, `:59`, `:69`) und die API-Änderungen in den Aufrufern; rcgen weiter mit ring. Windows-Code kompiliert per `cargo check --target x86_64-pc-windows-gnu` oder die CI-Jobs rust-windows (Ergebnis im Commit-Body). Mehr als acht Dateien nur, wenn die Aufrufer es verlangen (dann `set-files`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: changelog.d/kern-desktop-4.md
