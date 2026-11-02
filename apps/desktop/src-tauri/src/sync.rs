@@ -42,29 +42,11 @@ async fn fetch(url: &str, allow_self_signed: bool) -> Result<Vec<Connection>, Ap
 /// (`ansible.rs`).
 const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
 
-/// The JSON list in `response`. An answer over [`MAX_LIST_BYTES`] is refused by its declared
-/// length before any of the body is read, else as soon as more has arrived; no error quotes
-/// the answer.
-async fn read_list(mut response: reqwest::Response) -> Result<Vec<serde_json::Value>, AppError> {
-    let too_large = || {
-        AppError::Validation(format!(
-            "the connection list could not be loaded (answer larger than {} MiB)",
-            MAX_LIST_BYTES / (1024 * 1024)
-        ))
-    };
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_LIST_BYTES as u64)
-    {
-        return Err(too_large());
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        if body.len() + chunk.len() > MAX_LIST_BYTES {
-            return Err(too_large());
-        }
-        body.extend_from_slice(&chunk);
-    }
+/// The JSON list in `response`, read within [`MAX_LIST_BYTES`] and the body deadline
+/// ([`crate::http_client::read_bounded`]); no error quotes the answer.
+async fn read_list(response: reqwest::Response) -> Result<Vec<serde_json::Value>, AppError> {
+    let body =
+        crate::http_client::read_bounded(response, MAX_LIST_BYTES, "connection list").await?;
     serde_json::from_slice(&body).map_err(|_| {
         AppError::Validation(
             "the connection list could not be loaded (unexpected answer)".to_string(),

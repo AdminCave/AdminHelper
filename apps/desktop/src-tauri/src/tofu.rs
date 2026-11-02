@@ -301,7 +301,7 @@ fn keyring_delete(identity: &str) -> Result<(), AppError> {
 
 // ── rustls verifier ───────────────────────────────────────────────────
 
-/// The ring provider, matched to the backend reqwest's `rustls-tls` resolves.
+/// The ring provider, matched to the backend reqwest's rustls resolves.
 /// Built once: `builder_with_provider` requires an explicit provider because
 /// reqwest does not install a process-default one. Shared with `enrollment.rs`
 /// so the enrolled mTLS client uses the same provider.
@@ -410,7 +410,7 @@ fn client_with_verifier(
         .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
     crate::http_client::with_timeouts(reqwest::Client::builder())
-        .use_preconfigured_tls(tls)
+        .tls_backend_preconfigured(tls)
         .build()
         .map_err(AppError::from)
 }

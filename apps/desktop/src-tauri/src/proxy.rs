@@ -89,7 +89,7 @@ pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
     // Never probe a cleartext network URL (https, or http only for loopback).
     crate::validation::validate_server_url_secure(server_url)?;
     let client = crate::http_client::with_timeouts(reqwest::Client::builder())
-        .danger_accept_invalid_certs(false)
+        .tls_danger_accept_invalid_certs(false)
         .build()
         .map_err(AppError::from)?;
 
@@ -363,7 +363,9 @@ mod tests {
 
     #[test]
     fn build_request_rejects_unknown_methods() {
-        let client = reqwest::Client::new();
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .build()
+            .unwrap();
         for m in ["GET", "POST", "PUT", "DELETE"] {
             assert!(
                 build_request(&client, m, "https://x/y").is_ok(),

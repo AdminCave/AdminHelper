@@ -142,10 +142,21 @@ pub fn memory_epoch() -> u64 {
     memory_backend::epoch()
 }
 
+/// The keyring entry for `key`, in a store built for this call: a store holds one Secret
+/// Service connection, and one kept for the process would stay broken once the daemon restarts.
+#[cfg(unix)]
+fn os_entry(key: &str) -> keyring_core::Result<keyring_core::Entry> {
+    use keyring_core::api::CredentialStoreApi;
+    #[cfg(target_os = "macos")]
+    let store = apple_native_keyring_store::keychain::Store::new()?;
+    #[cfg(not(target_os = "macos"))]
+    let store = zbus_secret_service_keyring_store::Store::new()?;
+    store.build(SERVICE, key, None)
+}
+
 #[cfg(unix)]
 fn os_set(key: &str, value: &str) -> Result<(), AppError> {
-    use keyring::Entry;
-    Entry::new(SERVICE, key)
+    os_entry(key)
         .and_then(|entry| entry.set_password(value))
         .map_err(|e| AppError::Keyring(e.to_string()))
 }
@@ -165,8 +176,7 @@ fn os_set(_key: &str, _value: &str) -> Result<(), AppError> {
 /// alike ("not enrolled" for the identity).
 #[cfg(unix)]
 fn os_get(key: &str) -> Option<String> {
-    use keyring::Entry;
-    Entry::new(SERVICE, key).ok()?.get_password().ok()
+    os_entry(key).ok()?.get_password().ok()
 }
 
 #[cfg(target_os = "windows")]
@@ -187,8 +197,8 @@ fn os_get(_key: &str) -> Option<String> {
 /// fails open on `None` (the TOFU pin capture, 3.60).
 #[cfg(unix)]
 fn os_try_get(key: &str) -> Result<Option<String>, AppError> {
-    use keyring::{Entry, Error as KeyringError};
-    let entry = Entry::new(SERVICE, key).map_err(|e| AppError::Keyring(e.to_string()))?;
+    use keyring_core::Error as KeyringError;
+    let entry = os_entry(key).map_err(|e| AppError::Keyring(e.to_string()))?;
     match entry.get_password() {
         Ok(v) => Ok(Some(v)),
         Err(KeyringError::NoEntry) => Ok(None),
@@ -212,8 +222,8 @@ fn os_try_get(_key: &str) -> Result<Option<String>, AppError> {
 /// propagates so callers that care (session logout) can surface it.
 #[cfg(unix)]
 fn os_delete(key: &str) -> Result<(), AppError> {
-    use keyring::{Entry, Error as KeyringError};
-    match Entry::new(SERVICE, key) {
+    use keyring_core::Error as KeyringError;
+    match os_entry(key) {
         Ok(entry) => match entry.delete_credential() {
             Ok(_) | Err(KeyringError::NoEntry) => Ok(()),
             Err(e) => Err(AppError::Keyring(e.to_string())),
@@ -284,6 +294,44 @@ mod tests {
         assert_eq!(get("d"), None);
         assert!(matches!(try_get("d"), Ok(None)));
         assert!(delete("d").is_ok());
+    }
+
+    /// A Secret Service that cannot be reached is a read error, not "no entry": the TOFU pin
+    /// capture fails open on `Ok(None)` (3.60). The child process gets a bus address that
+    /// leads nowhere, so the real keyring is never touched.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn without_a_secret_service_reading_is_an_error_not_no_entry() {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "keyring_store::tests::dead_bus_child",
+                "--nocapture",
+            ])
+            .env("AH_DEAD_BUS_CHILD", "1")
+            .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/proc/self/ah-no-bus")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // The filter matched and the child really ran its checks.
+        assert!(stdout.contains("1 passed"), "{stdout}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dead_bus_child() {
+        if std::env::var_os("AH_DEAD_BUS_CHILD").is_none() {
+            return;
+        }
+        assert!(matches!(os_try_get("probe"), Err(AppError::Keyring(_))));
+        assert!(os_set("probe", "x").is_err());
+        assert_eq!(os_get("probe"), None);
+        assert!(os_delete("probe").is_err());
     }
 
     /// A credential name no one has, of this run and this call only.
