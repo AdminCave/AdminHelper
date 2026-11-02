@@ -1532,6 +1532,53 @@ ca_rotation() {
 }
 ca_rotation
 
+# ── 19. Recreating the stack after a wipe: fresh PKI, fresh database (R-1006) ──
+# `down -v` is what install.sh --reset and every re-install do. Last, because it throws the
+# stack away: after it the root is a new one, a device enrolled before is a stranger to the
+# gateway, a fresh enrollment works, and the admin exists again from ADMIN_PASSWORD.
+root_fingerprint() {
+    e2e_dc exec -T ca-issuer python -c 'from app import config; print((config.pki_dir() / "root.crt").read_text())' \
+        2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null
+}
+recreate_after_wipe() {
+    local before after token code jwt
+    before=$(root_fingerprint)
+    [ -n "$before" ] || { bad "wipe: the root fingerprint before the wipe could not be read"; return; }
+    if ! e2e_dc down -v --remove-orphans >"$E2E_WORK/wipe-down.log" 2>&1; then
+        bad "wipe: docker compose down -v failed"; tail -10 "$E2E_WORK/wipe-down.log"; return
+    fi
+    e2e_up gateway || { bad "wipe: the gateway did not come up again"; return; }
+    e2e_wait_enroll_plane || { bad "wipe: the enroll plane never reached the ca-issuer"; return; }
+    after=$(root_fingerprint)
+    if [ -n "$after" ] && [ "$after" != "$before" ]; then
+        ok "wipe: the recreated stack runs a new PKI root"
+    else
+        bad "wipe: the root after the wipe is missing or the old one"
+    fi
+    code=$(reach "${CERT[@]}")
+    [ "$code" = 400 ] && ok "wipe: a device enrolled before the wipe is refused (400)" \
+        || bad "wipe: the old device expected 400, got '$code'"
+    token=""
+    for _ in $(seq 1 45); do
+        token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+        [ -n "$token" ] && break
+        sleep 2
+    done
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client7.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client7.key" -subj "/CN=itest" -out "$E2E_WORK/client7.csr" 2>/dev/null
+    if [ -n "$token" ] && enroll "$token" client7; then
+        code=$(reach --cert "$E2E_WORK/client7-fullchain.pem" --key "$E2E_WORK/client7.key")
+        [ "$code" = 401 ] && ok "wipe: a fresh enrollment gets a certificate the gateway takes" \
+            || bad "wipe: the fresh device expected 401, got '$code'"
+    else
+        bad "wipe: enrollment on the recreated stack failed"
+    fi
+    jwt=$(e2e_admin_token)
+    [ -n "$jwt" ] && ok "wipe: the admin logs in with ADMIN_PASSWORD on the new database" \
+        || bad "wipe: the admin cannot log in on the new database"
+}
+recreate_after_wipe
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"
