@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/lib/components/layout/Sid
 Doku: → T9
 Abhängt von: T2
 
-### T4 — Seiten Benutzer, API-Keys, Zertifikate (R-1082)  [ ]
+### T4 — Seiten Benutzer, API-Keys, Zertifikate (R-1082)  [x]
 Komponente: web · Dateien: apps/web/src/pages/Users.svelte, apps/web/src/pages/Users.test.ts, apps/web/src/pages/ApiKeys.svelte, apps/web/src/pages/ApiKeys.test.ts, apps/web/src/pages/Certificates.svelte, apps/web/src/pages/Certificates.test.ts, apps/web/src/styles/global.css, apps/web/tests/e2e/crud.spec.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @18720823 2026-11-03T01:58:36+01:00
+Review: approve (.ah-out/review/kern-web-4/T4.verdict.json)
 Änderung: Kopf mit Titel und Aktion, Tabelle im `Panel`, Rollen und Zustände als `Pill`, Zeilenaktionen als `Button`/`IconButton` mit den bisherigen zugänglichen Namen, leere Zustände über `EmptyState`. Neue Seitentests für Users und ApiKeys (Laden, leere Liste, Aktion öffnet den Dialog). SPDX in den neuen Tests.
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Users.test.ts src/pages/ApiKeys.test.ts src/pages/Certificates.test.ts src/pages.load.test.ts
 Doku: → T9
@@ -87,3 +89,4 @@ Doku: diese Task
 - T2: Desktop-Tests gekürzt um `Badge`, `RadioGroup`, `Slider` (nicht kopiert); `primitives.test.ts` hydriert eine Sitzung wie `ConfirmDialog.test.ts`.
 - T2: E2E `crud.spec.ts:68/104` wählen „Schließen“ über `.modal-footer`: der Modal-Kopf trägt jetzt einen gleichnamigen `IconButton` (Prüfer-Blocker Runde 1).
 - T3: Das Logo bleibt als SVG in Sidebar und Login wie im Desktop (Marke, kein Lucide-Icon); raus sind die Icon-Pfade. `Input` bekommt `required` (Login-Felder hatten es nativ). Die Klasse `login-form` bleibt (Anker in `App.idle.test.ts`), dazu `.login-card`, `.login-error`, `#loginUser`, `#loginPass`. `theme-color` folgt dem neuen Dunkel `#17181b` (Nit aus T1). `theme.spec.ts` prüft den Hintergrund `rgb(23, 24, 27)` statt True-Black.
+- T4: Die globale Regel `.panel` gilt nur noch für `div.panel`: das `section.panel` der Komponente bekam sonst ihr Polster und ihren Schatten zusätzlich (traf schon das Login aus T3); T7 entfernt sie, sobald T5 die letzten `div.panel` ablöst. Löschen ist ein `IconButton` (Trash) mit dem Namen „Löschen“, Bearbeiten und Registrierungs-Token bleiben Text-Buttons. Zertifikate: der Zustand steht als `data-status` an der Zelle (der Test prüfte vorher die Klasse `.light`), Rollen und Rechte als `Pill`.

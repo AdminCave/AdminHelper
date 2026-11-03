@@ -79,7 +79,10 @@ describe('Certificates page', () => {
       ['web-01', '3', 'Kritisch'],
       ['srv-2', 'abgelaufen', 'Kritisch'],
     ]);
-    expect(section(container, 'agents').querySelector('.light.critical')).not.toBeNull();
+    expect(section(container, 'agents').querySelector('[data-status="critical"]')).not.toBeNull();
+    expect(
+      section(container, 'infrastructure').querySelector('[data-status="warning"]'),
+    ).not.toBeNull();
   });
 
   it('says "no data" when the ca-issuer recorded nothing', async () => {

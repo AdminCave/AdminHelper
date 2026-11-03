@@ -360,7 +360,8 @@ body {
 }
 
 /* ── Panel ─────────────────────────────────────────────────────────── */
-.panel {
+/* div only: the Panel component renders a section.panel with its own padding. */
+div.panel {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -384,10 +385,12 @@ body {
 
 .data-table th {
   font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-muted);
-  font-weight: 600;
+  color: var(--text-subtle);
+  font-weight: 500;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .data-table tr:hover td {
