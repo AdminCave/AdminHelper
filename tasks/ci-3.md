@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@03c4068a`. Den PR merged Kevin (`.github/workflows/`, CLAUDE.md §2); jede Task an einem Workflow ist Risikopfad (`security` je Task).
 
-### T1 — Manifest der Shard-Sammlung und Test der Teilung nach -m/-k (R-1019, R-1020)  [ ]
+### T1 — Manifest der Shard-Sammlung und Test der Teilung nach -m/-k (R-1019, R-1020)  [x]
 Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_shard.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @06febacf 2026-11-03T17:59:10+01:00
+Review: approve (.ah-out/review/ci-3/T1.verdict.json)
 Änderung: Neue Option `--shard-manifest <pfad>` (nur mit `--shard`): der `trylast`-Hook (`conftest.py:527`) schreibt vor der Teilung JSON mit `shard` (K/N), `count` (Tests nach `-m`/`-k`) und `sha256` der sortierten Node-IDs. Tests: das Manifest zweier Shards derselben Sammlung ist gleich, eine abweichende Sammlung ändert den Hash; ein `-k`/`-m` wirkt vor der Teilung (die Shards zusammen sind genau die gefilterte Menge, über `pytester` oder einen Unterprozess wie `test_an_invalid_shard_ends_pytest_with_a_usage_error`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py
 Doku: → T2
