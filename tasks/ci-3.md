@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/ci-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py
 Doku: → T2
 
-### T2 — CI vergleicht die Sammlung der Shards, fail-fast der Ergebnis-Matrix, cicd-Doku (R-1019, R-1020)  [ ]
+### T2 — CI vergleicht die Sammlung der Shards, fail-fast der Ergebnis-Matrix, cicd-Doku (R-1019, R-1020)  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_shards.py, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-3.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5fe52645 2026-11-03T18:02:58+01:00
+Review: approve (.ah-out/review/ci-3/T2.verdict.json)
 Änderung: Die Jobs `server` und `python-lock-server` rufen pytest mit `--shard-manifest` und laden das Manifest als Artefakt (je Leg und Shard benannt); `server-result` (`ci.yml:133`) und `python-lock-server-result` (`ci.yml:317`) laden die Manifeste ihrer Leg und sind rot, wenn eins fehlt oder `count`/`sha256` abweichen; `server-result` bekommt `fail-fast: false`. `test_ci_shards.py` prüft, dass jeder Shard-Job das Manifest schreibt und hochlädt und jeder Ergebnis-Job es vergleicht. Doku: Shard-Abgleich DE+EN, die doppelte Klammer in `docs/en/developer/cicd.html:40`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py tests/test_shard.py
 Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md

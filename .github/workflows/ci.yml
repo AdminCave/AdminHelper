@@ -102,7 +102,14 @@ jobs:
         # run.sh step; collected here it would run a second time inside this job.
         # -rs names each skip in the log; the next step reads the skips from the JUnit XML.
         # Each shard reports the coverage of its part only.
-        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
+        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: shard-manifest-server-py${{ matrix.python-version }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-manifest.json
+          if-no-files-found: error
+          retention-days: 1
       # A test whose precondition is missing skips, and pytest stays green. This leg has them
       # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
       # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
@@ -137,15 +144,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
+      # A red leg must not cancel the other: its result would read cancelled, not failure.
+      fail-fast: false
       matrix:
         python-version: ["3.14", "3.15"]
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: shard-manifest-server-py${{ matrix.python-version }}-*
+          path: ${{ runner.temp }}/shard-manifests
       - name: Every shard passed
         env:
           RESULT: ${{ needs.server.result }}
         run: |
           echo "server shards: $RESULT"
           test "$RESULT" = success
+      # Each shard collects the whole suite and keeps its part. Had one of them collected
+      # something else (an import error on one side only), a test file could land in no shard
+      # while every shard stays green: the shards must report the same collection.
+      - name: The shards collected the same tests
+        env:
+          SHARDS: "2"
+          MANIFESTS: ${{ runner.temp }}/shard-manifests
+        run: |
+          python3 - "$MANIFESTS" "$SHARDS" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root, shards = Path(sys.argv[1]), int(sys.argv[2])
+          manifests = [json.loads(path.read_text()) for path in sorted(root.rglob("*.json"))]
+          for manifest in manifests:
+              print(f"shard {manifest['shard']}: {manifest['count']} tests, {manifest['sha256']}")
+          want = [f"{index}/{shards}" for index in range(1, shards + 1)]
+          if sorted(m["shard"] for m in manifests) != want:
+              print(f"::error::expected one manifest for each of the shards {want}")
+              sys.exit(1)
+          if len({(m["count"], m["sha256"]) for m in manifests}) != 1:
+              print("::error::the shards collected different tests")
+              sys.exit(1)
+          PY
 
   python-lint:
     name: Python (ruff check + format)
@@ -311,7 +349,14 @@ jobs:
         run: python ../../scripts/dev/lock-pins.py requirements.txt
       - name: Run pytest
         working-directory: apps/server
-        run: pytest -q -m "not schemathesis" --shard "$PYTEST_SHARD"
+        run: pytest -q -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: shard-manifest-lock-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-manifest.json
+          if-no-files-found: error
+          retention-days: 1
 
   # The name python-lock-server had before its shards, one job green only when both are.
   python-lock-server-result:
@@ -321,12 +366,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: shard-manifest-lock-*
+          path: ${{ runner.temp }}/shard-manifests
       - name: Every shard passed
         env:
           RESULT: ${{ needs.python-lock-server.result }}
         run: |
           echo "image lock shards: $RESULT"
           test "$RESULT" = success
+      # Each shard collects the whole suite and keeps its part. Had one of them collected
+      # something else (an import error on one side only), a test file could land in no shard
+      # while every shard stays green: the shards must report the same collection.
+      - name: The shards collected the same tests
+        env:
+          SHARDS: "2"
+          MANIFESTS: ${{ runner.temp }}/shard-manifests
+        run: |
+          python3 - "$MANIFESTS" "$SHARDS" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root, shards = Path(sys.argv[1]), int(sys.argv[2])
+          manifests = [json.loads(path.read_text()) for path in sorted(root.rglob("*.json"))]
+          for manifest in manifests:
+              print(f"shard {manifest['shard']}: {manifest['count']} tests, {manifest['sha256']}")
+          want = [f"{index}/{shards}" for index in range(1, shards + 1)]
+          if sorted(m["shard"] for m in manifests) != want:
+              print(f"::error::expected one manifest for each of the shards {want}")
+              sys.exit(1)
+          if len({(m["count"], m["sha256"]) for m in manifests}) != 1:
+              print("::error::the shards collected different tests")
+              sys.exit(1)
+          PY
 
   python-lock-monitoring:
     name: Monitoring (pytest, image lock)
