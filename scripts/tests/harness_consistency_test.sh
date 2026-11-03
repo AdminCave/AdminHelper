@@ -172,6 +172,15 @@ done
 [ -z "$unread" ] && ok "feature-build, feature-plan and reviewer read testing.md and docs.md themselves" \
   || bad "they do not read the rules they need:$unread"
 
+echo "── node versions ──"
+# The test boxes run the Node that CI builds with; the bootstrap fell behind once
+# when CI moved on (R-1087).
+BOX_NODE="$(sed -n 's/^NODE_MAJOR="${AH_NODE_MAJOR:-\([0-9]*\)}"$/\1/p' "$ROOT/scripts/vm/bootstrap_linux.sh")"
+CI_NODE="$(sed -n 's/^ *node-version: "\([0-9]*\)"$/\1/p' "$ROOT/.github/workflows/ci.yml" | sort -u)"
+[ -n "$BOX_NODE" ] && [ -n "$CI_NODE" ] && [ "$CI_NODE" = "$BOX_NODE" ] \
+  && ok "bootstrap_linux.sh installs Node $BOX_NODE, every node-version in ci.yml" \
+  || bad "bootstrap_linux.sh NODE_MAJOR='$BOX_NODE', ci.yml node-version: $(tr '\n' ' ' <<<"$CI_NODE")"
+
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$ROOT/scripts/tests/run.sh")"
 grep -qw 'harness_consistency_test' <<<"$LIST" && ok "registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 
