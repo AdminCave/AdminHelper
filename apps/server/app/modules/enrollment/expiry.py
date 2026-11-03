@@ -22,6 +22,12 @@ from app.modules.servers.models import Server
 # Kevin 2026-10-30: yellow below 30 days, red below 7 days (and once expired).
 WARNING_DAYS = 30
 CRITICAL_DAYS = 7
+# Kevin 2026-11-02 (R-1021): the root has its own. Renewing it (rotate-root stage, switch,
+# finish) waits twice for every device to renew, so it turns yellow a year ahead, together
+# with the ca-issuer's warning. The old root and the cross certificate of a renewal go with
+# the other limits: finish takes them away.
+ROOT_WARNING_DAYS = 365
+ROOT_CRITICAL_DAYS = 120
 
 SOURCE_TYPE = "certificate_expiry"
 # Notices per daily run: a fleet whose agents were all enrolled on one day reaches the
@@ -34,17 +40,17 @@ def days_left(not_after: datetime.datetime, now: datetime.datetime) -> int:
     return (not_after - now) // datetime.timedelta(days=1)
 
 
-def status_of(days: int) -> str:
-    if days < CRITICAL_DAYS:
+def status_of(days: int, *, root: bool = False) -> str:
+    if days < (ROOT_CRITICAL_DAYS if root else CRITICAL_DAYS):
         return "critical"
-    if days < WARNING_DAYS:
+    if days < (ROOT_WARNING_DAYS if root else WARNING_DAYS):
         return "warning"
     return "ok"
 
 
-def _light(not_after: datetime.datetime, now: datetime.datetime) -> dict:
+def _light(not_after: datetime.datetime, now: datetime.datetime, *, root: bool = False) -> dict:
     days = days_left(not_after, now)
-    return {"not_after": not_after, "days_left": days, "status": status_of(days)}
+    return {"not_after": not_after, "days_left": days, "status": status_of(days, root=root)}
 
 
 def infrastructure(db: Session, now: datetime.datetime) -> list[dict]:
@@ -53,7 +59,7 @@ def infrastructure(db: Session, now: datetime.datetime) -> list[dict]:
             "name": row.name,
             "subject": row.subject,
             "fingerprint": row.fingerprint,
-            **_light(row.not_after, now),
+            **_light(row.not_after, now, root=row.name == "root"),
         }
         for row in db.query(InfraCertificate).order_by(InfraCertificate.name)
     ]

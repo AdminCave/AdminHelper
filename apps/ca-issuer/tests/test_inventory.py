@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import db, inventory, main, pki
 from app.storage import ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
+from tests import renewal
 
 _OLD = datetime.datetime(2026, 1, 1)
 
@@ -102,6 +103,57 @@ def test_a_new_start_replaces_the_old_snapshot(pki_tree):
     rows = _rows(engine)
     assert "intermediate:gone" not in rows
     assert len(rows) == 1 + len(pki.SCOPES) + 2
+
+
+def test_a_row_keeps_the_start_that_first_recorded_its_certificate(monkeypatch, pki_tree):
+    # R-1021: rotate-root finish counts a device from the first start under the root on.
+    pki_dir, gateway_dir, frps_dir = pki_tree
+    engine = _sqlite()
+    first = datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
+    later = first + datetime.timedelta(days=1)
+    monkeypatch.setattr(pki, "_now", lambda: first)
+    inventory.record(engine, inventory.collect(pki_dir, gateway_dir, frps_dir))
+
+    monkeypatch.setattr(pki, "_now", lambda: later)
+    certs = inventory.collect(pki_dir, gateway_dir, frps_dir)
+    certs["gateway"] = certs["frps"]  # another certificate under the same name
+    inventory.record(engine, certs)
+
+    rows = _rows(engine)
+    assert rows["root"]["recorded_at"] == first.replace(tzinfo=None)
+    assert rows["intermediate:tunnel"]["recorded_at"] == first.replace(tzinfo=None)
+    assert rows["gateway"]["recorded_at"] == later.replace(tzinfo=None)
+
+
+def _fingerprint(cert) -> str:
+    return cert.fingerprint(hashes.SHA256()).hex()
+
+
+@pytest.mark.parametrize("phase", renewal.PHASES)
+def test_records_the_roots_of_a_root_renewal(monkeypatch, tmp_path, phase):
+    # R-1021: "root" is root.crt, the root that signs; beside it the staged new root, or
+    # after the switch the old root and the cross certificate, until finish.
+    pki_dir = tmp_path / "pki"
+    r = renewal.renewed(monkeypatch, pki_dir, phase)
+    engine = _sqlite()
+
+    inventory.record(engine, inventory.collect(pki_dir, None, None))
+
+    rows = _rows(engine)
+    switched = phase in ("switched", "no-cross", "compromised", "expired")
+    signing = r.old_root if phase in ("none", "staged") else r.new_root
+    assert rows["root"]["fingerprint"] == _fingerprint(signing)
+    expected = {"root:next": r.new_root} if phase == "staged" else {}
+    if switched:
+        expected["root:retired"] = r.old_root
+        if r.cross is not None:
+            expected["root:cross"] = r.cross
+    assert {n: row["fingerprint"] for n, row in rows.items() if n.startswith("root:")} == {
+        n: _fingerprint(c) for n, c in expected.items()
+    }
+    assert {n for n in rows if n.startswith("intermediate:")} == {
+        f"intermediate:{s}" for s in pki.SCOPES
+    }
 
 
 def _configure(monkeypatch, tmp_path, pki_tree, url):

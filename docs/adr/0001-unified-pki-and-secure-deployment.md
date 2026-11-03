@@ -96,7 +96,7 @@ Client-Identität trägt — als Fundament für mTLS-Pflicht über alle Zugänge
 ### 3.1 Vertrauensmodell (Trust)
 
 ```
-Root CA  (kalt, passphrase-verschlüsselt, nur zum Intermediate-Rotieren)
+Root CA  (kalt, passphrase-verschlüsselt, nur zum Intermediate-Rotieren und zur Root-Erneuerung)
    │   ← Clients PINNEN diese CA beim Enrollment (TOFU-Moment über token-gesicherten Kanal)
    ├─ Intermediate "tunnel"    → frps-Server-Cert + Agent/Visitor-mTLS-Certs
    ├─ Intermediate "access"    → Server-Leaf (:443) + Client-Certs (Desktop/Browser)
@@ -167,6 +167,25 @@ Header-Integrität der Datenebene, nicht die CA.
 - Native: automatisch bei ~50 % Laufzeit + Überlappung → ein kurzzeitig nicht erreichbarer
   Issuer sperrt niemanden aus. Browser: manuell zum Ablauf (D5).
 
+**Root-Erneuerung (R-1021, 2026-11-02)** — `python -m app.cli rotate-root stage|switch|finish`,
+Runbook `docs/admin/betrieb.html#root-renewal`:
+- `stage` legt eine neue Root N mit eigenem Schlüssel neben die alte R; R signiert weiter.
+  Enrollment und Renewal geben im Feld `chain` das Zwischenzertifikat und jede Root aus, der der
+  Client vertrauen soll, die zu pinnende zuletzt (`I(R) N R`): jeder native Client trägt N nach
+  seiner nächsten Erneuerung.
+- `switch` stellt die Intermediates unter N aus, lässt R ein Cross-Zertifikat X für N signieren
+  (Subject, Schlüssel und SKI von N, Aussteller R, `pathLen 1`) und löscht danach den Schlüssel
+  von R. Gateway (`:443`, `:8445`) und frps präsentieren bis `finish` die Kette über X zu R,
+  `:8444` dazu N; `chain` wird `I(N) R N`. So erreichen Clients, die nur R kennen, den Server
+  weiter. `--compromised <scope>` nimmt die abgelösten Intermediates des Scopes aus dem Vertrauen
+  und R aus `chain` (Leck eines Intermediate-Schlüssels).
+- `finish` nimmt R, X und die Intermediates unter R aus allen Bündeln. Gesperrt aus dem
+  Zertifikats-Register (§3.4), solange ein aktives Gerät nur ein Zertifikat von vor dem ersten
+  Start des Issuers unter N hat, ohne DB ebenfalls; `--force` übergeht die Sperre.
+- Agent und Desktop ändern sich nicht: sie übernehmen `chain` bei jeder Erneuerung, und der
+  Desktop zeigt als `--ca-fp` die letzte Root der Kette. Ein Leck des Root-Schlüssels deckt das
+  nicht ab: Dann hilft nur eine frische Hierarchie mit Neu-Enrollment.
+
 ### 3.4 Deprovisionierung ohne CRL (wichtige Präzisierung zu D4)
 
 „Revocation = Ablauf" wirkt auf der **TLS-Schicht**. Für *sofortiges* Kappen eines
@@ -236,6 +255,9 @@ der praktische Schnell-Widerruf ohne CRL-Maschinerie.
 
 - **Root-Passphrase getrennt** vom verschlüsselten Root-Key aufbewahren (Passwortmanager,
   nicht im Backup-Tarball) — sonst ist die Verschlüsselung wertlos (F6).
+- **Root-Erneuerung** (§3.3): Backup nach jedem Schritt. Ein Restore von vor `switch` nimmt die
+  Erneuerung zurück (Geräte mit Zertifikaten unter N enrollen neu); nach `switch` ist der
+  Schlüssel von R nur noch in älteren Backups.
 - Backup-FIRST bei jedem Update; Restore = Volumes + `.env` + `./certs` zurück, dann
   `pg_restore`, dann `up -d` (App re-publiziert frps-Materials aus dem Issuer + DB).
 

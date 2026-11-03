@@ -13,6 +13,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
 from app import pki
 
@@ -266,3 +267,97 @@ def test_chain_pem_order():
     bundle = pki.chain_pem(inter_cert, root_cert)
     parsed = x509.load_pem_x509_certificates(bundle)
     assert [c.subject for c in parsed] == [inter_cert.subject, root_cert.subject]
+
+
+# --- Root renewal (R-1021) ---------------------------------------------------
+
+
+def _device_leaf(inter_cert, inter_key) -> x509.Certificate:
+    csr, _ = _csr("agent-srv-01")
+    spec = pki.LeafSpec(
+        lifetime_days=pki.LEAF_DAYS_NATIVE,
+        client_auth=True,
+        server_auth=False,
+        subject_cn="agent-srv-01",
+        scope="tunnel",
+        dns_names=("agent-srv-01",),
+    )
+    return pki.sign_leaf(csr, inter_cert, inter_key, spec)
+
+
+def _client_verifier(*anchors: x509.Certificate):
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=1)
+    return PolicyBuilder().store(Store(list(anchors))).time(now).build_client_verifier()
+
+
+def _ski(cert: x509.Certificate) -> bytes:
+    return cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+
+
+def _spki(cert: x509.Certificate) -> bytes:
+    return cert.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+
+
+def test_a_root_label_is_appended_to_the_cn():
+    root_cert, _ = pki.build_root_ca(label="2036-02-01")
+    assert pki.read_identity(root_cert)[0] == "AdminHelper Root CA 2036-02-01"
+
+
+def test_the_cross_certificate_is_the_new_root_signed_by_the_old_one(monkeypatch):
+    # The old root has 100 days left, the cross certificate ends with it.
+    old_root, old_key = _minted_at(monkeypatch, 100 - pki.VALIDITY_DAYS_ROOT, pki.build_root_ca)
+    new_root, _ = pki.build_root_ca(label="2026-11-02")
+
+    cross = pki.build_cross_cert(new_root, old_root, old_key)
+
+    assert cross.subject == new_root.subject and cross.issuer == old_root.subject
+    assert _spki(cross) == _spki(new_root) and _ski(cross) == _ski(new_root)
+    aki = cross.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value
+    assert aki.key_identifier == _ski(old_root)
+    bc = cross.extensions.get_extension_for_class(x509.BasicConstraints)
+    assert bc.critical and bc.value.ca and bc.value.path_length == 1
+    assert cross.not_valid_after_utc == old_root.not_valid_after_utc
+    cross.verify_directly_issued_by(old_root)
+    assert pki.cross_problem(cross, new_root, old_root) is None
+
+
+def test_a_client_that_trusts_only_the_old_root_reaches_a_leaf_of_the_new_one():
+    old_root, old_key = pki.build_root_ca()
+    new_root, new_key = pki.build_root_ca(label="2026-11-02")
+    cross = pki.build_cross_cert(new_root, old_root, old_key)
+    inter_cert, inter_key = pki.build_intermediate_ca("tunnel", new_root, new_key, label="x")
+    leaf = _device_leaf(inter_cert, inter_key)
+
+    chain = _client_verifier(old_root).verify(leaf, [inter_cert, cross]).chain
+    assert chain == [leaf, inter_cert, cross, old_root]
+    # One that trusts the new root stops there, with or without the cross certificate.
+    chain = _client_verifier(new_root).verify(leaf, [inter_cert, cross]).chain
+    assert chain == [leaf, inter_cert, new_root]
+    # Without the cross certificate the old root does not reach the new hierarchy.
+    with pytest.raises(VerificationError):
+        _client_verifier(old_root).verify(leaf, [inter_cert])
+
+
+def test_an_expired_old_root_signs_no_cross_certificate(monkeypatch):
+    old_root, old_key = _minted_at(monkeypatch, -pki.VALIDITY_DAYS_ROOT - 1, pki.build_root_ca)
+    new_root, _ = pki.build_root_ca(label="2026-11-02")
+
+    with pytest.raises(pki.IssuerNotValid, match="expired"):
+        pki.build_cross_cert(new_root, old_root, old_key)
+
+
+def test_cross_problem_names_what_is_wrong():
+    old_root, old_key = pki.build_root_ca()
+    new_root, _ = pki.build_root_ca(label="2026-11-02")
+    other_root, other_key = pki.build_root_ca(label="other")
+
+    foreign = pki.build_cross_cert(new_root, other_root, other_key)
+    assert "not signed by root 'AdminHelper Root CA'" in pki.cross_problem(
+        foreign, new_root, old_root
+    )
+    other_cross = pki.build_cross_cert(other_root, old_root, old_key)
+    assert "name and key of root" in pki.cross_problem(other_cross, new_root, old_root)
+    # The new root itself carries its name and key, but is no cross certificate.
+    assert pki.cross_problem(new_root, new_root, old_root) == "it is not a CA with path_length=1"
