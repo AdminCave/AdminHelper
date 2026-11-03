@@ -10,8 +10,10 @@ Heavy: linux-full — Monitoring-Routen hinter dem Gateway und die Desktop-Journ
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Verlauf und Vergleich enden am ersten Rasterpunkt ab jetzt (R-1104)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/history.py, apps/monitoring/tests/test_status_history.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-4.md
+### T1 — Verlauf und Vergleich enden am ersten Rasterpunkt ab jetzt (R-1104)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/history.py, apps/monitoring/tests/test_status_history.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-4.md, apps/monitoring/tests/test_status_compare.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1c528c97 2026-11-03T17:26:32+01:00
+Review: am Ende (Branch-Review)
 Änderung: `history_window` rundet `end` auf den nächsten Rasterpunkt auf statt ab; `start = end - duration`, das Raster bleibt ausgerichtet. Test zuerst rot: für jeden Zeitraum gilt `end >= now`, `end - now < step`, `end % step == 0`, dieselbe Punktzahl; `now` genau auf einem Rasterpunkt bleibt dort.
 Beweis: main@03c4068a apps/monitoring/app/history.py:62 `end = int(now) // step * step`; VM-Probe 2026-11-03 (Spec, Externe Integrationen) · Dedup-Key: BUG:monitoring:history.py:history_window
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_status_compare.py
