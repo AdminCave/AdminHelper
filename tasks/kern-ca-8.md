@@ -37,5 +37,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/frp-tunnel.html + EN · docs/developer/agent.html + EN · changelog.d/kern-ca-8.md
 Task-Review: am Ende
 
+### T6 — Abschlussprüfung: neutrale Texte, Kommentare zum Gegenstück (R-1112)  [x]
+Komponente: agent · Dateien: docs/features/kern-ca-8.md, tasks/kern-ca-8.md, changelog.d/kern-ca-8.md, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, apps/ca-issuer/app/config.py, apps/agent/internal/frpc/rewrite.go, apps/agent/internal/frpc/sync.go
+Evidenz: run.sh[quick] agent ca-issuer: 6 passed, 0 failed, 12 skipped @ab1e2ab9 2026-11-03T21:18:57+01:00
+Review: approve (.ah-out/review/kern-ca-8/T6.verdict.json)
+Änderung: Spec, Ledger, Changelog und Admin-Doku DE+EN neutral gefasst (frpc verlangt den Namen, den nur das frps-Zertifikat trägt); die Kommentare in `config.py` und `rewrite.go` nennen nur das Gegenstück, das den Namen schon verlangt; der Kommentar am unveränderten Hash in `sync.go` nennt das Neuschreiben. Fund der Abschlussprüfung.
+Verify: bash scripts/dev/verify.sh agent ca-issuer --strict
+Doku: docs/admin/frp-tunnel.html + EN · changelog.d/kern-ca-8.md
+
 ## Entscheidungen
 - T1: nennt `DOMAIN` selbst den frps-Namen, bricht der Start ab (`main.py`, RuntimeError); nennt ihn nur `EXTRA_SANS`, lässt der ca-issuer ihn mit Warnung weg (Spec, Trade-offs). Der Name wird über `config.frps_leaf_sans()` angehängt, `frps_extra_sans()` behält seine Bedeutung (Fallback-Test `test_config.py`). Beide Prüfungen erkennen auch `*.adminhelper.invalid` (`config.covers_frps_tls_name`, Fund der Task-Prüfung).

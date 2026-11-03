@@ -152,8 +152,9 @@ func Sync(ctx context.Context) error {
 	}
 	defer unlock()
 	if unchanged {
-		// The check passes the text frpc runs on: nothing to write, reload or restart. A text
-		// without a tunnel runs nothing, and applyConfig never checks one either.
+		// The check passes the text frpc runs on; the file in place is rewritten only when it is
+		// not what this agent writes for it. A text without a tunnel runs nothing, and
+		// applyConfig never checks one either.
 		if hasProxies(newConfig) {
 			if err := checkServerConfig(newConfig); err != nil {
 				return refuseServerConfig(ctx, err)
