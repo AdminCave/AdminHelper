@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-6 — Task-Ledger
-Status: erledigt · Branch: feature/ops-6 · Review: pro Task
+Status: aktiv · Branch: feature/ops-6 · Review: pro Task
 Spec: docs/features/ops-6.md (Roadmap R-1051, R-1049, R-1057, R-1050, R-1048, R-1052, R-1047, R-1058, R-1045)
 Heavy: linux-full — `scripts/install.sh`, `scripts/update.sh`, `scripts/backup.sh` und `scripts/restore.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`: `agent-install.sh` ändert nur das Lesen der gpg-Ausgabe, das `agent_install_test` mit echtem gpg prüft. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -65,6 +65,13 @@ Review: approve (.ah-out/review/ops-6/T6.verdict.json)
 Beweis: scripts/agent-install.sh:177, Nachstellung mit Wegwerf-Schluessel pub,rvk,fpr · Dedup-Key: bug:scripts:agent-install.sh:primary_fprs-rvk
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: changelog.d/ops-6.md
+
+### T7 — update_test: Differentialtest unabhaengig von der Compose-Version (R-1051)  [ ]
+Komponente: scripts · Dateien: scripts/tests/update_test.sh
+Änderung: Test 32 zählt die Warnung „variable is not set“ als Nein von Compose; Compose 2.38.2 (CI-Runner) warnt auch für einen Namen in einem Zweig, den es nicht auswertet (`${ZZ:+$YY}` bei leerem ZZ), v5.6.1 (Dev-Box) nicht, der Wert ist in beiden gleich. Für diese Zeilen zählt nur der Exit von Compose; das Verhalten von update.sh bleibt.
+Beweis: PR #384 CI-Lauf 41669842976, Job „Ops scripts“: fünf FAIL in Test 32 (`ab${ZZ:+$YY}`, `ab${zz9q+$zz9r}`, `ab${DOMAIN:-$zz9r}`, `ab${DOMAIN:?$zz9r}`, `E=` + `${E:+$zz9r}`)
+Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
+Doku: keine (nur Test)
 
 ## Entscheidungen
 - T1 (2026-11-03): Die neue `$`-Regel lehnt nur ab, was Compose selbst bemaengelt (Warnung "variable is not set" oder Abbruch durch `?`), ausgewertet wie Compose: zuerst die Umgebung (gesetzt oder leer, vor jeder Zeile der Datei), dann frühere Keys; spätere und Keys ohne Wert gelten nicht, Default/Alternative/WORD nur, wo Compose sie auswertet. Ein Wert mit Template gilt für `:` als möglicherweise leer (vorsichtige Seite). Belegt mit Proben gegen echtes `docker compose config`; die erste Fassung prüfte die Umgebung nach den früheren Keys (Prüferfund, behoben, Differentialfälle mit Umgebung). Der Differentialtest 32 zählt die Warnung jetzt als Ablehnung. Eine Zeile mit leerem Key setzt keinen Namen.
