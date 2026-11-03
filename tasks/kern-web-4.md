@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/lib/components/ui
 Doku: → T9
 Abhängt von: T1
 
-### T3 — Shell und Login (R-1082)  [ ]
-Komponente: web · Dateien: apps/web/src/lib/components/layout/Sidebar.svelte, apps/web/src/lib/components/layout/Sidebar.test.ts, apps/web/src/App.svelte, apps/web/src/pages/Login.svelte, apps/web/src/pages/Login.test.ts, apps/web/src/styles/global.css, apps/web/tests/e2e/smoke.spec.ts, apps/web/tests/e2e/theme.spec.ts, apps/web/tests/e2e/login.spec.ts
+### T3 — Shell und Login (R-1082)  [x]
+Komponente: web · Dateien: apps/web/src/lib/components/layout/Sidebar.svelte, apps/web/src/lib/components/layout/Sidebar.test.ts, apps/web/src/App.svelte, apps/web/src/pages/Login.svelte, apps/web/src/pages/Login.test.ts, apps/web/src/styles/global.css, apps/web/tests/e2e/smoke.spec.ts, apps/web/tests/e2e/theme.spec.ts, apps/web/tests/e2e/login.spec.ts, apps/web/index.html, apps/web/src/lib/stores/theme.ts, apps/web/src/lib/components/ui/Input.svelte
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @8b3ba5f7 2026-11-03T01:53:19+01:00
+Review: approve (.ah-out/review/kern-web-4/T3.verdict.json)
 Änderung: Sidebar wie im Desktop: Lucide-Icons statt der Inline-SVGs, aktiver Eintrag fett mit Balken, Theme-Umschalter, Benutzer und Abmelden als `IconButton`. Login auf `Panel`, `FormField`, `Input`, `Button`, Logo-SVG raus. Neue Tests für Sidebar (aktiver Eintrag, Abmelden, Theme) und Login (Fehler, Absenden). SPDX in den neuen Tests.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/components/layout/Sidebar.test.ts src/pages/Login.test.ts src/App.idle.test.ts src/mount.smoke.test.ts
 Doku: → T9
@@ -83,3 +85,5 @@ Doku: diese Task
 - T2: `ConfirmDialog` behält das Web-Verhalten (Sitzungsbindung, Escape per Capture-Listener) und bekommt nur die neuen `Button`-Varianten; `Toast` bleibt der Web-Stapel (`.toast-stack .toast.<kind>`, Klick schließt) im Look des Desktop-Toasts.
 - T2: `Kbd` kommt mit, weil `SearchField` ihn für `shortcut` nutzt. `@lucide/svelte` als `devDependency` wie alle Web-Pakete; `THIRD_PARTY_LICENSES.md` nennt es, weil die Icons im Bundle landen.
 - T2: Desktop-Tests gekürzt um `Badge`, `RadioGroup`, `Slider` (nicht kopiert); `primitives.test.ts` hydriert eine Sitzung wie `ConfirmDialog.test.ts`.
+- T2: E2E `crud.spec.ts:68/104` wählen „Schließen“ über `.modal-footer`: der Modal-Kopf trägt jetzt einen gleichnamigen `IconButton` (Prüfer-Blocker Runde 1).
+- T3: Das Logo bleibt als SVG in Sidebar und Login wie im Desktop (Marke, kein Lucide-Icon); raus sind die Icon-Pfade. `Input` bekommt `required` (Login-Felder hatten es nativ). Die Klasse `login-form` bleibt (Anker in `App.idle.test.ts`), dazu `.login-card`, `.login-error`, `#loginUser`, `#loginPass`. `theme-color` folgt dem neuen Dunkel `#17181b` (Nit aus T1). `theme.spec.ts` prüft den Hintergrund `rgb(23, 24, 27)` statt True-Black.

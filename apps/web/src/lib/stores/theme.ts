@@ -28,7 +28,7 @@ _theme.subscribe((theme) => {
     // Keep the mobile browser chrome in sync with the theme (web only; the desktop
     // index.html has no theme-color meta, so querySelector returns null and this skips).
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'light' ? '#fff' : '#000');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#fff' : '#17181b');
   }
   // setItem can THROW (Safari private mode / quota / blocked storage); an unhandled throw
   // here propagates out of this module's import and blanks the app. Swallow it — the theme

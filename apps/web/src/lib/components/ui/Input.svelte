@@ -21,6 +21,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     multiline?: boolean;
     rows?: number;
     disabled?: boolean;
+    required?: boolean;
     invalid?: boolean;
     fullWidth?: boolean;
     id?: string;
@@ -40,6 +41,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     multiline = false,
     rows = 4,
     disabled = false,
+    required = false,
     invalid = false,
     fullWidth = true,
     id,
@@ -69,6 +71,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {rows}
       {placeholder}
       {disabled}
+      {required}
       aria-invalid={bad || undefined}
       aria-describedby={field?.describedBy}
       {oninput}
@@ -82,6 +85,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {name}
       {placeholder}
       {disabled}
+      {required}
       {autocomplete}
       aria-invalid={bad || undefined}
       aria-describedby={field?.describedBy}
