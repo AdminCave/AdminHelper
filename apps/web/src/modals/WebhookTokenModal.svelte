@@ -7,6 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Copy from '@lucide/svelte/icons/copy';
   import { t } from '$lib/i18n';
   import { copyToClipboard } from '$lib/utils/clipboard';
 
@@ -33,22 +35,47 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </script>
 
 <Modal {open} title={title ?? $t('hook.webhookToken.title')} width="560px" {onClose}>
-  <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+  <p class="hint">
     {$t('hook.webhookToken.hint')}
   </p>
-  <div class="key-reveal">{token}</div>
-  <div style="margin-top:14px">
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
+  <div class="reveal">
+    <div class="key-reveal">{token}</div>
+    <IconButton icon={Copy} label={$t('action.copy')} variant="secondary" onclick={copy} />
+  </div>
+  <div class="cmd">
+    <div class="cmd-label">
       {$t('hook.webhookToken.triggerCmd')}
     </div>
-    <code
-      style="display:block;padding:8px 10px;background:var(--bg-elevated);border-radius:6px;font-size:12px;word-break:break-all"
-    >
+    <code>
       {curlExample}
     </code>
   </div>
   {#snippet footer()}
-    <Button variant="primary" onclick={copy}>{$t('action.copy')}</Button>
-    <Button variant="ghost" onclick={onClose}>{$t('action.close')}</Button>
+    <Button variant="secondary" onclick={onClose}>{$t('action.close')}</Button>
   {/snippet}
 </Modal>
+
+<style>
+  .hint {
+    margin-bottom: var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .cmd {
+    margin-top: var(--space-4);
+  }
+  .cmd-label {
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+  code {
+    display: block;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    word-break: break-all;
+  }
+</style>

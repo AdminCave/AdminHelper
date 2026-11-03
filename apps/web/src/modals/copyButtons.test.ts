@@ -131,3 +131,20 @@ describe.each(cases)('$name copy button', (c) => {
     );
   });
 });
+
+// The secret dialogs show the copy action as an icon button beside the value; the FRP preview
+// keeps its own layout (T7).
+describe.each(cases.filter((c) => c.name !== 'FrpConfigPreviewModal'))('$name layout', (c) => {
+  it('copies through one icon button beside the value', async () => {
+    const view = render(c.component, { props: c.props }) as unknown as Shown;
+    await c.prepare?.(view);
+
+    const button = view.getByRole('button', { name: 'Kopieren' });
+    expect(button.closest('.reveal')?.querySelector('.key-reveal')?.textContent?.trim()).toBe(
+      c.value,
+    );
+    expect(button.title).toBe('Kopieren');
+    expect(button.querySelector('svg.lucide')).not.toBeNull();
+    expect(button.closest('.modal-footer')).toBeNull();
+  });
+});
