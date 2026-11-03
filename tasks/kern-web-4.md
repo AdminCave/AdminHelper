@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Vorlage: Desktop-Bibliothek `apps/desktop/ui/src/components/ui/` und Tokens `apps/desktop/ui/src/styles/app.css` (nach `AdminCave/DesignSystem@244e890`). Stand `origin/main@4d1ad071`. Jede Task entfernt die globalen Klassen, die sie verwaist, und hält die Anker der Playwright-Specs (`apps/web/tests/e2e/*.spec.ts`, `apps/web/tests/live/smoke.live.spec.ts`) oder zieht sie in derselben Task nach.
 
-### T1 — Tokens auf DS-Stand (R-1082)  [ ]
+### T1 — Tokens auf DS-Stand (R-1082)  [x]
 Komponente: web · Dateien: apps/web/src/styles/global.css, apps/web/src/styles/tokens.test.ts, apps/web/src/theme-init.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @ca69efa0 2026-11-03T01:36:16+01:00
+Review: approve (.ah-out/review/kern-web-4/T1.verdict.json)
 Änderung: Die Token-Blöcke in `global.css` (dunkel und `[data-theme='light']`) bekommen Werte und Namen wie die Desktop-Tokens: soft black, `surface`/`raised`/`inset`, Status-Paare `--*-bg`/`--*-border`, Radien, Motion, `--ring-shadow`. Die alten Namen bleiben als Aliase. Neuer `tokens.test.ts` prüft Namen in beiden Themes, Aliase und reduzierte Bewegung wie `apps/desktop/ui/src/styles/tokens.test.ts`. SPDX im neuen Test.
 Verify: bash scripts/dev/verify.sh web --strict -- src/styles/tokens.test.ts src/theme-init.test.ts
 Doku: → T9

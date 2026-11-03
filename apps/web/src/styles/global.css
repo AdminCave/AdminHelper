@@ -1,63 +1,114 @@
 /* ── Design System ──────────────────────────────────────────────────── */
+/* Tokens nach AdminCave/DesignSystem@244e890 (tokens/*.css). Die alten AH-Namen
+   bleiben als var()-Aliase auf die DS-Namen, damit bestehende Seiten unverändert
+   laufen und dem Light-Override von selbst folgen. Neue Komponenten nehmen die
+   DS-Namen. */
 :root {
   color-scheme: dark;
 
-  /* Backgrounds — AdminCave DS (dark, True-Black) */
-  --bg: #000;
-  --bg-surface: #050506;
-  --bg-elevated: #101013;
-  --bg-sidebar: #000; /* getrennt von --bg via Border, nicht per Fläche */
+  /* Flächen — soft black */
+  --bg: #17181b;
+  --bg-subtle: #1b1c20;
+  --surface: #1e2024;
+  --surface-raised: #26282d;
+  --surface-inset: #131417;
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: rgba(255, 255, 255, 0.1);
 
-  /* Borders — Hairlines statt Flächen */
+  /* Rahmen — Hairlines statt Flächen */
   --border: rgba(255, 255, 255, 0.1);
-  --border-hover: rgba(255, 255, 255, 0.18);
-  --hover: rgba(255, 255, 255, 0.06); /* neutrales Hover-Overlay, kippt im Light */
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-faint: rgba(255, 255, 255, 0.06);
 
   /* Text */
   --text: #ededee;
+  --text-strong: #fff;
   --text-muted: #9aa1a8;
-  --text-faint: #6e757c;
+  --text-subtle: #6e757c;
+  --text-inverse: #000;
 
-  /* Accent — Blau nur als Akzent */
+  /* Akzent — Blau nur als Akzent */
   --accent: #4f9dff;
   --accent-hover: #7db3ff;
-  --accent-bg: rgba(79, 157, 255, 0.14);
+  --accent-muted: rgba(79, 157, 255, 0.14);
+  --accent-border: rgba(79, 157, 255, 0.32);
+  --link: #4f9dff;
 
-  /* Solid fill — monochrome Primary (Weiß auf Schwarz) */
+  /* Solid fill — monochrome Primary (Weiß auf Dunkel) */
   --fill-solid: #fff;
   --fill-solid-hover: #dfe2e5;
   --fill-solid-text: #000;
 
-  /* Semantic */
+  /* Status */
   --success: #34d186;
+  --success-bg: rgba(52, 209, 134, 0.12);
+  --success-border: rgba(52, 209, 134, 0.3);
   --warning: #f5b454;
+  --warning-bg: rgba(245, 180, 84, 0.12);
+  --warning-border: rgba(245, 180, 84, 0.3);
   --danger: #ff6b6b;
-  /* Alt-Aliase (nicht via var() referenziert) — an die DS-Semantik angeglichen */
-  --green: #34d186;
-  --yellow: #f5b454;
-  --red: #ff6b6b;
+  --danger-bg: rgba(255, 107, 107, 0.12);
+  --danger-border: rgba(255, 107, 107, 0.3);
+  --info: #4f9dff;
+  --info-bg: rgba(79, 157, 255, 0.12);
+  --info-border: rgba(79, 157, 255, 0.3);
 
-  /* Spacing */
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 24px;
-  --sp-6: 32px;
-  --sp-7: 48px;
-
-  /* Radii — DS: großzügiger; Pill (999px) für Buttons/Inputs/Chips */
-  --radius-lg: 16px;
-  --radius-md: 12px;
-  --radius-sm: 8px;
-  --radius-pill: 999px;
-  --radius-2xl: 28px;
-
-  /* Shadows + Fokus-Ring */
-  --shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.4);
+  /* Schatten + Fokus-Ring */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
   --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
   --ring: rgba(79, 157, 255, 0.55);
+  --ring-width: 3px;
+  --ring-shadow: 0 0 0 var(--ring-width) var(--ring);
+
+  /* Radius */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-pill: 999px;
+  --radius-field: 12px;
+
+  /* Bewegung */
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Abstände — 4px-Raster */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Alte AH-Namen (Aliase) */
+  --bg-surface: var(--surface);
+  --bg-elevated: var(--surface-raised);
+  --bg-sidebar: var(--bg-subtle);
+  --border-hover: var(--border-strong);
+  --hover: var(--surface-hover);
+  --text-faint: var(--text-subtle);
+  --accent-bg: var(--accent-muted);
+  --shadow: var(--shadow-md);
+  --sp-1: var(--space-1);
+  --sp-2: var(--space-2);
+  --sp-3: var(--space-3);
+  --sp-4: var(--space-4);
+  --sp-5: var(--space-6);
+  --sp-6: var(--space-8);
+  --sp-7: var(--space-12);
 
   /* Typography */
   --font: 'Geist Variable', 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -71,51 +122,75 @@
 }
 
 /* ── Light theme ────────────────────────────────────────────────────── */
-/* DS-Light-Aliase auf dieselben AH-Namen; nur Farben/Schatten kippen,
-   Radien/Spacing/Fonts/Text-Skala erben aus :root. Aktiv via
-   <html data-theme="light"> (Default = dark, Attribut fehlt/"dark"). */
+/* Nur Farben und Schatten kippen; Radius, Bewegung, Abstände, Fonts und die
+   Aliase erben aus :root. Aktiv via <html data-theme="light"> (Default = dark). */
 :root[data-theme='light'] {
   color-scheme: light;
 
-  /* Backgrounds — Pure-White */
   --bg: #fff;
-  --bg-surface: #fff;
-  --bg-elevated: #fff;
-  --bg-sidebar: #f4f5f6;
+  --bg-subtle: #f4f5f6;
+  --surface: #fff;
+  --surface-raised: #fff;
+  --surface-inset: #f4f5f6;
+  --surface-hover: rgba(0, 0, 0, 0.04);
+  --surface-active: rgba(0, 0, 0, 0.07);
 
-  /* Borders */
   --border: rgba(0, 0, 0, 0.1);
-  --border-hover: rgba(0, 0, 0, 0.16);
-  --hover: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --border-faint: rgba(0, 0, 0, 0.05);
 
-  /* Text */
   --text: #16181c;
+  --text-strong: #000;
   --text-muted: #565c64;
-  --text-faint: #868d94;
+  --text-subtle: #868d94;
+  --text-inverse: #fff;
 
-  /* Accent */
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
-  --accent-bg: rgba(37, 99, 235, 0.1);
+  --accent-muted: rgba(37, 99, 235, 0.1);
+  --accent-border: rgba(37, 99, 235, 0.26);
+  --link: #2563eb;
 
-  /* Solid fill — monochrome Primary (Schwarz auf Weiß) */
   --fill-solid: #000;
-  --fill-solid-hover: #2a2d33;
+  --fill-solid-hover: #16181c;
   --fill-solid-text: #fff;
 
-  /* Semantic */
-  --success: #1f9d57;
-  --warning: #e0961f;
-  --danger: #e5484d;
-  --green: #1f9d57;
-  --yellow: #e0961f;
-  --red: #e5484d;
+  --success: #158045;
+  --success-bg: rgba(31, 157, 87, 0.1);
+  --success-border: rgba(31, 157, 87, 0.28);
+  --warning: #b9780f;
+  --warning-bg: rgba(224, 150, 31, 0.12);
+  --warning-border: rgba(224, 150, 31, 0.3);
+  --danger: #c4363b;
+  --danger-bg: rgba(229, 72, 77, 0.1);
+  --danger-border: rgba(229, 72, 77, 0.28);
+  --info: #2563eb;
+  --info-bg: rgba(37, 99, 235, 0.1);
+  --info-border: rgba(37, 99, 235, 0.26);
 
-  /* Shadows + Fokus-Ring — hell */
-  --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
-  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.15);
-  --ring: rgba(37, 99, 235, 0.55);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 16px 48px rgba(16, 24, 40, 0.12);
+  --shadow-pop: 0 8px 28px rgba(16, 24, 40, 0.14);
+  --ring: rgba(37, 99, 235, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}
+
+/* Fokus-Ring des DS; :where() hält die Spezifität bei 0, damit eigene
+   :focus-visible-Regeln der Seiten weiter gewinnen. Als outline statt
+   --ring-shadow: Klassen mit eigenem box-shadow würden den Ring sonst
+   überdecken und den Fokus unsichtbar machen. */
+:where(:focus-visible) {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: 0;
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────── */
