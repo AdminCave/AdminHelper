@@ -9,4 +9,5 @@
   Update auf v4 folgt getrennt.
 - **CI: Runner ubuntu-26.04:** alle Linux-Jobs laufen ausdruecklich auf `ubuntu-26.04`. Der Desktop-Build des
   Releases und sein Smoke in CI bleiben auf `ubuntu-24.04`, damit das ausgelieferte Binary weiter auf Ubuntu 24.04
-  und Debian 12 startet.
+  und Debian 12 startet. Auch der Playwright-E2E-Job bleibt vorerst auf `ubuntu-24.04`, bis das Web-Frontend
+  Playwright 1.61 oder neuer nutzt (erst diese Version kennt Ubuntu 26.04).

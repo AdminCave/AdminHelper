@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ci-3 — Task-Ledger
-Status: aktiv · Branch: feature/ci-3 · Review: pro Task
+Status: bereit · Branch: feature/ci-3 · Review: pro Task
 Spec: docs/features/ci-3.md (Roadmap R-1019, R-1020, R-1042, R-1085)
 Heavy: none — nur CI-Workflows und ein pytest-Plugin der Server-Tests; die PR-CI fährt die geänderten Jobs selbst, `release.yml` und das Verify von `docker.yml` erst am nächsten Tag (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,8 +61,10 @@ Review: approve (.ah-out/review/ci-3/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: changelog.d/ci-3.md
 
-### T7 — Playwright-E2E bleibt auf ubuntu-24.04, bis Playwright 26.04 kennt (R-1042)  [ ]
+### T7 — Playwright-E2E bleibt auf ubuntu-24.04, bis Playwright 26.04 kennt (R-1042)  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4f1b494c 2026-11-03T20:02:50+01:00
+Review: approve (.ah-out/review/ci-3/T7.verdict.json)
 Änderung: Der Job `frontend-e2e` (`ci.yml:672`) läuft auf `ubuntu-24.04` mit Kommentar: Playwright 1.60 (`apps/web/package.json`) bricht `playwright install --with-deps` auf 26.04 ab („Playwright does not support chromium on ubuntu26.04-x64“, PR #387, Lauf 41693749807); 26.04 kennt Playwright erst ab 1.61 (Release-Notes v1.61.0), das Update gehört zu R-1039 (kern-deps-3). Doku DE+EN und Changelog nennen die Ausnahme. Fund der PR-CI.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md

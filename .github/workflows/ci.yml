@@ -671,7 +671,9 @@ jobs:
 
   frontend-e2e:
     name: Web-Frontend (Playwright E2E)
-    runs-on: ubuntu-26.04
+    # Playwright 1.60 refuses to install chromium on ubuntu-26.04; 26.04 support starts with
+    # 1.61. The job moves to 26.04 with the npm update (R-1039).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
