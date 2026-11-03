@@ -235,7 +235,12 @@ def get_client_identity(request: Request) -> ClientIdentity:
     not_after = cert.not_valid_after_utc.replace(tzinfo=None)
     # The gateway checks the validity only at the handshake and resumes a TLS session
     # for up to an hour (apps/gateway/nginx.conf), so a certificate can expire behind it.
-    now = utcnow_naive()
+    # One instant per request, as in _from_gateway: the scope guard and the binding to
+    # the user must not fall on both sides of not_after.
+    now = getattr(request.state, "identity_clock", None)
+    if now is None:
+        now = utcnow_naive()
+        request.state.identity_clock = now
     if now < not_before or now >= not_after:
         return _UNVERIFIED
     scope = _first(cert, NameOID.ORGANIZATIONAL_UNIT_NAME)

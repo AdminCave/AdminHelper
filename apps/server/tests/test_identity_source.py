@@ -370,6 +370,29 @@ def test_the_binding_to_the_user_sees_the_answer_of_the_scope_guard(
     assert flipping.answers == [True]
 
 
+def test_the_binding_to_the_user_sees_the_clock_of_the_scope_guard(
+    db_session, admin_user, monkeypatch
+):
+    # The certificate expires between the scope guard and the binding to the user: were
+    # the second read to see it expired, a cert of another user would pass with an admin
+    # token.
+    monkeypatch.setattr(config, "MTLS_ENFORCE", True)
+    identity._GATEWAY.refresh()
+    reads: list[datetime.datetime] = []
+    real = identity.utcnow_naive
+
+    def clock() -> datetime.datetime:
+        late = real() + datetime.timedelta(days=3650)
+        reads.append(late if reads else real())
+        return reads[-1]
+
+    monkeypatch.setattr(identity, "utcnow_naive", clock)
+    resp = _get_servers(db_session, GATEWAY, admin_user.username, cn="intruder")
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"] == identity.CERT_USER_MISMATCH
+    assert len(reads) == 1
+
+
 def test_the_app_starts_the_name_lookups_before_the_first_request(test_client, monkeypatch):
     import httpx
 
