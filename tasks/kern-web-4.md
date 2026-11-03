@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-web-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-web-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-web-4 · Review: pro Task
 Spec: docs/features/kern-web-4.md (Roadmap R-1082)
 Heavy: linux-full — das Web-Panel läuft im Sammellauf gegen den echten Stack (web-live, Playwright)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -83,8 +83,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/mount.smoke.test.ts
 Doku: keine (Testdaten)
 Abhängt von: T3, T4, T5, T6, T7
 
-### T9 — Doku DE+EN und Changelog (R-1082)  [ ]
+### T9 — Doku DE+EN und Changelog (R-1082)  [x]
 Komponente: web · Dateien: docs/developer/webui.html, docs/en/developer/webui.html, changelog.d/kern-web-4.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @16bafbb8 2026-11-03T02:30:21+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Entwickler-Doku Web-UI: Tokens nach DS-Stand, Bibliothek unter `lib/components/ui/` als Kopie der Desktop-Bausteine, Lucide; Changelog-Fragment.
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh web --strict -- src/styles/tokens.test.ts
