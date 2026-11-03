@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@03c4068a`. Jede Task liegt auf einem Risikopfad (PKI, FRP): `security` je Task. T3 und T4 fahren als R-1121 in `tasks/kern-ca-9.md`.
 
-### T1 — frps-Leaf trägt einen eigenen festen Namen (R-1112)  [ ]
+### T1 — frps-Leaf trägt einen eigenen festen Namen (R-1112)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/config.py, apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_frps_cert.py, apps/ca-issuer/tests/test_gateway_cert.py, apps/ca-issuer/tests/test_config.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @d3809767 2026-11-03T20:33:36+01:00
+Review: approve (.ah-out/review/kern-ca-8/T1.verdict.json)
 Änderung: `config.py` bekommt die Konstante `FRPS_TLS_NAME = "frps.adminhelper.invalid"`; `frps_extra_sans()` hängt sie an (einmal, auch wenn sie schon dasteht), andere Leafs tragen sie nicht (Entscheidungen im Code und unter Entscheidungen). Tests zuerst rot: das frps-Leaf trägt den Namen neben `DOMAIN` und den Extra-SANs; ein bestehendes frps-Leaf ohne ihn wird beim Start neu ausgestellt; kein anderes Leaf trägt ihn.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_frps_cert.py tests/test_gateway_cert.py tests/test_config.py
 Doku: → T5
@@ -32,3 +34,4 @@ Doku: docs/admin/frp-tunnel.html + EN · docs/developer/agent.html + EN · chang
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: nennt `DOMAIN` selbst den frps-Namen, bricht der Start ab (`main.py`, RuntimeError); nennt ihn nur `EXTRA_SANS`, lässt der ca-issuer ihn mit Warnung weg (Spec, Trade-offs). Der Name wird über `config.frps_leaf_sans()` angehängt, `frps_extra_sans()` behält seine Bedeutung (Fallback-Test `test_config.py`). Beide Prüfungen erkennen auch `*.adminhelper.invalid` (`config.covers_frps_tls_name`, Fund der Task-Prüfung).

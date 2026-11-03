@@ -18,7 +18,7 @@ from cryptography.x509 import DNSName
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
-from app import pki, rotation, storage
+from app import main, pki, rotation, storage
 from app.storage import Intermediate, ensure_gateway_cert
 from tests import renewal
 
@@ -445,3 +445,17 @@ def test_each_phase_change_of_a_root_renewal_remints_what_changed(monkeypatch, t
     assert len({keys[0], keys[2], keys[3]}) == 3
     new_root = pki.cert_from_pem((pki_dir / "root.crt").read_bytes())
     assert _der(_pems(out / "gateway-fullchain.pem")[1:]) == _der([finished.cert, new_root])
+
+
+@pytest.mark.parametrize("domain", ["FRPS.adminhelper.invalid", "*.adminhelper.invalid"])
+def test_boot_refuses_a_domain_that_covers_the_frps_tls_name(monkeypatch, tmp_path, domain):
+    # R-1112: the gateway leaf's primary name cannot be left out, so the boot stops instead.
+    inter = storage.ensure_hierarchy(tmp_path / "pki", b"pw")
+    monkeypatch.setenv("DOMAIN", domain)
+    monkeypatch.setenv("CA_TRUST_DIR", "")
+    monkeypatch.setenv("CA_FRPS_CERT_DIR", "")
+    monkeypatch.setenv("CA_GATEWAY_CERT_DIR", str(tmp_path / "gw"))
+
+    with pytest.raises(RuntimeError, match="frps.adminhelper.invalid"):
+        main.provision_boot_material(inter)
+    assert not (tmp_path / "gw").exists()

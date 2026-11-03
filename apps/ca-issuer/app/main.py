@@ -42,6 +42,10 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
     # The gateway can't sign its own leaf (chicken-egg, D6): give it an
     # access-signed TLS leaf + trust bundle.
     if config.gateway_cert_dir():
+        if config.covers_frps_tls_name(config.gateway_domain()):
+            raise RuntimeError(
+                f"DOMAIN must not cover {config.FRPS_TLS_NAME}: only the frps leaf carries it"
+            )
         ensure_gateway_cert(
             Path(config.gateway_cert_dir()),
             intermediates["access"],
@@ -55,7 +59,7 @@ def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
             Path(config.frps_cert_dir()),
             intermediates["tunnel"],
             config.frps_server_addr(),
-            config.frps_extra_sans(),
+            config.frps_leaf_sans(),
             # The desktop STCP visitor presents its access cert (F2), so frps must
             # trust the access intermediate alongside tunnel.
             extra_trust=(intermediates["access"],),
