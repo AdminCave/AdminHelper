@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ci-3 — Task-Ledger
-Status: bereit · Branch: feature/ci-3 · Review: pro Task
+Status: aktiv · Branch: feature/ci-3 · Review: pro Task
 Spec: docs/features/ci-3.md (Roadmap R-1019, R-1020, R-1042, R-1085)
 Heavy: none — nur CI-Workflows und ein pytest-Plugin der Server-Tests; die PR-CI fährt die geänderten Jobs selbst, `release.yml` und das Verify von `docker.yml` erst am nächsten Tag (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -52,6 +52,12 @@ Komponente: scripts · Dateien: .github/workflows/docker.yml, docs/developer/cic
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md
 Abhängt von: T3
+
+### T6 — Abschlussprüfung: Changelog nennt die cosign-Ausnahme, cgo-Kommentar (R-1042)  [ ]
+Komponente: scripts · Dateien: changelog.d/ci-3.md, .github/workflows/ci.yml
+Änderung: Der Changelog-Eintrag zu den Actions sagt nicht mehr „jeder Action“, sondern nennt `sigstore/cosign-installer` als Ausnahme (folgt mit R-1119); der Kommentar im Job `agent` (`ci.yml:573`) nennt `ubuntu-26.04` statt `ubuntu-latest`. Fund der Abschlussprüfung.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: changelog.d/ci-3.md
 
 ## Entscheidungen
 - T3: der Manifest-Upload aus T2 stand im Job `server` zwischen `Run pytest` und `No test skipped`; `test_release_images.py::test_the_skip_step_follows_pytest_in_the_leg_with_every_base_image` verlangt den Skip-Schritt direkt nach pytest und war rot (T2-Verify fuhr die Datei nicht). T3 setzt den Upload hinter den Skip-Schritt; alle Server-Tests, die die Workflows lesen: 69 passed, 2 skipped (Redis lokal nicht da).
