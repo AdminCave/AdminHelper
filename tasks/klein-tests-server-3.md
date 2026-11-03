@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-server-3 — Task-Ledger
-Status: geplant · Branch: feature/klein-tests-server-3 · Review: am Ende
+Status: aktiv · Branch: feature/klein-tests-server-3 · Review: am Ende
 Spec: docs/features/klein-tests-server-3.md (Roadmap R-1084)
 Heavy: none — nur ein Server-Unit-Test, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
