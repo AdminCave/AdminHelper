@@ -31,7 +31,7 @@ jobs:
   # PYTEST_SHARD names the count, which matches the shard list (test_ci_shards.py).
   server:
     name: Server (pytest, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The 3.14 leg pulls the base images and runs the image tests on top of the suite.
     timeout-minutes: 25
     strategy:
@@ -141,7 +141,7 @@ jobs:
     name: Server (pytest, py${{ matrix.python-version }})
     needs: server
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     strategy:
       # A red leg must not cancel the other: its result would read cancelled, not failure.
@@ -187,7 +187,7 @@ jobs:
 
   python-lint:
     name: Python (ruff check + format)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -206,7 +206,7 @@ jobs:
 
   monitoring:
     name: Monitoring (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
       # For the tests that need a real Postgres: test_migrations_smoke and
@@ -247,7 +247,7 @@ jobs:
 
   ca-issuer:
     name: CA-Issuer (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
       postgres:
@@ -297,7 +297,7 @@ jobs:
   # test_lock_pins.py holds python-version in lockstep with each Dockerfile's FROM.
   python-lock-server:
     name: Server (pytest, image lock, shard ${{ matrix.shard }}/2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -363,7 +363,7 @@ jobs:
     name: Server (pytest, image lock)
     needs: python-lock-server
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -404,7 +404,7 @@ jobs:
 
   python-lock-monitoring:
     name: Monitoring (pytest, image lock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
       postgres:
@@ -443,7 +443,7 @@ jobs:
 
   python-lock-ca-issuer:
     name: CA-Issuer (pytest, image lock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     # As in ca-issuer: Postgres only for the pg_engine tests, through AH_TEST_DB.
     services:
@@ -483,7 +483,7 @@ jobs:
 
   schemathesis:
     name: Schema fuzzing (server + monitoring + ca-issuer)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Its own job, not a step inside the three pytest ones: own budget, own
     # verdict, and a failure here says "a route answers something its schema does
     # not describe" rather than drowning in an unrelated suite.
@@ -537,7 +537,7 @@ jobs:
 
   agent:
     name: Go Agent (gofmt + vet + test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -607,7 +607,7 @@ jobs:
 
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -646,7 +646,7 @@ jobs:
 
   frontend:
     name: Web-Frontend (check + lint + unit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -671,7 +671,7 @@ jobs:
 
   frontend-e2e:
     name: Web-Frontend (Playwright E2E)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -706,7 +706,7 @@ jobs:
 
   rust:
     name: Desktop-Backend (fmt + clippy + test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -780,7 +780,8 @@ jobs:
   # deb-only keeps it affordable as a PR gate.
   tauri-build-smoke:
     name: Desktop (tauri build smoke, Linux)
-    runs-on: ubuntu-latest
+    # The runner of release.yml desktop-linux: the smoke builds what the release ships.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -827,7 +828,7 @@ jobs:
   # break (e.g. hash mismatch under --require-hashes) landed on main first.
   docker-build:
     name: ${{ matrix.image }} image (build only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -867,7 +868,7 @@ jobs:
   # and is the 4th pin.
   frp-consistency:
     name: Pinned versions + signing key in lockstep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -919,7 +920,7 @@ jobs:
 
   openapi-compat:
     name: OpenAPI breaking changes (oasdiff)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -971,7 +972,7 @@ jobs:
   # base logic is still held by it (an admin merge then).
   public-repo-guard:
     name: Public repo guard (review.sh sec)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1028,7 +1029,7 @@ jobs:
   # scripts are clean at default.
   ops-scripts:
     name: Ops scripts (shellcheck + update test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1078,7 +1079,7 @@ jobs:
 
   gateway-config:
     name: Gateway (nginx -t)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1117,7 +1118,7 @@ jobs:
   integration-stack:
     name: From-outside stack (mTLS gateway)
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

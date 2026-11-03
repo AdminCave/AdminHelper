@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ci-3 — Task-Ledger
-Status: aktiv · Branch: feature/ci-3 · Review: pro Task
+Status: bereit · Branch: feature/ci-3 · Review: pro Task
 Spec: docs/features/ci-3.md (Roadmap R-1019, R-1020, R-1042, R-1085)
 Heavy: none — nur CI-Workflows und ein pytest-Plugin der Server-Tests; die PR-CI fährt die geänderten Jobs selbst, `release.yml` und das Verify von `docker.yml` erst am nächsten Tag (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,8 +37,10 @@ Review: approve (.ah-out/review/ci-3/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: changelog.d/ci-3.md
 
-### T4 — Runner ubuntu-26.04, Desktop-Release-Build auf 24.04 (R-1042)  [ ]
+### T4 — Runner ubuntu-26.04, Desktop-Release-Build auf 24.04 (R-1042)  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/docker.yml, .github/workflows/audit.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6696ba80 2026-11-03T18:47:46+01:00
+Review: approve (.ah-out/review/ci-3/T4.verdict.json)
 Änderung: `runs-on: ubuntu-latest` wird `ubuntu-26.04`; nur `release.yml` Job `desktop-linux` wird ausdrücklich `ubuntu-24.04` mit Kommentar (glibc des ausgelieferten Binaries, Spec Trade-offs). `windows-latest` bleibt. Doku DE+EN nennt Runner und die Ausnahme.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md
@@ -53,3 +55,4 @@ Abhängt von: T3
 
 ## Entscheidungen
 - T3: der Manifest-Upload aus T2 stand im Job `server` zwischen `Run pytest` und `No test skipped`; `test_release_images.py::test_the_skip_step_follows_pytest_in_the_leg_with_every_base_image` verlangt den Skip-Schritt direkt nach pytest und war rot (T2-Verify fuhr die Datei nicht). T3 setzt den Upload hinter den Skip-Schritt; alle Server-Tests, die die Workflows lesen: 69 passed, 2 skipped (Redis lokal nicht da).
+- T4: auch der `tauri-build-smoke` in `ci.yml` bleibt auf `ubuntu-24.04`, nicht nur `release.yml` `desktop-linux`: der Smoke soll das bauen, was das Release ausliefert, sonst prüft die PR-CI einen anderen Build-Host (andere apt-Pakete, andere glibc) als den des Releases.

@@ -34,7 +34,9 @@ jobs:
     # Only on a tag: a workflow_dispatch from a branch yields VERSION=main (non-semver),
     # failing build-deb/rpm after a full build and burning runner minutes (4.90).
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    runs-on: ubuntu-latest
+    # The shipped binary needs the glibc it was built against: built on 26.04 it would no
+    # longer start on 24.04 or Debian 12. Pinned, so it does not move with ubuntu-latest.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri system dependencies
@@ -91,7 +93,7 @@ jobs:
   agent:
     name: Go Agent (deb/rpm/bins)
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -363,7 +365,7 @@ jobs:
     # partial-asset draft that looks complete while missing core assets, or one
     # whose Windows agent does not start.
     if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.agent-windows-smoke.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
