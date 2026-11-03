@@ -14,3 +14,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   abzubrechen.
 - **update.sh: gescheitertes Backup-first (R-1050):** die Meldung ist jetzt englisch; ein Test belegt, dass das Update
   dann ohne Aenderung endet.
+- **agent-install.sh: Repo-Schluessel mit designiertem Widerrufer (R-1045):** die Pruefung des gepinnten
+  Fingerabdrucks las bei einem solchen Schluessel keinen Fingerabdruck und brach die Installation ab; sie nimmt jetzt
+  den eigenen Fingerabdruck des Schluessels.

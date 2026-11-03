@@ -53,8 +53,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: changelog.d/ops-6.md
 Abhängt von: T4
 
-### T6 — agent-install.sh: Schlüssel mit designiertem Widerrufer (R-1045)  [ ]
+### T6 — agent-install.sh: Schlüssel mit designiertem Widerrufer (R-1045)  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @418ddb33 2026-11-03T16:19:48+01:00
+Review: approve (.ah-out/review/ops-6/T6.verdict.json)
 Änderung: `primary_fprs` nimmt den ersten `fpr` nach `pub` über `rvk` hinweg, nie über `sub`/`uid` hinaus. Test mit einem Wegwerf-Schlüssel mit Widerrufer (echtes gpg), rot ohne Fix.
 Beweis: scripts/agent-install.sh:177, Nachstellung mit Wegwerf-Schluessel pub,rvk,fpr · Dedup-Key: bug:scripts:agent-install.sh:primary_fprs-rvk
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test

@@ -174,11 +174,13 @@ ensure_gpg() {
 }
 
 # primary_fprs HOME FILE — one line per primary key in FILE: the fingerprint of
-# the fpr record right after its pub record, "?" if none follows.
+# the first fpr record after its pub record, "?" if none follows. A designated
+# revoker (rvk) stands between the two and carries the revoker's fingerprint in
+# its own field, so it is passed over; any other record ends the search.
 primary_fprs() {
     local listing
     listing=$(gpg --homedir "$1" --batch --no-autostart --show-keys --with-colons "$2" 2>/dev/null) || true
-    awk -F: 'p {print ($1 == "fpr" ? toupper($10) : "?"); p = 0} $1 == "pub" {p = 1} END {if (p) print "?"}' <<<"$listing"
+    awk -F: 'p && $1 == "rvk" {next} p {print ($1 == "fpr" ? toupper($10) : "?"); p = 0} $1 == "pub" {p = 1} END {if (p) print "?"}' <<<"$listing"
 }
 
 # pinned_keyring IN OUT [GPG_OPTION...] — write to OUT only the key of IN whose
