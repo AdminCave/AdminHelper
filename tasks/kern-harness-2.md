@@ -10,8 +10,10 @@ Heavy: linux-full — run.sh installiert die npm-Bäume auf den Boxen neu; Bewei
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — npm_ci_if_stale vergleicht einen Lock-Hash-Stempel (R-1106)  [ ]
+### T1 — npm_ci_if_stale vergleicht einen Lock-Hash-Stempel (R-1106)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, scripts/dev/worktree-setup.sh, scripts/tests/worktree_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b45f0475 2026-11-03T13:37:21+01:00
+Review: am Ende (Branch-Review)
 Änderung: `npm_ci_if_stale` installiert, wenn `node_modules/.ah-lock-sha256` fehlt oder nicht dem sha256 von `package-lock.json` entspricht, und schreibt den Stempel nach erfolgreichem `npm ci` über tmp+mv. `worktree-setup.sh` lässt das mtime-`touch` weg. Die Tests stellen auf Stempel um, und ein neuer Fall bildet den Sammellauf-Fehler nach: `node_modules` jünger als der Lock, aber mit dem Stempel eines anderen Locks, führt zu `npm ci`.
 Beweis: Sammellauf 2026-11-02-2310 (desktop-ui svelte-check 31x Cannot find module @lucide/svelte) · scripts/tests/run.sh:572 · Dedup-Key: bug:scripts:run.sh:npm_ci_if_stale-mtime (R-1106) · HEAD: 4e0d5f7e
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test worktree_setup_test
