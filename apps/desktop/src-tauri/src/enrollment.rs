@@ -1846,6 +1846,224 @@ mod tests {
                 other => panic!("erwartet General-Gefahrenmeldung, war: {other:?}"),
             }
         }
+
+        // The PKI through a root renewal (`rotate-root`, R-1021): the old root R,
+        // the new root N, an access intermediate under each, and the cross
+        // certificate X (subject and key of N, issued by R) that `switch` puts into
+        // the gateway's chain. Built like `apps/ca-issuer/app/pki.py`.
+        struct Renewal {
+            old_root: Ca,
+            new_root: Ca,
+            old_access: Ca,
+            new_access: Ca,
+            cross: rcgen::Certificate,
+        }
+
+        fn ca_params(cn: &str, constraints: BasicConstraints) -> CertificateParams {
+            let mut params = CertificateParams::new(vec![]).unwrap();
+            params.is_ca = IsCa::Ca(constraints);
+            params.distinguished_name.push(DnType::CommonName, cn);
+            params
+        }
+
+        fn make_renewal() -> Renewal {
+            let root = |cn: &str| {
+                let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+                let params = ca_params(cn, BasicConstraints::Unconstrained);
+                let cert = params.self_signed(&key).unwrap();
+                Ca { cert, params, key }
+            };
+            let intermediate = |cn: &str, root: &Ca| {
+                let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+                let params = ca_params(cn, BasicConstraints::Constrained(0));
+                let cert = params
+                    .signed_by(&key, &rcgen::Issuer::from_params(&root.params, &root.key))
+                    .unwrap();
+                Ca { cert, params, key }
+            };
+            let old_root = root("AdminHelper Root CA");
+            let new_root = root("AdminHelper Root CA 2026-11-02");
+            let cross = ca_params(
+                "AdminHelper Root CA 2026-11-02",
+                BasicConstraints::Constrained(1),
+            )
+            .signed_by(
+                &new_root.key,
+                &rcgen::Issuer::from_params(&old_root.params, &old_root.key),
+            )
+            .unwrap();
+            let old_access = intermediate("AdminHelper Access Intermediate", &old_root);
+            let new_access = intermediate("AdminHelper Access Intermediate 2026-11-02", &new_root);
+            Renewal {
+                old_root,
+                new_root,
+                old_access,
+                new_access,
+                cross,
+            }
+        }
+
+        fn pems(certs: &[&rcgen::Certificate]) -> String {
+            certs.iter().map(|cert| cert.pem()).collect()
+        }
+
+        /// (chain_pem, key_pem) of the gateway on :443: a server leaf under
+        /// `access`, then `access`, then `rest`.
+        fn gateway(access: &Ca, rest: &[&rcgen::Certificate]) -> (String, String) {
+            let (leaf, key) = make_leaf(
+                access,
+                "gateway",
+                vec!["localhost".to_string()],
+                ExtendedKeyUsagePurpose::ServerAuth,
+            );
+            (format!("{leaf}{}{}", access.cert.pem(), pems(rest)), key)
+        }
+
+        /// Serve `gateway` once and connect with a desktop that holds `anchors` as
+        /// its `enroll|ca`. The gateway's check of the desktop's leaf is not under
+        /// test: it trusts the intermediate the leaf comes from.
+        async fn connect(
+            client_ca: &Ca,
+            gateway: &(String, String),
+            anchors: &str,
+        ) -> Result<reqwest::Response, reqwest::Error> {
+            let (cli_cert, cli_key) = make_leaf(
+                client_ca,
+                "user-01",
+                vec![],
+                ExtendedKeyUsagePurpose::ClientAuth,
+            );
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(serve_once(
+                listener,
+                server_config(client_ca, &gateway.0, &gateway.1),
+            ));
+            let client = build_mtls_client(&cli_key, &cli_cert, anchors).unwrap();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.get(format!("https://127.0.0.1:{port}/")).send(),
+            )
+            .await
+            .expect("the handshake did not finish within 5s")
+        }
+
+        // The pin the provisioning tab hands the agent as `--ca-fp` is the last PEM
+        // of `enroll|ca`: the root :8444 presents in that phase, R while staged and
+        // N from the switch on (spec: contract `chain`).
+        #[test]
+        fn the_pin_is_the_last_root_of_the_chain_in_every_phase() {
+            let r = make_renewal();
+            let fingerprint = |cert: &rcgen::Certificate| crate::tofu::fingerprint(cert.der());
+            let staged = pems(&[&r.old_access.cert, &r.new_root.cert, &r.old_root.cert]);
+            let switched = pems(&[&r.new_access.cert, &r.old_root.cert, &r.new_root.cert]);
+            let finished = pems(&[&r.new_access.cert, &r.new_root.cert]);
+
+            assert_eq!(
+                root_fingerprint_of_chain(&staged),
+                Some(fingerprint(&r.old_root.cert))
+            );
+            assert_eq!(
+                root_fingerprint_of_chain(&switched),
+                Some(fingerprint(&r.new_root.cert))
+            );
+            assert_eq!(
+                root_fingerprint_of_chain(&finished),
+                Some(fingerprint(&r.new_root.cert))
+            );
+        }
+
+        // A desktop keeps its `enroll|ca` from its last enroll or renew until the
+        // next one, so every phase's bundle must accept the gateway of the phase
+        // after it: R alone the cross chain, a bundle with N the chain after finish.
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn keeps_the_gateway_through_a_root_renewal() {
+            let r = make_renewal();
+            let before_stage = pems(&[&r.old_access.cert, &r.old_root.cert]);
+            let staged = pems(&[&r.old_access.cert, &r.new_root.cert, &r.old_root.cert]);
+            let switched = pems(&[&r.new_access.cert, &r.old_root.cert, &r.new_root.cert]);
+            let compromised = pems(&[&r.new_access.cert, &r.new_root.cert]);
+            let gateway_staged = gateway(&r.old_access, &[&r.old_root.cert]);
+            let gateway_switched = gateway(&r.new_access, &[&r.cross, &r.old_root.cert]);
+            let gateway_finished = gateway(&r.new_access, &[&r.new_root.cert]);
+
+            let cases = [
+                (
+                    "staged bundle, gateway before the switch",
+                    &staged,
+                    &gateway_staged,
+                ),
+                (
+                    "bundle from before the stage, switched gateway",
+                    &before_stage,
+                    &gateway_switched,
+                ),
+                (
+                    "staged bundle, switched gateway",
+                    &staged,
+                    &gateway_switched,
+                ),
+                (
+                    "staged bundle, finished gateway",
+                    &staged,
+                    &gateway_finished,
+                ),
+                (
+                    "switched bundle, switched gateway",
+                    &switched,
+                    &gateway_switched,
+                ),
+                (
+                    "switched bundle, finished gateway",
+                    &switched,
+                    &gateway_finished,
+                ),
+                (
+                    "compromised bundle, switched gateway",
+                    &compromised,
+                    &gateway_switched,
+                ),
+            ];
+            for (case, anchors, gateway) in cases {
+                let response = connect(&r.old_access, gateway, anchors).await;
+                assert_eq!(
+                    response.map(|resp| resp.status()).ok(),
+                    Some(reqwest::StatusCode::OK),
+                    "{case}"
+                );
+            }
+        }
+
+        // The counter-case: a desktop that last renewed before the stage trusts R
+        // only, and after finish the gateway no longer chains to R. It must fail on
+        // the pin, the same gateway still serving a desktop that holds N.
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn loses_the_gateway_after_finish_with_a_bundle_from_before_the_stage() {
+            let r = make_renewal();
+            let before_stage = pems(&[&r.old_access.cert, &r.old_root.cert]);
+            let staged = pems(&[&r.old_access.cert, &r.new_root.cert, &r.old_root.cert]);
+            let gateway_finished = gateway(&r.new_access, &[&r.new_root.cert]);
+
+            let held_n = connect(&r.old_access, &gateway_finished, &staged).await;
+            assert_eq!(
+                held_n.map(|resp| resp.status()).ok(),
+                Some(reqwest::StatusCode::OK)
+            );
+
+            let err = connect(&r.old_access, &gateway_finished, &before_stage)
+                .await
+                .expect_err("a bundle with R only reached the finished gateway");
+            let mut causes = Vec::new();
+            let mut cause: Option<&dyn std::error::Error> = Some(&err);
+            while let Some(current) = cause {
+                causes.push(current.to_string());
+                cause = current.source();
+            }
+            assert!(
+                causes.iter().any(|c| c.contains("ERR_CA_PIN_MISMATCH")),
+                "expected the pin mismatch, got: {causes:?}"
+            );
+        }
     }
 
     // The steps of the enroll flows that touch only the keyring, against the

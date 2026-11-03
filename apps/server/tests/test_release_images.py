@@ -388,8 +388,8 @@ def test_the_server_job_pulls_the_base_of_every_image_test_before_the_tests(tmp_
     assert steps.index(_PULL_STEP) < steps.index("Run pytest"), steps
     step = _step("ci.yml", "server", _PULL_STEP)
     # One leg pulls, and that leg is in the matrix.
-    assert step.get("if") == "matrix.python-version == '3.13'", step
-    assert "3.13" in job["strategy"]["matrix"]["python-version"], job["strategy"]
+    assert step.get("if") == "matrix.python-version == '3.14'", step
+    assert "3.14" in job["strategy"]["matrix"]["python-version"], job["strategy"]
     # docker as a stub that prints what it was asked to do, one line a call.
     stub = tmp_path / "bin" / "docker"
     stub.parent.mkdir()

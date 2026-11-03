@@ -3,10 +3,10 @@ set -e
 
 # The ca-issuer provisions our TLS material into the shared certs volume on its
 # first boot (ADR 0001 §3.2): an access-signed server leaf + key + the CA trust
-# bundle for client verification. nginx fails to load without them, so wait
-# until all three exist and are non-empty before starting.
+# bundle for client verification, and the fullchain of :8444. nginx fails to load
+# without them, so wait until all four exist and are non-empty before starting.
 CERT_DIR=/etc/nginx/certs
-NEED="$CERT_DIR/gateway-fullchain.pem $CERT_DIR/gateway.key $CERT_DIR/client-ca.pem"
+NEED="$CERT_DIR/gateway-fullchain.pem $CERT_DIR/gateway-enroll-fullchain.pem $CERT_DIR/gateway.key $CERT_DIR/client-ca.pem"
 
 echo "[gateway] Warte auf Gateway-Zertifikate vom ca-issuer..."
 ATTEMPT=0

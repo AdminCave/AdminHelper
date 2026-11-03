@@ -15,7 +15,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
 
-from app import pki, storage
+from app import pki, root_rollover, rotation, storage
 
 
 def test_write_private_fails_closed_on_chmod_error(monkeypatch, tmp_path):
@@ -291,7 +291,7 @@ def test_an_intermediate_near_its_end_loads_with_one_warning(monkeypatch, tmp_pa
     assert "app.cli rotate-intermediates" in warnings[0]
 
 
-def test_a_root_near_its_end_warns_that_clients_must_enroll_again(monkeypatch, tmp_path, caplog):
+def test_a_root_near_its_end_warns_to_stage_a_new_root(monkeypatch, tmp_path, caplog):
     # Intermediates minted now end with the root (pki caps them), so all four warn.
     _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 30)
     for scope in pki.SCOPES:
@@ -307,10 +307,51 @@ def test_a_root_near_its_end_warns_that_clients_must_enroll_again(monkeypatch, t
     root_warnings = [w for w in warnings if w.startswith("root ")]
     assert len(root_warnings) == 1, warnings
     assert root_cert.not_valid_after_utc.isoformat() in root_warnings[0]
-    assert "enroll" in root_warnings[0]
+    # R-1021: the root is renewed in phases, the clients do not enroll again.
+    assert f"renew it with: {root_rollover.ROTATE_ROOT} stage" in root_warnings[0]
+    assert "enroll" not in root_warnings[0]
     # The command renews the intermediates under the root, never the root itself.
     assert "app.cli rotate-intermediates" not in root_warnings[0]
     assert all("app.cli rotate-intermediates" in w for w in warnings if w not in root_warnings)
+
+
+def test_the_root_warns_a_year_before_its_end(monkeypatch, tmp_path, caplog):
+    # Its intermediates, minted now and capped at its end, have more than
+    # pki.EXPIRY_WARN_DAYS left: only the root warns (pki.ROOT_WARN_DAYS).
+    _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 200)
+    for scope in pki.SCOPES:
+        _reissue(monkeypatch, tmp_path, scope)
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    storage.ensure_hierarchy(tmp_path, None)
+
+    warnings = _storage_warnings(caplog)
+    assert len(warnings) == 1 and warnings[0].startswith("root "), warnings
+    assert f"{root_rollover.ROTATE_ROOT} stage" in warnings[0]
+
+
+def test_a_root_near_its_end_with_a_staged_one_warns_to_switch(monkeypatch, tmp_path, caplog):
+    _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 30)
+    for scope in pki.SCOPES:
+        _reissue(monkeypatch, tmp_path, scope)
+    rotation.stage_root(tmp_path, b"next")
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    storage.ensure_hierarchy(tmp_path, None)
+
+    root_warnings = [w for w in _storage_warnings(caplog) if w.startswith("root ")]
+    assert len(root_warnings) == 1, root_warnings
+    assert f"switch to it with: {root_rollover.ROTATE_ROOT} switch" in root_warnings[0]
+    assert f"{root_rollover.ROTATE_ROOT} stage" not in root_warnings[0]
+
+
+def test_a_switched_root_near_its_end_is_finished_before_it_is_renewed():
+    # root.crt is the new root already; a stage refuses while the renewal runs.
+    hint = storage._root_renewal_hint("switched")
+    finish = hint.index(f"{root_rollover.ROTATE_ROOT} finish")
+    assert finish < hint.index(f"{root_rollover.ROTATE_ROOT} stage")
 
 
 def test_a_fresh_hierarchy_does_not_warn(tmp_path, caplog):
@@ -553,3 +594,259 @@ def test_a_retired_file_without_a_certificate_aborts_the_boot(tmp_path):
 
     with pytest.raises(RuntimeError, match=r"'access'.*access-retired\.pem"):
         storage.ensure_hierarchy(tmp_path, None)
+
+
+# R-1021: the boot reads the phase of a root renewal from the files; Intermediate.roots
+# (trust_bundle, `chain` of /enroll and /renew) follow it, `chain` (what the gateway and
+# frps present) stays the intermediate and root.crt.
+
+NEXT_PW = b"next-pw"
+
+
+def _bundle_roots(inter) -> list:
+    """The certificates after the intermediate in its trust bundle."""
+    bundle = x509.load_pem_x509_certificates(inter.trust_bundle)
+    assert bundle[0] == inter.cert
+    return bundle[1:]
+
+
+def _assert_presents_root_crt(pki_dir, inter) -> None:
+    root_crt = pki.cert_from_pem((pki_dir / "root.crt").read_bytes())
+    assert inter.chain == pki.chain_pem(inter.cert, root_crt)
+
+
+def test_without_a_renewal_the_trust_bundle_is_the_chain(tmp_path):
+    for inter in storage.ensure_hierarchy(tmp_path, b"pw").values():
+        assert inter.roots == (_root(tmp_path)[0],)
+        assert inter.trust_bundle == inter.chain
+
+
+def test_a_staged_root_comes_before_the_signing_root(tmp_path):
+    before = storage.ensure_hierarchy(tmp_path, b"pw")
+    old_root = _root(tmp_path)[0]
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    for scope in pki.SCOPES:
+        assert inter[scope].cert == before[scope].cert
+        assert _bundle_roots(inter[scope]) == [new_root, old_root]
+        _assert_presents_root_crt(tmp_path, inter[scope])
+
+
+@pytest.mark.parametrize("cross", [True, False])
+def test_after_the_switch_the_old_root_comes_first_and_its_intermediates_stay_retired(
+    tmp_path, cross
+):
+    before = storage.ensure_hierarchy(tmp_path, b"pw")
+    old_root = _root(tmp_path)[0]
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw" if cross else None, cross=cross)
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    for scope in pki.SCOPES:
+        assert pki.intermediate_problem(inter[scope].cert, scope, new_root) is None
+        assert _bundle_roots(inter[scope]) == [old_root, new_root]
+        assert inter[scope].retired == (before[scope].cert,)
+        _assert_presents_root_crt(tmp_path, inter[scope])
+
+
+def test_a_compromised_scope_takes_the_old_root_out_of_every_trust_bundle(tmp_path, caplog):
+    before = storage.ensure_hierarchy(tmp_path, b"pw")
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw", compromised=frozenset({"access"}))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert {scope: _bundle_roots(inter[scope]) for scope in pki.SCOPES} == {
+        scope: [new_root] for scope in pki.SCOPES
+    }
+    assert inter["access"].retired == ()
+    assert inter["tunnel"].retired == (before["tunnel"].cert,)
+    assert _storage_warnings(caplog) == []
+
+
+def test_an_expired_old_root_leaves_the_trust_bundle_with_a_finish_warning(
+    monkeypatch, tmp_path, caplog
+):
+    _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_ROOT - 10)
+    old_root = _root(tmp_path)[0]
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    later = pki._now() + datetime.timedelta(days=11)
+    monkeypatch.setattr(pki, "_now", lambda: later)
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert {scope: _bundle_roots(inter[scope]) for scope in pki.SCOPES} == {
+        scope: [new_root] for scope in pki.SCOPES
+    }
+    (warning,) = [w for w in _storage_warnings(caplog) if "old root" in w]
+    assert repr(pki.read_identity(old_root)[0]) in warning
+    assert f"{root_rollover.ROTATE_ROOT} finish" in warning
+
+
+def test_after_the_finish_only_the_new_root_is_left(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    rotation.finish_root(tmp_path)
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    for scope in pki.SCOPES:
+        assert _bundle_roots(inter[scope]) == [new_root]
+        assert inter[scope].retired == ()
+        assert inter[scope].trust_bundle == inter[scope].chain
+
+
+def _stopped_switch(pki_dir) -> None:
+    """A switch that wrote its record and nothing else."""
+    record = root_rollover.Switch(pki._now(), (), cross=True, drop_retired_root=False)
+    (pki_dir / root_rollover.STATE).write_bytes(record.to_json())
+
+
+def _stopped_finish(pki_dir) -> None:
+    """A finish that removed root-cross.pem and nothing else."""
+    (pki_dir / root_rollover.CROSS).unlink()
+
+
+@pytest.mark.parametrize(
+    ("switched", "stop", "command"),
+    [
+        (False, _stopped_switch, "switch, with the same options"),
+        (True, _stopped_finish, "finish"),
+    ],
+)
+def test_a_transition_that_stopped_part_way_aborts_the_boot_with_its_command(
+    tmp_path, switched, stop, command
+):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    rotation.stage_root(tmp_path, NEXT_PW)
+    if switched:
+        rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    stop(tmp_path)
+
+    with pytest.raises(RuntimeError, match="stopped part way") as exc:
+        storage.ensure_hierarchy(tmp_path, None)
+    assert str(exc.value).endswith(f"; end it with: {root_rollover.ROTATE_ROOT} {command}")
+
+
+def test_renewal_files_no_transition_leaves_abort_the_boot(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    (tmp_path / root_rollover.RETIRED).write_bytes((tmp_path / "root.crt").read_bytes())
+
+    with pytest.raises(RuntimeError, match=r"root-retired\.pem without root-switch\.json"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
+@pytest.mark.parametrize(
+    ("switched", "name", "what", "hint"),
+    [
+        (False, root_rollover.NEXT_CRT, "the new root is no root to hand out", "abort, then stage"),
+        (True, root_rollover.RETIRED, "the old root is no root", "restore the PKI volume"),
+    ],
+)
+def test_a_staged_or_retired_root_that_is_no_root_aborts_the_boot(
+    tmp_path, switched, name, what, hint
+):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    rotation.stage_root(tmp_path, NEXT_PW)
+    if switched:
+        rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    # An intermediate: a CA, but signed by the root.
+    (tmp_path / name).write_bytes((tmp_path / "tunnel.crt").read_bytes())
+
+    with pytest.raises(RuntimeError, match=f"{name}: {what}, it is not self-signed") as exc:
+        storage.ensure_hierarchy(tmp_path, None)
+    assert hint in str(exc.value)
+
+
+def _forged_cross(new_root, issuer, issuer_key, key=None, path_length=1) -> x509.Certificate:
+    """A CA certificate with the new root's name, `key` (default: the new root's),
+    `path_length` and `issuer`'s name, signed by `issuer_key`."""
+    now = pki._now()
+    return (
+        x509.CertificateBuilder()
+        .subject_name(new_root.subject)
+        .issuer_name(issuer.subject)
+        .public_key(key if key is not None else new_root.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=30))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=path_length), critical=True)
+        .sign(issuer_key, hashes.SHA256())
+    )
+
+
+@pytest.mark.parametrize(
+    ("forge", "reason"),
+    [
+        (lambda n, r, r_key: n, "it is not a CA with path_length=1"),
+        (lambda n, r, r_key: r, "it does not carry the name and key of root"),
+        (
+            lambda n, r, r_key: _forged_cross(n, r, r_key, pki.generate_key().public_key()),
+            "it does not carry the name and key of root",
+        ),
+        (
+            # Signed by R, but without path_length=1 it admits longer chains below N.
+            lambda n, r, r_key: _forged_cross(n, r, r_key, path_length=None),
+            "it is not a CA with path_length=1",
+        ),
+        (
+            # A foreign root of the same name as R: only the signature tells them apart.
+            lambda n, r, r_key: _forged_cross(n, r, pki.generate_key()),
+            "(the signature does not verify)",
+        ),
+    ],
+    ids=["new-root", "old-root", "other-key", "path-length", "other-signer"],
+)
+def test_a_cross_certificate_that_is_not_the_new_root_under_the_old_aborts_the_boot(
+    tmp_path, forge, reason
+):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    old_root, old_key = _root(tmp_path)
+    new_root = rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    (tmp_path / root_rollover.CROSS).write_bytes(
+        pki.cert_to_pem(forge(new_root, old_root, old_key))
+    )
+
+    with pytest.raises(
+        RuntimeError, match="root-cross.pem: not the cross certificate of root.crt, it "
+    ) as exc:
+        storage.ensure_hierarchy(tmp_path, None)
+    assert reason in str(exc.value)
+    assert str(exc.value).endswith("; restore the PKI volume from the backup of the last step")
+
+
+def test_after_the_switch_the_cross_certificate_and_the_old_root_go_to_the_servers(tmp_path):
+    storage.ensure_hierarchy(tmp_path, b"pw")
+    old_root = _root(tmp_path)[0]
+    rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw")
+    cross = pki.cert_from_pem((tmp_path / root_rollover.CROSS).read_bytes())
+
+    for inter in storage.ensure_hierarchy(tmp_path, None).values():
+        assert (inter.old_root, inter.cross) == (old_root, cross)
+
+
+def test_an_old_intermediate_written_back_for_a_compromised_scope_is_skipped(tmp_path, caplog):
+    before = storage.ensure_hierarchy(tmp_path, b"pw")
+    rotation.stage_root(tmp_path, NEXT_PW)
+    rotation.switch_root(tmp_path, NEXT_PW, b"pw", compromised=frozenset({"access"}))
+    # A partial restore puts the replaced intermediate under R back into the file.
+    (tmp_path / "access-retired.pem").write_bytes(pki.cert_to_pem(before["access"].cert))
+    caplog.clear()
+    caplog.set_level(logging.WARNING, logger="ca-issuer.storage")
+
+    inter = storage.ensure_hierarchy(tmp_path, None)
+
+    assert inter["access"].retired == ()
+    assert inter["tunnel"].retired == (before["tunnel"].cert,)
+    assert "not signed by root" in _skip_warning(caplog, "access", before["access"].cert)

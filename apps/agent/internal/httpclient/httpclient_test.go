@@ -326,3 +326,59 @@ func TestNewMTLSRejectsAServerCertTrustedDirectly(t *testing.T) {
 		t.Fatal("Request hat den Handler trotz Ablehnung erreicht")
 	}
 }
+
+// The agent's bundle is the chain of its last enroll or renew. In a root renewal (R-1021)
+// it is [T(R), R] before the stage, [T(R), N, R] after it, [T(N), R, N] after the switch
+// and [T(N), N] after finish or a switch with --compromised; the gateway presents
+// [leaf, A(N), X, R] after the switch and [leaf, A(N), N] after finish.
+func TestNewMTLSKeepsTheGatewayThroughARootRenewal(t *testing.T) {
+	r := makeRenewal(t)
+	switched := [][]byte{r.leafDER, r.newAccess, r.cross, r.oldRoot}
+	finished := [][]byte{r.leafDER, r.newAccess, r.newRoot}
+	for _, tc := range []struct {
+		name          string
+		bundle, chain [][]byte
+	}{
+		{"bundle from before the stage, gateway after the switch", [][]byte{r.oldTunnel, r.oldRoot}, switched},
+		{"bundle from the stage, gateway after the switch", [][]byte{r.oldTunnel, r.newRoot, r.oldRoot}, switched},
+		{"bundle from the switch, gateway after the switch", [][]byte{r.newTunnel, r.oldRoot, r.newRoot}, switched},
+		{"bundle from finish, gateway after the switch", [][]byte{r.newTunnel, r.newRoot}, switched},
+		{"bundle from the stage, gateway after finish", [][]byte{r.oldTunnel, r.newRoot, r.oldRoot}, finished},
+		{"bundle from the switch, gateway after finish", [][]byte{r.newTunnel, r.oldRoot, r.newRoot}, finished},
+		{"bundle from finish, gateway after finish", [][]byte{r.newTunnel, r.newRoot}, finished},
+	} {
+		srv, handled := serveChain(t, r.leafKey, tc.chain...)
+		certPath, keyPath, caPath := writeMTLSFiles(t, threeTier{leafDER: r.leafDER, leafKey: r.leafKey}, tc.bundle...)
+		client, err := NewMTLS(certPath, keyPath, caPath, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("%s: the gateway must be reached: %v", tc.name, err)
+		}
+		resp.Body.Close()
+		if !*handled {
+			t.Fatalf("%s: the request never reached the handler", tc.name)
+		}
+	}
+}
+
+// finish takes X off the gateway: an agent that has not renewed since before the stage
+// trusts only R and loses it, which is why finish waits for every device.
+func TestNewMTLSLosesTheGatewayAfterFinishWithABundleFromBeforeTheStage(t *testing.T) {
+	r := makeRenewal(t)
+	srv, handled := serveChain(t, r.leafKey, r.leafDER, r.newAccess, r.newRoot)
+	certPath, keyPath, caPath := writeMTLSFiles(t, threeTier{leafDER: r.leafDER, leafKey: r.leafKey}, r.oldTunnel, r.oldRoot)
+	client, err := NewMTLS(certPath, keyPath, caPath, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unknown x509.UnknownAuthorityError
+	if _, err := client.Get(srv.URL); !errors.As(err, &unknown) {
+		t.Fatalf("a bundle with only R must not verify the gateway after finish: %v", err)
+	}
+	if *handled {
+		t.Fatal("a request reached the handler despite the rejection")
+	}
+}

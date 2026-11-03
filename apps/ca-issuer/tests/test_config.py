@@ -113,3 +113,22 @@ def test_build_issuer_allows_memory_store_with_optin(monkeypatch):
     monkeypatch.setenv("CA_ALLOW_MEMORY_STORE", "1")
     issuer = build_issuer({})
     assert issuer.tokens is not None
+
+
+def test_next_root_passphrase_reads_its_own_variables(monkeypatch, tmp_path):
+    # rotate-root (R-1021): the new root's passphrase is read like the root's, from its
+    # own variables; the root's is no stand-in for it.
+    secret = tmp_path / "next"
+    secret.write_bytes(b"file-next\n")
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", "")
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE", "root-secret")
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE_FILE", str(secret))
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE", "env-next")
+    assert config.next_root_passphrase() == b"file-next"
+
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE_FILE", str(tmp_path / "absent"))
+    assert config.next_root_passphrase() == b"env-next"
+
+    monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE", "")
+    assert config.next_root_passphrase() is None
+    assert config.root_passphrase() == b"root-secret"
