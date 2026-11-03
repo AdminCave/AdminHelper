@@ -21,8 +21,10 @@ Beweis: feature/arch-ca-root-renewal@8f50d71a apps/ca-issuer/app/cli.py:419 · D
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py
 Doku: changelog.d/kern-ca-7.md
 
-### T2 — rotate-intermediates --compromised nach dem Switch trägt den Scope ein (R-1095)  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/tests/test_rotation.py, changelog.d/kern-ca-7.md
+### T2 — rotate-intermediates --compromised nach dem Switch trägt den Scope ein (R-1095)  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/tests/test_rotation.py, changelog.d/kern-ca-7.md, apps/ca-issuer/app/root_rollover.py, apps/ca-issuer/app/storage.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @2957b8cf 2026-11-03T16:54:22+01:00
+Review: approve (.ah-out/review/kern-ca-7/T2.verdict.json)
 Änderung: In Phase `switched` nimmt `_rotate` (`rotation.py:109`) die Scopes aus `--compromised` in `Switch.compromised` auf (Vereinigung, sortiert) und setzt `drop_retired_root`, vor den retired-Dateien wie heute; auch ein zweiter Lauf mit weiterem Scope ergänzt. Test: nach dem Lauf steht der Scope in `root-switch.json`, und `ensure_hierarchy` nimmt ein wieder eingespieltes Zwischenzertifikat unter der alten Root für diesen Scope nicht an; rot ohne Fix.
 Beweis: feature/arch-ca-root-renewal@8f50d71a apps/ca-issuer/app/rotation.py:103 · Dedup-Key: bug:ca-issuer:apps/ca-issuer/app/rotation.py:_rotate
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py
