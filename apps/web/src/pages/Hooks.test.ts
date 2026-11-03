@@ -12,6 +12,7 @@ import { tick } from 'svelte';
 
 import Hooks from './Hooks.svelte';
 import { language } from '$lib/i18n';
+import { hooks } from '$lib/stores/hooks';
 import type { Hook } from '$lib/api/types';
 
 function json(body: unknown, status = 200): Response {
@@ -54,6 +55,9 @@ const toggleCalls = () =>
 describe('Hooks page', () => {
   beforeEach(() => {
     language.set('de');
+    // The store outlives a test: the previous test's list would be on screen before this test's
+    // refresh lands, and that late refresh would mask a switch that kept its flipped state.
+    hooks.reset();
     toggleOk = true;
     fetchMock = vi.fn(fetchStub);
     vi.stubGlobal('fetch', fetchMock);

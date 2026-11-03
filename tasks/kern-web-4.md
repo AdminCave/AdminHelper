@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-web-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-web-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-web-4 · Review: pro Task
 Spec: docs/features/kern-web-4.md (Roadmap R-1082)
 Heavy: linux-full — das Web-Panel läuft im Sammellauf gegen den echten Stack (web-live, Playwright)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -92,8 +92,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh web --strict -- src/styles/tokens.test.ts
 Doku: diese Task
 
-### T10 — Tests aus der Abschlussprüfung: Akteur-Filter der Audit-Seite, Hooks-Test isoliert (R-1082)  [ ]
+### T10 — Tests aus der Abschlussprüfung: Akteur-Filter der Audit-Seite, Hooks-Test isoliert (R-1082)  [x]
 Komponente: web · Dateien: apps/web/src/pages/Audit.test.ts, apps/web/src/pages/Hooks.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @c0af429d 2026-11-03T02:47:54+01:00
+Review: approve (.ah-out/review/kern-web-4/T10.verdict.json)
 Änderung: Audit: der erste `list`-Aufruf trägt kein `actorType`, die Wahl eines Typs schickt ihn, Zurücksetzen nimmt ihn wieder weg. Hooks: der Store wird vor jedem Test geleert, damit die Liste des vorigen Tests den Rückfall-Test nicht trägt (allein gefahren ist er ohne `{#key}` rot, in der Datei grün).
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Audit.test.ts src/pages/Hooks.test.ts
 Doku: keine (nur Tests)
