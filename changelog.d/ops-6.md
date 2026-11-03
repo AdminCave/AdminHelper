@@ -12,3 +12,5 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - **install.sh: `--admin-user` wird vor dem Start geprueft (R-1057):** ein Name ausserhalb von 3 bis 64 Buchstaben,
   Ziffern, `.`, `_` oder `-` endet sofort mit Exit 2, statt die Installation erst nach `docker compose up`
   abzubrechen.
+- **update.sh: gescheitertes Backup-first (R-1050):** die Meldung ist jetzt englisch; ein Test belegt, dass das Update
+  dann ohne Aenderung endet.

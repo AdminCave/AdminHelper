@@ -1673,7 +1673,8 @@ reader_ends_update() {
   for _ in $(seq 300); do [ -e "$marker.started" ] && break; sleep 0.1; done
   kill "$rpid" 2>/dev/null; wait "$rpid" 2>/dev/null
   : > "$marker"
-  rc=0; wait "$pid" || rc=$?
+  # The braces take the shell's job notice for a run ended by SIGHUP off the output.
+  rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
 }
 INST="$WORK/inst46a"; make_install 0.33.0 "$SRC_OLD" "$INST"
 before=$(snapshot_install "$INST")
@@ -1692,6 +1693,17 @@ lost_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -prin
     && [ -n "$lost_log" ] && grep -q '^\[update\] ' "$lost_log"; } \
   && ok "no terminal, the reader ends before the swap: nothing changed, the output in a 0600 log" \
   || bad "reader ends before the swap: rc=$rc log=${lost_log:-none} $(cat "$lost_log" 2>/dev/null) backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"
+
+# ── 47. a failing backup-first ends the update before anything changes ──────
+INST="$WORK/inst47"; make_install 0.33.0 "$SRC_OLD" "$INST"; DLOG="$WORK/docker47.log"; rm -f "$DLOG"
+printf '#!/usr/bin/env bash\necho "[backup] stub failure" >&2\nexit 3\n' > "$INST/scripts/backup.sh"
+before=$(snapshot_install "$INST")
+out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Backup-first failed: update aborted, nothing changed\.' <<<"$out" \
+    && [ "$(snapshot_install "$INST")" = "$before" ] \
+    && [ -z "$(find "$INST/backups" -mindepth 1 2>/dev/null)" ] && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
+  && ok "a failing backup-first: exit $rc, told in English, nothing changed, no pull or up" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "failing backup-first: rc=$rc changed: $(diff <(echo "$before") <(snapshot_install "$INST") | grep '^>' | tr '\n' ';') docker $(tr '\n' ';' < "$DLOG" 2>/dev/null) backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"; }
 
 echo
 echo "──────────────────────────────────────────"

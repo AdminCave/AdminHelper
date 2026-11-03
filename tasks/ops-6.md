@@ -29,8 +29,10 @@ Beweis: feature/kern-server-5@dca0432c apps/server/app/cli.py:54 + scripts/insta
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
 Doku: changelog.d/ops-6.md
 
-### T3 — update.sh: gescheitertes Backup-first englisch und getestet (R-1050)  [ ]
+### T3 — update.sh: gescheitertes Backup-first englisch und getestet (R-1050)  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9030ce86 2026-11-03T14:55:06+01:00
+Review: approve (.ah-out/review/ops-6/T3.verdict.json)
 Änderung: Die Meldung beim gescheiterten Backup-first (`./scripts/backup.sh … | tee`) wird englisch; ein Test lässt `backup.sh` scheitern und prüft Abbruch ohne Änderung; die Job-Meldung in der `update_test`-Ausgabe verschwindet.
 Beweis: feature/ops-5@787f9377 scripts/update.sh:549, scripts/tests/update_test.sh:1638 · Dedup-Key: BUG:scripts:update.sh:backup_tee_die
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
@@ -60,3 +62,4 @@ Doku: changelog.d/ops-6.md
 
 ## Entscheidungen
 - T1 (2026-11-03): Die neue `$`-Regel lehnt nur ab, was Compose selbst bemaengelt (Warnung "variable is not set" oder Abbruch durch `?`), ausgewertet wie Compose: zuerst die Umgebung (gesetzt oder leer, vor jeder Zeile der Datei), dann frühere Keys; spätere und Keys ohne Wert gelten nicht, Default/Alternative/WORD nur, wo Compose sie auswertet. Ein Wert mit Template gilt für `:` als möglicherweise leer (vorsichtige Seite). Belegt mit Proben gegen echtes `docker compose config`; die erste Fassung prüfte die Umgebung nach den früheren Keys (Prüferfund, behoben, Differentialfälle mit Umgebung). Der Differentialtest 32 zählt die Warnung jetzt als Ablehnung. Eine Zeile mit leerem Key setzt keinen Namen.
+- T3 (2026-11-03): Die Jobmeldung „Aufgelegt“ kam von `wait` in `reader_ends_update` (update_test.sh) und ist mit `{ wait; } 2>/dev/null` weg. Die Zeile „│ Aufgelegt“ in der eingerückten Ausgabe von Test 44b bleibt: sie gehört zur Ausgabe von update.sh selbst (bash meldet den per SIGHUP beendeten Pull), die der Test absichtlich zeigt.

@@ -626,7 +626,7 @@ BACKUP_ARCHIVE=""
 if [ "$SKIP_BACKUP" != 1 ]; then
     log "Backup-first..."
     ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out" \
-        || die "Backup-first fehlgeschlagen — Update abgebrochen, nichts geaendert."
+        || die "Backup-first failed: update aborted, nothing changed."
     BACKUP_ARCHIVE=$(sed -n 's/^\[backup\] OK -> \(.*\) ([^)]*)$/\1/p' "${TMP}/backup.out")
 else
     log "Backup uebersprungen (--skip-backup)."
