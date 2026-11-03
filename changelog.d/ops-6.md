@@ -1,8 +1,3 @@
-<!--
-SPDX-FileCopyrightText: Kevin Stenzel
-SPDX-License-Identifier: GPL-3.0-or-later
--->
-
 ### Fixed
 
 - **install.sh/update.sh: `$` vor einem nicht gesetzten Namen in der `.env` (R-1051):** docker compose setzte diesen
