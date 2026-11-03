@@ -19,3 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - **agent-install.sh: Repo-Schluessel mit designiertem Widerrufer (R-1045):** die Pruefung des gepinnten
   Fingerabdrucks las bei einem solchen Schluessel keinen Fingerabdruck und brach die Installation ab; sie nimmt jetzt
   den eigenen Fingerabdruck des Schluessels.
+- **restore.sh: Rollen-Passwoerter und Compose-Variablen aus der `.env` (R-1047, R-1058):** der Restore liest ein
+  Passwort jetzt so, wie docker compose die Datei liest (letzte Zeile des Schluessels, `export`, `:`, Quotes,
+  Kommentar hinter dem Wert). Einen Wert, den er nicht ebenso lesen kann, meldet er mit dem Namen des Schluessels und
+  bricht ab, bevor etwas geaendert wird. Fehlermeldungen von docker compose erscheinen ohne Steuerzeichen.

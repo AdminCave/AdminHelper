@@ -125,7 +125,7 @@ tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 # The compose stub: compose config names AH_TEST_PROJECT, else the
 # COMPOSE_PROJECT_NAME of an --env-file, else drproj, and the postgres image pinned
 # by digest (none with AH_TEST_NO_IMAGE=1); with AH_TEST_CONFIG_FAIL=1 compose config
-# fails; compose config --services names postgres and server (fails with
+# fails (with 2: its message holds control characters); compose config --services names postgres and server (fails with
 # AH_TEST_SERVICES_FAIL=1), compose config --images server names SERVER_IMAGE of the
 # --env-file (or the default), its backslash escapes expanded as compose expands those
 # of a double-quoted value. docker volume inspect finds a volume only with AH_TEST_PGVOL=1.
@@ -143,6 +143,7 @@ case "$*" in
   "compose up -d postgres") [ -z "${STUB_DIR:-}" ] || [ ! -f .env ] || cp .env "$STUB_DIR/env.at-pg-start" ;;
   "compose config")
     [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo 'service "server" refers to undefined volume zz-missing' >&2; exit 1; }
+    [ "${AH_TEST_CONFIG_FAIL:-}" != 2 ] || { printf 'zz-cfg\033[2K\r hidden\n' >&2; exit 1; }
     p="${AH_TEST_PROJECT:-}"
     [ -n "$p" ] || [ -z "$ef" ] || p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$ef" | tail -n 1)
     echo "name: ${p:-drproj}"; echo 'services: {}' ;;
@@ -1085,6 +1086,58 @@ fresh_run "$WORK/fresh/l/run" "$WORK/fresh/l.tar.gz"
 { grep -q 'zz-manifest' <<<"$out" && ! LC_ALL=C grep -q $'[\001-\010\013-\037\177]' <<<"$out"; } \
   && ok "the MANIFEST of the backup reaches the terminal without control characters" \
   || bad "MANIFEST control characters: out=[$(cat -v <<<"$out")]"
+# (m) a cut behind the kept closing quote of another value that ends inside a statement
+# compose reads takes that statement to its end: no half of it stays for compose to refuse
+mkdir -p "$WORK/fresh/m/arch" "$WORK/fresh/m/run"
+printf 'POSTGRES_PASSWORD=zz9pg-old\nCOMPOSE_PROJECT_NAME=ah-prod\nA="x '"'"'COMPOSE_X=1" C="z\nw"\n%s\n' "$ROLE_ENV" \
+  > "$WORK/fresh/m/arch/env.sanitized"
+printf 'POSTGRES_PASSWORD=zz9pg-old\nCOMPOSE_PROJECT_NAME=ah-prod\nA="x '"'"'"\n%s\nCA_ROOT_PASSPHRASE=\n' "$ROLE_ENV" \
+  > "$WORK/fresh/m/expected.env"
+cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/m/arch/"
+tar czf "$WORK/fresh/m.tar.gz" -C "$WORK/fresh/m/arch" .
+fresh_run "$WORK/fresh/m/run" "$WORK/fresh/m.tar.gz"
+{ [ $rc -eq 0 ] && cmp -s "$WORK/fresh/m/expected.env" "$WORK/fresh/m/run/.env"; } \
+  && ok "fresh host: the cut behind a kept quote takes the statement it ends in whole" \
+  || bad "cut into a statement: rc=$rc .env=[$(cat -A "$WORK/fresh/m/run/.env" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# --- 28. compose's message reaches the terminal without control characters ──
+mkdir -p "$WORK/proj/d"
+proj_run "$WORK/proj/d" AH_TEST_CONFIG_FAIL=2
+{ [ $rc -ne 0 ] && grep -q 'zz-cfg' <<<"$out" && ! LC_ALL=C grep -q $'[\001-\010\013-\037\177]' <<<"$out"; } \
+  && ok "a failing compose config: its message without control characters" \
+  || bad "compose message control characters: rc=$rc out=[$(cat -v <<<"$out")]"
+
+# --- 29. restore.sh reads a role password as compose does ───────────────────
+# (a) the last statement counts, in every form compose reads: export, whitespace around
+# the separator, ":", quotes, an unquoted value up to " #"
+mkdir -p "$WORK/roles/forms"
+printf '%s\n' 'SERVER_DB_PASSWORD=zz9-old' 'export SERVER_DB_PASSWORD = "pw-server"' \
+  "SCHEDULER_DB_PASSWORD: 'pw-scheduler'" 'MONITOR_DB_PASSWORD=zz9-old' 'MONITOR_DB_PASSWORD=pw-monitor #note  ' \
+  'CA_DB_PASSWORD=pw-ca' "$PG_ENV" > "$WORK/roles/forms/.env"
+out=$( cd "$WORK/roles/forms" && STUB_DIR="$WORK/roles/forms" PATH="$WORK/roles/bin:$PATH" \
+    bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+calls="$WORK/roles/forms/calls.log"
+{ [ $rc -eq 0 ] && grep -q '^pw=\[pw-server\] .*pg_restore .*-U ah_server ' "$calls" \
+    && grep -q '^pw=\[pw-monitor\] .*pg_restore .*-U ah_monitor ' "$calls" && ! grep -q zz9 "$calls"; } \
+  && ok "a role password: the last statement, in every form compose reads" \
+  || bad "role password forms: rc=$rc out=[$out] calls=[$(cat "$calls" 2>/dev/null)]"
+# (b) a value compose would expand or refuses: the restore stops before any docker
+# call, names the key, never the value
+for v in dollar open break; do
+  mkdir -p "$WORK/roles/$v"
+  grep -v '^SERVER_DB_PASSWORD=' "$WORK/.env" > "$WORK/roles/$v/.env"
+  case $v in
+    dollar) printf '%s\n' 'SERVER_DB_PASSWORD="zz9$HOME"' ;;
+    open)   printf '%s\n' 'SERVER_DB_PASSWORD="zz9-open' ;;
+    break)  printf '%s\n' 'SERVER_DB_PASSWORD="zz9-a' 'zz9-b"' ;;
+  esac >> "$WORK/roles/$v/.env"
+  out=$( cd "$WORK/roles/$v" && STUB_DIR="$WORK/roles/$v" PATH="$WORK/roles/bin:$PATH" \
+      bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+  { [ $rc -eq 1 ] && grep -q 'SERVER_DB_PASSWORD in .env is no plain value' <<<"$out" && ! grep -q zz9 <<<"$out" \
+      && [ ! -e "$WORK/roles/$v/calls.log" ]; } \
+    && ok "a role password restore cannot read as compose does ($v): stop before any docker call" \
+    || bad "role password ($v): rc=$rc out=[$out] calls=[$(cat "$WORK/roles/$v/calls.log" 2>/dev/null)]"
+done
 
 echo
 echo "──────────────────────────────────────────"
