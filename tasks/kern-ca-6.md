@@ -28,7 +28,7 @@ Review: approve (.ah-out/review/kern-ca-6/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_certificate_check.py tests/test_identity_revocation.py
 Doku: changelog.d/kern-ca-6.md
 
-### T3 — Zweiter Teil von R-1053  [?] (Entscheidung bei Kevin, eigener Zug?)
+### T3 — Zweiter Teil von R-1053  [~] (verschoben nach R-1112: Entscheidung bei Kevin, eigener Zug)
 Komponente: server · Dateien: keine (eigener Zug)
 Änderung: als eigener Zug (R-1112); Details in `tasks/private/`.
 Verify: bash scripts/dev/verify.sh server --strict
