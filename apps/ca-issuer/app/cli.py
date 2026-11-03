@@ -131,8 +131,8 @@ def _signers(
     renewal: root_rollover.State | None, root: x509.Certificate, scope: str
 ) -> tuple[x509.Certificate, ...]:
     """The roots the boot accepts the retired intermediates of `scope` from
-    (storage.ensure_hierarchy): the old root too after the switch, unless the switch marked
-    the scope compromised."""
+    (storage.ensure_hierarchy): the old root too after the switch, unless the switch or a
+    later rotate-intermediates --compromised marked the scope compromised."""
     if (
         renewal is not None
         and renewal.phase == "switched"
@@ -444,8 +444,10 @@ class _Device:
         there the time the issuing process recorded it decides. That process records the
         start before it serves a request and takes both times from the same clock, so a
         certificate of the process before the restart is recorded before the start and one
-        of the new process at or after it. Only there: a certificate taken over from before
-        the register is recorded when it is taken over, long after it was signed."""
+        of the new process at or after it. A certificate taken over from before the register
+        is recorded by the server's database clock when it is taken over, long after it was
+        signed: an old one counts as new only if the register was installed in the second of
+        the start, which can only end the hold early, never extend trust."""
         second = at.replace(microsecond=0)
         if self.not_before != second:
             return self.not_before > second
