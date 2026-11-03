@@ -224,8 +224,12 @@ def test_hook_reader_grace_is_one_deadline_for_both_streams(monkeypatch):
     grace = 1.0
     monkeypatch.setattr(sr, "_READER_GRACE_SECONDS", grace)
     timed("result['ok'] = True")  # warm-up: the first worker start is the slow one
-    plain = timed("result['ok'] = True")
-    held = timed("import subprocess\nsubprocess.Popen(['sleep', '30'])\nresult['ok'] = True")
+    # Host load only ever lengthens a run, so the minimum of a few runs is the least disturbed one.
+    plain = min(timed("result['ok'] = True") for _ in range(3))
+    held = min(
+        timed("import subprocess\nsubprocess.Popen(['sleep', '30'])\nresult['ok'] = True")
+        for _ in range(3)
+    )
     extra = held - plain
     assert 0.8 * grace <= extra < 1.6 * grace, f"expected one grace, took {extra:.1f}s longer"
 
