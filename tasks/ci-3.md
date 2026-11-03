@@ -46,7 +46,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md
 Abhängt von: T3
 
-### T5 — cosign-installer v4 (R-1042)  [?] (cosign 3 mit neuem Bundle-Format, oder installer v4 mit cosign-release v2.6.x wie heute? Empfehlung cosign 3)
+### T5 — cosign-installer v4 (R-1042)  [~] (verschoben in ci-4 (R-1119): wartet auf Kevins cosign-Entscheidung)
 Komponente: scripts · Dateien: .github/workflows/docker.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-3.md
 Änderung: `sigstore/cosign-installer` (`docker.yml:83`, `docker.yml:140`) auf v4.1.2 per SHA; je nach Kevins Antwort cosign 3 (Doku-Abschnitt Signaturen nennt die cosign-Version zum Prüfen, nach Lektüre der cosign-3-Release-Notes zum Ablageort der Image-Signatur) oder `cosign-release: v2.6.x`.
 Verify: bash scripts/dev/verify.sh scripts --strict
