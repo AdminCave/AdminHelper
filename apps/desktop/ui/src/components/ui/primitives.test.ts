@@ -84,6 +84,93 @@ describe('Modal stacking', () => {
   });
 });
 
+const formSnippet = createRawSnippet(() => ({
+  render: () => '<div><input data-testid="a" /><input data-testid="b" /></div>',
+}));
+
+function opener(): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.textContent = 'Öffnen';
+  document.body.appendChild(b);
+  b.focus();
+  return b;
+}
+
+describe('Modal focus', () => {
+  afterEach(() => document.querySelectorAll('body > button').forEach((b) => b.remove()));
+
+  it('names itself by title and description and focuses the first body control', async () => {
+    const { getByRole, getByTestId } = render(Modal, {
+      props: { open: true, title: 'Server', description: 'Neu anlegen', children: formSnippet },
+    });
+    await tick();
+    const dlg = getByRole('dialog', { name: 'Server', description: 'Neu anlegen' });
+    expect(dlg.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(getByTestId('a'));
+  });
+
+  it('without controls in body or footer the panel itself takes focus', async () => {
+    const { getByRole } = render(Modal, { props: { open: true, children: bodySnippet } });
+    await tick();
+    expect(document.activeElement).toBe(getByRole('dialog'));
+    expect(getByRole('dialog').hasAttribute('aria-labelledby')).toBe(false);
+  });
+
+  it('Tab wraps forward and Shift+Tab backward inside the dialog', async () => {
+    const { getByTestId } = render(Modal, {
+      props: { open: true, title: 'T', children: formSnippet, footer: footerSnippet },
+    });
+    await tick();
+    const close = document.querySelector('.modal-header button') as HTMLElement;
+    const last = getByTestId('footer-btn');
+    last.focus();
+    const fwd = await fireEvent.keyDown(document, { key: 'Tab' });
+    expect(fwd).toBe(false); // default prevented
+    expect(document.activeElement).toBe(close);
+    await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    // In the middle the platform moves focus: the trap does not interfere.
+    getByTestId('a').focus();
+    expect(await fireEvent.keyDown(document, { key: 'Tab' })).toBe(true);
+  });
+
+  it('returns focus to the opener on close', async () => {
+    const btn = opener();
+    const { rerender } = render(Modal, {
+      props: { open: true, title: 'T', children: formSnippet },
+    });
+    await tick();
+    expect(document.activeElement).not.toBe(btn);
+    await rerender({ open: false });
+    await tick();
+    expect(document.activeElement).toBe(btn);
+  });
+
+  it('a stacked ConfirmDialog traps alone and hands focus back to the editor', async () => {
+    const { getByTestId } = render(Modal, {
+      props: { open: true, title: 'Editor', children: formSnippet },
+    });
+    render(ConfirmDialog);
+    await tick();
+    const field = getByTestId('b');
+    field.focus();
+    const pending = confirmDialog('Sicher?');
+    await tick();
+    const dialogs = document.querySelectorAll('[role="dialog"]');
+    const top = dialogs[dialogs.length - 1] as HTMLElement;
+    expect(top.contains(document.activeElement)).toBe(true);
+    const topButtons = [...top.querySelectorAll('button')];
+    topButtons[topButtons.length - 1].focus();
+    await fireEvent.keyDown(document, { key: 'Tab' });
+    expect(top.contains(document.activeElement)).toBe(true);
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await expect(pending).resolves.toBe(false);
+    await tick();
+    expect(document.activeElement).toBe(field);
+  });
+});
+
 describe('ConfirmDialog', () => {
   it('resolves true on confirm and false on cancel', async () => {
     const { getByText } = render(ConfirmDialog);

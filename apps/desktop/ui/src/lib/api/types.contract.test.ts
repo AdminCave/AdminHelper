@@ -228,6 +228,24 @@ const MAPPINGS: Mapping[] = [
     schema: 'TemplateCreate',
     direction: 'request',
   },
+  {
+    ts: 'HistorySeries',
+    snapshot: 'monitoring',
+    schema: 'HistorySeriesOut',
+    direction: 'response',
+  },
+  {
+    ts: 'ServerHistory',
+    snapshot: 'monitoring',
+    schema: 'ServerHistoryOut',
+    direction: 'response',
+  },
+  {
+    ts: 'ServerCompare',
+    snapshot: 'monitoring',
+    schema: 'ServerCompareOut',
+    direction: 'response',
+  },
 ];
 
 // Interfaces of types.ts that describe no schema of their own.
@@ -483,7 +501,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(37);
+    expect(MAPPINGS.length).toBe(40);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);

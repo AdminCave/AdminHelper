@@ -9,7 +9,7 @@ overflow, NULL scope = all servers, disabled windows never mute."""
 import json
 from datetime import datetime
 
-from app.maintenance import is_in_maintenance
+from app.maintenance import is_in_maintenance, maintenance_intervals
 from app.models import MonitorMaintenance
 
 
@@ -102,3 +102,64 @@ class TestWeekly:
 
     def test_empty_windows_list(self):
         assert not is_in_maintenance([], "srv-1", datetime(2026, 7, 19, 12, 0))
+
+
+class TestIntervals:
+    """maintenance_intervals (R-1076): the bands of the history chart are the times
+    is_in_maintenance mutes, cut to the asked range."""
+
+    def test_once_window_is_cut_to_the_range(self):
+        w = once(datetime(2026, 7, 19, 12, 0), datetime(2026, 7, 19, 14, 0), note="Kernel")
+        got = maintenance_intervals(
+            [w], "srv-1", datetime(2026, 7, 19, 13, 0), datetime(2026, 7, 20, 0, 0)
+        )
+        assert got == [(datetime(2026, 7, 19, 13, 0), datetime(2026, 7, 19, 14, 0), "Kernel")]
+
+    def test_windows_outside_scope_or_disabled_are_left_out(self):
+        start, end = datetime(2026, 7, 19, 12, 0), datetime(2026, 7, 19, 14, 0)
+        windows = [
+            once(start, end, id="other", server_id="srv-2"),
+            once(start, end, id="off", enabled=False),
+            once(datetime(2026, 7, 18), datetime(2026, 7, 18, 1), id="before"),
+            weekly([], "02:00", 60, "UTC", id="no-days"),
+        ]
+        assert maintenance_intervals(windows, "srv-1", start, end) == []
+
+    def test_weekly_occurrences_are_sorted_in_utc(self):
+        # Monday and Wednesday 02:00 Berlin summer time = 00:00 UTC.
+        w = weekly([0, 2], "02:00", 60, "Europe/Berlin")
+        got = maintenance_intervals(
+            [w, once(datetime(2026, 7, 21, 9), datetime(2026, 7, 21, 10), id="w2")],
+            "srv-1",
+            datetime(2026, 7, 19, 0, 0),
+            datetime(2026, 7, 23, 0, 0),
+        )
+        assert [(a, b) for a, b, _ in got] == [
+            (datetime(2026, 7, 20, 0, 0), datetime(2026, 7, 20, 1, 0)),
+            (datetime(2026, 7, 21, 9, 0), datetime(2026, 7, 21, 10, 0)),
+            (datetime(2026, 7, 22, 0, 0), datetime(2026, 7, 22, 1, 0)),
+        ]
+
+    def test_an_occurrence_from_the_day_before_reaches_into_the_range(self):
+        # Sunday 23:00 UTC for 3 h: the range starts Monday 00:00.
+        w = weekly([6], "23:00", 180, "UTC")
+        got = maintenance_intervals(
+            [w], "srv-1", datetime(2026, 7, 20, 0, 0), datetime(2026, 7, 20, 12, 0)
+        )
+        assert [(a, b) for a, b, _ in got] == [
+            (datetime(2026, 7, 20, 0, 0), datetime(2026, 7, 20, 2, 0))
+        ]
+
+    def test_dst_band_ends_where_muting_ends(self):
+        # Saturday 23:00 Berlin, 4 h wall clock, over the spring-forward night of
+        # 2026-03-29: 22:00 UTC until 03:00 CEST = 01:00 UTC, three real hours.
+        w = weekly([5], "23:00", 240, "Europe/Berlin")
+        got = maintenance_intervals(
+            [w], "srv-1", datetime(2026, 3, 28, 12, 0), datetime(2026, 3, 29, 12, 0)
+        )
+        assert [(a, b) for a, b, _ in got] == [
+            (datetime(2026, 3, 28, 22, 0), datetime(2026, 3, 29, 1, 0))
+        ]
+        assert is_in_maintenance([w], "srv-1", datetime(2026, 3, 29, 0, 59))
+        assert not is_in_maintenance([w], "srv-1", datetime(2026, 3, 29, 1, 0))
+        assert not is_in_maintenance([w], "srv-1", datetime(2026, 3, 28, 21, 59))

@@ -645,6 +645,44 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CompareServerOut": {
+        "properties": {
+          "points": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "points"
+        ],
+        "title": "CompareServerOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -656,6 +694,200 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryEventOut": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "integer"
+          },
+          "checkId": {
+            "title": "Checkid",
+            "type": "string"
+          },
+          "checkName": {
+            "title": "Checkname",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "checkId",
+          "checkName",
+          "status"
+        ],
+        "title": "HistoryEventOut",
+        "type": "object"
+      },
+      "HistorySeriesOut": {
+        "properties": {
+          "cpu": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Cpu",
+            "type": "array"
+          },
+          "disks": {
+            "additionalProperties": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Disks",
+            "type": "object"
+          },
+          "loadPerCpu": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Loadpercpu",
+            "type": "array"
+          },
+          "ram": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Ram",
+            "type": "array"
+          },
+          "swap": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Swap",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cpu",
+          "ram",
+          "swap",
+          "loadPerCpu",
+          "disks"
+        ],
+        "title": "HistorySeriesOut",
+        "type": "object"
+      },
+      "MaintenanceBandOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "note"
+        ],
+        "title": "MaintenanceBandOut",
         "type": "object"
       },
       "MaintenanceInput": {
@@ -1210,6 +1442,119 @@
           "alertsDeleted"
         ],
         "title": "ServerCleanupOut",
+        "type": "object"
+      },
+      "ServerCompareOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/CompareServerOut"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "metric",
+          "period",
+          "step",
+          "start",
+          "end",
+          "servers"
+        ],
+        "title": "ServerCompareOut",
+        "type": "object"
+      },
+      "ServerHistoryOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "maintenance": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceBandOut"
+            },
+            "title": "Maintenance",
+            "type": "array"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistorySeriesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "$ref": "#/components/schemas/HistorySeriesOut"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          },
+          "thresholds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ThresholdOut"
+            },
+            "title": "Thresholds",
+            "type": "object"
+          }
+        },
+        "required": [
+          "serverId",
+          "period",
+          "step",
+          "start",
+          "end",
+          "series",
+          "previous",
+          "thresholds",
+          "events",
+          "maintenance"
+        ],
+        "title": "ServerHistoryOut",
         "type": "object"
       },
       "StatusSummaryOut": {
@@ -1837,6 +2182,24 @@
           }
         },
         "title": "TemplateUpdate",
+        "type": "object"
+      },
+      "ThresholdOut": {
+        "properties": {
+          "crit": {
+            "title": "Crit",
+            "type": "number"
+          },
+          "warn": {
+            "title": "Warn",
+            "type": "number"
+          }
+        },
+        "required": [
+          "warn",
+          "crit"
+        ],
+        "title": "ThresholdOut",
         "type": "object"
       },
       "ValidationError": {
@@ -2580,7 +2943,7 @@
             "required": false,
             "schema": {
               "default": "1h",
-              "pattern": "^(1h|6h|24h|7d)$",
+              "pattern": "^(1h|6h|24h|7d|30d)$",
               "title": "Period",
               "type": "string"
             }
@@ -2993,6 +3356,58 @@
         "summary": "Get All Status"
       }
     },
+    "/status/compare": {
+      "get": {
+        "description": "One metric of every server with agent data on the history grid: CPU, RAM, the\nfullest disk or load per CPU.",
+        "operationId": "get_status_compare_status_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "pattern": "^(cpu|ram|disk|load)$",
+              "title": "Metric",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "24h",
+              "pattern": "^(1h|24h|7d|30d)$",
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCompareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Status Compare"
+      }
+    },
     "/status/server/{server_id}": {
       "get": {
         "description": "Returns check states for a specific server.",
@@ -3035,6 +3450,67 @@
           }
         },
         "summary": "Get Server Status"
+      }
+    },
+    "/status/server/{server_id}/history": {
+      "get": {
+        "description": "Resource history of one server from its agent: CPU, RAM, swap, load per CPU and\ndisks on one time grid, optionally the previous period, the warn/crit thresholds,\nthe status changes of its checks and its maintenance windows.",
+        "operationId": "get_server_history_status_server__server_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "24h",
+              "pattern": "^(1h|24h|7d|30d)$",
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "previous",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Previous",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Server History"
       }
     },
     "/status/summary": {

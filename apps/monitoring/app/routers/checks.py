@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from typing import Annotated
 
@@ -21,6 +22,16 @@ from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.core.victoria import escape_label_value, victoria
+from app.history import (
+    build_series,
+    compare_query,
+    compare_servers,
+    history_queries,
+    history_window,
+    server_events,
+    server_maintenance,
+    server_thresholds,
+)
 from app.models import MonitorCheck, MonitorState
 from app.scheduler import add_check, remove_check
 from app.schemas import (
@@ -30,6 +41,8 @@ from app.schemas import (
     CheckMetricsOut,
     CheckUpdate,
     MonitorCheckOut,
+    ServerCompareOut,
+    ServerHistoryOut,
     StatusSummaryOut,
 )
 from app.template_sync import mark_overrides, resolve_template_check, tombstone_check
@@ -495,7 +508,7 @@ def _series_or_502(response: dict) -> list:
 )
 def get_check_metrics(
     check_id: str,
-    period: str = Query("1h", pattern="^(1h|6h|24h|7d)$"),
+    period: str = Query("1h", pattern="^(1h|6h|24h|7d|30d)$"),
     db: Session = Depends(get_db),
 ):
     """Type-specific time-series metrics + status timeline from VictoriaMetrics."""
@@ -507,7 +520,13 @@ def get_check_metrics(
     # goes back to the pool before them (R-0615).
     db.rollback()
 
-    period_map = {"1h": ("1h", "1m"), "6h": ("6h", "5m"), "24h": ("24h", "15m"), "7d": ("7d", "1h")}
+    period_map = {
+        "1h": ("1h", "1m"),
+        "6h": ("6h", "5m"),
+        "24h": ("24h", "15m"),
+        "7d": ("7d", "1h"),
+        "30d": ("30d", "6h"),
+    }
     duration, step = period_map[period]
 
     all_results = []
@@ -560,4 +579,81 @@ def get_check_metrics(
         "period": period,
         "data": all_results,
         "statusHistory": _series_or_502(status_result),
+    }
+
+
+@router.get(
+    "/status/server/{server_id}/history",
+    response_model=ServerHistoryOut,
+    dependencies=[Depends(require_internal)],
+)
+def get_server_history(
+    server_id: str,
+    period: str = Query("24h", pattern="^(1h|24h|7d|30d)$"),
+    previous: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Resource history of one server from its agent: CPU, RAM, swap, load per CPU and
+    disks on one time grid, optionally the previous period, the warn/crit thresholds,
+    the status changes of its checks and its maintenance windows."""
+    start, end, step = history_window(period, time.time())
+    thresholds = server_thresholds(db, server_id)
+    events = server_events(db, server_id, start, end)
+    maintenance = server_maintenance(db, server_id, start, end)
+    # Up to four query_range calls follow; the connection goes back to the pool first.
+    db.rollback()
+    queries = history_queries(server_id, step)
+
+    def period_series(shift: int) -> dict:
+        results = [
+            _series_or_502(
+                victoria.query_range(
+                    query=queries[kind],
+                    start=str(start - shift),
+                    end=str(end - shift),
+                    step=f"{step}s",
+                )
+            )
+            for kind in ("usage", "load")
+        ]
+        return build_series(*results, start, end, step, shift)
+
+    return {
+        "serverId": server_id,
+        "period": period,
+        "step": step,
+        "start": start,
+        "end": end,
+        "series": period_series(0),
+        "previous": period_series(end - start) if previous else None,
+        "thresholds": thresholds,
+        "events": events,
+        "maintenance": maintenance,
+    }
+
+
+@router.get(
+    "/status/compare",
+    response_model=ServerCompareOut,
+    dependencies=[Depends(require_internal)],
+)
+def get_status_compare(
+    metric: str = Query(..., pattern="^(cpu|ram|disk|load)$"),
+    period: str = Query("24h", pattern="^(1h|24h|7d|30d)$"),
+):
+    """One metric of every server with agent data on the history grid: CPU, RAM, the
+    fullest disk or load per CPU."""
+    start, end, step = history_window(period, time.time())
+    result = _series_or_502(
+        victoria.query_range(
+            query=compare_query(metric, step), start=str(start), end=str(end), step=f"{step}s"
+        )
+    )
+    return {
+        "metric": metric,
+        "period": period,
+        "step": step,
+        "start": start,
+        "end": end,
+        "servers": compare_servers(result, start, end, step),
     }

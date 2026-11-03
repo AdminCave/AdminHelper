@@ -76,7 +76,7 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # records, per pull, SERVER_IMAGE from the environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
 # AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
 # and wait up to 30 s for <marker>, AH_TEST_STOP_BLOCK=<marker> the same at the
-# stop of the migrating services ---
+# stop of the migrating services, AH_TEST_HELP_BLOCK=<marker> at `compose up --help` ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
@@ -91,6 +91,7 @@ case "$*" in
     [ -z "${AH_TEST_PULL_LOG:-}" ] \
       || printf 'env=%s dotenv=%s\n' "${SERVER_IMAGE:-}" "$(grep -m1 '^SERVER_IMAGE=' .env)" >> "$AH_TEST_PULL_LOG"
     [ -z "${AH_TEST_PULL_BLOCK:-}" ] || [ -e "$AH_TEST_PULL_BLOCK" ] || block "$AH_TEST_PULL_BLOCK" ;;
+  "compose up --help") [ -z "${AH_TEST_HELP_BLOCK:-}" ] || [ -e "$AH_TEST_HELP_BLOCK" ] || block "$AH_TEST_HELP_BLOCK" ;;
   "compose up -d"*) [ -z "${AH_TEST_UP_BLOCK:-}" ] || [ -e "$AH_TEST_UP_BLOCK" ] || block "$AH_TEST_UP_BLOCK" ;;
   "compose stop server "*)
     [ -z "${AH_TEST_STOP_BLOCK:-}" ] || [ -e "$AH_TEST_STOP_BLOCK" ] || block "$AH_TEST_STOP_BLOCK" ;;
@@ -1618,6 +1619,41 @@ INST="$WORK/inst45f"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(AH_TEST_REV_FAIL=1 run_update "$INST" --ref v0.34.0 2>&1); rc=$?
 { [ $rc -eq 0 ] && pinned_on "$INST" 0.34.0; } \
   && ok "unreadable revisions do not stop a working update" || bad "unreadable revisions, working update: rc=$rc $out"
+
+# ── 46. without a terminal a reader that ends counts as a dropped session ────
+# ssh host ./scripts/update.sh: a dropped connection ends the reader of stdout and
+# stderr, and the next write ended the script by SIGPIPE wherever it was, without
+# a rollback and without a log (R-1003). $1 install dir, $2 marker, $3 the env var
+# that blocks: the reader ends once the run blocks there. Sets rc.
+reader_ends_update() {
+  local inst="$1" marker="$2" var="$3" rpid pid
+  mkfifo "$inst.fifo"
+  cat "$inst.fifo" > "$inst.out" & rpid=$!
+  ( cd "$inst" && exec env "$var=$marker" AH_TEST_DOCKER_LOG="$inst.docker" AH_TEST_HEALTH=0 \
+      bash ./scripts/update.sh ) > "$inst.fifo" 2>&1 &
+  pid=$!
+  for _ in $(seq 300); do [ -e "$marker.started" ] && break; sleep 0.1; done
+  kill "$rpid" 2>/dev/null; wait "$rpid" 2>/dev/null
+  : > "$marker"
+  rc=0; wait "$pid" || rc=$?
+}
+INST="$WORK/inst46a"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+reader_ends_update "$INST" "$WORK/inst46a.block" AH_TEST_PULL_BLOCK
+lost_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -q '^compose up -d' "$INST.docker" \
+    && [ -n "$lost_log" ] && grep -q 'FEHLER: interrupted by SIGHUP.*zurueckgerollt auf 0\.33\.0' "$lost_log"; } \
+  && ok "no terminal, the reader ends during the pull: rolled back, told in a 0600 log" \
+  || bad "reader ends during the pull: rc=$rc log=${lost_log:-none} $(cat "$lost_log" 2>/dev/null) docker $(tr '\n' ';' < "$INST.docker")"
+INST="$WORK/inst46b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+before=$(snapshot_install "$INST")
+reader_ends_update "$INST" "$WORK/inst46b.block" AH_TEST_HELP_BLOCK
+lost_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -print -quit)
+{ [ $rc -ne 0 ] && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -qE '^compose (pull|up -d)' "$INST.docker" \
+    && [ -z "$(find "$INST/backups" -mindepth 1 ! -name 'update-*.log')" ] \
+    && [ -n "$lost_log" ] && grep -q '^\[update\] ' "$lost_log"; } \
+  && ok "no terminal, the reader ends before the swap: nothing changed, the output in a 0600 log" \
+  || bad "reader ends before the swap: rc=$rc log=${lost_log:-none} $(cat "$lost_log" 2>/dev/null) backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"
 
 echo
 echo "──────────────────────────────────────────"
