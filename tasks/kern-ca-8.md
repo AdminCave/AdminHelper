@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-8 — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-8 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ca-8 · Review: pro Task
 Spec: docs/features/kern-ca-8.md (Roadmap R-1112)
 Heavy: scenario --tunnel — FRP-Tunnel-Datenpfad und PKI (frps-Leaf, frpc von Agent und Visitor über drei Hosts); ask-first
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
