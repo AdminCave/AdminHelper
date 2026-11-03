@@ -26,3 +26,9 @@ Review: am Ende (Branch-Review)
 Änderung: `NODE_MAJOR` Default 26. `harness_consistency_test.sh` prüft, dass jedes `node-version` in `.github/workflows/ci.yml` dem Default in `bootstrap_linux.sh` entspricht.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Box-Ausstattung, nirgends dokumentiert)
+
+### T3 — e2e_npm_ready und web_live.sh nach derselben Stempelregel (R-1106)  [ ]
+Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/web_live.sh, scripts/tests/lib_e2e_stack_test.sh
+Änderung: Fund der Abschlussprüfung: `e2e_npm_ready` (Desktop-E2E-Suiten) und `web_live.sh` prüften noch per mtime und nahmen wie `npm_ci_if_stale` einen hart verlinkten fremden Baum an. Beide nehmen jetzt den Stempel `node_modules/.ah-lock-sha256` (fehlt oder fremd → `npm ci`, danach Stempel über tmp+mv; scheitert `npm ci`, bleibt der alte). Die Tests stellen auf Stempel-Fixtures um, samt hart verlinktem Stempel der Hauptkopie, der unverändert bleibt.
+Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test run_flags_test
+Doku: keine (internes Test-Harness, nirgends dokumentiert)
