@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-3 — Task-Ledger
-Status: geplant · Branch: feature/kern-design-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-design-3 · Review: pro Task
 Spec: docs/features/kern-design-3.md (Roadmap R-1064)
 Heavy: linux-full — Infrastruktur, Ansible und Monitoring ändern das DOM der Desktop-Journeys (server-crud, provisioning, monitoring-*); der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
