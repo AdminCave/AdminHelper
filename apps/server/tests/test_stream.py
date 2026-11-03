@@ -7,11 +7,12 @@ and the stream endpoint's auth gate. The Redis fan-out and the live frame
 delivery are covered by the end-to-end test, not here."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
 from app.core.identity import ClientIdentity
+from app.core.time import utcnow_naive
 from app.modules.notifications import stream_hub
 from app.modules.notifications.service import ingest_event
 
@@ -175,6 +176,30 @@ class TestStreamReauth:
         not_before = datetime(2026, 10, 1, 12, 0, 0)
         assert _stream_reauth_ok("tok", "cn", "access", True, not_before) is True
         assert seen == [not_before]
+
+    def test_ends_when_the_certificate_expired_mid_stream(self, monkeypatch):
+        # R-1059: the TLS handshake checked notAfter at the connect, not since.
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=object(), revoked=False)
+        expired = ClientIdentity(
+            True, "cn", "access", not_after=utcnow_naive() - timedelta(seconds=1)
+        )
+        assert _stream_reauth_ok("tok", "cn", "access", True, identity=expired) is False
+
+    def test_ok_while_the_certificate_is_still_valid(self, monkeypatch):
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=object(), revoked=False)
+        valid = ClientIdentity(True, "cn", "access", not_after=utcnow_naive() + timedelta(hours=1))
+        assert _stream_reauth_ok("tok", "cn", "access", True, identity=valid) is True
+
+    def test_an_unverified_identity_has_no_expiry_to_check(self, monkeypatch):
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=object(), revoked=False)
+        stale = ClientIdentity(False, None, None, not_after=utcnow_naive() - timedelta(days=1))
+        assert _stream_reauth_ok("tok", None, None, False, identity=stale) is True
 
     def test_ends_when_the_trust_file_no_longer_lists_the_issuer(self, monkeypatch, tmp_path):
         # R-1026: the issuer check depends on the trust file, which can change while the

@@ -27,6 +27,7 @@ from app.core.identity import (
     get_client_identity,
     require_cert_user,
 )
+from app.core.time import utcnow_naive
 from app.modules.notifications import stream_hub
 
 # Included without the router scope guard (main.py): every route here must depend on
@@ -52,8 +53,8 @@ def _stream_reauth_ok(
 ) -> bool:
     """Re-check a live stream's authorization: the bearer JWT must still be valid
     (not blacklisted / expired / pre-password-reset) and the mTLS identity must not
-    have been revoked, nor its issuer dropped from the trust file since the connect.
-    Sync SQLAlchemy, so callers run it via run_in_threadpool to
+    have been revoked or expired, nor its issuer dropped from the trust file since the
+    connect. Sync SQLAlchemy, so callers run it via run_in_threadpool to
     keep the async stream from blocking the event loop."""
     from app.core.auth import _get_user_from_token
     from app.core.database import SessionLocal
@@ -62,6 +63,14 @@ def _stream_reauth_ok(
     db = SessionLocal()
     try:
         if not token or _get_user_from_token(token, db) is None:
+            return False
+        # The TLS handshake checked notAfter at the connect only (R-1059).
+        if (
+            verified
+            and identity is not None
+            and identity.not_after is not None
+            and utcnow_naive() >= identity.not_after
+        ):
             return False
         if identity is not None:
             identity = recheck_issuer(identity)
