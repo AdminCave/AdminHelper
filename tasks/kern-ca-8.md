@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-ca-8/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_frps_cert.py tests/test_gateway_cert.py tests/test_config.py
 Doku: → T5
 
-### T2 — Agent setzt transport.tls.serverName in frpc.toml (R-1112)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/rewrite.go, apps/agent/internal/frpc/rewrite_test.go, apps/agent/internal/frpc/sync_flow_test.go
+### T2 — Agent setzt transport.tls.serverName in frpc.toml (R-1112)  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/rewrite.go, apps/agent/internal/frpc/rewrite_test.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/frpc/servertoml_test.go, apps/agent/internal/frpc/servertoml.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f919bad7 2026-11-03T20:54:26+01:00
+Review: approve (.ah-out/review/kern-ca-8/T2.verdict.json)
 Änderung: Nach `checkServerConfig` (`sync.go:252`) setzt der Agent `serverName = "frps.adminhelper.invalid"` in den `[transport.tls]`-Block des Server-Texts (ohne Kopf als `transport.tls.serverName` im Root); `checkServerConfig` lehnt einen vom Server gesendeten `serverName` weiter ab, also steht der Schlüssel nie doppelt. Die Konstante nennt im Kommentar ihr Gegenstück (ca-issuer `config.py`). Tests zuerst rot: die geschriebene `frpc.toml` trägt den Namen genau einmal im TLS-Block, für den Text mit und ohne `[transport.tls]`-Kopf; der Hash-Vergleich mit dem Server (`FrpHashFile`) bleibt am Server-Text.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T5
