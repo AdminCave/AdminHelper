@@ -10,6 +10,8 @@
 // tab suggests the Linux standard template; assigning it creates the template's
 // checks and ends the suggestion. The step removes the assignment again, which
 // leaves the server as the first step left it.
+// The last two steps (R-1103): the history of the server, whose agent_resources
+// check the first step made, and the comparison tab show the agent's push.
 
 import {
   MODAL,
@@ -18,6 +20,7 @@ import {
   gotoInfrastructure,
   openServerTab,
   clickInModal,
+  clickItemByName,
   waitForRow,
   texts,
 } from "../lib/live.js";
@@ -31,6 +34,41 @@ const LINUX_BASE_CHECKS = ["Agent Heartbeat", "System Resources"];
 const SUGGEST_BOX = '.tpl-suggest input[type="checkbox"]';
 const LINUX_BASE_BOX = `${SUGGEST_BOX}[value="${LINUX_BASE}"]`;
 const CHECK_NAMES = ".mon-row .mon-name";
+// desktop_e2e_monitoring.sh seeds it; its agent pushes once before the specs run.
+const SERVER_NAME = "e2e-server";
+const HISTORY = ".history-panel";
+const COMPARE = ".compare-view";
+// The period group is the last of the header (after the history tabs or the metrics).
+const PERIOD_BUTTONS = ".mon-segmented:last-of-type .mon-seg-btn";
+const EMPTY_VALUE = "—"; // formatValue of a series without a value
+const OLD_CHART = "data-e2e-old";
+
+// The chart is drawn only once a series holds a value. load() empties the panel at
+// once and fills it on the response, so a chart right after a period switch may be
+// the old one still standing. Its node is marked before the switch and the wait
+// takes only an unmarked chart: a handle would not do, isExisting() queries again.
+async function waitForChart(scope) {
+  const selector = `${scope} .time-chart:not([${OLD_CHART}])`;
+  await $(selector).waitForExist({
+    timeout: 20000,
+    timeoutMsg: `no chart in ${scope}: no value of the agent's push in the period?`,
+  });
+}
+
+async function switchPeriod(scope, index) {
+  await browser.execute(
+    (sel, attr) => document.querySelector(sel)?.setAttribute(attr, ""),
+    `${scope} .time-chart`,
+    OLD_CHART,
+  );
+  await (await periodButton(scope, index)).click();
+  await waitForChart(scope);
+}
+
+// The period buttons by position (1h, 24h, 7d, 30d); their labels are translated.
+async function periodButton(scope, index) {
+  return (await $$(`${scope} ${PERIOD_BUTTONS}`))[index];
+}
 
 describe("Monitoring check via the GUI", () => {
   it("creates an agent_resources check on the seeded server", async () => {
@@ -87,5 +125,37 @@ describe("Monitoring check via the GUI", () => {
     });
     await remove.click();
     for (const name of LINUX_BASE_CHECKS) await waitForRow(CHECK_NAMES, name, false);
+  });
+
+  it("shows the server's resource history for 24 hours, then for 1 hour (R-1103)", async () => {
+    await $('.sidebar-nav [data-nav="monitoring"]').click();
+    await $('.mon-tabs [data-tab="overview"]').click();
+    await $(".mon-view-toggle .btn").click(); // the list view, which holds the dashboard
+    await clickItemByName(".mon-srv-item", ".mon-srv-name", SERVER_NAME);
+
+    await waitForChart(HISTORY);
+    expect(await (await periodButton(HISTORY, 1)).getAttribute("aria-pressed")).toBe("true");
+    // The first row of the statistics is CPU, with a value.
+    const cpu = await $(`${HISTORY} .history-stats tbody tr`);
+    expect(await cpu.$("th").getText()).toContain("CPU");
+    expect(await cpu.$("td").getText()).not.toBe(EMPTY_VALUE);
+    // The CSV export, the last tool; disabled without data.
+    expect(await $(`${HISTORY} .history-tools > .btn.small:last-child`).isEnabled()).toBe(true);
+
+    await switchPeriod(HISTORY, 0);
+    expect(await (await periodButton(HISTORY, 0)).getAttribute("aria-pressed")).toBe("true");
+    expect(await $(`${HISTORY} .history-stats tbody tr td`).getText()).not.toBe(EMPTY_VALUE);
+  });
+
+  it("ranks the server in the comparison tab, for 24 hours, then for 1 hour (R-1103)", async () => {
+    await $('.mon-tabs [data-tab="history"]').click();
+
+    await waitForChart(COMPARE);
+    expect(await (await periodButton(COMPARE, 1)).getAttribute("aria-pressed")).toBe("true");
+    await waitForRow(`${COMPARE} .compare-name`, SERVER_NAME);
+
+    await switchPeriod(COMPARE, 0);
+    expect(await (await periodButton(COMPARE, 0)).getAttribute("aria-pressed")).toBe("true");
+    await waitForRow(`${COMPARE} .compare-name`, SERVER_NAME);
   });
 });

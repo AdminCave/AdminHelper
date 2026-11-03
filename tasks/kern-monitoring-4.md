@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-4 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-4 · Review: am Ende
 Spec: docs/features/kern-monitoring-4.md (Roadmap R-1104, R-1107, R-1103)
 Heavy: linux-full — Monitoring-Routen hinter dem Gateway und die Desktop-Journey Monitoring; der Sammellauf fährt Stack, Agent-Monitoring und `desktop_e2e_monitoring.sh`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Beweis: weekly 2026-11-02-2310 (schemathesis, Teil rest) · main@03c4068a apps/m
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_router.py tests/test_template_suggestions.py tests/test_openapi_snapshot.py
 Doku: changelog.d/kern-monitoring-4.md
 
-### T3 — Live-E2E: Verlauf und Server-Vergleich (R-1103)  [ ]
+### T3 — Live-E2E: Verlauf und Server-Vergleich (R-1103)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-check.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @98a49779 2026-11-03T17:38:34+01:00
+Review: am Ende (Branch-Review)
 Änderung: Die Monitoring-Journey öffnet den Verlauf des Agent-Servers (Chart mit CPU-Serie, Zeitraum 24 Std., CSV-Knopf) und den Reiter Vergleich (die Rangliste nennt den Server). Je Runde wartet sie erst, bis die Anzeige da ist, und prüft sie; danach lädt sie mit 1 Std. neu und wartet erneut, denn `load()` leert die Anzeige sofort. Beweis im Sammellauf (`desktop_e2e_monitoring.sh`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
