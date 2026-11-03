@@ -417,6 +417,37 @@ def test_cpu_and_memory_are_written_once_per_server(client_db, monkeypatch):
     assert _lines_of(writes, "chk-1") == [f"monitor_check_status,{tags} value=0i"]
 
 
+def test_swap_and_cpu_count_are_written_when_the_agent_reports_them(client_db, monkeypatch):
+    # R-1076: the history divides load by cpu_count and shows swap; both came in the report
+    # but only the checker read them. A host without swap reports no swap_percent (the
+    # agent omits it), and then no series may appear.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    full = {"cpu_percent": 10, "swap_percent": 4.1, "load_1m": 0.5, "cpu_count": 8}
+    r = client.post("/agent/srv-1/report", json={"resources": full})
+    assert r.status_code == 200, r.text
+    r = client.post("/agent/srv-1/report", json={"resources": {"cpu_percent": 20, "cpu_count": 2}})
+    assert r.status_code == 200, r.text
+    # The load grading ignores a count that is no positive integer; the series does too.
+    for bad in (0, -2, 2.5):
+        r = client.post("/agent/srv-1/report", json={"resources": {"cpu_count": bad}})
+        assert r.status_code == 200, r.text
+
+    lines = [line.rsplit(" ", 1)[0] for batch in writes for line in batch]
+    assert [line for line in lines if line.startswith("monitor_agent_")] == [
+        "monitor_agent_cpu_percent,server_id=srv-1 value=10i",
+        "monitor_agent_swap_percent,server_id=srv-1 value=4.1",
+        "monitor_agent_load_1m,server_id=srv-1 value=0.5",
+        "monitor_agent_cpu_count,server_id=srv-1 value=8i",
+        "monitor_agent_cpu_percent,server_id=srv-1 value=20i",
+        "monitor_agent_cpu_count,server_id=srv-1 value=2i",
+    ]
+
+
 def test_resources_metrics_read_only_the_series_of_the_push_handler(client_db, monkeypatch):
     # R-0633: the series of the push handler carry no check_id; check_id="" leaves out the
     # check-labelled CPU/RAM copies the checker wrote before, which stay in VictoriaMetrics

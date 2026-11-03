@@ -182,6 +182,7 @@ Erzeugt mit `license-checker --production` (nur ausgelieferte Laufzeit-Deps).
 
 | Paket | Version | Lizenz |
 |---|---|---|
+| @lucide/svelte | 1.66.0 | ISC |
 | @tauri-apps/api | 2.11.0 | Apache-2.0 OR MIT |
 | @tauri-apps/plugin-dialog | 2.7.1 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-notification | 2.3.3 | MIT OR Apache-2.0 |

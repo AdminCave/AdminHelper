@@ -5,13 +5,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, type Component } from 'svelte';
+  import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
+  import Cable from '@lucide/svelte/icons/cable';
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import Layers from '@lucide/svelte/icons/layers';
+  import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+  import Moon from '@lucide/svelte/icons/moon';
+  import Search from '@lucide/svelte/icons/search';
+  import Server from '@lucide/svelte/icons/server';
+  import Settings from '@lucide/svelte/icons/settings';
+  import Sun from '@lucide/svelte/icons/sun';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings } from '$lib/stores/session';
-  import { searchTerm } from '$lib/stores/connections';
-  import { markRdpError } from '$lib/stores/connectFlow';
+  import { connections, searchTerm } from '$lib/stores/connections';
+  import { initiateConnect, markRdpError } from '$lib/stores/connectFlow';
+  import { openEditor } from '$lib/stores/editor';
+  import { buildEntries } from '$lib/palette';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import { context, openLauncher } from '$lib/stores/workspace';
   import { reportError } from '$lib/stores/statusBar';
@@ -27,8 +41,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import PasswordPrompt from './PasswordPrompt.svelte';
   import SettingsModal from './SettingsModal.svelte';
   import StatusBar from './StatusBar.svelte';
+  import CommandPalette from './CommandPalette.svelte';
+  import StatusFooter from './StatusFooter.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
+  import Avatar from './ui/Avatar.svelte';
+  import Kbd from './ui/Kbd.svelte';
   import {
     openSettings,
     logoutAndReload,
@@ -47,7 +65,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     id: 'dashboard' | 'connections' | 'infrastructure' | 'monitoring' | 'ansible';
     labelKey: string;
     href: string;
-    icon: string;
+    icon: Component<{ class?: string }>;
     serverOnly?: boolean;
   }
 
@@ -56,33 +74,33 @@ SPDX-License-Identifier: GPL-3.0-or-later
       id: 'dashboard',
       labelKey: 'nav.dashboard',
       href: '/dashboard',
-      icon: 'M4 13h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1zm0 8h6a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1zm10 0h6a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1zm0-18v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1z',
+      icon: LayoutDashboard,
     },
     {
       id: 'connections',
       labelKey: 'nav.connections',
       href: '/connections',
-      icon: 'M21 2H3a1 1 0 0 0-1 1v18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1zm-1 18H4V4h16v16zM7 7h2v2H7V7zm0 4h2v2H7v-2zm0 4h2v2H7v-2zm4-8h6v2h-6V7zm0 4h6v2h-6v-2zm0 4h6v2h-6v-2z',
+      icon: Cable,
     },
     {
       id: 'infrastructure',
       labelKey: 'nav.infrastructure',
       href: '/infrastructure',
-      icon: 'M3 4h18v6H3V4zm0 10h18v6H3v-6zm3-8v2h2V6H6zm0 10v2h2v-2H6z',
+      icon: Server,
       serverOnly: true,
     },
     {
       id: 'monitoring',
       labelKey: 'nav.monitoring',
       href: '/monitoring',
-      icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+      icon: CircleCheck,
       serverOnly: true,
     },
     {
       id: 'ansible',
       labelKey: 'nav.ansible',
       href: '/ansible',
-      icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+      icon: Layers,
       serverOnly: true,
     },
   ];
@@ -109,6 +127,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function toLauncher(): void {
     openLauncher().catch((err) => reportError(errMsg(err)));
+  }
+
+  let paletteOpen = $state(false);
+  const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
+  // Pages as in the sidebar, so the palette never offers what this mode cannot show.
+  let paletteEntries = $derived(
+    buildEntries({
+      connections: $connections,
+      pages: visibleNav.map((n) => ({ id: n.id, label: $t(n.labelKey), href: n.href })),
+      actions: [
+        { id: 'newConnection', label: $t('connections.new'), run: () => openEditor(null) },
+        { id: 'settings', label: $t('settings.label'), run: openSettings },
+        { id: 'theme', label: $t('theme.toggle'), run: toggleTheme },
+        { id: 'workspace', label: $t('workspace.openLauncher'), run: toLauncher },
+      ],
+      connect: (c) => void initiateConnect(c),
+      navigate,
+    }),
+  );
+
+  // Ctrl+K / Cmd+K works from inside input fields too: it is the way out of one. Not over another
+  // dialog: the palette would open beneath it and take the typing (a password) out of view.
+  // e.code keeps the shortcut on layouts whose K key types another letter.
+  function onWindowKeydown(e: KeyboardEvent): void {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    if (e.code !== 'KeyK' && e.key.toLowerCase() !== 'k') return;
+    if (document.querySelector('[aria-modal="true"]')) return;
+    e.preventDefault();
+    paletteOpen = true;
   }
 
   // Poll the notification feed app-wide while a server session is active. The
@@ -197,6 +244,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div
   class="app-shell"
   class:sidebar-collapsed={collapsed}
@@ -214,10 +263,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           />
         </svg>
       </div>
-      <div class="sidebar-brand-text">
-        <div class="sidebar-title" style="font-weight:600">Admin</div>
-        <div class="sidebar-subtitle" style="font-weight:300">Helper</div>
-      </div>
+      <div class="sidebar-brand-text">Admin<span class="sidebar-brand-light">Helper</span></div>
     </div>
 
     {#if workspace}
@@ -229,6 +275,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >
         <span class="workspace-dot" style:background={workspace.color}></span>
         <span class="workspace-chip-name">{workspace.name}</span>
+        <ChevronsUpDown class="workspace-chip-caret" size={13} />
       </button>
     {/if}
 
@@ -237,11 +284,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button
           class="sidebar-item"
           class:active={currentId === item.id}
+          aria-current={currentId === item.id ? 'page' : undefined}
           data-nav={item.id}
           onclick={() => go(item)}
           title={$t(item.labelKey)}
         >
-          <svg class="sidebar-icon" viewBox="0 0 24 24"><path d={item.icon} /></svg>
+          <item.icon class="sidebar-icon" />
           <span class="sidebar-label">{$t(item.labelKey)}</span>
         </button>
       {/each}
@@ -253,19 +301,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
     <div class="sidebar-bottom">
       <button class="sidebar-item" onclick={openSettings} title={$t('settings.label')}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24">
-          <path
-            d="M12 8.75a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5Zm8.25 3.25c0-.46-.04-.9-.11-1.34l2.01-1.57-1.8-3.12-2.45.99a7.9 7.9 0 0 0-2.32-1.34l-.37-2.6H9.79l-.37 2.6a7.9 7.9 0 0 0-2.32 1.34l-2.45-.99-1.8 3.12 2.01 1.57c-.07.44-.11.88-.11 1.34 0 .46.04.9.11 1.34l-2.01 1.57 1.8 3.12 2.45-.99c.69.57 1.48 1 2.32 1.34l.37 2.6h4.42l.37-2.6c.84-.34 1.63-.77 2.32-1.34l2.45.99 1.8-3.12-2.01-1.57c.07-.44.11-.88.11-1.34Z"
-          />
-        </svg>
+        <Settings class="sidebar-icon" />
         <span class="sidebar-label">{$t('settings.label')}</span>
       </button>
       <!-- After the settings and without an aria-label: the live specs take the first item here
            for the settings and the one with an aria-label for the theme toggle. -->
       <button class="sidebar-item" onclick={toLauncher} title={$t('workspace.openLauncher')}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z" />
-        </svg>
+        <ArrowLeftRight class="sidebar-icon" />
         <span class="sidebar-label">{$t('workspace.openLauncher')}</span>
       </button>
       <button
@@ -275,15 +317,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         aria-label={$t('theme.toggle')}
       >
         {#if $theme === 'dark'}
-          <svg class="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
+          <Moon class="sidebar-icon" />
         {:else}
-          <svg class="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"
-            />
-          </svg>
+          <Sun class="sidebar-icon" />
         {/if}
         <span class="sidebar-label">{$t('theme.toggle')}</span>
       </button>
@@ -295,9 +331,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       onclick={toggleCollapse}
       aria-label={collapsed ? $t('sidebar.expand') : $t('sidebar.collapse')}
     >
-      <svg viewBox="0 0 24 24" width="16" height="16">
-        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-      </svg>
+      <ChevronLeft size={16} />
     </button>
   </aside>
 
@@ -306,20 +340,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <h1 class="page-title">{title}</h1>
     </div>
     <div class="content-header-right">
+      <!-- Not .btn.ghost.small: the live specs take the first of those for the sign-out. -->
+      <button
+        class="header-palette-btn"
+        onclick={() => (paletteOpen = true)}
+        title={$t('palette.open')}
+        aria-label={$t('palette.open')}
+        aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
+      >
+        <Search size={14} />
+        <Kbd>{isMac ? '⌘K' : $t('palette.shortcut')}</Kbd>
+      </button>
       {#if currentId === 'connections'}
         <label class="search-box">
-          <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16">
-            <path
-              d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-            />
-          </svg>
+          <Search class="search-icon" size={16} />
           <input type="search" placeholder={$t('search.placeholder')} bind:value={$searchTerm} />
         </label>
       {/if}
       {#if $session}
         <NotificationBell />
-        <span style="color: var(--text-muted); margin: 0 var(--sp-3);">
-          {$session.username}
+        <span class="header-user">
+          <Avatar name={$session.username} size="sm" />
+          <span class="header-user-name">{$session.username}</span>
         </span>
         <button class="btn ghost small" onclick={() => logoutAndReload()}>{$t('nav.logout')}</button
         >
@@ -342,9 +384,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
     </section>
   </main>
+
+  <StatusFooter />
 </div>
 
 <ConnectionEditor />
 <PasswordPrompt />
 <SettingsModal />
 <StatusBar />
+<CommandPalette open={paletteOpen} entries={paletteEntries} onClose={() => (paletteOpen = false)} />

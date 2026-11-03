@@ -520,6 +520,40 @@ export interface MonitoringMetricsResponse {
   statusHistory?: MonitoringMetricSeries[];
 }
 
+/** [unix seconds, value]; value null where the history grid point has no sample. */
+export type HistoryPoint = [number, number | null];
+
+export interface HistorySeries {
+  cpu: HistoryPoint[];
+  ram: HistoryPoint[];
+  swap: HistoryPoint[];
+  loadPerCpu: HistoryPoint[];
+  disks: Record<string, HistoryPoint[]>;
+}
+
+/** One metric of every server with agent data on one grid (`GET /status/compare`). */
+export interface ServerCompare {
+  metric: string;
+  period: string;
+  step: number;
+  start: number;
+  end: number;
+  servers: { serverId: string; points: HistoryPoint[] }[];
+}
+
+export interface ServerHistory {
+  serverId: string;
+  period: string;
+  step: number;
+  start: number;
+  end: number;
+  series: HistorySeries;
+  previous: HistorySeries | null;
+  thresholds: Record<string, { warn: number; crit: number }>;
+  events: { at: number; checkId: string; checkName: string; status: string }[];
+  maintenance: { start: number; end: number; note: string | null }[];
+}
+
 export interface AlertChannelConfig {
   url?: string;
   recipients?: string[];

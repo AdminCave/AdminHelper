@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import Bell from '@lucide/svelte/icons/bell';
   import { t } from '$lib/i18n';
   import { timeAgo } from '$lib/utils/timeAgo';
   import {
@@ -15,9 +16,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     closePanel,
     markAllRead,
   } from '$lib/stores/notifications';
-
-  const BELL_ICON =
-    'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z';
 </script>
 
 <div class="notif-wrap">
@@ -28,7 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     title={$t('notifications.title')}
     aria-label={$t('notifications.title')}
   >
-    <svg viewBox="0 0 24 24" width="20" height="20"><path d={BELL_ICON} /></svg>
+    <Bell size={20} />
     {#if $unreadCount > 0}
       <span class="notif-badge">{$unreadCount > 99 ? '99+' : $unreadCount}</span>
     {/if}
