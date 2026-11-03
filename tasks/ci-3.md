@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py te
 Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md
 Abhängt von: T1
 
-### T3 — Actions auf das aktuelle Release, tauri-cli 2.12.4 (R-1042, R-1085)  [ ]
+### T3 — Actions auf das aktuelle Release, tauri-cli 2.12.4 (R-1042, R-1085)  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/docker.yml, .github/workflows/audit.yml, changelog.d/ci-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d4516fb4 2026-11-03T18:26:48+01:00
+Review: approve (.ah-out/review/ci-3/T3.verdict.json)
 Änderung: Jede `uses:`-Zeile außer `sigstore/cosign-installer` (T5) und `dtolnay/rust-toolchain` auf den SHA des Releases aus der Spec-Tabelle, Kommentar `# vX.Y.Z`; SHAs unmittelbar vor dem Bau mit `gh api repos/<r>/commits/<tag>` neu holen. `cargo install tauri-cli --version` in `ci.yml:734`, `release.yml:59` und `release.yml:261` auf `2.12.4`. Vorher `grep` nach Eingaben, die die Majors entfernt haben (`pip-install`, `NODE_AUTH_TOKEN`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: changelog.d/ci-3.md
@@ -50,3 +52,4 @@ Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md
 Abhängt von: T3
 
 ## Entscheidungen
+- T3: der Manifest-Upload aus T2 stand im Job `server` zwischen `Run pytest` und `No test skipped`; `test_release_images.py::test_the_skip_step_follows_pytest_in_the_leg_with_every_base_image` verlangt den Skip-Schritt direkt nach pytest und war rot (T2-Verify fuhr die Datei nicht). T3 setzt den Upload hinter den Skip-Schritt; alle Server-Tests, die die Workflows lesen: 69 passed, 2 skipped (Redis lokal nicht da).
