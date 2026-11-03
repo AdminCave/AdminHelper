@@ -257,7 +257,7 @@ def test_the_step_takes_in_the_postgresql_clients_where_the_image_has_them(box):
 
 def test_after_the_step_a_process_of_app_is_not_dumpable(box):
     uid = _app_uid()
-    script = "#!/usr/local/bin/python3.12\nimport time\ntime.sleep(602)\n"
+    script = "#!/usr/local/bin/python3.14\nimport time\ntime.sleep(602)\n"
     write = "cat > /tmp/sleeper.py && chmod 0755 /tmp/sleeper.py"
     assert box.exec("sh", "-c", write, stdin=script).returncode == 0
     # A copy of sleep anyone reads: the counter-check, a process of app that stays dumpable.
@@ -276,7 +276,7 @@ def test_after_the_step_a_process_of_app_is_not_dumpable(box):
         ("python3", "-c", "import time; time.sleep(600)"): "0:0",
         ("sh", "-c", "sleep 601; :"): "0:0",
         ("sleep", "601"): "0:0",
-        ("/usr/local/bin/python3.12", "/tmp/sleeper.py"): "0:0",
+        ("/usr/local/bin/python3.14", "/tmp/sleeper.py"): "0:0",
         ("/tmp/sleep", "603"): f"{uid}:{_APP_GID}",
     }
     deadline = time.monotonic() + _WAIT
