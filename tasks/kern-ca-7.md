@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-7 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-7 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-7 · Review: pro Task
 Spec: docs/features/kern-ca-7.md (Roadmap R-1094, R-1095, R-1111)
 Heavy: linux-full — `apps/ca-issuer` im Diff: der Sammellauf über `main` fährt Stack und Enrollment.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Beweis: feature/arch-ca-root-renewal@8f50d71a apps/ca-issuer/app/rotation.py:103
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py
 Doku: changelog.d/kern-ca-7.md
 
-### T3 — /renew: Laufzeit des vorgelegten Zertifikats im Test (R-1111)  [ ]
+### T3 — /renew: Laufzeit des vorgelegten Zertifikats im Test (R-1111)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/test_enroll_renew.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @4ef47f4b 2026-11-03T16:57:01+01:00
+Review: approve (.ah-out/review/kern-ca-7/T3.verdict.json)
 Änderung: Tests über die Route `/renew` mit einem vom Zwischenzertifikat des Scopes signierten Leaf: abgelaufen, noch nicht gültig, letzte gültige Sekunde; die ersten beiden 403, die letzte 200. Gegenprobe gegen eine Variante ohne die Prüfung in `_verify_ca_signed`.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew.py
 Doku: keine (Testcode)
