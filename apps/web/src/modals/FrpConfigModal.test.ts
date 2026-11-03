@@ -100,7 +100,9 @@ function renderModal(editing: FrpConfig | null) {
   const asked = () => question.container.querySelector('.modal-body p')?.textContent ?? null;
   const answer = (ok: boolean) =>
     fireEvent.click(
-      question.container.querySelector(ok ? '.btn.danger' : '.btn.ghost') as HTMLButtonElement,
+      question.container.querySelector(
+        ok ? '.ui-btn-danger' : '.ui-btn-ghost',
+      ) as HTMLButtonElement,
     );
   dropQuestion = async () => {
     if (asked() !== null) await answer(false);
@@ -269,7 +271,7 @@ describe('asking before saving an edit', () => {
     expect(m.onClose).not.toHaveBeenCalled();
     expect(m.asked()).toBeNull();
     expect(m.field('fcBindPort').value).toBe('7001');
-    expect((m.view.container.querySelector('.btn.primary') as HTMLButtonElement).disabled).toBe(
+    expect((m.view.container.querySelector('.ui-btn-primary') as HTMLButtonElement).disabled).toBe(
       false,
     );
   });
