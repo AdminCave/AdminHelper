@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-4 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-4 · Review: am Ende
+Status: erledigt · Branch: feature/kern-monitoring-4 · Review: am Ende
 Spec: docs/features/kern-monitoring-4.md (Roadmap R-1104, R-1107, R-1103)
 Heavy: linux-full — Monitoring-Routen hinter dem Gateway und die Desktop-Journey Monitoring; der Sammellauf fährt Stack, Agent-Monitoring und `desktop_e2e_monitoring.sh`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
