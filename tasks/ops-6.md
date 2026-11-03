@@ -38,11 +38,13 @@ Beweis: feature/ops-5@787f9377 scripts/update.sh:549, scripts/tests/update_test.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: changelog.d/ops-6.md
 
-### T4 — backup.sh: Passphrase-Filter und Maskierung (R-1048, R-1052, R-1049)  [ ]
-Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, changelog.d/ops-6.md
-Änderung: Der Filter behält das schließende Quote eines Werts auch auf einer Zeile, die wie ein Kommentar aussieht (R-1048); die Maskierung einer kaputten `.env` trifft nur den betroffenen Teil (R-1052); Kommentar am Filter umbrechen (R-1049). Tests je Fall, rot ohne Fix.
+### T4 — backup.sh: Passphrase-Filter und Maskierung (R-1048, R-1052, R-1049)  [x]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/tests/restore_guard_test.sh, changelog.d/ops-6.md, scripts/diagnostics.sh, scripts/restore.sh, docs/features/ops-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6253eb7e 2026-11-03T16:27:14+01:00
+Review: approve (.ah-out/review/ops-6/T4.verdict.json)
+Änderung: Der Filter behält das schließende Quote eines Werts auch auf einer Zeile, die wie ein Kommentar aussieht (R-1048); in einer `.env`, die Compose ablehnt, bleibt kein Quote aus der Passphrase stehen (R-1052); Kommentar am Filter umbrechen (R-1049). Tests je Fall, rot ohne Fix.
 Beweis: feature/ops-5@7fe85795 scripts/backup.sh ENV_TOK-Filter · Dedup-Key: BUG:scripts:backup.sh:env_filter_comment_quote
-Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
+Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagnostics_test
 Doku: changelog.d/ops-6.md
 
 ### T5 — restore.sh liest die .env wie Compose (R-1047, R-1058)  [ ]
@@ -65,3 +67,4 @@ Doku: changelog.d/ops-6.md
 ## Entscheidungen
 - T1 (2026-11-03): Die neue `$`-Regel lehnt nur ab, was Compose selbst bemaengelt (Warnung "variable is not set" oder Abbruch durch `?`), ausgewertet wie Compose: zuerst die Umgebung (gesetzt oder leer, vor jeder Zeile der Datei), dann frühere Keys; spätere und Keys ohne Wert gelten nicht, Default/Alternative/WORD nur, wo Compose sie auswertet. Ein Wert mit Template gilt für `:` als möglicherweise leer (vorsichtige Seite). Belegt mit Proben gegen echtes `docker compose config`; die erste Fassung prüfte die Umgebung nach den früheren Keys (Prüferfund, behoben, Differentialfälle mit Umgebung). Der Differentialtest 32 zählt die Warnung jetzt als Ablehnung. Eine Zeile mit leerem Key setzt keinen Namen.
 - T3 (2026-11-03): Die Jobmeldung „Aufgelegt“ kam von `wait` in `reader_ends_update` (update_test.sh) und ist mit `{ wait; } 2>/dev/null` weg. Die Zeile „│ Aufgelegt“ in der eingerückten Ausgabe von Test 44b bleibt: sie gehört zur Ausgabe von update.sh selbst (bash meldet den per SIGHUP beendeten Pull), die der Test absichtlich zeigt.
+- T4 (2026-11-03): R-1048 stand schon auf `main` behoben (61afd157 aus ops-5, Test 15f in `restore_guard_test`; der Fall aus dem Fund ergibt `B="x`, `"`, `F=6`); T4 baut dafür nichts nach. R-1052: liest `tok_exact` eine Zeile, die Compose ablehnt (`tbad`), behält der Filter kein schließendes Quote mehr, die Anweisung geht ganz (Test 15h, rot ohne Fix). `tbad` steht im geteilten Tokenizer, daher auch in `diagnostics.sh` und `restore.sh` (der Gleichheitstest in `diagnostics_test`). Prüferfund: eine Zeile mit leerem Key (`=abc`, `export =1`) nimmt Compose an (Probe rc 0, `bad key=1` rc 1), sie setzt `tbad` daher nicht (Test 15i, rot ohne Fix). security-Fund Runde 2: Compose liest auch den Wert eines leeren Keys ganz, ein gequoteter läuft bis zu seinem schließenden Quote über Zeilen; `tok_exact` liest ihn jetzt wie jeden anderen Wert (Test 15j, rot ohne Fix). Er löst auch `hit` aus: ohne bliebe das schließende Quote seines Werts nicht stehen (Test 15k, rot in der Variante ohne `hit`; `want` liefert für den leeren Key in `diagnostics.sh` und `restore.sh` außerhalb von `ex` nichts). Die Spec-Zeile zu R-1052 ist neutral gefasst, Details in `tasks/private/`. Kevin 2026-11-03: dritte Prüfrunde für T4 zugelassen.

@@ -33,6 +33,10 @@
 # key goes, but that value's closing quote stays; the bytes behind it go too (15e:
 # there the passphrase's own value may begin). 15f: a commented line that holds that
 # closing quote stays with it; 15g: a statement compose reads behind it goes whole.
+# 15h: in a file compose refuses, the passphrase statement goes whole, no quote kept.
+# 15i: a line with an empty key compose takes: the closing quote of another value stays.
+# 15j: the quoted value of an empty key runs on to its closing quote, like any other;
+# 15k: that closing quote stays.
 # 16: backup.sh, against the same stubs and a date stub that fixes the archive
 # name: a directory under that name fails the backup and takes no archive, and no
 # temp file stays; a symlink under it is replaced by the archive, its target
@@ -492,6 +496,52 @@ sanitized=$(bk_env "$WORK/bk/f7")
 { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f7/expected" "$sanitized"; } \
   && ok "env.sanitized cuts a statement behind the kept quote whole" \
   || bad "statement behind the kept quote: rc=$rc env.sanitized=[$(cat -A "$sanitized" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# --- 15h. backup.sh: in a file compose refuses, the statement goes whole ──────────
+# compose refuses the key with a space; read past it, B's value would close on the
+# quote inside the passphrase, and the kept quote told a byte of it.
+mkdir -p "$WORK/bk/f8"
+printf 'bad key="\nB="\nCA_ROOT_PASSPHRASE=ab"cd13secret\n' > "$WORK/bk/run/.env"
+printf 'bad key="\nB="\n' > "$WORK/bk/f8/expected"
+out=$(bk_run "$WORK/bk/f8" "$WORK/bk/f8/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f8")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f8/expected" "$sanitized"; } \
+  && ok "env.sanitized drops the passphrase statement whole in a file compose refuses" \
+  || bad "refused file: rc=$rc env.sanitized=[$(sed 's/cd13secret/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+
+# --- 15i. backup.sh: an empty key is no refused file ─────────────────────────────
+# compose passes over "=abc" and reads on; the quote that closes A stays, or the
+# restored .env would hold an open quote compose refuses.
+mkdir -p "$WORK/bk/f9"
+printf '=abc\nA="x \x27CA_ROOT_PASSPHRASE=geheim"\nB=1\n' > "$WORK/bk/run/.env"
+printf '=abc\nA="x \x27"\nB=1\n' > "$WORK/bk/f9/expected"
+out=$(bk_run "$WORK/bk/f9" "$WORK/bk/f9/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f9")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f9/expected" "$sanitized"; } \
+  && ok "env.sanitized keeps the closing quote behind a line with an empty key" \
+  || bad "empty key: rc=$rc env.sanitized=[$(sed 's/geheim/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+
+# --- 15j. backup.sh: an empty key's quoted value runs on over lines ────────────
+# compose reads the value of the empty key to its closing quote on the next line and
+# the passphrase statement behind it; cut at the line, a quote of it would stay.
+mkdir -p "$WORK/bk/f10"
+printf '="a\nB="\nCA_ROOT_PASSPHRASE=ab"cd13secret\n' > "$WORK/bk/run/.env"
+printf '="a\nB="\n' > "$WORK/bk/f10/expected"
+out=$(bk_run "$WORK/bk/f10" "$WORK/bk/f10/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f10")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f10/expected" "$sanitized"; } \
+  && ok "env.sanitized reads an empty key's quoted value to its closing quote" \
+  || bad "empty key, quoted: rc=$rc env.sanitized=[$(sed 's/cd13secret/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+
+# --- 15k. backup.sh: the closing quote of an empty key's value stays ───────────
+mkdir -p "$WORK/bk/f11"
+printf '="x \x27CA_ROOT_PASSPHRASE=geheim"\nB=1\n' > "$WORK/bk/run/.env"
+printf '="x \x27"\nB=1\n' > "$WORK/bk/f11/expected"
+out=$(bk_run "$WORK/bk/f11" "$WORK/bk/f11/out"); rc=$?
+sanitized=$(bk_env "$WORK/bk/f11")
+{ [ $rc -eq 0 ] && cmp -s "$WORK/bk/f11/expected" "$sanitized"; } \
+  && ok "env.sanitized keeps the closing quote of an empty key's value" \
+  || bad "empty key, closing quote: rc=$rc env.sanitized=[$(sed 's/geheim/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
 
 # --- 16. backup.sh: the archive lands under its name as a file ───────────────
 # Without -T, mv takes a directory under the archive name (or a symlink to one)

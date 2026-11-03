@@ -23,7 +23,8 @@ die Frage steht am Gate.
   Test; die `update_test.sh`-Ausgabe trägt eine Job-Meldung („Aufgelegt“) einer Shell-Jobsteuerung.
 - **R-1048:** Der Passphrase-Filter in `backup.sh` verliert das schließende Quote eines Werts, wenn es auf einer
   Zeile steht, die wie ein Kommentar aussieht.
-- **R-1052:** Die Maskierung einer kaputten `.env` in `backup.sh` maskiert mehr als nötig.
+- **R-1052:** Der Passphrase-Filter in `backup.sh` behandelt eine `.env`, die Compose ablehnt, wie eine, die Compose
+  annimmt, und liest eine Zeile mit leerem Key anders als Compose.
 - **R-1047:** `restore.sh` `role_password` (`:268`) liest nur `KEY=` und die erste Anweisung; Compose nimmt jede Form
   (`export KEY=`, `KEY = v`, Quotes) und die letzte.
 - **R-1058:** Der Schnitt der Compose-Variablen in `restore.sh` kennt die ES/EE-Erweiterung aus `backup.sh` nicht
