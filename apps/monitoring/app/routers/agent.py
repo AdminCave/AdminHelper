@@ -157,10 +157,22 @@ def _report_lines(server_id: str, report: dict) -> list[str]:
     try:
         resources = report.get("resources", {})
         if isinstance(resources, dict):
-            for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
+            for key in (
+                "cpu_percent",
+                "memory_percent",
+                "swap_percent",
+                "load_1m",
+                "load_5m",
+                "load_15m",
+            ):
                 val = agent_number(resources.get(key))
                 if val is not None:
                     lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
+            # Same rule as the load grading (_grade_load): the history divides by this
+            # series, so a count that is no positive integer is no series.
+            cpu_count = agent_number(resources.get("cpu_count"))
+            if isinstance(cpu_count, int) and cpu_count >= 1:
+                lines.append(format_line("monitor_agent_cpu_count", base_tags, cpu_count, ts))
 
             for disk in capped_objects(resources.get("disks")):
                 if entry_text(disk, "fstype", "_real_") in EXCLUDED_FSTYPES:

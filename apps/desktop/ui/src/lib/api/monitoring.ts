@@ -23,6 +23,8 @@ import type {
   MaintenanceWindow,
   MaintenanceInput,
   Server,
+  ServerCompare,
+  ServerHistory,
   TemplateAssignment,
   TemplateSuggestion,
 } from '$lib/api/types';
@@ -50,6 +52,26 @@ export const monitoringApi = {
       session,
       'GET',
       `/api/monitoring/checks/${encodeURIComponent(checkId)}/metrics?period=${period}`,
+    );
+  },
+
+  fetchServerCompare(session: AuthSession, metric: string, period: string): Promise<ServerCompare> {
+    return apiRequest<ServerCompare>(
+      session,
+      'GET',
+      `/api/monitoring/status/compare?metric=${encodeURIComponent(metric)}&period=${encodeURIComponent(period)}`,
+    );
+  },
+
+  fetchServerHistory(
+    session: AuthSession,
+    serverId: string,
+    period: string,
+  ): Promise<ServerHistory> {
+    return apiRequest<ServerHistory>(
+      session,
+      'GET',
+      `/api/monitoring/status/server/${encodeURIComponent(serverId)}/history?period=${period}&previous=true`,
     );
   },
 

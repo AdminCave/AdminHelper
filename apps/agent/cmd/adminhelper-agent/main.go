@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -105,6 +106,43 @@ var stdinTerminal = func(in io.Reader) (int, bool) {
 // readTerminal reads a line from the terminal fd without echo; tests swap it.
 var readTerminal = term.ReadPassword
 
+// The terminal state and interrupt hooks of readTerminalRestoring; tests swap them.
+var (
+	termState       = term.GetState
+	termRestore     = term.Restore
+	notifyInterrupt = func(c chan<- os.Signal) { signal.Notify(c, os.Interrupt) }
+	stopInterrupt   = func(c chan<- os.Signal) { signal.Stop(c) }
+	exitProcess     = os.Exit
+)
+
+// readTerminalRestoring is readTerminal that puts the terminal state back when an
+// interrupt (Ctrl-C) ends the process during the read: x/term restores the echo
+// only when the read returns, and the default interrupt handling exits before that,
+// leaving the shell without echo. Exits with 130, the shell's code for SIGINT.
+func readTerminalRestoring(fd int, prompt io.Writer) ([]byte, error) {
+	state, err := termState(fd)
+	if err != nil {
+		return readTerminal(fd)
+	}
+	sig := make(chan os.Signal, 1)
+	notifyInterrupt(sig)
+	done := make(chan struct{})
+	defer func() {
+		stopInterrupt(sig)
+		close(done)
+	}()
+	go func() {
+		select {
+		case <-sig:
+			_ = termRestore(fd, state)
+			fmt.Fprintln(prompt)
+			exitProcess(130)
+		case <-done:
+		}
+	}()
+	return readTerminal(fd)
+}
+
 // readStdinSecret returns the first line of in, trimmed, so a secret (what: "provision
 // token", "API key") does not have to be a program argument (visible in the process
 // list). On a terminal it prompts on prompt and reads without echo, so the secret stays
@@ -113,7 +151,7 @@ func readStdinSecret(in io.Reader, prompt io.Writer, what string) (string, error
 	var line string
 	if fd, ok := stdinTerminal(in); ok {
 		fmt.Fprintf(prompt, "%s%s: ", strings.ToUpper(what[:1]), what[1:])
-		b, err := readTerminal(fd)
+		b, err := readTerminalRestoring(fd, prompt)
 		fmt.Fprintln(prompt)
 		if err != nil {
 			return "", fmt.Errorf("read the %s from the terminal: %w", what, err)

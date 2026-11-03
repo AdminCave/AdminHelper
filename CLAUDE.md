@@ -138,10 +138,12 @@ löschen ungestagte Arbeit: nur nach `git add` oder wenn Verwerfen der Zweck ist
 schreibt nur `python3 scripts/dev/roadmap.py` (`add`, `status`, `approve`, `sync`, `lint`), nie ein Edit; „Als Nächstes“
 erzeugt es bei jedem Schreiben aus den Zeilen (Kevin 2026-10-30), Handarbeit für Kevin ist eine `blockiert`-Zeile;
 `zurückgestellt`/`blockiert` mit `--note` und Datum. Die Triage ordnet jede angenommene Zeile einem Zug zu
-(`status R-nnnn geplant --ledger tasks/<zug>.md`, `klein-` für die Klein-Session; `/roadmap`). Jedes Vorhaben baut in
-`git worktree add ../AdminHelper-<slug> feature/<slug>` plus `bash scripts/dev/worktree-setup.sh ../AdminHelper-<slug>
-<slug>` (eigene Test-DB, Venv, `node_modules`, Sidecar, `.vm/lane`); erst danach den Ledger-Kopf im Worktree ändern (das
-Ledger liegt nur auf dem Branch). Nach dem Merge `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`
+(`status R-nnnn geplant --ledger tasks/<zug>.md`, `klein-` für die Klein-Session; `/roadmap`). Jedes Vorhaben plant und
+baut in seinem Worktree `../AdminHelper-<slug>`: `/feature-plan` legt ihn an (`git worktree add --no-track -b
+feature/<slug> ../AdminHelper-<slug> origin/main`), `/feature-build` richtet ihn ein (`bash scripts/dev/worktree-setup.sh
+../AdminHelper-<slug> <slug>`: eigene Test-DB, Venv, `node_modules`, Sidecar, `.vm/lane`); erst danach den Ledger-Kopf
+im Worktree ändern (das Ledger liegt nur auf dem Branch). Der Haupt-Checkout bleibt auf `main` und wechselt nie den
+Branch: alle Sessions teilen ihn (Kevin 2026-11-02; der Bash-Guard lehnt `git switch`/`checkout` dort ab). Nach dem Merge `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`
 (reapt zuerst die VMs der Lane), dann `git worktree list` und `vm.py list` sauber. Temp-Verzeichnisse nur `mktemp -d -p
 <eigenes Verzeichnis>`, gelöscht nur mit vollem Pfad, nie per Glob.
 

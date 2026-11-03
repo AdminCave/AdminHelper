@@ -67,12 +67,78 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// this cap. A client-global `timeout()` would instead tear the stream down every cycle.
 const READ_TIMEOUT: Duration = Duration::from_secs(45);
 
-/// Apply the shared connect/read timeouts. Every client build path routes through this so
-/// no reqwest client is ever built without a timeout (4.2).
+/// Apply the shared connect/read timeouts and the public-CA TLS config. Every client build path
+/// routes through this so no reqwest client is ever built without a timeout (4.2), nor without a
+/// TLS config: reqwest runs without a crypto provider of its own. The TOFU and mTLS paths replace
+/// the TLS config with theirs afterwards.
 pub fn with_timeouts(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
     builder
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
+        .tls_backend_preconfigured(PUBLIC_CA_TLS.clone())
+}
+
+/// Full validation against the webpki roots, on ring.
+static PUBLIC_CA_TLS: LazyLock<rustls::ClientConfig> = LazyLock::new(|| {
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    rustls::ClientConfig::builder_with_provider(crate::tofu::ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring supports the default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth()
+});
+
+/// How long reading one body may take as a whole. [`READ_TIMEOUT`] bounds the wait for each
+/// chunk only, so an answer that drips stays under it and would hold the fetch open.
+const BODY_DEADLINE: Duration = Duration::from_secs(120);
+
+/// The body of `response`, for "the `what` could not be loaded" errors. A body over `max_bytes`
+/// is refused by its declared length before any of it is read, else as soon as more has arrived;
+/// one that takes longer than [`BODY_DEADLINE`] is refused too. No error quotes the answer.
+pub async fn read_bounded(
+    response: reqwest::Response,
+    max_bytes: usize,
+    what: &str,
+) -> Result<Vec<u8>, AppError> {
+    read_within(response, max_bytes, what, BODY_DEADLINE).await
+}
+
+async fn read_within(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    what: &str,
+    deadline: Duration,
+) -> Result<Vec<u8>, AppError> {
+    let too_large = || {
+        AppError::Validation(format!(
+            "the {what} could not be loaded (answer larger than {} MiB)",
+            max_bytes / (1024 * 1024)
+        ))
+    };
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(too_large());
+    }
+    let read = async {
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if body.len() + chunk.len() > max_bytes {
+                return Err(too_large());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    };
+    tokio::time::timeout(deadline, read).await.map_err(|_| {
+        AppError::Validation(format!(
+            "the {what} could not be loaded (answer took longer than {} s)",
+            deadline.as_secs_f32()
+        ))
+    })?
 }
 
 /// Build the reqwest client for talking to `server_url`, choosing the strongest
@@ -130,7 +196,7 @@ fn client_for(
         // on-path MITM. Pin the server's certificate on first use instead.
         crate::tofu::pinning_client(server_url)?
     } else {
-        // Public-CA path: reqwest's default full validation against webpki-roots.
+        // Public-CA path: full validation against the webpki roots from with_timeouts.
         with_timeouts(reqwest::Client::builder())
             .build()
             .map_err(AppError::from)?
@@ -149,8 +215,82 @@ pub fn invalidate_client_cache() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_client, build_client_without_identity, with_timeouts, ClientCache};
+    use super::{
+        build_client, build_client_without_identity, read_within, with_timeouts, ClientCache,
+    };
     use crate::keyring_store;
+    use std::time::Duration;
+
+    /// Serve one HTTP answer without a length on a fresh loopback port: `parts` one after the
+    /// other, `pause` apart, then the connection closes.
+    async fn serve_dripping(parts: Vec<&'static str>, pause: Duration) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "http://127.0.0.1:{}/",
+            listener.local_addr().unwrap().port()
+        );
+        tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    return;
+                }
+                head.extend_from_slice(&buf[..n]);
+            }
+            let _ = tcp
+                .write_all(b"HTTP/1.1 200 OK\r\nconnection: close\r\n\r\n")
+                .await;
+            for part in parts {
+                tokio::time::sleep(pause).await;
+                if tcp.write_all(part.as_bytes()).await.is_err() {
+                    return;
+                }
+            }
+            let _ = tcp.shutdown().await;
+        });
+        url
+    }
+
+    async fn get(url: &str) -> reqwest::Response {
+        with_timeouts(reqwest::Client::builder())
+            .build()
+            .unwrap()
+            .get(url)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn read_within_refuses_an_answer_that_drips_past_the_deadline() {
+        // Each part comes well inside READ_TIMEOUT, the whole answer not inside the deadline.
+        let url = serve_dripping(vec!["["; 40], Duration::from_millis(50)).await;
+        let read = tokio::time::timeout(
+            Duration::from_secs(10),
+            read_within(get(&url).await, 1024, "list", Duration::from_millis(300)),
+        )
+        .await
+        .expect("the read outlived its deadline");
+        let message = read.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(
+            message.contains("the list could not be loaded (answer took longer than"),
+            "{message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_within_returns_an_answer_that_ends_inside_the_deadline() {
+        let url = serve_dripping(vec!["[1,", "2]"], Duration::from_millis(20)).await;
+        let body = read_within(get(&url).await, 1024, "list", Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(body, b"[1,2]");
+    }
 
     #[test]
     fn with_timeouts_builds_a_valid_client() {

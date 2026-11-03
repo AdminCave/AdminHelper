@@ -25,6 +25,7 @@ import argparse
 import datetime
 import fcntl
 import os
+import re
 import sys
 from typing import NoReturn
 
@@ -40,7 +41,7 @@ from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.users.models import User
-from app.modules.users.schemas import PASSWORD_MAX_LEN
+from app.modules.users.schemas import _USERNAME_PATTERN, PASSWORD_MAX_LEN
 
 _MIN_PASSWORD_LEN = 8
 # No request, no principal: the operator at the container shell. The web panel
@@ -50,6 +51,13 @@ _CLI_ACTOR = Actor("system", None, "cli", None)
 
 def create_admin(db, username: str, password: str) -> int:
     """Create an admin user. Returns a process exit code (0 ok, 1 refused)."""
+    # The rule of UserCreate: the name becomes a file name in the FRP bulk-ZIP, too.
+    if not 3 <= len(username) <= 64 or not re.fullmatch(_USERNAME_PATTERN, username):
+        print(
+            "Error: the username must be 3 to 64 letters, digits, '.', '_' or '-'.",
+            file=sys.stderr,
+        )
+        return 1
     if len(password) < _MIN_PASSWORD_LEN:
         print(f"Fehler: Passwort muss >= {_MIN_PASSWORD_LEN} Zeichen sein.", file=sys.stderr)
         return 1

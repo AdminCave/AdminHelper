@@ -120,10 +120,10 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 ### Direkte Abhängigkeiten (`Cargo.toml`)
 
 `serde`, `serde_json`, `tauri`, `reqwest`, `futures-util`, `tokio`, `url`,
-`open`, `keyring`, `tauri-plugin-shell`, `tauri-plugin-dialog`,
+`open`, `keyring-core`, `zbus-secret-service-keyring-store` (Linux), `apple-native-keyring-store` (macOS), `tauri-plugin-shell`, `tauri-plugin-dialog`,
 `tauri-plugin-notification`, `tauri-plugin-log`,
 `tauri-plugin-single-instance` (nur Desktop-Ziele), `log`, `chrono`, `regex`,
-`rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `x509-parser`, `p12`,
+`rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
 `toml`, `zeroize` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
@@ -182,6 +182,7 @@ Erzeugt mit `license-checker --production` (nur ausgelieferte Laufzeit-Deps).
 
 | Paket | Version | Lizenz |
 |---|---|---|
+| @lucide/svelte | 1.66.0 | ISC |
 | @tauri-apps/api | 2.11.0 | Apache-2.0 OR MIT |
 | @tauri-apps/plugin-dialog | 2.7.1 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-notification | 2.3.3 | MIT OR Apache-2.0 |

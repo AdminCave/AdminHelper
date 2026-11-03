@@ -38,7 +38,7 @@ use commands::{
     password_state, pinned_ca_fingerprint, refresh_tunnel, reset_device_identity,
     reset_server_cert_pin, resolve_connection, save_connections, save_password, save_settings,
     save_workspace, start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
-    sync_connections, tunnel_status, workspace_context,
+    sync_connections, tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -246,6 +246,7 @@ fn main() {
             reset_device_identity,
             enroll_with_token,
             export_browser_p12,
+            write_export_csv,
             ansible_run,
             start_notification_stream,
             stop_notification_stream,

@@ -66,38 +66,20 @@ pub async fn fetch_playbook(session: &SessionState, id: &str) -> Result<Playbook
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 /// The answer to an authenticated GET of `path` as `T`. A status other than 2xx, an answer over
-/// [`MAX_RESPONSE_BYTES`] (refused by its declared length before any of the body is read, else
-/// as soon as more has arrived) and one that is no `T` are errors that never quote the answer.
+/// [`MAX_RESPONSE_BYTES`] or past the body deadline ([`crate::http_client::read_bounded`]) and
+/// one that is no `T` are errors that never quote the answer.
 async fn fetch_json<T: serde::de::DeserializeOwned>(
     session: &SessionState,
     path: &str,
 ) -> Result<T, AppError> {
-    let (mut response, _) = crate::auth::authenticated_get(session, path).await?;
+    let (response, _) = crate::auth::authenticated_get(session, path).await?;
     let status = response.status();
     if !status.is_success() {
         return Err(AppError::Validation(format!(
             "the playbook could not be loaded ({status})"
         )));
     }
-    let too_large = || {
-        AppError::Validation(format!(
-            "the playbook could not be loaded (answer larger than {} MiB)",
-            MAX_RESPONSE_BYTES / (1024 * 1024)
-        ))
-    };
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-    {
-        return Err(too_large());
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
-            return Err(too_large());
-        }
-        body.extend_from_slice(&chunk);
-    }
+    let body = crate::http_client::read_bounded(response, MAX_RESPONSE_BYTES, "playbook").await?;
     serde_json::from_slice(&body).map_err(|_| {
         AppError::Validation("the playbook could not be loaded (unexpected answer)".to_string())
     })
