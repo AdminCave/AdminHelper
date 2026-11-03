@@ -131,18 +131,22 @@ e2e_require() {
     docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not reachable"; exit 75; }
 }
 
-# e2e_npm_ready <dir>... — `npm ci` in each dir whose node_modules is missing or older
-# than its package-lock.json, the rule of run.sh's npm_ci_if_stale (5.26). A suite run
-# with --step skips the desktop-e2e-smoke step that applies it, and node_modules from
-# the template then lacks every package the lockfile gained since.
+# e2e_npm_ready <dir>... — `npm ci` in each dir whose node_modules was not installed
+# from its package-lock.json, the rule of run.sh's npm_ci_if_stale (R-1106): a stamp
+# with the lockfile's hash, written only after npm ci went through, via tmp + mv (a
+# worktree's node_modules is a hard-linked copy). A suite run with --step skips the
+# desktop-e2e-smoke step that applies it, and node_modules from the template or from
+# another tree then lacks every package the lockfile gained since.
 e2e_npm_ready() {
-    local d
+    local d want
     for d in "$@"; do
         ( cd "$d" || exit 1
-          if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then
-              echo "  npm ci in $d (node_modules missing or older than package-lock.json)"
-              npm ci --no-audit --no-fund
-          fi ) || return 1
+          want=$(sha256sum package-lock.json) || exit 1; want=${want%% *}
+          [ -d node_modules ] && [ "$(cat node_modules/.ah-lock-sha256 2>/dev/null)" = "$want" ] && exit 0
+          echo "  npm ci in $d (node_modules not installed from this package-lock.json)"
+          npm ci --no-audit --no-fund || exit 1
+          printf '%s\n' "$want" > node_modules/.ah-lock-sha256.tmp && mv -f node_modules/.ah-lock-sha256.tmp node_modules/.ah-lock-sha256
+        ) || return 1
     done
 }
 

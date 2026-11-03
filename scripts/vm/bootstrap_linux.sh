@@ -20,7 +20,7 @@ GO_VERSION="${AH_GO_VERSION:-1.27.2}"
 # Pin the Go tarball checksum like the frpc one (consistency) — the official sha256
 # from go.dev's release JSON; override alongside a non-default GO_VERSION (4.123).
 GO_SHA256_LINUX_AMD64="${AH_GO_SHA256:-ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5}"
-NODE_MAJOR="${AH_NODE_MAJOR:-22}"
+NODE_MAJOR="${AH_NODE_MAJOR:-26}"
 TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
 # Pinned, and to the same version ci.yml installs: a bake picks up whatever pip
 # offers that day, and a newer ruff enables rules this repo never opted into.
