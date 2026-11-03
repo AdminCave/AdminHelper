@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-6 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-6 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ca-6 · Review: pro Task
 Spec: docs/features/kern-ca-6.md (Roadmap R-1053, R-1109)
 Heavy: linux-full — `apps/server/app/core/identity.py` (Server-Identität hinter dem Gateway) und der mTLS-Client des Desktops: der Sammellauf über `main` fährt Stack und Desktop-Journeys. Kein `scenario`: kein FRP-Datenpfad, keine Install-Pfade. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -33,5 +33,11 @@ Komponente: server · Dateien: keine (eigener Zug)
 Änderung: als eigener Zug (R-1112); Details in `tasks/private/`.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (bis zur Antwort)
+
+### T4 — Server: eine Uhrzeit je Anfrage für die Laufzeitprüfung (R-1109)  [ ]
+Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/tests/test_identity_source.py, docs/features/kern-ca-6.md, tasks/kern-ca-6.md
+Änderung: `get_client_identity` liest die Uhr einmal je Anfrage (`request.state`, wie `_from_gateway`), damit Scope-Prüfung und Bindung an den Nutzer dieselbe Antwort sehen. Test, der die Uhr zwischen beiden Lesern über `not_after` schiebt (rot ohne Fix). Spec und Ledger zum zweiten Teil von R-1053 neutral gefasst.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_certificate_check.py tests/test_identity_revocation.py
+Doku: keine (Verhalten wie T2 dokumentiert)
 
 ## Entscheidungen
