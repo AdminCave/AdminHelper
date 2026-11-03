@@ -195,7 +195,7 @@ def _coverage(
         parts.append(f"{since} renewed since the stage")
     if new_root is not None:
         if register.started_root == new_root.fingerprint(hashes.SHA256()).hex():
-            since = sum(1 for d in register.devices if d.not_before >= register.started_at)
+            since = sum(1 for d in register.devices if d.signed_since(register.started_at))
             parts.append(f"{since} since the restart under the new root")
         else:
             parts.append("none under the new root yet: the ca-issuer has not restarted")
@@ -416,7 +416,7 @@ def _finish_lock(pki_dir: Path, renewal: root_rollover.State, now: datetime.date
         )
     # From the first start under the new root on the ca-issuer signs under it; what the old
     # process signed between the switch and that restart still needs the old root.
-    if pending := [d for d in register.devices if d.not_before < register.started_at]:
+    if pending := [d for d in register.devices if not d.signed_since(register.started_at)]:
         last = max(d.not_after for d in pending)
         return (
             f"{len(pending)} active device(s) still hold a certificate from before the restart "
@@ -436,6 +436,20 @@ class _Device:
     # Of the newest certificate of an active device line, aware UTC.
     not_before: datetime.datetime
     not_after: datetime.datetime
+    recorded_at: datetime.datetime  # issued_certificates.created_at
+
+    def signed_since(self, at: datetime.datetime) -> bool:
+        """Whether the certificate was signed at `at` or later. not_before holds whole
+        seconds (the signing time cut down), so within the second of `at` it cannot tell;
+        there the time the issuing process recorded it decides. That process records the
+        start before it serves a request and takes both times from the same clock, so a
+        certificate of the process before the restart is recorded before the start and one
+        of the new process at or after it. Only there: a certificate taken over from before
+        the register is recorded when it is taken over, long after it was signed."""
+        second = at.replace(microsecond=0)
+        if self.not_before != second:
+            return self.not_before > second
+        return self.recorded_at >= at
 
 
 @dataclass(frozen=True)
@@ -472,13 +486,15 @@ def _query_register(conn: Connection, now: datetime.datetime) -> _Register:
             select(lines.id, lines.subject_id, lines.scope).where(lines.revoked_at.is_(None))
         )
     }
-    newest: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
-    for row in conn.execute(select(certs.line_id, certs.not_before, certs.not_after)):
+    newest: dict[str, _Device] = {}
+    for row in conn.execute(
+        select(certs.line_id, certs.not_before, certs.not_after, certs.created_at)
+    ):
         not_before = _aware(row.not_before)
         if row.line_id in line_of and (
-            row.line_id not in newest or not_before > newest[row.line_id][0]
+            row.line_id not in newest or not_before > newest[row.line_id].not_before
         ):
-            newest[row.line_id] = (not_before, _aware(row.not_after))
+            newest[row.line_id] = _Device(not_before, _aware(row.not_after), _aware(row.created_at))
     revoked = {
         (row.subject_id, row.scope): row.revoked_at
         for row in conn.execute(
@@ -490,15 +506,15 @@ def _query_register(conn: Connection, now: datetime.datetime) -> _Register:
         )
     }
     devices = []
-    for line_id, (not_before, not_after) in newest.items():
+    for line_id, device in newest.items():
         identity = line_of[line_id]
         # DbTokenStore._active: revoked up to revoked_at, without a time for good.
         if identity in revoked and (
-            revoked[identity] is None or not_before <= _aware(revoked[identity])
+            revoked[identity] is None or device.not_before <= _aware(revoked[identity])
         ):
             continue
-        if not_after > now:
-            devices.append(_Device(not_before, not_after))
+        if device.not_after > now:
+            devices.append(device)
     installed_at = conn.execute(
         select(db.certificate_register_state.c.installed_at).where(
             db.certificate_register_state.c.id == 1

@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@03c4068a`.
 
-### T1 — rotate-root finish und status vergleichen in voller Auflösung (R-1094)  [ ]
+### T1 — rotate-root finish und status vergleichen in voller Auflösung (R-1094)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py, apps/ca-issuer/tests/test_cli.py, changelog.d/kern-ca-7.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @e00b210e 2026-11-03T16:50:50+01:00
+Review: approve (.ah-out/review/kern-ca-7/T1.verdict.json)
 Änderung: `_query_register` liefert je Gerät den Registerzeitpunkt seines neuesten Zertifikats (`created_at`, volle Auflösung); `_finish_lock` (`cli.py:419`) und die Zählung „since the restart“ (`cli.py:198`) vergleichen ihn mit `started_at`. Tests: Erneuerung in derselben Sekunde nach dem Start gibt `finish` frei, eine davor hält es fest; rot ohne Fix.
 Beweis: feature/arch-ca-root-renewal@8f50d71a apps/ca-issuer/app/cli.py:419 · Dedup-Key: bug:ca-issuer:apps/ca-issuer/app/cli.py:_finish_lock
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py
@@ -33,3 +35,4 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew
 Doku: keine (Testcode)
 
 ## Entscheidungen
+- T1 (2026-11-03): `created_at` entscheidet nur, wenn `not_before` in die Sekunde des Starts faellt; sonst bleibt `not_before` der Vergleich. Ein reiner `created_at`-Vergleich zaehlte uebernommene Altzertifikate (aufgezeichnet bei der Uebernahme, lange nach der Signatur) als neu. Getragen wird der Vergleich davon, dass der ausstellende Prozess den Start vor dem ersten Request aufzeichnet und beide Zeiten von derselben Uhr nimmt.
