@@ -3,7 +3,8 @@
 - **install.sh/update.sh: `$` vor einem nicht gesetzten Namen in der `.env` (R-1051):** docker compose setzte diesen
   Teil eines Werts still leer (`$NAME`, `${NAME}`) oder brach jeden Aufruf ab (`${NAME?…}`). Beide Skripte halten
   jetzt vor dem ersten Compose-Aufruf an und nennen nur die Zeile; `$$` und einfache Quotes bleiben der Weg fuer ein
-  woertliches `$`. Fehlermeldungen von docker compose geben beide Skripte einheitlich aus.
+  woertliches `$`. install.sh gibt die Fehlermeldung eines gescheiterten `docker compose config` oder `ps` ohne
+  Steuerzeichen aus.
 - **install.sh: `--admin-user` wird vor dem Start geprueft (R-1057):** ein Name ausserhalb von 3 bis 64 Buchstaben,
   Ziffern, `.`, `_` oder `-` endet sofort mit Exit 2, statt die Installation erst nach `docker compose up`
   abzubrechen.

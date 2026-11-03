@@ -125,8 +125,9 @@ tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 # The compose stub: compose config names AH_TEST_PROJECT, else the
 # COMPOSE_PROJECT_NAME of an --env-file, else drproj, and the postgres image pinned
 # by digest (none with AH_TEST_NO_IMAGE=1); with AH_TEST_CONFIG_FAIL=1 compose config
-# fails (with 2: its message holds control characters); compose config --services names postgres and server (fails with
-# AH_TEST_SERVICES_FAIL=1), compose config --images server names SERVER_IMAGE of the
+# fails (with 2: its message holds control characters); compose config --services
+# names postgres and server (fails with AH_TEST_SERVICES_FAIL=1), compose config
+# --images server names SERVER_IMAGE of the
 # --env-file (or the default), its backslash escapes expanded as compose expands those
 # of a double-quoted value. docker volume inspect finds a volume only with AH_TEST_PGVOL=1.
 # With STUB_DIR it logs every call, keeps the .env as compose up -d postgres finds it and
