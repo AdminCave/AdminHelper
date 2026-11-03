@@ -660,10 +660,18 @@ div.panel {
 }
 
 /* ── Key reveal ────────────────────────────────────────────────────── */
+.reveal {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
 .key-reveal {
+  flex: 1;
+  min-width: 0;
   padding: var(--sp-4);
-  background: rgba(52, 211, 153, 0.06);
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: var(--text-sm);

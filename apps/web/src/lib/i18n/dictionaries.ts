@@ -49,8 +49,6 @@ export const translations: Translations = {
     'action.create': 'Erstellen',
     'action.refresh': 'Aktualisieren',
     'action.run': 'Ausführen',
-    'action.enable': 'Aktivieren',
-    'action.disable': 'Deaktivieren',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
@@ -175,7 +173,6 @@ export const translations: Translations = {
     'page.hooks.lastRun': 'Letzter Lauf',
     'page.hooks.next': 'Nächster: {time}',
     'page.hooks.active': 'Aktiv',
-    'page.hooks.inactive': 'Inaktiv',
     'page.hooks.rotateToken': 'Token rotieren',
 
     // ── Hook Events ───────────────────────────────────────────────────
@@ -374,8 +371,6 @@ export const translations: Translations = {
     'action.create': 'Create',
     'action.refresh': 'Refresh',
     'action.run': 'Run',
-    'action.enable': 'Enable',
-    'action.disable': 'Disable',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
@@ -498,7 +493,6 @@ export const translations: Translations = {
     'page.hooks.lastRun': 'Last run',
     'page.hooks.next': 'Next: {time}',
     'page.hooks.active': 'Active',
-    'page.hooks.inactive': 'Inactive',
     'page.hooks.rotateToken': 'Rotate token',
 
     // ── Hook Events ───────────────────────────────────────────────────
