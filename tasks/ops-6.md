@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-6 — Task-Ledger
-Status: bereit · Branch: feature/ops-6 · Review: pro Task
+Status: erledigt · Branch: feature/ops-6 · Review: pro Task
 Spec: docs/features/ops-6.md (Roadmap R-1051, R-1049, R-1057, R-1050, R-1048, R-1052, R-1047, R-1058, R-1045)
 Heavy: linux-full — `scripts/install.sh`, `scripts/update.sh`, `scripts/backup.sh` und `scripts/restore.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`: `agent-install.sh` ändert nur das Lesen der gpg-Ausgabe, das `agent_install_test` mit echtem gpg prüft. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
