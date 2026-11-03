@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-4 — Task-Ledger
-Status: geplant · Branch: feature/kern-deps-4 · Review: am Ende
+Status: aktiv · Branch: feature/kern-deps-4 · Review: am Ende
 Spec: docs/features/kern-deps-4.md (Roadmap R-1093)
 Heavy: none — nur der Lockfile-Stand eines transitiven Pakets; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
