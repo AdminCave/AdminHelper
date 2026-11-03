@@ -397,6 +397,29 @@ out=$(cd "$INST" && ADMIN_PASSWORD=zz9pw-env AH_TEST_DOCKER_ENV="$DENV" bash "$I
   && ok "exported ADMIN_PASSWORD: no docker call inherits the password" \
   || bad "docker calls inherited ADMIN_PASSWORD: $(sort -u "$DENV" 2>/dev/null | tr '\n' ' ')"
 
+# (i) --admin-user follows the rule of create-admin before anything changes (exit 2)
+long64=$(printf 'a%.0s' $(seq 64))
+for name in abc 'a.b_c-1' "$long64"; do
+  new_inst inst8i; DLOG="$WORK/docker8i.log"; rm -f "$DLOG"; printf 'zz9pw-file8i\n' > "$INST/pw"
+  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-user "$name" \
+    --admin-password-file pw --yes 2>&1); rc=$?
+  { [ $rc -eq 0 ] && grep -q -- "--username $name " "$DLOG" 2>/dev/null; } \
+    && ok "--admin-user '${name:0:12}' (${#name} chars) reaches create-admin" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--admin-user '${name:0:12}': rc=$rc"; }
+  rm -rf "$INST"
+done
+for name in ab "${long64}a" 'a@b.example' 'ädmin' 'a b' 'adm/in' $'adm\nin'; do
+  new_inst inst8i; DLOG="$WORK/docker8i.log"; rm -f "$DLOG"; printf 'zz9pw-file8i\n' > "$INST/pw"
+  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-user "$name" \
+    --admin-password-file pw --yes 2>&1); rc=$?
+  shown=$(printf '%q' "${name:0:12}")
+  { [ $rc -eq 2 ] && grep -q -- "--admin-user must be 3 to 64" <<<"$out" && [ ! -s "$DLOG" ] \
+      && [ "$(cat "$INST/.env")" = DOMAIN=old.example ]; } \
+    && ok "--admin-user $shown (${#name} chars) refused with exit 2, nothing changed" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--admin-user $shown: rc=$rc, docker log: $(tr '\n' ' ' < "$DLOG" 2>/dev/null)"; }
+  rm -rf "$INST"
+done
+
 # ── 9. the install directory is at most 0750, and a host account with a container UID is named ─
 INST="$WORK/inst9"; mkdir -p "$INST/scripts"; chmod 0755 "$INST"
 cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"

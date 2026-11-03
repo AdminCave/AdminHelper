@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/ops-6/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: docs/admin/installation.html + EN · changelog.d/ops-6.md
 
-### T2 — install.sh prüft --admin-user vor dem Start (R-1057)  [ ]
+### T2 — install.sh prüft --admin-user vor dem Start (R-1057)  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/ops-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5b2652f6 2026-11-03T14:35:51+01:00
+Review: approve (.ah-out/review/ops-6/T2.verdict.json)
 Änderung: `--admin-user` wird beim Lesen der Argumente gegen `_USERNAME_PATTERN` und die Länge 3–64 geprüft (wie `apps/server/app/cli.py:55`); ein anderer Name endet mit Exit 2, bevor etwas geändert wird. Test für gültige und ungültige Namen.
 Beweis: feature/kern-server-5@dca0432c apps/server/app/cli.py:54 + scripts/install.sh --admin-user · Dedup-Key: bug:scripts:install.sh:admin-user-unchecked
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test

@@ -104,6 +104,16 @@ elif [ -n "$ADMIN_PASSWORD" ]; then
     echo "[install] WARNING: --admin-password leaves the password in the process list and the shell history; --admin-password-file FILE avoids both." >&2
 fi
 
+# The rule of create-admin (apps/server/app/cli.py), checked before anything changes:
+# a refused name would otherwise end the install after the stack is up. The class is
+# spelled out, since a range like A-Z also matches letters such as ä in some locales.
+admin_user_ok() {
+    local chars='^[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-]+$'
+    [ "${#1}" -ge 3 ] && [ "${#1}" -le 64 ] && [[ $1 =~ $chars ]]
+}
+admin_user_ok "$ADMIN_USER" \
+    || { echo "ERROR: --admin-user must be 3 to 64 letters, digits, '.', '_' or '-'." >&2; exit 2; }
+
 # Per-file raw fetch — dev/branch refs, or release tags older than the runtime
 # bundle (≤ 0.33.0). RUNTIME_FILES omits install.sh (it's the running script).
 raw_fetch() {
