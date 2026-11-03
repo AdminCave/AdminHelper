@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-8 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-8 · Review: pro Task
 Spec: docs/features/kern-ca-8.md (Roadmap R-1112)
 Heavy: scenario --tunnel — FRP-Tunnel-Datenpfad und PKI (frps-Leaf, frpc von Agent und Visitor über drei Hosts); ask-first
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/kern-ca-8/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T5
 
-### T5 — Doku und Changelog (R-1112)  [ ]
+### T5 — Doku und Changelog (R-1112)  [x]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-ca-8.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ee8d6139 2026-11-03T21:03:14+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `frp-tunnel.html` (Abschnitt Tunnel-PKI, `trustedCaFile`-Punkt): frpc prüft das frps-Zertifikat gegen `ca.crt` und den festen Namen `frps.adminhelper.invalid`, den nur das frps-Leaf trägt; `agent.html`: der Agent setzt ihn in `frpc.toml`. `changelog.d/kern-ca-8.md` unter `### Security`, ohne Details.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/frp-tunnel.html + EN · docs/developer/agent.html + EN · changelog.d/kern-ca-8.md
