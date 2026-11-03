@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-web-4 — Task-Ledger
-Status: bereit · Branch: feature/kern-web-4 · Review: pro Task
+Status: erledigt · Branch: feature/kern-web-4 · Review: pro Task
 Spec: docs/features/kern-web-4.md (Roadmap R-1082)
 Heavy: linux-full — das Web-Panel läuft im Sammellauf gegen den echten Stack (web-live, Playwright)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
