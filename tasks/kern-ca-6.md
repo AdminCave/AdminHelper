@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-6 — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-6 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ca-6 · Review: pro Task
 Spec: docs/features/kern-ca-6.md (Roadmap R-1053, R-1109)
 Heavy: linux-full — `apps/server/app/core/identity.py` (Server-Identität hinter dem Gateway) und der mTLS-Client des Desktops: der Sammellauf über `main` fährt Stack und Desktop-Journeys. Kein `scenario`: kein FRP-Datenpfad, keine Install-Pfade. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
