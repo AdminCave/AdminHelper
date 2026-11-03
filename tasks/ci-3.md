@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ci-3 — Task-Ledger
-Status: geplant · Branch: feature/ci-3 · Review: pro Task
+Status: aktiv · Branch: feature/ci-3 · Review: pro Task
 Spec: docs/features/ci-3.md (Roadmap R-1019, R-1020, R-1042, R-1085)
 Heavy: none — nur CI-Workflows und ein pytest-Plugin der Server-Tests; die PR-CI fährt die geänderten Jobs selbst, `release.yml` und das Verify von `docker.yml` erst am nächsten Tag (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
