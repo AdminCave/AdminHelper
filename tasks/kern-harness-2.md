@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-harness-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-harness-2 · Review: am Ende
 Spec: docs/features/kern-harness-2.md (Roadmap R-1106, R-1087)
 Heavy: linux-full — run.sh installiert die npm-Bäume auf den Boxen neu; Beweis ist der Neustart des roten Sammellaufs 2026-11-02 (Kevin 2026-11-03), der den Schritt desktop-ui vitest wieder fährt
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
