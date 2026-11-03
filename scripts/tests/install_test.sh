@@ -79,7 +79,7 @@ case "$*" in
   "compose version --short") echo 2.16.0; exit 0 ;;
   *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
   "compose config"*)
-    [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo "compose config failed in the stub" >&2; exit 1; }
+    [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { printf 'compose config failed in the stub\e]0;title\a\n' >&2; exit 1; }
     # Like compose, a key with a space ends the call with the line quoted.
     bad=$(grep -nE '^[^#=:]* [^#=:]*$' .env 2>/dev/null | head -n 1)
     [ -z "$bad" ] || { echo "failed to read .env: line ${bad%%:*}: key cannot contain a space: ${bad#*:}" >&2; exit 1; }
@@ -89,7 +89,7 @@ case "$*" in
     done
     exit 0 ;;
   "compose ps --all --quiet")
-    [ "${AH_TEST_PS_FAIL:-}" != 1 ] || { echo "compose ps failed in the stub" >&2; exit 1; }
+    [ "${AH_TEST_PS_FAIL:-}" != 1 ] || { printf 'compose ps failed in the stub\e]0;title\a\n' >&2; exit 1; }
     gone || [ -z "${AH_TEST_CONTAINERS:-}" ] || echo "$AH_TEST_CONTAINERS"; exit 0 ;;
   "inspect --format "*)
     shift 3; for _ in "$@"; do echo "dir=${AH_TEST_WORKDIR-$PWD}"; done; exit 0 ;;
@@ -508,9 +508,15 @@ existing_install inst10e AH_TEST_CONFIG_FAIL=1
 { [ $rc -ne 0 ] && grep -q 'compose config failed' <<<"$out"; } && ok "compose config fails: abort with its error" \
   || { echo "$out" | sed 's/^/    │ /'; bad "compose config fails: rc=$rc"; }
 unchanged inst10e
+# compose's message reaches the terminal through cat -v: an escape sequence in it
+# (the stub sets the window title) shows as text instead of acting.
+{ grep -qF 'stub^[]0;title^G' <<<"$out" && ! grep -q $'\e' <<<"$out"; } \
+  && ok "compose config fails: its message without raw control characters" || bad "compose config fails: $(cat -v <<<"$out")"
 existing_install inst10e2 AH_TEST_PS_FAIL=1
 { [ $rc -ne 0 ] && grep -q "cannot list the containers of compose project 'ahtest'" <<<"$out"; } \
   && ok "compose ps fails: abort names the project" || { echo "$out" | sed 's/^/    │ /'; bad "compose ps fails: rc=$rc"; }
+{ grep -qF 'stub^[]0;title^G' <<<"$out" && ! grep -q $'\e' <<<"$out"; } \
+  && ok "compose ps fails: its message without raw control characters" || bad "compose ps fails: $(cat -v <<<"$out")"
 unchanged inst10e2
 
 # ── 11. --reset deletes only after the project name typed on a terminal (R-0665) ─
