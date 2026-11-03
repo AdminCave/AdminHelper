@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ci-3 — Task-Ledger
-Status: erledigt · Branch: feature/ci-3 · Review: pro Task
+Status: aktiv · Branch: feature/ci-3 · Review: pro Task
 Spec: docs/features/ci-3.md (Roadmap R-1019, R-1020, R-1042, R-1085)
 Heavy: none — nur CI-Workflows und ein pytest-Plugin der Server-Tests; die PR-CI fährt die geänderten Jobs selbst, `release.yml` und das Verify von `docker.yml` erst am nächsten Tag (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,6 +61,13 @@ Review: approve (.ah-out/review/ci-3/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: changelog.d/ci-3.md
 
+### T7 — Playwright-E2E bleibt auf ubuntu-24.04, bis Playwright 26.04 kennt (R-1042)  [ ]
+Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-3.md
+Änderung: Der Job `frontend-e2e` (`ci.yml:672`) läuft auf `ubuntu-24.04` mit Kommentar: Playwright 1.60 (`apps/web/package.json`) bricht `playwright install --with-deps` auf 26.04 ab („Playwright does not support chromium on ubuntu26.04-x64“, PR #387, Lauf 41693749807); 26.04 kennt Playwright erst ab 1.61 (Release-Notes v1.61.0), das Update gehört zu R-1039 (kern-deps-3). Doku DE+EN und Changelog nennen die Ausnahme. Fund der PR-CI.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/cicd.html + EN · changelog.d/ci-3.md
+
 ## Entscheidungen
 - T3: der Manifest-Upload aus T2 stand im Job `server` zwischen `Run pytest` und `No test skipped`; `test_release_images.py::test_the_skip_step_follows_pytest_in_the_leg_with_every_base_image` verlangt den Skip-Schritt direkt nach pytest und war rot (T2-Verify fuhr die Datei nicht). T3 setzt den Upload hinter den Skip-Schritt; alle Server-Tests, die die Workflows lesen: 69 passed, 2 skipped (Redis lokal nicht da).
 - T4: auch der `tauri-build-smoke` in `ci.yml` bleibt auf `ubuntu-24.04`, nicht nur `release.yml` `desktop-linux`: der Smoke soll das bauen, was das Release ausliefert, sonst prüft die PR-CI einen anderen Build-Host (andere apt-Pakete, andere glibc) als den des Releases.
+- T7: Playwright nicht hier auf 1.61+ heben: das npm-Update ist R-1039 (kern-deps-3), und `feature/kern-web-4` (#378) ändert `apps/web/package.json` schon (`overlap.sh`); der Job geht mit R-1039 auf 26.04.
