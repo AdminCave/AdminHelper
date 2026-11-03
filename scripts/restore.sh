@@ -47,15 +47,214 @@ fi
 rm -f "$STAGE/.names" "$STAGE/.verbose"
 tar xzf "$ARCHIVE" -C "$STAGE" --no-same-owner --no-same-permissions
 
-[ -f "$STAGE/MANIFEST.txt" ] && { echo "--- MANIFEST ---"; cat "$STAGE/MANIFEST.txt"; echo "----------------"; }
+# cat -v: the MANIFEST comes from the backup; a control character in it must not
+# reach the terminal before the question.
+[ -f "$STAGE/MANIFEST.txt" ] && { echo "--- MANIFEST ---"; cat -v "$STAGE/MANIFEST.txt"; echo "----------------"; }
+
+# >>> dotenv tokenizer: backup.sh, diagnostics.sh and restore.sh hold the same text, a test keeps it so
+# The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
+# bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
+# whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
+# LINE and PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM MATHEMATICAL SPACE and IDEOGRAPHIC
+# SPACE; compose trims it from the end of an unquoted value. In front of a key it skips
+# that and a BOM: ENV_SP. Between key and separator, and between separator and value,
+# it skips ASCII whitespace, NEL and NBSP: ENV_SEP.
+ENV_WS="([[:space:]]|"$'\xc2[\x85\xa0]|\xe1\x9a\x80|\xe2\x80[\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)'
+ENV_SP="(${ENV_WS}|"$'\xef\xbb\xbf)'
+ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
+
+# ENV_TOK: awk functions that find the statements of a .env, for LC_ALL=C awk (byte
+# for byte: a NUL byte or a byte outside UTF-8 passes). The program appends every line
+# with a newline to S, defines want(k) (1 for a key whose values it needs) and
+# hit(k, ks, vs, ve, q, closed, cs) (called for such a key only: a statement of k from
+# ks, its value from vs to ve:
+# q is its quote, "" for an unquoted value that ends before its newline; closed is 0
+# for a quoted value without its closing quote; cs is the place of the "#" in front of
+# a commented-out statement, 0 outside a comment), and calls tok_init(sp, sep,
+# cmt) in BEGIN and tok_run() in END. A statement may be found more than once.
+# tok_exact reads the file as compose does (compose-go dotenv: parse,
+# getStatementStart, locateKeyName, extractVarValue): a quoted value runs on to its
+# closing quote over any number of lines, whatever key it belongs to, and behind it
+# the next statement begins. compose refuses a file with a key it cannot read; such a
+# line is passed over here and the next one read. tok_alone then reads every line
+# start and the place behind every quote as if it began a line, statements one behind
+# the other while each quoted value closes on its line: the text may be a value of
+# another key that only looks like an assignment, or a file compose refuses, and a
+# secret there must still go. A quoted value of a wanted key runs on to its closing
+# quote; with cmt also behind any "#" among the whitespace in front of a statement,
+# and there over the commented-out lines that follow, to its closing quote or to the
+# first line that is no comment.
+ENV_TOK='
+    function tok_init(sp, sep, cmt) {
+        tsp = "^(" sp ")*"
+        tspl = tok_nonl(sp)
+        hs = tok_nonl(sep)
+        tlead = "^(" tspl (cmt ? "|#" : "") ")*"
+        tcre = "^(" tspl ")*#"
+        tgre = "^(export(" tspl ")+)?[^[:space:]=:#\"\047]+(" hs ")*[=:]"
+        tkey = "^(" hs "|[][A-Za-z0-9_.-]|[\200-\377])*"
+        tcmt = cmt
+    }
+    # tok_nonl(re): re without the newline: a statement ends at its line.
+    function tok_nonl(re) { gsub(/\[\[:space:\]\]/, "[ \t\v\f\r]", re); return re }
+    # tok_eol(p): the place of the newline that ends the line of p.
+    function tok_eol(p) { return p + index(substr(S, p), "\n") - 1 }
+    # tok_close(s, c): the place of the quote c that closes a quoted value in s, 0
+    # without one; a quote behind a backslash does not.
+    function tok_close(s, c,    i, e, x) {
+        for (i = 1; i <= length(s); i++) {
+            x = substr(s, i, 1)
+            if (e) e = 0
+            else if (x == "\\") e = 1
+            else if (x == c) return i
+        }
+        return 0
+    }
+    function tok_exact(    p, t, k, c, i, ks) {
+        p = 1
+        while (p <= N) {
+            t = substr(S, p)
+            match(t, tsp)
+            p += RLENGTH
+            if (p > N) return
+            if (substr(S, p, 1) == "#") { p = tok_eol(p) + 1; continue }
+            ks = p
+            t = substr(S, p)
+            if (match(t, "^export[ \t\f\r]")) { match(t, "^export(" hs ")*"); p += RLENGTH }
+            match(substr(S, p), tkey)
+            k = substr(S, p, RLENGTH)
+            c = substr(S, p + RLENGTH, 1)
+            p += RLENGTH + 1
+            sub("(" hs ")+$", "", k)
+            if (k == "" || index(k, " ") || (c != "=" && c != ":" && c != "\n")) { p = tok_eol(ks) + 1; continue }
+            if (c == "\n") continue
+            match(substr(S, p), "^(" hs ")*")
+            p += RLENGTH
+            c = substr(S, p, 1)
+            if (c == "\"" || c == "\047") {
+                i = tok_close(substr(S, p + 1), c)
+                if (want(k)) hit(k, ks, p, i ? p + i : N, c, i > 0, 0)
+                p = i ? p + i + 1 : N + 1
+                continue
+            }
+            i = tok_eol(p)
+            if (want(k)) hit(k, ks, p, i - 1, "", 1, 0)
+            p = i + 1
+        }
+    }
+    # tok_alone(p, h): the statements from p on as described above; h: p stands in a
+    # commented-out line.
+    function tok_alone(p, h,    t, k, c, i, j, e, ks, cs, x) {
+        while (1) {
+            t = substr(S, p)
+            match(t, tlead)
+            if (i = index(substr(t, 1, RLENGTH), "#")) { h = 1; if (!cs) cs = p + i - 1 }
+            p += RLENGTH
+            t = substr(S, p)
+            if (!match(t, tgre)) return
+            k = substr(t, 1, RLENGTH - 1)
+            sub("^export(" tspl ")+", "", k)
+            sub("(" hs ")+$", "", k)
+            ks = p
+            p += RLENGTH
+            match(substr(S, p), "^(" hs ")*")
+            p += RLENGTH
+            c = substr(S, p, 1)
+            e = tok_eol(p)
+            if (c != "\"" && c != "\047") { if (want(k)) hit(k, ks, p, e - 1, "", 1, cs); return }
+            i = tok_close(substr(S, p + 1), c)
+            if (i && p + i < e) {
+                if (want(k)) hit(k, ks, p, p + i, c, 1, cs)
+                p += i + 1
+                continue
+            }
+            if (!want(k)) return
+            if (!(h && tcmt)) { hit(k, ks, p, i ? p + i : N, c, i > 0, cs); return }
+            for (x = e + 1; x <= N && substr(S, x, tok_eol(x) - x) ~ tcre; x = tok_eol(x) + 1)
+                if (j = tok_close(substr(S, x, tok_eol(x) - x), c)) { hit(k, ks, p, x + j - 1, c, 1, cs); return }
+            hit(k, ks, p, x - 2, c, 0, cs)
+            return
+        }
+    }
+    function tok_run(    p, c, h) {
+        N = length(S)
+        tok_exact()
+        for (p = 1; p <= N; p++) {
+            if (p == 1 || substr(S, p - 1, 1) == "\n") {
+                h = substr(S, p, tok_eol(p) - p) ~ tcre
+                tok_alone(p, 0)
+            }
+            c = substr(S, p, 1)
+            if (c == "\"" || c == "\047") tok_alone(p + 1, h)
+        }
+    }
+'
+# <<< dotenv tokenizer
 
 # Without a .env (a fresh host) the backup's env.sanitized can become the .env,
 # with an empty CA_ROOT_PASSPHRASE= (compose needs the line; the restored
 # hierarchy does not need the value to start). Staged here, written after the
 # confirmation and before postgres starts: postgres initialises a new volume with
 # the POSTGRES_PASSWORD it finds then.
+# env.new keeps the keys of the application only: every statement of a key that compose
+# or the docker CLI read for themselves (COMPOSE_*, DOCKER_*, any case) goes, except
+# COMPOSE_PROJECT_NAME (the volume prefix of the backed-up project). The statements as
+# ENV_TOK finds them (as compose reads the file, and every line start and the place
+# behind every quote read alone); cut as backup.sh cuts CA_ROOT_PASSPHRASE: a statement
+# that starts inside the closed quoted value of another key keeps that closing quote, a
+# changed line keeps the bytes outside those statements, a line left with whitespace
+# only goes. Any awk error stops the restore before anything changes.
 if [ -f "$STAGE/env.sanitized" ]; then
-    { cat "$STAGE/env.sanitized"; [ -z "$(tail -c 1 "$STAGE/env.sanitized")" ] || echo; echo "CA_ROOT_PASSPHRASE="; } > "$STAGE/env.new"
+    # shellcheck disable=SC2016 # an awk program, $0 is awk's
+    LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" "$ENV_TOK"'
+        BEGIN { tok_init(sp, sep, 0) }
+        function drop(k) { return toupper(k) ~ /^(COMPOSE|DOCKER)_/ && k != "COMPOSE_PROJECT_NAME" }
+        function want(k) { return ex || drop(k) }
+        function hit(k, ks, vs, ve, q, closed, cs) {
+            if (!drop(k)) {
+                if (ex && q != "" && closed) { m++; QS[m] = vs; QE[m] = ve }
+                return
+            }
+            n++
+            A[n] = ks
+            B[n] = q == "" ? tok_eol(ve) - 1 : ve
+        }
+        { S = S $0 "\n" }
+        END {
+            N = length(S)
+            ex = 1; tok_exact(); ex = 0
+            tok_run()
+            n0 = n
+            for (j = 1; j <= n0; j++)
+                for (i = 1; i <= m; i++)
+                    if (QS[i] < A[j] && A[j] < QE[i] && B[j] >= QE[i]) {
+                        if (B[j] > QE[i]) { n++; A[n] = QE[i] + 1; B[n] = B[j] }
+                        B[j] = QE[i] - 1
+                    }
+            for (ls = 1; ls <= N; ls = le + 1) {
+                le = tok_eol(ls)
+                o = ""
+                ch = 0
+                p = ls
+                while (p < le) {
+                    c = 0
+                    for (j = 1; j <= n; j++) if (A[j] <= p && B[j] >= p && (!c || B[j] > B[c])) c = j
+                    if (c) { ch = 1; p = B[c] + 1; continue }
+                    x = le
+                    for (j = 1; j <= n; j++) if (A[j] > p && A[j] < x) x = A[j]
+                    o = o substr(S, p, x - p)
+                    p = x
+                }
+                if (!ch) print substr(S, ls, le - ls)
+                else if (o !~ ("^(" sp ")*$")) {
+                    sub("(" sp ")+$", "", o)
+                    print o
+                }
+            }
+            print "CA_ROOT_PASSPHRASE="
+        }
+    ' "$STAGE/env.sanitized" > "$STAGE/env.new" \
+        || { echo "[restore] ERROR: could not read the .env of the backup; nothing was changed." >&2; exit 1; }
 fi
 NEW_ENV=""
 [ -f .env ] || [ ! -f "$STAGE/env.new" ] || NEW_ENV="$STAGE/env.new"
@@ -117,6 +316,29 @@ if [ -n "$NEW_ENV" ]; then
     compose_names --env-file "$NEW_ENV"
     pg_volume_exists || FRESH=1
 fi
+# The images the stack starts with the .env of the backup, named before the question,
+# one per service. A value of the backup reaches the terminal here, so each must be one
+# line of a plain image reference; control characters or a line break could make the
+# list show other images than start. cat -v: compose's message may quote such values.
+compose_fail() {
+    echo "[restore] ERROR: docker compose $1 failed; nothing was changed:" >&2
+    cat -v "$STAGE/.compose-err" >&2
+    exit 1
+}
+IMAGES=""
+if [ "$FRESH" = 1 ]; then
+    SERVICES=$(docker compose --env-file "$NEW_ENV" config --services </dev/null 2>"$STAGE/.compose-err") \
+        || compose_fail "config --services"
+    for svc in $SERVICES; do
+        img=$(docker compose --env-file "$NEW_ENV" config --images "$svc" </dev/null 2>"$STAGE/.compose-err") \
+            || compose_fail "config --images"
+        if [ "$img" != "${img%%$'\n'*}" ] || ! LC_ALL=C grep -qxE '[A-Za-z0-9][A-Za-z0-9._/:@+-]*' <<<"$img"; then
+            echo "[restore] ERROR: the image of service ${svc} in the .env of the backup is not one plain image reference (letters, digits and ._/:@+- on one line); nothing was changed." >&2
+            exit 1
+        fi
+        IMAGES+="${svc}: ${img}"$'\n'
+    done
+fi
 if [ "$FRESH" = 0 ]; then
     if [ "$ENV_FILE" != .env ]; then ENV_FILE=.env; check_role_passwords; fi
     compose_names
@@ -141,6 +363,10 @@ MONITOR_PW=$(role_password MONITOR_DB_PASSWORD)
 
 echo "[restore] Ziel-Compose-Projekt: $PROJECT"
 [ "$FRESH" = 0 ] || echo "[restore] No .env and no database volume here: the .env of the backup becomes .env before postgres starts."
+if [ "$FRESH" = 1 ]; then
+    echo "[restore] With it the stack starts these images:"
+    printf '%s' "$IMAGES" | sed 's/^/[restore]   /'
+fi
 echo "[restore] DIES ÜBERSCHREIBT ca-pki, monitoring-data, victoria-data und beide DBs."
 if [ "$ASSUME_YES" != 1 ]; then
     printf "Fortfahren? [y/N] "

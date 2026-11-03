@@ -123,8 +123,9 @@ class Issuer:
             "cert": leaf_pem.decode(),
             # fullchain = leaf + intermediate (what a client presents)
             "fullchain": (leaf_pem + pki.cert_to_pem(inter.cert)).decode(),
-            # trust bundle = intermediate + root (what a client pins/validates against)
-            "chain": inter.chain.decode(),
+            # trust bundle = intermediate + every root to trust, the one :8444 serves last
+            # (what a client pins/validates against; several during a root renewal)
+            "chain": inter.trust_bundle.decode(),
         }
 
     def _warn_if_ending(self, inter: Intermediate) -> None:
