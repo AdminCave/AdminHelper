@@ -88,8 +88,10 @@ for c in server monitoring; do
 done
 for d in apps/web apps/desktop/ui; do
   mkdir -p "$MAIN/$d/node_modules/pkg"; echo "module.exports = 1" > "$MAIN/$d/node_modules/pkg/index.js"
-  # Fresh, as after an npm ci: node_modules newer than its lockfile.
-  touch -d '2026-01-01 00:00' "$MAIN/$d/package-lock.json"; touch -d '2026-01-02 00:00' "$MAIN/$d/node_modules"
+  # Fresh, as after run.sh's npm ci: stamped with its lockfile's hash. Older than
+  # the lockfile by mtime, which must not matter any more (R-1106).
+  sha256sum "$MAIN/$d/package-lock.json" | cut -d' ' -f1 > "$MAIN/$d/node_modules/.ah-lock-sha256"
+  touch -d '2026-01-02 00:00' "$MAIN/$d/package-lock.json"; touch -d '2026-01-01 00:00' "$MAIN/$d/node_modules"
 done
 cat > "$MAIN/.devenv.sh" <<DEVENV
 export AH_TEST_DB="$MAIN_DB"
@@ -97,6 +99,7 @@ export AH_VENV="\$HOME/.cache/ah-venv"
 DEVENV
 printf '{"permissions": {"allow": ["placeholder"]}}\n' > "$MAIN/.claude/settings.local.json"
 
+lock_sha() { sha256sum "$1/package-lock.json" | cut -d' ' -f1; }  # the stamp run.sh writes for that lockfile
 setup()    { (cd "$MAIN" && bash "$MAIN/scripts/dev/worktree-setup.sh" "$@") > "$WORK/out.log" 2>&1; }
 teardown() { (cd "$MAIN" && bash "$MAIN/scripts/dev/worktree-teardown.sh" "$@") > "$WORK/out.log" 2>&1; }
 out() { cat "$WORK/out.log"; }
@@ -187,8 +190,8 @@ grep -qx "createdb pw=secret --maintenance-db=postgresql://ah@localhost:5432/adm
 for d in apps/web apps/desktop/ui; do
   [ -d "$WA/$d/node_modules" ] && [ ! -L "$WA/$d/node_modules" ] \
     && [ "$(stat -c %i "$WA/$d/node_modules/pkg/index.js")" = "$(stat -c %i "$MAIN/$d/node_modules/pkg/index.js")" ] \
-    && [ ! "$WA/$d/package-lock.json" -nt "$WA/$d/node_modules" ] \
-    && ok "$d/node_modules: hard links in a real directory, as fresh as the main copy (no npm ci)" \
+    && [ "$(cat "$WA/$d/node_modules/.ah-lock-sha256")" = "$(lock_sha "$WA/$d")" ] \
+    && ok "$d/node_modules: hard links in a real directory, stamped with this lockfile (no npm ci)" \
     || bad "$d/node_modules: $(ls -la "$WA/$d" 2>&1)"
 done
 [ -f "$WA/.claude/settings.local.json" ] && [ ! -L "$WA/.claude/settings.local.json" ] \
@@ -353,10 +356,11 @@ L="$WORK/AdminHelper-lockdiff"
 printf '{"lockfileVersion": 3, "name": "web", "changed": true}\n' > "$L/apps/web/package-lock.json"
 git -C "$L" -c user.name=t -c user.email=t@t commit -qam "the branch changes the web lockfile"
 rc=0; setup ../AdminHelper-lockdiff lockdiff || rc=$?
-[ "$rc" = 0 ] && [ -d "$L/apps/web/node_modules" ] && [ "$L/apps/web/package-lock.json" -nt "$L/apps/web/node_modules" ] \
-  && [ ! "$L/apps/desktop/ui/package-lock.json" -nt "$L/apps/desktop/ui/node_modules" ] \
-  && ok "its node_modules stays older than the changed lockfile, the unchanged one is fresh" \
-  || bad "lockdiff: rc=$rc $(ls -la --full-time "$L/apps/web" 2>&1)"
+[ "$rc" = 0 ] && [ -d "$L/apps/web/node_modules" ] \
+  && [ "$(cat "$L/apps/web/node_modules/.ah-lock-sha256")" != "$(lock_sha "$L/apps/web")" ] \
+  && [ "$(cat "$L/apps/desktop/ui/node_modules/.ah-lock-sha256")" = "$(lock_sha "$L/apps/desktop/ui")" ] \
+  && ok "its node_modules keeps the stamp of the main lockfile, not the changed one; the unchanged one matches" \
+  || bad "lockdiff: rc=$rc $(ls -la "$L/apps/web/node_modules" 2>&1)"
 
 echo "── setup: inner dashes and 40 characters ──"
 LONG="$(printf 'a%.0s' $(seq 1 40))"
