@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # kern-design-3 — Task-Ledger
 Status: aktiv · Branch: feature/kern-design-3 · Review: pro Task
-Spec: docs/features/kern-design-3.md (Roadmap R-1064)
+Spec: docs/features/kern-design-3.md (Roadmap R-1064, R-1089)
 Heavy: linux-full — Infrastruktur, Ansible und Monitoring ändern das DOM der Desktop-Journeys (server-crud, provisioning, monitoring-*); der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
@@ -56,6 +56,14 @@ Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testcode)
 Abhängt von: T1, T2, T4, T5, T6
+
+### T9 — Undefinierte Tokens: NotificationBell und Wächtertest (R-1089)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationBell.svelte, apps/desktop/ui/src/styles/tokens.test.ts
+Änderung: `NotificationBell` nutzt definierte Tokens (`--radius-*`, `--surface-hover` statt `--radius`, `--bg-hover`); `tokens.test.ts` prüft, dass jedes `var(--x)` unter `src/` einen Token trifft, den `app.css`, `global.css` oder eine Komponente selbst deklariert (sonst fällt `var()` still auf den Browser-Default). Die Ansible-Fälle (`--bg-elev`, `--bg-accent`) räumt T3 ab; T9 läuft nach T3, damit der Wächter grün startet.
+Beweis: grep var(--bg-elev apps/desktop/ui/src/pages/Ansible.svelte (main@1c313156) · Dedup-Key: bug:desktop-ui:Ansible.svelte:undefined-tokens
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts
+Doku: keine (interne Styles, kein dokumentiertes Verhalten)
+Abhängt von: T3
 
 ### T8 — Doku DE+EN und Changelog (R-1064)  [ ]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-design-3.md

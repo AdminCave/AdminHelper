@@ -23,6 +23,8 @@ Betriebsseiten nicht:
   Server-Dashboard (`MonServerDashboard.svelte`, eigene `.mon-pill`), die Sektionen unter
   `components/monitoring/section/`, Alerts, Templates und Log nutzen eigene Klassen aus `styles/app.css`.
 
+**R-1089 (BUG, im selben Zug):** Die Desktop-UI nutzt undefinierte Tokens (`--bg-elev`, `--bg-accent` in `Ansible.svelte`, `--radius`, `--bg-hover` in `NotificationBell.svelte`); `var()` fällt dann still auf den Browser-Default. T3 ersetzt die Ansible-Stellen ohnehin, T9 zieht `NotificationBell` nach und hängt an `styles/tokens.test.ts` einen Wächter, der jedes `var(--x)` unter `src/` gegen die deklarierten Tokens prüft.
+
 ## Ziel & Nicht-Ziele
 
 **Ziel:** dieselben Funktionen in der Gestalt des Mockups, mit den Bausteinen der Bibliothek (`Tabs`, `Panel`, `Pill`,
