@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-6 — Task-Ledger
-Status: aktiv · Branch: feature/ops-6 · Review: pro Task
+Status: bereit · Branch: feature/ops-6 · Review: pro Task
 Spec: docs/features/ops-6.md (Roadmap R-1051, R-1049, R-1057, R-1050, R-1048, R-1052, R-1047, R-1058, R-1045)
 Heavy: linux-full — `scripts/install.sh`, `scripts/update.sh`, `scripts/backup.sh` und `scripts/restore.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`: `agent-install.sh` ändert nur das Lesen der gpg-Ausgabe, das `agent_install_test` mit echtem gpg prüft. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -66,8 +66,10 @@ Beweis: scripts/agent-install.sh:177, Nachstellung mit Wegwerf-Schluessel pub,rv
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: changelog.d/ops-6.md
 
-### T7 — update_test: Differentialtest unabhaengig von der Compose-Version (R-1051)  [ ]
+### T7 — update_test: Differentialtest unabhaengig von der Compose-Version (R-1051)  [x]
 Komponente: scripts · Dateien: scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c52d0a15 2026-11-03T17:18:58+01:00
+Review: approve (.ah-out/review/ops-6/T7.verdict.json)
 Änderung: Test 32 zählt die Warnung „variable is not set“ als Nein von Compose; Compose 2.38.2 (CI-Runner) warnt auch für einen Namen in einem Zweig, den es nicht auswertet (`${ZZ:+$YY}` bei leerem ZZ), v5.6.1 (Dev-Box) nicht, der Wert ist in beiden gleich. Für diese Zeilen zählt nur der Exit von Compose; das Verhalten von update.sh bleibt.
 Beweis: PR #384 CI-Lauf 41669842976, Job „Ops scripts“: fünf FAIL in Test 32 (`ab${ZZ:+$YY}`, `ab${zz9q+$zz9r}`, `ab${DOMAIN:-$zz9r}`, `ab${DOMAIN:?$zz9r}`, `E=` + `${E:+$zz9r}`)
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test

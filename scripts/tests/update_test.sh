@@ -965,6 +965,12 @@ ENV_MULTI=($'P=\'line1\nzz9frag: ab${q\n\'' $'P="line1\nzz9frag=ab${q\n"' $'P="l
 # Appends $1 to a fresh install's .env and holds --check against `docker compose
 # config -q` there; leaves shown=, base= (the lines before $1), out=, ours=, theirs=.
 DIFF_ENV=()
+# Compose 2.38.2 also warns about a name in a default or an alternative it does not
+# evaluate, v5.6.1 does not; the value is the same in both. For these lines only
+# compose's exit counts.
+# shellcheck disable=SC2016
+ENV_LAZY=('SMTP_PASSWORD=ab${ZZ:+$YY}' 'X=ab${zz9q+$zz9r}' 'X=ab${DOMAIN:-$zz9r}' 'X=ab${DOMAIN:?$zz9r}'
+  $'E=\nX=${E:+$zz9r}')
 env_differential() {
   local line="$1"
   n=$((n + 1)); shown=${line//$'\n'/\\n}
@@ -978,7 +984,9 @@ env_differential() {
     >/dev/null 2>"$INST.compose"; theirs=$?
   # compose's warning about a variable that is not set counts as its no: it quotes
   # a part of the value and drops it.
-  ! grep -q 'variable is not set' "$INST.compose" || theirs=1
+  local lazy=0 l
+  for l in "${ENV_LAZY[@]}"; do [ "$l" != "$line" ] || lazy=1; done
+  [ "$lazy" -eq 1 ] || ! grep -q 'variable is not set' "$INST.compose" || theirs=1
   # A refusal has to be the check's own, not --check failing for another reason.
   { [ "$((ours != 0))" = "$((theirs != 0))" ] \
       && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: the (value starting|entry) in line' <<<"$out"; }; } \
