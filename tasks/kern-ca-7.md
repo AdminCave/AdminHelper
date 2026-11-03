@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-7 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-7 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ca-7 · Review: pro Task
 Spec: docs/features/kern-ca-7.md (Roadmap R-1094, R-1095, R-1111)
 Heavy: linux-full — `apps/ca-issuer` im Diff: der Sammellauf über `main` fährt Stack und Enrollment.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
