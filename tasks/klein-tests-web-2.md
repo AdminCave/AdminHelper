@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-web-2 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-web-2 · Review: am Ende
+Status: erledigt · Branch: feature/klein-tests-web-2 · Review: am Ende
 Spec: docs/features/klein-tests-web-2.md (Roadmap R-1108)
 Heavy: none — Test-Konfiguration; die Playwright-Specs fährt der CI-Job frontend_e2e, kein Stack-, Gateway- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
