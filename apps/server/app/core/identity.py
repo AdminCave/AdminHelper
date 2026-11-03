@@ -46,6 +46,7 @@ from app.core import config
 from app.core.database import get_db
 from app.core.errors import CodedHTTPException
 from app.core.middleware import _NameResolver
+from app.core.time import utcnow_naive
 
 logger = logging.getLogger("adminhelper.identity")
 
@@ -230,15 +231,22 @@ def get_client_identity(request: Request) -> ClientIdentity:
     except ValueError:
         logger.warning("Vom Gateway weitergereichtes Client-Cert nicht parsebar")
         return _UNVERIFIED
+    not_before = cert.not_valid_before_utc.replace(tzinfo=None)
+    not_after = cert.not_valid_after_utc.replace(tzinfo=None)
+    # The gateway checks the validity only at the handshake and resumes a TLS session
+    # for up to an hour (apps/gateway/nginx.conf), so a certificate can expire behind it.
+    now = utcnow_naive()
+    if now < not_before or now >= not_after:
+        return _UNVERIFIED
     scope = _first(cert, NameOID.ORGANIZATIONAL_UNIT_NAME)
     return ClientIdentity(
         verified=True,
         cn=_first(cert, NameOID.COMMON_NAME),
         scope=scope,
-        not_before=cert.not_valid_before_utc.replace(tzinfo=None),
+        not_before=not_before,
         fingerprint=cert.fingerprint(hashes.SHA256()).hex(),
         serial=format(cert.serial_number, "x"),
-        not_after=cert.not_valid_after_utc.replace(tzinfo=None),
+        not_after=not_after,
         issuer_listed=_issuer_listed(cert, scope),
         cert=cert,
     )

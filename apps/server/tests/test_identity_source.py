@@ -13,6 +13,7 @@ getaddrinfo answers and counts its calls, and the resolver's background thread n
 starts, so every lookup is either one out of turn or one the test made with refresh().
 """
 
+import datetime
 import ipaddress
 import logging
 import socket
@@ -28,7 +29,7 @@ from app.core import middleware as mw
 from app.core.auth import create_access_token
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, get_client_identity
-from tests.test_mtls_scope import _gateway_headers
+from tests.test_mtls_scope import _client_cert_pem, _gateway_headers
 from tests.token_claims import claims_for
 
 # Lifts _every_peer_is_the_gateway (conftest): here the real check runs.
@@ -108,6 +109,38 @@ def test_headers_from_the_gateway_count(dns):
     # As an absolute name, so no search domain is tried; the cached address answers, no lookup
     # out of turn.
     assert dns.asked == ["gateway."]
+
+
+@pytest.mark.parametrize(
+    ("not_before", "days"),
+    [
+        (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2), 1),
+        (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1), 1),
+    ],
+    ids=["expired", "not-yet-valid"],
+)
+def test_a_certificate_outside_its_validity_does_not_count(dns, not_before, days):
+    # The gateway checks the validity at the handshake only; a resumed session can carry
+    # a certificate that has expired since.
+    identity._GATEWAY.refresh()
+    headers = {
+        "X-Client-Verify": "SUCCESS",
+        "X-Client-Cert": _client_cert_pem("user-01", SCOPE_ACCESS, not_before, days),
+    }
+    assert get_client_identity(_req(GATEWAY, headers)).verified is False
+
+
+def test_a_certificate_counts_until_its_last_second(dns, monkeypatch):
+    identity._GATEWAY.refresh()
+    headers = _gateway_headers(cn="user-01")
+    ident = get_client_identity(_req(GATEWAY, headers))
+    assert ident.verified is True
+    monkeypatch.setattr(
+        identity, "utcnow_naive", lambda: ident.not_after - datetime.timedelta(seconds=1)
+    )
+    assert get_client_identity(_req(GATEWAY, headers)).verified is True
+    monkeypatch.setattr(identity, "utcnow_naive", lambda: ident.not_after)
+    assert get_client_identity(_req(GATEWAY, headers)).verified is False
 
 
 def test_the_first_request_before_any_lookup_counts(dns):

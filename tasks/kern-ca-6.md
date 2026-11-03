@@ -18,10 +18,12 @@ Komponente: desktop · Dateien: apps/desktop/src-tauri/src/enrollment.rs, docs/d
 Verify: bash scripts/dev/verify.sh desktop --strict -- enrollment
 Doku: docs/developer/desktop.html + EN · changelog.d/kern-ca-6.md
 
-### T2 — Server: Client-Zertifikat außerhalb seiner Laufzeit gilt nicht (R-1109)  [ ]
-Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/tests/test_identity_source.py, changelog.d/kern-ca-6.md
+### T2 — Server: Client-Zertifikat außerhalb seiner Laufzeit gilt nicht (R-1109)  [x]
+Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/tests/test_identity_source.py, changelog.d/kern-ca-6.md, apps/server/tests/test_certificate_check.py, apps/server/tests/test_identity_revocation.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8769a66b 2026-11-03T15:09:27+01:00
+Review: approve (.ah-out/review/kern-ca-6/T2.verdict.json)
 Änderung: `get_client_identity` gibt die unverifizierte Identität zurück, wenn die Uhr vor `not_valid_before` oder ab `not_valid_after` des weitergereichten Zertifikats steht. Test mit abgelaufenem und noch nicht gültigem Zertifikat bei `X-Client-Verify: SUCCESS` (rot ohne Fix) und einem gültigen.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_source.py tests/test_certificate_check.py tests/test_identity_revocation.py
 Doku: changelog.d/kern-ca-6.md
 
 ### T3 — Zweiter Teil von R-1053  [?] (Entscheidung bei Kevin, eigener Zug?)
