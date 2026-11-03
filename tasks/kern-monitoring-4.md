@@ -19,8 +19,10 @@ Beweis: main@03c4068a apps/monitoring/app/history.py:62 `end = int(now) // step 
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_status_compare.py
 Doku: docs/developer/monitoring.html + EN · changelog.d/kern-monitoring-4.md
 
-### T2 — builtin-update-Route vor den Routen mit festem zweitem Segment (R-1107)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_templates_router.py, apps/monitoring/tests/openapi.snapshot.json, changelog.d/kern-monitoring-4.md
+### T2 — builtin-update-Route vor den Routen mit festem zweitem Segment (R-1107)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_templates_router.py, apps/monitoring/tests/openapi.snapshot.json, changelog.d/kern-monitoring-4.md, apps/monitoring/tests/test_template_suggestions.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1cab4621 2026-11-03T17:32:02+01:00
+Review: am Ende (Branch-Review)
 Änderung: `GET /templates/{template_id}/builtin-update` wird vor `GET /templates/assignments/{server_id}` und `GET /templates/suggestions/{server_id}` registriert. Test zuerst rot: `GET /templates/assignments/builtin-update` und `GET /templates/suggestions/builtin-update` antworten 404 von `get_builtin_update`, nicht `[]`; die Zuweisungen und Vorschläge eines echten Servers bleiben gleich. Der OpenAPI-Snapshot ändert sich nur, wenn er die Reihenfolge der Pfade trägt.
 Beweis: weekly 2026-11-02-2310 (schemathesis, Teil rest) · main@03c4068a apps/monitoring/app/routers/templates.py:152 vor :369 · Dedup-Key: bug:monitoring:templates.py:builtin-update-route-collision
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_router.py tests/test_template_suggestions.py tests/test_openapi_snapshot.py
@@ -33,3 +35,4 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 
 ## Entscheidungen
+- T2: `test_suggestion_route_is_not_taken_by_a_template_route` schrieb die alte Reihenfolge fest (ein Server namens `builtin-update` bekam Vorschläge); er prüft jetzt die neue Reihenfolge und die Vorschläge eines normalen Servers, wie es die Spec (Trade-offs) festlegt. Der OpenAPI-Snapshot sortiert die Schlüssel und bleibt gleich. Abgleich aller Routen (gleiche Methode, gleiche Segmentzahl, überlappende Pfade) über den echten Router: übrig bleibt nur `GET /alerts/log` vor `/alerts/{rule_id}` (gewollt); die in der Spec vermutete POST-Kollision gibt es nicht (`/templates/{id}/assign/{server_id}` ist nicht POST), also keine Roadmap-Zeile.
