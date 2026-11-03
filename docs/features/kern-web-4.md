@@ -87,7 +87,7 @@ Keine. Lucide: `@lucide/svelte` 1.66.0 (ISC), wie im Desktop.
 - **Visuelle Baselines:** `login.spec.ts:61` und `smoke.spec.ts:58` vergleichen sieben Bildschirmfotos. Jede
   sichtbare Änderung macht sie rot. T8 erzeugt sie neu im Playwright-Container. Weicht dessen Rendering von
   `ubuntu-latest` ab, kommen sie aus dem Artefakt des CI-Laufs.
-- **Kontrast:** Neue Werte für dunkel und hell; `tokens.test.ts` prüft die Paare wie im Desktop.
+- **Tokens:** Neue Werte für dunkel und hell aus dem DS; `tokens.test.ts` prüft Namen und Aliase wie im Desktop.
 - **Rollback:** je Task `git revert`, keine Datenänderung.
 
 ## Doku-Impact

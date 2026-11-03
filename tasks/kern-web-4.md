@@ -14,7 +14,7 @@ Vorlage: Desktop-Bibliothek `apps/desktop/ui/src/components/ui/` und Tokens `app
 
 ### T1 — Tokens auf DS-Stand (R-1082)  [ ]
 Komponente: web · Dateien: apps/web/src/styles/global.css, apps/web/src/styles/tokens.test.ts, apps/web/src/theme-init.test.ts
-Änderung: Die Token-Blöcke in `global.css` (dunkel und `[data-theme='light']`) bekommen Werte und Namen wie die Desktop-Tokens: soft black, `surface`/`raised`/`inset`, Status-Paare `--*-bg`/`--*-border`, Radien, Motion, `--ring-shadow`. Die alten Namen bleiben als Aliase. Neuer `tokens.test.ts` prüft die Namen in beiden Themes und die Kontrastpaare wie `apps/desktop/ui/src/styles/tokens.test.ts`. SPDX im neuen Test.
+Änderung: Die Token-Blöcke in `global.css` (dunkel und `[data-theme='light']`) bekommen Werte und Namen wie die Desktop-Tokens: soft black, `surface`/`raised`/`inset`, Status-Paare `--*-bg`/`--*-border`, Radien, Motion, `--ring-shadow`. Die alten Namen bleiben als Aliase. Neuer `tokens.test.ts` prüft Namen in beiden Themes, Aliase und reduzierte Bewegung wie `apps/desktop/ui/src/styles/tokens.test.ts`. SPDX im neuen Test.
 Verify: bash scripts/dev/verify.sh web --strict -- src/styles/tokens.test.ts src/theme-init.test.ts
 Doku: → T9
 
