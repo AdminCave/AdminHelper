@@ -12,6 +12,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
 from app import main, pki, rotation, storage, trust
+from tests import renewal
 
 PW = b"pw"
 
@@ -107,3 +108,26 @@ def test_boot_writes_the_trust_dir_before_a_failing_gateway_step(monkeypatch, tm
     with pytest.raises(OSError):
         main.provision_boot_material(inter)
     assert _der(_listed(tmp_path / "trust", "access")) == _der([inter["access"].cert])
+
+
+# R-1021: the scopes whose intermediate from before the switch (under the old root) the
+# server still accepts in each phase of a root renewal.
+_LISTS_THE_OLD = {
+    "staged": frozenset(),  # nothing replaced yet
+    "switched": frozenset(pki.SCOPES),
+    "no-cross": frozenset(pki.SCOPES),
+    "compromised": frozenset(pki.SCOPES) - {"access"},
+    "expired": frozenset(),  # ended with the old root
+    "finished": frozenset(),
+}
+
+
+@pytest.mark.parametrize("phase", list(_LISTS_THE_OLD))
+def test_the_listed_intermediates_follow_the_phase_of_a_root_renewal(monkeypatch, tmp_path, phase):
+    r = renewal.renewed(monkeypatch, tmp_path / "pki", phase)
+
+    trust.write_trust(tmp_path / "trust", r.after)
+
+    for scope in pki.SCOPES:
+        old = [r.before[scope].cert] if scope in _LISTS_THE_OLD[phase] else []
+        assert _der(_listed(tmp_path / "trust", scope)) == _der([r.after[scope].cert, *old])

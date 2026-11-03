@@ -1019,6 +1019,7 @@ jobs:
           openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
             -keyout certs/gateway.key -out certs/gateway-fullchain.pem -subj /CN=t -days 1
           cp certs/gateway-fullchain.pem certs/client-ca.pem
+          cp certs/gateway-fullchain.pem certs/gateway-enroll-fullchain.pem
           echo 'ssl_verify_client optional;' > snippets/data-plane-mtls.conf
           cp apps/gateway/identity-headers.conf snippets/identity-headers.conf
           docker run --rm \

@@ -43,9 +43,12 @@ LEAF_DAYS_BROWSER = 365
 # (storage._leaf_needs_remint, F4), so a stack restart refreshes it well before
 # expiry. Clients pin the Root, not the leaf, so the rotation is transparent (D2).
 LEAF_DAYS_GATEWAY = 365
-# Root and intermediates with fewer days left than this are logged as a WARNING:
-# half a year to rotate, which needs the separately kept root passphrase.
+# Intermediates with fewer days left than this are logged as a WARNING: half a year to
+# rotate, which needs the separately kept root passphrase.
 EXPIRY_WARN_DAYS = 180
+# The root's WARNING comes earlier (R-1021): a new root reaches the clients only with
+# their renewals, so a year leaves time to stage it, wait for them and switch.
+ROOT_WARN_DAYS = 365
 
 SCOPES = ("tunnel", "access", "internal")
 
@@ -159,8 +162,14 @@ def _ca_key_usage() -> x509.KeyUsage:
 
 def build_root_ca(
     common_name: str = "AdminHelper Root CA",
+    label: str | None = None,
 ) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """`label` is appended to the CN ("AdminHelper Root CA 2036-02-01"). A root renewal
+    passes one (R-1021): the old and the new root are trusted side by side for a while,
+    and a client finds the issuer of a certificate by its name."""
     key = generate_key()
+    if label:
+        common_name = f"{common_name} {label}"
     name = _name(common_name)
     now = _now()
     cert = (
@@ -177,6 +186,70 @@ def build_root_ca(
         .sign(key, _HASH)
     )
     return cert, key
+
+
+def build_cross_cert(
+    new_root: x509.Certificate,
+    old_root: x509.Certificate,
+    old_key: ec.EllipticCurvePrivateKey,
+) -> x509.Certificate:
+    """The cross certificate of a root renewal (R-1021): subject, public key and SKI of
+    `new_root`, signed by `old_root`. A client that trusts only the old root builds
+    leaf -> intermediate -> cross -> old root, one that trusts the new root stops at the
+    new root, because the intermediate names it as issuer either way. path_length=1 leaves
+    room for the intermediate and nothing more. It ends with the earlier of both roots;
+    an old root outside its validity does not sign it (IssuerNotValid)."""
+    now = _now()
+    end = min(_not_after(old_root, VALIDITY_DAYS_ROOT, now), new_root.not_valid_after_utc)
+    ski = new_root.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+    return (
+        x509.CertificateBuilder()
+        .subject_name(new_root.subject)
+        .issuer_name(old_root.subject)
+        .public_key(new_root.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(end)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=1), critical=True)
+        .add_extension(_ca_key_usage(), critical=True)
+        .add_extension(ski, critical=False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(old_key.public_key()),
+            critical=False,
+        )
+        .sign(old_key, _HASH)
+    )
+
+
+def cross_problem(
+    cert: x509.Certificate, new_root: x509.Certificate, old_root: x509.Certificate
+) -> str | None:
+    """Why `cert` is not a cross certificate as build_cross_cert issues it for `new_root`
+    under `old_root` (subject and key of the new root, a CA with path_length=1, signed by
+    the old root), or None if it is; its validity in time is left to the caller."""
+    if cert.subject != new_root.subject or _spki(cert) != _spki(new_root):
+        return f"it does not carry the name and key of root {read_identity(new_root)[0]!r}"
+    try:
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except (x509.ExtensionNotFound, x509.DuplicateExtension, ValueError):
+        constraints = None
+    if constraints is None or not constraints.ca or constraints.path_length != 1:
+        return "it is not a CA with path_length=1"
+    try:
+        cert.verify_directly_issued_by(old_root)
+    except InvalidSignature:
+        detail = "the signature does not verify"
+    except (ValueError, TypeError) as exc:
+        detail = str(exc)
+    else:
+        return None
+    return f"it is not signed by root {read_identity(old_root)[0]!r} ({detail})"
+
+
+def _spki(cert: x509.Certificate) -> bytes:
+    return cert.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
 
 def _intermediate_cn(scope: str) -> str:
@@ -249,6 +322,37 @@ def intermediate_problem(
     else:
         return None
     return f"it is not signed by root {read_identity(root_cert)[0]!r} ({detail})"
+
+
+def intermediate_problem_among(
+    cert: x509.Certificate, scope: str, roots: tuple[x509.Certificate, ...]
+) -> str | None:
+    """None if `cert` is an intermediate of `scope` under one of `roots`
+    (intermediate_problem), else why it is under none of them."""
+    problems = [intermediate_problem(cert, scope, root) for root in roots]
+    if None in problems:
+        return None
+    return "; ".join(dict.fromkeys(p for p in problems if p))
+
+
+def root_problem(cert: x509.Certificate) -> str | None:
+    """Why `cert` is not a root as build_root_ca issues one (a CA, signed by itself), or
+    None if it is; its validity in time is left to the caller."""
+    try:
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except (x509.ExtensionNotFound, x509.DuplicateExtension, ValueError):
+        constraints = None
+    if constraints is None or not constraints.ca:
+        return "it is not a CA"
+    try:
+        cert.verify_directly_issued_by(cert)
+    except InvalidSignature:
+        detail = "the signature does not verify"
+    except (ValueError, TypeError) as exc:
+        detail = str(exc)
+    else:
+        return None
+    return f"it is not self-signed ({detail})"
 
 
 # --- Leaf signing ------------------------------------------------------------
