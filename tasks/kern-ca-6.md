@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-6 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-6 · Review: pro Task
 Spec: docs/features/kern-ca-6.md (Roadmap R-1053, R-1109)
 Heavy: linux-full — `apps/server/app/core/identity.py` (Server-Identität hinter dem Gateway) und der mTLS-Client des Desktops: der Sammellauf über `main` fährt Stack und Desktop-Journeys. Kein `scenario`: kein FRP-Datenpfad, keine Install-Pfade. Kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@ba79469e`. Details nur in `tasks/private/sec-kern-ca-6-notes.md`.
 
-### T1 — Desktop: Server-Zertifikat im registrierten Zustand wie der Agent prüfen (R-1053)  [ ]
+### T1 — Desktop: Server-Zertifikat im registrierten Zustand wie der Agent prüfen (R-1053)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-ca-6.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e8c2ff76 2026-11-03T15:27:35+01:00
+Review: approve (.ah-out/review/kern-ca-6/T1.verdict.json)
 Änderung: `CaPinVerifier` nimmt nach erfolgreicher Kettenprüfung (auch im Namensfall) nur ein Leaf an, dessen Aussteller-CN `AdminHelper Access Intermediate` ist oder damit plus Leerzeichen beginnt (wie `isAccessIntermediate` im Agent); sonst Fehler ohne `ERR_CA_PIN_MISMATCH`. Echt-Handshake-Test mit einem Leaf eines anderen Intermediates unter derselben Root (rot ohne Fix); die Rotations-Tests bleiben grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
 Doku: docs/developer/desktop.html + EN · changelog.d/kern-ca-6.md
