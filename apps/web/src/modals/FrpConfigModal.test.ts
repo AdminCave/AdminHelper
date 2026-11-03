@@ -115,7 +115,11 @@ function renderModal(editing: FrpConfig | null) {
     submit: () => fireEvent.submit(view.container.querySelector('#frp-config-form') as Element),
     asked,
     answer,
-    warning: () => view.queryByTestId('frp-bind-port-warning'),
+    // The warning is the hint the bind port field points at.
+    warning: () => {
+      const id = field('fcBindPort').getAttribute('aria-describedby');
+      return id ? document.getElementById(id) : null;
+    },
   };
 }
 
@@ -360,7 +364,7 @@ describe('the bind port warning', () => {
     expect(m.warning()?.textContent?.trim()).toBe(
       de['modal.frpConfig.bindPortMismatch'].replace('{port}', '7000'),
     );
-    expect(m.field('fcBindPort').getAttribute('aria-describedby')).toBe(m.warning()?.id);
+    expect(m.warning()?.closest('.ui-field')).toBe(m.field('fcBindPort').closest('.ui-field'));
 
     await m.type('fcBindPort', '7000');
     expect(m.warning()).toBeNull();

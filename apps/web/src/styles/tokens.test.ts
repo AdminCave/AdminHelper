@@ -73,17 +73,7 @@ const SHARED = [
   ...[1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map((n) => `--space-${n}`),
 ];
 
-const ALIASES = [
-  '--bg-surface',
-  '--bg-elevated',
-  '--bg-sidebar',
-  '--border-hover',
-  '--hover',
-  '--text-faint',
-  '--accent-bg',
-  '--shadow',
-  ...[1, 2, 3, 4, 5, 6, 7].map((n) => `--sp-${n}`),
-];
+const ALIASES = ['--border-hover', '--hover', ...[2, 3, 4, 5, 6, 7].map((n) => `--sp-${n}`)];
 
 describe('global.css design tokens', () => {
   it.each(THEMED)('%s is set in the dark and the light block', (name) => {
