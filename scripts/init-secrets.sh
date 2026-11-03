@@ -32,13 +32,21 @@ if ! command -v openssl >/dev/null 2>&1; then
     exit 1
 fi
 
+# A key in every form compose reads: blanks in front, "export ", blanks around the
+# separator, '=' or ':' (as migrate_env in update.sh). A key read only as KEY= took
+# 'export KEY=v' or 'KEY = v' for unset, and upsert added a second line with a new
+# value: a POSTGRES_PASSWORD that no longer matches the volume.
+# Compose takes the last statement of a key, so is_set_safely reads the last one.
+key_re() { printf '^[[:space:]]*(export[[:space:]]+)?%s[[:space:]]*[=:]' "$1"; }
+
 # Prueft, ob eine Variable gesetzt und nicht-leer/nicht-Placeholder ist.
 # Akzeptiert sowohl 'KEY=value' als auch 'KEY="value"'.
 is_set_safely() {
     local var="$1"
     local placeholder="${2:-}"
-    local value
-    value=$(LC_ALL=C grep -a -E "^${var}=" "$ENV_FILE" 2>/dev/null | head -1 | sed -E "s/^${var}=//; s/^\"//; s/\"\$//")
+    local value re
+    re=$(key_re "$var")
+    value=$(LC_ALL=C grep -a -E "$re" "$ENV_FILE" 2>/dev/null | tail -n 1 | sed -E "s/${re}[[:space:]]*//; s/[[:space:]]+\$//; s/^\"//; s/\"\$//")
     if [ -z "$value" ]; then
         return 1
     fi
@@ -53,7 +61,8 @@ is_set_safely() {
 upsert() {
     local key="$1"
     local value="$2"
-    # Delete any existing (commented or not) line, then append the literal value.
+    # Delete any existing (commented or not) line in every form key_re reads, then
+    # append the literal value.
     # No sed replacement means |, & or \ in the value aren't interpreted, and
     # [[:space:]] is POSIX where GNU-only \s breaks on macOS sed — matches install.sh (2.37).
     # grep -v exits 1 when it filters every line, which is fine; 2 is an error (a
@@ -69,7 +78,7 @@ upsert() {
     # and waits for an answer that a wrapper collecting the output never shows.
     local tmp failed="Fehler: ${key} konnte nicht in $ENV_FILE geschrieben werden — Abbruch. $ENV_FILE bleibt beim letzten vollstaendigen Stand."
     tmp=$(mktemp "${ENV_FILE}.ah-XXXXXX") || { echo "$failed" >&2; exit 1; }
-    { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
+    { { LC_ALL=C grep -a -vE "^#?[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
         && mv -f "$tmp" "$ENV_FILE"; } \
         || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }

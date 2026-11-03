@@ -59,7 +59,8 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # current directory; empty: no label) as the directory of every container.
 # compose up --help offers --wait and --wait-timeout unless AH_TEST_NO_WAIT=1;
 # compose up fails with AH_TEST_UP_FAIL=1; compose logs names a refused Postgres
-# password with AH_TEST_PG_AUTH=1.
+# password with AH_TEST_PG_AUTH=1. compose config fails like compose on a .env line
+# whose key holds a space, and quotes that line.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -79,6 +80,9 @@ case "$*" in
   *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
   "compose config"*)
     [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo "compose config failed in the stub" >&2; exit 1; }
+    # Like compose, a key with a space ends the call with the line quoted.
+    bad=$(grep -nE '^[^#=:]* [^#=:]*$' .env 2>/dev/null | head -n 1)
+    [ -z "$bad" ] || { echo "failed to read .env: line ${bad%%:*}: key cannot contain a space: ${bad#*:}" >&2; exit 1; }
     echo "name: ${AH_TEST_PROJECT:-ahtest}"; echo "services: {}"; echo "volumes:"
     for k in ${AH_TEST_VOLUME_KEYS:-ca-pki gateway-certs postgres-data}; do
       echo "  $k:"; echo "    name: ${AH_TEST_PROJECT:-ahtest}_$k"
@@ -643,6 +647,30 @@ cmp -s "$WORK/inst13d.env.orig" "$INST/.env" && ok "compose without up --wait: .
   || bad "compose without up --wait: .env changed: $(tr '\n' ' ' < "$INST/.env")"
 ! grep -qE '^compose (pull|up -d|down)' <<<"$dlog" && ok "compose without up --wait: no compose pull/up/down" \
   || bad "compose without up --wait: $(grep -E '^compose' <<<"$dlog" | tr '\n' ' ')"
+
+# ── 14. a .env written ahead is checked like update.sh checks it, before compose ──
+# (a) a line compose rejects: abort with its line number, no byte of it, no compose call
+new_inst inst14a; printf 'DOMAIN=old.example\nGEHEIM WERT\n' > "$INST/.env"; cp "$INST/.env" "$WORK/inst14a.env.orig"
+DLOG="$WORK/docker-inst14a.log"
+out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+dlog=$(cat "$DLOG" 2>/dev/null)
+{ [ $rc -ne 0 ] && grep -q 'line 2' <<<"$out" && ! grep -q GEHEIM <<<"$out" && ! grep -q WERT <<<"$out"; } \
+  && ok "a .env line compose rejects: abort with the line number, without its text" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "rejected .env line: rc=$rc"; }
+{ ! grep -q '^compose' <<<"$dlog" && cmp -s "$WORK/inst14a.env.orig" "$INST/.env"; } \
+  && ok "a .env line compose rejects: no compose call, .env unchanged" \
+  || bad "rejected .env line: calls=[$(tr '\n' ' ' <<<"$dlog")] .env=[$(tr '\n' ' ' < "$INST/.env")]"
+# (b) a valid .env with the forms compose reads: the install runs as before
+new_inst inst14b; printf 'DOMAIN=old.example\nexport A_B = "x\ny"\nC: \x27${D}\x27\n' > "$INST/.env"
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a valid .env written ahead: the install runs" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "valid .env written ahead: rc=$rc"; }
+# (c) install.sh holds the check of update.sh byte for byte
+blk() { sed -n '/^# >>> env check/,/^# <<< env check$/p' "$1"; }
+blk_i=$(blk "$REAL_INSTALL"); blk_u=$(blk "$REPO_ROOT/scripts/update.sh")
+{ grep -q '^check_env_templates() {' <<<"$blk_u" && grep -q '^# <<< env check$' <<<"$blk_u" && [ "$blk_i" = "$blk_u" ]; } \
+  && ok "install.sh holds the .env check of update.sh byte for byte" \
+  || bad "the .env check of install.sh differs from that of update.sh"
 
 echo
 echo "──────────────────────────────────────────"

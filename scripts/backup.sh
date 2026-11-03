@@ -99,7 +99,7 @@ fi
 dump_db adminhelper
 dump_db adminhelper_monitor
 
-# >>> dotenv tokenizer: diagnostics.sh and backup.sh hold the same text, a test keeps it so
+# >>> dotenv tokenizer: backup.sh, diagnostics.sh and restore.sh hold the same text, a test keeps it so
 # The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
 # bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
 # whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
@@ -246,7 +246,10 @@ if [ -f .env ]; then
     # commented-out ones too: in a comment from its '#' to the end of the line its value
     # ends on. A changed line keeps the bytes outside those statements without the
     # whitespace at its end; a commented-out line or one left with whitespace only goes.
-    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. LC_ALL=C: awk reads
+    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. A statement that
+    # starts inside the closed quoted value of another key (as compose reads the file:
+    # the first tok_exact run notes those values) keeps that closing quote and drops
+    # the rest: cut with it, the value would run on over the lines below. LC_ALL=C: awk reads
     # bytes, so a NUL byte or a byte the caller's locale cannot decode passes unchanged
     # (grep took such a file for binary and left lines out). Every other line is printed
     # as is, the last with a newline; any awk error (a write error too) aborts the
@@ -254,19 +257,40 @@ if [ -f .env ]; then
     # shellcheck disable=SC2016 # an awk program, $0 is awk's
     LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" "$ENV_TOK"'
         BEGIN { tok_init(sp, sep, 1) }
-        function want(k) { return k == "CA_ROOT_PASSPHRASE" }
+        function want(k) { return 1 }
         function hit(k, ks, vs, ve, q, closed, cs) {
+            if (k != "CA_ROOT_PASSPHRASE") {
+                if (ex && q != "" && closed) { m++; QS[m] = vs; QE[m] = ve }
+                if (ex) { ne++; ES[ne] = ks; EE[ne] = ve }
+                return
+            }
             n++
             A[n] = cs ? cs : ks
             B[n] = (cs || q == "") ? tok_eol(ve) - 1 : ve
         }
         { S = S $0 "\n" }
         END {
+            N = length(S)
+            ex = 1; tok_exact(); ex = 0
             tok_run()
+            n0 = n
+            for (j = 1; j <= n0; j++)
+                for (i = 1; i <= m; i++)
+                    if (QS[i] < A[j] && A[j] < QE[i] && B[j] >= QE[i]) {
+                        if (B[j] > QE[i]) {
+                            n++; A[n] = QE[i] + 1; B[n] = B[j]
+                            do {
+                                g = 0
+                                for (r = 1; r <= ne; r++)
+                                    if (ES[r] <= B[n] && EE[r] > B[n] && EE[r] >= A[n]) { B[n] = EE[r]; g = 1 }
+                            } while (g)
+                        }
+                        B[j] = QE[i] - 1
+                    }
             for (ls = 1; ls <= N; ls = le + 1) {
                 le = tok_eol(ls)
                 o = ""
-                ch = 0
+                ch = kq = 0
                 p = ls
                 while (p < le) {
                     c = 0
@@ -275,10 +299,11 @@ if [ -f .env ]; then
                     x = le
                     for (j = 1; j <= n; j++) if (A[j] > p && A[j] < x) x = A[j]
                     o = o substr(S, p, x - p)
+                    for (i = 1; i <= m; i++) if (p <= QE[i] && QE[i] < x) kq = 1
                     p = x
                 }
                 if (!ch) print substr(S, ls, le - ls)
-                else if (substr(S, ls, le - ls) !~ tcre && o !~ ("^(" sp ")*$")) {
+                else if (kq || (substr(S, ls, le - ls) !~ tcre && o !~ ("^(" sp ")*$"))) {
                     sub("(" sp ")+$", "", o)
                     print o
                 }

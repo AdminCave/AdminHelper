@@ -71,9 +71,27 @@ while [ $# -gt 0 ]; do
 done
 
 # Diagnostics go to stderr so functions can return a value on stdout via $(...).
-log() { echo "[update] $*" >&2; }
-die() { echo "FEHLER: $*" >&2; exit 1; }
+# Run without a terminal (ssh host ./scripts/update.sh), a dropped connection ends
+# the reader of stdout and stderr instead of sending SIGHUP. SIGPIPE is ignored, so
+# the next write fails instead of ending the script wherever it is, mid-swap or
+# mid-rollback included. A failed write counts as a dropped session (out_lost): the
+# output moves to the log and the script sends itself SIGHUP, which ends it before
+# the swap (nothing changed yet) and rolls back from the swap on (on_signal).
+trap '' PIPE
+HUP_LOG=""
+hup_to_log() {
+    [ -z "$HUP_LOG" ] || return 0
+    HUP_LOG="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
+    ( umask 077; { [ -d backups ] || { [ -f docker-compose.yml ] && mkdir backups; }; } \
+        && : >> "$HUP_LOG" ) && exec >> "$HUP_LOG" 2>&1
+}
+# In a $(...) subshell the signal goes to the script; the subshell then ends.
+out_lost() { hup_to_log; printf '%s\n' "$1" >&2; kill -HUP $$; [ "$BASHPID" = "$$" ] || exit 1; }
+say() { printf '%s\n' "$*" >&2 || out_lost "$*"; }
+log() { say "[update] $*"; }
+die() { say "FEHLER: $*"; exit 1; }
 
+# >>> env check: update.sh and install.sh hold the same text, a test keeps it so
 # 0 if every '${' in $1 that is not part of a '$$' starts a placeholder compose
 # accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}' on
 # the same line, nested ones included. The classes are spelled out: under
@@ -182,8 +200,8 @@ env_key_ok() {
 # placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
 # template"; so do a quote that never closes and a key compose does not take
 # (env_key_ok), text after a closing quote included. Checked before the first
-# call, so such a .env stops the update before backup, swap and re-pin rather than
-# after. Reads .env as compose does: a BOM at its start drops, blank and '#' lines
+# call, so such a .env stops the script before it changes anything (update.sh:
+# before backup, swap and re-pin). Reads .env as compose does: a BOM at its start drops, blank and '#' lines
 # drop, "export " may lead, '=' or ':' separates, a line without either is a key
 # without a value; a quoted value runs to its closing quote, over several lines if
 # need be, and is literal in single quotes, and the text after that quote is read
@@ -239,6 +257,7 @@ check_env_templates() {
         done
     done < .env
 }
+# <<< env check
 
 # --- Preflight --------------------------------------------------------------
 [ -f docker-compose.yml ] || die "aus dem Install-Verzeichnis ausfuehren (docker-compose.yml fehlt)."
@@ -248,7 +267,7 @@ check_env_templates() {
 # Tighten only: g-w,o-rwx turns 0755/0775 into 0750 and leaves a stricter 0700 alone.
 close_install_dir() {
     chmod g-w,o-rwx . 2>/dev/null \
-        || echo "WARNING: could not close $(pwd) to other accounts; they may read the install directory." >&2
+        || say "WARNING: could not close $(pwd) to other accounts; they may read the install directory."
     return 0
 }
 warn_host_uids() {
@@ -257,7 +276,7 @@ warn_host_uids() {
     for uid in 10001 70; do
         # getent ends with 2 for no such account; under pipefail that must not end the run.
         name=$(getent passwd "$uid" 2>/dev/null | cut -d: -f1) || name=""
-        [ -z "$name" ] || echo "WARNING: host account '$name' has UID $uid, which a container uses; it can read the data of the services (see docs/admin/betrieb.html)." >&2
+        [ -z "$name" ] || say "WARNING: host account '$name' has UID $uid, which a container uses; it can read the data of the services (see docs/admin/betrieb.html)."
     done
     return 0
 }
@@ -528,7 +547,8 @@ fi
 BACKUP_ARCHIVE=""
 if [ "$SKIP_BACKUP" != 1 ]; then
     log "Backup-first..."
-    ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out"
+    ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out" \
+        || die "Backup-first fehlgeschlagen — Update abgebrochen, nichts geaendert."
     BACKUP_ARCHIVE=$(sed -n 's/^\[backup\] OK -> \(.*\) ([^)]*)$/\1/p' "${TMP}/backup.out")
 else
     log "Backup uebersprungen (--skip-backup)."
@@ -596,7 +616,7 @@ rollback_before_deploy() {
         die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien bleiben stehen, Image-Pins unveraendert}, Container unveraendert. $2"
     fi
     local incomplete=0
-    echo >&2
+    say ""
     log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..."
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # Copy next to .env, then rename: an interrupted restore leaves no half .env.
@@ -647,16 +667,11 @@ swap_runtime_files() {
 # ends; a dropped SSH session sends SIGHUP to the whole foreground process group,
 # so docker compose ends too. Before the recreate the containers are untouched,
 # after it they may run the new version. The rollback itself ignores further INT
-# and TERM. After SIGHUP the terminal is gone, so its messages go to a log file.
+# and TERM. After SIGHUP (or a failed write, out_lost) the terminal is gone, so its
+# messages go to a log file.
 # NO_ROLLBACK_STAYS is what --no-rollback leaves in place at this point, empty for
 # the default text of rollback_before_deploy.
 DEPLOY_STARTED=0
-HUP_LOG=""
-hup_to_log() {
-    [ -z "$HUP_LOG" ] || return 0
-    HUP_LOG="backups/update-$(date -u +%Y%m%dT%H%M%SZ).log"
-    ( umask 077; : >> "$HUP_LOG" ) && exec >> "$HUP_LOG" 2>&1
-}
 # At the start of a rollback, $@ = the rollback call. INT and TERM would cut it
 # short, so the shell ignores them, and so does a command it starts unless it
 # sets a handler of its own. HUP cannot be ignored: a write to the dead terminal
@@ -742,7 +757,7 @@ rollback_after_deploy() {
         die "$1. --no-rollback gesetzt: kaputter Stand bleibt zum Debuggen stehen, .env auf ${TARGET_VER} gepinnt. Danach: ./scripts/update.sh --redeploy (gepinnte Images neu starten); ${back}. Alembic kann die Datenbank beim Start schon migriert haben; Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
     fi
     local incomplete=0
-    echo >&2
+    say ""
     # server, scheduler and monitoring may still be migrating behind a failed or
     # interrupted `up --wait`: until that transaction commits, the query sees the old
     # revision. Stopped, every migration has committed or rolled back; if the stop
