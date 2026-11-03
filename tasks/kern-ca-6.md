@@ -13,9 +13,9 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Stand `origin/main@ba79469e`. Details nur in `tasks/private/sec-kern-ca-6-notes.md`.
 
 ### T1 — Desktop: Server-Zertifikat im registrierten Zustand wie der Agent prüfen (R-1053)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/enrollment.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-ca-6.md
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-ca-6.md
 Änderung: `CaPinVerifier` nimmt nach erfolgreicher Kettenprüfung (auch im Namensfall) nur ein Leaf an, dessen Aussteller-CN `AdminHelper Access Intermediate` ist oder damit plus Leerzeichen beginnt (wie `isAccessIntermediate` im Agent); sonst Fehler ohne `ERR_CA_PIN_MISMATCH`. Echt-Handshake-Test mit einem Leaf eines anderen Intermediates unter derselben Root (rot ohne Fix); die Rotations-Tests bleiben grün.
-Verify: bash scripts/dev/verify.sh desktop --strict -- enrollment
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
 Doku: docs/developer/desktop.html + EN · changelog.d/kern-ca-6.md
 
 ### T2 — Server: Client-Zertifikat außerhalb seiner Laufzeit gilt nicht (R-1109)  [x]
