@@ -56,6 +56,11 @@ import {
   setNewNotificationHandler,
   togglePanel,
   panelOpen,
+  markRead,
+  loadCenter,
+  centerItems,
+  centerHasMore,
+  CENTER_PAGE,
 } from './notifications';
 
 const item = (over: Partial<NotificationItem>): NotificationItem => ({
@@ -187,9 +192,9 @@ describe('notifications store', () => {
     expect(h.stopStream).toHaveBeenCalled(); // the restarted SSE stream was stopped
   });
 
-  it('togglePanel marks the feed read on open, but not on close', async () => {
-    // Opening the bell panel marks everything read (the badge-clearing the user sees on each click);
-    // closing must NOT, else the badge would clear on close or never (6.118). panelOpen isn't reset in
+  it('togglePanel opens and closes the panel without marking anything read', async () => {
+    // R-1078: the panel has an "unread" tab, so opening it must leave the entries unread (the
+    // badge clears through "mark all read" or by opening an entry). panelOpen isn't reset in
     // beforeEach, so normalize to closed first.
     if (get(panelOpen)) togglePanel();
     h.markRead.mockClear();
@@ -197,11 +202,91 @@ describe('notifications store', () => {
 
     togglePanel(); // open
     expect(get(panelOpen)).toBe(true);
-    await vi.waitFor(() => expect(h.markRead).toHaveBeenCalledTimes(1));
-
-    h.markRead.mockClear();
     togglePanel(); // close
     expect(get(panelOpen)).toBe(false);
+    await new Promise((r) => setTimeout(r, 0));
     expect(h.markRead).not.toHaveBeenCalled();
+  });
+
+  it('markRead marks the given entries in the feed and lowers the badge by the unread ones', async () => {
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 1, read: false }),
+      item({ id: 2, read: false }),
+      item({ id: 3, read: true }),
+    ]);
+    h.fetchUnreadCount.mockResolvedValueOnce({ count: 5 });
+    await loadFeed();
+
+    await markRead([1, 3]);
+    expect(h.markRead).toHaveBeenCalledWith(expect.anything(), [1, 3]);
+    expect(get(notificationItems).map((n) => [n.id, n.read])).toEqual([
+      [1, true],
+      [2, false],
+      [3, true],
+    ]);
+    // Only id 1 was unread: 5 - 1 (the badge counts beyond the 50-row list).
+    expect(get(unreadCount)).toBe(4);
+  });
+
+  it('markRead with no ids does not call the API', async () => {
+    await markRead([]);
+    expect(h.markRead).not.toHaveBeenCalled();
+  });
+
+  it('markRead keeps the feed when the API fails', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);
+    h.fetchUnreadCount.mockResolvedValueOnce({ count: 1 });
+    await loadFeed();
+    h.markRead.mockRejectedValueOnce(new Error('boom'));
+    await markRead([1]);
+    expect(get(notificationItems)[0].read).toBe(false);
+    expect(get(unreadCount)).toBe(1);
+  });
+
+  it('loadCenter reads a page of the center size and appends the next one by offset', async () => {
+    const page = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => item({ id: from - i, read: true }));
+    h.fetchFeed.mockResolvedValueOnce(page(1000, CENTER_PAGE));
+    await loadCenter();
+    expect(h.fetchFeed).toHaveBeenLastCalledWith(expect.anything(), CENTER_PAGE, 0);
+    expect(get(centerItems)).toHaveLength(CENTER_PAGE);
+    expect(get(centerHasMore)).toBe(true);
+
+    // The next page overlaps by one row (an entry arrived meanwhile): no duplicate.
+    h.fetchFeed.mockResolvedValueOnce(page(501, 3));
+    await loadCenter(false);
+    expect(h.fetchFeed).toHaveBeenLastCalledWith(expect.anything(), CENTER_PAGE, CENTER_PAGE);
+    expect(get(centerItems)).toHaveLength(CENTER_PAGE + 2);
+    expect(get(centerHasMore)).toBe(false);
+
+    // A reset starts from the top again.
+    h.fetchFeed.mockResolvedValueOnce(page(7, 2));
+    await loadCenter();
+    expect(get(centerItems).map((n) => n.id)).toEqual([7, 6]);
+  });
+
+  it('loadCenter keeps the list when the API fails', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 9 })]);
+    await loadCenter();
+    h.fetchFeed.mockRejectedValueOnce(new Error('boom'));
+    await loadCenter(false);
+    expect(get(centerItems).map((n) => n.id)).toEqual([9]);
+  });
+
+  it('markRead and markAllRead reach the center list too', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1 }), item({ id: 2 }), item({ id: 3 })]);
+    await loadCenter();
+    await markRead([2]);
+    expect(get(centerItems).map((n) => n.read)).toEqual([false, true, false]);
+    await markAllRead();
+    expect(get(centerItems).every((n) => n.read)).toBe(true);
+  });
+
+  it('deactivate empties the center list', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1 })]);
+    await loadCenter();
+    deactivateNotifications();
+    expect(get(centerItems)).toEqual([]);
+    expect(get(centerHasMore)).toBe(false);
   });
 });
