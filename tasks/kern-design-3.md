@@ -69,8 +69,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testcode)
 Abhängt von: T1, T2, T4, T5, T6
 
-### T9 — Undefinierte Tokens: NotificationBell und Wächtertest (R-1089)  [ ]
+### T9 — Undefinierte Tokens: NotificationBell und Wächtertest (R-1089)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationBell.svelte, apps/desktop/ui/src/styles/tokens.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @249ef2c7 2026-11-04T16:38:15+01:00
+Review: approve (.ah-out/review/kern-design-3/T9.verdict.json)
 Änderung: `NotificationBell` nutzt definierte Tokens (`--radius-*`, `--surface-hover` statt `--radius`, `--bg-hover`); `tokens.test.ts` prüft, dass jedes `var(--x)` unter `src/` einen Token trifft, den `app.css`, `global.css` oder eine Komponente selbst deklariert (sonst fällt `var()` still auf den Browser-Default). Die Ansible-Fälle (`--bg-elev`, `--bg-accent`) räumt T3 ab; T9 läuft nach T3, damit der Wächter grün startet.
 Beweis: grep var(--bg-elev apps/desktop/ui/src/pages/Ansible.svelte (main@1c313156) · Dedup-Key: bug:desktop-ui:Ansible.svelte:undefined-tokens
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts
@@ -98,3 +100,5 @@ Doku: diese Task
 - 2026-11-04 T5: Kein SSH-Knopf im Dashboard-Kopf: der Kontext hat keine Verbindungsfunktion, eine neue wäre Scope über das Re-Design hinaus (Spec, offene Frage 1). „Wartungsfenster“ öffnet den bestehenden `MaintenanceModal` (neu, `serverId` = Auswahl, danach `loadMaintenanceWindows()`), nur für echte Server. Der Status-Streifen der Sektionen weicht einem `Dot` rechts im Kopf; das Icon bleibt neutral. Die Live-Pills bleiben eigene `span.mon-live-pill` mit `level-*` (scoped im Pill-Look), weil `Pill` keine Klasse durchreicht und `SecLive.test` die Stufe am Element liest.
 - 2026-11-04 T5 (Nachtrag aus dem Review): Mit Streifen und altem Dashboard-Punkt fällt auch `@keyframes monPulseCrit` weg; kritisch zeigt der Dashboard-Kopf jetzt einen ruhigen `Dot` mit Ring, wie das Mockup (keine Animation im Design-System).
 - 2026-11-04 T6: Das Verify nimmt `BuiltinUpdateModal.test.ts` (liest `.mon-tpl-card` und den Update-Knopf) und den i18n-Wächter mit (neue Schlüssel `monitoring.alerts.title|active`, `monitoring.log.title`, `monitoring.tplEdit.builtin|custom`; `monitoring.alerts.enable|disable` entfallen mit dem Knopf). Der Alert-Switch zeigt den Zustand der Regel und schaltet über `toggleAlert`; schlägt der Aufruf fehl, bleibt der Schalter bis zum nächsten Laden umgelegt (der Fehler steht in der Statusleiste). Templates zeigen statt „Zuweisen“ (Mockup) nur Bearbeiten: Zuweisen liegt im Template-Modal, ein zweiter Weg wäre neue Funktion. Kein CSV-Export im Log (nicht im Bestand). `.mon-dot-sm`, `.mon-alert-*` und `.mon-log-*` wandern aus `app.css` in die Komponenten; `.mon-empty` bleibt global (Template-Modal).
+- 2026-11-04 T6 (Nachtrag aus dem Review): Jeder Alert-Switch trägt sichtbar „Aktiv“ — `ui/Switch` rendert sein Label sichtbar, und ohne Label hätte der Schalter keinen zugänglichen Namen.
+- 2026-11-04 T9: NotificationBell nutzt `--radius-xs`/`--radius-sm` statt des undefinierten `--radius` und `--surface-hover`/`--accent-muted` statt `--bg-hover`; die Fallback-Farben entfallen. Der neue Wächter in `tokens.test.ts` zählt als Deklaration jede `--x:` unter `src/` (ohne Tests) und jede `style:--x`-Direktive (`--pct` im Slider, `--workspace-color` in AppShell); Gegenprobe mit der alten NotificationBell: rot mit `--radius` und `--bg-hover`.
