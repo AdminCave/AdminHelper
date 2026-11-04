@@ -28,6 +28,9 @@
     "basic-ftp": "^6.2.1",
     "mocha": {
       "chokidar": "^4.0.3"
+    },
+    "webdriver": {
+      "undici": "^8.12.3"
     }
   }
 }

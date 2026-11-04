@@ -263,17 +263,21 @@ def test_server_without_host_facts_gets_no_suggestions(client_db):
     assert r.json() == []
 
 
-def test_suggestion_route_is_not_taken_by_a_template_route(client_db):
-    # /templates/{template_id}/builtin-update has as many segments as this route:
-    # declared first, it would answer for a server named "builtin-update" with its
-    # own 404. Through the app's real router, not a direct call.
+def test_builtin_update_route_takes_precedence_over_the_suggestion_route(client_db):
+    # Both have three segments. GET /templates/{template_id}/builtin-update is declared
+    # first, so it answers for a template named "suggestions" (R-1107); a server named
+    # "builtin-update" gets its 404 instead, server ids are UUIDs. Through the app's
+    # real router, not a direct call.
     client, factory = client_db
     _seed(factory, server_id="builtin-update", subsystems=())
+    _seed(factory, server_id="srv-1", subsystems=())
 
-    r = client.get("/templates/suggestions/builtin-update")
+    taken = client.get("/templates/suggestions/builtin-update")
+    listed = client.get("/templates/suggestions/srv-1")
 
-    assert r.status_code == 200, r.text
-    assert [s["slug"] for s in r.json()] == ["linux-base"]
+    assert (taken.status_code, taken.json()) == (404, {"detail": "Standard template not found"})
+    assert listed.status_code == 200, listed.text
+    assert [s["slug"] for s in listed.json()] == ["linux-base"]
 
 
 # --- dismiss: POST /templates/suggestions/{server_id}/dismiss -------------------

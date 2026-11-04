@@ -397,7 +397,13 @@ def _line(engine, subject: str, *, revoked: bool = False) -> str:
     return line_id
 
 
-def _issue(engine, line_id: str, not_before: datetime.datetime, days: int = 30) -> None:
+def _issue(
+    engine,
+    line_id: str,
+    not_before: datetime.datetime,
+    days: int = 30,
+    recorded_at: datetime.datetime | None = None,
+) -> None:
     with engine.begin() as conn:
         conn.execute(
             insert(db.issued_certificates),
@@ -409,7 +415,7 @@ def _issue(engine, line_id: str, not_before: datetime.datetime, days: int = 30) 
                     "not_before": _naive(not_before),
                     "not_after": _naive(not_before + datetime.timedelta(days=days)),
                     "renewed_from": None,
-                    "created_at": _naive(not_before),
+                    "created_at": _naive(recorded_at or not_before),
                 }
             ],
         )
@@ -763,6 +769,33 @@ def test_rotate_root_finish_counts_a_device_from_the_first_restart_under_the_new
         _start(engine, pki_dir)
     assert _started_at(engine) == restart
     assert cli.main(["rotate-root", "finish"]) == 0
+
+
+@pytest.mark.parametrize("recorded", ["after the start", "before the start"])
+def test_rotate_root_finish_decides_a_renewal_in_the_second_of_the_start_by_its_record(
+    monkeypatch, pki_dir, capsys, recorded
+):
+    # A leaf's not_before holds whole seconds; the start under the new root has microseconds.
+    # Within that second the time the issuing process recorded the leaf decides.
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    engine = _register(monkeypatch)
+    restart = root_rollover.load_state(pki_dir).switch.switched_at.replace(
+        microsecond=500_000
+    ) + datetime.timedelta(hours=1)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: restart)
+        _start(engine, pki_dir)
+    assert _started_at(engine) == restart
+    step = datetime.timedelta(milliseconds=1)
+    at = restart + step if recorded == "after the start" else restart - step
+    _issue(engine, _line(engine, "same-second"), restart.replace(microsecond=0), recorded_at=at)
+
+    since = 1 if recorded == "after the start" else 0
+    assert cli.main(["status"]) == 0
+    assert f"{since} since the restart under the new root" in capsys.readouterr().out
+    assert cli.main(["rotate-root", "finish"]) == (0 if since else 1)
+    held = "still hold a certificate from before the restart" in capsys.readouterr().err
+    assert held == (since == 0)
 
 
 def test_rotate_root_finish_waits_while_the_register_may_miss_a_device(

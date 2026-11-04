@@ -13,8 +13,24 @@ the FastAPI app object built at import time.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger("ca-issuer")
+
+# The DNS name only the frps leaf carries (R-1112). The agent's frpc asks for it
+# (transport.tls.serverName), so a leaf under the same root without it is not taken for frps;
+# the gateway leaf therefore never carries it. .invalid never resolves (RFC 6761).
+# Counterpart: apps/agent/internal/frpc (frpsTLSName).
+FRPS_TLS_NAME = "frps.adminhelper.invalid"
+
+
+def covers_frps_tls_name(name: str) -> bool:
+    """Whether a leaf with SAN name passes for FRPS_TLS_NAME: the name itself (case and a trailing
+    dot aside) or a wildcard over its parent, as TLS clients match one left-most label."""
+    name = name.strip().rstrip(".").lower()
+    return name in (FRPS_TLS_NAME, "*." + FRPS_TLS_NAME.split(".", 1)[1])
 
 
 def data_dir() -> Path:
@@ -92,7 +108,16 @@ def gateway_domain() -> str:
 
 
 def gateway_extra_sans() -> str:
-    return os.environ.get("EXTRA_SANS", "").strip()
+    """EXTRA_SANS without FRPS_TLS_NAME: the gateway leaf must never pass for frps. A warning
+    instead of a refusal, so a slip in .env does not stop the stack."""
+    entries = os.environ.get("EXTRA_SANS", "").strip().split(",")
+    kept = [entry for entry in entries if not covers_frps_tls_name(entry)]
+    if len(kept) != len(entries):
+        logger.warning(
+            "EXTRA_SANS covers %s, which only the frps leaf carries; left out of the gateway leaf",
+            FRPS_TLS_NAME,
+        )
+    return ",".join(kept).strip()
 
 
 def frps_cert_dir() -> str:
@@ -120,6 +145,11 @@ def frps_extra_sans() -> str:
     differ from the gateway's; falls back to the gateway SANs when unset — mirroring
     frps_server_addr()'s CA_FRPS_SERVER_ADDR -> gateway_domain() fallback."""
     return os.environ.get("CA_FRPS_EXTRA_SANS", "").strip() or gateway_extra_sans()
+
+
+def frps_leaf_sans() -> str:
+    """The extra SANs the frps leaf is minted with: frps_extra_sans() and FRPS_TLS_NAME."""
+    return ",".join(entry for entry in (frps_extra_sans(), FRPS_TLS_NAME) if entry)
 
 
 # Headers the gateway sets from the verified client cert (ADR 0001 §3.2). The
