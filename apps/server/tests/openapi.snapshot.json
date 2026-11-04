@@ -4183,6 +4183,17 @@
       },
       "VisitorBundleOut": {
         "properties": {
+          "frps_tls_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frps Tls Name"
+          },
           "pki": {
             "additionalProperties": true,
             "title": "Pki",

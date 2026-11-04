@@ -6,6 +6,8 @@
 STCP secret autogeneration, and the duplicate-name conflict — none of which had a test, so a
 regression removing the conflict check would only surface as frps misbehaviour in production (6.74)."""
 
+import tomllib
+
 import pytest
 
 from app.modules.connections.models import Connection
@@ -164,6 +166,18 @@ def test_provision_config_and_visitor_bundle_still_carry_the_secret(
     bundle = test_client.get("/api/frp/generate/visitor-bundle", headers=h)
     assert bundle.status_code == 200, bundle.text
     assert 'secretKey = "existing-secret"' in bundle.json()["toml"]
+
+
+def test_visitor_bundle_names_the_frps_leaf_beside_the_toml(test_client, db_session, admin_user):
+    # The desktop sets the name as transport.tls.serverName itself (R-1121); the text keeps
+    # leaving serverName out of [transport.tls], which the desktop's allow-list refuses.
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    bundle = test_client.get("/api/frp/generate/visitor-bundle", headers=h)
+    assert bundle.status_code == 200, bundle.text
+    assert bundle.json()["frps_tls_name"] == "frps.adminhelper.invalid"
+    tls = tomllib.loads(bundle.json()["toml"])["transport"]["tls"]
+    assert "serverName" not in tls
 
 
 def test_stcp_create_generates_secret_and_port_and_masks_the_secret(
