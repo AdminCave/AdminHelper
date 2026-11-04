@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
-from app import pki
+from app import main, pki, storage
 from app.storage import Intermediate, ensure_frps_cert
 from tests import renewal
 
@@ -319,3 +319,45 @@ def test_after_the_switch_an_frpc_enrolled_under_the_old_root_reaches_frps_over_
     # The chain an frpc got at its enrollment before the stage: [T0, R].
     assert _frpc_reaches([r.before["tunnel"].cert, r.old_root], out / "frps.crt") is old_frpc
     assert _frpc_reaches([r.new_root], out / "frps.crt")
+
+
+def _boot_env(monkeypatch, tmp_path, extra_sans: str = "") -> None:
+    monkeypatch.setenv("DOMAIN", "gw.example")
+    monkeypatch.setenv("EXTRA_SANS", extra_sans)
+    monkeypatch.setenv("CA_FRPS_SERVER_ADDR", "")
+    monkeypatch.setenv("CA_FRPS_EXTRA_SANS", "")
+    monkeypatch.setenv("CA_TRUST_DIR", "")
+    monkeypatch.setenv("CA_GATEWAY_CERT_DIR", str(tmp_path / "gw"))
+    monkeypatch.setenv("CA_FRPS_CERT_DIR", str(tmp_path / "frps"))
+
+
+def _dns_names(path) -> list[str]:
+    leaf = x509.load_pem_x509_certificates(path.read_bytes())[0]
+    san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    return san.get_values_for_type(x509.DNSName)
+
+
+def test_boot_gives_only_the_frps_leaf_the_frps_tls_name(monkeypatch, tmp_path):
+    # R-1112: frpc asks for the name, so the gateway leaf (same root, same DOMAIN) must lack it,
+    # even when EXTRA_SANS names it.
+    inter = storage.ensure_hierarchy(tmp_path / "pki", b"pw")
+    _boot_env(monkeypatch, tmp_path, extra_sans="frps.adminhelper.invalid")
+
+    main.provision_boot_material(inter)
+
+    frps_names = _dns_names(tmp_path / "frps" / "frps.crt")
+    assert "frps.adminhelper.invalid" in frps_names
+    assert "gw.example" in frps_names
+    assert "frps.adminhelper.invalid" not in _dns_names(tmp_path / "gw" / "gateway-fullchain.pem")
+
+
+def test_boot_remints_an_frps_leaf_without_the_frps_tls_name(monkeypatch, tmp_path):
+    # An frps leaf from before R-1112 carries DOMAIN only; the next boot replaces it.
+    inter = storage.ensure_hierarchy(tmp_path / "pki", b"pw")
+    _boot_env(monkeypatch, tmp_path)
+    ensure_frps_cert(tmp_path / "frps", inter["tunnel"], "gw.example")
+    assert "frps.adminhelper.invalid" not in _dns_names(tmp_path / "frps" / "frps.crt")
+
+    main.provision_boot_material(inter)
+
+    assert "frps.adminhelper.invalid" in _dns_names(tmp_path / "frps" / "frps.crt")
