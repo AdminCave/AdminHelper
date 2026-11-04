@@ -42,12 +42,13 @@ export const translations: Translations = {
     'action.delete': 'Löschen',
     'action.edit': 'Bearbeiten',
     'action.close': 'Schließen',
+    'ui.search': 'Suchen',
+    'ui.clear': 'Leeren',
+    'ui.select': 'Auswählen …',
     'action.copy': 'Kopieren',
     'action.create': 'Erstellen',
     'action.refresh': 'Aktualisieren',
     'action.run': 'Ausführen',
-    'action.enable': 'Aktivieren',
-    'action.disable': 'Deaktivieren',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
@@ -172,7 +173,6 @@ export const translations: Translations = {
     'page.hooks.lastRun': 'Letzter Lauf',
     'page.hooks.next': 'Nächster: {time}',
     'page.hooks.active': 'Aktiv',
-    'page.hooks.inactive': 'Inaktiv',
     'page.hooks.rotateToken': 'Token rotieren',
 
     // ── Hook Events ───────────────────────────────────────────────────
@@ -364,12 +364,13 @@ export const translations: Translations = {
     'action.delete': 'Delete',
     'action.edit': 'Edit',
     'action.close': 'Close',
+    'ui.search': 'Search',
+    'ui.clear': 'Clear',
+    'ui.select': 'Choose …',
     'action.copy': 'Copy',
     'action.create': 'Create',
     'action.refresh': 'Refresh',
     'action.run': 'Run',
-    'action.enable': 'Enable',
-    'action.disable': 'Disable',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
@@ -492,7 +493,6 @@ export const translations: Translations = {
     'page.hooks.lastRun': 'Last run',
     'page.hooks.next': 'Next: {time}',
     'page.hooks.active': 'Active',
-    'page.hooks.inactive': 'Inactive',
     'page.hooks.rotateToken': 'Rotate token',
 
     // ── Hook Events ───────────────────────────────────────────────────

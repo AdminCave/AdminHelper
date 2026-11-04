@@ -65,7 +65,8 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
     // adressiert, weil waehrend des Modal-Wechsels kurz zwei dialogs existieren.
     await expect(page.locator('.key-reveal')).toContainText('ah_e2e_');
     await expect(page.getByText('nur einmal angezeigt')).toBeVisible();
-    await page.getByRole('button', { name: 'Schließen' }).click();
+    // The footer button: the dialog header has its own close button of the same name.
+    await page.locator('.modal-footer').getByRole('button', { name: 'Schließen' }).click();
 
     // Erscheint in der Liste
     await expect(page.locator('tbody tr', { hasText: 'e2e-key' })).toBeVisible();
@@ -101,7 +102,7 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
     await expect(modal.locator('.key-reveal')).toHaveText('enr_e2e_admin');
     await expect(modal).toContainText('Gültig bis 1.1.2026, 02:00:00');
 
-    await modal.getByRole('button', { name: 'Schließen' }).click();
+    await modal.locator('.modal-footer').getByRole('button', { name: 'Schließen' }).click();
     await expect(modal).toBeHidden();
     await expect(page.getByText('enr_e2e_admin')).toHaveCount(0);
 

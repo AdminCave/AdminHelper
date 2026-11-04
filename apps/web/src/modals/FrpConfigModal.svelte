@@ -7,6 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import FormField from '$lib/components/ui/FormField.svelte';
+  import Input from '$lib/components/ui/Input.svelte';
   import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
   import { t } from '$lib/i18n';
   import { frpConfig } from '$lib/stores/frp';
@@ -22,18 +24,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { open, editing, onClose }: Props = $props();
 
-  // '' until typed into; Svelte binds an emptied number input as null, not '' (to_number in its
-  // input bindings).
-  type NumberField = number | '' | null;
+  // The port fields hold strings, but Svelte reads a number input back as a number, and an emptied
+  // one as null (to_number in its input bindings); num() takes all three.
+  type NumberField = string | number | null;
 
   let name = $state('');
   let serverAddr = $state('');
-  let bindPort = $state<NumberField>(7000);
-  let vhostPort = $state<NumberField>('');
+  let bindPort = $state('7000');
+  let vhostPort = $state('');
   let authToken = $state('');
   let subdomainHost = $state('');
-  let maxPorts = $state<NumberField>('');
-  let dashboardPort = $state<NumberField>('');
+  let maxPorts = $state('');
+  let dashboardPort = $state('');
   let dashboardUser = $state('');
   let dashboardPassword = $state('');
   let submitting = $state(false);
@@ -44,15 +46,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (open) {
       name = editing?.name ?? '';
       serverAddr = editing?.serverAddr ?? '';
-      bindPort = editing?.bindPort ?? 7000;
-      vhostPort = editing?.vhostHttpsPort ?? '';
+      bindPort = String(editing?.bindPort ?? 7000);
+      vhostPort = String(editing?.vhostHttpsPort ?? '');
       // Secrets are never pre-filled — leaving them empty when editing keeps the
       // stored value unchanged (the GET masks them anyway, so there is nothing
       // to round-trip). Same pattern as the password field in UserModal.
       authToken = '';
       subdomainHost = editing?.subdomainHost ?? '';
-      maxPorts = editing?.maxPortsPerClient ?? '';
-      dashboardPort = editing?.dashboardPort ?? '';
+      maxPorts = String(editing?.maxPortsPerClient ?? '');
+      dashboardPort = String(editing?.dashboardPort ?? '');
       dashboardUser = editing?.dashboardUser ?? '';
       dashboardPassword = '';
     }
@@ -150,66 +152,53 @@ SPDX-License-Identifier: GPL-3.0-or-later
   width="720px"
   {onClose}
 >
-  <form class="modal-form" onsubmit={onSubmit} id="frp-config-form">
-    <div class="field">
-      <label for="fcName">{$t('label.name')} *</label>
-      <input id="fcName" required bind:value={name} />
-    </div>
-    <div class="field">
-      <label for="fcServerAddr">{$t('modal.frpConfig.serverAddr')} *</label>
-      <input id="fcServerAddr" required placeholder="frps.example.net" bind:value={serverAddr} />
-    </div>
-    <div class="field">
-      <label for="fcBindPort">{$t('modal.frpConfig.bindPort')}</label>
-      <input
+  <form class="form" onsubmit={onSubmit} id="frp-config-form">
+    <FormField label={$t('label.name')} id="fcName" required>
+      <Input required bind:value={name} />
+    </FormField>
+    <FormField label={$t('modal.frpConfig.serverAddr')} id="fcServerAddr" required>
+      <Input required placeholder="frps.example.net" bind:value={serverAddr} />
+    </FormField>
+    <div class="bind" class:warn={portMismatch}>
+      <FormField
+        label={$t('modal.frpConfig.bindPort')}
         id="fcBindPort"
-        type="number"
-        aria-describedby={portMismatch ? 'fcBindPortWarning' : undefined}
-        bind:value={bindPort}
-      />
-      {#if portMismatch}
-        <small
-          id="fcBindPortWarning"
-          style="color:var(--warning)"
-          data-testid="frp-bind-port-warning"
-        >
-          {$t('modal.frpConfig.bindPortMismatch', { port: publishedBindPort })}
-        </small>
-      {/if}
+        hint={portMismatch
+          ? $t('modal.frpConfig.bindPortMismatch', { port: publishedBindPort })
+          : undefined}
+      >
+        <Input type="number" bind:value={bindPort} />
+      </FormField>
     </div>
-    <div class="field">
-      <label for="fcVhostPort">{$t('modal.frpConfig.vhostPort')}</label>
-      <input id="fcVhostPort" type="number" bind:value={vhostPort} />
+    <FormField label={$t('modal.frpConfig.vhostPort')} id="fcVhostPort">
+      <Input type="number" bind:value={vhostPort} />
+    </FormField>
+    <div class="full">
+      <FormField label={$t('modal.frpConfig.authToken')} id="fcAuthToken">
+        <Input
+          type="password"
+          placeholder={$t('modal.frpConfig.authTokenPlaceholder')}
+          bind:value={authToken}
+        />
+      </FormField>
     </div>
-    <div class="field full">
-      <label for="fcAuthToken">{$t('modal.frpConfig.authToken')}</label>
-      <input
-        id="fcAuthToken"
-        type="password"
-        placeholder={$t('modal.frpConfig.authTokenPlaceholder')}
-        bind:value={authToken}
-      />
+    <div class="full">
+      <FormField label={$t('modal.frpConfig.subdomainHost')} id="fcSubdomainHost">
+        <Input placeholder="ops.example.net" bind:value={subdomainHost} />
+      </FormField>
     </div>
-    <div class="field full">
-      <label for="fcSubdomainHost">{$t('modal.frpConfig.subdomainHost')}</label>
-      <input id="fcSubdomainHost" placeholder="ops.example.net" bind:value={subdomainHost} />
-    </div>
-    <div class="field">
-      <label for="fcMaxPorts">{$t('modal.frpConfig.maxPorts')}</label>
-      <input id="fcMaxPorts" type="number" bind:value={maxPorts} />
-    </div>
-    <div class="field">
-      <label for="fcDashPort">{$t('modal.frpConfig.dashPort')}</label>
-      <input id="fcDashPort" type="number" bind:value={dashboardPort} />
-    </div>
-    <div class="field">
-      <label for="fcDashUser">{$t('modal.frpConfig.dashUser')}</label>
-      <input id="fcDashUser" bind:value={dashboardUser} />
-    </div>
-    <div class="field">
-      <label for="fcDashPass">{$t('modal.frpConfig.dashPass')}</label>
-      <input id="fcDashPass" type="password" bind:value={dashboardPassword} />
-    </div>
+    <FormField label={$t('modal.frpConfig.maxPorts')} id="fcMaxPorts">
+      <Input type="number" bind:value={maxPorts} />
+    </FormField>
+    <FormField label={$t('modal.frpConfig.dashPort')} id="fcDashPort">
+      <Input type="number" bind:value={dashboardPort} />
+    </FormField>
+    <FormField label={$t('modal.frpConfig.dashUser')} id="fcDashUser">
+      <Input bind:value={dashboardUser} />
+    </FormField>
+    <FormField label={$t('modal.frpConfig.dashPass')} id="fcDashPass">
+      <Input type="password" bind:value={dashboardPassword} />
+    </FormField>
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
@@ -218,3 +207,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </Button>
   {/snippet}
 </Modal>
+
+<style>
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+  .full {
+    grid-column: 1 / -1;
+  }
+  .warn :global(.msg) {
+    color: var(--warning);
+  }
+</style>

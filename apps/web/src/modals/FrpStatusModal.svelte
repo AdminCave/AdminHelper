@@ -7,6 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import Dot from '$lib/components/ui/Dot.svelte';
+  import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import { t } from '$lib/i18n';
   import { showError } from '$lib/stores/notifications';
   import * as api from '$lib/api/frp';
@@ -60,15 +62,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <Modal {open} title={$t('frp.status.title')} width="820px" {onClose}>
   {#if loading || !status}
-    <p style="color:var(--text-muted)">{$t('state.loading')}</p>
+    <p class="muted">{$t('state.loading')}</p>
   {:else if status.error}
-    <p style="color:var(--danger)">
+    <p class="failed" role="alert">
       {$t('frp.status.unreachable', { error: status.error })}
     </p>
   {:else if !status.proxies || status.proxies.length === 0}
-    <p style="color:var(--text-muted)">{$t('frp.status.noProxies')}</p>
+    <EmptyState message={$t('frp.status.noProxies')} framed={false} />
   {:else}
-    <table class="data-table" style="margin:0">
+    <table class="data-table">
       <thead>
         <tr>
           <th></th>
@@ -84,11 +86,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {@const online = p.status === 'online'}
           <tr>
             <td>
-              {#if online}
-                <span style="color:var(--success)" title="Online">&#x25CF;</span>
-              {:else}
-                <span style="color:var(--danger)" title="Offline">&#x25CF;</span>
-              {/if}
+              <Dot st={online ? 'ok' : 'crit'} label={online ? 'Online' : 'Offline'} />
             </td>
             <td>{p.name}</td>
             <td>{p.type || '-'}</td>
@@ -102,6 +100,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {/if}
   {#snippet footer()}
     <Button variant="ghost" onclick={refresh}>{$t('action.refresh')}</Button>
-    <Button variant="primary" onclick={onClose}>{$t('action.close')}</Button>
+    <Button variant="secondary" onclick={onClose}>{$t('action.close')}</Button>
   {/snippet}
 </Modal>
+
+<style>
+  .muted {
+    color: var(--text-muted);
+  }
+  .failed {
+    color: var(--danger);
+  }
+</style>

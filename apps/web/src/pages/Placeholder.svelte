@@ -10,6 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // admin only lands here on an unknown path.
   import { isAdmin } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
+  import Panel from '$lib/components/ui/Panel.svelte';
 </script>
 
 <div class="page active">
@@ -19,17 +20,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <div class="page-title">{$t('page.notFound.title')}</div>
       </div>
     </div>
-    <div class="panel" style="padding:24px">
+    <Panel pad={24}>
       <p><a href="#/users">{$t('page.notFound.back')}</a></p>
-    </div>
+    </Panel>
   {:else}
     <div class="page-header">
       <div>
         <div class="page-title">{$t('page.adminOnly.title')}</div>
       </div>
     </div>
-    <div class="panel" style="padding:24px">
+    <Panel pad={24}>
       <p>{$t('page.adminOnly.text')}</p>
-    </div>
+    </Panel>
   {/if}
 </div>
