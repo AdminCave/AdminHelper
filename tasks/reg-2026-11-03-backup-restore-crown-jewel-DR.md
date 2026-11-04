@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression backup_restore (crown-jewel DR) (2026-11-03) — Task-Ledger
-Status: aktiv · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
+Status: bereit · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
 Spec: Roadmap R-1118 · Quelle: Wochenlauf 2026-11-03-1503
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step "backup_restore (crown-jewel DR)"`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ HEAD: 03c4068a053596900cd7d9ba8e9c4e750f5f553a
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Verhalten wie dokumentiert; der Fehler kam nach v0.46.0 und ist nicht veröffentlicht)
 
-### R2 — Leerer-Host-Abschnitt: Compose-Dateien als Host-Einstellung, nicht in der .env  [ ]
+### R2 — Leerer-Host-Abschnitt: Compose-Dateien als Host-Einstellung, nicht in der .env  [x]
 Komponente: scripts · Dateien: scripts/tests/backup_restore_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @94be12bb 2026-11-04T05:43:06+01:00
+Review: am Ende (Branch-Review)
 Änderung: Zweite Ursache, die Box-Lauf `iter.sh all --strict --step "backup_restore (crown-jewel DR)"` mit R1 zeigt: die Install-`.env` des Abschnitts trägt `COMPOSE_FILE=docker-compose.yml:docker-compose.test.yml`, `restore.sh` lässt `COMPOSE_*` außer `COMPOSE_PROJECT_NAME` auf einem frischen Host wie dokumentiert weg (d7b07f1b), der Stack startet ohne Overlay mit `ghcr.io/…/server:latest` (`No module named app.db_roles`). Fix im Test: `COMPOSE_FILE` steht nicht mehr in der `.env`, `in_inst` gibt es jedem Aufruf als Umgebung des Hosts mit; `COMPOSE_PROJECT_NAME` kommt weiter nur aus dem Backup, alle Prüfungen bleiben.
 Semantik: docs/admin/betrieb.html „Schlüssel, die Compose oder Docker selbst steuern (<code>COMPOSE_*</code>, <code>DOCKER_*</code>), fallen weg, außer <code>COMPOSE_PROJECT_NAME</code>.“
 Beweis: Box-Lauf 2026-11-04 auf 528b2cf0, `.ah-out/heavy/dr.log` des Worktrees: `FAIL empty host: restore.sh failed`, Restore zieht `ghcr.io/admincave/adminhelper/server:latest`

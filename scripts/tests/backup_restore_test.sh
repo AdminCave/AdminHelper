@@ -106,18 +106,22 @@ CA_AFTER=$(ca_fingerprint)
 
 # ── Restore on an empty host, COMPOSE_PROJECT_NAME only in the .env (R-0665) ──
 # An install directory of its own named unlike the project: restore.sh must take the
-# project (the volume prefix) and the .env from the backup, with nothing exported.
+# project (the volume prefix) and the .env from the backup, with nothing exported but
+# the host's compose files: restore.sh drops COMPOSE_FILE from the backup's .env as it
+# drops every key compose reads for itself (docs/admin/betrieb.html), so the test
+# overlay is the host's setting here, not the backup's.
 INST="$E2E_WORK/dr-host"
 # Created up front so docker does not create them as root; the restore still hands
 # ./data to the container user, so the section empties it in a container at its end.
 mkdir -p "$INST/scripts" "$INST/data" "$INST/repo"
 cp "$E2E_REPO_ROOT/docker-compose.yml" "$E2E_REPO_ROOT/docker-compose.test.yml" "$INST/"
 cp "$E2E_REPO_ROOT/scripts/backup.sh" "$E2E_REPO_ROOT/scripts/restore.sh" "$INST/scripts/"
-{ cat "$E2E_WORK/.env"; echo "COMPOSE_PROJECT_NAME=$E2E_PROJECT"; echo "COMPOSE_FILE=docker-compose.yml:docker-compose.test.yml"; } > "$INST/.env"
+{ cat "$E2E_WORK/.env"; echo "COMPOSE_PROJECT_NAME=$E2E_PROJECT"; } > "$INST/.env"
 chmod 600 "$INST/.env"
 # in_inst <cmd…> — run in $INST with none of the variables this test exported.
 in_inst() {
-    (cd "$INST" && env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
+    (cd "$INST" && env -i PATH="$PATH" HOME="$HOME" COMPOSE_FILE=docker-compose.yml:docker-compose.test.yml \
+        ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
         ${DOCKER_CONTEXT:+DOCKER_CONTEXT="$DOCKER_CONTEXT"} "$@")
 }
 mkdir -p "$E2E_WORK/bk2"
