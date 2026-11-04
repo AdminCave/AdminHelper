@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-2 · Review: pro Task
 Spec: docs/features/kern-verbindungen-2.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Desktop-Journey Verbindungen (Editor); der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -76,8 +76,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
 Doku: diese Task
 
-### T10 — „Server zuordnen“ nur für Admins, Doku zu „Unbekannter Server“ (R-1066)  [ ]
+### T10 — „Server zuordnen“ nur für Admins, Doku zu „Unbekannter Server“ (R-1066)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts, docs/admin/index.html, docs/en/admin/index.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @bb0d2528 2026-11-04T20:36:54+01:00
+Review: approve (.ah-out/review/kern-verbindungen-2/T10.verdict.json)
 Änderung: Fund der Abschlussprüfung: `GET /api/servers` verlangt Admin, der Editor lud die Liste auch für Nicht-Admins (403, Fehlerhinweis bei jedem Öffnen); Feld und Laden nur mit `isAdmin`, Test für Nicht-Admin. Doku und Kommentar: der Server setzt `server_id` beim Löschen auf NULL, „Unbekannter Server“ heißt, die Serverliste kennt die ID nicht (fehlt oder nicht geladen).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts src/components/ConnectionEditor.delete.test.ts src/components/ConnectionEditor.lastused.test.ts
 Doku: docs/admin/index.html, docs/en/admin/index.html
@@ -85,3 +87,4 @@ Doku: docs/admin/index.html, docs/en/admin/index.html
 ## Entscheidungen
 - T4: Typ-Umschalter `Segmented`, Tabs `Tabs` (Web ohne Tab-Leiste); ein Typwechsel und jedes Öffnen setzen auf Allgemein zurück. „Server zuordnen“ nur bei `mode === 'server'` mit Sitzung; leere Serverliste → `loadServers()` beim Öffnen, die Liste liest der Effect untracked (`get`), sonst startet jede Antwort ihn neu; eine `serverId` ohne bekannten Server bleibt als „Unbekannter Server“ wählbar (sonst verlöre Speichern sie still). Name und Host bleiben die ersten Text-Inputs (Live-E2E `connection-crud`). Der Platz neben Name bleibt außerhalb des Server-Modus leer (Raster wie im Mockup).
 - T9: Doku nur für das Gebaute (Editor-Reiter, Server zuordnen) in der Admin-Doku DE+EN und das Fragment; API-Referenz und Entwickler-Doku zu `options` und Sitzungen ziehen mit T1–T3, T5–T8 in den nächsten Zug.
+- T10: Feld und Laden hängen an `isAdmin` der Sitzung (Lesen der Serverliste und Speichern sind serverseitig Admin-only); Nicht-Admins sehen das Feld nicht, statt eines Felds mit 403-Hinweis. Gegenprobe mit dem alten Tor (`$session !== null`): der Nicht-Admin-Test ist rot. Die Doku nennt „Unbekannter Server“ nun für eine ID, die die Liste nicht kennt; ein gelöschter Server hebt die Zuordnung serverseitig auf (`ondelete=SET NULL`). Heavy-Begründung im Kopf an den verbliebenen Umfang angepasst.

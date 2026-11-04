@@ -34,8 +34,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let tagsInput = $state('');
   let isNew = $state(true);
   let tab = $state<EditorTab>('general');
-  // Servers exist only behind a server session; a local connection has nobody to belong to.
-  const serverMode = $derived($settings?.mode === 'server' && $session !== null);
+  // Servers exist only behind a server session, and only an admin may list them (GET /api/servers)
+  // or save a connection; anyone else would get a 403 on every opening.
+  const assignServer = $derived($settings?.mode === 'server' && $session?.isAdmin === true);
   const tabs = $derived(
     form.kind === 'web'
       ? []
@@ -44,7 +45,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           { id: 'auth', label: $t('editor.tab.auth') },
         ],
   );
-  // A server deleted since the connection was saved stays selectable, or saving would drop it.
+  // An id the list does not know (not loaded, failed, or stale) stays selectable, or saving would drop it.
   const unknownServer = $derived(
     !!form.serverId && !$infraServers.some((s) => s.id === form.serverId),
   );
@@ -68,7 +69,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // The servers load with the infrastructure page; an editor opened before needs them too.
     // Read untracked: loadServers writes the store the list derives from, and an empty answer
     // would start the effect again without end.
-    if ($editorState.open && serverMode && get(infraServers).length === 0) void loadServers();
+    if ($editorState.open && assignServer && get(infraServers).length === 0) void loadServers();
   });
 
   function collect(): Connection {
@@ -200,7 +201,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             />
           </label>
 
-          {#if serverMode}
+          {#if assignServer}
             <label class="field">
               <span class="field-label">{$t('editor.field.server')}</span>
               <select

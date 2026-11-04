@@ -37,7 +37,10 @@ import ConnectionEditor from './ConnectionEditor.svelte';
 
 type W<T> = ReturnType<typeof writable<T>>;
 const settings = sessionStores.settings as unknown as W<{ mode: string } | null>;
-const session = sessionStores.session as unknown as W<{ username: string } | null>;
+const session = sessionStores.session as unknown as W<{
+  username: string;
+  isAdmin: boolean;
+} | null>;
 
 async function seedServers(list: { id: string; name: string }[]): Promise<void> {
   h.list.mockResolvedValueOnce(list);
@@ -45,9 +48,9 @@ async function seedServers(list: { id: string; name: string }[]): Promise<void> 
   h.list.mockClear();
 }
 
-function serverMode(): void {
+function serverMode(isAdmin = true): void {
   settings.set({ mode: 'server' });
-  session.set({ username: 'admin' });
+  session.set({ username: isAdmin ? 'admin' : 'alice', isAdmin });
 }
 
 async function open(conn: Connection): Promise<HTMLElement> {
@@ -75,7 +78,7 @@ beforeAll(() => setLanguage('en'));
 
 beforeEach(async () => {
   settings.set(null);
-  session.set({ username: 'admin' });
+  session.set({ username: 'admin', isAdmin: true });
   await seedServers([]);
   session.set(null);
   h.list.mockReset();
@@ -140,6 +143,15 @@ describe('ConnectionEditor tabs', () => {
 describe('ConnectionEditor assign server', () => {
   it('offers no server field outside server mode', async () => {
     const c = await open({ ...emptyConnection('ssh'), name: 'web01' });
+    expect(c.querySelector('select[name="serverId"]')).toBeNull();
+    expect(h.list).not.toHaveBeenCalled();
+  });
+
+  it('offers no server field to a non-admin and does not ask the server', async () => {
+    // GET /api/servers is admin-only: a non-admin would get a 403 on every opening.
+    serverMode(false);
+    const c = await open({ ...emptyConnection('ssh'), name: 'web01', serverId: 's1' });
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
     expect(c.querySelector('select[name="serverId"]')).toBeNull();
     expect(h.list).not.toHaveBeenCalled();
   });
