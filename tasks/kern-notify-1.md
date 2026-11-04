@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-notify-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-1 · Review: pro Task
 Spec: docs/features/kern-notify-1.md (Roadmap R-1078)
 Heavy: linux-full — Glocke und Panel gehören zur Desktop-Journey notification-push; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts
 Doku: diese Task
 
-### T6 — Abschlussprüfung: Glocken-Doku und Center-Abruf nach Logout (R-1078)  [ ]
+### T6 — Abschlussprüfung: Glocken-Doku und Center-Abruf nach Logout (R-1078)  [x]
 Komponente: desktop-ui · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/ui/src/lib/stores/notifications.ts, apps/desktop/ui/src/lib/stores/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @4801455e 2026-11-04T18:57:10+01:00
+Review: approve (.ah-out/review/kern-notify-1/T6.verdict.json)
 Änderung: Fund der Abschlussprüfung: Admin-Monitoring-Doku DE+EN sagt noch „Öffnen markiert als gelesen“ (seit T1 falsch); Quellbaum der Entwickler-Doku nennt 5 statt 6 Seiten; `loadCenter` füllt nach einem Logout während des Abrufs die geleerte Liste wieder (Generationszähler wie `activateNotifications`), mit Test.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: diese Task
@@ -73,3 +75,4 @@ Doku: diese Task
 - T2: Die Weiche liegt immer an, nicht nur mit OS-Benachrichtigungen; `dictionaries.ts` per set-files dazu (Texte „Öffnen“, „+N weitere“, „Nicht stören bis …“).
 - T3: Badge in Akzentfarbe, rot nur bei ungelesenem Kritischen; Kategorie roh (die Kategorien haben keine Übersetzung). Der Schlüssel `notifications.empty` weicht `notifications.empty.<tab>`. Das Menü bietet „Beenden“ nur bei aktivem Nicht stören; der Hinweis trägt es zusätzlich als Knopf.
 - T4: Die Seite führt Center-Liste und Feed der Glocke zusammen (die Kopie im Feed ist die frischere), damit ein Eintrag, der nach dem Laden kam und per Toast geöffnet wird, im Detail steht. Die Seitenleiste markiert auf der Seite nichts; Titel „Benachrichtigungen“; Palette-Eintrag nur mit Server-Session. Mehrfachauswahl zählt und sendet nur ungelesene, die der Filter gerade zeigt. „Mehr laden“ steht auch unter leerer Trefferliste; Zeitstempel in der App-Sprache. Das Detail erscheint erst ab 900 px Breite (schmaler: nur die Liste, GUI-Lauf prüft das). `AppShell.shell.test.ts` per set-files dazu.
+- T6: `loadCenter` merkt sich einen eigenen Zähler `logoutGen` (nur `deactivateNotifications` erhöht ihn) und verwirft eine Seite, die nach einem Logout ankommt; nicht `activationGen`, weil das `onMount` der Seite nach einem Login vor der Aktivierung in AppShell lädt (Prüfer-Fund). Gegenproben: ohne Wächter und mit `activationGen` je 1 failed. Doku: Satz „Öffnen markiert gelesen“ in admin/monitoring.html DE+EN ersetzt, Seitenzahl in developer/desktop.html auf 6.

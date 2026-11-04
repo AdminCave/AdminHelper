@@ -289,4 +289,26 @@ describe('notifications store', () => {
     expect(get(centerItems)).toEqual([]);
     expect(get(centerHasMore)).toBe(false);
   });
+
+  it('a center page that arrives after deactivate does not refill the list', async () => {
+    let resolve: (v: NotificationItem[]) => void = () => {};
+    h.fetchFeed.mockImplementationOnce(() => new Promise<NotificationItem[]>((r) => (resolve = r)));
+    const pending = loadCenter();
+    deactivateNotifications();
+    resolve([item({ id: 1 })]);
+    await pending;
+    expect(get(centerItems)).toEqual([]);
+  });
+
+  it('a center page started just before activate is kept', async () => {
+    // After a login the page's onMount load starts before AppShell activates.
+    let resolve: (v: NotificationItem[]) => void = () => {};
+    h.fetchFeed.mockImplementationOnce(() => new Promise<NotificationItem[]>((r) => (resolve = r)));
+    const pending = loadCenter();
+    const activation = activateNotifications();
+    resolve([item({ id: 1 })]);
+    await pending;
+    await activation;
+    expect(get(centerItems).map((n) => n.id)).toEqual([1]);
+  });
 });

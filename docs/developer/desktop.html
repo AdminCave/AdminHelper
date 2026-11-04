@@ -62,7 +62,7 @@
     &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/         DE/EN-Dictionaries
     &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
     &#9474;   &#9500;&#9472;&#9472; components/       Picker, WorkspaceEditor, AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip;
-    &#9474;   &#9500;&#9472;&#9472; pages/            5 Pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible
+    &#9474;   &#9500;&#9472;&#9472; pages/            6 Pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible, Notifications
     &#9474;   &#9492;&#9472;&#9472; main.ts
     &#9492;&#9472;&#9472; vitest.setup.ts       Vitest-Setup; die Unit-Tests liegen neben dem Code (src/**/*.test.ts)</code></pre>
           <p>Der Desktop läuft als <strong>Launcher</strong> und je geöffnetem Workspace als eigener <strong>Workspace-Prozess</strong> (siehe <em>Workspaces</em>). Nur der Launcher läuft einmal: Ein zweiter Start ohne Argumente reicht an einen laufenden Launcher weiter, der sein Fenster nach vorn holt, und beendet sich; läuft keiner, ist er selbst der Launcher. Dafür ist <code>tauri-plugin-single-instance</code> nur im Launcher registriert, dort als erstes Plugin in <code>main.rs</code> (unter Linux über den D-Bus-Session-Bus). Workspace-Prozesse laufen nebeneinander; den Lock je Workspace hält immer nur einer. <code>enableGTKAppId</code> in <code>tauri.conf.json</code> bleibt <code>false</code>: Mit GTK-App-ID reicht GApplication einen zweiten Start selbst an die laufende Instanz weiter, die daraufhin ihr Setup erneut ausführt und abstürzt.</p>

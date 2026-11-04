@@ -130,8 +130,12 @@ export async function loadCenter(reset = true): Promise<void> {
   const session = currentSession();
   if (!session) return;
   const offset = reset ? 0 : get(_state).center.length;
+  const gen = logoutGen;
   try {
     const res = await notificationsApi.fetchFeed(session, CENTER_PAGE, offset);
+    // A logout during the request emptied the list; a late page must not refill it. Not
+    // activationGen: the page's onMount load starts before AppShell activates after a login.
+    if (gen !== logoutGen) return;
     const page = Array.isArray(res) ? res : [];
     _state.update((s) => {
       const before = reset ? [] : s.center;
@@ -161,6 +165,8 @@ let unlistenStream: UnlistenFn | null = null;
 // Bumped by every activate/deactivate so an in-flight activation whose async awaits are
 // overtaken by a logout can detect it's stale and undo itself instead of leaking (4.41).
 let activationGen = 0;
+// Bumped only by deactivateNotifications (loadCenter's guard).
+let logoutGen = 0;
 
 export async function activateNotifications(): Promise<void> {
   const gen = ++activationGen;
@@ -195,6 +201,7 @@ export async function activateNotifications(): Promise<void> {
 
 export function deactivateNotifications(): void {
   activationGen++; // invalidate any in-flight activateNotifications so it undoes itself (4.41)
+  logoutGen++;
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
