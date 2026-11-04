@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-5 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-5 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-5 · Review: pro Task
 Spec: docs/features/kern-monitoring-5.md (Roadmap R-1105)
 Heavy: linux-full — `apps/agent` und der Push-Pfad Agent → Monitoring; der Sammellauf fährt Stack und Agent-Monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -43,6 +43,13 @@ Komponente: monitoring · Dateien: docs/developer/agent.html, docs/en/developer/
 Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @baffd903 2026-11-04T19:51:01+01:00
 Review: am Ende (nur Doku, Branch-Review)
 Änderung: Report-Felder und Interface-Auswahl (agent.html), Serien, Verlauf `netIn`/`netOut` und `metric=net` (monitoring.html), Reiter Netzwerk und Vergleich (admin); Changelog-Fragment.
+Task-Review: am Ende
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py
+Doku: diese Task
+
+### T5 — Changelog-Fragment umlautfrei (R-1105)  [ ]
+Komponente: monitoring · Dateien: changelog.d/kern-monitoring-5.md
+Änderung: Fund der Abschlussprüfung: das Fragment schreibt ae/oe/ue statt Umlauten (`changelog.d/README.md`, `.claude/rules/docs.md`).
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py
 Doku: diese Task
