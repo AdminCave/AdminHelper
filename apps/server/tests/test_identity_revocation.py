@@ -23,7 +23,7 @@ from sqlalchemy import delete, text
 from sqlalchemy.orm import sessionmaker
 
 import app.modules.servers.router as servers_router
-from app.core import config
+from app.core import config, identity
 from app.core.auth import create_access_token
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT
 from app.core.time import utcnow_naive
@@ -37,8 +37,8 @@ from app.modules.enrollment.models import (
     revoke_identity,
 )
 from app.modules.servers.models import Server
-from tests.test_certificate_check import _fp, _leaf, _record
-from tests.test_mtls_scope import _gateway_headers
+from tests.test_certificate_check import _assert_revoked, _fp, _leaf, _record
+from tests.test_mtls_scope import _client_cert_pem, _gateway_headers
 from tests.token_claims import claims_for
 
 
@@ -181,9 +181,17 @@ def test_a_new_user_keeps_the_former_namesakes_certificates_out(
     assert _revoked_at(db_session, "bob") == revoked_at
 
     bob = {"Authorization": f"Bearer {create_access_token(claims_for('bob'))}"}
-    old = _gateway_headers(cn="bob", not_before=revoked_at - timedelta(days=1))
+    # Still valid at the clock below: only the revocation can keep it out.
+    old = {
+        "X-Client-Verify": "SUCCESS",
+        "X-Client-Cert": _client_cert_pem(
+            cn="bob", not_before=revoked_at - timedelta(days=1), days=2
+        ),
+    }
     new = _gateway_headers(cn="bob", not_before=revoked_at + timedelta(seconds=2))
-    assert test_client.get("/api/users/me/servers", headers={**bob, **old}).status_code == 403
+    # The later certificate begins in the future: the validity check reads a clock past it.
+    monkeypatch.setattr(identity, "utcnow_naive", lambda: revoked_at + timedelta(seconds=3))
+    _assert_revoked(test_client.get("/api/users/me/servers", headers={**bob, **old}))
     resp = test_client.get("/api/users/me/servers", headers={**bob, **new})
     assert resp.status_code == 200, resp.text
 

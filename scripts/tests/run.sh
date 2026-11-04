@@ -567,10 +567,17 @@ have_display(){ have xvfb-run && have WebKitWebDriver && have tauri-driver; }
 FRPC_SIDECAR="apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 
 # npm ci wipes node_modules every run, defeating warm-box node_modules survival
-# (the sync excludes it from the delete). Install only when the lockfile is
-# newer or node_modules is missing — deterministic when it matters, fast otherwise (5.26).
+# (the sync excludes it from the delete). Install only when node_modules was not
+# installed from this very lockfile — deterministic when it matters, fast otherwise (5.26).
+# A stamp with the lockfile's hash, not mtimes: a warm box kept the node_modules of
+# another tree, newer than this lockfile, and svelte-check missed a module (R-1106).
+# tmp + mv: a worktree's node_modules is a hard-linked copy of the main one
+# (worktree-setup.sh); writing into the stamp's inode would change both.
 npm_ci_if_stale() {
-  if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then npm ci --no-audit --no-fund; fi
+  local want; want=$(sha256sum package-lock.json) || return 1; want=${want%% *}
+  [ -d node_modules ] && [ "$(cat node_modules/.ah-lock-sha256 2>/dev/null)" = "$want" ] && return 0
+  npm ci --no-audit --no-fund || return 1
+  printf '%s\n' "$want" > node_modules/.ah-lock-sha256.tmp && mv -f node_modules/.ah-lock-sha256.tmp node_modules/.ah-lock-sha256
 }
 export -f npm_ci_if_stale  # the run_step `bash -c` subshells need it in their env
 

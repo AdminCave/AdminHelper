@@ -130,17 +130,12 @@ for c in server monitoring ca-issuer; do
 done
 
 # Hard links, not a symlink: vitest loads no test through a symlinked node_modules.
-# An existing one is an earlier run's copy or the worktree's own install.
+# An existing one is an earlier run's copy or the worktree's own install. The copy
+# carries the main one's lockfile stamp: run.sh's npm_ci_if_stale takes it as is
+# while the lockfiles match, and a branch that changes its lockfile gets npm ci.
 for d in apps/web apps/desktop/ui; do
   if [ ! -d "$ROOT/$d/node_modules" ] || [ -e "$WT/$d/node_modules" ]; then continue; fi
   if cp -al "$ROOT/$d/node_modules" "$WT/$d/node_modules" 2>/dev/null; then
-    # cp -a keeps the main copy's mtime, older than the lockfile git just checked
-    # out, and run.sh's npm_ci_if_stale would reinstall. As fresh as the main copy
-    # while the lockfiles match; a branch that changes its lockfile gets npm ci.
-    if cmp -s "$ROOT/$d/package-lock.json" "$WT/$d/package-lock.json" \
-       && [ ! "$ROOT/$d/package-lock.json" -nt "$ROOT/$d/node_modules" ]; then
-      touch "$WT/$d/node_modules"
-    fi
     echo "  $d/node_modules hard-linked"
   else
     # Hard links do not cross file systems; half a copy would pass for an install.

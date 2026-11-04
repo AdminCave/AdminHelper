@@ -343,33 +343,48 @@ ${ITEST_BIND_IP:+${ITEST_BIND_IP}:}${ITEST_REPO_PORT:-8445}:8445'
   || bad "production publishes: $(ports_of "$REPO_ROOT/docker-compose.yml" postgres) $(ports_of "$REPO_ROOT/docker-compose.yml" redis)"
 
 # ── e2e_npm_ready ────────────────────────────────────────────────────────────
-# node_modules from the template outlived a lockfile change (R-0131): the suites
-# checked only `[ -d node_modules ]`. npm is a stub that logs where it ran.
+# node_modules from the template outlived a lockfile change (R-0131), and one from
+# another tree, newer than the lockfile, passed the mtime rule (R-1106): the rule is
+# run.sh's lockfile stamp. npm is a stub that logs where it ran and, like npm ci,
+# leaves a node_modules behind.
 cat > "$SHIM/npm" <<'EOF'
 #!/usr/bin/env bash
 printf '%s %s\n' "$PWD" "$*" >> "$STUB_LOG/npm.args"
-[ "${STUB_NPM_FAIL:-0}" = 0 ]
+[ "${STUB_NPM_FAIL:-0}" = 0 ] && mkdir -p node_modules
 EOF
 chmod +x "$SHIM/npm"
 NPM="$WORK/npm"
-mkdir -p "$NPM/missing" "$NPM/stale/node_modules" "$NPM/fresh/node_modules"
-for d in missing stale fresh; do : > "$NPM/$d/package-lock.json"; done
-touch -d '2026-01-01' "$NPM/stale/node_modules" "$NPM/fresh/package-lock.json"
-touch -d '2026-02-01' "$NPM/stale/package-lock.json" "$NPM/fresh/node_modules"
+mkdir -p "$NPM/missing" "$NPM/other/node_modules" "$NPM/match/node_modules"
+for d in missing other match; do printf '{"lockfileVersion": 3, "d": "%s"}\n' "$d" > "$NPM/$d/package-lock.json"; done
+lock_sha() { sha256sum "$1/package-lock.json" | cut -d' ' -f1; }
+# other: a stamp hard-linked to another tree's (worktree-setup.sh copies node_modules
+# with cp -al), node_modules newer than the lockfile. match: a lockfile newer than
+# node_modules, but the stamp is its hash.
+echo 0000 > "$WORK/main-stamp"; ln "$WORK/main-stamp" "$NPM/other/node_modules/.ah-lock-sha256"
+lock_sha "$NPM/match" > "$NPM/match/node_modules/.ah-lock-sha256"
+touch -d '2026-01-01' "$NPM/other/package-lock.json" "$NPM/match/node_modules"
+touch -d '2026-02-01' "$NPM/other/node_modules" "$NPM/match/package-lock.json"
 npm_ready() {  # npm_ready <dir>... — e2e_npm_ready in a shell of its own, like a suite
   PATH="$SHIM:$PATH" bash -c '. "$1/scripts/tests/lib_e2e_stack.sh"; shift; e2e_npm_ready "$@"' \
     _ "$REPO_ROOT" "$@" > "$WORK/npm.out" 2>&1
 }
-npm_ready "$NPM/missing" "$NPM/stale" "$NPM/fresh"; rc=$?
+npm_ready "$NPM/missing" "$NPM/other" "$NPM/match"; rc=$?
 [ "$rc" = 0 ] && ok "e2e_npm_ready runs against the npm stub" || bad "e2e_npm_ready: rc=$rc $(cat "$WORK/npm.out")"
-grep -qx "$NPM/missing ci --no-audit --no-fund" "$STUB_LOG/npm.args" 2>/dev/null \
-  && ok "node_modules missing: npm ci" || bad "missing: $(cat "$STUB_LOG/npm.args" 2>/dev/null)"
-grep -qx "$NPM/stale ci --no-audit --no-fund" "$STUB_LOG/npm.args" 2>/dev/null \
-  && ok "package-lock.json newer than node_modules: npm ci" || bad "stale: $(cat "$STUB_LOG/npm.args" 2>/dev/null)"
-! grep -q "^$NPM/fresh " "$STUB_LOG/npm.args" 2>/dev/null \
-  && ok "node_modules newer than the lockfile: no npm call" || bad "fresh: $(cat "$STUB_LOG/npm.args")"
-STUB_NPM_FAIL=1 npm_ready "$NPM/missing"; rc=$?
-[ "$rc" != 0 ] && ok "a failing npm ci is a non-zero exit (rc=$rc)" || bad "a failing npm ci returned 0"
+{ grep -qx "$NPM/missing ci --no-audit --no-fund" "$STUB_LOG/npm.args" 2>/dev/null \
+    && [ "$(cat "$NPM/missing/node_modules/.ah-lock-sha256" 2>/dev/null)" = "$(lock_sha "$NPM/missing")" ] \
+    && [ ! -e "$NPM/missing/node_modules/.ah-lock-sha256.tmp" ]; } \
+  && ok "node_modules missing: npm ci, then the lockfile's stamp" || bad "missing: $(cat "$STUB_LOG/npm.args" 2>/dev/null)"
+{ grep -qx "$NPM/other ci --no-audit --no-fund" "$STUB_LOG/npm.args" 2>/dev/null \
+    && [ "$(cat "$NPM/other/node_modules/.ah-lock-sha256")" = "$(lock_sha "$NPM/other")" ] \
+    && [ "$(cat "$WORK/main-stamp")" = 0000 ]; } \
+  && ok "another tree's stamp, node_modules newer than the lockfile: npm ci, the linked stamp untouched" \
+  || bad "other: $(cat "$STUB_LOG/npm.args" 2>/dev/null), main-stamp $(cat "$WORK/main-stamp")"
+! grep -q "^$NPM/match " "$STUB_LOG/npm.args" 2>/dev/null \
+  && ok "the lockfile's stamp, lockfile newer than node_modules: no npm call" || bad "match: $(cat "$STUB_LOG/npm.args")"
+echo keep > "$NPM/other/node_modules/.ah-lock-sha256"
+STUB_NPM_FAIL=1 npm_ready "$NPM/other"; rc=$?
+{ [ "$rc" != 0 ] && [ "$(cat "$NPM/other/node_modules/.ah-lock-sha256")" = keep ]; } \
+  && ok "a failing npm ci is a non-zero exit and writes no stamp (rc=$rc)" || bad "a failing npm ci: rc=$rc, stamp $(cat "$NPM/other/node_modules/.ah-lock-sha256")"
 npm_ready "$NPM/nowhere"; rc=$?
 [ "$rc" != 0 ] && ok "a directory that is not there is a non-zero exit" || bad "a missing directory returned 0"
 

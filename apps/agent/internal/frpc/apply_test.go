@@ -122,11 +122,14 @@ func TestWriteSyncConfigCreatesNoPkiDir(t *testing.T) {
 	}
 }
 
-// bundleToml is a server-built frpc.toml as a provisioning bundle carries it. Its identity path
-// is rewritten to the agent's identity dir (setupSyncTest moves it to a temp dir), so the file on
-// disk differs from the server's text by more than the preamble.
+// bundleToml is a server-built frpc.toml as a provisioning bundle carries it, with its TLS keys
+// in the root. Its identity paths are rewritten to the agent's identity dir (setupSyncTest moves
+// it to a temp dir), so the file on disk differs from the server's text by more than the preamble.
 var bundleToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n" +
-	"transport.tls.certFile = \"/etc/adminhelper/identity/agent.crt\"\n\n[[proxies]]\nname = \"ssh\"\n")
+	"transport.tls.enable = true\n" +
+	"transport.tls.trustedCaFile = \"/etc/adminhelper/identity/ca.crt\"\n" +
+	"transport.tls.certFile = \"/etc/adminhelper/identity/agent.crt\"\n" +
+	"transport.tls.keyFile = \"/etc/adminhelper/identity/agent.key\"\n\n[[proxies]]\nname = \"ssh\"\n")
 
 // applyBundle runs Apply as a provisioning with an FRP bundle carrying toml.
 func applyBundle(toml []byte) error {
@@ -153,7 +156,9 @@ func TestReprovisionRestartsRunningFrpcOnTheNewConfig(t *testing.T) {
 		t.Errorf("restarts = %d, enables = %d, disables = %d, want 1, 0 and 0", calls.restarts, calls.enables, calls.disables)
 	}
 	identity := filepath.ToSlash(config.AgentPkiDir()) + "/"
-	want := localHead(t) + strings.ReplaceAll(string(bundleToml), "/etc/adminhelper/identity/", identity)
+	// The bundle sets its TLS keys in the root, so the agent's serverName goes there (R-1112).
+	want := localHead(t) + "transport.tls.serverName = \"frps.adminhelper.invalid\"\n" +
+		strings.ReplaceAll(string(bundleToml), "/etc/adminhelper/identity/", identity)
 	if got, _ := os.ReadFile(config.FrpConfigFile()); string(got) != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
