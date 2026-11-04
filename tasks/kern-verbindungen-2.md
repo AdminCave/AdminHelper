@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-2 · Review: pro Task
 Spec: docs/features/kern-verbindungen-2.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (Connections, neue Tabelle) und Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -67,8 +67,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/connect
 Doku: → T9
 Abhängt von: T7
 
-### T9 — Doku DE+EN und Changelog (R-1066, R-1068)  [ ]
+### T9 — Doku DE+EN und Changelog (R-1066, R-1068)  [x]
 Komponente: desktop-ui · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-verbindungen-2.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @3c011b27 2026-11-04T20:12:33+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku: Editor-Tabs, Optionen je Verbindung, Verlauf; Hinweis, dass ein alter Client beim Bearbeiten die Optionen verwirft. API-Referenz: `options`, Sitzungs-Endpunkte, Speicherdauer. Entwickler-Doku: Überschreibung der globalen RDP-Werte, lokaler Verlauf. Changelog-Fragment.
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
@@ -76,3 +78,4 @@ Doku: diese Task
 
 ## Entscheidungen
 - T4: Typ-Umschalter `Segmented`, Tabs `Tabs` (Web ohne Tab-Leiste); ein Typwechsel und jedes Öffnen setzen auf Allgemein zurück. „Server zuordnen“ nur bei `mode === 'server'` mit Sitzung; leere Serverliste → `loadServers()` beim Öffnen, die Liste liest der Effect untracked (`get`), sonst startet jede Antwort ihn neu; eine `serverId` ohne bekannten Server bleibt als „Unbekannter Server“ wählbar (sonst verlöre Speichern sie still). Name und Host bleiben die ersten Text-Inputs (Live-E2E `connection-crud`). Der Platz neben Name bleibt außerhalb des Server-Modus leer (Raster wie im Mockup).
+- T9: Doku nur für das Gebaute (Editor-Reiter, Server zuordnen) in der Admin-Doku DE+EN und das Fragment; API-Referenz und Entwickler-Doku zu `options` und Sitzungen ziehen mit T1–T3, T5–T8 in den nächsten Zug.
