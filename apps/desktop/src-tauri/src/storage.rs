@@ -394,6 +394,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         server_url: url_of(SyncMode::Server),
         last_username: meta.and_then(|meta| meta.last_username.clone()),
         os_notifications,
+        favorite_connections: meta.map_or_else(Vec::new, |meta| meta.favorite_connections.clone()),
     }
 }
 
@@ -454,6 +455,7 @@ fn meta_with(
         interval_minutes: settings.interval_minutes,
         allow_self_signed_certs: settings.allow_self_signed_certs,
         last_username: settings.last_username.clone(),
+        favorite_connections: settings.favorite_connections.clone(),
         ..meta.clone()
     })
 }
@@ -941,6 +943,7 @@ mod settings_tests {
             allow_self_signed_certs: false,
             last_username: None,
             legacy_keys: false,
+            favorite_connections: Vec::new(),
         }
     }
 
@@ -1006,6 +1009,7 @@ mod settings_tests {
         settings.interval_minutes = 9;
         settings.allow_self_signed_certs = true;
         settings.last_username = Some("admin".to_string());
+        settings.favorite_connections = vec!["c1".to_string(), "c2".to_string()];
         save_settings_in(base, &process, &settings).unwrap();
 
         // The next process of the workspace reads what this one saved.
@@ -1033,11 +1037,47 @@ mod settings_tests {
                 interval_minutes: 9,
                 allow_self_signed_certs: true,
                 last_username: Some("admin".to_string()),
+                favorite_connections: vec!["c1".to_string(), "c2".to_string()],
                 ..meta(SyncMode::Server, None)
             }
         );
         // The settings file of the one workspace before R-0431 is neither read nor written.
         assert!(!base.join("settings.json").exists());
+    }
+
+    #[test]
+    fn favorites_belong_to_their_workspace_and_old_metas_have_none() {
+        let scratch = Scratch::new("settings-favorites");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        // A workspace.json written before R-1065: no favoriteConnections.
+        let dir_b = workspace("b").data_dir(base);
+        fs::create_dir_all(&dir_b).unwrap();
+        let mut old = serde_json::to_value(meta(SyncMode::Local, None)).unwrap();
+        old.as_object_mut().unwrap().remove("favoriteConnections");
+        fs::write(dir_b.join("workspace.json"), old.to_string()).unwrap();
+        {
+            let _a = enter("a");
+            let process = SeenPrefs::new();
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.favorite_connections = vec!["fav".to_string()];
+            // A device-wide change too, so prefs.json is written.
+            settings.language = Some("en".to_string());
+            save_settings_in(base, &process, &settings).unwrap();
+        }
+        let _b = enter("b");
+        assert!(load_settings_in(base, None)
+            .unwrap()
+            .favorite_connections
+            .is_empty());
+        assert_eq!(
+            meta_in(base, "a").favorite_connections,
+            vec!["fav".to_string()]
+        );
+        // The device-wide half does not carry them.
+        let prefs = json_of(&base.join(PREFS_FILE));
+        assert_eq!(prefs["language"], "en");
+        assert!(prefs.get("favoriteConnections").is_none());
     }
 
     #[test]

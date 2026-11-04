@@ -22,7 +22,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings } from '$lib/stores/session';
-  import { connections, searchTerm } from '$lib/stores/connections';
+  import { connections } from '$lib/stores/connections';
   import { initiateConnect, markRdpError } from '$lib/stores/connectFlow';
   import { openEditor } from '$lib/stores/editor';
   import { buildEntries } from '$lib/palette';
@@ -351,12 +351,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <Search size={14} />
         <Kbd>{isMac ? '⌘K' : $t('palette.shortcut')}</Kbd>
       </button>
-      {#if currentId === 'connections'}
-        <label class="search-box">
-          <Search class="search-icon" size={16} />
-          <input type="search" placeholder={$t('search.placeholder')} bind:value={$searchTerm} />
-        </label>
-      {/if}
       {#if $session}
         <NotificationBell />
         <span class="header-user">

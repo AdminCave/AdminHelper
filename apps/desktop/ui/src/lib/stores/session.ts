@@ -153,6 +153,16 @@ export async function setAllowSelfSignedCerts(allow: boolean): Promise<void> {
   _state.update((s) => ({ ...s, settings: next }));
 }
 
+/** Persist the starred connections of this workspace. The whole list goes out every time:
+ * a save without it would clear them. */
+export async function setFavoriteConnections(ids: string[]): Promise<void> {
+  const current = get(_state);
+  if (!current.settings) return;
+  const next = { ...current.settings, favoriteConnections: ids };
+  await bridge.saveSettings(next);
+  _state.update((s) => ({ ...s, settings: next }));
+}
+
 export async function refreshSettings(): Promise<void> {
   const s = await bridge.loadSettings();
   _state.update((st) => ({ ...st, settings: s }));

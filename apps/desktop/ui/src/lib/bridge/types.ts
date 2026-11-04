@@ -54,6 +54,14 @@ export interface Settings {
   lastUsername?: string | null;
   // Show native OS notifications for new bell-feed entries (opt-in).
   osNotifications: boolean;
+  // Ids of the starred connections; kept in the workspace, not on a server.
+  favoriteConnections?: string[];
+}
+
+// One reachability probe: probe_targets answers with the connect time in ms or null per target.
+export interface ProbeTarget {
+  host: string;
+  port: number;
 }
 
 // Who signed in where. The tokens stay in the Rust process (session.rs), never here.
