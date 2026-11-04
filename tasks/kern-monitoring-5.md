@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-5 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-5 · Review: pro Task
 Spec: docs/features/kern-monitoring-5.md (Roadmap R-1105)
 Heavy: linux-full — `apps/agent` und der Push-Pfad Agent → Monitoring; der Sammellauf fährt Stack und Agent-Monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -47,8 +47,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py
 Doku: diese Task
 
-### T5 — Changelog-Fragment umlautfrei (R-1105)  [ ]
+### T5 — Changelog-Fragment umlautfrei (R-1105)  [x]
 Komponente: monitoring · Dateien: changelog.d/kern-monitoring-5.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d639f223 2026-11-04T20:01:01+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Fund der Abschlussprüfung: das Fragment schreibt ae/oe/ue statt Umlauten (`changelog.d/README.md`, `.claude/rules/docs.md`).
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py
@@ -59,3 +61,4 @@ Doku: diese Task
 - T2: MetricsQL-`rate` nimmt laut VictoriaMetrics-Doku die letzte Probe vor dem Fenster mit und extrapoliert nicht; das 5-min-Fenster bleibt (bei 5-min-Push liegt eine Probe davor). Verlauf skaliert in Python (`keep_metric_names` behält den Namen nur ohne Binäroperation), der Vergleich in der Abfrage (`* 8 / 1e6`). Ein Zähler über int64 geht als float hinein (`format_line`). Verschwindet ein Interface, fällt die Summe und `rate` zeigt eine Spitze von einem Punkt: hingenommen, Doku in T4. `schemas.py` in `Dateien:` nachgetragen.
 - T3: Der Reiter Netzwerk erscheint nur, wenn `netIn` oder `netOut` einen Punkt trägt; während ein Verlauf lädt, bleibt ein gewählter Reiter stehen (ein Periodenwechsel wirft nicht auf CPU), ein Server ohne Daten fällt auf CPU zurück. Ereignisse der Checks bleiben im Reiter weg (sie sagen nichts über Verkehr). Der Vergleich nutzt die vorhandene Skalierung ohne festes Maximum für Nicht-%-Einheiten.
 - T4: Der Ausreißer beim Verschwinden eines Interfaces steht in der Entwickler-Doku (Verlauf), nicht in der Admin-Doku; Admin nennt, dass ältere Agents keinen Reiter Netzwerk bekommen.
+- T5: Umlaute im Fragment durch ae/oe/ue ersetzt (Fund der Abschlussprüfung); die Fragmente von main enthalten ebenfalls keine.
