@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-deps-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-deps-2 · Review: pro Task
 Spec: docs/features/kern-deps-2.md (Roadmap R-1037)
 Heavy: linux-full — neue Laufzeit-Pakete in Server, Monitoring und CA-Issuer; den Stack (Gateway, mTLS, SSE über Redis) fährt der Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/kern-deps-2/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict
 Doku: → T4
 
-### T4 — Doku: Lizenzliste, Entwickler-Übersicht, Changelog (R-1037)  [ ]
+### T4 — Doku: Lizenzliste, Entwickler-Übersicht, Changelog (R-1037)  [x]
 Komponente: scripts · Dateien: THIRD_PARTY_LICENSES.md, docs/developer/index.html, changelog.d/kern-deps-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @11924b77 2026-11-04T09:01:56+01:00
+Review: approve (.ah-out/review/kern-deps-2/T4.verdict.json)
 Änderung: Die Python-Tabelle in `THIRD_PARTY_LICENSES.md` auf die Versionen der neuen Locks, die fastapi-Notiz darunter auf eine gemeinsame Version. `docs/developer/index.html` nennt „SQLAlchemy 2.1“ (EN „SQLAlchemy 2“ bleibt). `changelog.d/kern-deps-2.md` (neu, SPDX) unter `### Changed`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: THIRD_PARTY_LICENSES.md · docs/developer/index.html · changelog.d/kern-deps-2.md
@@ -44,3 +46,4 @@ Abhängt von: T1, T2, T3
 ## Entscheidungen
 - R-1038 (ruff) nicht im Zug: Harness-Pfad `scripts/vm/bootstrap_linux.sh` und `ci.yml` (Spec, Offene Fragen 1).
 - `THIRD_PARTY_LICENSES.md` ändert auch `feature/kern-web-4`, in einem anderen Abschnitt (Spec, Trade-offs); der Basis-Merge vor dem PR zeigt jeden Konflikt.
+- T4: `changelog.d/kern-deps-2.md` ohne SPDX-Kopf, anders als das Ledger sagt: `changelog-assemble.py --check` lehnt Text vor der ersten `###`-Überschrift ab, und kein anderes Fragment unter `changelog.d/` trägt einen (nur `changelog.d/README.md`).
