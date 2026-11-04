@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-5 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-5 · Review: pro Task
 Spec: docs/features/kern-monitoring-5.md (Roadmap R-1105)
 Heavy: linux-full — `apps/agent` und der Push-Pfad Agent → Monitoring; der Sammellauf fährt Stack und Agent-Monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T4
 Abhängt von: T2
 
-### T4 — Doku DE+EN und Changelog (R-1105)  [ ]
+### T4 — Doku DE+EN und Changelog (R-1105)  [x]
 Komponente: monitoring · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-5.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @baffd903 2026-11-04T19:51:01+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Report-Felder und Interface-Auswahl (agent.html), Serien, Verlauf `netIn`/`netOut` und `metric=net` (monitoring.html), Reiter Netzwerk und Vergleich (admin); Changelog-Fragment.
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py
@@ -49,3 +51,4 @@ Doku: diese Task
 - T1: Loopback über die Flags von `net.Interfaces()` (gopsutil benennt die Zähler wie die Standardbibliothek bzw. /proc/net/dev); Linux zählt Interfaces mit `/sys/class/net/<name>/device`, ohne solche alle außer Loopback; jeder gescheiterte Lesevorgang lässt beide Felder weg (eine Teilsumme sähe aus wie ein Einbruch). `report.go` in `Dateien:` nachgetragen (Einbau in den Report).
 - T2: MetricsQL-`rate` nimmt laut VictoriaMetrics-Doku die letzte Probe vor dem Fenster mit und extrapoliert nicht; das 5-min-Fenster bleibt (bei 5-min-Push liegt eine Probe davor). Verlauf skaliert in Python (`keep_metric_names` behält den Namen nur ohne Binäroperation), der Vergleich in der Abfrage (`* 8 / 1e6`). Ein Zähler über int64 geht als float hinein (`format_line`). Verschwindet ein Interface, fällt die Summe und `rate` zeigt eine Spitze von einem Punkt: hingenommen, Doku in T4. `schemas.py` in `Dateien:` nachgetragen.
 - T3: Der Reiter Netzwerk erscheint nur, wenn `netIn` oder `netOut` einen Punkt trägt; während ein Verlauf lädt, bleibt ein gewählter Reiter stehen (ein Periodenwechsel wirft nicht auf CPU), ein Server ohne Daten fällt auf CPU zurück. Ereignisse der Checks bleiben im Reiter weg (sie sagen nichts über Verkehr). Der Vergleich nutzt die vorhandene Skalierung ohne festes Maximum für Nicht-%-Einheiten.
+- T4: Der Ausreißer beim Verschwinden eines Interfaces steht in der Entwickler-Doku (Verlauf), nicht in der Admin-Doku; Admin nennt, dass ältere Agents keinen Reiter Netzwerk bekommen.
