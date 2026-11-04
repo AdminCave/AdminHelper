@@ -57,9 +57,11 @@ _THRESHOLDS = {
 
 
 def history_window(period: str, now: float) -> tuple[int, int, int]:
-    """(start, end, step) in unix seconds, end aligned to the step."""
+    """(start, end, step) in unix seconds, end the first grid point from now on."""
     duration, step = PERIODS[period]
-    end = int(now) // step * step
+    # Rounded up, not down: the last point then averages the samples up to now
+    # (VictoriaMetrics evaluates a step in the future, probed with v1.155.0).
+    end = -(-math.ceil(now) // step) * step
     return end - duration, end, step
 
 
