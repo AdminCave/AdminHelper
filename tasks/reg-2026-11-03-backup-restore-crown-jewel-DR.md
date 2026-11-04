@@ -37,6 +37,7 @@ Doku: keine (Test)
 - auf einer frischen zweiten VM (Lane w2) ebenfalls rot
 - auf dem letzten PASS-Commit `e74aab15d055f770c75bb455724acd739c02fb67` in derselben Lane grün
 - Artefakte: `/home/kevin/Dev/AdminCave/AdminHelper/.ah-out/weekly/2026-11-03-1503`
+- Fix-Beweis 2026-11-04 auf b6c32143 (Box 3001, Lane reg-backup-restore-dr): `iter.sh all --strict --step "backup_restore (crown-jewel DR)"` → `backup_restore_test: 17 passed, 0 failed`, `run.sh[all]: 1 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`
 
 ## Entscheidungen
 - Lane und Test-DB heißen `reg-backup-restore-dr`: `worktree-setup.sh` verlangt einen Slug aus `[a-z0-9-]` mit höchstens 40 Zeichen, und der Ledger-Name von heavy.sh ist 42 lang und trägt `DR`; Teardown mit demselben Slug.
