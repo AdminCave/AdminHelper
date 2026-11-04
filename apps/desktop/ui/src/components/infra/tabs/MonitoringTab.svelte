@@ -17,11 +17,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/api/types';
   import type { AuthSession } from '$lib/bridge/types';
   import { monitoringApi } from '$lib/api/monitoring';
-  import { statusClass, canRunManually, isPushOnlyCheck } from '$lib/models/monitoring';
+  import { canRunManually, isPushOnlyCheck } from '$lib/models/monitoring';
   import { session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
   import MonitorCheckModal from '../../monitoring/MonitorCheckModal.svelte';
   import MaintenanceModal from '../../monitoring/MaintenanceModal.svelte';
+  import { Pencil, Play, Plus } from '@lucide/svelte';
+  import Button from '../../ui/Button.svelte';
+  import Dot from '../../ui/Dot.svelte';
+  import Panel from '../../ui/Panel.svelte';
+  import Pill from '../../ui/Pill.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -271,22 +276,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
       {/each}
       <div class="tpl-suggest-actions">
-        <button
-          class="btn primary small"
+        <Button
+          size="sm"
+          data-action="tpl-suggest-assign"
           disabled={assignBusy || checkedSlugs.length === 0}
-          onclick={onAssignSuggestions}>{$t('infra.monTab.assign')}</button
+          onclick={onAssignSuggestions}>{$t('infra.monTab.assign')}</Button
         >
-        <button
-          class="btn small"
+        <Button
+          size="sm"
+          variant="secondary"
           disabled={assignBusy || checkedSlugs.length === 0}
-          onclick={onDismissSuggestions}>{$t('infra.monTab.ignore')}</button
+          onclick={onDismissSuggestions}>{$t('infra.monTab.ignore')}</Button
         >
       </div>
     </div>
   {/if}
 
-  <div class="tpl-section">
-    <h4 class="tpl-title">{$t('infra.monTab.templates')}</h4>
+  <Panel title={$t('infra.monTab.templates')}>
     {#if assignments.length === 0}
       <p class="muted">{$t('infra.monTab.noTemplates')}</p>
     {:else}
@@ -295,7 +301,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="tpl-pill">
             {a.templateName ?? a.templateId}
             {#if builtinById.get(a.templateId)}
-              <span class="tpl-badge">{$t('infra.monTab.builtin')}</span>
+              <Pill tone="accent">{$t('infra.monTab.builtin')}</Pill>
             {/if}
             {#if a.removedChecks}
               <button
@@ -328,15 +334,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <option value={tpl.id}>{tpl.name}</option>
           {/each}
         </select>
-        <button class="btn small" disabled={assignBusy || !selectedTemplateId} onclick={onAssign}
-          >{$t('infra.monTab.assign')}</button
+        <Button
+          size="sm"
+          variant="secondary"
+          data-action="tpl-assign"
+          disabled={assignBusy || !selectedTemplateId}
+          onclick={onAssign}>{$t('infra.monTab.assign')}</Button
         >
       </div>
     {/if}
-  </div>
+  </Panel>
 
-  <div class="tpl-section">
-    <h4 class="tpl-title">{$t('monitoring.maint.title')}</h4>
+  {#snippet maintAction()}
+    <Button
+      size="sm"
+      variant="secondary"
+      iconLeft={Plus}
+      data-action="maint-new"
+      onclick={() => {
+        maintEditing = null;
+        maintModalOpen = true;
+      }}>{$t('monitoring.maint.add')}</Button
+    >
+  {/snippet}
+  <Panel title={$t('monitoring.maint.title')} action={maintAction}>
     {#if maintenance.length === 0}
       <p class="muted">{$t('monitoring.maint.empty')}</p>
     {:else}
@@ -351,64 +372,66 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span class="maint-summary">{maintSummary(w)}</span>
             {#if w.note}<span class="maint-note">{w.note}</span>{/if}
             {#if w.serverId == null}
-              <span class="tpl-badge">{$t('monitoring.maint.globalBadge')}</span>
+              <Pill>{$t('monitoring.maint.globalBadge')}</Pill>
             {/if}
-            <button
-              class="btn small"
+            <Button
+              size="sm"
+              variant="ghost"
+              iconLeft={Pencil}
               onclick={() => {
                 maintEditing = w;
                 maintModalOpen = true;
-              }}>{$t('action.edit')}</button
+              }}>{$t('action.edit')}</Button
             >
           </div>
         {/each}
       </div>
     {/if}
-    <div>
-      <button
-        class="btn small"
-        onclick={() => {
-          maintEditing = null;
-          maintModalOpen = true;
-        }}>+ {$t('monitoring.maint.add')}</button
+  </Panel>
+
+  {#snippet checkAction()}
+    <div class="mon-toolbar">
+      <Button size="sm" iconLeft={Plus} data-action="check-new" onclick={openNew}
+        >{$t('monitoring.checkEdit.add')}</Button
       >
     </div>
-  </div>
-
-  <div class="mon-toolbar">
-    <button class="btn primary small" onclick={openNew}>+ {$t('monitoring.checkEdit.add')}</button>
-  </div>
-
-  {#if loading}
-    <p class="muted">{$t('loading.generic')}</p>
-  {:else if items.length === 0}
-    <p class="muted">{$t('monitoring.checkEdit.empty')}</p>
-  {:else}
-    <div class="mon-list">
-      {#each items as c (c.id)}
-        <div class="mon-row" class:disabled={!c.enabled}>
-          <span class="status-dot {statusClass(c.state?.status)}"></span>
-          <div class="mon-info">
-            <div class="mon-name">{c.name}</div>
-            <div class="mon-meta">{c.checkType}</div>
+  {/snippet}
+  <Panel title={$t('infra.monTab.checks')} action={checkAction} pad={6}>
+    {#if loading}
+      <p class="muted">{$t('loading.generic')}</p>
+    {:else if items.length === 0}
+      <p class="muted">{$t('monitoring.checkEdit.empty')}</p>
+    {:else}
+      <div class="mon-list">
+        {#each items as c (c.id)}
+          <div class="mon-row" class:disabled={!c.enabled}>
+            <Dot st={c.state?.status ?? 'pending'} label={c.state?.status ?? 'pending'} />
+            <div class="mon-info">
+              <div class="mon-name">{c.name}</div>
+              <div class="mon-meta">{c.checkType}</div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              iconLeft={Play}
+              onclick={() => onRun(c)}
+              disabled={running === c.id || !canRunManually(c)}
+              title={isPushOnlyCheck(c.checkType)
+                ? $t('monitoring.check.runPushOnly')
+                : !c.enabled
+                  ? $t('monitoring.check.runDisabled')
+                  : undefined}
+            >
+              {$t('action.run')}
+            </Button>
+            <Button size="sm" variant="ghost" iconLeft={Pencil} onclick={() => openEdit(c)}
+              >{$t('action.edit')}</Button
+            >
           </div>
-          <button
-            class="btn small"
-            onclick={() => onRun(c)}
-            disabled={running === c.id || !canRunManually(c)}
-            title={isPushOnlyCheck(c.checkType)
-              ? $t('monitoring.check.runPushOnly')
-              : !c.enabled
-                ? $t('monitoring.check.runDisabled')
-                : undefined}
-          >
-            {$t('action.run')}
-          </button>
-          <button class="btn small" onclick={() => openEdit(c)}>{$t('action.edit')}</button>
-        </div>
-      {/each}
-    </div>
-  {/if}
+        {/each}
+      </div>
+    {/if}
+  </Panel>
 </div>
 
 <MonitorCheckModal
@@ -465,21 +488,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     gap: var(--sp-2);
     margin-left: auto;
   }
-  .tpl-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-2);
-    padding-bottom: var(--sp-3);
-    border-bottom: 1px solid var(--border);
-  }
-  .tpl-title {
-    margin: 0;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
   .tpl-list {
     display: flex;
     flex-wrap: wrap;
@@ -494,14 +502,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border-radius: var(--radius-sm);
     padding: 2px var(--sp-3);
     font-size: var(--text-xs);
-  }
-  .tpl-badge {
-    background: var(--accent);
-    color: var(--bg-panel);
-    border-radius: var(--radius-sm);
-    padding: 0 var(--sp-2);
-    font-size: 10px;
-    font-weight: 600;
   }
   .tpl-via-tag {
     color: var(--text-muted);
@@ -597,32 +597,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   /* Same reason as .mon-line-wrapper.disabled in app.css: the row already
      dims, so do not multiply it with the button's own disabled opacity. */
-  .mon-row.disabled :global(.btn:disabled) {
+  .mon-row.disabled :global(.ui-btn:disabled) {
     opacity: 1;
   }
 
   .mon-row.disabled {
     opacity: 0.55;
-  }
-  .status-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--text-muted);
-  }
-  .status-dot.mon-ok {
-    background: var(--success);
-  }
-  .status-dot.mon-warning {
-    background: var(--warning);
-  }
-  .status-dot.mon-critical {
-    background: var(--danger);
-  }
-  .status-dot.mon-pending,
-  .status-dot.mon-unknown {
-    background: var(--text-muted);
   }
   .mon-info {
     flex: 1;

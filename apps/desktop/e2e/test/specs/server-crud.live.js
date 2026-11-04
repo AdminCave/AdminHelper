@@ -13,7 +13,7 @@ describe('Server CRUD via the GUI', () => {
     await gotoInfrastructure();
 
     // create via "+ Add Server" (ServerModal: name, hostname, ...)
-    await $('.infra-toolbar .btn.primary').click();
+    await $('[data-action="server-new"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     // Fill by field name, not input index — a reordered/added field would otherwise
     // silently populate the wrong column (4.33). The inputs carry name="…" attrs.
@@ -24,7 +24,7 @@ describe('Server CRUD via the GUI', () => {
 
     // select it, open its editor (detail header "Edit"), delete (two-step)
     await clickItemByName('.srv-item', '.srv-item-name', 'crud-server');
-    await $('.srv-head .btn.small').click();
+    await $('[data-action="server-edit"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     await clickInModal('.btn.danger');
     await clickInModal('.btn.danger');

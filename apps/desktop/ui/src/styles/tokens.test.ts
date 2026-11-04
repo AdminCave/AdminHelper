@@ -6,11 +6,12 @@
 // browser default and the page just looks wrong. These tests pin the DS token set
 // of app.css (AdminCave/DesignSystem@244e890) and the old AH names that alias it.
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.css'), 'utf-8');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CSS = readFileSync(join(HERE, 'app.css'), 'utf-8');
 
 function block(selector: string): Map<string, string> {
   const start = CSS.indexOf(`${selector} {`);
@@ -128,5 +129,33 @@ describe('app.css design tokens', () => {
     expect(CSS).toMatch(
       /:where\(:focus-visible\) \{[^}]*outline: var\(--ring-width\) solid var\(--ring\);/,
     );
+  });
+});
+
+// Every source file under src/ except tests: a style block or a style: directive may
+// declare a property, any of them may use one.
+function sources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return sources(p);
+    return /\.(css|svelte|ts)$/.test(e.name) && !/\.test\.ts$/.test(e.name) ? [p] : [];
+  });
+}
+
+describe('custom property uses under src/', () => {
+  it('every var() names a property declared somewhere under src/', () => {
+    const declared = new Set<string>();
+    const used = new Map<string, string>();
+    for (const file of sources(join(HERE, '..'))) {
+      const text = readFileSync(file, 'utf-8');
+      for (const re of [/(?<![\w-])(--[\w-]+)\s*:/g, /style:(--[\w-]+)/g])
+        for (const m of text.matchAll(re)) declared.add(m[1]);
+      for (const m of text.matchAll(/var\(\s*(--[\w-]+)/g))
+        if (!used.has(m[1])) used.set(m[1], file.slice(HERE.length - 'styles'.length));
+    }
+    const missing = [...used]
+      .filter(([name]) => !declared.has(name))
+      .map(([n, f]) => `${n} (${f})`);
+    expect(missing).toEqual([]);
   });
 });

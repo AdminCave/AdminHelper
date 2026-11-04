@@ -243,3 +243,45 @@ describe('ProvisioningTab — the token beside the one-liner', () => {
     expect(view.queryByTestId('prov-token')).not.toBeNull();
   });
 });
+
+describe('ProvisioningTab — design anchors (R-1064)', () => {
+  it('mints from the prov-mint button and tones the token states', async () => {
+    h.pinnedCaFingerprint.mockResolvedValue(FP);
+    h.listTokens.mockResolvedValueOnce([
+      {
+        id: 'a',
+        createdAt: '2026-11-01T10:00:00Z',
+        expiresAt: '2026-11-02T10:00:00Z',
+        isValid: true,
+      },
+      {
+        id: 'b',
+        createdAt: '2026-11-01T10:00:00Z',
+        expiresAt: '2026-11-02T10:00:00Z',
+        usedAt: '2026-11-01T11:00:00Z',
+        isValid: false,
+      },
+      {
+        id: 'c',
+        createdAt: '2026-10-01T10:00:00Z',
+        expiresAt: '2026-10-02T10:00:00Z',
+        isValid: false,
+      },
+    ] as never);
+    const view = render(ProvisioningTab, { server });
+    await waitFor(() =>
+      expect(view.container.querySelectorAll('.prov-table tbody tr')).toHaveLength(3),
+    );
+    const tones = Array.from(view.container.querySelectorAll('.prov-table tbody .pill')).map((p) =>
+      Array.from(p.classList).find((c) => c.startsWith('pill-')),
+    );
+    expect(tones).toEqual(['pill-accent', 'pill-ok', 'pill-crit']);
+    const mint = view.container.querySelector('[data-action="prov-mint"]') as HTMLButtonElement;
+    expect(mint.textContent?.trim()).toBe('Token erzeugen');
+    await fireEvent.click(mint);
+    await waitFor(() => expect(h.createToken).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(view.getByTestId('script-command').querySelector('pre')).not.toBeNull(),
+    );
+  });
+});

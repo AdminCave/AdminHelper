@@ -608,16 +608,6 @@ body {
   display: none;
 }
 
-/* ── Section Toolbar ───────────────────────────────────────────────── */
-.section-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-5);
-  flex-wrap: wrap;
-}
-
 /* ── Chips / Filter Buttons ────────────────────────────────────────── */
 .filters {
   display: flex;
@@ -1231,111 +1221,12 @@ body {
 }
 
 /* ── Monitoring Section ────────────────────────────────────────────── */
-.mon-tabs {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.mon-tab {
-  padding: 8px var(--sp-5);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  font-family: var(--font);
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s ease;
-}
-
-.mon-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.mon-tab:hover:not(.active) {
-  color: var(--text);
-}
 .mon-tab-content {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-}
-
-/* Summary Cards */
-.mon-summary-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
-}
-
-.mon-summary-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--sp-4) var(--sp-5);
-  text-align: center;
-  background: var(--bg-surface);
-}
-
-.mon-summary-value {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.mon-summary-label {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.mon-summary-ok {
-  border-color: rgba(34, 197, 94, 0.3);
-}
-.mon-summary-ok .mon-summary-value {
-  color: var(--success);
-}
-.mon-summary-warning {
-  border-color: rgba(251, 191, 36, 0.3);
-}
-.mon-summary-warning .mon-summary-value {
-  color: var(--warning);
-}
-.mon-summary-critical {
-  border-color: rgba(248, 113, 113, 0.3);
-}
-.mon-summary-critical .mon-summary-value {
-  color: var(--danger);
-}
-
-/* Filter-Search (vom Server-Such-Input verwendet) */
-.mon-filter-search {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 5px 10px;
-  color: var(--text);
-  font-size: var(--text-xs);
-  font-family: var(--font);
-  flex: 1;
-  min-width: 140px;
-  transition: border-color 0.15s ease;
-}
-
-.mon-filter-search:hover {
-  border-color: var(--border-hover);
-}
-.mon-filter-search:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-.mon-filter-search::placeholder {
-  color: var(--text-faint);
 }
 
 /* Status Dots */
@@ -1345,13 +1236,6 @@ body {
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.mon-dot-sm {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 .mon-ok {
@@ -1460,153 +1344,6 @@ body {
    Monitoring Dashboard — Split-Layout, Server-List, Dashboard, Sections
    ────────────────────────────────────────────────────────────────── */
 
-/* ── Split-Layout: Server-Liste | Dashboard ────────────────────────── */
-.mon-split {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: var(--sp-4);
-  align-items: start;
-  margin-top: var(--sp-3);
-}
-@media (max-width: 1000px) {
-  .mon-split {
-    grid-template-columns: 1fr;
-  }
-}
-
-.mon-split-sidebar {
-  position: sticky;
-  top: var(--sp-3);
-  max-height: calc(100vh - 140px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-@media (max-width: 1000px) {
-  .mon-split-sidebar {
-    position: static;
-    max-height: none;
-  }
-}
-.mon-split-main {
-  min-width: 0;
-}
-
-/* Server-Liste */
-.mon-srv-list {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.mon-srv-search {
-  padding: var(--sp-3);
-  border-bottom: 1px solid var(--border);
-}
-.mon-srv-search .mon-filter-search {
-  width: 100%;
-  min-width: 0;
-}
-.mon-srv-items {
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-  gap: 2px;
-}
-.mon-srv-empty {
-  padding: var(--sp-4);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.mon-srv-item {
-  display: grid;
-  grid-template-columns: 4px 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  text-align: left;
-  color: var(--text);
-  font-family: inherit;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-  width: 100%;
-}
-.mon-srv-item:hover {
-  background: var(--hover);
-}
-.mon-srv-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.mon-srv-item.selected {
-  background: rgba(77, 159, 255, 0.12);
-  border-color: rgba(77, 159, 255, 0.35);
-}
-.mon-srv-stripe {
-  width: 4px;
-  height: 30px;
-  border-radius: 2px;
-  align-self: center;
-  background: var(--text-muted);
-}
-.mon-srv-stripe.mon-ok {
-  background: var(--success);
-}
-.mon-srv-stripe.mon-warning {
-  background: var(--warning);
-}
-.mon-srv-stripe.mon-critical {
-  background: var(--danger);
-  animation: monPulseCrit 2s ease-in-out infinite;
-}
-.mon-srv-stripe.mon-unknown {
-  background: var(--text-muted);
-}
-.mon-srv-stripe.mon-pending {
-  background: var(--text-muted);
-  opacity: 0.5;
-}
-
-.mon-srv-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.mon-srv-name {
-  font-weight: 600;
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mon-srv-meta {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.mon-srv-count {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-.mon-srv-pills {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  flex-shrink: 0;
-}
-
 .mon-pill {
   display: inline-flex;
   align-items: center;
@@ -1635,34 +1372,6 @@ body {
 .mon-pill.pill-muted {
   background: var(--hover);
   color: var(--text-muted);
-}
-
-.mon-panel-empty,
-.mon-panel-empty-inline {
-  padding: var(--sp-6) var(--sp-4);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-.mon-panel-empty-icon {
-  font-size: 24px;
-  opacity: 0.5;
-}
-
-@keyframes monPulseCrit {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 .mon-spark {
@@ -1861,172 +1570,17 @@ body {
   color: #fff;
 }
 
-/* ── Dashboard (rechte Spalte) ─────────────────────────────────────── */
-.mon-dashboard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-
-.mon-dashboard-head {
-  display: flex;
-  align-items: center;
-  padding-bottom: var(--sp-3);
-  border-bottom: 1px solid var(--border);
-}
-.mon-dashboard-title {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex: 1;
-  min-width: 0;
-}
-
-.mon-dashboard-add {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.mon-dashboard-heartbeat {
-  margin-top: var(--sp-3);
-}
-.mon-dashboard-dot {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-.mon-dashboard-dot.mon-critical {
-  animation: monPulseCrit 2s ease-in-out infinite;
-}
-.mon-dashboard-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex-shrink: 1;
-}
-.mon-dashboard-name {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: -0.01em;
-}
-.mon-dashboard-host {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mon-dashboard-stats {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.mon-dashboard-stats .mon-pill {
-  padding: 3px 9px;
-  font-size: 11px;
-}
-
-/* ── Section ───────────────────────────────────────────────────────── */
+/* ── Section (Rahmen; Kopf in MonSectionHeader) ─────────────────────── */
 .mon-section {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
-
-.mon-section-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: var(--sp-3) var(--sp-4);
-  padding-left: calc(var(--sp-4) + 6px);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  background: var(--hover);
-}
-.mon-section-stripe {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--text-muted);
-}
-.mon-section-stripe.mon-ok {
-  background: var(--success);
-}
-.mon-section-stripe.mon-warning {
-  background: var(--warning);
-}
-.mon-section-stripe.mon-critical {
-  background: var(--danger);
-  animation: monPulseCrit 2s ease-in-out infinite;
-}
-.mon-section-stripe.mon-unknown {
-  background: var(--text-muted);
-}
-.mon-section-stripe.mon-pending {
-  background: var(--text-muted);
-  opacity: 0.5;
-}
-
-.mon-section-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--hover);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.mon-section-icon.mon-ok {
-  color: var(--success);
-  background: rgba(52, 211, 153, 0.1);
-}
-.mon-section-icon.mon-warning {
-  color: var(--warning);
-  background: rgba(251, 191, 36, 0.1);
-}
-.mon-section-icon.mon-critical {
-  color: var(--danger);
-  background: rgba(248, 113, 113, 0.12);
-}
-
-.mon-section-title {
-  font-size: var(--text-base);
-  font-weight: 600;
-  margin: 0;
-  color: var(--text);
-  text-transform: none;
-  letter-spacing: 0;
-}
-.mon-section-count {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--hover);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-variant-numeric: tabular-nums;
-}
-.mon-section-sub {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-left: auto;
-}
-
 .mon-section-body {
   display: flex;
   flex-direction: column;
+  padding: 0 16px 16px;
 }
 
 /* ── Check-Line (klickbare Zeile mit Expand) ────────────────────────── */
@@ -2234,30 +1788,6 @@ body {
   gap: 6px;
   flex-wrap: wrap;
 }
-.mon-live-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--hover);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-.mon-live-pill.level-ok {
-  background: rgba(52, 211, 153, 0.14);
-  color: var(--success);
-}
-.mon-live-pill.level-warn {
-  background: rgba(251, 191, 36, 0.14);
-  color: var(--warning);
-}
-.mon-live-pill.level-crit {
-  background: rgba(248, 113, 113, 0.14);
-  color: var(--danger);
-}
-
 .mon-live-detail {
   display: flex;
   flex-direction: column;
@@ -2340,274 +1870,12 @@ body {
   color: var(--danger);
 }
 
-/* Alerts */
-.mon-alert-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.mon-alert-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-}
-.mon-alert-name {
-  font-weight: 600;
-  font-size: var(--text-base);
-}
-.mon-alert-meta {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-.mon-alert-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* Alert Log */
-.mon-alert-log {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.mon-log-entry {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  gap: var(--sp-3);
-  align-items: center;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--text-sm);
-}
-.mon-log-time {
-  color: var(--text-muted);
-  white-space: nowrap;
-  font-family: var(--font-mono);
-}
-.mon-log-transition {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.mon-log-result {
-  font-weight: 700;
-}
-.mon-log-error {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Empty State */
 .mon-empty {
   text-align: center;
   padding: var(--sp-7) var(--sp-5);
   color: var(--text-muted);
   font-size: var(--text-base);
-}
-
-/* ── Ansible ───────────────────────────────────────────────────────── */
-.ansible-steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.ansible-step {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--sp-4);
-  opacity: 0.5;
-  transition: opacity 0.15s;
-}
-
-.ansible-step.active {
-  opacity: 1;
-}
-
-.ansible-step-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: var(--sp-3);
-  font-weight: 600;
-  font-size: var(--text-base);
-  color: var(--text);
-}
-
-.step-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.ansible-playbook-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.ansible-playbook-card {
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-}
-
-.ansible-playbook-card:hover {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.ansible-playbook-card.selected {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.ansible-playbook-name {
-  font-weight: 600;
-  font-size: var(--text-base);
-  color: var(--text);
-}
-
-.ansible-playbook-desc {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.ansible-playbook-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.ansible-playbook-file {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.ansible-tag {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--accent-bg);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.ansible-target-mode {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.ansible-server-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.ansible-server-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.ansible-server-row:hover {
-  background: var(--hover);
-}
-.ansible-server-row input[type='checkbox'] {
-  flex-shrink: 0;
-  accent-color: var(--accent);
-}
-
-.ansible-server-info {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-.ansible-server-name {
-  font-weight: 500;
-  font-size: var(--text-sm);
-  color: var(--text);
-}
-.ansible-server-host {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.ansible-tag-list {
-  display: flex;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-
-.ansible-tag-chip {
-  padding: 5px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-family: var(--font);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.ansible-tag-chip:hover {
-  border-color: var(--accent);
-}
-
-.ansible-tag-chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.ansible-run-summary {
-  font-size: var(--text-base);
-  color: var(--text);
-  margin-bottom: 10px;
-}
-
-.ansible-empty {
-  padding: var(--sp-5);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
 }
 
 /* ── Utility ───────────────────────────────────────────────────────── */
@@ -2668,8 +1936,5 @@ body {
 @media (max-width: 720px) {
   .card {
     grid-template-columns: 1fr;
-  }
-  .mon-summary-cards {
-    grid-template-columns: repeat(2, 1fr);
   }
 }

@@ -76,7 +76,7 @@ describe("Monitoring check via the GUI", () => {
     await gotoInfrastructure();
     await openServerTab("monitoring");
 
-    await $(".mon-toolbar .btn.primary").click();
+    await $('[data-action="check-new"]').click();
     await $(`${MODAL} ${MODAL_PANEL}`).waitForExist({ timeout: 10000 });
     await $(`${MODAL} input[type="text"]`).setValue("cpu-check");
     const selects = await $$(`${MODAL} select`); // checkType, interval, severity
@@ -102,7 +102,7 @@ describe("Monitoring check via the GUI", () => {
       const wanted = (await box.getAttribute("value")) === LINUX_BASE;
       if ((await box.isSelected()) !== wanted) await box.click();
     }
-    const assign = await $(".tpl-suggest .btn.primary");
+    const assign = await $('[data-action="tpl-suggest-assign"]');
     await assign.waitForEnabled({
       timeout: 10000,
       timeoutMsg: "the Assign button of the suggestion never became enabled",
@@ -130,7 +130,8 @@ describe("Monitoring check via the GUI", () => {
   it("shows the server's resource history for 24 hours, then for 1 hour (R-1103)", async () => {
     await $('.sidebar-nav [data-nav="monitoring"]').click();
     await $('.mon-tabs [data-tab="overview"]').click();
-    await $(".mon-view-toggle .btn").click(); // the list view, which holds the dashboard
+    // The list view, which holds the dashboard: the first option of the view switch.
+    await $('.mon-overview-toolbar [role="radio"]').click();
     await clickItemByName(".mon-srv-item", ".mon-srv-name", SERVER_NAME);
 
     await waitForChart(HISTORY);
