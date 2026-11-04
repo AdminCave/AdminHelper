@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-design-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-design-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-design-3 · Review: pro Task
 Spec: docs/features/kern-design-3.md (Roadmap R-1064, R-1089)
 Heavy: linux-full — Infrastruktur, Ansible und Monitoring ändern das DOM der Desktop-Journeys (server-crud, provisioning, monitoring-*); der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test
 Doku: keine (interne Styles, kein dokumentiertes Verhalten)
 Abhängt von: T3
 
-### T8 — Doku DE+EN und Changelog (R-1064)  [ ]
-Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-design-3.md
+### T8 — Doku DE+EN und Changelog (R-1064)  [x]
+Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-design-3.md, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8645467f 2026-11-04T16:49:43+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Entwickler-Doku zu Aufbau von Infrastruktur, Ansible und Monitoring (Bibliothek, `data-tab`/`data-action`-Anker); Admin-Doku nur, wo sich sichtbare Namen der Wege ändern; Changelog-Fragment.
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts
@@ -105,3 +107,4 @@ Doku: diese Task
 - 2026-11-04 T6 (Nachtrag aus dem Review): Jeder Alert-Switch trägt sichtbar „Aktiv“ — `ui/Switch` rendert sein Label sichtbar, und ohne Label hätte der Schalter keinen zugänglichen Namen.
 - 2026-11-04 T9: NotificationBell nutzt `--radius-xs`/`--radius-sm` statt des undefinierten `--radius` und `--surface-hover`/`--accent-muted` statt `--bg-hover`; die Fallback-Farben entfallen. Der neue Wächter in `tokens.test.ts` zählt als Deklaration jede `--x:` unter `src/` (ohne Tests) und jede `style:--x`-Direktive (`--pct` im Slider, `--workspace-color` in AppShell); Gegenprobe mit der alten NotificationBell: rot mit `--radius` und `--bg-hover`.
 - 2026-11-04 T7: `texts()` (und damit `waitForRow`) liest jetzt für alle Specs über `textContentOf`, nicht nur für die vier Listen: ellipsierte Namen gibt WebKitWebDriver per `getText()` leer zurück, und `textContent` gleicht `getText()` für die übrigen einzeiligen Namen. `openRowByName` klickt den einzigen `.ui-btn` der Zeile; die Listenansicht im Monitoring ist das erste Radio des `Segmented` in `.mon-overview-toolbar` (die Optionen tragen kein Wert-Attribut). Die Modale behalten `.btn.primary`/`.btn.danger` (nicht Teil des Re-Designs). Lokal nur Lint, der Lauf ist der Sammellauf.
+- 2026-11-04 T8: `docs/admin/index.html` (DE+EN) bleibt unverändert, dort steht kein Weg, der sich ändert; nachgezogen sind dafür `docs/admin/ansible.html` (Assistent → Liste + Detail) und `docs/admin/monitoring.html` (Dashboard-Kopf, eigene Reiter für Alerts/Templates/Log; die alte Zeile nannte falsche Zeitfenster).

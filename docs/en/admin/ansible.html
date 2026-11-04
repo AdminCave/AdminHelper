@@ -57,13 +57,13 @@ DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)</code></pre
 
           <p>CRUD operations fire hooks: <code>playbook.created</code>, <code>playbook.updated</code> and <code>playbook.deleted</code> (payload: <code>id</code> + <code>name</code>). For hook configuration details: <a href="../developer/hooks.html">Hooks &amp; Events</a>.</p>
 
-          <h2>3-Step Workflow (Desktop)</h2>
-          <p>The desktop client guides you through a three-step wizard. Step 2 only becomes active once a playbook is selected; step 3 only once at least one target server is also selected.</p>
-          <ol>
-            <li><strong>Select playbook</strong> — list of all playbooks maintained on the server, with name, description, filename and tags.</li>
-            <li><strong>Select target servers</strong> — two modes: <em>Servers</em> (individual checkbox selection) or <em>Tags</em> (one chip per tag selects all servers carrying that tag).</li>
-            <li><strong>Run</strong> — summary (playbook + server count), then launch via <code>ansible-playbook</code> in a native terminal.</li>
-          </ol>
+          <h2>Running a playbook (Desktop)</h2>
+          <p>The <em>Ansible</em> page shows the list of playbooks on the left and the selected playbook on the right. Until a playbook is selected, the right side only shows a hint.</p>
+          <ul>
+            <li><strong>List</strong> — all playbooks maintained on the server, with name, description, filename and tags; the <em>+ Playbook</em> button above it creates a new one.</li>
+            <li><strong>Targets</strong> — two modes: <em>By servers</em> (individual checkbox selection, name and host per server) or <em>By tags</em> (one chip per tag selects all servers carrying that tag). Below, the page states on how many servers the playbook will run.</li>
+            <li><strong>Run</strong> — the button in the playbook's header (next to <em>Edit</em>) becomes active once at least one target server is selected and launches <code>ansible-playbook</code> in a native terminal.</li>
+          </ul>
           <p>On run, the desktop itself fetches the playbook's file name and YAML content fresh from the signed-in server (<code>/{id}</code> and <code>/{id}/content</code>), writes inventory and playbook into a temporary directory of their own per run and starts the run; from the UI it only gets the playbook id and the selected targets. On Linux the terminal deletes this directory with the playbook and the inventory as soon as <code>ansible-playbook</code> ends, whatever the result, and also when the terminal is closed during the run. If the start (no <code>ansible-playbook</code>, no terminal) or a step before it fails, the client deletes the directory at once, a half-written file with it. On Windows it stays in the temp directory after a started run. The server inventory and playbooks are sourced directly from the AdminHelper server of the workspace — nothing is maintained locally.</p>
 
           <h2>Inventory Generation</h2>
@@ -83,7 +83,7 @@ web01.example.com</code></pre>
           <h2>Requirements</h2>
           <ul>
             <li><code>ansible-playbook</code> must be installed on the <strong>desktop machine</strong> and on the <code>PATH</code>. If missing, the run aborts with an error message.</li>
-            <li>Target servers must be created in the desktop client under <em>Infrastructure</em> — only hosts maintained there appear in the Ansible wizard.</li>
+            <li>Target servers must be created in the desktop client under <em>Infrastructure</em> — only hosts maintained there appear in the targets of the Ansible page.</li>
             <li>Playbook maintenance (create/edit/delete) requires an admin session.</li>
           </ul>
 
