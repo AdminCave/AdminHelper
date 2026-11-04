@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-deps-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-deps-2 · Review: pro Task
 Spec: docs/features/kern-deps-2.md (Roadmap R-1037)
 Heavy: linux-full — neue Laufzeit-Pakete in Server, Monitoring und CA-Issuer; den Stack (Gateway, mTLS, SSE über Redis) fährt der Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
