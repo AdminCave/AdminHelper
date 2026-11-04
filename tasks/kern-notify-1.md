@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/statusB
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Glocke und Panel (R-1078)  [ ]
+### T3 — Glocke und Panel (R-1078)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationBell.svelte, apps/desktop/ui/src/components/NotificationBell.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7b131bd9 2026-11-04T18:15:58+01:00
+Review: approve (.ah-out/review/kern-notify-1/T3.verdict.json)
 Änderung: Glocke als `IconButton` mit Badge (rot bei ungelesenem Kritischen, `bell-off` bei Nicht stören); Panel nach `notifications.jsx` (NotifPanel): Kopf mit Nicht-stören-`Menu` und Hinweis, `Tabs` Alle/Ungelesen/Offen mit Zählern, Tagesgruppen, Schnellaktion „Als gelesen markieren“, Klick öffnet den Eintrag auf der Center-Seite, leere Zustände, Fuß „Alle gelesen“ und „Alle anzeigen“. Die E2E-Anker `.notif-bell`, `.notif-badge`, `.notif-panel`, `.notif-item`, `.notif-item-title` bleiben. Neuer Test für Tabs, Gruppen, Gelesen und Nicht stören. SPDX im neuen Test.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/NotificationBell.test.ts
 Doku: → T5
@@ -59,3 +61,4 @@ Doku: diese Task
 - T2: Der Toast-Klick ist ein Knopf „Öffnen“ im Aktionsfeld des Toasts (zugänglich, ohne `Toast.svelte` zu ändern); er öffnet `#/notifications/<id>`, die Seite liest die id in T4.
 - T2: Die neue Meldung erscheint immer (Status und Fehler antworten auf eine Aktion, die Spec lässt `showStatus`/`reportError` unverändert). Ein voller Stapel wirft unter den älteren zuerst den ältesten Toast, der von selbst ginge, stehen alle, den ältesten; eine neue Benachrichtigung, die von selbst ginge, wird dann selbst verworfen und gezählt. So verdrängt eine Info-Flut keinen kritischen Toast; „+N weitere“ zählt nur verdrängte Benachrichtigungen (sie bleiben in Glocke und Feed), bis der Stapel leer ist.
 - T2: Die Weiche liegt immer an, nicht nur mit OS-Benachrichtigungen; `dictionaries.ts` per set-files dazu (Texte „Öffnen“, „+N weitere“, „Nicht stören bis …“).
+- T3: Badge in Akzentfarbe, rot nur bei ungelesenem Kritischen; Kategorie roh (die Kategorien haben keine Übersetzung). Der Schlüssel `notifications.empty` weicht `notifications.empty.<tab>`. Das Menü bietet „Beenden“ nur bei aktivem Nicht stören; der Hinweis trägt es zusätzlich als Knopf.
