@@ -68,7 +68,8 @@ var serverHead = regexp.MustCompile(`^\[\[?[A-Za-z0-9_.-]+\]\]?$`)
 // it reads the TOML; only in this form all of these read it the same. A proxy may carry any key
 // (a tunnel's extra_config) but one whose first segment is plugin in any case: the server sets
 // up no proxy plugin, and frp maps keys to its fields without regard to case. The error names
-// line and key, never the value: a line may hold auth.token or a secretKey.
+// line and key, never the value: a line may hold auth.token or a secretKey. withFrpsTLSName
+// (rewrite.go) reads the text by lines and relies on this form.
 func checkServerConfig(serverToml []byte) error {
 	root := keyTable{}
 	table, prefix, total := root, "", 0

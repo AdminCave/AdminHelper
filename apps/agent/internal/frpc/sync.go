@@ -152,11 +152,21 @@ func Sync(ctx context.Context) error {
 	}
 	defer unlock()
 	if unchanged {
-		// The check passes the text frpc runs on: nothing to write, reload or restart. A text
-		// without a tunnel runs nothing, and applyConfig never checks one either.
+		// The check passes the text frpc runs on; the file in place is rewritten only when it is
+		// not what this agent writes for it. A text without a tunnel runs nothing, and
+		// applyConfig never checks one either.
 		if hasProxies(newConfig) {
 			if err := checkServerConfig(newConfig); err != nil {
 				return refuseServerConfig(ctx, err)
+			}
+			// An agent that writes the file differently (the frps TLS name) puts its own in place
+			// once; a changed common part makes that a restart (startFrpc).
+			api, err := loadAdminAPI()
+			if err != nil {
+				return err
+			}
+			if inPlace, err := os.ReadFile(config.FrpConfigFile()); err != nil || !bytes.Equal(inPlace, frpcTomlFor(api, newConfig)) {
+				return applyConfig(ctx, newConfig, true)
 			}
 		}
 		return writeCheckedBy(remoteHash)
@@ -256,7 +266,7 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	if err != nil {
 		return err
 	}
-	frpcToml := append([]byte(localPreamble+api.head()), rewriteIdentityPaths(serverToml)...)
+	frpcToml := frpcTomlFor(api, serverToml)
 
 	// Write the config atomically (0600: contains the frp auth token). A plain in-place WriteFile
 	// truncates first, so a crash/kill between truncate and write would leave a partial frpc.toml
@@ -289,6 +299,11 @@ func applyConfig(ctx context.Context, serverToml []byte, mayReload bool) error {
 	}
 	logger.Infof("frpc.toml updated, frpc %s.", started)
 	return nil
+}
+
+// frpcTomlFor is the frpc.toml the agent writes for the server's text.
+func frpcTomlFor(api adminAPI, serverToml []byte) []byte {
+	return append([]byte(localPreamble+api.head()), withFrpsTLSName(rewriteIdentityPaths(serverToml))...)
 }
 
 // agentVersion is the version of this agent, set by main. A text stored under another version
