@@ -27,6 +27,12 @@ const DYNAMIC_PREFIXES = [
   'monitoring.history.tab.',
   'monitoring.history.period.',
   'monitoring.compare.metric.',
+  // Bell and center (NotificationBell.svelte, pages/Notifications.svelte): notifications.empty.${tab},
+  // notifications.day.${g.bucket}, notifications.severity.${n.severity}, notifications.mailbox.${m}.
+  'notifications.empty.',
+  'notifications.day.',
+  'notifications.severity.',
+  'notifications.mailbox.',
 ];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {

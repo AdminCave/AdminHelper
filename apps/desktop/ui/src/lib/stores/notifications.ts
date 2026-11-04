@@ -15,18 +15,33 @@ import { notificationsApi } from '$lib/api/notifications';
 import type { NotificationItem } from '$lib/api/types';
 
 const POLL_INTERVAL_MS = 30_000;
+/** Page size of the center page (R-1078); "load more" asks for the next one by offset. */
+export const CENTER_PAGE = 500;
 
 interface NotifState {
   items: NotificationItem[];
   unreadCount: number;
   panelOpen: boolean;
+  /** The center page's list, longer than the bell's 50; empty until it loads. */
+  center: NotificationItem[];
+  centerHasMore: boolean;
 }
 
-const _state = writable<NotifState>({ items: [], unreadCount: 0, panelOpen: false });
+const EMPTY: NotifState = {
+  items: [],
+  unreadCount: 0,
+  panelOpen: false,
+  center: [],
+  centerHasMore: false,
+};
+
+const _state = writable<NotifState>({ ...EMPTY });
 export const notifications = { subscribe: _state.subscribe };
 export const notificationItems = derived(_state, ($s) => $s.items);
 export const unreadCount = derived(_state, ($s) => $s.unreadCount);
 export const panelOpen = derived(_state, ($s) => $s.panelOpen);
+export const centerItems = derived(_state, ($s) => $s.center);
+export const centerHasMore = derived(_state, ($s) => $s.centerHasMore);
 
 // Highest feed id we have already seen. Guards OS notifications from firing for
 // the whole backlog on the first poll: priming sets it without firing; only
@@ -76,6 +91,7 @@ export async function markAllRead(): Promise<void> {
     _state.update((s) => ({
       ...s,
       items: s.items.map((n) => ({ ...n, read: true })),
+      center: s.center.map((n) => ({ ...n, read: true })),
       unreadCount: 0,
     }));
   } catch {
@@ -83,10 +99,61 @@ export async function markAllRead(): Promise<void> {
   }
 }
 
+/** Marks the entries `ids` as read, in the bell feed and on the center page. */
+export async function markRead(ids: number[]): Promise<void> {
+  const session = currentSession();
+  if (!session || !ids.length) return;
+  try {
+    await notificationsApi.markRead(session, ids);
+    const marked = new Set(ids);
+    _state.update((s) => {
+      const known = new Map([...s.center, ...s.items].map((n) => [n.id, n]));
+      const newlyRead = ids.filter((id) => known.get(id)?.read === false).length;
+      const read = (n: NotificationItem) => (marked.has(n.id) ? { ...n, read: true } : n);
+      return {
+        ...s,
+        items: s.items.map(read),
+        center: s.center.map(read),
+        unreadCount: Math.max(0, s.unreadCount - newlyRead),
+      };
+    });
+  } catch {
+    /* ignore — next poll reconciles */
+  }
+}
+
+/**
+ * Loads the center page's list: from the start (`reset`), or the next page after what it holds.
+ * A failed load keeps what is there.
+ */
+export async function loadCenter(reset = true): Promise<void> {
+  const session = currentSession();
+  if (!session) return;
+  const offset = reset ? 0 : get(_state).center.length;
+  const gen = logoutGen;
+  try {
+    const res = await notificationsApi.fetchFeed(session, CENTER_PAGE, offset);
+    // A logout during the request emptied the list; a late page must not refill it. Not
+    // activationGen: the page's onMount load starts before AppShell activates after a login.
+    if (gen !== logoutGen) return;
+    const page = Array.isArray(res) ? res : [];
+    _state.update((s) => {
+      const before = reset ? [] : s.center;
+      const seen = new Set(before.map((n) => n.id));
+      return {
+        ...s,
+        center: [...before, ...page.filter((n) => !seen.has(n.id))],
+        centerHasMore: page.length === CENTER_PAGE,
+      };
+    });
+  } catch {
+    /* keep the current list */
+  }
+}
+
+// Opening the panel marks nothing read any more (R-1078): the "unread" tab would be empty.
 export function togglePanel(): void {
   _state.update((s) => ({ ...s, panelOpen: !s.panelOpen }));
-  // Opening the panel marks the feed as seen.
-  if (get(_state).panelOpen) void markAllRead();
 }
 
 export function closePanel(): void {
@@ -98,6 +165,8 @@ let unlistenStream: UnlistenFn | null = null;
 // Bumped by every activate/deactivate so an in-flight activation whose async awaits are
 // overtaken by a logout can detect it's stale and undo itself instead of leaking (4.41).
 let activationGen = 0;
+// Bumped only by deactivateNotifications (loadCenter's guard).
+let logoutGen = 0;
 
 export async function activateNotifications(): Promise<void> {
   const gen = ++activationGen;
@@ -132,6 +201,7 @@ export async function activateNotifications(): Promise<void> {
 
 export function deactivateNotifications(): void {
   activationGen++; // invalidate any in-flight activateNotifications so it undoes itself (4.41)
+  logoutGen++;
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
@@ -148,5 +218,5 @@ export function deactivateNotifications(): void {
   // Reset priming so a different user's backlog does not trigger OS spam.
   lastSeenId = 0;
   primed = false;
-  _state.set({ items: [], unreadCount: 0, panelOpen: false });
+  _state.set({ ...EMPTY });
 }
