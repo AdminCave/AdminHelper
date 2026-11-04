@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression backup_restore (crown-jewel DR) (2026-11-03) — Task-Ledger
-Status: bereit · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
+Status: aktiv · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
 Spec: Roadmap R-1118 · Quelle: Wochenlauf 2026-11-03-1503
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step "backup_restore (crown-jewel DR)"`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,12 +32,18 @@ Beweis: Box-Lauf 2026-11-04 auf 528b2cf0, `.ah-out/heavy/dr.log` des Worktrees: 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 
+### R3 — Abschlussprüfung: Kommentar von in_inst nennt die Compose-Dateien  [ ]
+Komponente: scripts · Dateien: scripts/tests/backup_restore_test.sh
+Änderung: Der Kommentar zu `in_inst` sagt, dass die Funktion außer den Compose-Dateien des Hosts keine Variable des Tests mitgibt (Fund der Abschlussprüfung, Nit).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Kommentar)
+
 ## Beweis (heavy.sh, 2026-11-03-1503)
 - Schritt `backup_restore (crown-jewel DR)` war auf der ersten Box 3x rot, jedes Mal mit demselben Marker: `FAIL empty host: restore.sh failed`
 - auf einer frischen zweiten VM (Lane w2) ebenfalls rot
 - auf dem letzten PASS-Commit `e74aab15d055f770c75bb455724acd739c02fb67` in derselben Lane grün
 - Artefakte: `/home/kevin/Dev/AdminCave/AdminHelper/.ah-out/weekly/2026-11-03-1503`
-- Fix-Beweis 2026-11-04 auf b6c32143 (Box 3001, Lane reg-backup-restore-dr): `iter.sh all --strict --step "backup_restore (crown-jewel DR)"` → `backup_restore_test: 17 passed, 0 failed`, `run.sh[all]: 1 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`
+- Fix-Beweis 2026-11-04 auf dem Baum von 9e49a9ff (vor dem Amend b6c32143; Box 3001, Lane reg-backup-restore-dr): `iter.sh all --strict --step "backup_restore (crown-jewel DR)"` → `backup_restore_test: 17 passed, 0 failed`, `run.sh[all]: 1 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`
 
 ## Entscheidungen
 - Lane und Test-DB heißen `reg-backup-restore-dr`: `worktree-setup.sh` verlangt einen Slug aus `[a-z0-9-]` mit höchstens 40 Zeichen, und der Ledger-Name von heavy.sh ist 42 lang und trägt `DR`; Teardown mit demselben Slug.
