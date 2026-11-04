@@ -39,6 +39,14 @@ def test_the_traffic_light_at_its_limits(left, days, status):
     assert expiry.status_of(days) == status
 
 
+@pytest.mark.parametrize(
+    ("days", "status"),
+    [(365, "ok"), (364, "warning"), (120, "warning"), (119, "critical"), (-1, "critical")],
+)
+def test_the_root_has_its_own_limits(days, status):
+    assert expiry.status_of(days, root=True) == status
+
+
 def _infra(db, name, not_after):
     db.add(
         InfraCertificate(
@@ -93,6 +101,17 @@ def test_infrastructure_entries_carry_days_and_status(db_session):
     assert rows["gateway"]["subject"] == "CN=gateway"
 
 
+def test_only_the_root_turns_yellow_a_year_ahead(db_session):
+    # R-1021: the roots beside it in a renewal and the intermediates keep the other limits.
+    names = ("root", "root:next", "root:retired", "root:cross", "intermediate:tunnel")
+    for name in names:
+        _infra(db_session, name, NOW + 200 * DAY)
+
+    rows = {r["name"]: r["status"] for r in expiry.infrastructure(db_session, NOW)}
+
+    assert rows == {name: "warning" if name == "root" else "ok" for name in names}
+
+
 def test_an_agent_counts_with_its_newest_certificate_and_its_server_name(db_session):
     db_session.add(Server(id="srv-1", name="web-01", hostname="web-01.example"))
     _, certs = _agent_line(db_session, "srv-1", not_afters=(NOW + 5 * DAY, NOW + 50 * DAY))
@@ -129,7 +148,7 @@ def test_revoked_lines_lines_without_a_certificate_and_devices_are_left_out(db_s
 
 def test_the_admin_gets_the_overview(test_client, db_session, admin_user):
     now = utcnow_naive()
-    _infra(db_session, "root", now + 100 * DAY)
+    _infra(db_session, "root", now + 400 * DAY)
     _agent_line(db_session, "srv-2", not_afters=(now + 10 * DAY,))
     db_session.commit()
 

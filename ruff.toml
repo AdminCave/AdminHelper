@@ -15,7 +15,7 @@
 # nie sieht).
 required-version = "==0.15.20"
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 # docs/examples sind annotierte Beispiel-Skripte, data/ ist Laufzeit.
 extend-exclude = ["docs", "data"]

@@ -10,14 +10,11 @@
 
 -r requirements.in
 
-# <9.2: pytest-alembic 0.13.1 bricht unter pytest 9.2.0 beim Sammeln ab
-# (AttributeError TestCollector._nodeid, R-0916). Zuruecknehmen, sobald
-# pytest-alembic eine mit pytest 9.2 vertraegliche Version hat.
-pytest<9.2
+pytest>=9.2.0
 pytest-cov
 
 # Generatoren (Harness 8b): schema-getriebene API-Tests gegen die eigene
 # OpenAPI, Property-based Tests und die vier eingebauten Alembic-Tests.
-hypothesis==6.168.3
-schemathesis==4.29.0
-pytest-alembic>=0.12
+hypothesis==6.170.14
+schemathesis==4.33.0
+pytest-alembic>=0.13.2

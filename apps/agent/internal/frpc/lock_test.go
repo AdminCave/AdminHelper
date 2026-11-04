@@ -134,7 +134,7 @@ func TestFrpcLockSyncWaits(t *testing.T) {
 	}
 
 	c.goesOn("Sync")
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, tunnelToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if calls.enables != 1 {

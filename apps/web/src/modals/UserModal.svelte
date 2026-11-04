@@ -7,6 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import Checkbox from '$lib/components/ui/Checkbox.svelte';
+  import FormField from '$lib/components/ui/FormField.svelte';
+  import Input from '$lib/components/ui/Input.svelte';
   import { t } from '$lib/i18n';
   import { users } from '$lib/stores/users';
   import { auth, currentUser } from '$lib/stores/auth';
@@ -113,58 +116,37 @@ SPDX-License-Identifier: GPL-3.0-or-later
   width="520px"
   {onClose}
 >
-  <form class="modal-form" onsubmit={onSubmit} id="user-form">
-    <div class="field">
-      <label for="ufUsername">{$t('modal.user.username')}</label>
-      <input id="ufUsername" required disabled={!!editing} bind:value={username} />
-    </div>
-    <div class="field">
-      <label for="ufPassword">
-        {editing ? $t('modal.user.passwordEdit') : $t('modal.user.password')}
-      </label>
-      <input
-        id="ufPassword"
+  <form class="form" onsubmit={onSubmit} id="user-form">
+    <FormField label={$t('modal.user.username')} id="ufUsername">
+      <Input required disabled={!!editing} bind:value={username} />
+    </FormField>
+    <FormField
+      label={editing ? $t('modal.user.passwordEdit') : $t('modal.user.password')}
+      id="ufPassword"
+    >
+      <Input
         type="password"
         required={!editing}
         bind:value={password}
         autocomplete="new-password"
       />
-    </div>
-    <div class="field">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" bind:checked={isAdmin} />
-        <span>{$t('modal.user.adminRights')}</span>
-      </label>
-    </div>
-    <div class="field full">
-      <span
-        class="label-like"
-        style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px"
-      >
-        {$t('modal.user.assignServers')}
-      </span>
-      <div
-        style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:6px"
-      >
+    </FormField>
+    <Checkbox bind:checked={isAdmin} label={$t('modal.user.adminRights')} />
+    <div class="servers">
+      <span class="servers-label">{$t('modal.user.assignServers')}</span>
+      <div class="server-list">
         {#if serverLoadFailed}
-          <span style="color:var(--danger);font-size:12px">
-            {$t('page.users.serverLoadFailed')}
-          </span>
+          <span class="note failed">{$t('page.users.serverLoadFailed')}</span>
         {:else if serverList.length === 0}
-          <span style="color:var(--text-muted);font-size:12px">
-            {$t('page.users.noServers')}
-          </span>
+          <span class="note">{$t('page.users.noServers')}</span>
         {:else}
           {#each serverList as s (s.id)}
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input
-                type="checkbox"
-                checked={selectedServerIds.has(s.id)}
-                onchange={() => toggleServer(s.id)}
-              />
-              <span>{s.name}</span>
-              <span style="color:var(--text-muted);font-size:11px">{s.hostname}</span>
-            </label>
+            <Checkbox
+              checked={selectedServerIds.has(s.id)}
+              label={s.name}
+              description={s.hostname}
+              onChange={() => toggleServer(s.id)}
+            />
           {/each}
         {/if}
       </div>
@@ -172,8 +154,48 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
-    <Button variant="primary" type="submit" disabled={submitting} form="user-form">
+    <Button
+      variant="primary"
+      type="submit"
+      loading={submitting}
+      disabled={submitting}
+      form="user-form"
+    >
       {$t('action.save')}
     </Button>
   {/snippet}
 </Modal>
+
+<style>
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .servers {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .servers-label {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .server-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-height: 180px;
+    overflow-y: auto;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .note {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .failed {
+    color: var(--danger);
+  }
+</style>

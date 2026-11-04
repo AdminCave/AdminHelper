@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
-from app import config, db, pki
+from app import config, db, pki, rotation, storage
 from app.issuer import Issuer
 from app.main import app
 from app.storage import Intermediate
@@ -839,7 +839,8 @@ def _issuer_with(client, monkeypatch, scope: str, days_left: float) -> Intermedi
         m.setattr(pki, "_now", lambda: then)
         root_cert, root_key = pki.build_root_ca()
         cert, key = pki.build_intermediate_ca(scope, root_cert, root_key)
-    inter = Intermediate(scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root_cert))
+    chain = pki.chain_pem(cert, root_cert)
+    inter = Intermediate(scope=scope, cert=cert, key=key, chain=chain, roots=(root_cert,))
     client.app.state.issuer = Issuer({scope: inter}, client.app.state.token_store)
     return inter
 
@@ -1006,7 +1007,12 @@ def _inter_of(
         m.setattr(pki, "_now", lambda: then)
         cert, key = pki.build_intermediate_ca(scope, root_cert, root_key)
     return Intermediate(
-        scope=scope, cert=cert, key=key, chain=pki.chain_pem(cert, root_cert), retired=retired
+        scope=scope,
+        cert=cert,
+        key=key,
+        chain=pki.chain_pem(cert, root_cert),
+        roots=(root_cert,),
+        retired=retired,
     )
 
 
@@ -1031,7 +1037,7 @@ def test_a_leaf_of_a_retired_intermediate_renews_under_the_current_one(
 
     assert r.status_code == 200, r.text
     _leaf(r.json()["cert"]).verify_directly_issued_by(after.cert)
-    assert r.json()["chain"] == after.chain.decode()
+    assert r.json()["chain"] == after.trust_bundle.decode()
     store = register_client.app.state.token_store
     assert store.line_of(_fp(r.json()["cert"])).line_id == store.line_of(_fp(old)).line_id
 
@@ -1073,3 +1079,99 @@ def test_only_a_valid_retired_intermediate_of_its_own_scope_vouches_for_a_leaf(
     )
 
     assert _renew(register_client, leaf).status_code == status
+
+
+# R-1021: `chain` of /enroll and /renew during a root renewal — the issuing intermediate,
+# the other roots to trust, last root.crt (the root :8444 serves); a leaf from before the
+# switch renews under the new root unless its scope was switched as compromised.
+
+ROOT_PW, NEXT_PW = b"pw", b"next-pw"
+
+
+def _boot(client, pki_dir) -> dict[str, Intermediate]:
+    """Serve what a boot of `pki_dir` loads."""
+    inter = storage.ensure_hierarchy(pki_dir, None)
+    _serve(client, *inter.values())
+    return inter
+
+
+def _root_crt(pki_dir) -> x509.Certificate:
+    return pki.cert_from_pem((pki_dir / "root.crt").read_bytes())
+
+
+@pytest.mark.parametrize(
+    ("phase", "expected"),
+    [
+        ("none", ["R"]),
+        ("staged", ["N", "R"]),
+        ("switched", ["R", "N"]),
+        ("switched, access compromised", ["N"]),
+        ("finished", ["N"]),
+    ],
+)
+def test_enroll_hands_out_the_roots_of_the_renewal_phase(client, tmp_path, phase, expected):
+    storage.ensure_hierarchy(tmp_path, ROOT_PW)
+    roots = {"R": _root_crt(tmp_path)}
+    if phase != "none":
+        roots["N"] = rotation.stage_root(tmp_path, NEXT_PW)
+    if phase.startswith("switched") or phase == "finished":
+        compromised = frozenset({"access"}) if "compromised" in phase else frozenset()
+        rotation.switch_root(tmp_path, NEXT_PW, ROOT_PW, compromised=compromised)
+    if phase == "finished":
+        rotation.finish_root(tmp_path)
+    inter = _boot(client, tmp_path)
+    client.app.state.token_store.mint("t", EnrollmentGrant("agent-07", "tunnel"))
+
+    r = client.post("/enroll", json={"token": "t", "csr": _csr_pem("agent-07")})
+
+    assert r.status_code == 200, r.text
+    chain = x509.load_pem_x509_certificates(r.json()["chain"].encode())
+    assert chain == [inter["tunnel"].cert, *(roots[name] for name in expected)]
+    assert chain[-1] == _root_crt(tmp_path)
+    _leaf(r.json()["cert"]).verify_directly_issued_by(chain[0])
+
+
+@pytest.mark.parametrize(
+    ("compromised", "status"), [(frozenset(), 200), (frozenset({"access"}), 403)]
+)
+def test_a_leaf_from_before_the_root_switch_renews_under_the_new_root(
+    register_client, tmp_path, compromised, status
+):
+    storage.ensure_hierarchy(tmp_path, ROOT_PW)
+    old_root = _root_crt(tmp_path)
+    rotation.stage_root(tmp_path, NEXT_PW)
+    _boot(register_client, tmp_path)
+    old = _enroll_pem(register_client, "t1", EnrollmentGrant("alice", "access"))
+    rotation.switch_root(tmp_path, NEXT_PW, ROOT_PW, compromised=compromised)
+    after = _boot(register_client, tmp_path)
+
+    r = _renew(register_client, old)
+
+    assert r.status_code == status, r.text
+    if status == 200:
+        _leaf(r.json()["cert"]).verify_directly_issued_by(after["access"].cert)
+        chain = x509.load_pem_x509_certificates(r.json()["chain"].encode())
+        assert chain == [after["access"].cert, old_root, _root_crt(tmp_path)]
+        store = register_client.app.state.token_store
+        assert store.line_of(_fp(r.json()["cert"])).line_id == store.line_of(_fp(old)).line_id
+
+
+@pytest.mark.parametrize(
+    "moment, status",
+    [("before its start", 403), ("its last second", 200), ("after its end", 403)],
+)
+def test_renew_takes_the_presented_certificate_only_within_its_lifetime(
+    client, monkeypatch, moment, status
+):
+    pem = _enroll(client, "agent-07", "tunnel")
+    leaf = _leaf(pem)
+    second = datetime.timedelta(seconds=1)
+    at = {
+        "before its start": leaf.not_valid_before_utc - second,
+        "its last second": leaf.not_valid_after_utc,
+        "after its end": leaf.not_valid_after_utc + second,
+    }[moment]
+    monkeypatch.setattr(pki, "_now", lambda: at)
+
+    r = client.post("/renew", json={"csr": _csr_pem("ignored")}, headers=_renew_headers(pem))
+    assert r.status_code == status, r.text

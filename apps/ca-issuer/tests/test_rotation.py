@@ -10,6 +10,7 @@ import datetime
 import errno
 import fcntl
 import hashlib
+import json
 import os
 
 import pytest
@@ -366,3 +367,90 @@ def test_an_unknown_compromised_scope_changes_nothing(tmp_path):
         rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"acces"}))
 
     assert _snapshot(tmp_path) == before
+
+
+# --- During a root renewal (R-1021) -------------------------------------------
+
+NEXT_PW = b"next-pw"
+
+
+def _cert(pki_dir, name: str) -> x509.Certificate:
+    return pki.cert_from_pem((pki_dir / name).read_bytes())
+
+
+def test_a_rotation_while_a_root_is_staged_stays_under_the_old_root(monkeypatch, tmp_path):
+    _booted(monkeypatch, tmp_path, days_ago=10)
+    old_root = _cert(tmp_path, "root.crt")
+    rotation.stage_root(tmp_path, NEXT_PW)
+    staged = {n: (tmp_path / n).read_bytes() for n in ("root-next.crt", "root-next.key.enc")}
+
+    rotated = rotation.rotate_intermediates(tmp_path, PW)
+
+    for r in rotated:
+        assert pki.intermediate_problem(r.new, r.scope, old_root) is None
+        assert _retired_file(tmp_path, r.scope) == [r.old]
+    assert {n: (tmp_path / n).read_bytes() for n in staged} == staged
+    assert _cert(tmp_path, "root.crt") == old_root
+
+
+def test_a_rotation_after_the_switch_keeps_what_is_under_both_roots(monkeypatch, tmp_path):
+    first = _booted(monkeypatch, tmp_path, days_ago=20)
+    _at(monkeypatch, 20, lambda: rotation.stage_root(tmp_path, NEXT_PW))
+    switched = _at(monkeypatch, 10, lambda: rotation.switch_root(tmp_path, NEXT_PW, PW))
+    before = (tmp_path / "root-switch.json").read_bytes()
+
+    # root.key.enc holds the key of the new root now, under its passphrase.
+    with pytest.raises(rotation.RotationError, match="wrong passphrase"):
+        rotation.rotate_intermediates(tmp_path, PW)
+    rotated = rotation.rotate_intermediates(tmp_path, NEXT_PW)
+
+    for r, under_n in zip(rotated, switched.rotated, strict=True):
+        assert pki.intermediate_problem(r.new, r.scope, switched.root) is None
+        assert r.old == under_n.new
+        assert _retired_file(tmp_path, r.scope) == [under_n.new, first[r.scope].cert]
+    assert (tmp_path / "root-switch.json").read_bytes() == before
+
+
+def test_a_compromised_rotation_after_the_switch_names_its_scopes_in_the_record(
+    monkeypatch, tmp_path
+):
+    before = _booted(monkeypatch, tmp_path, days_ago=20)
+    _at(monkeypatch, 20, lambda: rotation.stage_root(tmp_path, NEXT_PW))
+    _at(monkeypatch, 10, lambda: rotation.switch_root(tmp_path, NEXT_PW, PW))
+
+    rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
+    record = json.loads((tmp_path / "root-switch.json").read_bytes())
+    assert (record["compromised"], record["drop_retired_root"]) == (["tunnel"], True)
+    # A partial restore puts the intermediate under the old root back into the file.
+    (tmp_path / "tunnel-retired.pem").write_bytes(pki.cert_to_pem(before["tunnel"].cert))
+    assert storage.ensure_hierarchy(tmp_path, None)["tunnel"].retired == ()
+
+    # A later run adds its scope to those already named.
+    rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"access"}))
+    record = json.loads((tmp_path / "root-switch.json").read_bytes())
+    assert record["compromised"] == ["access", "tunnel"]
+
+
+def test_a_compromised_rotation_after_the_switch_drops_the_old_root_first(monkeypatch, tmp_path):
+    _booted(monkeypatch, tmp_path, days_ago=20)
+    _at(monkeypatch, 20, lambda: rotation.stage_root(tmp_path, NEXT_PW))
+    _at(monkeypatch, 10, lambda: rotation.switch_root(tmp_path, NEXT_PW, PW))
+    real_replace = os.replace
+
+    def replace(src, dst):
+        if os.path.basename(dst) == "tunnel-retired.pem":
+            raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+        real_replace(src, dst)
+
+    # Stopped at the first retired file, the record already says R leaves `chain`.
+    with monkeypatch.context() as m:
+        m.setattr(os, "replace", replace)
+        with pytest.raises(rotation.RotationError, match=r"tunnel-retired\.pem"):
+            rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
+    record = json.loads((tmp_path / "root-switch.json").read_bytes())
+    assert record["drop_retired_root"] is True and record["compromised"] == ["tunnel"]
+
+    rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
+
+    assert _retired_file(tmp_path, "tunnel") == []
+    assert json.loads((tmp_path / "root-switch.json").read_bytes()) == record

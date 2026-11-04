@@ -36,9 +36,7 @@ case "$AH_OUT_DIR" in /*) ;; *) AH_OUT_DIR="$PWD/$AH_OUT_DIR" ;; esac
 export ITEST_WEB_URL="$E2E_SERVER_URL" ITEST_ADMIN_PW="$E2E_ADMIN_PW"
 cd "$E2E_REPO_ROOT/apps/web" || exit 1
 # run.sh's npm_ci_if_stale, for a run of this script on its own.
-if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then
-  npm ci --no-audit --no-fund || exit 1
-fi
+e2e_npm_ready . || exit 1
 npx playwright install --with-deps chromium || exit 1
 echo "[web-live] Playwright project live against $ITEST_WEB_URL"
 PLAYWRIGHT_JUNIT_OUTPUT_FILE="$AH_OUT_DIR/junit/web-live.xml" npx playwright test --project live

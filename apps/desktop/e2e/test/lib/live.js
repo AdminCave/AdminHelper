@@ -347,6 +347,36 @@ export async function openRowByName(rowSel, nameSel, name) {
   );
 }
 
+// The rows of the connections page; a single click selects, a double click connects.
+export const CONN_ROW = '[data-testid="conn-row"]';
+
+// Connect the connection row whose name matches: a double click, dispatched in the page like
+// jsClick, so WebKitWebDriver's pointer actions play no part.
+export async function connectByName(name) {
+  await browser.waitUntil(
+    async () => {
+      try {
+        for (const row of await $$(CONN_ROW)) {
+          if ((await textContentOf(await row.$(".conn-name"))) === name) {
+            await browser.execute(
+              (node) => node.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+              row,
+            );
+            return true;
+          }
+        }
+      } catch {
+        return false;
+      }
+      return false;
+    },
+    {
+      timeout: 15000,
+      timeoutMsg: `connection "${name}" not found/connectable (${CONN_ROW})`,
+    },
+  );
+}
+
 // Click the item (e.g. a server card) whose name matches. The name is read through
 // textContentOf: the picker cuts its names off with an ellipsis.
 export async function clickItemByName(itemSel, nameSel, name) {

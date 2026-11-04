@@ -570,7 +570,7 @@ services:
         condition: service_healthy
 
   victoria:
-    image: victoriametrics/victoria-metrics:v1.144.0@sha256:dc030542eb0cd262287c9ec32e5867f8dcccc0efd5906c10f7fc8176c53d34d7
+    image: victoriametrics/victoria-metrics:v1.155.0@sha256:f60dc268b54ecf87f6e09d740c2b732838aa9193090cc741417c9f6386a130df
     environment:
       - TZ=${TZ:-Europe/Berlin}
     volumes:

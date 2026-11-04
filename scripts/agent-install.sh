@@ -8,7 +8,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \
 #     | sudo bash -s -- --server https://srm.example.com \
-#         --token <provision-token> --server-id <id> --ca-fp <sha256>
+#         --server-id <id> --ca-fp <sha256>
+#
+# Without --token the script asks for the provisioning token on /dev/tty, hidden,
+# so it stays out of the shell history and the one-liner. Unattended rollouts
+# (Ansible, cloud-init) pass --token <provision-token> instead.
 #
 # Trust model (fail-closed at every step):
 #   * Packages: the server's repo plane (:8445) is served over an UNVERIFIED

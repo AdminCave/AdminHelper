@@ -16,15 +16,19 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
-from app import pki
+from app import main, pki, storage
 from app.storage import Intermediate, ensure_frps_cert
+from tests import renewal
 
 
 def _tunnel_intermediate() -> tuple[Intermediate, x509.Certificate]:
     root_cert, root_key = pki.build_root_ca()
     inter_cert, inter_key = pki.build_intermediate_ca("tunnel", root_cert, root_key)
     chain = pki.chain_pem(inter_cert, root_cert)
-    return Intermediate(scope="tunnel", cert=inter_cert, key=inter_key, chain=chain), root_cert
+    inter = Intermediate(
+        scope="tunnel", cert=inter_cert, key=inter_key, chain=chain, roots=(root_cert,)
+    )
+    return inter, root_cert
 
 
 def test_provisions_serverauth_leaf_under_tunnel(tmp_path):
@@ -70,8 +74,13 @@ def test_ca_trusts_access_visitor_certs_with_extra_trust(tmp_path):
     root_cert, root_key = pki.build_root_ca()
     tunnel_cert, tunnel_key = pki.build_intermediate_ca("tunnel", root_cert, root_key)
     access_cert, access_key = pki.build_intermediate_ca("access", root_cert, root_key)
-    tunnel = Intermediate("tunnel", tunnel_cert, tunnel_key, pki.chain_pem(tunnel_cert, root_cert))
-    access = Intermediate("access", access_cert, access_key, pki.chain_pem(access_cert, root_cert))
+    roots = (root_cert,)
+    tunnel = Intermediate(
+        "tunnel", tunnel_cert, tunnel_key, pki.chain_pem(tunnel_cert, root_cert), roots
+    )
+    access = Intermediate(
+        "access", access_cert, access_key, pki.chain_pem(access_cert, root_cert), roots
+    )
 
     ensure_frps_cert(tmp_path, tunnel, "frp.example", extra_trust=(access,))
 
@@ -143,9 +152,10 @@ def _generations(scope: str, root_cert, root_key) -> tuple[Intermediate, Interme
     the retired one like ensure_hierarchy does."""
     old_cert, old_key = pki.build_intermediate_ca(scope, root_cert, root_key)
     new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key)
-    old = Intermediate(scope, old_cert, old_key, pki.chain_pem(old_cert, root_cert))
+    roots = (root_cert,)
+    old = Intermediate(scope, old_cert, old_key, pki.chain_pem(old_cert, root_cert), roots)
     chain = pki.chain_pem(new_cert, root_cert)
-    return old, Intermediate(scope, new_cert, new_key, chain, retired=(old_cert,))
+    return old, Intermediate(scope, new_cert, new_key, chain, roots, retired=(old_cert,))
 
 
 def _der(certs) -> list[bytes]:
@@ -236,3 +246,118 @@ def test_ca_accepts_only_what_a_listed_intermediate_issued(tmp_path):
     foreign = _client_leaf(dropped_cert, dropped_key, "tunnel")
     with pytest.raises(VerificationError):
         verifier.verify(foreign, [dropped_cert, root_cert])
+
+
+# --- R-1021: what frps holds in each phase of a root renewal ------------------
+# T/A: the current tunnel/access intermediates, T0/A0: those from before the switch,
+# R: the old root, N: the new root, X: the cross certificate (N signed by R).
+
+_FRPS_TAILS = {
+    # (phase, compromised scope): (after the leaf in frps.crt, ca.crt)
+    ("staged", "access"): (["T"], ["T", "A"]),
+    ("switched", "access"): (["T", "X"], ["T", "T0", "A", "A0"]),
+    ("no-cross", "access"): (["T"], ["T", "T0", "A", "A0"]),
+    ("compromised", "tunnel"): (["T", "X"], ["T", "A", "A0"]),
+    ("compromised", "access"): (["T", "X"], ["T", "T0", "A"]),
+    ("expired", "access"): (["T"], ["T", "A"]),
+    ("finished", "access"): (["T"], ["T", "A"]),
+}
+
+
+def _frps_named(r, names) -> list[x509.Certificate]:
+    certs = {"R": r.old_root, "N": r.new_root, "X": r.cross}
+    for name, scope in (("T", "tunnel"), ("A", "access")):
+        certs[name] = r.after[scope].cert
+        certs[f"{name}0"] = r.before[scope].cert
+    return [certs[name] for name in names]
+
+
+def _frps_renewed(monkeypatch, tmp_path, phase, compromised="access"):
+    r = renewal.renewed(monkeypatch, tmp_path / "pki", phase, compromised=compromised)
+    out = tmp_path / "frps"
+    ensure_frps_cert(out, r.after["tunnel"], "frp.example", extra_trust=(r.after["access"],))
+    return r, out
+
+
+@pytest.mark.parametrize(("phase", "compromised"), list(_FRPS_TAILS))
+def test_the_frps_material_follows_the_phase_of_a_root_renewal(
+    monkeypatch, tmp_path, phase, compromised
+):
+    r, out = _frps_renewed(monkeypatch, tmp_path, phase, compromised)
+
+    presented, anchors = _FRPS_TAILS[(phase, compromised)]
+    certs = x509.load_pem_x509_certificates((out / "frps.crt").read_bytes())
+    assert _der(certs[1:]) == _der(_frps_named(r, presented))
+    certs[0].verify_directly_issued_by(r.after["tunnel"].cert)
+    bundle = x509.load_pem_x509_certificates((out / "ca.crt").read_bytes())
+    assert _der(bundle) == _der(_frps_named(r, anchors))
+
+
+def _frpc_reaches(anchors, frps_crt) -> bool:
+    # Like Go's crypto/tls in frpc: every certificate in trustedCaFile is an anchor.
+    chain = x509.load_pem_x509_certificates(frps_crt.read_bytes())
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=1)
+    verifier = (
+        PolicyBuilder()
+        .store(Store(list(anchors)))
+        .time(now)
+        .build_server_verifier(x509.DNSName("frp.example"))
+    )
+    try:
+        verifier.verify(chain[0], chain[1:])
+    except VerificationError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(("phase", "old_frpc"), [("switched", True), ("no-cross", False)])
+def test_after_the_switch_an_frpc_enrolled_under_the_old_root_reaches_frps_over_x(
+    monkeypatch, tmp_path, phase, old_frpc
+):
+    r, out = _frps_renewed(monkeypatch, tmp_path, phase)
+
+    # The chain an frpc got at its enrollment before the stage: [T0, R].
+    assert _frpc_reaches([r.before["tunnel"].cert, r.old_root], out / "frps.crt") is old_frpc
+    assert _frpc_reaches([r.new_root], out / "frps.crt")
+
+
+def _boot_env(monkeypatch, tmp_path, extra_sans: str = "") -> None:
+    monkeypatch.setenv("DOMAIN", "gw.example")
+    monkeypatch.setenv("EXTRA_SANS", extra_sans)
+    monkeypatch.setenv("CA_FRPS_SERVER_ADDR", "")
+    monkeypatch.setenv("CA_FRPS_EXTRA_SANS", "")
+    monkeypatch.setenv("CA_TRUST_DIR", "")
+    monkeypatch.setenv("CA_GATEWAY_CERT_DIR", str(tmp_path / "gw"))
+    monkeypatch.setenv("CA_FRPS_CERT_DIR", str(tmp_path / "frps"))
+
+
+def _dns_names(path) -> list[str]:
+    leaf = x509.load_pem_x509_certificates(path.read_bytes())[0]
+    san = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    return san.get_values_for_type(x509.DNSName)
+
+
+def test_boot_gives_only_the_frps_leaf_the_frps_tls_name(monkeypatch, tmp_path):
+    # R-1112: frpc asks for the name, so the gateway leaf (same root, same DOMAIN) must lack it,
+    # even when EXTRA_SANS names it.
+    inter = storage.ensure_hierarchy(tmp_path / "pki", b"pw")
+    _boot_env(monkeypatch, tmp_path, extra_sans="frps.adminhelper.invalid")
+
+    main.provision_boot_material(inter)
+
+    frps_names = _dns_names(tmp_path / "frps" / "frps.crt")
+    assert "frps.adminhelper.invalid" in frps_names
+    assert "gw.example" in frps_names
+    assert "frps.adminhelper.invalid" not in _dns_names(tmp_path / "gw" / "gateway-fullchain.pem")
+
+
+def test_boot_remints_an_frps_leaf_without_the_frps_tls_name(monkeypatch, tmp_path):
+    # An frps leaf from before R-1112 carries DOMAIN only; the next boot replaces it.
+    inter = storage.ensure_hierarchy(tmp_path / "pki", b"pw")
+    _boot_env(monkeypatch, tmp_path)
+    ensure_frps_cert(tmp_path / "frps", inter["tunnel"], "gw.example")
+    assert "frps.adminhelper.invalid" not in _dns_names(tmp_path / "frps" / "frps.crt")
+
+    main.provision_boot_material(inter)
+
+    assert "frps.adminhelper.invalid" in _dns_names(tmp_path / "frps" / "frps.crt")

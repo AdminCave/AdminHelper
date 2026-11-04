@@ -1234,13 +1234,16 @@ rc=0
 bash "$ROOT/scripts/diagnostics.sh" --bogus > /dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || { echo "(h) --bogus: exit $rc, expected 2" >&2; fail=1; }
 
-# --- (r) backup.sh holds the same dotenv tokenizer -------------------------------------
-# Both scripts ship as files of their own, so each holds the text; it must not drift.
+# --- (r) backup.sh and restore.sh hold the same dotenv tokenizer -----------------------
+# The scripts ship as files of their own, so each holds the text; it must not drift.
 tok_of() { sed -n '/^# >>> dotenv tokenizer/,/^# <<< dotenv tokenizer$/p' "$1"; }
 tok_d=$(tok_of "$ROOT/scripts/diagnostics.sh")
 tok_b=$(tok_of "$ROOT/scripts/backup.sh")
+tok_r=$(tok_of "$ROOT/scripts/restore.sh")
 { grep -q "^ENV_TOK='" <<<"$tok_d" && grep -q '^# <<< dotenv tokenizer$' <<<"$tok_d" && [ "$tok_d" = "$tok_b" ]; } \
     || { echo "(r) the dotenv tokenizer of backup.sh differs from that of diagnostics.sh" >&2; fail=1; }
+[ "$tok_d" = "$tok_r" ] \
+    || { echo "(r) the dotenv tokenizer of restore.sh differs from that of diagnostics.sh" >&2; fail=1; }
 
 if [ "$fail" != 0 ]; then
     echo "diagnostics_test: FAILED" >&2

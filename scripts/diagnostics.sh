@@ -190,7 +190,7 @@ SED
         done
 }
 
-# >>> dotenv tokenizer: diagnostics.sh and backup.sh hold the same text, a test keeps it so
+# >>> dotenv tokenizer: backup.sh, diagnostics.sh and restore.sh hold the same text, a test keeps it so
 # The whitespace of a .env line as compose reads it, EREs for LC_ALL=C awk with the
 # bytes spelled out. ENV_WS is what Go's unicode.IsSpace calls whitespace: ASCII
 # whitespace and the UTF-8 forms of NEL, NBSP, OGHAM SPACE MARK, EN QUAD to HAIR SPACE,
