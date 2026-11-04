@@ -37,10 +37,12 @@ Review: approve (.ah-out/review/kern-design-3/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Ansible.test.ts src/lib/stores/ansible.test.ts src/lib/stores/ansible.pipeline.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 
-### T4 — Monitoring: Tabs und Übersicht (R-1064)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/components/monitoring/MonitoringOverview.svelte, apps/desktop/ui/src/components/monitoring/MonSummaryCards.svelte, apps/desktop/ui/src/components/monitoring/MonServerList.svelte, apps/desktop/ui/src/components/monitoring/MonServerListItem.svelte, apps/desktop/ui/src/components/monitoring/MonServerGrid.svelte, apps/desktop/ui/src/components/monitoring/MonitoringOverview.test.ts, apps/desktop/ui/src/components/monitoring/MonServerGrid.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+### T4 — Monitoring: Tabs und Übersicht (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/components/monitoring/MonitoringOverview.svelte, apps/desktop/ui/src/components/monitoring/MonSummaryCards.svelte, apps/desktop/ui/src/components/monitoring/MonServerList.svelte, apps/desktop/ui/src/components/monitoring/MonServerListItem.svelte, apps/desktop/ui/src/components/monitoring/MonServerGrid.svelte, apps/desktop/ui/src/components/monitoring/MonitoringOverview.test.ts, apps/desktop/ui/src/components/monitoring/MonServerGrid.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/pages/Monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c399b458 2026-11-04T16:04:28+01:00
+Review: approve (.ah-out/review/kern-design-3/T4.verdict.json)
 Änderung: Tabs über `ui/Tabs` (Zähler Alerts und Templates aus dem Store, `.mon-tabs` als Wrapper bleibt), Übersicht nach `monitoring.jsx`: Banner „Server ohne Checks“, Summary-Karten, `Segmented` Liste/Kacheln statt `.mon-view-toggle`, Hinweis „Auto-Refresh 30 s“, Liste als Leiste mit `Dot`, Kacheln mit `MonHeartbeatBar`. Zehn Dateien, weil Übersicht, Liste und Kacheln ein Layout teilen.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringOverview.test.ts src/components/monitoring/MonServerGrid.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringOverview.test.ts src/components/monitoring/MonServerGrid.test.ts src/pages/Monitoring.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 
 ### T5 — Monitoring: Server-Dashboard und Sektionen (R-1064)  [ ]
@@ -83,3 +85,8 @@ Doku: diese Task
 - 2026-11-04 T2: Provisionierung zeigt Befehle per `CodeBlock copyable={false}`, der Kopierknopf bleibt eigener erster Knopf der `.cmd-box` — die Status-Meldung und das Ausblenden des Tokens aus `copyText` bleiben erhalten.
 - 2026-11-04 T7: Dateien um `connection-crud`, `tunnel-crud`, `tunnel-create`, `tunnel-start` erweitert — sie drücken `.conn-toolbar/.tun-toolbar .btn.primary`, das mit `Button` zu `.ui-btn-primary` wird.
 - 2026-11-04 T3: keine automatische Playbook-Auswahl (Detail zeigt bis zur Wahl einen Hinweis); Bearbeiten im Detail-Kopf statt Hover-Overlay; Rail-Knopf „+ Playbook“ statt „Hochladen“, weil die Funktion Anlegen per Modal ist; ungenutzte Schlüssel ansible.step.* und der globale Ansible-Block in app.css entfallen.
+- 2026-11-04 T3 (Nachtrag aus dem Review): Die Server-Checkbox der Ansible-Ziele zeigt Name und Host, aber keine Server-Tags mehr — wer nach Tags zielt, nutzt den Tag-Modus mit seinen Chips.
+- 2026-11-04 T4: Die Tab-Zähler für Alerts und Templates erscheinen nur bei einer nicht leeren Liste: beide laden erst auf ihrem Tab, eine 0 hieße oft nur „noch nicht geladen“.
+- 2026-11-04 T4: Die Serversuche wandert aus der Liste in die Werkzeugleiste der Übersicht und filtert Liste und Kacheln gleich (vorher nur die Liste; die Kacheln lasen denselben Store ohne Eingabefeld).
+- 2026-11-04 T4: Die globalen Regeln `.mon-tab`, `.mon-tabs`, `.mon-summary-*`, `.mon-split*`, `.mon-srv-*`, `.mon-filter-search` und `.section-toolbar` sind gelöscht, die Komponenten tragen ihren Stil selbst. `.mon-tab` traf nebenbei das `<div class="mon-tab">` in `infra/tabs/MonitoringTab.svelte` (Button-Polster auf einem Container); das fällt damit weg.
+- 2026-11-04 T4: Das Banner „Server ohne Monitoring“ nennt die betroffenen Server hinter dem Zähltext (eigenes Element, damit der Zähltext als Anker bleibt); Fehler- und Hinweisbanner sind `ui/Callout`.
