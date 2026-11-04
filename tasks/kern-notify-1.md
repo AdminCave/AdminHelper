@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Notific
 Doku: → T5
 Abhängt von: T1
 
-### T4 — Center-Seite (R-1078)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Notifications.svelte, apps/desktop/ui/src/pages/Notifications.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T4 — Center-Seite (R-1078)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Notifications.svelte, apps/desktop/ui/src/pages/Notifications.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/AppShell.shell.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2428b5db 2026-11-04T18:27:53+01:00
+Review: approve (.ah-out/review/kern-notify-1/T4.verdict.json)
 Änderung: Neue Seite `#/notifications` (nur mit Server-Sitzung, nicht in der Sidebar, Eintrag in der Befehlspalette) nach `notifications.jsx` (NotificationsView): Leiste Postfach (Posteingang, Offen, Alle), Schweregrad und Kategorie mit Zählern; Liste mit Suche, Tagesgruppen und Mehrfachauswahl „Als gelesen markieren“; Detail mit Feldern und „Als gelesen markieren“; „Mehr laden“. Leiste und Detail über Container-Queries. Neuer Seitentest. SPDX in den neuen Dateien.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Notifications.test.ts src/components/AppShell.shell.test.ts
 Doku: → T5
@@ -62,3 +64,4 @@ Doku: diese Task
 - T2: Die neue Meldung erscheint immer (Status und Fehler antworten auf eine Aktion, die Spec lässt `showStatus`/`reportError` unverändert). Ein voller Stapel wirft unter den älteren zuerst den ältesten Toast, der von selbst ginge, stehen alle, den ältesten; eine neue Benachrichtigung, die von selbst ginge, wird dann selbst verworfen und gezählt. So verdrängt eine Info-Flut keinen kritischen Toast; „+N weitere“ zählt nur verdrängte Benachrichtigungen (sie bleiben in Glocke und Feed), bis der Stapel leer ist.
 - T2: Die Weiche liegt immer an, nicht nur mit OS-Benachrichtigungen; `dictionaries.ts` per set-files dazu (Texte „Öffnen“, „+N weitere“, „Nicht stören bis …“).
 - T3: Badge in Akzentfarbe, rot nur bei ungelesenem Kritischen; Kategorie roh (die Kategorien haben keine Übersetzung). Der Schlüssel `notifications.empty` weicht `notifications.empty.<tab>`. Das Menü bietet „Beenden“ nur bei aktivem Nicht stören; der Hinweis trägt es zusätzlich als Knopf.
+- T4: Die Seite führt Center-Liste und Feed der Glocke zusammen (die Kopie im Feed ist die frischere), damit ein Eintrag, der nach dem Laden kam und per Toast geöffnet wird, im Detail steht. Die Seitenleiste markiert auf der Seite nichts; Titel „Benachrichtigungen“; Palette-Eintrag nur mit Server-Session. Mehrfachauswahl zählt und sendet nur ungelesene, die der Filter gerade zeigt. „Mehr laden“ steht auch unter leerer Trefferliste; Zeitstempel in der App-Sprache. Das Detail erscheint erst ab 900 px Breite (schmaler: nur die Liste, GUI-Lauf prüft das). `AppShell.shell.test.ts` per set-files dazu.

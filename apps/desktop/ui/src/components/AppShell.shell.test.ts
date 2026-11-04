@@ -79,6 +79,7 @@ vi.mock('../pages/Connections.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Infrastructure.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Monitoring.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Ansible.svelte', () => ({ default: vi.fn() }));
+vi.mock('../pages/Notifications.svelte', () => ({ default: vi.fn() }));
 vi.mock('./ConnectionEditor.svelte', () => ({ default: vi.fn() }));
 vi.mock('./PasswordPrompt.svelte', () => ({ default: vi.fn() }));
 vi.mock('./SettingsModal.svelte', () => ({ default: vi.fn() }));
@@ -92,6 +93,8 @@ import { loadContext } from '$lib/stores/workspace';
 import { replace } from '$lib/router';
 import AppShell from './AppShell.svelte';
 import StatusFooter from './StatusFooter.svelte';
+import Notifications from '../pages/Notifications.svelte';
+import Dashboard from '../pages/Dashboard.svelte';
 
 const settingsState = settings as unknown as Writable<Partial<Settings> | null>;
 const sessionState = session as unknown as Writable<AuthSession | null>;
@@ -163,6 +166,27 @@ describe('AppShell: sidebar', () => {
     const view = render(AppShell);
     const current = view.container.querySelector('.sidebar-nav [aria-current="page"]');
     expect((current as HTMLElement | null)?.dataset.nav).toBe('dashboard');
+  });
+
+  it('shows the center page in a server session, without a sidebar entry; else the dashboard', async () => {
+    replace('/notifications/4');
+    const local = render(AppShell);
+    expect(Notifications).not.toHaveBeenCalled();
+    expect(local.container.querySelector('.page-title')?.textContent).toBe(tNow('nav.dashboard'));
+    cleanup();
+
+    await serverSession();
+    const view = render(AppShell);
+    expect(Notifications).toHaveBeenCalled();
+    expect(view.container.querySelector('.page-title')?.textContent).toBe(
+      tNow('notifications.title'),
+    );
+    expect(view.container.querySelector('.sidebar-nav [aria-current="page"]')).toBeNull();
+    expect(view.container.querySelector('.sidebar-nav .active')).toBeNull();
+    expect(view.container.querySelector('[data-nav="notifications"]')).toBeNull();
+    vi.mocked(Dashboard).mockClear();
+    replace('/dashboard');
+    await waitFor(() => expect(Dashboard).toHaveBeenCalled());
   });
 
   it('collapses and expands with the button, which says what it will do', async () => {
@@ -314,6 +338,26 @@ describe('AppShell: command palette', () => {
     const labels = paletteLabels();
     expect(labels).toHaveLength(9);
     expect(labels).toContain(tNow('nav.monitoring'));
+  });
+
+  it('offers the center page only in a server session', async () => {
+    render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    const input = document.querySelector<HTMLInputElement>('.palette-input')!;
+    await fireEvent.input(input, { target: { value: tNow('notifications.title') } });
+    expect(paletteLabels()).toEqual([]);
+    cleanup();
+
+    await serverSession();
+    render(AppShell);
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await tick();
+    const again = document.querySelector<HTMLInputElement>('.palette-input')!;
+    await fireEvent.input(again, { target: { value: tNow('notifications.title') } });
+    expect(paletteLabels()).toEqual([tNow('notifications.title')]);
+    await fireEvent.keyDown(again, { key: 'Enter' });
+    await waitFor(() => expect(location.hash).toBe('#/notifications'));
   });
 
   it('Enter on a connection connects through the usual path, on a page navigates', async () => {
