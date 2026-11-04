@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-9 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-9 · Review: am Ende
+Status: bereit · Branch: feature/kern-ca-9 · Review: am Ende
 Spec: docs/features/kern-ca-9.md (Roadmap R-1121)
 Heavy: linux-full — Server-API und Desktop-Tunnel-Journey (tunnel-start startet den Visitor gegen frps)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,8 +29,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: → T3
 
-### T3 — Doku DE+EN und Changelog (R-1121)  [ ]
+### T3 — Doku DE+EN und Changelog (R-1121)  [x]
 Komponente: server · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-ca-9.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @aa2b9cf8 2026-11-04T17:31:14+01:00
+Review: am Ende (Branch-Review)
 Änderung: Tunnel-PKI: auch der Desktop-Visitor verlangt den Namen (ab einem Server, der ihn liefert); `visitor-bundle` liefert `{ toml, pki, frps_tls_name }`; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py
 Doku: diese Task
