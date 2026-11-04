@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression backup_restore (crown-jewel DR) (2026-11-03) — Task-Ledger
-Status: geplant · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
+Status: aktiv · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
 Spec: Roadmap R-1118 · Quelle: Wochenlauf 2026-11-03-1503
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step "backup_restore (crown-jewel DR)"`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -25,3 +25,6 @@ Doku: keine (Verhalten wie dokumentiert; der Fehler kam nach v0.46.0 und ist nic
 - auf einer frischen zweiten VM (Lane w2) ebenfalls rot
 - auf dem letzten PASS-Commit `e74aab15d055f770c75bb455724acd739c02fb67` in derselben Lane grün
 - Artefakte: `/home/kevin/Dev/AdminCave/AdminHelper/.ah-out/weekly/2026-11-03-1503`
+
+## Entscheidungen
+- Lane und Test-DB heißen `reg-backup-restore-dr`: `worktree-setup.sh` verlangt einen Slug aus `[a-z0-9-]` mit höchstens 40 Zeichen, und der Ledger-Name von heavy.sh ist 42 lang und trägt `DR`; Teardown mit demselben Slug.
