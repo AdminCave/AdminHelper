@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-8 — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-8 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ca-8 · Review: pro Task
 Spec: docs/features/kern-ca-8.md (Roadmap R-1112)
 Heavy: scenario --tunnel — FRP-Tunnel-Datenpfad und PKI (frps-Leaf, frpc von Agent und Visitor über drei Hosts); ask-first
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -47,3 +47,4 @@ Doku: docs/admin/frp-tunnel.html + EN · changelog.d/kern-ca-8.md
 
 ## Entscheidungen
 - T1: nennt `DOMAIN` selbst den frps-Namen, bricht der Start ab (`main.py`, RuntimeError); nennt ihn nur `EXTRA_SANS`, lässt der ca-issuer ihn mit Warnung weg (Spec, Trade-offs). Der Name wird über `config.frps_leaf_sans()` angehängt, `frps_extra_sans()` behält seine Bedeutung (Fallback-Test `test_config.py`). Beide Prüfungen erkennen auch `*.adminhelper.invalid` (`config.covers_frps_tls_name`, Fund der Task-Prüfung).
+- Heavy 2026-11-04 auf eda2f144 (Kevins Ja): `multibox.sh --tunnel` → `multibox: 32 ok, 0 failed, 1 skipped`; der Skip ist der MTLS_ENFORCE-Wächter (ohne `--enforce` erwartet). frps nimmt den festen TLS-Namen an; die Szenario-VMs sind abgebaut.
