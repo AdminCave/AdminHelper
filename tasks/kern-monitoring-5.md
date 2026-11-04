@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-5 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-5 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-5 · Review: pro Task
 Spec: docs/features/kern-monitoring-5.md (Roadmap R-1105)
 Heavy: linux-full — `apps/agent` und der Push-Pfad Agent → Monitoring; der Sammellauf fährt Stack und Agent-Monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
