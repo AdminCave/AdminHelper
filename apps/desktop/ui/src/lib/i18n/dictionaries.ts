@@ -64,6 +64,7 @@ export const translations: Translations = {
     'infra.prov.noCaFp':
       'Dieses Gerät ist nicht registriert — Befehle ohne --ca-fp: Der Erstkontakt der Agents bleibt unverifiziert (Trust-on-first-use).',
     'infra.prov.existingTokens': 'Vorhandene Tokens',
+    'infra.prov.agent': 'Agent-Provisionierung',
     'infra.prov.noTokens': 'Keine Tokens',
     'infra.prov.created': 'Token erzeugt',
     'infra.prov.commandCopied': 'Befehl kopiert',
@@ -652,6 +653,7 @@ export const translations: Translations = {
     'monitoring.checkCfg.windowHours': 'Analyse-Fenster (Stunden)',
     'monitoring.checkCfg.minHistoryHours': 'Min. Historie (Stunden)',
     'infra.monTab.templates': 'Monitoring-Templates',
+    'infra.monTab.checks': 'Checks',
     'infra.monTab.noTemplates': 'Keine Templates zugewiesen',
     'infra.monTab.selectTemplate': 'Template wählen …',
     'infra.monTab.assign': 'Zuweisen',
@@ -1012,6 +1014,7 @@ export const translations: Translations = {
     'infra.prov.noCaFp':
       'This device is not enrolled — commands omit --ca-fp: the agents’ first contact stays unverified (trust-on-first-use).',
     'infra.prov.existingTokens': 'Existing tokens',
+    'infra.prov.agent': 'Agent provisioning',
     'infra.prov.noTokens': 'No tokens',
     'infra.prov.created': 'Token created',
     'infra.prov.commandCopied': 'Command copied',
@@ -1597,6 +1600,7 @@ export const translations: Translations = {
     'monitoring.checkCfg.windowHours': 'Analysis window (hours)',
     'monitoring.checkCfg.minHistoryHours': 'Min. history (hours)',
     'infra.monTab.templates': 'Monitoring templates',
+    'infra.monTab.checks': 'Checks',
     'infra.monTab.noTemplates': 'No templates assigned',
     'infra.monTab.selectTemplate': 'Select template…',
     'infra.monTab.assign': 'Assign',

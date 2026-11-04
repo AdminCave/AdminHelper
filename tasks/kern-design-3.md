@@ -20,10 +20,12 @@ Review: approve (.ah-out/review/kern-design-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts src/pages/Infrastructure.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 
-### T2 — Infrastruktur-Tabs Verbindungen, Tunnel, Monitoring, Provisionierung (R-1064)  [ ]
+### T2 — Infrastruktur-Tabs Verbindungen, Tunnel, Monitoring, Provisionierung (R-1064)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/ConnectionsTab.svelte, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.svelte, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5eb534ea 2026-11-04T15:37:41+01:00
+Review: approve (.ah-out/review/kern-design-3/T2.verdict.json)
 Änderung: Die vier Tabs als `Panel`s mit Bibliotheksknöpfen (`Button`, `Pill`, `Switch` wo heute ein Umschalter ist), Provisionierung mit `CodeBlock`. E2E-Anker bleiben: `.prov`, `.cmd-box`, `.prov-table`, `.mon-row .mon-name`, `.tpl-suggest`; Knöpfe, die eine Spec drückt, tragen `data-action` (`prov-mint`, `check-new`, `tpl-assign`). Tests ziehen auf die Anker nach.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/MonitoringTab.test.ts src/components/infra/tabs/ProvisioningTab.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/MonitoringTab.test.ts src/components/infra/tabs/ProvisioningTab.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 Abhängt von: T1
 
@@ -53,7 +55,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T8
 
 ### T7 — Desktop-E2E auf die neuen Anker (R-1064)  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/e2e/test/specs/monitoring-alerts.live.js, apps/desktop/e2e/test/specs/monitoring-check.live.js, apps/desktop/e2e/test/lib/live.js
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/e2e/test/specs/monitoring-alerts.live.js, apps/desktop/e2e/test/specs/monitoring-check.live.js, apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js
 Änderung: Die vier Specs und `openServerTab` in `lib/live.js` wählen über `data-tab`/`data-action` statt `.btn.primary`/`.srv-tab`/`.srv-head .btn.small` und warten auf Namen über `textContentOf`. Lokal nur Lint; der Beweis ist der Sammellauf (Heavy).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testcode)
@@ -73,3 +75,8 @@ Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/develope
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts
 Doku: diese Task
+
+## Entscheidungen
+- 2026-11-04 T2: Tunnel und Checks bekommen keinen `Switch` — heute gibt es dort keinen Umschalter, ein Toggle wäre neues Verhalten.
+- 2026-11-04 T2: Provisionierung zeigt Befehle per `CodeBlock copyable={false}`, der Kopierknopf bleibt eigener erster Knopf der `.cmd-box` — die Status-Meldung und das Ausblenden des Tokens aus `copyText` bleiben erhalten.
+- 2026-11-04 T7: Dateien um `connection-crud`, `tunnel-crud`, `tunnel-create`, `tunnel-start` erweitert — sie drücken `.conn-toolbar/.tun-toolbar .btn.primary`, das mit `Button` zu `.ui-btn-primary` wird.
