@@ -528,6 +528,9 @@ export interface HistorySeries {
   ram: HistoryPoint[];
   swap: HistoryPoint[];
   loadPerCpu: HistoryPoint[];
+  /** Mbit/s from the agent's byte counters; empty without network data. */
+  netIn: HistoryPoint[];
+  netOut: HistoryPoint[];
   disks: Record<string, HistoryPoint[]>;
 }
 
