@@ -10,8 +10,13 @@ import type { AuthSession } from '$lib/bridge/types';
 import type { NotificationItem, NotificationPrefs, NotificationPrefsUpdate } from '$lib/api/types';
 
 export const notificationsApi = {
-  fetchFeed(session: AuthSession, limit = 50): Promise<NotificationItem[]> {
-    return apiRequest<NotificationItem[]>(session, 'GET', `/api/notifications?limit=${limit}`);
+  fetchFeed(session: AuthSession, limit = 50, offset = 0): Promise<NotificationItem[]> {
+    const page = offset ? `&offset=${offset}` : '';
+    return apiRequest<NotificationItem[]>(
+      session,
+      'GET',
+      `/api/notifications?limit=${limit}${page}`,
+    );
   },
   fetchUnreadCount(session: AuthSession): Promise<{ count: number }> {
     return apiRequest<{ count: number }>(session, 'GET', '/api/notifications/unread-count');

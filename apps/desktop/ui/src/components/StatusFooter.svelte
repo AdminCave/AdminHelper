@@ -13,6 +13,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { monitoringChecks, monitoringHasLoaded, monitoringError } from '$lib/stores/monitoring';
   import { lastSyncedAt } from '$lib/stores/connections';
   import { settingsModalOpen } from '$lib/stores/settings';
+  import { dndUntil } from '$lib/stores/dnd';
   import { timeAgo } from '$lib/utils/timeAgo';
   import { t, currentLocale } from '$lib/i18n';
 
@@ -84,6 +85,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     );
   });
 
+  // The store ends the quiet by its own timer; the label only follows it.
+  let dndLabel = $derived.by(() => {
+    const until = $dndUntil;
+    if (until === null) return null;
+    const time = new Date(until).toLocaleTimeString(currentLocale(), {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return $t('footer.dndUntil', { time });
+  });
+
   let certLabel = $derived.by(() => {
     if (identity === undefined) return null;
     if (identity === null) return $t('footer.certNone');
@@ -118,5 +130,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {/if}
   {#if mode === 'sync'}
     <span class="status-footer-item" data-field="sync">{syncLabel}</span>
+  {/if}
+  {#if dndLabel}
+    <span class="status-footer-item" data-field="dnd">{dndLabel}</span>
   {/if}
 </footer>
