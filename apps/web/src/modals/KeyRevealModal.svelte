@@ -7,6 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Copy from '@lucide/svelte/icons/copy';
   import { t } from '$lib/i18n';
   import { copyToClipboard } from '$lib/utils/clipboard';
 
@@ -24,12 +26,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </script>
 
 <Modal {open} title={$t('modal.apikey.titleReveal')} width="520px" {onClose}>
-  <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+  <p class="hint">
     {$t('modal.apikey.revealHint')}
   </p>
-  <div class="key-reveal">{value}</div>
+  <div class="reveal">
+    <div class="key-reveal">{value}</div>
+    <IconButton icon={Copy} label={$t('action.copy')} variant="secondary" onclick={copy} />
+  </div>
   {#snippet footer()}
-    <Button variant="primary" onclick={copy}>{$t('action.copy')}</Button>
-    <Button variant="ghost" onclick={onClose}>{$t('action.close')}</Button>
+    <Button variant="secondary" onclick={onClose}>{$t('action.close')}</Button>
   {/snippet}
 </Modal>
+
+<style>
+  .hint {
+    margin-bottom: var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+</style>

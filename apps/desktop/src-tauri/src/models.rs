@@ -120,6 +120,9 @@ pub struct Settings {
     // OS notification permission, requested when the user enables it).
     #[serde(default)]
     pub os_notifications: bool,
+    /// Ids of the starred connections, kept in the workspace (`workspace.json`), not on a server.
+    #[serde(default)]
+    pub favorite_connections: Vec<String>,
 }
 
 impl Default for Settings {
@@ -138,6 +141,7 @@ impl Default for Settings {
             server_url: None,
             last_username: None,
             os_notifications: false,
+            favorite_connections: Vec::new(),
         }
     }
 }

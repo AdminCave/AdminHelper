@@ -196,11 +196,16 @@ geführt (keine NOTICE-Pflicht).
 
 ### `apps/web/` (Admin-Panel) und `apps/desktop/e2e/`
 
-**Keine ausgelieferten Dritt-Laufzeit-Abhängigkeiten.** Das Admin-Panel ist
-eine reine Svelte-Anwendung — Svelte kompiliert zur Build-Zeit weg, und
-`apps/web` deklariert keine Laufzeit-`dependencies` (Vite/Svelte/ESLint sind
-`devDependencies` = Build-Werkzeuge, nicht Teil des ausgelieferten Bundles).
-`apps/desktop/e2e/` ist ein reines Test-Harness und wird nicht ausgeliefert.
+| Paket | Version | Lizenz |
+|---|---|---|
+| @lucide/svelte | 1.66.0 | ISC |
+
+Das Admin-Panel ist eine reine Svelte-Anwendung — Svelte kompiliert zur
+Build-Zeit weg, und `apps/web` deklariert keine Laufzeit-`dependencies`
+(Vite/Svelte/ESLint sind `devDependencies` = Build-Werkzeuge). Ausnahme sind die
+Icons: `@lucide/svelte` steht als `devDependency` im Manifest, die genutzten
+Icons landen aber im ausgelieferten Bundle. `apps/desktop/e2e/` ist ein reines
+Test-Harness und wird nicht ausgeliefert.
 
 ---
 

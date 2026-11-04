@@ -13,13 +13,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { showToast, showError } from '$lib/stores/notifications';
   import { HOOK_TYPE_LABEL } from '$lib/utils/hooks';
   import * as hookApi from '$lib/api/hooks';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import Button from '$lib/components/ui/Button.svelte';
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Panel from '$lib/components/ui/Panel.svelte';
+  import Pill from '$lib/components/ui/Pill.svelte';
+  import Switch from '$lib/components/ui/Switch.svelte';
+  import Tag from '$lib/components/ui/Tag.svelte';
   import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
   import HookModal from '$modals/HookModal.svelte';
   import WebhookTokenModal from '$modals/WebhookTokenModal.svelte';
   import HookRunResultModal from '$modals/HookRunResultModal.svelte';
-  import type { Hook, HookDetail, HookRunResult } from '$lib/api/types';
+  import type { Hook, HookDetail, HookRunResult, HookType } from '$lib/api/types';
+
+  const TYPE_TONE: Record<HookType, 'accent' | 'warn' | 'muted'> = {
+    webhook: 'accent',
+    event: 'warn',
+    schedule: 'muted',
+  };
 
   let modalOpen = $state(false);
   let editing = $state<HookDetail | null>(null);
@@ -110,10 +122,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  // The Switch flips itself on click; after a failed toggle the store keeps the old value and
+  // the prop does not change, so the switch is rebuilt from it. Only then: a rebuild on success
+  // would drop the keyboard focus.
+  let toggleFailures = $state(0);
+
   async function toggleEnabled(h: Hook) {
     try {
       await hooks.toggle(h.id);
     } catch (err) {
+      toggleFailures++;
       showError(err);
     }
   }
@@ -128,9 +146,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <Button variant="primary" onclick={openCreate}>{$t('page.hooks.add')}</Button>
   </div>
 
-  <div class="panel">
+  <Panel pad={0}>
     {#if $hooks.length === 0}
-      <EmptyState message={$t('page.hooks.empty')} />
+      <EmptyState framed={false} message={$t('page.hooks.empty')} />
     {:else}
       <table class="data-table">
         <thead>
@@ -149,63 +167,65 @@ SPDX-License-Identifier: GPL-3.0-or-later
               <td>
                 <strong>{h.name}</strong>
                 {#if h.description}
-                  <br />
-                  <span style="font-size:11px;color:var(--text-muted)">{h.description}</span>
+                  <div class="sub">{h.description}</div>
                 {/if}
               </td>
               <td>
-                <span class="badge badge-{h.hook_type}">{HOOK_TYPE_LABEL[h.hook_type]}</span>
+                <Pill tone={TYPE_TONE[h.hook_type]}>{HOOK_TYPE_LABEL[h.hook_type]}</Pill>
               </td>
               <td>
                 {#if h.hook_type === 'webhook'}
-                  <code style="font-size:11px;color:var(--accent)">/api/hooks/trigger/…</code>
+                  <code class="trigger">/api/hooks/trigger/…</code>
                 {:else if h.hook_type === 'event'}
-                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                  <div class="tags">
                     {#each h.event_triggers ?? [] as evt (evt)}
-                      <span class="tag">{evt}</span>
+                      <Tag tone="neutral" size="sm">{evt}</Tag>
                     {/each}
                   </div>
                 {:else if h.hook_type === 'schedule'}
                   <strong>{h.schedule_interval ?? '–'}</strong>
                   {#if h.next_run}
-                    <br />
-                    <span style="font-size:11px;color:var(--text-muted)">
+                    <div class="sub">
                       {$t('page.hooks.next', { time: formatDateTime(h.next_run) })}
-                    </span>
+                    </div>
                   {/if}
                 {/if}
               </td>
               <td>
-                <span class="badge badge-{h.enabled ? 'active' : 'inactive'}">
-                  {h.enabled ? $t('page.hooks.active') : $t('page.hooks.inactive')}
-                </span>
+                {#key toggleFailures}
+                  <Switch
+                    size="sm"
+                    checked={h.enabled}
+                    label={$t('page.hooks.active')}
+                    onChange={() => toggleEnabled(h)}
+                  />
+                {/key}
               </td>
-              <td style="font-size:12px;color:var(--text-muted)">
-                {formatDateTime(h.last_run)}
-              </td>
+              <td class="sub">{formatDateTime(h.last_run)}</td>
               <td>
-                <div style="display:flex;gap:6px;flex-wrap:wrap">
-                  <button class="btn small" onclick={() => openEdit(h)}>
+                <div class="actions">
+                  <Button variant="secondary" size="sm" onclick={() => openEdit(h)}>
                     {$t('action.edit')}
-                  </button>
-                  <button
-                    class="btn small ghost"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={running.has(h.id)}
                     onclick={() => runHook(h)}
-                    disabled={running.has(h.id)}
                   >
                     {$t('action.run')}
-                  </button>
+                  </Button>
                   {#if h.hook_type === 'webhook'}
-                    <button class="btn small ghost" onclick={() => rotateToken(h)}>
+                    <Button variant="ghost" size="sm" onclick={() => rotateToken(h)}>
                       {$t('page.hooks.rotateToken')}
-                    </button>
+                    </Button>
                   {/if}
-                  <button class="btn small ghost" onclick={() => toggleEnabled(h)}>
-                    {h.enabled ? $t('action.disable') : $t('action.enable')}
-                  </button>
-                  <button class="btn small ghost" onclick={() => removeHook(h)}>
-                    {$t('action.delete')}
-                  </button>
+                  <IconButton
+                    icon={Trash2}
+                    size="sm"
+                    label={$t('action.delete')}
+                    onclick={() => removeHook(h)}
+                  />
                 </div>
               </td>
             </tr>
@@ -213,7 +233,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </tbody>
       </table>
     {/if}
-  </div>
+  </Panel>
 </div>
 
 <HookModal open={modalOpen} {editing} onClose={handleModalClose} />
@@ -236,3 +256,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
     runResult = null;
   }}
 />
+
+<style>
+  .sub {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+  .trigger {
+    color: var(--accent);
+    font-size: var(--text-xs);
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+</style>

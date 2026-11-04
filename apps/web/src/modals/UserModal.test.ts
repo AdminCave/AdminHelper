@@ -248,6 +248,19 @@ describe('UserModal form and server list', () => {
     expect(serversApi.listSummaries).toHaveBeenCalledTimes(1);
   });
 
+  it('labels its fields and keeps the field ids', async () => {
+    const m = open(OTHER);
+    const name = m.view.getByLabelText(de['modal.user.username']) as HTMLInputElement;
+    expect(name.id).toBe('ufUsername');
+    expect(name.disabled).toBe(true);
+    const pass = m.view.getByLabelText(de['modal.user.passwordEdit']) as HTMLInputElement;
+    expect(pass.id).toBe('ufPassword');
+    expect(pass.type).toBe('password');
+    expect(pass.required).toBe(false);
+    const admin = m.view.getByRole('checkbox', { name: de['modal.user.adminRights'] });
+    expect((admin as HTMLInputElement).checked).toBe(false);
+  });
+
   it('an empty list says there are no servers', async () => {
     vi.mocked(serversApi.listSummaries).mockResolvedValue([]);
     const m = open(null);

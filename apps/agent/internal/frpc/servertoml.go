@@ -27,6 +27,15 @@ var serverRootKeys = map[string]bool{
 	"transport.tls.keyFile":       true,
 }
 
+// serverTLS are the values generate_frpc_toml (_tls_agent_block) writes for the TLS keys. A
+// text passes only with all four: without trustedCaFile frpc does not verify frps at all.
+var serverTLS = []struct{ key, value string }{
+	{"transport.tls.enable", "true"},
+	{"transport.tls.trustedCaFile", serverIdentityDir + `ca.crt"`},
+	{"transport.tls.certFile", serverIdentityDir + `agent.crt"`},
+	{"transport.tls.keyFile", serverIdentityDir + `agent.key"`},
+}
+
 // serverKey is a bare or dotted TOML key without quotes, as the generator writes them.
 var serverKey = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$`)
 
@@ -63,7 +72,8 @@ var serverHead = regexp.MustCompile(`^\[\[?[A-Za-z0-9_.-]+\]\]?$`)
 
 // checkServerConfig refuses a server text that is not in the form generate_frpc_toml writes:
 // every line blank, [transport.tls], [[proxies]] or `key = value` with a value of one line; in
-// the root (with [transport.tls]) only the generator's keys; no key twice in a table; no "{{".
+// the root (with [transport.tls]) only the generator's keys, the TLS keys all four and with the
+// generator's values (serverTLS); no key twice in a table; no "{{".
 // frp decides on the raw text whether it is legacy INI and renders it as a Go template before
 // it reads the TOML; only in this form all of these read it the same. A proxy may carry any key
 // (a tunnel's extra_config) but one whose first segment is plugin in any case: the server sets
@@ -74,6 +84,7 @@ func checkServerConfig(serverToml []byte) error {
 	root := keyTable{}
 	table, prefix, total := root, "", 0
 	tlsHead, inProxies, rootTLS := false, false, false
+	tlsSeen := map[string]bool{}
 	// Line by line instead of strings.Split: a slice of all lines would hold a header for every
 	// line of the text, however short.
 	rest, n := string(serverToml), 0
@@ -136,6 +147,14 @@ func checkServerConfig(serverToml []byte) error {
 			if prefix == "" && strings.HasPrefix(path, "transport.tls.") {
 				rootTLS = true
 			}
+			for _, tls := range serverTLS {
+				if path == tls.key {
+					if value != tls.value {
+						return refuse(n, fmt.Sprintf("%s must be %s", path, tls.value))
+					}
+					tlsSeen[path] = true
+				}
+			}
 		} else if first, _, _ := strings.Cut(path, "."); strings.EqualFold(first, "plugin") {
 			return refuse(n, fmt.Sprintf("%s is a plugin key; a proxy from the server carries no plugin", quoteKey(path)))
 		}
@@ -149,6 +168,11 @@ func checkServerConfig(serverToml []byte) error {
 			return refuse(n, fmt.Sprintf("a table with more than %d keys", maxTableKeys))
 		case total > maxKeys:
 			return refuse(n, fmt.Sprintf("more than %d keys", maxKeys))
+		}
+	}
+	for _, tls := range serverTLS {
+		if !tlsSeen[tls.key] {
+			return fmt.Errorf("the server's frpc.toml is not in the form the server writes: %s is missing; not applied", tls.key)
 		}
 	}
 	return nil

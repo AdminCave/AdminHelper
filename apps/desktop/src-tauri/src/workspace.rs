@@ -360,6 +360,9 @@ pub(crate) struct Meta {
     pub last_username: Option<String>,
     /// Keyring keys without a prefix ([`Workspace::keyring_prefix`]).
     pub legacy_keys: bool,
+    /// Ids of the starred connections (R-1065); a meta written before has none.
+    #[serde(default)]
+    pub favorite_connections: Vec<String>,
 }
 
 impl Meta {
@@ -1247,6 +1250,7 @@ mod tests {
             allow_self_signed_certs: true,
             last_username: Some("admin".to_string()),
             legacy_keys: false,
+            favorite_connections: Vec::new(),
         }
     }
 
@@ -1304,6 +1308,7 @@ mod tests {
                 "allowSelfSignedCerts": true,
                 "lastUsername": null,
                 "legacyKeys": true,
+                "favoriteConnections": [],
             })
         );
         assert_eq!(names_in(&dir), [META_FILE]);

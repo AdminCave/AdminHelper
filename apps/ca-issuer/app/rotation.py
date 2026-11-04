@@ -76,8 +76,9 @@ def rotate_intermediates(
     scope is a RotationError before anything is read.
     During a root renewal root.crt is R while N is staged and N after the switch; then
     the retired files also keep the intermediates under R, and with `compromised` R
-    leaves `chain` before finish (Switch.drop_retired_root). A switch or finish that
-    stopped part way is a RotationError: it has to be ended first.
+    leaves `chain` before finish (Switch.drop_retired_root) and the scope goes into
+    Switch.compromised. A switch or finish that stopped part way is a RotationError: it
+    has to be ended first.
     Holds an exclusive lock on <pki_dir>/.rotate.lock (RotationError if another run
     holds it). Returns one RotatedScope per scope, in pki.SCOPES order."""
     _check_scopes(compromised)
@@ -106,11 +107,18 @@ def _rotate(pki_dir: Path, passphrase: bytes, compromised: frozenset[str]) -> li
     # reads only <scope>.crt (still the old certificate, retired again) and never the key.
     # The replaced key is overwritten rather than kept: checking the leaves it signed
     # needs only its certificate, and a spare signing key would be risk without a use.
-    if compromised and state.switch is not None and not state.switch.drop_retired_root:
+    if compromised and state.switch is not None:
         # Before the retired files: a client that trusts R trusts the intermediates under
-        # R that this run drops, so R leaves `chain` from the next boot on.
-        new_switch = dataclasses.replace(state.switch, drop_retired_root=True)
-        _replace(pki_dir / STATE, new_switch.to_json(), 0o644)
+        # R that this run drops, so R leaves `chain` from the next boot on; and the scope
+        # goes into the record, which the issuer reads to refuse an intermediate under R
+        # written back into its retired file.
+        new_switch = dataclasses.replace(
+            state.switch,
+            compromised=tuple(sorted(set(state.switch.compromised) | compromised)),
+            drop_retired_root=True,
+        )
+        if new_switch != state.switch:
+            _replace(pki_dir / STATE, new_switch.to_json(), 0o644)
     for rotated, new_key, retired in planned:
         _write_scope(pki_dir, rotated, new_key, retired, root_cert)
     _sync_dir(pki_dir)

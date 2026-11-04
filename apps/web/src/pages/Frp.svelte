@@ -13,6 +13,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { FrpSupervisorStatus } from '$lib/api/frp';
   import { formatDateTime } from '$lib/utils/datetime';
   import Button from '$lib/components/ui/Button.svelte';
+  import Panel from '$lib/components/ui/Panel.svelte';
   import FrpConfigModal from '$modals/FrpConfigModal.svelte';
   import FrpConfigPreviewModal from '$modals/FrpConfigPreviewModal.svelte';
   import FrpStatusModal from '$modals/FrpStatusModal.svelte';
@@ -161,7 +162,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="page-title">{$t('page.frp.title')}</div>
       <div class="page-subtitle">{$t('page.frp.subtitle')}</div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div class="header-actions">
       <Button variant="ghost" onclick={() => (configModalOpen = true)}>
         {$frpConfig ? $t('page.frp.editConfig') : $t('page.frp.createConfig')}
       </Button>
@@ -182,11 +183,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </div>
   </div>
 
-  <div class="panel">
+  <Panel>
     {#if $frpConfig}
-      <div
-        style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 24px"
-      >
+      <div class="facts">
         <div><strong>{$t('label.name')}:</strong> {$frpConfig.name}</div>
         <div><strong>{$t('modal.frpConfig.serverAddr')}:</strong> {$frpConfig.serverAddr}</div>
         <div><strong>{$t('modal.frpConfig.bindPort')}:</strong> {$frpConfig.bindPort}</div>
@@ -201,26 +200,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/if}
         <div>
           <strong>mTLS:</strong>
-          <span style="color:var(--success)">{$t('page.frp.mtlsActive')}</span>
+          <span class="ok">{$t('page.frp.mtlsActive')}</span>
         </div>
       </div>
     {:else}
-      <p style="margin:0;color:var(--text-muted)">{$t('page.frp.noConfig')}</p>
+      <p class="muted">{$t('page.frp.noConfig')}</p>
     {/if}
-  </div>
+  </Panel>
 
-  <div class="panel" style="margin-top:var(--sp-4)">
-    <div style="font-weight:600;margin-bottom:var(--sp-2)">{$t('page.frp.supervisor.title')}</div>
+  <Panel title={$t('page.frp.supervisor.title')}>
     {#if !supervisorLoaded}
-      <p style="margin:0;color:var(--text-muted)">{$t('state.loading')}</p>
+      <p class="muted">{$t('state.loading')}</p>
     {:else if !supervisor}
-      <p style="margin:0;color:var(--text-muted)" data-testid="frps-unavailable">
+      <p class="muted" data-testid="frps-unavailable">
         {$t('page.frp.supervisor.unavailable')}
       </p>
     {:else}
-      <div
-        style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 24px"
-      >
+      <div class="facts">
         <div>
           <strong>{$t('page.frp.supervisor.label.state')}:</strong>
           <span
@@ -250,19 +246,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span data-testid="frps-event">
               {$t(EVENT_TEXT.get(supervisor.lastEvent) ?? 'page.frp.supervisor.event.unknown')}
             </span>
-            <span data-testid="frps-event-at" style="color:var(--text-muted)">
+            <span data-testid="frps-event-at" class="at">
               {formatDateTime(supervisor.lastEventAt)}
             </span>
           </div>
         {/if}
       </div>
       {#if supervisor.stale}
-        <p style="margin:var(--sp-2) 0 0;color:var(--warning)" data-testid="frps-stale">
+        <p class="stale" data-testid="frps-stale">
           {$t('page.frp.supervisor.stale')}
         </p>
       {/if}
     {/if}
-  </div>
+  </Panel>
 </div>
 
 <FrpConfigModal open={configModalOpen} editing={$frpConfig} onClose={handleConfigClose} />
@@ -273,3 +269,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
   onClose={closePreview}
 />
 <FrpStatusModal open={statusOpen} onClose={() => (statusOpen = false)} />
+
+<style>
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-2) var(--space-6);
+  }
+  .muted {
+    margin: 0;
+    color: var(--text-muted);
+  }
+  .ok {
+    color: var(--success);
+  }
+  .at {
+    color: var(--text-muted);
+  }
+  .stale {
+    margin: var(--space-2) 0 0;
+    color: var(--warning);
+  }
+</style>
