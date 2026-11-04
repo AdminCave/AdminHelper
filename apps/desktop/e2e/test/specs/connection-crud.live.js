@@ -23,7 +23,7 @@ describe('Connection CRUD via the GUI', () => {
     await openServerTab('connections');
 
     // create (ssh kind by default: name + host required)
-    await $('.conn-toolbar .btn.primary').click();
+    await $('[data-action="conn-new"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     let inputs = await $$('.editor-overlay input[type="text"]'); // [0]=name, [1]=host
     await inputs[0].setValue('crud-conn');

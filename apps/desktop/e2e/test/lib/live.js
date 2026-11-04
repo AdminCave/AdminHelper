@@ -280,8 +280,9 @@ export async function gotoInfrastructure() {
 // monitoring | provisioning), not a positional index a reordered tab list would
 // silently mismap (4.31).
 export async function openServerTab(tabId) {
-  await $(".srv-tab").waitForExist({ timeout: 15000 });
-  await $(`.srv-tab[data-tab="${tabId}"]`).click();
+  const tab = await $(`.srv-detail [role="tab"][data-tab="${tabId}"]`);
+  await tab.waitForExist({ timeout: 15000 });
+  await tab.click();
 }
 
 // JS .click() bypasses the WebDriver hit-test — the fixed status bar overlaps
@@ -303,11 +304,12 @@ export async function textContentOf(el) {
   return browser.execute((node) => node.textContent.trim(), el);
 }
 
-// Text of every element matching `selector`.
+// Text of every element matching `selector`, through textContentOf: the list names
+// (servers, connections, tunnels, checks, alert rules) are cut off with an ellipsis.
 export async function texts(selector) {
   const out = [];
   for (const el of await $$(selector)) {
-    out.push(await el.getText());
+    out.push(await textContentOf(el));
   }
   return out;
 }
@@ -322,7 +324,7 @@ export async function waitForRow(selector, name, present = true) {
   );
 }
 
-// Open the row whose name matches by clicking its edit button (`.btn.small`).
+// Open the row whose name matches by clicking its edit button, the row's only `.ui-btn`.
 export async function openRowByName(rowSel, nameSel, name) {
   // Re-query the list on each pass: a re-render between waitForRow and the click can
   // stale a row handle, so a single iteration throws "stale element reference" (4.97).
@@ -330,8 +332,8 @@ export async function openRowByName(rowSel, nameSel, name) {
     async () => {
       try {
         for (const row of await $$(rowSel)) {
-          if ((await row.$(nameSel).getText()) === name) {
-            await row.$(".btn.small").click();
+          if ((await textContentOf(await row.$(nameSel))) === name) {
+            await row.$(".ui-btn").click();
             return true;
           }
         }

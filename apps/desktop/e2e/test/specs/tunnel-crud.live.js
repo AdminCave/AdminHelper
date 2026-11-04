@@ -22,8 +22,8 @@ describe('Tunnel CRUD via the GUI', () => {
     await openServerTab('tunnels');
 
     // create (the lone seeded FRP config is preselected)
-    await $('.tun-toolbar .btn.primary').waitForEnabled({ timeout: 15000 });
-    await $('.tun-toolbar .btn.primary').click();
+    await $('[data-action="tun-new"]').waitForEnabled({ timeout: 15000 });
+    await $('[data-action="tun-new"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     await $('.editor-overlay input[placeholder="k01-lnx1-ssh"]').setValue('crud-tun');
     let nums = await $$('.editor-overlay input[type="number"]');
