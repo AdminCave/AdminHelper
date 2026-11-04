@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-4 · Review: am Ende
+Status: bereit · Branch: feature/kern-frp-4 · Review: am Ende
 Spec: docs/features/kern-frp-4.md (Roadmap R-1120)
 Heavy: linux-full — `apps/agent` (frpc-Sync); der Sammellauf fährt Agent-Install und Tunnel-Sync
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -20,8 +20,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html + EN · changelog.d/kern-frp-4.md
 
-### T2 — Changelog-Fragment ohne Umlaute (R-1120)  [ ]
+### T2 — Changelog-Fragment ohne Umlaute (R-1120)  [x]
 Komponente: scripts · Dateien: changelog.d/kern-frp-4.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c76701eb 2026-11-04T07:02:41+01:00
+Review: am Ende (Branch-Review)
 Änderung: Das Fragment schreibt „uebernimmt“ und „Identitaetspfade“; Fragmente sind umlautfrei (`.claude/rules/docs.md`, `changelog.d/README.md`). Fund der Abschlussprüfung.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: changelog.d/kern-frp-4.md
