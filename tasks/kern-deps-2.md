@@ -26,8 +26,10 @@ Review: approve (.ah-out/review/kern-deps-2/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: → T4
 
-### T3 — CA-Issuer: Pakete auf aktuell, Lock neu (R-1037)  [ ]
+### T3 — CA-Issuer: Pakete auf aktuell, Lock neu (R-1037)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/requirements.in, apps/ca-issuer/requirements.txt, apps/ca-issuer/requirements-dev.txt, apps/ca-issuer/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] ca-issuer: 4 passed, 0 failed, 14 skipped @764d5e23 2026-11-04T08:41:58+01:00
+Review: approve (.ah-out/review/kern-deps-2/T3.verdict.json)
 Änderung: Wie T1 für den CA-Issuer; fastapi zieht mit Server und Monitoring gleich. Er nutzt kein async, greenlet fällt aus dem Lock.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict
 Doku: → T4
