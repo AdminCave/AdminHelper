@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp
 Doku: → T9
 Abhängt von: T2
 
-### T4 — Editor v2: Typ-Umschalter, Tabs und „Server zuordnen“ (R-1066)  [ ]
+### T4 — Editor v2: Typ-Umschalter, Tabs und „Server zuordnen“ (R-1066)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @aa2697b9 2026-11-04T20:10:59+01:00
+Review: approve (.ah-out/review/kern-verbindungen-2/T4.verdict.json)
 Änderung: Editor mit Typ-Umschalter und Tabs (SSH Allgemein/Anmeldung/Optionen, RDP Allgemein/Anmeldung/Anzeige, Web nur Allgemein); die heutigen Felder auf die Tabs verteilt; „Server zuordnen“ als Auswahl der Server (nur Server-Modus, setzt `serverId`). Die Tabs Optionen/Anzeige bleiben bis T5 leer verborgen. Neue Testdatei mit SPDX.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts src/components/ConnectionEditor.delete.test.ts src/components/ConnectionEditor.lastused.test.ts
 Doku: → T9
@@ -73,3 +75,4 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Connect
 Doku: diese Task
 
 ## Entscheidungen
+- T4: Typ-Umschalter `Segmented`, Tabs `Tabs` (Web ohne Tab-Leiste); ein Typwechsel und jedes Öffnen setzen auf Allgemein zurück. „Server zuordnen“ nur bei `mode === 'server'` mit Sitzung; leere Serverliste → `loadServers()` beim Öffnen, die Liste liest der Effect untracked (`get`), sonst startet jede Antwort ihn neu; eine `serverId` ohne bekannten Server bleibt als „Unbekannter Server“ wählbar (sonst verlöre Speichern sie still). Name und Host bleiben die ersten Text-Inputs (Live-E2E `connection-crud`). Der Platz neben Name bleibt außerhalb des Server-Modus leer (Raster wie im Mockup).
