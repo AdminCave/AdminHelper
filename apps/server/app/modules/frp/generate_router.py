@@ -35,6 +35,11 @@ from app.modules.servers.models import Server
 from app.modules.users.models import User
 from app.modules.users.schemas import _USERNAME_PATTERN
 
+# The DNS name only the frps leaf carries (R-1112). Counterparts: FRPS_TLS_NAME in
+# apps/ca-issuer/app/config.py, frpsTLSName in apps/agent/internal/frpc/rewrite.go and the
+# check of frps_tls_name in apps/desktop/src-tauri/src/frpc.rs.
+FRPS_TLS_NAME = "frps.adminhelper.invalid"
+
 logger = logging.getLogger(__name__)
 
 
@@ -184,7 +189,7 @@ def gen_visitor_bundle(
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
     toml = generate_visitor_toml(config, tunnels, current_user.username)
 
-    return {"toml": toml, "pki": {}}
+    return {"toml": toml, "pki": {}, "frps_tls_name": FRPS_TLS_NAME}
 
 
 @router.get("/generate/bulk-zip")
