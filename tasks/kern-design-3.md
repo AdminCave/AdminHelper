@@ -29,10 +29,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/t
 Doku: → T8
 Abhängt von: T1
 
-### T3 — Ansible: Playbook-Leiste und Detail (R-1064)  [ ]
+### T3 — Ansible: Playbook-Leiste und Detail (R-1064)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @92d11ad2 2026-11-04T15:48:26+01:00
+Review: approve (.ah-out/review/kern-design-3/T3.verdict.json)
 Änderung: Nach `ops.jsx` (AnsibleView): Leiste mit Playbooks (Name, Beschreibung, Meta, „Hochladen“), Detail mit Ziel-Auswahl (Server oder Tags wie heute) und „Ausführen“; kein Probelauf, kein Ausgabefeld (Spec, Nicht-Ziele). Neuer Seitentest für Auswahl, Zielmodus und Ausführen-Sperre gegen den Store. SPDX im neuen Test.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Ansible.test.ts src/lib/stores/ansible.test.ts src/lib/stores/ansible.pipeline.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Ansible.test.ts src/lib/stores/ansible.test.ts src/lib/stores/ansible.pipeline.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 
 ### T4 — Monitoring: Tabs und Übersicht (R-1064)  [ ]
@@ -80,3 +82,4 @@ Doku: diese Task
 - 2026-11-04 T2: Tunnel und Checks bekommen keinen `Switch` — heute gibt es dort keinen Umschalter, ein Toggle wäre neues Verhalten.
 - 2026-11-04 T2: Provisionierung zeigt Befehle per `CodeBlock copyable={false}`, der Kopierknopf bleibt eigener erster Knopf der `.cmd-box` — die Status-Meldung und das Ausblenden des Tokens aus `copyText` bleiben erhalten.
 - 2026-11-04 T7: Dateien um `connection-crud`, `tunnel-crud`, `tunnel-create`, `tunnel-start` erweitert — sie drücken `.conn-toolbar/.tun-toolbar .btn.primary`, das mit `Button` zu `.ui-btn-primary` wird.
+- 2026-11-04 T3: keine automatische Playbook-Auswahl (Detail zeigt bis zur Wahl einen Hinweis); Bearbeiten im Detail-Kopf statt Hover-Overlay; Rail-Knopf „+ Playbook“ statt „Hochladen“, weil die Funktion Anlegen per Modal ist; ungenutzte Schlüssel ansible.step.* und der globale Ansible-Block in app.css entfallen.
