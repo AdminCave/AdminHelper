@@ -45,8 +45,10 @@ Review: approve (.ah-out/review/kern-design-3/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringOverview.test.ts src/components/monitoring/MonServerGrid.test.ts src/pages/Monitoring.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 
-### T5 — Monitoring: Server-Dashboard und Sektionen (R-1064)  [ ]
+### T5 — Monitoring: Server-Dashboard und Sektionen (R-1064)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/components/monitoring/section/MonSectionHeader.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/MonServerDashboard.test.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0f1acd23 2026-11-04T16:17:55+01:00
+Review: approve (.ah-out/review/kern-design-3/T5.verdict.json)
 Änderung: Dashboard-Kopf mit `Dot`, `Pill`s statt `.mon-pill`, `Button`s (SSH, Wartung, „+ Check“ mit `data-action="check-new"`) und Heartbeat; die Sektionen bekommen über `MonSectionHeader` und einen gemeinsamen Rahmen die Panel-Gestalt, Inhalt und Aufklappen bleiben. Die bestehenden `Sec*`-Tests müssen grün bleiben; neuer Dashboard-Test für Kopf und Pills. SPDX im neuen Test.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonServerDashboard.test.ts src/components/monitoring/section
 Doku: → T8
@@ -60,7 +62,7 @@ Doku: → T8
 
 ### T7 — Desktop-E2E auf die neuen Anker (R-1064)  [ ]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/e2e/test/specs/monitoring-alerts.live.js, apps/desktop/e2e/test/specs/monitoring-check.live.js, apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js
-Änderung: Die vier Specs und `openServerTab` in `lib/live.js` wählen über `data-tab`/`data-action` statt `.btn.primary`/`.srv-tab`/`.srv-head .btn.small` und warten auf Namen über `textContentOf`. Lokal nur Lint; der Beweis ist der Sammellauf (Heavy).
+Änderung: Die vier Specs und `openServerTab` in `lib/live.js` wählen über `data-tab`/`data-action` statt `.btn.primary`/`.srv-tab`/`.srv-head .btn.small` und warten auf Namen über `textContentOf`; dazu `openRowByName` (`.btn.small`), ellipsierte `.conn-name`/`.tun-name`/`.mon-srv-name` (leeres `getText()`), `.tpl-suggest .btn.primary` → `data-action="tpl-suggest-assign"`, `.mon-view-toggle .btn` (`monitoring-check.live.js`) → `Segmented`-Radio. Lokal nur Lint; der Beweis ist der Sammellauf (Heavy).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testcode)
 Abhängt von: T1, T2, T4, T5, T6
@@ -90,3 +92,5 @@ Doku: diese Task
 - 2026-11-04 T4: Die Serversuche wandert aus der Liste in die Werkzeugleiste der Übersicht und filtert Liste und Kacheln gleich (vorher nur die Liste; die Kacheln lasen denselben Store ohne Eingabefeld).
 - 2026-11-04 T4: Die globalen Regeln `.mon-tab`, `.mon-tabs`, `.mon-summary-*`, `.mon-split*`, `.mon-srv-*`, `.mon-filter-search` und `.section-toolbar` sind gelöscht, die Komponenten tragen ihren Stil selbst. `.mon-tab` traf nebenbei das `<div class="mon-tab">` in `infra/tabs/MonitoringTab.svelte` (Button-Polster auf einem Container); das fällt damit weg.
 - 2026-11-04 T4: Das Banner „Server ohne Monitoring“ nennt die betroffenen Server hinter dem Zähltext (eigenes Element, damit der Zähltext als Anker bleibt); Fehler- und Hinweisbanner sind `ui/Callout`.
+- 2026-11-04 T4 (Nachtrag aus dem Review): Die Leiste der Monitoring-Übersicht schaltet über Media-Queries (280 px, bis 1200 px 210 px, bis 900 px gestapelt) statt über eine Container-Query wie Infrastruktur und Ansible; die Übersicht hat keinen eigenen Größen-Container, und das Ergebnis im Fenster ist gleich.
+- 2026-11-04 T5: Kein SSH-Knopf im Dashboard-Kopf: der Kontext hat keine Verbindungsfunktion, eine neue wäre Scope über das Re-Design hinaus (Spec, offene Frage 1). „Wartungsfenster“ öffnet den bestehenden `MaintenanceModal` (neu, `serverId` = Auswahl, danach `loadMaintenanceWindows()`), nur für echte Server. Der Status-Streifen der Sektionen weicht einem `Dot` rechts im Kopf; das Icon bleibt neutral. Die Live-Pills bleiben eigene `span.mon-live-pill` mit `level-*` (scoped im Pill-Look), weil `Pill` keine Klasse durchreicht und `SecLive.test` die Stufe am Element liest.
