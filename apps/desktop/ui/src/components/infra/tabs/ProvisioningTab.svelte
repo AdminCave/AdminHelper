@@ -14,6 +14,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { reportError, showStatus } from '$lib/stores/statusBar';
   import { t, language } from '$lib/i18n';
   import { shellQuote } from '$lib/utils/shell';
+  import { Copy, KeyRound } from '@lucide/svelte';
+  import Button from '../../ui/Button.svelte';
+  import CodeBlock from '../../ui/CodeBlock.svelte';
+  import Panel from '../../ui/Panel.svelte';
+  import Pill from '../../ui/Pill.svelte';
 
   // The forms the server issues: `adminhelper_prov_` + token_urlsafe, and a uuid4. Only the
   // character class for the token, so another prefix on the server would not break the tab.
@@ -146,10 +151,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  function statusOf(tk: FrpProvisionToken): { label: string; cls: string } {
-    if (tk.usedAt) return { label: $t('infra.prov.used', { time: fmt(tk.usedAt) }), cls: 'used' };
-    if (tk.isValid) return { label: $t('infra.prov.active'), cls: 'active' };
-    return { label: $t('infra.prov.expired'), cls: 'expired' };
+  function statusOf(tk: FrpProvisionToken): { label: string; tone: 'ok' | 'accent' | 'crit' } {
+    if (tk.usedAt) return { label: $t('infra.prov.used', { time: fmt(tk.usedAt) }), tone: 'ok' };
+    if (tk.isValid) return { label: $t('infra.prov.active'), tone: 'accent' };
+    return { label: $t('infra.prov.expired'), tone: 'crit' };
   }
 
   onMount(() => {
@@ -160,65 +165,63 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 </script>
 
+{#snippet copyButton(onclick: () => void)}
+  <Button size="sm" variant="secondary" iconLeft={Copy} {onclick}>{$t('action.copy')}</Button>
+{/snippet}
+
 <div class="prov">
-  <p class="prov-hint">{$t('infra.prov.hint')}</p>
+  <Panel title={$t('infra.prov.agent')}>
+    <div class="prov-body">
+      <p class="prov-hint">{$t('infra.prov.hint')}</p>
 
-  {#if caFp}
-    <p class="prov-fp" data-testid="ca-fp">
-      <span>{$t('infra.prov.caFp')}</span>
-      <code>{caFp}</code>
-    </p>
-  {:else}
-    <p class="prov-fp-warn" data-testid="no-ca-fp">{$t('infra.prov.noCaFp')}</p>
-  {/if}
+      {#if caFp}
+        <p class="prov-fp" data-testid="ca-fp">
+          <span>{$t('infra.prov.caFp')}</span>
+          <code>{caFp}</code>
+        </p>
+      {:else}
+        <p class="prov-fp-warn" data-testid="no-ca-fp">{$t('infra.prov.noCaFp')}</p>
+      {/if}
 
-  <div>
-    <button class="btn primary small" onclick={createToken}>{$t('infra.prov.createToken')}</button>
-  </div>
-
-  {#if scriptCommand}
-    <div class="cmd-box" data-testid="script-command">
-      <div class="cmd-head">
-        <strong>{$t('infra.prov.installScript')}</strong>
-        <button
-          class="btn small"
-          onclick={() => copyText(scriptCommand, 'infra.prov.commandCopied', false)}
-        >
-          {$t('action.copy')}
-        </button>
-      </div>
-      <pre>{scriptCommand}</pre>
-    </div>
-  {/if}
-
-  {#if token}
-    <div class="cmd-box" data-testid="prov-token">
-      <div class="cmd-head">
-        <span class="prov-token-hint">{$t('infra.prov.tokenPrompt')}</span>
-        <button class="btn small" onclick={() => copyText(token, 'infra.prov.tokenCopied')}>
-          {$t('action.copy')}
-        </button>
-      </div>
-      <code>{token}</code>
-    </div>
-  {/if}
-
-  {#if command}
-    <div class="cmd-box" data-testid="provision-command">
-      <div class="cmd-head">
-        <strong>{$t('infra.prov.runOnTarget')}</strong>
-        <button
-          class="btn small"
-          onclick={() => copyText(command, 'infra.prov.commandCopied', false)}
-          >{$t('action.copy')}</button
+      <div>
+        <Button size="sm" iconLeft={KeyRound} data-action="prov-mint" onclick={createToken}
+          >{$t('infra.prov.createToken')}</Button
         >
       </div>
-      <pre>{command}</pre>
-    </div>
-  {/if}
 
-  <div>
-    <h4 class="prov-subtitle">{$t('infra.prov.existingTokens')}</h4>
+      {#if scriptCommand}
+        <div class="cmd-box" data-testid="script-command">
+          <div class="cmd-head">
+            <strong>{$t('infra.prov.installScript')}</strong>
+            {@render copyButton(() => copyText(scriptCommand, 'infra.prov.commandCopied', false))}
+          </div>
+          <CodeBlock code={scriptCommand} copyable={false} />
+        </div>
+      {/if}
+
+      {#if token}
+        <div class="cmd-box" data-testid="prov-token">
+          <div class="cmd-head">
+            <span class="prov-token-hint">{$t('infra.prov.tokenPrompt')}</span>
+            {@render copyButton(() => copyText(token, 'infra.prov.tokenCopied'))}
+          </div>
+          <code class="prov-token">{token}</code>
+        </div>
+      {/if}
+
+      {#if command}
+        <div class="cmd-box" data-testid="provision-command">
+          <div class="cmd-head">
+            <strong>{$t('infra.prov.runOnTarget')}</strong>
+            {@render copyButton(() => copyText(command, 'infra.prov.commandCopied', false))}
+          </div>
+          <CodeBlock code={command} copyable={false} />
+        </div>
+      {/if}
+    </div>
+  </Panel>
+
+  <Panel title={$t('infra.prov.existingTokens')} pad={6}>
     {#if loading}
       <p class="muted">{$t('loading.generic')}</p>
     {:else if tokens.length === 0}
@@ -238,13 +241,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <tr>
               <td>{fmt(tk.createdAt)}</td>
               <td>{fmt(tk.expiresAt)}</td>
-              <td><span class="badge {st.cls}">{st.label}</span></td>
+              <td><Pill tone={st.tone}>{st.label}</Pill></td>
             </tr>
           {/each}
         </tbody>
       </table>
     {/if}
-  </div>
+  </Panel>
 </div>
 
 <style>
@@ -252,6 +255,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
+  }
+  .prov-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
   }
   .prov-hint {
     margin: 0;
@@ -293,21 +301,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-size: var(--text-sm);
     color: var(--text-muted);
   }
-  .cmd-box code {
+  .prov-token {
     font-size: var(--text-xs);
     word-break: break-all;
   }
-  .cmd-box pre {
-    margin: 0;
-    font-size: var(--text-xs);
-    white-space: pre-wrap;
-    overflow-x: auto;
-  }
-  .prov-subtitle {
-    margin: 0 0 var(--sp-2);
-    font-size: var(--text-sm);
-  }
   .muted {
+    margin: 0;
+    padding: 10px;
     color: var(--text-muted);
     font-size: var(--text-sm);
   }
@@ -326,14 +326,5 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .prov-table td {
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
-  }
-  .badge.used {
-    color: var(--green);
-  }
-  .badge.active {
-    color: var(--accent);
-  }
-  .badge.expired {
-    color: var(--danger);
   }
 </style>

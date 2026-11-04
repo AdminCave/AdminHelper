@@ -21,8 +21,8 @@ describe("Monitoring alert rule via the GUI", () => {
     // Switch to the alerts tab by its stable id (the tab button, not the content div).
     await $('.mon-tabs [data-tab="alerts"]').click();
 
-    await $(".mon-alert-toolbar .btn.primary").waitForExist({ timeout: 15000 });
-    await $(".mon-alert-toolbar .btn.primary").click();
+    await $('[data-action="alert-new"]').waitForExist({ timeout: 15000 });
+    await $('[data-action="alert-new"]').click();
 
     // channel defaults to webhook → name + webhookUrl are the required fields.
     await $(`${MODAL} ${MODAL_PANEL}`).waitForExist({ timeout: 10000 });

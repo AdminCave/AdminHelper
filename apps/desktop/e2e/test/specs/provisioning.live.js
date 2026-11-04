@@ -15,7 +15,7 @@ describe('Provisioning token via the GUI', () => {
     await gotoInfrastructure();
     await openServerTab('provisioning');
 
-    await $('.prov .btn.primary').click();
+    await $('[data-action="prov-mint"]').click();
 
     // the provision command (carrying the freshly minted token) is shown...
     await $('.cmd-box').waitForExist({ timeout: 15000 });

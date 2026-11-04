@@ -12,7 +12,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { session } from '$lib/stores/session';
   import { refreshFromServer } from '$lib/stores/connections';
   import { reportError } from '$lib/stores/statusBar';
+  import { Pencil, Plus } from '@lucide/svelte';
   import ServerConnectionModal from '../ServerConnectionModal.svelte';
+  import Button from '../../ui/Button.svelte';
+  import Panel from '../../ui/Panel.svelte';
+  import Pill from '../../ui/Pill.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -67,11 +71,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   onMount(load);
 </script>
 
-<div class="conn-tab">
+{#snippet toolbar()}
   <div class="conn-toolbar">
-    <button class="btn primary small" onclick={openNew}>+ {$t('infra.conn.add')}</button>
+    <Button size="sm" iconLeft={Plus} data-action="conn-new" onclick={openNew}
+      >{$t('infra.conn.add')}</Button
+    >
   </div>
+{/snippet}
 
+<Panel title={$t('infra.tab.connections')} action={toolbar} pad={6}>
   {#if loading}
     <p class="muted">{$t('loading.generic')}</p>
   {:else if items.length === 0}
@@ -84,13 +92,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <div class="conn-name">{c.name}</div>
             <div class="conn-meta">{meta(c)}</div>
           </div>
-          <span class="conn-kind">{c.kind.toUpperCase()}</span>
-          <button class="btn small" onclick={() => openEdit(c)}>{$t('action.edit')}</button>
+          <Pill>{c.kind.toUpperCase()}</Pill>
+          <Button size="sm" variant="ghost" iconLeft={Pencil} onclick={() => openEdit(c)}
+            >{$t('action.edit')}</Button
+          >
         </div>
       {/each}
     </div>
   {/if}
-</div>
+</Panel>
 
 <ServerConnectionModal
   open={modalOpen}
@@ -101,49 +111,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
 />
 
 <style>
-  .conn-tab {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-  }
   .conn-toolbar {
     display: flex;
-    justify-content: flex-end;
   }
   .muted {
+    margin: 0;
+    padding: 10px;
     color: var(--text-muted);
     font-size: var(--text-sm);
   }
   .conn-list {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1);
   }
   .conn-row {
     display: flex;
     align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    gap: 12px;
+    padding: 10px;
+  }
+  .conn-row + .conn-row {
+    border-top: 1px solid var(--border);
   }
   .conn-info {
     flex: 1;
     min-width: 0;
   }
   .conn-name {
+    overflow: hidden;
+    color: var(--text-strong);
     font-size: var(--text-sm);
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .conn-meta {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-  }
-  .conn-kind {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 0 var(--sp-2);
+    overflow: hidden;
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>
