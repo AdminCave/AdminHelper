@@ -864,21 +864,21 @@ impl ServerCertVerifier for CaPinVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, TlsError> {
-        match self.inner.verify_server_cert(
+        let verified = match self.inner.verify_server_cert(
             end_entity,
             intermediates,
             server_name,
             ocsp_response,
             now,
         ) {
-            Ok(verified) => Ok(verified),
+            Ok(verified) => verified,
             // webpki validates the chain to a trust anchor BEFORE the name, so a
             // name error means the chain already validated against our pinned CA —
             // accept it (hostname intentionally not enforced). rustls 0.23 reports
             // this as either NotValidForName or the richer NotValidForNameContext.
             Err(TlsError::InvalidCertificate(
                 CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. },
-            )) => Ok(ServerCertVerified::assertion()),
+            )) => ServerCertVerified::assertion(),
             // The presented cert does NOT chain to the CA pinned at enrollment:
             // no path to the pinned anchor (UnknownIssuer) or the leaf signature
             // does not verify against it (BadSignature — what a single-leaf chain
@@ -890,7 +890,7 @@ impl ServerCertVerifier for CaPinVerifier {
             // different problem the identity reset would not fix.
             Err(TlsError::InvalidCertificate(
                 CertificateError::UnknownIssuer | CertificateError::BadSignature,
-            )) => Err(TlsError::General(
+            )) => return Err(TlsError::General(
                 // ERR_CA_PIN_MISMATCH is the stable contract the login screen keys
                 // the "reset device identity" recovery off (Login.svelte), so that
                 // action never depends on the German prose below staying verbatim.
@@ -900,8 +900,12 @@ impl ServerCertVerifier for CaPinVerifier {
                      Einstellungen die Geräte-Identität zurücksetzen und neu registrieren."
                     .to_string(),
             )),
-            Err(err) => Err(err),
-        }
+            Err(err) => return Err(err),
+        };
+        // The pinned root also signs the tunnel intermediate, whose frps leaf is a
+        // serverAuth leaf too: only a leaf of the access intermediate is the gateway.
+        issued_by_access_intermediate(end_entity)?;
+        Ok(verified)
     }
 
     fn verify_tls12_signature(
@@ -924,6 +928,36 @@ impl ServerCertVerifier for CaPinVerifier {
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         self.inner.supported_verify_schemes()
+    }
+}
+
+/// The CN the ca-issuer gives the access intermediate; a rotation appends
+/// " <label>" (apps/ca-issuer/app/pki.py, build_intermediate_ca).
+const ACCESS_INTERMEDIATE_CN: &str = "AdminHelper Access Intermediate";
+
+/// Accept only a leaf issued by the access intermediate, as the agent does
+/// (apps/agent/internal/httpclient, isAccessIntermediate). Called after the chain
+/// validated, so the issuer name is the subject of a CA under the pinned root.
+fn issued_by_access_intermediate(end_entity: &CertificateDer<'_>) -> Result<(), TlsError> {
+    let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref())
+        .map_err(|_| TlsError::InvalidCertificate(CertificateError::BadEncoding))?;
+    let issuer = cert
+        .issuer()
+        .iter_common_name()
+        .next()
+        .and_then(|cn| cn.as_str().ok())
+        .unwrap_or("");
+    let access = issuer == ACCESS_INTERMEDIATE_CN
+        || issuer
+            .strip_prefix(ACCESS_INTERMEDIATE_CN)
+            .is_some_and(|rest| rest.starts_with(' '));
+    if access {
+        Ok(())
+    } else {
+        Err(TlsError::General(format!(
+            "the presented server certificate is not issued by the access intermediate \
+             (issuer {issuer:?}): not the gateway of this server"
+        )))
     }
 }
 
@@ -1704,13 +1738,15 @@ mod tests {
             key: KeyPair,
         }
 
+        // Pinned and issuing at once, so it carries the access intermediate's CN:
+        // the desktop takes only a server leaf of that intermediate.
         fn make_ca() -> Ca {
             let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
             let mut params = CertificateParams::new(vec![]).unwrap();
             params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
             params
                 .distinguished_name
-                .push(DnType::CommonName, "Test CA");
+                .push(DnType::CommonName, "AdminHelper Access Intermediate");
             let cert = params.self_signed(&key).unwrap();
             Ca { cert, params, key }
         }
@@ -2062,6 +2098,55 @@ mod tests {
             assert!(
                 causes.iter().any(|c| c.contains("ERR_CA_PIN_MISMATCH")),
                 "expected the pin mismatch, got: {causes:?}"
+            );
+        }
+
+        // A serverAuth leaf under the same root but of the tunnel intermediate (the
+        // frps leaf) chains to the pin and, by IP, fails only on the name: it is
+        // still not the gateway. No ERR_CA_PIN_MISMATCH, a reset would not help.
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn refuses_a_server_leaf_of_another_intermediate_under_the_pinned_root() {
+            let r = make_renewal();
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let params = ca_params(
+                "AdminHelper Tunnel Intermediate",
+                BasicConstraints::Constrained(0),
+            );
+            let cert = params
+                .signed_by(
+                    &key,
+                    &rcgen::Issuer::from_params(&r.old_root.params, &r.old_root.key),
+                )
+                .unwrap();
+            let tunnel = Ca { cert, params, key };
+            let anchors = pems(&[&r.old_access.cert, &r.old_root.cert]);
+            let frps = gateway(&tunnel, &[&r.old_root.cert]);
+
+            let err = connect(&r.old_access, &frps, &anchors)
+                .await
+                .expect_err("a leaf of the tunnel intermediate reached the desktop");
+            let mut causes = Vec::new();
+            let mut cause: Option<&dyn std::error::Error> = Some(&err);
+            while let Some(current) = cause {
+                causes.push(current.to_string());
+                cause = current.source();
+            }
+            assert!(
+                causes
+                    .iter()
+                    .any(|c| c.contains("not issued by the access intermediate")),
+                "expected the issuer check, got: {causes:?}"
+            );
+            assert!(
+                !causes.iter().any(|c| c.contains("ERR_CA_PIN_MISMATCH")),
+                "the issuer check is no pin mismatch, got: {causes:?}"
+            );
+
+            let gateway = gateway(&r.old_access, &[&r.old_root.cert]);
+            let response = connect(&r.old_access, &gateway, &anchors).await;
+            assert_eq!(
+                response.map(|resp| resp.status()).ok(),
+                Some(reqwest::StatusCode::OK)
             );
         }
     }
