@@ -470,6 +470,10 @@ class VisitorBundleOut(BaseModel):
     # desktop's response shape (gen_visitor_bundle).
     toml: str
     pki: dict[str, Any]
+    # The name only the frps leaf carries (R-1121): the desktop sets it as
+    # transport.tls.serverName when it is there. Optional, so an older server's bundle
+    # still passes the desktop.
+    frps_tls_name: Optional[str] = None
 
 
 class ConfigHashOut(BaseModel):

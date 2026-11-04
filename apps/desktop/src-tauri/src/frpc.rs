@@ -243,6 +243,42 @@ struct VisitorBundle {
     // The server no longer ships PKI material (F2/F3: D6 — the server holds no
     // signing capability). The visitor presents the desktop's own enrolled
     // identity instead; any `pki` field the server still sends is ignored.
+    /// The name only the frps leaf carries, see [`named_server_toml`]. A server before R-1121
+    /// sends none.
+    #[serde(default)]
+    frps_tls_name: Option<String>,
+}
+
+/// The DNS name only the frps leaf carries (R-1112). Counterparts: `FRPS_TLS_NAME` in
+/// apps/ca-issuer/app/config.py and apps/server/app/modules/frp/generate_router.py,
+/// `frpsTLSName` in apps/agent/internal/frpc/rewrite.go.
+const FRPS_TLS_NAME: &str = "frps.adminhelper.invalid";
+
+/// The server TOML of `bundle` as the desktop runs it (R-1121): checked against the allow-list,
+/// which keeps refusing a `serverName` in `transport.tls`, and then, if the bundle names the frps
+/// leaf, with that name as `transport.tls.serverName`, so frpc takes only a frps certificate that
+/// carries it. The one name allowed is [`FRPS_TLS_NAME`]; any other refuses the bundle. A bundle
+/// without the name, from an older server, stays as it is, so an update cuts no tunnel off.
+fn named_server_toml(bundle: &VisitorBundle) -> Result<String, AppError> {
+    let mut server = validate_visitor_toml(&bundle.toml)?;
+    let Some(name) = bundle.frps_tls_name.as_deref() else {
+        return Ok(bundle.toml.clone());
+    };
+    if name != FRPS_TLS_NAME {
+        return Err(AppError::Validation(
+            "visitor bundle: unexpected frps_tls_name".to_string(),
+        ));
+    }
+    // Without a TLS table frpc checks no certificate, and a name would change nothing.
+    if let Some(tls) = server
+        .get_mut("transport")
+        .and_then(|transport| transport.get_mut("tls"))
+        .and_then(toml::Value::as_table_mut)
+    {
+        tls.insert("serverName".to_string(), name.into());
+    }
+    toml::to_string(&server)
+        .map_err(|e| AppError::Validation(format!("visitor.toml does not serialize: {e}")))
 }
 
 /// A visitor-bundle reply: the bundle, `None` for no tunnels (see [`carries_bundle`]), and
@@ -374,6 +410,37 @@ fn validate_visitor_toml(toml_str: &str) -> Result<toml::Value, AppError> {
         .ok_or_else(|| AppError::Validation("visitor.toml: kein TOML-Table".to_string()))?;
     validate_visitor_table(table)?;
     Ok(value)
+}
+
+/// [`validate_visitor_toml`] for a TOML [`named_server_toml`] made: `transport.tls.serverName`
+/// may hold [`FRPS_TLS_NAME`], and nothing else.
+fn validate_named_toml(toml_str: &str) -> Result<toml::Value, AppError> {
+    let value: toml::Value =
+        toml::from_str(toml_str).map_err(|e| parse_error("visitor.toml", toml_str, &e))?;
+    let table = value
+        .as_table()
+        .ok_or_else(|| AppError::Validation("visitor.toml: kein TOML-Table".to_string()))?;
+    validate_named_table(table)?;
+    Ok(value)
+}
+
+/// [`validate_visitor_table`] with the name of [`validate_named_toml`].
+fn validate_named_table(table: &toml::Table) -> Result<(), AppError> {
+    let mut rest = table.clone();
+    if let Some(tls) = rest
+        .get_mut("transport")
+        .and_then(|transport| transport.get_mut("tls"))
+        .and_then(toml::Value::as_table_mut)
+    {
+        if let Some(name) = tls.remove("serverName") {
+            if name.as_str() != Some(FRPS_TLS_NAME) {
+                return Err(AppError::Validation(
+                    "visitor.toml: transport.tls.serverName is not the frps name".to_string(),
+                ));
+            }
+        }
+    }
+    validate_visitor_table(&rest)
 }
 
 /// The allow-list of [`validate_visitor_toml`] over a parsed root table.
@@ -534,7 +601,7 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 /// The config frpc runs: the allow-listed server TOML with the desktop's local head in its root,
 /// as the text frpc reads. `loginFailExit = false` keeps frpc retrying while frps is unreachable
 /// (frp's default ends it after the first failed login); `webServer.*` opens frpc's admin API on
-/// loopback for the reload. The head goes in only after `validate_visitor_toml`, so the allow-list
+/// loopback for the reload. The head goes in only after `validate_named_toml`, so the allow-list
 /// stays as it is and still rejects a server that sends `webServer` or `loginFailExit` itself. The
 /// password is never optional — without user and password frp serves the admin API,
 /// `GET /api/config` with the frps token and every `secretKey` included, to every local process —
@@ -544,7 +611,7 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 /// from the server, and every string in it stands on one line. toml writes a string with a line
 /// break over several lines, so such a value is refused.
 fn with_local_head(server_toml: &str, port: u16, password: &str) -> Result<String, AppError> {
-    let server = validate_visitor_toml(server_toml)?;
+    let server = validate_named_toml(server_toml)?;
     if password.is_empty() || !password.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(AppError::Validation(
             "frpc admin API password is not hex".to_string(),
@@ -608,7 +675,7 @@ fn frpc_config(
     // The placeholder is the one `{{` the server TOML may hold; filled in, it is gone from the TLS
     // paths, and one anywhere else fails the check of the generated text below.
     no_template_delimiter(&server_toml.replace(IDENTITY_DIR_PLACEHOLDER, ""))?;
-    let mut server = validate_visitor_toml(server_toml)?;
+    let mut server = validate_named_toml(server_toml)?;
     rewrite_identity_paths(&mut server, identity_dir);
     let server_toml = toml::to_string(&server)
         .map_err(|e| AppError::Validation(format!("visitor.toml does not serialize: {e}")))?;
@@ -626,7 +693,7 @@ fn frpc_config(
             "frpc config: the local head is not as written".to_string(),
         ));
     }
-    validate_visitor_table(&root)?;
+    validate_named_table(&root)?;
     Ok(config)
 }
 
@@ -1217,7 +1284,8 @@ async fn assign_ports(
     }))
 }
 
-/// Bring frpc in line with `server_toml`, the user's visitor TOML as fetched; `None` means no
+/// Bring frpc in line with `server_toml`, the user's visitor TOML as fetched and named
+/// ([`named_server_toml`]); `None` means no
 /// tunnels and stops frpc. `since` is the generation before the fetch: a stop since then wins and
 /// nothing starts. A TOML the allow-list rejects leaves the running frpc alone. frpc gets the
 /// visitors at their local ports from `ports`, and the comparison with the running frpc is on
@@ -1283,7 +1351,7 @@ async fn bring_in_line(
         stop_frpc(state)?;
         return Ok(RefreshOutcome::Stopped);
     };
-    let mut server = validate_visitor_toml(server_toml)?;
+    let mut server = validate_named_toml(server_toml)?;
 
     let frpc_runs = {
         let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
@@ -1437,8 +1505,8 @@ pub async fn refresh_tunnel(
         run_dir,
         data_dir,
     };
-    let server_toml = reply.bundle.as_ref().map(|bundle| bundle.toml.as_str());
-    let outcome = reconcile(&state, &sidecar, &ports, server_toml, who, since).await?;
+    let server_toml = reply.bundle.as_ref().map(named_server_toml).transpose()?;
+    let outcome = reconcile(&state, &sidecar, &ports, server_toml.as_deref(), who, since).await?;
     Ok(TunnelRefresh {
         status: tunnel_status(&state),
         outcome,
@@ -1456,11 +1524,12 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
-        reconcile, remap_visitors, request_reload, rewrite_identity_paths, runtime_dir, stop_frpc,
-        stop_left_behind, tunnel_status, validate_visitor_toml, visitor_names, with_local_head,
-        write_visitor_config, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar,
-        VisitorBinding, NO_IDENTITY_HINT, VISITOR_CONFIG,
+        bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config,
+        named_server_toml, plan_refresh, reconcile, remap_visitors, request_reload,
+        rewrite_identity_paths, runtime_dir, stop_frpc, stop_left_behind, tunnel_status,
+        validate_visitor_toml, visitor_names, with_local_head, write_visitor_config, Applied,
+        FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding, VisitorBundle,
+        FRPS_TLS_NAME, NO_IDENTITY_HINT, VISITOR_CONFIG,
     };
     use crate::error::AppError;
     use crate::keyring_store;
@@ -2118,6 +2187,94 @@ bindPort = 6001
     /// [`server_toml_with`], parsed.
     fn changed(from: &str, to: &str) -> toml::Value {
         parse(&server_toml_with(from, to))
+    }
+
+    fn bundle(toml: &str, frps_tls_name: Option<&str>) -> VisitorBundle {
+        VisitorBundle {
+            toml: toml.to_string(),
+            frps_tls_name: frps_tls_name.map(str::to_string),
+        }
+    }
+
+    /// `transport.tls.serverName` of a parsed config.
+    fn tls_server_name(config: &toml::Value) -> Option<&str> {
+        config["transport"]["tls"].get("serverName")?.as_str()
+    }
+
+    #[test]
+    fn visitor_bundle_reads_the_frps_name_and_does_without_it() {
+        let named: VisitorBundle = serde_json::from_str(
+            r#"{"toml":"x","pki":{},"frps_tls_name":"frps.adminhelper.invalid"}"#,
+        )
+        .unwrap();
+        assert_eq!(named.frps_tls_name.as_deref(), Some(FRPS_TLS_NAME));
+        let older: VisitorBundle = serde_json::from_str(r#"{"toml":"x","pki":{}}"#).unwrap();
+        assert_eq!(older.frps_tls_name, None);
+    }
+
+    #[test]
+    fn a_named_bundle_has_frpc_check_the_frps_name() {
+        // R-1121: the name reaches the config frpc runs, the identity paths filled in beside it.
+        let named = named_server_toml(&bundle(SERVER_TOML, Some(FRPS_TLS_NAME))).unwrap();
+        assert_eq!(tls_server_name(&parse(&named)), Some(FRPS_TLS_NAME));
+        let config = frpc_config(&named, "/data/identity", &head(7400, "c0ffee")).unwrap();
+        let config = parse(&config);
+        assert_eq!(tls_server_name(&config), Some(FRPS_TLS_NAME));
+        assert_eq!(
+            config["transport"]["tls"]["certFile"].as_str(),
+            Some("/data/identity/cert.pem")
+        );
+        // The name is part of what frp reads only at start: a frpc without it restarts.
+        assert_eq!(
+            plan_refresh(Some(&parse(SERVER_TOML)), &parse(&named)),
+            RefreshPlan::Restart
+        );
+    }
+
+    #[test]
+    fn a_bundle_without_the_name_runs_as_before() {
+        // An older server sends no name: the TOML stays as it is and frpc checks no name.
+        let named = named_server_toml(&bundle(SERVER_TOML, None)).unwrap();
+        assert_eq!(named, SERVER_TOML);
+        let config = frpc_config(&named, "/data/identity", &head(7400, "c0ffee")).unwrap();
+        assert_eq!(tls_server_name(&parse(&config)), None);
+    }
+
+    #[test]
+    fn a_bundle_naming_another_frps_is_refused() {
+        for name in ["frps.example.net", "", "FRPS.ADMINHELPER.INVALID"] {
+            assert!(
+                named_server_toml(&bundle(SERVER_TOML, Some(name))).is_err(),
+                "accepted: {name:?}"
+            );
+        }
+        // Nor does a name the desktop did not set get through further down.
+        let other = SERVER_TOML.replace(
+            "enable = true\n",
+            "enable = true\nserverName = \"frps.example.net\"\n",
+        );
+        assert_ne!(other, SERVER_TOML);
+        assert!(frpc_config(&other, "/data/identity", &head(7400, "c0ffee")).is_err());
+        assert!(with_local_head(&other, 7400, "c0ffee").is_err());
+    }
+
+    #[test]
+    fn the_server_text_still_sets_no_server_name() {
+        // The allow-list keeps refusing serverName in the server's own TOML, the desktop's name
+        // included, with the field and without it.
+        for value in [FRPS_TLS_NAME, "frps"] {
+            let text = SERVER_TOML.replace(
+                "enable = true\n",
+                &format!("enable = true\nserverName = \"{value}\"\n"),
+            );
+            assert_ne!(text, SERVER_TOML);
+            for field in [Some(FRPS_TLS_NAME), None] {
+                assert!(
+                    named_server_toml(&bundle(&text, field)).is_err(),
+                    "accepted: {value:?} with {field:?}"
+                );
+            }
+        }
     }
 
     #[test]
