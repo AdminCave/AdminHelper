@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-NOW = 1_800_000_030
+NOW = 1_799_999_970
 END = 1_800_000_000
 START_1H = END - 3600
 

@@ -150,8 +150,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     it comes before root.crt (R, which signs); after the switch the old root R comes
     before root.crt (N) and retired intermediates under R count too, until R expires
     (a WARNING that the finish is due) or a --compromised scope took R out. Retired
-    intermediates under R never count for a scope the switch named --compromised. Until
-    R expires, Intermediate.old_root is R and Intermediate.cross the cross certificate.
+    intermediates under R never count for a scope the switch or a later rotation named
+    --compromised. Until R expires, Intermediate.old_root is R and Intermediate.cross the
+    cross certificate.
     A switch or a finish that stopped part way raises with the command that ends it, as
     do files no transition leaves, a staged N or a retired R that is no root and a cross
     certificate that is not root.crt signed by R."""
@@ -227,8 +228,8 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     for scope in pki.SCOPES:
         signers = trust.signers
         if renewal.switch is not None and scope in renewal.switch.compromised:
-            # The switch emptied this retired file; an intermediate under R written back
-            # into it (a partial restore) must not be trusted again.
+            # The switch or a rotation emptied this retired file; an intermediate under R
+            # written back into it (a partial restore) must not be trusted again.
             signers = (root,)
         cert_path = pki_dir / f"{scope}.crt"
         key_path = pki_dir / f"{scope}.key"

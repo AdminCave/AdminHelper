@@ -190,7 +190,12 @@ def test_an_unrecorded_certificate_is_refused_once_the_transition_ends(
 ):
     now = utcnow_naive()
     _installed(db_session, now - LEGACY_WINDOW - timedelta(days=1))
-    headers, _ = _leaf("admin", not_before=now - LEGACY_WINDOW - timedelta(days=10))
+    # Valid until today: an expired one is refused before the register is asked.
+    headers, _ = _leaf(
+        "admin",
+        not_before=now - LEGACY_WINDOW - timedelta(days=10),
+        days=LEGACY_WINDOW.days + 20,
+    )
     _assert_revoked(_me(test_client, {**_bearer("admin"), **headers}))
 
 
