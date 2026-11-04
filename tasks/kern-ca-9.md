@@ -21,8 +21,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
 Doku: → T3
 
-### T2 — Desktop-Visitor setzt transport.tls.serverName aus dem Bundle (R-1121)  [ ]
+### T2 — Desktop-Visitor setzt transport.tls.serverName aus dem Bundle (R-1121)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @db2edf59 2026-11-04T17:30:13+01:00
+Review: am Ende (Branch-Review)
 Änderung: `VisitorBundle` liest das optionale `frps_tls_name`; ist es da, schreibt der Desktop es nach `validate_visitor_table` als `transport.tls.serverName` in die Visitor-Konfiguration (nur mit `transport.tls`), ein anderer Wert als `frps.adminhelper.invalid` lehnt das Bundle ab. Ohne Feld bleibt alles wie bisher. Tests: mit Feld, ohne Feld, falscher Wert, Server-Text mit `serverName` weiter abgelehnt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc
 Doku: → T3
@@ -38,3 +40,4 @@ Task-Review: am Ende
 - 2026-11-04 Plan: Der Desktop nimmt nur genau `frps.adminhelper.invalid` an (Spec, Trade-offs): der Name ist fest, ein anderer Wert ist ein Fehler des Servers.
 - 2026-11-04 Plan: R-1054 (Trust-Generation im Config-Hash) braucht einen API-Vertrag über ca-issuer, Server, Agent und Desktop (woher die Generation kommt, wie der Desktop sie erfährt); er fährt nicht in diesem Zug.
 - 2026-11-04 T1: `test_response_shapes.py` hält die Feldfolge des Visitor-Bundles fest; der Test nennt jetzt `frps_tls_name` mit seinem Wert (Vertragserweiterung, nicht gelockert). Der Server setzt das Feld immer; `Optional` nur, damit das Schema den Vertrag „darf fehlen“ für ältere Server ausdrückt.
+- 2026-11-04 T2: Der Desktop benennt den Server-Text beim Abruf (`named_server_toml`): erst die unveränderte, strenge Allow-List (ein `serverName` des Servers bleibt verboten, auch mit dem richtigen Wert), dann `transport.tls.serverName`. Die Prüfungen danach (`bring_in_line`, `with_local_head`, `frpc_config`) nehmen über `validate_named_toml` genau `FRPS_TLS_NAME` hin. So bleibt die Signatur von `reconcile` (31 Aufrufe) gleich, und der Name zählt zum Teil, den frp nur beim Start liest (Neustart, sobald er erscheint). Ein abgelehntes Bundle endet jetzt vor `reconcile`, wie vorher in dessen Prüfung; das Aufräumen eines frpc, den ein abgestürzter Prozess hinterließ, holt der nächste gültige Abruf nach.
