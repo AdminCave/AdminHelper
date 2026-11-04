@@ -46,6 +46,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       type="button"
       role="tab"
       class="tab"
+      data-tab={t.id}
       aria-selected={t.id === active}
       tabindex={t.id === active ? 0 : -1}
       onclick={() => select(t.id)}

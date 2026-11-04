@@ -125,7 +125,7 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     await gotoInfrastructure();
     await openServerTab('tunnels');
     // The "add tunnel" button enables only once the seeded FRP config loads.
-    const add = await $('.tun-toolbar .btn.primary');
+    const add = await $('[data-action="tun-new"]');
     await add.waitForEnabled({ timeout: 15000 });
     await add.click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });

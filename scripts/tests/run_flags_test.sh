@@ -47,7 +47,7 @@ BARE="$WORK/bin"; mkdir -p "$BARE"
 # der Sekunden, die sie oben verspricht, und pruefte dabei etwas anderes als sie
 # behauptet. Einzelne Aufrufe duerfen weiter ueberschreiben.
 export AH_VENV="$WORK/no-venv"
-for t in bash sh git mktemp sed grep awk cat tee date rm mv cp ls wc head tail tr cut sort paste env dirname basename find touch mkdir printf; do
+for t in bash sh git mktemp sed grep awk cat tee date rm mv cp ls wc head tail tr cut sort paste env dirname basename find touch mkdir printf sha256sum; do
   src=$(command -v "$t" 2>/dev/null) && ln -sf "$src" "$BARE/$t"
 done
 for leaked in go cargo node npm docker shellcheck ruff python3; do
@@ -883,15 +883,18 @@ grep -qx 'docker info' "$GUI_STUB_LOG" && [ -z "$others" ] \
 
 # The smoke step's `npm test` builds the app, and that build runs `npm --prefix ui
 # run build`; in part gui no other step installs ui/, so the smoke step must, by
-# npm_ci_if_stale's rule. A root of its own, because the rule reads mtimes and this
-# test must not touch the checkout's node_modules. npm is a stub that logs where it
-# was called: nothing is installed, no app is built. No docker on this PATH, so the
-# GUI suites stay behind their guard row.
+# npm_ci_if_stale's rule. A root of its own, because the rule reads the stamp in
+# node_modules and this test must not touch the checkout's. npm is a stub that logs
+# where it was called: nothing is installed, no app is built. No docker on this
+# PATH, so the GUI suites stay behind their guard row.
 echo "── smoke: ui dependencies ──"
 SMOKE_ROOT="$WORK/smoke-root"
 mkdir -p "$SMOKE_ROOT/scripts/tests" "$SMOKE_ROOT/apps/desktop/ui/node_modules" "$SMOKE_ROOT/apps/desktop/e2e/node_modules"
 cp "$RUN" "$SMOKE_ROOT/scripts/tests/run.sh"
-touch "$SMOKE_ROOT/apps/desktop/ui/package-lock.json" "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
+echo '{"name": "ui"}' > "$SMOKE_ROOT/apps/desktop/ui/package-lock.json"
+echo '{"name": "e2e"}' > "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
+UI_SHA=$(sha256sum "$SMOKE_ROOT/apps/desktop/ui/package-lock.json" | cut -d' ' -f1)
+UI_STAMP="$SMOKE_ROOT/apps/desktop/ui/node_modules/.ah-lock-sha256"
 SMOKESTUB="$WORK/bin-smokestub"; mkdir -p "$SMOKESTUB"
 cp -a "$BARE/." "$SMOKESTUB/"
 NPM_LOG="$WORK/npm.log"
@@ -907,35 +910,55 @@ echo "\$(pwd) npm \$*" >> "$NPM_LOG"
 exit 0
 EOF
 chmod +x "$SMOKESTUB/npm"
-smoke_run() {  # smoke_run <mtime of ui/node_modules> <mtime of ui/package-lock.json>
-  touch -d "$1" "$SMOKE_ROOT/apps/desktop/ui/node_modules"
-  touch -d "$2" "$SMOKE_ROOT/apps/desktop/ui/package-lock.json"
+smoke_run() {  # smoke_run <ui stamp: match|other|none>
+  case "$1" in
+    match) echo "$UI_SHA" > "$UI_STAMP" ;;
+    # A hard link, as in a worktree's copy of the main node_modules (worktree-setup.sh).
+    other) rm -f "$UI_STAMP" "$WORK/main-stamp"
+           echo "0000000000000000000000000000000000000000000000000000000000000000" > "$WORK/main-stamp"
+           ln "$WORK/main-stamp" "$UI_STAMP" ;;
+    none)  rm -f "$UI_STAMP" ;;
+  esac
+  # mtimes that the old rule took for fresh: only the stamp may decide.
+  touch -d 2026-01-01 "$SMOKE_ROOT/apps/desktop/ui/package-lock.json"
+  touch -d 2026-01-02 "$SMOKE_ROOT/apps/desktop/ui/node_modules"
   # e2e/ is fresh every time, so an `npm ci` in the log can only be ui's.
-  touch -d 2026-01-01 "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json"
-  touch -d 2026-01-02 "$SMOKE_ROOT/apps/desktop/e2e/node_modules"
+  sha256sum "$SMOKE_ROOT/apps/desktop/e2e/package-lock.json" | cut -d' ' -f1 \
+    > "$SMOKE_ROOT/apps/desktop/e2e/node_modules/.ah-lock-sha256"
   : > "$NPM_LOG"
   OUT=$(PATH="$SMOKESTUB" AH_OUT_DIR="$WORK/out-smoke" AH_ALLOW_REAL=1 \
         "$SMOKESTUB/bash" "$SMOKE_ROOT/scripts/tests/run.sh" e2e --part gui 2>&1); rc=$?
 }
 smoke_line() { sed -n "\\#$1\$#{=;q}" "$NPM_LOG"; }  # number of the first log line ending in $1
-smoke_run 2026-01-01 2026-01-02
+smoke_run none
 UI_CI=$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')
 E2E_TEST=$(smoke_line '/apps/desktop/e2e npm test')
 [ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
   && [ -n "$UI_CI" ] && [ -n "$E2E_TEST" ] && [ "$UI_CI" -lt "$E2E_TEST" ] \
-  && ok "smoke: ui/node_modules older than its lockfile -> npm ci in ui before npm test in e2e" \
-  || bad "smoke, stale ui: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
-smoke_run 2026-01-02 2026-01-01
+  && [ "$(cat "$UI_STAMP" 2>&1)" = "$UI_SHA" ] && [ ! -e "$UI_STAMP.tmp" ] \
+  && ok "smoke: ui/node_modules without a stamp -> npm ci in ui before npm test in e2e, the stamp written" \
+  || bad "smoke, no stamp: rc=$rc stamp=$(cat "$UI_STAMP" 2>&1) npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+# R-1106: node_modules newer than the lockfile, but installed from another one.
+# Its stamp is a hard link: the new one must not land in the main copy's inode.
+smoke_run other
+[ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
+  && [ -n "$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')" ] \
+  && [ "$(cat "$UI_STAMP" 2>&1)" = "$UI_SHA" ] && [ "$(cat "$WORK/main-stamp")" != "$UI_SHA" ] \
+  && ok "smoke: a newer ui/node_modules with another lockfile's stamp -> npm ci, the stamp now this one, the linked one untouched" \
+  || bad "smoke, other stamp: rc=$rc stamp=$(cat "$UI_STAMP" 2>&1) npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+smoke_run match
 [ $rc -eq 0 ] && grep -q "PASS  desktop-e2e smoke" <<<"$OUT" \
   && [ -n "$(smoke_line '/apps/desktop/e2e npm test')" ] && ! grep -q ' npm ci ' "$NPM_LOG" \
-  && ok "smoke: fresh ui/node_modules -> no npm ci, npm test still runs" \
-  || bad "smoke, fresh ui: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
-# A failed install in ui/ must not let the build go on with the old node_modules.
-SMOKE_NPM_CI_FAIL=1 smoke_run 2026-01-01 2026-01-02
+  && ok "smoke: ui/node_modules stamped with this lockfile -> no npm ci, npm test still runs" \
+  || bad "smoke, matching stamp: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+# A failed install in ui/ must not let the build go on with the old node_modules,
+# and must not stamp them as installed from this lockfile.
+SMOKE_NPM_CI_FAIL=1 smoke_run other
 [ $rc -eq 1 ] && grep -q "FAIL  desktop-e2e smoke" <<<"$OUT" \
   && [ -n "$(smoke_line '/apps/desktop/ui npm ci --no-audit --no-fund')" ] && ! grep -q ' npm test' "$NPM_LOG" \
-  && ok "smoke: a failed npm ci in ui fails the step before npm test" \
-  || bad "smoke, failed ui install: rc=$rc npm calls: $(tr '\n' '|' < "$NPM_LOG")"
+  && [ "$(cat "$UI_STAMP" 2>&1)" != "$UI_SHA" ] \
+  && ok "smoke: a failed npm ci in ui fails the step before npm test, the old stamp stays" \
+  || bad "smoke, failed ui install: rc=$rc stamp=$(cat "$UI_STAMP" 2>&1) npm calls: $(tr '\n' '|' < "$NPM_LOG")"
 
 # ── run.sh: the shared lock for the heavy python steps (T2, T6) ─────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a

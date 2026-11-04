@@ -15,6 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { replace } from '$lib/router';
   import Router from '$lib/components/layout/Router.svelte';
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
+  import Spinner from '$lib/components/ui/Spinner.svelte';
   import Toast from '$lib/components/ui/Toast.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import Login from './pages/Login.svelte';
@@ -58,7 +59,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 {#if !hydrated}
   <div class="boot-loader">
-    <div class="spinner"></div>
+    <Spinner size={36} stroke={3} />
   </div>
 {:else if !$isAuthenticated}
   <Login />
@@ -80,18 +81,5 @@ SPDX-License-Identifier: GPL-3.0-or-later
     display: grid;
     place-items: center;
     background: var(--bg);
-  }
-  .spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.9s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 </style>

@@ -7,6 +7,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import Checkbox from '$lib/components/ui/Checkbox.svelte';
+  import FormField from '$lib/components/ui/FormField.svelte';
+  import Input from '$lib/components/ui/Input.svelte';
+  import Select from '$lib/components/ui/Select.svelte';
   import { t } from '$lib/i18n';
   import { showToast, showError } from '$lib/stores/notifications';
   import { hooks } from '$lib/stores/hooks';
@@ -30,7 +34,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let name = $state('');
   let description = $state('');
-  let hookType = $state<HookType>('webhook');
+  // Select binds a string; its three options are exactly the HookType values.
+  let hookType = $state<string>('webhook');
   let script = $state('');
   let events = $state<Set<string>>(new Set());
   let interval = $state<string>('1h');
@@ -76,7 +81,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const form: HookForm = {
       name,
       description,
-      hookType,
+      hookType: hookType as HookType,
       script,
       events: [...events],
       interval,
@@ -116,74 +121,74 @@ SPDX-License-Identifier: GPL-3.0-or-later
   width="720px"
   onClose={() => onClose()}
 >
-  <form class="modal-form" onsubmit={onSubmit} id="hook-form">
-    <div class="field">
-      <label for="hkName">{$t('label.name')} *</label>
-      <input id="hkName" required bind:value={name} />
-    </div>
-    <div class="field">
-      <label for="hkDesc">{$t('modal.hook.description')}</label>
-      <input id="hkDesc" placeholder={$t('modal.hook.descPlaceholder')} bind:value={description} />
-    </div>
-    <div class="field">
-      <label for="hkType">{$t('modal.hook.type')}</label>
-      <select id="hkType" disabled={!!editing} bind:value={hookType}>
-        <option value="webhook">{$t('modal.hook.typeWebhook')}</option>
-        <option value="event">{$t('modal.hook.typeEvent')}</option>
-        <option value="schedule">{$t('modal.hook.typeSchedule')}</option>
-      </select>
-    </div>
+  <form class="form" onsubmit={onSubmit} id="hook-form">
+    <FormField label={$t('label.name')} id="hkName" required>
+      <Input required bind:value={name} />
+    </FormField>
+    <FormField label={$t('modal.hook.description')} id="hkDesc">
+      <Input placeholder={$t('modal.hook.descPlaceholder')} bind:value={description} />
+    </FormField>
+    <FormField label={$t('modal.hook.type')} id="hkType">
+      <Select
+        disabled={!!editing}
+        fullWidth
+        bind:value={hookType}
+        options={[
+          { value: 'webhook', label: $t('modal.hook.typeWebhook') },
+          { value: 'event', label: $t('modal.hook.typeEvent') },
+          { value: 'schedule', label: $t('modal.hook.typeSchedule') },
+        ]}
+      />
+    </FormField>
     {#if isEvent}
-      <div class="field full">
-        <span style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px">
-          {$t('modal.hook.events')}
-        </span>
-        <div
-          style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;max-height:220px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:6px"
-        >
+      <div class="events">
+        <span class="events-label">{$t('modal.hook.events')}</span>
+        <div class="event-list">
           {#each HOOK_EVENTS as evt (evt)}
-            <label class="checkbox-label">
-              <input type="checkbox" checked={events.has(evt)} onchange={() => toggleEvent(evt)} />
-              {$t(`hook.event.${evt}`)}
-              <br />
-              <span style="font-size:10px;color:var(--text-muted)">{evt}</span>
-            </label>
+            <Checkbox
+              checked={events.has(evt)}
+              label={$t(`hook.event.${evt}`)}
+              description={evt}
+              onChange={() => toggleEvent(evt)}
+            />
           {/each}
         </div>
       </div>
     {/if}
     {#if isSchedule}
-      <div class="field">
-        <label for="hkInterval">{$t('modal.hook.interval')}</label>
-        <select id="hkInterval" bind:value={interval}>
-          <option value="5m">{$t('modal.hook.interval5m')}</option>
-          <option value="15m">{$t('modal.hook.interval15m')}</option>
-          <option value="30m">{$t('modal.hook.interval30m')}</option>
-          <option value="1h">{$t('modal.hook.interval1h')}</option>
-          <option value="6h">{$t('modal.hook.interval6h')}</option>
-          <option value="12h">{$t('modal.hook.interval12h')}</option>
-          <option value="24h">{$t('modal.hook.interval24h')}</option>
-          <option value="custom">{$t('modal.hook.intervalCustom')}</option>
-        </select>
-      </div>
+      <FormField label={$t('modal.hook.interval')} id="hkInterval">
+        <Select
+          fullWidth
+          bind:value={interval}
+          options={[
+            { value: '5m', label: $t('modal.hook.interval5m') },
+            { value: '15m', label: $t('modal.hook.interval15m') },
+            { value: '30m', label: $t('modal.hook.interval30m') },
+            { value: '1h', label: $t('modal.hook.interval1h') },
+            { value: '6h', label: $t('modal.hook.interval6h') },
+            { value: '12h', label: $t('modal.hook.interval12h') },
+            { value: '24h', label: $t('modal.hook.interval24h') },
+            { value: 'custom', label: $t('modal.hook.intervalCustom') },
+          ]}
+        />
+      </FormField>
       {#if isCustomInterval}
-        <div class="field">
-          <label for="hkCron">{$t('modal.hook.cron')}</label>
-          <input id="hkCron" placeholder="*/10 * * * *" bind:value={cron} />
-          <small style="color:var(--text-muted)">{$t('modal.hook.cronFormat')}</small>
-        </div>
+        <FormField label={$t('modal.hook.cron')} id="hkCron" hint={$t('modal.hook.cronFormat')}>
+          <Input placeholder="*/10 * * * *" bind:value={cron} />
+        </FormField>
       {/if}
     {/if}
-    <div class="field full">
-      <label for="hkScript">{$t('modal.hook.script')}</label>
-      <textarea
-        id="hkScript"
-        placeholder={$t('modal.hook.scriptPlaceholder')}
-        required
-        style="min-height:220px;font-family:monospace;font-size:13px"
-        bind:value={script}
-      ></textarea>
-      <small style="color:var(--text-muted)"
+    <div class="script">
+      <FormField label={$t('modal.hook.script')} id="hkScript">
+        <Input
+          multiline
+          rows={10}
+          placeholder={$t('modal.hook.scriptPlaceholder')}
+          required
+          bind:value={script}
+        />
+      </FormField>
+      <small class="help"
         >{#each scriptHelp.split('`') as part, i (i)}{#if i % 2 === 1}<code>{part}</code
             >{:else}{part}{/if}{/each}</small
       >
@@ -191,8 +196,57 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={() => onClose()}>{$t('action.cancel')}</Button>
-    <Button variant="primary" type="submit" disabled={submitting} form="hook-form">
+    <Button
+      variant="primary"
+      type="submit"
+      loading={submitting}
+      disabled={submitting}
+      form="hook-form"
+    >
       {$t('action.save')}
     </Button>
   {/snippet}
 </Modal>
+
+<style>
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .events {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .events-label {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .event-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--space-2);
+    max-height: 220px;
+    overflow-y: auto;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .script {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .script :global(textarea) {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  .help {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .help code {
+    font-family: var(--font-mono);
+  }
+</style>

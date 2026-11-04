@@ -27,6 +27,7 @@ export function getSettingsDefaults(): Settings {
     serverUrl: '',
     lastUsername: '',
     osNotifications: false,
+    favoriteConnections: [],
   };
 }
 

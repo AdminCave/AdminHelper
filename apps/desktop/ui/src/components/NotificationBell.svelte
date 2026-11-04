@@ -81,10 +81,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
-    border-radius: var(--radius, 6px);
+    border-radius: var(--radius-xs);
   }
   .notif-bell:hover {
-    background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+    background: var(--surface-hover);
     color: var(--text);
   }
   .notif-bell.has-unread {
@@ -124,7 +124,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     flex-direction: column;
     background: var(--bg-elevated);
     border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
-    border-radius: var(--radius, 8px);
+    border-radius: var(--radius-sm);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
     overflow: hidden;
   }
@@ -153,7 +153,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.15));
   }
   .notif-item.unread {
-    background: var(--bg-hover, rgba(80, 130, 220, 0.08));
+    background: var(--accent-muted);
   }
   .notif-sev {
     flex: 0 0 auto;

@@ -3,22 +3,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Connections store. Loads, caches and saves connections via the
-// Tauri bridge. Filter + search are derived stores - the UI reads them directly.
+// Tauri bridge.
 
 import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import type { AuthSession, Connection, ConnectionKind, Settings } from '$lib/bridge/types';
+import type {
+  AuthSession,
+  Connection,
+  ConnectionKind,
+  ProbeTarget,
+  Settings,
+} from '$lib/bridge/types';
 import type { Connection as ServerConnection } from '$lib/api/types';
-import { groupConnectionsByHost, type ConnectionGroup } from '$lib/models/connection';
 import { connectionsApi } from '$lib/api/connections';
-import { sessionStore } from './session';
+import { probeTarget, type Reach } from '$lib/models/connectionList';
+import { sessionStore, setFavoriteConnections } from './session';
 import { showStatus } from './statusBar';
 import { tNow } from '$lib/i18n';
-
-export type KindFilter = 'all' | 'ssh' | 'rdp' | 'web';
-export type GroupFilter = 'single' | 'grouped';
-export type ViewMode = 'list' | 'tree';
 
 interface ConnectionsState {
   items: Connection[];
@@ -38,46 +40,6 @@ export const connections = derived(_state, ($s) => $s.items);
 export const loading = derived(_state, ($s) => $s.loading);
 
 export const searchTerm = writable<string>('');
-export const kindFilter = writable<KindFilter>('all');
-export const groupFilter = writable<GroupFilter>('single');
-export const viewMode = writable<ViewMode>('list');
-
-export const filteredConnections = derived(
-  [_state, searchTerm, kindFilter],
-  ([$s, $term, $kind]) => {
-    const q = $term.trim().toLowerCase();
-    return $s.items
-      .filter((c) => {
-        if ($kind !== 'all' && c.kind !== $kind) return false;
-        if (!q) return true;
-        const haystack = [
-          c.name,
-          c.host ?? '',
-          c.url ?? '',
-          c.username ?? '',
-          c.domain ?? '',
-          ...(c.tags ?? []),
-        ]
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(q);
-      })
-      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
-  },
-);
-
-// Group once per items change — the expensive part (URL parsing, sorting, haystack building) — then
-// let the search filter cheaply on the prebuilt haystack, instead of re-grouping on every keystroke
-// (5.13).
-const allGroups = derived(_state, ($s): ConnectionGroup[] => groupConnectionsByHost($s.items, ''));
-
-export const groupedConnections = derived(
-  [allGroups, searchTerm],
-  ([$groups, $term]): ConnectionGroup[] => {
-    const q = $term.trim().toLowerCase();
-    return q ? $groups.filter((g) => g.haystack.includes(q)) : $groups;
-  },
-);
 
 // Shared request generation: load() (cache read) and reloadForMode() (network fetch) both write
 // _state, and the pages mount a load while login() runs a reloadForMode in parallel. Without a
@@ -270,3 +232,105 @@ export const recentConnections = derived(_state, ($s): Connection[] =>
     })
     .slice(0, RECENT_LIMIT),
 );
+
+// ─────────────────────────── Favorites ───────────────────────────
+
+/** Ids of the starred connections of this workspace. */
+export const favorites = derived(
+  sessionStore,
+  ($s): ReadonlySet<string> => new Set($s.settings?.favoriteConnections ?? []),
+);
+
+// Toggles run one after the other: each reads the list the previous one saved, so two quick
+// clicks on different stars do not drop one of them.
+let favoriteChain: Promise<void> = Promise.resolve();
+
+export function toggleFavorite(id: string): Promise<void> {
+  const run = favoriteChain.then(async () => {
+    const ids = get(sessionStore).settings?.favoriteConnections ?? [];
+    await setFavoriteConnections(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
+  });
+  favoriteChain = run.catch(() => {});
+  return run;
+}
+
+// ─────────────────────────── Reachability (R-1067) ───────────────
+
+export const PROBE_INTERVAL_MS = 60_000;
+// probe_targets refuses longer lists.
+const PROBE_BATCH = 256;
+
+const _reach = writable<Record<string, Reach>>({});
+/** Per connection id: latency in ms, null when unreachable, 'tunnel' when not probed. */
+export const reachability = { subscribe: _reach.subscribe };
+
+/** Probes the given connections from this device. Tunneled ones are behind FRP and are not
+ * dialed; connections without a host or port stay unknown. Each host and port is dialed once. */
+export async function probeVisible(
+  conns: readonly Connection[],
+  tunneled: ReadonlySet<string>,
+): Promise<void> {
+  const result: Record<string, Reach> = {};
+  const byTarget = new Map<string, { target: ProbeTarget; ids: string[] }>();
+  const untargeted: string[] = [];
+  for (const c of conns) {
+    if (tunneled.has(c.id)) {
+      result[c.id] = 'tunnel';
+      continue;
+    }
+    const target = probeTarget(c);
+    if (!target) {
+      untargeted.push(c.id);
+      continue;
+    }
+    const key = JSON.stringify([target.host, target.port]);
+    const entry = byTarget.get(key);
+    if (entry) entry.ids.push(c.id);
+    else byTarget.set(key, { target, ids: [c.id] });
+  }
+  const entries = [...byTarget.values()];
+  for (let i = 0; i < entries.length; i += PROBE_BATCH) {
+    const batch = entries.slice(i, i + PROBE_BATCH);
+    const latencies = await bridge.probeTargets(batch.map((e) => e.target));
+    batch.forEach((e, j) => {
+      for (const id of e.ids) result[id] = latencies[j] ?? null;
+    });
+  }
+  _reach.update((r) => {
+    const next = { ...r, ...result };
+    for (const id of untargeted) delete next[id];
+    return next;
+  });
+}
+
+/** Probes what `visible()` returns now and every PROBE_INTERVAL_MS while the window is visible;
+ * coming back to a visible window probes again once the last probe is that old. Returns stop. */
+export function startReachability(
+  visible: () => { conns: readonly Connection[]; tunneled: ReadonlySet<string> },
+): () => void {
+  let running = false;
+  let lastStart = -Infinity;
+  const tick = async () => {
+    if (running || document.visibilityState === 'hidden') return;
+    running = true;
+    lastStart = Date.now();
+    try {
+      const v = visible();
+      await probeVisible(v.conns, v.tunneled);
+    } catch {
+      // A failed probe keeps the last values; the next tick tries again.
+    } finally {
+      running = false;
+    }
+  };
+  const onVisibility = () => {
+    if (Date.now() - lastStart >= PROBE_INTERVAL_MS) void tick();
+  };
+  void tick();
+  const timer = setInterval(() => void tick(), PROBE_INTERVAL_MS);
+  document.addEventListener('visibilitychange', onVisibility);
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', onVisibility);
+  };
+}

@@ -54,6 +54,20 @@ def test_a_certificate_entering_yellow_and_then_red_is_reported_once_each(db_ses
     assert rows[1].title == "Certificate gateway expires in 6 day(s)"
 
 
+def test_the_root_is_reported_a_year_ahead_and_red_below_120_days(db_session, admin_user):
+    _admin_bell(db_session, admin_user)
+    _infra(db_session, "root", NOW + 300 * DAY)
+    _infra(db_session, "root:retired", NOW + 300 * DAY)
+
+    assert expiry.notify_expiring(db_session, NOW) == 1
+    assert expiry.notify_expiring(db_session, NOW + 181 * DAY) == 1
+
+    assert [(r.severity, r.title) for r in _notices(db_session)] == [
+        ("warning", "Certificate root expires in 300 day(s)"),
+        ("critical", "Certificate root expires in 119 day(s)"),
+    ]
+
+
 def test_an_ok_certificate_and_a_renewed_one_stay_quiet(db_session, admin_user):
     _admin_bell(db_session, admin_user)
     db_session.add(Server(id="srv-1", name="web-01", hostname="web-01.example"))

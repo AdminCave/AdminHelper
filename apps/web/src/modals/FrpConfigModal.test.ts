@@ -100,7 +100,9 @@ function renderModal(editing: FrpConfig | null) {
   const asked = () => question.container.querySelector('.modal-body p')?.textContent ?? null;
   const answer = (ok: boolean) =>
     fireEvent.click(
-      question.container.querySelector(ok ? '.btn.danger' : '.btn.ghost') as HTMLButtonElement,
+      question.container.querySelector(
+        ok ? '.ui-btn-danger' : '.ui-btn-ghost',
+      ) as HTMLButtonElement,
     );
   dropQuestion = async () => {
     if (asked() !== null) await answer(false);
@@ -113,7 +115,11 @@ function renderModal(editing: FrpConfig | null) {
     submit: () => fireEvent.submit(view.container.querySelector('#frp-config-form') as Element),
     asked,
     answer,
-    warning: () => view.queryByTestId('frp-bind-port-warning'),
+    // The warning is the hint the bind port field points at.
+    warning: () => {
+      const id = field('fcBindPort').getAttribute('aria-describedby');
+      return id ? document.getElementById(id) : null;
+    },
   };
 }
 
@@ -269,7 +275,7 @@ describe('asking before saving an edit', () => {
     expect(m.onClose).not.toHaveBeenCalled();
     expect(m.asked()).toBeNull();
     expect(m.field('fcBindPort').value).toBe('7001');
-    expect((m.view.container.querySelector('.btn.primary') as HTMLButtonElement).disabled).toBe(
+    expect((m.view.container.querySelector('.ui-btn-primary') as HTMLButtonElement).disabled).toBe(
       false,
     );
   });
@@ -358,7 +364,7 @@ describe('the bind port warning', () => {
     expect(m.warning()?.textContent?.trim()).toBe(
       de['modal.frpConfig.bindPortMismatch'].replace('{port}', '7000'),
     );
-    expect(m.field('fcBindPort').getAttribute('aria-describedby')).toBe(m.warning()?.id);
+    expect(m.warning()?.closest('.ui-field')).toBe(m.field('fcBindPort').closest('.ui-field'));
 
     await m.type('fcBindPort', '7000');
     expect(m.warning()).toBeNull();

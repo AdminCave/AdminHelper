@@ -18,6 +18,7 @@ mod models;
 mod notifications;
 mod password;
 mod port_registry;
+mod probe;
 mod proxy;
 mod session;
 mod storage;
@@ -35,7 +36,7 @@ use commands::{
     enroll_with_token, export_browser_p12, fetch_connections_jwt, fetch_tunnels,
     generate_diagnostics, is_device_enrolled, list_workspaces, load_connections, load_settings,
     login, logout, open_connection, open_connection_stored, open_launcher, open_workspace,
-    password_state, pinned_ca_fingerprint, refresh_tunnel, reset_device_identity,
+    password_state, pinned_ca_fingerprint, probe_targets, refresh_tunnel, reset_device_identity,
     reset_server_cert_pin, resolve_connection, save_connections, save_password, save_settings,
     save_workspace, start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
     sync_connections, tunnel_status, workspace_context, write_export_csv,
@@ -247,6 +248,7 @@ fn main() {
             enroll_with_token,
             export_browser_p12,
             write_export_csv,
+            probe_targets,
             ansible_run,
             start_notification_stream,
             stop_notification_stream,

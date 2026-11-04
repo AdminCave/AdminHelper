@@ -42,12 +42,13 @@ export const translations: Translations = {
     'action.delete': 'Löschen',
     'action.edit': 'Bearbeiten',
     'action.close': 'Schließen',
+    'ui.search': 'Suchen',
+    'ui.clear': 'Leeren',
+    'ui.select': 'Auswählen …',
     'action.copy': 'Kopieren',
     'action.create': 'Erstellen',
     'action.refresh': 'Aktualisieren',
     'action.run': 'Ausführen',
-    'action.enable': 'Aktivieren',
-    'action.disable': 'Deaktivieren',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
@@ -128,7 +129,7 @@ export const translations: Translations = {
     // ── Certificates ───────────────────────────────────────────────────
     'page.certificates.title': 'Zertifikate',
     'page.certificates.subtitle':
-      'Wann die Zertifikate der Infrastruktur und der Agenten ablaufen — gelb unter 30, rot unter 7 Tagen.',
+      'Wann die Zertifikate der Infrastruktur und der Agenten ablaufen — gelb unter 30, rot unter 7 Tagen; die Root gelb unter 365, rot unter 120 Tagen.',
     'page.certificates.loading': 'Lädt …',
     'page.certificates.infra': 'Infrastruktur',
     'page.certificates.agents': 'Agenten',
@@ -172,7 +173,6 @@ export const translations: Translations = {
     'page.hooks.lastRun': 'Letzter Lauf',
     'page.hooks.next': 'Nächster: {time}',
     'page.hooks.active': 'Aktiv',
-    'page.hooks.inactive': 'Inaktiv',
     'page.hooks.rotateToken': 'Token rotieren',
 
     // ── Hook Events ───────────────────────────────────────────────────
@@ -364,12 +364,13 @@ export const translations: Translations = {
     'action.delete': 'Delete',
     'action.edit': 'Edit',
     'action.close': 'Close',
+    'ui.search': 'Search',
+    'ui.clear': 'Clear',
+    'ui.select': 'Choose …',
     'action.copy': 'Copy',
     'action.create': 'Create',
     'action.refresh': 'Refresh',
     'action.run': 'Run',
-    'action.enable': 'Enable',
-    'action.disable': 'Disable',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
@@ -448,7 +449,7 @@ export const translations: Translations = {
     // ── Certificates ───────────────────────────────────────────────────
     'page.certificates.title': 'Certificates',
     'page.certificates.subtitle':
-      'When the certificates of the infrastructure and the agents run out — yellow below 30, red below 7 days.',
+      'When the certificates of the infrastructure and the agents run out — yellow below 30, red below 7 days; the root yellow below 365, red below 120 days.',
     'page.certificates.loading': 'Loading …',
     'page.certificates.infra': 'Infrastructure',
     'page.certificates.agents': 'Agents',
@@ -492,7 +493,6 @@ export const translations: Translations = {
     'page.hooks.lastRun': 'Last run',
     'page.hooks.next': 'Next: {time}',
     'page.hooks.active': 'Active',
-    'page.hooks.inactive': 'Inactive',
     'page.hooks.rotateToken': 'Rotate token',
 
     // ── Hook Events ───────────────────────────────────────────────────

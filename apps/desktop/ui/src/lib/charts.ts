@@ -173,7 +173,7 @@ export function formatTip(at: number, locale: string): string {
 // names and mount points from the servers, so they are quoted as text.
 const FORMULA_START = /^[=+\-@\t\r]/;
 
-function csvCell(text: string): string {
+export function csvCell(text: string): string {
   const safe = FORMULA_START.test(text) ? `'${text}` : text;
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

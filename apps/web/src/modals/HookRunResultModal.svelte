@@ -21,11 +21,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </script>
 
 <Modal {open} title={$t('hook.result.title', { name: hookName })} width="720px" {onClose}>
-  <pre
-    style="margin:0;padding:14px;font-size:13px;background:var(--bg-elevated);border-radius:6px;overflow:auto;max-height:60vh">{result
-      ? JSON.stringify(result, null, 2)
-      : ''}</pre>
+  <pre>{result ? JSON.stringify(result, null, 2) : ''}</pre>
   {#snippet footer()}
-    <Button variant="ghost" onclick={onClose}>{$t('action.close')}</Button>
+    <Button variant="secondary" onclick={onClose}>{$t('action.close')}</Button>
   {/snippet}
 </Modal>
+
+<style>
+  pre {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  pre {
+    max-height: 60vh;
+  }
+</style>

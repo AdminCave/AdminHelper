@@ -5,311 +5,502 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import Pencil from '@lucide/svelte/icons/pencil';
+  import { onDestroy, onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
+  import { LayoutGrid, Plus, Rows3, SearchX } from '@lucide/svelte';
   import {
-    filteredConnections,
-    groupedConnections,
-    kindFilter,
-    groupFilter,
-    viewMode,
-    loadForCurrentMode as loadConnections,
     connections,
     connectionsStore,
+    favorites,
+    loadForCurrentMode as loadConnections,
     loading,
+    reachability,
+    remove,
+    searchTerm,
+    startReachability,
+    toggleFavorite,
+    upsert,
   } from '$lib/stores/connections';
-  import ConnectionsLoadError from '../components/ConnectionsLoadError.svelte';
-  import { tunnelMappings } from '$lib/stores/tunnel';
-  import { toCardMeta, groupedTagKeys, type ConnectionGroup } from '$lib/models/connection';
+  import { save } from '@tauri-apps/plugin-dialog';
+  import { deletePassword, writeExportCsv } from '$lib/bridge';
+  import { reportError, showStatus } from '$lib/stores/statusBar';
+  import { errMsg } from '$lib/utils/errors';
+  import {
+    connectionsCsv,
+    filterConnections,
+    groupConnections,
+    kindCounts,
+    libraryCounts,
+    quickAccess,
+    sortConnections,
+    tagCounts,
+    type Grouping,
+    type Library,
+    type ListContext,
+    type SortDir,
+    type SortKey,
+  } from '$lib/models/connectionList';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
+  import { tunnelMappings } from '$lib/stores/tunnel';
+  import { infraServers } from '$lib/stores/infra';
   import { openEditor } from '$lib/stores/editor';
   import { initiateConnect } from '$lib/stores/connectFlow';
   import { t } from '$lib/i18n';
   import { accelerateScroll, LIST_FACTOR } from '$lib/utils/scrollAcceleration';
+  import ConnectionsLoadError from '../components/ConnectionsLoadError.svelte';
+  import BulkBar from '../components/connections/BulkBar.svelte';
+  import ConnectionInspector from '../components/connections/ConnectionInspector.svelte';
+  import ConnectionSidebar from '../components/connections/ConnectionSidebar.svelte';
+  import ConnectionTable from '../components/connections/ConnectionTable.svelte';
+  import QuickAccess from '../components/connections/QuickAccess.svelte';
+  import Button from '../components/ui/Button.svelte';
+  import { confirmDialog } from '../components/ui/ConfirmDialog.svelte';
+  import EmptyState from '../components/ui/EmptyState.svelte';
+  import SearchField from '../components/ui/SearchField.svelte';
+  import Segmented from '../components/ui/Segmented.svelte';
+  import Select from '../components/ui/Select.svelte';
+  import Tag from '../components/ui/Tag.svelte';
+
+  // Literal keys, so the unused-key check in i18n.test.ts sees them.
+  const LIBRARY_LABELS: Record<Library, string> = {
+    all: 'connections.library.all',
+    favorites: 'connections.library.favorites',
+    recent: 'connections.library.recent',
+    tunnel: 'connections.library.tunnel',
+  };
+  const KIND_LABELS: Record<ConnectionKind, string> = {
+    ssh: 'filters.ssh',
+    rdp: 'filters.rdp',
+    web: 'filters.web',
+  };
+  const DEFAULT_DIR: Record<SortKey, SortDir> = { name: 'asc', ping: 'asc', lastUsed: 'desc' };
+
+  let library = $state<Library>('all');
+  let kind = $state<ConnectionKind | null>(null);
+  let tag = $state<string | null>(null);
+  let grouping = $state<Grouping>('host');
+  let view = $state<'table' | 'cards'>('table');
+  let sortKey = $state<SortKey>('lastUsed');
+  let sortDir = $state<SortDir>('desc');
+  let selectedId = $state<string | null>(null);
+  const checkedIds = new SvelteSet<string>();
+  let busy = $state(false);
+
+  let tunnelByConn = $derived(
+    new Map(
+      $tunnelMappings
+        .filter((m) => m.enabled && m.connectionId)
+        .map((m) => [m.connectionId as string, m.name]),
+    ),
+  );
+  // Ticks, so "last 24 h" and the counts follow the clock while the page stays open.
+  let now = $state(Date.now());
+  let ctx = $derived<ListContext>({
+    favorites: $favorites,
+    tunneled: new Set(tunnelByConn.keys()),
+    now,
+  });
+  let shown = $derived(
+    sortConnections(
+      filterConnections($connections, { library, kind, tag, search: $searchTerm }, ctx),
+      sortKey,
+      sortDir,
+      $reachability,
+    ),
+  );
+  let groups = $derived(groupConnections(shown, grouping));
+  let filtered = $derived(
+    library !== 'all' || kind != null || tag != null || $searchTerm.trim() !== '',
+  );
+  let quick = $derived(filtered ? [] : quickAccess($connections, ctx));
+  let selected = $derived($connections.find((c) => c.id === selectedId) ?? null);
+  // Derived from the store, so a connection deleted elsewhere drops out of the selection.
+  let checkedConns = $derived($connections.filter((c) => checkedIds.has(c.id)));
+  let allChecked = $derived(shown.length > 0 && shown.every((c) => checkedIds.has(c.id)));
+  // Only a server the inventory already holds gets a name; the page does not load the inventory.
+  let selectedServer = $derived(
+    selected?.serverId
+      ? ($infraServers.find((s) => s.id === selected?.serverId)?.name ?? null)
+      : null,
+  );
+
+  let stopProbe: (() => void) | null = null;
+  let destroyed = false;
+  const clock = setInterval(() => (now = Date.now()), 60_000);
 
   onMount(async () => {
     await loadConnections();
+    if (destroyed) return;
+    stopProbe = startReachability(() => ({ conns: shown, tunneled: ctx.tunneled }));
+  });
+  onDestroy(() => {
+    destroyed = true;
+    clearInterval(clock);
+    stopProbe?.();
   });
 
-  type Chip = 'single' | 'grouped' | 'ssh' | 'rdp' | 'web';
+  function resetFilters(): void {
+    library = 'all';
+    kind = null;
+    tag = null;
+    searchTerm.set('');
+  }
 
-  let activeChip = $derived<Chip>($kindFilter !== 'all' ? ($kindFilter as Chip) : $groupFilter);
-
-  function setChip(chip: Chip): void {
-    if (chip === 'single' || chip === 'grouped') {
-      groupFilter.set(chip);
-      kindFilter.set('all');
-    } else {
-      groupFilter.set('single');
-      kindFilter.set(chip);
+  function onSort(key: SortKey): void {
+    if (key === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else {
+      sortKey = key;
+      sortDir = DEFAULT_DIR[key];
     }
   }
 
-  function onCardClick(conn: Connection, ev: MouseEvent | KeyboardEvent): void {
-    const target = ev.target as HTMLElement;
-    if (target.closest('button')) return;
-    void initiateConnect(conn);
+  function check(c: Connection, on: boolean): void {
+    if (on) checkedIds.add(c.id);
+    else checkedIds.delete(c.id);
   }
 
-  // Preferred connection of a group for the click/edit target: SSH, then RDP, then
-  // web, else the first — the fallback that used to be copied at 3 call sites (2.27).
-  function preferredOf(group: ConnectionGroup): Connection | undefined {
-    return group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0];
+  // "All" means the visible rows: a filter narrows what the bulk actions touch.
+  function checkAll(on: boolean): void {
+    for (const c of shown) check(c, on);
   }
 
-  function onGroupClick(group: ConnectionGroup, ev: MouseEvent | KeyboardEvent): void {
-    const target = ev.target as HTMLElement;
-    if (target.closest('button')) return;
-    const preferred = preferredOf(group);
-    if (preferred) void initiateConnect(preferred);
-  }
-
-  function onConnect(conn: Connection, event: MouseEvent | KeyboardEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    void initiateConnect(conn);
-  }
-
-  function onEdit(conn: Connection, event: MouseEvent | KeyboardEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    openEditor(conn);
-  }
-
-  function tunnelFor(conn: Connection): string | null {
-    const match = $tunnelMappings.find((m) => m.enabled && m.connectionId === conn.id);
-    return match ? match.name : null;
-  }
-
-  let counter = $derived(
-    $groupFilter === 'grouped' ? $groupedConnections.length : $filteredConnections.length,
-  );
-
-  interface TreeNode {
-    tag: string;
-    items: Connection[];
-    groups: ConnectionGroup[];
-  }
-
-  let treeNodes = $derived.by<TreeNode[]>(() => {
-    const untagged = $t('tree.untagged');
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, never held as reactive state
-    const m = new Map<string, TreeNode>();
-    if ($groupFilter === 'grouped') {
-      for (const grp of $groupedConnections) {
-        const tags = groupedTagKeys(grp, untagged);
-        for (const tag of tags) {
-          const key = tag.trim() || untagged;
-          if (!m.has(key)) m.set(key, { tag: key, items: [], groups: [] });
-          m.get(key)!.groups.push(grp);
-        }
-      }
-    } else {
-      for (const conn of $filteredConnections) {
-        const tags = conn.tags && conn.tags.length > 0 ? conn.tags : [untagged];
-        for (const tag of tags) {
-          const key = tag.trim() || untagged;
-          if (!m.has(key)) m.set(key, { tag: key, items: [], groups: [] });
-          m.get(key)!.items.push(conn);
-        }
-      }
+  async function bulk(run: () => Promise<void>): Promise<void> {
+    busy = true;
+    try {
+      await run();
+    } catch (err) {
+      reportError(errMsg(err));
+    } finally {
+      busy = false;
     }
-    return Array.from(m.values()).sort((a, b) => a.tag.localeCompare(b.tag));
-  });
-
-  let openTags = $state<Record<string, boolean>>({});
-  function toggleTag(tag: string): void {
-    openTags = { ...openTags, [tag]: !(openTags[tag] ?? true) };
   }
-  function isOpen(tag: string): boolean {
-    return openTags[tag] ?? true;
+
+  function retag(tagName: string, add: boolean): Promise<void> {
+    return bulk(async () => {
+      const changed = checkedConns.filter((c) => c.tags.includes(tagName) !== add);
+      for (const c of changed) {
+        const tags = add ? [...c.tags, tagName] : c.tags.filter((x) => x !== tagName);
+        await upsert({ ...c, tags });
+      }
+      showStatus($t('connections.bulk.updated', { count: changed.length }));
+    });
+  }
+
+  function exportChecked(): Promise<void> {
+    return bulk(async () => {
+      const dest = await save({
+        defaultPath: 'adminhelper-connections.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (!dest) return;
+      const path = await writeExportCsv(dest, connectionsCsv(checkedConns));
+      showStatus($t('connections.bulk.saved', { path }));
+    });
+  }
+
+  async function deleteChecked(): Promise<void> {
+    const targets = checkedConns;
+    const ok = await confirmDialog(
+      $t('connections.bulk.deleteConfirm', { count: targets.length }),
+      {
+        confirmLabel: $t('action.delete'),
+      },
+    );
+    if (!ok) return;
+    await bulk(async () => {
+      for (const c of targets) {
+        await remove(c.id);
+        if (c.kind === 'rdp') {
+          try {
+            await deletePassword(c);
+          } catch {
+            // non-fatal, as in the editor: a missing keyring entry must not stop the rest
+          }
+        }
+      }
+      checkedIds.clear();
+      showStatus($t('connections.bulk.deleted', { count: targets.length }));
+    });
+  }
+
+  function connect(c: Connection): void {
+    selectedId = c.id;
+    void initiateConnect(c);
   }
 </script>
 
-<div class="section-toolbar">
-  <div class="toolbar-left">
-    <div class="filters">
-      <button class="chip" class:active={activeChip === 'single'} onclick={() => setChip('single')}
-        >{$t('filters.single')}</button
+<div class="conn-page">
+  <aside class="conn-rail">
+    <ConnectionSidebar
+      {library}
+      {kind}
+      {tag}
+      libraryCounts={libraryCounts($connections, ctx)}
+      kindCounts={kindCounts($connections)}
+      tags={tagCounts($connections)}
+      onLibrary={(l) => (library = l)}
+      onKind={(k) => (kind = k)}
+      onTag={(x) => (tag = x)}
+    />
+  </aside>
+
+  <div class="conn-main">
+    <div class="conn-toolbar">
+      <div class="search">
+        <SearchField
+          bind:value={$searchTerm}
+          placeholder={$t('connections.search')}
+          label={$t('connections.search')}
+          size="sm"
+          fullWidth
+        />
+      </div>
+      <div class="kind-switch">
+        <Segmented
+          label={$t('connections.type')}
+          value={kind ?? 'all'}
+          options={[
+            { value: 'all', label: $t('connections.library.all') },
+            { value: 'ssh', label: $t('filters.ssh') },
+            { value: 'rdp', label: $t('filters.rdp') },
+            { value: 'web', label: $t('filters.web') },
+          ]}
+          onChange={(v) => (kind = v === 'all' ? null : (v as ConnectionKind))}
+        />
+      </div>
+      <div class="grouping" title={$t('connections.group')}>
+        <Select
+          size="sm"
+          value={grouping}
+          options={[
+            { value: 'host', label: $t('connections.group.host') },
+            { value: 'tag', label: $t('connections.group.tag') },
+            { value: 'kind', label: $t('connections.group.kind') },
+            { value: 'none', label: $t('connections.group.none') },
+          ]}
+          onChange={(v) => (grouping = v as Grouping)}
+        />
+      </div>
+      <Segmented
+        label={$t('connections.view')}
+        value={view}
+        options={[
+          { value: 'table', icon: Rows3, title: $t('connections.view.table') },
+          { value: 'cards', icon: LayoutGrid, title: $t('connections.view.cards') },
+        ]}
+        onChange={(v) => (view = v as 'table' | 'cards')}
+      />
+      <span class="counter" data-testid="conn-counter"
+        >{$t('connections.count', { shown: shown.length, total: $connections.length })}</span
       >
-      <button
-        class="chip"
-        class:active={activeChip === 'grouped'}
-        onclick={() => setChip('grouped')}>{$t('filters.grouped')}</button
-      >
-      <button class="chip" class:active={activeChip === 'ssh'} onclick={() => setChip('ssh')}
-        >{$t('filters.ssh')}</button
-      >
-      <button class="chip" class:active={activeChip === 'rdp'} onclick={() => setChip('rdp')}
-        >{$t('filters.rdp')}</button
-      >
-      <button class="chip" class:active={activeChip === 'web'} onclick={() => setChip('web')}
-        >{$t('filters.web')}</button
+      <Button
+        size="sm"
+        iconLeft={Plus}
+        data-action="connection-new"
+        onclick={() => openEditor(null)}>{$t('connections.new')}</Button
       >
     </div>
-    <div class="view-toggle">
-      <button class="chip" class:active={$viewMode === 'list'} onclick={() => viewMode.set('list')}
-        >{$t('view.list')}</button
-      >
-      <button class="chip" class:active={$viewMode === 'tree'} onclick={() => viewMode.set('tree')}
-        >{$t('view.tree')}</button
-      >
+
+    {#if filtered}
+      <div class="chips">
+        {#if library !== 'all'}
+          <Tag
+            size="sm"
+            onRemove={() => (library = 'all')}
+            removeLabel={$t('connections.chip.remove')}>{$t(LIBRARY_LABELS[library])}</Tag
+          >
+        {/if}
+        {#if kind}
+          <Tag size="sm" onRemove={() => (kind = null)} removeLabel={$t('connections.chip.remove')}
+            >{$t('connections.chip.kind', { kind: $t(KIND_LABELS[kind]) })}</Tag
+          >
+        {/if}
+        {#if tag}
+          <Tag size="sm" onRemove={() => (tag = null)} removeLabel={$t('connections.chip.remove')}
+            >{$t('connections.chip.tag', { tag })}</Tag
+          >
+        {/if}
+        {#if $searchTerm.trim()}
+          <Tag
+            size="sm"
+            onRemove={() => searchTerm.set('')}
+            removeLabel={$t('connections.chip.remove')}
+            >{$t('connections.chip.search', { q: $searchTerm.trim() })}</Tag
+          >
+        {/if}
+        <button type="button" class="reset" onclick={resetFilters}>{$t('connections.reset')}</button
+        >
+      </div>
+    {/if}
+
+    {#if checkedConns.length > 0}
+      <BulkBar
+        count={checkedConns.length}
+        {busy}
+        onAddTag={(x) => void retag(x, true)}
+        onRemoveTag={(x) => void retag(x, false)}
+        onExport={() => void exportChecked()}
+        onDelete={() => void deleteChecked()}
+        onClear={() => checkedIds.clear()}
+      />
+    {/if}
+
+    <ConnectionsLoadError />
+
+    <div class="conn-scroll" use:accelerateScroll={LIST_FACTOR}>
+      {#if $connections.length === 0}
+        {#if $loading}
+          <div class="dash-empty" style="padding: var(--sp-6);">{$t('loading.generic')}</div>
+        {:else if !$connectionsStore.error}
+          <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.empty')}</div>
+        {/if}
+      {:else}
+        <QuickAccess
+          items={quick}
+          favorites={$favorites}
+          reach={$reachability}
+          onConnect={connect}
+        />
+        {#if shown.length === 0}
+          <div class="no-results">
+            <EmptyState icon={SearchX} title={$t('connections.noResults')}>
+              {#snippet action()}
+                <Button size="sm" variant="secondary" onclick={resetFilters}
+                  >{$t('connections.resetFilters')}</Button
+                >
+              {/snippet}
+            </EmptyState>
+          </div>
+        {:else}
+          <ConnectionTable
+            {groups}
+            {grouping}
+            {view}
+            favorites={$favorites}
+            reach={$reachability}
+            tunnelName={(c) => tunnelByConn.get(c.id) ?? null}
+            {selectedId}
+            {sortKey}
+            {sortDir}
+            {onSort}
+            onSelect={(c) => (selectedId = c.id)}
+            onClear={() => (selectedId = null)}
+            checked={checkedIds}
+            {allChecked}
+            onCheck={check}
+            onCheckAll={checkAll}
+            onConnect={connect}
+            onEdit={(c) => openEditor(c)}
+            onFavorite={(c) => void toggleFavorite(c.id)}
+          />
+        {/if}
+      {/if}
     </div>
   </div>
-  <div class="toolbar-right">
-    <div class="counter">{counter}</div>
-    <button class="btn primary" onclick={() => openEditor(null)}>{$t('connections.new')}</button>
+
+  <div class="conn-insp">
+    <ConnectionInspector
+      conn={selected}
+      favorite={selected ? $favorites.has(selected.id) : false}
+      reach={selected ? $reachability[selected.id] : undefined}
+      tunnel={selected ? (tunnelByConn.get(selected.id) ?? null) : null}
+      server={selectedServer}
+      onConnect={connect}
+      onEdit={(c) => openEditor(c)}
+      onFavorite={(c) => void toggleFavorite(c.id)}
+    />
   </div>
 </div>
 
-{#snippet connCard(conn: Connection, showTags: boolean)}
-  {@const tunnelName = tunnelFor(conn)}
-  <div
-    class="card"
-    role="button"
-    tabindex="0"
-    onclick={(e) => onCardClick(conn, e)}
-    onkeydown={(e) => e.key === 'Enter' && onCardClick(conn, e)}
-  >
-    <div class="card-main">
-      <div class="card-title">{conn.name || $t('list.noName')}</div>
-      <div class="card-meta">{toCardMeta(conn)}</div>
-      <div class="card-tag">{conn.kind.toUpperCase()}</div>
-      {#if tunnelName}
-        <div class="card-tag tunnel-badge" title={tunnelName}>{$t('tunnel.badge')}</div>
-      {/if}
-      {#if showTags && conn.tags && conn.tags.length > 0}
-        <div class="card-tags">
-          {#each conn.tags as tag (tag)}
-            <span class="tag">{tag}</span>
-          {/each}
-        </div>
-      {/if}
-    </div>
-    <div class="card-actions">
-      <button
-        class="btn icon large"
-        title={$t('action.edit')}
-        aria-label={$t('action.edit')}
-        onclick={(e) => onEdit(conn, e)}
-      >
-        <Pencil />
-      </button>
-    </div>
-  </div>
-{/snippet}
+<style>
+  .conn-page {
+    container-type: inline-size;
+    display: flex;
+    height: 100%;
+    min-height: 0;
+  }
+  .conn-rail {
+    display: none;
+    flex: 0 0 220px;
+    min-height: 0;
+  }
+  .conn-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .conn-insp {
+    display: none;
+    flex: 0 0 340px;
+    min-height: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+  }
+  .conn-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .search {
+    flex: 1 1 220px;
+    min-width: 180px;
+    max-width: 420px;
+  }
+  .counter {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-subtle);
+    white-space: nowrap;
+  }
+  .chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: var(--sp-3) var(--sp-4) 0;
+  }
+  .reset {
+    border: none;
+    background: transparent;
+    color: var(--link);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .conn-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: var(--sp-4);
+  }
+  .no-results {
+    padding: var(--sp-5);
+  }
 
-{#snippet groupCard(group: ConnectionGroup)}
-  {@const preferred = preferredOf(group)}
-  <div
-    class="card"
-    role="button"
-    tabindex="0"
-    onclick={(e) => onGroupClick(group, e)}
-    onkeydown={(e) => e.key === 'Enter' && onGroupClick(group, e)}
-  >
-    <div class="card-main">
-      <div class="card-title">{group.displayName || $t('list.noName')}</div>
-      <div class="card-meta">
-        {group.host} · {$t('grouped.connections', { count: group.connections.length })}
-      </div>
-      <div class="card-tag">
-        {['ssh', 'rdp', 'web']
-          .filter((k) => group.byKind[k as ConnectionKind])
-          .map((k) => k.toUpperCase())
-          .join(' · ')}
-      </div>
-    </div>
-    <div class="card-actions">
-      {#each ['ssh', 'rdp', 'web'] as kind (kind)}
-        {#if group.byKind[kind as ConnectionKind]}
-          <button
-            class="btn small accent"
-            onclick={(e) => onConnect(group.byKind[kind as ConnectionKind]!, e)}
-            >{kind.toUpperCase()}</button
-          >
-        {/if}
-      {/each}
-      {#if preferred}
-        <button
-          class="btn icon large"
-          title={$t('action.edit')}
-          aria-label={$t('action.edit')}
-          onclick={(e) => onEdit(preferred, e)}
-        >
-          <Pencil />
-        </button>
-      {/if}
-    </div>
-  </div>
-{/snippet}
-
-<ConnectionsLoadError />
-
-{#if $connections.length === 0}
-  <div class="list" use:accelerateScroll={LIST_FACTOR}>
-    {#if $loading}
-      <div class="dash-empty" style="padding: var(--sp-6);">{$t('loading.generic')}</div>
-    {:else if !$connectionsStore.error}
-      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.empty')}</div>
-    {/if}
-  </div>
-{:else if $viewMode === 'list' && $groupFilter === 'single'}
-  <div class="list" use:accelerateScroll={LIST_FACTOR}>
-    {#if $filteredConnections.length === 0}
-      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
-    {:else}
-      {#each $filteredConnections as conn (conn.id)}
-        {@render connCard(conn, true)}
-      {/each}
-    {/if}
-  </div>
-{:else if $viewMode === 'list' && $groupFilter === 'grouped'}
-  <div class="list" use:accelerateScroll={LIST_FACTOR}>
-    {#if $groupedConnections.length === 0}
-      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
-    {:else}
-      {#each $groupedConnections as group (group.key)}
-        {@render groupCard(group)}
-      {/each}
-    {/if}
-  </div>
-{:else}
-  <div class="tree" use:accelerateScroll={LIST_FACTOR}>
-    {#if treeNodes.length === 0}
-      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
-    {:else}
-      {#each treeNodes as node (node.tag)}
-        <div class="tree-group" class:open={isOpen(node.tag)}>
-          <div
-            class="tree-header"
-            role="button"
-            tabindex="0"
-            onclick={() => toggleTag(node.tag)}
-            onkeydown={(e) => e.key === 'Enter' && toggleTag(node.tag)}
-          >
-            <div class="tree-tag">{node.tag}</div>
-            <div class="tree-toggle">
-              <span class="tree-count">
-                {$t('tree.connections', {
-                  count: $groupFilter === 'grouped' ? node.groups.length : node.items.length,
-                })}
-              </span>
-            </div>
-          </div>
-          <div class="tree-list">
-            {#if $groupFilter === 'grouped'}
-              {#each node.groups as group (group.key)}
-                <div class="tree-node">{@render groupCard(group)}</div>
-              {/each}
-            {:else}
-              {#each node.items as conn (conn.id)}
-                <div class="tree-node">{@render connCard(conn, false)}</div>
-              {/each}
-            {/if}
-          </div>
-        </div>
-      {/each}
-    {/if}
-  </div>
-{/if}
+  /* A container query only reaches descendants, hence nothing on .conn-page itself here. */
+  @container (min-width: 900px) {
+    .conn-insp {
+      display: block;
+    }
+  }
+  @container (min-width: 1380px) {
+    .conn-insp {
+      flex-basis: 380px;
+    }
+  }
+  /* From 1180 px the filters live in the rail, and the kind switch in the toolbar goes. */
+  @container (min-width: 1180px) {
+    .conn-rail {
+      display: block;
+    }
+    .kind-switch {
+      display: none;
+    }
+  }
+</style>

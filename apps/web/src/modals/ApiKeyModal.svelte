@@ -7,6 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import FormField from '$lib/components/ui/FormField.svelte';
+  import Input from '$lib/components/ui/Input.svelte';
+  import Select from '$lib/components/ui/Select.svelte';
   import { t } from '$lib/i18n';
   import { apikeys } from '$lib/stores/apikeys';
   import { showError } from '$lib/stores/notifications';
@@ -21,7 +24,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let { open, onClose, onReveal }: Props = $props();
 
   let name = $state('');
-  let permission = $state<ApiKeyPermission>('read');
+  // Select binds a string; the two options are exactly the ApiKeyPermission values.
+  let permission = $state<string>('read');
   let submitting = $state(false);
 
   $effect(() => {
@@ -35,7 +39,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     e.preventDefault();
     submitting = true;
     try {
-      const created = await apikeys.create({ name: name.trim(), permission });
+      const created = await apikeys.create({
+        name: name.trim(),
+        permission: permission as ApiKeyPermission,
+      });
       onReveal(created.key);
     } catch (err) {
       showError(err);
@@ -46,23 +53,39 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </script>
 
 <Modal {open} title={$t('modal.apikey.titleNew')} width="420px" {onClose}>
-  <form class="modal-form" onsubmit={onSubmit} id="apikey-form">
-    <div class="field">
-      <label for="akName">{$t('label.name')} *</label>
-      <input id="akName" required placeholder="Client-Sync" bind:value={name} />
-    </div>
-    <div class="field">
-      <label for="akPermission">{$t('page.apikeys.permission')}</label>
-      <select id="akPermission" bind:value={permission}>
-        <option value="read">{$t('page.apikeys.readOnly')}</option>
-        <option value="read_write">{$t('page.apikeys.readWrite')}</option>
-      </select>
-    </div>
+  <form class="form" onsubmit={onSubmit} id="apikey-form">
+    <FormField label={$t('label.name')} id="akName" required>
+      <Input required placeholder="Client-Sync" bind:value={name} />
+    </FormField>
+    <FormField label={$t('page.apikeys.permission')} id="akPermission">
+      <Select
+        bind:value={permission}
+        fullWidth
+        options={[
+          { value: 'read', label: $t('page.apikeys.readOnly') },
+          { value: 'read_write', label: $t('page.apikeys.readWrite') },
+        ]}
+      />
+    </FormField>
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
-    <Button variant="primary" type="submit" disabled={submitting} form="apikey-form">
+    <Button
+      variant="primary"
+      type="submit"
+      loading={submitting}
+      disabled={submitting}
+      form="apikey-form"
+    >
       {$t('action.create')}
     </Button>
   {/snippet}
 </Modal>
+
+<style>
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+</style>

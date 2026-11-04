@@ -79,7 +79,25 @@ describe('Certificates page', () => {
       ['web-01', '3', 'Kritisch'],
       ['srv-2', 'abgelaufen', 'Kritisch'],
     ]);
-    expect(section(container, 'agents').querySelector('.light.critical')).not.toBeNull();
+    expect(section(container, 'agents').querySelector('[data-status="critical"]')).not.toBeNull();
+    expect(
+      section(container, 'infrastructure').querySelector('[data-status="warning"]'),
+    ).not.toBeNull();
+  });
+
+  it('names the limits of the traffic light, the root with its own', async () => {
+    vi.mocked(overview).mockResolvedValue({ infrastructure: [], agents: [] });
+    const { container, unmount } = render(Certificates);
+    const subtitle = () => container.querySelector('.page-subtitle')?.textContent ?? '';
+    expect(subtitle()).toContain('gelb unter 30, rot unter 7 Tagen');
+    expect(subtitle()).toContain('die Root gelb unter 365, rot unter 120 Tagen');
+    unmount();
+
+    language.set('en');
+    const en = render(Certificates);
+    expect(en.container.querySelector('.page-subtitle')?.textContent).toContain(
+      'yellow below 30, red below 7 days; the root yellow below 365, red below 120 days',
+    );
   });
 
   it('says "no data" when the ca-issuer recorded nothing', async () => {

@@ -36,48 +36,50 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | Paket | Version | Lizenz | S | M | C |
 |---|---|---|:-:|:-:|:-:|
 | bcrypt | 5.0.0 | Apache-2.0 | x |  |  |
-| python-multipart | 0.0.32 | Apache-2.0 | x |  |  |
-| cryptography | 50.0.1 | Apache-2.0 OR BSD-3-Clause | x |  | x |
-| uvloop | 0.22.1 | Apache-2.0 OR MIT | x | x | x |
-| click | 8.4.1 | BSD-3-Clause | x | x | x |
+| python-multipart | 0.0.33 | Apache-2.0 | x |  |  |
+| opentelemetry-api | 1.45.2 | Apache-2.0 | x | x | x |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | x |  | x |
+| uvloop | 0.23.0 | Apache-2.0 OR MIT | x | x | x |
+| click | 8.5.0 | BSD-3-Clause | x | x | x |
 | httpcore | 1.0.9 | BSD-3-Clause | x | x |  |
 | httpx | 0.28.1 | BSD-3-Clause | x | x |  |
-| idna | 3.18 | BSD-3-Clause | x | x | x |
-| MarkupSafe | 3.0.3 | BSD-3-Clause | x | x |  |
-| pycparser | 3.0 | BSD-3-Clause | x |  | x |
-| python-dotenv | 1.2.2 | BSD-3-Clause | x | x | x |
-| starlette | 1.3.1 | BSD-3-Clause | x | x | x |
-| uvicorn | 0.49.0 | BSD-3-Clause | x | x | x |
-| websockets | 16.0 | BSD-3-Clause | x | x | x |
-| psycopg | 3.3.4 | LGPL-3.0-only | x | x | x |
-| psycopg-binary | 3.3.4 | LGPL-3.0-only | x | x | x |
-| alembic | 1.18.4 | MIT | x | x |  |
-| annotated-doc | 0.0.4 | MIT | x | x | x |
-| annotated-types | 0.7.0 | MIT | x | x | x |
-| anyio | 4.13.0 | MIT | x | x | x |
-| APScheduler | 3.11.2 | MIT | x | x |  |
-| cffi | 2.0.0 | MIT | x |  | x |
-| fastapi | 0.138.0 / 0.139.0 | MIT | x | x | x |
+| idna | 3.20 | BSD-3-Clause | x | x | x |
+| MarkupSafe | 3.0.4 | BSD-3-Clause | x | x |  |
+| pycparser | 3.12 | BSD-3-Clause | x |  | x |
+| python-dotenv | 1.2.4 | BSD-3-Clause | x | x | x |
+| starlette | 1.10.0 | BSD-3-Clause | x | x | x |
+| uvicorn | 0.54.0 | BSD-3-Clause | x | x | x |
+| websockets | 17.4 | BSD-3-Clause | x | x | x |
+| psycopg | 3.3.7 | LGPL-3.0-only | x | x | x |
+| psycopg-binary | 3.3.7 | LGPL-3.0-only | x | x | x |
+| alembic | 1.20.1 | MIT | x | x |  |
+| annotated-doc | 0.0.5 | MIT | x | x | x |
+| annotated-types | 0.8.0 | MIT | x | x | x |
+| anyio | 4.16.0 | MIT | x | x | x |
+| APScheduler | 3.11.3 | MIT | x | x |  |
+| cffi | 2.1.1 | MIT | x |  | x |
+| fastapi | 0.162.0 | MIT | x | x | x |
 | h11 | 0.16.0 | MIT | x | x | x |
-| httptools | 0.8.0 | MIT | x | x | x |
-| Mako | 1.3.12 | MIT | x | x |  |
-| pydantic | 2.13.4 | MIT | x | x | x |
-| pydantic_core | 2.46.4 | MIT | x | x | x |
+| httptools | 0.9.0 | MIT | x | x | x |
+| Mako | 1.4.3 | MIT | x | x |  |
+| pydantic | 2.14.2 | MIT | x | x | x |
+| pydantic_core | 2.50.2 | MIT | x | x | x |
 | PyJWT | 2.15.1 | MIT | x |  |  |
 | PyYAML | 6.0.3 | MIT | x | x | x |
-| redis | 8.0.0 | MIT | x |  |  |
-| SQLAlchemy | 2.0.50 | MIT | x | x | x |
-| typing-inspection | 0.4.2 | MIT | x | x | x |
-| tzlocal | 5.3.1 | MIT | x | x |  |
-| watchfiles | 1.2.0 | MIT | x | x | x |
-| greenlet | 3.5.1 | MIT AND PSF-2.0 | x | x | x |
-| certifi | 2026.5.20 | MPL-2.0 | x | x |  |
-| typing_extensions | 4.15.0 | PSF-2.0 | x | x | x |
+| redis | 8.1.0 | MIT | x |  |  |
+| SQLAlchemy | 2.1.8 | MIT | x | x | x |
+| typing-inspection | 0.4.4 | MIT | x | x | x |
+| tzlocal | 5.4.5 | MIT | x | x |  |
+| watchfiles | 1.3.0 | MIT | x | x | x |
+| greenlet | 3.5.6 | MIT AND PSF-2.0 | x | x |  |
+| certifi | 2026.10.23 | MPL-2.0 | x | x |  |
+| typing_extensions | 4.16.0 | PSF-2.0 | x | x | x |
 
-`fastapi` ist im Server/Monitoring auf `0.138.0`, im CA-Issuer auf `0.139.0`
-gepinnt.
+`fastapi` ist in allen drei Diensten auf `0.162.0` gepinnt; es zieht
+`opentelemetry-api` mit (ohne SDK, sendet nichts).
 
-**Auflagen-relevant:** Apache-2.0 (NOTICE) — `bcrypt`, `python-multipart`;
+**Auflagen-relevant:** Apache-2.0 (NOTICE) — `bcrypt`, `python-multipart`,
+`opentelemetry-api`;
 LGPL-3.0 — `psycopg`, `psycopg-binary`; MPL-2.0 — `certifi`. `cryptography`
 (Apache OR BSD) und `uvloop` (Apache OR MIT) sind dual — es wird der
 permissive Zweig geführt (siehe „Auflagen & Hinweise").
@@ -194,11 +196,16 @@ geführt (keine NOTICE-Pflicht).
 
 ### `apps/web/` (Admin-Panel) und `apps/desktop/e2e/`
 
-**Keine ausgelieferten Dritt-Laufzeit-Abhängigkeiten.** Das Admin-Panel ist
-eine reine Svelte-Anwendung — Svelte kompiliert zur Build-Zeit weg, und
-`apps/web` deklariert keine Laufzeit-`dependencies` (Vite/Svelte/ESLint sind
-`devDependencies` = Build-Werkzeuge, nicht Teil des ausgelieferten Bundles).
-`apps/desktop/e2e/` ist ein reines Test-Harness und wird nicht ausgeliefert.
+| Paket | Version | Lizenz |
+|---|---|---|
+| @lucide/svelte | 1.66.0 | ISC |
+
+Das Admin-Panel ist eine reine Svelte-Anwendung — Svelte kompiliert zur
+Build-Zeit weg, und `apps/web` deklariert keine Laufzeit-`dependencies`
+(Vite/Svelte/ESLint sind `devDependencies` = Build-Werkzeuge). Ausnahme sind die
+Icons: `@lucide/svelte` steht als `devDependency` im Manifest, die genutzten
+Icons landen aber im ausgelieferten Bundle. `apps/desktop/e2e/` ist ein reines
+Test-Harness und wird nicht ausgeliefert.
 
 ---
 

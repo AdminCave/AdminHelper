@@ -8,7 +8,8 @@
 # replacement, quoted-value recognition (audit 6.71), a write that hits a full
 # disk (R-0516), CA_ROOT_PASSPHRASE only in the run that generates
 # POSTGRES_PASSWORD, a .env with bytes outside UTF-8 or a NUL byte (R-0530), and a
-# read-only .env with a terminal on stdin (R-0538).
+# read-only .env with a terminal on stdin (R-0538), and keys in every form compose
+# reads: export, blanks around the separator, ':' (R-1002).
 #
 # Run: bash scripts/tests/init-secrets_test.sh   (needs bash, openssl, coreutils, the
 #      locale C.UTF-8: without it test 7 cannot run, and the test ends with 75;
@@ -30,7 +31,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 # The keys of a .env for a FAIL line: its values are secrets, even generated test ones.
-envkeys() { LC_ALL=C cut -d= -f1 "$1" | cat -v | tr '\n' ' '; }
+envkeys() { LC_ALL=C sed -E 's/[=:].*//' "$1" | cat -v | tr '\n' ' '; }
 val() { grep -E "^$1=" "$2" | head -1 | sed -E "s/^$1=//; s/^\"//; s/\"\$//"; }
 
 # ── 1. fresh generation: empty secrets get 64-hex values ─────────────────────
@@ -79,7 +80,7 @@ AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
 cat > "$BIN/grep" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
-  *"-vE ^#?[[:space:]]*SECRET_KEY="*)
+  *"-vE ^#?[[:space:]]*(export[[:space:]]+)?SECRET_KEY[[:space:]]*[=:]"*)
     [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
 esac
 exec "$AH_TEST_REAL_GREP" "$@"
@@ -237,6 +238,45 @@ for k in SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
   v=$(val "$k" "$ENV"); [ "${#v}" -eq 64 ] || added=0
 done
 [ "$added" = 1 ] && ok "existing .env: the missing role passwords added" || bad "existing .env: role passwords not added"
+
+# ── 10. keys in every form compose reads (R-1002) ────────────────────────────
+# Read only as KEY=, 'export KEY=v' or 'KEY = v' counted as unset: upsert added a
+# second line with a new value, and compose took the second one, a
+# POSTGRES_PASSWORD that no longer matches the volume.
+ENV="$WORK/env10"
+printf '%s\n' 'export POSTGRES_PASSWORD=pgold' 'SERVER_DB_PASSWORD = srvold' 'MONITOR_DB_PASSWORD: monold' \
+  ' SCHEDULER_DB_PASSWORD="schedold"' 'export SECRET_KEY=' MONITOR_API_KEY=m1 CA_DB_PASSWORD=c1 CA_ROOT_PASSPHRASE= > "$ENV"
+cp "$ENV" "$WORK/env10.orig"
+bash "$INIT" "$ENV" >/dev/null 2>&1; rc=$?
+kept=1
+for l in 'export POSTGRES_PASSWORD=pgold' 'SERVER_DB_PASSWORD = srvold' 'MONITOR_DB_PASSWORD: monold' ' SCHEDULER_DB_PASSWORD="schedold"'; do
+  [ "$(grep -cxF -- "$l" "$ENV")" -eq 1 ] || kept=0
+done
+for k in POSTGRES_PASSWORD SERVER_DB_PASSWORD MONITOR_DB_PASSWORD SCHEDULER_DB_PASSWORD; do
+  [ "$(grep -cE "^[[:space:]]*(export[[:space:]]+)?${k}[[:space:]]*[=:]" "$ENV")" -eq 1 ] || kept=0
+done
+{ [ $rc -eq 0 ] && [ "$kept" = 1 ]; } \
+  && ok "export, blanks around the separator and ':' count as set: each key once, unchanged" \
+  || bad "key forms: rc=$rc keys: $(envkeys "$ENV")"
+v=$(val SECRET_KEY "$ENV")
+{ [ "${#v}" -eq 64 ] && [ "$(grep -cE '^[[:space:]]*(export[[:space:]]+)?SECRET_KEY[[:space:]]*[=:]' "$ENV")" -eq 1 ]; } \
+  && ok "an empty 'export SECRET_KEY=' is replaced by one generated line" \
+  || bad "empty export SECRET_KEY: keys: $(envkeys "$ENV")"
+{ [ -z "$(val CA_ROOT_PASSPHRASE "$ENV")" ]; } \
+  && ok "POSTGRES_PASSWORD read as set: CA_ROOT_PASSPHRASE stays empty" \
+  || bad "CA_ROOT_PASSPHRASE generated although POSTGRES_PASSWORD was set"
+
+# Compose takes the last statement of a key: an empty first one in another form
+# must not count, else POSTGRES_PASSWORD and CA_ROOT_PASSPHRASE are made anew.
+ENV="$WORK/env10b"
+printf '%s\n' 'export POSTGRES_PASSWORD=' POSTGRES_PASSWORD=pglast SECRET_KEY=s1 MONITOR_API_KEY=m1 \
+  SERVER_DB_PASSWORD=r1 SCHEDULER_DB_PASSWORD=r2 MONITOR_DB_PASSWORD=r3 CA_DB_PASSWORD=r4 CA_ROOT_PASSPHRASE= > "$ENV"
+bash "$INIT" "$ENV" >/dev/null 2>&1; rc=$?
+{ [ $rc -eq 0 ] && [ "$(grep -cx POSTGRES_PASSWORD=pglast "$ENV")" -eq 1 ] \
+    && [ "$(grep -cE '^[[:space:]]*(export[[:space:]]+)?POSTGRES_PASSWORD[[:space:]]*[=:]' "$ENV")" -eq 2 ] \
+    && [ -z "$(val CA_ROOT_PASSPHRASE "$ENV")" ]; } \
+  && ok "the last statement of a key counts, as for compose: nothing made anew" \
+  || bad "last statement: rc=$rc keys: $(envkeys "$ENV")"
 
 echo
 echo "──────────────────────────────────────────"

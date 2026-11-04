@@ -239,9 +239,9 @@ describe('AppShell: command palette', () => {
   }
 
   it('opens with Ctrl+K from inside an input and hands the focus back on Escape', async () => {
-    replace('/connections');
-    const view = render(AppShell);
-    const search = view.container.querySelector<HTMLInputElement>('.search-box input')!;
+    render(AppShell);
+    // Any text field of a page; the header carries none since the connections page has its own.
+    const search = document.body.appendChild(document.createElement('input'));
     search.focus();
     await fireEvent.keyDown(search, { key: 'k', ctrlKey: true });
     await tick();
@@ -253,6 +253,7 @@ describe('AppShell: command palette', () => {
     await tick();
     expect(document.querySelector('.palette')).toBeNull();
     expect(document.activeElement).toBe(search);
+    search.remove();
   });
 
   it('opens with Cmd+K and from the header button, but not on a plain k', async () => {

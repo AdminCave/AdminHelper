@@ -38,14 +38,93 @@ func TestServerConfigAcceptsTheGeneratorForm(t *testing.T) {
 		"bundleToml":     bundleToml,
 		"withToken":      withToken("rotated-token"),
 		"without a tunnel": []byte("serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n" +
-			"auth.method = \"token\"\nauth.token = \"frps-token\"\n"),
-		"floats": []byte("serverAddr = \"203.0.113.10\"\n\n[[proxies]]\nname = \"ssh\"\n" +
+			"auth.method = \"token\"\nauth.token = \"frps-token\"\n" + generatorTLS),
+		"TLS keys in the root": []byte("serverAddr = \"203.0.113.10\"\n" + rootTLS + "\n[[proxies]]\nname = \"ssh\"\n"),
+		"floats": []byte("serverAddr = \"203.0.113.10\"\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n" +
 			"a = 1.5\nb = 1e+20\nc = inf\nd = -inf\ne = nan\nf = 1e-05\ng = -0.5\nh = 1.5e+20\n" +
 			"i = -7\nj = []\n"),
 	}
 	for name, toml := range texts {
 		if err := checkServerConfig(toml); err != nil {
 			t.Errorf("%s: checkServerConfig = %v, want nil", name, err)
+		}
+	}
+}
+
+// rootTLS is generatorTLS with its keys dotted in the root, a form checkServerConfig takes as well.
+const rootTLS = "transport.tls.enable = true\n" +
+	"transport.tls.trustedCaFile = \"/etc/adminhelper/identity/ca.crt\"\n" +
+	"transport.tls.certFile = \"/etc/adminhelper/identity/agent.crt\"\n" +
+	"transport.tls.keyFile = \"/etc/adminhelper/identity/agent.key\"\n"
+
+// The TLS part passes only as the generator writes it, under [transport.tls] and in the root:
+// each of the four keys with another value, or missing, refuses the text. The error names line and
+// key, never the value the text holds.
+func TestServerConfigTakesOnlyTheGeneratorsTLS(t *testing.T) {
+	const marker = "MARKER-7f3a"
+	const common = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n"
+	const proxy = "\n[[proxies]]\nname = \"ssh\"\n"
+	// text is common, the generator's TLS part with key set to value (left out for value ""), and
+	// proxy. The TLS lines are lines 5 to 8 under [transport.tls] and lines 3 to 6 in the root.
+	text := func(root bool, key, value string) string {
+		var b strings.Builder
+		b.WriteString(common)
+		if !root {
+			b.WriteString("\n[transport.tls]\n")
+		}
+		for _, tls := range serverTLS {
+			v := tls.value
+			if tls.key == key {
+				if value == "" {
+					continue
+				}
+				v = value
+			}
+			name := tls.key
+			if !root {
+				name = strings.TrimPrefix(name, "transport.tls.")
+			}
+			fmt.Fprintf(&b, "%s = %s\n", name, v)
+		}
+		b.WriteString(proxy)
+		return b.String()
+	}
+	others := map[string][]string{
+		"transport.tls.enable":        {"false", "\"true\"", "1"},
+		"transport.tls.trustedCaFile": {"\"/tmp/" + marker + "/ca.crt\"", "\"/etc/adminhelper/identity/agent.crt\"", "\"\""},
+		"transport.tls.certFile":      {"\"/tmp/" + marker + "/agent.crt\"", "\"/etc/adminhelper/identity/ca.crt\""},
+		"transport.tls.keyFile":       {"\"/tmp/" + marker + "/agent.key\"", "[\"/etc/adminhelper/identity/agent.key\"]"},
+	}
+	for _, root := range []bool{false, true} {
+		first := 5
+		if root {
+			first = 3
+		}
+		if err := checkServerConfig([]byte(text(root, "", ""))); err != nil {
+			t.Errorf("root = %v, the generator's TLS part: checkServerConfig = %v, want nil", root, err)
+		}
+		for i, tls := range serverTLS {
+			for _, value := range others[tls.key] {
+				err := checkServerConfig([]byte(text(root, tls.key, value)))
+				want := fmt.Sprintf("line %d: %s must be %s", first+i, tls.key, tls.value)
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Errorf("root = %v, %s = %s: checkServerConfig = %v, want it to contain %q", root, tls.key, value, err, want)
+				} else if strings.Contains(err.Error(), marker) {
+					t.Errorf("root = %v, %s = %s: checkServerConfig = %q, want it without the value", root, tls.key, value, err)
+				}
+			}
+			err := checkServerConfig([]byte(text(root, tls.key, "")))
+			if want := tls.key + " is missing"; err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("root = %v, without %s: checkServerConfig = %v, want it to contain %q", root, tls.key, err, want)
+			}
+		}
+	}
+	for name, toml := range map[string]string{
+		"no TLS part":              common + proxy,
+		"an empty [transport.tls]": common + "\n[transport.tls]\n" + proxy,
+	} {
+		if err := checkServerConfig([]byte(toml)); err == nil || !strings.Contains(err.Error(), "transport.tls.enable is missing") {
+			t.Errorf("%s: checkServerConfig = %v, want it refused for the missing TLS keys", name, err)
 		}
 	}
 }
@@ -87,7 +166,7 @@ func TestServerConfigRefusesOtherForms(t *testing.T) {
 		"[transport.tls] after a proxy":   {common + proxy + "\n[transport.tls]\nenable = true\n", "line 7: [transport.tls] after a [[proxies]]"},
 		"[transport.tls] after root keys": {common + "transport.tls.enable = true\n\n[transport.tls]\n" + proxy, "line 5: [transport.tls] after transport.tls keys"},
 		"duplicate root key":              {common + "serverPort = 7001\n" + proxy, "line 3: serverPort is set twice"},
-		"duplicate under [transport.tls]": {common + "\n[transport.tls]\nenable = true\nenable = false\n" + proxy, "line 6: transport.tls.enable is set twice"},
+		"duplicate under [transport.tls]": {common + "\n[transport.tls]\nenable = true\nenable = true\n" + proxy, "line 6: transport.tls.enable is set twice"},
 		"duplicate proxy key":             {common + proxy + "name = \"rdp\"\n", "line 6: name is set twice"},
 		"duplicate proxy key, other case": {common + proxy + "Name = \"rdp\"\n", "line 6: Name is set twice"},
 		"prefix conflict":                 {common + proxy + "transport = 1\ntransport.x = 2\n", "line 7: transport.x is set twice, or as a value and a table"},
@@ -115,12 +194,12 @@ func TestServerConfigRefusesOtherForms(t *testing.T) {
 // A proxy carries no key of the plugin family in any case, as frp maps keys without regard to
 // case; other extra_config keys, such as transport.useCompression, still pass.
 func TestServerConfigRefusesProxyPlugins(t *testing.T) {
-	const head = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\n"
+	const head = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n"
 	for line, want := range map[string]string{
-		"plugin.type = \"static_file\"": "line 6: plugin.type is a plugin key",
-		"PLUGIN.type = \"x\"":           "line 6: PLUGIN.type is a plugin key",
-		"Plugin.localPath = \"/x\"":     "line 6: Plugin.localPath is a plugin key",
-		"plugin = \"x\"":                "line 6: plugin is a plugin key",
+		"plugin.type = \"static_file\"": "line 12: plugin.type is a plugin key",
+		"PLUGIN.type = \"x\"":           "line 12: PLUGIN.type is a plugin key",
+		"Plugin.localPath = \"/x\"":     "line 12: Plugin.localPath is a plugin key",
+		"plugin = \"x\"":                "line 12: plugin is a plugin key",
 	} {
 		t.Run(line, func(t *testing.T) {
 			err := checkServerConfig([]byte(head + line + "\n"))
@@ -145,13 +224,13 @@ func TestServerConfigRefusesProxyPlugins(t *testing.T) {
 // A key with more segments than any frp field has is refused, without its text in the error;
 // a key of maxKeySegments segments still passes.
 func TestServerConfigRefusesKeysWithTooManySegments(t *testing.T) {
-	const head = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\n"
+	const head = "serverAddr = \"203.0.113.10\"\nserverPort = 7000\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n"
 	long := strings.Repeat("a.", 5000) + "a"
 	err := checkServerConfig([]byte(head + long + " = 1\n"))
 	if err == nil {
 		t.Fatal("checkServerConfig = nil, want the key refused")
 	}
-	if want := "line 6: a key with more than"; !strings.Contains(err.Error(), want) {
+	if want := "line 12: a key with more than"; !strings.Contains(err.Error(), want) {
 		t.Errorf("checkServerConfig = %q, want it to contain %q", err, want)
 	}
 	if strings.Contains(err.Error(), "a.a.a.a") {
@@ -202,7 +281,7 @@ func TestServerConfigErrorCutsTheKey(t *testing.T) {
 // maxKeys in all, the text is refused; the tables a dotted key opens count. Up to the bounds it
 // passes.
 func TestServerConfigBoundsTheKeys(t *testing.T) {
-	const head = "serverAddr = \"203.0.113.10\"\n"
+	const head = "serverAddr = \"203.0.113.10\"\n" + generatorTLS
 	table := func(keys int, tag string) string {
 		var b strings.Builder
 		b.WriteString("\n[[proxies]]\n")
@@ -226,11 +305,12 @@ func TestServerConfigBoundsTheKeys(t *testing.T) {
 
 	var all strings.Builder
 	all.WriteString(head)
-	// serverAddr is the first of the maxKeys.
+	// head holds the first 7 of the maxKeys: serverAddr, the tables transport and transport.tls
+	// and the four TLS keys.
 	for range maxKeys/maxTableKeys - 1 {
 		all.WriteString(table(maxTableKeys, "k"))
 	}
-	all.WriteString(table(maxTableKeys-1, "k"))
+	all.WriteString(table(maxTableKeys-7, "k"))
 	if err := checkServerConfig([]byte(all.String())); err != nil {
 		t.Errorf("%d keys in all: %v, want nil", maxKeys, err)
 	}
@@ -332,7 +412,7 @@ func TestServerConfigAcceptedAfterARefusalStartsFrpc(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with a text that passes: %v", err)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, tunnelToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if got := readFile(t, config.FrpHashFile()); got != hashConfig(tunnelToml) {
@@ -353,7 +433,10 @@ func TestServerConfigFixtureAppliedBySync(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the generator's output: %v", err)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(rewriteIdentityPaths(fixture)); got != want {
+	// R-1112: plus the agent's serverName at the top of the fixture's [transport.tls] block.
+	want := localHead(t) + strings.Replace(string(rewriteIdentityPaths(fixture)),
+		"[transport.tls]\n", "[transport.tls]\nserverName = \"frps.adminhelper.invalid\"\n", 1)
+	if got := readFile(t, config.FrpConfigFile()); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if got := readFile(t, config.FrpHashFile()); got != hashConfig(fixture) {

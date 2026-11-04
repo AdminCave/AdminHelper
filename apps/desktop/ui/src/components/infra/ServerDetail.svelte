@@ -5,9 +5,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { Info, Monitor, Pencil, Server as ServerIcon } from '@lucide/svelte';
   import type { Server } from '$lib/api/types';
   import { openServerEditor } from '$lib/stores/infra';
   import { t } from '$lib/i18n';
+  import Button from '../ui/Button.svelte';
+  import MetaList from '../ui/MetaList.svelte';
+  import Panel from '../ui/Panel.svelte';
+  import Tabs from '../ui/Tabs.svelte';
   import ConnectionsTab from './tabs/ConnectionsTab.svelte';
   import TunnelsTab from './tabs/TunnelsTab.svelte';
   import MonitoringTab from './tabs/MonitoringTab.svelte';
@@ -18,40 +23,43 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   let { server }: Props = $props();
 
-  type Tab = 'overview' | 'connections' | 'tunnels' | 'monitoring' | 'provisioning';
-  const tabs: { id: Tab; labelKey: string }[] = [
-    { id: 'overview', labelKey: 'infra.tab.overview' },
-    { id: 'connections', labelKey: 'infra.tab.connections' },
-    { id: 'tunnels', labelKey: 'infra.tab.tunnels' },
-    { id: 'monitoring', labelKey: 'infra.tab.monitoring' },
-    { id: 'provisioning', labelKey: 'infra.tab.provisioning' },
-  ];
-  let active = $state<Tab>('overview');
+  const tabs = $derived([
+    { id: 'overview', label: $t('infra.tab.overview') },
+    { id: 'connections', label: $t('infra.tab.connections') },
+    { id: 'tunnels', label: $t('infra.tab.tunnels') },
+    { id: 'monitoring', label: $t('infra.tab.monitoring') },
+    { id: 'provisioning', label: $t('infra.tab.provisioning') },
+  ]);
+  let active = $state('overview');
+
+  const windows = $derived((server.osType ?? '').toLowerCase().includes('windows'));
+  const rows = $derived([
+    { key: $t('infra.field.hostname'), value: server.hostname },
+    { key: $t('infra.field.osType'), value: server.osType || '—', mono: false },
+    { key: $t('infra.field.tags'), value: (server.tags ?? []).join(', ') || '—' },
+    { key: $t('infra.field.notes'), value: server.notes || '—', mono: false },
+  ]);
 </script>
 
 <div class="srv-detail">
   <header class="srv-head">
+    <span class="srv-tile" aria-hidden="true">
+      {#if windows}<Monitor size={22} />{:else}<ServerIcon size={22} />{/if}
+    </span>
     <div class="srv-head-main">
       <h2 class="srv-name">{server.name}</h2>
       <div class="srv-sub">{server.hostname}</div>
     </div>
-    <button class="btn small" onclick={() => openServerEditor(server)}>
-      {$t('action.edit')}
-    </button>
+    <Button
+      size="sm"
+      variant="ghost"
+      iconLeft={Pencil}
+      data-action="server-edit"
+      onclick={() => openServerEditor(server)}>{$t('action.edit')}</Button
+    >
   </header>
 
-  <nav class="srv-tabs">
-    {#each tabs as tab (tab.id)}
-      <button
-        class="srv-tab"
-        class:active={active === tab.id}
-        data-tab={tab.id}
-        onclick={() => (active = tab.id)}
-      >
-        {$t(tab.labelKey)}
-      </button>
-    {/each}
-  </nav>
+  <Tabs {tabs} bind:value={active} label={server.name} />
 
   <!-- Re-key on server.id so the data-fetching tabs remount on a server switch;
        this guards against an in-flight load() of the old server overwriting the
@@ -59,26 +67,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="srv-tab-body">
     {#key server.id}
       {#if active === 'overview'}
-        <dl class="meta-list">
-          <dt>{$t('infra.field.hostname')}</dt>
-          <dd>{server.hostname}</dd>
-          <dt>{$t('infra.field.osType')}</dt>
-          <dd>{server.osType || '—'}</dd>
-          <dt>{$t('infra.field.tags')}</dt>
-          <dd>
-            {#if (server.tags ?? []).length > 0}
-              <span class="tag-row">
-                {#each server.tags ?? [] as tag (tag)}
-                  <span class="tag">{tag}</span>
-                {/each}
-              </span>
-            {:else}
-              —
-            {/if}
-          </dd>
-          <dt>{$t('infra.field.notes')}</dt>
-          <dd class="notes">{server.notes || '—'}</dd>
-        </dl>
+        <div class="srv-overview">
+          <Panel title={$t('infra.overview.title')} icon={Info}>
+            <MetaList {rows} />
+          </Panel>
+        </div>
       {:else if active === 'connections'}
         <ConnectionsTab {server} />
       {:else if active === 'tunnels'}
@@ -87,8 +80,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <MonitoringTab {server} />
       {:else if active === 'provisioning'}
         <ProvisioningTab {server} />
-      {:else}
-        <div class="tab-placeholder">{$t('infra.tab.placeholder')}</div>
       {/if}
     {/key}
   </div>
@@ -100,89 +91,57 @@ SPDX-License-Identifier: GPL-3.0-or-later
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    padding: 20px 28px 0;
   }
   .srv-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--sp-3);
-    padding-bottom: var(--sp-4);
-    border-bottom: 1px solid var(--border);
+    gap: 14px;
+    padding-bottom: 16px;
+  }
+  .srv-tile {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-inset);
+    color: var(--text-strong);
   }
   .srv-head-main {
+    flex: 1 1 220px;
     min-width: 0;
   }
   .srv-name {
     margin: 0;
-    font-size: var(--text-xl);
+    overflow: hidden;
+    color: var(--text-strong);
+    font-size: 22px;
     font-weight: 600;
+    letter-spacing: -0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .srv-sub {
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-    margin-top: var(--sp-1);
-  }
-  .srv-tabs {
-    display: flex;
-    gap: var(--sp-1);
-    border-bottom: 1px solid var(--border);
-    margin-top: var(--sp-3);
-  }
-  .srv-tab {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: var(--text-muted);
-    padding: var(--sp-2) var(--sp-3);
-    font-size: var(--text-sm);
-    font-family: inherit;
-    cursor: pointer;
-  }
-  .srv-tab:hover {
-    color: var(--text);
-  }
-  .srv-tab.active {
-    color: var(--text);
-    border-bottom-color: var(--accent);
+    margin-top: 4px;
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 12px;
   }
   .srv-tab-body {
-    padding-top: var(--sp-4);
-    overflow-y: auto;
+    flex: 1;
     min-height: 0;
+    overflow-y: auto;
+    padding: 20px 0 28px;
   }
-  .meta-list {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    gap: var(--sp-2) var(--sp-4);
-    margin: 0;
+  .srv-overview {
+    max-width: 640px;
   }
-  .meta-list dt {
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-  }
-  .meta-list dd {
-    margin: 0;
-    font-size: var(--text-sm);
-  }
-  .meta-list dd.notes {
+  .srv-overview :global(dd) {
     white-space: pre-wrap;
-  }
-  .tag-row {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: var(--sp-1);
-  }
-  .tag {
-    background: var(--accent-bg);
-    color: var(--accent);
-    border-radius: var(--radius-sm);
-    padding: 1px var(--sp-2);
-    font-size: var(--text-xs);
-  }
-  .tab-placeholder {
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-    padding: var(--sp-6) 0;
-    text-align: center;
   }
 </style>

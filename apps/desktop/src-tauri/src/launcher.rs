@@ -144,6 +144,7 @@ pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError
             allow_self_signed_certs: defaults.allow_self_signed_certs,
             last_username: None,
             legacy_keys: false,
+            favorite_connections: Vec::new(),
         };
         return create(base, &mut registry, &meta);
     };
@@ -878,6 +879,7 @@ mod tests {
             allow_self_signed_certs: true,
             last_username: Some("admin".to_string()),
             legacy_keys: true,
+            favorite_connections: Vec::new(),
         }
     }
 
@@ -1247,6 +1249,7 @@ mod tests {
                     allow_self_signed_certs: defaults.allow_self_signed_certs,
                     last_username: None,
                     legacy_keys: false,
+                    favorite_connections: Vec::new(),
                 },
                 "{case}"
             );
