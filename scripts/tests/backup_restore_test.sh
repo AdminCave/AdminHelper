@@ -118,7 +118,8 @@ cp "$E2E_REPO_ROOT/docker-compose.yml" "$E2E_REPO_ROOT/docker-compose.test.yml" 
 cp "$E2E_REPO_ROOT/scripts/backup.sh" "$E2E_REPO_ROOT/scripts/restore.sh" "$INST/scripts/"
 { cat "$E2E_WORK/.env"; echo "COMPOSE_PROJECT_NAME=$E2E_PROJECT"; } > "$INST/.env"
 chmod 600 "$INST/.env"
-# in_inst <cmd…> — run in $INST with none of the variables this test exported.
+# in_inst <cmd…> — run in $INST with none of the variables this test exported, only
+# the compose files of the host.
 in_inst() {
     (cd "$INST" && env -i PATH="$PATH" HOME="$HOME" COMPOSE_FILE=docker-compose.yml:docker-compose.test.yml \
         ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression backup_restore (crown-jewel DR) (2026-11-03) — Task-Ledger
-Status: aktiv · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
+Status: bereit · Branch: feature/reg-2026-11-03-backup-restore-crown-jewel-DR · Review: am Ende
 Spec: Roadmap R-1118 · Quelle: Wochenlauf 2026-11-03-1503
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step "backup_restore (crown-jewel DR)"`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Beweis: Box-Lauf 2026-11-04 auf 528b2cf0, `.ah-out/heavy/dr.log` des Worktrees: 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 
-### R3 — Abschlussprüfung: Kommentar von in_inst nennt die Compose-Dateien  [ ]
+### R3 — Abschlussprüfung: Kommentar von in_inst nennt die Compose-Dateien  [x]
 Komponente: scripts · Dateien: scripts/tests/backup_restore_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a7dd95ed 2026-11-04T06:03:22+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Kommentar zu `in_inst` sagt, dass die Funktion außer den Compose-Dateien des Hosts keine Variable des Tests mitgibt (Fund der Abschlussprüfung, Nit).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kommentar)
