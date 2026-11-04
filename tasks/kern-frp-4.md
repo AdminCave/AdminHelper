@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-frp-4 — Task-Ledger
-Status: geplant · Branch: feature/kern-frp-4 · Review: am Ende
+Status: aktiv · Branch: feature/kern-frp-4 · Review: am Ende
 Spec: docs/features/kern-frp-4.md (Roadmap R-1120)
 Heavy: linux-full — `apps/agent` (frpc-Sync); der Sammellauf fährt Agent-Install und Tunnel-Sync
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
