@@ -10,8 +10,10 @@ Heavy: linux-full — neue Laufzeit-Pakete in Server, Monitoring und CA-Issuer; 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Server: Pakete auf aktuell, Lock neu (R-1037)  [ ]
+### T1 — Server: Pakete auf aktuell, Lock neu (R-1037)  [x]
 Komponente: server · Dateien: apps/server/requirements.in, apps/server/requirements.txt, apps/server/requirements-dev.txt, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @d3772d20 2026-11-04T08:38:44+01:00
+Review: approve (.ah-out/review/kern-deps-2/T1.verdict.json)
 Änderung: Böden in `requirements.in` auf das aktuelle Release (Spec-Tabelle, unmittelbar vor dem Bau neu von PyPI), Dev-Pins (hypothesis, schemathesis, pytest-alembic, testcontainers, pytest-cov) ebenso; `pytest<9.2` fällt, wenn pytest-alembic 0.13.2 unter pytest 9.2 sammelt. Lock mit `pip-compile --generate-hashes --upgrade` im `python:3.14-slim` (DEVELOPMENT.md). Code oder Snapshot nur, wo ein Release es verlangt (Spec, Datenmodell / API).
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: → T4
