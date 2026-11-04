@@ -122,11 +122,14 @@ func TestWriteSyncConfigCreatesNoPkiDir(t *testing.T) {
 	}
 }
 
-// bundleToml is a server-built frpc.toml as a provisioning bundle carries it. Its identity path
-// is rewritten to the agent's identity dir (setupSyncTest moves it to a temp dir), so the file on
-// disk differs from the server's text by more than the preamble.
+// bundleToml is a server-built frpc.toml as a provisioning bundle carries it, with its TLS keys
+// in the root. Its identity paths are rewritten to the agent's identity dir (setupSyncTest moves
+// it to a temp dir), so the file on disk differs from the server's text by more than the preamble.
 var bundleToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n" +
-	"transport.tls.certFile = \"/etc/adminhelper/identity/agent.crt\"\n\n[[proxies]]\nname = \"ssh\"\n")
+	"transport.tls.enable = true\n" +
+	"transport.tls.trustedCaFile = \"/etc/adminhelper/identity/ca.crt\"\n" +
+	"transport.tls.certFile = \"/etc/adminhelper/identity/agent.crt\"\n" +
+	"transport.tls.keyFile = \"/etc/adminhelper/identity/agent.key\"\n\n[[proxies]]\nname = \"ssh\"\n")
 
 // applyBundle runs Apply as a provisioning with an FRP bundle carrying toml.
 func applyBundle(toml []byte) error {
