@@ -54,15 +54,17 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T8
 Abhängt von: T4
 
-### T6 — Monitoring: Alerts, Templates und Log (R-1064)  [ ]
+### T6 — Monitoring: Alerts, Templates und Log (R-1064)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitoringAlerts.svelte, apps/desktop/ui/src/components/monitoring/MonitoringTemplates.svelte, apps/desktop/ui/src/components/monitoring/MonitoringLog.svelte, apps/desktop/ui/src/components/monitoring/MonitoringAlerts.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0db98530 2026-11-04T16:30:29+01:00
+Review: approve (.ah-out/review/kern-design-3/T6.verdict.json)
 Änderung: Alerts und Log als `Panel`-Listen (Alerts mit `Switch`, „+ Alert“ mit `data-action="alert-new"`, `.mon-alert-name` bleibt), Templates als Karten-Grid. Neuer Test für Alerts (Liste, Umschalten, Neu). SPDX im neuen Test.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringAlerts.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringAlerts.test.ts src/components/monitoring/BuiltinUpdateModal.test.ts src/lib/i18n
 Doku: → T8
 
 ### T7 — Desktop-E2E auf die neuen Anker (R-1064)  [ ]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/e2e/test/specs/monitoring-alerts.live.js, apps/desktop/e2e/test/specs/monitoring-check.live.js, apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js
-Änderung: Die vier Specs und `openServerTab` in `lib/live.js` wählen über `data-tab`/`data-action` statt `.btn.primary`/`.srv-tab`/`.srv-head .btn.small` und warten auf Namen über `textContentOf`; dazu `openRowByName` (`.btn.small`), ellipsierte `.conn-name`/`.tun-name`/`.mon-srv-name` (leeres `getText()`), `.tpl-suggest .btn.primary` → `data-action="tpl-suggest-assign"`, `.mon-view-toggle .btn` (`monitoring-check.live.js`) → `Segmented`-Radio. Lokal nur Lint; der Beweis ist der Sammellauf (Heavy).
+Änderung: Die vier Specs und `openServerTab` in `lib/live.js` wählen über `data-tab`/`data-action` statt `.btn.primary`/`.srv-tab`/`.srv-head .btn.small` und warten auf Namen über `textContentOf`; dazu `openRowByName` (`.btn.small`), ellipsierte `.conn-name`/`.tun-name`/`.mon-srv-name` (leeres `getText()`), `.tpl-suggest .btn.primary` → `data-action="tpl-suggest-assign"`, `.mon-alert-toolbar .btn.primary` (`monitoring-alerts.live.js`) → `data-action="alert-new"`, ellipsierte `.mon-alert-name`, `.mon-view-toggle .btn` (`monitoring-check.live.js`) → `Segmented`-Radio. Lokal nur Lint; der Beweis ist der Sammellauf (Heavy).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testcode)
 Abhängt von: T1, T2, T4, T5, T6
@@ -94,3 +96,5 @@ Doku: diese Task
 - 2026-11-04 T4: Das Banner „Server ohne Monitoring“ nennt die betroffenen Server hinter dem Zähltext (eigenes Element, damit der Zähltext als Anker bleibt); Fehler- und Hinweisbanner sind `ui/Callout`.
 - 2026-11-04 T4 (Nachtrag aus dem Review): Die Leiste der Monitoring-Übersicht schaltet über Media-Queries (280 px, bis 1200 px 210 px, bis 900 px gestapelt) statt über eine Container-Query wie Infrastruktur und Ansible; die Übersicht hat keinen eigenen Größen-Container, und das Ergebnis im Fenster ist gleich.
 - 2026-11-04 T5: Kein SSH-Knopf im Dashboard-Kopf: der Kontext hat keine Verbindungsfunktion, eine neue wäre Scope über das Re-Design hinaus (Spec, offene Frage 1). „Wartungsfenster“ öffnet den bestehenden `MaintenanceModal` (neu, `serverId` = Auswahl, danach `loadMaintenanceWindows()`), nur für echte Server. Der Status-Streifen der Sektionen weicht einem `Dot` rechts im Kopf; das Icon bleibt neutral. Die Live-Pills bleiben eigene `span.mon-live-pill` mit `level-*` (scoped im Pill-Look), weil `Pill` keine Klasse durchreicht und `SecLive.test` die Stufe am Element liest.
+- 2026-11-04 T5 (Nachtrag aus dem Review): Mit Streifen und altem Dashboard-Punkt fällt auch `@keyframes monPulseCrit` weg; kritisch zeigt der Dashboard-Kopf jetzt einen ruhigen `Dot` mit Ring, wie das Mockup (keine Animation im Design-System).
+- 2026-11-04 T6: Das Verify nimmt `BuiltinUpdateModal.test.ts` (liest `.mon-tpl-card` und den Update-Knopf) und den i18n-Wächter mit (neue Schlüssel `monitoring.alerts.title|active`, `monitoring.log.title`, `monitoring.tplEdit.builtin|custom`; `monitoring.alerts.enable|disable` entfallen mit dem Knopf). Der Alert-Switch zeigt den Zustand der Regel und schaltet über `toggleAlert`; schlägt der Aufruf fehl, bleibt der Schalter bis zum nächsten Laden umgelegt (der Fehler steht in der Statusleiste). Templates zeigen statt „Zuweisen“ (Mockup) nur Bearbeiten: Zuweisen liegt im Template-Modal, ein zweiter Weg wäre neue Funktion. Kein CSV-Export im Log (nicht im Bestand). `.mon-dot-sm`, `.mon-alert-*` und `.mon-log-*` wandern aus `app.css` in die Komponenten; `.mon-empty` bleibt global (Template-Modal).
