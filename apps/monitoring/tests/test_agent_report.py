@@ -448,6 +448,31 @@ def test_swap_and_cpu_count_are_written_when_the_agent_reports_them(client_db, m
     ]
 
 
+def test_network_counters_are_written_only_as_non_negative_integers(client_db, monkeypatch):
+    # R-1105: byte counters since boot; the history takes their rate. A negative, fractional
+    # or non-numeric value would read as a counter reset, so it writes no line.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    good = {"net_rx_bytes_total": 0, "net_tx_bytes_total": 18_000_000_000_000_000_000}
+    r = client.post("/agent/srv-1/report", json={"resources": good})
+    assert r.status_code == 200, r.text
+    for bad in (-1, 2.5, "7", True, None):
+        resources = {"net_rx_bytes_total": bad, "net_tx_bytes_total": bad}
+        r = client.post("/agent/srv-1/report", json={"resources": resources})
+        assert r.status_code == 200, r.text
+
+    lines = [line.rsplit(" ", 1)[0] for batch in writes for line in batch]
+    assert [line for line in lines if line.startswith("monitor_agent_net")] == [
+        "monitor_agent_net_rx_bytes_total,server_id=srv-1 value=0i",
+        # A uint64 beyond int64 goes in as float (format_line), not as a rejected batch.
+        "monitor_agent_net_tx_bytes_total,server_id=srv-1 value=1.8e+19",
+    ]
+
+
 def test_resources_metrics_read_only_the_series_of_the_push_handler(client_db, monkeypatch):
     # R-0633: the series of the push handler carry no check_id; check_id="" leaves out the
     # check-labelled CPU/RAM copies the checker wrote before, which stay in VictoriaMetrics

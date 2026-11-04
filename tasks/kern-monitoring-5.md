@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/kern-monitoring-5/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestResources
 Doku: → T4
 
-### T2 — Netzwerk im Push, Verlauf und Vergleich (R-1105)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/history.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_status_compare.py, apps/monitoring/tests/openapi.snapshot.json
+### T2 — Netzwerk im Push, Verlauf und Vergleich (R-1105)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/history.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_status_compare.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/app/schemas.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @a61e4e72 2026-11-04T18:51:41+01:00
+Review: approve (.ah-out/review/kern-monitoring-5/T2.verdict.json)
 Änderung: Push schreibt `monitor_agent_net_rx_bytes_total`/`…_tx_…` (nur nicht-negative JSON-Ganzzahl); Verlauf liefert `netIn`/`netOut` als `rate(…[window])*8/1e6` (Mbit/s, eigene Abfrage), Vergleich nimmt `metric=net` (eingehend). MetricsQL-`rate` am Fensterrand vorher in der VictoriaMetrics-Doku nachlesen. OpenAPI-Snapshot nachziehen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_status_history.py tests/test_status_compare.py tests/test_openapi_snapshot.py
 Doku: → T4
@@ -43,3 +45,4 @@ Doku: diese Task
 
 ## Entscheidungen
 - T1: Loopback über die Flags von `net.Interfaces()` (gopsutil benennt die Zähler wie die Standardbibliothek bzw. /proc/net/dev); Linux zählt Interfaces mit `/sys/class/net/<name>/device`, ohne solche alle außer Loopback; jeder gescheiterte Lesevorgang lässt beide Felder weg (eine Teilsumme sähe aus wie ein Einbruch). `report.go` in `Dateien:` nachgetragen (Einbau in den Report).
+- T2: MetricsQL-`rate` nimmt laut VictoriaMetrics-Doku die letzte Probe vor dem Fenster mit und extrapoliert nicht; das 5-min-Fenster bleibt (bei 5-min-Push liegt eine Probe davor). Verlauf skaliert in Python (`keep_metric_names` behält den Namen nur ohne Binäroperation), der Vergleich in der Abfrage (`* 8 / 1e6`). Ein Zähler über int64 geht als float hinein (`format_line`). Verschwindet ein Interface, fällt die Summe und `rate` zeigt eine Spitze von einem Punkt: hingenommen, Doku in T4. `schemas.py` in `Dateien:` nachgetragen.

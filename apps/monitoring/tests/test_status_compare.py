@@ -49,6 +49,11 @@ def compare(client_db, monkeypatch):
             + " / "
             + _per_server("monitor_agent_cpu_count_value"),
         ),
+        (
+            "net",
+            'max by (server_id) (rate(monitor_agent_net_rx_bytes_total_value{check_id=""}[5m]))'
+            " * 8 / 1e6",
+        ),
     ],
 )
 def test_each_metric_is_one_query_over_all_servers(compare, metric, query):
@@ -87,7 +92,7 @@ def test_30_days_use_the_6h_step(compare):
     assert int(end) - int(start) == 30 * 86400
 
 
-@pytest.mark.parametrize("query", ["metric=net", "metric=swap", "metric=cpu&period=6h", ""])
+@pytest.mark.parametrize("query", ["metric=netOut", "metric=swap", "metric=cpu&period=6h", ""])
 def test_unknown_metric_or_period_is_rejected(compare, query):
     assert compare.get(f"/status/compare?{query}").status_code == 422
     assert compare.asked == []
