@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-notify-1 — Task-Ledger
-Status: geplant · Branch: feature/kern-notify-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-1 · Review: pro Task
 Spec: docs/features/kern-notify-1.md (Roadmap R-1078)
 Heavy: linux-full — Glocke und Panel gehören zur Desktop-Journey notification-push; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
