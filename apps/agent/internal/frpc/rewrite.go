@@ -7,6 +7,7 @@ package frpc
 import (
 	"bytes"
 	"path/filepath"
+	"strings"
 
 	"adminhelper-agent/internal/config"
 )
@@ -28,4 +29,40 @@ func rewriteIdentityPaths(toml []byte) []byte {
 // applies filepath.ToSlash) so the substitution is platform-independent + testable.
 func rewriteIdentityPathsTo(toml []byte, slashDir string) []byte {
 	return bytes.ReplaceAll(toml, []byte(serverIdentityDir), []byte(`"`+slashDir+`/`))
+}
+
+// frpsTLSName is the DNS name only the frps leaf carries (R-1112). As serverName it makes frpc
+// take no other leaf under the enrollment root for frps. The agent sets it itself: an older agent
+// refuses a key it does not know and stops frpc (checkServerConfig), and the agent comes from the
+// server's repo, whose ca-issuer mints the name already. Counterpart: FRPS_TLS_NAME in
+// apps/ca-issuer/app/config.py.
+const frpsTLSName = "frps.adminhelper.invalid"
+
+// withFrpsTLSName sets transport.tls.serverName in a server text that checkServerConfig passed:
+// right after the [transport.tls] head, or in the root when the text sets its TLS keys there
+// (checkServerConfig allows only one of the two). A text without TLS keys stays as it is. The
+// server's text never sets serverName (checkServerConfig refuses it), so the key stands once.
+func withFrpsTLSName(serverToml []byte) []byte {
+	const value = `serverName = "` + frpsTLSName + `"`
+	text, offset, rootTLS := string(serverToml), 0, false
+	for rest, more := text, true; more; {
+		var raw string
+		raw, rest, more = strings.Cut(rest, "\n")
+		end := offset + len(raw)
+		offset = end + 1
+		line := strings.Trim(raw, " ")
+		if line == "[transport.tls]" {
+			return []byte(text[:end] + "\n" + value + text[end:])
+		}
+		if strings.HasPrefix(line, "[") {
+			break // the root ends at the first other table head
+		}
+		if strings.HasPrefix(line, "transport.tls.") {
+			rootTLS = true
+		}
+	}
+	if !rootTLS {
+		return serverToml
+	}
+	return []byte("transport.tls." + value + "\n" + text)
 }

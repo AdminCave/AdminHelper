@@ -353,7 +353,10 @@ func TestServerConfigFixtureAppliedBySync(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the generator's output: %v", err)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(rewriteIdentityPaths(fixture)); got != want {
+	// R-1112: plus the agent's serverName at the top of the fixture's [transport.tls] block.
+	want := localHead(t) + strings.Replace(string(rewriteIdentityPaths(fixture)),
+		"[transport.tls]\n", "[transport.tls]\nserverName = \"frps.adminhelper.invalid\"\n", 1)
+	if got := readFile(t, config.FrpConfigFile()); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if got := readFile(t, config.FrpHashFile()); got != hashConfig(fixture) {
