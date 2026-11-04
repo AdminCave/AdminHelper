@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-notify-1 — Task-Ledger
-Status: erledigt · Branch: feature/kern-notify-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-1 · Review: pro Task
 Spec: docs/features/kern-notify-1.md (Roadmap R-1078)
 Heavy: linux-full — Glocke und Panel gehören zur Desktop-Journey notification-push; der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -63,6 +63,12 @@ Review: approve (.ah-out/review/kern-notify-1/T6.verdict.json)
 Änderung: Fund der Abschlussprüfung: Admin-Monitoring-Doku DE+EN sagt noch „Öffnen markiert als gelesen“ (seit T1 falsch); Quellbaum der Entwickler-Doku nennt 5 statt 6 Seiten; `loadCenter` füllt nach einem Logout während des Abrufs die geleerte Liste wieder (Generationszähler wie `activateNotifications`), mit Test.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: diese Task
+
+### T7 — CI-Fund: dynamische Schlüssel der Benachrichtigungen im Tot-Schlüssel-Test (R-1078)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/i18n.test.ts
+Änderung: PR-CI rot: `i18n.test.ts` „has no unused translation keys“ meldet `notifications.empty.*`, `.day.*`, `.severity.*`, `.mailbox.*` als tot; sie werden per Template-String gebaut (`NotificationBell.svelte`, `pages/Notifications.svelte`). Die vier Präfixe in `DYNAMIC_PREFIXES` mit Fundstelle, wie die übrigen dynamischen Schlüssel.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts src/lib/stores/notifications.test.ts
+Doku: keine (Testkonfiguration)
 
 ## Entscheidungen
 - T1: Nicht stören liegt je Workspace unter `ah.dnd.<workspace-id>`: die Workspace-Prozesse teilen einen localStorage.
