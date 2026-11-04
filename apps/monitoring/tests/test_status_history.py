@@ -12,7 +12,7 @@ import pytest
 
 from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorMaintenance
 
-NOW = 1_800_000_030  # 30 s past a minute: the grid ends at the full minute before
+NOW = 1_799_999_970  # 30 s before a minute: the grid ends at the full minute after
 END = 1_800_000_000
 F = 'server_id="srv-1",check_id=""'
 USAGE_1H = (
@@ -134,6 +134,24 @@ def test_each_period_has_its_step(history, period, step):
     assert {asked[3] for asked in history.asked} == {step}
     body = r.json()
     assert (body["end"] - body["start"]) // body["step"] + 1 <= 169
+
+
+@pytest.mark.parametrize("period", ["1h", "24h", "7d", "30d"])
+@pytest.mark.parametrize("past", [0, 0.5, 1, 59, 3599, 21599])
+def test_the_window_ends_at_the_first_grid_point_from_now(period, past):
+    # R-1104: an end on the last full step hid up to a step of the newest data.
+    from app.history import PERIODS, history_window
+
+    duration, step = PERIODS[period]
+    now = 1_800_007_200 // step * step + past % step
+    start, end, got_step = history_window(period, now)
+
+    assert got_step == step
+    assert end % step == 0
+    assert now <= end < now + step
+    if now % step == 0:
+        assert end == now
+    assert end - start == duration
 
 
 def test_unknown_period_is_rejected(history):
