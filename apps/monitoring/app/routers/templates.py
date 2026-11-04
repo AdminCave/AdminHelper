@@ -149,6 +149,47 @@ def list_templates(db: Session = Depends(get_db)):
     ]
 
 
+# Declared ahead of GET /templates/assignments/{server_id} and
+# /templates/suggestions/{server_id}, which have as many segments: after them, they
+# would answer for a template named "assignments" or "suggestions" (R-1107). A server
+# named "builtin-update" gets this route's 404 instead; server ids are UUIDs.
+@router.get(
+    "/templates/{template_id}/builtin-update",
+    response_model=BuiltinUpdateOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
+def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
+    """Compares a standard template's definitions with those of its shipped version.
+
+    Both sides leave out the keys at their schema default, as the hash does: the
+    editor stores every key, the shipped definitions only those they set, and a
+    definition saved unchanged has to look like the shipped one."""
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
+    shipped = shipped_builtin(template.builtin_slug) if template else None
+    if shipped is None:
+        raise HTTPException(404, "Standard template not found")
+    # The stored side is read like to_dict (NaN, Infinity or a number beyond float
+    # range shows as null); the hash in builtin_edited keeps reading the raw
+    # values, so a stored hash stays valid.
+    current_checks, current_alerts = canonical_definitions(
+        loads_readable(template.check_definitions or "[]"),
+        loads_readable(template.alert_definitions or "[]"),
+    )
+    shipped_checks, shipped_alerts = canonical_definitions(
+        shipped["check_definitions"], shipped["alert_definitions"]
+    )
+    return {
+        "currentVersion": template.builtin_version,
+        "shippedVersion": shipped["version"],
+        "current": {
+            "checkDefinitions": current_checks,
+            "alertDefinitions": masked_alert_definitions(current_alerts),
+        },
+        "shipped": {"checkDefinitions": shipped_checks, "alertDefinitions": shipped_alerts},
+    }
+
+
 @router.get(
     "/templates/assignments/{server_id}",
     response_model=list[ServerAssignmentOut],
@@ -332,8 +373,6 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # Template suggestions (app/template_suggestions.py)
 # ---------------------------------------------------------------------------
-# Declared ahead of GET /templates/{template_id}/builtin-update, which has as many
-# segments: after it, that route would answer for a server named "builtin-update".
 
 
 @router.get(
@@ -364,43 +403,6 @@ def dismiss_template_suggestion(
 # ---------------------------------------------------------------------------
 # Standard-template updates (app/builtin_templates.py)
 # ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/templates/{template_id}/builtin-update",
-    response_model=BuiltinUpdateOut,
-    response_model_exclude_unset=True,
-    dependencies=[Depends(require_internal)],
-)
-def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
-    """Compares a standard template's definitions with those of its shipped version.
-
-    Both sides leave out the keys at their schema default, as the hash does: the
-    editor stores every key, the shipped definitions only those they set, and a
-    definition saved unchanged has to look like the shipped one."""
-    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
-    shipped = shipped_builtin(template.builtin_slug) if template else None
-    if shipped is None:
-        raise HTTPException(404, "Standard template not found")
-    # The stored side is read like to_dict (NaN, Infinity or a number beyond float
-    # range shows as null); the hash in builtin_edited keeps reading the raw
-    # values, so a stored hash stays valid.
-    current_checks, current_alerts = canonical_definitions(
-        loads_readable(template.check_definitions or "[]"),
-        loads_readable(template.alert_definitions or "[]"),
-    )
-    shipped_checks, shipped_alerts = canonical_definitions(
-        shipped["check_definitions"], shipped["alert_definitions"]
-    )
-    return {
-        "currentVersion": template.builtin_version,
-        "shippedVersion": shipped["version"],
-        "current": {
-            "checkDefinitions": current_checks,
-            "alertDefinitions": masked_alert_definitions(current_alerts),
-        },
-        "shipped": {"checkDefinitions": shipped_checks, "alertDefinitions": shipped_alerts},
-    }
 
 
 @router.post(
