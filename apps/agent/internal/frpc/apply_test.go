@@ -153,7 +153,9 @@ func TestReprovisionRestartsRunningFrpcOnTheNewConfig(t *testing.T) {
 		t.Errorf("restarts = %d, enables = %d, disables = %d, want 1, 0 and 0", calls.restarts, calls.enables, calls.disables)
 	}
 	identity := filepath.ToSlash(config.AgentPkiDir()) + "/"
-	want := localHead(t) + strings.ReplaceAll(string(bundleToml), "/etc/adminhelper/identity/", identity)
+	// The bundle sets its TLS keys in the root, so the agent's serverName goes there (R-1112).
+	want := localHead(t) + "transport.tls.serverName = \"frps.adminhelper.invalid\"\n" +
+		strings.ReplaceAll(string(bundleToml), "/etc/adminhelper/identity/", identity)
 	if got, _ := os.ReadFile(config.FrpConfigFile()); string(got) != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}

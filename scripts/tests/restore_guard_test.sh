@@ -122,9 +122,13 @@ tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 # COMPOSE_PROJECT_NAME of an --env-file, else drproj, and the postgres image pinned
 # by digest (none with AH_TEST_NO_IMAGE=1); with AH_TEST_CONFIG_FAIL=1 compose config
 # fails; compose config --services names postgres and server (fails with
-# AH_TEST_SERVICES_FAIL=1), compose config --images server names SERVER_IMAGE of the
-# --env-file (or the default), its backslash escapes expanded as compose expands those
-# of a double-quoted value. docker volume inspect finds a volume only with AH_TEST_PGVOL=1.
+# AH_TEST_SERVICES_FAIL=1). The image of server is SERVER_IMAGE of the --env-file (or
+# the default), its backslash escapes expanded as compose expands those of a
+# double-quoted value; compose config renders it as compose's YAML does (plain, a block
+# for a line break, quoted with escapes for a control character), and compose config
+# --images server names the image of postgres too, as compose names those of the
+# dependencies (server depends on postgres; v5.6.1). docker volume inspect finds a
+# volume only with AH_TEST_PGVOL=1.
 # With STUB_DIR it logs every call, keeps the .env as compose up -d postgres finds it and
 # the last --env-file as compose read it (envfile.seen).
 mkdir -p "$WORK/cfg/bin"
@@ -134,6 +138,11 @@ cat > "$WORK/cfg/bin/docker" <<'STUB'
 ef=""
 if [ "$1 ${2:-}" = "compose --env-file" ]; then ef="$3"; shift 3; set -- compose "$@"; fi
 [ -z "${STUB_DIR:-}" ] || [ -z "$ef" ] || cp "$ef" "$STUB_DIR/envfile.seen"
+PG_IMAGE='postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+server_image() {
+  local i=""; [ -z "$ef" ] || i=$(sed -n 's/^SERVER_IMAGE=//p' "$ef" | tail -n 1)
+  printf '%b\n' "${i:-ghcr.io/admincave/adminhelper/server:latest}"
+}
 case "$*" in
   "volume inspect "*) [ "${AH_TEST_PGVOL:-}" = 1 ] || exit 1 ;;
   "compose up -d postgres") [ -z "${STUB_DIR:-}" ] || [ ! -f .env ] || cp .env "$STUB_DIR/env.at-pg-start" ;;
@@ -141,14 +150,24 @@ case "$*" in
     [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo 'service "server" refers to undefined volume zz-missing' >&2; exit 1; }
     p="${AH_TEST_PROJECT:-}"
     [ -n "$p" ] || [ -z "$ef" ] || p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$ef" | tail -n 1)
-    echo "name: ${p:-drproj}"; echo 'services: {}' ;;
-  "compose config --images postgres") [ "${AH_TEST_NO_IMAGE:-}" = 1 ] || echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
+    echo "name: ${p:-drproj}"; echo 'services:'
+    echo '  postgres:'; echo "    image: $PG_IMAGE"
+    echo '  server:'; echo '    depends_on:'; echo '      postgres:'
+    echo '        condition: service_healthy'
+    img=$(server_image)
+    if [ "$img" != "${img%%$'\n'*}" ]; then
+      echo '    image: |-'; sed 's/^/      /' <<<"$img"
+    elif LC_ALL=C grep -q '[[:cntrl:]]' <<<"$img"; then
+      printf '    image: "%s"\n' "$(sed 's/\x1b/\\e/g; s/\r/\\r/g' <<<"$img")"
+    else
+      echo "    image: $img"
+    fi
+    echo '    networks:'; echo '      default: null' ;;
+  "compose config --images postgres") [ "${AH_TEST_NO_IMAGE:-}" = 1 ] || echo "$PG_IMAGE" ;;
   "compose config --services")
     [ "${AH_TEST_SERVICES_FAIL:-}" != 1 ] || { echo 'zz-services-failed' >&2; exit 1; }
     echo postgres; echo server ;;
-  "compose config --images server")
-    i=""; [ -z "$ef" ] || i=$(sed -n 's/^SERVER_IMAGE=//p' "$ef" | tail -n 1)
-    printf '%b\n' "${i:-ghcr.io/admincave/adminhelper/server:latest}" ;;
+  "compose config --images server") echo "$PG_IMAGE"; server_image ;;
   *pg_restore*|*ON_ERROR_STOP*) cat >/dev/null ;;
 esac
 exit 0

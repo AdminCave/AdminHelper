@@ -1197,7 +1197,18 @@ func TestReloadLocalHeadCheckLetsValuesPass(t *testing.T) {
 // with checkedBy holding the given version ("" for none, as every agent before the marker).
 func seedRunningTunnel(t *testing.T, calls *seamCalls, toml []byte, checkedByVersion string) {
 	t.Helper()
-	if err := os.WriteFile(config.FrpConfigFile(), toml, 0600); err != nil {
+	api, err := loadAdminAPI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedRunningFile(t, calls, frpcTomlFor(api, toml), toml, checkedByVersion)
+}
+
+// seedRunningFile is seedRunningTunnel with the frpc.toml in place given: written as another
+// agent wrote it for the server's text toml.
+func seedRunningFile(t *testing.T, calls *seamCalls, inPlace, toml []byte, checkedByVersion string) {
+	t.Helper()
+	if err := os.WriteFile(config.FrpConfigFile(), inPlace, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(config.FrpHashFile(), []byte(hashConfig(toml)), 0644); err != nil {
@@ -1260,6 +1271,49 @@ func TestSyncRechecksTheConfigAfterAnUpdate(t *testing.T) {
 				t.Errorf("config fetches after the second run = %d, want still 1", *fetches)
 			}
 		})
+	}
+}
+
+// An agent that writes the file differently than the one before it (the frps TLS name) puts
+// its own file in place on the recheck after its update, even with the same hash, and restarts
+// frpc on it: the name is in the common part, which a reload leaves out.
+func TestSyncRewritesTheFileOfAnOlderAgentAfterAnUpdate(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	useAgentVersion(t, "0.47.0")
+	fixture := serverFixture(t) // the generator's text, with a [transport.tls] block
+	fetches := serveToml(t, fixture)
+	api, err := loadAdminAPI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	older := append([]byte(localPreamble+api.head()), rewriteIdentityPaths(fixture)...)
+	seedRunningFile(t, calls, older, fixture, "0.45.0 "+hashConfig(fixture))
+	if err := os.WriteFile(startedHashFile(), []byte(hashConfig(commonPart(older))), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync after an update: %v", err)
+	}
+	if got, want := readFile(t, config.FrpConfigFile()), string(frpcTomlFor(api, fixture)); got != want {
+		t.Errorf("frpc.toml = %q, want this agent's file %q", got, want)
+	}
+	if !strings.Contains(readFile(t, config.FrpConfigFile()), `serverName = "`+frpsTLSName+`"`) {
+		t.Errorf("frpc.toml does not ask for %s", frpsTLSName)
+	}
+	if calls.restarts != 1 || calls.reloads != 0 {
+		t.Errorf("frpc service state %+v, want one restart and no reload", *calls)
+	}
+	if got, want := checkedBy(), "0.47.0 "+hashConfig(fixture); got != want {
+		t.Errorf("checked by %q, want %q", got, want)
+	}
+
+	actions := *calls
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	if *fetches != 1 || *calls != actions {
+		t.Errorf("second run: fetches %d, service %+v; want 1 fetch and nothing changed", *fetches, *calls)
 	}
 }
 
@@ -1435,5 +1489,32 @@ func TestStopFrpcReportsAFailedTunnelDrop(t *testing.T) {
 	}
 	if calls.reloads != reloads+1 {
 		t.Errorf("second stopFrpc: reloads %d -> %d, want a new reload after the failed one", reloads, calls.reloads)
+	}
+}
+
+// R-1112: the written frpc.toml asks frps for the name only the frps leaf carries; the stored
+// hash stays the one of the server's text, so the next run with the same hash does nothing.
+func TestSyncSetsTheFrpsTLSNameInTheWrittenConfig(t *testing.T) {
+	serverToml := []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n[transport.tls]\nenable = true\n\n[[proxies]]\nname = \"ssh\"\n")
+	hash := hashConfig(serverToml)
+	srv, fetches := hashServer(t, `{"hash":"`+hash+`"}`, serverToml)
+	setupSyncTest(t, srv.URL)
+
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	want := localHead(t) + "serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n[transport.tls]\n" +
+		"serverName = \"frps.adminhelper.invalid\"\nenable = true\n\n[[proxies]]\nname = \"ssh\"\n"
+	if got := readFile(t, config.FrpConfigFile()); got != want {
+		t.Errorf("frpc.toml = %q, want %q", got, want)
+	}
+	if got, _ := os.ReadFile(config.FrpHashFile()); strings.TrimSpace(string(got)) != hash {
+		t.Errorf("hash file = %q, want the hash of the server's text %q", got, hash)
+	}
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	if *fetches != 1 {
+		t.Errorf("config fetches = %d, want 1", *fetches)
 	}
 }

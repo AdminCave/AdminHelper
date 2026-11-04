@@ -320,6 +320,11 @@ fi
 # one per service. A value of the backup reaches the terminal here, so each must be one
 # line of a plain image reference; control characters or a line break could make the
 # list show other images than start. cat -v: compose's message may quote such values.
+# Each image comes from the service's own key in compose's canonical YAML (service at
+# indent 2, image at 4): `config --images <svc>` names the images of the service's
+# dependencies too, in no fixed order (db-init depends on postgres). A value YAML
+# quotes or writes as a block fails the check below; a service without an image key
+# gets compose's default name <project>-<svc>.
 compose_fail() {
     echo "[restore] ERROR: docker compose $1 failed; nothing was changed:" >&2
     cat -v "$STAGE/.compose-err" >&2
@@ -329,9 +334,15 @@ IMAGES=""
 if [ "$FRESH" = 1 ]; then
     SERVICES=$(docker compose --env-file "$NEW_ENV" config --services </dev/null 2>"$STAGE/.compose-err") \
         || compose_fail "config --services"
+    NEW_CFG=$(docker compose --env-file "$NEW_ENV" config </dev/null 2>"$STAGE/.compose-err") \
+        || compose_fail "config"
     for svc in $SERVICES; do
-        img=$(docker compose --env-file "$NEW_ENV" config --images "$svc" </dev/null 2>"$STAGE/.compose-err") \
-            || compose_fail "config --images"
+        img=$(awk -v svc="$svc" '
+            /^[^ ]/ { in_svc = ($0 == "services:"); cur = ""; next }
+            in_svc && /^  [^ ]/ { cur = substr($0, 3); sub(/:$/, "", cur); next }
+            in_svc && cur == svc && /^    image:/ { print substr($0, 12); found = 1 }
+            END { if (!found) exit 3 }
+        ' <<<"$NEW_CFG") || img="${PROJECT}-${svc}"
         if [ "$img" != "${img%%$'\n'*}" ] || ! LC_ALL=C grep -qxE '[A-Za-z0-9][A-Za-z0-9._/:@+-]*' <<<"$img"; then
             echo "[restore] ERROR: the image of service ${svc} in the .env of the backup is not one plain image reference (letters, digits and ._/:@+- on one line); nothing was changed." >&2
             exit 1
