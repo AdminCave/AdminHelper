@@ -4,9 +4,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-verbindungen-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-2 · Review: pro Task
 Spec: docs/features/kern-verbindungen-2.md (Roadmap R-1066, R-1068)
-Heavy: linux-full — Server-API (Connections, neue Tabelle) und Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
+Heavy: linux-full — Desktop-Journey Verbindungen (Editor); der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
@@ -75,6 +75,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
 Doku: diese Task
+
+### T10 — „Server zuordnen“ nur für Admins, Doku zu „Unbekannter Server“ (R-1066)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts, docs/admin/index.html, docs/en/admin/index.html
+Änderung: Fund der Abschlussprüfung: `GET /api/servers` verlangt Admin, der Editor lud die Liste auch für Nicht-Admins (403, Fehlerhinweis bei jedem Öffnen); Feld und Laden nur mit `isAdmin`, Test für Nicht-Admin. Doku und Kommentar: der Server setzt `server_id` beim Löschen auf NULL, „Unbekannter Server“ heißt, die Serverliste kennt die ID nicht (fehlt oder nicht geladen).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts src/components/ConnectionEditor.delete.test.ts src/components/ConnectionEditor.lastused.test.ts
+Doku: docs/admin/index.html, docs/en/admin/index.html
 
 ## Entscheidungen
 - T4: Typ-Umschalter `Segmented`, Tabs `Tabs` (Web ohne Tab-Leiste); ein Typwechsel und jedes Öffnen setzen auf Allgemein zurück. „Server zuordnen“ nur bei `mode === 'server'` mit Sitzung; leere Serverliste → `loadServers()` beim Öffnen, die Liste liest der Effect untracked (`get`), sonst startet jede Antwort ihn neu; eine `serverId` ohne bekannten Server bleibt als „Unbekannter Server“ wählbar (sonst verlöre Speichern sie still). Name und Host bleiben die ersten Text-Inputs (Live-E2E `connection-crud`). Der Platz neben Name bleibt außerhalb des Server-Modus leer (Raster wie im Mockup).
