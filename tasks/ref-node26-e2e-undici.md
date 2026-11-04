@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-E2E unter Node 26: undici von webdriver 9 (2026-11-04) — Task-Ledger
-Status: bereit · Branch: feature/ref-node26-e2e-undici · Review: am Ende
+Status: erledigt · Branch: feature/ref-node26-e2e-undici · Review: am Ende
 Spec: Roadmap R-1122 · Quelle: Sammellauf 2026-11-03-1503 und 2026-11-04-0628, Teil gui
 Heavy: linux-full — die GUI-Specs des nächsten Sammellaufs über `main` sind der Box-Beweis (alle scheitern heute beim Sessionstart); vor dem Merge beweist der Unit-Test unter Node 26 in der CI (Job Desktop, `E2E eslint`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
