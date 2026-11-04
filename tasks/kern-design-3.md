@@ -12,10 +12,12 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Vorlage `AdminCave/DesignSystem@244e890` (`ui_kits/adminhelper/ops.jsx`, `monitoring.jsx`). Stand `origin/main@4d1ad071`. Pfade unter `apps/desktop/ui/`, soweit nicht anders genannt. Bausteine aus `src/components/ui/`; ohne neue Funktion (Spec, Nicht-Ziele). Gebaut wird nach dem Merge von kern-verbindungen-1 (gemeinsam: `dictionaries.ts`, `e2e/test/lib/live.js`).
 
-### T1 — Infrastruktur: Leiste, Detail-Kopf, Tabs und Übersicht (R-1064)  [ ]
+### T1 — Infrastruktur: Leiste, Detail-Kopf, Tabs und Übersicht (R-1064)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/Tabs.svelte, apps/desktop/ui/src/components/ui/Tabs.test.ts, apps/desktop/ui/src/pages/Infrastructure.svelte, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/pages/Infrastructure.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e6890a74 2026-11-04T15:26:53+01:00
+Review: approve (.ah-out/review/kern-design-3/T1.verdict.json)
 Änderung: `ui/Tabs` setzt je Tab `data-tab={id}`. Infrastruktur nach `ops.jsx` (InfraView): Leiste mit `SearchField` und „+ Server“ (`data-action="server-new"`), Einträge mit Name, Host und Tags (`.srv-item`, `.srv-item-name` bleiben); Detail-Kopf mit Icon-Kachel, Name, Host und „Bearbeiten“ (`data-action="server-edit"`); Tabs über `ui/Tabs` (`.srv-tab`-Anker entfällt, `data-tab` bleibt); Übersicht als `Panel` mit `MetaList`. Neuer Test für Suche, Auswahl, Tab-Wechsel und Kopf-Aktionen; verwaiste `.infra-*`/`.srv-*`-Regeln raus. SPDX im neuen Test.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts src/pages/Infrastructure.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts src/pages/Infrastructure.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T8
 
 ### T2 — Infrastruktur-Tabs Verbindungen, Tunnel, Monitoring, Provisionierung (R-1064)  [ ]
