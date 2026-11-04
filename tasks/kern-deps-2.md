@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-deps-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: → T4
 
-### T2 — Monitoring: Pakete auf aktuell, Lock neu (R-1037)  [ ]
+### T2 — Monitoring: Pakete auf aktuell, Lock neu (R-1037)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/requirements.in, apps/monitoring/requirements.txt, apps/monitoring/requirements-dev.txt, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped @4498dd0b 2026-11-04T08:41:28+01:00
+Review: approve (.ah-out/review/kern-deps-2/T2.verdict.json)
 Änderung: Wie T1 für den Monitoring-Dienst, mit denselben Böden für die gemeinsamen Pakete.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: → T4
