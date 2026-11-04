@@ -46,6 +46,11 @@ vi.mock('$lib/stores/settings', async () => {
   return { settingsModalOpen: w(false) };
 });
 
+vi.mock('$lib/stores/dnd', async () => {
+  const { writable: w } = await import('svelte/store');
+  return { dndUntil: w<number | null>(null) };
+});
+
 vi.mock('$lib/stores/monitoring', async () => {
   const { writable: w } = await import('svelte/store');
   return {
@@ -59,6 +64,7 @@ import * as sessionMod from '$lib/stores/session';
 import * as tunnelMod from '$lib/stores/tunnel';
 import * as monitoringMod from '$lib/stores/monitoring';
 import * as settingsMod from '$lib/stores/settings';
+import * as dndMod from '$lib/stores/dnd';
 import { reloadForMode } from '$lib/stores/connections';
 import StatusFooter from './StatusFooter.svelte';
 import { setLanguage } from '$lib/i18n';
@@ -73,6 +79,7 @@ const checks = monitoringMod.monitoringChecks as unknown as W<Partial<MonitorChe
 const hasLoaded = monitoringMod.monitoringHasLoaded as unknown as W<boolean>;
 const loadError = monitoringMod.monitoringError as unknown as W<string | null>;
 const modalOpen = settingsMod.settingsModalOpen as unknown as W<boolean>;
+const dndUntil = dndMod.dndUntil as unknown as W<number | null>;
 
 const base: Settings = {
   mode: 'local',
@@ -110,6 +117,7 @@ describe('StatusFooter', () => {
     hasLoaded.set(false);
     loadError.set(null);
     modalOpen.set(false);
+    dndUntil.set(null);
   });
 
   afterEach(() => cleanup());
@@ -255,5 +263,19 @@ describe('StatusFooter', () => {
     const { container } = render(StatusFooter);
     expect(fields(container)).toEqual(['mode']);
     expect(text(container, 'mode')).toBe('Server');
+  });
+
+  // R-1078: do not disturb shows its end in every mode, and goes when it ends.
+  it('shows do not disturb with its end time while it holds', async () => {
+    sessionState.set({ settings: { ...base, mode: 'local' }, session: null });
+    const { container } = render(StatusFooter);
+    expect(fields(container)).toEqual(['mode']);
+    dndUntil.set(new Date(2026, 10, 4, 14, 5).getTime());
+    await tick();
+    expect(fields(container)).toEqual(['mode', 'dnd']);
+    expect(text(container, 'dnd')).toBe('Nicht stören bis 14:05');
+    dndUntil.set(null);
+    await tick();
+    expect(fields(container)).toEqual(['mode']);
   });
 });

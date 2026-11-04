@@ -8,6 +8,8 @@ import {
   status,
   toasts,
   showStatus,
+  showNotice,
+  overflow,
   reportError,
   clearStatus,
   dismissStatus,
@@ -149,5 +151,74 @@ describe('statusBar store', () => {
     expect(get(status)?.text).toBe('b');
     dismissStatus(first.id);
     expect(get(toasts).map((m) => m.text)).toEqual(['b']);
+  });
+
+  // R-1078: feed entries as toasts.
+  it('a notice carries tone, text and its open action, and goes after 6 s', () => {
+    const onOpen = vi.fn();
+    showNotice({ title: 'Disk full', body: 'web-01', tone: 'warning', onOpen });
+    const m = get(toasts)[0];
+    expect([m.text, m.body, m.tone, m.isError, m.sticky]).toEqual([
+      'Disk full',
+      'web-01',
+      'warning',
+      false,
+      false,
+    ]);
+    m.onOpen?.();
+    expect(onOpen).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(6000);
+    expect(get(toasts)).toEqual([]);
+  });
+
+  it('a sticky notice stands until it is closed', () => {
+    showNotice({ title: 'Down', tone: 'danger', sticky: true });
+    vi.advanceTimersByTime(60 * 60_000);
+    const [m] = get(toasts);
+    expect(m.text).toBe('Down');
+    dismissStatus(m.id);
+    expect(get(toasts)).toEqual([]);
+  });
+
+  it('a burst of info does not push a sticky notice out, and counts what it dropped', () => {
+    showNotice({ title: 'crit', tone: 'danger', sticky: true });
+    for (const title of ['a', 'b', 'c', 'd']) showNotice({ title, tone: 'info' });
+    expect(get(toasts).map((m) => m.text)).toEqual(['crit', 'c', 'd']);
+    expect(get(overflow)).toBe(2);
+  });
+
+  // The answer to the user's own action must show even during an incident (R-0248).
+  it('with every toast standing the oldest goes, and a new status or error always shows', () => {
+    for (const title of ['c1', 'c2', 'c3']) showNotice({ title, tone: 'danger', sticky: true });
+    showStatus('saved');
+    expect(get(toasts).map((m) => m.text)).toEqual(['c2', 'c3', 'saved']);
+    expect(get(overflow)).toBe(1);
+    reportError('failed');
+    expect(get(toasts).map((m) => m.text)).toEqual(['c2', 'c3', 'failed']);
+    expect(get(overflow)).toBe(1);
+    vi.advanceTimersByTime(10000);
+    expect(get(toasts).map((m) => m.text)).toEqual(['c2', 'c3']);
+  });
+
+  it('a notice that would go by itself does not push a standing one out', () => {
+    for (const title of ['c1', 'c2', 'c3']) showNotice({ title, tone: 'danger', sticky: true });
+    showNotice({ title: 'info', tone: 'info' });
+    expect(get(toasts).map((m) => m.text)).toEqual(['c1', 'c2', 'c3']);
+    expect(get(overflow)).toBe(1);
+    vi.advanceTimersByTime(6000);
+    expect(get(toasts).map((m) => m.text)).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('counts only pushed-out notices, and starts again once the stack is empty', () => {
+    for (const text of ['a', 'b', 'c', 'd']) showStatus(text);
+    expect(get(toasts).map((m) => m.text)).toEqual(['b', 'c', 'd']);
+    expect(get(overflow)).toBe(0);
+    for (const title of ['n1', 'n2', 'n3', 'n4']) showNotice({ title, tone: 'info' });
+    expect(get(overflow)).toBe(1);
+    vi.advanceTimersByTime(6000);
+    expect(get(toasts)).toEqual([]);
+    expect(get(overflow)).toBe(0);
+    showNotice({ title: 'n5', tone: 'info' });
+    expect(get(overflow)).toBe(0);
   });
 });

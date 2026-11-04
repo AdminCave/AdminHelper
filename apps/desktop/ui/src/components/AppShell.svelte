@@ -28,7 +28,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { buildEntries } from '$lib/palette';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import { context, openLauncher } from '$lib/stores/workspace';
-  import { reportError } from '$lib/stores/statusBar';
+  import { reportError, showNotice, type ToastTone } from '$lib/stores/statusBar';
   import { errMsg } from '$lib/utils/errors';
   import { t, tNow } from '$lib/i18n';
   import { theme, toggleTheme } from '$lib/stores/theme';
@@ -60,6 +60,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     setNewNotificationHandler,
   } from '$lib/stores/notifications';
   import { notifyOs } from '$lib/osNotify';
+  import { allows } from '$lib/stores/dnd';
+  import type { NotificationItem } from '$lib/api/types';
 
   interface NavItem {
     id: 'dashboard' | 'connections' | 'infrastructure' | 'monitoring' | 'ansible';
@@ -173,9 +175,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return () => deactivateNotifications();
   });
 
-  // Route new feed entries to OS notifications only while the user opted in.
+  // New feed entries become toasts and, while the user opted in, OS notifications; do not
+  // disturb holds both back for this window, a critical entry always comes through (R-1078).
+  const NOTICE_TONE: Record<NotificationItem['severity'], ToastTone> = {
+    info: 'info',
+    warning: 'warning',
+    critical: 'danger',
+  };
+  function onNewNotifications(items: NotificationItem[], os: boolean): void {
+    const shown = items.filter((n) => allows(n.severity));
+    for (const n of shown) {
+      showNotice({
+        title: n.title,
+        body: n.body,
+        tone: NOTICE_TONE[n.severity],
+        sticky: n.severity === 'critical',
+        onOpen: () => navigate(`/notifications/${n.id}`),
+      });
+    }
+    if (os && shown.length) void notifyOs(shown);
+  }
   $effect(() => {
-    setNewNotificationHandler($settings?.osNotifications ? notifyOs : null);
+    const os = !!$settings?.osNotifications;
+    setNewNotificationHandler((items) => onNewNotifications(items, os));
   });
 
   function go(item: NavItem): void {

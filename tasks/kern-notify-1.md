@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-notify-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts src/lib/stores/notifications.test.ts src/lib/stores/dnd.test.ts src/lib/api/notifications.test.ts
 Doku: → T5
 
-### T2 — Live-Toasts und Weiche über Nicht stören (R-1078)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/statusBar.ts, apps/desktop/ui/src/lib/stores/statusBar.test.ts, apps/desktop/ui/src/components/StatusBar.svelte, apps/desktop/ui/src/components/StatusBar.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.notifications.test.ts, apps/desktop/ui/src/components/StatusFooter.svelte, apps/desktop/ui/src/components/StatusFooter.test.ts
+### T2 — Live-Toasts und Weiche über Nicht stören (R-1078)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/statusBar.ts, apps/desktop/ui/src/lib/stores/statusBar.test.ts, apps/desktop/ui/src/components/StatusBar.svelte, apps/desktop/ui/src/components/StatusBar.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.notifications.test.ts, apps/desktop/ui/src/components/StatusFooter.svelte, apps/desktop/ui/src/components/StatusFooter.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f039e905 2026-11-04T18:06:35+01:00
+Review: approve (.ah-out/review/kern-notify-1/T2.verdict.json)
 Änderung: `statusBar.ts` bekommt `showNotice({title, body, tone, sticky, onOpen})` neben `showStatus`/`reportError` (unverändert); der Stapel zeigt Ton, Text und „+N weitere“, kritische Toasts bleiben stehen. Die Shell schickt neue Feed-Einträge an Toasts und, falls eingeschaltet, an die OS-Benachrichtigung, beides nur, wenn `dnd.allows(severity)`; der Toast-Klick öffnet `#/notifications` mit dem Eintrag. Die Statusleiste zeigt „Nicht stören bis HH:MM“.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/statusBar.test.ts src/components/StatusBar.test.ts src/components/AppShell.notifications.test.ts src/components/StatusFooter.test.ts
 Doku: → T5
@@ -54,3 +56,6 @@ Doku: diese Task
 - T1: Der API-Client bekommt `offset` (der Server kann es schon, router.py:60), damit die Zentrale über 500 Einträge hinaus nachlädt; `api/notifications.ts` samt Test per set-files in T1, Verify erweitert.
 - T1: Das Öffnen des Panels markiert nichts mehr gelesen (Spec); der alte Store-Test dazu ist durch den der neuen Regel ersetzt, eine geplante Verhaltensänderung, keine Schwächung.
 - T1: Die dnd-Tests prüfen den Ablauf-Timer über das Verhalten, nicht über `vi.getTimerCount()`: jsdom legt je Storage-Event einen Timer an.
+- T2: Der Toast-Klick ist ein Knopf „Öffnen“ im Aktionsfeld des Toasts (zugänglich, ohne `Toast.svelte` zu ändern); er öffnet `#/notifications/<id>`, die Seite liest die id in T4.
+- T2: Die neue Meldung erscheint immer (Status und Fehler antworten auf eine Aktion, die Spec lässt `showStatus`/`reportError` unverändert). Ein voller Stapel wirft unter den älteren zuerst den ältesten Toast, der von selbst ginge, stehen alle, den ältesten; eine neue Benachrichtigung, die von selbst ginge, wird dann selbst verworfen und gezählt. So verdrängt eine Info-Flut keinen kritischen Toast; „+N weitere“ zählt nur verdrängte Benachrichtigungen (sie bleiben in Glocke und Feed), bis der Stapel leer ist.
+- T2: Die Weiche liegt immer an, nicht nur mit OS-Benachrichtigungen; `dictionaries.ts` per set-files dazu (Texte „Öffnen“, „+N weitere“, „Nicht stören bis …“).
