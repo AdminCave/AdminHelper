@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Vorlage `AdminCave/DesignSystem@244e890` (`ui_kits/adminhelper/charts.jsx`). Stand `origin/main@c550f4a9`. T3 baut nach
 dem Merge von kern-notify-1 (gemeinsam: `apps/desktop/ui/src/lib/i18n/dictionaries.ts`).
 
-### T1 — Agent meldet Netzwerk-Byte-Zähler (R-1105)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go
+### T1 — Agent meldet Netzwerk-Byte-Zähler (R-1105)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/report.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @7c1f759f 2026-11-04T18:42:24+01:00
+Review: approve (.ah-out/review/kern-monitoring-5/T1.verdict.json)
 Änderung: `resources.net_rx_bytes_total`/`net_tx_bytes_total` = Summe über die gezählten Interfaces aus `net.IOCounters(true)` (Linux: mit `/sys/class/net/<name>/device`, sonst alle außer Loopback; Windows: alle außer Loopback), über `resourceCalls` testbar wie Swap; ein Fehler lässt beide Felder weg. gopsutil-Doku vorher lesen.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestResources
 Doku: → T4
@@ -40,3 +42,4 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_hist
 Doku: diese Task
 
 ## Entscheidungen
+- T1: Loopback über die Flags von `net.Interfaces()` (gopsutil benennt die Zähler wie die Standardbibliothek bzw. /proc/net/dev); Linux zählt Interfaces mit `/sys/class/net/<name>/device`, ohne solche alle außer Loopback; jeder gescheiterte Lesevorgang lässt beide Felder weg (eine Teilsumme sähe aus wie ein Einbruch). `report.go` in `Dateien:` nachgetragen (Einbau in den Report).
