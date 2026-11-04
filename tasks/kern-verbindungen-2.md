@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-verbindungen-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-verbindungen-2 · Review: pro Task
 Spec: docs/features/kern-verbindungen-2.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Desktop-Journey Verbindungen (Editor); der Sammellauf fährt die GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
