@@ -1154,3 +1154,24 @@ def test_a_leaf_from_before_the_root_switch_renews_under_the_new_root(
         assert chain == [after["access"].cert, old_root, _root_crt(tmp_path)]
         store = register_client.app.state.token_store
         assert store.line_of(_fp(r.json()["cert"])).line_id == store.line_of(_fp(old)).line_id
+
+
+@pytest.mark.parametrize(
+    "moment, status",
+    [("before its start", 403), ("its last second", 200), ("after its end", 403)],
+)
+def test_renew_takes_the_presented_certificate_only_within_its_lifetime(
+    client, monkeypatch, moment, status
+):
+    pem = _enroll(client, "agent-07", "tunnel")
+    leaf = _leaf(pem)
+    second = datetime.timedelta(seconds=1)
+    at = {
+        "before its start": leaf.not_valid_before_utc - second,
+        "its last second": leaf.not_valid_after_utc,
+        "after its end": leaf.not_valid_after_utc + second,
+    }[moment]
+    monkeypatch.setattr(pki, "_now", lambda: at)
+
+    r = client.post("/renew", json={"csr": _csr_pem("ignored")}, headers=_renew_headers(pem))
+    assert r.status_code == status, r.text
