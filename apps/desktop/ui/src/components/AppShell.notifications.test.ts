@@ -16,6 +16,9 @@ import type { AuthSession, Settings } from '$lib/bridge/types';
 const h = vi.hoisted(() => ({
   activateNotifications: vi.fn(async () => {}),
   deactivateNotifications: vi.fn(),
+  setNewNotificationHandler: vi.fn(),
+  notifyOs: vi.fn(async () => {}),
+  allows: vi.fn((_severity: string) => true),
 }));
 
 vi.mock('$lib/bridge', () => ({
@@ -38,7 +41,7 @@ vi.mock('$lib/stores/settings', () => ({
 vi.mock('$lib/stores/notifications', () => ({
   activateNotifications: h.activateNotifications,
   deactivateNotifications: h.deactivateNotifications,
-  setNewNotificationHandler: vi.fn(),
+  setNewNotificationHandler: h.setNewNotificationHandler,
 }));
 vi.mock('$lib/stores/tunnel', () => ({
   markTerminated: vi.fn(),
@@ -50,7 +53,8 @@ vi.mock('$lib/stores/connections', async () => {
   const { writable } = await import('svelte/store');
   return { searchTerm: writable(''), connections: writable([]) };
 });
-vi.mock('$lib/osNotify', () => ({ notifyOs: vi.fn() }));
+vi.mock('$lib/osNotify', () => ({ notifyOs: h.notifyOs }));
+vi.mock('$lib/stores/dnd', () => ({ allows: h.allows }));
 vi.mock('../pages/Dashboard.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Connections.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Infrastructure.svelte', () => ({ default: vi.fn() }));
@@ -67,6 +71,9 @@ vi.mock('./NotificationBell.svelte', () => ({ default: vi.fn() }));
 
 import { settings, session } from '$lib/stores/session';
 import { replace } from '$lib/router';
+import { get } from 'svelte/store';
+import { toasts, clearStatus } from '$lib/stores/statusBar';
+import type { NotificationItem } from '$lib/api/types';
 import AppShell from './AppShell.svelte';
 
 const settingsState = settings as unknown as Writable<Partial<Settings> | null>;
@@ -89,6 +96,7 @@ async function loggedInThenSettingsSaved(): Promise<void> {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  h.allows.mockImplementation(() => true);
   replace('/dashboard');
   settingsState.set({ mode: 'server' });
   sessionState.set(aliceSession());
@@ -96,6 +104,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  clearStatus();
 });
 
 describe('AppShell: notifications follow server and user, not the session object', () => {
@@ -132,5 +141,69 @@ describe('AppShell: notifications follow server and user, not the session object
     await setSession(null);
     expect(h.deactivateNotifications).toHaveBeenCalledTimes(2);
     expect(h.activateNotifications).toHaveBeenCalledTimes(2);
+  });
+});
+
+// R-1078: the switch from new feed entries to toasts and OS notifications.
+const entry = (id: number, severity: NotificationItem['severity']): NotificationItem => ({
+  id,
+  createdAt: '2026-11-04T09:00:00Z',
+  severity,
+  category: 'monitoring',
+  eventType: 'monitoring.check.transition',
+  title: `entry ${id}`,
+  body: `body ${id}`,
+  sourceType: 'server',
+  sourceId: 'srv-1',
+  read: false,
+  readAt: null,
+});
+
+type Handler = ((items: NotificationItem[]) => void) | null;
+const lastHandler = (): Handler =>
+  h.setNewNotificationHandler.mock.calls.at(-1)?.[0] as unknown as Handler;
+
+describe('AppShell: new entries as toasts and OS notifications', () => {
+  it('shows each new entry as a toast with its tone; a critical one stands', async () => {
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info'), entry(2, 'warning'), entry(3, 'critical')]);
+    expect(get(toasts).map((m) => [m.text, m.body, m.tone, m.sticky])).toEqual([
+      ['entry 1', 'body 1', 'info', false],
+      ['entry 2', 'body 2', 'warning', false],
+      ['entry 3', 'body 3', 'danger', true],
+    ]);
+    expect(h.notifyOs).not.toHaveBeenCalled();
+  });
+
+  it('a toast opens its entry on the center page', async () => {
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(7, 'warning')]);
+    get(toasts)[0].onOpen?.();
+    expect(location.hash).toBe('#/notifications/7');
+  });
+
+  it('sends OS notifications too, once the user opted in', async () => {
+    settingsState.set({ mode: 'server', osNotifications: true });
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info')]);
+    expect(h.notifyOs).toHaveBeenCalledWith([entry(1, 'info')]);
+    expect(get(toasts)).toHaveLength(1);
+  });
+
+  it('do not disturb holds back toast and OS notification, but not a critical entry', async () => {
+    settingsState.set({ mode: 'server', osNotifications: true });
+    h.allows.mockImplementation((severity: string) => severity === 'critical');
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info'), entry(2, 'warning'), entry(3, 'critical')]);
+    expect(get(toasts).map((m) => m.text)).toEqual(['entry 3']);
+    expect(h.notifyOs).toHaveBeenCalledWith([entry(3, 'critical')]);
+
+    h.notifyOs.mockClear();
+    lastHandler()?.([entry(4, 'info')]);
+    expect(h.notifyOs).not.toHaveBeenCalled();
   });
 });
