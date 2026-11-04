@@ -78,7 +78,7 @@ func TestSyncIsNotStoppedByTheOpenLogFile(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the log file open: %v", err)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, tunnelToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if calls.enables != 1 {

@@ -97,9 +97,26 @@ func pointSyncAt(t *testing.T, srvURL string) {
 	}
 }
 
-// tunnelToml is a server-built frpc.toml with one tunnel. It has no identity paths, so the
-// rewrite is a no-op; without a [[proxies]] line the sync would stop frpc.
-var tunnelToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\n")
+// generatorTLS is the TLS part generate_frpc_toml writes into every text; checkServerConfig
+// refuses a text without it.
+const generatorTLS = "\n[transport.tls]\nenable = true\n" +
+	"trustedCaFile = \"/etc/adminhelper/identity/ca.crt\"\n" +
+	"certFile = \"/etc/adminhelper/identity/agent.crt\"\n" +
+	"keyFile = \"/etc/adminhelper/identity/agent.key\"\n"
+
+// tunnelToml is a server-built frpc.toml with one tunnel; without a [[proxies]] line the sync
+// would stop frpc.
+var tunnelToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n")
+
+// onDisk is the frpc.toml the agent writes for the server text server with a [transport.tls]
+// head: the local head, the frps TLS name under the head, the identity paths in the agent's
+// identity dir (setupSyncTest moves it to a temp dir).
+func onDisk(t *testing.T, server []byte) string {
+	t.Helper()
+	text := strings.Replace(string(server), "[transport.tls]\n",
+		"[transport.tls]\nserverName = \"frps.adminhelper.invalid\"\n", 1)
+	return localHead(t) + strings.ReplaceAll(text, "/etc/adminhelper/identity/", filepath.ToSlash(config.AgentPkiDir())+"/")
+}
 
 // A running frpc restarts onto the new file.
 func TestSyncWritesConfigOnHashMismatch(t *testing.T) {
@@ -121,7 +138,7 @@ func TestSyncWritesConfigOnHashMismatch(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, tunnelToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if got, _ := os.ReadFile(config.FrpHashFile()); strings.TrimSpace(string(got)) != hash {
@@ -158,8 +175,8 @@ func TestSyncFirstTunnelEnablesFrpc(t *testing.T) {
 	if !ok {
 		t.Errorf("frpc.toml = %q, want it to start with the local head %q", got, localHead(t))
 	}
-	if !bytes.Equal(rest, tunnelToml) {
-		t.Errorf("frpc.toml after the local head = %q, want the server's text %q", rest, tunnelToml)
+	if want := strings.TrimPrefix(onDisk(t, tunnelToml), localHead(t)); string(rest) != want {
+		t.Errorf("frpc.toml after the local head = %q, want the server's text %q", rest, want)
 	}
 	if runtime.GOOS != "windows" {
 		if info, err := os.Stat(config.FrpConfigFile()); err != nil || info.Mode().Perm() != 0o600 {
@@ -384,7 +401,7 @@ func TestSyncReloadsWithoutAnswerFromSystemd(t *testing.T) {
 		t.Errorf("reloads = %d, restarts = %d, enables = %d, disables = %d, want 1, 0, 1 and 0",
 			calls.reloads, calls.restarts, calls.enables, calls.disables)
 	}
-	if want := localHead(t) + string(tunnelToml); atReload != want {
+	if want := onDisk(t, tunnelToml); atReload != want {
 		t.Errorf("frpc.toml at the reload = %q, want %q", atReload, want)
 	}
 	if got := readFile(t, config.FrpHashFile()); got != hashConfig(tunnelToml) {
@@ -636,12 +653,12 @@ func TestSyncKeepsFilesWhenStoppingFrpcFails(t *testing.T) {
 }
 
 // twoTunnelsToml is tunnelToml with a second tunnel: the common part stays, only the proxies change.
-var twoTunnelsToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\n\n" +
+var twoTunnelsToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n\n" +
 	"[[proxies]]\nname = \"rdp\"\n")
 
 // withToken is a server-built frpc.toml with one tunnel and the frps token token.
 func withToken(token string) []byte {
-	return []byte("serverAddr = \"1.2.3.4\"\nauth.token = \"" + token + "\"\n\n[[proxies]]\nname = \"ssh\"\n")
+	return []byte("serverAddr = \"1.2.3.4\"\nauth.token = \"" + token + "\"\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n")
 }
 
 // R-0398: a running frpc takes changed tunnels by a reload over its local admin API, so the
@@ -667,7 +684,7 @@ func TestReloadWhenOnlyProxiesChange(t *testing.T) {
 	if calls.reloads != 1 || calls.restarts != 0 || calls.enables != 1 {
 		t.Errorf("reloads = %d, restarts = %d, enables = %d, want 1, 0 and 1", calls.reloads, calls.restarts, calls.enables)
 	}
-	if want := localHead(t) + string(twoTunnelsToml); atReload != want {
+	if want := onDisk(t, twoTunnelsToml); atReload != want {
 		t.Errorf("frpc.toml at the reload = %q, want %q", atReload, want)
 	}
 	if got := readFile(t, config.FrpHashFile()); got != hashConfig(twoTunnelsToml) {
@@ -691,7 +708,7 @@ func TestReloadNotWhenTheTokenChanges(t *testing.T) {
 	if calls.restarts != 1 || calls.reloads != 0 {
 		t.Errorf("restarts = %d, reloads = %d, want 1 and 0", calls.restarts, calls.reloads)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(withToken("rotated-token")); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, withToken("rotated-token")); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 }
@@ -780,7 +797,7 @@ func TestReloadAdminPortMovesWhenFrpcIsDown(t *testing.T) {
 		t.Errorf("admin.conf port %s -> %s, password kept = %v; want a new port and a new password",
 			before["PORT"], after["PORT"], after["PASSWORD"] == before["PASSWORD"])
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, tunnelToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if calls.enables != 2 || *fetches != 2 {
@@ -826,7 +843,7 @@ func TestSyncStuckFrpcGetsANewAdminPortWhenTheHashChanges(t *testing.T) {
 		t.Errorf("admin.conf port %s -> %s, password kept = %v; want a new port and a new password",
 			before["PORT"], after["PORT"], after["PASSWORD"] == before["PASSWORD"])
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(twoTunnelsToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, twoTunnelsToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if calls.enables != 2 || calls.restarts != 0 || calls.reloads != 0 {
@@ -1108,7 +1125,7 @@ func TestSyncLeavesTheFrpDirOwnerOnly(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
-	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(tunnelToml); got != want {
+	if got, want := readFile(t, config.FrpConfigFile()), onDisk(t, tunnelToml); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
 	if runtime.GOOS != "windows" {
@@ -1187,7 +1204,7 @@ func TestReloadRefusesALocalHeadFromTheServer(t *testing.T) {
 
 // Only keys and tables count: a value that names webServer, as a proxy name may, passes.
 func TestReloadLocalHeadCheckLetsValuesPass(t *testing.T) {
-	toml := []byte("serverAddr = \"1.2.3.4\"\nuser = \"webServer\"\n\n[[proxies]]\nname = \"loginFailExit\"\n")
+	toml := []byte("serverAddr = \"1.2.3.4\"\nuser = \"webServer\"\n" + generatorTLS + "\n[[proxies]]\nname = \"loginFailExit\"\n")
 	if err := checkServerConfig(toml); err != nil {
 		t.Errorf("checkServerConfig = %v, want nil when only values name webServer or loginFailExit", err)
 	}
@@ -1495,7 +1512,7 @@ func TestStopFrpcReportsAFailedTunnelDrop(t *testing.T) {
 // R-1112: the written frpc.toml asks frps for the name only the frps leaf carries; the stored
 // hash stays the one of the server's text, so the next run with the same hash does nothing.
 func TestSyncSetsTheFrpsTLSNameInTheWrittenConfig(t *testing.T) {
-	serverToml := []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n[transport.tls]\nenable = true\n\n[[proxies]]\nname = \"ssh\"\n")
+	serverToml := tunnelToml
 	hash := hashConfig(serverToml)
 	srv, fetches := hashServer(t, `{"hash":"`+hash+`"}`, serverToml)
 	setupSyncTest(t, srv.URL)
@@ -1503,8 +1520,11 @@ func TestSyncSetsTheFrpsTLSNameInTheWrittenConfig(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
+	identity := filepath.ToSlash(config.AgentPkiDir()) + "/"
 	want := localHead(t) + "serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\n[transport.tls]\n" +
-		"serverName = \"frps.adminhelper.invalid\"\nenable = true\n\n[[proxies]]\nname = \"ssh\"\n"
+		"serverName = \"frps.adminhelper.invalid\"\nenable = true\n" +
+		"trustedCaFile = \"" + identity + "ca.crt\"\ncertFile = \"" + identity + "agent.crt\"\n" +
+		"keyFile = \"" + identity + "agent.key\"\n\n[[proxies]]\nname = \"ssh\"\n"
 	if got := readFile(t, config.FrpConfigFile()); got != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
 	}
