@@ -11,8 +11,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { users } from '$lib/stores/users';
   import { currentUser } from '$lib/stores/auth';
   import { showToast, showError } from '$lib/stores/notifications';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import Button from '$lib/components/ui/Button.svelte';
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Panel from '$lib/components/ui/Panel.svelte';
+  import Pill from '$lib/components/ui/Pill.svelte';
   import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
   import UserModal from '$modals/UserModal.svelte';
   import EnrollTokenModal from '$modals/EnrollTokenModal.svelte';
@@ -70,9 +74,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <Button variant="primary" onclick={openCreate}>{$t('page.users.add')}</Button>
   </div>
 
-  <div class="panel">
+  <Panel pad={0}>
     {#if $users.length === 0}
-      <EmptyState message={$t('page.users.empty')} />
+      <EmptyState framed={false} message={$t('page.users.empty')} />
     {:else}
       <table class="data-table">
         <thead>
@@ -89,30 +93,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <tr>
               <td>
                 <strong>{u.username}</strong>
-                {#if isMe}
-                  <span style="color:var(--text-muted);font-size:12px;margin-left:6px">
-                    {$t('page.users.me')}
-                  </span>
-                {/if}
+                {#if isMe}<span class="me">{$t('page.users.me')}</span>{/if}
               </td>
               <td>
-                <span class="badge badge-{u.is_admin ? 'admin' : 'user'}">
+                <Pill tone={u.is_admin ? 'warn' : 'accent'}>
                   {u.is_admin ? $t('role.admin') : $t('role.user')}
-                </span>
+                </Pill>
               </td>
               <td>{formatDate(u.created_at)}</td>
               <td>
-                <div style="display:flex;gap:6px">
-                  <button class="btn small" onclick={() => openEdit(u)}>
+                <div class="actions">
+                  <Button variant="secondary" size="sm" onclick={() => openEdit(u)}>
                     {$t('action.edit')}
-                  </button>
-                  <button class="btn small" onclick={() => (enrollFor = u)}>
+                  </Button>
+                  <Button variant="secondary" size="sm" onclick={() => (enrollFor = u)}>
                     {$t('page.users.enrollToken')}
-                  </button>
+                  </Button>
                   {#if !isMe}
-                    <button class="btn small ghost" onclick={() => removeUser(u)}>
-                      {$t('action.delete')}
-                    </button>
+                    <IconButton
+                      icon={Trash2}
+                      size="sm"
+                      label={$t('action.delete')}
+                      onclick={() => removeUser(u)}
+                    />
                   {/if}
                 </div>
               </td>
@@ -121,7 +124,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </tbody>
       </table>
     {/if}
-  </div>
+  </Panel>
 </div>
 
 <UserModal open={modalOpen} {editing} onClose={handleClose} />
@@ -130,3 +133,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   username={enrollFor?.username ?? ''}
   onClose={() => (enrollFor = null)}
 />
+
+<style>
+  .me {
+    margin-left: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+</style>

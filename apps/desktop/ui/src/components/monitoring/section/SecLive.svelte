@@ -264,6 +264,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mon-hero-bar-fill.level-ignored {
     background: var(--text-faint);
   }
+  /* Same look as ui/Pill; kept as own spans so level-* stays on the element. */
+  .mon-live-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .mon-live-pill.level-ok {
+    border-color: var(--success-border);
+    background: var(--success-bg);
+    color: var(--success);
+  }
+  .mon-live-pill.level-warn {
+    border-color: var(--warning-border);
+    background: var(--warning-bg);
+    color: var(--warning);
+  }
+  .mon-live-pill.level-crit {
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
   .mon-live-pill.level-unrated {
     color: var(--text-muted);
   }

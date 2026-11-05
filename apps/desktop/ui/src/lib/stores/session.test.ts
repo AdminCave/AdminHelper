@@ -31,6 +31,7 @@ import {
   session,
   settings,
   setAllowSelfSignedCerts,
+  setFavoriteConnections,
   registerConnectionsSync,
 } from './session';
 import { context } from './workspace';
@@ -332,6 +333,39 @@ describe('session store', () => {
 
       await expect(setAllowSelfSignedCerts(true)).rejects.toThrow('disk full');
       expect(get(settings)?.allowSelfSignedCerts).toBe(false);
+    });
+  });
+
+  describe('setFavoriteConnections (R-1065)', () => {
+    it('saves the whole settings with the list and updates the store', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ language: 'de', favoriteConnections: ['a'] }),
+      );
+      await hydrate();
+
+      await setFavoriteConnections(['a', 'b']);
+
+      expect(bridge.saveSettings).toHaveBeenLastCalledWith(
+        baseSettings({ language: 'de', favoriteConnections: ['a', 'b'] }),
+      );
+      expect(get(settings)?.favoriteConnections).toEqual(['a', 'b']);
+    });
+
+    it('does not touch the store when persisting fails', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ favoriteConnections: ['a'] }),
+      );
+      await hydrate();
+      vi.mocked(bridge.saveSettings).mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(setFavoriteConnections(['a', 'b'])).rejects.toThrow('disk full');
+      expect(get(settings)?.favoriteConnections).toEqual(['a']);
+    });
+
+    it('saves nothing before settings are loaded', async () => {
+      const fresh = await freshStart();
+      await fresh.session.setFavoriteConnections(['a']);
+      expect(fresh.bridge.saveSettings).not.toHaveBeenCalled();
     });
   });
 });

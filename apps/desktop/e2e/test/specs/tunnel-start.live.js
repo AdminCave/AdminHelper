@@ -28,11 +28,11 @@ const ADDED_VISITOR = `${ADDED_TUNNEL}-visitor`;
 // A rejection fails the spec with its message. It comes back as { rejected }: webdriver takes
 // a script result with an `error` key for a failed command (logout.live.js).
 async function tunnelStatus() {
-  const out = await browser.executeAsync((done) => {
-    window.__TAURI__.core
+  const out = await browser.execute(async () => {
+    return window.__TAURI__.core
       .invoke('tunnel_status')
-      .then((value) => done({ value }))
-      .catch((e) => done({ rejected: String((e && e.message) || e) }));
+      .then((value) => ({ value }))
+      .catch((e) => ({ rejected: String((e && e.message) || e) }));
   });
   if (out.rejected !== undefined) throw new Error(`tunnel_status failed: ${out.rejected}`);
   return out.value;
@@ -56,12 +56,12 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     // with explicit self-signed trust, so the spec does not depend on the
     // setting the GUI enroll form reads. The cert lands in the run's fresh
     // keyring, where start_tunnel reads it.
-    const err = await browser.executeAsync(
-      (url, token, done) => {
-        window.__TAURI__.core
+    const err = await browser.execute(
+      async (url, token) => {
+        return window.__TAURI__.core
           .invoke('enroll_with_token', { serverUrl: url, token, allowSelfSigned: true })
-          .then(() => done(null))
-          .catch((e) => done(String((e && e.message) || e)));
+          .then(() => null)
+          .catch((e) => String((e && e.message) || e));
       },
       SERVER_URL,
       ENROLL_TOKEN,
@@ -125,7 +125,7 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     await gotoInfrastructure();
     await openServerTab('tunnels');
     // The "add tunnel" button enables only once the seeded FRP config loads.
-    const add = await $('.tun-toolbar .btn.primary');
+    const add = await $('[data-action="tun-new"]');
     await add.waitForEnabled({ timeout: 15000 });
     await add.click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });

@@ -1,0 +1,110 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# kern-design-3 — Task-Ledger
+Status: erledigt · Branch: feature/kern-design-3 · Review: pro Task
+Spec: docs/features/kern-design-3.md (Roadmap R-1064, R-1089)
+Heavy: linux-full — Infrastruktur, Ansible und Monitoring ändern das DOM der Desktop-Journeys (server-crud, provisioning, monitoring-*); der Sammellauf fährt die GUI-E2E
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+Vorlage `AdminCave/DesignSystem@244e890` (`ui_kits/adminhelper/ops.jsx`, `monitoring.jsx`). Stand `origin/main@4d1ad071`. Pfade unter `apps/desktop/ui/`, soweit nicht anders genannt. Bausteine aus `src/components/ui/`; ohne neue Funktion (Spec, Nicht-Ziele). Gebaut wird nach dem Merge von kern-verbindungen-1 (gemeinsam: `dictionaries.ts`, `e2e/test/lib/live.js`).
+
+### T1 — Infrastruktur: Leiste, Detail-Kopf, Tabs und Übersicht (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ui/Tabs.svelte, apps/desktop/ui/src/components/ui/Tabs.test.ts, apps/desktop/ui/src/pages/Infrastructure.svelte, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/pages/Infrastructure.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e6890a74 2026-11-04T15:26:53+01:00
+Review: approve (.ah-out/review/kern-design-3/T1.verdict.json)
+Änderung: `ui/Tabs` setzt je Tab `data-tab={id}`. Infrastruktur nach `ops.jsx` (InfraView): Leiste mit `SearchField` und „+ Server“ (`data-action="server-new"`), Einträge mit Name, Host und Tags (`.srv-item`, `.srv-item-name` bleiben); Detail-Kopf mit Icon-Kachel, Name, Host und „Bearbeiten“ (`data-action="server-edit"`); Tabs über `ui/Tabs` (`.srv-tab`-Anker entfällt, `data-tab` bleibt); Übersicht als `Panel` mit `MetaList`. Neuer Test für Suche, Auswahl, Tab-Wechsel und Kopf-Aktionen; verwaiste `.infra-*`/`.srv-*`-Regeln raus. SPDX im neuen Test.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts src/pages/Infrastructure.test.ts src/lib/i18n/i18n.test.ts
+Doku: → T8
+
+### T2 — Infrastruktur-Tabs Verbindungen, Tunnel, Monitoring, Provisionierung (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/ConnectionsTab.svelte, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.svelte, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5eb534ea 2026-11-04T15:37:41+01:00
+Review: approve (.ah-out/review/kern-design-3/T2.verdict.json)
+Änderung: Die vier Tabs als `Panel`s mit Bibliotheksknöpfen (`Button`, `Pill`, `Switch` wo heute ein Umschalter ist), Provisionierung mit `CodeBlock`. E2E-Anker bleiben: `.prov`, `.cmd-box`, `.prov-table`, `.mon-row .mon-name`, `.tpl-suggest`; Knöpfe, die eine Spec drückt, tragen `data-action` (`prov-mint`, `check-new`, `tpl-assign`). Tests ziehen auf die Anker nach.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/MonitoringTab.test.ts src/components/infra/tabs/ProvisioningTab.test.ts src/lib/i18n/i18n.test.ts
+Doku: → T8
+Abhängt von: T1
+
+### T3 — Ansible: Playbook-Leiste und Detail (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @92d11ad2 2026-11-04T15:48:26+01:00
+Review: approve (.ah-out/review/kern-design-3/T3.verdict.json)
+Änderung: Nach `ops.jsx` (AnsibleView): Leiste mit Playbooks (Name, Beschreibung, Meta, „Hochladen“), Detail mit Ziel-Auswahl (Server oder Tags wie heute) und „Ausführen“; kein Probelauf, kein Ausgabefeld (Spec, Nicht-Ziele). Neuer Seitentest für Auswahl, Zielmodus und Ausführen-Sperre gegen den Store. SPDX im neuen Test.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Ansible.test.ts src/lib/stores/ansible.test.ts src/lib/stores/ansible.pipeline.test.ts src/lib/i18n/i18n.test.ts
+Doku: → T8
+
+### T4 — Monitoring: Tabs und Übersicht (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/components/monitoring/MonitoringOverview.svelte, apps/desktop/ui/src/components/monitoring/MonSummaryCards.svelte, apps/desktop/ui/src/components/monitoring/MonServerList.svelte, apps/desktop/ui/src/components/monitoring/MonServerListItem.svelte, apps/desktop/ui/src/components/monitoring/MonServerGrid.svelte, apps/desktop/ui/src/components/monitoring/MonitoringOverview.test.ts, apps/desktop/ui/src/components/monitoring/MonServerGrid.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/pages/Monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c399b458 2026-11-04T16:04:28+01:00
+Review: approve (.ah-out/review/kern-design-3/T4.verdict.json)
+Änderung: Tabs über `ui/Tabs` (Zähler Alerts und Templates aus dem Store, `.mon-tabs` als Wrapper bleibt), Übersicht nach `monitoring.jsx`: Banner „Server ohne Checks“, Summary-Karten, `Segmented` Liste/Kacheln statt `.mon-view-toggle`, Hinweis „Auto-Refresh 30 s“, Liste als Leiste mit `Dot`, Kacheln mit `MonHeartbeatBar`. Zehn Dateien, weil Übersicht, Liste und Kacheln ein Layout teilen.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringOverview.test.ts src/components/monitoring/MonServerGrid.test.ts src/pages/Monitoring.test.ts src/lib/i18n/i18n.test.ts
+Doku: → T8
+
+### T5 — Monitoring: Server-Dashboard und Sektionen (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/components/monitoring/section/MonSectionHeader.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/MonServerDashboard.test.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0f1acd23 2026-11-04T16:17:55+01:00
+Review: approve (.ah-out/review/kern-design-3/T5.verdict.json)
+Änderung: Dashboard-Kopf mit `Dot`, `Pill`s statt `.mon-pill`, `Button`s (SSH, Wartung, „+ Check“ mit `data-action="check-new"`) und Heartbeat; die Sektionen bekommen über `MonSectionHeader` und einen gemeinsamen Rahmen die Panel-Gestalt, Inhalt und Aufklappen bleiben. Die bestehenden `Sec*`-Tests müssen grün bleiben; neuer Dashboard-Test für Kopf und Pills. SPDX im neuen Test.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonServerDashboard.test.ts src/components/monitoring/section
+Doku: → T8
+Abhängt von: T4
+
+### T6 — Monitoring: Alerts, Templates und Log (R-1064)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitoringAlerts.svelte, apps/desktop/ui/src/components/monitoring/MonitoringTemplates.svelte, apps/desktop/ui/src/components/monitoring/MonitoringLog.svelte, apps/desktop/ui/src/components/monitoring/MonitoringAlerts.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0db98530 2026-11-04T16:30:29+01:00
+Review: approve (.ah-out/review/kern-design-3/T6.verdict.json)
+Änderung: Alerts und Log als `Panel`-Listen (Alerts mit `Switch`, „+ Alert“ mit `data-action="alert-new"`, `.mon-alert-name` bleibt), Templates als Karten-Grid. Neuer Test für Alerts (Liste, Umschalten, Neu). SPDX im neuen Test.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringAlerts.test.ts src/components/monitoring/BuiltinUpdateModal.test.ts src/lib/i18n
+Doku: → T8
+
+### T7 — Desktop-E2E auf die neuen Anker (R-1064)  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/e2e/test/specs/monitoring-alerts.live.js, apps/desktop/e2e/test/specs/monitoring-check.live.js, apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @693b03f6 2026-11-04T16:46:18+01:00
+Review: approve (.ah-out/review/kern-design-3/T7.verdict.json)
+Änderung: Die vier Specs und `openServerTab` in `lib/live.js` wählen über `data-tab`/`data-action` statt `.btn.primary`/`.srv-tab`/`.srv-head .btn.small` und warten auf Namen über `textContentOf`; dazu `openRowByName` (`.btn.small`), ellipsierte `.conn-name`/`.tun-name`/`.mon-srv-name` (leeres `getText()`), `.tpl-suggest .btn.primary` → `data-action="tpl-suggest-assign"`, `.mon-alert-toolbar .btn.primary` (`monitoring-alerts.live.js`) → `data-action="alert-new"`, ellipsierte `.mon-alert-name`, `.mon-view-toggle .btn` (`monitoring-check.live.js`) → `Segmented`-Radio. Lokal nur Lint; der Beweis ist der Sammellauf (Heavy).
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Testcode)
+Abhängt von: T1, T2, T4, T5, T6
+
+### T9 — Undefinierte Tokens: NotificationBell und Wächtertest (R-1089)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationBell.svelte, apps/desktop/ui/src/styles/tokens.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @249ef2c7 2026-11-04T16:38:15+01:00
+Review: approve (.ah-out/review/kern-design-3/T9.verdict.json)
+Änderung: `NotificationBell` nutzt definierte Tokens (`--radius-*`, `--surface-hover` statt `--radius`, `--bg-hover`); `tokens.test.ts` prüft, dass jedes `var(--x)` unter `src/` einen Token trifft, den `app.css`, `global.css` oder eine Komponente selbst deklariert (sonst fällt `var()` still auf den Browser-Default). Die Ansible-Fälle (`--bg-elev`, `--bg-accent`) räumt T3 ab; T9 läuft nach T3, damit der Wächter grün startet.
+Beweis: grep var(--bg-elev apps/desktop/ui/src/pages/Ansible.svelte (main@1c313156) · Dedup-Key: bug:desktop-ui:Ansible.svelte:undefined-tokens
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts
+Doku: keine (interne Styles, kein dokumentiertes Verhalten)
+Abhängt von: T3
+
+### T8 — Doku DE+EN und Changelog (R-1064)  [x]
+Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-design-3.md, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8645467f 2026-11-04T16:49:43+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: Entwickler-Doku zu Aufbau von Infrastruktur, Ansible und Monitoring (Bibliothek, `data-tab`/`data-action`-Anker); Admin-Doku nur, wo sich sichtbare Namen der Wege ändern; Changelog-Fragment.
+Task-Review: am Ende
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ui/Tabs.test.ts
+Doku: diese Task
+
+## Entscheidungen
+- 2026-11-04 T2: Tunnel und Checks bekommen keinen `Switch` — heute gibt es dort keinen Umschalter, ein Toggle wäre neues Verhalten.
+- 2026-11-04 T2: Provisionierung zeigt Befehle per `CodeBlock copyable={false}`, der Kopierknopf bleibt eigener erster Knopf der `.cmd-box` — die Status-Meldung und das Ausblenden des Tokens aus `copyText` bleiben erhalten.
+- 2026-11-04 T7: Dateien um `connection-crud`, `tunnel-crud`, `tunnel-create`, `tunnel-start` erweitert — sie drücken `.conn-toolbar/.tun-toolbar .btn.primary`, das mit `Button` zu `.ui-btn-primary` wird.
+- 2026-11-04 T3: keine automatische Playbook-Auswahl (Detail zeigt bis zur Wahl einen Hinweis); Bearbeiten im Detail-Kopf statt Hover-Overlay; Rail-Knopf „+ Playbook“ statt „Hochladen“, weil die Funktion Anlegen per Modal ist; ungenutzte Schlüssel ansible.step.* und der globale Ansible-Block in app.css entfallen.
+- 2026-11-04 T3 (Nachtrag aus dem Review): Die Server-Checkbox der Ansible-Ziele zeigt Name und Host, aber keine Server-Tags mehr — wer nach Tags zielt, nutzt den Tag-Modus mit seinen Chips.
+- 2026-11-04 T4: Die Tab-Zähler für Alerts und Templates erscheinen nur bei einer nicht leeren Liste: beide laden erst auf ihrem Tab, eine 0 hieße oft nur „noch nicht geladen“.
+- 2026-11-04 T4: Die Serversuche wandert aus der Liste in die Werkzeugleiste der Übersicht und filtert Liste und Kacheln gleich (vorher nur die Liste; die Kacheln lasen denselben Store ohne Eingabefeld).
+- 2026-11-04 T4: Die globalen Regeln `.mon-tab`, `.mon-tabs`, `.mon-summary-*`, `.mon-split*`, `.mon-srv-*`, `.mon-filter-search` und `.section-toolbar` sind gelöscht, die Komponenten tragen ihren Stil selbst. `.mon-tab` traf nebenbei das `<div class="mon-tab">` in `infra/tabs/MonitoringTab.svelte` (Button-Polster auf einem Container); das fällt damit weg.
+- 2026-11-04 T4: Das Banner „Server ohne Monitoring“ nennt die betroffenen Server hinter dem Zähltext (eigenes Element, damit der Zähltext als Anker bleibt); Fehler- und Hinweisbanner sind `ui/Callout`.
+- 2026-11-04 T4 (Nachtrag aus dem Review): Die Leiste der Monitoring-Übersicht schaltet über Media-Queries (280 px, bis 1200 px 210 px, bis 900 px gestapelt) statt über eine Container-Query wie Infrastruktur und Ansible; die Übersicht hat keinen eigenen Größen-Container, und das Ergebnis im Fenster ist gleich.
+- 2026-11-04 T5: Kein SSH-Knopf im Dashboard-Kopf: der Kontext hat keine Verbindungsfunktion, eine neue wäre Scope über das Re-Design hinaus (Spec, offene Frage 1). „Wartungsfenster“ öffnet den bestehenden `MaintenanceModal` (neu, `serverId` = Auswahl, danach `loadMaintenanceWindows()`), nur für echte Server. Der Status-Streifen der Sektionen weicht einem `Dot` rechts im Kopf; das Icon bleibt neutral. Die Live-Pills bleiben eigene `span.mon-live-pill` mit `level-*` (scoped im Pill-Look), weil `Pill` keine Klasse durchreicht und `SecLive.test` die Stufe am Element liest.
+- 2026-11-04 T5 (Nachtrag aus dem Review): Mit Streifen und altem Dashboard-Punkt fällt auch `@keyframes monPulseCrit` weg; kritisch zeigt der Dashboard-Kopf jetzt einen ruhigen `Dot` mit Ring, wie das Mockup (keine Animation im Design-System).
+- 2026-11-04 T6: Das Verify nimmt `BuiltinUpdateModal.test.ts` (liest `.mon-tpl-card` und den Update-Knopf) und den i18n-Wächter mit (neue Schlüssel `monitoring.alerts.title|active`, `monitoring.log.title`, `monitoring.tplEdit.builtin|custom`; `monitoring.alerts.enable|disable` entfallen mit dem Knopf). Der Alert-Switch zeigt den Zustand der Regel und schaltet über `toggleAlert`; schlägt der Aufruf fehl, bleibt der Schalter bis zum nächsten Laden umgelegt (der Fehler steht in der Statusleiste). Templates zeigen statt „Zuweisen“ (Mockup) nur Bearbeiten: Zuweisen liegt im Template-Modal, ein zweiter Weg wäre neue Funktion. Kein CSV-Export im Log (nicht im Bestand). `.mon-dot-sm`, `.mon-alert-*` und `.mon-log-*` wandern aus `app.css` in die Komponenten; `.mon-empty` bleibt global (Template-Modal).
+- 2026-11-04 T6 (Nachtrag aus dem Review): Jeder Alert-Switch trägt sichtbar „Aktiv“ — `ui/Switch` rendert sein Label sichtbar, und ohne Label hätte der Schalter keinen zugänglichen Namen.
+- 2026-11-04 T9: NotificationBell nutzt `--radius-xs`/`--radius-sm` statt des undefinierten `--radius` und `--surface-hover`/`--accent-muted` statt `--bg-hover`; die Fallback-Farben entfallen. Der neue Wächter in `tokens.test.ts` zählt als Deklaration jede `--x:` unter `src/` (ohne Tests) und jede `style:--x`-Direktive (`--pct` im Slider, `--workspace-color` in AppShell); Gegenprobe mit der alten NotificationBell: rot mit `--radius` und `--bg-hover`.
+- 2026-11-04 T7: `texts()` (und damit `waitForRow`) liest jetzt für alle Specs über `textContentOf`, nicht nur für die vier Listen: ellipsierte Namen gibt WebKitWebDriver per `getText()` leer zurück, und `textContent` gleicht `getText()` für die übrigen einzeiligen Namen. `openRowByName` klickt den einzigen `.ui-btn` der Zeile; die Listenansicht im Monitoring ist das erste Radio des `Segmented` in `.mon-overview-toolbar` (die Optionen tragen kein Wert-Attribut). Die Modale behalten `.btn.primary`/`.btn.danger` (nicht Teil des Re-Designs). Lokal nur Lint, der Lauf ist der Sammellauf.
+- 2026-11-04 T8: `docs/admin/index.html` (DE+EN) bleibt unverändert, dort steht kein Weg, der sich ändert; nachgezogen sind dafür `docs/admin/ansible.html` (Assistent → Liste + Detail) und `docs/admin/monitoring.html` (Dashboard-Kopf, eigene Reiter für Alerts/Templates/Log; die alte Zeile nannte falsche Zeitfenster).

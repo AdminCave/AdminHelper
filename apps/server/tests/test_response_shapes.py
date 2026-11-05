@@ -749,7 +749,7 @@ class TestFrpBundleShape:
         )
         db.commit()
 
-    def test_visitor_bundle_answers_toml_and_an_empty_pki(
+    def test_visitor_bundle_answers_toml_an_empty_pki_and_the_frps_name(
         self, test_client, db_session, admin_user
     ):
         self._seed_config(db_session)
@@ -758,8 +758,9 @@ class TestFrpBundleShape:
         r = test_client.get("/api/frp/generate/visitor-bundle", headers=h)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert list(body) == ["toml", "pki"]
+        assert list(body) == ["toml", "pki", "frps_tls_name"]
         assert body["pki"] == {}
+        assert body["frps_tls_name"] == "frps.adminhelper.invalid"
         assert "[[visitors]]" in body["toml"]
 
     def test_config_hash_is_null_without_a_config(self, test_client, db_session, admin_user):

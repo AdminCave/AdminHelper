@@ -23,6 +23,7 @@ import type {
   DeviceIdentity,
   HttpMethod,
   PasswordState,
+  ProbeTarget,
   ResetOutcome,
   ResolvedConnection,
   Settings,
@@ -191,6 +192,12 @@ export function exportBrowserP12(password: string, destPath: string): Promise<st
 // resolves to the written path.
 export function writeExportCsv(destPath: string, content: string): Promise<string> {
   return invoke<string>('write_export_csv', { destPath, content });
+}
+
+// TCP connect time per target in ms, null when it did not answer within 1.5 s; at most 256
+// targets per call.
+export function probeTargets(targets: ProbeTarget[]): Promise<(number | null)[]> {
+  return invoke<(number | null)[]>('probe_targets', { targets });
 }
 
 // ─────────────────────────── Server API proxy ────────────────────

@@ -46,6 +46,8 @@ function history(over: Partial<ServerHistory> = {}): ServerHistory {
       ram: grid([60, 60, 60, 60, 60]),
       swap: grid([null, null, null, null, null]),
       loadPerCpu: grid([0.5, 0.5, 0.5, 0.5, 0.5]),
+      netIn: grid([null, null, null, null, null]),
+      netOut: grid([null, null, null, null, null]),
       disks: { '/': grid([50, 55, 60, 65, 70]), '/data': grid([30, 30, 30, 30, 30]) },
     },
     previous: {
@@ -53,6 +55,8 @@ function history(over: Partial<ServerHistory> = {}): ServerHistory {
       ram: grid([50, 50, 50, 50, 50]),
       swap: grid([null, null, null, null, null]),
       loadPerCpu: grid([0.2, 0.2, 0.2, 0.2, 0.2]),
+      netIn: grid([null, null, null, null, null]),
+      netOut: grid([null, null, null, null, null]),
       disks: {},
     },
     thresholds: { cpu: { warn: 80, crit: 95 }, disk: { warn: 85, crit: 95 } },
@@ -63,6 +67,22 @@ function history(over: Partial<ServerHistory> = {}): ServerHistory {
 }
 
 const ping = { id: 'p1', name: 'Ping gw', checkType: 'ping' } as MonitorCheck;
+
+function withNet(): ServerHistory {
+  const h = history();
+  return {
+    ...h,
+    series: { ...h.series, netIn: grid([1, 2, 3, 4, 5]), netOut: grid([0.5, 0.5, 0.5, 0.5, 0.5]) },
+  };
+}
+
+/** The y coordinates of one drawn line. */
+function ys(container: HTMLElement, key: string): number[] {
+  const d = container.querySelector(`[data-testid="chart-line"][data-series="${key}"]`);
+  return [...(d?.getAttribute('d') ?? '').matchAll(/[ML][\d.]+ ([\d.]+)/g)].map((m) =>
+    Number(m[1]),
+  );
+}
 
 function lines(container: HTMLElement): string[] {
   return [...container.querySelectorAll('[data-testid="chart-line"]')].map(
@@ -249,5 +269,73 @@ describe('HistoryPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalled());
     expect(mocks.writeExportCsv).not.toHaveBeenCalled();
+  });
+
+  it('offers the network tab only with network data', async () => {
+    mocks.fetchServerHistory.mockResolvedValue(history());
+    const { container } = render(HistoryPanel, {
+      serverId: 'srv1',
+      serverName: 'web-1',
+      latencyChecks: [],
+    });
+    await waitFor(() => expect(lines(container)).toHaveLength(2));
+    expect(screen.queryByRole('tab', { name: 'Network' })).toBeNull();
+  });
+
+  it('draws incoming above and outgoing below zero in Mbit/s, without thresholds or events', async () => {
+    mocks.fetchServerHistory.mockResolvedValue(withNet());
+    const { container } = render(HistoryPanel, {
+      serverId: 'srv1',
+      serverName: 'web-1',
+      latencyChecks: [],
+    });
+    await waitFor(() => expect(lines(container)).toHaveLength(2));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Network' }));
+    await waitFor(() => expect(lines(container)).toEqual(['netIn', 'netOut']));
+    // Height 230, padding 16 above and 28 below: the zero line of the mirrored axis is at 109.
+    expect(ys(container, 'netIn').every((y) => y < 109)).toBe(true);
+    expect(ys(container, 'netOut').every((y) => y > 109)).toBe(true);
+    expect(container.querySelectorAll('[data-testid="chart-threshold"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid="chart-event"]')).toHaveLength(0);
+    const row = screen.getByRole('rowheader', { name: 'Incoming' }).closest('tr');
+    const cells = [...(row?.querySelectorAll('td') ?? [])].map((c) => c.textContent);
+    expect(cells[0]).toBe('3.0 Mbit/s');
+    expect(cells[3]).toBe('5.0 Mbit/s');
+  });
+
+  it('keeps the network tab over a period switch', async () => {
+    mocks.fetchServerHistory.mockResolvedValue(withNet());
+    const { container } = render(HistoryPanel, {
+      serverId: 'srv1',
+      serverName: 'web-1',
+      latencyChecks: [],
+    });
+    await waitFor(() => expect(lines(container)).toHaveLength(2));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Network' }));
+    await waitFor(() => expect(lines(container)).toEqual(['netIn', 'netOut']));
+    await fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    await waitFor(() =>
+      expect(mocks.fetchServerHistory).toHaveBeenLastCalledWith({ token: 's' }, 'srv1', '7d'),
+    );
+    await waitFor(() => expect(lines(container)).toEqual(['netIn', 'netOut']));
+    expect(screen.getByRole('tab', { name: 'Network' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('falls back to CPU when the next server has no network data', async () => {
+    mocks.fetchServerHistory.mockResolvedValueOnce(withNet()).mockResolvedValue(history());
+    const { container, rerender } = render(HistoryPanel, {
+      serverId: 'srv1',
+      serverName: 'web-1',
+      latencyChecks: [],
+    });
+    await waitFor(() => expect(lines(container)).toHaveLength(2));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Network' }));
+    await waitFor(() => expect(lines(container)).toEqual(['netIn', 'netOut']));
+    await rerender({ serverId: 'srv2', serverName: 'db-1', latencyChecks: [] });
+    await waitFor(() => expect(lines(container)).toEqual(['cpu', 'ram']));
+    expect(screen.queryByRole('tab', { name: 'Network' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'CPU & RAM' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
   });
 });

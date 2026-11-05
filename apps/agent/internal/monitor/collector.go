@@ -6,6 +6,8 @@ package monitor
 
 import (
 	"math"
+	stdnet "net"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
+	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
 // Filesystem types to skip (Linux-specific; Windows ignores these).
@@ -123,10 +126,73 @@ func collectLoad() map[string]any {
 // resourceCalls indirects the swap and CPU count reads and the OS so tests can drive every path, the
 // Windows branch included, without depending on the host (same reason as hostFactsCalls, 6.18).
 var resourceCalls = struct {
-	goos   string
-	swap   func() (*mem.SwapMemoryStat, error)
-	counts func(logical bool) (int, error)
-}{runtime.GOOS, mem.SwapMemory, cpu.Counts}
+	goos     string
+	swap     func() (*mem.SwapMemoryStat, error)
+	counts   func(logical bool) (int, error)
+	netIO    func(pernic bool) ([]gnet.IOCountersStat, error)
+	loopback func() (map[string]bool, error)
+	device   func(name string) bool
+}{runtime.GOOS, mem.SwapMemory, cpu.Counts, gnet.IOCounters, loopbackNames, hasNetDevice}
+
+// loopbackNames are the interfaces flagged loopback. gopsutil names its counters like the standard
+// library on Windows and like /proc/net/dev on Linux, both the names net.Interfaces returns.
+func loopbackNames() (map[string]bool, error) {
+	ifs, err := stdnet.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, i := range ifs {
+		if i.Flags&stdnet.FlagLoopback != 0 {
+			out[i.Name] = true
+		}
+	}
+	return out, nil
+}
+
+// hasNetDevice is true for a Linux interface backed by a device (NIC, virtio), false for bridges,
+// veth, tap, tun and bonds, which only carry traffic a device already counts.
+func hasNetDevice(name string) bool {
+	_, err := os.Stat("/sys/class/net/" + name + "/device")
+	return err == nil
+}
+
+// collectNetwork sums the byte counters since boot over the counted interfaces: on Linux those
+// with a device, or every non-loopback one if there is none (a container sees only its veth); on
+// Windows every non-loopback one. A Proxmox host so counts eno1 but not again vmbr0 and the guests'
+// tap devices. Any failed read drops both fields: a partial sum would read as a traffic drop.
+func collectNetwork() map[string]any {
+	counters, err := resourceCalls.netIO(true)
+	if err != nil {
+		return nil
+	}
+	loop, err := resourceCalls.loopback()
+	if err != nil {
+		return nil
+	}
+	var candidates, devices []gnet.IOCountersStat
+	for _, c := range counters {
+		if loop[c.Name] {
+			continue
+		}
+		candidates = append(candidates, c)
+		if resourceCalls.goos == "linux" && resourceCalls.device(c.Name) {
+			devices = append(devices, c)
+		}
+	}
+	if len(devices) > 0 {
+		candidates = devices
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	var rx, tx uint64
+	for _, c := range candidates {
+		rx += c.BytesRecv
+		tx += c.BytesSent
+	}
+	return map[string]any{"net_rx_bytes_total": rx, "net_tx_bytes_total": tx}
+}
 
 // collectSwapAndCPUCount reports the logical CPUs and the swap on Linux only, like the load they put
 // into proportion (nil elsewhere). A failed part drops only its own fields. Without a swap device

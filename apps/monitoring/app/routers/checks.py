@@ -593,14 +593,14 @@ def get_server_history(
     previous: bool = False,
     db: Session = Depends(get_db),
 ):
-    """Resource history of one server from its agent: CPU, RAM, swap, load per CPU and
-    disks on one time grid, optionally the previous period, the warn/crit thresholds,
+    """Resource history of one server from its agent: CPU, RAM, swap, load per CPU,
+    network in/out and disks on one time grid, optionally the previous period, the warn/crit thresholds,
     the status changes of its checks and its maintenance windows."""
     start, end, step = history_window(period, time.time())
     thresholds = server_thresholds(db, server_id)
     events = server_events(db, server_id, start, end)
     maintenance = server_maintenance(db, server_id, start, end)
-    # Up to four query_range calls follow; the connection goes back to the pool first.
+    # Up to six query_range calls follow; the connection goes back to the pool first.
     db.rollback()
     queries = history_queries(server_id, step)
 
@@ -614,7 +614,7 @@ def get_server_history(
                     step=f"{step}s",
                 )
             )
-            for kind in ("usage", "load")
+            for kind in ("usage", "load", "net")
         ]
         return build_series(*results, start, end, step, shift)
 
@@ -638,11 +638,11 @@ def get_server_history(
     dependencies=[Depends(require_internal)],
 )
 def get_status_compare(
-    metric: str = Query(..., pattern="^(cpu|ram|disk|load)$"),
+    metric: str = Query(..., pattern="^(cpu|ram|disk|load|net)$"),
     period: str = Query("24h", pattern="^(1h|24h|7d|30d)$"),
 ):
     """One metric of every server with agent data on the history grid: CPU, RAM, the
-    fullest disk or load per CPU."""
+    fullest disk, load per CPU or incoming network traffic."""
     start, end, step = history_window(period, time.time())
     result = _series_or_502(
         victoria.query_range(

@@ -33,6 +33,9 @@ import { apikeys } from './apikeys';
 import { frpConfig } from './frp';
 import { auth } from './auth';
 
+// Registered once at module import; read here because Vitest 5 clears mock calls before each test.
+const authFailureHandler = vi.mocked(registerAuthFailureHandler).mock.calls[0][0];
+
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => (resolve = r));
@@ -87,13 +90,12 @@ describe('auth store session lifecycle (4.77, 6.89)', () => {
   });
 
   it('ends the session globally when the registered auth-failure handler fires', async () => {
-    // The handler is registered once at module import (a global 401 anywhere must end the session).
-    const handler = vi.mocked(registerAuthFailureHandler).mock.calls[0][0];
+    // A global 401 anywhere must end the session.
     vi.mocked(authApi.me).mockResolvedValue({ id: 1, username: 'admin', is_admin: true });
     await auth.hydrate();
     expect(get(auth).user).not.toBeNull();
 
-    handler();
+    authFailureHandler();
 
     expect(authApi.logout).toHaveBeenCalled();
     expect(get(auth)).toEqual({ user: null, ready: true });
@@ -110,7 +112,7 @@ describe('auth store session lifecycle (4.77, 6.89)', () => {
     [
       'the auth-failure handler',
       async () => {
-        vi.mocked(registerAuthFailureHandler).mock.calls[0][0]();
+        authFailureHandler();
       },
     ],
     [
@@ -178,7 +180,7 @@ describe('auth store session lifecycle (4.77, 6.89)', () => {
       .mockReturnValueOnce(second.promise);
 
     void auth.logout();
-    vi.mocked(registerAuthFailureHandler).mock.calls[0][0]();
+    authFailureHandler();
     const login = auth.login('admin', 'pw');
     second.resolve();
     await settle();
@@ -200,7 +202,7 @@ describe('auth store session lifecycle (4.77, 6.89)', () => {
 
     void auth.logout();
     const login = auth.login('admin', 'pw');
-    vi.mocked(registerAuthFailureHandler).mock.calls[0][0]();
+    authFailureHandler();
     first.resolve();
     await settle();
     expect(authApi.login).not.toHaveBeenCalled();

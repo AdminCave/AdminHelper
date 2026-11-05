@@ -173,6 +173,12 @@ def _report_lines(server_id: str, report: dict) -> list[str]:
             cpu_count = agent_number(resources.get("cpu_count"))
             if isinstance(cpu_count, int) and cpu_count >= 1:
                 lines.append(format_line("monitor_agent_cpu_count", base_tags, cpu_count, ts))
+            # Byte counters since boot (R-1105); the history takes their rate. A counter is
+            # a non-negative integer, anything else would read as a reset.
+            for key in ("net_rx_bytes_total", "net_tx_bytes_total"):
+                count = agent_number(resources.get(key))
+                if isinstance(count, int) and count >= 0:
+                    lines.append(format_line(f"monitor_agent_{key}", base_tags, count, ts))
 
             for disk in capped_objects(resources.get("disks")):
                 if entry_text(disk, "fstype", "_real_") in EXCLUDED_FSTYPES:

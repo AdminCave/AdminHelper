@@ -57,8 +57,7 @@ function deref(schema: Schema | undefined, seen = new Set<string>()): Schema | u
 function responseSchema(fixture: MockFixture): Schema | undefined {
   const op = spec.paths[`/api/${fixture.path}`]?.[fixture.method.toLowerCase()];
   const responses = op?.responses as
-    | Record<string, { content?: Record<string, { schema?: Schema }> }>
-    | undefined;
+    Record<string, { content?: Record<string, { schema?: Schema }> }> | undefined;
   const body = responses?.[String(fixture.status)]?.content?.['application/json']?.schema;
   return deref(body);
 }

@@ -50,7 +50,7 @@ class Switch:
     """The record of a switch in root-switch.json."""
 
     switched_at: datetime.datetime
-    compromised: tuple[str, ...]  # scopes given to the switch, sorted
+    compromised: tuple[str, ...]  # scopes given to the switch or a later rotation, sorted
     cross: bool  # False after --no-cross: no X, clients that trust only R lose the server
     # R leaves `chain` before finish: a switch or a later rotation with --compromised
     # set it, because a client that trusts R also trusts the replaced intermediates.

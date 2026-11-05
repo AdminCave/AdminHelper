@@ -411,6 +411,26 @@ def test_a_rotation_after_the_switch_keeps_what_is_under_both_roots(monkeypatch,
     assert (tmp_path / "root-switch.json").read_bytes() == before
 
 
+def test_a_compromised_rotation_after_the_switch_names_its_scopes_in_the_record(
+    monkeypatch, tmp_path
+):
+    before = _booted(monkeypatch, tmp_path, days_ago=20)
+    _at(monkeypatch, 20, lambda: rotation.stage_root(tmp_path, NEXT_PW))
+    _at(monkeypatch, 10, lambda: rotation.switch_root(tmp_path, NEXT_PW, PW))
+
+    rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
+    record = json.loads((tmp_path / "root-switch.json").read_bytes())
+    assert (record["compromised"], record["drop_retired_root"]) == (["tunnel"], True)
+    # A partial restore puts the intermediate under the old root back into the file.
+    (tmp_path / "tunnel-retired.pem").write_bytes(pki.cert_to_pem(before["tunnel"].cert))
+    assert storage.ensure_hierarchy(tmp_path, None)["tunnel"].retired == ()
+
+    # A later run adds its scope to those already named.
+    rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"access"}))
+    record = json.loads((tmp_path / "root-switch.json").read_bytes())
+    assert record["compromised"] == ["access", "tunnel"]
+
+
 def test_a_compromised_rotation_after_the_switch_drops_the_old_root_first(monkeypatch, tmp_path):
     _booted(monkeypatch, tmp_path, days_ago=20)
     _at(monkeypatch, 20, lambda: rotation.stage_root(tmp_path, NEXT_PW))
@@ -428,7 +448,7 @@ def test_a_compromised_rotation_after_the_switch_drops_the_old_root_first(monkey
         with pytest.raises(rotation.RotationError, match=r"tunnel-retired\.pem"):
             rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
     record = json.loads((tmp_path / "root-switch.json").read_bytes())
-    assert record["drop_retired_root"] is True and record["compromised"] == []
+    assert record["drop_retired_root"] is True and record["compromised"] == ["tunnel"]
 
     rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
 
