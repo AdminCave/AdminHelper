@@ -7,6 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { onMount } from 'svelte';
   import Check from '@lucide/svelte/icons/check';
+  import CheckCheck from '@lucide/svelte/icons/check-check';
+  import EyeOff from '@lucide/svelte/icons/eye-off';
+  import NotificationDetail from '../components/NotificationDetail.svelte';
   import Button from '../components/ui/Button.svelte';
   import Checkbox from '../components/ui/Checkbox.svelte';
   import SearchField from '../components/ui/SearchField.svelte';
@@ -15,23 +18,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t, currentLocale } from '$lib/i18n';
   import { navigate, segments } from '$lib/router';
   import { timeAgo } from '$lib/utils/timeAgo';
-  import type { NotificationItem, NotificationSeverity } from '$lib/api/types';
+  import type { NotificationSeverity } from '$lib/api/types';
   import {
     categoriesOf,
+    categoryLabel,
     filterItems,
     groupByDay,
+    isOpen,
     matchesMailbox,
+    stateLabel,
     type Mailbox,
   } from '$lib/models/notifications';
   import {
+    ackIncidents,
     centerItems,
     centerHasMore,
+    hide,
     notificationItems,
     loadCenter,
     markRead,
   } from '$lib/stores/notifications';
 
-  const MAILBOXES: Mailbox[] = ['inbox', 'open', 'all'];
+  const MAILBOXES: Mailbox[] = ['inbox', 'open', 'acked', 'resolved', 'muted', 'all'];
+  // The narrow layout's switch keeps the three a reader needs most; the rail holds all six.
+  const SWITCH: Mailbox[] = ['inbox', 'open', 'all'];
   const SEVERITIES: NotificationSeverity[] = ['critical', 'warning', 'info'];
 
   let mailbox = $state<Mailbox>('inbox');
@@ -39,6 +49,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let category = $state<string | null>(null);
   let query = $state('');
   let picked = $state<number[]>([]);
+  let skipped = $state(0);
 
   onMount(() => void loadCenter());
 
@@ -58,9 +69,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const selectedId = $derived(Number($segments[1]));
   const selected = $derived(all.find((n) => n.id === selectedId) ?? null);
   // Only what the filter shows counts: a row picked before the filter changed is not sent unseen.
-  const pickedUnread = $derived(
-    picked.filter((id) => shown.find((n) => n.id === id)?.read === false),
-  );
+  const pickedShown = $derived(shown.filter((n) => picked.includes(n.id)));
+  const pickedUnread = $derived(pickedShown.filter((n) => !n.read).map((n) => n.id));
+  // Incidents, not rows: two picked rows of one incident acknowledge it once.
+  const pickedOpen = $derived([
+    ...new Set(
+      pickedShown
+        .filter(isOpen)
+        .map((n) => n.incidentId)
+        .filter((id): id is number => id != null),
+    ),
+  ]);
 
   const mailboxCount = (m: Mailbox) => all.filter((n) => matchesMailbox(n, m)).length;
   const severityCount = (s: NotificationSeverity) =>
@@ -68,6 +87,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function pick(id: number, on: boolean) {
     picked = on ? [...picked, id] : picked.filter((x) => x !== id);
+    skipped = 0;
   }
 
   async function markPicked() {
@@ -75,10 +95,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     picked = [];
   }
 
-  function at(n: NotificationItem): string {
-    if (!n.createdAt) return '';
-    const d = new Date(n.createdAt);
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(currentLocale());
+  async function ackPicked() {
+    const res = await ackIncidents(pickedOpen);
+    if (!res) return;
+    picked = [];
+    skipped = res.skipped.length;
+  }
+
+  async function hidePicked() {
+    if (await hide(pickedShown.map((n) => n.id))) picked = [];
   }
 </script>
 
@@ -124,7 +149,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           data-category={c.category}
           onclick={() => (category = category === c.category ? null : c.category)}
         >
-          <span>{c.category}</span><span class="nc-count">{c.count}</span>
+          <span>{categoryLabel(c.category, $t)}</span><span class="nc-count">{c.count}</span>
         </button>
       {/each}
     {/if}
@@ -145,22 +170,52 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <Segmented
           label={$t('notifications.mailbox')}
           value={mailbox}
-          options={MAILBOXES.map((m) => ({ value: m, label: $t(`notifications.mailbox.${m}`) }))}
+          options={SWITCH.map((m) => ({ value: m, label: $t(`notifications.mailbox.${m}`) }))}
           onChange={(v) => (mailbox = v as Mailbox)}
         />
       </div>
-      {#if pickedUnread.length}
-        <Button
-          size="sm"
-          variant="secondary"
-          iconLeft={Check}
-          class="nc-mark-picked"
-          onclick={markPicked}
-        >
-          {$t('notifications.markPicked', { count: pickedUnread.length })}
-        </Button>
+      {#if pickedShown.length}
+        <div class="nc-bulk">
+          {#if pickedUnread.length}
+            <Button
+              size="sm"
+              variant="secondary"
+              iconLeft={Check}
+              class="nc-mark-picked"
+              onclick={markPicked}
+            >
+              {$t('notifications.markPicked', { count: pickedUnread.length })}
+            </Button>
+          {/if}
+          {#if pickedOpen.length}
+            <Button
+              size="sm"
+              variant="secondary"
+              iconLeft={CheckCheck}
+              class="nc-ack-picked"
+              onclick={ackPicked}
+            >
+              {$t('notifications.ackPicked', { count: pickedOpen.length })}
+            </Button>
+          {/if}
+          <Button
+            size="sm"
+            variant="secondary"
+            iconLeft={EyeOff}
+            class="nc-hide-picked"
+            onclick={hidePicked}
+          >
+            {$t('notifications.hidePicked', { count: pickedShown.length })}
+          </Button>
+          <Button size="sm" variant="ghost" class="nc-unpick" onclick={() => (picked = [])}>
+            {$t('notifications.unpick')}
+          </Button>
+        </div>
       {/if}
     </div>
+    {#if skipped}
+      <div class="nc-note" role="status">{$t('notifications.ackSkipped', { count: skipped })}</div>
+    {/if}
 
     <div class="nc-scroll">
       {#if groups.length === 0}
@@ -183,8 +238,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 onclick={() => navigate(`/notifications/${n.id}`)}
               >
                 <span class="nc-sev sev-{n.severity}" aria-hidden="true"></span>
-                <span class="nc-row-title">{n.title}</span>
-                <span class="nc-row-meta">{n.category} · {timeAgo(n.createdAt, $t)}</span>
+                <span class="nc-row-title"
+                  >{n.title}{#if (n.count ?? 1) > 1}<span class="nc-row-count">×{n.count}</span
+                    >{/if}</span
+                >
+                {#if stateLabel(n, $t, currentLocale())}
+                  <span class="nc-row-state">{stateLabel(n, $t, currentLocale())}</span>
+                {/if}
+                <span class="nc-row-meta"
+                  >{categoryLabel(n.category, $t)} · {timeAgo(n.createdAt, $t)}</span
+                >
               </button>
             </div>
           {/each}
@@ -203,33 +266,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   <div class="nc-detail">
     {#if selected}
-      <article class="nc-detail-body" aria-label={selected.title}>
-        <h2 class="nc-detail-title">
-          <span class="nc-sev sev-{selected.severity}" aria-hidden="true"></span>{selected.title}
-        </h2>
-        {#if selected.body}<p class="nc-detail-text">{selected.body}</p>{/if}
-        <dl class="nc-fields">
-          <dt>{$t('notifications.severityHead')}</dt>
-          <dd>{$t(`notifications.severity.${selected.severity}`)}</dd>
-          <dt>{$t('notifications.categoryHead')}</dt>
-          <dd>{selected.category}</dd>
-          <dt>{$t('notifications.source')}</dt>
-          <dd>{selected.sourceType ?? '-'}{selected.sourceId ? ` ${selected.sourceId}` : ''}</dd>
-          <dt>{$t('notifications.time')}</dt>
-          <dd>{at(selected)}</dd>
-        </dl>
-        {#if !selected.read}
-          <Button
-            size="sm"
-            variant="secondary"
-            iconLeft={Check}
-            class="nc-detail-read"
-            onclick={() => markRead([selected.id])}
-          >
-            {$t('notifications.markRead')}
-          </Button>
-        {/if}
-      </article>
+      {#key selected.id}
+        <NotificationDetail item={selected} />
+      {/key}
     {:else}
       <div class="nc-empty">
         <EmptyState title={$t('notifications.noneSelected')} framed={false} />
@@ -392,35 +431,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
     overflow-y: auto;
     border-left: 1px solid var(--border);
   }
-  .nc-detail-body {
+  .nc-bulk {
     display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-    padding: var(--sp-4);
+    flex-wrap: wrap;
+    gap: var(--sp-2);
   }
-  .nc-detail-title {
-    display: flex;
-    align-items: center;
-    margin: 0;
-    font-size: var(--text-lg, 1.1em);
-  }
-  .nc-detail-text {
-    margin: 0;
-    white-space: pre-line;
-  }
-  .nc-fields {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 4px var(--sp-3);
-    margin: 0;
+  .nc-note {
+    padding: var(--sp-2) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    background: var(--warning-bg);
     font-size: var(--text-sm);
   }
-  .nc-fields dt {
+  .nc-row-count {
+    margin-left: 6px;
     color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
   }
-  .nc-fields dd {
-    margin: 0;
-    overflow-wrap: anywhere;
+  .nc-row-state {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
   }
 
   /* A container query only reaches descendants, hence nothing on .nc-page itself here. */

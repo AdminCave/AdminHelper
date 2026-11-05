@@ -33,6 +33,11 @@ const DYNAMIC_PREFIXES = [
   'notifications.day.',
   'notifications.severity.',
   'notifications.mailbox.',
+  // Labels from the vocabulary and the incident history (models/notifications.ts,
+  // NotificationDetail.svelte): notifications.category.${c}, .channel.${c}, .history.${e.kind}.
+  'notifications.category.',
+  'notifications.channel.',
+  'notifications.history.',
 ];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {

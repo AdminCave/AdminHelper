@@ -4,18 +4,24 @@
 
 // R-1078, R-1079: open from the incident state, day groups in local time, the panel tabs, the
 // six mailboxes, the center filters and the category order. Dates are built in local time, so
-// the tests hold in any zone.
+// the tests hold in any zone. The labels: category, channel, state and the short time.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { get } from 'svelte/store';
 import type { NotificationItem } from '$lib/api/types';
+import { setLanguage, t } from '$lib/i18n';
 import {
   categoriesOf,
+  categoryLabel,
+  channelLabel,
   dayBucket,
   filterItems,
   groupByDay,
   isOpen,
   matchesMailbox,
   matchesTab,
+  shortTime,
+  stateLabel,
   type CenterFilter,
   type Mailbox,
 } from './notifications';
@@ -204,5 +210,44 @@ describe('categoriesOf', () => {
       item({ category: 'alpha' }),
     ];
     expect(categoriesOf(items).map((c) => c.category)).toEqual(['agent', 'alpha', 'zeta']);
+  });
+});
+
+describe('labels', () => {
+  beforeAll(() => setLanguage('de'));
+
+  it('names a known category and channel, an unknown one as it came', () => {
+    const tr = get(t);
+    expect(categoryLabel('agent', tr)).toBe('Agent & Updates');
+    expect(categoryLabel('security', tr)).toBe('Sicherheit');
+    expect(categoryLabel('zeta', tr)).toBe('zeta');
+    expect(channelLabel('email', tr)).toBe('E-Mail');
+    expect(channelLabel('bell', tr)).toBe('Glocke');
+    expect(channelLabel('pager', tr)).toBe('pager');
+  });
+
+  it('shows a time of today as hh:mm and one of another day with its date', () => {
+    expect(shortTime(local(2026, 11, 4, 8, 5), 'de-DE', NOW)).toBe('08:05');
+    const other = shortTime(local(2026, 11, 3, 23, 50), 'de-DE', NOW);
+    expect(other).toContain('03.11.');
+    expect(other).toContain('23:50');
+    expect(shortTime(null, 'de-DE', NOW)).toBe('');
+    expect(shortTime('not a date', 'de-DE', NOW)).toBe('');
+  });
+
+  it('states the mute first, then who acknowledged, then resolved; open shows nothing', () => {
+    const tr = get(t);
+    const until = local(2026, 11, 4, 10, 30);
+    expect(
+      stateLabel(item({ state: 'acked', muted: true, mutedUntil: until }), tr, 'de-DE', NOW),
+    ).toBe('Stumm bis 10:30');
+    expect(stateLabel(item({ muted: true, mutedUntil: null }), tr, 'de-DE', NOW)).toBe('Stumm');
+    expect(stateLabel(item({ state: 'acked', ackedBy: 'anna' }), tr, 'de-DE', NOW)).toBe(
+      'Bestätigt · anna',
+    );
+    expect(stateLabel(item({ state: 'acked' }), tr, 'de-DE', NOW)).toBe('Bestätigt');
+    expect(stateLabel(item({ state: 'resolved' }), tr, 'de-DE', NOW)).toBe('Behoben');
+    expect(stateLabel(item({ state: 'open' }), tr, 'de-DE', NOW)).toBeNull();
+    expect(stateLabel(item({}), tr, 'de-DE', NOW)).toBeNull();
   });
 });

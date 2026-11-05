@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// R-1078 bell and panel: the badge colour, the tabs with their counts, the day groups, read by
-// quick action or by opening an entry, nothing read by opening the panel, and do not disturb.
+// R-1078, R-1079 bell and panel: the badge colour, the tabs with their counts, the day groups,
+// read by quick action or by opening an entry, nothing read by opening the panel, do not disturb,
+// and an open incident acknowledged from the panel with its count and state in the entry.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
@@ -18,6 +19,7 @@ const h = vi.hoisted(() => ({
   dndUntil: null as unknown,
   markRead: vi.fn(),
   markAllRead: vi.fn(),
+  ackIncidents: vi.fn(),
   closePanel: vi.fn(),
   togglePanel: vi.fn(),
   startDnd: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock('$lib/stores/notifications', async () => {
     panelOpen: h.open,
     markRead: h.markRead,
     markAllRead: h.markAllRead,
+    ackIncidents: h.ackIncidents,
     closePanel: h.closePanel,
     togglePanel: h.togglePanel,
   };
@@ -166,6 +169,38 @@ describe('NotificationBell', () => {
     expect(h.markRead).toHaveBeenCalledWith([4]);
     expect(h.navigate).not.toHaveBeenCalled();
     expect(h.closePanel).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges an open incident from the panel, without opening it', async () => {
+    const { container } = render(NotificationBell);
+    const acks = container.querySelectorAll<HTMLButtonElement>('.notif-item-ack');
+    // Only the open incident carries it; a warning without an incident does not.
+    expect(acks).toHaveLength(1);
+    expect(acks[0].textContent?.trim()).toBe('Bestätigen');
+    await fireEvent.click(acks[0]);
+    expect(h.ackIncidents).toHaveBeenCalledWith([4]);
+    expect(h.navigate).not.toHaveBeenCalled();
+    expect(h.closePanel).not.toHaveBeenCalled();
+  });
+
+  it('shows the count, the category label and the state of an entry', () => {
+    feed([
+      item({
+        id: 8,
+        title: 'CPU',
+        severity: 'warning',
+        incidentId: 8,
+        state: 'acked',
+        ackedBy: 'anna',
+        count: 3,
+      }),
+    ]);
+    const { container } = render(NotificationBell);
+    expect(container.querySelector('.notif-item-count')?.textContent).toBe('×3');
+    expect(container.querySelector('.notif-item-meta')?.textContent?.trim()).toBe(
+      'Warnung · Monitoring · vor 30 min · Bestätigt · anna',
+    );
+    expect(container.querySelector('.notif-item-ack')).toBeNull();
   });
 
   it('opens an entry on the center page and marks it read; a read one is not marked again', async () => {

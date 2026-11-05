@@ -7,6 +7,7 @@
 // store.
 
 import type { NotificationItem, NotificationSeverity } from '$lib/api/types';
+import type { TranslateFn } from '$lib/i18n';
 
 export type DayBucket = 'today' | 'yesterday' | 'older';
 export type PanelTab = 'all' | 'unread' | 'open';
@@ -121,4 +122,56 @@ export function categoriesOf(items: NotificationItem[]): { category: string; cou
   return [...counts]
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
     .map(([category, count]) => ({ category, count }));
+}
+
+/** The label of a category of the vocabulary; any other as the server wrote it. */
+export function categoryLabel(category: string, tr: TranslateFn): string {
+  const known: readonly string[] = NOTIFICATION_CATEGORIES;
+  return known.includes(category) ? tr(`notifications.category.${category}`) : category;
+}
+
+const CHANNELS = ['bell', 'email', 'telegram', 'webhook'];
+
+/** The label of a hub channel or an alert rule's channel; any other as it came. */
+export function channelLabel(channel: string, tr: TranslateFn): string {
+  return CHANNELS.includes(channel) ? tr(`notifications.channel.${channel}`) : channel;
+}
+
+/** A time of today as hh:mm, one of another day with its date; '' for none. */
+export function shortTime(
+  iso: string | null | undefined,
+  locale: string,
+  now = new Date(),
+): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+  return startOfDay(d) === startOfDay(now)
+    ? d.toLocaleTimeString(locale, time)
+    : d.toLocaleString(locale, { day: '2-digit', month: '2-digit', ...time });
+}
+
+/**
+ * The state a row shows next to its title: the reader's mute first, then acknowledged (by whom)
+ * or resolved; an open incident and a row without one show nothing.
+ */
+export function stateLabel(
+  n: NotificationItem,
+  tr: TranslateFn,
+  locale: string,
+  now = new Date(),
+): string | null {
+  if (n.muted) {
+    return n.mutedUntil
+      ? tr('notifications.state.muted', { time: shortTime(n.mutedUntil, locale, now) })
+      : tr('notifications.mailbox.muted');
+  }
+  if (n.state === 'acked') {
+    return n.ackedBy
+      ? tr('notifications.state.ackedBy', { user: n.ackedBy })
+      : tr('notifications.state.acked');
+  }
+  if (n.state === 'resolved') return tr('notifications.state.resolved');
+  return null;
 }

@@ -16,9 +16,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { navigate } from '$lib/router';
   import { timeAgo } from '$lib/utils/timeAgo';
   import type { NotificationItem } from '$lib/api/types';
-  import { groupByDay, isOpen, matchesTab, type PanelTab } from '$lib/models/notifications';
+  import {
+    categoryLabel,
+    groupByDay,
+    isOpen,
+    matchesTab,
+    stateLabel,
+    type PanelTab,
+  } from '$lib/models/notifications';
   import { dndUntil, endDnd, startDnd } from '$lib/stores/dnd';
   import {
+    ackIncidents,
     notificationItems,
     unreadCount,
     panelOpen,
@@ -120,16 +128,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 <button type="button" class="notif-item-main" onclick={() => open(n)}>
                   <span class="notif-sev sev-{n.severity}" aria-hidden="true"></span>
                   <span class="notif-item-body">
-                    <span class="notif-item-title">{n.title}</span>
+                    <span class="notif-item-title"
+                      >{n.title}{#if (n.count ?? 1) > 1}<span class="notif-item-count"
+                          >×{n.count}</span
+                        >{/if}</span
+                    >
                     {#if n.body}<span class="notif-item-text">{n.body}</span>{/if}
                     <span class="notif-item-meta">
-                      {$t(`notifications.severity.${n.severity}`)} · {n.category} · {timeAgo(
-                        n.createdAt,
-                        $t,
-                      )}
+                      {[
+                        $t(`notifications.severity.${n.severity}`),
+                        categoryLabel(n.category, $t),
+                        timeAgo(n.createdAt, $t),
+                        stateLabel(n, $t, currentLocale()),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </span>
                   </span>
                 </button>
+                {#if isOpen(n) && n.incidentId != null}
+                  {@const incidentId = n.incidentId}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="notif-item-ack"
+                    onclick={() => ackIncidents([incidentId])}
+                  >
+                    {$t('notifications.ack')}
+                  </Button>
+                {/if}
                 {#if !n.read}
                   <IconButton
                     class="notif-item-read"
@@ -273,8 +300,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .notif-item-main:hover {
     background: var(--surface-hover);
   }
-  .notif-item :global(.notif-item-read) {
+  .notif-item :global(.notif-item-read),
+  .notif-item :global(.notif-item-ack) {
     margin-top: var(--sp-2, 8px);
+  }
+  .notif-item-count {
+    margin-left: 6px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    font-weight: 400;
   }
   .notif-sev {
     flex: 0 0 auto;
