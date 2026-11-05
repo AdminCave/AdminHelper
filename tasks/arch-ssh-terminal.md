@@ -156,8 +156,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T9
 Abhängt von: T5
 
-### T8 — Live-E2E: SSH im eingebetteten Terminal und im OS-Terminal (R-1069)  [ ]
+### T8 — Live-E2E: SSH im eingebetteten Terminal und im OS-Terminal (R-1069)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/ssh-connect.live.js, apps/desktop/e2e/test/lib/live.js, scripts/tests/desktop_e2e_connect.sh
+Evidenz: run.sh[quick] desktop-e2e scripts: 7 passed, 0 failed, 11 skipped @49b3538b 2026-11-05T13:05:39+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T8.verdict.json)
 Änderung:
 - `ssh-connect.live.js`: über das Split-Menü *Im AdminHelper-Terminal*: Tab erscheint, Host-Key mit `yes`, Passwort
   `e2e`, `echo AH_E2E_$((6*7))` ergibt `AH_E2E_42` in `.xterm-rows`, Status *verbunden*; `exit` → *getrennt*,
@@ -223,3 +225,6 @@ Abhängt von: T3, T8
 - 2026-11-05 T7: Der Hauptteil des Split-Buttons bleibt *Verbinden* und startet mit der Einstellung; der Pfeil heißt für Screenreader *Konsole wählen*, sein Menü gilt nur für diesen Start. Doppelklick, Enter und der Schnellzugriff starten weiter mit der Einstellung; `Connections.svelte` reicht die Wahl des Inspectors an `initiateConnect` durch (Datei nachgetragen, mit ihrem Test).
 - 2026-11-05 T7: Die Sektion *Terminal* steht zwischen RDP und Benachrichtigungen, ganz unter `data-scope="device"`: *Konsole für SSH* und die Terminal-Optionen liegen in `prefs.json` (`SettingsModal.workspace.test.ts` nachgetragen, damit die Geräte-Gruppe sie zählt). Der Dialog startet die Optionen mit `terminalPrefs`, nicht mit den gespeicherten Einstellungen: eine Änderung aus einem Terminal, deren Speichern noch läuft, überschreibt der Dialog so nicht.
 - 2026-11-05 T7: Elf Dateien statt etwa acht: der Split-Button und die Sektion teilen das Wörterbuch und den Weg über `initiateConnect`, die Hälfte der Dateien sind die Tests, die das neue Argument und die sechste Sektion zeigen.
+- 2026-11-05 T8: Die Spec startet beide Wege über die Einträge im Menü des Pfeils, nicht per Doppelklick: der Doppelklick nimmt den Standard aus T3, so hängt die Spec nicht an ihm. *Verbunden* belegt die Ausgabe des Befehls im Terminal, *getrennt* das Feld `.term-ended` (es steht nur bei `disconnected`); die Texte der Statusanzeige hängen an der Sprache.
+- 2026-11-05 T8: ssh im AdminHelper-Terminal prüft die `known_hosts` des Benutzers (Home aus passwd, nicht `$HOME`), das Ziel erzeugt bei jedem Start einen neuen Host-Key; `desktop_e2e_connect.sh` entfernt den Eintrag für `[127.0.0.1]:2222` vor den Specs und im Trap (`ssh-keygen -R`, die alte Datei bleibt als `known_hosts.old`). `ssh-keygen` steht nicht in `e2e_require`: `desktop_e2e_skip_test` stubbt genau dessen Programme, und es kommt mit openssh-client wie `ssh`.
+- 2026-11-05 T8: Das sshd-Log zählt Client-Enden: genau zwei mit `Accepted` (Start und Neu verbinden), drei insgesamt (das ssh im OS-Terminal meldet sich nicht an und hinterlässt seine `[preauth]`-Zeile, wenn der X-Server endet). Beleg auf der Box der Lane über `iter.sh --cmd 'bash scripts/tests/desktop_e2e_connect.sh'`: `desktop_e2e_connect: 12 passed, 0 failed`; `iter.sh --step desktop_e2e_connect` bricht ab, weil run.sh Schritte als Teilzeichenkette sucht und auch `desktop_e2e_connect_tunnel` findet (Harness-Fund, Roadmap-Zeile).

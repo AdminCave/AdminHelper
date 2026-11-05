@@ -352,17 +352,18 @@ export async function openRowByName(rowSel, nameSel, name) {
 // The rows of the connections page; a single click selects, a double click connects.
 export const CONN_ROW = '[data-testid="conn-row"]';
 
-// Connect the connection row whose name matches: a double click, dispatched in the page like
-// jsClick, so WebKitWebDriver's pointer actions play no part.
-export async function connectByName(name) {
+// A mouse event on the connection row whose name matches, dispatched in the page like jsClick,
+// so WebKitWebDriver's pointer actions play no part.
+async function dispatchOnRow(name, type) {
   await browser.waitUntil(
     async () => {
       try {
         for (const row of await $$(CONN_ROW)) {
           if ((await textContentOf(await row.$(".conn-name"))) === name) {
             await browser.execute(
-              (node) => node.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+              (node, t) => node.dispatchEvent(new MouseEvent(t, { bubbles: true })),
               row,
+              type,
             );
             return true;
           }
@@ -374,9 +375,57 @@ export async function connectByName(name) {
     },
     {
       timeout: 15000,
-      timeoutMsg: `connection "${name}" not found/connectable (${CONN_ROW})`,
+      timeoutMsg: `connection "${name}" not found/${type === "click" ? "selectable" : "connectable"} (${CONN_ROW})`,
     },
   );
+}
+
+// Connect the connection row whose name matches: a double click, in the console of the settings.
+export async function connectByName(name) {
+  await dispatchOnRow(name, "dblclick");
+}
+
+// Select the connection row whose name matches: a click, the inspector then shows it.
+export async function selectByName(name) {
+  await dispatchOnRow(name, "click");
+}
+
+// The pane of the session tab in front; the panes behind it stay mounted, hidden (R-1069).
+export const TERM_PANE = ".terminal-pane:not(.hidden)";
+
+// The lines of the terminal in front as the DOM renderer of xterm draws them, its blanks as
+// plain spaces.
+export async function terminalLines() {
+  return browser.execute((pane) => {
+    const rows = document.querySelector(`${pane} .xterm-rows`);
+    return rows ? [...rows.children].map((r) => r.textContent.replace(/\u00a0/g, " ")) : [];
+  }, TERM_PANE);
+}
+
+// The first line of the terminal in front that matches `re`, once there is one. A timeout
+// names the last lines of the screen: what ssh said instead.
+export async function waitForTerminalLine(re, timeout = 30000) {
+  let lines = [];
+  try {
+    await browser.waitUntil(
+      async () => {
+        lines = await terminalLines();
+        return lines.some((l) => re.test(l));
+      },
+      { timeout },
+    );
+  } catch {
+    const screen = lines.map((l) => l.trimEnd()).filter(Boolean).slice(-8);
+    throw new Error(`no line of the terminal matches ${re}; the screen ends with ${JSON.stringify(screen)}`);
+  }
+  return lines.find((l) => re.test(l));
+}
+
+// Type a line into the terminal in front through the keyboard of WebDriver, into the textarea
+// xterm reads its keys from, and end it with Enter.
+export async function typeInTerminal(line) {
+  await $(`${TERM_PANE} .xterm-helper-textarea`).addValue(line);
+  await browser.keys("Enter");
 }
 
 // Click the item (e.g. a server card) whose name matches. The name is read through
