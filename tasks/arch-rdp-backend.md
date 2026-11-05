@@ -160,8 +160,10 @@ Abhängt von: T2, T3, T4
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T7
 
-### T6 — xrdp-Suite: Container mit GFX und Skript im E2E-Layer  [ ]
+### T6 — xrdp-Suite: Container mit GFX und Skript im E2E-Layer  [x]
 Komponente: scripts · Dateien: scripts/tests/desktop_e2e_rdp_embedded.sh (neu, SPDX), scripts/tests/xrdp-gfx/Dockerfile (neu, SPDX), scripts/tests/xrdp-gfx/entrypoint.sh (neu, SPDX)
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9af910cd 2026-11-05T12:27:04+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T6.verdict.json)
 Abhängt von: T5
 Änderung:
 - `xrdp-gfx/Dockerfile`, neu geschrieben, ohne Lab-Daten:
@@ -239,3 +241,5 @@ Doku: docs/features/arch-rdp-backend.md · Entwickler-Doku → T7
 - 2026-11-05 T5: Pinned heißt `Strict` plus Callback; vorab prüft die Sitzung, ob `rustls_client_config(Strict, …)` die Plattform-Wurzeln laden kann, sonst `failed`/`tls`, statt IronRDP vor dem Callback scheitern zu lassen. TrustAll heißt `DangerouslyAcceptInvalidCertificate` ohne Callback (wie `/cert:ignore`).
 - 2026-11-05 T5 (Rest aus T3): Anmeldungen am Bild-WebSocket laufen jetzt gleichzeitig (bis 8, je 5 s), die erste gültige gewinnt; danach schließt der Port. Keine Origin-Prüfung: das Token ist 256 Bit und geht nur über die Tauri-IPC an die Webview, eine Origin-Liste brächte nichts gegen einen lokalen Prozess, der den Header frei setzt. Der WebSocket endet mit der Sitzung (`serve.abort()`, dann das Ende des `LocalSet`), bevor die letzte Phase gemeldet wird.
 - 2026-11-05 T5: Der xrdp-Test (`xrdp_live_session`, `#[ignore]`) liest Ziel, Benutzer, Passwort und den erwarteten Fingerprint aus `AH_RDP_E2E_*`; der Fingerprint ist der SHA-256 des DER-Zertifikats des Containers, den das Skript aus T6 setzt. Die Sitzung im Container startet `xterm`, damit ein Tastendruck verlässlich ein Bild auslöst (Quittungsprobe).
+- 2026-11-05 T6: xrdp beantwortet ein gescheitertes Autologon mit seinem eigenen Login-Bildschirm, der Tasten annimmt und Bilder schickt; der Live-Test allein war mit falschem Passwort grün (Gegenprobe). Die Suite belegt den Login deshalb aus `/var/log/xrdp.log` des Containers („session is available on display N for user e2e“, kein „could not be authenticated“) und den GFX-Pfad aus „egfx created“ und „gfx rfx pro codec session“; Gegenprobe mit falschem Passwort: `5 passed, 1 failed`.
+- 2026-11-05 T6: Debian trixie liefert xrdp 0.10.1 ohne x264 und ohne `gfx.toml`: GFX läuft mit RemoteFX Progressive, wie es die Spec für Linux vorsieht (E3). Die apt-Pakete sind nicht versionsgepinnt (Debian entfernt ersetzte Versionen aus dem Mirror, der Build bräche bei jedem Sicherheitsupdate); der Build bricht ab, wenn xrdp nicht 0.10.x ist. Bereitschaft über `/proc/net/tcp` (kein ss im Image), `docker run --init` gegen Zombies der Sitzungsprozesse.
