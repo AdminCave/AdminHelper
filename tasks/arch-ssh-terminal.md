@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ssh-terminal — Task-Ledger
-Status: bereit · Branch: feature/arch-ssh-terminal · Review: pro Task
+Status: aktiv · Branch: feature/arch-ssh-terminal · Review: pro Task
 Spec: docs/features/arch-ssh-terminal.md (Roadmap R-1069)
 Heavy: linux-full — neue Desktop-Journey (`ssh-connect.live.js` über `scripts/tests/desktop_e2e_connect.sh`), Sammellauf. Weil die PR-CI keine GUI fährt und der Kanal-Weg (Raw/Json, CSP) erst in der echten Webview belegt ist, läuft vor dem Merge zusätzlich `desktop_e2e_connect` auf der Lane-VM (`/test`). Kein `scenario` (kein Tunnel-Datenpfad neu, `resolve_connection` unverändert), kein `windows` (Pool ohne Windows-Vorlage; ConPTY über `rust-windows`).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -222,6 +222,16 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: README
 Task-Review: am Ende
 Abhängt von: T9
+
+### T13 — Terminal: kein Fokus beim Start aus einem offenen Dialog (R-1069)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts
+Änderung: `SshTerminal.svelte` holt sich beim Mount den Tastaturfokus nicht, solange ein modaler Dialog
+(`aria-modal="true"`) offen ist; *Verbinden* im Verbindungseditor lässt den Editor offen, Tasten und Escape bleiben
+bei ihm. Test: offener Dialog mit fokussiertem Knopf, Mount ruft `focus` nicht, der Fokus bleibt im Dialog. Fund der
+Abschlussprüfung (`branch.verdict.json` zu `ca49730e`, `connectFlow.ts:287`, `SshTerminal.svelte:276`).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: keine (Verhalten wie dokumentiert: der Editor bleibt nach *Verbinden* offen)
+Abhängt von: T5
 
 ## Entscheidungen
 - 2026-11-05 T1: Der Warte-Thread wartet blockierend (`child.wait()`) und nimmt den `ChildKiller` gleich danach weg; `close` nach dem Ende signalisiert nichts mehr — so trifft ein Kill keine Prozess-Id, die das System schon weitergegeben hat (Restfenster zwischen Wait und Wegnahme: Mikrosekunden, Pids werden fortlaufend vergeben).
