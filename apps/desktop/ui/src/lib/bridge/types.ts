@@ -137,6 +137,14 @@ export interface TunnelRefresh {
   refused: number | null;
 }
 
+/** One connect of a connection (R-1068), as the server lists it and as the local history keeps it. */
+export interface ConnectionSession {
+  id: string;
+  device: string | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
 export interface ClientInfo {
   screenWidth?: number | null;
   screenHeight?: number | null;

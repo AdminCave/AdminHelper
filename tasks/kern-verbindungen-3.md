@@ -55,17 +55,19 @@ Review: approve (.ah-out/review/kern-verbindungen-3/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sessions.py tests/test_connections_storage.py tests/test_connections_isolation.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
 Doku: → T8
 
-### T6 — Desktop: Sitzungen schreiben, Ende bei RDP, lokaler Verlauf (R-1068)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/mod.rs, apps/desktop/src-tauri/src/connection/rdp.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/sync.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts
-Änderung: Verbinden legt eine Sitzung an (Server-Modus über `touch` mit Hostname, lokal in `sessions.json` je Workspace, höchstens 50 je Verbindung und 90 Tage), das Ende meldet der RDP-Exit-Monitor; neuer Befehl `list_sessions(connectionId)`.
+### T6 — Desktop: Sitzungen schreiben, Ende bei RDP, lokaler Verlauf (R-1068)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/mod.rs, apps/desktop/src-tauri/src/connection/rdp.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/sync.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/src-tauri/src/connection/sessions.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @9512ee05 2026-11-05T10:25:26+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T6.verdict.json)
+Änderung: Lokaler Sitzungsverlauf in `sessions.json` je Workspace (höchstens 50 je Verbindung und 90 Tage) mit den Befehlen `start_session`, `end_session`, `list_sessions(connectionId)` und `device_name`; das Ende einer RDP-Sitzung meldet das Ereignis `rdp-exit` (FreeRDP und mstsc); Bridge-Funktionen und -Typen. Die Verdrahtung im Connect-Flow baut T7.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session
 Doku: → T8
 Abhängt von: T5
 
 ### T7 — Inspector: „Letzte Sitzungen“ (R-1068)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/connections/ConnectionInspector.test.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Der Inspector lädt die letzten 5 Sitzungen der gewählten Verbindung (Beginn, Dauer oder „—“, Gerät), leerer Zustand „Noch keine Sitzungen“.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/connections/ConnectionInspector.test.ts
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/connections/ConnectionInspector.test.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/api/connections.ts, apps/desktop/ui/src/components/AppShell.svelte
+Änderung: Verbinden legt eine Sitzung an (Server-Modus über `touch` mit dem bereinigten Hostnamen als `device`, lokal und Sync über `start_session`), `rdp-exit` beendet sie (Server: `.../sessions/{id}/end`, lokal: `end_session`). Der Inspector lädt die letzten 5 Sitzungen der gewählten Verbindung (Beginn, Dauer oder „—“, Gerät), leerer Zustand „Noch keine Sitzungen“.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/connections/ConnectionInspector.test.ts src/lib/stores/connectFlow.test.ts
 Doku: → T8
 Abhängt von: T6
 
@@ -97,3 +99,6 @@ Doku: diese Task
 - T5: Beenden darf nur der Nutzer, der die Sitzung begann (gleiche `user_id`); eine Sitzung ohne Nutzer (API-Key, gelöschter Nutzer) beendet niemand, sie bleibt ohne Ende. Zweites Beenden behält das erste Ende. Die Liste zeigt im Scope der Verbindung die Sitzungen aller Nutzer, `limit` 1–50, Standard 5.
 - T5: Die 90 Tage setzt der Touch durch (löscht alle älteren Einträge aller Verbindungen), die Liste blendet Ältere bis dahin aus; kein Scheduler-Job. `user_id` ist `ON DELETE SET NULL`, damit ein gelöschter Nutzer den Verlauf nicht mitnimmt.
 - T5: `save_connections` (Hooks) prüft `options` mit `ConnectionOptions` wie die API und speichert die geprüfte Form (`"30"` wird 30, `"yes"` true), sonst verwürfe der Desktop die Verbindung; ein ungültiger Wert schreibt nichts (ValidationError vor der Sitzung).
+- T6: Schnitt Rust/UI: T6 baut die Rust-Seite (lokaler Verlauf `sessions.json` je Workspace in `connection/sessions.rs`, Befehle `start_session`/`end_session`/`list_sessions`/`device_name`, Ereignis `rdp-exit` mit der `correlationId`) und die Bridge; das Verdrahten im Connect-Flow (Touch mit `device`, Ende auf `rdp-exit`, Server- oder lokaler Weg je Modus) geht mit dem Inspector in T7, denn `touch` ruft schon heute die UI (`connectFlow.ts`), und Rust kennt die `sessionId` der Server-Sitzung nicht. `sync.rs` bleibt unverändert.
+- T6: Lokal gilt dieselbe Regel wie am Server: 90 Tage und höchstens 50 je Verbindung, beim Schreiben beschnitten, beim Lesen ausgeblendet; zweites Ende behält das erste, eine unbekannte ID ist kein Fehler (die Speicherdauer kann sie während der Sitzung genommen haben). Ein kaputtes `sessions.json` ist ein Fehler und wird nicht überschrieben. Ein Mutex im Prozess hält zwei gleichzeitige Verbindungen vom gegenseitigen Überschreiben ab; Sitzungs-ID aus Zeit, PID und Zähler (kein uuid-Crate im Desktop).
+- T6: Hostname über `/proc/sys/kernel/hostname` (Linux), sonst `COMPUTERNAME`/`HOSTNAME`, sonst `hostname`. `rdp-exit` feuert bei jedem Ende des FreeRDP-Prozesses (mit und ohne Passwort) und unter Windows beim Ende des gestarteten `mstsc`; der Windows-Zweig ist lokal nicht baubar (kein Windows-Target), ihn prüft der CI-Job „Desktop-Backend (cargo test, Windows)“. SSH und Web haben kein Ende („—“, Nicht-Ziel).

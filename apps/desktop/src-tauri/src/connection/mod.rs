@@ -8,6 +8,7 @@
 
 pub mod rdp;
 pub mod rdp_logic;
+pub mod sessions;
 pub mod ssh;
 pub mod web;
 

@@ -412,6 +412,70 @@ pub async fn open_connection(
     .await
 }
 
+/// The local session history (R-1068) of a local or sync workspace; a server workspace asks the
+/// server. A connection id is what the webview sends, so it is bounded before it lands in a file.
+fn session_connection_id(connection_id: &str) -> Result<&str, AppError> {
+    if connection_id.is_empty() || connection_id.len() > 255 {
+        return Err(AppError::Validation("Invalid connection id".to_string()));
+    }
+    Ok(connection_id)
+}
+
+fn sessions_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppError> {
+    storage::workspace_file(app, "sessions.json")
+}
+
+/// Begins a session of the connection in the local history, with this computer as its device.
+#[tauri::command]
+pub async fn start_session(
+    app: tauri::AppHandle,
+    connection_id: String,
+) -> Result<connection::sessions::SessionEntry, AppError> {
+    blocking(move || {
+        let id = session_connection_id(&connection_id)?;
+        connection::sessions::start_at(
+            &sessions_path(&app)?,
+            id,
+            connection::sessions::device_name(),
+            chrono::Utc::now(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn end_session(app: tauri::AppHandle, session_id: String) -> Result<(), AppError> {
+    blocking(move || {
+        connection::sessions::end_at(&sessions_path(&app)?, &session_id, chrono::Utc::now())
+    })
+    .await
+}
+
+/// The newest `limit` (1–50) sessions of the connection in the local history.
+#[tauri::command]
+pub async fn list_sessions(
+    app: tauri::AppHandle,
+    connection_id: String,
+    limit: usize,
+) -> Result<Vec<connection::sessions::SessionEntry>, AppError> {
+    blocking(move || {
+        let id = session_connection_id(&connection_id)?;
+        connection::sessions::list_at(
+            &sessions_path(&app)?,
+            id,
+            limit.clamp(1, 50),
+            chrono::Utc::now(),
+        )
+    })
+    .await
+}
+
+/// The name of this computer, the device a server session is recorded with.
+#[tauri::command]
+pub fn device_name() -> Option<String> {
+    connection::sessions::device_name()
+}
+
 /// A stored password opens only the target Rust resolves the credential connection (without one,
 /// the opened connection) to, with the tunnel mappings and server connections the session fetched
 /// (not ones the webview sends) and the bindings of the frpc that runs for that sign-in, all read

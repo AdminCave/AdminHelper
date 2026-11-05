@@ -17,6 +17,26 @@ use super::rdp_logic::{
     interactive_exit_message, parse_freerdp_error, OutputTail,
 };
 
+/// The end of an RDP client process: the webview ends the session it began for this connect
+/// (R-1068).
+#[cfg(any(unix, target_os = "windows"))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RdpExitPayload {
+    correlation_id: String,
+}
+
+#[cfg(any(unix, target_os = "windows"))]
+fn emit_rdp_exit(app: &tauri::AppHandle, correlation_id: &str) {
+    use tauri::Emitter;
+    let _ = app.emit(
+        "rdp-exit",
+        RdpExitPayload {
+            correlation_id: correlation_id.to_string(),
+        },
+    );
+}
+
 #[cfg(unix)]
 fn emit_rdp_error(app: &tauri::AppHandle, correlation_id: &str, message: impl Into<String>) {
     let _ = app.emit(
@@ -112,7 +132,16 @@ pub fn open_rdp(
     #[cfg(target_os = "windows")]
     {
         return open_rdp_windows(
-            app, connection, host, port, username, domain, rdp, password, deadline,
+            app,
+            connection,
+            host,
+            port,
+            username,
+            domain,
+            rdp,
+            password,
+            correlation_id,
+            deadline,
         );
     }
 
@@ -187,6 +216,7 @@ fn open_rdp_windows(
     domain: &str,
     rdp: RdpOptions,
     password: Option<&str>,
+    correlation_id: &str,
     deadline: &super::Deadline,
 ) -> Result<(), AppError> {
     use std::process::Command;
@@ -206,13 +236,24 @@ fn open_rdp_windows(
         rdp.performance_profile,
         connection.options.as_ref().and_then(|o| o.rdp.as_ref()),
     )?;
+    let mut started = None;
     crate::password::start_mstsc(&base, host, port, connection, password, || {
         // A start past the deadline does not run, and run_termsrv_plan takes back the
         // entry and hold it made for it.
         deadline.start()?;
-        Command::new("mstsc").arg(&rdp_path).spawn()?;
+        started = Some(Command::new("mstsc").arg(&rdp_path).spawn()?);
         Ok(())
-    })
+    })?;
+    if let Some(mut child) = started {
+        let app = app.clone();
+        let correlation_id = correlation_id.to_string();
+        std::thread::spawn(move || {
+            if child.wait().is_ok() {
+                emit_rdp_exit(&app, &correlation_id);
+            }
+        });
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -521,7 +562,11 @@ fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
 
     // Exit monitoring thread
     std::thread::spawn(move || {
-        if child.wait().is_ok() && !emitted.load(Ordering::SeqCst) {
+        let exited = child.wait().is_ok();
+        if exited {
+            emit_rdp_exit(&app, &correlation_id);
+        }
+        if exited && !emitted.load(Ordering::SeqCst) {
             let elapsed_ms = started_at.elapsed().as_millis() as u64;
             if !connected.load(Ordering::SeqCst) {
                 emit_rdp_error(
@@ -631,7 +676,9 @@ fn spawn_rdp_interactive(
     let app_handle = app.clone();
     let cid = correlation_id.to_string();
     std::thread::spawn(move || {
-        if let Some(message) = wait_interactive(child) {
+        let message = wait_interactive(child);
+        emit_rdp_exit(&app_handle, &cid);
+        if let Some(message) = message {
             emit_rdp_error(&app_handle, &cid, message);
         }
     });
