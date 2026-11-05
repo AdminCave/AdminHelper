@@ -229,6 +229,18 @@ docker compose up -d</code></pre>
             </div>
           </div>
 
+          <h3 id="postgres-18">PostgreSQL 17 → 18</h3>
+          <p>Die Datenbank läuft auf PostgreSQL 18 im Volume <code>&lt;projekt&gt;_postgres18-data</code> (Projektname = Verzeichnisname, meist <code>adminhelper</code>). PostgreSQL 18 liest das Datenverzeichnis von 17 nicht, deshalb zieht das erste Update auf diese Version die Daten per Dump um:</p>
+          <ul>
+            <li>Vor dem Backup prüft <code>update.sh</code>, dass PostgreSQL 17 auf dem alten Volume <code>&lt;projekt&gt;_postgres-data</code> läuft und genug Platz frei ist: im Docker-Root das Doppelte der Clustergröße, im Install-Verzeichnis einmal die Größe für den Dump in <code>backups/</code>. Sonst bricht es ab, ohne etwas zu ändern, und nennt den Grund.</li>
+            <li>Nach dem Pull stoppt es die übrigen Dienste, sichert alle Datenbanken und Rollen mit <code>pg_dumpall</code> aus dem 18er-Image, startet ein frisches PostgreSQL 18 und spielt den Dump ein. Danach startet der Stack wie gewohnt.</li>
+            <li>Scheitert ein Schritt oder der Start, rollt das Update zurück: das neue Volume wird entfernt, PostgreSQL 17 startet wieder auf dem alten. Mit <code>--no-rollback</code> gilt das auch für einen unfertigen Umzug.</li>
+          </ul>
+          <p>Das alte Volume rührt <code>update.sh</code> nie an; es bleibt als Rückweg stehen. Läuft alles, entfernt man es nach der Prüfung selbst:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker volume rm adminhelper_postgres-data</code></pre>
+          <p>Bricht der Umzug hart ab (<code>kill -9</code>, Stromausfall), bleibt der Dump als <code>backups/pg17-dumpall.*</code> liegen (nur für den Eigentümer lesbar). Er enthält alle Daten und die Passwort-Hashes der Rollen: löschen, sobald er nicht mehr gebraucht wird. Ein späteres <code>update.sh --ref</code> auf ein Release mit PostgreSQL 17 startet auf dem alten Volume; was seit dem Umzug geschrieben wurde, fehlt dort.</p>
+
           <p>Manuell geht es weiterhin:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>docker compose pull server
@@ -250,7 +262,7 @@ docker compose up -d server</code></pre>
 # "Wirklich alles weg" — auch Images und Backups (--rmi/--purge-backups belegen
 # zugleich die jeweilige Frage mit JA vor):
 ./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
-          <p>Abgefragt/entfernt werden einzeln: alle Container des Compose-Projekts und das Netzwerk, <strong>alle Named Volumes</strong> (inkl. <code>ca-pki</code> mit der Root-CA, <code>postgres-data</code> und <code>victoria-data</code>), die Host-Bind-Mounts <code>./data</code>, <code>./certs</code> und <code>./repo</code>, die Secrets-Datei <code>.env</code> samt <code>.env.restored</code> und den Arbeitskopien <code>.env.ah-*</code> sowie optional <code>./backups/</code> und die Docker-Images. Da <code>./data</code>/<code>./certs</code> dem Container-User (<code>uid 10001</code>) gehören, löscht das Script sie als root in einem Wegwerf-Container — <strong>ohne <code>sudo</code> vorauszusetzen</strong>.</p>
+          <p>Abgefragt/entfernt werden einzeln: alle Container des Compose-Projekts und das Netzwerk, <strong>alle Named Volumes</strong> (inkl. <code>ca-pki</code> mit der Root-CA, <code>postgres18-data</code>, dem alten <code>postgres-data</code> von vor PostgreSQL 18 und <code>victoria-data</code>), die Host-Bind-Mounts <code>./data</code>, <code>./certs</code> und <code>./repo</code>, die Secrets-Datei <code>.env</code> samt <code>.env.restored</code> und den Arbeitskopien <code>.env.ah-*</code> sowie optional <code>./backups/</code> und die Docker-Images. Da <code>./data</code>/<code>./certs</code> dem Container-User (<code>uid 10001</code>) gehören, löscht das Script sie als root in einem Wegwerf-Container — <strong>ohne <code>sudo</code> vorauszusetzen</strong>.</p>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>

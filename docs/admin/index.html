@@ -138,7 +138,7 @@
                 APScheduler, der Monitoring-Jobs ausführt.
                 Metriken werden an ein externes <strong>VictoriaMetrics</strong>
                 gestreamt, FRP läuft in einem eigenen Container; die mTLS-PKI betreibt der eigene Dienst <code>ca-issuer</code> (Laufzeiten der Zertifikate unter <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>).
-                Persistenz: <strong>PostgreSQL 17</strong> (eigener Compose-Service);
+                Persistenz: <strong>PostgreSQL 18</strong> (eigener Compose-Service);
                 Server- und Monitoring-Service teilen sich einen
                 Postgres-Cluster mit zwei DBs (<code>adminhelper</code>,
                 <code>adminhelper_monitor</code>).

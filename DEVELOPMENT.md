@@ -888,7 +888,7 @@ Das startet:
 - **frps** auf Port 7000 (FRP-Protokoll) und 7443 (HTTPS-vhosts)
 - **Monitoring** nur intern im Compose-Network (`expose 8080`, kein Host-Port); Agent-Metriken laufen tunnelfrei über den Server unter `/api/monitoring`
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
-- **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB legt `db-init` an
+- **PostgreSQL 18** (`postgres:18-alpine`, Volume `postgres18-data`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB legt `db-init` an
 - **db-init** (Server-Image, Einmal-Dienst) — legt bei jedem Start die Postgres-Rollen je Dienst und die Monitoring-DB an und übergibt ihnen das Schema `public`; Server, Scheduler, Monitoring und ca-issuer starten erst nach seinem Ende
 - **scheduler** (Server-Image mit `RUN_MODE=scheduler`, nur intern, seit 0.38.0) — die **einzige** APScheduler-Instanz für periodische Jobs (u. a. FRP-Zertifikats-Renewals); bewusst **nicht** skalieren, sonst laufen die Jobs doppelt
 - **redis** (`redis:7-alpine`, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern

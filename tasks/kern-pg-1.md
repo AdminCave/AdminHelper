@@ -32,8 +32,10 @@ Review: approve (.ah-out/review/kern-pg-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test restore_guard_test uninstall_test
 Doku: → T4
 
-### T4 — Doku PostgreSQL 18 und das alte Volume (R-1035)  [ ]
-Komponente: scripts · Dateien: README.md, DEVELOPMENT.md, docs/admin/index.html, docs/en/admin/index.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/index.html, docs/en/developer/index.html
+### T4 — Doku PostgreSQL 18 und das alte Volume (R-1035)  [x]
+Komponente: scripts · Dateien: README.md, DEVELOPMENT.md, docs/admin/index.html, docs/en/admin/index.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b0a67a57 2026-11-05T08:50:03+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Version 18 und Volume `postgres18-data`; im Update-Abschnitt: das erste Update auf diese Version migriert per Dump, das alte Volume `<projekt>_postgres-data` bleibt als Rollback und wird nach der Prüfung mit `docker volume rm` entfernt; Troubleshooting zum Installer-Fund beider Volumes. Zwölf Dateien: je Seite DE+EN.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die genannten Dateien

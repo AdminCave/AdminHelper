@@ -182,6 +182,18 @@ docker compose up -d</code></pre>
             </div>
           </div>
 
+          <h3 id="postgres-18">PostgreSQL 17 → 18</h3>
+          <p>The database runs on PostgreSQL 18 in the volume <code>&lt;project&gt;_postgres18-data</code> (project name = directory name, usually <code>adminhelper</code>). PostgreSQL 18 does not read the data directory of 17, so the first update to this version moves the data by dump:</p>
+          <ul>
+            <li>Before the backup, <code>update.sh</code> checks that PostgreSQL 17 runs on the old volume <code>&lt;project&gt;_postgres-data</code> and that there is room: twice the cluster size under the Docker root, once the size in the install directory for the dump in <code>backups/</code>. Otherwise it stops without changing anything and names the reason.</li>
+            <li>After the pull it stops the other services, saves all databases and roles with <code>pg_dumpall</code> of the 18 image, starts a fresh PostgreSQL 18 and plays the dump in. Then the stack starts as usual.</li>
+            <li>If a step or the start fails, the update rolls back: the new volume is removed, PostgreSQL 17 starts again on the old one. With <code>--no-rollback</code> this holds for an unfinished move as well.</li>
+          </ul>
+          <p><code>update.sh</code> never touches the old volume; it stays as the way back. Once everything runs, remove it after checking:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker volume rm adminhelper_postgres-data</code></pre>
+          <p>If the move is cut off hard (<code>kill -9</code>, power loss), the dump stays behind as <code>backups/pg17-dumpall.*</code> (readable by the owner only). It holds all data and the password hashes of the roles: delete it once it is no longer needed. A later <code>update.sh --ref</code> to a release with PostgreSQL 17 starts on the old volume; whatever was written since the move is missing there.</p>
+
           <p>Database migrations run automatically on container start via <strong>Alembic</strong> (see <code>apps/server/alembic/versions/</code>). The entrypoint first waits for <code>pg_isready</code>, then runs <code>alembic upgrade head</code>, and only then starts uvicorn. Compose starts the <code>ca-issuer</code> only once the server is healthy, i.e. after the migration: <code>/enroll</code> and <code>/renew</code> thus never hit a schema without their tables. The agent has its own release cycle — see <a href="./agent-deployment.html">Agent Deployment</a>.</p>
 
           <h2 id="uninstall">Uninstall</h2>
@@ -198,7 +210,7 @@ docker compose up -d</code></pre>
 # "Really wipe everything" — images and backups too (--rmi/--purge-backups also
 # pre-set the matching question to YES):
 ./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
-          <p>Asked/removed individually: every container of the compose project and the network, <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres-data</code> and <code>victoria-data</code>), the host bind mounts <code>./data</code>, <code>./certs</code> and <code>./repo</code>, the secrets file <code>.env</code> along with <code>.env.restored</code> and the working copies <code>.env.ah-*</code>, and optionally <code>./backups/</code> and the Docker images. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
+          <p>Asked/removed individually: every container of the compose project and the network, <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres18-data</code>, the old <code>postgres-data</code> from before PostgreSQL 18 and <code>victoria-data</code>), the host bind mounts <code>./data</code>, <code>./certs</code> and <code>./repo</code>, the secrets file <code>.env</code> along with <code>.env.restored</code> and the working copies <code>.env.ah-*</code>, and optionally <code>./backups/</code> and the Docker images. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>

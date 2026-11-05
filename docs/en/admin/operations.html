@@ -34,11 +34,12 @@
           <p class="lead">Where data lives, how logs are named, how to take consistent backups – the operational knobs you need to keep the system healthy over time.</p>
 
           <h2>Data Directories &amp; Postgres Volume</h2>
-          <p>State splits across two locations: <code>DATA_DIR</code> for file-based artifacts, the <code>postgres-data</code> Docker volume for the actual databases.</p>
+          <p>State splits across two locations: <code>DATA_DIR</code> for file-based artifacts, the <code>postgres18-data</code> Docker volume for the actual databases.</p>
           <table>
             <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>postgres-data</code> (volume)</td><td>PostgreSQL cluster with two DBs: <code>adminhelper</code> (users, connections, servers, hooks) and <code>adminhelper_monitor</code> (checks, alerts, templates, agent keys). Each service connects with a role of its own without superuser rights; the roles own the schema <code>public</code> of their database, the databases themselves stay with the superuser <code>adminhelper</code>.</td></tr>
+              <tr><td><code>postgres18-data</code> (volume)</td><td>PostgreSQL 18 cluster with two DBs: <code>adminhelper</code> (users, connections, servers, hooks) and <code>adminhelper_monitor</code> (checks, alerts, templates, agent keys). Each service connects with a role of its own without superuser rights; the roles own the schema <code>public</code> of their database, the databases themselves stay with the superuser <code>adminhelper</code>.</td></tr>
+              <tr><td><code>postgres-data</code> (volume, only on installations from before PostgreSQL 18)</td><td>The old PostgreSQL 17 cluster. The update to PostgreSQL 18 leaves it as the way back; remove it after checking (<a href="./installation.html#postgres-18">Installation → PostgreSQL 17 → 18</a>).</td></tr>
               <tr><td><code>/data/.bootstrap_token</code></td><td>One-time setup-token hash for the first admin (see installation guide).</td></tr>
               <tr><td><code>/data/.bootstrap.lock</code></td><td>Empty; makes sure that with several server workers only one creates the setup token. May be deleted while the server is stopped.</td></tr>
               <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete without re-issuing all tokens.</td></tr>

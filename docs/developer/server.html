@@ -195,7 +195,7 @@ allowUsers = ["ops-admin"]</code></pre>
           <h2>Persistenz</h2>
           <p>Stateful-Daten verteilen sich auf zwei Stellen:</p>
           <ul>
-            <li><strong>PostgreSQL</strong> (Compose-Volume <code>postgres-data</code>): zwei DBs <code>adminhelper</code> (Server) und <code>adminhelper_monitor</code> (Monitoring).</li>
+            <li><strong>PostgreSQL</strong> (Compose-Volume <code>postgres18-data</code>): zwei DBs <code>adminhelper</code> (Server) und <code>adminhelper_monitor</code> (Monitoring).</li>
             <li><strong>File-System unter <code>DATA_DIR</code></strong> (Default <code>/app/data</code>): Bootstrap-Token, JWT-Secret, Ansible-Playbook-Dateien.</li>
             <li><strong>Shared-Volume <code>frp-config</code></strong> (frps mountet es <code>:ro</code> unter <code>/etc/frp</code>): nur das nicht-geheime <code>frps.toml</code> (<code>0600</code>). Die FRP-TLS-Materialien liefert der <code>ca-issuer</code> (Volume <code>frps-certs</code>), das PKI-Kronjuwel ist dessen <code>ca-pki</code>-Volume.</li>
           </ul>
