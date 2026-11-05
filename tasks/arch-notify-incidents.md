@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-notify-incidents — Task-Ledger
-Status: bereit · Branch: feature/arch-notify-incidents · Review: pro Task
+Status: erledigt · Branch: feature/arch-notify-incidents · Review: pro Task
 Spec: docs/features/arch-notify-incidents.md (Roadmap R-1079)
 Heavy: linux-full — Server-API, Hub-Ingress vom Monitoring und die Desktop-Journey notification-push; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
