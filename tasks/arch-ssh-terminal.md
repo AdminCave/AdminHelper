@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ssh-terminal — Task-Ledger
-Status: aktiv · Branch: feature/arch-ssh-terminal · Review: pro Task
+Status: bereit · Branch: feature/arch-ssh-terminal · Review: pro Task
 Spec: docs/features/arch-ssh-terminal.md (Roadmap R-1069)
 Heavy: linux-full — neue Desktop-Journey (`ssh-connect.live.js` über `scripts/tests/desktop_e2e_connect.sh`), Sammellauf. Weil die PR-CI keine GUI fährt und der Kanal-Weg (Raw/Json, CSP) erst in der echten Webview belegt ist, läuft vor dem Merge zusätzlich `desktop_e2e_connect` auf der Lane-VM (`/test`). Kein `scenario` (kein Tunnel-Datenpfad neu, `resolve_connection` unverändert), kein `windows` (Pool ohne Windows-Vorlage; ConPTY über `rust-windows`).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -199,11 +199,13 @@ Doku: README · docs/admin DE+EN · docs/developer/desktop DE+EN · THIRD_PARTY_
 Task-Review: am Ende
 Abhängt von: T3, T8
 
-### T11 — Entwickler-Doku: Sitzungszahl in der Statusleiste (R-1069)  [ ]
+### T11 — Entwickler-Doku: Sitzungszahl in der Statusleiste (R-1069)  [x]
 Komponente: desktop · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @6b5b74ac 2026-11-05T20:13:07+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Beschreibung von `StatusFooter.svelte` in der Entwickler-Doku DE+EN nennt die Zahl der offenen
 Terminal-Sitzungen (jede Art, nur bei offenen Sitzungen) zwischen Tunnelzustand und Problemen; T9 hat sie nur im
-Admin-Handbuch nachgezogen.
+Admin-Handbuch nachgezogen. Im selben Satz fehlt *Nicht stören* (aus `main`, `7b131bd9`): kommt mit dazu.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: docs/developer/desktop DE+EN
 Task-Review: am Ende
@@ -246,3 +248,4 @@ Abhängt von: T9
 - 2026-11-05 T3: Die Round-Trip-Tests in `storage.rs` speichern `External`, den Wert, der vom Standard abweicht; der Tunnel-Test in `connectFlow.test.ts` setzt `sshConsole: 'external'`, weil er den Start im OS-Terminal prüft (den eingebetteten an einem aufgelösten Ziel prüft der Konsolen-Block). Beleg auf der Box der Lane mit dem neuen Standard: `desktop_e2e_connect_tunnel: 17 passed, 0 failed` (Doppelklick auf die SSH-Verbindung über den Tunnel), `desktop_e2e_workspaces: 29 passed, 0 failed`.
 - 2026-11-05 T9: Die Lizenztabelle der Crates ist aus dem Graphen des Branches neu erzeugt (`cargo metadata` über `apps/desktop/src-tauri`): `main` hat 571 Fremd-Crates, der Branch 580; die neun neuen kommen mit `portable-pty` (cfg_aliases, downcast-rs, filedescriptor, nix 0.28, portable-pty, serial2, shared_library, shell-words, winreg 0.10), keines fällt weg. Die alte Zahl 625 war Drift früherer Dependency-Updates; in den NOTICE-Listen fällt `borsh-derive` weg (auf `main` nicht mehr im Graphen) und `target-lexicon` kommt dazu (schon vor dem Branch im Graphen, bisher nicht genannt).
 - 2026-11-05 T9: `changelog.d/arch-ssh-terminal.md` trägt neben `### Added` ein `### Changed` für den neuen Standard der Konsole (T3), mit dem Weg zurück zum OS-Terminal.
+- 2026-11-05 T11: Falsche Doku ist ein Bug (`.claude/rules/docs.md`): die Aufzählung von `StatusFooter.svelte` in der Entwickler-Doku nennt neben der Sitzungszahl aus T7 auch das Feld *Nicht stören* (`data-field="dnd"`, aus `main` `7b131bd9`), das sie bisher ausließ; ein Satz, dieselbe Stelle.
