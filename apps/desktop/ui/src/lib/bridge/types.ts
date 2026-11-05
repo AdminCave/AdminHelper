@@ -35,6 +35,30 @@ export interface Connection {
   // Set for server-owned connections (server mode). The launcher does not edit
   // it but round-trips it so a server-mode edit keeps the server association.
   serverId?: string | null;
+  options?: ConnectionOptions | null;
+}
+
+export type SshForwardType = 'L' | 'R' | 'D';
+export type SshAuthMethod = 'key' | 'agent' | 'password';
+
+export interface SshForward {
+  type: SshForwardType;
+  listen: string;
+  target?: string | null;
+}
+
+export interface SshOptions {
+  jumpHost?: string | null;
+  forwards?: SshForward[];
+  agentForwarding?: boolean | null;
+  compression?: boolean | null;
+  keepalive?: number | null;
+  authMethod?: SshAuthMethod | null;
+}
+
+// Per-connection overrides (R-1066); a field left out means the global default.
+export interface ConnectionOptions {
+  ssh?: SshOptions | null;
 }
 
 export interface Settings {

@@ -84,6 +84,57 @@ pub struct Connection {
     // association. Absent for local/sync connections.
     #[serde(default)]
     pub server_id: Option<String>,
+    // Per-connection overrides (R-1066); a field left out means the global default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<ConnectionOptions>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<SshOptions>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SshOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forwards: Vec<SshForward>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_forwarding: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_method: Option<SshAuthMethod>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SshForward {
+    #[serde(rename = "type")]
+    pub kind: SshForwardKind,
+    pub listen: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SshForwardKind {
+    L,
+    R,
+    D,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SshAuthMethod {
+    Key,
+    Agent,
+    Password,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

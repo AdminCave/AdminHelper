@@ -1010,6 +1010,7 @@ mod args_tests {
             trust_cert,
             last_used: None,
             server_id: None,
+            options: None,
         }
     }
 
