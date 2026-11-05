@@ -72,8 +72,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       aria-invalid={bad || undefined}
       aria-describedby={field?.describedBy}
       {oninput}
-      {onkeydown}
-    ></textarea>
+      {onkeydown}></textarea>
   {:else}
     <input
       bind:value

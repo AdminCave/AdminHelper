@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-deps-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: changelog.d/kern-deps-3.md
 
-### T2 — Desktop-UI: npm-Pakete auf aktuell, Lock neu, Lizenztabelle (R-1039)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, apps/desktop/ui/vitest.config.ts, apps/desktop/ui/vitest.setup.ts, THIRD_PARTY_LICENSES.md, changelog.d/kern-deps-3.md
+### T2 — Desktop-UI: npm-Pakete auf aktuell, Lock neu, Lizenztabelle (R-1039)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, apps/desktop/ui/vitest.config.ts, apps/desktop/ui/vitest.setup.ts, THIRD_PARTY_LICENSES.md, changelog.d/kern-deps-3.md, apps/desktop/ui/src/components/monitoring/section/SecBackups.svelte, apps/desktop/ui/src/components/ui/Input.svelte, apps/desktop/ui/src/lib/stores/connections.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7b0dfdbf 2026-11-05T06:36:14+01:00
+Review: approve (.ah-out/review/kern-deps-3/T2.verdict.json)
 Änderung: Wie T1 für die Desktop-UI, dazu @testing-library/svelte 5.4 und @vitest/ui 5; die Tauri-JS-Pakete bleiben im Gleichschritt mit den Crates in `Cargo.lock` (Major.Minor). Abschnitt 4 von `THIRD_PARTY_LICENSES.md` mit den ausgelieferten Versionen (`license-checker --production`), die Geist-Schriften mit ihrer Lizenz ergänzt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: THIRD_PARTY_LICENSES.md · changelog.d/kern-deps-3.md
@@ -34,3 +36,5 @@ Doku: changelog.d/kern-deps-3.md
 - T1: Vitest 5 setzt `clearMocks: true`. Zwei Testdateien lasen den beim Import registrierten Auth-Failure-Handler aus `mock.calls` jedes Tests; sie lesen ihn jetzt einmal auf Modulebene. Den alten Standard (`clearMocks: false`) setzen wir nicht: isolierte Mock-Aufrufe je Test sind der gewollte neue Standard.
 - T1: `@testing-library/dom` ist neu direkte devDependency (Pflicht-Peer von jest-dom 7). `npm audit` zeigt denselben Stand wie `main` (12, nichts ab high; minimatch über eslint, deepmerge).
 - T1: Prettier 3.9 formatiert zwei Dateien anders (Union-Typ in einer Zeile, schließendes `</textarea>`); übernommen.
+- T2: Die Tauri-JS-Pakete bleiben mit `^` (Major.Minor deckungsgleich mit `Cargo.lock`: api 2.12/tauri 2.12, dialog 2.8, notification 2.8, shell 2.6). `@testing-library/dom` neu als Peer wie in T1; `npm audit` wie `main` (12, nichts ab high). Prettier 3.9 formatiert drei Dateien neu; übernommen.
+- T2: Die Lizenztabelle nennt jetzt auch die Geist-Schriften (OFL-1.1) für Desktop-UI und Web, dazu ein Absatz unter „Auflagen“.
