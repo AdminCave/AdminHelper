@@ -143,7 +143,7 @@ def notify_expiring(db: Session, now: datetime.datetime | None = None) -> int:
             IncomingEvent(
                 event_type=f"lifecycle.certificate.expiry.{entry['status']}",
                 severity=entry["status"],
-                category="lifecycle",
+                category="security",
                 title=title,
                 body=body,
                 source_type=SOURCE_TYPE,

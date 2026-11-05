@@ -170,10 +170,11 @@ class MonitorState(Base):
     # last actually reported. NULL = never reported. A discrepancy to `status`
     # means a suppressed transition awaits catch-up notification.
     notified_status = Column(String, nullable=True)
-    # Bell cooldown (docs/features/monitoring-alert-quality.md): the status the
-    # notification hub last accepted and when it last got a problem. Kept apart
-    # from notified_status because the bell can skip a problem the alert rules
-    # did report, and must then not send its recovery either.
+    # Bell record (alerter.hub_decision): the status the notification hub last
+    # accepted and when it last got a problem; the pair tells one reservation of
+    # the bell from a later one. Kept apart from notified_status because the bell
+    # can skip a problem the alert rules did report (capped at info), and must
+    # then not send its recovery either.
     hub_status = Column(String, nullable=True)
     hub_sent_at = Column(DateTime, nullable=True)
 

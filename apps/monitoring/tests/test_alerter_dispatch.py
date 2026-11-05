@@ -509,3 +509,33 @@ def test_unloadable_smtp_ca_file_stores_tls_failed_without_connecting(
     assert len(lines) == 1 and lines[0].startswith("Email failed: c: ")
     # The log names the setting to fix; the stored message above stays generic.
     assert f"SMTP_CA_FILE {ca_file} cannot be loaded" in lines[0]
+
+
+class _AddingDb:
+    def __init__(self):
+        self.added = []
+
+    def add(self, row):
+        self.added.append(row)
+
+
+@pytest.mark.parametrize(
+    ("dispatch", "ok"),
+    [
+        (lambda rule, check, msg: (True, None), True),
+        (lambda rule, check, msg: (False, "No webhook URL configured"), False),
+        (_raising(ValueError("smtp_port abc")), False),
+    ],
+    ids=["sent", "refused", "raised"],
+)
+def test_send_to_rule_returns_what_the_rule_did(monkeypatch, dispatch, ok):
+    # R-1079: the bell's event names the rule, its channel and whether it got out,
+    # and the server a bound rule is for (alert_bundle names it to that server only).
+    monkeypatch.setattr(alerter, "_dispatch", dispatch)
+    rule = SimpleNamespace(id="r1", name="Ops", channel="email", match_server_id="s1")
+    db = _AddingDb()
+
+    result = alerter.send_to_rule(db, rule, [(CHECK, "ok")], MSG, "critical")
+
+    assert result == alerter.RuleResult("Ops", "email", ok, "s1")
+    assert [(row.check_id, row.success) for row in db.added] == [("c1", ok)]

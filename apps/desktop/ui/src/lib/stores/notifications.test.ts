@@ -2,16 +2,24 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Notification store: feed loading, unread count, and the priming logic that
-// keeps the first poll from firing OS notifications for the whole backlog.
+// Notification store: feed loading, unread count, the priming logic that
+// keeps the first poll from firing OS notifications for the whole backlog, the
+// new-entry detection by ping time, and the incident actions (R-1079).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { NotificationItem } from '$lib/api/types';
+import type { IncidentDetail, NotificationItem } from '$lib/api/types';
 
 const h = vi.hoisted(() => ({
   fetchFeed: vi.fn(async (..._a: unknown[]) => [] as NotificationItem[]),
   fetchUnreadCount: vi.fn(async (..._a: unknown[]) => ({ count: 0 })),
   markRead: vi.fn(async (..._a: unknown[]) => ({ updated: 0 })),
+  hide: vi.fn(async (..._a: unknown[]) => ({ updated: 0 })),
+  markUnread: vi.fn(async (..._a: unknown[]) => ({ updated: 0 })),
+  ackIncidents: vi.fn(async (..._a: unknown[]) => ({ updated: 0, skipped: [] as number[] })),
+  resolveIncident: vi.fn(async (..._a: unknown[]) => ({}) as IncidentDetail),
+  muteIncident: vi.fn(async (..._a: unknown[]) => ({}) as NotificationItem),
+  muteServer: vi.fn(async (..._a: unknown[]) => ({ serverId: '', until: '' })),
+  reportError: vi.fn(),
   startStream: vi.fn(async (..._a: unknown[]) => {}),
   stopStream: vi.fn(async () => {}),
   listen: vi.fn(async (..._a: unknown[]) => () => {}),
@@ -22,8 +30,15 @@ vi.mock('$lib/api/notifications', () => ({
     fetchFeed: h.fetchFeed,
     fetchUnreadCount: h.fetchUnreadCount,
     markRead: h.markRead,
+    hide: h.hide,
+    markUnread: h.markUnread,
+    ackIncidents: h.ackIncidents,
+    resolveIncident: h.resolveIncident,
+    muteIncident: h.muteIncident,
+    muteServer: h.muteServer,
   },
 }));
+vi.mock('./statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/bridge', () => ({
   startNotificationStream: h.startStream,
   stopNotificationStream: h.stopStream,
@@ -61,6 +76,12 @@ import {
   centerItems,
   centerHasMore,
   CENTER_PAGE,
+  hide,
+  markUnread,
+  ackIncidents,
+  resolveIncident,
+  muteIncident,
+  muteServer,
 } from './notifications';
 
 const item = (over: Partial<NotificationItem>): NotificationItem => ({
@@ -85,6 +106,10 @@ describe('notifications store', () => {
     h.fetchUnreadCount.mockResolvedValue({ count: 0 });
     h.markRead.mockReset();
     h.markRead.mockResolvedValue({ updated: 0 });
+    for (const fn of [h.hide, h.markUnread, h.ackIncidents, h.resolveIncident, h.muteIncident])
+      fn.mockReset();
+    h.muteServer.mockReset();
+    h.reportError.mockReset();
     setNewNotificationHandler(null);
     deactivateNotifications(); // resets items + priming state
     h.startStream.mockClear();
@@ -124,7 +149,7 @@ describe('notifications store', () => {
     expect(seen).toHaveLength(0);
   });
 
-  it('fires the new-entry handler only for entries newer than last seen', async () => {
+  it('without a ping time (a server before R-1079) fires only for ids newer than last seen', async () => {
     const seen: NotificationItem[][] = [];
     setNewNotificationHandler((items) => seen.push(items));
     h.fetchFeed.mockResolvedValueOnce([item({ id: 5, read: false })]);
@@ -133,6 +158,78 @@ describe('notifications store', () => {
     await loadFeed();
     expect(seen).toHaveLength(1);
     expect(seen[0].map((n) => n.id)).toEqual([7]);
+  });
+
+  it('fires for a newer ping, also of a row seen before, and not for older, read or muted rows', async () => {
+    const seen: number[][] = [];
+    setNewNotificationHandler((items) => seen.push(items.map((n) => n.id)));
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z' }),
+      item({ id: 4, notifiedAt: '2026-11-05T07:00:00.250000Z', read: true }),
+    ]);
+    await loadFeed(); // priming
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 8, notifiedAt: '2026-11-05T09:10:00Z', muted: true }),
+      item({ id: 7, notifiedAt: '2026-11-05T09:05:00Z', read: true }),
+      item({ id: 4, notifiedAt: '2026-11-05T09:00:00.123456Z' }), // pinged again: unread, moved up
+      item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z' }), // unchanged
+      item({ id: 3, notifiedAt: '2026-11-05T06:00:00Z' }), // an older row slid into the 50
+    ]);
+    await loadFeed();
+    expect(seen).toEqual([[4]]);
+  });
+
+  it('a server update mid-session fires only for new ids until a ping time was seen', async () => {
+    const seen: number[][] = [];
+    setNewNotificationHandler((items) => seen.push(items.map((n) => n.id)));
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 5 }), item({ id: 4 })]);
+    await loadFeed(); // priming against the old server: no ping times
+    // The updated server fills notifiedAt in for every row; the unread backlog stays quiet.
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z' }),
+      item({ id: 4, notifiedAt: '2026-11-05T07:00:00Z' }),
+    ]);
+    await loadFeed();
+    expect(seen).toEqual([]);
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 6, notifiedAt: '2026-11-05T09:00:00Z' }),
+      item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z' }),
+    ]);
+    await loadFeed();
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 4, notifiedAt: '2026-11-05T09:30:00Z' }), // pinged again, now by its time
+      item({ id: 6, notifiedAt: '2026-11-05T09:00:00Z' }),
+    ]);
+    await loadFeed();
+    expect(seen).toEqual([[6], [4]]);
+  });
+
+  it('does not fire for a row the reader marked unread: its ping time stays', async () => {
+    const seen: NotificationItem[][] = [];
+    setNewNotificationHandler((items) => seen.push(items));
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z', read: true }),
+    ]);
+    await loadFeed();
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z' })]);
+    await loadFeed();
+    expect(seen).toEqual([]);
+  });
+
+  it('forgets the ping time on deactivate: the next session primes again', async () => {
+    const seen: NotificationItem[][] = [];
+    setNewNotificationHandler((items) => seen.push(items));
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 5, notifiedAt: '2026-11-05T08:00:00Z' })]);
+    await loadFeed();
+    deactivateNotifications();
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 2, notifiedAt: '2026-11-04T08:00:00Z' })]);
+    await loadFeed(); // priming of the next session, no toast
+    h.fetchFeed.mockResolvedValueOnce([
+      item({ id: 3, notifiedAt: '2026-11-04T09:00:00Z' }),
+      item({ id: 2, notifiedAt: '2026-11-04T08:00:00Z' }),
+    ]);
+    await loadFeed();
+    expect(seen.map((b) => b.map((n) => n.id))).toEqual([[3]]);
   });
 
   it('markAllRead clears the unread count and calls the API with null', async () => {
@@ -310,5 +407,136 @@ describe('notifications store', () => {
     await pending;
     await activation;
     expect(get(centerItems).map((n) => n.id)).toEqual([1]);
+  });
+
+  describe('incident actions (R-1079)', () => {
+    const row = (over: Partial<NotificationItem>) =>
+      item({ incidentId: 1, state: 'open', notifiedAt: '2026-11-05T08:00:00Z', ...over });
+
+    // The center list and the bell feed both hold the rows; the reload after an action answers
+    // with `after` (the server's view).
+    async function seed(rows: NotificationItem[], after: NotificationItem[] = rows) {
+      h.fetchFeed.mockResolvedValueOnce(rows);
+      await loadCenter();
+      h.fetchFeed.mockResolvedValueOnce(rows);
+      await loadFeed();
+      h.fetchFeed.mockResolvedValue(after);
+    }
+
+    it('hide drops the rows from the center and reloads the feed', async () => {
+      await seed([row({ id: 1 }), row({ id: 2 })], [row({ id: 2 })]);
+      h.hide.mockResolvedValueOnce({ updated: 1 });
+      expect(await hide([1])).toBe(true);
+      expect(h.hide).toHaveBeenCalledWith(expect.anything(), [1]);
+      expect(get(centerItems).map((n) => n.id)).toEqual([2]);
+      expect(get(notificationItems).map((n) => n.id)).toEqual([2]);
+    });
+
+    it('sends at most 500 ids per call, each id once', async () => {
+      await seed([row({ id: 1 }), row({ id: 2 })], []);
+      h.hide.mockResolvedValue({ updated: 0 });
+      const ids = [1, 1, ...Array.from({ length: 500 }, (_, i) => i + 2)];
+      expect(await hide(ids)).toBe(true);
+      expect(h.hide.mock.calls.map((c) => (c[1] as number[]).length)).toEqual([500, 1]);
+      expect(h.hide.mock.calls.flatMap((c) => c[1] as number[])).toEqual(
+        Array.from({ length: 501 }, (_, i) => i + 1),
+      );
+      expect(get(centerItems)).toEqual([]);
+    });
+
+    it('adds up the answers of the parts of an acknowledgement', async () => {
+      await seed([row({ id: 1 })]);
+      h.ackIncidents
+        .mockResolvedValueOnce({ updated: 499, skipped: [3] })
+        .mockResolvedValueOnce({ updated: 0, skipped: [501] });
+      const ids = Array.from({ length: 501 }, (_, i) => i + 1);
+      expect(await ackIncidents(ids)).toEqual({ updated: 499, skipped: [3, 501] });
+    });
+
+    it('keeps the parts the server took when a later one fails', async () => {
+      await seed([row({ id: 1 }), row({ id: 600, incidentId: 600 })]);
+      h.ackIncidents
+        .mockResolvedValueOnce({ updated: 1, skipped: [] })
+        .mockRejectedValueOnce(new Error('boom'));
+      const ids = Array.from({ length: 600 }, (_, i) => i + 1);
+      expect(await ackIncidents(ids)).toBeNull();
+      expect(h.reportError).toHaveBeenCalledWith('boom');
+      expect(get(centerItems).map((n) => n.state)).toEqual(['acked', 'open']);
+    });
+
+    it('markUnread sets the rows unread on the center page', async () => {
+      await seed([row({ id: 1, read: true }), row({ id: 2, read: true })]);
+      h.markUnread.mockResolvedValueOnce({ updated: 1 });
+      expect(await markUnread([2])).toBe(true);
+      expect(get(centerItems).map((n) => n.read)).toEqual([true, false]);
+    });
+
+    it('ackIncidents takes incident ids and turns the rows of the acknowledged ones acked', async () => {
+      await seed([
+        row({ id: 10, incidentId: 1 }),
+        row({ id: 11, incidentId: 2 }),
+        row({ id: 12, incidentId: null, state: null }),
+      ]);
+      h.ackIncidents.mockResolvedValueOnce({ updated: 1, skipped: [2] });
+      const res = await ackIncidents([1, 2]);
+      expect(h.ackIncidents).toHaveBeenCalledWith(expect.anything(), [1, 2]);
+      expect(res).toEqual({ updated: 1, skipped: [2] });
+      expect(get(centerItems).map((n) => [n.id, n.state, n.ackedBy ?? null])).toEqual([
+        [10, 'acked', 'admin'],
+        [11, 'open', null],
+        [12, null, null],
+      ]);
+    });
+
+    it('resolveIncident puts the row of the answer in place and hands the detail back', async () => {
+      await seed([row({ id: 10 }), row({ id: 11, incidentId: 2 })]);
+      const resolved = row({ id: 10, state: 'resolved', resolvedBy: 'admin', read: true });
+      h.resolveIncident.mockResolvedValueOnce({ id: 1, row: resolved } as IncidentDetail);
+      const detail = await resolveIncident(1);
+      expect(h.resolveIncident).toHaveBeenCalledWith(expect.anything(), 1);
+      expect(detail?.row).toEqual(resolved);
+      expect(get(centerItems)).toEqual([resolved, row({ id: 11, incidentId: 2 })]);
+    });
+
+    it('a failed action reports the error, answers null and changes no row', async () => {
+      await seed([row({ id: 10 })]);
+      h.resolveIncident.mockRejectedValueOnce(new Error('Incident is already resolved'));
+      expect(await resolveIncident(1)).toBeNull();
+      expect(h.reportError).toHaveBeenCalledWith('Incident is already resolved');
+      expect(get(centerItems)).toEqual([row({ id: 10 })]);
+    });
+
+    it('muteIncident takes the row the server answers with', async () => {
+      await seed([row({ id: 10 })]);
+      const muted = row({
+        id: 10,
+        muted: true,
+        mutedUntil: '2026-11-05T09:00:00Z',
+        muteSource: 'incident',
+      });
+      h.muteIncident.mockResolvedValueOnce(muted);
+      expect(await muteIncident(1, '2026-11-05T09:00:00.000Z')).toEqual(muted);
+      expect(h.muteIncident).toHaveBeenCalledWith(expect.anything(), 1, '2026-11-05T09:00:00.000Z');
+      expect(get(centerItems)).toEqual([muted]);
+    });
+
+    it('muteServer reloads a loaded center from the start: only the server knows its rows', async () => {
+      await seed([row({ id: 10 })], [row({ id: 10, muted: true, muteSource: 'server' })]);
+      h.fetchFeed.mockClear();
+      expect(await muteServer('srv-1', '2026-11-06T08:00:00.000Z')).toBe(true);
+      expect(h.muteServer).toHaveBeenCalledWith(
+        expect.anything(),
+        'srv-1',
+        '2026-11-06T08:00:00.000Z',
+      );
+      expect(h.fetchFeed).toHaveBeenCalledWith(expect.anything(), CENTER_PAGE, 0);
+      expect(get(centerItems).map((n) => n.muteSource)).toEqual(['server']);
+    });
+
+    it('muteServer leaves an unloaded center alone', async () => {
+      h.fetchFeed.mockResolvedValue([]);
+      expect(await muteServer('srv-1', '2026-11-06T08:00:00.000Z')).toBe(true);
+      expect(h.fetchFeed).not.toHaveBeenCalledWith(expect.anything(), CENTER_PAGE, 0);
+    });
   });
 });
