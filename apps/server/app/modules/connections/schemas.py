@@ -2,9 +2,18 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import Any, Literal, Optional
+import re
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import InitErrorDetails
 
 from app.core.bounds import RequestModel
@@ -38,6 +47,92 @@ def _reject_snake_spellings(model: str, data: Any) -> Any:
     )
 
 
+# Per-connection options (R-1066). The desktop turns these into command-line arguments for
+# ssh and FreeRDP, so every free-form value is held to a strict format here, the first of two
+# boundaries (the desktop checks again): host names, ports 1-65535, no leading "-" (it would
+# read as a flag), no whitespace or control characters. Unknown keys are refused, and a field
+# left out means "the global default".
+_HOST = r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,252}))"
+_PORT = r"(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})"
+_USER = r"[A-Za-z0-9_][A-Za-z0-9._-]{0,63}"
+_JUMP_HOP = rf"(?:{_USER}@)?{_HOST}(?::{_PORT})?"
+_JUMP_RE = re.compile(rf"{_JUMP_HOP}(?:,{_JUMP_HOP}){{0,7}}")
+_LISTEN_RE = re.compile(rf"(?:(?:\*|{_HOST}):)?{_PORT}")
+_TARGET_RE = re.compile(rf"{_HOST}:{_PORT}")
+_GATEWAY_RE = re.compile(rf"{_HOST}(?::{_PORT})?")
+_SIZE_RE = re.compile(r"([0-9]{3,4})[xX]([0-9]{3,4})")
+
+
+def _matching(pattern: re.Pattern, what: str):
+    def check(value: str) -> str:
+        if not pattern.fullmatch(value):
+            raise ValueError(f"invalid {what}")
+        return value
+
+    return AfterValidator(check)
+
+
+def _screen_size(value: str) -> str:
+    m = _SIZE_RE.fullmatch(value)
+    # The range the desktop's parse_custom_size accepts.
+    if not m or not (640 <= int(m[1]) <= 7680 and 480 <= int(m[2]) <= 4320):
+        raise ValueError("invalid size, use WxH between 640x480 and 7680x4320")
+    return value
+
+
+class _Options(RequestModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SshForward(_Options):
+    """One port forward: L and R need a target host:port, D (SOCKS) takes none."""
+
+    type: Literal["L", "R", "D"]
+    listen: Annotated[str, Field(max_length=300), _matching(_LISTEN_RE, "listen address")]
+    target: Optional[
+        Annotated[str, Field(max_length=300), _matching(_TARGET_RE, "target host:port")]
+    ] = None
+
+    @model_validator(mode="after")
+    def _target_matches_type(self) -> "SshForward":
+        if self.type == "D" and self.target is not None:
+            raise ValueError("a dynamic forward (D) takes no target")
+        if self.type != "D" and self.target is None:
+            raise ValueError(f"a {self.type} forward needs a target")
+        return self
+
+
+class SshOptions(_Options):
+    jumpHost: Optional[Annotated[str, Field(max_length=1000), _matching(_JUMP_RE, "jump host")]] = (
+        None
+    )
+    forwards: Optional[list[SshForward]] = Field(None, max_length=32)
+    agentForwarding: Optional[bool] = None
+    compression: Optional[bool] = None
+    # Seconds, for ServerAliveInterval.
+    keepalive: Optional[int] = Field(None, ge=1, le=3600)
+    authMethod: Optional[Literal["key", "agent", "password"]] = None
+
+
+class RdpOptions(_Options):
+    scalingMode: Optional[Literal["auto", "normal", "hdpi"]] = None
+    windowMode: Optional[Literal["fit", "fullscreen", "multimon", "custom"]] = None
+    customSize: Optional[Annotated[str, AfterValidator(_screen_size)]] = None
+    performanceProfile: Optional[Literal["auto", "lan", "broadband", "low"]] = None
+    drives: Optional[bool] = None
+    audio: Optional[Literal["local", "remote", "off"]] = None
+    printers: Optional[bool] = None
+    gateway: Optional[
+        Annotated[str, Field(max_length=300), _matching(_GATEWAY_RE, "gateway host[:port]")]
+    ] = None
+    nla: Optional[bool] = None
+
+
+class ConnectionOptions(_Options):
+    ssh: Optional[SshOptions] = None
+    rdp: Optional[RdpOptions] = None
+
+
 class ConnectionCreate(RequestModel):
     name: str = Field(..., min_length=1, max_length=255)
     # The desktop/web clients only render ssh/rdp/web; reject anything else at
@@ -54,6 +149,7 @@ class ConnectionCreate(RequestModel):
     trustCert: Optional[bool] = False
     lastUsed: Optional[str] = None
     serverId: Optional[str] = None
+    options: Optional[ConnectionOptions] = None
 
     model_config = {"extra": "allow"}
 
@@ -87,6 +183,7 @@ class ConnectionUpdate(RequestModel):
     trustCert: Optional[bool] = None
     lastUsed: Optional[str] = None
     serverId: Optional[str] = None
+    options: Optional[ConnectionOptions] = None
 
     model_config = {"extra": "allow"}
 
@@ -135,6 +232,9 @@ class ConnectionOut(BaseModel):
     lastUsed: Optional[str]
     # Only set when the connection belongs to a server; the routes leave it out otherwise.
     serverId: Optional[str] = None
+    # Only set when the connection has options of its own (ConnectionOptions). A dict, not the
+    # model: a row must not turn the whole list into a 500 should the schema ever get stricter.
+    options: Optional[dict[str, Any]] = None
 
 
 class ConnectionImportResult(BaseModel):

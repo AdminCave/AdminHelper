@@ -509,6 +509,16 @@
             "default": "",
             "title": "Notes"
           },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "port": {
             "anyOf": [
               {
@@ -610,6 +620,33 @@
         "title": "ConnectionImportResult",
         "type": "object"
       },
+      "ConnectionOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "rdp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RdpOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ssh": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SshOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ConnectionOptions",
+        "type": "object"
+      },
       "ConnectionOut": {
         "additionalProperties": true,
         "description": "Connection.to_dict. The extra fields a client stored ride along as further keys.",
@@ -652,6 +689,18 @@
           "notes": {
             "title": "Notes",
             "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
           },
           "port": {
             "anyOf": [
@@ -795,6 +844,16 @@
               }
             ],
             "title": "Notes"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "port": {
             "anyOf": [
@@ -3569,6 +3628,135 @@
         "title": "ProvisionTokenOut",
         "type": "object"
       },
+      "RdpOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local",
+                  "remote",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
+          "customSize": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customsize"
+          },
+          "drives": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drives"
+          },
+          "gateway": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway"
+          },
+          "nla": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nla"
+          },
+          "performanceProfile": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "lan",
+                  "broadband",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performanceprofile"
+          },
+          "printers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printers"
+          },
+          "scalingMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "normal",
+                  "hdpi"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scalingmode"
+          },
+          "windowMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fit",
+                  "fullscreen",
+                  "multimon",
+                  "custom"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windowmode"
+          }
+        },
+        "title": "RdpOptions",
+        "type": "object"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -3797,6 +3985,129 @@
           }
         },
         "title": "ServerUpdate",
+        "type": "object"
+      },
+      "SshForward": {
+        "additionalProperties": false,
+        "description": "One port forward: L and R need a target host:port, D (SOCKS) takes none.",
+        "properties": {
+          "listen": {
+            "maxLength": 300,
+            "title": "Listen",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "type": {
+            "enum": [
+              "L",
+              "R",
+              "D"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "listen"
+        ],
+        "title": "SshForward",
+        "type": "object"
+      },
+      "SshOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "agentForwarding": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentforwarding"
+          },
+          "authMethod": {
+            "anyOf": [
+              {
+                "enum": [
+                  "key",
+                  "agent",
+                  "password"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authmethod"
+          },
+          "compression": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compression"
+          },
+          "forwards": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SshForward"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwards"
+          },
+          "jumpHost": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jumphost"
+          },
+          "keepalive": {
+            "anyOf": [
+              {
+                "maximum": 3600.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keepalive"
+          }
+        },
+        "title": "SshOptions",
         "type": "object"
       },
       "SubscriptionInput": {

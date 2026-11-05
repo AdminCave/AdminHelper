@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Rest aus kern-verbindungen-2 (T1–T3, T5–T8 dort verschoben), Kevins Antworten vom 2026-11-05 in der Spec. Stand `origin/main@a3645c00`.
 
-### T1 — Server: Feld `options` an der Verbindung (R-1066)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/alembic/versions/, apps/server/tests/test_connections_options.py, apps/server/tests/test_openapi_snapshot.py
+### T1 — Server: Feld `options` an der Verbindung (R-1066)  [x]
+Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_options.py, apps/server/tests/test_openapi_snapshot.py, apps/server/alembic/versions/a7c3e9d1f5b2_add_connection_options.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fcf37486 2026-11-05T09:05:57+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T1.verdict.json)
 Änderung: Pydantic `ConnectionOptions` (`ssh`: jumpHost, forwards[{type L/R/D, listen, target}], agentForwarding, compression, keepalive, authMethod; `rdp`: scalingMode, windowMode, customSize, performanceProfile, drives, audio, printers, gateway, nla), alle optional, `extra="forbid"`, Formate an der Grenze geprüft (Host, Port 1–65535, kein führendes `-`, keine Steuerzeichen). Spalte `options` per Alembic-Revision (Downgrade entfernt sie), in Create/Update/Out, Import und Export. Neue Testdatei mit SPDX, Tests mit bösen Werten; OpenAPI-Snapshot nachziehen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
 Doku: → T8
@@ -40,7 +42,7 @@ Doku: → T8
 Abhängt von: T2
 
 ### T5 — Server: Sitzungsverlauf, Tabelle und Endpunkte (R-1068)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/alembic/versions/, apps/server/tests/test_connection_sessions.py, apps/server/tests/test_openapi_snapshot.py
+Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/tests/test_connection_sessions.py, apps/server/tests/test_openapi_snapshot.py
 Änderung: Tabelle `connection_sessions` per Alembic-Revision (FK `ON DELETE CASCADE`, Downgrade entfernt sie); `touch` legt einen Eintrag an (Gerät: Name der Geräteregistrierung, sonst der vom Client gemeldete Hostname) und liefert `sessionId`; `POST /connections/{id}/sessions/{sid}/end`, `GET /connections/{id}/sessions?limit=` (Standard 5); Scope wie die Liste; Einträge älter als 90 Tage löscht der Server beim Schreiben. Neue Testdatei mit SPDX.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sessions.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
 Doku: → T8
@@ -67,3 +69,5 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Connect
 Doku: diese Task
 
 ## Entscheidungen
+- T1: Form der Optionen. SSH: `jumpHost` als `[user@]host[:port]`, bis zu acht Hops mit Komma (wie `-J`); `forwards` höchstens 32 Einträge `{type L|R|D, listen "[bind:]port" (bind auch `*`), target "host:port"}`: L/R brauchen ein Ziel, D (SOCKS) nimmt keins; `keepalive` in Sekunden 1–3600 (`ServerAliveInterval`); `authMethod` key|agent|password. RDP: `scalingMode`, `windowMode`, `performanceProfile` mit den Werten der Desktop-Enums, `customSize` im Bereich von `parse_custom_size` (640x480–7680x4320); `drives`, `printers`, `nla` als bool, `audio` local|remote|off, `gateway` `host[:port]`. Host: Name aus `[A-Za-z0-9._-]` ohne führendes `-`, oder IPv6 in Klammern; Port 1–65535 als Regex, damit `0` und `65536` scheitern. Damit sind Leerzeichen, Steuerzeichen und Shell-Zeichen ausgeschlossen.
+- T1: Gespeichert wird nur, was gesetzt ist (`_compact` entfernt None rekursiv, leer → NULL), damit „Feld fehlt“ der globale Standard bleibt. `PUT` ersetzt `options` als Ganzes (kein Merge), `null` löscht; ohne `options` im Body bleiben sie. Die Antwort trägt `options` nur, wenn gesetzt, wie `serverId`. `ConnectionOut.options` ist ein `dict`, nicht das Modell: eine Zeile soll die Liste nicht in einen 500 kippen, falls das Schema später strenger wird (wie `tags: Any`). Ein Extra-Eintrag `options` aus `extra_data` (vor der Spalte) wird nie ausgegeben, weil `options` jetzt ein bekanntes Feld ist.
