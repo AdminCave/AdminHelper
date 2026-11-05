@@ -18,11 +18,11 @@ const NO_SESSION = 'Keine aktive Sitzung — Anfrage abgelehnt';
 // webdriver reads a script result that carries an `error` key as a failed command and
 // throws (isSuccessfulResponse), so { error } would never come back as a value.
 function proxyGet(path) {
-  return browser.executeAsync((p, done) => {
-    window.__TAURI__.core
+  return browser.execute(async (p) => {
+    return window.__TAURI__.core
       .invoke('api_proxy', { method: 'GET', path: p })
-      .then((value) => done({ value }))
-      .catch((e) => done({ rejected: String((e && e.message) || e) }));
+      .then((value) => ({ value }))
+      .catch((e) => ({ rejected: String((e && e.message) || e) }));
   }, path);
 }
 

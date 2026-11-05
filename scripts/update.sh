@@ -121,6 +121,71 @@ env_template_ok() {
     [ "$open" -eq 0 ]
 }
 
+# 0 if compose quotes a part of the value $1 in a message of its own: a $NAME or
+# ${NAME} with NAME not set ("The \"NAME\" variable is not set", on every call,
+# and the value loses that part) or a ${NAME?WORD} / ${NAME:?WORD} that fails
+# (the call ends with WORD). In a password such a '$' is a typo, not a template.
+# Evaluated like compose: a default, an alternative and a WORD only where they
+# take effect. A name counts as compose finds it: in the environment first (set or
+# empty, above any line of the file), then in the keys of the lines above
+# (ENV_SEEN); a later key does not count. A value that holds a template may be
+# empty: for ':' that counts as empty and as set alike.
+env_value_quoted_by_compose() {
+    TPL_S="$1"; TPL_I=0; TPL_LEAK=0
+    env_tpl_walk 1 0
+    [ "$TPL_LEAK" -eq 1 ]
+}
+# Leaves in ENV_STATE what compose finds for the name $1: set, empty, tpl (a value
+# with a template, maybe empty) or unset.
+env_var_state() {
+    local v
+    if v=$(printenv "$1"); then
+        if [ -n "$v" ]; then ENV_STATE='set'; else ENV_STATE='empty'; fi
+    elif [ -n "${ENV_SEEN[$1]+x}" ]; then
+        ENV_STATE=${ENV_SEEN[$1]}
+    else
+        ENV_STATE='unset'
+    fi
+}
+# Walks TPL_S from TPL_I; $1 = 1 where compose evaluates the text, $2 = 1 inside a
+# ${...}, which ends at its '}'. Sets TPL_LEAK. env_template_ok has passed the text.
+env_tpl_walk() {
+    local on="$1" m st op colon
+    local name='^[_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ][_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]*'
+    while [ "$TPL_I" -lt "${#TPL_S}" ]; do
+        case ${TPL_S:TPL_I:2} in
+            '}'*) TPL_I=$((TPL_I + 1)); [ "$2" -eq 0 ] || return 0 ;;
+            '$$') TPL_I=$((TPL_I + 2)) ;;
+            "\${")
+                TPL_I=$((TPL_I + 2))
+                [[ ${TPL_S:TPL_I} =~ $name ]] || continue
+                m=${BASH_REMATCH[0]}; TPL_I=$((TPL_I + ${#m}))
+                env_var_state "$m"; st=$ENV_STATE
+                op=${TPL_S:TPL_I:1}; colon=0
+                if [ "$op" = : ]; then colon=1; TPL_I=$((TPL_I + 1)); op=${TPL_S:TPL_I:1}; fi
+                TPL_I=$((TPL_I + 1))
+                case $op in
+                    '}') [ "$on$st" != 1unset ] || TPL_LEAK=1 ;;
+                    -) if [ "$st" = unset ] || { [ "$colon" -eq 1 ] && [ "$st" != set ]; }; then
+                           env_tpl_walk "$on" 1; else env_tpl_walk 0 1; fi ;;
+                    +) if [ "$st" = unset ] || { [ "$colon" -eq 1 ] && [ "$st" = empty ]; }; then
+                           env_tpl_walk 0 1; else env_tpl_walk "$on" 1; fi ;;
+                    '?') if [ "$st" = unset ] || { [ "$colon" -eq 1 ] && [ "$st" != set ]; }; then
+                             [ "$on" -eq 0 ] || TPL_LEAK=1
+                         fi
+                         env_tpl_walk 0 1 ;;
+                esac ;;
+            '$'*)
+                TPL_I=$((TPL_I + 1))
+                [[ ${TPL_S:TPL_I} =~ $name ]] || continue
+                m=${BASH_REMATCH[0]}; TPL_I=$((TPL_I + ${#m}))
+                env_var_state "$m"
+                [ "$on$ENV_STATE" != 1unset ] || TPL_LEAK=1 ;;
+            *) TPL_I=$((TPL_I + 1)) ;;
+        esac
+    done
+}
+
 # A quoted value as compose reads it: $2 is the text after the opening quote $1. A
 # backslash escapes the next character, and in double quotes \$ is a literal '$'
 # (passed on as '$$'). Leaves the text up to the closing quote in QUOTED and the
@@ -199,18 +264,20 @@ env_key_ok() {
 # compose reads the values in .env as templates, and a '${' that starts no valid
 # placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
 # template"; so do a quote that never closes and a key compose does not take
-# (env_key_ok), text after a closing quote included. Checked before the first
-# call, so such a .env stops the script before it changes anything (update.sh:
-# before backup, swap and re-pin). Reads .env as compose does: a BOM at its start drops, blank and '#' lines
-# drop, "export " may lead, '=' or ':' separates, a line without either is a key
-# without a value; a quoted value runs to its closing quote, over several lines if
-# need be, and is literal in single quotes, and the text after that quote is read
-# as a line of its own; an unquoted value ends at " #". The message names only a
-# line number, never a key, a value or the line: a secret pasted by mistake reads as
-# a key once it holds '=' or ':', and compose's own message quotes them all. For a
-# value it is the line its entry starts in.
+# (env_key_ok), text after a closing quote included. Checked before the first call,
+# so such a .env stops the script before it changes anything (update.sh: before
+# backup, swap and re-pin). Reads .env as compose does: a BOM at its start drops,
+# blank and '#' lines drop, "export " may lead, '=' or ':' separates, a line without
+# either is a key without a value; a quoted value runs to its closing quote, over
+# several lines if need be, and is literal in single quotes, and the text after that
+# quote is read as a line of its own; an unquoted value ends at " #". The message
+# names only a line number, never a key, a value or the line: a secret pasted by
+# mistake reads as a key once it holds '=' or ':', and compose's own message quotes
+# them all. For a value it is the line its entry starts in.
 check_env_templates() {
-    local line key name val more q rest eol spaced n=0 start QUOTED QUOTED_REST TRIMMED
+    local line key name val lit more q rest eol spaced n=0 start QUOTED QUOTED_REST TRIMMED
+    local ENV_STATE TPL_S TPL_I TPL_LEAK
+    local -A ENV_SEEN=()
     [ -f .env ] || return 0
     while :; do
         # eol=0: the line ends .env without a line break.
@@ -248,11 +315,22 @@ check_env_templates() {
                         n=$((n + 1)); val+=$'\n'$more
                     done
                     rest=$QUOTED_REST
-                    if [ "$q" = '"' ]; then val=$QUOTED; else val=""; fi ;;
-                *) val=${val%% #*} ;;
+                    lit=$QUOTED
+                    if [ "$q" = '"' ]; then val=$QUOTED; lit=""; else val=""; fi ;;
+                *) val=${val%% #*}; lit="" ;;
             esac
             env_template_ok "$val" \
                 || die ".env: the value starting in line ${start} holds a '\${' that starts no valid placeholder, which makes every compose call fail with 'Invalid template'. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
+            ! env_value_quoted_by_compose "$val" \
+                || die ".env: the value starting in line ${start} holds a '\$' that docker compose reads as a variable that is not set (\$NAME, \${NAME} or \${NAME?...}): compose drops that part of the value or stops, and quotes it in its messages. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
+            # A value in single quotes is literal; one with a template may be empty. An empty
+            # key names nothing a template could use.
+            if [ -z "$key" ]; then :
+            elif [ -n "$val" ]; then
+                case ${val//\$\$/} in *'$'*) ENV_SEEN[$key]='tpl' ;; *) ENV_SEEN[$key]='set' ;; esac
+            elif [ -n "$lit" ]; then ENV_SEEN[$key]='set'
+            else ENV_SEEN[$key]='empty'
+            fi
             line=$rest
         done
     done < .env
@@ -687,7 +765,7 @@ BACKUP_ARCHIVE=""
 if [ "$SKIP_BACKUP" != 1 ]; then
     log "Backup-first..."
     ./scripts/backup.sh "${BACKUP_ARGS[@]}" | tee "${TMP}/backup.out" \
-        || die "Backup-first fehlgeschlagen — Update abgebrochen, nichts geaendert."
+        || die "Backup-first failed: update aborted, nothing changed."
     BACKUP_ARCHIVE=$(sed -n 's/^\[backup\] OK -> \(.*\) ([^)]*)$/\1/p' "${TMP}/backup.out")
 else
     log "Backup uebersprungen (--skip-backup)."

@@ -75,15 +75,16 @@ ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
 # tok_exact reads the file as compose does (compose-go dotenv: parse,
 # getStatementStart, locateKeyName, extractVarValue): a quoted value runs on to its
 # closing quote over any number of lines, whatever key it belongs to, and behind it
-# the next statement begins. compose refuses a file with a key it cannot read; such a
-# line is passed over here and the next one read. tok_alone then reads every line
-# start and the place behind every quote as if it began a line, statements one behind
-# the other while each quoted value closes on its line: the text may be a value of
-# another key that only looks like an assignment, or a file compose refuses, and a
-# secret there must still go. A quoted value of a wanted key runs on to its closing
-# quote; with cmt also behind any "#" among the whitespace in front of a statement,
-# and there over the commented-out lines that follow, to its closing quote or to the
-# first line that is no comment.
+# the next statement begins. compose refuses a file with a key it cannot read (it sets
+# tbad) and reads the value of an empty key like any other, then drops it; here a bad
+# key's line is passed over and the next one read, an empty key read like any other.
+# tok_alone then reads every line start and the place behind every quote as if it
+# began a line, statements one behind the other while each quoted value closes on its
+# line: the text may be a value of another key that only looks like an
+# assignment, or a file compose refuses, and a secret there must still go.
+# A quoted value of a wanted key runs on to its closing quote; with cmt also behind any
+# "#" among the whitespace in front of a statement, and there over the commented-out
+# lines that follow, to its closing quote or to the first line that is no comment.
 ENV_TOK='
     function tok_init(sp, sep, cmt) {
         tsp = "^(" sp ")*"
@@ -126,7 +127,10 @@ ENV_TOK='
             c = substr(S, p + RLENGTH, 1)
             p += RLENGTH + 1
             sub("(" hs ")+$", "", k)
-            if (k == "" || index(k, " ") || (c != "=" && c != ":" && c != "\n")) { p = tok_eol(ks) + 1; continue }
+            if (index(k, " ") || (c != "=" && c != ":" && c != "\n")) {
+                tbad = 1
+                p = tok_eol(ks) + 1; continue
+            }
             if (c == "\n") continue
             match(substr(S, p), "^(" hs ")*")
             p += RLENGTH
@@ -201,9 +205,10 @@ ENV_TOK='
 # COMPOSE_PROJECT_NAME (the volume prefix of the backed-up project). The statements as
 # ENV_TOK finds them (as compose reads the file, and every line start and the place
 # behind every quote read alone); cut as backup.sh cuts CA_ROOT_PASSPHRASE: a statement
-# that starts inside the closed quoted value of another key keeps that closing quote, a
-# changed line keeps the bytes outside those statements, a line left with whitespace
-# only goes. Any awk error stops the restore before anything changes.
+# that starts inside the closed quoted value of another key keeps that closing quote,
+# and a cut behind it that ends inside a statement compose reads takes that statement
+# to its end, a changed line keeps the bytes outside those statements, a line left
+# with whitespace only goes. Any awk error stops the restore before anything changes.
 if [ -f "$STAGE/env.sanitized" ]; then
     # shellcheck disable=SC2016 # an awk program, $0 is awk's
     LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" "$ENV_TOK"'
@@ -213,6 +218,7 @@ if [ -f "$STAGE/env.sanitized" ]; then
         function hit(k, ks, vs, ve, q, closed, cs) {
             if (!drop(k)) {
                 if (ex && q != "" && closed) { m++; QS[m] = vs; QE[m] = ve }
+                if (ex) { ne++; ES[ne] = ks; EE[ne] = ve }
                 return
             }
             n++
@@ -228,7 +234,14 @@ if [ -f "$STAGE/env.sanitized" ]; then
             for (j = 1; j <= n0; j++)
                 for (i = 1; i <= m; i++)
                     if (QS[i] < A[j] && A[j] < QE[i] && B[j] >= QE[i]) {
-                        if (B[j] > QE[i]) { n++; A[n] = QE[i] + 1; B[n] = B[j] }
+                        if (B[j] > QE[i]) {
+                            n++; A[n] = QE[i] + 1; B[n] = B[j]
+                            do {
+                                g = 0
+                                for (r = 1; r <= ne; r++)
+                                    if (ES[r] <= B[n] && EE[r] > B[n] && EE[r] >= A[n]) { B[n] = EE[r]; g = 1 }
+                            } while (g)
+                        }
                         B[j] = QE[i] - 1
                     }
             for (ls = 1; ls <= N; ls = le + 1) {
@@ -263,19 +276,50 @@ NEW_ENV=""
 # these passwords), never as the superuser. Read them the way compose interpolates
 # ${VAR}: the environment first, then the env file compose will read (.env, or the
 # staged one above). Checked before the stack is stopped.
+# In the file the last statement of the key counts, in every form compose reads
+# (ENV_TOK): an unquoted value up to a " #" without the whitespace at its end, a quoted
+# one between its quotes. A value restore cannot take as compose does (a quote left
+# open, a line break, a backslash inside quotes, a "$" outside single quotes: compose
+# would expand them) stops the restore with the key named, never its value.
 ENV_FILE=.env
 [ -z "$NEW_ENV" ] || ENV_FILE="$NEW_ENV"
 role_password() {
-    local key="$1" value="${!1:-}"
+    local key="$1" value="${!1:-}" rc=0
     if [ -z "$value" ] && [ -f "$ENV_FILE" ]; then
-        value=$( { LC_ALL=C grep -a -E "^${key}=" "$ENV_FILE" || true; } | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"\$//")
+        # shellcheck disable=SC2016 # an awk program, $0 is awk's
+        value=$(LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" -v ws="$ENV_WS" -v key="$key" "$ENV_TOK"'
+            BEGIN { tok_init(sp, sep, 0) }
+            function want(k) { return k == key }
+            function hit(k, ks, vs, ve, q, closed, cs) {
+                F = 1; Q = q; C = closed
+                V = q == "" ? substr(S, vs, ve - vs + 1) : substr(S, vs + 1, ve - vs - 1)
+            }
+            { S = S $0 "\n" }
+            END {
+                N = length(S)
+                tok_exact()
+                if (!F) exit 0
+                if (Q == "") {
+                    if (i = index(V, " #")) V = substr(V, 1, i - 1)
+                    sub("(" ws ")+$", "", V)
+                }
+                if (!C || index(V, "\n") || (Q != "" && index(V, "\\")) || (Q != "\047" && index(V, "$"))) exit 3
+                printf "%s", V
+            }
+        ' "$ENV_FILE") || rc=$?
+        if [ "$rc" = 3 ]; then
+            echo "[restore] ERROR: ${key} in ${ENV_FILE} is no plain value (a quote left open, a line break, a backslash inside quotes or a \$ outside single quotes); restore cannot read it as compose does. Nothing was changed." >&2
+            exit 1
+        fi
+        [ "$rc" = 0 ] || { echo "[restore] ERROR: could not read ${key} from ${ENV_FILE}; nothing was changed." >&2; exit 1; }
     fi
     printf '%s' "$value"
 }
 check_role_passwords() {
-    local key missing=()
+    local key value missing=()
     for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
-        [ -n "$(role_password "$key")" ] || missing+=("$key")
+        value=$(role_password "$key") || exit 1
+        [ -n "$value" ] || missing+=("$key")
     done
     if [ "${#missing[@]}" -gt 0 ]; then
         if [ "$ENV_FILE" = .env ]; then
@@ -295,14 +339,14 @@ compose_names() {
     local compose_cfg
     if ! compose_cfg=$(docker compose "$@" config </dev/null 2>"$STAGE/.compose-err"); then
         echo "[restore] ERROR: docker compose config failed; nothing was changed:" >&2
-        cat "$STAGE/.compose-err" >&2
+        cat -v "$STAGE/.compose-err" >&2
         exit 1
     fi
     PROJECT=$(sed -n '1s/^name: //p' <<<"$compose_cfg")
     HELPER_IMAGE=$(docker compose "$@" config --images postgres </dev/null 2>"$STAGE/.compose-err") || HELPER_IMAGE=""
     if [ -z "$PROJECT" ] || [ -z "$HELPER_IMAGE" ]; then
         echo "[restore] ERROR: docker compose names no project or no postgres image; nothing was changed." >&2
-        cat "$STAGE/.compose-err" >&2
+        cat -v "$STAGE/.compose-err" >&2
         exit 1
     fi
     rm -f "$STAGE/.compose-err"
@@ -361,7 +405,8 @@ if [ "$FRESH" = 0 ]; then
     PGVOL=0; pg_volume_exists && PGVOL=1
     # Without a volume postgres initialises one with POSTGRES_PASSWORD, from the
     # environment (backup_restore_test.sh exports it) or from .env.
-    if [ "$PGVOL" = 0 ] && [ ! -f .env ] && [ -z "$(role_password POSTGRES_PASSWORD)" ]; then
+    PG_PW=$(role_password POSTGRES_PASSWORD) || exit 1
+    if [ "$PGVOL" = 0 ] && [ ! -f .env ] && [ -z "$PG_PW" ]; then
         if [ -n "$NEW_ENV" ]; then
             echo "[restore] ERROR: no .env here and no POSTGRES_PASSWORD in the environment; the .env of the backup belongs to a project whose database volume exists, not to ${PROJECT}. Nothing was changed." >&2
         else
@@ -369,13 +414,13 @@ if [ "$FRESH" = 0 ]; then
         fi
         exit 1
     fi
-    if [ "$PGVOL" = 1 ] && [ -z "$(role_password POSTGRES_PASSWORD)" ]; then
+    if [ "$PGVOL" = 1 ] && [ -z "$PG_PW" ]; then
         echo "[restore] ERROR: the volume ${PROJECT}_postgres18-data exists, but POSTGRES_PASSWORD is set neither in the environment nor in .env; pg_restore could not log in. Nothing was changed." >&2
         exit 1
     fi
 fi
-SERVER_PW=$(role_password SERVER_DB_PASSWORD)
-MONITOR_PW=$(role_password MONITOR_DB_PASSWORD)
+SERVER_PW=$(role_password SERVER_DB_PASSWORD) || exit 1
+MONITOR_PW=$(role_password MONITOR_DB_PASSWORD) || exit 1
 
 echo "[restore] Ziel-Compose-Projekt: $PROJECT"
 [ "$FRESH" = 0 ] || echo "[restore] No .env and no database volume here: the .env of the backup becomes .env before postgres starts."

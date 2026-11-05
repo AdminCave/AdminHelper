@@ -957,11 +957,20 @@ done
 run_env_case 'SMTP_PASSWORD="zz9secret' "$WORK/inst30-quote"
 assert_env_stop 'SMTP_PASSWORD="zz9secret' "update" \
   "FEHLER: \.env: the value starting in line $lineno has a quote that is never closed"
+# A '$' before a name that is not set: compose warns on every call and quotes the
+# name, which is part of the value; a ${NAME?WORD} that fails quotes WORD.
+# shellcheck disable=SC2016
+for line in 'SMTP_PASSWORD=zz9a$zz9b' 'SMTP_PASSWORD=ab${zz9b?zz9c}'; do
+  run_env_case "$line" "$WORK/inst30-var$((++n))"
+  assert_env_stop "$line" "update" \
+    "FEHLER: \.env: the value starting in line $lineno holds a '\\\$' that docker compose reads as a variable that is not set"
+done
 
 # ── 31. a '$' compose can read does not stop the update ─────────────────────
 # shellcheck disable=SC2016
 ENV_GOOD=('SMTP_PASSWORD=ab$$cd' "SMTP_PASSWORD='ab\${cd'" 'SMTP_PASSWORD="ab$$"' 'SMTP_PASSWORD=ab${DOMAIN}x'
-  'SMTP_PASSWORD=ab${ZZ:-${DOMAIN}}' 'SMTP_PASSWORD=ab #${' '# X=${')
+  'SMTP_PASSWORD=ab${ZZ:-${DOMAIN}}' 'SMTP_PASSWORD=ab #${' '# X=${' 'SMTP_PASSWORD=ab$DOMAIN'
+  'SMTP_PASSWORD=ab${ZZ:+$YY}')
 n=0
 for line in "${ENV_GOOD[@]}"; do
   n=$((n + 1))
@@ -994,15 +1003,29 @@ ENV_MULTI=($'P=\'line1\nzz9frag: ab${q\n\'' $'P="line1\nzz9frag=ab${q\n"' $'P="l
   $'P=\'a\nb\' Q=ab${q' $'P="a\nb" Q=${DOMAIN}')
 # Appends $1 to a fresh install's .env and holds --check against `docker compose
 # config -q` there; leaves shown=, base= (the lines before $1), out=, ours=, theirs=.
+DIFF_ENV=()
+# Compose 2.38.2 also warns about a name in a default or an alternative it does not
+# evaluate, v5.6.1 does not; the value is the same in both. For these lines only
+# compose's exit counts.
+# shellcheck disable=SC2016
+ENV_LAZY=('SMTP_PASSWORD=ab${ZZ:+$YY}' 'X=ab${zz9q+$zz9r}' 'X=ab${DOMAIN:-$zz9r}' 'X=ab${DOMAIN:?$zz9r}'
+  $'E=\nX=${E:+$zz9r}')
 env_differential() {
   local line="$1"
   n=$((n + 1)); shown=${line//$'\n'/\\n}
   INST="$WORK/inst32-$n"; make_install 0.33.0 "$SRC_OLD" "$INST"
   base=$(wc -l < "$INST/.env")
   printf '%s\n' "$line" >> "$INST/.env"
-  out=$(run_update "$INST" --check 2>&1); ours=$?
-  ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
+  # DIFF_ENV: variables both calls see in their environment (NAME=VALUE).
+  out=$(for kv in "${DIFF_ENV[@]}"; do export "${kv?}"; done; run_update "$INST" --check 2>&1); ours=$?
+  ( for kv in "${DIFF_ENV[@]}"; do export "${kv?}"; done
+    cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
     >/dev/null 2>"$INST.compose"; theirs=$?
+  # compose's warning about a variable that is not set counts as its no: it quotes
+  # a part of the value and drops it.
+  local lazy=0 l
+  for l in "${ENV_LAZY[@]}"; do [ "$l" != "$line" ] || lazy=1; done
+  [ "$lazy" -eq 1 ] || ! grep -q 'variable is not set' "$INST.compose" || theirs=1
   # A refusal has to be the check's own, not --check failing for another reason.
   { [ "$((ours != 0))" = "$((theirs != 0))" ] \
       && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: the (value starting|entry) in line' <<<"$out"; }; } \
@@ -1020,6 +1043,29 @@ for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}";
         && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
   esac
 done
+# A '$' before a name: compose takes the keys above it in .env (DOMAIN) and the
+# environment (HOME) as set, a later key or a key without a value not; a default,
+# an alternative and a WORD count only where compose evaluates them; with ':' an
+# empty value counts as not set. A refusal names the line, never the name or WORD.
+# shellcheck disable=SC2016
+ENV_VARS=('X=ab$zz9q' 'X=ab${zz9q}' 'X="ab$zz9q"' 'X=ab${zz9q?zz9w}' 'X=ab${zz9q:?zz9w}' 'X=ab$HOME'
+  'X=ab$DOMAIN' 'X=ab${zz9q:-d}' 'X=ab${zz9q+$zz9r}' 'X=ab${zz9q:-$zz9r}' 'X=ab${DOMAIN:-$zz9r}'
+  'X=ab${DOMAIN:+$zz9r}' 'X=ab${DOMAIN:?$zz9r}' 'X=ab${zz9q-${zz9r?zz9w}}' 'X=ab$$zz9q' 'X=$zz9q # c'
+  $'E=\nX=${E?zz9w}' $'E=\nX=${E:?zz9w}' $'E=\nX=${E:-$zz9r}' $'E=\nX=${E:+$zz9r}' $'zz9q\nX=$zz9q'
+  $'X=$zz9l\nzz9l=1' $'E=\'v\'\nX=${E:?zz9w}' $'X=a\nX=${X:?zz9w}' '=zz9v' '=ab$zz9q')
+# The environment ranks above a key of the file: empty there, a key set above
+# does not help; set there, a key left empty above does not count.
+ENV_VARS_ENV=('zz9e=|'$'zz9e=v\nX=${zz9e:?zz9w}' 'zz9e=|'$'zz9e=v\nX=${zz9e:-$zz9r}'
+  'zz9e=v|'$'zz9e=\nX=${zz9e:+$zz9r}' 'zz9e=v|'$'zz9e=\nX=${zz9e:?zz9w}')
+for line in "${ENV_VARS[@]}" "${ENV_VARS_ENV[@]}"; do
+  case $line in zz9e=*'|'*) DIFF_ENV=("${line%%|*}"); line=${line#*|} ;; *) DIFF_ENV=() ;; esac
+  env_differential "$line"
+  [ "$ours" -ne 0 ] || continue
+  { grep -qE "the value starting in line $((base + 1))|the value starting in line $((base + 2))" <<<"$out" \
+      && ! grep -q zz9 <<<"$out"; } \
+    && ok "[$shown]: the refusal names the line and nothing of the value" || bad "[$shown]: $out"
+done
+DIFF_ENV=()
 # Quotes and keys: a quote never closed, text after a closing quote that is no key,
 # and a key compose does not take end every compose call too, and compose's message
 # quotes the line. A refusal of a value (SMTP_PASSWORD, P) names the line it starts
@@ -1674,7 +1720,8 @@ reader_ends_update() {
   for _ in $(seq 300); do [ -e "$marker.started" ] && break; sleep 0.1; done
   kill "$rpid" 2>/dev/null; wait "$rpid" 2>/dev/null
   : > "$marker"
-  rc=0; wait "$pid" || rc=$?
+  # The braces take the shell's job notice for a run ended by SIGHUP off the output.
+  rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
 }
 INST="$WORK/inst46a"; make_install 0.33.0 "$SRC_OLD" "$INST"
 before=$(snapshot_install "$INST")
@@ -1832,6 +1879,17 @@ pg_inst n 0.40.0 "$SRC_PG"; : > "$VOLS/ahproj_postgres18-data"
 out=$(AH_TEST_PG_MOUNTS=ahproj_postgres18-data pg_update --redeploy 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q '^compose pull' "$DLOG"; } \
   && ok "--redeploy after the move runs" || bad "--redeploy after the move: rc=$rc $out"
+
+# ── 48. a failing backup-first ends the update before anything changes ──────
+INST="$WORK/inst48"; make_install 0.33.0 "$SRC_OLD" "$INST"; DLOG="$WORK/docker48.log"; rm -f "$DLOG"
+printf '#!/usr/bin/env bash\necho "[backup] stub failure" >&2\nexit 3\n' > "$INST/scripts/backup.sh"
+before=$(snapshot_install "$INST")
+out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Backup-first failed: update aborted, nothing changed\.' <<<"$out" \
+    && [ "$(snapshot_install "$INST")" = "$before" ] \
+    && [ -z "$(find "$INST/backups" -mindepth 1 2>/dev/null)" ] && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
+  && ok "a failing backup-first: exit $rc, told in English, nothing changed, no pull or up" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "failing backup-first: rc=$rc changed: $(diff <(echo "$before") <(snapshot_install "$INST") | grep '^>' | tr '\n' ';') docker $(tr '\n' ';' < "$DLOG" 2>/dev/null) backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"; }
 
 echo
 echo "──────────────────────────────────────────"

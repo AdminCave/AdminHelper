@@ -461,7 +461,7 @@ def test_the_skip_step_follows_pytest_in_the_leg_with_every_base_image():
     steps = [step.get("name") for step in _workflow("ci.yml")["jobs"]["server"]["steps"]]
     assert steps.index(_SKIP_STEP) == steps.index("Run pytest") + 1, steps
     step = _step("ci.yml", "server", _SKIP_STEP)
-    # The leg that pulls the base images; the 3.12 leg skips the image tests on purpose.
+    # The leg that pulls the base images; the 3.15 leg skips the image tests on purpose.
     assert step.get("if") == _step("ci.yml", "server", _PULL_STEP).get("if"), step
     assert "continue-on-error" not in step, step
 

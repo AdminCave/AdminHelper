@@ -184,11 +184,13 @@ Erzeugt mit `license-checker --production` (nur ausgelieferte Laufzeit-Deps).
 
 | Paket | Version | Lizenz |
 |---|---|---|
-| @lucide/svelte | 1.66.0 | ISC |
-| @tauri-apps/api | 2.11.0 | Apache-2.0 OR MIT |
-| @tauri-apps/plugin-dialog | 2.7.1 | MIT OR Apache-2.0 |
-| @tauri-apps/plugin-notification | 2.3.3 | MIT OR Apache-2.0 |
-| @tauri-apps/plugin-shell | 2.3.5 | MIT OR Apache-2.0 |
+| @fontsource-variable/geist | 5.3.0 | OFL-1.1 |
+| @fontsource-variable/geist-mono | 5.3.0 | OFL-1.1 |
+| @lucide/svelte | 1.68.0 | ISC |
+| @tauri-apps/api | 2.12.4 | Apache-2.0 OR MIT |
+| @tauri-apps/plugin-dialog | 2.8.4 | MIT OR Apache-2.0 |
+| @tauri-apps/plugin-notification | 2.8.0 | MIT OR Apache-2.0 |
+| @tauri-apps/plugin-shell | 2.6.0 | MIT OR Apache-2.0 |
 | uplot | 1.6.32 | MIT |
 
 Alle `@tauri-apps/*`-Pakete sind dual MIT/Apache → es wird der MIT-Zweig
@@ -198,13 +200,16 @@ geführt (keine NOTICE-Pflicht).
 
 | Paket | Version | Lizenz |
 |---|---|---|
-| @lucide/svelte | 1.66.0 | ISC |
+| @fontsource-variable/geist | 5.3.0 | OFL-1.1 |
+| @fontsource-variable/geist-mono | 5.3.0 | OFL-1.1 |
+| @lucide/svelte | 1.68.0 | ISC |
 
 Das Admin-Panel ist eine reine Svelte-Anwendung — Svelte kompiliert zur
 Build-Zeit weg, und `apps/web` deklariert keine Laufzeit-`dependencies`
 (Vite/Svelte/ESLint sind `devDependencies` = Build-Werkzeuge). Ausnahme sind die
-Icons: `@lucide/svelte` steht als `devDependency` im Manifest, die genutzten
-Icons landen aber im ausgelieferten Bundle. `apps/desktop/e2e/` ist ein reines
+Icons und Schriften: `@lucide/svelte` und die Geist-Schriften stehen als
+`devDependency` im Manifest, die genutzten Icons und die Schriftdateien landen
+aber im ausgelieferten Bundle. `apps/desktop/e2e/` ist ein reines
 Test-Harness und wird nicht ausgeliefert.
 
 ---
@@ -236,6 +241,13 @@ LGPL-lizenzierte Quelltext muss mitgeliefert oder per schriftlichem Angebot
 zugänglich gemacht werden, und Endnutzer müssen die psycopg-Komponente durch
 eine eigene Version ersetzen können (bei dynamischem Bezug über PyPI gegeben).
 
+### OFL-1.1 — Geist-Schriften
+
+Die Geist-Schriften (`@fontsource-variable/geist`, `-mono`) stehen unter der SIL
+Open Font License 1.1: die Schriftdateien dürfen gebündelt weitergegeben werden,
+nicht aber einzeln verkauft werden; Copyright-Vermerk und Lizenztext (`LICENSE` im
+jeweiligen Paket) gehören zur Distribution.
+
 ### MPL-2.0
 
 `MPL-2.0` betrifft `certifi` (Python, Server + Monitoring) sowie im
@@ -250,6 +262,17 @@ Die `Unicode-3.0`-Crates (ICU-/Zerovec-Familie im Rust-Graphen) sowie die
 diversen `BSD`-/`ISC`-/`Zlib`-/`MIT`-Lizenzen sind GPL-3.0-kompatibel. Es
 genügt, den jeweiligen Lizenztext bzw. Copyright-Hinweis in der Distribution
 mitzuführen.
+
+### AGPL-3.0 — Redis-Server (Container-Image)
+
+Der Stack startet den Redis-Server aus dem offiziellen Image `redis:8-alpine`
+(`docker-compose.yml`, Dienst `redis`). Redis ab Version 8 steht wahlweise unter
+RSALv2, SSPLv1 oder **AGPLv3** (redis.io/legal/licenses); AdminHelper nutzt ihn
+unter AGPLv3. Das Image wird nicht mitgeliefert, sondern beim Start aus der
+Registry gezogen und unverändert betrieben. Auflage: Wer den Redis-Server selbst
+ändert und über ein Netz anbietet, muss den geänderten Quelltext bereitstellen
+(AGPLv3 §13). Die Python-Client-Bibliothek `redis` (Abschnitt 1, MIT) ist davon
+getrennt.
 
 ---
 

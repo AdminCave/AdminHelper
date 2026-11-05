@@ -80,7 +80,7 @@ case "$*" in
   "compose version --short") echo 2.16.0; exit 0 ;;
   *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
   "compose config"*)
-    [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo "compose config failed in the stub" >&2; exit 1; }
+    [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { printf 'compose config failed in the stub\e]0;title\a\n' >&2; exit 1; }
     # Like compose, a key with a space ends the call with the line quoted.
     bad=$(grep -nE '^[^#=:]* [^#=:]*$' .env 2>/dev/null | head -n 1)
     [ -z "$bad" ] || { echo "failed to read .env: line ${bad%%:*}: key cannot contain a space: ${bad#*:}" >&2; exit 1; }
@@ -90,7 +90,7 @@ case "$*" in
     done
     exit 0 ;;
   "compose ps --all --quiet")
-    [ "${AH_TEST_PS_FAIL:-}" != 1 ] || { echo "compose ps failed in the stub" >&2; exit 1; }
+    [ "${AH_TEST_PS_FAIL:-}" != 1 ] || { printf 'compose ps failed in the stub\e]0;title\a\n' >&2; exit 1; }
     gone || [ -z "${AH_TEST_CONTAINERS:-}" ] || echo "$AH_TEST_CONTAINERS"; exit 0 ;;
   "inspect --format "*)
     shift 3; for _ in "$@"; do echo "dir=${AH_TEST_WORKDIR-$PWD}"; done; exit 0 ;;
@@ -398,6 +398,29 @@ out=$(cd "$INST" && ADMIN_PASSWORD=zz9pw-env AH_TEST_DOCKER_ENV="$DENV" bash "$I
   && ok "exported ADMIN_PASSWORD: no docker call inherits the password" \
   || bad "docker calls inherited ADMIN_PASSWORD: $(sort -u "$DENV" 2>/dev/null | tr '\n' ' ')"
 
+# (i) --admin-user follows the rule of create-admin before anything changes (exit 2)
+long64=$(printf 'a%.0s' $(seq 64))
+for name in abc 'a.b_c-1' "$long64"; do
+  new_inst inst8i; DLOG="$WORK/docker8i.log"; rm -f "$DLOG"; printf 'zz9pw-file8i\n' > "$INST/pw"
+  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-user "$name" \
+    --admin-password-file pw --yes 2>&1); rc=$?
+  { [ $rc -eq 0 ] && grep -q -- "--username $name " "$DLOG" 2>/dev/null; } \
+    && ok "--admin-user '${name:0:12}' (${#name} chars) reaches create-admin" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--admin-user '${name:0:12}': rc=$rc"; }
+  rm -rf "$INST"
+done
+for name in ab "${long64}a" 'a@b.example' 'ädmin' 'a b' 'adm/in' $'adm\nin'; do
+  new_inst inst8i; DLOG="$WORK/docker8i.log"; rm -f "$DLOG"; printf 'zz9pw-file8i\n' > "$INST/pw"
+  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" bash "$INSTALL" --domain new.example --admin-user "$name" \
+    --admin-password-file pw --yes 2>&1); rc=$?
+  shown=$(printf '%q' "${name:0:12}")
+  { [ $rc -eq 2 ] && grep -q -- "--admin-user must be 3 to 64" <<<"$out" && [ ! -s "$DLOG" ] \
+      && [ "$(cat "$INST/.env")" = DOMAIN=old.example ]; } \
+    && ok "--admin-user $shown (${#name} chars) refused with exit 2, nothing changed" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--admin-user $shown: rc=$rc, docker log: $(tr '\n' ' ' < "$DLOG" 2>/dev/null)"; }
+  rm -rf "$INST"
+done
+
 # ── 9. the install directory is at most 0750, and a host account with a container UID is named ─
 INST="$WORK/inst9"; mkdir -p "$INST/scripts"; chmod 0755 "$INST"
 cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
@@ -515,9 +538,15 @@ existing_install inst10e AH_TEST_CONFIG_FAIL=1
 { [ $rc -ne 0 ] && grep -q 'compose config failed' <<<"$out"; } && ok "compose config fails: abort with its error" \
   || { echo "$out" | sed 's/^/    │ /'; bad "compose config fails: rc=$rc"; }
 unchanged inst10e
+# compose's message reaches the terminal through cat -v: an escape sequence in it
+# (the stub sets the window title) shows as text instead of acting.
+{ grep -qF 'stub^[]0;title^G' <<<"$out" && ! grep -q $'\e' <<<"$out"; } \
+  && ok "compose config fails: its message without raw control characters" || bad "compose config fails: $(cat -v <<<"$out")"
 existing_install inst10e2 AH_TEST_PS_FAIL=1
 { [ $rc -ne 0 ] && grep -q "cannot list the containers of compose project 'ahtest'" <<<"$out"; } \
   && ok "compose ps fails: abort names the project" || { echo "$out" | sed 's/^/    │ /'; bad "compose ps fails: rc=$rc"; }
+{ grep -qF 'stub^[]0;title^G' <<<"$out" && ! grep -q $'\e' <<<"$out"; } \
+  && ok "compose ps fails: its message without raw control characters" || bad "compose ps fails: $(cat -v <<<"$out")"
 unchanged inst10e2
 
 # ── 11. --reset deletes only after the project name typed on a terminal (R-0665) ─

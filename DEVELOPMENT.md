@@ -891,7 +891,7 @@ Das startet:
 - **PostgreSQL 18** (`postgres:18-alpine`, Volume `postgres18-data`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB legt `db-init` an
 - **db-init** (Server-Image, Einmal-Dienst) — legt bei jedem Start die Postgres-Rollen je Dienst und die Monitoring-DB an und übergibt ihnen das Schema `public`; Server, Scheduler, Monitoring und ca-issuer starten erst nach seinem Ende
 - **scheduler** (Server-Image mit `RUN_MODE=scheduler`, nur intern, seit 0.38.0) — die **einzige** APScheduler-Instanz für periodische Jobs (u. a. FRP-Zertifikats-Renewals); bewusst **nicht** skalieren, sonst laufen die Jobs doppelt
-- **redis** (`redis:7-alpine`, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern
+- **redis** (`redis:8-alpine`, Redis 8 unter AGPLv3, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern
 
 **Erstanmeldung:** Es gibt keinen Default-Login. Entweder den
 Bootstrap-Token-Flow nutzen (`docker compose logs server | grep -A2
