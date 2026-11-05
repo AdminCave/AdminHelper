@@ -73,9 +73,10 @@ Doku: → T9
 Abhängt von: T1
 
 ### T3 — Standardwert der Konsole für SSH (R-1069)  [?] (Standardwert der Konsole für SSH: AdminHelper-Terminal oder OS-Terminal?)
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/lib/models/settings.test.ts, apps/desktop/src-tauri/src/storage.rs
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/lib/models/settings.test.ts, apps/desktop/src-tauri/src/storage.rs, apps/desktop/ui/src/components/settings/SettingsDialog.svelte
 Änderung: `#[default]` von `SshConsole` und `getSettingsDefaults().sshConsole` auf Kevins Wert; die Tests aus T2, die
-den Standard prüfen, auf den Wert ziehen. Bleibt es bei `external`, wird die Task `[~]` (nichts zu ändern).
+den Standard prüfen, auf den Wert ziehen. Bleibt es bei `external`, wird die Task `[~]` (nichts zu ändern). Mit
+`embedded` dazu in `SettingsDialog.svelte` das `stored.sshConsole ?? 'external'` auf den Standard ziehen (Nit des Prüfers zu T7).
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9
 Abhängt von: T2
