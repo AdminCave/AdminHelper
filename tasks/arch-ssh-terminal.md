@@ -161,8 +161,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
 Doku: → T9
 Abhängt von: T6, T7
 
-### T10 — Windows: eine Sitzung ohne Zuhörer beantwortet die Cursor-Abfrage der Pseudo-Konsole (R-1069)  [ ]
+### T10 — Windows: eine Sitzung ohne Zuhörer beantwortet die Cursor-Abfrage der Pseudo-Konsole (R-1069)  [x]
 Komponente: desktop · Dateien: apps/desktop/src-tauri/src/pty.rs
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @36f6d8c1 2026-11-05T10:09:48+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T10.verdict.json)
 Beweis: feature/arch-ssh-terminal@454a7b28, `gh workflow run ci.yml --ref feature/arch-ssh-terminal` (Lauf 41995544339), Job „Desktop-Backend (cargo test, Windows)“: `pty::tests::a_sink_nobody_listens_to_ends_the_program ... FAILED`, `src\pty.rs:327:13: the session stays in the registry` (erwartet: die Sitzung ist nach dem Kill binnen 20 s weg); die übrigen sieben PTY-Tests dort grün. Auf Linux nicht reproduzierbar: die Abfrage stellt nur ConPTY.
 HEAD: 454a7b28
 Änderung: portable-pty erzeugt die ConPTY mit `PSEUDOCONSOLE_INHERIT_CURSOR` (`portable-pty-0.9.0/src/win/psuedocon.rs:87`); laut Microsoft („Creating a Pseudoconsole session“, Abschnitt „Ending the Pseudoconsole Session“) kann das Schließen ohne Antwort auf die Cursor-Abfrage verklemmen. Hört niemand mehr zu, beantwortet der Lese-Thread unter Windows jede Cursor-Abfrage (`ESC[6n`) selbst mit `ESC[1;1R`; `CURSOR_QUERY`, `CURSOR_ANSWER` und `contains` ziehen aus dem Testmodul auf Modulebene (`cfg(any(windows, test))`). Der rote Test selbst bleibt unverändert und beweist den Fix auf `rust-windows` (`gh workflow run ci.yml --ref feature/arch-ssh-terminal` nach dem Commit, Ergebnis unter `## Entscheidungen`).

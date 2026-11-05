@@ -23,6 +23,19 @@ use crate::error::AppError;
 /// The most a session reads, and so sends, at once.
 const READ_BLOCK: usize = 64 * 1024;
 
+/// On Windows the pseudo console asks its terminal where the cursor is (portable-pty creates it
+/// with PSEUDOCONSOLE_INHERIT_CURSOR) and does not close before the answer: xterm.js answers in
+/// the app, the session itself once nobody listens.
+#[cfg(any(windows, test))]
+const CURSOR_QUERY: &[u8] = b"\x1b[6n";
+#[cfg(any(windows, test))]
+const CURSOR_ANSWER: &[u8] = b"\x1b[1;1R";
+
+#[cfg(any(windows, test))]
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
 /// What a session sends, in this order: output as it comes, then one `Exit`, then nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Output {
@@ -151,6 +164,13 @@ impl PtyRegistry {
                             listening = false;
                             session.kill();
                         }
+                        #[cfg(windows)]
+                        if !listening && contains(&block[..n], CURSOR_QUERY) {
+                            let mut writer = lock(&session.writer);
+                            let _ = writer
+                                .write_all(CURSOR_ANSWER)
+                                .and_then(|()| writer.flush());
+                        }
                     }
                     Err(e) if e.kind() == ErrorKind::Interrupted => {}
                     // Linux answers EIO, not 0, once the slave side is closed.
@@ -225,11 +245,6 @@ mod tests {
 
     const WAIT: Duration = Duration::from_secs(20);
 
-    /// ConPTY asks its terminal where the cursor is and may hold the program's output until the
-    /// answer comes; xterm.js answers it in the app, the tests answer it here.
-    const CURSOR_QUERY: &[u8] = b"\x1b[6n";
-    const CURSOR_ANSWER: &[u8] = b"\x1b[1;1R";
-
     #[cfg(unix)]
     fn shell(script: &str) -> Spawn {
         Spawn {
@@ -269,11 +284,8 @@ mod tests {
         (id, rx)
     }
 
-    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-        haystack.windows(needle.len()).any(|w| w == needle)
-    }
-
-    /// The next message, answering a cursor query in it; fails when none comes in time.
+    /// The next message, answering a cursor query in it as xterm.js would; fails when none
+    /// comes in time.
     fn next(registry: &PtyRegistry, id: u64, rx: &mpsc::Receiver<Output>) -> Output {
         let out = rx.recv_timeout(WAIT).expect("the session answers in time");
         if let Output::Data(bytes) = &out {
@@ -433,7 +445,8 @@ mod tests {
             })
             .expect("the session starts");
         rx.recv_timeout(WAIT).expect("the first output comes");
-        // Without the kill the program would run its 30 s and keep the session.
+        // Without the kill the program would run its 30 s and keep the session; on Windows,
+        // without the session's own answer to the cursor query, the pseudo console would.
         let started = Instant::now();
         until_gone(&registry);
         assert!(
