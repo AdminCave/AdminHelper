@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: wiederholter Skalar-Query-Parameter → 422 — Task-Ledger
-Status: bereit · Branch: feature/monitoring-repeated-query · Review: am Ende
+Status: erledigt · Branch: feature/monitoring-repeated-query · Review: am Ende
 Spec: Roadmap R-1131
 Heavy: linux-full — der Schritt schemathesis ist im Sammellauf 2026-11-04 rot; der Fix beweist sich auf einer Box (`bash scripts/tests/run.sh all --strict --step schemathesis`, 100 Beispiele)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
