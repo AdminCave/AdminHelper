@@ -82,12 +82,12 @@ function windowOf(label, session, key) {
 // rejection: webdriver takes a script result with an `error` key for a failed command
 // (logout.live.js).
 function call(w, cmd, args) {
-  return w.session.executeAsync(
-    (c, a, done) => {
-      window.__TAURI__.core
+  return w.session.execute(
+    async (c, a) => {
+      return window.__TAURI__.core
         .invoke(c, a)
-        .then((value) => done({ value }))
-        .catch((e) => done({ rejected: String((e && e.message) || e) }));
+        .then((value) => ({ value }))
+        .catch((e) => ({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,

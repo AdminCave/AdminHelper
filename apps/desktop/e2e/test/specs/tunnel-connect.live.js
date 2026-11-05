@@ -34,12 +34,12 @@ const FALLBACK_LAST = 23999;
 // back as { rejected }: webdriver takes a script result with an `error` key for a failed
 // command (logout.live.js).
 async function invoke(cmd, args = {}) {
-  const out = await browser.executeAsync(
-    (c, a, done) => {
-      window.__TAURI__.core
+  const out = await browser.execute(
+    async (c, a) => {
+      return window.__TAURI__.core
         .invoke(c, a)
-        .then((value) => done({ value }))
-        .catch((e) => done({ rejected: String((e && e.message) || e) }));
+        .then((value) => ({ value }))
+        .catch((e) => ({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,
@@ -118,12 +118,12 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
     await $('.login-card').waitForExist({ timeout: 20000 });
 
     // Device enrollment (setup) via the bridge with explicit self-signed trust.
-    const err = await browser.executeAsync(
-      (url, token, done) => {
-        window.__TAURI__.core
+    const err = await browser.execute(
+      async (url, token) => {
+        return window.__TAURI__.core
           .invoke('enroll_with_token', { serverUrl: url, token, allowSelfSigned: true })
-          .then(() => done(null))
-          .catch((e) => done(String((e && e.message) || e)));
+          .then(() => null)
+          .catch((e) => String((e && e.message) || e));
       },
       SERVER_URL,
       ENROLL_TOKEN,
