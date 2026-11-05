@@ -18,8 +18,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_healthchecks.py tests/test_rate_limit.py
 Doku: DEVELOPMENT.md · changelog.d/kern-laufzeit-2.md
 
-### T2 — Kommentar zur Image-Leg in test_release_images.py (R-1088)  [ ]
+### T2 — Kommentar zur Image-Leg in test_release_images.py (R-1088)  [x]
 Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3d3e086a 2026-11-05T06:52:10+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Kommentar an der Assertion zum Skip-Schritt nennt die 3.15-Leg statt der 3.12-Leg (Matrix 3.14/3.15, Pull nur auf 3.14).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: keine (Testkommentar)
