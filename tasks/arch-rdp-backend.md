@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Eingebettetes RDP Stufe 1: Backend — Task-Ledger
-Status: aktiv · Branch: feature/arch-rdp-backend · Review: pro Task
+Status: bereit · Branch: feature/arch-rdp-backend · Review: pro Task
 Spec: docs/features/arch-rdp-backend.md (Roadmap R-1097)
 Heavy: linux-full — neue Desktop-Suite `desktop_e2e_rdp_embedded` (xrdp-Container, GUI-Teil des E2E-Layers) im Sammellauf; vor dem Merge dieser Schritt einmal auf einer Pool-VM der eigenen Lane (`run.sh e2e --strict --part gui --step desktop_e2e_rdp_embedded`). Kein `windows`: Den Windows-Pfad (Media Foundation) bauen und testen `rust-windows` und `tauri-build-smoke`; Desktop-GUI unter Windows bleibt nicht verifiziert (R-1090).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -204,8 +204,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/arch-rdp-backend.md
 
-### T8 — Audit-Ausnahme RUSTSEC-2023-0071 (`rsa` über IronRDP)  [ ]
+### T8 — Audit-Ausnahme RUSTSEC-2023-0071 (`rsa` über IronRDP)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/.cargo/audit.toml (neu), apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs, docs/features/arch-rdp-backend.md, .gitignore
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @31c91fef 2026-11-05T19:34:32+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T8.verdict.json)
 Abhängt von: T1
 Änderung:
 - Befund aus dem Review von T1: `rsa 0.10.0-rc.18` kommt über `picky`, `sspi` und `winscard` (IronRDP) in den Build

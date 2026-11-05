@@ -89,6 +89,23 @@ fn license_gate_finds_a_package_that_is_built() {
     assert_eq!(presence("ring"), Ok(Presence::Present));
 }
 
+// RUSTSEC-2023-0071 (rsa through IronRDP, no fixed release) is accepted in .cargo/audit.toml,
+// which `cargo audit` reads in audit.yml. The whole file stays that one exception: a second
+// ignore or any other setting there would silence advisories nobody accepted.
+#[test]
+fn license_gate_audit_ignores_only_the_accepted_rsa_advisory() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".cargo/audit.toml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let config: toml::Table = toml::from_str(&text).expect("audit.toml is not valid TOML");
+    let expected: toml::Table =
+        toml::from_str("[advisories]\nignore = [\"RUSTSEC-2023-0071\"]\n").expect("expected table");
+    assert_eq!(
+        config, expected,
+        "audit.toml must ignore exactly RUSTSEC-2023-0071 and set nothing else"
+    );
+}
+
 #[test]
 fn license_gate_classify_rejects_unclear_answers() {
     assert_eq!(classify(true, "", ""), Ok(Presence::Absent));

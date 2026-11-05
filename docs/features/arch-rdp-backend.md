@@ -215,7 +215,8 @@ trägt dann keinen Fingerprint, eine Statuszeile dafür in Stufe 2 braucht einen
 
 ## Risiken & Rollback
 
-- **CA-gültige Zertifikate ohne Pin** (Trade-off oben, Offene Frage 1). Erreichbar erst mit Stufe 2.
+- **CA-gültige Zertifikate ohne Pin** (Trade-off oben, Offene Frage 1). Erreichbar erst mit Stufe 2. Kevin hat am
+  2026-11-05 Variante (a) hingenommen; R-1141 („Pin immer“) kommt vor Stufe 2.
 - **`SSLKEYLOGFILE`:**
   - `ironrdp-tls` setzt `KeyLogFile`. Ist die Variable gesetzt, schreibt rustls die TLS-Schlüssel der RDP-Sitzung in
     diese Datei.
@@ -233,6 +234,14 @@ trägt dann keinen Fingerprint, eine Statuszeile dafür in Stufe 2 braucht einen
     Gate prüft deshalb `cargo tree`, nicht das Lockfile.
   - `cargo audit` (`audit.yml`) liest das Lockfile und könnte ein Advisory dieser Pakete melden, obwohl sie nicht im
     Build sind. Bei einem Treffer ist das eine Ausnahme mit Begründung, keine Code-Änderung.
+- **RUSTSEC-2023-0071 (`rsa`, T8):**
+  - `rsa` kommt über `picky`, `sspi` und `winscard` (IronRDP) in den Build. Das Advisory (Marvin: Timing-Seitenkanal
+    bei Operationen mit dem privaten Schlüssel) hat keine gepatchte Version; `cargo audit` wäre damit rot.
+  - Die Sitzung meldet sich mit dem Passwort über CredSSP/NTLM an und lädt keinen privaten RSA-Schlüssel. IronRDP
+    braucht einen nur für Smartcard- und Entra-Anmeldung, die die Sitzung nicht anbietet.
+  - Kevin hat das Restrisiko am 2026-11-05 hingenommen. `apps/desktop/src-tauri/.cargo/audit.toml` nimmt genau dieses
+    Advisory aus, `audit.yml` bleibt unverändert; ein Test in `license_gate.rs` hält die Datei bei dieser einen
+    Ausnahme. Fällt `rsa` aus dem Graphen oder gibt es eine gepatchte Version, entfällt der Eintrag.
 - **Systembibliotheken in der CI:** Der `rust`-Job installiert GTK, WebKit und OpenSSL. Ob IronRDP ohne `sound`
   weitere `-dev`-Pakete braucht, zeigt der erste CI-Lauf von T1. Bräuchte es welche, ist das eine Workflow-Änderung:
   dann STOPP und Frage an Kevin.
@@ -260,6 +269,7 @@ trägt dann keinen Fingerprint, eine Statuszeile dafür in Stufe 2 braucht einen
 ## Offene Fragen
 
 1. **CA-gültige RDP-Zertifikate ohne Pin** (Kevins Bereich: hingenommenes Restrisiko, Abweichung von Bedingung 5).
+   Entschieden (Kevin 2026-11-05): (a), die Folgezeile (c) ist R-1141 und kommt vor Stufe 2.
    - Empfehlung (a): Stufe 1 pinnt jedes Zertifikat, das die Plattform-CA-Prüfung nicht besteht. CA-gültige nimmt sie
      wie `xfreerdp3` und `mstsc` an.
    - Dazu eine Folgezeile (c): Upstream-Option in IronRDP, damit der Callback immer gefragt wird, und danach
