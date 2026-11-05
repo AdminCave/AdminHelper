@@ -126,7 +126,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `tauri-plugin-notification`, `tauri-plugin-log`,
 `tauri-plugin-single-instance` (nur Desktop-Ziele), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
-`toml`, `zeroize` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
+`toml`, `zeroize`, `portable-pty` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
 > Paket ist seit Aug. 2025 archiviert, seine PEM-Parser wanderten in die
@@ -134,39 +134,39 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license` (625 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license` (580 Fremd-Crates, Stand 2026-11-05; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 381 |
-| MIT | 145 |
+| Apache-2.0 OR MIT | 362 |
+| MIT | 126 |
 | Apache-2.0 OR MIT OR Zlib | 21 |
 | Unicode-3.0 | 18 |
-| Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 15 |
-| MIT OR Unlicense | 7 |
-| MPL-2.0 | 7 |
-| Apache-2.0 | 2 |
+| MIT OR Unlicense | 12 |
+| MPL-2.0 | 5 |
+| Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 5 |
 | BSD-3-Clause | 3 |
+| Apache-2.0 OR ISC OR MIT | 3 |
 | ISC | 3 |
 | Zlib | 2 |
-| Apache-2.0 OR ISC OR MIT | 2 |
 | Apache-2.0 OR BSD-3-Clause | 2 |
 | Apache-2.0 OR BSD-3-Clause OR MIT | 2 |
 | Apache-2.0 OR LGPL-2.1-or-later OR MIT | 2 |
-| Apache-2.0 OR BSD-2-Clause OR MIT | 2 |
-| übrige (je 1) | 11 |
+| Apache-2.0 | 2 |
+| CDLA-Permissive-2.0 | 2 |
+| übrige (je 1) | 10 |
 
 Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MIT`,
 `BSD-3-Clause OR MIT`, `Apache-2.0 AND MIT`, `Apache-2.0 OR CC0-1.0 OR MIT-0`,
 `(Apache-2.0 OR MIT) AND BSD-3-Clause`, `Apache-2.0 AND ISC`,
-`Apache-2.0 OR BSL-1.0`, `Apache-2.0 WITH LLVM-exception`,
-`(Apache-2.0 OR MIT) AND Unicode-3.0`, `CDLA-Permissive-2.0`.
+`Apache-2.0 OR BSD-2-Clause`, `Apache-2.0 WITH LLVM-exception`,
+`(Apache-2.0 OR MIT) AND Unicode-3.0`.
 
 **Auflagen-relevant:**
 
 - **Apache-2.0 (NOTICE), unvermeidbar** (pur oder als `AND`-Anteil):
-  `borsh-derive`, `sync_wrapper`, `tao`, `dpi`, `encoding_rs`, `ring`,
+  `sync_wrapper`, `tao`, `dpi`, `encoding_rs`, `ring`, `target-lexicon`,
   `unicode-ident`.
 - **MPL-2.0:** `cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext`,
   `selectors`.
@@ -192,6 +192,9 @@ Erzeugt mit `license-checker --production` (nur ausgelieferte Laufzeit-Deps).
 | @tauri-apps/plugin-notification | 2.8.0 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-shell | 2.6.0 | MIT OR Apache-2.0 |
 | uplot | 1.6.32 | MIT |
+| @xterm/addon-fit | 0.11.0 | MIT |
+| @xterm/addon-search | 0.16.0 | MIT |
+| @xterm/xterm | 6.0.0 | MIT |
 
 Alle `@tauri-apps/*`-Pakete sind dual MIT/Apache → es wird der MIT-Zweig
 geführt (keine NOTICE-Pflicht).
@@ -224,8 +227,8 @@ Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 
 - **Python:** `bcrypt`, `python-multipart`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
-- **Rust:** `borsh-derive`, `sync_wrapper`, `tao`, `dpi`, `encoding_rs`,
-  `ring`, `unicode-ident`
+- **Rust:** `sync_wrapper`, `tao`, `dpi`, `encoding_rs`, `ring`,
+  `target-lexicon`, `unicode-ident`
 
 Sofern diese Projekte eine `NOTICE`-Datei mitliefern, gehört deren Inhalt
 unverändert in die Distribution. Bei allen **dual** MIT/Apache lizenzierten

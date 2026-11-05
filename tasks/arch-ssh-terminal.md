@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ssh-terminal — Task-Ledger
-Status: aktiv · Branch: feature/arch-ssh-terminal · Review: pro Task
+Status: bereit · Branch: feature/arch-ssh-terminal · Review: pro Task
 Spec: docs/features/arch-ssh-terminal.md (Roadmap R-1069)
 Heavy: linux-full — neue Desktop-Journey (`ssh-connect.live.js` über `scripts/tests/desktop_e2e_connect.sh`), Sammellauf. Weil die PR-CI keine GUI fährt und der Kanal-Weg (Raw/Json, CSP) erst in der echten Webview belegt ist, läuft vor dem Merge zusätzlich `desktop_e2e_connect` auf der Lane-VM (`/test`). Kein `scenario` (kein Tunnel-Datenpfad neu, `resolve_connection` unverändert), kein `windows` (Pool ohne Windows-Vorlage; ConPTY über `rust-windows`).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -185,8 +185,10 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: keine (internes Verhalten der PTY-Sitzung; Commands und ihre Tabelle bleiben)
 Abhängt von: T1
 
-### T9 — Doku DE+EN, Lizenzen, CHANGELOG (R-1069)  [ ]
+### T9 — Doku DE+EN, Lizenzen, CHANGELOG (R-1069)  [x]
 Komponente: desktop · Dateien: README.md, docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, THIRD_PARTY_LICENSES.md, changelog.d/arch-ssh-terminal.md
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @23c091fd 2026-11-05T20:02:52+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `README.md` „Platform behavior“ SSH (Zeile 26); Admin-Handbuch DE+EN (Verbindungen: Konsole, Split-Button,
 Tabs, Optionen, Tastatur, Status-Bedeutung); Entwickler-Doku DE+EN (Modulbaum `pty.rs`, Kanal-Protokoll, Lebenszyklus,
 neue Settings-Felder global, sechste Sektion im Einstellungsdialog, `terminal_open_ssh` in *Fremde Ports* und im
@@ -232,3 +234,5 @@ Abhängt von: T3, T8
 - 2026-11-05 T8: Das sshd-Log zählt Client-Enden: genau zwei mit `Accepted` (Start und Neu verbinden), drei insgesamt (das ssh im OS-Terminal meldet sich nicht an und hinterlässt seine `[preauth]`-Zeile, wenn der X-Server endet). Beleg auf der Box der Lane über `iter.sh --cmd 'bash scripts/tests/desktop_e2e_connect.sh'`: `desktop_e2e_connect: 12 passed, 0 failed`; `iter.sh --step desktop_e2e_connect` bricht ab, weil run.sh Schritte als Teilzeichenkette sucht und auch `desktop_e2e_connect_tunnel` findet (Harness-Fund, Roadmap-Zeile).
 - 2026-11-05 T3: Kevin 2026-11-05: Standard der Konsole für SSH ist das AdminHelper-Terminal (`embedded`: `#[default]` in `models.rs`, `SSH_CONSOLE_DEFAULT` in `settings.ts`). Wer keinen Wert gespeichert hat, öffnet nach dem Update per Doppelklick einen Tab; der CHANGELOG nennt das (T9), die Einstellung nimmt es zurück. Ohne geladene Einstellungen gilt derselbe Standard (ersetzt „ohne geladene Einstellungen gilt `external`“ aus T4).
 - 2026-11-05 T3: Die Round-Trip-Tests in `storage.rs` speichern `External`, den Wert, der vom Standard abweicht; der Tunnel-Test in `connectFlow.test.ts` setzt `sshConsole: 'external'`, weil er den Start im OS-Terminal prüft (den eingebetteten an einem aufgelösten Ziel prüft der Konsolen-Block). Beleg auf der Box der Lane mit dem neuen Standard: `desktop_e2e_connect_tunnel: 17 passed, 0 failed` (Doppelklick auf die SSH-Verbindung über den Tunnel), `desktop_e2e_workspaces: 29 passed, 0 failed`.
+- 2026-11-05 T9: Die Lizenztabelle der Crates ist aus dem Graphen des Branches neu erzeugt (`cargo metadata` über `apps/desktop/src-tauri`): `main` hat 571 Fremd-Crates, der Branch 580; die neun neuen kommen mit `portable-pty` (cfg_aliases, downcast-rs, filedescriptor, nix 0.28, portable-pty, serial2, shared_library, shell-words, winreg 0.10), keines fällt weg. Die alte Zahl 625 war Drift früherer Dependency-Updates; in den NOTICE-Listen fällt `borsh-derive` weg (auf `main` nicht mehr im Graphen) und `target-lexicon` kommt dazu (schon vor dem Branch im Graphen, bisher nicht genannt).
+- 2026-11-05 T9: `changelog.d/arch-ssh-terminal.md` trägt neben `### Added` ein `### Changed` für den neuen Standard der Konsole (T3), mit dem Weg zurück zum OS-Terminal.
