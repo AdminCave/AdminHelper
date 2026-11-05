@@ -139,8 +139,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T9
 Abhängt von: T5
 
-### T7 — Split-Button im Inspector und Sektion Terminal in den Einstellungen (R-1069)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/ConnectButton.svelte (neu, SPDX), apps/desktop/ui/src/components/terminal/ConnectButton.test.ts (neu, SPDX), apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/settings/TerminalSection.svelte (neu, SPDX), apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/components/SettingsModal.nav.test.ts, apps/desktop/ui/src/components/SettingsModal.save.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T7 — Split-Button im Inspector und Sektion Terminal in den Einstellungen (R-1069)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/ConnectButton.svelte (neu, SPDX), apps/desktop/ui/src/components/terminal/ConnectButton.test.ts (neu, SPDX), apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/settings/TerminalSection.svelte (neu, SPDX), apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/components/SettingsModal.nav.test.ts, apps/desktop/ui/src/components/SettingsModal.save.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @b9b5928c 2026-11-05T12:13:07+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T7.verdict.json)
 Änderung:
 - `ConnectButton.svelte` (auf `ui/Menu.svelte`): bei SSH Hauptknopf *Verbinden* (Einstellung) und Pfeil mit
   *Im AdminHelper-Terminal* / *Im OS-Terminal* (`initiateConnect(c, …, mode)`); sonst der einfache Knopf. Ersetzt
@@ -217,3 +219,6 @@ Abhängt von: T3, T8
 - 2026-11-05 T6: Jeder Wechsel der Route holt den Seiten-Tab nach vorn (Palette, Hinweise); der Klick in der Sidebar ruft `showTab` zusätzlich selbst, für die Seite, die schon offen ist.
 - 2026-11-05 T6: Seite und inaktive Panes bleiben gemountet und sind per `display:none` versteckt; der Header zeigt bei aktiver Sitzung den Namen und `SSH · <host>` mit dem Host, wie er gelistet ist (nicht der aufgelöste Besucher-Port).
 - 2026-11-05 T6: Die Fußzeile zählt die Sitzungen in jedem Modus, nach dem Tunnel; Singular und Plural als eigene Schlüssel (`footer.session`, `footer.sessions`), die i18n kennt keine Pluralformen.
+- 2026-11-05 T7: Der Hauptteil des Split-Buttons bleibt *Verbinden* und startet mit der Einstellung; der Pfeil heißt für Screenreader *Konsole wählen*, sein Menü gilt nur für diesen Start. Doppelklick, Enter und der Schnellzugriff starten weiter mit der Einstellung; `Connections.svelte` reicht die Wahl des Inspectors an `initiateConnect` durch (Datei nachgetragen, mit ihrem Test).
+- 2026-11-05 T7: Die Sektion *Terminal* steht zwischen RDP und Benachrichtigungen, ganz unter `data-scope="device"`: *Konsole für SSH* und die Terminal-Optionen liegen in `prefs.json` (`SettingsModal.workspace.test.ts` nachgetragen, damit die Geräte-Gruppe sie zählt). Der Dialog startet die Optionen mit `terminalPrefs`, nicht mit den gespeicherten Einstellungen: eine Änderung aus einem Terminal, deren Speichern noch läuft, überschreibt der Dialog so nicht.
+- 2026-11-05 T7: Elf Dateien statt etwa acht: der Split-Button und die Sektion teilen das Wörterbuch und den Weg über `initiateConnect`, die Hälfte der Dateien sind die Tests, die das neue Argument und die sechste Sektion zeigen.

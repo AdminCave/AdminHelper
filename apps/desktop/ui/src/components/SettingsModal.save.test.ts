@@ -8,9 +8,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { get } from 'svelte/store';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { language, setLanguage, tNow } from '$lib/i18n';
 import { settingsModalOpen } from '$lib/stores/settings';
+import { saveTerminalPrefs } from '$lib/stores/terminalPrefs';
 import type { Settings } from '$lib/bridge/types';
 
 // Values the dialog loads and writes back unchanged, so the saved object is the
@@ -192,6 +193,84 @@ describe('SettingsModal — no stored language shows the language the UI runs in
     await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
     expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({ ...h.stored, language: 'de' });
     expect(get(language)).toBe('de');
+  });
+});
+
+// The section Terminal (R-1069) saves the console for SSH and the options of the embedded terminal
+// with the rest of the dialog, each option under its own key and in its type: a scrollback taken
+// from its select as a string would not match the steps the terminal knows.
+describe('SettingsModal — the section Terminal (R-1069)', () => {
+  it('saves the console for SSH and every terminal option with its type', async () => {
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+    await fireEvent.click(container.querySelector('[role="tab"][data-section="terminal"]')!);
+    const pane = within(container.querySelector<HTMLElement>('[data-pane="terminal"]')!);
+
+    const sshConsole = container.querySelector<HTMLSelectElement>(
+      'select[data-field="ssh-console"]',
+    )!;
+    await fireEvent.change(sshConsole, { target: { value: 'embedded' } });
+    await fireEvent.input(pane.getByRole('slider', { name: tNow('terminal.options.fontSize') }), {
+      target: { value: '16' },
+    });
+    await fireEvent.click(pane.getByRole('radio', { name: tNow('terminal.options.theme.light') }));
+    await fireEvent.click(pane.getByRole('radio', { name: tNow('terminal.options.cursor.bar') }));
+    for (const key of [
+      'terminal.options.copyOnSelect',
+      'terminal.options.rightClickPaste',
+      'terminal.options.confirmClose',
+    ]) {
+      await fireEvent.click(pane.getByRole('switch', { name: tNow(key) }));
+    }
+    await fireEvent.change(
+      pane.getByRole('combobox', { name: tNow('terminal.options.scrollback') }),
+      {
+        target: { value: '100000' },
+      },
+    );
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({
+      ...h.stored,
+      sshConsole: 'embedded',
+      terminal: {
+        fontSize: 16,
+        theme: 'light',
+        cursor: 'bar',
+        scrollback: 100000,
+        copyOnSelect: false,
+        rightClickPaste: false,
+        confirmClose: false,
+      },
+    });
+  });
+
+  it('starts from the options a terminal is still saving, not from the stored ones', async () => {
+    let release!: () => void;
+    h.saveSettings.mockImplementationOnce(
+      () => new Promise<undefined>((resolve) => (release = () => resolve(undefined))),
+    );
+    const fromTerminal = saveTerminalPrefs({ ...h.stored.terminal, fontSize: 18 });
+    await waitFor(() => expect(h.saveSettings).toHaveBeenCalledTimes(1));
+
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+    await fireEvent.click(container.querySelector('[role="tab"][data-section="terminal"]')!);
+    const pane = within(container.querySelector<HTMLElement>('[data-pane="terminal"]')!);
+    expect(
+      pane.getByRole<HTMLInputElement>('slider', { name: tNow('terminal.options.fontSize') }).value,
+    ).toBe('18');
+
+    release();
+    await fromTerminal;
+    await fireEvent.click(saveButton(container));
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenLastCalledWith({
+      ...h.stored,
+      terminal: { ...h.stored.terminal, fontSize: 18 },
+    });
+    expect(h.saveSettings).toHaveBeenCalledTimes(2);
   });
 });
 

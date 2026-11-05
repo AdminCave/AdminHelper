@@ -7,8 +7,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import { setLanguage } from '$lib/i18n';
+import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { setLanguage, tNow } from '$lib/i18n';
 import { settingsModalOpen, stopSyncTimer } from '$lib/stores/settings';
 import type { Settings } from '$lib/bridge/types';
 
@@ -85,7 +85,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn(async () => null) }));
 
 import SettingsModal from './SettingsModal.svelte';
 
-const SECTIONS = ['general', 'workspace', 'rdp', 'notifications', 'device'];
+const SECTIONS = ['general', 'workspace', 'rdp', 'terminal', 'notifications', 'device'];
 
 beforeEach(() => {
   setLanguage('de');
@@ -126,7 +126,7 @@ function expectShown(container: HTMLElement, id: string): void {
 }
 
 describe('SettingsModal — sections (R-1063)', () => {
-  it('opens on General, with the five sections in the nav', () => {
+  it('opens on General, with the six sections in the nav', () => {
     const container = open();
 
     expect(
@@ -185,6 +185,18 @@ describe('SettingsModal — sections (R-1063)', () => {
     const size = pane(container, 'rdp').querySelector<HTMLInputElement>('input[type="text"]')!;
     await fireEvent.input(size, { target: { value: ' 1280x720 ' } });
 
+    await fireEvent.click(tab(container, 'terminal'));
+    const sshConsole = pane(container, 'terminal').querySelector<HTMLSelectElement>(
+      'select[data-field="ssh-console"]',
+    )!;
+    expect(sshConsole.value).toBe('external');
+    await fireEvent.change(sshConsole, { target: { value: 'embedded' } });
+    await fireEvent.click(
+      within(pane(container, 'terminal')).getByRole('switch', {
+        name: tNow('terminal.options.confirmClose'),
+      }),
+    );
+
     // Back on General, the change made there is still in its field.
     await fireEvent.click(tab(container, 'general'));
     expect(language.value).toBe('en');
@@ -198,6 +210,8 @@ describe('SettingsModal — sections (R-1063)', () => {
       intervalMinutes: 42,
       rdpWindowMode: 'custom',
       rdpCustomSize: '1280x720',
+      sshConsole: 'embedded',
+      terminal: { ...h.stored.terminal, confirmClose: false },
     });
   });
 });

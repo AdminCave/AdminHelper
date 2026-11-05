@@ -225,6 +225,8 @@ function expectDeviceGroup(container: HTMLElement): void {
     'settings.section.language',
     'settings.storePasswords',
     'settings.section.rdp',
+    'settings.terminal.sshConsole',
+    'terminal.options.scrollback',
     'settings.osNotifications',
     'settings.diagnostics.create',
   ]) {

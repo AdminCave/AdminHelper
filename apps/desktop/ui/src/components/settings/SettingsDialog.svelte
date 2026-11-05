@@ -8,6 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { get } from 'svelte/store';
   import { settings, session } from '$lib/stores/session';
   import { closeSettings, saveSettings } from '$lib/stores/settings';
+  import { terminalPrefs } from '$lib/stores/terminalPrefs';
   import { context } from '$lib/stores/workspace';
   import { t, resolveLanguage, type Language } from '$lib/i18n';
   import { confirmDialog } from '../ui/ConfirmDialog.svelte';
@@ -17,12 +18,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RdpWindowMode,
     RdpPerformanceProfile,
     RdpScalingMode,
+    SshConsole,
+    TerminalPrefs,
   } from '$lib/bridge/types';
   import NotificationPrefs from '../NotificationPrefs.svelte';
   import WorkspaceSection from './WorkspaceSection.svelte';
   import DeviceSection from './DeviceSection.svelte';
   import GeneralSection from './GeneralSection.svelte';
   import RdpSection from './RdpSection.svelte';
+  import TerminalSection from './TerminalSection.svelte';
   import NotificationsSection from './NotificationsSection.svelte';
   import DiagnosticsSection from './DiagnosticsSection.svelte';
   import CertificateSection from './CertificateSection.svelte';
@@ -50,6 +54,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpCustomSize = $state(stored.rdpCustomSize ?? '1920x1080');
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>(stored.rdpPerformanceProfile ?? 'auto');
   let osNotifications = $state(Boolean(stored.osNotifications));
+  let sshConsole = $state<SshConsole>(stored.sshConsole ?? 'external');
+  // What the terminals show, so a change made in one while its save runs is not undone here.
+  let terminal = $state<TerminalPrefs>(get(terminalPrefs));
 
   // A reset question sits in App's layer, outside this overlay, but the focus stays on the
   // reset button in here: its Escape reaches the overlay's handler before the dialog's own and
@@ -57,12 +64,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // the open question, and the first one's end must not lift the guard the second one holds.
   let asking = 0;
 
-  const SECTIONS = ['general', 'workspace', 'rdp', 'notifications', 'device'] as const;
+  const SECTIONS = ['general', 'workspace', 'rdp', 'terminal', 'notifications', 'device'] as const;
   type Section = (typeof SECTIONS)[number];
   const NAV_LABEL: Record<Section, string> = {
     general: 'settings.nav.general',
     workspace: 'settings.nav.workspace',
     rdp: 'settings.nav.rdp',
+    terminal: 'settings.nav.terminal',
     notifications: 'settings.nav.notifications',
     device: 'settings.nav.device',
   };
@@ -104,6 +112,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       rdpCustomSize: rdpCustomSize.trim(),
       rdpPerformanceProfile,
       osNotifications,
+      sshConsole,
+      terminal,
     };
     await saveSettings(next);
   }
@@ -188,6 +198,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
               bind:rdpPerformanceProfile
             />
           </div>
+        </div>
+        <div
+          class="sm-pane"
+          role="tabpanel"
+          id="sm-pane-terminal"
+          aria-labelledby="sm-tab-terminal"
+          data-pane="terminal"
+          hidden={active !== 'terminal'}
+        >
+          <div data-scope="device"><TerminalSection bind:sshConsole bind:terminal /></div>
         </div>
         <div
           class="sm-pane"
