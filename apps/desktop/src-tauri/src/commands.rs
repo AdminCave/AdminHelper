@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use tauri::State;
+use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::{Manager, State};
 
 use crate::ansible;
 use crate::auth;
@@ -16,18 +17,21 @@ use crate::error::AppError;
 use crate::frpc;
 use crate::launcher::{self, Spawner};
 use crate::models::{
-    AuthSession, ClientInfo, Connection, DeviceIdentity, PasswordState, RdpOptions, Settings,
-    TunnelRefresh, TunnelStatus, VisitorBinding, WorkspaceContext, WorkspaceDraft, WorkspaceList,
+    AuthSession, ClientInfo, Connection, ConnectionKind, DeviceIdentity, PasswordState, RdpOptions,
+    Settings, TerminalExit, TunnelRefresh, TunnelStatus, VisitorBinding, WorkspaceContext,
+    WorkspaceDraft, WorkspaceList,
 };
 use crate::password;
 use crate::port_registry::PortRegistry;
 use crate::probe::{self, ProbeTarget};
 use crate::proxy;
+use crate::pty::{self, PtyRegistry};
 use crate::session::SessionState;
 use crate::storage;
 use crate::sync;
 use crate::tofu;
 use crate::tunnel;
+use crate::validation::validate_connection_input;
 use crate::workspace::{self, Meta, Side, WorkspaceId};
 
 /// Resolve the "allow self-signed certs" flag: an explicit per-call override, else
@@ -599,6 +603,98 @@ pub async fn resolve_connection(
     Ok(resolved)
 }
 
+// ── Embedded terminal (R-1069): ssh in a pseudo console of this process ──
+
+/// What the embedded terminal starts for `connection`: the `ssh` found in `PATH`, taken only as
+/// an absolute path so no working directory decides which program runs, with the argv the OS
+/// terminal gets and no shell in between, in `home`.
+fn ssh_spawn(
+    connection: &Connection,
+    ssh: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Result<pty::Spawn, AppError> {
+    validate_connection_input(connection)?;
+    if connection.kind != ConnectionKind::Ssh {
+        return Err(AppError::Validation(
+            "the embedded terminal opens SSH connections only".to_string(),
+        ));
+    }
+    let program = ssh
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| AppError::Connection("ssh was not found in PATH".to_string()))?;
+    Ok(pty::Spawn {
+        program,
+        args: connection::ssh::build_ssh_args(connection)?,
+        env: vec![("TERM".to_string(), "xterm-256color".to_string())],
+        cwd: home,
+    })
+}
+
+/// Opens `connection`, resolved as for `open_connection`, in the embedded terminal: `ssh` in a
+/// pseudo console of `cols`×`rows`, whose session id it returns. `output` gets the output as
+/// `Raw` blocks, then one `TerminalExit` as `Json`. Like `open_connection` it opens nothing at
+/// a loopback port of another workspace's tunnel, and the launcher opens nothing.
+#[tauri::command]
+pub async fn terminal_open_ssh(
+    app: tauri::AppHandle,
+    state: State<'_, frpc::FrpcState>,
+    session: State<'_, SessionState>,
+    connection: Connection,
+    cols: u16,
+    rows: u16,
+    output: Channel<InvokeResponseBody>,
+) -> Result<u64, AppError> {
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
+        None => Vec::new(),
+    };
+    let spawn = ssh_spawn(
+        &connection,
+        crate::terminal::which("ssh"),
+        app.path().home_dir().ok(),
+    )?;
+    blocking(move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
+        app.state::<PtyRegistry>()
+            .open(spawn, cols, rows, move |out| match out {
+                pty::Output::Data(bytes) => output.send(InvokeResponseBody::Raw(bytes)).is_ok(),
+                pty::Output::Exit(exit_code) => serde_json::to_string(&TerminalExit { exit_code })
+                    .is_ok_and(|json| output.send(InvokeResponseBody::Json(json)).is_ok()),
+            })
+    })
+    .await
+}
+
+/// Typed input for session `id`, bytes as they are. On a blocking thread: the write waits
+/// while the program does not read.
+#[tauri::command]
+pub async fn terminal_write(app: tauri::AppHandle, id: u64, data: Vec<u8>) -> Result<(), AppError> {
+    blocking(move || app.state::<PtyRegistry>().write(id, &data)).await
+}
+
+#[tauri::command]
+pub fn terminal_resize(
+    registry: State<'_, PtyRegistry>,
+    id: u64,
+    cols: u16,
+    rows: u16,
+) -> Result<(), AppError> {
+    registry.resize(id, cols, rows)
+}
+
+/// Ends the program of session `id`; its `TerminalExit` follows on the session's channel.
+#[tauri::command]
+pub fn terminal_close(registry: State<'_, PtyRegistry>, id: u64) {
+    registry.close(id);
+}
+
+/// Ends every session: the UI calls it as it starts and before it reloads, since the channels
+/// of a webview that reloaded lead nowhere and their programs would wait for input forever.
+#[tauri::command]
+pub fn terminal_close_all(registry: State<'_, PtyRegistry>) {
+    registry.close_all();
+}
+
 // ── Workspaces (R-0431): the launcher manages them, a workspace brings the launcher up ──
 
 /// Fails unless this process is the one `side` names ([`workspace::check_side`]).
@@ -750,7 +846,7 @@ mod tests {
         ansible_run_with, check_server_cert_in, delete_workspace_in, enroll_with_token_in,
         list_workspaces_in, open_launcher_with, open_workspace_in, reject_foreign_port,
         reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
-        sign_in_target, sync_source,
+        sign_in_target, ssh_spawn, sync_source,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -1955,6 +2051,74 @@ mod tests {
         }
     }
 
+    /// The embedded terminal runs the `ssh` from `PATH` itself, with the argv the OS terminal
+    /// gets: no shell, so nothing in the connection is read as a command.
+    #[test]
+    fn the_embedded_terminal_runs_ssh_with_the_argv_of_the_os_terminal() {
+        let ssh = std::env::temp_dir().join("ssh");
+        let home = std::env::temp_dir().join("home");
+        let mut connection = loopback(2222);
+        connection.username = Some("admin".to_string());
+        let spawn = ssh_spawn(&connection, Some(ssh.clone()), Some(home.clone()))
+            .expect("an SSH connection opens");
+        assert_eq!(spawn.program, ssh);
+        assert_eq!(spawn.args, ["-p", "2222", "--", "admin@127.0.0.1"]);
+        assert_eq!(
+            spawn.args,
+            crate::connection::ssh::build_ssh_args(&connection).unwrap()
+        );
+        assert_eq!(
+            spawn.env,
+            [("TERM".to_string(), "xterm-256color".to_string())]
+        );
+        assert_eq!(spawn.cwd, Some(home));
+        let without_home = ssh_spawn(&connection, Some(ssh), None).expect("it opens");
+        assert_eq!(without_home.cwd, None);
+    }
+
+    #[test]
+    fn the_embedded_terminal_opens_ssh_connections_only() {
+        let ssh = Some(std::env::temp_dir().join("ssh"));
+        for kind in [ConnectionKind::Rdp, ConnectionKind::Web] {
+            let mut connection = loopback(3389);
+            connection.kind = kind;
+            assert_refused(
+                ssh_spawn(&connection, ssh.clone(), None).map(|_| ()),
+                "SSH connections only",
+                "not ssh",
+            );
+        }
+    }
+
+    /// A relative path would be looked up in the working directory of the app.
+    #[test]
+    fn the_embedded_terminal_needs_ssh_at_an_absolute_path() {
+        for ssh in [None, Some(PathBuf::from("ssh"))] {
+            let refused = ssh_spawn(&loopback(22), ssh.clone(), None).map(|_| ());
+            assert!(
+                matches!(&refused, Err(AppError::Connection(msg)) if msg == "ssh was not found in PATH"),
+                "{ssh:?}: {refused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_embedded_terminal_validates_the_connection_first() {
+        let ssh = Some(std::env::temp_dir().join("ssh"));
+        let mut connection = loopback(22);
+        connection.username = Some("admin\n-oProxyCommand=x".to_string());
+        assert!(matches!(
+            ssh_spawn(&connection, ssh.clone(), None),
+            Err(AppError::Validation(_))
+        ));
+        let mut connection = loopback(22);
+        connection.host = Some("-oProxyCommand=x".to_string());
+        assert!(matches!(
+            ssh_spawn(&connection, ssh, None),
+            Err(AppError::Validation(_))
+        ));
+    }
+
     /// A synchronous command runs on the main thread: the window stands still while the
     /// keyring or the settings lock keeps it waiting. These wait on either, so each is async
     /// and does its work through `blocking`.
@@ -1973,6 +2137,8 @@ mod tests {
             "password_state",
             "save_password",
             "delete_password",
+            "terminal_open_ssh",
+            "terminal_write",
         ] {
             let head = format!("#[tauri::command]\npub async fn {name}(");
             let start = source

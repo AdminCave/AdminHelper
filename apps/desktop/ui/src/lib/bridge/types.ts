@@ -197,3 +197,11 @@ export interface WorkspaceContext {
   launcher: boolean;
   workspace?: WorkspaceInfo | null;
 }
+
+// ─────────────────────────── Embedded terminal (R-1069) ───────────────────
+
+// The last message of a terminal session, after all of its output (models.rs TerminalExit):
+// the program ended, with its exit code when waiting for it worked.
+export interface TerminalExit {
+  exitCode: number | null;
+}

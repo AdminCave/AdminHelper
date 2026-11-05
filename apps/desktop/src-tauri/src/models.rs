@@ -228,6 +228,14 @@ pub struct DeviceIdentity {
     pub not_after: String,
 }
 
+/// The last message of an embedded terminal session (R-1069), after all of its output: the
+/// program ended, with its exit code when waiting for it worked.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalExit {
+    pub exit_code: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RdpErrorPayload {

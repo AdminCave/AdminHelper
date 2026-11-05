@@ -67,6 +67,9 @@ toml = "1"
 # Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
 # Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
 zeroize = "1.8.2"
+# The embedded SSH terminal (pty.rs): ssh runs in a pseudo console, ConPTY on Windows, without
+# unsafe code in this crate.
+portable-pty = "0.9"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }

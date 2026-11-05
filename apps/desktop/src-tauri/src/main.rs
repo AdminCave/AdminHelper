@@ -20,6 +20,7 @@ mod password;
 mod port_registry;
 mod probe;
 mod proxy;
+mod pty;
 mod session;
 mod storage;
 mod sync;
@@ -39,7 +40,8 @@ use commands::{
     password_state, pinned_ca_fingerprint, probe_targets, refresh_tunnel, reset_device_identity,
     reset_server_cert_pin, resolve_connection, save_connections, save_password, save_settings,
     save_workspace, start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
-    sync_connections, tunnel_status, workspace_context, write_export_csv,
+    sync_connections, terminal_close, terminal_close_all, terminal_open_ssh, terminal_resize,
+    terminal_write, tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -128,6 +130,7 @@ fn main() {
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
         .manage(session::SessionState::default())
+        .manage(pty::PtyRegistry::default())
         .setup(move |app| {
             let base = storage::app_data_dir(app.handle()).map_err(|e| e.to_string())?;
             // The migration, the workspace's lock, then the workspace: nothing before this
@@ -257,12 +260,19 @@ fn main() {
             save_workspace,
             delete_workspace,
             open_workspace,
-            open_launcher
+            open_launcher,
+            terminal_open_ssh,
+            terminal_write,
+            terminal_resize,
+            terminal_close,
+            terminal_close_all
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(move |_app, event| {
+        .run(move |app, event| {
             if let tauri::RunEvent::Exit = event {
+                // No ssh of the embedded terminal outlives the app.
+                app.state::<pty::PtyRegistry>().close_all();
                 let _ = frpc::stop_frpc(&frpc_state_exit);
                 notifications::stop(&stream_state_exit);
                 // A `TERMSRV/…` entry whose time has not come goes now, not with the logon

@@ -18,8 +18,10 @@ nach T2; T9 zuletzt (vorher `origin/main` hineinmergen: `feature/kern-laufzeit-2
 
 ## Tasks
 
-### T1 — PTY-Backend, Terminal-Commands und Bridge (R-1069)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/pty.rs (neu, SPDX), apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+### T1 — PTY-Backend, Terminal-Commands und Bridge (R-1069)  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/pty.rs (neu, SPDX), apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/ui/src/lib/bridge/invoke.test.ts
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @e78f3fa1 2026-11-05T09:34:18+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T1.verdict.json)
 Umfang: elf Dateien, weil der IPC-Vertrag (Command, Registrierung, Bridge, Typ, Command-Tabelle der Entwickler-Doku)
 nur zusammen grün wird (`types.parity.test.ts`, `ipc.inventory.test.ts`).
 Änderung:
@@ -170,3 +172,8 @@ Task-Review: am Ende
 Abhängt von: T3, T8
 
 ## Entscheidungen
+- 2026-11-05 T1: Der Warte-Thread wartet blockierend (`child.wait()`) und nimmt den `ChildKiller` gleich danach weg; `close` nach dem Ende signalisiert nichts mehr — so trifft ein Kill keine Prozess-Id, die das System schon weitergegeben hat (Restfenster zwischen Wait und Wegnahme: Mikrosekunden, Pids werden fortlaufend vergeben).
+- 2026-11-05 T1: Eine Senke, die `false` liefert (Kanal weg), beendet das Programm, der Leser liest aber bis EOF weiter — sonst hielte ein voller Pty-Puffer das Programm auf und der Warte-Thread käme nie zum Ende.
+- 2026-11-05 T1: `ssh` nur als absoluter Pfad aus `terminal::which`; ein relativer Treffer gilt als nicht gefunden — sonst entschiede das Arbeitsverzeichnis der App, welches Programm läuft (`terminal.rs` bleibt unverändert).
+- 2026-11-05 T1: `close_all` beim `RunEvent::Exit` in Rust und `terminalCloseAll` beim Start der UI (T4) — Tauri-`send` scheitert nach einem Webview-Reload nicht, die Programme hingen sonst ohne Leser an einem toten Kanal.
+- 2026-11-05 T1: `terminal_write` läuft über `blocking()`; zwei gleichzeitige Invokes könnten die Reihenfolge tauschen, darum serialisiert der Store (T4) die Eingabe je Session (nächster Write erst nach dem letzten).

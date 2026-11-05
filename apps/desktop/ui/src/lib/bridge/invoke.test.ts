@@ -12,9 +12,16 @@ const h = vi.hoisted(() => ({
   invoke: vi.fn(async (..._a: unknown[]): Promise<unknown> => undefined),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: h.invoke }));
+// Stands in for Tauri's Channel: what the backend sends on it reaches `onmessage`.
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: h.invoke,
+  Channel: class {
+    constructor(public onmessage: (message: unknown) => void = () => {}) {}
+  },
+}));
 
-import { apiProxy } from './index';
+import { apiProxy, terminalOpenSsh, terminalWrite } from './index';
+import type { Connection, TerminalExit } from './types';
 import { IpcError, errCode, errMsg, errStatus } from '$lib/utils/errors';
 
 async function refusalOf(raw: unknown): Promise<unknown> {
@@ -76,5 +83,38 @@ describe('bridge invoke refusals', () => {
       path: '/api/x',
       body: undefined,
     });
+  });
+});
+
+describe('bridge terminal', () => {
+  const connection: Connection = {
+    id: 'c1',
+    name: 'Box',
+    kind: 'ssh',
+    host: '192.0.2.10',
+    port: 22,
+    tags: [],
+    trustCert: false,
+  };
+
+  it('opens a session with a channel whose messages reach the caller', async () => {
+    h.invoke.mockResolvedValueOnce(7);
+    const seen: unknown[] = [];
+    await expect(terminalOpenSsh(connection, 120, 40, (m) => seen.push(m))).resolves.toBe(7);
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+    const [cmd, args] = h.invoke.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cmd).toBe('terminal_open_ssh');
+    expect(args).toMatchObject({ connection, cols: 120, rows: 40 });
+    const output = args.output as { onmessage: (message: unknown) => void };
+    const bytes = new Uint8Array([104, 105]).buffer;
+    const end: TerminalExit = { exitCode: 0 };
+    output.onmessage(bytes);
+    output.onmessage(end);
+    expect(seen).toEqual([bytes, end]);
+  });
+
+  it('sends typed bytes as the list of numbers a Vec<u8> takes', async () => {
+    await terminalWrite(7, new Uint8Array([3, 13, 255]));
+    expect(h.invoke).toHaveBeenCalledWith('terminal_write', { id: 7, data: [3, 13, 255] });
   });
 });
