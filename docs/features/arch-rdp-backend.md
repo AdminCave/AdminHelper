@@ -92,7 +92,7 @@ Webview ruft sie erst in Stufe 2 auf; bis dahin sind sie interner Vertrag zwisch
 - `rdp_session_stop(session_id)` beendet die Sitzung und den WebSocket; unbekannte IDs sind kein Fehler.
 - `rdp_trust_certificate(identity, fingerprint)` speichert genau den Fingerprint, den der Nutzer bestätigt hat (Dialog
   in Stufe 2), als Pin der Identität. Der Webview startet danach neu. Der Befehl prüft Form und Länge beider Werte
-  (64 Hex-Zeichen; Identität mit Präfix `rdp/`).
+  (64 Hex-Zeichen; Identität mit Präfix `rdp/<workspace>/` des eigenen Prozesses, im Launcher keine).
 
 **Event** `rdp-session`:
 
@@ -169,13 +169,19 @@ und lässt Pins unberührt, wie heute `/cert:ignore`. `CertificateValidation::Da
 nehmen wir dafür nicht: Dann fragt IronRDP keinen Callback mehr, und das Event bekäme keinen Fingerprint für die
 Statuszeile in Stufe 2.
 
-**Pin-Identität mit Tunnelname.**
-- Direkt: `rdp/<host>:<port>` der gespeicherten Verbindung.
-- Über einen Tunnel (`via_tunnel` aus `resolve_connection`): `rdp/<tunnel>/<host>:<port>`, mit Host und Port der
-  gespeicherten Verbindung, nicht des lokalen Visitor-Endpunkts.
-- Private Adressen wiederholen sich zwischen Standorten. `10.0.0.5:3389` an zwei Standorten sind zwei Server, und ein
+**Pin-Identität mit Workspace und Tunnelname.**
+- Direkt: `rdp/<workspace>/<host>:<port>` der gespeicherten Verbindung.
+- Über einen Tunnel (`via_tunnel` aus `resolve_connection`): `rdp/<workspace>/<tunnel>/<host>:<port>`, mit Host und
+  Port der gespeicherten Verbindung, nicht des lokalen Visitor-Endpunkts.
+- Private Adressen wiederholen sich zwischen Standorten: dieselbe Adresse an zwei Standorten sind zwei Server, und ein
   gemeinsamer Pin wiese den zweiten fälschlich als geändert ab.
+- Die Workspace-ID steht vorn, weil Tunnelnamen nur je Server eindeutig sind und die Server zweier Workspaces Tunnel
+  und Adressen gleich benennen können; ein Pin gilt nur im Workspace, der ihn gesetzt hat. `rdp_trust_certificate`
+  nimmt nur Identitäten des eigenen Workspaces an.
+- `%` und `/` in Tunnelname und Host werden als `%25` und `%2F` geschrieben, damit `/` nur die Teile trennt.
 - Der Präfix `rdp/` trennt die RDP-Pins von den Server-Pins (`host:port`) im selben Keyring-Namensraum.
+- Der Callback gilt nur für das Ziel, zu dem die Sitzung aufgebaut wird (Endpoint `host:port` der IronRDP-Destination).
+  Für jedes andere Ziel lehnt er ab, ohne einen Fingerprint zur Bestätigung zu melden.
 
 **Pin vorab lesen statt im Callback.**
 - Der Callback läuft im TLS-Handshake auf dem Sitzungs-Thread.
@@ -266,8 +272,8 @@ Statuszeile in Stufe 2.
 
 ## Entscheidungen (Session, im Rahmen von R-1097)
 
-- E1: TOFU über den IronRDP-Callback mit vorab gelesenem Pin; Identität `rdp/[<tunnel>/]<host>:<port>` der
-  gespeicherten Verbindung. Erster
+- E1: TOFU über den IronRDP-Callback mit vorab gelesenem Pin; Identität `rdp/<workspace>/[<tunnel>/]<host>:<port>`
+  der gespeicherten Verbindung, der Callback an den Endpoint der Sitzung gebunden. Erster
   Kontakt meldet `certificate` und pinnt erst über `rdp_trust_certificate`; `trust_cert` nimmt ohne Dialog an.
 - E2: Feature `sound` bleibt in Stufe 1 aus. Die Roadmap-Zeile nennt es, aber CPAL braucht unter Linux
   `libasound2-dev` in `ci.yml` und `release.yml`, eine Workflow-Änderung. Der Bauplan (R-1074) legt Audio ohnehin in

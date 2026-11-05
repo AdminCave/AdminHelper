@@ -42,8 +42,10 @@ Review: approve (.ah-out/review/arch-rdp-backend/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- license_gate
 Doku: THIRD_PARTY_LICENSES.md · Entwickler-Doku → T7
 
-### T2 — RDP-TOFU: Pin-Identität, Entscheidung, Prüf-Callback, Befehl `rdp_trust_certificate`  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tofu.rs, apps/desktop/src-tauri/src/rdp_embedded/tofu.rs (neu, SPDX), apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/main.rs
+### T2 — RDP-TOFU: Pin-Identität, Entscheidung, Prüf-Callback, Befehl `rdp_trust_certificate`  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tofu.rs, apps/desktop/src-tauri/src/rdp_embedded/tofu.rs (neu, SPDX), apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/test-fixtures/README.md, docs/features/arch-rdp-backend.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @59ea14b4 2026-11-05T10:01:03+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T2.verdict.json)
 Abhängt von: T1
 Änderung:
 - `tofu.rs` (Risikopfad), keine Verhaltensänderung:
@@ -51,20 +53,22 @@ Abhängt von: T1
     `PinDecision` (`tofu.rs:70`) werden `pub(crate)`.
   - Ein Speicher-Helfer schreibt einen bestätigten Pin unter der Sperre seiner Identität.
 - `rdp_embedded/tofu.rs`:
-  - `pin_identity(conn, resolved)`: `rdp/<host>:<port>` direkt, `rdp/<tunnel>/<host>:<port>` über einen Tunnel, mit
-    Host und Port der gespeicherten Verbindung; IPv6 in Klammern.
-  - `CertPolicy`: `TrustAll` aus `trust_cert`, sonst `Pinned(Option<fp>)`, vorab aus dem Keyring gelesen. Ein
-    Lesefehler startet nicht (fail closed).
+  - `pin_identity(workspace, conn, resolved)`: `rdp/<workspace>/<host>:<port>` direkt,
+    `rdp/<workspace>/<tunnel>/<host>:<port>` über einen Tunnel, mit Host und Port der gespeicherten Verbindung; IPv6 in
+    Klammern; `%` und `/` in Tunnelname und Host kodiert.
+  - `CertPolicy`: `TrustAll` aus `trust_cert`, sonst `Pinned(Option<fp>)` mit dem Endpoint der Sitzung (IronRDP-
+    `Destination`), vorab aus dem Keyring gelesen. Ein Lesefehler startet nicht (fail closed).
   - `validation_callback(policy, report)` für IronRDP, die Regeln:
     - `TrustAll` nimmt an.
     - Ein passender Pin nimmt an.
     - Ohne Pin lehnt der Callback ab und meldet „unknown“ mit dem Fingerprint (`tofu.rs:40`).
     - Ein abweichender Pin lehnt ab und meldet „changed“.
+    - Ein anderer Endpoint (Server-Umleitung) lehnt ab und meldet nichts zur Bestätigung.
     - Der Callback schreibt nie einen Pin.
-  - Befehl `rdp_trust_certificate(identity, fingerprint)`: prüft Präfix `rdp/` und 64 Hex-Zeichen und speichert
-    über `KeyringPinStore`. Er wird in `main.rs` registriert.
+  - Befehl `rdp_trust_certificate(identity, fingerprint)`: prüft Präfix `rdp/<workspace>/` des eigenen Prozesses (im
+    Launcher keiner) und 64 Hex-Zeichen und speichert über `KeyringPinStore`. Er wird in `main.rs` registriert.
 - Tests:
-  - Identitäten: direkt, Tunnel, IPv6.
+  - Identitäten: direkt, Tunnel, IPv6, je Workspace, Kodierung.
   - Entscheidungstabelle der vier Fälle; der Callback meldet Fingerprint und Grund.
   - Lesefehler heißt kein Start.
   - Trust-Befehl: Eingabeprüfung, dann Speichern und erneutes Lesen mit dem Speicher-Keyring.
@@ -181,7 +185,8 @@ Task-Review: am Ende
 - `desktop.html` DE und EN:
   - neuer Abschnitt „Eingebettetes RDP (Backend)“ mit Sitzung, Befehlen, Event `rdp-session`, WebSocket-Protokoll,
     Watchdog, xrdp-Suite und Binärgröße;
-  - „TLS-Zertifikat-Pinning (TOFU)“ um die RDP-Pins, die CA-Regel und `SSLKEYLOGFILE`;
+  - „TLS-Zertifikat-Pinning (TOFU)“ um die RDP-Pins (je Workspace), die CA-Regel, `SSLKEYLOGFILE` und das
+    Zielzertifikat, das ein umleitender Server meldet (IronRDP nimmt es ohne unseren Callback an);
   - die Befehlsliste um die drei Befehle.
 - Binärgröße: Release-Build (`cargo build --release --locked`) von `origin/main` und vom Branch, die Differenz in die
   Doku und in den PR.
@@ -212,3 +217,5 @@ Doku: docs/features/arch-rdp-backend.md · Entwickler-Doku → T7
 - 2026-11-05 T1: Die Lizenz-Gates fragen `cargo tree --locked --offline -e normal,build -i <crate>`, nicht `Cargo.lock` oder `cargo-license` — beide führen `aws-lc-rs`/`aws-lc-sys` über das Default-Feature `aws-lc-rs` von `sspi` (`rustls?/aws-lc-rs`), obwohl sie nicht gebaut werden; THIRD_PARTY_LICENSES nennt das ausdrücklich.
 - 2026-11-05 T1: Die Apache-Pflichtliste der Rust-Crates (Abschnitt 3 und „NOTICE") aus dem gebauten Graphen neu erhoben statt nur ergänzt — `borsh-derive`, `encoding_rs`, `unicode-ident` sind dort nicht mehr Apache-pflichtig, neu sind `cryptoki`, `cryptoki-sys`, `flagset`, `gethostname` (IronRDP/sspi) und `target-lexicon`; keines liefert eine NOTICE-Datei.
 - 2026-11-05 T1: Der Befund RUSTSEC-2023-0071 (`rsa` über IronRDP, ohne Fix) wird eine eigene Frage-Task (T8) statt T1 anzuhalten: die Abhängigkeit selbst deckt Kevins Entscheidung R-1074 (IronRDP nativ), die Ausnahme im Audit ist hingenommenes Restrisiko und seine Entscheidung; T8 offen hält den Abschluss (`review.sh final`) auf, die übrigen Tasks laufen weiter.
+- 2026-11-05 T2: `rdp_trust_certificate` schreibt über `KeyringPinStore::store` (Identitäts-Sperre, Cache) statt eines neuen Helfers; dafür sind `PinDecision`, `decide`, `PinStore`, `KeyringPinStore` und `production` in `tofu.rs` jetzt `pub(crate)`, ohne Verhaltensänderung. Die RDP-Pins teilen den Keyring-Namensraum `tofu|cert|…` mit den Server-Pins; das Präfix `rdp/` trennt sie, und der Befehl nimmt nur Identitäten mit diesem Präfix an.
+- 2026-11-05 T2 (security, Runde 1): Die Pin-Identität trägt die Workspace-ID (`rdp/<workspace>/…`) statt des Keyring-Präfixes `keyring_prefix()` — der ist für migrierte Workspaces leer (`legacy_keys`), die ID nie; `rdp_trust_certificate` nimmt nur Identitäten des Workspaces aus `workspace::current()` an. Der Callback ist an den Endpoint der Sitzung (`Destination::to_string()`, wie IronRDP ihn übergibt) gebunden und lehnt jedes andere Ziel ohne Meldung ab; `TrustAll` bleibt `/cert:ignore` und nimmt weiter alles an.

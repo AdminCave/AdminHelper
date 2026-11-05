@@ -258,7 +258,8 @@ fn main() {
             save_workspace,
             delete_workspace,
             open_workspace,
-            open_launcher
+            open_launcher,
+            rdp_embedded::tofu::rdp_trust_certificate
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
