@@ -187,7 +187,7 @@ Doku: → T7
 
 ### T7 — Doku DE+EN, CHANGELOG, Binärgröße  [ ]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/arch-rdp-backend.md
-Abhängt von: T6
+Abhängt von: T6, T9
 Task-Review: am Ende
 Änderung:
 - `desktop.html` DE und EN:
@@ -219,6 +219,20 @@ Abhängt von: T1
 - Spec-Abschnitt „Risiken“ um den Fall ergänzt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- license_gate
 Doku: docs/features/arch-rdp-backend.md · Entwickler-Doku → T7
+
+### T9 — xrdp-Suite aus der npm-Konvention der Desktop-Suiten  [x]
+Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @85dca4bd 2026-11-05T12:55:09+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T9.verdict.json)
+Abhängt von: T6
+Änderung:
+- Befund aus dem Verify von T7: `lib_e2e_stack_test` verlangt von jeder `desktop_e2e_*`-Suite `e2e_npm_ready` nach
+  der tauri-cli-Prüfung und zählt genau neun. `desktop_e2e_rdp_embedded.sh` (T6) ist die zehnte und fährt einen
+  Rust-Test gegen xrdp, ohne WebdriverIO und ohne npm; das Verify von T6 lief nur `desktop_e2e_skip_test`.
+- Die Prüfung nimmt die Suite ausdrücklich aus und bleibt bei neun; sie wird rot, sobald die Suite npm, `wdio` oder
+  `E2E_DIR` nennt.
+Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
+Doku: keine (Testkonvention, kein dokumentiertes Verhalten)
 
 ## Entscheidungen
 - 2026-11-05 T1: `tokio-tungstenite` 0.29 als direkte Abhängigkeit mit `default-features = false` und `rustls-tls-native-roots` — `ironrdp-client` ruft `client_async_tls` ohne Feature-Gate (RDCleanPath-Transport, `connect_rdcleanpath_transport`) und baut ohne TLS-Feature nicht; rustls ohne Default-Features hält den Provider bei ring, `aws-lc-rs` bleibt draußen (`cargo tree -i`).
