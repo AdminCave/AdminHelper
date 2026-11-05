@@ -22,10 +22,12 @@ Review: approve (.ah-out/review/arch-notify-incidents/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_category_migration.py tests/test_frp_supervisor_watch.py tests/test_notification_bridge.py tests/test_certificate_expiry_watch.py tests/test_migrations_smoke.py
 Doku: → T9
 
-### T2 — Server: Vorfall-Tabellen und Migration (R-1079)  [ ]
+### T2 — Server: Vorfall-Tabellen und Migration (R-1079)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/d3b5f7a9c1e4_notification_incidents.py, apps/server/tests/test_notification_incident_migration.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f5eea904 2026-11-05T09:14:48+01:00
+Review: approve (.ah-out/review/arch-notify-incidents/T2.verdict.json)
 Änderung: Modelle `NotificationIncident`, `NotificationIncidentMember`, `NotificationIncidentEvent`, `NotificationServerMute`; an `Notification` die Spalten `incident_id` (FK CASCADE), `notified_at`, `muted_until`, `hidden_at` und die Eindeutigkeit je (user, incident). Migration mit Backfill `notified_at = created_at`, danach NOT NULL; Downgrade entfernt alles. Migrationstest (SPDX): Altzeilen behalten Inhalt und bekommen `notified_at`, Downgrade/Upgrade wiederholbar.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_incident_migration.py tests/test_migrations_smoke.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_incident_migration.py tests/test_migrations_smoke.py tests/test_alembic_builtin.py
 Doku: → T9
 Abhängt von: T1
 
