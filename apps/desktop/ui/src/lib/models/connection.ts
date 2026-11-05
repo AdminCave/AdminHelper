@@ -4,9 +4,17 @@
 
 // Connection model: normalization, validation, presentation helpers.
 
-import type { Connection, ConnectionKind } from '$lib/bridge/types';
+import type {
+  Connection,
+  ConnectionKind,
+  ConnectionOptions,
+  RdpConnectionOptions,
+  SshForward,
+  SshOptions,
+} from '$lib/bridge/types';
 import { tNow } from '$lib/i18n';
 import { parseTags, type ValidationResult } from './shared';
+import { RDP_CUSTOM_SIZE_PATTERN } from './settings';
 export { parseTags };
 
 export const DEFAULT_PORTS: Record<Extract<ConnectionKind, 'ssh' | 'rdp'>, number> = {
@@ -59,7 +67,85 @@ export function normalizeConnection(
     tags,
     lastUsed: (raw.lastUsed as string | null | undefined) ?? null,
     serverId: (raw.serverId as string | null | undefined) ?? null,
+    options: normalizeOptions(kind, raw.options as ConnectionOptions | null | undefined),
   };
+}
+
+// Drops every unset or empty field, so a field left empty keeps meaning "the global default"
+// (R-1066); only the options of the connection's own kind are kept.
+export function normalizeOptions(
+  kind: ConnectionKind,
+  raw: ConnectionOptions | null | undefined,
+): ConnectionOptions | null {
+  if (kind === 'ssh' && raw?.ssh) {
+    const ssh = compactSsh(raw.ssh);
+    return ssh ? { ssh } : null;
+  }
+  if (kind === 'rdp' && raw?.rdp) {
+    const rdp = compactRdp(raw.rdp);
+    return rdp ? { rdp } : null;
+  }
+  return null;
+}
+
+function text(v: string | null | undefined): string | undefined {
+  const s = String(v ?? '').trim();
+  return s || undefined;
+}
+
+function compactSsh(o: SshOptions): SshOptions | null {
+  const forwards: SshForward[] = (o.forwards ?? [])
+    .map((f) => ({ type: f.type, listen: String(f.listen ?? '').trim(), target: text(f.target) }))
+    .filter((f) => f.listen !== '')
+    .map((f) => (f.type === 'D' || !f.target ? { type: f.type, listen: f.listen } : f));
+  const keepalive = o.keepalive === null || o.keepalive === undefined ? NaN : Number(o.keepalive);
+  return compact<SshOptions>({
+    jumpHost: text(o.jumpHost),
+    forwards: forwards.length > 0 ? forwards : undefined,
+    agentForwarding: o.agentForwarding ?? undefined,
+    compression: o.compression ?? undefined,
+    keepalive: Number.isFinite(keepalive) ? keepalive : undefined,
+    authMethod: o.authMethod ?? undefined,
+  });
+}
+
+function compactRdp(o: RdpConnectionOptions): RdpConnectionOptions | null {
+  return compact<RdpConnectionOptions>({
+    scalingMode: o.scalingMode ?? undefined,
+    windowMode: o.windowMode ?? undefined,
+    customSize: text(o.customSize),
+    performanceProfile: o.performanceProfile ?? undefined,
+    drives: o.drives ?? undefined,
+    audio: o.audio ?? undefined,
+    printers: o.printers ?? undefined,
+    gateway: text(o.gateway),
+    nla: o.nla ?? undefined,
+  });
+}
+
+function compact<T extends object>(o: T): T | null {
+  const entries = Object.entries(o).filter(([, v]) => v !== undefined);
+  return entries.length > 0 ? (Object.fromEntries(entries) as T) : null;
+}
+
+// What the form checks before Rust and the server do: the fields whose message would else be
+// a bare "invalid connection".
+function validateOptions(c: Connection): ValidationResult {
+  const ssh = c.options?.ssh;
+  if (ssh?.keepalive !== undefined && ssh.keepalive !== null) {
+    const k = ssh.keepalive;
+    if (!Number.isInteger(k) || k < 1 || k > 3600) {
+      return { ok: false, message: tNow('validation.keepalive') };
+    }
+  }
+  if (ssh?.forwards?.some((f) => f.type !== 'D' && !f.target)) {
+    return { ok: false, message: tNow('validation.forward.target') };
+  }
+  const size = c.options?.rdp?.customSize;
+  if (size && !RDP_CUSTOM_SIZE_PATTERN.test(size)) {
+    return { ok: false, message: tNow('validation.rdpSize.invalid') };
+  }
+  return { ok: true };
 }
 
 export function validateConnection(c: Connection): ValidationResult {
@@ -88,7 +174,7 @@ export function validateConnection(c: Connection): ValidationResult {
     return { ok: true };
   }
   if (!c.host) return { ok: false, message: tNow('validation.host.empty') };
-  return { ok: true };
+  return validateOptions(c);
 }
 
 export function toCardMeta(c: Connection): string {

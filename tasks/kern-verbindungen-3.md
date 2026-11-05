@@ -38,10 +38,12 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp
 Doku: → T8
 Abhängt von: T2
 
-### T4 — Editor v2: Optionen und Anzeige (R-1066)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.options.test.ts, apps/desktop/ui/src/lib/models/connection.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T4 — Editor v2: Optionen und Anzeige (R-1066)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/components/ConnectionEditor.options.test.ts, apps/desktop/ui/src/lib/models/connection.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.server.test.ts, apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f05c9049 2026-11-05T09:59:19+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T4.verdict.json)
 Änderung: Reiter Optionen (SSH: Jump-Host, Weiterleitungen hinzufügen/entfernen, Agent-Forwarding, Kompression, Keepalive; Auth-Art im Reiter Anmeldung) und Anzeige (RDP: Skalierung, Fenstermodus, Größe, Leistung mit „Global“ als Standard; Laufwerke, Audio, Drucker, Gateway, NLA). Leere Werte werden nicht gespeichert. Neue Testdatei mit SPDX.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.options.test.ts src/components/ConnectionEditor.tabs.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.options.test.ts src/components/ConnectionEditor.tabs.test.ts src/lib/stores/connections.server.test.ts
 Doku: → T8
 Abhängt von: T2
 
@@ -85,3 +87,6 @@ Doku: diese Task
 - T3: mstsc-Zeilen nach MS Learn `IRemoteDesktopClientSettings::SetRdpProperty`: `drivestoredirect`, `audiomode` 0/1/2, `redirectprinters`, `enablecredsspsupport`, `gatewayhostname` mit `gatewayusagemethod:i:1` und `gatewayprofileusagemethod:i:1`. Der Windows-Zweig (`write_rdp_file`) ist lokal nicht baubar (kein Windows-Target); `connection_rdp_lines` läuft im Unix-Test, den Rest prüft der CI-Job „Desktop-Backend (cargo test, Windows)“.
 - T3: Gateway-Format wie Jump-Host-Hop ohne Benutzer: `HOST(:PORT)?`, höchstens 300 Zeichen; `customSize` über `rdp_logic::parse_custom_size`, dieselbe Prüfung wie global.
 - T2 (Nachtrag aus dem security-Hinweis): OpenSSH V_10_2_P1 baut bei mehreren Hops den ProxyCommand mit `" -J ", options.jump_extra` ungequotet (ssh.c:1356–1367) und führt ihn per `shell -c` aus (sshconnect.c:233–235); `[`/`]` eines IPv6-Hops ab dem zweiten werden so Shell-Glob. Keine Injection (JUMP_RE schließt andere Shell-Zeichen aus); ob IPv6-Literale nur im ersten Hop erlaubt sein sollen, ist eine Frage an Kevin.
+- T4: `normalizeConnection` warf `options` bisher weg und `toServerPayload` schickte sie nicht; beide tragen sie jetzt. Der Store schickt `options` immer, als Ganzes oder `null`, weil `PUT` ersetzt und ein fehlendes Feld die alten Optionen behielte. `normalizeOptions` behält nur die Optionen der eigenen Art und streicht Leeres (getrimmte Strings, Weiterleitungen ohne `listen`, `D` ohne Ziel), damit „Global“ wirklich fehlt.
+- T4: Der Editor hält SSH- und RDP-Optionen getrennt, damit ein Typwechsel nichts verliert; erst `collect()` behält die der gespeicherten Art. Tri-State-Auswahl Global/An/Aus statt Checkbox, weil ein ausdrückliches Aus (`ForwardAgent=no`) etwas anderes ist als „nicht gesetzt“. Die Anzeige-Felder nutzen die Texte der globalen RDP-Einstellungen (`settings.rdp.*`).
+- T4: Die UI prüft Keepalive 1–3600, Ziel bei L/R und die Größe mit `RDP_CUSTOM_SIZE_PATTERN` wie die globale Einstellung; Jump-Host- und Gateway-Format prüfen Rust und Server (eine dritte Regex-Kopie im UI wäre nur Drift). Die Bereichsgrenze 640x480 der Größe prüft wie global erst Rust.

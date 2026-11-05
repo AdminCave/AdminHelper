@@ -6,7 +6,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { errMsg } from '$lib/utils/errors';
-  import type { Connection, ConnectionKind } from '$lib/bridge/types';
+  import type {
+    Connection,
+    ConnectionKind,
+    RdpConnectionOptions,
+    SshForward,
+    SshOptions,
+  } from '$lib/bridge/types';
   import {
     DEFAULT_PORTS,
     emptyConnection,
@@ -28,9 +34,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { settings, session } from '$lib/stores/session';
   import { infraServers, loadServers } from '$lib/stores/infra';
 
-  type EditorTab = 'general' | 'auth';
+  type EditorTab = 'general' | 'auth' | 'options' | 'display';
 
   let form = $state<Connection>(emptyConnection());
+  // The options of both kinds stay editable across a type switch; collect() keeps the ones of
+  // the saved kind and drops what is left empty (R-1066).
+  let ssh = $state<SshOptions & { forwards: SshForward[] }>({ forwards: [] });
+  let rdp = $state<RdpConnectionOptions>({});
   let tagsInput = $state('');
   let isNew = $state(true);
   let tab = $state<EditorTab>('general');
@@ -43,6 +53,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       : [
           { id: 'general', label: $t('editor.tab.general') },
           { id: 'auth', label: $t('editor.tab.auth') },
+          form.kind === 'ssh'
+            ? { id: 'options', label: $t('editor.tab.options') }
+            : { id: 'display', label: $t('editor.tab.display') },
         ],
   );
   // An id the list does not know (not loaded, failed, or stale) stays selectable, or saving would drop it.
@@ -61,6 +74,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const base = st.target ? { ...st.target } : emptyConnection();
     form = base;
     tagsInput = (base.tags ?? []).join(', ');
+    const own = base.options ?? {};
+    ssh = { ...own.ssh, forwards: (own.ssh?.forwards ?? []).map((f) => ({ ...f })) };
+    rdp = { ...own.rdp };
     isNew = st.target === null;
     tab = 'general';
   });
@@ -77,7 +93,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
       ...form,
       tags: parseTags(tagsInput),
       id: form.id,
+      options: { ssh, rdp },
     });
+  }
+
+  // A select's "Global" option is the empty value: the field is left out and the global
+  // setting holds.
+  const tri = (v: boolean | null | undefined): string =>
+    v === true ? 'on' : v === false ? 'off' : '';
+  const fromTri = (v: string): boolean | undefined =>
+    v === 'on' ? true : v === 'off' ? false : undefined;
+  const picked = (e: Event): string => (e.currentTarget as HTMLSelectElement).value;
+
+  function addForward(): void {
+    ssh.forwards = [...ssh.forwards, { type: 'L', listen: '', target: '' }];
+  }
+
+  function removeForward(i: number): void {
+    ssh.forwards = ssh.forwards.filter((_, j) => j !== i);
   }
 
   async function onSave(): Promise<void> {
@@ -302,7 +335,242 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </div>
       {:else}
         <div class="form-grid" role="tabpanel">
-          {#if form.kind === 'ssh'}
+          {#if tab === 'options'}
+            <label class="field" style="grid-column: span 2;">
+              <span class="field-label">{$t('editor.field.jumpHost')}</span>
+              <input
+                type="text"
+                name="jumpHost"
+                bind:value={ssh.jumpHost}
+                placeholder={$t('editor.field.jumpHost.placeholder')}
+              />
+              <span class="field-hint">{$t('editor.field.jumpHost.hint')}</span>
+            </label>
+
+            <div class="field" style="grid-column: span 2;">
+              <span class="field-label">{$t('editor.field.forwards')}</span>
+              {#each ssh.forwards as fwd, i (i)}
+                <div class="forward-row" data-testid="forward-row">
+                  <select
+                    name="forwardType"
+                    aria-label={$t('editor.forward.type')}
+                    bind:value={fwd.type}
+                  >
+                    <option value="L">{$t('editor.forward.L')}</option>
+                    <option value="R">{$t('editor.forward.R')}</option>
+                    <option value="D">{$t('editor.forward.D')}</option>
+                  </select>
+                  <input
+                    type="text"
+                    name="forwardListen"
+                    aria-label={$t('editor.forward.listen')}
+                    placeholder={$t('editor.forward.listen')}
+                    bind:value={fwd.listen}
+                  />
+                  {#if fwd.type !== 'D'}
+                    <input
+                      type="text"
+                      name="forwardTarget"
+                      aria-label={$t('editor.forward.target')}
+                      placeholder={$t('editor.forward.target')}
+                      bind:value={fwd.target}
+                    />
+                  {:else}
+                    <div></div>
+                  {/if}
+                  <button class="btn ghost small" onclick={() => removeForward(i)}>
+                    {$t('editor.forward.remove')}
+                  </button>
+                </div>
+              {/each}
+              <div>
+                <button class="btn small" data-testid="forward-add" onclick={addForward}>
+                  {$t('editor.forward.add')}
+                </button>
+              </div>
+            </div>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.agentForwarding')}</span>
+              <select
+                name="agentForwarding"
+                value={tri(ssh.agentForwarding)}
+                onchange={(e) => (ssh.agentForwarding = fromTri(picked(e)))}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="on">{$t('editor.option.on')}</option>
+                <option value="off">{$t('editor.option.off')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.compression')}</span>
+              <select
+                name="compression"
+                value={tri(ssh.compression)}
+                onchange={(e) => (ssh.compression = fromTri(picked(e)))}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="on">{$t('editor.option.on')}</option>
+                <option value="off">{$t('editor.option.off')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.keepalive')}</span>
+              <input
+                type="number"
+                name="keepalive"
+                min="1"
+                max="3600"
+                value={ssh.keepalive ?? ''}
+                placeholder={$t('editor.option.global')}
+                oninput={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  ssh.keepalive = v === '' ? undefined : Number(v);
+                }}
+              />
+            </label>
+          {:else if tab === 'display'}
+            <span class="field-hint" style="grid-column: span 2;">{$t('editor.display.hint')}</span>
+            <label class="field">
+              <span class="field-label">{$t('settings.rdp.scaling')}</span>
+              <select
+                name="scalingMode"
+                value={rdp.scalingMode ?? ''}
+                onchange={(e) =>
+                  (rdp.scalingMode = (picked(e) ||
+                    undefined) as RdpConnectionOptions['scalingMode'])}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="auto">{$t('settings.rdp.scaling.auto')}</option>
+                <option value="normal">{$t('settings.rdp.scaling.normal')}</option>
+                <option value="hdpi">{$t('settings.rdp.scaling.hdpi')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('settings.rdp.windowMode')}</span>
+              <select
+                name="windowMode"
+                value={rdp.windowMode ?? ''}
+                onchange={(e) =>
+                  (rdp.windowMode = (picked(e) || undefined) as RdpConnectionOptions['windowMode'])}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="fit">{$t('settings.rdp.window.fit')}</option>
+                <option value="fullscreen">{$t('settings.rdp.window.fullscreen')}</option>
+                <option value="multimon">{$t('settings.rdp.window.multimon')}</option>
+                <option value="custom">{$t('settings.rdp.window.custom')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('settings.rdp.customSize')}</span>
+              <input
+                type="text"
+                name="customSize"
+                bind:value={rdp.customSize}
+                placeholder={$t('settings.rdp.customSize.placeholder')}
+              />
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('settings.rdp.performance')}</span>
+              <select
+                name="performanceProfile"
+                value={rdp.performanceProfile ?? ''}
+                onchange={(e) =>
+                  (rdp.performanceProfile = (picked(e) ||
+                    undefined) as RdpConnectionOptions['performanceProfile'])}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="auto">{$t('settings.rdp.perf.auto')}</option>
+                <option value="lan">{$t('settings.rdp.perf.lan')}</option>
+                <option value="broadband">{$t('settings.rdp.perf.broadband')}</option>
+                <option value="low">{$t('settings.rdp.perf.low')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.drives')}</span>
+              <select
+                name="drives"
+                value={tri(rdp.drives)}
+                onchange={(e) => (rdp.drives = fromTri(picked(e)))}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="on">{$t('editor.option.on')}</option>
+                <option value="off">{$t('editor.option.off')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.audio')}</span>
+              <select
+                name="audio"
+                value={rdp.audio ?? ''}
+                onchange={(e) =>
+                  (rdp.audio = (picked(e) || undefined) as RdpConnectionOptions['audio'])}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="local">{$t('editor.audio.local')}</option>
+                <option value="remote">{$t('editor.audio.remote')}</option>
+                <option value="off">{$t('editor.audio.off')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.printers')}</span>
+              <select
+                name="printers"
+                value={tri(rdp.printers)}
+                onchange={(e) => (rdp.printers = fromTri(picked(e)))}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="on">{$t('editor.option.on')}</option>
+                <option value="off">{$t('editor.option.off')}</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.nla')}</span>
+              <select
+                name="nla"
+                value={tri(rdp.nla)}
+                onchange={(e) => (rdp.nla = fromTri(picked(e)))}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="on">{$t('editor.option.on')}</option>
+                <option value="off">{$t('editor.option.off')}</option>
+              </select>
+            </label>
+
+            <label class="field" style="grid-column: span 2;">
+              <span class="field-label">{$t('editor.field.gateway')}</span>
+              <input
+                type="text"
+                name="gateway"
+                bind:value={rdp.gateway}
+                placeholder={$t('editor.field.gateway.placeholder')}
+              />
+            </label>
+          {:else if form.kind === 'ssh'}
+            <label class="field">
+              <span class="field-label">{$t('editor.field.authMethod')}</span>
+              <select
+                name="authMethod"
+                value={ssh.authMethod ?? ''}
+                onchange={(e) =>
+                  (ssh.authMethod = (picked(e) || undefined) as SshOptions['authMethod'])}
+              >
+                <option value="">{$t('editor.option.global')}</option>
+                <option value="key">{$t('editor.authMethod.key')}</option>
+                <option value="agent">{$t('editor.authMethod.agent')}</option>
+                <option value="password">{$t('editor.authMethod.password')}</option>
+              </select>
+            </label>
+            <div></div>
             <label class="field" style="grid-column: span 2;">
               <span class="field-label">{$t('editor.field.keyPath')}</span>
               <input
@@ -412,6 +680,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .field select:focus,
   .field textarea:focus {
     outline: 1px solid var(--accent);
+  }
+  .forward-row {
+    display: grid;
+    grid-template-columns: 9rem 1fr 1fr auto;
+    gap: var(--sp-2);
+    align-items: center;
   }
   .panel-actions {
     display: flex;

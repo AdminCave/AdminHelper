@@ -56,7 +56,6 @@ export interface SshOptions {
   authMethod?: SshAuthMethod | null;
 }
 
-// Per-connection overrides (R-1066); a field left out means the global default.
 export type RdpAudio = 'local' | 'remote' | 'off';
 
 export interface RdpConnectionOptions {
@@ -71,6 +70,7 @@ export interface RdpConnectionOptions {
   nla?: boolean | null;
 }
 
+// Per-connection overrides (R-1066); a field left out means the global default.
 export interface ConnectionOptions {
   ssh?: SshOptions | null;
   rdp?: RdpConnectionOptions | null;

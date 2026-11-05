@@ -91,6 +91,18 @@ describe('connections store — server mode', () => {
     expect(h.create).not.toHaveBeenCalled();
   });
 
+  it('sends the options as a whole and null when there are none', async () => {
+    // PUT replaces the options; null clears them, a missing field would keep the old ones.
+    const options = { ssh: { jumpHost: 'bastion', compression: true } };
+    await saveAll([conn({ id: 'srv-1' })]);
+    await upsert(conn({ id: 'srv-1', options }));
+    // The upsert re-pulls the list from the server; seed it again for the second edit.
+    await saveAll([conn({ id: 'srv-1', options })]);
+    await upsert(conn({ id: 'srv-1' }));
+    expect((h.update.mock.calls[0][2] as Record<string, unknown>).options).toEqual(options);
+    expect((h.update.mock.calls[1][2] as Record<string, unknown>).options).toBeNull();
+  });
+
   it('removes a connection server-side', async () => {
     await saveAll([conn({ id: 'srv-1' })]);
     await remove('srv-1');

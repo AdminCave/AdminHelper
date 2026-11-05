@@ -144,6 +144,8 @@ function toServerPayload(conn: Connection): Partial<ServerConnection> {
     tags: conn.tags ?? [],
     trustCert: conn.trustCert,
     serverId: conn.serverId ?? null,
+    // The whole object: PUT replaces it, null clears it (R-1066).
+    options: conn.options ?? null,
   };
 }
 

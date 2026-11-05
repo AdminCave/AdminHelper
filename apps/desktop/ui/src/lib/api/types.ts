@@ -40,7 +40,6 @@ export interface SshOptions {
   authMethod?: SshAuthMethod | null;
 }
 
-// `options` of the server API (R-1066), the same shape as the desktop model.
 export type RdpAudio = 'local' | 'remote' | 'off';
 
 export interface RdpConnectionOptions {
@@ -55,6 +54,7 @@ export interface RdpConnectionOptions {
   nla?: boolean | null;
 }
 
+// `options` of the server API (R-1066), the same shape as the desktop model.
 export interface ConnectionOptions {
   ssh?: SshOptions | null;
   rdp?: RdpConnectionOptions | null;
