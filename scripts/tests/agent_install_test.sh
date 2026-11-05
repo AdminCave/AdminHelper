@@ -280,6 +280,31 @@ grep -q "mismatch" <<<"$out" && grep -q "$FP" <<<"$out" && grep -q "$OFP" <<<"$o
 [ ! -e "$AH_KEYRING_DIR/adminhelper-archive-keyring.gpg" ] && ok "no keyring installed" || bad "keyring installed despite mismatch"
 [ ! -e "$AH_APT_SOURCES_DIR/adminhelper.sources" ] && ok "no source file written" || bad "source written despite mismatch"
 
+echo "── apt, the pinned key names a designated revoker: accepted ──"
+# gpg lists the revoker (rvk, with the revoker's fingerprint) between pub and the
+# key's own fpr; the pin must still match the key's own fingerprint.
+RVK_HOME="$WORK/gnupg-rvk"
+install -d -m 700 "$RVK_HOME"
+RVKFP=""
+if GNUPGHOME="$RVK_HOME" gpg --batch --import "$KEYS/other.gpg" >/dev/null 2>&1 \
+    && GNUPGHOME="$RVK_HOME" gpg --batch --passphrase '' --quick-generate-key "AH Rvk <rvk@example.invalid>" ed25519 sign never >/dev/null 2>&1; then
+    RVKFP=$(GNUPGHOME="$RVK_HOME" gpg --list-keys --with-colons "rvk@example.invalid" 2>/dev/null | awk -F: '$1 == "fpr" {print $10; exit}')
+    printf '%s\ny\n' "$OFP" | GNUPGHOME="$RVK_HOME" gpg --batch --yes --pinentry-mode loopback --passphrase '' \
+        --command-fd 0 --edit-key "$RVKFP" addrevoker save >/dev/null 2>&1
+fi
+GNUPGHOME="$RVK_HOME" gpg --export "$RVKFP" > "$KEYS/rvk.gpg" 2>/dev/null
+if [ -z "$RVKFP" ] || ! gpg --show-keys --with-colons "$KEYS/rvk.gpg" 2>/dev/null | grep -q '^rvk:'; then
+    bad "gpg could not make a test key with a designated revoker"
+else
+    fresh_env; export AH_PKG_MGR=apt
+    case_keyring apt "$KEYS/rvk.gpg"
+    out=$(run_script --server https://srm.example.com --gpg-fp "$RVKFP"); rc=$?
+    [ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc: $(echo "$out" | tail -3)"
+    prim=$(gpg --show-keys --with-colons "$AH_KEYRING_DIR/adminhelper-archive-keyring.gpg" 2>/dev/null \
+        | awk -F: '$1 == "fpr" {print $10; exit}')
+    [ "$prim" = "$RVKFP" ] && ok "the key with the revoker is installed" || bad "installed key: ${prim:-none}"
+fi
+
 echo "── apt, --gpg-fp is the fingerprint of a subkey: refused ──"
 # Last on purpose: the subkey goes onto the pinned key in the shared GNUPGHOME.
 # gpg --export with a subkey fingerprint hands out the whole primary key, so
