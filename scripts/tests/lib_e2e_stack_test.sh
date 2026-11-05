@@ -390,10 +390,15 @@ npm_ready "$NPM/nowhere"; rc=$?
 
 # Every desktop suite keeps ui/ and e2e/ node_modules as the lockfile says — after
 # its tauri-cli check, so desktop_e2e_skip_test.sh (which ends there with 75) runs
-# without npm. The skip test itself is no suite.
+# without npm. The skip test itself is no suite, and desktop_e2e_rdp_embedded.sh
+# drives a Rust test against an xrdp container, without WebdriverIO and without npm.
 SUITES=0; WRONG=""
 for f in "$REPO_ROOT"/scripts/tests/desktop_e2e_*.sh; do
   [ "${f##*/}" = desktop_e2e_skip_test.sh ] && continue
+  if [ "${f##*/}" = desktop_e2e_rdp_embedded.sh ]; then
+    ! grep -Eq 'npm|wdio|E2E_DIR' "$f" || WRONG+=" ${f##*/}(uses npm or WebdriverIO, so not exempt)"
+    continue
+  fi
   SUITES=$((SUITES + 1))
   call="$(grep -n '^e2e_npm_ready "\$E2E_REPO_ROOT/apps/desktop/ui" "\$E2E_DIR" || exit 1$' "$f" | head -1 | cut -d: -f1)"
   tauri="$(grep -n 'SKIP: tauri-cli' "$f" | head -1 | cut -d: -f1)"

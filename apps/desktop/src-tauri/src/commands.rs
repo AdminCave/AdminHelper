@@ -343,14 +343,15 @@ pub fn save_connections(
 /// thread so the UI stays responsive, and the timeout turns an eternal freeze into an error
 /// the user can act on (4.3). tauri::async_runtime::spawn_blocking — the crate's tokio only
 /// enables the "time" feature, not "rt", so tokio::task::spawn_blocking isn't available.
-const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs `work` with a [`connection::Deadline`] of `timeout`. Past it, the command gives up
 /// only if the work has not started anything yet; a start that came first is waited for and
 /// its outcome returned, so no window opens after the timeout message.
-async fn run_with_deadline<F>(timeout: Duration, work: F) -> Result<(), AppError>
+pub(crate) async fn run_with_deadline<T, F>(timeout: Duration, work: F) -> Result<T, AppError>
 where
-    F: FnOnce(&connection::Deadline) -> Result<(), AppError> + Send + 'static,
+    T: Send + 'static,
+    F: FnOnce(&connection::Deadline) -> Result<T, AppError> + Send + 'static,
 {
     let deadline = std::sync::Arc::new(connection::Deadline::new(timeout));
     let theirs = std::sync::Arc::clone(&deadline);
@@ -371,7 +372,7 @@ where
 /// ([`tunnel::reject_foreign_port`]), by the port map in the app data dir `base` and the
 /// workspace of this process; the launcher has none and opens nothing. The map's file lock may
 /// wait: on a blocking thread only.
-fn reject_foreign_port(
+pub(crate) fn reject_foreign_port(
     base: &Path,
     connection: &Connection,
     bindings: &[VisitorBinding],
@@ -904,7 +905,7 @@ mod tests {
     async fn run_with_deadline_waits_for_work_that_started_in_time() {
         // Started before the deadline, finished after it: its outcome counts, not a timeout.
         // A second leaves a loaded runner time to start the blocking thread before it.
-        let r = run_with_deadline(Duration::from_secs(1), |deadline| {
+        let r: Result<(), AppError> = run_with_deadline(Duration::from_secs(1), |deadline| {
             deadline.start()?;
             std::thread::sleep(Duration::from_millis(1500));
             Err(AppError::Connection("the started work's own error".into()))
@@ -920,7 +921,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_with_deadline_passes_through_work_errors() {
-        let r = run_with_deadline(Duration::from_secs(5), |_| {
+        let r: Result<(), AppError> = run_with_deadline(Duration::from_secs(5), |_| {
             Err(AppError::Connection("boom".into()))
         })
         .await;

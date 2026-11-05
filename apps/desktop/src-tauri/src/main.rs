@@ -21,6 +21,7 @@ mod port_registry;
 mod probe;
 mod proxy;
 mod pty;
+mod rdp_embedded;
 mod session;
 mod storage;
 mod sync;
@@ -131,6 +132,7 @@ fn main() {
         .manage(stream_state)
         .manage(session::SessionState::default())
         .manage(pty::PtyRegistry::default())
+        .manage(rdp_embedded::RdpSessions::default())
         .setup(move |app| {
             let base = storage::app_data_dir(app.handle()).map_err(|e| e.to_string())?;
             // The migration, the workspace's lock, then the workspace: nothing before this
@@ -265,7 +267,10 @@ fn main() {
             terminal_write,
             terminal_resize,
             terminal_close,
-            terminal_close_all
+            terminal_close_all,
+            rdp_embedded::tofu::rdp_trust_certificate,
+            rdp_embedded::rdp_session_start,
+            rdp_embedded::rdp_session_stop
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
