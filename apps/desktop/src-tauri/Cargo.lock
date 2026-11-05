@@ -16,6 +16,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "ironrdp-client",
+ "ironrdp-pdu",
  "ironrdp-tls",
  "keyring-core",
  "log",

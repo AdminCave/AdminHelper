@@ -78,8 +78,10 @@ Abhängt von: T1
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- tofu
 Doku: → T7
 
-### T3 — Bildweg: lokaler WebSocket mit Token, Bildpuffer, Gegendruck, Eingabe; CSP  [ ]
+### T3 — Bildweg: lokaler WebSocket mit Token, Bildpuffer, Gegendruck, Eingabe; CSP  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs (neu, SPDX), apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/tauri.conf.json, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @46271f16 2026-11-05T10:15:21+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T3.verdict.json)
 Abhängt von: T1
 Änderung:
 - `frame_ws.rs`, Server und Anmeldung:
@@ -219,3 +221,5 @@ Doku: docs/features/arch-rdp-backend.md · Entwickler-Doku → T7
 - 2026-11-05 T1: Der Befund RUSTSEC-2023-0071 (`rsa` über IronRDP, ohne Fix) wird eine eigene Frage-Task (T8) statt T1 anzuhalten: die Abhängigkeit selbst deckt Kevins Entscheidung R-1074 (IronRDP nativ), die Ausnahme im Audit ist hingenommenes Restrisiko und seine Entscheidung; T8 offen hält den Abschluss (`review.sh final`) auf, die übrigen Tasks laufen weiter.
 - 2026-11-05 T2: `rdp_trust_certificate` schreibt über `KeyringPinStore::store` (Identitäts-Sperre, Cache) statt eines neuen Helfers; dafür sind `PinDecision`, `decide`, `PinStore`, `KeyringPinStore` und `production` in `tofu.rs` jetzt `pub(crate)`, ohne Verhaltensänderung. Die RDP-Pins teilen den Keyring-Namensraum `tofu|cert|…` mit den Server-Pins; das Präfix `rdp/` trennt sie, und der Befehl nimmt nur Identitäten mit diesem Präfix an.
 - 2026-11-05 T2 (security, Runde 1): Die Pin-Identität trägt die Workspace-ID (`rdp/<workspace>/…`) statt des Keyring-Präfixes `keyring_prefix()` — der ist für migrierte Workspaces leer (`legacy_keys`), die ID nie; `rdp_trust_certificate` nimmt nur Identitäten des Workspaces aus `workspace::current()` an. Der Callback ist an den Endpoint der Sitzung (`Destination::to_string()`, wie IronRDP ihn übergibt) gebunden und lehnt jedes andere Ziel ohne Meldung ab; `TrustAll` bleibt `/cert:ignore` und nimmt weiter alles an.
+- 2026-11-05 T2 (security, Runde 2, nits für T5): Der Endpoint-Vergleich sieht nur `name:port` — eine Umleitung mit gleichem Namen und anderer Adresse fällt nicht auf; T5 entscheidet, ob die Sitzung bei `RdpOutputEvent::ServerRedirected` endet oder es als Restrisiko in die Doku geht. Das `log::warn!` des Callbacks setzt den Endpoint mit `{endpoint:?}` ein (T5 nimmt `rdp_embedded/tofu.rs` dafür in seine Dateien).
+- 2026-11-05 T3: Ein falsches Token oder keines binnen Frist schließt nur diese Verbindung; der Server nimmt weiter an, bis eine Anmeldung gelingt (ein lokaler Prozess, der zuerst verbindet, sperrt die Webview nicht aus; 256 Bit Token machen Raten aussichtslos), danach schließt er den Port. Das Token kommt aus dem ring-RNG des rustls-Providers (`tofu::ring_provider().secure_random`) statt einer neuen direkten `ring`-Abhängigkeit. Zusätzlich zu `rt`: `tokio` `macros` (`select!` zwischen Bild und Eingabe), `futures-util` `sink` (`SinkExt::send`), `ironrdp-pdu` als Dev-Abhängigkeit (Regionstyp von `DesktopUpdate` für die Tests; T5 braucht es für die Eingabe-Events ohnehin). Der erste Bildpuffer und jeder Größenwechsel schicken das ganze Desktop-Bild, weil der Client sonst kein vollständiges hat.

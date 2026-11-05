@@ -19,12 +19,15 @@ tauri = { version = "2", features = ["image-png"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "stream"] }
 # The public-CA trust anchors: the Mozilla roots reqwest 0.12's `rustls-tls` shipped.
 webpki-roots = "1"
-# StreamExt::next() over the SSE byte stream.
-futures-util = { version = "0.3", default-features = false }
+# StreamExt::next() over the SSE byte stream; `sink`: SinkExt::send() on the frame WebSocket
+# (rdp_embedded/frame_ws.rs).
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 # Reconnect backoff (sleep) for the SSE client, the async session lock
 # (session.rs) and the wait for the admin port of a stopped frpc (frpc.rs);
 # tauri provides the runtime. `net` is in the build through reqwest already.
-tokio = { version = "1", default-features = false, features = ["sync", "time", "net"] }
+# `rt` and `macros`: embedded RDP runs its session on a runtime of its own and selects between
+# the picture and the input of its WebSocket (rdp_embedded/).
+tokio = { version = "1", default-features = false, features = ["sync", "time", "net", "rt", "macros"] }
 url = "2"
 open = "5"
 # The OS keyring through keyring-core and one store crate per platform (keyring_store.rs), not the
@@ -105,3 +108,5 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "net", "
 # default-features=false keeps aws-lc-rs (and its cmake/C build) out of the test
 # tree, so tests use the same ring provider as the shipped binary.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+# The region type of IronRDP's DesktopUpdate, to build updates in the frame_ws tests.
+ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
