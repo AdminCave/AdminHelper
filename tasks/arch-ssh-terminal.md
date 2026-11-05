@@ -122,8 +122,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T9
 Abhängt von: T4
 
-### T6 — Tab-Leiste, Sitzungs-Panes und Tastatur (R-1069)  [ ]
+### T6 — Tab-Leiste, Sitzungs-Panes und Tastatur (R-1069)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/SessionTabs.svelte (neu, SPDX), apps/desktop/ui/src/components/terminal/SessionTabs.test.ts (neu, SPDX), apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.sessions.test.ts (neu, SPDX), apps/desktop/ui/src/components/StatusFooter.svelte, apps/desktop/ui/src/components/StatusFooter.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7c939462 2026-11-05T11:43:39+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T6.verdict.json)
 Änderung:
 - `SessionTabs.svelte` nur bei ≥ 1 Sitzung: Seiten-Tab, je Sitzung Icon, Name, Status-Punkt, Schließen (ConfirmDialog,
   wenn `confirmClose` an und nicht getrennt); Tastatur wie die Tab-Leisten der App (Pfeiltasten).
@@ -210,3 +212,8 @@ Abhängt von: T3, T8
 - 2026-11-05 T5: Die Fußzeile zeigt bei „verbunden seit“ die Uhrzeit des Verbindens, keine laufende Dauer („seit“ nennt einen Zeitpunkt; keine Sekunden-Neuzeichnung je Tab).
 - 2026-11-05 T5: Strg+Umschalt+V gibt xterm nicht weiter und überlässt das Einfügen der Webview; deren `paste`-Ereignis nimmt `SshTerminal` in der Capture-Phase vor xterm ab und fügt es wie den Rechtsklick über `sanitizePaste` (`lib/terminal/paste.ts`: Text, Tab und Zeilenumbrüche, ohne die übrigen C0/C1-Steuerzeichen und DEL) mit `term.paste` ein (Bracketed Paste bleibt bei xterm); ob WebKitGTK und WebView2 dabei einfügen und ob `clipboard.readText` dort erlaubt ist: nicht verifiziert (kein Display auf der Dev-Box), der Hinweis in der Fußzeile fängt die Ablehnung ab; die Prüfung fährt `desktop_e2e_connect` vor dem Merge nicht mit.
 - 2026-11-05 T5 (Review): Den Test des Optionsformulars (`TerminalOptions`: Schlüssel und Typ je Bedienelement) bringt T7 mit, das das Formular in den Einstellungen wiederverwendet (Nit des Prüfers zu T5).
+- 2026-11-05 T6: Die Rückfrage vor dem Beenden sitzt in `AppShell` (`endSession`), das Kreuz im Tab und „Sitzung beenden“ im Kopf des Terminals gehen beide dort hindurch; `SessionTabs` meldet nur `onClose`.
+- 2026-11-05 T6: Die Kreuze der Tabs stehen nicht in der Tab-Reihenfolge (`tabindex=-1`), Entf auf einem Sitzungs-Tab schließt ihn (`aria-keyshortcuts`); Pfeile, Pos1 und Ende wie in den übrigen Tab-Leisten (`ui/roving`).
+- 2026-11-05 T6: Jeder Wechsel der Route holt den Seiten-Tab nach vorn (Palette, Hinweise); der Klick in der Sidebar ruft `showTab` zusätzlich selbst, für die Seite, die schon offen ist.
+- 2026-11-05 T6: Seite und inaktive Panes bleiben gemountet und sind per `display:none` versteckt; der Header zeigt bei aktiver Sitzung den Namen und `SSH · <host>` mit dem Host, wie er gelistet ist (nicht der aufgelöste Besucher-Port).
+- 2026-11-05 T6: Die Fußzeile zählt die Sitzungen in jedem Modus, nach dem Tunnel; Singular und Plural als eigene Schlüssel (`footer.session`, `footer.sessions`), die i18n kennt keine Pluralformen.

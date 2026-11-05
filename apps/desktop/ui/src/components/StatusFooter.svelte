@@ -14,6 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { lastSyncedAt } from '$lib/stores/connections';
   import { settingsModalOpen } from '$lib/stores/settings';
   import { dndUntil } from '$lib/stores/dnd';
+  import { terminals } from '$lib/stores/terminals';
   import { timeAgo } from '$lib/utils/timeAgo';
   import { t, currentLocale } from '$lib/i18n';
 
@@ -85,6 +86,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     );
   });
 
+  // The sessions of the embedded terminal open in this window (R-1069), in every mode.
+  let sessionCount = $derived($terminals.sessions.length);
+
   // The store ends the quiet by its own timer; the label only follows it.
   let dndLabel = $derived.by(() => {
     const until = $dndUntil;
@@ -119,6 +123,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="status-footer-item" data-field="tunnel" data-status={$tunnel.ui}>
       <span class="status-footer-dot" aria-hidden="true"></span>{tunnelLabel}
     </span>
+  {/if}
+  {#if sessionCount > 0}
+    <span class="status-footer-item" data-field="sessions">
+      {sessionCount === 1 ? $t('footer.session') : $t('footer.sessions', { count: sessionCount })}
+    </span>
+  {/if}
+  {#if serverMode}
     {#if $monitoringHasLoaded && !$monitoringError}
       <span class="status-footer-item" data-field="problems" class:has-problems={problems > 0}>
         {problems > 0 ? $t('footer.problems', { count: problems }) : $t('footer.problemsNone')}
