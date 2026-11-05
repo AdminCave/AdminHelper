@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-3 · Review: pro Task
 Spec: docs/features/kern-verbindungen-3.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (zwei Alembic-Revisionen, neue Endpunkte) und die Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -73,8 +73,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/connect
 Doku: → T8
 Abhängt von: T6
 
-### T8 — Doku DE+EN und Changelog (R-1066, R-1068)  [ ]
+### T8 — Doku DE+EN und Changelog (R-1066, R-1068)  [x]
 Komponente: desktop-ui · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-verbindungen-3.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5ebef869 2026-11-05T10:48:22+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku: Optionen je Verbindung, Verlauf; Hinweis, dass ein alter Client beim Bearbeiten die Optionen verwirft. API-Referenz: `options`, Sitzungs-Endpunkte, Speicherdauer 90 Tage. Entwickler-Doku: Überschreibung der globalen RDP-Werte, lokaler Verlauf (50 je Verbindung). Changelog-Fragment (umlautfrei). `docs/admin/index.html` ändert auch feature/kern-pg-1 (eine Zeile, andere Stelle): vor dieser Task origin/main hineinmergen, falls pg-1 gemergt ist.
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
