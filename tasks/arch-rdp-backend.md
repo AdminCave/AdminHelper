@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Eingebettetes RDP Stufe 1: Backend — Task-Ledger
-Status: aktiv · Branch: feature/arch-rdp-backend · Review: pro Task
+Status: bereit · Branch: feature/arch-rdp-backend · Review: pro Task
 Spec: docs/features/arch-rdp-backend.md (Roadmap R-1097)
 Heavy: linux-full — neue Desktop-Suite `desktop_e2e_rdp_embedded` (xrdp-Container, GUI-Teil des E2E-Layers) im Sammellauf; vor dem Merge dieser Schritt einmal auf einer Pool-VM der eigenen Lane (`run.sh e2e --strict --part gui --step desktop_e2e_rdp_embedded`). Kein `windows`: Den Windows-Pfad (Media Foundation) bauen und testen `rust-windows` und `tauri-build-smoke`; Desktop-GUI unter Windows bleibt nicht verifiziert (R-1090).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -185,8 +185,10 @@ Abhängt von: T5
 Verify: bash scripts/dev/verify.sh scripts --strict -- desktop_e2e_skip_test
 Doku: → T7
 
-### T7 — Doku DE+EN, CHANGELOG, Binärgröße  [ ]
+### T7 — Doku DE+EN, CHANGELOG, Binärgröße  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/arch-rdp-backend.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c13cee7c 2026-11-05T13:04:32+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Abhängt von: T6, T9
 Task-Review: am Ende
 Änderung:
