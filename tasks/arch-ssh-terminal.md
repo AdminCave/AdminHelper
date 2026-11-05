@@ -22,7 +22,7 @@ nach T2; T9 zuletzt (vorher `origin/main` hineinmergen: `feature/kern-laufzeit-2
 Komponente: desktop · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/pty.rs (neu, SPDX), apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/ui/src/lib/bridge/invoke.test.ts
 Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @e78f3fa1 2026-11-05T09:34:18+01:00
 Review: approve (.ah-out/review/arch-ssh-terminal/T1.verdict.json)
-Umfang: elf Dateien, weil der IPC-Vertrag (Command, Registrierung, Bridge, Typ, Command-Tabelle der Entwickler-Doku)
+Umfang: zwölf Dateien, weil der IPC-Vertrag (Command, Registrierung, Bridge, Typ, Command-Tabelle der Entwickler-Doku)
 nur zusammen grün wird (`types.parity.test.ts`, `ipc.inventory.test.ts`).
 Änderung:
 - `Cargo.toml`: `portable-pty = "0.9"`; neuen Crate-Graphen auf Advisories prüfen (`cargo audit`, falls lokal da,
