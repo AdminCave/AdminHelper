@@ -273,7 +273,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       observer?.observe(host);
       refit();
       apply($terminalPrefs);
-      terminal.focus();
+      // A start from a dialog (Connect in the connection editor) leaves the dialog open: the
+      // keys stay with it, not with the terminal behind it.
+      if (!document.querySelector('[aria-modal="true"]')) terminal.focus();
 
       teardown = () => {
         observer?.disconnect();

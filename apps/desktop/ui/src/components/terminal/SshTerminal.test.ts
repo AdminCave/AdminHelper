@@ -247,6 +247,25 @@ describe('SshTerminal', () => {
     );
   });
 
+  it('leaves the keys with a dialog that is still open when it starts', async () => {
+    // Connect in the connection editor keeps the editor open over the new tab.
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const button = document.createElement('button');
+    dialog.append(button);
+    document.body.append(dialog);
+    button.focus();
+    try {
+      const { term } = await mount();
+
+      expect(term.focus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(button);
+    } finally {
+      dialog.remove();
+    }
+  });
+
   it('writes the output of the program and lets go of it when it unmounts', async () => {
     const { term, unmount } = await mount();
     expect(h.attachTerminal).toHaveBeenCalledWith(KEY, expect.any(Function));

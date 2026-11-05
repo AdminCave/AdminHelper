@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ssh-terminal — Task-Ledger
-Status: aktiv · Branch: feature/arch-ssh-terminal · Review: pro Task
+Status: bereit · Branch: feature/arch-ssh-terminal · Review: pro Task
 Spec: docs/features/arch-ssh-terminal.md (Roadmap R-1069)
 Heavy: linux-full — neue Desktop-Journey (`ssh-connect.live.js` über `scripts/tests/desktop_e2e_connect.sh`), Sammellauf. Weil die PR-CI keine GUI fährt und der Kanal-Weg (Raw/Json, CSP) erst in der echten Webview belegt ist, läuft vor dem Merge zusätzlich `desktop_e2e_connect` auf der Lane-VM (`/test`). Kein `scenario` (kein Tunnel-Datenpfad neu, `resolve_connection` unverändert), kein `windows` (Pool ohne Windows-Vorlage; ConPTY über `rust-windows`).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -223,8 +223,10 @@ Doku: README
 Task-Review: am Ende
 Abhängt von: T9
 
-### T13 — Terminal: kein Fokus beim Start aus einem offenen Dialog (R-1069)  [ ]
+### T13 — Terminal: kein Fokus beim Start aus einem offenen Dialog (R-1069)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e1be17ec 2026-11-05T21:15:47+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T13.verdict.json)
 Änderung: `SshTerminal.svelte` holt sich beim Mount den Tastaturfokus nicht, solange ein modaler Dialog
 (`aria-modal="true"`) offen ist; *Verbinden* im Verbindungseditor lässt den Editor offen, Tasten und Escape bleiben
 bei ihm. Test: offener Dialog mit fokussiertem Knopf, Mount ruft `focus` nicht, der Fokus bleibt im Dialog. Fund der
