@@ -1,6 +1,27 @@
 {
   "components": {
     "schemas": {
+      "AckOut": {
+        "properties": {
+          "skipped": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated",
+          "skipped"
+        ],
+        "title": "AckOut",
+        "type": "object"
+      },
       "ActivateEnrollmentOut": {
         "properties": {
           "enrollPort": {
@@ -2726,6 +2747,27 @@
         "title": "HookUpdate",
         "type": "object"
       },
+      "IdsRequest": {
+        "description": "Feed rows (hide, unread) or incidents (ack) of the caller, at most 500 at once.",
+        "properties": {
+          "ids": {
+            "items": {
+              "maximum": 9223372036854775807,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "IdsRequest",
+        "type": "object"
+      },
       "ImportRequest": {
         "properties": {
           "connections": {
@@ -2750,6 +2792,368 @@
           "mode"
         ],
         "title": "ImportRequest",
+        "type": "object"
+      },
+      "IncidentDetailOut": {
+        "description": "An incident as its reader may see it (incidents.detail).",
+        "properties": {
+          "ackedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ackedat"
+          },
+          "ackedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ackedby"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "bundle": {
+            "title": "Bundle",
+            "type": "boolean"
+          },
+          "canAct": {
+            "title": "Canact",
+            "type": "boolean"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "channels": {
+            "items": {
+              "enum": [
+                "bell",
+                "email",
+                "telegram"
+              ],
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "eventType": {
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "firstAt": {
+            "title": "Firstat",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentEntryOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lastAt": {
+            "title": "Lastat",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedby"
+          },
+          "row": {
+            "$ref": "#/components/schemas/NotificationOut"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IncidentRuleOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentServerOut"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceid"
+          },
+          "sourceType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetype"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "acked",
+              "resolved"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "severity",
+          "category",
+          "eventType",
+          "title",
+          "body",
+          "sourceType",
+          "sourceId",
+          "count",
+          "firstAt",
+          "lastAt",
+          "ackedBy",
+          "ackedAt",
+          "resolvedBy",
+          "resolvedAt",
+          "bundle",
+          "servers",
+          "rules",
+          "channels",
+          "history",
+          "canAct",
+          "row"
+        ],
+        "title": "IncidentDetailOut",
+        "type": "object"
+      },
+      "IncidentEntryOut": {
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "triggered",
+              "notified",
+              "escalated",
+              "acked",
+              "resolved",
+              "reopened",
+              "note"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "kind",
+          "actor",
+          "text",
+          "severity",
+          "serverId"
+        ],
+        "title": "IncidentEntryOut",
+        "type": "object"
+      },
+      "IncidentRule": {
+        "description": "What one alert rule of the monitoring service did with the event.",
+        "properties": {
+          "channel": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Channel",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "channel",
+          "ok"
+        ],
+        "title": "IncidentRule",
+        "type": "object"
+      },
+      "IncidentRuleOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "channel",
+          "ok"
+        ],
+        "title": "IncidentRuleOut",
+        "type": "object"
+      },
+      "IncidentServerOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recoveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recoveredat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "recoveredAt"
+        ],
+        "title": "IncidentServerOut",
         "type": "object"
       },
       "IncomingEvent": {
@@ -2778,6 +3182,37 @@
             "title": "Event Type",
             "type": "string"
           },
+          "incident_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Key"
+          },
+          "incident_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Keys"
+          },
           "new_status": {
             "anyOf": [
               {
@@ -2789,6 +3224,21 @@
               }
             ],
             "title": "New Status"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IncidentRule"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
           },
           "severity": {
             "enum": [
@@ -3022,6 +3472,21 @@
         "title": "MarkReadRequest",
         "type": "object"
       },
+      "MuteRequest": {
+        "description": "Mute until a time: later than now, at most MUTE_MAX ahead. The client works out\ntimes like \"tomorrow 07:00\" in its own zone; the server checks only the bounds.",
+        "properties": {
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "until"
+        ],
+        "title": "MuteRequest",
+        "type": "object"
+      },
       "MyServerOut": {
         "description": "A server assigned to the caller.",
         "properties": {
@@ -3046,9 +3511,35 @@
         "title": "MyServerOut",
         "type": "object"
       },
-      "NotificationOut": {
-        "description": "A feed row as Notification.to_dict hands it out.",
+      "NoteRequest": {
         "properties": {
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "NoteRequest",
+        "type": "object"
+      },
+      "NotificationOut": {
+        "description": "A feed row as incidents.feed_rows hands it out. The incident fields are NULL for\na row without an incident and for one whose incident the reader no longer sees.",
+        "properties": {
+          "ackedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ackedby"
+          },
           "body": {
             "anyOf": [
               {
@@ -3063,6 +3554,17 @@
           "category": {
             "title": "Category",
             "type": "string"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
           },
           "createdAt": {
             "anyOf": [
@@ -3083,6 +3585,58 @@
             "title": "Id",
             "type": "integer"
           },
+          "incidentId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incidentid"
+          },
+          "muteSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "incident",
+                  "server"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutesource"
+          },
+          "muted": {
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "mutedUntil": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muteduntil"
+          },
+          "notifiedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifiedat"
+          },
           "read": {
             "title": "Read",
             "type": "boolean"
@@ -3097,6 +3651,17 @@
               }
             ],
             "title": "Readat"
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedby"
           },
           "severity": {
             "title": "Severity",
@@ -3124,6 +3689,22 @@
             ],
             "title": "Sourcetype"
           },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "acked",
+                  "resolved"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -3140,7 +3721,16 @@
           "sourceType",
           "sourceId",
           "read",
-          "readAt"
+          "readAt",
+          "incidentId",
+          "state",
+          "count",
+          "ackedBy",
+          "resolvedBy",
+          "notifiedAt",
+          "muted",
+          "mutedUntil",
+          "muteSource"
         ],
         "title": "NotificationOut",
         "type": "object"
@@ -3633,6 +4223,24 @@
           "hostname"
         ],
         "title": "ServerCreate",
+        "type": "object"
+      },
+      "ServerMuteOut": {
+        "properties": {
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "until": {
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "until"
+        ],
+        "title": "ServerMuteOut",
         "type": "object"
       },
       "ServerOut": {
@@ -7145,7 +7753,7 @@
     },
     "/api/notifications": {
       "get": {
-        "description": "The caller's notifications, newest first.",
+        "description": "The caller's notifications, last pinged first; hidden ones are left out.",
         "operationId": "list_notifications_api_notifications_get",
         "parameters": [
           {
@@ -7226,6 +7834,418 @@
         ]
       }
     },
+    "/api/notifications/hide": {
+      "post": {
+        "description": "Hide rows of the caller's feed; the next ping of their incident shows them again.",
+        "operationId": "hide_rows_api_notifications_hide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Hide Rows",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/incidents/ack": {
+      "post": {
+        "description": "Acknowledge open incidents of the caller's feed. One the caller may not act on,\nor that is not open, comes back in skipped.",
+        "operationId": "ack_incidents_api_notifications_incidents_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ack Incidents",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/incidents/{incident_id}": {
+      "get": {
+        "description": "An incident of the caller's feed: the servers of it they see, its history\nwithout entries of the others, and whether they may act on it (canAct).",
+        "operationId": "get_incident_api_notifications_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Incident",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/incidents/{incident_id}/mute": {
+      "delete": {
+        "description": "End the caller's mute of an incident.",
+        "operationId": "unmute_incident_api_notifications_incidents__incident_id__mute_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unmute Incident",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Mute the caller's row of an incident until a time: its pings keep it read and\nsend nothing. Its read state stays as it is.",
+        "operationId": "mute_incident_api_notifications_incidents__incident_id__mute_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mute Incident",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/incidents/{incident_id}/notes": {
+      "post": {
+        "description": "Add a note to the history of an incident, in any state.",
+        "operationId": "add_note_api_notifications_incidents__incident_id__notes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Note",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/incidents/{incident_id}/reopen": {
+      "post": {
+        "description": "Open a resolved incident again, unacknowledged.",
+        "operationId": "reopen_incident_api_notifications_incidents__incident_id__reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reopen Incident",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/incidents/{incident_id}/resolve": {
+      "post": {
+        "description": "Mark an incident resolved by hand. Its next problem event reopens it inside the\nreopen window, or opens a new one.",
+        "operationId": "resolve_incident_api_notifications_incidents__incident_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resolve Incident",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/notifications/read": {
       "post": {
         "description": "Mark the caller's notifications as read (given ids, or all unread).",
@@ -7273,6 +8293,134 @@
         ]
       }
     },
+    "/api/notifications/server-mutes": {
+      "get": {
+        "description": "The caller's server mutes that still hold.",
+        "operationId": "list_server_mutes_api_notifications_server_mutes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerMuteOut"
+                  },
+                  "title": "Response List Server Mutes Api Notifications Server Mutes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Server Mutes",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/server-mutes/{server_id}": {
+      "delete": {
+        "description": "End the caller's mute of a server; no mute to end is no error.",
+        "operationId": "unmute_server_api_notifications_server_mutes__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unmute Server",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Mute a server the caller sees until a time: their rows of its incidents of\nthis one server stay read and send nothing.",
+        "operationId": "mute_server_api_notifications_server_mutes__server_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerMuteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mute Server",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/notifications/stream": {
       "get": {
         "operationId": "notification_stream_api_notifications_stream_get",
@@ -7292,9 +8440,56 @@
         ]
       }
     },
+    "/api/notifications/unread": {
+      "post": {
+        "description": "Mark rows of the caller's feed as unread.",
+        "operationId": "mark_unread_api_notifications_unread_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mark Unread",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/notifications/unread-count": {
       "get": {
-        "description": "Cheap badge count for the bell (polled by the desktop client).",
+        "description": "Cheap badge count for the bell (polled by the desktop client): unread rows that\nare neither hidden nor muted.",
         "operationId": "unread_count_api_notifications_unread_count_get",
         "responses": {
           "200": {

@@ -604,8 +604,11 @@ export interface AlertLogEntry {
 
 export type NotificationSeverity = 'info' | 'warning' | 'critical';
 export type NotificationScopeType = 'all' | 'tag' | 'server';
+export type IncidentState = 'open' | 'acked' | 'resolved';
 
-// One bell-feed entry (mirrors the server's Notification.to_dict()).
+// One bell-feed entry (mirrors the server's incidents.feed_rows). The incident fields are
+// optional because a server before R-1079 sends none of them; they are null for a row without
+// an incident and for one whose servers the reader no longer sees.
 export interface NotificationItem {
   id: number;
   createdAt: string | null;
@@ -618,6 +621,85 @@ export interface NotificationItem {
   sourceId?: string | null;
   read: boolean;
   readAt?: string | null;
+  incidentId?: number | null;
+  state?: IncidentState | null;
+  count?: number | null;
+  ackedBy?: string | null;
+  resolvedBy?: string | null;
+  // The last ping of the row: a ping moves it up and sets it unread again.
+  notifiedAt?: string | null;
+  muted?: boolean;
+  mutedUntil?: string | null;
+  muteSource?: 'incident' | 'server' | null;
+}
+
+export type IncidentEntryKind =
+  'triggered' | 'notified' | 'escalated' | 'acked' | 'resolved' | 'reopened' | 'note';
+
+export interface IncidentEntry {
+  id: number;
+  at: string;
+  kind: IncidentEntryKind;
+  // The username; null: done by the hub itself, or a deleted user.
+  actor: string | null;
+  text: string | null;
+  severity: NotificationSeverity | null;
+  serverId: string | null;
+}
+
+export interface IncidentServer {
+  id: string;
+  name: string;
+  // A bundle member's recovery; null while it is down, and for a single incident.
+  recoveredAt: string | null;
+}
+
+// What one alert rule of the monitoring service did with the incident's last event.
+export interface IncidentRule {
+  name: string;
+  channel: string;
+  ok: boolean;
+}
+
+// An incident as its reader may see it: only the servers they see, the history without
+// entries of the others.
+export interface IncidentDetail {
+  id: number;
+  state: IncidentState;
+  severity: NotificationSeverity;
+  category: string;
+  eventType: string;
+  title: string;
+  body: string | null;
+  sourceType: string | null;
+  sourceId: string | null;
+  count: number;
+  firstAt: string;
+  lastAt: string;
+  ackedBy: string | null;
+  ackedAt: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  bundle: boolean;
+  servers: IncidentServer[];
+  // null: the sender reports no rules (only the monitoring service does).
+  rules: IncidentRule[] | null;
+  channels: ('bell' | 'email' | 'telegram')[];
+  history: IncidentEntry[];
+  // The reader sees every server of it: acknowledge, resolve, reopen, note.
+  canAct: boolean;
+  row: NotificationItem;
+}
+
+export interface IncidentAckResult {
+  updated: number;
+  // Not acknowledged: not the caller's, not seen in full, or not open.
+  skipped: number[];
+}
+
+export interface NotificationServerMute {
+  serverId: string;
+  until: string;
 }
 
 // One per-user subscription rule (mirrors NotificationSubscription.to_dict()).

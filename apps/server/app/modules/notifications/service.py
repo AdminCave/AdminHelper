@@ -21,12 +21,15 @@ import logging
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.notifications.models import (
     SEVERITY_LEVELS,
     Notification,
-    NotificationOutbox,
+    NotificationIncident,
+    NotificationIncidentMember,
+    NotificationServerMute,
     NotificationSubscription,
 )
 from app.modules.notifications.schemas import IncomingEvent
@@ -203,61 +206,11 @@ def _bundle_text(event: IncomingEvent, servers: list[str]) -> tuple[str, str]:
 
 
 def ingest_event(db: Session, event: IncomingEvent) -> int:
-    """Resolve recipients, write the bell feed + outbox rows, return the number
-    of users notified. Commits once at the end."""
-    recipients = resolve_recipients(db, event)
-    notified = 0
-    notified_user_ids: list[int] = []
-    max_id = 0
-    for user, channels in recipients:
-        title, body = event.title, event.body
-        if event.source_ids is not None:
-            title, body = _bundle_text(event, channels["bell"])
-        notif = Notification(
-            user_id=user.id,
-            severity=event.severity,
-            category=event.category,
-            event_type=event.event_type,
-            title=title,
-            body=body,
-            source_type=event.source_type,
-            source_id=event.source_id,
-        )
-        db.add(notif)
-        db.flush()  # assign notif.id for the outbox FK
-        max_id = max(max_id, notif.id)
-        notified_user_ids.append(user.id)
-        # External channels are queued only when the user actually has an
-        # address for them — the outbox drain (Phase D) never sees a dead row.
-        for channel, address in (("email", user.email), ("telegram", user.telegram_chat_id)):
-            if channel not in channels or not address:
-                continue
-            # A bundle gets the channel's own text: the bell row may list servers
-            # that only a subscription without this channel covers.
-            own_title, own_body = (
-                _bundle_text(event, channels[channel])
-                if event.source_ids is not None
-                else (None, None)
-            )
-            db.add(
-                NotificationOutbox(
-                    notification_id=notif.id,
-                    user_id=user.id,
-                    channel=channel,
-                    address=address,
-                    title=own_title,
-                    body=own_body,
-                )
-            )
-        notified += 1
-    db.commit()
-    # After commit (rows are now readable), push a refresh nudge to the affected
-    # users' live SSE streams across all workers. Best-effort; polling reconciles.
-    if notified_user_ids:
-        from app.modules.notifications import stream_hub
+    """Fold the event into the incidents of the bell (incidents.ingest) and return the
+    number of recipient rows its pings wrote. Commits once at the end."""
+    from app.modules.notifications import incidents
 
-        stream_hub.publish(notified_user_ids, max_id)
-    return notified
+    return incidents.ingest(db, event).notified
 
 
 def notify_users(db: Session, users: Iterable[User], event: IncomingEvent) -> int:
@@ -265,47 +218,51 @@ def notify_users(db: Session, users: Iterable[User], event: IncomingEvent) -> in
 
     Bypasses resolve_recipients: non-admins usually have no subscription and
     would never be reached through it. Queues no outbox rows, so nothing leaves
-    by e-mail or Telegram. A user listed twice gets one row. Commits once, and
-    only when there is a row to write."""
-    rows = [
-        Notification(
-            user_id=user_id,
-            severity=event.severity,
-            category=event.category,
-            event_type=event.event_type,
-            title=event.title,
-            body=event.body,
-            source_type=event.source_type,
-            source_id=event.source_id,
-        )
-        for user_id in dict.fromkeys(user.id for user in users)
-    ]
-    if not rows:
-        return 0
-    db.add_all(rows)
-    db.flush()  # assign the ids for the SSE nudge before commit expires them
-    user_ids = [row.user_id for row in rows]
-    max_id = max(row.id for row in rows)
-    db.commit()
-    from app.modules.notifications import stream_hub
+    by e-mail or Telegram. A user listed twice gets one row. A warning or critical
+    notice is one incident of its own (incidents.notify). Commits once, and only
+    when there is a row to write."""
+    from app.modules.notifications import incidents
 
-    stream_hub.publish(user_ids, max_id)
-    return len(rows)
+    return incidents.notify(db, users, event)
 
 
 def cleanup_old_notifications(db: Session, retention_days: int) -> int:
     """Delete bell-feed rows older than ``retention_days`` and return the count.
 
     The retention path that keeps the notification table from growing without
-    bound (driven by a daily system job). Outbox rows of a pruned notification
-    go with it via the FK cascade. ``retention_days <= 0`` keeps everything."""
+    bound (driven by a daily system job). A row without an incident goes by its
+    notified_at; an incident goes with its rows, members and history once its last
+    event is older and it is resolved, or keyless (nothing resolves those, as the rows
+    before them were pruned too). An open check incident stays however old. Outbox
+    rows go with their notification via the FK cascade, and expired server mutes
+    go too. ``retention_days <= 0`` keeps everything."""
     if retention_days <= 0:
         return 0
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=retention_days)
     removed = (
         db.query(Notification)
-        .filter(Notification.created_at < cutoff)
+        .filter(Notification.incident_id.is_(None), Notification.notified_at < cutoff)
         .delete(synchronize_session=False)
+    )
+    bundles = select(NotificationIncidentMember.incident_id)
+    stale = select(NotificationIncident.id).where(
+        NotificationIncident.last_at < cutoff,
+        or_(
+            NotificationIncident.state == "resolved",
+            and_(NotificationIncident.key.is_(None), NotificationIncident.id.not_in(bundles)),
+        ),
+    )
+    removed += (
+        db.query(Notification)
+        .filter(Notification.incident_id.in_(stale))
+        .delete(synchronize_session=False)
+    )
+    db.query(NotificationIncident).filter(NotificationIncident.id.in_(stale)).delete(
+        synchronize_session=False
+    )
+    db.query(NotificationServerMute).filter(NotificationServerMute.until <= now).delete(
+        synchronize_session=False
     )
     db.commit()
     return removed

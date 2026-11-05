@@ -62,14 +62,14 @@ _STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
 _SEVERITY_LEVEL = {"info": 0, "warning": 1, "critical": 2}
 
-# Bell cooldown (docs/features/monitoring-alert-quality.md): at most one problem
-# per check in this window reaches the notification hub; see hub_decision.
-HUB_COOLDOWN = timedelta(minutes=30)
-
 # The longest title the hub takes: IncomingEvent.title in the server
 # (apps/server/app/modules/notifications/schemas.py). A longer one turns the push
 # into a 422, and the bell gets nothing; test_alerter_hub keeps both equal.
 HUB_TITLE_MAX = 512
+# The rule results the hub takes with an event, and the longest rule name
+# (IncomingEvent.rules, IncidentRule.name): the same 422 past either.
+HUB_RULES_MAX = 50
+HUB_RULE_NAME_MAX = 200
 
 # In the subject, every control character of the check name (Unicode category Cc: C0, DEL,
 # C1) and the line and paragraph separators become a space, one for one. The subject is a
@@ -126,6 +126,17 @@ def rule_applies(
     return True
 
 
+class RuleResult(NamedTuple):
+    """What one send of an alert rule did, for the hub's incident (hub_rules).
+    server_id is the server the rule is bound to (match_server_id): a bundle never
+    names such a rule (alert_bundle._bundle_payload)."""
+
+    name: str
+    channel: str
+    ok: bool
+    server_id: str | None
+
+
 def send_to_rule(
     db: Session,
     rule: MonitorAlertRule,
@@ -133,7 +144,7 @@ def send_to_rule(
     msg: dict,
     new_status: str,
     sent_at: datetime | None = None,
-) -> None:
+) -> RuleResult:
     """Sends one message over the rule's channel and adds an alert-log row per
     member (check, reported old status), so the rule's cooldown per check holds.
     The first member stands in as the check the channel names in its service log.
@@ -160,6 +171,7 @@ def send_to_rule(
                 error=error,
             )
         )
+    return RuleResult(rule.name, rule.channel, success, rule.match_server_id)
 
 
 def process_alert(
@@ -197,15 +209,18 @@ def process_alert(
     msg = build_message(db, check, claim.reported_old, claim.new_status)
 
     is_recovery = claim.new_status == "ok"
+    results: list[RuleResult] = []
     for rule in claim.rules:
         if rule_applies(db, rule, check, is_recovery=is_recovery):
-            send_to_rule(db, rule, [(check, claim.reported_old)], msg, claim.new_status)
+            results.append(
+                send_to_rule(db, rule, [(check, claim.reported_old)], msg, claim.new_status)
+            )
 
     # The claim was committed before the I/O above; only the alert-log rows
     # remain for the caller's commit.
     db.flush()
 
-    _notify_bell(db, check, claim, msg)
+    _notify_bell(db, check, claim, msg, results)
 
 
 class _Claim(NamedTuple):
@@ -284,8 +299,8 @@ def _reserve_bell(
 ) -> tuple[bool, tuple[str | None, datetime | None], tuple[str | None, datetime | None]]:
     """(emit, slot before, slot reserved) of the bell for this transition.
 
-    The bell (notification hub) has its own cooldown (hub_decision). It decides
-    under the claim's lock and its slot is reserved with the claim, so a dispatch
+    The bell (notification hub) decides under the claim's lock (hub_decision)
+    and its slot is reserved with the claim, so a dispatch
     of this check that starts while this one is still in its hub POST reads what
     this one is about to show, not the record from before. What the bell skips is
     dropped: the claim records the transition as reported, nothing is caught up.
@@ -296,20 +311,24 @@ def _reserve_bell(
         before = (state.hub_status, state.hub_sent_at)
     else:
         before = (_capped_status(notified, check.severity), None)
-    emit = hub_decision(*before, new_status, check.severity, now) == "emit"
+    emit = hub_decision(before[0], new_status, check.severity) == "emit"
     return emit, before, bell_record(new_status, check.severity, before[1], now)
 
 
-def _notify_bell(db: Session, check: MonitorCheck, claim: _Claim, msg: dict) -> None:
-    """Independently of the rule-based webhook/email dispatch, push the transition
-    to the server's notification hub for per-user routing; a failed POST hands the
-    reserved slot back."""
+def _notify_bell(
+    db: Session, check: MonitorCheck, claim: _Claim, msg: dict, results: list[RuleResult]
+) -> None:
+    """Next to the rule-based webhook/email dispatch, push the transition with
+    what the rules did (``results``) to the server's notification hub for per-user
+    routing; a failed POST hands the reserved slot back."""
     if not claim.hub_emit:
         return
     severity = bell_severity(
         claim.hub_before[0], claim.reported_old, claim.new_status, check.severity
     )
-    if emit_to_hub(check, claim.reported_old, claim.new_status, msg, severity=severity):
+    if emit_to_hub(
+        check, claim.reported_old, claim.new_status, msg, severity=severity, rules=results
+    ):
         return
     if claim.state is not None:
         _release_hub_slot(db, check.id, claim.hub_reserved, claim.hub_before)
@@ -433,8 +452,9 @@ def bell_severity(hub_status: str | None, old_status: str, new_status: str, seve
 def bell_record(
     status: str, severity: str, sent_at: datetime | None, now: datetime
 ) -> tuple[str | None, datetime | None]:
-    """(hub_status, hub_sent_at) once the bell showed ``status``: a problem starts
-    the cooldown, a recovery leaves hub_sent_at as it was."""
+    """(hub_status, hub_sent_at) once the bell showed ``status``: a problem
+    stamps hub_sent_at, a recovery leaves it as it was. The pair tells one
+    reservation from a later one (_release_hub_slot)."""
     return _capped_status(status, severity), sent_at if status == "ok" else now
 
 
@@ -447,37 +467,48 @@ def _capped_status(status: str | None, severity: str) -> str | None:
     return status
 
 
-def hub_decision(
-    hub_status: str | None,
-    hub_sent_at: datetime | None,
-    new_status: str,
-    severity: str,
-    now: datetime,
-) -> str:
-    """Bell decision for a transition the alerter reports
-    (docs/features/monitoring-alert-quality.md, "Glocken-Cooldown").
+def hub_decision(hub_status: str | None, new_status: str, severity: str) -> str:
+    """Bell decision for a transition the alerter reports. The bell has no
+    cooldown here: the hub folds the events of a check into one incident and
+    decides whom it pings (docs/features/arch-notify-incidents.md).
 
-    ``hub_status`` is what the bell last showed of the check (_capped_status),
-    ``hub_sent_at`` when it last got a problem of it.
+    ``hub_status`` is what the bell last showed of the check (_capped_status).
 
     Returns:
-        "emit" — a recovery of a problem the bell showed; a shown warning that
-                 escalates to critical (capped at the severity); any other
-                 problem when no problem went to the bell in HUB_COOLDOWN.
+        "emit" — a recovery of a problem the bell showed; any problem at capped
+                 level warning or critical.
         "skip" — a recovery of a problem the bell never showed; a problem at
-                 capped level info; any other problem inside the cooldown.
+                 capped level info.
     """
     if new_status == "ok":
         # The bell clears only what it showed, at the level it showed it.
         return "emit" if hub_status in ("warning", "critical") else "skip"
     level = min(_STATUS_LEVEL.get(new_status, 1), _severity_level(severity))
-    if level == 0:
-        return "skip"
-    if hub_status == "warning" and level == 2:
-        return "emit"
-    if hub_sent_at is not None and now - hub_sent_at < HUB_COOLDOWN:
-        return "skip"
-    return "emit"
+    return "skip" if level == 0 else "emit"
+
+
+def hub_key(check: MonitorCheck) -> str:
+    """The incident key of the check's events: the hub folds them into one
+    incident. Check ids are uuid4 strings, far below the hub's 200."""
+    return f"check:{check.id}"
+
+
+def hub_rules(results: Iterable[RuleResult]) -> list[dict]:
+    """Rule results as the hub takes them (IncomingEvent.rules): one entry per
+    name and channel, ok only when each of its sends went out. A rule name may be
+    empty or of any length: an empty one is named, a long one cut at
+    HUB_RULE_NAME_MAX; past HUB_RULES_MAX entries the rest is left out."""
+    merged: dict[tuple[str, str], bool] = {}
+    for result in results:
+        name = result.name or "(unnamed)"
+        if len(name) > HUB_RULE_NAME_MAX:
+            name = name[: HUB_RULE_NAME_MAX - 1] + "\u2026"
+        key = (name, result.channel)
+        merged[key] = merged.get(key, True) and result.ok
+    return [
+        {"name": name, "channel": channel, "ok": ok}
+        for (name, channel), ok in list(merged.items())[:HUB_RULES_MAX]
+    ]
 
 
 def emit_to_hub(
@@ -486,6 +517,7 @@ def emit_to_hub(
     new_status: str,
     msg: dict,
     severity: str | None = None,
+    rules: Iterable[RuleResult] | None = None,
 ) -> bool:
     """Push the status transition to the server's notification hub (best-effort).
 
@@ -493,7 +525,9 @@ def emit_to_hub(
     monitoring stays a pure event source. A failed push must never break the
     alert path, so errors are logged, not raised. ``severity`` replaces the one
     computed from the transition (process_alert: a recovery at the level of its
-    alarm). Returns whether the hub accepted the event."""
+    alarm). ``rules``: what the alert rules did with the transition, none sent
+    is an empty list; without it the hub shows no rules. Returns whether the hub
+    accepted the event."""
     if severity is None:
         severity = _hub_severity(old_status, new_status, check.severity)
     # An info-level transition only involves ok/pending — not notification-worthy
@@ -520,7 +554,10 @@ def emit_to_hub(
         # the server distinguish a real alert from a recovery (the hook must
         # not fire on the critical -> ok leg).
         "new_status": new_status,
+        "incident_key": hub_key(check),
     }
+    if rules is not None:
+        payload["rules"] = hub_rules(rules)
     return post_hub_event(payload, check.name)
 
 

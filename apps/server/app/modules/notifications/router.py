@@ -20,26 +20,39 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import APIKeyHeader
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
-from app.core.bounds import Offset
+from app.core.bounds import BigIntPk, Offset
 from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
-from app.modules.notifications.models import Notification, NotificationSubscription
+from app.core.time import iso_utc
+from app.modules.notifications import incidents, stream_hub
+from app.modules.notifications.models import (
+    Notification,
+    NotificationServerMute,
+    NotificationSubscription,
+)
 from app.modules.notifications.schemas import (
+    AckOut,
     EventsAcceptedOut,
+    IdsRequest,
+    IncidentDetailOut,
     IncomingEvent,
     MarkReadOut,
     MarkReadRequest,
+    MuteRequest,
+    NoteRequest,
     NotificationOut,
     NotificationPrefsOut,
     NotificationPrefsUpdate,
+    ServerMuteOut,
     UnreadCountOut,
 )
-from app.modules.notifications.service import ingest_event
 from app.modules.users.models import User
 
 feed_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -59,13 +72,15 @@ def list_notifications(
     limit: int | None = Query(None, ge=1, le=1000),
     offset: Annotated[Offset, Query()] = 0,
 ):
-    """The caller's notifications, newest first."""
-    query = db.query(Notification).filter(Notification.user_id == current_user.id)
+    """The caller's notifications, last pinged first; hidden ones are left out."""
+    query = db.query(Notification).filter(
+        Notification.user_id == current_user.id, Notification.hidden_at.is_(None)
+    )
     if unread_only:
         query = query.filter(Notification.read_at.is_(None))
-    query = query.order_by(Notification.created_at.desc(), Notification.id.desc())
+    query = query.order_by(Notification.notified_at.desc(), Notification.id.desc())
     rows = paginate(query, response, limit, offset).all()
-    return [r.to_dict() for r in rows]
+    return incidents.feed_rows(db, current_user, rows, _now())
 
 
 @feed_router.get("/unread-count", response_model=UnreadCountOut)
@@ -73,13 +88,9 @@ def unread_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Cheap badge count for the bell (polled by the desktop client)."""
-    count = (
-        db.query(Notification)
-        .filter(Notification.user_id == current_user.id, Notification.read_at.is_(None))
-        .count()
-    )
-    return {"count": count}
+    """Cheap badge count for the bell (polled by the desktop client): unread rows that
+    are neither hidden nor muted."""
+    return {"count": incidents.unread_count(db, current_user, _now())}
 
 
 @feed_router.post("/read", response_model=MarkReadOut)
@@ -101,6 +112,236 @@ def mark_read(
     )
     db.commit()
     return {"updated": updated}
+
+
+@feed_router.post("/hide", response_model=MarkReadOut)
+def hide_rows(
+    data: IdsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Hide rows of the caller's feed; the next ping of their incident shows them again."""
+    return _update_own(
+        db, current_user, data.ids, Notification.hidden_at.is_(None), hidden_at=_now()
+    )
+
+
+@feed_router.post("/unread", response_model=MarkReadOut)
+def mark_unread(
+    data: IdsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark rows of the caller's feed as unread."""
+    return _update_own(db, current_user, data.ids, Notification.read_at.is_not(None), read_at=None)
+
+
+def _update_own(db: Session, user: User, ids: list[int], condition, **values) -> dict:
+    changed = (
+        db.execute(
+            update(Notification)
+            .where(Notification.user_id == user.id, Notification.id.in_(ids), condition)
+            .values(**values)
+            .returning(Notification.id)
+            .execution_options(synchronize_session=False)
+        )
+        .scalars()
+        .all()
+    )
+    db.commit()
+    if changed:
+        # The caller's other devices: a personal change concerns nobody else.
+        stream_hub.publish([user.id], max(changed))
+    return {"updated": len(changed)}
+
+
+# --- Incidents (R-1079) -----------------------------------------------------
+#
+# Every route needs the caller's own row of the incident and sight of one of its
+# servers now; without either it answers 404 alike, so it tells nobody whether an
+# incident exists. The team actions (ack, resolve, reopen, notes) need sight of every
+# server of it (403, or skipped). Mutes are personal and not in the history.
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _held(db: Session, user: User, incident_id: int, *, team: bool) -> incidents.Access:
+    held = incidents.access(db, user, incident_id, lock=team)
+    if held is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
+    if team and not held.can_act:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acting on an incident needs sight of every one of its servers",
+        )
+    return held
+
+
+def _team_action(
+    db: Session, user: User, incident_id: int, kind: str, conflict: str, text: str | None = None
+) -> dict:
+    held = _held(db, user, incident_id, team=True)
+    if not incidents.may_act(kind, held.incident.state):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict)
+    now = _now()
+    incidents.act(db, user, held, kind, now, text=text)
+    incidents.finish_actions(db, [incident_id])
+    return incidents.detail(db, user, held, now)
+
+
+def _personal(db: Session, user: User, row: Notification) -> dict:
+    db.commit()
+    stream_hub.publish([user.id], row.id)
+    return incidents.feed_rows(db, user, [row], _now())[0]
+
+
+@feed_router.get("/incidents/{incident_id}", response_model=IncidentDetailOut)
+def get_incident(
+    incident_id: BigIntPk,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """An incident of the caller's feed: the servers of it they see, its history
+    without entries of the others, and whether they may act on it (canAct)."""
+    held = _held(db, current_user, incident_id, team=False)
+    return incidents.detail(db, current_user, held, _now())
+
+
+@feed_router.post("/incidents/ack", response_model=AckOut)
+def ack_incidents(
+    data: IdsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Acknowledge open incidents of the caller's feed. One the caller may not act on,
+    or that is not open, comes back in skipped."""
+    now = _now()
+    done: list[int] = []
+    skipped: list[int] = []
+    # In id order: the row locks of two calls never wait on each other in a circle.
+    for incident_id in sorted(set(data.ids)):
+        held = incidents.access(db, current_user, incident_id, lock=True)
+        if held is None or not held.can_act or not incidents.may_act("acked", held.incident.state):
+            skipped.append(incident_id)
+            continue
+        incidents.act(db, current_user, held, "acked", now)
+        done.append(incident_id)
+    incidents.finish_actions(db, done)
+    return {"updated": len(done), "skipped": skipped}
+
+
+@feed_router.post("/incidents/{incident_id}/resolve", response_model=IncidentDetailOut)
+def resolve_incident(
+    incident_id: BigIntPk,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark an incident resolved by hand. Its next problem event reopens it inside the
+    reopen window, or opens a new one."""
+    return _team_action(db, current_user, incident_id, "resolved", "Incident is already resolved")
+
+
+@feed_router.post("/incidents/{incident_id}/reopen", response_model=IncidentDetailOut)
+def reopen_incident(
+    incident_id: BigIntPk,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Open a resolved incident again, unacknowledged."""
+    return _team_action(db, current_user, incident_id, "reopened", "Incident is not resolved")
+
+
+@feed_router.post("/incidents/{incident_id}/notes", response_model=IncidentDetailOut)
+def add_note(
+    incident_id: BigIntPk,
+    data: NoteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add a note to the history of an incident, in any state."""
+    return _team_action(db, current_user, incident_id, "note", "", text=data.text)
+
+
+@feed_router.put("/incidents/{incident_id}/mute", response_model=NotificationOut)
+def mute_incident(
+    incident_id: BigIntPk,
+    data: MuteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mute the caller's row of an incident until a time: its pings keep it read and
+    send nothing. Its read state stays as it is."""
+    held = _held(db, current_user, incident_id, team=False)
+    held.row.muted_until = data.until
+    return _personal(db, current_user, held.row)
+
+
+@feed_router.delete("/incidents/{incident_id}/mute", response_model=NotificationOut)
+def unmute_incident(
+    incident_id: BigIntPk,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """End the caller's mute of an incident."""
+    held = _held(db, current_user, incident_id, team=False)
+    held.row.muted_until = None
+    return _personal(db, current_user, held.row)
+
+
+@feed_router.get("/server-mutes", response_model=list[ServerMuteOut])
+def list_server_mutes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The caller's server mutes that still hold."""
+    return [
+        {"serverId": m.server_id, "until": iso_utc(m.until)}
+        for m in incidents.server_mutes(db, current_user, _now())
+    ]
+
+
+@feed_router.put("/server-mutes/{server_id}", response_model=ServerMuteOut)
+def mute_server(
+    server_id: str,
+    data: MuteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mute a server the caller sees until a time: their rows of its incidents of
+    this one server stay read and send nothing."""
+    if not incidents.may_mute_server(db, current_user, server_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    # An upsert: a second PUT of the same server (two devices) must not hit the key.
+    db.execute(
+        insert(NotificationServerMute)
+        .values(user_id=current_user.id, server_id=server_id, until=data.until)
+        .on_conflict_do_update(index_elements=["user_id", "server_id"], set_={"until": data.until})
+    )
+    db.commit()
+    stream_hub.publish([current_user.id], 0)
+    return {"serverId": server_id, "until": iso_utc(data.until)}
+
+
+@feed_router.delete("/server-mutes/{server_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unmute_server(
+    server_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """End the caller's mute of a server; no mute to end is no error."""
+    ended = (
+        db.query(NotificationServerMute)
+        .filter(
+            NotificationServerMute.user_id == current_user.id,
+            NotificationServerMute.server_id == server_id,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    if ended:
+        stream_hub.publish([current_user.id], 0)
 
 
 # --- Per-user preferences (own scope) --------------------------------------
@@ -215,7 +456,7 @@ def ingest(
                 }
             ]
         )
-    notified = ingest_event(db, event)
+    result = incidents.ingest(db, event)
     if (
         event.event_type == "monitoring.check.transition"
         and event.severity == "critical"
@@ -225,15 +466,12 @@ def ingest(
         and (event.new_status or "critical") == "critical"
     ):
         # The documented alert.triggered hook: a critical check transition also
-        # reaches registered event hooks (docs/developer/hooks.html). A bundled
-        # event fires it once per server, so a hook still sees one server per
-        # call; a repeated id counts once, as in the resolver.
-        server_ids = (
-            list(dict.fromkeys(event.source_ids))
-            if event.source_ids is not None
-            else [event.source_id]
-        )
-        for server_id in server_ids:
+        # reaches registered event hooks (docs/developer/hooks.html), for the
+        # servers whose incident it pinged: a repeat folded in silently is no new
+        # alert, as the monitoring cooldown kept it from the hub before. A bundle
+        # fires it once per server, so a hook still sees one server per call; a
+        # repeated id counts once, as in the resolver.
+        for server_id in dict.fromkeys(result.pinged_servers):
             fire_event(
                 "alert.triggered",
                 {
@@ -243,4 +481,4 @@ def ingest(
                     "message": event.body,
                 },
             )
-    return {"notified": notified}
+    return {"notified": result.notified}
