@@ -47,10 +47,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Connect
 Doku: → T8
 Abhängt von: T2
 
-### T5 — Server: Sitzungsverlauf, Tabelle und Endpunkte (R-1068)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/tests/test_connection_sessions.py, apps/server/tests/test_openapi_snapshot.py
+### T5 — Server: Sitzungsverlauf, Tabelle und Endpunkte (R-1068)  [x]
+Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/app/modules/connections/schemas.py, apps/server/app/modules/connections/router.py, apps/server/tests/test_connection_sessions.py, apps/server/tests/test_openapi_snapshot.py, apps/server/app/modules/connections/storage.py, apps/server/alembic/versions/c8e2f4a6b0d1_add_connection_sessions.py, apps/server/tests/test_connections_storage.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b6895401 2026-11-05T10:15:51+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T5.verdict.json)
 Änderung: Tabelle `connection_sessions` per Alembic-Revision (FK `ON DELETE CASCADE`, Downgrade entfernt sie); `touch` legt einen Eintrag an (Gerät: Name der Geräteregistrierung, sonst der vom Client gemeldete Hostname) und liefert `sessionId`; `POST /connections/{id}/sessions/{sid}/end`, `GET /connections/{id}/sessions?limit=` (Standard 5); Scope wie die Liste; Einträge älter als 90 Tage löscht der Server beim Schreiben. Neue Testdatei mit SPDX.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sessions.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sessions.py tests/test_connections_storage.py tests/test_connections_isolation.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
 Doku: → T8
 
 ### T6 — Desktop: Sitzungen schreiben, Ende bei RDP, lokaler Verlauf (R-1068)  [ ]
@@ -90,3 +92,8 @@ Doku: diese Task
 - T4: `normalizeConnection` warf `options` bisher weg und `toServerPayload` schickte sie nicht; beide tragen sie jetzt. Der Store schickt `options` immer, als Ganzes oder `null`, weil `PUT` ersetzt und ein fehlendes Feld die alten Optionen behielte. `normalizeOptions` behält nur die Optionen der eigenen Art und streicht Leeres (getrimmte Strings, Weiterleitungen ohne `listen`, `D` ohne Ziel), damit „Global“ wirklich fehlt.
 - T4: Der Editor hält SSH- und RDP-Optionen getrennt, damit ein Typwechsel nichts verliert; erst `collect()` behält die der gespeicherten Art. Tri-State-Auswahl Global/An/Aus statt Checkbox, weil ein ausdrückliches Aus (`ForwardAgent=no`) etwas anderes ist als „nicht gesetzt“. Die Anzeige-Felder nutzen die Texte der globalen RDP-Einstellungen (`settings.rdp.*`).
 - T4: Die UI prüft Keepalive 1–3600, Ziel bei L/R und die Größe mit `RDP_CUSTOM_SIZE_PATTERN` wie die globale Einstellung; Jump-Host- und Gateway-Format prüfen Rust und Server (eine dritte Regex-Kopie im UI wäre nur Drift). Die Bereichsgrenze 640x480 der Größe prüft wie global erst Rust.
+- T5: Gerät = der vom Client gemeldete Hostname (`device` im optionalen Touch-Body, ohne Steuerzeichen, 1–255 Zeichen). Die Geräteregistrierung (`DeviceLine`) trägt keinen Namen (nur Art, ID, Zeiten), und der Zertifikats-CN ist der Benutzername: Einen Registrierungsnamen gibt es also noch nicht, „sonst Hostname“ ist damit der einzige Weg. Ohne Body bleibt `device` leer (alte Clients).
+- T5: Ein Touch ohne Body bleibt gültig (`TouchRequest` optional), die Antwort ist `ConnectionOut` plus `sessionId`. Zeiten speichert die Tabelle naiv in UTC (F7), die API gibt sie mit `+00:00` aus wie `lastUsed`.
+- T5: Beenden darf nur der Nutzer, der die Sitzung begann (gleiche `user_id`); eine Sitzung ohne Nutzer (API-Key, gelöschter Nutzer) beendet niemand, sie bleibt ohne Ende. Zweites Beenden behält das erste Ende. Die Liste zeigt im Scope der Verbindung die Sitzungen aller Nutzer, `limit` 1–50, Standard 5.
+- T5: Die 90 Tage setzt der Touch durch (löscht alle älteren Einträge aller Verbindungen), die Liste blendet Ältere bis dahin aus; kein Scheduler-Job. `user_id` ist `ON DELETE SET NULL`, damit ein gelöschter Nutzer den Verlauf nicht mitnimmt.
+- T5: `save_connections` (Hooks) prüft `options` mit `ConnectionOptions` wie die API und speichert die geprüfte Form (`"30"` wird 30, `"yes"` true), sonst verwürfe der Desktop die Verbindung; ein ungültiger Wert schreibt nichts (ValidationError vor der Sitzung).

@@ -4,8 +4,8 @@
 
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Annotated
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -19,14 +19,18 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
+from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
-from app.modules.connections.models import Connection
+from app.modules.connections.models import Connection, ConnectionSession
 from app.modules.connections.schemas import (
     ConnectionCreate,
     ConnectionImportResult,
     ConnectionOut,
+    ConnectionSessionOut,
+    ConnectionTouchOut,
     ConnectionUpdate,
     ImportRequest,
+    TouchRequest,
 )
 from app.modules.servers.models import Server
 from app.modules.users.models import User
@@ -38,6 +42,9 @@ read_dep = ApiKeyOrUser(require_write=False)
 # are documented to read AND write). require_admin gates only the JWT path; the
 # API-key path is gated by require_write. Pinned by tests/test_connections_authz.py.
 write_dep = ApiKeyOrUser(require_write=True, require_admin=True)
+
+# How long the session history is kept (R-1068, Kevin 2026-11-03).
+SESSION_RETENTION = timedelta(days=90)
 
 
 def _scope_connections(query, auth):
@@ -180,18 +187,39 @@ def update_connection(
     return result
 
 
-@router.post("/{conn_id}/touch", response_model=ConnectionOut, response_model_exclude_unset=True)
+@router.post(
+    "/{conn_id}/touch", response_model=ConnectionTouchOut, response_model_exclude_unset=True
+)
 def touch_connection(
-    conn_id: str, request: Request, db: Session = Depends(get_db), auth=Depends(read_dep)
+    conn_id: str,
+    request: Request,
+    body: Optional[TouchRequest] = None,
+    db: Session = Depends(get_db),
+    auth=Depends(read_dep),
 ):
-    """Setzt last_used auf jetzt. Auth: jeder Lesezugriff genuegt (Nutzung == Lesen),
-    aber per-User/Key-Scope wie bei der Liste (kein Touch fremder Connections)."""
+    """Setzt last_used auf jetzt und beginnt eine Sitzung im Verlauf. Auth: jeder
+    Lesezugriff genuegt (Nutzung == Lesen), aber per-User/Key-Scope wie bei der Liste
+    (kein Touch fremder Connections)."""
     conn = _scope_connections(db.query(Connection), auth).filter(Connection.id == conn_id).first()
     if not conn:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden"
         )
+    now = utcnow_naive()
     conn.last_used = datetime.now(timezone.utc).isoformat()
+    user, _ = auth
+    session = ConnectionSession(
+        id=str(uuid.uuid4()),
+        connection_id=conn.id,
+        user_id=user.id if user is not None else None,
+        device=body.device if body is not None else None,
+        started_at=now,
+    )
+    db.add(session)
+    # The retention is enforced here, where sessions are written, so no scheduler job is needed.
+    db.query(ConnectionSession).filter(
+        ConnectionSession.started_at < now - SESSION_RETENTION
+    ).delete(synchronize_session=False)
     db.commit()
     db.refresh(conn)
     audit.record(
@@ -202,7 +230,61 @@ def touch_connection(
         object_id=conn_id,
         object_label=conn.name,
     )
-    return conn.to_dict()
+    return {**conn.to_dict(), "sessionId": session.id}
+
+
+def _scoped_connection(db: Session, conn_id: str, auth) -> Connection:
+    conn = _scope_connections(db.query(Connection), auth).filter(Connection.id == conn_id).first()
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden"
+        )
+    return conn
+
+
+@router.post("/{conn_id}/sessions/{session_id}/end", response_model=ConnectionSessionOut)
+def end_connection_session(
+    conn_id: str, session_id: str, db: Session = Depends(get_db), auth=Depends(read_dep)
+):
+    """Ends a session the calling user began. Ending it again keeps the first end."""
+    _scoped_connection(db, conn_id, auth)
+    user, _ = auth
+    session = (
+        db.query(ConnectionSession)
+        .filter(ConnectionSession.id == session_id, ConnectionSession.connection_id == conn_id)
+        .first()
+    )
+    # Only the user who began it: another one in the same scope must not end it. A session
+    # without a user (begun with an API key, or its user deleted) has no owner to end it.
+    if session is None or user is None or session.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if session.ended_at is None:
+        session.ended_at = utcnow_naive()
+        db.commit()
+    return session.to_dict()
+
+
+@router.get("/{conn_id}/sessions", response_model=list[ConnectionSessionOut])
+def list_connection_sessions(
+    conn_id: str,
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+    db: Session = Depends(get_db),
+    auth=Depends(read_dep),
+):
+    """The newest sessions of a connection, newest first, of every user."""
+    _scoped_connection(db, conn_id, auth)
+    sessions = (
+        db.query(ConnectionSession)
+        .filter(
+            ConnectionSession.connection_id == conn_id,
+            # Older ones go with the next write; until then they are no longer shown.
+            ConnectionSession.started_at >= utcnow_naive() - SESSION_RETENTION,
+        )
+        .order_by(ConnectionSession.started_at.desc(), ConnectionSession.id)
+        .limit(limit)
+        .all()
+    )
+    return [s.to_dict() for s in sessions]
 
 
 @router.delete("/{conn_id}", status_code=status.HTTP_204_NO_CONTENT)

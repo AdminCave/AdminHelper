@@ -200,6 +200,14 @@ class ConnectionUpdate(RequestModel):
         return v.strip() if v else v
 
 
+class TouchRequest(RequestModel):
+    # The client's hostname, the device of the session. No control characters: it is shown
+    # as text in the history.
+    device: Optional[str] = Field(
+        None, min_length=1, max_length=255, pattern=r"^[^\x00-\x1f\x7f]+$"
+    )
+
+
 class ImportRequest(RequestModel):
     connections: list[dict[str, Any]]
     mode: Literal["merge", "replace"]
@@ -235,6 +243,18 @@ class ConnectionOut(BaseModel):
     # Only set when the connection has options of its own (ConnectionOptions). A dict, not the
     # model: a row must not turn the whole list into a 500 should the schema ever get stricter.
     options: Optional[dict[str, Any]] = None
+
+
+class ConnectionTouchOut(ConnectionOut):
+    # The session the touch opened; the client ends it with .../sessions/{sessionId}/end.
+    sessionId: str
+
+
+class ConnectionSessionOut(BaseModel):
+    id: str
+    device: Optional[str]
+    startedAt: str
+    endedAt: Optional[str]
 
 
 class ConnectionImportResult(BaseModel):

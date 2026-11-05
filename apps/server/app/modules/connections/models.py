@@ -4,6 +4,7 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
@@ -201,3 +202,31 @@ class Connection(Base):
             existing = self._extra()
             existing.update(extra)
             self.extra_data = json.dumps(existing, ensure_ascii=False)
+
+
+def _iso_utc(value: datetime | None) -> str | None:
+    return value.replace(tzinfo=timezone.utc).isoformat() if value is not None else None
+
+
+class ConnectionSession(Base):
+    """One connect of a connection (R-1068): who, from which device, from when to when."""
+
+    __tablename__ = "connection_sessions"
+
+    id = Column(String, primary_key=True)
+    connection_id = Column(
+        String, ForeignKey("connections.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    device = Column(String, nullable=True)
+    started_at = Column(DateTime, nullable=False, index=True)  # naive UTC (F7)
+    # None while open, and for a session whose client never reported the end.
+    ended_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "device": self.device,
+            "startedAt": _iso_utc(self.started_at),
+            "endedAt": _iso_utc(self.ended_at),
+        }

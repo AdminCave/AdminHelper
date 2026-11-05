@@ -758,6 +758,163 @@
         "title": "ConnectionOut",
         "type": "object"
       },
+      "ConnectionSessionOut": {
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "startedAt": {
+            "title": "Startedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device",
+          "startedAt",
+          "endedAt"
+        ],
+        "title": "ConnectionSessionOut",
+        "type": "object"
+      },
+      "ConnectionTouchOut": {
+        "additionalProperties": true,
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "keyPath": {
+            "title": "Keypath",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "lastUsed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastused"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "sessionId": {
+            "title": "Sessionid",
+            "type": "string"
+          },
+          "tags": {
+            "title": "Tags"
+          },
+          "trustCert": {
+            "title": "Trustcert",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "host",
+          "port",
+          "username",
+          "domain",
+          "keyPath",
+          "url",
+          "notes",
+          "tags",
+          "trustCert",
+          "lastUsed",
+          "sessionId"
+        ],
+        "title": "ConnectionTouchOut",
+        "type": "object"
+      },
       "ConnectionUpdate": {
         "additionalProperties": true,
         "properties": {
@@ -4201,6 +4358,26 @@
         "title": "TokenResponse",
         "type": "object"
       },
+      "TouchRequest": {
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          }
+        },
+        "title": "TouchRequest",
+        "type": "object"
+      },
       "TunnelMappingOut": {
         "description": "A tunnel as a non-admin lists it: the keys of _MAPPING_FIELDS (tunnel_router.py).",
         "properties": {
@@ -5585,9 +5762,136 @@
         ]
       }
     },
+    "/api/connections/{conn_id}/sessions": {
+      "get": {
+        "description": "The newest sessions of a connection, newest first, of every user.",
+        "operationId": "list_connection_sessions_api_connections__conn_id__sessions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conn_id",
+            "required": true,
+            "schema": {
+              "title": "Conn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionSessionOut"
+                  },
+                  "title": "Response List Connection Sessions Api Connections  Conn Id  Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "List Connection Sessions",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/api/connections/{conn_id}/sessions/{session_id}/end": {
+      "post": {
+        "description": "Ends a session the calling user began. Ending it again keeps the first end.",
+        "operationId": "end_connection_session_api_connections__conn_id__sessions__session_id__end_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conn_id",
+            "required": true,
+            "schema": {
+              "title": "Conn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "End Connection Session",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
     "/api/connections/{conn_id}/touch": {
       "post": {
-        "description": "Setzt last_used auf jetzt. Auth: jeder Lesezugriff genuegt (Nutzung == Lesen),\naber per-User/Key-Scope wie bei der Liste (kein Touch fremder Connections).",
+        "description": "Setzt last_used auf jetzt und beginnt eine Sitzung im Verlauf. Auth: jeder\nLesezugriff genuegt (Nutzung == Lesen), aber per-User/Key-Scope wie bei der Liste\n(kein Touch fremder Connections).",
         "operationId": "touch_connection_api_connections__conn_id__touch_post",
         "parameters": [
           {
@@ -5600,12 +5904,29 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TouchRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectionOut"
+                  "$ref": "#/components/schemas/ConnectionTouchOut"
                 }
               }
             },
