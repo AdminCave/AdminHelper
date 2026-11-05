@@ -108,6 +108,7 @@
             <li><code>collectMemory()</code> &ndash; <code>memory_percent</code>, <code>memory_total_mb</code>, <code>memory_used_mb</code></li>
             <li><code>collectLoad()</code> &ndash; <code>load_1m</code>, <code>load_5m</code>, <code>load_15m</code></li>
             <li><code>collectSwapAndCPUCount()</code> &ndash; nur Linux, wie die Load, die der Monitoring-Dienst damit ins Verh&auml;ltnis setzt: <code>cpu_count</code> (logische CPUs, <code>cpu.Counts(true)</code>; eine 0 gilt als gescheitert und fehlt), <code>swap_total_mb</code>, <code>swap_used_mb</code> und nur mit Swap-Ger&auml;t (<code>Total &gt; 0</code>) <code>swap_percent</code> (<code>mem.SwapMemory()</code>). Scheitert ein Aufruf, fehlen nur seine Felder.</li>
+            <li><code>collectNetwork()</code> &ndash; Linux und Windows: <code>net_rx_bytes_total</code> und <code>net_tx_bytes_total</code>, die Byte-Z&auml;hler seit dem Boot (<code>net.IOCounters(true)</code>), summiert &uuml;ber die gez&auml;hlten Interfaces. Unter Linux z&auml;hlt jedes Interface mit <code>/sys/class/net/&lt;name&gt;/device</code> (physisch oder virtio), gibt es keins (Container, <code>veth</code>), jedes au&szlig;er Loopback; unter Windows jedes au&szlig;er Loopback. Ein Proxmox-Host z&auml;hlt so <code>eno1</code>, aber nicht noch einmal <code>vmbr0</code> und die <code>tap</code>-Ger&auml;te der G&auml;ste. Scheitert ein Lesevorgang, fehlen beide Felder (eine Teilsumme s&auml;he aus wie ein Einbruch). Die Felder sind additiv, die Report-Version bleibt.</li>
             <li><code>collectDisks()</code> &ndash; pro Mountpoint <code>mount</code>, <code>fstype</code>, <code>percent</code>, <code>total_gb</code>, <code>used_gb</code> und <code>free_gb</code> (gopsutil <code>Free</code>, der f&uuml;r Nicht-Root freie Platz, <code>Bavail</code>; kann kleiner sein als gesamt minus belegt; beide Plattformen), dazu <code>inodes_percent</code> nur unter Linux und nur, wenn das Dateisystem Inodes meldet (<code>InodesTotal &gt; 0</code>; btrfs und vfat nicht). Die Abbildung macht die reine Funktion <code>diskInfo</code>.</li>
             <li><code>collectUptime()</code></li>
             <li><code>collectTemperatures()</code> &ndash; lm-sensors / Windows-WMI</li>
@@ -164,6 +165,11 @@
                 <td><code>collectSwapAndCPUCount()</code><br /><code>collector.go (gemeinsam)</code></td>
                 <td><code>cpu_count</code>, <code>swap_total_mb</code>, <code>swap_used_mb</code>, mit Swap-Ger&auml;t <code>swap_percent</code>.</td>
                 <td>Liefert <code>nil</code> &mdash; Guard <code>resourceCalls.goos != "linux"</code>.</td>
+              </tr>
+              <tr>
+                <td><code>collectNetwork()</code><br /><code>collector.go (gemeinsam)</code></td>
+                <td><code>net_rx_bytes_total</code>, <code>net_tx_bytes_total</code> &uuml;ber die Interfaces mit <code>/sys/class/net/&lt;name&gt;/device</code>, ohne solche alle au&szlig;er Loopback.</td>
+                <td>Alle Interfaces au&szlig;er Loopback.</td>
               </tr>
               <tr>
                 <td><code>collectSystemState(ctx, st)</code><br /><code>system_linux.go</code> / <code>system_other.go</code></td>

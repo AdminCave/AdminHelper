@@ -108,6 +108,7 @@
             <li><code>collectMemory()</code> &ndash; <code>memory_percent</code>, <code>memory_total_mb</code>, <code>memory_used_mb</code></li>
             <li><code>collectLoad()</code> &ndash; <code>load_1m</code>, <code>load_5m</code>, <code>load_15m</code></li>
             <li><code>collectSwapAndCPUCount()</code> &ndash; Linux only, like the load the monitoring service puts into proportion with it: <code>cpu_count</code> (logical CPUs, <code>cpu.Counts(true)</code>; a 0 counts as failed and is left out), <code>swap_total_mb</code>, <code>swap_used_mb</code> and, only with a swap device (<code>Total &gt; 0</code>), <code>swap_percent</code> (<code>mem.SwapMemory()</code>). A failed call drops only its own fields.</li>
+            <li><code>collectNetwork()</code> &ndash; Linux and Windows: <code>net_rx_bytes_total</code> and <code>net_tx_bytes_total</code>, the byte counters since boot (<code>net.IOCounters(true)</code>), summed over the counted interfaces. On Linux every interface with <code>/sys/class/net/&lt;name&gt;/device</code> counts (physical or virtio), and if there is none (container, <code>veth</code>), every one except loopback; on Windows every one except loopback. A Proxmox host so counts <code>eno1</code> but not again <code>vmbr0</code> and the guests' <code>tap</code> devices. A failed read drops both fields (a partial sum would read as a traffic drop). The fields are additive; the report version stays.</li>
             <li><code>collectDisks()</code> &ndash; per mountpoint <code>mount</code>, <code>fstype</code>, <code>percent</code>, <code>total_gb</code>, <code>used_gb</code> and <code>free_gb</code> (gopsutil <code>Free</code>, the space left to non-root users, <code>Bavail</code>; it can be less than total minus used; both platforms), plus <code>inodes_percent</code> on Linux only and only when the filesystem reports inodes (<code>InodesTotal &gt; 0</code>; btrfs and vfat do not). The pure function <code>diskInfo</code> does the mapping.</li>
             <li><code>collectUptime()</code></li>
             <li><code>collectTemperatures()</code> &ndash; lm-sensors / Windows WMI</li>
@@ -164,6 +165,11 @@
                 <td><code>collectSwapAndCPUCount()</code><br /><code>collector.go (shared)</code></td>
                 <td><code>cpu_count</code>, <code>swap_total_mb</code>, <code>swap_used_mb</code>, with a swap device <code>swap_percent</code>.</td>
                 <td>Returns <code>nil</code> &mdash; guarded by <code>resourceCalls.goos != "linux"</code>.</td>
+              </tr>
+              <tr>
+                <td><code>collectNetwork()</code><br /><code>collector.go (shared)</code></td>
+                <td><code>net_rx_bytes_total</code>, <code>net_tx_bytes_total</code> over the interfaces with <code>/sys/class/net/&lt;name&gt;/device</code>, without such every one except loopback.</td>
+                <td>Every interface except loopback.</td>
               </tr>
               <tr>
                 <td><code>collectSystemState(ctx, st)</code><br /><code>system_linux.go</code> / <code>system_other.go</code></td>

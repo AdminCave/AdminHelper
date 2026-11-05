@@ -44,6 +44,12 @@ _USAGE_NAMES = {
     "monitor_agent_swap_percent_value": "swap",
 }
 _DISK_NAME = "monitor_agent_disk_percent_value"
+_NET_NAMES = {
+    "monitor_agent_net_rx_bytes_total_value": "netIn",
+    "monitor_agent_net_tx_bytes_total_value": "netOut",
+}
+# Bytes per second to Mbit/s.
+_MBIT = 8 / 1e6
 
 # Config keys and defaults as the agent_resources checker reads them
 # (app/checkers/agent.py: _grade_usage, _grade_load, _grade_disks).
@@ -66,13 +72,15 @@ def history_window(period: str, now: float) -> tuple[int, int, int]:
 
 
 def history_queries(server_id: str, step: int) -> dict[str, str]:
-    """The two range queries of one period: usage percentages and load per CPU.
+    """The three range queries of one period: usage percentages, load per CPU and the
+    network byte rates (bytes/s; build_series converts them to Mbit/s).
 
     Each point is the average over its step, not the last raw sample: at 6 h per
     point a single sample would stand for 359 minutes it never saw."""
     labels = f'server_id="{escape_label_value(server_id)}",check_id=""'
     window = _WINDOW[step]
     usage_names = "|".join([*_USAGE_NAMES, _DISK_NAME])
+    net_names = "|".join(_NET_NAMES)
     return {
         "usage": (
             f'avg_over_time({{__name__=~"{usage_names}",{labels}}}[{window}]) keep_metric_names'
@@ -82,6 +90,9 @@ def history_queries(server_id: str, step: int) -> dict[str, str]:
             f"avg_over_time(monitor_agent_load_5m_value{{{labels}}}[{window}])"
             f" / avg_over_time(monitor_agent_cpu_count_value{{{labels}}}[{window}])"
         ),
+        # MetricsQL rate also takes the last sample before the window, so one push per
+        # 5 min window is enough; the scaling stays in Python, where the name survives.
+        "net": f'rate({{__name__=~"{net_names}",{labels}}}[{window}]) keep_metric_names',
     }
 
 
@@ -90,11 +101,13 @@ _COMPARE_NAMES = {
     "ram": "monitor_agent_memory_percent_value",
     "disk": "monitor_agent_disk_percent_value",
 }
+_COMPARE_RATES = {"net": "monitor_agent_net_rx_bytes_total_value"}
 
 
 def compare_query(metric: str, step: int) -> str:
     """One range query over all agent servers, one series per server_id. disk is the
-    fullest mount; load is load_5m per CPU like the history and the checker."""
+    fullest mount; load is load_5m per CPU like the history and the checker; net is the
+    incoming traffic in Mbit/s."""
     window = _WINDOW[step]
 
     def per_server(name: str) -> str:
@@ -105,6 +118,9 @@ def compare_query(metric: str, step: int) -> str:
             f"{per_server('monitor_agent_load_5m_value')}"
             f" / {per_server('monitor_agent_cpu_count_value')}"
         )
+    if metric in _COMPARE_RATES:
+        name = _COMPARE_RATES[metric]
+        return f'max by (server_id) (rate({name}{{check_id=""}}[{window}])) * 8 / 1e6'
     return per_server(_COMPARE_NAMES[metric])
 
 
@@ -120,12 +136,12 @@ def compare_servers(result: list, start: int, end: int, step: int) -> list[dict]
     return sorted(servers, key=lambda server: server["serverId"])
 
 
-def _points(values: list, start: int, end: int, step: int, shift: int) -> list:
+def _points(values: list, start: int, end: int, step: int, shift: int, scale: float = 1.0) -> list:
     grid: list[list] = [[ts, None] for ts in range(start, end + 1, step)]
     for raw_ts, raw_value in values:
         try:
             ts = float(raw_ts) + shift
-            value = float(raw_value)
+            value = float(raw_value) * scale
         except (TypeError, ValueError):
             continue
         index = round((ts - start) / step)
@@ -134,10 +150,20 @@ def _points(values: list, start: int, end: int, step: int, shift: int) -> list:
     return grid
 
 
-def build_series(usage: list, load: list, start: int, end: int, step: int, shift: int = 0) -> dict:
-    """The series of one period from the two query results. `shift` moves the
+def build_series(
+    usage: list, load: list, net: list, start: int, end: int, step: int, shift: int = 0
+) -> dict:
+    """The series of one period from the three query results. `shift` moves the
     samples of the previous period onto this period's grid."""
-    out: dict = {"cpu": [], "ram": [], "swap": [], "loadPerCpu": [], "disks": {}}
+    out: dict = {
+        "cpu": [],
+        "ram": [],
+        "swap": [],
+        "loadPerCpu": [],
+        "netIn": [],
+        "netOut": [],
+        "disks": {},
+    }
     for series in usage:
         metric = series.get("metric", {})
         name = metric.get("__name__")
@@ -148,6 +174,10 @@ def build_series(usage: list, load: list, start: int, end: int, step: int, shift
             out[_USAGE_NAMES[name]] = points
     if load:
         out["loadPerCpu"] = _points(load[0].get("values", []), start, end, step, shift)
+    for series in net:
+        key = _NET_NAMES.get(series.get("metric", {}).get("__name__"))
+        if key:
+            out[key] = _points(series.get("values", []), start, end, step, shift, _MBIT)
     return out
 
 

@@ -14,7 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import TimeChart from '../charts/TimeChart.svelte';
   import { t } from '$lib/i18n';
 
-  const METRICS = ['cpu', 'ram', 'disk', 'load'] as const;
+  const METRICS = ['cpu', 'ram', 'disk', 'load', 'net'] as const;
   type Metric = (typeof METRICS)[number];
   const PERIODS = ['1h', '24h', '7d', '30d'] as const;
   type Period = (typeof PERIODS)[number];
@@ -65,7 +65,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return srv ? srv.name || srv.hostname || id : id;
   }
 
-  const unit = $derived<ChartUnit>(metric === 'load' ? '' : '%');
+  const unit = $derived<ChartUnit>(metric === 'load' ? '' : metric === 'net' ? 'Mbit/s' : '%');
   const gridLength = $derived(data ? Math.floor((data.end - data.start) / data.step) + 1 : 0);
   const times = $derived(
     Array.from({ length: gridLength }, (_, i) => (data?.start ?? 0) + i * (data?.step ?? 0)),

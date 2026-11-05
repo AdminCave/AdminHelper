@@ -24,6 +24,10 @@ LOAD_1H = (
     f"avg_over_time(monitor_agent_load_5m_value{{{F}}}[5m])"
     f" / avg_over_time(monitor_agent_cpu_count_value{{{F}}}[5m])"
 )
+NET_1H = (
+    'rate({__name__=~"monitor_agent_net_rx_bytes_total_value|monitor_agent_net_tx_bytes_total_value",'
+    f"{F}}}[5m]) keep_metric_names"
+)
 
 
 def _series(name, values, **labels):
@@ -76,6 +80,7 @@ def test_history_puts_every_series_on_one_grid(history):
     assert history.asked == [
         (USAGE_1H, str(start), str(END), "60s"),
         (LOAD_1H, str(start), str(END), "60s"),
+        (NET_1H, str(start), str(END), "60s"),
     ]
     body = r.json()
     assert (body["serverId"], body["period"], body["step"]) == ("srv-1", "1h", 60)
@@ -96,12 +101,38 @@ def test_history_puts_every_series_on_one_grid(history):
     assert body["previous"] is None
 
 
+def test_network_rates_arrive_in_mbit_per_second(history):
+    # R-1105: the query yields bytes/s per counter; the history shows Mbit/s.
+    start = END - 3600
+    history.answers[(NET_1H, str(start))] = [
+        _series("monitor_agent_net_rx_bytes_total_value", [[END - 60, "125000"], [END, "NaN"]]),
+        _series("monitor_agent_net_tx_bytes_total_value", [[END, "2500000"]]),
+        _series("monitor_agent_cpu_percent_value", [[END, "1"]]),  # foreign name: ignored
+    ]
+
+    series = history.get("/status/server/srv-1/history?period=1h").json()["series"]
+
+    grid = list(range(start, END + 1, 60))
+    assert [ts for ts, _ in series["netIn"]] == grid
+    assert series["netIn"][-2:] == [[END - 60, 1.0], [END, None]]
+    assert series["netOut"][-1] == [END, 20.0]
+    assert series["cpu"] == []
+
+
 def test_history_without_data_has_empty_series(history):
     r = history.get("/status/server/srv-1/history?period=24h")
 
     assert r.status_code == 200, r.text
-    assert r.json()["series"] == {"cpu": [], "ram": [], "swap": [], "loadPerCpu": [], "disks": {}}
-    assert [step for *_, step in history.asked] == ["900s", "900s"]
+    assert r.json()["series"] == {
+        "cpu": [],
+        "ram": [],
+        "swap": [],
+        "loadPerCpu": [],
+        "netIn": [],
+        "netOut": [],
+        "disks": {},
+    }
+    assert [step for *_, step in history.asked] == ["900s", "900s", "900s"]
 
 
 def test_previous_period_lands_on_this_periods_grid(history):
@@ -116,8 +147,10 @@ def test_previous_period_lands_on_this_periods_grid(history):
     assert [(q, s, e) for q, s, e, _ in history.asked] == [
         (USAGE_1H, str(start), str(END)),
         (LOAD_1H, str(start), str(END)),
+        (NET_1H, str(start), str(END)),
         (USAGE_1H, str(start - 3600), str(start)),
         (LOAD_1H, str(start - 3600), str(start)),
+        (NET_1H, str(start - 3600), str(start)),
     ]
     previous = r.json()["previous"]["cpu"]
     assert previous[0] == [start, 5.0]
@@ -159,9 +192,9 @@ def test_unknown_period_is_rejected(history):
     assert history.asked == []
 
 
-@pytest.mark.parametrize("failing", ["usage", "load"])
+@pytest.mark.parametrize("failing", ["usage", "load", "net"])
 def test_a_failed_query_answers_502(history, failing):
-    query = USAGE_1H if failing == "usage" else LOAD_1H
+    query = {"usage": USAGE_1H, "load": LOAD_1H, "net": NET_1H}[failing]
     history.answers[(query, str(END - 3600))] = None
 
     r = history.get("/status/server/srv-1/history?period=1h")
