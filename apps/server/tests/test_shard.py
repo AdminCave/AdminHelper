@@ -5,6 +5,7 @@
 """--shard K/N: the CI jobs together run every test exactly once (ci.yml, R-0950)."""
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +18,7 @@ SERVER = Path(__file__).resolve().parents[1]
 FILES = ["tests/test_core_time.py", "tests/test_bounds.py", "tests/test_ip_filter.py"]
 
 
-def _collected(*args):
+def _collected(*args, files=FILES):
     result = subprocess.run(
         [
             sys.executable,
@@ -27,7 +28,7 @@ def _collected(*args):
             "-q",
             "-p",
             "no:cacheprovider",
-            *FILES,
+            *files,
             *args,
         ],
         cwd=SERVER,
@@ -46,6 +47,37 @@ def test_the_shards_of_a_real_collection_are_disjoint_and_together_all_of_it():
     assert first and second
     assert not first & second
     assert first | second == everything
+
+
+def _manifest(tmp_path, shard, *args, files=FILES):
+    path = tmp_path / f"manifest-{shard.replace('/', '-')}-{len(files)}.json"
+    _collected("--shard", shard, "--shard-manifest", str(path), *args, files=files)
+    return json.loads(path.read_text())
+
+
+def test_the_shards_of_one_collection_write_the_same_manifest(tmp_path):
+    first, second = _manifest(tmp_path, "1/2"), _manifest(tmp_path, "2/2")
+    assert (first["shard"], second["shard"]) == ("1/2", "2/2")
+    assert first["count"] == second["count"] == len(_collected())
+    assert first["sha256"] == second["sha256"]
+
+
+def test_a_different_collection_changes_the_manifest(tmp_path):
+    whole = _manifest(tmp_path, "1/2")
+    fewer = _manifest(tmp_path, "1/2", files=FILES[:-1])
+    assert fewer["count"] < whole["count"]
+    assert fewer["sha256"] != whole["sha256"]
+
+
+def test_the_shards_split_what_is_left_after_a_keyword_filter(tmp_path):
+    # Leaves part of test_bounds.py and part of test_ip_filter.py, none of test_core_time.py.
+    filtered = _collected("-k", "reject or invalid")
+    assert filtered and filtered < _collected()
+    first = _collected("--shard", "1/2", "-k", "reject or invalid")
+    second = _collected("--shard", "2/2", "-k", "reject or invalid")
+    assert not first & second
+    assert first | second == filtered
+    assert _manifest(tmp_path, "1/2", "-k", "reject or invalid")["count"] == len(filtered)
 
 
 def test_each_file_goes_whole_to_one_shard_and_the_load_is_balanced():

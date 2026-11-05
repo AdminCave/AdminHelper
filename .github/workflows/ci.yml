@@ -31,7 +31,7 @@ jobs:
   # PYTEST_SHARD names the count, which matches the shard list (test_ci_shards.py).
   server:
     name: Server (pytest, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The 3.14 leg pulls the base images and runs the image tests on top of the suite.
     timeout-minutes: 25
     strategy:
@@ -75,8 +75,8 @@ jobs:
       ADMIN_PASSWORD: ciadmin
       PYTEST_SHARD: ${{ matrix.shard }}/2
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -102,7 +102,7 @@ jobs:
         # run.sh step; collected here it would run a second time inside this job.
         # -rs names each skip in the log; the next step reads the skips from the JUnit XML.
         # Each shard reports the coverage of its part only.
-        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
+        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
       # A test whose precondition is missing skips, and pytest stays green. This leg has them
       # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
       # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
@@ -126,6 +126,13 @@ jobs:
               sys.exit(1)
           print(f"{len(cases)} tests, none skipped")
           PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: shard-manifest-server-py${{ matrix.python-version }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-manifest.json
+          if-no-files-found: error
+          retention-days: 1
 
   # The required checks of the ruleset name a leg, not a shard: one job a leg, green only when
   # every shard is. needs on a matrix job has one result for all its legs, so a red shard of
@@ -134,26 +141,57 @@ jobs:
     name: Server (pytest, py${{ matrix.python-version }})
     needs: server
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     strategy:
+      # A red leg must not cancel the other: its result would read cancelled, not failure.
+      fail-fast: false
       matrix:
         python-version: ["3.14", "3.15"]
     steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shard-manifest-server-py${{ matrix.python-version }}-*
+          path: ${{ runner.temp }}/shard-manifests
       - name: Every shard passed
         env:
           RESULT: ${{ needs.server.result }}
         run: |
           echo "server shards: $RESULT"
           test "$RESULT" = success
+      # Each shard collects the whole suite and keeps its part. Had one of them collected
+      # something else (an import error on one side only), a test file could land in no shard
+      # while every shard stays green: the shards must report the same collection.
+      - name: The shards collected the same tests
+        env:
+          SHARDS: "2"
+          MANIFESTS: ${{ runner.temp }}/shard-manifests
+        run: |
+          python3 - "$MANIFESTS" "$SHARDS" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root, shards = Path(sys.argv[1]), int(sys.argv[2])
+          manifests = [json.loads(path.read_text()) for path in sorted(root.rglob("*.json"))]
+          for manifest in manifests:
+              print(f"shard {manifest['shard']}: {manifest['count']} tests, {manifest['sha256']}")
+          want = [f"{index}/{shards}" for index in range(1, shards + 1)]
+          if sorted(m["shard"] for m in manifests) != want:
+              print(f"::error::expected one manifest for each of the shards {want}")
+              sys.exit(1)
+          if len({(m["count"], m["sha256"]) for m in manifests}) != 1:
+              print("::error::the shards collected different tests")
+              sys.exit(1)
+          PY
 
   python-lint:
     name: Python (ruff check + format)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
       - name: Install ruff
@@ -168,7 +206,7 @@ jobs:
 
   monitoring:
     name: Monitoring (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
       # For the tests that need a real Postgres: test_migrations_smoke and
@@ -191,8 +229,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -209,7 +247,7 @@ jobs:
 
   ca-issuer:
     name: CA-Issuer (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
       postgres:
@@ -228,8 +266,8 @@ jobs:
     env:
       AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -259,7 +297,7 @@ jobs:
   # test_lock_pins.py holds python-version in lockstep with each Dockerfile's FROM.
   python-lock-server:
     name: Server (pytest, image lock, shard ${{ matrix.shard }}/2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -295,8 +333,8 @@ jobs:
       ADMIN_PASSWORD: ciadmin
       PYTEST_SHARD: ${{ matrix.shard }}/2
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -311,26 +349,62 @@ jobs:
         run: python ../../scripts/dev/lock-pins.py requirements.txt
       - name: Run pytest
         working-directory: apps/server
-        run: pytest -q -m "not schemathesis" --shard "$PYTEST_SHARD"
+        run: pytest -q -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: shard-manifest-lock-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-manifest.json
+          if-no-files-found: error
+          retention-days: 1
 
   # The name python-lock-server had before its shards, one job green only when both are.
   python-lock-server-result:
     name: Server (pytest, image lock)
     needs: python-lock-server
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shard-manifest-lock-*
+          path: ${{ runner.temp }}/shard-manifests
       - name: Every shard passed
         env:
           RESULT: ${{ needs.python-lock-server.result }}
         run: |
           echo "image lock shards: $RESULT"
           test "$RESULT" = success
+      # Each shard collects the whole suite and keeps its part. Had one of them collected
+      # something else (an import error on one side only), a test file could land in no shard
+      # while every shard stays green: the shards must report the same collection.
+      - name: The shards collected the same tests
+        env:
+          SHARDS: "2"
+          MANIFESTS: ${{ runner.temp }}/shard-manifests
+        run: |
+          python3 - "$MANIFESTS" "$SHARDS" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root, shards = Path(sys.argv[1]), int(sys.argv[2])
+          manifests = [json.loads(path.read_text()) for path in sorted(root.rglob("*.json"))]
+          for manifest in manifests:
+              print(f"shard {manifest['shard']}: {manifest['count']} tests, {manifest['sha256']}")
+          want = [f"{index}/{shards}" for index in range(1, shards + 1)]
+          if sorted(m["shard"] for m in manifests) != want:
+              print(f"::error::expected one manifest for each of the shards {want}")
+              sys.exit(1)
+          if len({(m["count"], m["sha256"]) for m in manifests}) != 1:
+              print("::error::the shards collected different tests")
+              sys.exit(1)
+          PY
 
   python-lock-monitoring:
     name: Monitoring (pytest, image lock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
       postgres:
@@ -349,8 +423,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -369,7 +443,7 @@ jobs:
 
   python-lock-ca-issuer:
     name: CA-Issuer (pytest, image lock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     # As in ca-issuer: Postgres only for the pg_engine tests, through AH_TEST_DB.
     services:
@@ -389,8 +463,8 @@ jobs:
     env:
       AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -409,7 +483,7 @@ jobs:
 
   schemathesis:
     name: Schema fuzzing (server + monitoring + ca-issuer)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Its own job, not a step inside the three pytest ones: own budget, own
     # verdict, and a failure here says "a route answers something its schema does
     # not describe" rather than drowning in an unrelated suite.
@@ -442,8 +516,8 @@ jobs:
       # `import schemathesis` gate finds the package.
       AH_VENV: /tmp/ci-venv
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -463,11 +537,11 @@ jobs:
 
   agent:
     name: Go Agent (gofmt + vet + test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           # The runner image's toolcache can lag behind the newest patch, and the
@@ -496,7 +570,7 @@ jobs:
         # Coverage is report-only (no threshold) — visibility, not a gate.
         # -race because the agent is concurrent (monitor, frpc, config): a data
         # race is the bug class neither review nor a single-threaded test sees.
-        # It needs cgo, which ubuntu-latest has. Measured on this job: ~38 s
+        # It needs cgo, which ubuntu-26.04 has. Measured on this job: ~38 s
         # before, 75 s with the detector (run 34484154968) — far inside
         # timeout-minutes: 15.
         run: go test -race -cover ./...
@@ -511,8 +585,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           check-latest: true
@@ -533,17 +607,17 @@ jobs:
 
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The three types both api/types.ts files describe (FrpConfig, FrpStatus,
       # FrpStatusProxy) are maintained twice. Every line the web file
       # declares has to exist in the desktop one — the desktop may carry more,
       # since it projects the same payload further (harness 8a, T14).
       - name: Shared API types in lockstep with the web frontend
         run: bash apps/desktop/ui/scripts/sync-from-web.sh --check
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
           cache: npm
@@ -572,11 +646,11 @@ jobs:
 
   frontend:
     name: Web-Frontend (check + lint + unit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
           cache: npm
@@ -597,11 +671,13 @@ jobs:
 
   frontend-e2e:
     name: Web-Frontend (Playwright E2E)
-    runs-on: ubuntu-latest
+    # Playwright 1.60 refuses to install chromium on ubuntu-26.04; 26.04 support starts with
+    # 1.61. The job moves to 26.04 with the npm update (R-1039).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
           cache: npm
@@ -621,7 +697,7 @@ jobs:
       - name: Playwright test
         working-directory: apps/web
         run: npx playwright test
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
@@ -632,10 +708,10 @@ jobs:
 
   rust:
     name: Desktop-Backend (fmt + clippy + test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # A slow apt mirror held this step in tauri-build-smoke until that job's limit
       # (run 39776102278). The step normally takes under a minute; its own limit makes a
       # bad mirror cost 10 minutes, not the job.
@@ -659,7 +735,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
       - name: cargo fmt
@@ -681,9 +757,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
       - name: frpc sidecar (externalBin must resolve for tauri-build)
@@ -706,10 +782,11 @@ jobs:
   # deb-only keeps it affordable as a PR gate.
   tauri-build-smoke:
     name: Desktop (tauri build smoke, Linux)
-    runs-on: ubuntu-latest
+    # The runner of release.yml desktop-linux: the smoke builds what the release ships.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # A slow apt mirror held this step until the job's 45-minute limit
       # (run 39776102278). The step normally takes under a minute; its own limit makes a
       # bad mirror cost 10 minutes, not the job.
@@ -721,17 +798,17 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
             libayatana-appindicator3-dev libssl-dev patchelf file
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
           cache: npm
           cache-dependency-path: apps/desktop/ui/package-lock.json
       - name: Install Tauri CLI
         # Keep this pin in lockstep with release.yml.
-        run: cargo install tauri-cli --locked --version "2.11.2"
+        run: cargo install tauri-cli --locked --version "2.12.4"
       - name: frpc sidecar
         run: |
           curl -fsSL -o frpc.tar.gz \
@@ -753,7 +830,7 @@ jobs:
   # break (e.g. hash mismatch under --require-hashes) landed on main first.
   docker-build:
     name: ${{ matrix.image }} image (build only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -775,11 +852,11 @@ jobs:
             context: apps/frps
             dockerfile: apps/frps/Dockerfile
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build (no push)
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -793,10 +870,10 @@ jobs:
   # and is the 4th pin.
   frp-consistency:
     name: Pinned versions + signing key in lockstep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compare the four FRP_VERSION pins
         run: |
           ci=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
@@ -845,10 +922,10 @@ jobs:
 
   openapi-compat:
     name: OpenAPI breaking changes (oasdiff)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The gate diffs this branch's snapshot against the base branch's, so the
           # base ref has to exist locally. The default shallow clone has only this
@@ -897,10 +974,10 @@ jobs:
   # base logic is still held by it (an admin merge then).
   public-repo-guard:
     name: Public repo guard (review.sh sec)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Every commit of the span is read, and the base has to exist locally.
           fetch-depth: 0
@@ -954,10 +1031,10 @@ jobs:
   # scripts are clean at default.
   ops-scripts:
     name: Ops scripts (shellcheck + update test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: shellcheck
         # The frps supervisor runs under the busybox sh of its image, so it is checked as
         # POSIX sh, not as bash.
@@ -1004,10 +1081,10 @@ jobs:
 
   gateway-config:
     name: Gateway (nginx -t)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Syntax-check the single public TLS edge on every PR: the integration-stack
       # job below skips PRs and docker.yml only builds on releases, so a broken
       # nginx.conf (bad directive, missing snippet include) would otherwise merge and
@@ -1043,10 +1120,10 @@ jobs:
   integration-stack:
     name: From-outside stack (mTLS gateway)
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: From-outside mTLS integration test
         run: bash scripts/tests/integration_stack_test.sh
 
