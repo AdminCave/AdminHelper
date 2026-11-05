@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-3 · Review: pro Task
 Spec: docs/features/kern-verbindungen-3.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (zwei Alembic-Revisionen, neue Endpunkte) und die Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -90,8 +90,10 @@ Review: approve (.ah-out/review/kern-verbindungen-3/T9.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage_key -- stored_password_key -- termsrv_legacy
 Doku: keine (internes Verhalten des Passwortspeichers)
 
-### T10 — Doku: Route im Schlüssel des RDP-Passworts DE+EN (R-1066)  [ ]
+### T10 — Doku: Route im Schlüssel des RDP-Passworts DE+EN (R-1066)  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @94b0a363 2026-11-05T11:24:23+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Nachtrag aus der Abschlussprüfung zu T9: Keyring-Account mit `|gw=<gateway>` und `|nla=off`, eine geänderte Route fragt neu; Status und Übernahme der Windows-Alt-Einträge nur ohne Route.
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
