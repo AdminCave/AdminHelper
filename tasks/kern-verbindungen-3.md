@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-verbindungen-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-3 · Review: pro Task
 Spec: docs/features/kern-verbindungen-3.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (zwei Alembic-Revisionen, neue Endpunkte) und die Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -81,6 +81,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
 Doku: diese Task
+
+### T9 — Desktop: gespeichertes RDP-Passwort an Gateway und NLA-Wahl binden (R-1066)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/password.rs, apps/desktop/src-tauri/src/connection/mod.rs
+Änderung: Nachtrag aus der Abschlussprüfung. Der Schlüssel des gespeicherten RDP-Passworts trägt Gateway und „NLA aus“, wenn gesetzt (ohne beides bleibt er unverändert); `check_credential_connection` verlangt dieselbe Gateway- und NLA-Wahl bei geöffneter und Quell-Verbindung. Tests: abweichende Wahl ergibt einen anderen Schlüssel und wird abgelehnt, Schlüssel ohne Optionen unverändert.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage_key -- stored_password_key
+Doku: keine (internes Verhalten des Passwortspeichers)
 
 ## Entscheidungen
 - T1: Form der Optionen. SSH: `jumpHost` als `[user@]host[:port]`, bis zu acht Hops mit Komma (wie `-J`); `forwards` höchstens 32 Einträge `{type L|R|D, listen "[bind:]port" (bind auch `*`), target "host:port"}`: L/R brauchen ein Ziel, D (SOCKS) nimmt keins; `keepalive` in Sekunden 1–3600 (`ServerAliveInterval`); `authMethod` key|agent|password. RDP: `scalingMode`, `windowMode`, `performanceProfile` mit den Werten der Desktop-Enums, `customSize` im Bereich von `parse_custom_size` (640x480–7680x4320); `drives`, `printers`, `nla` als bool, `audio` local|remote|off, `gateway` `host[:port]`. Host: Name aus `[A-Za-z0-9._-]` ohne führendes `-`, oder IPv6 in Klammern; Port 1–65535 als Regex, damit `0` und `65536` scheitern. Damit sind Leerzeichen, Steuerzeichen und Shell-Zeichen ausgeschlossen.
