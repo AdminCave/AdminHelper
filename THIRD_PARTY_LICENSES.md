@@ -266,6 +266,17 @@ diversen `BSD`-/`ISC`-/`Zlib`-/`MIT`-Lizenzen sind GPL-3.0-kompatibel. Es
 genügt, den jeweiligen Lizenztext bzw. Copyright-Hinweis in der Distribution
 mitzuführen.
 
+### AGPL-3.0 — Redis-Server (Container-Image)
+
+Der Stack startet den Redis-Server aus dem offiziellen Image `redis:8-alpine`
+(`docker-compose.yml`, Dienst `redis`). Redis ab Version 8 steht wahlweise unter
+RSALv2, SSPLv1 oder **AGPLv3** (redis.io/legal/licenses); AdminHelper nutzt ihn
+unter AGPLv3. Das Image wird nicht mitgeliefert, sondern beim Start aus der
+Registry gezogen und unverändert betrieben. Auflage: Wer den Redis-Server selbst
+ändert und über ein Netz anbietet, muss den geänderten Quelltext bereitstellen
+(AGPLv3 §13). Die Python-Client-Bibliothek `redis` (Abschnitt 1, MIT) ist davon
+getrennt.
+
 ---
 
 ## Reproduktion

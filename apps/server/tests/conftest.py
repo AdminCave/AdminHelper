@@ -6,6 +6,8 @@
 SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 from collections import Counter
@@ -497,6 +499,14 @@ def pytest_addoption(parser):
         metavar="K/N",
         help="run only the K-th of N disjoint parts of the collected tests",
     )
+    # CI compares the files of all shards of a leg: a test file only one shard collects would
+    # land in no shard, and both stay green (ci.yml, server-result).
+    parser.addoption(
+        "--shard-manifest",
+        default=None,
+        metavar="PATH",
+        help="with --shard: write the count and hash of the collection before the split to PATH",
+    )
 
 
 def parse_shard(value):
@@ -530,6 +540,18 @@ def pytest_collection_modifyitems(config, items):
     if config.getoption("--shard") is None:
         return
     index, count = config.getoption("--shard")
+    manifest = config.getoption("--shard-manifest")
+    if manifest:
+        nodeids = "\n".join(sorted(item.nodeid for item in items))
+        Path(manifest).write_text(
+            json.dumps(
+                {
+                    "shard": f"{index}/{count}",
+                    "count": len(items),
+                    "sha256": hashlib.sha256(nodeids.encode()).hexdigest(),
+                }
+            )
+        )
     files = [item.nodeid.split("::", 1)[0] for item in items]
     shard = shard_of_each_file(Counter(files), count)
     keep = [item for item, f in zip(items, files, strict=True) if shard[f] == index - 1]
