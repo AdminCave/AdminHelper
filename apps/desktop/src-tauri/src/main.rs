@@ -20,6 +20,7 @@ mod password;
 mod port_registry;
 mod probe;
 mod proxy;
+mod rdp_embedded;
 mod session;
 mod storage;
 mod sync;

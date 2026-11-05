@@ -18,8 +18,10 @@ Reihenfolge: T1 zuerst (Abhängigkeit). T2, T3 und T4 hängen nur an T1. T5 brau
 
 ## Tasks
 
-### T1 — IronRDP als Abhängigkeit, Lizenz-Gates, THIRD_PARTY_LICENSES  [ ]
+### T1 — IronRDP als Abhängigkeit, Lizenz-Gates, THIRD_PARTY_LICENSES  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs (neu, SPDX), apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs (neu, SPDX), THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @7fbdf2b1 2026-11-05T09:36:56+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T1.verdict.json)
 Änderung:
 - `Cargo.toml`: `ironrdp-client` und `ironrdp-tls` als Git-Abhängigkeit auf Revision
   `f96f664abf0bdfe547f222bcd37e09899f00f310`.
@@ -187,4 +189,26 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/arch-rdp-backend.md
 
+### T8 — Audit-Ausnahme RUSTSEC-2023-0071 (`rsa` über IronRDP)  [?] (RUSTSEC-2023-0071 (rsa, Marvin, ohne Fix) im Desktop hinnehmen und per .cargo/audit.toml ausnehmen? Empfehlung: ja, kein privater RSA-Schlüssel im genutzten Anmeldeweg)
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/.cargo/audit.toml (neu), apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs, docs/features/arch-rdp-backend.md
+Abhängt von: T1
+Änderung:
+- Befund aus dem Review von T1: `rsa 0.10.0-rc.18` kommt über `picky`, `sspi` und `winscard` (IronRDP) in den Build
+  (`cargo tree -e normal,build -i rsa`). Für `rsa` gilt RUSTSEC-2023-0071 (Marvin: Timing-Seitenkanal bei Operationen
+  mit dem privaten Schlüssel), eine gepatchte Version gibt es nicht. `cargo audit` (`audit.yml`, Job `rust`) wird
+  damit rot.
+- Bei „hinnehmen“: `.cargo/audit.toml` neben `Cargo.lock` mit `ignore = ["RUSTSEC-2023-0071"]` und Begründung.
+  - Die Sitzung meldet sich mit dem Passwort über CredSSP/NTLM an; einen privaten RSA-Schlüssel nutzt IronRDP nur bei
+    Smartcard- und Entra-Anmeldung, beide nutzt die Sitzung nicht; Standard-RDP-Sicherheit bleibt aus (Spec).
+  - `cargo audit` liest die Datei aus dem Arbeitsverzeichnis des Jobs, der Workflow bleibt unverändert (Probe auf
+    dem Lockfile von T1: rc 1 ohne, rc 0 mit der Datei).
+  - Ein Test in `license_gate.rs` hält die Ausnahmeliste bei genau diesem Advisory.
+- Spec-Abschnitt „Risiken“ um den Fall ergänzt.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- license_gate
+Doku: docs/features/arch-rdp-backend.md · Entwickler-Doku → T7
+
 ## Entscheidungen
+- 2026-11-05 T1: `tokio-tungstenite` 0.29 als direkte Abhängigkeit mit `default-features = false` und `rustls-tls-native-roots` — `ironrdp-client` ruft `client_async_tls` ohne Feature-Gate (RDCleanPath-Transport, `connect_rdcleanpath_transport`) und baut ohne TLS-Feature nicht; rustls ohne Default-Features hält den Provider bei ring, `aws-lc-rs` bleibt draußen (`cargo tree -i`).
+- 2026-11-05 T1: Die Lizenz-Gates fragen `cargo tree --locked --offline -e normal,build -i <crate>`, nicht `Cargo.lock` oder `cargo-license` — beide führen `aws-lc-rs`/`aws-lc-sys` über das Default-Feature `aws-lc-rs` von `sspi` (`rustls?/aws-lc-rs`), obwohl sie nicht gebaut werden; THIRD_PARTY_LICENSES nennt das ausdrücklich.
+- 2026-11-05 T1: Die Apache-Pflichtliste der Rust-Crates (Abschnitt 3 und „NOTICE") aus dem gebauten Graphen neu erhoben statt nur ergänzt — `borsh-derive`, `encoding_rs`, `unicode-ident` sind dort nicht mehr Apache-pflichtig, neu sind `cryptoki`, `cryptoki-sys`, `flagset`, `gethostname` (IronRDP/sspi) und `target-lexicon`; keines liefert eine NOTICE-Datei.
+- 2026-11-05 T1: Der Befund RUSTSEC-2023-0071 (`rsa` über IronRDP, ohne Fix) wird eine eigene Frage-Task (T8) statt T1 anzuhalten: die Abhängigkeit selbst deckt Kevins Entscheidung R-1074 (IronRDP nativ), die Ausnahme im Audit ist hingenommenes Restrisiko und seine Entscheidung; T8 offen hält den Abschluss (`review.sh final`) auf, die übrigen Tasks laufen weiter.

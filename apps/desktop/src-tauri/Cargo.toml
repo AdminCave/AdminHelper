@@ -67,6 +67,17 @@ toml = "1"
 # Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
 # Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
 zeroize = "1.8.2"
+# Embedded RDP (rdp_embedded/): IronRDP pinned to a reviewed Git revision, not a crates.io release,
+# so the client API and the GFX fixes it relies on cannot move underneath us.
+# The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs, and `sound` stays off
+# (docs/features/arch-rdp-backend.md, E2). H.264 comes from the platform (Media Foundation on
+# Windows, none on Linux), not openh264. The license_gate tests keep it that way.
+ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["clipboard", "rdpdr"] }
+ironrdp-tls = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["rustls-ring"] }
+# ironrdp-client calls tokio_tungstenite::client_async_tls without a feature gate (its RDCleanPath
+# WebSocket transport, unused here), which only exists with a TLS feature of tokio-tungstenite. This one
+# takes rustls without default features, so the provider stays ring.
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-native-roots"] }
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
