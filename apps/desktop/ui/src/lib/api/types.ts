@@ -22,11 +22,11 @@ export interface Connection {
   options?: ConnectionOptions | null;
 }
 
-export type SshForwardType = 'L' | 'R' | 'D';
+export type SshForwardKind = 'L' | 'R' | 'D';
 export type SshAuthMethod = 'key' | 'agent' | 'password';
 
 export interface SshForward {
-  type: SshForwardType;
+  type: SshForwardKind;
   listen: string;
   target?: string | null;
 }

@@ -107,8 +107,10 @@ Review: approve (.ah-out/review/kern-verbindungen-3/T11.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp
 Doku: keine (nur Test)
 
-### T12 — Desktop-UI: Vertrags- und Paritätstests kennen die Optionstypen (R-1066)  [ ]
+### T12 — Desktop-UI: Vertrags- und Paritätstests kennen die Optionstypen (R-1066)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @313771c1 2026-11-05T11:51:22+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T12.verdict.json)
 Änderung: Nachtrag aus der PR-CI (#402, Job „Desktop-UI“): `types.contract.test.ts` bildet `ConnectionOptions`, `SshOptions`, `SshForward` und `RdpConnectionOptions` (Schema `RdpOptions`) auf die Server-Schemas ab; der TS-Typ `SshForwardType` heißt wie das Rust-Enum `SshForwardKind`, damit `types.parity.test.ts` ihn findet.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts -- src/lib/bridge/types.parity.test.ts
 Doku: keine (nur Typnamen und Tests)
