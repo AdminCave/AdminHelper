@@ -13,7 +13,11 @@
 // already syncs the full list from the server.
 
 import { apiRequest } from '$lib/api/request';
-import type { AuthSession, Connection as LauncherConnection } from '$lib/bridge/types';
+import type {
+  AuthSession,
+  ConnectionSession,
+  Connection as LauncherConnection,
+} from '$lib/bridge/types';
 import type { Connection } from '$lib/api/types';
 
 export const connectionsApi = {
@@ -31,14 +35,33 @@ export const connectionsApi = {
       data,
     );
   },
-  // Bumps lastUsed server-side and echoes the connection back. Returns the
-  // launcher-shaped Connection because the caller (connectFlow) patches it
-  // straight into the launcher store, not the server-API view.
-  touch(session: AuthSession, id: string): Promise<LauncherConnection> {
-    return apiRequest<LauncherConnection>(
+  // Bumps lastUsed server-side, begins a session of this device and echoes the connection back
+  // with the session's id. Returns the launcher-shaped Connection because the caller
+  // (connectFlow) patches it straight into the launcher store, not the server-API view.
+  touch(
+    session: AuthSession,
+    id: string,
+    device?: string,
+  ): Promise<LauncherConnection & { sessionId?: string }> {
+    return apiRequest<LauncherConnection & { sessionId?: string }>(
       session,
       'POST',
       `/api/connections/${encodeURIComponent(id)}/touch`,
+      device ? { device } : undefined,
+    );
+  },
+  endSession(session: AuthSession, id: string, sessionId: string): Promise<ConnectionSession> {
+    return apiRequest<ConnectionSession>(
+      session,
+      'POST',
+      `/api/connections/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}/end`,
+    );
+  },
+  sessions(session: AuthSession, id: string, limit: number): Promise<ConnectionSession[]> {
+    return apiRequest<ConnectionSession[]>(
+      session,
+      'GET',
+      `/api/connections/${encodeURIComponent(id)}/sessions?limit=${limit}`,
     );
   },
   remove(session: AuthSession, id: string): Promise<void> {

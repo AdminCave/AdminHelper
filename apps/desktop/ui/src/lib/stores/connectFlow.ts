@@ -17,7 +17,12 @@ import type { ClientInfo, Connection } from '$lib/bridge/types';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
 import { sessionStore } from './session';
-import { connections as connectionsStore, upsert, patchInMemory } from './connections';
+import {
+  connections as connectionsStore,
+  upsert,
+  patchInMemory,
+  sessionsChanged,
+} from './connections';
 import { reportError, showStatus } from './statusBar';
 import { getMappings } from './tunnel';
 import { requestPassword } from './passwordPrompt';
@@ -39,6 +44,17 @@ interface RdpAttempt {
 }
 
 const rdpAttempts = new Map<string, RdpAttempt>();
+
+/** A session begun by a connect, to be ended where it was begun. */
+interface OpenSession {
+  mode: 'server' | 'local';
+  connectionId: string;
+  id: string;
+}
+
+// The session of each running RDP start by its correlationId, until its rdp-exit. A promise: a
+// start that ends at once may report its exit before the session is written.
+const rdpSessions = new Map<string, Promise<OpenSession | null>>();
 
 function newCorrelationId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -94,6 +110,47 @@ export function markRdpError(correlationId: string | null, message: string): voi
   reportError(message);
 }
 
+/** Ends the session of the RDP start `correlationId`; called from the rdp-exit Tauri event. */
+export async function markRdpExit(correlationId: string): Promise<void> {
+  const pending = rdpSessions.get(correlationId);
+  if (!pending) return;
+  rdpSessions.delete(correlationId);
+  const open = await pending.catch(() => null);
+  if (!open) return;
+  try {
+    if (open.mode === 'server') {
+      const { session } = get(sessionStore);
+      if (session) await connectionsApi.endSession(session, open.connectionId, open.id);
+    } else {
+      await bridge.endSession(open.id);
+    }
+    sessionsChanged();
+  } catch {
+    // The history then shows the session without an end; nothing the user could act on.
+  }
+}
+
+let deviceCache: Promise<string | undefined> | null = null;
+
+/**
+ * This computer's name as the device of a server session: without control characters (the
+ * server refuses them, and every connect would fail its touch) and at most 255 characters.
+ */
+function deviceName(): Promise<string | undefined> {
+  deviceCache ??= bridge
+    .deviceName()
+    .then((name) => {
+      const clean = [...(name ?? '')]
+        .filter((ch) => ch.charCodeAt(0) > 0x1f && ch.charCodeAt(0) !== 0x7f)
+        .join('')
+        .trim()
+        .slice(0, 255);
+      return clean || undefined;
+    })
+    .catch(() => undefined);
+  return deviceCache;
+}
+
 function passwordStoreEnabled(): boolean {
   const { settings } = get(sessionStore);
   return Boolean(settings?.storePasswords);
@@ -111,29 +168,47 @@ function rememberAllowed(connection: Connection): boolean {
   return get(connectionsStore).some((c) => c.id === connection.id);
 }
 
+/** Begins a session in the workspace's local history; `null` when it could not be written. */
+async function startLocalSession(connectionId: string): Promise<OpenSession | null> {
+  try {
+    const started = await bridge.startSession(connectionId);
+    return { mode: 'local', connectionId, id: started.id };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Updates lastUsed in a mode-specific way:
- *  - local:  upsert into local SQLite (persistent).
- *  - server: POST /api/connections/{id}/touch -> memory patch with server response.
- *  - sync:   memory patch only (sync URL is read-only, does not survive the next sync).
+ * Updates lastUsed and begins a session in a mode-specific way:
+ *  - local:  upsert into local SQLite (persistent), session in the local history.
+ *  - server: POST /api/connections/{id}/touch with this device -> memory patch with server
+ *            response, session on the server.
+ *  - sync:   memory patch only (sync URL is read-only, does not survive the next sync),
+ *            session in the local history.
+ * Returns the session begun, `null` when none could be.
  */
-async function markConnectionUsed(connection: Connection): Promise<void> {
+async function markConnectionUsed(connection: Connection): Promise<OpenSession | null> {
   const { settings, session } = get(sessionStore);
   const mode = settings?.mode ?? 'local';
 
   if (mode === 'server' && session) {
     try {
-      const updated = await connectionsApi.touch(session, connection.id);
+      const { sessionId, ...updated } = await connectionsApi.touch(
+        session,
+        connection.id,
+        await deviceName(),
+      );
       patchInMemory(updated);
+      return sessionId ? { mode: 'server', connectionId: connection.id, id: sessionId } : null;
     } catch {
       patchInMemory({ ...connection, lastUsed: new Date().toISOString() });
+      return null;
     }
-    return;
   }
 
   if (mode === 'sync') {
     patchInMemory({ ...connection, lastUsed: new Date().toISOString() });
-    return;
+    return startLocalSession(connection.id);
   }
 
   const items = get(connectionsStore);
@@ -143,6 +218,7 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
     lastUsed: new Date().toISOString(),
   };
   await upsert(updated);
+  return startLocalSession(connection.id);
 }
 
 /**
@@ -285,6 +361,8 @@ async function performConnect(
         : bridge.openConnection(resolved, password, client, cid);
       promise.catch((err: unknown) => {
         clearRdpAttempt(cid);
+        // No client ran, so no rdp-exit comes: the session ends here.
+        void markRdpExit(cid);
         reportError(errMsg(err));
       });
     } else if (useStoredPassword) {
@@ -293,7 +371,12 @@ async function performConnect(
       await bridge.openConnection(resolved, password);
     }
 
-    await markConnectionUsed(connection);
+    const used = markConnectionUsed(connection).then((open) => {
+      if (open) sessionsChanged();
+      return open;
+    });
+    if (rdpId !== null) rdpSessions.set(rdpId, used);
+    await used;
 
     if (connection.kind === 'rdp') {
       if (rdpId !== null) scheduleRdpStatus(rdpId);

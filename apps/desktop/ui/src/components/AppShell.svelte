@@ -23,7 +23,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings } from '$lib/stores/session';
   import { connections } from '$lib/stores/connections';
-  import { initiateConnect, markRdpError } from '$lib/stores/connectFlow';
+  import { initiateConnect, markRdpError, markRdpExit } from '$lib/stores/connectFlow';
   import { openEditor } from '$lib/stores/editor';
   import { buildEntries } from '$lib/palette';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
@@ -254,6 +254,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           } else {
             markRdpError(payload.correlationId ?? null, payload.message ?? tNow('error.rdpAuth'));
           }
+        }),
+        listen<{ correlationId?: string }>('rdp-exit', (e) => {
+          if (e.payload?.correlationId) void markRdpExit(e.payload.correlationId);
         }),
         listenForSessionExpiry(),
       ]);
