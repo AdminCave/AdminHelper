@@ -128,7 +128,8 @@ tar czf "$WORK/sym.tar.gz" -C "$WORK" link
 # for a line break, quoted with escapes for a control character), and compose config
 # --images server names the image of postgres too, as compose names those of the
 # dependencies (server depends on postgres; v5.6.1). docker volume inspect finds a
-# volume only with AH_TEST_PGVOL=1.
+# volume only with AH_TEST_PGVOL=1, and with AH_TEST_PGVOL=17 only the postgres-data
+# volume of PostgreSQL 17.
 # With STUB_DIR it logs every call, keeps the .env as compose up -d postgres finds it and
 # the last --env-file as compose read it (envfile.seen).
 mkdir -p "$WORK/cfg/bin"
@@ -144,7 +145,8 @@ server_image() {
   printf '%b\n' "${i:-ghcr.io/admincave/adminhelper/server:latest}"
 }
 case "$*" in
-  "volume inspect "*) [ "${AH_TEST_PGVOL:-}" = 1 ] || exit 1 ;;
+  "volume inspect "*)
+    [ "${AH_TEST_PGVOL:-}" = 1 ] || { [ "${AH_TEST_PGVOL:-}" = 17 ] && [ "${3%_postgres-data}" != "$3" ]; } || exit 1 ;;
   "compose up -d postgres") [ -z "${STUB_DIR:-}" ] || [ ! -f .env ] || cp .env "$STUB_DIR/env.at-pg-start" ;;
   "compose config")
     [ "${AH_TEST_CONFIG_FAIL:-}" != 1 ] || { echo 'service "server" refers to undefined volume zz-missing' >&2; exit 1; }
@@ -967,6 +969,13 @@ mkdir -p "$WORK/fresh/e"
 fresh_run "$WORK/fresh/e" "$WORK/fresh/with.tar.gz" AH_TEST_PGVOL=1 $ROLE_ENV POSTGRES_PASSWORD=pw-pg
 { [ $rc -eq 0 ] && grep -q '^compose up -d postgres' <<<"$calls" && [ ! -e "$WORK/fresh/e/.env" ]; } \
   && ok "a volume with POSTGRES_PASSWORD in the environment restores" || bad "volume with POSTGRES_PASSWORD: rc=$rc out=[$out]"
+# (e2) only the postgres-data volume of PostgreSQL 17 (update.sh keeps it after the
+# migration): an installation all the same, the .env of the backup does not count
+mkdir -p "$WORK/fresh/e2"
+fresh_run "$WORK/fresh/e2" "$WORK/fresh/with.tar.gz" AH_TEST_PGVOL=17 $ROLE_ENV
+{ [ $rc -ne 0 ] && grep -q 'belongs to a project whose database volume exists' <<<"$out" && [ ! -e "$WORK/fresh/e2/.env" ]; } \
+  && ok "the volume of PostgreSQL 17 alone keeps the .env of the backup out" || bad "volume of 17: rc=$rc out=[$out]"
+untouched "the volume of PostgreSQL 17 alone"
 # (f) as (b) with POSTGRES_PASSWORD in the environment (backup_restore_test.sh after
 # down -v, its backup without env.sanitized): postgres can initialise, it restores
 mkdir -p "$WORK/fresh/f"

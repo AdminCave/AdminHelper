@@ -22,8 +22,10 @@ Komponente: scripts · Dateien: docker-compose.yml, scripts/update.sh, scripts/t
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: changelog.d/kern-pg-1.md · → T4
 
-### T3 — install/restore/uninstall kennen das neue Volume (R-1035)  [ ]
+### T3 — install/restore/uninstall kennen das neue Volume (R-1035)  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/restore.sh, scripts/uninstall.sh, scripts/tests/install_test.sh, scripts/tests/restore_guard_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0ed0cf1c 2026-11-05T07:14:27+01:00
+Review: approve (.ah-out/review/kern-pg-1/T3.verdict.json)
 Änderung: `install.sh` erkennt eine bestehende Installation an `postgres18-data` und am alten `postgres-data` (Meldungen nennen das Volume, das es fand); `restore.sh` prüft `postgres18-data`; `uninstall.sh` nennt beide im Kopf (der Lauf löscht per Projekt-Label schon beide). Tests je Fall.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test restore_guard_test uninstall_test
 Doku: → T4
@@ -36,3 +38,4 @@ Doku: die genannten Dateien
 Task-Review: am Ende
 
 ## Entscheidungen
+- T3: Die Compose-Datei nennt das alte Volume `postgres-data` nach T2 nicht mehr (ein nur deklariertes Volume könnte Compose bei Neuinstallationen leer anlegen und die Migrationserkennung in `update.sh` täuschen; nicht verifiziert, darum vermieden). Deshalb hängt `install.sh` es an `project_volumes` an und entfernt es bei `--reset` nach `down -v` mit `docker volume rm`; `restore.sh` wertet es als bestehende Installation (die `.env` des Backups zählt dann nicht), prüft aber das Passwort am neuen Volume, weil Postgres 18 nur dieses öffnet. `uninstall.sh` löscht per Projekt-Label schon beide, nur der Kopf nennt das alte. Gegenprobe: neue Tests gegen den Stand vor T3 in einem Probe-Worktree, install_test 127 passed, 6 failed; restore_guard_test 76 passed, 1 failed.
