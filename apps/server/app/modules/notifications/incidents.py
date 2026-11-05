@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.core.time import iso_utc
 from app.modules.notifications import stream_hub
 from app.modules.notifications.models import (
     Notification,
@@ -44,6 +45,7 @@ from app.modules.notifications.models import (
 )
 from app.modules.notifications.schemas import IncomingEvent
 from app.modules.notifications.service import _bundle_text, resolve_recipients
+from app.modules.servers.models import Server
 from app.modules.users.models import User
 
 # The same span as HUB_COOLDOWN of the monitoring service, whose cooldown moved here.
@@ -460,7 +462,9 @@ def _ping(
         row.title = title
         row.body = body
         row.source_type = event.source_type
-        row.source_id = event.source_id
+        # A bundle ping of one server is that server's (_single_server): the feed and
+        # the badge read the server mute from the row, as this ping applied it.
+        row.source_id = server if event.source_ids is not None else event.source_id
         if not muted:
             row.read_at = None
             row.hidden_at = None
@@ -684,3 +688,309 @@ def _finish(db: Session, done: Ingested) -> None:
     # the users across all workers. Best-effort; polling reconciles.
     if done.user_ids:
         stream_hub.publish(sorted(done.user_ids), done.max_id)
+
+
+# --- the API: what a reader sees and may do (router.py) ----------------------------
+
+# The transitions of the team actions: the states each one leaves from.
+_FROM = {"acked": ("open",), "resolved": ("open", "acked"), "reopened": ("resolved",), "note": None}
+
+
+@dataclass
+class Access:
+    """A reader's hold on an incident: their own row, the members of a bundle, the
+    servers of the incident they see now, and whether they see every one (can_act:
+    the team actions)."""
+
+    row: Notification
+    incident: NotificationIncident
+    members: list[NotificationIncidentMember]
+    visible: set[str]
+    can_act: bool
+
+
+def access(db: Session, user: User, incident_id: int, *, lock: bool = False) -> Access | None:
+    """None without a row of the reader's own or without sight of a server of the
+    incident now: the API answers 404 to both alike. lock: the team actions hold the
+    incident row until their commit."""
+    row = (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id, Notification.incident_id == incident_id)
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    query = db.query(_Incident).filter(_Incident.id == incident_id)
+    if lock:
+        query = query.with_for_update()
+    incident = query.one_or_none()
+    if incident is None:
+        return None
+    members = (
+        db.query(_Member)
+        .filter(_Member.incident_id == incident_id)
+        .order_by(_Member.server_id, _Member.key)
+        .all()
+    )
+    sight = _sight(
+        user, _assigned(user), _incident_servers(incident, [m.server_id for m in members])
+    )
+    if sight is None:
+        return None
+    return Access(row, incident, members, *sight)
+
+
+def may_act(kind: str, state: str) -> bool:
+    allowed = _FROM[kind]
+    return allowed is None or state in allowed
+
+
+def act(
+    db: Session, user: User, held: Access, kind: str, now: datetime, *, text: str | None = None
+) -> None:
+    """A team action on an incident held by access(lock=True): the transition and its
+    history entry, which names the actor."""
+    incident = held.incident
+    if kind == "acked":
+        incident.state = "acked"
+        incident.acked_by, incident.acked_at = user.id, now
+    elif kind == "resolved":
+        incident.state = "resolved"
+        incident.resolved_by, incident.resolved_at = user.id, now
+    elif kind == "reopened":
+        incident.state = "open"
+        incident.resolved_by = incident.resolved_at = None
+        incident.acked_by = incident.acked_at = None
+    db.add(_Entry(incident_id=incident.id, at=now, kind=kind, actor_id=user.id, text=text))
+
+
+def finish_actions(db: Session, incident_ids: list[int]) -> None:
+    """Commit the team actions, then nudge every holder of a row of these incidents:
+    the state they show changed for all of them."""
+    if not incident_ids:
+        return
+    _cap_history(db, incident_ids)
+    db.commit()
+    holders = (
+        db.query(Notification.user_id, func.max(Notification.id))
+        .filter(Notification.incident_id.in_(incident_ids))
+        .group_by(Notification.user_id)
+        .all()
+    )
+    if holders:
+        stream_hub.publish(sorted(uid for uid, _ in holders), max(mid for _, mid in holders))
+
+
+def feed_rows(db: Session, user: User, rows: list[Notification], now: datetime) -> list[dict]:
+    """The rows as the feed hands them out. The team state of an incident (incidentId
+    included) only while the reader still sees one of its servers, as for its detail;
+    muted: whichever of the reader's mutes holds the row now."""
+    ids = {row.incident_id for row in rows if row.incident_id is not None}
+    found: dict[int, NotificationIncident] = {}
+    servers: dict[int, list[str]] = {}
+    if ids:
+        found = {i.id: i for i in db.query(_Incident).filter(_Incident.id.in_(ids))}
+        for incident_id, server_id in (
+            db.query(_Member.incident_id, _Member.server_id)
+            .filter(_Member.incident_id.in_(ids))
+            .order_by(_Member.incident_id, _Member.server_id)
+        ):
+            servers.setdefault(incident_id, []).append(server_id)
+    assigned = _assigned(user)
+    seen = {
+        iid: incident
+        for iid, incident in found.items()
+        if _sight(user, assigned, _incident_servers(incident, servers.get(iid, []))) is not None
+    }
+    names = _usernames(db, [u for i in seen.values() for u in (i.acked_by, i.resolved_by)])
+    mutes = {m.server_id: m.until for m in server_mutes(db, user, now)} if ids else {}
+    out = []
+    for row in rows:
+        incident = seen.get(row.incident_id)
+        item = row.to_dict()
+        item.update(
+            incidentId=incident.id if incident else None,
+            state=incident.state if incident else None,
+            count=incident.event_count if incident else None,
+            ackedBy=names.get(incident.acked_by) if incident else None,
+            resolvedBy=names.get(incident.resolved_by) if incident else None,
+            notifiedAt=iso_utc(row.notified_at),
+            **_mute(row, mutes, now),
+        )
+        out.append(item)
+    return out
+
+
+def detail(db: Session, user: User, held: Access, now: datetime) -> dict:
+    """The incident as its reader may see it: the servers among its own they see now,
+    the history without entries of the others, a bundle's title and lines counting
+    only theirs."""
+    incident = held.incident
+    bundle = bool(held.members)
+    recovered: dict[str, list[datetime | None]] = {}
+    if bundle:
+        for member in held.members:
+            if member.server_id in held.visible:
+                recovered.setdefault(member.server_id, []).append(member.recovered_at)
+    else:
+        recovered = {sid: [None] for sid in _incident_servers(incident, []) if sid in held.visible}
+    labels = {
+        s.id: s.name for s in db.query(Server).filter(Server.id.in_(list(recovered))) if s.name
+    }
+    servers = [
+        {
+            "id": sid,
+            "name": labels.get(sid, sid),
+            "recoveredAt": None if None in ats else iso_utc(max(ats)),
+        }
+        for sid, ats in recovered.items()
+    ]
+    if bundle:
+        # _bundle_text reads title and body only, which the incident carries too.
+        title, body = _bundle_text(incident, [s["name"] for s in servers])
+    else:
+        title, body = incident.title, incident.body
+    entries = (
+        db.query(_Entry)
+        .filter(
+            _Entry.incident_id == incident.id,
+            or_(_Entry.server_id.is_(None), _Entry.server_id.in_(held.visible)),
+        )
+        .order_by(_Entry.id)
+        .all()
+    )
+    names = _usernames(
+        db, [incident.acked_by, incident.resolved_by, *(e.actor_id for e in entries)]
+    )
+    used = {
+        channel
+        for (channel,) in db.query(NotificationOutbox.channel)
+        .filter(NotificationOutbox.notification_id == held.row.id)
+        .distinct()
+    }
+    return {
+        "id": incident.id,
+        "state": incident.state,
+        "severity": incident.severity,
+        "category": incident.category,
+        "eventType": incident.event_type,
+        "title": title,
+        "body": body,
+        "sourceType": incident.source_type,
+        "sourceId": incident.source_id,
+        "count": incident.event_count,
+        "firstAt": iso_utc(incident.first_at),
+        "lastAt": iso_utc(incident.last_at),
+        "ackedBy": names.get(incident.acked_by),
+        "ackedAt": iso_utc(incident.acked_at),
+        "resolvedBy": names.get(incident.resolved_by),
+        "resolvedAt": iso_utc(incident.resolved_at),
+        "bundle": bundle,
+        "servers": servers,
+        "rules": json.loads(incident.rules) if incident.rules else None,
+        "channels": ["bell", *(c for c in ("email", "telegram") if c in used)],
+        "history": [
+            {
+                "id": e.id,
+                "at": iso_utc(e.at),
+                "kind": e.kind,
+                "actor": names.get(e.actor_id),
+                "text": e.text,
+                "severity": e.severity,
+                "serverId": e.server_id,
+            }
+            for e in entries
+        ],
+        "canAct": held.can_act,
+        "row": feed_rows(db, user, [held.row], now)[0],
+    }
+
+
+def unread_count(db: Session, user: User, now: datetime) -> int:
+    """The badge: unread rows that are neither hidden nor muted (the feed's muted)."""
+    server_muted = (
+        select(NotificationServerMute.server_id)
+        .where(
+            NotificationServerMute.user_id == Notification.user_id,
+            NotificationServerMute.server_id == Notification.source_id,
+            NotificationServerMute.until > now,
+            Notification.source_type == "server",
+        )
+        .exists()
+    )
+    return (
+        db.query(func.count(Notification.id))
+        .filter(
+            Notification.user_id == user.id,
+            Notification.read_at.is_(None),
+            Notification.hidden_at.is_(None),
+            or_(
+                Notification.incident_id.is_(None),
+                and_(
+                    or_(Notification.muted_until.is_(None), Notification.muted_until <= now),
+                    ~server_muted,
+                ),
+            ),
+        )
+        .scalar()
+    )
+
+
+def server_mutes(db: Session, user: User, now: datetime) -> list[NotificationServerMute]:
+    return (
+        db.query(NotificationServerMute)
+        .filter(NotificationServerMute.user_id == user.id, NotificationServerMute.until > now)
+        .order_by(NotificationServerMute.server_id)
+        .all()
+    )
+
+
+def may_mute_server(db: Session, user: User, server_id: str) -> bool:
+    """A server the user sees: assigned, or any existing one for an admin."""
+    if user.is_admin:
+        return db.get(Server, server_id) is not None
+    return server_id in _assigned(user)
+
+
+def _assigned(user: User) -> set[str]:
+    return set() if user.is_admin else {s.id for s in user.servers}
+
+
+def _incident_servers(incident: NotificationIncident, members: list[str]) -> list[str]:
+    """The servers an incident is about: a bundle's members, the server of a server
+    incident; none for a notice of the server itself."""
+    if members:
+        return list(dict.fromkeys(members))
+    if incident.source_type == "server" and incident.source_id:
+        return [incident.source_id]
+    return []
+
+
+def _sight(user: User, assigned: set[str], servers: list[str]) -> tuple[set[str], bool] | None:
+    """(the servers the user sees, whether that is every one), None when they see
+    none. An incident without a server is the admins' (service._user_can_see)."""
+    if user.is_admin:
+        return set(servers), True
+    visible = set(servers) & assigned
+    if not visible:
+        return None
+    return visible, visible == set(servers)
+
+
+def _mute(row: Notification, mutes: dict[str, datetime], now: datetime) -> dict:
+    """A mute holds only a row of an incident: plain rows are never pinged again. A
+    server mute only a row of a single server, as in _single_server."""
+    if row.incident_id is not None:
+        if row.muted_until is not None and row.muted_until > now:
+            return {"muted": True, "mutedUntil": iso_utc(row.muted_until), "muteSource": "incident"}
+        until = mutes.get(row.source_id) if row.source_type == "server" else None
+        if until is not None:
+            return {"muted": True, "mutedUntil": iso_utc(until), "muteSource": "server"}
+    return {"muted": False, "mutedUntil": None, "muteSource": None}
+
+
+def _usernames(db: Session, ids: Iterable[int | None]) -> dict[int, str]:
+    wanted = {i for i in ids if i is not None}
+    if not wanted:
+        return {}
+    return dict(db.query(User.id, User.username).filter(User.id.in_(wanted)).all())
