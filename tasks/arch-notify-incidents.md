@@ -14,8 +14,10 @@ Vorlage `AdminCave/DesignSystem@244e890` (`ui_kits/adminhelper/notifications.jsx
 Server-Tasks T1–T4 liegen auf Risikopfaden (`notifications/*`, `schemas.py`, `alembic/versions/*`, `frp/*`,
 `enrollment/*`): `security` je Task. T5 (`alerter.py`) und T6 (`types.ts`) ebenso.
 
-### T1 — Server: Kategorien nach Mockup und Datenmigration (R-1079)  [ ]
+### T1 — Server: Kategorien nach Mockup und Datenmigration (R-1079)  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/app/modules/frp/supervisor_watch.py, apps/server/app/modules/enrollment/expiry.py, apps/server/app/modules/notifications/event_bridge.py, apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/c1a7e3f5b9d2_notification_categories.py, apps/server/tests/test_notification_category_migration.py, apps/server/tests/test_frp_supervisor_watch.py, apps/server/tests/test_notification_bridge.py, apps/server/tests/test_certificate_expiry_watch.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0205d37e 2026-11-05T09:09:01+01:00
+Review: approve (.ah-out/review/arch-notify-incidents/T1.verdict.json)
 Änderung: Die Erzeuger schreiben die Mockup-Kategorien statt `lifecycle`: frp_config (`main._tell_admins`), frps (`supervisor_watch`) und `lifecycle.frp.tunnel.created` → `tunnel`, Zertifikatsablauf → `security`, `lifecycle.server.deleted` → `agent`; der Spalten-Kommentar in `models.py` nennt das Vokabular. Neue Alembic-Revision (Kopf `b4d6f8a0c2e1`) bildet Altzeilen nach `event_type`-Präfix und Abos (`categories` mit `lifecycle` → tunnel, security, agent) ab, Downgrade zurück (für Abos verlustbehaftet, im Kopf dokumentiert). Neuer Migrationstest nach dem Muster von `test_outbox_expiry_migration.py` (SPDX). Zehn Dateien: ein Umbenennen über vier Erzeuger mit ihren drei Tests, gemeinsam mit der Migration, damit nie gemischte Kategorien stehen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_category_migration.py tests/test_frp_supervisor_watch.py tests/test_notification_bridge.py tests/test_certificate_expiry_watch.py tests/test_migrations_smoke.py
 Doku: → T9

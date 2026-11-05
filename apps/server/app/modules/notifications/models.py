@@ -52,7 +52,7 @@ class NotificationSubscription(Base):
     scope_type = Column(String, nullable=False, default="all")
     scope_ref = Column(String, nullable=True)
     min_severity = Column(String, nullable=False, default="warning")
-    # Optional JSON array of category names (e.g. ["monitoring","pki"]); NULL =
+    # Optional JSON array of category names (e.g. ["monitoring","tunnel"]); NULL =
     # every category. Stored as a JSON string to match the project's tags/
     # event_triggers convention (no JSONB).
     categories = Column(Text, nullable=True)
@@ -93,7 +93,9 @@ class Notification(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     severity = Column(String, nullable=False)  # info | warning | critical
-    category = Column(String, nullable=False)  # monitoring | security | pki | lifecycle
+    # The vocabulary of the bell (R-1079): monitoring | security | tunnel | backup |
+    # ansible | agent | session. A free string: an older sender keeps its own.
+    category = Column(String, nullable=False)
     event_type = Column(String, nullable=False)  # e.g. "monitoring.check.transition"
     title = Column(String, nullable=False)
     body = Column(Text, nullable=True)

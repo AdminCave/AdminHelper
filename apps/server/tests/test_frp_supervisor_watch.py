@@ -161,7 +161,7 @@ def test_applied_reaches_the_admins_and_the_users_with_tunnel_access(
     for row in rows:
         assert (row.severity, row.category, row.event_type) == (
             "info",
-            "lifecycle",
+            "tunnel",
             "lifecycle.frp.server.applied",
         )
         assert (row.source_type, row.source_id) == ("frps", f"{BOOT}:2")
@@ -252,8 +252,9 @@ def test_every_event_but_applied_and_started_reaches_the_admins_only(
 
     (row,) = _rows(db_session)
     assert row.user_id == people.admin.id
-    assert (row.severity, row.event_type, row.title, row.body) == (
+    assert (row.severity, row.category, row.event_type, row.title, row.body) == (
         severity,
+        "tunnel",
         f"lifecycle.frp.server.{event}",
         title,
         body,

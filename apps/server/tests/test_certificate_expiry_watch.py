@@ -50,7 +50,7 @@ def test_a_certificate_entering_yellow_and_then_red_is_reported_once_each(db_ses
         (admin_user.id, "critical", f"{fp}:critical"),
     ]
     assert rows[0].title == "Certificate gateway expires in 20 day(s)"
-    assert rows[0].category == "lifecycle"
+    assert rows[0].category == "security"
     assert rows[1].title == "Certificate gateway expires in 6 day(s)"
 
 

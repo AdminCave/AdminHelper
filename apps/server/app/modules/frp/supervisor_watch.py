@@ -176,7 +176,7 @@ def notify_supervisor_events(db: Session, *, now: datetime | None = None) -> int
             IncomingEvent(
                 event_type=f"lifecycle.frp.server.{kind}",
                 severity=severity,
-                category="lifecycle",
+                category="tunnel",
                 title=title,
                 body=body,
                 source_type=SOURCE_TYPE,
