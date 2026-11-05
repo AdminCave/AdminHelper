@@ -22,10 +22,33 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { accelerateScroll, PANEL_FACTOR } from '$lib/utils/scrollAcceleration';
   import { t } from '$lib/i18n';
   import { confirmDialog } from './ui/ConfirmDialog.svelte';
+  import Segmented from './ui/Segmented.svelte';
+  import Tabs from './ui/Tabs.svelte';
+  import { get } from 'svelte/store';
+  import { settings, session } from '$lib/stores/session';
+  import { infraServers, loadServers } from '$lib/stores/infra';
+
+  type EditorTab = 'general' | 'auth';
 
   let form = $state<Connection>(emptyConnection());
   let tagsInput = $state('');
   let isNew = $state(true);
+  let tab = $state<EditorTab>('general');
+  // Servers exist only behind a server session, and only an admin may list them (GET /api/servers)
+  // or save a connection; anyone else would get a 403 on every opening.
+  const assignServer = $derived($settings?.mode === 'server' && $session?.isAdmin === true);
+  const tabs = $derived(
+    form.kind === 'web'
+      ? []
+      : [
+          { id: 'general', label: $t('editor.tab.general') },
+          { id: 'auth', label: $t('editor.tab.auth') },
+        ],
+  );
+  // An id the list does not know (not loaded, failed, or stale) stays selectable, or saving would drop it.
+  const unknownServer = $derived(
+    !!form.serverId && !$infraServers.some((s) => s.id === form.serverId),
+  );
   // The delete question sits in App's layer, outside this overlay, but the focus stays on
   // "Delete" in here: its Escape reaches the overlay's handler before the dialog's own and
   // would close the editor under the question. A count, as in SettingsModal: a second click
@@ -39,6 +62,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     form = base;
     tagsInput = (base.tags ?? []).join(', ');
     isNew = st.target === null;
+    tab = 'general';
+  });
+
+  $effect(() => {
+    // The servers load with the infrastructure page; an editor opened before needs them too.
+    // Read untracked: loadServers writes the store the list derives from, and an empty answer
+    // would start the effect again without end.
+    if ($editorState.open && assignServer && get(infraServers).length === 0) void loadServers();
   });
 
   function collect(): Connection {
@@ -110,6 +141,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function setKind(k: ConnectionKind): void {
     form = { ...form, kind: k };
+    tab = 'general';
   }
 </script>
 
@@ -134,76 +166,144 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button class="btn ghost small" onclick={onClose} aria-label={$t('editor.close')}>×</button>
       </div>
 
-      <div class="form-grid">
-        <label class="field">
-          <span class="field-label">{$t('editor.field.name')}</span>
-          <input
-            type="text"
-            name="name"
-            bind:value={form.name}
-            placeholder={$t('editor.field.name.placeholder')}
-            required
+      <div class="editor-head">
+        <Segmented
+          size="md"
+          label={$t('editor.field.kind')}
+          value={form.kind}
+          onChange={(v) => setKind(v as ConnectionKind)}
+          options={[
+            { value: 'ssh', label: 'SSH' },
+            { value: 'rdp', label: 'RDP' },
+            { value: 'web', label: 'Web' },
+          ]}
+        />
+        {#if tabs.length > 0}
+          <Tabs
+            {tabs}
+            value={tab}
+            label={$t('editor.tabs')}
+            onChange={(id) => (tab = id as EditorTab)}
           />
-        </label>
+        {/if}
+      </div>
 
-        <label class="field">
-          <span class="field-label">{$t('editor.field.kind')}</span>
-          <select
-            value={form.kind}
-            onchange={(e) =>
-              setKind((e.currentTarget as HTMLSelectElement).value as ConnectionKind)}
-          >
-            <option value="ssh">SSH</option>
-            <option value="rdp">RDP</option>
-            <option value="web">Web</option>
-          </select>
-        </label>
-
-        {#if form.kind !== 'web'}
+      {#if tab === 'general' || form.kind === 'web'}
+        <div class="form-grid" role={tabs.length > 0 ? 'tabpanel' : undefined}>
           <label class="field">
-            <span class="field-label">{$t('editor.field.host')}</span>
+            <span class="field-label">{$t('editor.field.name')}</span>
             <input
               type="text"
-              name="host"
-              bind:value={form.host}
-              placeholder={$t('editor.field.host.placeholder')}
+              name="name"
+              bind:value={form.name}
+              placeholder={$t('editor.field.name.placeholder')}
+              required
             />
           </label>
 
-          <label class="field">
-            <span class="field-label">{$t('editor.field.port')}</span>
-            <input
-              type="number"
-              value={form.port ?? ''}
-              oninput={(e) => {
-                const v = (e.currentTarget as HTMLInputElement).value;
-                form = { ...form, port: v === '' ? null : Number(v) };
-              }}
-              placeholder={form.kind === 'ssh'
-                ? String(DEFAULT_PORTS.ssh)
-                : String(DEFAULT_PORTS.rdp)}
-            />
-          </label>
-
-          <label class="field">
-            <span class="field-label">{$t('editor.field.username')}</span>
-            <input type="text" bind:value={form.username} />
-          </label>
-
-          {#if form.kind === 'rdp'}
+          {#if assignServer}
             <label class="field">
-              <span class="field-label">{$t('editor.field.domain')}</span>
-              <input type="text" bind:value={form.domain} />
+              <span class="field-label">{$t('editor.field.server')}</span>
+              <select
+                name="serverId"
+                value={form.serverId ?? ''}
+                onchange={(e) => {
+                  const v = (e.currentTarget as HTMLSelectElement).value;
+                  form = { ...form, serverId: v === '' ? null : v };
+                }}
+              >
+                <option value="">{$t('editor.field.server.none')}</option>
+                {#each $infraServers as s (s.id)}
+                  <option value={s.id}>{s.name}</option>
+                {/each}
+                {#if unknownServer}
+                  <option value={form.serverId}>{$t('editor.field.server.unknown')}</option>
+                {/if}
+              </select>
+              <span class="field-hint">{$t('editor.field.server.hint')}</span>
+            </label>
+          {:else}
+            <div></div>
+          {/if}
+
+          {#if form.kind !== 'web'}
+            <label class="field">
+              <span class="field-label">{$t('editor.field.host')}</span>
+              <input
+                type="text"
+                name="host"
+                bind:value={form.host}
+                placeholder={$t('editor.field.host.placeholder')}
+              />
             </label>
 
-            <label class="field checkbox">
-              <input type="checkbox" bind:checked={form.trustCert} />
-              <span>{$t('editor.field.trustCert')}</span>
+            <label class="field">
+              <span class="field-label">{$t('editor.field.port')}</span>
+              <input
+                type="number"
+                value={form.port ?? ''}
+                oninput={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  form = { ...form, port: v === '' ? null : Number(v) };
+                }}
+                placeholder={form.kind === 'ssh'
+                  ? String(DEFAULT_PORTS.ssh)
+                  : String(DEFAULT_PORTS.rdp)}
+              />
+            </label>
+
+            <label class="field">
+              <span class="field-label">{$t('editor.field.username')}</span>
+              <input type="text" bind:value={form.username} />
+            </label>
+
+            {#if form.kind === 'rdp'}
+              <label class="field">
+                <span class="field-label">{$t('editor.field.domain')}</span>
+                <input type="text" bind:value={form.domain} />
+              </label>
+            {/if}
+          {:else}
+            <label class="field" style="grid-column: span 2;">
+              <span class="field-label">{$t('editor.field.url')}</span>
+              <input
+                type="url"
+                bind:value={form.url}
+                placeholder={$t('editor.field.url.placeholder')}
+                required
+              />
             </label>
           {/if}
 
+          <label class="field" style="grid-column: span 2;">
+            <span class="field-label">{$t('editor.field.tags')}</span>
+            <input
+              type="text"
+              bind:value={tagsInput}
+              placeholder={$t('editor.field.tags.placeholder')}
+            />
+          </label>
+
+          <label class="field" style="grid-column: span 2;">
+            <span class="field-label">{$t('editor.field.notes')}</span>
+            <textarea rows="3" bind:value={form.notes}></textarea>
+          </label>
+
+          <div class="field" style="grid-column: span 2;">
+            <span class="field-label">{$t('editor.field.lastUsed')}</span>
+            <!-- A value inside .field, whose global rule styles labels: no caps, no spacing. -->
+            <div
+              data-testid="editor-last-used"
+              style="color: var(--text-muted); text-transform: none; letter-spacing: normal;"
+            >
+              {form.lastUsed ? new Date(form.lastUsed).toLocaleString() : '-'}
+            </div>
+          </div>
+        </div>
+      {:else}
+        <div class="form-grid" role="tabpanel">
           {#if form.kind === 'ssh'}
-            <label class="field">
+            <label class="field" style="grid-column: span 2;">
               <span class="field-label">{$t('editor.field.keyPath')}</span>
               <input
                 type="text"
@@ -211,44 +311,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 placeholder={$t('editor.field.keyPath.placeholder')}
               />
             </label>
+          {:else}
+            <label class="field checkbox" style="grid-column: span 2;">
+              <input type="checkbox" bind:checked={form.trustCert} />
+              <span>{$t('editor.field.trustCert')}</span>
+            </label>
           {/if}
-        {:else}
-          <label class="field" style="grid-column: span 2;">
-            <span class="field-label">{$t('editor.field.url')}</span>
-            <input
-              type="url"
-              bind:value={form.url}
-              placeholder={$t('editor.field.url.placeholder')}
-              required
-            />
-          </label>
-        {/if}
-
-        <label class="field" style="grid-column: span 2;">
-          <span class="field-label">{$t('editor.field.tags')}</span>
-          <input
-            type="text"
-            bind:value={tagsInput}
-            placeholder={$t('editor.field.tags.placeholder')}
-          />
-        </label>
-
-        <label class="field" style="grid-column: span 2;">
-          <span class="field-label">{$t('editor.field.notes')}</span>
-          <textarea rows="3" bind:value={form.notes}></textarea>
-        </label>
-
-        <div class="field" style="grid-column: span 2;">
-          <span class="field-label">{$t('editor.field.lastUsed')}</span>
-          <!-- A value inside .field, whose global rule styles labels: no caps, no spacing. -->
-          <div
-            data-testid="editor-last-used"
-            style="color: var(--text-muted); text-transform: none; letter-spacing: normal;"
-          >
-            {form.lastUsed ? new Date(form.lastUsed).toLocaleString() : '-'}
-          </div>
         </div>
-      </div>
+      {/if}
 
       <div class="panel-actions">
         {#if !isNew}
@@ -296,6 +366,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     margin: 0;
     font-size: 16px;
     font-weight: 600;
+  }
+  .editor-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5) 0;
+  }
+  .field-hint {
+    font-size: 12px;
+    color: var(--text-subtle, var(--text-muted));
   }
   .form-grid {
     padding: var(--sp-5);
