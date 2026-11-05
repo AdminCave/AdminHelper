@@ -4,14 +4,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pg-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-pg-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-pg-1 · Review: pro Task
 Spec: docs/features/kern-pg-1.md (Roadmap R-1035)
 Heavy: linux-full — `docker-compose.yml` und der Upgrade-Pfad: `upgrade_path_test.sh` (letztes Release mit 17 → HEAD) und `backup_restore_test.sh` laufen im Sammellauf; kein multibox-Flag deckt update.sh
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Tests gegen PostgreSQL 18 (R-1035)  [ ]
-Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_db_roles.py, scripts/tests/sse_push_e2e.sh, DEVELOPMENT.md
+### T1 — Tests gegen PostgreSQL 18 (R-1035)  [x]
+Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_db_roles.py, scripts/tests/sse_push_e2e.sh, DEVELOPMENT.md, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1f747100 2026-11-05T10:02:12+01:00
+Review: approve (.ah-out/review/kern-pg-1/T1.verdict.json)
 Änderung: Testcontainer, Wegwerf-Container in `test_db_roles.py` und das SSE-E2E-Skript auf `postgres:18-alpine`; `DEVELOPMENT.md:220` nennt 18. Baut erst nach dem Merge von `feature/kern-laufzeit-2` (`sse_push_e2e.sh`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py tests/test_migrations_smoke.py
 Doku: DEVELOPMENT.md

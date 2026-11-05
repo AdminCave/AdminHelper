@@ -340,7 +340,7 @@ def pg_engine():
 
     - If the DATABASE_URL env is set (CI mode with GitLab services
       or dev setup with local Postgres) -> use that URL.
-    - Otherwise -> testcontainers starts a Postgres 17-alpine container.
+    - Otherwise -> testcontainers starts a Postgres 18-alpine container.
 
     Create the schema once per session via Base.metadata.create_all
     (faster than alembic upgrade head). Drift between the models and the
@@ -371,7 +371,7 @@ def pg_engine():
     # Local: testcontainers
     from testcontainers.postgres import PostgresContainer
 
-    with PostgresContainer("postgres:17-alpine") as pg:
+    with PostgresContainer("postgres:18-alpine") as pg:
         url = _normalize_postgres_url(pg.get_connection_url())
         engine = _utc_engine(url)
         Base.metadata.create_all(bind=engine)

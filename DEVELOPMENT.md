@@ -217,7 +217,7 @@ DATABASE_URL="postgresql+psycopg://adminhelper:<passwort>@localhost:5432/adminhe
   apps/server/.venv/bin/python -m pytest -q
 ```
 
-`tests/test_db_roles.py` startet unabhängig davon einen eigenen Wegwerf-Container `postgres:17-alpine`
+`tests/test_db_roles.py` startet unabhängig davon einen eigenen Wegwerf-Container `postgres:18-alpine`
 (Superuser, Rollen, Eigentum, Rechte des `ca-issuer`); ohne Docker überspringt pytest diese Tests.
 
 Das Passwort steht nicht im Befehl: `\password` fragt es ab, verschlüsselt es und schickt es als
