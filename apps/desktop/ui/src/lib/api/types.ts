@@ -41,8 +41,23 @@ export interface SshOptions {
 }
 
 // `options` of the server API (R-1066), the same shape as the desktop model.
+export type RdpAudio = 'local' | 'remote' | 'off';
+
+export interface RdpConnectionOptions {
+  scalingMode?: 'auto' | 'normal' | 'hdpi' | null;
+  windowMode?: 'fit' | 'fullscreen' | 'multimon' | 'custom' | null;
+  customSize?: string | null;
+  performanceProfile?: 'auto' | 'lan' | 'broadband' | 'low' | null;
+  drives?: boolean | null;
+  audio?: RdpAudio | null;
+  printers?: boolean | null;
+  gateway?: string | null;
+  nla?: boolean | null;
+}
+
 export interface ConnectionOptions {
   ssh?: SshOptions | null;
+  rdp?: RdpConnectionOptions | null;
 }
 
 export interface Server {

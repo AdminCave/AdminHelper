@@ -61,6 +61,21 @@ pub struct RdpOptions<'a> {
     pub performance_profile: RdpPerformanceProfile,
 }
 
+impl<'a> RdpOptions<'a> {
+    /// The connection's own values win field by field; a field it leaves out keeps the global one.
+    pub fn with_overrides(self, own: Option<&'a RdpConnectionOptions>) -> Self {
+        let Some(own) = own else {
+            return self;
+        };
+        RdpOptions {
+            scaling_mode: own.scaling_mode.unwrap_or(self.scaling_mode),
+            window_mode: own.window_mode.unwrap_or(self.window_mode),
+            custom_size: own.custom_size.as_deref().or(self.custom_size),
+            performance_profile: own.performance_profile.unwrap_or(self.performance_profile),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connection {
@@ -94,6 +109,39 @@ pub struct Connection {
 pub struct ConnectionOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshOptions>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rdp: Option<RdpConnectionOptions>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpConnectionOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scaling_mode: Option<RdpScalingMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_mode: Option<RdpWindowMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performance_profile: Option<RdpPerformanceProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drives: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<RdpAudio>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub printers: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nla: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RdpAudio {
+    Local,
+    Remote,
+    Off,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

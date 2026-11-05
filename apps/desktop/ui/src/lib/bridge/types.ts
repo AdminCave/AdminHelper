@@ -57,8 +57,23 @@ export interface SshOptions {
 }
 
 // Per-connection overrides (R-1066); a field left out means the global default.
+export type RdpAudio = 'local' | 'remote' | 'off';
+
+export interface RdpConnectionOptions {
+  scalingMode?: RdpScalingMode | null;
+  windowMode?: RdpWindowMode | null;
+  customSize?: string | null;
+  performanceProfile?: RdpPerformanceProfile | null;
+  drives?: boolean | null;
+  audio?: RdpAudio | null;
+  printers?: boolean | null;
+  gateway?: string | null;
+  nla?: boolean | null;
+}
+
 export interface ConnectionOptions {
   ssh?: SshOptions | null;
+  rdp?: RdpConnectionOptions | null;
 }
 
 export interface Settings {

@@ -5,7 +5,9 @@
 use crate::error::AppError;
 use crate::models::{ClientInfo, Connection, RdpErrorPayload, RdpOptions};
 #[cfg(any(unix, target_os = "windows"))]
-use crate::models::{RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
+use crate::models::{
+    RdpAudio, RdpConnectionOptions, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
+};
 
 #[cfg(any(unix, target_os = "windows"))]
 use super::rdp_logic::parse_custom_size;
@@ -91,6 +93,8 @@ pub fn open_rdp(
         .as_ref()
         .map(|value| value.trim())
         .unwrap_or("");
+    let own = connection.options.as_ref().and_then(|o| o.rdp.as_ref());
+    let rdp = rdp.with_overrides(own);
 
     #[cfg(not(any(unix, target_os = "windows")))]
     let _ = password;
@@ -115,25 +119,39 @@ pub fn open_rdp(
     #[cfg(unix)]
     {
         let rdp_binary = detect_rdp_binary()?;
-        preflight_rdp(host, port)?;
+        // Behind an RD gateway the host is not reachable directly, so neither the TCP probe nor
+        // the credential check (which connects without the gateway) can run. The check also
+        // connects without the connection's /sec choice, so with NLA off it would test
+        // something else than the launch.
+        let via_gateway = own.is_some_and(|o| o.gateway.is_some());
+        let direct_auth_check = !via_gateway && own.is_none_or(|o| o.nla != Some(false));
+        if !via_gateway {
+            preflight_rdp(host, port)?;
+        }
 
         let mut args = build_rdp_args(connection, host, port, client, rdp, ui_language)?;
+        if let Some(own) = own {
+            let freerdp3 = !via_gateway || freerdp_major(rdp_binary)? >= 3;
+            args.extend(connection_args(own, freerdp3));
+        }
         let password = password.filter(|value| !value.is_empty());
 
         if let Some(secret) = password {
             if username.is_empty() {
                 return Err(AppError::Validation("Benutzer fehlt".to_string()));
             }
-            check_rdp_auth(
-                rdp_binary,
-                host,
-                port,
-                username,
-                domain,
-                connection.trust_cert,
-                secret,
-                deadline.remaining(),
-            )?;
+            if direct_auth_check {
+                check_rdp_auth(
+                    rdp_binary,
+                    host,
+                    port,
+                    username,
+                    domain,
+                    connection.trust_cert,
+                    secret,
+                    deadline.remaining(),
+                )?;
+            }
             args.push("/from-stdin:force".to_string());
             args.push("/log-level:INFO".to_string());
             deadline.start()?;
@@ -186,6 +204,7 @@ fn open_rdp_windows(
         rdp.window_mode,
         rdp.custom_size,
         rdp.performance_profile,
+        connection.options.as_ref().and_then(|o| o.rdp.as_ref()),
     )?;
     crate::password::start_mstsc(&base, host, port, connection, password, || {
         // A start past the deadline does not run, and run_termsrv_plan takes back the
@@ -283,6 +302,72 @@ fn build_rdp_args(
     args.extend(performance_args(rdp.performance_profile));
 
     Ok(args)
+}
+
+/// xfreerdp arguments for the connection's own redirections, security and gateway (R-1066).
+/// A field left out adds nothing, so FreeRDP's default holds. `freerdp3` picks the gateway
+/// syntax: FreeRDP 3 builds the old `/g:` only with WITH_FREERDP_DEPRECATED_COMMANDLINE.
+#[cfg(unix)]
+fn connection_args(own: &RdpConnectionOptions, freerdp3: bool) -> Vec<String> {
+    let mut args = Vec::new();
+    if own.drives == Some(true) {
+        args.push("+drives".to_string());
+    }
+    match own.audio {
+        Some(RdpAudio::Local) => args.push("/sound".to_string()),
+        Some(RdpAudio::Remote) => args.push("/audio-mode:1".to_string()),
+        Some(RdpAudio::Off) => args.push("/audio-mode:2".to_string()),
+        None => {}
+    }
+    if own.printers == Some(true) {
+        args.push("/printer".to_string());
+    }
+    // `/sec:nla:off` exists only in FreeRDP 3; forcing TLS means "no NLA" in 2 and 3.
+    match own.nla {
+        Some(true) => args.push("/sec:nla".to_string()),
+        Some(false) => args.push("/sec:tls".to_string()),
+        None => {}
+    }
+    if let Some(gateway) = own.gateway.as_deref() {
+        args.push(if freerdp3 {
+            format!("/gateway:g:{gateway}")
+        } else {
+            format!("/g:{gateway}")
+        });
+    }
+    args
+}
+
+/// The major version of `binary`; `xfreerdp3` is FreeRDP 3 by name, a plain `xfreerdp` may be
+/// either (distributions ship 3 under both names).
+#[cfg(unix)]
+fn freerdp_major(binary: &str) -> Result<u32, AppError> {
+    if binary == "xfreerdp3" {
+        return Ok(3);
+    }
+    let output = Command::new(binary)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()?;
+    parse_freerdp_major(&String::from_utf8_lossy(&output.stdout)).ok_or_else(|| {
+        AppError::Connection(
+            "Could not read the FreeRDP version, which the RD gateway option needs".to_string(),
+        )
+    })
+}
+
+/// Reads `This is FreeRDP version 2.11.7 (…)`, or with the binary named first as FreeRDP 3's
+/// `freerdp_client_print_version_ex` prints it: `This is FreeRDP version [xfreerdp] 3.10.3 (…)`.
+#[cfg(unix)]
+fn parse_freerdp_major(version_output: &str) -> Option<u32> {
+    let rest = version_output
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("This is FreeRDP version "))?;
+    let rest = match rest.strip_prefix('[') {
+        Some(named) => named.split_once("] ")?.1,
+        None => rest,
+    };
+    rest.split('.').next()?.parse().ok()
 }
 
 /// The connection's name, in a workspace process after `[<workspace name>] `, so the windows of
@@ -770,7 +855,39 @@ fn sweep_stale_rdp_files(dir: &std::path::Path) {
     }
 }
 
+/// `.rdp` lines for the connection's own redirections, security and gateway (R-1066), as
+/// "Supported RDP properties" and `IRemoteDesktopClientSettings::SetRdpProperty` (MS Learn)
+/// name them. A field left out adds nothing, so mstsc's default holds.
+#[cfg(any(target_os = "windows", test))]
+fn connection_rdp_lines(own: &RdpConnectionOptions) -> Vec<String> {
+    let mut lines = Vec::new();
+    match own.drives {
+        Some(true) => lines.push("drivestoredirect:s:*".to_string()),
+        Some(false) => lines.push("drivestoredirect:s:".to_string()),
+        None => {}
+    }
+    match own.audio {
+        Some(RdpAudio::Local) => lines.push("audiomode:i:0".to_string()),
+        Some(RdpAudio::Remote) => lines.push("audiomode:i:1".to_string()),
+        Some(RdpAudio::Off) => lines.push("audiomode:i:2".to_string()),
+        None => {}
+    }
+    if let Some(printers) = own.printers {
+        lines.push(format!("redirectprinters:i:{}", u8::from(printers)));
+    }
+    if let Some(nla) = own.nla {
+        lines.push(format!("enablecredsspsupport:i:{}", u8::from(nla)));
+    }
+    if let Some(gateway) = own.gateway.as_deref() {
+        lines.push(format!("gatewayhostname:s:{gateway}"));
+        lines.push("gatewayusagemethod:i:1".to_string());
+        lines.push("gatewayprofileusagemethod:i:1".to_string());
+    }
+    lines
+}
+
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 pub fn write_rdp_file(
     host: &str,
     port: u16,
@@ -780,6 +897,7 @@ pub fn write_rdp_file(
     rdp_window_mode: RdpWindowMode,
     rdp_custom_size: Option<&str>,
     rdp_performance_profile: RdpPerformanceProfile,
+    own: Option<&RdpConnectionOptions>,
 ) -> Result<std::path::PathBuf, AppError> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let mut path = std::env::temp_dir();
@@ -829,6 +947,9 @@ pub fn write_rdp_file(
 
     // Performance
     lines.extend(performance_rdp_lines(rdp_performance_profile));
+    if let Some(own) = own {
+        lines.extend(connection_rdp_lines(own));
+    }
 
     let contents = lines.join("\r\n");
     std::fs::write(&path, contents)?;
@@ -1021,6 +1142,136 @@ mod args_tests {
             custom_size: None,
             performance_profile: RdpPerformanceProfile::Auto,
         }
+    }
+
+    fn own(json: serde_json::Value) -> RdpConnectionOptions {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn the_connections_rdp_values_override_the_global_ones_field_by_field() {
+        let own = own(serde_json::json!({"windowMode": "custom", "customSize": "1280x720"}));
+        let merged = opts().with_overrides(Some(&own));
+        assert_eq!(merged.window_mode, RdpWindowMode::Custom);
+        assert_eq!(merged.custom_size, Some("1280x720"));
+        // Left out: the global value stays.
+        assert_eq!(merged.scaling_mode, RdpScalingMode::Normal);
+        assert_eq!(merged.performance_profile, RdpPerformanceProfile::Auto);
+
+        let args = build_rdp_args(&conn("n", false), "h", 3389, None, merged, None).unwrap();
+        assert!(args.iter().any(|a| a == "/size:1280x720"), "{args:?}");
+
+        let all = own_all();
+        let merged = opts().with_overrides(Some(&all));
+        assert_eq!(merged.scaling_mode, RdpScalingMode::Hdpi);
+        assert_eq!(merged.performance_profile, RdpPerformanceProfile::Lan);
+        let untouched = opts().with_overrides(None);
+        assert_eq!(untouched.window_mode, RdpWindowMode::Fit);
+        assert_eq!(untouched.custom_size, None);
+    }
+
+    fn own_all() -> RdpConnectionOptions {
+        own(serde_json::json!({
+            "scalingMode": "hdpi", "windowMode": "fit", "performanceProfile": "lan",
+            "drives": true, "audio": "remote", "printers": true,
+            "gateway": "rdgw.example.org:443", "nla": true
+        }))
+    }
+
+    #[test]
+    fn connection_args_map_every_option_for_freerdp_3_and_2() {
+        assert_eq!(
+            connection_args(&own_all(), true),
+            vec![
+                "+drives",
+                "/audio-mode:1",
+                "/printer",
+                "/sec:nla",
+                "/gateway:g:rdgw.example.org:443"
+            ]
+        );
+        assert_eq!(
+            connection_args(&own_all(), false)
+                .last()
+                .map(String::as_str),
+            Some("/g:rdgw.example.org:443")
+        );
+    }
+
+    #[test]
+    fn connection_args_map_audio_nla_off_and_leave_unset_fields_out() {
+        assert!(connection_args(&own(serde_json::json!({})), true).is_empty());
+        // "Off" for drives and printers is FreeRDP's default: nothing to pass.
+        assert!(connection_args(
+            &own(serde_json::json!({"drives": false, "printers": false})),
+            true
+        )
+        .is_empty());
+        assert_eq!(
+            connection_args(
+                &own(serde_json::json!({"audio": "local", "nla": false})),
+                true
+            ),
+            vec!["/sound", "/sec:tls"]
+        );
+        assert_eq!(
+            connection_args(&own(serde_json::json!({"audio": "off"})), true),
+            vec!["/audio-mode:2"]
+        );
+    }
+
+    #[test]
+    fn parse_freerdp_major_reads_both_version_lines() {
+        assert_eq!(
+            parse_freerdp_major("This is FreeRDP version 2.11.7 (2.11.7)\n"),
+            Some(2)
+        );
+        assert_eq!(
+            parse_freerdp_major("This is FreeRDP version [/usr/bin/xfreerdp] 3.10.3 (abc)\n"),
+            Some(3)
+        );
+        assert_eq!(
+            parse_freerdp_major("noise\nThis is FreeRDP version 3.5.1 (x)\nBuild config: y\n"),
+            Some(3)
+        );
+        assert_eq!(parse_freerdp_major(""), None);
+        assert_eq!(parse_freerdp_major("xfreerdp: unknown option"), None);
+        assert_eq!(
+            parse_freerdp_major("This is FreeRDP version [x 3.1.0"),
+            None
+        );
+    }
+
+    #[test]
+    fn connection_rdp_lines_map_every_option_for_mstsc() {
+        assert_eq!(
+            connection_rdp_lines(&own_all()),
+            vec![
+                "drivestoredirect:s:*",
+                "audiomode:i:1",
+                "redirectprinters:i:1",
+                "enablecredsspsupport:i:1",
+                "gatewayhostname:s:rdgw.example.org:443",
+                "gatewayusagemethod:i:1",
+                "gatewayprofileusagemethod:i:1",
+            ]
+        );
+        assert_eq!(
+            connection_rdp_lines(&own(serde_json::json!({
+                "drives": false, "audio": "local", "printers": false, "nla": false
+            }))),
+            vec![
+                "drivestoredirect:s:",
+                "audiomode:i:0",
+                "redirectprinters:i:0",
+                "enablecredsspsupport:i:0",
+            ]
+        );
+        assert_eq!(
+            connection_rdp_lines(&own(serde_json::json!({"audio": "off"}))),
+            vec!["audiomode:i:2"]
+        );
+        assert!(connection_rdp_lines(&own(serde_json::json!({}))).is_empty());
     }
 
     #[test]

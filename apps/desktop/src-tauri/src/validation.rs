@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::error::AppError;
-use crate::models::{Connection, ConnectionKind, SshForwardKind, SshOptions};
+use crate::models::{Connection, ConnectionKind, RdpConnectionOptions, SshForwardKind, SshOptions};
 use url::{Host, Url};
 
 pub fn validate_host(host: &str) -> Result<(), AppError> {
@@ -78,6 +78,9 @@ pub fn validate_connection_input(connection: &Connection) -> Result<(), AppError
     if let Some(ssh) = connection.options.as_ref().and_then(|o| o.ssh.as_ref()) {
         validate_ssh_options(ssh)?;
     }
+    if let Some(rdp) = connection.options.as_ref().and_then(|o| o.rdp.as_ref()) {
+        validate_rdp_options(rdp)?;
+    }
     Ok(())
 }
 
@@ -97,6 +100,8 @@ static LISTEN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!(r"^(?:(?:\*|{HOST}):)?{PORT}$")).expect("listen pattern"));
 static TARGET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!("^{HOST}:{PORT}$")).expect("target pattern"));
+static GATEWAY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("^{HOST}(?::{PORT})?$")).expect("gateway pattern"));
 
 const MAX_FORWARDS: usize = 32;
 
@@ -142,6 +147,18 @@ pub fn validate_ssh_options(ssh: &SshOptions) -> Result<(), AppError> {
                 "Keepalive must be 1-3600 seconds".to_string(),
             ));
         }
+    }
+    Ok(())
+}
+
+pub fn validate_rdp_options(rdp: &RdpConnectionOptions) -> Result<(), AppError> {
+    if let Some(ref gateway) = rdp.gateway {
+        if !matches_within(&GATEWAY_RE, gateway, 300) {
+            return Err(AppError::Validation("Invalid RD gateway".to_string()));
+        }
+    }
+    if rdp.custom_size.is_some() {
+        crate::connection::rdp_logic::parse_custom_size(rdp.custom_size.as_deref())?;
     }
     Ok(())
 }
@@ -381,6 +398,78 @@ mod tests {
     fn sanitize_synced_connections_drops_entries_with_bad_ssh_options() {
         let good = ssh_connection_with_key_path("");
         let bad = with_ssh_options(serde_json::json!({"jumpHost": "-oX"})).unwrap();
+        assert_eq!(sanitize_synced_connections(vec![good, bad]).len(), 1);
+    }
+
+    fn with_rdp_options(json: serde_json::Value) -> Result<Connection, serde_json::Error> {
+        let mut c = ssh_connection_with_key_path("");
+        c.kind = ConnectionKind::Rdp;
+        c.options = Some(serde_json::from_value(serde_json::json!({ "rdp": json }))?);
+        Ok(c)
+    }
+
+    #[test]
+    fn validate_connection_input_accepts_good_rdp_options() {
+        for gateway in [
+            "rdgw.example.org",
+            "rdgw.example.org:443",
+            "[2001:db8::1]:8443",
+        ] {
+            let c = with_rdp_options(serde_json::json!({
+                "scalingMode": "hdpi", "windowMode": "custom", "customSize": "1920x1080",
+                "performanceProfile": "lan", "drives": true, "audio": "remote",
+                "printers": false, "gateway": gateway, "nla": true
+            }))
+            .unwrap();
+            assert!(validate_connection_input(&c).is_ok(), "{gateway}");
+        }
+    }
+
+    #[test]
+    fn validate_connection_input_rejects_bad_rdp_options() {
+        let long_gateway = "a".repeat(301);
+        for options in [
+            serde_json::json!({"gateway": "-gw"}),
+            serde_json::json!({"gateway": "gw /u:admin"}),
+            serde_json::json!({"gateway": "gw,u:admin"}),
+            serde_json::json!({"gateway": "gw\n/p:x"}),
+            serde_json::json!({"gateway": "gw:0"}),
+            serde_json::json!({"gateway": "gw:65536"}),
+            serde_json::json!({"gateway": ""}),
+            serde_json::json!({"gateway": long_gateway}),
+            serde_json::json!({"customSize": "100x100"}),
+            serde_json::json!({"customSize": "1920x1080x60"}),
+            serde_json::json!({"customSize": "1920x1080 /p:x"}),
+        ] {
+            let c = with_rdp_options(options.clone()).unwrap();
+            assert!(validate_connection_input(&c).is_err(), "{options}");
+        }
+    }
+
+    #[test]
+    fn unknown_rdp_enum_values_do_not_parse() {
+        for options in [
+            serde_json::json!({"scalingMode": "zoom"}),
+            serde_json::json!({"audio": "loud"}),
+            serde_json::json!({"windowMode": "kiosk"}),
+        ] {
+            assert!(with_rdp_options(options).is_err());
+        }
+    }
+
+    #[test]
+    fn rdp_options_round_trip_and_keep_only_the_fields_set() {
+        let c = with_rdp_options(serde_json::json!({"nla": false, "gateway": "gw"})).unwrap();
+        assert_eq!(
+            serde_json::to_value(&c).unwrap()["options"],
+            serde_json::json!({"rdp": {"gateway": "gw", "nla": false}})
+        );
+    }
+
+    #[test]
+    fn sanitize_synced_connections_drops_entries_with_bad_rdp_options() {
+        let good = ssh_connection_with_key_path("");
+        let bad = with_rdp_options(serde_json::json!({"gateway": "-gw"})).unwrap();
         assert_eq!(sanitize_synced_connections(vec![good, bad]).len(), 1);
     }
 
