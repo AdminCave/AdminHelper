@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Eingebettetes RDP Stufe 1: Backend — Task-Ledger
-Status: bereit · Branch: feature/arch-rdp-backend · Review: pro Task
+Status: aktiv · Branch: feature/arch-rdp-backend · Review: pro Task
 Spec: docs/features/arch-rdp-backend.md (Roadmap R-1097)
 Heavy: linux-full — neue Desktop-Suite `desktop_e2e_rdp_embedded` (xrdp-Container, GUI-Teil des E2E-Layers) im Sammellauf; vor dem Merge dieser Schritt einmal auf einer Pool-VM der eigenen Lane (`run.sh e2e --strict --part gui --step desktop_e2e_rdp_embedded`). Kein `windows`: Den Windows-Pfad (Media Foundation) bauen und testen `rust-windows` und `tauri-build-smoke`; Desktop-GUI unter Windows bleibt nicht verifiziert (R-1090).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -204,8 +204,8 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/arch-rdp-backend.md
 
-### T8 — Audit-Ausnahme RUSTSEC-2023-0071 (`rsa` über IronRDP)  [?] (RUSTSEC-2023-0071 (rsa, Marvin, ohne Fix) im Desktop hinnehmen und per .cargo/audit.toml ausnehmen? Empfehlung: ja, kein privater RSA-Schlüssel im genutzten Anmeldeweg)
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/.cargo/audit.toml (neu), apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs, docs/features/arch-rdp-backend.md
+### T8 — Audit-Ausnahme RUSTSEC-2023-0071 (`rsa` über IronRDP)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/.cargo/audit.toml (neu), apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs, docs/features/arch-rdp-backend.md, .gitignore
 Abhängt von: T1
 Änderung:
 - Befund aus dem Review von T1: `rsa 0.10.0-rc.18` kommt über `picky`, `sspi` und `winscard` (IronRDP) in den Build
@@ -275,3 +275,6 @@ Doku: THIRD_PARTY_LICENSES.md, docs/features/arch-rdp-backend.md
 - 2026-11-05 T5: Der xrdp-Test (`xrdp_live_session`, `#[ignore]`) liest Ziel, Benutzer, Passwort und den erwarteten Fingerprint aus `AH_RDP_E2E_*`; der Fingerprint ist der SHA-256 des DER-Zertifikats des Containers, den das Skript aus T6 setzt. Die Sitzung im Container startet `xterm`, damit ein Tastendruck verlässlich ein Bild auslöst (Quittungsprobe).
 - 2026-11-05 T6: xrdp beantwortet ein gescheitertes Autologon mit seinem eigenen Login-Bildschirm, der Tasten annimmt und Bilder schickt; der Live-Test allein war mit falschem Passwort grün (Gegenprobe). Die Suite belegt den Login deshalb aus `/var/log/xrdp.log` des Containers („session is available on display N for user e2e“, kein „could not be authenticated“) und den GFX-Pfad aus „egfx created“ und „gfx rfx pro codec session“; Gegenprobe mit falschem Passwort: `5 passed, 1 failed`.
 - 2026-11-05 T6: Debian trixie liefert xrdp 0.10.1 ohne x264 und ohne `gfx.toml`: GFX läuft mit RemoteFX Progressive, wie es die Spec für Linux vorsieht (E3). Die apt-Pakete sind nicht versionsgepinnt (Debian entfernt ersetzte Versionen aus dem Mirror, der Build bräche bei jedem Sicherheitsupdate); der Build bricht ab, wenn xrdp nicht 0.10.x ist. Bereitschaft über `/proc/net/tcp` (kein ss im Image), `docker run --init` gegen Zombies der Sitzungsprozesse.
+- 2026-11-05 Kevin (T8): RUSTSEC-2023-0071 wird hingenommen, die Ausnahme steht in `apps/desktop/src-tauri/.cargo/audit.toml`; der Workflow bleibt unverändert.
+- 2026-11-05 Kevin (Offene Frage 1 der Spec): Variante (a) — CA-gültige Zertifikate ohne Pin bleiben in Stufe 1 wie gebaut; R-1141 („Pin immer“) wird vor Stufe 2 gebaut.
+- 2026-11-05 T8: `.gitignore` schließt `apps/desktop/src-tauri/.cargo/` als Tauri-Erzeugnis aus; das Muster nimmt jetzt den Inhalt aus (`.cargo/*`) und lässt `audit.toml` zu, damit die Ausnahme versioniert ist und erzeugte Dateien draußen bleiben.
