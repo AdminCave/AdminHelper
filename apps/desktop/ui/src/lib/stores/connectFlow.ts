@@ -13,7 +13,7 @@
 import { errMsg } from '$lib/utils/errors';
 import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import type { ClientInfo, Connection } from '$lib/bridge/types';
+import type { ClientInfo, Connection, SshConsole } from '$lib/bridge/types';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
 import { sessionStore } from './session';
@@ -22,6 +22,7 @@ import { reportError, showStatus } from './statusBar';
 import { getMappings } from './tunnel';
 import { requestPassword } from './passwordPrompt';
 import { closeEditor } from './editor';
+import { openTerminal } from './terminals';
 import { tNow } from '$lib/i18n';
 
 const isLinux =
@@ -227,9 +228,22 @@ async function handleRdpAuth(
   return false;
 }
 
+/**
+ * The console an SSH start takes: the one asked for, else the setting; the OS terminal while the
+ * settings have not loaded, as before the embedded terminal.
+ */
+function sshConsoleFor(asked: SshConsole | undefined): SshConsole {
+  return asked ?? get(sessionStore).settings?.sshConsole ?? 'external';
+}
+
+/**
+ * Starts `connection`. An SSH connection opens in `sshConsole`, by default the one the settings
+ * name.
+ */
 export async function initiateConnect(
   connection: Connection,
   keepEditorOpen = false,
+  sshConsole?: SshConsole,
 ): Promise<void> {
   // Resolve before validating: the server's automatic web connections have no URL until a
   // visitor gives them one.
@@ -241,12 +255,35 @@ export async function initiateConnect(
     return;
   }
 
+  if (connection.kind === 'ssh' && sshConsoleFor(sshConsole) === 'embedded') {
+    await connectEmbedded(connection, resolved, keepEditorOpen);
+    return;
+  }
+
   if (connection.kind === 'rdp') {
     const handled = await handleRdpAuth(connection, resolved, keepEditorOpen);
     if (handled) return;
   }
 
   await performConnect(connection, resolved, keepEditorOpen);
+}
+
+/**
+ * Opens `resolved`, the target of the SSH connection `connection`, in a tab of the embedded
+ * terminal. The tab shows how the start goes, so the status bar says nothing unless it failed.
+ */
+async function connectEmbedded(
+  connection: Connection,
+  resolved: Connection,
+  keepEditorOpen: boolean,
+): Promise<void> {
+  if (!(await openTerminal(connection, resolved))) return;
+  try {
+    await markConnectionUsed(connection);
+  } catch (err) {
+    reportError(errMsg(err));
+  }
+  if (!keepEditorOpen) closeEditor();
 }
 
 interface PerformOptions {

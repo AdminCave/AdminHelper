@@ -80,8 +80,10 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9
 Abhängt von: T2
 
-### T4 — Sitzungs-Store und Verbindungs-Zweig (R-1069)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts (neu, SPDX), apps/desktop/ui/src/lib/stores/terminals.test.ts (neu, SPDX), apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/App.svelte
+### T4 — Sitzungs-Store und Verbindungs-Zweig (R-1069)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts (neu, SPDX), apps/desktop/ui/src/lib/stores/terminals.test.ts (neu, SPDX), apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/main.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @4e394e72 2026-11-05T10:31:03+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T4.verdict.json)
 Änderung:
 - `terminals.ts`: Sitzungen (key, Verbindung, aufgelöste Verbindung, Status `connecting`|`connected`|`disconnected`,
   Exit-Code, `connectedAt`, Backend-Id), aktiver Tab (`page` oder key), Ausgabe-Puffer bis ein Terminal sich anhängt
@@ -192,3 +194,7 @@ Abhängt von: T3, T8
 - 2026-11-05 T1: `terminal_write` läuft über `blocking()`; zwei gleichzeitige Invokes könnten die Reihenfolge tauschen, darum serialisiert der Store (T4) die Eingabe je Session (nächster Write erst nach dem letzten).
 - 2026-11-05 T2: `sshConsole` und `terminal` sind im TS-Typ `Settings` Pflicht (Rust sendet beide immer); darum ziehen sieben Test-Fixtures, die ein ganzes `Settings` bauen, die Felder als Literal nach (drei liegen in `vi.hoisted`, ein Import ginge dort nicht), und die beiden Migrationstests in `migration.rs` erwarten die Standardwerte in der migrierten `prefs.json` — T2 trägt damit dreizehn Dateien.
 - 2026-11-05 T2: `TerminalPrefs` hat `#[serde(default)]` auf Struct-Ebene: ein von Hand gekürztes `terminal`-Objekt lädt mit Standardwerten für die fehlenden Optionen; ein ungültiger Wert (etwa `fontSize: 300` über `u8`) scheitert wie jedes andere ungültige Feld von `prefs.json`. `clampTerminalPrefs` nimmt beim Scrollback die nächste Stufe.
+- 2026-11-05 T4: Schreiben, Größe und Tab-Wechsel laufen über den Store (`writeTerminal`, `resizeTerminal`, `showTab`), die Backend-Id bleibt in ihm; jeder Start zählt (`attempt`), Nachrichten eines ersetzten oder geschlossenen Programms gehen ins Leere, ein Start, dessen Tab inzwischen zu ist, beendet sein Programm. Die Größe merkt sich der Store, ein Neu-Verbinden startet mit ihr.
+- 2026-11-05 T4: Das Aufräumen beim Start (`terminalCloseAll`) steht in `main.ts`, nicht in `App.svelte`: mehrere Tests mounten `App` über Bridge-Mocks ohne Terminal-Befehle; `App.svelte` ist aus `Dateien:` gestrichen.
+- 2026-11-05 T4 (Review): Eingaben, bevor `terminal_open_ssh` die Id meldet, wartet der Store je Start in `input` und schickt sie mit der Id in Tipp-Reihenfolge (die Cursor-Abfrage der Windows-Pseudo-Konsole kommt in diesem Fenster); ein neuer Start oder ein gescheiterter verwirft sie, ein Write geht nur an das Programm, für das er getippt wurde.
+- 2026-11-05 T4: Ein eingebetteter Start zeigt keine Statusmeldung (der Tab zeigt den Verlauf), ein gescheiterter Start markiert die Verbindung nicht als benutzt und lässt den Editor offen; ohne geladene Einstellungen gilt `external`.

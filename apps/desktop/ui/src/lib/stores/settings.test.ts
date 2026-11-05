@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   reloadWindow: vi.fn(),
   listen: vi.fn(),
   workspaceContext: vi.fn(),
+  terminalCloseAll: vi.fn(async () => {}),
 }));
 
 vi.mock('./connections', () => ({
@@ -58,6 +59,7 @@ vi.mock('$lib/bridge', () => ({
   fetchTunnels: h.fetchTunnels,
   stopTunnel: h.stopTunnel,
   workspaceContext: h.workspaceContext,
+  terminalCloseAll: h.terminalCloseAll,
 }));
 vi.mock('./tunnel', () => ({ stop: h.tunnelStop, startIfServerMode: h.tunnelStart }));
 vi.mock('$lib/utils/reloadWindow', () => ({ reloadWindow: h.reloadWindow }));
@@ -296,6 +298,21 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     expect(h.bridgeLogout.mock.invocationCallOrder[0]).toBeLessThan(
       h.reloadWindow.mock.invocationCallOrder[0],
     );
+  });
+
+  it('ends the terminal sessions before the reload (R-1069)', async () => {
+    await logoutAndReload();
+    expect(h.terminalCloseAll).toHaveBeenCalledOnce();
+    expect(h.terminalCloseAll.mock.invocationCallOrder[0]).toBeLessThan(
+      h.reloadWindow.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('a failed end of the terminal sessions prevents neither the logout nor the reload', async () => {
+    h.terminalCloseAll.mockRejectedValueOnce(new Error('ipc gone'));
+    await expect(logoutAndReload()).resolves.toBeUndefined();
+    expect(h.bridgeLogout).toHaveBeenCalledOnce();
+    expect(h.reloadWindow).toHaveBeenCalledOnce();
   });
 
   it('a failed tunnel stop does not prevent the reload', async () => {
