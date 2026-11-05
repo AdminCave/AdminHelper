@@ -30,6 +30,9 @@ import Modal from './Modal.svelte';
 import { registerAuthFailureHandler } from '$lib/api/client';
 import { auth } from '$lib/stores/auth';
 
+// Registered once at module import; read here because Vitest 5 clears mock calls before each test.
+const authFailureHandler = vi.mocked(registerAuthFailureHandler).mock.calls[0][0];
+
 afterEach(cleanup);
 
 describe('ConfirmDialog', () => {
@@ -117,7 +120,7 @@ describe('ConfirmDialog', () => {
   // over the login page, and a confirm after the next login would act with the new session.
   it.each([
     ['a logout', () => auth.logout()],
-    ['an expiry', () => vi.mocked(registerAuthFailureHandler).mock.calls[0][0]()],
+    ['an expiry', () => authFailureHandler()],
   ])('cancels the open question on %s', async (_name, endSession) => {
     expect(get(auth).user).not.toBeNull();
     const { container } = render(ConfirmDialog);
@@ -135,7 +138,7 @@ describe('ConfirmDialog', () => {
   // The same rule for a question asked only after the session ended: it is not asked at all.
   it('answers false at once and opens nothing without a session', async () => {
     const { container } = render(ConfirmDialog);
-    vi.mocked(registerAuthFailureHandler).mock.calls[0][0]();
+    authFailureHandler();
     expect(get(auth).user).toBeNull();
     // Let the dialog see the session end first; else that effect would cancel the question.
     await tick();
