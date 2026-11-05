@@ -801,6 +801,54 @@
             "title": "Loadpercpu",
             "type": "array"
           },
+          "netIn": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Netin",
+            "type": "array"
+          },
+          "netOut": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Netout",
+            "type": "array"
+          },
           "ram": {
             "items": {
               "maxItems": 2,
@@ -855,6 +903,8 @@
           "ram",
           "swap",
           "loadPerCpu",
+          "netIn",
+          "netOut",
           "disks"
         ],
         "title": "HistorySeriesOut",
@@ -3358,7 +3408,7 @@
     },
     "/status/compare": {
       "get": {
-        "description": "One metric of every server with agent data on the history grid: CPU, RAM, the\nfullest disk or load per CPU.",
+        "description": "One metric of every server with agent data on the history grid: CPU, RAM, the\nfullest disk, load per CPU or incoming network traffic.",
         "operationId": "get_status_compare_status_compare_get",
         "parameters": [
           {
@@ -3366,7 +3416,7 @@
             "name": "metric",
             "required": true,
             "schema": {
-              "pattern": "^(cpu|ram|disk|load)$",
+              "pattern": "^(cpu|ram|disk|load|net)$",
               "title": "Metric",
               "type": "string"
             }
@@ -3454,7 +3504,7 @@
     },
     "/status/server/{server_id}/history": {
       "get": {
-        "description": "Resource history of one server from its agent: CPU, RAM, swap, load per CPU and\ndisks on one time grid, optionally the previous period, the warn/crit thresholds,\nthe status changes of its checks and its maintenance windows.",
+        "description": "Resource history of one server from its agent: CPU, RAM, swap, load per CPU,\nnetwork in/out and disks on one time grid, optionally the previous period, the warn/crit thresholds,\nthe status changes of its checks and its maintenance windows.",
         "operationId": "get_server_history_status_server__server_id__history_get",
         "parameters": [
           {

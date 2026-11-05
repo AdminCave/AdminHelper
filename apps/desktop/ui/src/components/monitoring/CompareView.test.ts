@@ -143,4 +143,32 @@ describe('CompareView', () => {
     render(CompareView);
     await waitFor(() => expect(screen.getByText('No server with agent data yet.')).toBeTruthy());
   });
+
+  it('compares incoming traffic in Mbit/s, the bars scaled to the busiest server', async () => {
+    mocks.fetchServerCompare.mockResolvedValue(compare());
+    const { container } = render(CompareView);
+    await waitFor(() => expect(lines(container)).toHaveLength(4));
+    mocks.fetchServerCompare.mockResolvedValue(
+      compare({
+        metric: 'net',
+        servers: [
+          { serverId: 'a', points: flat(200) },
+          { serverId: 'b', points: flat(50) },
+        ],
+      }),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Network in' }));
+    await waitFor(() =>
+      expect(mocks.fetchServerCompare).toHaveBeenLastCalledWith({ token: 's' }, 'net', '24h'),
+    );
+    await waitFor(() => expect(order()).toEqual(['a', 'b']));
+    const row = (id: string) =>
+      screen.getAllByTestId('compare-row').find((r) => r.getAttribute('data-server') === id);
+    expect(row('a')?.textContent).toContain('200 Mbit/s');
+    expect(row('b')?.textContent).toContain('50.0 Mbit/s');
+    const width = (id: string) =>
+      (row(id)?.querySelector('.compare-bar') as HTMLElement | null)?.style.width;
+    expect(width('a')).toBe('100%');
+    expect(width('b')).toBe('25%');
+  });
 });

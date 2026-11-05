@@ -48,6 +48,11 @@ func buildReportWithState(ctx context.Context, serviceNames []string, prev repor
 			resources[k] = v
 		}
 	}
+	if n := collectNetwork(); n != nil {
+		for k, v := range n {
+			resources[k] = v
+		}
+	}
 	if disks := collectDisks(); len(disks) > 0 {
 		resources["disks"] = disks
 	}
