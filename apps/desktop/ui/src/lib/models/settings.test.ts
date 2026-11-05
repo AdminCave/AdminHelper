@@ -4,8 +4,10 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  clampTerminalPrefs,
   getIntervalMinutes,
   getSettingsDefaults,
+  getTerminalDefaults,
   validateSettings,
   validateWindowSettings,
   RDP_CUSTOM_SIZE_PATTERN,
@@ -35,6 +37,61 @@ describe('getSettingsDefaults', () => {
     expect(d.intervalMinutes).toBe(1);
     expect(d.rdpWindowMode).toBe('fit');
     expect(d.rdpPerformanceProfile).toBe('auto');
+  });
+
+  it('opens SSH in the OS terminal and has the terminal defaults of Rust', () => {
+    const d = getSettingsDefaults();
+    expect(d.sshConsole).toBe('external');
+    // TerminalPrefs::default() in models.rs.
+    expect(d.terminal).toEqual({
+      fontSize: 13,
+      theme: 'cave',
+      cursor: 'block',
+      scrollback: 10000,
+      copyOnSelect: true,
+      rightClickPaste: true,
+      confirmClose: true,
+    });
+  });
+});
+
+describe('clampTerminalPrefs', () => {
+  const at = (fontSize: number, scrollback: number) =>
+    clampTerminalPrefs({ ...getTerminalDefaults(), fontSize, scrollback });
+
+  it('keeps what the settings offer', () => {
+    expect(clampTerminalPrefs(getTerminalDefaults())).toEqual(getTerminalDefaults());
+    expect(at(10, 1000)).toMatchObject({ fontSize: 10, scrollback: 1000 });
+    expect(at(22, 100000)).toMatchObject({ fontSize: 22, scrollback: 100000 });
+  });
+
+  it('holds the font size to 10 through 22 in whole points', () => {
+    expect(at(9, 10000).fontSize).toBe(10);
+    expect(at(0, 10000).fontSize).toBe(10);
+    expect(at(23, 10000).fontSize).toBe(22);
+    expect(at(255, 10000).fontSize).toBe(22);
+    expect(at(14.6, 10000).fontSize).toBe(15);
+    expect(at(Number.NaN, 10000).fontSize).toBe(13);
+  });
+
+  it('takes the nearest of the three scrollback steps', () => {
+    expect(at(13, 0).scrollback).toBe(1000);
+    expect(at(13, 5000).scrollback).toBe(1000);
+    expect(at(13, 6000).scrollback).toBe(10000);
+    expect(at(13, 50000).scrollback).toBe(10000);
+    expect(at(13, 60000).scrollback).toBe(100000);
+    expect(at(13, 4_000_000_000).scrollback).toBe(100000);
+    expect(at(13, Number.NaN).scrollback).toBe(10000);
+  });
+
+  it('leaves the other options alone', () => {
+    const mine = {
+      ...getTerminalDefaults(),
+      theme: 'light',
+      cursor: 'bar',
+      copyOnSelect: false,
+    } as const;
+    expect(clampTerminalPrefs({ ...mine, fontSize: 99 })).toEqual({ ...mine, fontSize: 22 });
   });
 });
 

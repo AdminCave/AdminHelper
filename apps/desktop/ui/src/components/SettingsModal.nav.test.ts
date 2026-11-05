@@ -25,6 +25,16 @@ const h = vi.hoisted(() => ({
     rdpPerformanceProfile: 'auto',
     allowSelfSignedCerts: false,
     osNotifications: false,
+    sshConsole: 'external',
+    terminal: {
+      fontSize: 13,
+      theme: 'cave',
+      cursor: 'block',
+      scrollback: 10000,
+      copyOnSelect: true,
+      rightClickPaste: true,
+      confirmClose: true,
+    },
   } satisfies Settings,
   saveSettings: vi.fn(async (_settings: Settings) => undefined),
 }));

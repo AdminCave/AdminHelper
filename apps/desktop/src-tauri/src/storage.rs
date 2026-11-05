@@ -15,7 +15,8 @@ use tauri::Manager;
 use crate::enrollment;
 use crate::error::AppError;
 use crate::models::{
-    Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings, SyncMode,
+    Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings, SshConsole,
+    SyncMode, TerminalPrefs,
 };
 use crate::validation::{validate_https_url, validate_server_url_secure};
 use crate::workspace::{self, Meta};
@@ -377,6 +378,8 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         rdp_custom_size,
         rdp_performance_profile,
         os_notifications,
+        ssh_console,
+        terminal,
     } = prefs;
     Settings {
         mode: meta.map_or(defaults.mode, |meta| meta.kind.clone()),
@@ -395,6 +398,8 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         last_username: meta.and_then(|meta| meta.last_username.clone()),
         os_notifications,
         favorite_connections: meta.map_or_else(Vec::new, |meta| meta.favorite_connections.clone()),
+        ssh_console,
+        terminal,
     }
 }
 
@@ -538,6 +543,11 @@ pub(crate) struct Prefs {
     pub rdp_custom_size: Option<String>,
     pub rdp_performance_profile: RdpPerformanceProfile,
     pub os_notifications: bool,
+    // Absent in a prefs.json of 0.46 and before.
+    #[serde(default)]
+    pub ssh_console: SshConsole,
+    #[serde(default)]
+    pub terminal: TerminalPrefs,
 }
 
 impl From<&Settings> for Prefs {
@@ -550,6 +560,8 @@ impl From<&Settings> for Prefs {
             rdp_custom_size: settings.rdp_custom_size.clone(),
             rdp_performance_profile: settings.rdp_performance_profile,
             os_notifications: settings.os_notifications,
+            ssh_console: settings.ssh_console,
+            terminal: settings.terminal,
         }
     }
 }
@@ -578,6 +590,8 @@ impl Prefs {
             rdp_custom_size,
             rdp_performance_profile,
             os_notifications,
+            ssh_console,
+            terminal,
         } = mine;
         take_changed(&mut self.language, &seen.language, language);
         take_changed(
@@ -610,6 +624,9 @@ impl Prefs {
             &seen.os_notifications,
             os_notifications,
         );
+        take_changed(&mut self.ssh_console, &seen.ssh_console, ssh_console);
+        // As a whole: two windows changing different options at once, the last one wins.
+        take_changed(&mut self.terminal, &seen.terminal, terminal);
         self
     }
 }
@@ -898,7 +915,10 @@ mod settings_tests {
     };
     use crate::error::AppError;
     use crate::keyring_store;
-    use crate::models::{Connection, RdpScalingMode, Settings, SyncMode};
+    use crate::models::{
+        Connection, RdpScalingMode, Settings, SshConsole, SyncMode, TerminalCursor, TerminalPrefs,
+        TerminalTheme,
+    };
     use crate::workspace::{self, EnteredWorkspace, Meta, Workspace, WorkspaceId, PALETTE};
 
     /// A directory of its own for one test case under the system temp dir, gone with the guard.
@@ -1010,6 +1030,16 @@ mod settings_tests {
         settings.allow_self_signed_certs = true;
         settings.last_username = Some("admin".to_string());
         settings.favorite_connections = vec!["c1".to_string(), "c2".to_string()];
+        settings.ssh_console = SshConsole::Embedded;
+        settings.terminal = TerminalPrefs {
+            font_size: 16,
+            theme: TerminalTheme::Contrast,
+            cursor: TerminalCursor::Underline,
+            scrollback: 100_000,
+            copy_on_select: false,
+            right_click_paste: false,
+            confirm_close: false,
+        };
         save_settings_in(base, &process, &settings).unwrap();
 
         // The next process of the workspace reads what this one saved.
@@ -1028,6 +1058,16 @@ mod settings_tests {
                 "rdpCustomSize": "1600x900",
                 "rdpPerformanceProfile": "auto",
                 "osNotifications": true,
+                "sshConsole": "embedded",
+                "terminal": {
+                    "fontSize": 16,
+                    "theme": "contrast",
+                    "cursor": "underline",
+                    "scrollback": 100000,
+                    "copyOnSelect": false,
+                    "rightClickPaste": false,
+                    "confirmClose": false,
+                },
             })
         );
         assert_eq!(
@@ -1125,6 +1165,106 @@ mod settings_tests {
             save_settings_in(base, &second, &in_b).unwrap();
         }
         assert_eq!(json_of(&base.join(PREFS_FILE))["language"], "en");
+    }
+
+    #[test]
+    fn prefs_of_an_older_version_load_the_terminal_defaults() {
+        let scratch = Scratch::new("settings-old-prefs");
+        let base = &scratch.0;
+        // prefs.json as 0.46 wrote it: no sshConsole, no terminal.
+        fs::write(
+            base.join(PREFS_FILE),
+            json!({
+                "language": "en",
+                "storePasswords": false,
+                "rdpScalingMode": "auto",
+                "rdpWindowMode": "fit",
+                "rdpCustomSize": null,
+                "rdpPerformanceProfile": "auto",
+                "osNotifications": false,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let settings = load_settings_in(base, None).unwrap();
+        assert_eq!(settings.language.as_deref(), Some("en"));
+        assert_eq!(settings.ssh_console, SshConsole::External);
+        assert_eq!(settings.terminal, TerminalPrefs::default());
+        assert_eq!(
+            wire(&settings)["terminal"],
+            json!({
+                "fontSize": 13,
+                "theme": "cave",
+                "cursor": "block",
+                "scrollback": 10000,
+                "copyOnSelect": true,
+                "rightClickPaste": true,
+                "confirmClose": true,
+            })
+        );
+
+        // A terminal edited by hand down to one option keeps it and has the defaults for the rest.
+        let mut partial = json_of(&base.join(PREFS_FILE));
+        partial["terminal"] = json!({"fontSize": 18});
+        fs::write(base.join(PREFS_FILE), partial.to_string()).unwrap();
+        assert_eq!(
+            load_settings_in(base, None).unwrap().terminal,
+            TerminalPrefs {
+                font_size: 18,
+                ..TerminalPrefs::default()
+            }
+        );
+    }
+
+    #[test]
+    fn two_processes_keep_each_others_console_and_the_last_terminal_options() {
+        let scratch = Scratch::new("settings-terminal-two-processes");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        make(base, "b", &meta(SyncMode::Local, None));
+        let (first, second) = (SeenPrefs::new(), SeenPrefs::new());
+        let mut in_a = {
+            let _a = enter("a");
+            load_settings_in(base, Some(&first)).unwrap()
+        };
+        let mut in_b = {
+            let _b = enter("b");
+            load_settings_in(base, Some(&second)).unwrap()
+        };
+
+        in_a.terminal.font_size = 16;
+        {
+            let _a = enter("a");
+            save_settings_in(base, &first, &in_a).unwrap();
+        }
+        // The second window, on the old view, changes the console only.
+        in_b.ssh_console = SshConsole::Embedded;
+        {
+            let _b = enter("b");
+            save_settings_in(base, &second, &in_b).unwrap();
+        }
+        let both = load_settings_in(base, None).unwrap();
+        assert_eq!(both.terminal.font_size, 16, "the first change is lost");
+        assert_eq!(
+            both.ssh_console,
+            SshConsole::Embedded,
+            "the second change is lost"
+        );
+
+        // The terminal options go as a whole: a change of another option in the second window
+        // takes its whole view, the old font size with it.
+        in_b.terminal.theme = TerminalTheme::Light;
+        {
+            let _b = enter("b");
+            save_settings_in(base, &second, &in_b).unwrap();
+        }
+        assert_eq!(
+            load_settings_in(base, None).unwrap().terminal,
+            TerminalPrefs {
+                theme: TerminalTheme::Light,
+                ..TerminalPrefs::default()
+            }
+        );
     }
 
     #[test]

@@ -4,13 +4,15 @@
 
 // Settings model: pure functions + constants, no side effects.
 
-import type { Settings } from '$lib/bridge/types';
+import type { Settings, TerminalPrefs } from '$lib/bridge/types';
 import { systemLanguage, tNow } from '$lib/i18n';
 
 export const RDP_WINDOW_MODES = ['fit', 'fullscreen', 'multimon', 'custom'] as const;
 export const RDP_PERFORMANCE_PROFILES = ['auto', 'lan', 'broadband', 'low'] as const;
 export const RDP_SCALING_MODES = ['auto', 'normal', 'hdpi'] as const;
 export const RDP_CUSTOM_SIZE_PATTERN = /^\d{3,5}x\d{3,5}$/;
+export const TERMINAL_FONT_SIZE = { min: 10, max: 22 } as const;
+export const TERMINAL_SCROLLBACKS = [1_000, 10_000, 100_000] as const;
 
 export function getSettingsDefaults(): Settings {
   return {
@@ -28,7 +30,39 @@ export function getSettingsDefaults(): Settings {
     lastUsername: '',
     osNotifications: false,
     favoriteConnections: [],
+    sshConsole: 'external',
+    terminal: getTerminalDefaults(),
   };
+}
+
+export function getTerminalDefaults(): TerminalPrefs {
+  return {
+    fontSize: 13,
+    theme: 'cave',
+    cursor: 'block',
+    scrollback: 10_000,
+    copyOnSelect: true,
+    rightClickPaste: true,
+    confirmClose: true,
+  };
+}
+
+/** `prefs` within what the settings offer, also for a `prefs.json` edited by hand. */
+export function clampTerminalPrefs(prefs: TerminalPrefs): TerminalPrefs {
+  const defaults = getTerminalDefaults();
+  const font = Math.round(Number(prefs.fontSize));
+  const fontSize = Number.isFinite(font)
+    ? Math.max(TERMINAL_FONT_SIZE.min, Math.min(TERMINAL_FONT_SIZE.max, font))
+    : defaults.fontSize;
+  const wanted = Number(prefs.scrollback);
+  // The nearest of the steps.
+  const scrollback = Number.isFinite(wanted)
+    ? TERMINAL_SCROLLBACKS.reduce<number>(
+        (best, step) => (Math.abs(step - wanted) < Math.abs(best - wanted) ? step : best),
+        TERMINAL_SCROLLBACKS[0],
+      )
+    : defaults.scrollback;
+  return { ...prefs, fontSize, scrollback };
 }
 
 export function getIntervalMinutes(settings: Partial<Settings> | null | undefined): number {

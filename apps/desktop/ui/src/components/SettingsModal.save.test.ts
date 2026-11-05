@@ -30,6 +30,16 @@ const h = vi.hoisted(() => ({
     serverUrl: 'https://srv.example',
     lastUsername: 'kevin',
     osNotifications: false,
+    sshConsole: 'external',
+    terminal: {
+      fontSize: 13,
+      theme: 'cave',
+      cursor: 'block',
+      scrollback: 10000,
+      copyOnSelect: true,
+      rightClickPaste: true,
+      confirmClose: true,
+    },
   } satisfies Settings,
   saveSettings: vi.fn(async (_settings: Settings) => undefined),
   // The notification prefs inside the dialog load through the proxy and render their own

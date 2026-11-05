@@ -53,8 +53,10 @@ nur zusammen grün wird (`types.parity.test.ts`, `ipc.inventory.test.ts`).
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Command-Tabelle, vom Inventar-Test verlangt); Prosa → T9
 
-### T2 — Einstellungen: Konsole für SSH und Terminal-Optionen (R-1069)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/lib/models/settings.test.ts
+### T2 — Einstellungen: Konsole für SSH und Terminal-Optionen (R-1069)  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/lib/models/settings.test.ts, apps/desktop/ui/src/components/Login.workspace.test.ts, apps/desktop/ui/src/components/SettingsModal.save.test.ts, apps/desktop/ui/src/components/StatusFooter.test.ts, apps/desktop/ui/src/components/SettingsModal.nav.test.ts, apps/desktop/ui/src/components/SettingsModal.seed.test.ts, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts, apps/desktop/ui/src/lib/stores/session.test.ts, apps/desktop/src-tauri/src/migration.rs
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @bdeb25b8 2026-11-05T09:54:44+01:00
+Review: approve (.ah-out/review/arch-ssh-terminal/T2.verdict.json)
 Änderung:
 - `models.rs`: `SshConsole` (`embedded` | `external`, `#[default]` vorerst `external`), `TerminalTheme`
   (`cave`|`contrast`|`light`), `TerminalCursor` (`block`|`bar`|`underline`), `TerminalPrefs { font_size: u8 = 13,
@@ -177,3 +179,5 @@ Abhängt von: T3, T8
 - 2026-11-05 T1: `ssh` nur als absoluter Pfad aus `terminal::which`; ein relativer Treffer gilt als nicht gefunden — sonst entschiede das Arbeitsverzeichnis der App, welches Programm läuft (`terminal.rs` bleibt unverändert).
 - 2026-11-05 T1: `close_all` beim `RunEvent::Exit` in Rust und `terminalCloseAll` beim Start der UI (T4) — Tauri-`send` scheitert nach einem Webview-Reload nicht, die Programme hingen sonst ohne Leser an einem toten Kanal.
 - 2026-11-05 T1: `terminal_write` läuft über `blocking()`; zwei gleichzeitige Invokes könnten die Reihenfolge tauschen, darum serialisiert der Store (T4) die Eingabe je Session (nächster Write erst nach dem letzten).
+- 2026-11-05 T2: `sshConsole` und `terminal` sind im TS-Typ `Settings` Pflicht (Rust sendet beide immer); darum ziehen sieben Test-Fixtures, die ein ganzes `Settings` bauen, die Felder als Literal nach (drei liegen in `vi.hoisted`, ein Import ginge dort nicht), und die beiden Migrationstests in `migration.rs` erwarten die Standardwerte in der migrierten `prefs.json` — T2 trägt damit dreizehn Dateien.
+- 2026-11-05 T2: `TerminalPrefs` hat `#[serde(default)]` auf Struct-Ebene: ein von Hand gekürztes `terminal`-Objekt lädt mit Standardwerten für die fehlenden Optionen; ein ungültiger Wert (etwa `fontSize: 300` über `u8`) scheitert wie jedes andere ungültige Feld von `prefs.json`. `clampTerminalPrefs` nimmt beim Scrollback die nächste Stufe.
