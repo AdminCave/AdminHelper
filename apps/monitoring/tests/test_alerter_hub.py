@@ -7,9 +7,11 @@ notification hub, independently of the rule-based webhook/email dispatch.
 
 Pure-logic tests (no DB): severity mapping, the outbound call shape, best-effort
 error handling, and that process_alert fires the emit on a transition only.
-R-0424 adds the bell cooldown (hub_decision) and real-session tests of the bell's
+R-0424 adds the bell's record (hub_decision) and real-session tests of the bell's
 slot across two dispatches of one check (SQLite here, Postgres in
-test_check_engine_concurrency)."""
+test_check_engine_concurrency). R-1079 moves the bell's cooldown into the hub
+(server tests/test_notification_incidents.py) and sends the check's incident key
+and what its alert rules did with each event."""
 
 import re
 from datetime import datetime, timedelta
@@ -22,11 +24,14 @@ from sqlalchemy.orm import sessionmaker
 
 from app import alerter
 from app.alerter import (
-    HUB_COOLDOWN,
+    HUB_RULE_NAME_MAX,
+    HUB_RULES_MAX,
+    RuleResult,
     _hub_severity,
     _severity_level,
     emit_to_hub,
     hub_decision,
+    hub_rules,
     process_alert,
 )
 from app.check_engine import dispatch_alert_bg
@@ -91,53 +96,42 @@ class TestSeverityLevel:
         assert _severity_level(value) == 2
 
 
-_RECENT = _NOW - timedelta(minutes=10)
-_JUST_INSIDE = _NOW - HUB_COOLDOWN + timedelta(seconds=1)
-_EXPIRED = _NOW - HUB_COOLDOWN  # exactly 30 min ago: no longer "younger than"
-
-# (hub_status, hub_sent_at, new_status, severity) -> decision. hub_status is what
-# the bell last showed of the check (a problem capped at the check's severity),
-# hub_sent_at when it last got a problem.
+# (hub_status, new_status, severity) -> decision. hub_status is what the bell
+# last showed of the check (a problem capped at the check's severity). The bell
+# has no cooldown here (R-1079): a problem it showed a minute ago goes again, and
+# the hub folds it into the open incident.
 _HUB_MATRIX = [
-    # a problem, nothing shown in the cooldown
-    (None, None, "critical", "critical", "emit"),
-    (None, None, "warning", "critical", "emit"),
-    ("ok", None, "critical", "critical", "emit"),
-    ("ok", _EXPIRED, "critical", "critical", "emit"),
-    ("critical", _EXPIRED, "warning", "critical", "emit"),
-    # a problem inside the cooldown: dropped
-    ("ok", _RECENT, "critical", "critical", "skip"),
-    ("ok", _JUST_INSIDE, "warning", "critical", "skip"),
-    ("critical", _RECENT, "warning", "critical", "skip"),
-    ("warning", _RECENT, "warning", "critical", "skip"),
-    # escalation of a shown warning: at once
-    ("warning", _RECENT, "critical", "critical", "emit"),
-    # ... measured capped: a warning check never escalates
-    ("warning", _RECENT, "critical", "warning", "skip"),
+    # a problem at capped level warning or critical, whatever the bell showed
+    (None, "critical", "critical", "emit"),
+    (None, "warning", "critical", "emit"),
+    ("ok", "critical", "critical", "emit"),
+    ("ok", "warning", "critical", "emit"),
+    ("critical", "warning", "critical", "emit"),
+    ("warning", "critical", "critical", "emit"),
+    # ... capped: a warning check going critical reaches the hub as warning again
+    ("warning", "critical", "warning", "emit"),
     # capped level 0: never
-    (None, None, "critical", "info", "skip"),
-    (None, None, "warning", "info", "skip"),
-    ("ok", None, "pending", "critical", "skip"),
-    # recovery: of a problem the bell showed, cooldown or not ...
-    ("critical", _RECENT, "ok", "critical", "emit"),
-    ("warning", _RECENT, "ok", "critical", "emit"),
-    ("critical", None, "ok", "warning", "emit"),
+    (None, "critical", "info", "skip"),
+    (None, "warning", "info", "skip"),
+    ("ok", "pending", "critical", "skip"),
+    # recovery: of a problem the bell showed ...
+    ("critical", "ok", "critical", "emit"),
+    ("warning", "ok", "critical", "emit"),
+    ("critical", "ok", "warning", "emit"),
     # ... at the level the alarm reached it with, whatever the severity is now
-    ("critical", _RECENT, "ok", "info", "emit"),
+    ("critical", "ok", "info", "emit"),
     # ... never of a problem it did not show
-    ("ok", _RECENT, "ok", "critical", "skip"),
-    (None, None, "ok", "critical", "skip"),
-    ("pending", None, "ok", "critical", "skip"),
+    ("ok", "ok", "critical", "skip"),
+    (None, "ok", "critical", "skip"),
+    ("pending", "ok", "critical", "skip"),
+    ("info", "ok", "critical", "skip"),
 ]
 
 
 class TestHubDecision:
-    @pytest.mark.parametrize(("hub_status", "sent_at", "new", "severity", "expected"), _HUB_MATRIX)
-    def test_matrix(self, hub_status, sent_at, new, severity, expected):
-        assert hub_decision(hub_status, sent_at, new, severity, _NOW) == expected
-
-    def test_cooldown_is_thirty_minutes(self):
-        assert HUB_COOLDOWN == timedelta(minutes=30)
+    @pytest.mark.parametrize(("hub_status", "new", "severity", "expected"), _HUB_MATRIX)
+    def test_matrix(self, hub_status, new, severity, expected):
+        assert hub_decision(hub_status, new, severity) == expected
 
 
 class TestEmitToHub:
@@ -282,6 +276,81 @@ class TestEmitToHub:
         assert emit_to_hub(check, "warning", "ok", make_msg(), severity="critical") is True
 
         assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "ok")]
+
+    def test_the_event_carries_the_incident_key_of_its_check(self, monkeypatch):
+        # R-1079: the hub folds the events of one key into one incident.
+        posted = self._capture_posts(monkeypatch)
+
+        emit_to_hub(make_check(id="chk-7"), "ok", "critical", make_msg())
+        emit_to_hub(make_check(id="chk-7"), "critical", "ok", make_msg())
+        emit_to_hub(make_check(id="chk-7", server_id=None), "ok", "critical", make_msg())
+
+        assert [(p["incident_key"], p["source_id"]) for p in posted] == [
+            ("check:chk-7", "srv-1"),
+            ("check:chk-7", "srv-1"),
+            ("check:chk-7", None),
+        ]
+        # Without results the hub shows no rules (an older caller).
+        assert all("rules" not in p for p in posted)
+
+    def test_the_event_carries_what_the_rules_did(self, monkeypatch):
+        posted = self._capture_posts(monkeypatch)
+        results = [
+            RuleResult("Ops mail", "email", True, None),
+            RuleResult("Ops hook", "webhook", False, "srv-1"),
+        ]
+
+        emit_to_hub(make_check(), "ok", "critical", make_msg(), rules=results)
+        emit_to_hub(make_check(), "ok", "critical", make_msg(), rules=[])
+
+        assert [p["rules"] for p in posted] == [
+            [
+                {"name": "Ops mail", "channel": "email", "ok": True},
+                {"name": "Ops hook", "channel": "webhook", "ok": False},
+            ],
+            # No rule sent: the bell alone.
+            [],
+        ]
+
+
+class TestHubRules:
+    """R-1079: the rule results within the hub's bounds (IncomingEvent.rules); an
+    event past them is a 422, and the bell gets nothing."""
+
+    def test_a_long_name_is_cut(self):
+        (cut, kept) = hub_rules(
+            [
+                RuleResult("n" * (HUB_RULE_NAME_MAX + 50), "email", True, None),
+                RuleResult("m" * HUB_RULE_NAME_MAX, "email", True, None),
+            ]
+        )
+        assert cut["name"] == "n" * (HUB_RULE_NAME_MAX - 1) + "\u2026"
+        assert len(cut["name"]) == HUB_RULE_NAME_MAX
+        assert kept["name"] == "m" * HUB_RULE_NAME_MAX
+
+    def test_an_empty_name_is_named(self):
+        # The monitoring takes any name, the hub at least one character.
+        assert hub_rules([RuleResult("", "webhook", True, None)]) == [
+            {"name": "(unnamed)", "channel": "webhook", "ok": True}
+        ]
+
+    def test_sends_of_one_name_and_channel_are_one_entry(self):
+        assert hub_rules(
+            [
+                RuleResult("Ops", "email", True, None),
+                RuleResult("Ops", "webhook", True, None),
+                RuleResult("Ops", "email", False, "srv-1"),
+                RuleResult("Ops", "email", True, None),
+            ]
+        ) == [
+            {"name": "Ops", "channel": "email", "ok": False},
+            {"name": "Ops", "channel": "webhook", "ok": True},
+        ]
+
+    def test_at_most_the_bound(self):
+        results = [RuleResult(f"r{i}", "email", True, None) for i in range(HUB_RULES_MAX + 10)]
+
+        assert [r["name"] for r in hub_rules(results)] == [f"r{i}" for i in range(HUB_RULES_MAX)]
 
 
 class TestSeverityCapThroughProcessAlert:
@@ -430,6 +499,26 @@ def test_hub_title_max_matches_the_server_schema():
     assert int(field.group(1)) == alerter.HUB_TITLE_MAX
 
 
+def test_hub_rule_bounds_match_the_server_schema():
+    # R-1079: HUB_RULES_MAX and HUB_RULE_NAME_MAX mirror IncomingEvent.rules and
+    # IncidentRule.name; a drift turns every event past them into a 422.
+    src = _SERVER_SCHEMAS.read_text(encoding="utf-8")
+    event = re.search(r"^class IncomingEvent\(.*?(?=^class |\Z)", src, re.M | re.S)
+    rule = re.search(r"^class IncidentRule\(.*?(?=^class |\Z)", src, re.M | re.S)
+    assert event and rule, f"IncomingEvent or IncidentRule not found in {_SERVER_SCHEMAS}"
+    rules = re.search(
+        r"^\s+rules: Optional\[list\[IncidentRule\]\] = Field\(default=None, max_length=(\d+)\)$",
+        event.group(0),
+        re.M,
+    )
+    name = re.search(
+        r"^\s+name: str = Field\(min_length=1, max_length=(\d+)\)$", rule.group(0), re.M
+    )
+    assert rules and name, f"the bounds of IncomingEvent.rules not found in {_SERVER_SCHEMAS}"
+    assert int(rules.group(1)) == HUB_RULES_MAX
+    assert int(name.group(1)) == HUB_RULE_NAME_MAX
+
+
 class TestProcessAlertEmits:
     def test_emit_fires_on_transition(self, monkeypatch):
         seen = {}
@@ -438,10 +527,16 @@ class TestProcessAlertEmits:
         monkeypatch.setattr(
             alerter,
             "emit_to_hub",
-            lambda check, old, new, msg, severity=None: seen.update(old=old, new=new),
+            lambda check, old, new, msg, severity=None, rules=None: seen.update(
+                old=old, new=new, rules=rules
+            ),
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "critical")
-        assert seen == {"old": "ok", "new": "critical"}
+        assert seen == {
+            "old": "ok",
+            "new": "critical",
+            "rules": [RuleResult("r", "webhook", True, None)],
+        }
 
     def test_no_emit_when_status_unchanged(self, monkeypatch):
         calls = {"n": 0}
@@ -461,6 +556,58 @@ class TestProcessAlertEmits:
         assert calls["n"] == 0
 
 
+class TestRulesThroughProcessAlert:
+    """R-1079: the bell's event of a transition names the rules that sent it and
+    whether they got it out; a rule in its cooldown or for another server sent
+    nothing and is not named."""
+
+    def _run(self, monkeypatch, rules, old_status="ok", new_status="critical", failing=()):
+        monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
+        monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda db, rule, check: rule.id == "cool")
+        posted = []
+
+        def fake_dispatch(rule, check, msg):
+            return (False, "HTTP 500") if rule.id in failing else (True, None)
+
+        def fake_post(url, **kwargs):
+            posted.append(kwargs["json"])
+            return SimpleNamespace(status_code=202)
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter.httpx, "post", fake_post)
+        process_alert(_CapturingDb(rules), make_check(), old_status, new_status)
+        return posted
+
+    def test_the_event_names_the_rules_and_whether_they_sent(self, monkeypatch):
+        rules = [
+            make_rule(id="mail", name="Ops mail", channel="email"),
+            make_rule(id="hook", name="Ops hook"),
+            make_rule(id="cool", name="Cooling"),
+            make_rule(id="other", name="Other server", match_server_id="srv-2"),
+        ]
+
+        (event,) = self._run(monkeypatch, rules, failing={"hook"})
+
+        assert event["incident_key"] == "check:check-1"
+        assert event["rules"] == [
+            {"name": "Ops mail", "channel": "email", "ok": True},
+            {"name": "Ops hook", "channel": "webhook", "ok": False},
+        ]
+
+    def test_without_a_rule_sending_the_bell_is_alone(self, monkeypatch):
+        (event,) = self._run(monkeypatch, [make_rule(id="cool")])
+
+        assert event["rules"] == []
+
+    def test_a_recovery_names_its_rules_too(self, monkeypatch):
+        # The rule cooldown never holds a recovery back.
+        (event,) = self._run(monkeypatch, [make_rule(id="cool", name="Cooling")], "critical", "ok")
+
+        assert (event["incident_key"], event["new_status"]) == ("check:check-1", "ok")
+        assert event["rules"] == [{"name": "Cooling", "channel": "webhook", "ok": True}]
+
+
 class _Clock:
     def __init__(self, now):
         self.now = now
@@ -469,10 +616,11 @@ class _Clock:
         return self.now
 
 
-class TestBellCooldownThroughProcessAlert:
-    """R-0424: the bell gets at most one problem per check in HUB_COOLDOWN; a
-    recovery only of a problem it showed, an escalation at once. The rules see
-    every transition. The state stub carries the bell's record like the row."""
+class TestBellThroughProcessAlert:
+    """R-1079: every problem goes to the hub, which folds it into the check's
+    incident and keeps the cooldown (server tests/test_notification_incidents.py);
+    a recovery only of a problem the bell showed. The rules see every transition.
+    The state stub carries the bell's record like the row."""
 
     def _setup(self, monkeypatch, status_code=202):
         monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
@@ -501,7 +649,7 @@ class TestBellCooldownThroughProcessAlert:
         old, state.status = state.status, status
         process_alert(_CapturingDb([make_rule()], state=state), check, old, status)
 
-    def test_one_problem_per_cooldown(self, monkeypatch):
+    def test_every_problem_goes_to_the_hub(self, monkeypatch):
         clock, state, sent, posted = self._setup(monkeypatch)
         check = make_check()
 
@@ -509,24 +657,20 @@ class TestBellCooldownThroughProcessAlert:
         assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW)
         clock.now = _NOW + timedelta(minutes=1)
         self._transition(state, check, "ok")
-        # A recovery does not start a cooldown.
+        # A recovery leaves hub_sent_at as it was.
         assert (state.hub_status, state.hub_sent_at) == ("ok", _NOW)
         clock.now = _NOW + timedelta(minutes=10)
-        self._transition(state, check, "critical")  # inside the cooldown: dropped
-        clock.now = _NOW + timedelta(minutes=11)
-        self._transition(state, check, "ok")  # the bell never showed it: no recovery
-        assert (state.hub_status, state.hub_sent_at) == ("ok", _NOW)
-        clock.now = _NOW + timedelta(minutes=31)
+        # Ten minutes after the first: the hub reopens the incident and decides the ping.
         self._transition(state, check, "critical")
+        clock.now = _NOW + timedelta(minutes=11)
+        self._transition(state, check, "ok")
+        assert (state.hub_status, state.hub_sent_at) == ("ok", _NOW + timedelta(minutes=10))
 
-        assert posted == [("critical", "critical"), ("critical", "ok"), ("critical", "critical")]
-        assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW + timedelta(minutes=31))
-        # The bell cooldown is the bell's alone: the rules got every transition,
-        # and the claim recorded each as reported — nothing is caught up.
-        assert sent == ["critical", "ok", "critical", "ok", "critical"]
-        assert state.notified_status == "critical"
+        assert posted == [("critical", "critical"), ("critical", "ok")] * 2
+        assert sent == ["critical", "ok", "critical", "ok"]
+        assert state.notified_status == "ok"
 
-    def test_escalation_inside_the_cooldown_goes_through(self, monkeypatch):
+    def test_an_escalation_goes_through(self, monkeypatch):
         clock, state, _sent, posted = self._setup(monkeypatch)
         check = make_check()
 
@@ -537,20 +681,23 @@ class TestBellCooldownThroughProcessAlert:
         assert posted == [("warning", "warning"), ("critical", "critical")]
         assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW + timedelta(minutes=5))
 
-    def test_improvement_inside_the_cooldown_is_dropped(self, monkeypatch):
+    def test_an_improvement_goes_to_the_hub(self, monkeypatch):
         clock, state, _sent, posted = self._setup(monkeypatch)
         check = make_check()
 
         self._transition(state, check, "critical")
         clock.now = _NOW + timedelta(minutes=5)
         self._transition(state, check, "warning")
-        assert posted == [("critical", "critical")]
-        assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW)
+        # The event goes at the worse of both states (_hub_severity); the record
+        # keeps what the check stands at now.
+        assert posted == [("critical", "critical"), ("critical", "warning")]
+        assert (state.hub_status, state.hub_sent_at) == ("warning", _NOW + timedelta(minutes=5))
 
-        # The recovery clears what the bell showed: critical.
+        # The recovery follows what the bell got last; the hub's all-clear keeps
+        # the level it pinged with (incidents._recover, notified_severity).
         clock.now = _NOW + timedelta(minutes=6)
         self._transition(state, check, "ok")
-        assert posted == [("critical", "critical"), ("critical", "ok")]
+        assert posted[-1] == ("warning", "ok")
 
     def test_recovery_keeps_the_level_its_alarm_reached_the_bell_with(self, monkeypatch):
         # T5 review: the severity lowered from critical to warning between alarm and
@@ -661,10 +808,10 @@ class TestBellSlotAcrossDispatches:
 
     @pytest.mark.parametrize("first_code", [202, 403])
     def test_a_newer_reservation_outlives_the_first_post(self, bell_db, monkeypatch, first_code):
-        # The first dispatch is an all-clear; during its POST a new alarm comes,
-        # outside the cooldown. Whether the all-clear's POST then succeeds or
-        # fails, the record is the newer reservation.
-        shown_at = _NOW - HUB_COOLDOWN - timedelta(minutes=10)
+        # The first dispatch is an all-clear; during its POST a new alarm comes.
+        # Whether the all-clear's POST then succeeds or fails, the record is the
+        # newer reservation.
+        shown_at = _NOW - timedelta(minutes=40)
         cid = seed_bell_check(
             bell_db,
             status="ok",
@@ -690,7 +837,7 @@ class TestBellSlotAcrossDispatches:
             # (SQLAlchemy); is_not_distinct_from says it explicitly.
             ("ok", "critical", ("critical", None)),
         ],
-        ids=["alarm-first", "alarm-after-cooldown", "recovery", "recovery-after-backfill"],
+        ids=["alarm-first", "alarm-after-a-recovery", "recovery", "recovery-after-backfill"],
     )
     def test_failed_post_without_a_newer_dispatch_changes_nothing(
         self, bell_db, monkeypatch, status, notified, hub_before
@@ -716,7 +863,7 @@ class TestBellSlotAcrossDispatches:
         # hub_sent_at: recovery A reserves (ok, t0); during its POST alarm B
         # reserves (critical, now) and recovery C (ok, now). A fails, the row
         # carries A's hub_status but a newer hub_sent_at: nothing is handed back.
-        shown_at = _NOW - HUB_COOLDOWN - timedelta(minutes=10)
+        shown_at = _NOW - timedelta(minutes=40)
         cid = seed_bell_check(
             bell_db,
             status="ok",
