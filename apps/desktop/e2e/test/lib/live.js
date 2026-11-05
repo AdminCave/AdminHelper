@@ -123,7 +123,9 @@ export async function login() {
 // webview — the webview can't reach the self-signed gateway). Runs curl with -k;
 // MONITOR_API_KEY comes from the env the orchestration script exports. Returns
 // the parsed { notified: N } so a spec can assert the admin was a recipient.
-export function injectEvent(title, severity = "critical") {
+// `extra` adds or overrides fields of the event, e.g. incident_key and new_status:
+// events of one key fold into one incident, new_status "ok" resolves it (R-1079).
+export function injectEvent(title, severity = "critical", extra = {}) {
   // Pass the secret header via stdin (curl `-H @-`), not argv, so it can't leak
   // into the test log through a curl/execFileSync error message (3.19).
   const out = execFileSync(
@@ -143,6 +145,7 @@ export function injectEvent(title, severity = "critical") {
         severity,
         category: "monitoring",
         title,
+        ...extra,
       }),
     ],
     {

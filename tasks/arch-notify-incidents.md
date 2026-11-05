@@ -76,8 +76,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Notification
 Doku: → T9
 Abhängt von: T6
 
-### T8 — Desktop-E2E: Vorfall-Journey (R-1079)  [ ]
+### T8 — Desktop-E2E: Vorfall-Journey (R-1079)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/notification-push.live.js, apps/desktop/e2e/test/lib/live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @fb9c69ae 2026-11-05T12:24:41+01:00
+Review: approve (.ah-out/review/arch-notify-incidents/T8.verdict.json)
 Änderung: Die Live-Spec bekommt eine zweite Journey: ein Ereignis mit `incident_key` einspeisen, Vorfall im Center öffnen, bestätigen, eine Wiederholung zählt ×2 ohne neuen Toast, die Erholung behebt ihn. `live.js` lernt das Einspeisen mit Schlüssel. Der echte Lauf gehört zum Sammellauf (`Heavy: linux-full`); hier Lint und Syntax.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T9
@@ -133,3 +135,5 @@ Abhängt von: T8
 - 2026-11-05 (Session, T7): Die Leiste zeigt alle sechs Postfächer, der schmale Umschalter nur Posteingang, Offen, Alle. Das Schnell-Bestätigen der Glocke ist ein Textknopf nur an offenen Zeilen mit Vorfall.
 - 2026-11-05 (Session, T7): Kanäle im Detail: die Kanäle des Hubs ohne Glocke und die der Regeln, ein gescheiterter markiert, entdoppelt; „nur Glocke“, wenn sonst nichts rausging. Server stumm gilt 24 h; „Regel bearbeiten“ öffnet den Alerts-Tab des Monitorings und steht nur an Kategorie monitoring.
 - 2026-11-05 (Session, T7): T7 trägt zehn Dateien statt acht: die Anzeige-Helfer (Kategorie, Kanal, Zeit, Zustand) liegen testbar in `models/notifications.ts`, und `i18n.test.ts` braucht die dynamischen Präfixe; `Verify:` nimmt `models/notifications.test.ts` dazu.
+- 2026-11-05 (Session, T8): Die Vorfall-Journey ist ein zweites `it` in `notification-push.live.js` (derselbe Runner `desktop_e2e_sse_push.sh`, dieselbe App-Sitzung); nach einem roten ersten hält `bail` die Spec an, einzeln gefahren (mocha grep) meldet sie sich selbst an. Zustände prüft sie an den Knöpfen des Details (sprachunabhängig), den Schlüssel macht ein Zeitstempel je Lauf eindeutig.
+- 2026-11-05 (Session, T8): Eine stille Wiederholung stößt kein SSE an; das ×2 bringt der 30-s-Poll, darum warten die Schritte bis 45 s. „Kein Toast“ gilt, sobald ×2 sichtbar ist: `loadFeed` meldet neue Einträge vor dem Aktualisieren der Zeilen. Der echte Lauf gehört zum Sammellauf; hier Lint (eslint mit Gegenprobe) und `node --check`, live nicht verifiziert.
