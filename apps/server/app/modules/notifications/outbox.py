@@ -59,8 +59,8 @@ def drain_outbox(db: Session, *, batch_size: int = 50) -> tuple[int, int]:
     for entry in due:
         notif = notifs.get(entry.notification_id)
         if entry.title is not None:
-            # A bundle's text for this channel (service.ingest_event): it names
-            # fewer servers than the bell row may.
+            # The text of the ping for this channel (incidents._queue): the bell
+            # row may have moved on to a later ping, a bundle's row name more servers.
             subject, body = entry.title, entry.body or entry.title
         else:
             subject = notif.title if notif else "AdminHelper"

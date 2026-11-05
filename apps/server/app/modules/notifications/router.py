@@ -28,6 +28,7 @@ from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
+from app.modules.notifications import incidents
 from app.modules.notifications.models import Notification, NotificationSubscription
 from app.modules.notifications.schemas import (
     EventsAcceptedOut,
@@ -39,7 +40,6 @@ from app.modules.notifications.schemas import (
     NotificationPrefsUpdate,
     UnreadCountOut,
 )
-from app.modules.notifications.service import ingest_event
 from app.modules.users.models import User
 
 feed_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -215,7 +215,7 @@ def ingest(
                 }
             ]
         )
-    notified = ingest_event(db, event)
+    result = incidents.ingest(db, event)
     if (
         event.event_type == "monitoring.check.transition"
         and event.severity == "critical"
@@ -225,15 +225,12 @@ def ingest(
         and (event.new_status or "critical") == "critical"
     ):
         # The documented alert.triggered hook: a critical check transition also
-        # reaches registered event hooks (docs/developer/hooks.html). A bundled
-        # event fires it once per server, so a hook still sees one server per
-        # call; a repeated id counts once, as in the resolver.
-        server_ids = (
-            list(dict.fromkeys(event.source_ids))
-            if event.source_ids is not None
-            else [event.source_id]
-        )
-        for server_id in server_ids:
+        # reaches registered event hooks (docs/developer/hooks.html), for the
+        # servers whose incident it pinged: a repeat folded in silently is no new
+        # alert, as the monitoring cooldown kept it from the hub before. A bundle
+        # fires it once per server, so a hook still sees one server per call; a
+        # repeated id counts once, as in the resolver.
+        for server_id in dict.fromkeys(result.pinged_servers):
             fire_event(
                 "alert.triggered",
                 {
@@ -243,4 +240,4 @@ def ingest(
                     "message": event.body,
                 },
             )
-    return {"notified": notified}
+    return {"notified": result.notified}

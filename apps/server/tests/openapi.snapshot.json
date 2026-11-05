@@ -2752,6 +2752,34 @@
         "title": "ImportRequest",
         "type": "object"
       },
+      "IncidentRule": {
+        "description": "What one alert rule of the monitoring service did with the event.",
+        "properties": {
+          "channel": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Channel",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "channel",
+          "ok"
+        ],
+        "title": "IncidentRule",
+        "type": "object"
+      },
       "IncomingEvent": {
         "description": "Event pushed to the hub by an event source (monitoring via\n/api/internal/events, or the in-process bus calling ingest_event directly).",
         "properties": {
@@ -2778,6 +2806,37 @@
             "title": "Event Type",
             "type": "string"
           },
+          "incident_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Key"
+          },
+          "incident_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Keys"
+          },
           "new_status": {
             "anyOf": [
               {
@@ -2789,6 +2848,21 @@
               }
             ],
             "title": "New Status"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IncidentRule"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
           },
           "severity": {
             "enum": [

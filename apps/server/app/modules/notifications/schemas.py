@@ -17,6 +17,17 @@ ScopeType = Literal["all", "tag", "server"]
 _EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
+class IncidentRule(RequestModel):
+    """What one alert rule of the monitoring service did with the event."""
+
+    name: str = Field(min_length=1, max_length=200)
+    channel: str = Field(min_length=1, max_length=64)
+    ok: bool
+
+
+IncidentKey = Annotated[str, Field(min_length=1, max_length=200)]
+
+
 class IncomingEvent(RequestModel):
     """Event pushed to the hub by an event source (monitoring via
     /api/internal/events, or the in-process bus calling ingest_event directly)."""
@@ -38,11 +49,28 @@ class IncomingEvent(RequestModel):
     # the worse of old/new (so recoveries reach warning subscribers) — this
     # field lets the ingest tell an actual alert from a recovery.
     new_status: Optional[str] = Field(default=None, max_length=32)
+    # The incident the event belongs to (monitoring: check:<check_id>): events of one
+    # key fold into one incident of the bell (incidents.py). Without one, a warning or
+    # critical event is an incident of its own.
+    incident_key: Optional[IncidentKey] = None
+    # A bundle's keys, one per entry of source_ids and in the same order.
+    incident_keys: Optional[list[IncidentKey]] = Field(default=None, min_length=1, max_length=500)
+    # The alert rules of the check and whether each one sent (shown on the incident).
+    rules: Optional[list[IncidentRule]] = Field(default=None, max_length=50)
 
     @model_validator(mode="after")
     def _check_single_or_bundle(self) -> "IncomingEvent":
         if self.source_id is not None and self.source_ids is not None:
             raise ValueError("source_id and source_ids are mutually exclusive")
+        if self.incident_key is not None and self.source_ids is not None:
+            raise ValueError("a bundle names its keys in incident_keys, not incident_key")
+        if self.incident_keys is not None:
+            if self.source_ids is None or len(self.incident_keys) != len(self.source_ids):
+                raise ValueError("incident_keys needs source_ids of the same length")
+            servers: dict[str, str] = {}
+            for key, server in zip(self.incident_keys, self.source_ids):
+                if servers.setdefault(key, server) != server:
+                    raise ValueError(f"incident key {key!r} names two servers")
         return self
 
 
