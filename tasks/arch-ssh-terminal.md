@@ -12,7 +12,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Prüfung: `reviewer` je Task (ein Prüfer für den Zug, fortgesetzt); `security` dazu bei T1 (Prozessstart, Risikopfade
 `models.rs`, `bridge/types.ts`) und T2 (Risikopfade `models.rs`, `bridge/types.ts`, `prefs.json`-Vertrag).
-Reihenfolge: T1 → T4 → T5 → T6 → T7 → T8; T2 vor T4 (der Zweig liest `sshConsole`); T3 nach Kevins Antwort, jederzeit
+Reihenfolge: T1 → T10 → T4 → T5 → T6 → T7 → T8; T2 vor T4 (der Zweig liest `sshConsole`); T3 nach Kevins Antwort, jederzeit
 nach T2; T9 zuletzt (vorher `origin/main` hineinmergen: `feature/kern-laufzeit-2` ändert `THIRD_PARTY_LICENSES.md`,
 `feature/kern-pg-1` `README.md` und `docs/admin/index.html`, jeweils andere Abschnitte).
 
@@ -160,6 +160,15 @@ Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/ssh-connect.live
 Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
 Doku: → T9
 Abhängt von: T6, T7
+
+### T10 — Windows: eine Sitzung ohne Zuhörer beantwortet die Cursor-Abfrage der Pseudo-Konsole (R-1069)  [ ]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/pty.rs
+Beweis: feature/arch-ssh-terminal@454a7b28, `gh workflow run ci.yml --ref feature/arch-ssh-terminal` (Lauf 41995544339), Job „Desktop-Backend (cargo test, Windows)“: `pty::tests::a_sink_nobody_listens_to_ends_the_program ... FAILED`, `src\pty.rs:327:13: the session stays in the registry` (erwartet: die Sitzung ist nach dem Kill binnen 20 s weg); die übrigen sieben PTY-Tests dort grün. Auf Linux nicht reproduzierbar: die Abfrage stellt nur ConPTY.
+HEAD: 454a7b28
+Änderung: portable-pty erzeugt die ConPTY mit `PSEUDOCONSOLE_INHERIT_CURSOR` (`portable-pty-0.9.0/src/win/psuedocon.rs:87`); laut Microsoft („Creating a Pseudoconsole session“, Abschnitt „Ending the Pseudoconsole Session“) kann das Schließen ohne Antwort auf die Cursor-Abfrage verklemmen. Hört niemand mehr zu, beantwortet der Lese-Thread unter Windows jede Cursor-Abfrage (`ESC[6n`) selbst mit `ESC[1;1R`; `CURSOR_QUERY`, `CURSOR_ANSWER` und `contains` ziehen aus dem Testmodul auf Modulebene (`cfg(any(windows, test))`). Der rote Test selbst bleibt unverändert und beweist den Fix auf `rust-windows` (`gh workflow run ci.yml --ref feature/arch-ssh-terminal` nach dem Commit, Ergebnis unter `## Entscheidungen`).
+Verify: bash scripts/dev/verify.sh desktop --strict
+Doku: keine (internes Verhalten der PTY-Sitzung; Commands und ihre Tabelle bleiben)
+Abhängt von: T1
 
 ### T9 — Doku DE+EN, Lizenzen, CHANGELOG (R-1069)  [ ]
 Komponente: desktop · Dateien: README.md, docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, THIRD_PARTY_LICENSES.md, changelog.d/arch-ssh-terminal.md
