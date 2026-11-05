@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-laufzeit-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-laufzeit-2 · Review: am Ende
+Status: erledigt · Branch: feature/kern-laufzeit-2 · Review: am Ende
 Spec: docs/features/kern-laufzeit-2.md (Roadmap R-1032, R-1088)
 Heavy: linux-full — Redis-Image in `docker-compose.yml`; den Stack mit Redis 8 fährt der Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
