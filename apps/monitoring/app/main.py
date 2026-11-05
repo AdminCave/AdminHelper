@@ -14,13 +14,14 @@ import math
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
 from app.core.middleware import NulByteMiddleware
+from app.core.query_params import reject_repeated_scalar_query
 from app.models import (  # noqa: F401
     MonitorAgentKey,
     MonitorAgentLiveness,
@@ -114,6 +115,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/openapi.json" if _DOCS_ENABLED else None,
     lifespan=lifespan,
+    dependencies=[Depends(reject_repeated_scalar_query)],
 )
 
 
