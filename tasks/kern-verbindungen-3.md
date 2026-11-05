@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-3 · Review: pro Task
 Spec: docs/features/kern-verbindungen-3.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (zwei Alembic-Revisionen, neue Endpunkte) und die Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -82,10 +82,12 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
 Doku: diese Task
 
-### T9 — Desktop: gespeichertes RDP-Passwort an Gateway und NLA-Wahl binden (R-1066)  [ ]
+### T9 — Desktop: gespeichertes RDP-Passwort an Gateway und NLA-Wahl binden (R-1066)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/password.rs, apps/desktop/src-tauri/src/connection/mod.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8bf817ec 2026-11-05T11:13:20+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T9.verdict.json)
 Änderung: Nachtrag aus der Abschlussprüfung. Der Schlüssel des gespeicherten RDP-Passworts trägt Gateway und „NLA aus“, wenn gesetzt (ohne beides bleibt er unverändert); `check_credential_connection` verlangt dieselbe Gateway- und NLA-Wahl bei geöffneter und Quell-Verbindung. Tests: abweichende Wahl ergibt einen anderen Schlüssel und wird abgelehnt, Schlüssel ohne Optionen unverändert.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage_key -- stored_password_key
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage_key -- stored_password_key -- termsrv_legacy
 Doku: keine (internes Verhalten des Passwortspeichers)
 
 ## Entscheidungen
@@ -115,3 +117,5 @@ Doku: keine (internes Verhalten des Passwortspeichers)
 - T7: Die Sitzung beginnt dort, wo heute `lastUsed` gesetzt wird (`markConnectionUsed`): Server per `touch` mit `device`, lokal und Sync per `start_session`. Das Ende kennt nur RDP: `rdp-exit` beendet die Sitzung seines Starts (Map `correlationId` → Promise der Sitzung, denn ein sofort endender Start kann sein Ende melden, bevor die Sitzung geschrieben ist); scheitert der Start, endet die Sitzung sofort. Fehler beim Schreiben oder Beenden einer Sitzung melden nichts und brechen das Verbinden nicht ab: der Verlauf zeigt die Sitzung dann ohne Ende bzw. gar nicht.
 - T7: Der Hostname geht ohne Steuerzeichen, getrimmt und auf 255 Zeichen gekürzt an den Server (er lehnt Steuerzeichen mit 422 ab, und jeder Touch schlüge fehl); leer → ohne `device`. Je Prozess einmal gelesen.
 - T7: Der Inspector lädt seine Sitzungen selbst (`recentSessions` im Connections-Store, modusabhängig) und neu, sobald `connectFlow` eine Sitzung geschrieben oder beendet hat (Signal `sessionsVersion` im Connections-Store; `lastUsed` reicht nicht: das Ende ändert es nicht, und lokal steht es vor der Sitzung); ein Ladefehler zeigt „Sitzungen konnten nicht geladen werden“ statt eines leeren Verlaufs. Beginn relativ (`timeAgo`, genaue Zeit im `title`), Dauer „< 1 min“/„N min“/„H h M min“, offen oder unbekannt „—“.
+- T9: Die Route (Gateway getrimmt und klein, „NLA aus“) gehört zum Schlüssel des gespeicherten RDP-Passworts (`password::rdp_route`), nur wenn gesetzt: Schlüssel ohne Gateway und mit NLA an oder ungesetzt bleiben, wie sie sind, keine Migration. Eine geänderte Route fragt das Passwort neu ab, wie ein geänderter Host. `check_credential_connection` verlangt dieselbe Route bei geöffneter und Quell-Verbindung, weil der Start Gateway und NLA aus der geöffneten nimmt, den Schlüssel aber aus der Quelle. Der Altschlüssel (`rdp|<ziel>`) trägt die Route mit; Gateway-Verbindungen gibt es erst seit T3, also keine alten Einträge mit Route.
+- T9 (Nachtrag aus security): Unter Windows übernimmt der Start einen alten `TERMSRV/<host:port>`-Eintrag (vor R-0431) nur ohne Route (`readable_legacy_termsrv`): der Eintrag nennt keine Route, sein Passwort galt dem direkten Weg.

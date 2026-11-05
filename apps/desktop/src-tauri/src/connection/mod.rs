@@ -219,6 +219,9 @@ fn check_credential_connection(
         && connection.username == credential.username
         && connection.domain == credential.domain;
     let same_trust = !connection.trust_cert || credential.trust_cert;
+    // The start takes gateway and NLA from `connection`, the password from `credential`'s key.
+    let same_route =
+        crate::password::rdp_route(connection) == crate::password::rdp_route(credential);
     let server_connection = || {
         mapping_of(credential, tunnels).is_none()
             || connections.iter().any(|server| {
@@ -233,7 +236,7 @@ fn check_credential_connection(
         let resolved = resolve_connection(credential, tunnels, bindings).connection;
         connection.host == resolved.host && connection.port == resolved.port
     };
-    if same_identity && same_trust && server_connection() && resolved_target() {
+    if same_identity && same_trust && same_route && server_connection() && resolved_target() {
         Ok(())
     } else {
         Err(AppError::Validation(
@@ -519,6 +522,49 @@ mod tests {
                 Err(err) => panic!("{:?}: {err:?}", target(opened)),
             }
         }
+    }
+
+    /// `connection` with the RDP options `gateway` and `nla` of its own.
+    fn routed(mut connection: Connection, gateway: Option<&str>, nla: Option<bool>) -> Connection {
+        connection.options = Some(crate::models::ConnectionOptions {
+            ssh: None,
+            rdp: Some(crate::models::RdpConnectionOptions {
+                gateway: gateway.map(String::from),
+                nla,
+                ..Default::default()
+            }),
+        });
+        connection
+    }
+
+    #[test]
+    fn stored_password_key_rejects_a_route_the_credential_connection_does_not_have() {
+        // The start takes gateway and NLA from the opened connection: one the password's
+        // source does not name would send the password along another route.
+        let held = Held::nothing();
+        let direct = rdp("192.0.2.10", 3390);
+        for (gateway, nla) in [
+            (Some("gw.example"), None),
+            (None, Some(false)),
+            (Some("gw.example"), Some(false)),
+        ] {
+            let opened = routed(direct.clone(), gateway, nla);
+            held.assert_rejected(&opened, &direct);
+            held.assert_rejected(&direct, &opened);
+            assert!(
+                held.check(&opened, &opened.clone()).is_ok(),
+                "{gateway:?} {nla:?}"
+            );
+            assert_ne!(rdp_storage_key(&opened), rdp_storage_key(&direct));
+        }
+        held.assert_rejected(
+            &routed(direct.clone(), Some("other.example"), None),
+            &routed(direct.clone(), Some("gw.example"), None),
+        );
+        // NLA on or a blank gateway is no route of its own.
+        assert!(held
+            .check(&routed(direct.clone(), Some(" "), Some(true)), &direct)
+            .is_ok());
     }
 
     #[test]

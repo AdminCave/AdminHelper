@@ -24,7 +24,28 @@ pub fn rdp_port(connection: &Connection) -> u16 {
     connection.port.unwrap_or(3389)
 }
 
-/// Host, port, user and domain of an RDP password's key.
+/// How a start reaches the host besides host and port: the RD gateway and NLA off, empty
+/// when neither is set. Part of the password's key, so a password stored for one route is
+/// never sent along another (to a gateway, or without NLA); a start's options come from the
+/// opened connection, which `check_credential_connection` holds to the same route.
+pub fn rdp_route(connection: &Connection) -> String {
+    let own = connection.options.as_ref().and_then(|o| o.rdp.as_ref());
+    let mut route = String::new();
+    if let Some(gateway) = own
+        .and_then(|o| o.gateway.as_deref())
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+    {
+        route.push_str("|gw=");
+        route.push_str(&gateway.to_lowercase());
+    }
+    if own.is_some_and(|o| o.nla == Some(false)) {
+        route.push_str("|nla=off");
+    }
+    route
+}
+
+/// Host, port, user and domain of an RDP password's key, then its route ([`rdp_route`]).
 fn rdp_target(connection: &Connection) -> Option<String> {
     let host = normalized(&connection.host);
     let username = normalized(&connection.username);
@@ -34,15 +55,17 @@ fn rdp_target(connection: &Connection) -> Option<String> {
     let domain = normalized(&connection.domain);
     let port = rdp_port(connection);
     Some(format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}|{}{}",
         host.to_lowercase(),
         port,
         username.to_lowercase(),
-        domain.to_lowercase()
+        domain.to_lowercase(),
+        rdp_route(connection)
     ))
 }
 
-/// The key of the connection's RDP password, `rdp|<id>|<host>|<port>|<user>|<domain>`,
+/// The key of the connection's RDP password, `rdp|<id>|<host>|<port>|<user>|<domain>` and
+/// the route if any (`|gw=<gateway>`, `|nla=off`),
 /// in the keyring behind the prefix of the workspace. An empty id, or one with the
 /// separator, names no single connection and gets none.
 pub fn rdp_storage_key(connection: &Connection) -> Option<String> {
@@ -911,11 +934,15 @@ fn legacy_termsrv(workspace: &Workspace, connection: &Connection) -> Option<Stri
 }
 
 /// [`legacy_termsrv`] where it counts as a stored password: not for an address on this machine,
-/// whose entries a start deletes before mstsc runs.
+/// whose entries a start deletes before mstsc runs, nor for a connection with a route
+/// ([`rdp_route`]).
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn readable_legacy_termsrv(workspace: &Workspace, connection: &Connection) -> Option<String> {
+    // The entry names host and port only, and its password was stored for the direct route:
+    // a connection through a gateway or without NLA must not take it over.
     legacy_termsrv(workspace, connection)
         .filter(|_| !termsrv_this_machine(&normalized(&connection.host)))
+        .filter(|_| rdp_route(connection).is_empty())
 }
 
 /// What a start of mstsc does with the entry [`readable_legacy_termsrv`] names, by
@@ -1642,6 +1669,49 @@ mod tests {
     fn storage_key_uses_default_port_and_empty_domain() {
         let c = rdp(Some("h"), None, Some("u"), None);
         assert_eq!(rdp_storage_key(&c).as_deref(), Some("rdp|c1|h|3389|u|"));
+    }
+
+    fn with_rdp_options(gateway: Option<&str>, nla: Option<bool>) -> Connection {
+        let mut c = rdp_with_id("c1");
+        c.options = Some(crate::models::ConnectionOptions {
+            ssh: None,
+            rdp: Some(crate::models::RdpConnectionOptions {
+                gateway: gateway.map(String::from),
+                nla,
+                ..Default::default()
+            }),
+        });
+        c
+    }
+
+    #[test]
+    fn storage_key_carries_the_gateway_and_nla_off() {
+        let plain = rdp_storage_key(&rdp_with_id("c1"));
+        assert_eq!(plain.as_deref(), Some("rdp|c1|host.com|3390|admin|corp"));
+        // Without a route the key stays the one passwords were stored under before.
+        for (gateway, nla) in [(None, None), (None, Some(true)), (Some("  "), None)] {
+            assert_eq!(
+                rdp_storage_key(&with_rdp_options(gateway, nla)),
+                plain,
+                "{gateway:?} {nla:?}"
+            );
+        }
+        assert_eq!(
+            rdp_storage_key(&with_rdp_options(Some(" GW.example:443 "), None)).as_deref(),
+            Some("rdp|c1|host.com|3390|admin|corp|gw=gw.example:443")
+        );
+        assert_eq!(
+            rdp_storage_key(&with_rdp_options(None, Some(false))).as_deref(),
+            Some("rdp|c1|host.com|3390|admin|corp|nla=off")
+        );
+        assert_eq!(
+            rdp_storage_key(&with_rdp_options(Some("gw.example"), Some(false))).as_deref(),
+            Some("rdp|c1|host.com|3390|admin|corp|gw=gw.example|nla=off")
+        );
+        assert_ne!(
+            rdp_storage_key(&with_rdp_options(Some("a.example"), None)),
+            rdp_storage_key(&with_rdp_options(Some("b.example"), None))
+        );
     }
 
     #[test]
@@ -2760,6 +2830,27 @@ mod tests {
                 "{id:?}"
             );
         }
+    }
+
+    #[test]
+    fn termsrv_legacy_entry_is_no_stored_password_for_a_route() {
+        for (gateway, nla) in [(Some("gw.example"), None), (None, Some(false))] {
+            let c = with_rdp_options(gateway, nla);
+            assert_eq!(
+                legacy_termsrv(&standard(), &c).as_deref(),
+                Some("TERMSRV/Host.COM:3390"),
+                "{gateway:?} {nla:?}"
+            );
+            assert_eq!(
+                readable_legacy_termsrv(&standard(), &c),
+                None,
+                "{gateway:?} {nla:?}"
+            );
+        }
+        assert_eq!(
+            readable_legacy_termsrv(&standard(), &with_rdp_options(None, Some(true))).as_deref(),
+            Some("TERMSRV/Host.COM:3390")
+        );
     }
 
     // A start deletes the entries for this machine before mstsc runs, so such an entry is no
