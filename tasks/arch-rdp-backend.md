@@ -105,8 +105,10 @@ Abhängt von: T1
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frame_ws
 Doku: → T7
 
-### T4 — Watchdog gegen Bildstillstand  [ ]
+### T4 — Watchdog gegen Bildstillstand  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/watchdog.rs (neu, SPDX), apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @66a6b8f8 2026-11-05T10:18:34+01:00
+Review: approve (.ah-out/review/arch-rdp-backend/T4.verdict.json)
 Abhängt von: T1
 Änderung:
 - Reine Zustandsmaschine mit eingespeister Zeit. Sie bekommt `login_complete`, `frame`, `input_sent` und `tick(now)` und
@@ -223,3 +225,5 @@ Doku: docs/features/arch-rdp-backend.md · Entwickler-Doku → T7
 - 2026-11-05 T2 (security, Runde 1): Die Pin-Identität trägt die Workspace-ID (`rdp/<workspace>/…`) statt des Keyring-Präfixes `keyring_prefix()` — der ist für migrierte Workspaces leer (`legacy_keys`), die ID nie; `rdp_trust_certificate` nimmt nur Identitäten des Workspaces aus `workspace::current()` an. Der Callback ist an den Endpoint der Sitzung (`Destination::to_string()`, wie IronRDP ihn übergibt) gebunden und lehnt jedes andere Ziel ohne Meldung ab; `TrustAll` bleibt `/cert:ignore` und nimmt weiter alles an.
 - 2026-11-05 T2 (security, Runde 2, nits für T5): Der Endpoint-Vergleich sieht nur `name:port` — eine Umleitung mit gleichem Namen und anderer Adresse fällt nicht auf; T5 entscheidet, ob die Sitzung bei `RdpOutputEvent::ServerRedirected` endet oder es als Restrisiko in die Doku geht. Das `log::warn!` des Callbacks setzt den Endpoint mit `{endpoint:?}` ein (T5 nimmt `rdp_embedded/tofu.rs` dafür in seine Dateien).
 - 2026-11-05 T3: Ein falsches Token oder keines binnen Frist schließt nur diese Verbindung; der Server nimmt weiter an, bis eine Anmeldung gelingt (ein lokaler Prozess, der zuerst verbindet, sperrt die Webview nicht aus; 256 Bit Token machen Raten aussichtslos), danach schließt er den Port. Das Token kommt aus dem ring-RNG des rustls-Providers (`tofu::ring_provider().secure_random`) statt einer neuen direkten `ring`-Abhängigkeit. Zusätzlich zu `rt`: `tokio` `macros` (`select!` zwischen Bild und Eingabe), `futures-util` `sink` (`SinkExt::send`), `ironrdp-pdu` als Dev-Abhängigkeit (Regionstyp von `DesktopUpdate` für die Tests; T5 braucht es für die Eingabe-Events ohnehin). Der erste Bildpuffer und jeder Größenwechsel schicken das ganze Desktop-Bild, weil der Client sonst kein vollständiges hat.
+- 2026-11-05 T3 (reviewer und security, nits für T5): Anmeldungen laufen nacheinander mit je bis zu 5 s Frist; ein lokaler Prozess, der immer wieder ohne Token verbindet, hält die Webview hin (nur Verfügbarkeit). T5 prüft offene Anmeldungen gleichzeitig (die erste gültige gewinnt) und erwägt eine Origin-Liste der Webview im Handshake; `stream()` endet nur über den Client, also beendet T5 den Server mit der Sitzung (Laufzeit-Ende oder `abort()`). T5 nimmt `rdp_embedded/frame_ws.rs` dafür in seine Dateien.
+- 2026-11-05 T4: Die Neuverbindungen zählen bis zur ersten beantworteten Eingabe, nicht bis zum ersten Bild — im Stillstand der Probe kam das erste Bild nach dem Login, danach nichts; mit Rücksetzen beim ersten Bild würde die Sitzung bei jedem Stillstand endlos neu verbinden. `GiveUp` kommt beim vierten Stillstand in Folge (M = 3 Neuverbindungen). Eine spätere Eingabe verschiebt die Frist der ersten unbeantworteten nicht. Welche Eingaben `input_sent` melden (nur solche, die der Desktop mit einem Bild beantwortet), legt T5 fest.

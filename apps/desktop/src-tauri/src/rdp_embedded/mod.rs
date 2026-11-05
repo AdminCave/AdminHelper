@@ -8,3 +8,4 @@ pub(crate) mod frame_ws;
 #[cfg(test)]
 mod license_gate;
 pub(crate) mod tofu;
+pub(crate) mod watchdog;
