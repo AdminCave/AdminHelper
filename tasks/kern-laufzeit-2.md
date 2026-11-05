@@ -27,7 +27,7 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.
 Doku: keine (Testkommentar)
 
 ### T3 — Redis-Server in der Lizenztabelle (R-1032)  [ ]
-Komponente: docs · Dateien: THIRD_PARTY_LICENSES.md
+Komponente: scripts · Dateien: THIRD_PARTY_LICENSES.md
 Änderung: Unter „Auflagen & Hinweise“ ein Abschnitt zum Redis-Server-Image (Redis 8, Lizenzwahl AGPLv3, nicht mitgeliefert, sondern beim Start gezogen). Erst nach dem Merge von `feature/kern-deps-3` und `git merge origin/main` (dieselbe Datei).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: THIRD_PARTY_LICENSES.md
