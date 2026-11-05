@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pg-1 — Task-Ledger
-Status: geplant · Branch: feature/kern-pg-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-pg-1 · Review: pro Task
 Spec: docs/features/kern-pg-1.md (Roadmap R-1035)
 Heavy: linux-full — `docker-compose.yml` und der Upgrade-Pfad: `upgrade_path_test.sh` (letztes Release mit 17 → HEAD) und `backup_restore_test.sh` laufen im Sammellauf; kein multibox-Flag deckt update.sh
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
