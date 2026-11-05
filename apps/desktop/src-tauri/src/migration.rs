@@ -746,7 +746,7 @@ mod tests {
                 "rdpPerformanceProfile": "lan",
                 "osNotifications": true,
                 // A settings.json before 0.47 has no console and no terminal options.
-                "sshConsole": "external",
+                "sshConsole": "embedded",
                 "terminal": {
                     "fontSize": 13,
                     "theme": "cave",
@@ -911,7 +911,7 @@ mod tests {
                 "rdpPerformanceProfile": "auto",
                 "osNotifications": false,
                 // A settings.json before 0.47 has no console and no terminal options.
-                "sshConsole": "external",
+                "sshConsole": "embedded",
                 "terminal": {
                     "fontSize": 13,
                     "theme": "cave",

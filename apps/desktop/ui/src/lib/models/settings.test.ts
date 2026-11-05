@@ -39,9 +39,9 @@ describe('getSettingsDefaults', () => {
     expect(d.rdpPerformanceProfile).toBe('auto');
   });
 
-  it('opens SSH in the OS terminal and has the terminal defaults of Rust', () => {
+  it('opens SSH in the AdminHelper terminal and has the terminal defaults of Rust', () => {
     const d = getSettingsDefaults();
-    expect(d.sshConsole).toBe('external');
+    expect(d.sshConsole).toBe('embedded');
     // TerminalPrefs::default() in models.rs.
     expect(d.terminal).toEqual({
       fontSize: 13,

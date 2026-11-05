@@ -154,6 +154,11 @@ describe('tunnel resolution without mappings', () => {
   });
 
   it('resolves the connection and opens what Rust returns', async () => {
+    // The OS terminal; the embedded one at a resolved target is tested with the console below.
+    state.setSession({
+      settings: { mode: 'local', storePasswords: false, sshConsole: 'external' },
+      session: null,
+    });
     const listed = autoConnection('ssh');
     const resolved: Connection = { ...listed, port: 23001 };
     vi.mocked(resolveConnection).mockResolvedValueOnce({ connection: resolved, viaTunnel: true });
@@ -652,14 +657,20 @@ describe('SSH console (R-1069)', () => {
     expect(showStatus).not.toHaveBeenCalled();
   });
 
-  it('starts the OS terminal when the settings ask or have not loaded', async () => {
+  it('starts the OS terminal when the settings ask', async () => {
     withConsole('external');
     await initiateConnect(sshConn);
+
+    expect(openConnection).toHaveBeenCalledOnce();
+    expect(openTerminal).not.toHaveBeenCalled();
+  });
+
+  it('opens the embedded terminal, the default, while the settings have not loaded', async () => {
     state.setSession({ settings: null, session: null });
     await initiateConnect(sshConn);
 
-    expect(openConnection).toHaveBeenCalledTimes(2);
-    expect(openTerminal).not.toHaveBeenCalled();
+    expect(openTerminal).toHaveBeenCalledOnce();
+    expect(openConnection).not.toHaveBeenCalled();
   });
 
   it('takes the console asked for at the start over the setting', async () => {

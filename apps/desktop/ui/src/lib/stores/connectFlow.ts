@@ -16,6 +16,7 @@ import * as bridge from '$lib/bridge';
 import type { ClientInfo, Connection, SshConsole } from '$lib/bridge/types';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
+import { SSH_CONSOLE_DEFAULT } from '$lib/models/settings';
 import { sessionStore } from './session';
 import { connections as connectionsStore, upsert, patchInMemory } from './connections';
 import { reportError, showStatus } from './statusBar';
@@ -229,11 +230,11 @@ async function handleRdpAuth(
 }
 
 /**
- * The console an SSH start takes: the one asked for, else the setting; the OS terminal while the
- * settings have not loaded, as before the embedded terminal.
+ * The console an SSH start takes: the one asked for, else the setting, else its default while the
+ * settings have not loaded.
  */
 function sshConsoleFor(asked: SshConsole | undefined): SshConsole {
-  return asked ?? get(sessionStore).settings?.sshConsole ?? 'external';
+  return asked ?? get(sessionStore).settings?.sshConsole ?? SSH_CONSOLE_DEFAULT;
 }
 
 /**

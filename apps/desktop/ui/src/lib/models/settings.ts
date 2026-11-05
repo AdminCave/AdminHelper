@@ -4,7 +4,7 @@
 
 // Settings model: pure functions + constants, no side effects.
 
-import type { Settings, TerminalPrefs } from '$lib/bridge/types';
+import type { Settings, SshConsole, TerminalPrefs } from '$lib/bridge/types';
 import { systemLanguage, tNow } from '$lib/i18n';
 
 export const RDP_WINDOW_MODES = ['fit', 'fullscreen', 'multimon', 'custom'] as const;
@@ -13,6 +13,8 @@ export const RDP_SCALING_MODES = ['auto', 'normal', 'hdpi'] as const;
 export const RDP_CUSTOM_SIZE_PATTERN = /^\d{3,5}x\d{3,5}$/;
 export const TERMINAL_FONT_SIZE = { min: 10, max: 22 } as const;
 export const TERMINAL_SCROLLBACKS = [1_000, 10_000, 100_000] as const;
+/** `#[default]` of `SshConsole` in models.rs. */
+export const SSH_CONSOLE_DEFAULT: SshConsole = 'embedded';
 
 export function getSettingsDefaults(): Settings {
   return {
@@ -30,7 +32,7 @@ export function getSettingsDefaults(): Settings {
     lastUsername: '',
     osNotifications: false,
     favoriteConnections: [],
-    sshConsole: 'external',
+    sshConsole: SSH_CONSOLE_DEFAULT,
     terminal: getTerminalDefaults(),
   };
 }

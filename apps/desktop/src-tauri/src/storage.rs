@@ -1030,7 +1030,7 @@ mod settings_tests {
         settings.allow_self_signed_certs = true;
         settings.last_username = Some("admin".to_string());
         settings.favorite_connections = vec!["c1".to_string(), "c2".to_string()];
-        settings.ssh_console = SshConsole::Embedded;
+        settings.ssh_console = SshConsole::External;
         settings.terminal = TerminalPrefs {
             font_size: 16,
             theme: TerminalTheme::Contrast,
@@ -1058,7 +1058,7 @@ mod settings_tests {
                 "rdpCustomSize": "1600x900",
                 "rdpPerformanceProfile": "auto",
                 "osNotifications": true,
-                "sshConsole": "embedded",
+                "sshConsole": "external",
                 "terminal": {
                     "fontSize": 16,
                     "theme": "contrast",
@@ -1188,7 +1188,7 @@ mod settings_tests {
         .unwrap();
         let settings = load_settings_in(base, None).unwrap();
         assert_eq!(settings.language.as_deref(), Some("en"));
-        assert_eq!(settings.ssh_console, SshConsole::External);
+        assert_eq!(settings.ssh_console, SshConsole::Embedded);
         assert_eq!(settings.terminal, TerminalPrefs::default());
         assert_eq!(
             wire(&settings)["terminal"],
@@ -1238,7 +1238,7 @@ mod settings_tests {
             save_settings_in(base, &first, &in_a).unwrap();
         }
         // The second window, on the old view, changes the console only.
-        in_b.ssh_console = SshConsole::Embedded;
+        in_b.ssh_console = SshConsole::External;
         {
             let _b = enter("b");
             save_settings_in(base, &second, &in_b).unwrap();
@@ -1247,7 +1247,7 @@ mod settings_tests {
         assert_eq!(both.terminal.font_size, 16, "the first change is lost");
         assert_eq!(
             both.ssh_console,
-            SshConsole::Embedded,
+            SshConsole::External,
             "the second change is lost"
         );
 

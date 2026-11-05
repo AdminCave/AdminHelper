@@ -54,7 +54,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpCustomSize = $state(stored.rdpCustomSize ?? '1920x1080');
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>(stored.rdpPerformanceProfile ?? 'auto');
   let osNotifications = $state(Boolean(stored.osNotifications));
-  let sshConsole = $state<SshConsole>(stored.sshConsole ?? 'external');
+  let sshConsole = $state<SshConsole>(stored.sshConsole ?? getSettingsDefaults().sshConsole);
   // What the terminals show, so a change made in one while its save runs is not undone here.
   let terminal = $state<TerminalPrefs>(get(terminalPrefs));
 

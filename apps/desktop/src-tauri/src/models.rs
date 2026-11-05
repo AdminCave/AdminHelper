@@ -55,8 +55,8 @@ pub enum RdpPerformanceProfile {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SshConsole {
-    Embedded,
     #[default]
+    Embedded,
     External,
 }
 
@@ -201,7 +201,7 @@ impl Default for Settings {
             last_username: None,
             os_notifications: false,
             favorite_connections: Vec::new(),
-            ssh_console: SshConsole::External,
+            ssh_console: SshConsole::Embedded,
             terminal: TerminalPrefs::default(),
         }
     }
