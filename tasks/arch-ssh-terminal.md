@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ssh-terminal — Task-Ledger
-Status: bereit · Branch: feature/arch-ssh-terminal · Review: pro Task
+Status: aktiv · Branch: feature/arch-ssh-terminal · Review: pro Task
 Spec: docs/features/arch-ssh-terminal.md (Roadmap R-1069)
 Heavy: linux-full — neue Desktop-Journey (`ssh-connect.live.js` über `scripts/tests/desktop_e2e_connect.sh`), Sammellauf. Weil die PR-CI keine GUI fährt und der Kanal-Weg (Raw/Json, CSP) erst in der echten Webview belegt ist, läuft vor dem Merge zusätzlich `desktop_e2e_connect` auf der Lane-VM (`/test`). Kein `scenario` (kein Tunnel-Datenpfad neu, `resolve_connection` unverändert), kein `windows` (Pool ohne Windows-Vorlage; ConPTY über `rust-windows`).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -208,6 +208,16 @@ Terminal-Sitzungen (jede Art, nur bei offenen Sitzungen) zwischen Tunnelzustand 
 Admin-Handbuch nachgezogen. Im selben Satz fehlt *Nicht stören* (aus `main`, `7b131bd9`): kommt mit dazu.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: docs/developer/desktop DE+EN
+Task-Review: am Ende
+Abhängt von: T9
+
+### T12 — README: Sektion Terminal unter Settings (R-1069)  [ ]
+Komponente: desktop · Dateien: README.md
+Änderung: `README.md` „### Settings“ nennt sechs Sektionen und die Zeile *Terminal* (Konsole für SSH und die
+Terminal-Optionen, für alle Workspaces des Geräts) zwischen RDP und Notifications; Fund der Abschlussprüfung
+(`branch.verdict.json` zu `636e0e84`, README.md:99).
+Verify: bash scripts/dev/verify.sh desktop --strict
+Doku: README
 Task-Review: am Ende
 Abhängt von: T9
 
