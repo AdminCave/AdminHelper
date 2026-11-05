@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-notify-incidents — Task-Ledger
-Status: aktiv · Branch: feature/arch-notify-incidents · Review: pro Task
+Status: bereit · Branch: feature/arch-notify-incidents · Review: pro Task
 Spec: docs/features/arch-notify-incidents.md (Roadmap R-1079)
 Heavy: linux-full — Server-API, Hub-Ingress vom Monitoring und die Desktop-Journey notification-push; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -85,9 +85,11 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T9
 Abhängt von: T7
 
-### T9 — Doku DE+EN und Changelog (R-1079)  [ ]
-Komponente: server · Dateien: docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-notify-incidents.md
-Änderung: Notification-Hub mit Vorfällen, Falten und Tabellen; neue Routen, Feld- und Ingress-Felder; Glocke ohne eigenen Monitoring-Cooldown, Schlüssel und Regel-Ergebnisse; `alert.triggered` nur beim critical-Ping; Benachrichtigungs-Center (Postfächer, Detail, Stummschalten, Kategorien); Changelog-Eintrag. Dreizehn Dateien: sechs Seiten je DE+EN und der Changelog.
+### T9 — Doku DE+EN und Changelog (R-1079)  [x]
+Komponente: server · Dateien: docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-notify-incidents.md, docs/admin/index.html, docs/en/admin/index.html, README.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @14ad9215 2026-11-05T12:41:25+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: Notification-Hub mit Vorfällen, Falten und Tabellen; neue Routen, Feld- und Ingress-Felder; Glocke ohne eigenen Monitoring-Cooldown, Schlüssel und Regel-Ergebnisse; `alert.triggered` nur beim critical-Ping; Benachrichtigungs-Center (Postfächer, Detail, Stummschalten, Kategorien); Changelog-Eintrag. Sechzehn Dateien: sieben Seiten je DE+EN, README und der Changelog.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py
 Doku: diese Task
 Task-Review: am Ende
@@ -137,3 +139,5 @@ Abhängt von: T8
 - 2026-11-05 (Session, T7): T7 trägt zehn Dateien statt acht: die Anzeige-Helfer (Kategorie, Kanal, Zeit, Zustand) liegen testbar in `models/notifications.ts`, und `i18n.test.ts` braucht die dynamischen Präfixe; `Verify:` nimmt `models/notifications.test.ts` dazu.
 - 2026-11-05 (Session, T8): Die Vorfall-Journey ist ein zweites `it` in `notification-push.live.js` (derselbe Runner `desktop_e2e_sse_push.sh`, dieselbe App-Sitzung); nach einem roten ersten hält `bail` die Spec an, einzeln gefahren (mocha grep) meldet sie sich selbst an. Zustände prüft sie an den Knöpfen des Details (sprachunabhängig), den Schlüssel macht ein Zeitstempel je Lauf eindeutig.
 - 2026-11-05 (Session, T8): Eine stille Wiederholung stößt kein SSE an; das ×2 bringt der 30-s-Poll, darum warten die Schritte bis 45 s. „Kein Toast“ gilt, sobald ×2 sichtbar ist: `loadFeed` meldet neue Einträge vor dem Aktualisieren der Zeilen. Der echte Lauf gehört zum Sammellauf; hier Lint (eslint mit Gegenprobe) und `node --check`, live nicht verifiziert.
+- 2026-11-05 (Session, T9): `docs/admin/index.html` (DE+EN) und `README.md` kamen dazu: beide beschrieben die Glocke noch ohne Vorfälle (Postfach Offen = ungelesen, Kategorie lifecycle). Neuer Abschnitt `#vorfaelle`/`#incidents` in der Admin-Doku Monitoring; Hooks-, Index- und Monitoring-Text verweisen darauf.
+- 2026-11-05 (Session, T9): T9 bleibt reine Doku. Der Kommentar über `REOPEN_WINDOW` in `incidents.py` nennt `HUB_COOLDOWN` als Herkunft der 30 min (Warum, nicht veraltet); die Test-ID `alarm-after-cooldown` in `apps/monitoring/tests/test_check_engine_concurrency.py` (fremde Datei) nennt den entfallenen Glocken-Cooldown: Roadmap R-1146; `docs/features/monitoring-alert-quality.md` ist eine historische Spec und bleibt unverändert.

@@ -330,7 +330,7 @@ The **monitoring service** runs as a separate container alongside the server and
 - **Alerting**: webhook and email notifications with a configurable cooldown, plus damping — `unknown` never notifies, per-metric hysteresis, host-down suppression, and maintenance windows per server or global (one-off/weekly, IANA time zone)
 - **Recovery alerts**: automatic notification when a check is OK again
 - **Overview**: list and tile-grid views with worst-state coloring and a 24 h heartbeat bar per server
-- **Personal notifications**: per-user notification hub — a bell with a feed in the desktop client, native OS notifications, and e-mail — with per-user rules (scope all/tag/single server, minimum severity). Also surfaces security (new admin) and lifecycle events. New admin users start with a default rule (all servers / warning / bell).
+- **Personal notifications**: per-user notification hub — a bell with a feed in the desktop client, native OS notifications, and e-mail — with per-user rules (scope all/tag/single server, minimum severity). Repeated reports of a check fold into one incident that the team acknowledges, resolves or reopens (with notes and history); each person can mute an incident or a server. Also surfaces security (new admin, certificates running out), tunnel and agent events. New admin users start with a default rule (all servers / warning / bell).
 
 ### Configuration (env)
 
