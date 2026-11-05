@@ -10,14 +10,14 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:17-alpine@sha256:979c4379dd698aba0b890599a6104e082035f98ef31d9b9291ec22f2b13059ca
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     environment:
       - POSTGRES_USER=adminhelper
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=adminhelper
       - TZ=${TZ:-Europe/Berlin}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres18-data:/var/lib/postgresql
       # The monitoring DB (adminhelper_monitor) and the service roles come from the
       # db-init service below, not a bind-mounted init script — this keeps
       # docker-compose.yml free of repo-file bind mounts (single self-contained
@@ -608,7 +608,7 @@ services:
   # Retention 7 Tage rolling.
   #
   # pg-backup:
-  #   image: postgres:17-alpine@sha256:979c4379dd698aba0b890599a6104e082035f98ef31d9b9291ec22f2b13059ca
+  #   image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
   #   volumes:
   #     - ./backups:/backups
   #     - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
@@ -674,7 +674,7 @@ volumes:
   frps-active:
   monitoring-data:
   victoria-data:
-  postgres-data:
+  postgres18-data:
 
 # The CA root passphrase for the ca-issuer. Compose takes the value from CA_ROOT_PASSPHRASE
 # in the environment or the project's .env and writes it into the container as
