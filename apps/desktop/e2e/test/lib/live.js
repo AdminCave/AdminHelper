@@ -38,22 +38,22 @@ export async function enrollIfAsked() {
   await $(".login-card").waitForExist({ timeout: 20000 });
   // Ask the app, not this module: `enrolled` only remembers THIS node process,
   // and an enrollment token is one-time — a second redeem of a spent one fails.
-  const already = await browser.executeAsync((done) => {
-    window.__TAURI__.core
+  const already = await browser.execute(async () => {
+    return window.__TAURI__.core
       .invoke("is_device_enrolled")
-      .then((v) => done(v === true))
-      .catch(() => done(false));
+      .then((v) => v === true)
+      .catch(() => false);
   });
   if (already) {
     enrolled = true;
     return;
   }
-  const err = await browser.executeAsync(
-    (url, tok, done) => {
-      window.__TAURI__.core
+  const err = await browser.execute(
+    async (url, tok) => {
+      return window.__TAURI__.core
         .invoke("enroll_with_token", { serverUrl: url, token: tok, allowSelfSigned: true })
-        .then(() => done(null))
-        .catch((e) => done(String((e && e.message) || e)));
+        .then(() => null)
+        .catch((e) => String((e && e.message) || e));
     },
     SERVER_URL,
     token,

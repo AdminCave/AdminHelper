@@ -60,6 +60,10 @@ export const config = {
   port: 4444,
   specs: ['./test/specs/**/*.e2e.js'],
   maxInstances: 1,
+  // WebdriverIO 10 makes `$` throw when a selector matches more than one element; the specs
+  // were written against the first-match `$` of wdio 9 and only the GUI run on a box shows
+  // which selectors are ambiguous, so the old behaviour stays until that run narrows them.
+  strictSelectors: false,
   capabilities: [
     {
       maxInstances: 1,
