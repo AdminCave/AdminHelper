@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ssh-terminal — Task-Ledger
-Status: bereit · Branch: feature/arch-ssh-terminal · Review: pro Task
+Status: aktiv · Branch: feature/arch-ssh-terminal · Review: pro Task
 Spec: docs/features/arch-ssh-terminal.md (Roadmap R-1069)
 Heavy: linux-full — neue Desktop-Journey (`ssh-connect.live.js` über `scripts/tests/desktop_e2e_connect.sh`), Sammellauf. Weil die PR-CI keine GUI fährt und der Kanal-Weg (Raw/Json, CSP) erst in der echten Webview belegt ist, läuft vor dem Merge zusätzlich `desktop_e2e_connect` auf der Lane-VM (`/test`). Kein `scenario` (kein Tunnel-Datenpfad neu, `resolve_connection` unverändert), kein `windows` (Pool ohne Windows-Vorlage; ConPTY über `rust-windows`).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -198,6 +198,16 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: README · docs/admin DE+EN · docs/developer/desktop DE+EN · THIRD_PARTY_LICENSES.md · changelog.d/arch-ssh-terminal.md
 Task-Review: am Ende
 Abhängt von: T3, T8
+
+### T11 — Entwickler-Doku: Sitzungszahl in der Statusleiste (R-1069)  [ ]
+Komponente: desktop · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: Die Beschreibung von `StatusFooter.svelte` in der Entwickler-Doku DE+EN nennt die Zahl der offenen
+Terminal-Sitzungen (jede Art, nur bei offenen Sitzungen) zwischen Tunnelzustand und Problemen; T9 hat sie nur im
+Admin-Handbuch nachgezogen.
+Verify: bash scripts/dev/verify.sh desktop --strict
+Doku: docs/developer/desktop DE+EN
+Task-Review: am Ende
+Abhängt von: T9
 
 ## Entscheidungen
 - 2026-11-05 T1: Der Warte-Thread wartet blockierend (`child.wait()`) und nimmt den `ChildKiller` gleich danach weg; `close` nach dem Ende signalisiert nichts mehr — so trifft ein Kill keine Prozess-Id, die das System schon weitergegeben hat (Restfenster zwischen Wait und Wegnahme: Mikrosekunden, Pids werden fortlaufend vergeben).
