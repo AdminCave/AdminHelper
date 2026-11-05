@@ -126,9 +126,10 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `tauri-plugin-notification`, `tauri-plugin-log`,
 `tauri-plugin-single-instance` (nur Desktop-Ziele), `windows` (nur Windows), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
-`toml`, `zeroize`, `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`, `ironrdp-connector` und `ironrdp-session`
-(eingebettetes RDP, Git-Revision von `github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname`
-(`Apache-2.0`, siehe NOTICE unten) — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
+`toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
+`ironrdp-connector` und `ironrdp-session` (eingebettetes RDP, Git-Revision von
+`github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten) —
+überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
 > Paket ist seit Aug. 2025 archiviert, seine PEM-Parser wanderten in die
@@ -136,13 +137,13 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license`, Stand **2026-11-05** (729 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license`, Stand **2026-11-05** (737 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 480 |
-| MIT | 140 |
+| Apache-2.0 OR MIT | 482 |
+| MIT | 145 |
 | Apache-2.0 OR MIT OR Zlib | 23 |
 | Unicode-3.0 | 18 |
 | MIT OR Unlicense | 12 |
@@ -158,12 +159,12 @@ selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 | Apache-2.0 OR LGPL-2.1-or-later OR MIT | 2 |
 | CDLA-Permissive-2.0 | 2 |
 | Apache-2.0 OR BSD-2-Clause OR MIT | 2 |
-| übrige (je 1) | 13 |
+| übrige (je 1) | 14 |
 
 Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MIT`,
 `BSD-3-Clause OR MIT`, `Apache-2.0 AND MIT`, `Apache-2.0 OR CC0-1.0 OR MIT-0`,
 `(Apache-2.0 OR MIT) AND BSD-3-Clause`, `Apache-2.0 AND ISC`,
-`Apache-2.0 OR BSL-1.0`, `Apache-2.0 WITH LLVM-exception`,
+`Apache-2.0 OR BSL-1.0`, `Apache-2.0 OR BSD-2-Clause`, `Apache-2.0 WITH LLVM-exception`,
 `(Apache-2.0 OR MIT) AND Unicode-3.0`, `Apache-2.0 OR BSD-1-Clause OR MIT`,
 `(Apache-2.0 OR ISC) AND ISC` (`aws-lc-rs`) und ein zusammengesetzter Ausdruck aus `Apache-2.0`,
 `BSD-3-Clause`, `ISC` und `MIT` (`aws-lc-sys`).
@@ -202,6 +203,9 @@ Erzeugt mit `license-checker --production` (nur ausgelieferte Laufzeit-Deps).
 | @tauri-apps/plugin-notification | 2.8.0 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-shell | 2.6.0 | MIT OR Apache-2.0 |
 | uplot | 1.6.32 | MIT |
+| @xterm/addon-fit | 0.11.0 | MIT |
+| @xterm/addon-search | 0.16.0 | MIT |
+| @xterm/xterm | 6.0.0 | MIT |
 
 Alle `@tauri-apps/*`-Pakete sind dual MIT/Apache → es wird der MIT-Zweig
 geführt (keine NOTICE-Pflicht).

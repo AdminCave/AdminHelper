@@ -70,6 +70,9 @@ toml = "1"
 # Overwrites the desktop's own copy of a password once it is handed on (RDP stdin,
 # Windows Credential Manager) without unsafe code. Already in the lockfile via rustls.
 zeroize = "1.8.2"
+# The embedded SSH terminal (pty.rs): ssh runs in a pseudo console, ConPTY on Windows, without
+# unsafe code in this crate.
+portable-pty = "0.9"
 # Embedded RDP (rdp_embedded/): IronRDP pinned to a reviewed Git revision, not a crates.io release,
 # so the client API and the GFX fixes it relies on cannot move underneath us.
 # The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs, and `sound` stays off

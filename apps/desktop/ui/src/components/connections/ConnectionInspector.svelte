@@ -5,18 +5,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { ArrowUpRight, Globe, Monitor, Pencil, SquareTerminal, Star } from '@lucide/svelte';
+  import { Globe, Monitor, Pencil, SquareTerminal, Star } from '@lucide/svelte';
   import type { Component } from 'svelte';
-  import type { Connection, ConnectionKind } from '$lib/bridge/types';
+  import type { Connection, ConnectionKind, SshConsole } from '$lib/bridge/types';
   import { commandPreview, type Reach } from '$lib/models/connectionList';
   import { DEFAULT_PORTS, toCardMeta } from '$lib/models/connection';
   import { timeAgo } from '$lib/utils/timeAgo';
   import { t } from '$lib/i18n';
-  import Button from '../ui/Button.svelte';
   import CodeBlock from '../ui/CodeBlock.svelte';
   import Dot from '../ui/Dot.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import Tag from '../ui/Tag.svelte';
+  import ConnectButton from '../terminal/ConnectButton.svelte';
   import { reachView } from './ConnectionTable.svelte';
 
   interface Props {
@@ -25,7 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     reach: Reach;
     tunnel: string | null;
     server: string | null;
-    onConnect: (c: Connection) => void;
+    onConnect: (c: Connection, sshConsole?: SshConsole) => void;
     onEdit: (c: Connection) => void;
     onFavorite: (c: Connection) => void;
   }
@@ -82,13 +82,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       />
     </div>
 
-    <Button
-      variant="primary"
-      fullWidth
-      iconRight={conn.kind === 'web' ? ArrowUpRight : undefined}
-      onclick={() => onConnect(conn)}
-      >{$t(conn.kind === 'web' ? 'connections.open' : 'action.connect')}</Button
-    >
+    <ConnectButton {conn} {onConnect} />
 
     <dl class="insp-meta">
       <dt>{$t('connections.insp.kind')}</dt>

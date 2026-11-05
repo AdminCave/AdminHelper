@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount, onDestroy, type Component } from 'svelte';
+  import { get } from 'svelte/store';
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
   import Cable from '@lucide/svelte/icons/cable';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -32,6 +33,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { errMsg } from '$lib/utils/errors';
   import { t, tNow } from '$lib/i18n';
   import { theme, toggleTheme } from '$lib/stores/theme';
+  import {
+    PAGE_TAB,
+    closeTerminal,
+    showTab,
+    terminals,
+    type TerminalSession,
+  } from '$lib/stores/terminals';
+  import { terminalPrefs } from '$lib/stores/terminalPrefs';
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
   import Infrastructure from '../pages/Infrastructure.svelte';
@@ -46,7 +55,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import StatusFooter from './StatusFooter.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
+  import SessionTabs from './terminal/SessionTabs.svelte';
+  import SshTerminal from './terminal/SshTerminal.svelte';
   import Avatar from './ui/Avatar.svelte';
+  import { confirmDialog } from './ui/ConfirmDialog.svelte';
   import Kbd from './ui/Kbd.svelte';
   import {
     openSettings,
@@ -127,13 +139,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // palette lead there.
   let onNotifications = $derived(isServerMode && $routePath.startsWith('/notifications'));
 
-  let title = $derived(
+  let pageTitle = $derived(
     $t(
       onNotifications
         ? 'notifications.title'
         : (navItems.find((n) => n.id === currentId)?.labelKey ?? 'nav.dashboard'),
     ),
   );
+  // Sessions of the embedded terminal (R-1069) are tabs after the page; one in front names
+  // itself in the header.
+  let activeSession = $derived($terminals.sessions.find((s) => s.key === $terminals.active));
+  let title = $derived(activeSession?.connection.name ?? pageTitle);
+  let subtitle = $derived(activeSession ? `SSH · ${activeSession.connection.host}` : null);
   // The workspace this window serves (R-0431); null only when its context did not load.
   let workspace = $derived($context?.workspace ?? null);
 
@@ -166,10 +183,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // Ctrl+K / Cmd+K works from inside input fields too: it is the way out of one. Not over another
   // dialog: the palette would open beneath it and take the typing (a password) out of view.
-  // e.code keeps the shortcut on layouts whose K key types another letter.
+  // e.code keeps the shortcut on layouts whose K key types another letter. Not from inside a
+  // terminal: there Ctrl+K belongs to the shell, which cuts the line with it.
   function onWindowKeydown(e: KeyboardEvent): void {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.code !== 'KeyK' && e.key.toLowerCase() !== 'k') return;
+    if (e.target instanceof Element && e.target.closest('.xterm')) return;
     if (document.querySelector('[aria-modal="true"]')) return;
     e.preventDefault();
     paletteOpen = true;
@@ -215,8 +234,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     setNewNotificationHandler((items) => onNewNotifications(items, os));
   });
 
+  // The sidebar shows the page, also the one already open behind a session.
   function go(item: NavItem): void {
+    showTab(PAGE_TAB);
     navigate(item.href);
+  }
+
+  // A page opened another way, from the palette or a notice, comes to the front too.
+  $effect(() => {
+    void $routePath;
+    showTab(PAGE_TAB);
+  });
+
+  // A running session ends only after the question, when the options ask it; an ended one
+  // closes at once.
+  async function endSession(s: TerminalSession): Promise<void> {
+    if (s.status !== 'disconnected' && get(terminalPrefs).confirmClose) {
+      const ok = await confirmDialog(tNow('terminal.confirmEnd', { name: s.connection.name }), {
+        confirmLabel: tNow('terminal.close'),
+      });
+      if (!ok) return;
+    }
+    closeTerminal(s.key);
   }
 
   function toggleCollapse(): void {
@@ -375,6 +414,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <header class="content-header">
     <div class="content-header-left">
       <h1 class="page-title">{title}</h1>
+      {#if subtitle}<span class="page-subtitle">{subtitle}</span>{/if}
     </div>
     <div class="content-header-right">
       <!-- Not .btn.ghost.small: the live specs take the first of those for the sign-out. -->
@@ -400,23 +440,39 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </div>
   </header>
 
-  <main class="content-main">
-    <section class="content-section">
-      {#if onNotifications}
-        <Notifications />
-      {:else if currentId === 'dashboard'}
-        <Dashboard />
-      {:else if currentId === 'connections'}
-        <Connections />
-      {:else if currentId === 'infrastructure'}
-        <Infrastructure />
-      {:else if currentId === 'monitoring'}
-        <Monitoring />
-      {:else if currentId === 'ansible'}
-        <Ansible />
-      {/if}
-    </section>
-  </main>
+  <!-- The page and every session stay mounted behind the tab in front: a page keeps its state,
+       a terminal its scrollback and its program. -->
+  <div class="content-area">
+    <SessionTabs
+      sessions={$terminals.sessions}
+      active={$terminals.active}
+      pageLabel={pageTitle}
+      onSelect={showTab}
+      onClose={(s) => void endSession(s)}
+    />
+    <main class="content-main" class:hidden={activeSession !== undefined}>
+      <section class="content-section">
+        {#if onNotifications}
+          <Notifications />
+        {:else if currentId === 'dashboard'}
+          <Dashboard />
+        {:else if currentId === 'connections'}
+          <Connections />
+        {:else if currentId === 'infrastructure'}
+          <Infrastructure />
+        {:else if currentId === 'monitoring'}
+          <Monitoring />
+        {:else if currentId === 'ansible'}
+          <Ansible />
+        {/if}
+      </section>
+    </main>
+    {#each $terminals.sessions as s (s.key)}
+      <div class="terminal-pane" class:hidden={s.key !== $terminals.active} data-session={s.key}>
+        <SshTerminal session={s} onClose={() => void endSession(s)} />
+      </div>
+    {/each}
+  </div>
 
   <StatusFooter />
 </div>
@@ -426,3 +482,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <SettingsModal />
 <StatusBar />
 <CommandPalette open={paletteOpen} entries={paletteEntries} onClose={() => (paletteOpen = false)} />
+
+<style>
+  /* The row under the header: the tabs of the sessions over the page or a terminal. */
+  .content-area {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .content-main {
+    flex: 1;
+    min-height: 0;
+  }
+  .terminal-pane {
+    flex: 1;
+    min-height: 0;
+  }
+  .hidden {
+    display: none;
+  }
+  .page-subtitle {
+    overflow: hidden;
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+</style>

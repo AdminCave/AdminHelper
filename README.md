@@ -7,6 +7,7 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 ## Highlights
 
 - **SSH / RDP / Web** connections in a single app
+- **Embedded SSH terminal**: SSH sessions as tabs beside the page, with search in the scrollback and reconnect; the OS terminal stays one setting away
 - **Filters**:
   - `Einzeln` (single connections)
   - `Zusammengefasst` (grouped by host/IP)
@@ -24,8 +25,10 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 ## Platform behavior
 
 - **SSH**
-  - Windows: opens Windows Terminal (or cmd) and runs `ssh`
-  - Linux: opens the first available terminal (gnome-terminal, konsole, xfce4-terminal, xterm, alacritty, kitty, wezterm, ...)
+  - By default opens in a session tab of the **AdminHelper terminal**: `ssh` runs in a pseudo console of the app (ConPTY on Windows) with the same arguments, through the tunnel too
+  - In the OS terminal via the *Console for SSH* setting, or for one start via the arrow of the *Connect* button:
+    - Windows: opens Windows Terminal (or cmd) and runs `ssh`
+    - Linux: opens the first available terminal (gnome-terminal, konsole, xfce4-terminal, xterm, alacritty, kitty, wezterm, ...)
 - **RDP**
   - Windows: opens `mstsc`
   - Linux: uses **FreeRDP** (`xfreerdp3` or `xfreerdp`)
@@ -39,6 +42,7 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 
 - **Passwords are not saved by default**. Optional per-device storage uses the OS keychain/credential store.
 - Password storage is currently **RDP-only**. SSH uses keys and does not store passwords; Web connections do not have password fields.
+- In the AdminHelper terminal, `ssh` asks for the host key and the password itself, in the terminal; the app writes neither keystrokes nor output to a log.
 - On Linux RDP, the password dialog is shown in-app and passed to FreeRDP via **stdin**.
 - On Windows RDP, a stored password lives in the Windows Credential Manager in the app's namespace, per workspace and connection. For a start the app writes `TERMSRV/<address>` for this logon session only, which `mstsc` reads, and removes it 60 s later (not yet verified with `mstsc` on Windows).
 - Local data files are written with **0600 permissions** on Unix systems.
@@ -92,13 +96,15 @@ Notes:
 
 ### Settings
 
-Five sections; a pill marks what applies to **this workspace** only, the rest applies to every workspace on this
+Six sections; a pill marks what applies to **this workspace** only, the rest applies to every workspace on this
 device:
 - **General**: **language** (German/English), **theme** (dark/light), **store passwords locally** (optional, OS
   keychain, RDP only), and self-signed certificates of this workspace
 - **Workspace & sync**: name, colour and URL (shown; the workspace list changes them while the workspace is closed),
   sign-out, and the **interval** of a sync workspace
 - **RDP**: **scaling mode** `auto`, `normal`, `hdpi`, window, performance
+- **Terminal**: **console for SSH** (AdminHelper terminal or OS terminal), and the terminal options: font size,
+  colour scheme, cursor, scrollback, copy on select, right-click pastes, confirm close
 - **Notifications**: OS notifications, and the notification rules of this workspace
 - **Device**: device identity and enrollment token, the pinned certificate and the browser certificate of this
   workspace, diagnostics
