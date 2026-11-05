@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-laufzeit-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-laufzeit-2 · Review: am Ende
+Status: bereit · Branch: feature/kern-laufzeit-2 · Review: am Ende
 Spec: docs/features/kern-laufzeit-2.md (Roadmap R-1032, R-1088)
 Heavy: linux-full — Redis-Image in `docker-compose.yml`; den Stack mit Redis 8 fährt der Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,8 +26,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: keine (Testkommentar)
 
-### T3 — Redis-Server in der Lizenztabelle (R-1032)  [ ]
+### T3 — Redis-Server in der Lizenztabelle (R-1032)  [x]
 Komponente: scripts · Dateien: THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @69e4d565 2026-11-05T08:20:10+01:00
+Review: am Ende (Branch-Review)
 Änderung: Unter „Auflagen & Hinweise“ ein Abschnitt zum Redis-Server-Image (Redis 8, Lizenzwahl AGPLv3, nicht mitgeliefert, sondern beim Start gezogen). Erst nach dem Merge von `feature/kern-deps-3` und `git merge origin/main` (dieselbe Datei).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: THIRD_PARTY_LICENSES.md
