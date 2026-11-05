@@ -72,7 +72,14 @@ const item = (over: Partial<NotificationItem>): NotificationItem => ({
 });
 
 const FEED = [
-  item({ id: 4, title: 'Disk full', severity: 'critical', createdAt: at(4, 9) }),
+  item({
+    id: 4,
+    title: 'Disk full',
+    severity: 'critical',
+    createdAt: at(4, 9),
+    incidentId: 4,
+    state: 'open',
+  }),
   item({ id: 3, title: 'Load high', severity: 'warning', createdAt: at(3, 15), read: true }),
   item({ id: 2, title: 'Backup done', severity: 'info', createdAt: at(3, 8) }),
   item({ id: 1, title: 'Login', severity: 'info', createdAt: at(1, 8), read: true }),
@@ -139,7 +146,7 @@ describe('NotificationBell', () => {
   });
 
   it('says per tab when there is nothing to show', async () => {
-    feed(FEED.map((n) => ({ ...n, read: true })));
+    feed(FEED.map((n) => ({ ...n, read: true, state: 'resolved' as const })));
     const { container } = render(NotificationBell);
     await fireEvent.click(tabButtons(container)[1]);
     expect(container.querySelector('.notif-empty')?.textContent).toBe('Alles gelesen');

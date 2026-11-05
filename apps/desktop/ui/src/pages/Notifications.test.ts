@@ -64,7 +64,15 @@ const item = (over: Partial<NotificationItem>): NotificationItem => ({
 });
 
 const CENTER = [
-  item({ id: 4, title: 'Disk full', severity: 'critical', createdAt: at(4, 9), body: 'On web' }),
+  item({
+    id: 4,
+    title: 'Disk full',
+    severity: 'critical',
+    createdAt: at(4, 9),
+    body: 'On web',
+    incidentId: 4,
+    state: 'open',
+  }),
   item({ id: 3, title: 'Load high', severity: 'warning', createdAt: at(3, 15), read: true }),
   item({ id: 2, title: 'New login', severity: 'info', category: 'security', createdAt: at(3, 8) }),
   item({ id: 1, title: 'Backup done', severity: 'info', createdAt: at(1, 8), read: true }),
@@ -137,10 +145,10 @@ describe('Notifications page', () => {
     const { container } = render(Notifications);
     store<NotificationItem[]>(h.items).set([
       item({ id: 5, title: 'Cert expires', severity: 'warning' }),
-      { ...CENTER[0], read: true },
+      { ...CENTER[0], read: true, state: 'acked' },
     ]);
     await tick();
-    // The newer copy wins: "Disk full" is read now and leaves the inbox.
+    // The newer copy wins: "Disk full" is acknowledged and read now and leaves the inbox.
     expect(titles(container)).toEqual(['Cert expires', 'New login']);
   });
 

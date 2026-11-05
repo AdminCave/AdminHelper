@@ -2,21 +2,33 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Notification feed as the bell panel and the center page show it (R-1078): what counts as
-// open, the day groups, and the filters. Pure functions over the feed rows, no store.
+// Notification feed as the bell panel and the center page show it (R-1078, R-1079): what counts
+// as open, the day groups, the mailboxes and the filters. Pure functions over the feed rows, no
+// store.
 
 import type { NotificationItem, NotificationSeverity } from '$lib/api/types';
 
 export type DayBucket = 'today' | 'yesterday' | 'older';
 export type PanelTab = 'all' | 'unread' | 'open';
-export type Mailbox = 'inbox' | 'open' | 'all';
+export type Mailbox = 'inbox' | 'open' | 'acked' | 'resolved' | 'muted' | 'all';
+
+/** The categories the hub writes, in the order the center lists them. */
+export const NOTIFICATION_CATEGORIES = [
+  'monitoring',
+  'security',
+  'tunnel',
+  'backup',
+  'ansible',
+  'agent',
+  'session',
+] as const;
 
 /**
- * Open = unread and warning or critical. A stand-in until the feed knows an incident state
- * (R-1079); the tabs stay the same then.
+ * Open = a warning or critical incident nobody has acknowledged or resolved, and not muted for
+ * the reader. Read or unread does not matter: a read open incident still waits for someone.
  */
 export function isOpen(n: NotificationItem): boolean {
-  return !n.read && (n.severity === 'warning' || n.severity === 'critical');
+  return (n.severity === 'warning' || n.severity === 'critical') && n.state === 'open' && !n.muted;
 }
 
 function startOfDay(d: Date): number {
@@ -55,10 +67,22 @@ export function matchesTab(n: NotificationItem, tab: PanelTab): boolean {
   return true;
 }
 
+/** Inbox = what needs the reader: unread or open, a muted row never. */
 export function matchesMailbox(n: NotificationItem, mailbox: Mailbox): boolean {
-  if (mailbox === 'inbox') return !n.read || isOpen(n);
-  if (mailbox === 'open') return isOpen(n);
-  return true;
+  switch (mailbox) {
+    case 'inbox':
+      return !n.muted && (!n.read || isOpen(n));
+    case 'open':
+      return isOpen(n);
+    case 'acked':
+      return n.state === 'acked';
+    case 'resolved':
+      return n.state === 'resolved';
+    case 'muted':
+      return !!n.muted;
+    case 'all':
+      return true;
+  }
 }
 
 export interface CenterFilter {
@@ -82,11 +106,19 @@ export function filterItems(items: NotificationItem[], f: CenterFilter): Notific
   );
 }
 
-/** The categories the feed holds, with their counts, sorted by name. */
+/**
+ * The categories the feed holds, with their counts: the known ones in vocabulary order, then any
+ * other (a newer server may write one) by name.
+ */
 export function categoriesOf(items: NotificationItem[]): { category: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const n of items) counts.set(n.category, (counts.get(n.category) ?? 0) + 1);
+  const known: readonly string[] = NOTIFICATION_CATEGORIES;
+  const rank = (c: string) => {
+    const i = known.indexOf(c);
+    return i < 0 ? known.length : i;
+  };
   return [...counts]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
     .map(([category, count]) => ({ category, count }));
 }

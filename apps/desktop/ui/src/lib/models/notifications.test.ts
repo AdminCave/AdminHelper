@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// R-1078: open as the stand-in for an incident state, day groups in local time, the panel tabs
-// and the center filters. Dates are built in local time, so the tests hold in any zone.
+// R-1078, R-1079: open from the incident state, day groups in local time, the panel tabs, the
+// six mailboxes, the center filters and the category order. Dates are built in local time, so
+// the tests hold in any zone.
 
 import { describe, it, expect } from 'vitest';
 import type { NotificationItem } from '$lib/api/types';
@@ -16,6 +17,7 @@ import {
   matchesMailbox,
   matchesTab,
   type CenterFilter,
+  type Mailbox,
 } from './notifications';
 
 const item = (over: Partial<NotificationItem>): NotificationItem => ({
@@ -39,11 +41,18 @@ const local = (y: number, m: number, d: number, h = 0, min = 0) =>
 const NOW = new Date(2026, 10, 4, 9, 30); // 2026-11-04 09:30 local
 
 describe('isOpen', () => {
-  it('is unread and warning or critical', () => {
-    expect(isOpen(item({ severity: 'warning' }))).toBe(true);
-    expect(isOpen(item({ severity: 'critical' }))).toBe(true);
-    expect(isOpen(item({ severity: 'info' }))).toBe(false);
-    expect(isOpen(item({ severity: 'critical', read: true }))).toBe(false);
+  it('is a warning or critical incident in state open and not muted, read or not', () => {
+    expect(isOpen(item({ severity: 'warning', state: 'open' }))).toBe(true);
+    expect(isOpen(item({ severity: 'critical', state: 'open', read: true }))).toBe(true);
+    expect(isOpen(item({ severity: 'info', state: 'open' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: 'acked' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: 'resolved' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: 'open', muted: true }))).toBe(false);
+  });
+
+  it('is never open without an incident state (a server before R-1079)', () => {
+    expect(isOpen(item({ severity: 'critical' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: null }))).toBe(false);
   });
 });
 
@@ -85,8 +94,8 @@ describe('groupByDay', () => {
 
 describe('tabs and mailboxes', () => {
   const unreadInfo = item({ severity: 'info' });
-  const readCritical = item({ severity: 'critical', read: true });
-  const openWarning = item({ severity: 'warning' });
+  const readCritical = item({ severity: 'critical', read: true, state: 'resolved' });
+  const openWarning = item({ severity: 'warning', state: 'open' });
 
   it('panel tabs: all, unread, open', () => {
     expect([unreadInfo, readCritical, openWarning].map((n) => matchesTab(n, 'all'))).toEqual([
@@ -123,11 +132,32 @@ describe('tabs and mailboxes', () => {
       true,
     ]);
   });
+
+  it('mailboxes by incident state: acked, resolved, muted; the inbox drops a muted row', () => {
+    const readOpen = item({ severity: 'critical', state: 'open', read: true });
+    const acked = item({ severity: 'critical', state: 'acked', read: true });
+    const unreadAcked = item({ severity: 'warning', state: 'acked' });
+    const muted = item({ severity: 'critical', state: 'open', muted: true });
+    const rows = [readOpen, acked, unreadAcked, muted, readCritical];
+    const box = (m: Mailbox) => rows.map((n) => matchesMailbox(n, m));
+    expect(box('inbox')).toEqual([true, false, true, false, false]);
+    expect(box('open')).toEqual([true, false, false, false, false]);
+    expect(box('acked')).toEqual([false, true, true, false, false]);
+    expect(box('resolved')).toEqual([false, false, false, false, true]);
+    expect(box('muted')).toEqual([false, false, false, true, false]);
+    expect(box('all')).toEqual([true, true, true, true, true]);
+  });
 });
 
 describe('filterItems', () => {
   const items = [
-    item({ id: 1, severity: 'critical', category: 'monitoring', title: 'Disk full on web-01' }),
+    item({
+      id: 1,
+      severity: 'critical',
+      category: 'monitoring',
+      title: 'Disk full on web-01',
+      state: 'open',
+    }),
     item({ id: 2, severity: 'info', category: 'security', title: 'Login', body: 'New DEVICE' }),
     item({ id: 3, severity: 'warning', category: 'monitoring', title: 'Load', read: true }),
   ];
@@ -151,15 +181,28 @@ describe('filterItems', () => {
 });
 
 describe('categoriesOf', () => {
-  it('counts the categories of the feed, sorted by name', () => {
+  it('counts the categories of the feed, the known ones in vocabulary order', () => {
     const items = [
+      item({ category: 'session' }),
       item({ category: 'security' }),
       item({ category: 'monitoring' }),
       item({ category: 'security' }),
+      item({ category: 'backup' }),
     ];
     expect(categoriesOf(items)).toEqual([
       { category: 'monitoring', count: 1 },
       { category: 'security', count: 2 },
+      { category: 'backup', count: 1 },
+      { category: 'session', count: 1 },
     ]);
+  });
+
+  it('puts an unknown category after the known ones, by name', () => {
+    const items = [
+      item({ category: 'zeta' }),
+      item({ category: 'agent' }),
+      item({ category: 'alpha' }),
+    ];
+    expect(categoriesOf(items).map((c) => c.category)).toEqual(['agent', 'alpha', 'zeta']);
   });
 });

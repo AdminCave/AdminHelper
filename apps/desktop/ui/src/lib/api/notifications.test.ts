@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Method/path/body contract of notificationsApi against the apiProxy mock — the last API module
-// without one. Non-obvious semantics worth pinning: markRead(null) = "mark everything read", and the
-// limit query in fetchFeed (6.40).
+// without one. Non-obvious semantics worth pinning: markRead(null) = "mark everything read", the
+// limit query in fetchFeed (6.40), and the escaped server id of a server mute (R-1079).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AuthSession } from '$lib/bridge/types';
@@ -71,6 +71,90 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     'POST',
     '/api/notifications/read',
     JSON.stringify({ ids: [1, 2] }),
+  ],
+  [
+    'hide',
+    () => notificationsApi.hide(session, [3]),
+    'POST',
+    '/api/notifications/hide',
+    JSON.stringify({ ids: [3] }),
+  ],
+  [
+    'markUnread',
+    () => notificationsApi.markUnread(session, [3, 4]),
+    'POST',
+    '/api/notifications/unread',
+    JSON.stringify({ ids: [3, 4] }),
+  ],
+  [
+    'fetchIncident',
+    () => notificationsApi.fetchIncident(session, 7),
+    'GET',
+    '/api/notifications/incidents/7',
+    undefined,
+  ],
+  [
+    'ackIncidents (incident ids)',
+    () => notificationsApi.ackIncidents(session, [7, 8]),
+    'POST',
+    '/api/notifications/incidents/ack',
+    JSON.stringify({ ids: [7, 8] }),
+  ],
+  [
+    'resolveIncident',
+    () => notificationsApi.resolveIncident(session, 7),
+    'POST',
+    '/api/notifications/incidents/7/resolve',
+    undefined,
+  ],
+  [
+    'reopenIncident',
+    () => notificationsApi.reopenIncident(session, 7),
+    'POST',
+    '/api/notifications/incidents/7/reopen',
+    undefined,
+  ],
+  [
+    'addNote',
+    () => notificationsApi.addNote(session, 7, 'rotated the logs'),
+    'POST',
+    '/api/notifications/incidents/7/notes',
+    JSON.stringify({ text: 'rotated the logs' }),
+  ],
+  [
+    'muteIncident',
+    () => notificationsApi.muteIncident(session, 7, '2026-11-05T07:00:00.000Z'),
+    'PUT',
+    '/api/notifications/incidents/7/mute',
+    JSON.stringify({ until: '2026-11-05T07:00:00.000Z' }),
+  ],
+  [
+    'unmuteIncident',
+    () => notificationsApi.unmuteIncident(session, 7),
+    'DELETE',
+    '/api/notifications/incidents/7/mute',
+    undefined,
+  ],
+  [
+    'fetchServerMutes',
+    () => notificationsApi.fetchServerMutes(session),
+    'GET',
+    '/api/notifications/server-mutes',
+    undefined,
+  ],
+  [
+    'muteServer (the id escaped)',
+    () => notificationsApi.muteServer(session, 'a/b c', '2026-11-05T07:00:00.000Z'),
+    'PUT',
+    '/api/notifications/server-mutes/a%2Fb%20c',
+    JSON.stringify({ until: '2026-11-05T07:00:00.000Z' }),
+  ],
+  [
+    'unmuteServer',
+    () => notificationsApi.unmuteServer(session, 'srv-1'),
+    'DELETE',
+    '/api/notifications/server-mutes/srv-1',
+    undefined,
   ],
   [
     'fetchPrefs',
