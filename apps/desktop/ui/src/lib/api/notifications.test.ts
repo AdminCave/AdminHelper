@@ -45,6 +45,13 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     undefined,
   ],
   [
+    'fetchFeed (a later page)',
+    () => notificationsApi.fetchFeed(session, 500, 500),
+    'GET',
+    '/api/notifications?limit=500&offset=500',
+    undefined,
+  ],
+  [
     'fetchUnreadCount',
     () => notificationsApi.fetchUnreadCount(session),
     'GET',

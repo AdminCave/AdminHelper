@@ -5,7 +5,7 @@
 // Exemplary component-level test enabled by the jsdom + @testing-library/svelte
 // setup (6.94): mounts a real component, drives it through the promise-based
 // confirm flow, and asserts the resolved value + open/closed state. Buttons are
-// selected by their variant class (.danger / .ghost) to stay independent of the
+// selected by their variant class (.ui-btn-danger / .ui-btn-ghost) to stay independent of the
 // active i18n language.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -30,6 +30,9 @@ import Modal from './Modal.svelte';
 import { registerAuthFailureHandler } from '$lib/api/client';
 import { auth } from '$lib/stores/auth';
 
+// Registered once at module import; read here because Vitest 5 clears mock calls before each test.
+const authFailureHandler = vi.mocked(registerAuthFailureHandler).mock.calls[0][0];
+
 afterEach(cleanup);
 
 describe('ConfirmDialog', () => {
@@ -40,23 +43,23 @@ describe('ConfirmDialog', () => {
 
   it('opens with the requested message and resolves true on confirm', async () => {
     const { container, getByText } = render(ConfirmDialog);
-    expect(container.querySelector('.btn.danger')).toBeNull(); // closed initially
+    expect(container.querySelector('.ui-btn-danger')).toBeNull(); // closed initially
 
     const answer = confirmDialog('Wirklich löschen?');
     // getByText throws when the node is absent, so a truthy result is the assertion.
     await waitFor(() => expect(getByText('Wirklich löschen?')).toBeTruthy());
 
-    await fireEvent.click(container.querySelector('.btn.danger') as HTMLButtonElement);
+    await fireEvent.click(container.querySelector('.ui-btn-danger') as HTMLButtonElement);
     await expect(answer).resolves.toBe(true);
-    await waitFor(() => expect(container.querySelector('.btn.danger')).toBeNull()); // closed again
+    await waitFor(() => expect(container.querySelector('.ui-btn-danger')).toBeNull()); // closed again
   });
 
   it('resolves false on cancel', async () => {
     const { container } = render(ConfirmDialog);
     const answer = confirmDialog('Abbrechen?');
-    await waitFor(() => expect(container.querySelector('.btn.ghost')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('.ui-btn-ghost')).not.toBeNull());
 
-    await fireEvent.click(container.querySelector('.btn.ghost') as HTMLButtonElement);
+    await fireEvent.click(container.querySelector('.ui-btn-ghost') as HTMLButtonElement);
     await expect(answer).resolves.toBe(false);
   });
 
@@ -67,8 +70,8 @@ describe('ConfirmDialog', () => {
     // The dropped first request must resolve (as cancelled) so its awaiter never hangs.
     await expect(first).resolves.toBe(false);
 
-    await waitFor(() => expect(container.querySelector('.btn.ghost')).not.toBeNull());
-    await fireEvent.click(container.querySelector('.btn.ghost') as HTMLButtonElement);
+    await waitFor(() => expect(container.querySelector('.ui-btn-ghost')).not.toBeNull());
+    await fireEvent.click(container.querySelector('.ui-btn-ghost') as HTMLButtonElement);
     await expect(second).resolves.toBe(false); // settle the second too (module store is shared)
   });
 
@@ -81,12 +84,12 @@ describe('ConfirmDialog', () => {
     const { container } = render(ConfirmDialog);
     let result: boolean | undefined;
     void confirmDialog('Escape?').then((ok) => (result = ok));
-    await waitFor(() => expect(container.querySelector('.btn.danger')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('.ui-btn-danger')).not.toBeNull());
 
     await fireEvent.keyDown(document.body, { key: 'Escape' });
 
     await waitFor(() => expect(result).toBe(false));
-    await waitFor(() => expect(container.querySelector('.btn.danger')).toBeNull());
+    await waitFor(() => expect(container.querySelector('.ui-btn-danger')).toBeNull());
     expect(below).not.toHaveBeenCalled();
 
     await fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -100,13 +103,13 @@ describe('ConfirmDialog', () => {
     try {
       const { container } = render(ConfirmDialog);
       const answer = confirmDialog('Enter?');
-      await waitFor(() => expect(container.querySelector('.btn.ghost')).not.toBeNull());
+      await waitFor(() => expect(container.querySelector('.ui-btn-ghost')).not.toBeNull());
 
       await fireEvent.keyDown(document.body, { key: 'Enter' });
 
       expect(seen).toHaveBeenCalledTimes(1);
-      expect(container.querySelector('.btn.ghost')).not.toBeNull();
-      await fireEvent.click(container.querySelector('.btn.ghost') as HTMLButtonElement);
+      expect(container.querySelector('.ui-btn-ghost')).not.toBeNull();
+      await fireEvent.click(container.querySelector('.ui-btn-ghost') as HTMLButtonElement);
       await expect(answer).resolves.toBe(false);
     } finally {
       document.removeEventListener('keydown', seen);
@@ -117,31 +120,31 @@ describe('ConfirmDialog', () => {
   // over the login page, and a confirm after the next login would act with the new session.
   it.each([
     ['a logout', () => auth.logout()],
-    ['an expiry', () => vi.mocked(registerAuthFailureHandler).mock.calls[0][0]()],
+    ['an expiry', () => authFailureHandler()],
   ])('cancels the open question on %s', async (_name, endSession) => {
     expect(get(auth).user).not.toBeNull();
     const { container } = render(ConfirmDialog);
     let result: boolean | undefined;
     void confirmDialog('Session?').then((ok) => (result = ok));
-    await waitFor(() => expect(container.querySelector('.btn.danger')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('.ui-btn-danger')).not.toBeNull());
 
     endSession();
 
     expect(get(auth).user).toBeNull();
     await waitFor(() => expect(result).toBe(false));
-    await waitFor(() => expect(container.querySelector('.btn.danger')).toBeNull());
+    await waitFor(() => expect(container.querySelector('.ui-btn-danger')).toBeNull());
   });
 
   // The same rule for a question asked only after the session ended: it is not asked at all.
   it('answers false at once and opens nothing without a session', async () => {
     const { container } = render(ConfirmDialog);
-    vi.mocked(registerAuthFailureHandler).mock.calls[0][0]();
+    authFailureHandler();
     expect(get(auth).user).toBeNull();
     // Let the dialog see the session end first; else that effect would cancel the question.
     await tick();
 
     await expect(confirmDialog('x')).resolves.toBe(false);
     await tick();
-    expect(container.querySelector('.btn.danger')).toBeNull();
+    expect(container.querySelector('.ui-btn-danger')).toBeNull();
   });
 });

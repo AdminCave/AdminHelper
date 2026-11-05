@@ -15,14 +15,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
     assignTemplateToServers,
     loadMonitoring,
     loadTemplates,
+    monitoringServerSearch,
     setOverviewView,
+    setServerSearch,
     setTab,
   } from '$lib/stores/monitoring';
+  import { LayoutGrid, PanelLeft, TriangleAlert } from '@lucide/svelte';
   import MonSummaryCards from './MonSummaryCards.svelte';
   import MonServerList from './MonServerList.svelte';
   import MonServerGrid from './MonServerGrid.svelte';
   import MonServerDashboard from './MonServerDashboard.svelte';
+  import Button from '../ui/Button.svelte';
+  import Callout from '../ui/Callout.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
+  import SearchField from '../ui/SearchField.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import Modal from '../ui/Modal.svelte';
   import { t } from '$lib/i18n';
 
@@ -42,6 +49,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
         a.name.localeCompare(b.name),
     ),
   );
+  let viewOptions = $derived([
+    { value: 'list', label: $t('monitoring.view.list'), icon: PanelLeft },
+    { value: 'grid', label: $t('monitoring.view.grid'), icon: LayoutGrid },
+  ]);
+  let missingNames = $derived($serversWithoutChecks.map((s) => s.name).join(', '));
+
   let bulkOpen = $state(false);
   let bulkBusy = $state(false);
   let bulkTemplateId = $state('');
@@ -75,72 +88,91 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 </script>
 
-{#if $monitoringError}
-  <div class="mon-error-banner" role="alert">
-    <span class="mon-error-text">{$t('error.monitoring', { message: $monitoringError })}</span>
-    <button class="btn small" onclick={() => void loadMonitoring()}>{$t('action.retry')}</button>
-  </div>
-{/if}
-
-{#if firstLoad}
-  <div class="mon-skeleton" aria-hidden="true">
-    <div class="mon-skeleton-cards">
-      {#each [0, 1, 2, 3] as i (i)}
-        <div class="mon-skeleton-block card"></div>
-      {/each}
-    </div>
-    <div class="mon-skeleton-split">
-      <div class="mon-skeleton-block sidebar"></div>
-      <div class="mon-skeleton-block main"></div>
-    </div>
-  </div>
-{:else if $monitoringChecks.length === 0 && !$monitoringError}
-  <EmptyState message={$t('monitoring.empty.noChecks')}>
-    <button class="btn primary small" onclick={() => setTab('templates')}>
-      {$t('monitoring.empty.cta')}
-    </button>
-  </EmptyState>
-{:else if $monitoringChecks.length > 0}
-  {#if $serversWithoutChecks.length > 0}
-    <div class="mon-bulk-banner">
-      <span class="mon-bulk-text"
-        >{$t('monitoring.bulk.banner', { count: String($serversWithoutChecks.length) })}</span
-      >
-      <button class="btn primary small" onclick={openBulkAssign}>
-        {$t('monitoring.bulk.cta')}
-      </button>
+<div class="mon-overview">
+  {#if $monitoringError}
+    <div role="alert">
+      <Callout tone="danger">
+        {$t('error.monitoring', { message: $monitoringError })}
+        {#snippet action()}
+          <Button size="sm" variant="secondary" onclick={() => void loadMonitoring()}
+            >{$t('action.retry')}</Button
+          >
+        {/snippet}
+      </Callout>
     </div>
   {/if}
-  <MonSummaryCards />
 
-  <div class="mon-view-toggle" role="group" aria-label={$t('monitoring.view.toggleLabel')}>
-    <button
-      class="btn small"
-      class:primary={$overviewView === 'list'}
-      aria-pressed={$overviewView === 'list'}
-      onclick={() => setOverviewView('list')}>{$t('monitoring.view.list')}</button
-    >
-    <button
-      class="btn small"
-      class:primary={$overviewView === 'grid'}
-      aria-pressed={$overviewView === 'grid'}
-      onclick={() => setOverviewView('grid')}>{$t('monitoring.view.grid')}</button
-    >
-  </div>
-
-  {#if $overviewView === 'grid'}
-    <MonServerGrid />
-  {:else}
-    <div class="mon-split">
-      <aside class="mon-split-sidebar">
-        <MonServerList />
-      </aside>
-      <section class="mon-split-main">
-        <MonServerDashboard />
-      </section>
+  {#if firstLoad}
+    <div class="mon-skeleton" aria-hidden="true">
+      <div class="mon-skeleton-cards">
+        {#each [0, 1, 2, 3] as i (i)}
+          <div class="mon-skeleton-block card"></div>
+        {/each}
+      </div>
+      <div class="mon-skeleton-split">
+        <div class="mon-skeleton-block sidebar"></div>
+        <div class="mon-skeleton-block main"></div>
+      </div>
     </div>
+  {:else if $monitoringChecks.length === 0 && !$monitoringError}
+    <EmptyState message={$t('monitoring.empty.noChecks')}>
+      <Button size="sm" onclick={() => setTab('templates')}>{$t('monitoring.empty.cta')}</Button>
+    </EmptyState>
+  {:else if $monitoringChecks.length > 0}
+    {#if $serversWithoutChecks.length > 0}
+      <div class="mon-bulk-banner">
+        <Callout tone="warning" icon={TriangleAlert}>
+          <span class="mon-bulk-text"
+            ><strong
+              >{$t('monitoring.bulk.banner', {
+                count: String($serversWithoutChecks.length),
+              })}</strong
+            ><span class="mon-bulk-names">: {missingNames}</span></span
+          >
+          {#snippet action()}
+            <Button size="sm" data-action="bulk-assign" onclick={openBulkAssign}
+              >{$t('monitoring.bulk.cta')}</Button
+            >
+          {/snippet}
+        </Callout>
+      </div>
+    {/if}
+    <MonSummaryCards />
+
+    <div class="mon-overview-toolbar">
+      <Segmented
+        options={viewOptions}
+        value={$overviewView}
+        label={$t('monitoring.view.toggleLabel')}
+        onChange={(v) => setOverviewView(v as 'list' | 'grid')}
+      />
+      <div class="mon-overview-search">
+        <SearchField
+          size="sm"
+          value={$monitoringServerSearch}
+          placeholder={$t('monitoring.serverList.search')}
+          label={$t('monitoring.serverList.search')}
+          oninput={(e) => setServerSearch((e.currentTarget as HTMLInputElement).value)}
+          onClear={() => setServerSearch('')}
+        />
+      </div>
+      <span class="mon-refresh-hint">{$t('monitoring.autoRefresh')}</span>
+    </div>
+
+    {#if $overviewView === 'grid'}
+      <MonServerGrid />
+    {:else}
+      <div class="mon-split">
+        <aside class="mon-split-sidebar">
+          <MonServerList />
+        </aside>
+        <section class="mon-split-main">
+          <MonServerDashboard />
+        </section>
+      </div>
+    {/if}
   {/if}
-{/if}
+</div>
 
 <Modal
   open={bulkOpen}
@@ -172,39 +204,77 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {/if}
 
   {#snippet footer()}
-    <button class="btn" onclick={() => (bulkOpen = false)} disabled={bulkBusy}>
+    <Button variant="secondary" onclick={() => (bulkOpen = false)} disabled={bulkBusy}>
       {$t('action.cancel')}
-    </button>
-    <button
-      class="btn primary"
+    </Button>
+    <Button
       onclick={submitBulkAssign}
+      loading={bulkBusy}
       disabled={bulkBusy || !bulkTemplateId || bulkSelected.length === 0}
     >
       {$t('monitoring.bulk.assign', { count: String(bulkSelected.length) })}
-    </button>
+    </Button>
   {/snippet}
 </Modal>
 
 <style>
-  .mon-view-toggle {
+  .mon-overview {
     display: flex;
-    gap: var(--sp-2);
-    margin: var(--sp-4) 0;
-  }
-  .mon-bulk-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-4);
-    margin-bottom: var(--sp-4);
-    border: 1px solid var(--warning);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--warning) 10%, transparent);
-    font-size: 13px;
+    flex-direction: column;
+    gap: 18px;
   }
   .mon-bulk-text {
-    flex: 1;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mon-bulk-names {
+    color: var(--text-muted);
+  }
+  .mon-overview-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .mon-overview-search {
+    width: 240px;
+  }
+  .mon-refresh-hint {
+    margin-left: auto;
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .mon-split {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .mon-split-sidebar {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+  }
+  .mon-split-main {
     min-width: 0;
+  }
+  @media (max-width: 1200px) {
+    .mon-split {
+      grid-template-columns: 210px minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 900px) {
+    .mon-split {
+      grid-template-columns: 1fr;
+    }
+    .mon-split-sidebar {
+      position: static;
+      max-height: none;
+    }
   }
   .mon-bulk-servers {
     display: flex;
@@ -244,21 +314,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-size: 13px;
     font-family: inherit;
   }
-  .mon-error-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-4);
-    margin-bottom: var(--sp-4);
-    border: 1px solid var(--danger);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--danger) 10%, transparent);
-    font-size: 13px;
-  }
-  .mon-error-text {
-    flex: 1;
-    min-width: 0;
-  }
   .mon-skeleton {
     display: flex;
     flex-direction: column;
@@ -277,7 +332,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mon-skeleton-block {
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    background: var(--bg-panel);
+    background: var(--surface);
     animation: mon-skeleton-pulse 1.2s ease-in-out infinite;
   }
   .mon-skeleton-block.card {

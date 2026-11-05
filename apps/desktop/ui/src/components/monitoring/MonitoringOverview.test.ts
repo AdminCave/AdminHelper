@@ -7,7 +7,7 @@
 // EmptyState with a CTA to the templates tab instead of a blank split view.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 
@@ -43,6 +43,8 @@ import {
   loadServers,
   loadTemplates,
   monitoringTab,
+  setOverviewView,
+  setServerSearch,
   setTab,
 } from '$lib/stores/monitoring';
 import MonitoringOverview from './MonitoringOverview.svelte';
@@ -238,5 +240,72 @@ describe('MonitoringOverview states (T19)', () => {
     await tick();
     expect(container.querySelector('.mon-skeleton')).toBeNull();
     expect(container.querySelector('.mon-split')).toBeTruthy();
+  });
+});
+
+describe('MonitoringOverview design anchors (R-1064)', () => {
+  async function seed() {
+    h.fetchServers.mockResolvedValueOnce([
+      { id: 'srv-1', name: 'web01', hostname: 'web01' },
+      { id: 'srv-2', name: 'db01', hostname: 'db01' },
+      { id: 'srv-3', name: 'web02', hostname: 'web02' },
+    ]);
+    await loadServers();
+    h.fetchStatus.mockResolvedValueOnce([_check('c1', 'srv-1'), _check('c3', 'srv-3')]);
+    await loadMonitoring();
+  }
+
+  afterEach(() => {
+    setOverviewView('list');
+    setServerSearch('');
+  });
+
+  it('names the servers without checks in the banner and keeps the CTA', async () => {
+    await seed();
+    const { container } = render(MonitoringOverview);
+    await tick();
+    expect(container.querySelector('.mon-bulk-names')?.textContent).toBe(': db01');
+    const cta = container.querySelector('[data-action="bulk-assign"]') as HTMLButtonElement;
+    expect(cta.textContent?.trim()).toBe('Template zuweisen');
+  });
+
+  it('switches list and grid through the segmented control and shows the refresh hint', async () => {
+    await seed();
+    const { container } = render(MonitoringOverview);
+    await tick();
+    expect(screen.getByText('Auto-Refresh 30 s')).toBeTruthy();
+    const list = screen.getByRole('radio', { name: 'Liste' });
+    const grid = screen.getByRole('radio', { name: 'Kacheln' });
+    expect(list.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelector('.mon-split')).toBeTruthy();
+
+    await fireEvent.click(grid);
+    expect(grid.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelector('.mon-split')).toBeNull();
+    expect(container.querySelectorAll('.mon-tile')).toHaveLength(2);
+  });
+
+  it('filters the tiles through the toolbar search', async () => {
+    await seed();
+    setOverviewView('grid');
+    const { container } = render(MonitoringOverview);
+    await tick();
+    const search = screen.getByRole('searchbox') as HTMLInputElement;
+    await fireEvent.input(search, { target: { value: 'web02' } });
+    const tiles = Array.from(container.querySelectorAll('.mon-tile'));
+    expect(tiles.map((t) => t.querySelector('.mon-tile-name')?.textContent)).toEqual(['web02']);
+  });
+
+  it('labels the worst-state dot of a list item and marks the selection', async () => {
+    await seed();
+    const { container } = render(MonitoringOverview);
+    await tick();
+    const items = Array.from(container.querySelectorAll<HTMLButtonElement>('.mon-srv-item'));
+    expect(items).toHaveLength(2);
+    expect(items[0].querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('OK');
+    expect(items[0].querySelector('.mon-srv-count')?.textContent).toMatch(/^1 /);
+    await fireEvent.click(items[1]);
+    expect(items[1].getAttribute('aria-current')).toBe('true');
+    expect(items[0].getAttribute('aria-current')).toBeNull();
   });
 });

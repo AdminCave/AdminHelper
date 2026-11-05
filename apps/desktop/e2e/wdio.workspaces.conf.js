@@ -39,6 +39,7 @@ export const config = {
       },
     ]),
   ),
+  strictSelectors: base.strictSelectors,
   reporters: base.reporters,
   framework: base.framework,
   mochaOpts: base.mochaOpts,

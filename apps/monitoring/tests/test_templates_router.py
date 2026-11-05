@@ -565,6 +565,24 @@ def test_builtin_update_of_an_unknown_or_own_template_is_404(client):
             assert (r.status_code, r.json()) == (404, {"detail": "Standard template not found"})
 
 
+@pytest.mark.parametrize("template_id", ["assignments", "suggestions"])
+def test_builtin_update_answers_for_a_template_named_like_a_fixed_segment(client, template_id):
+    # /templates/assignments/{server_id} and /templates/suggestions/{server_id} have as
+    # many segments; registered first, they answered this path with [] (R-1107).
+    c, _factory = client
+    r = c.get(f"/templates/{template_id}/builtin-update")
+    assert (r.status_code, r.json()) == (404, {"detail": "Standard template not found"})
+
+
+def test_assignments_of_a_server_are_still_listed(client):
+    c, _factory = client
+    tid = _template(c, _PING_DEF)
+    _assign(c, tid)
+    r = c.get("/templates/assignments/srv-1")
+    assert r.status_code == 200, r.text
+    assert [a["templateId"] for a in r.json()] == [tid]
+
+
 def test_taking_the_update_replaces_the_definitions_and_keeps_check_overrides(client, monkeypatch):
     c, factory = client
     tid = _builtin(factory)

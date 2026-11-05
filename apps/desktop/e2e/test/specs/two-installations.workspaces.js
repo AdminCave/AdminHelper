@@ -25,6 +25,8 @@ import { application } from '../../wdio.conf.js';
 const TUNNEL = 'e2e-ssh-tun';
 const VISITOR = `${TUNNEL}-visitor`;
 const CONNECTION = 'ssh-tunnel';
+// The rows of the connections page (CONN_ROW in ../lib/live.js, which this multiremote spec does not use).
+const CONN_ROW = '[data-testid="conn-row"]';
 // The workspace the migration made: it keeps the keyring keys without a prefix, Kunde B has
 // its own prefix, and the identity of one must stay out of the other's sight.
 const STANDARD = 'standard';
@@ -80,12 +82,12 @@ function windowOf(label, session, key) {
 // rejection: webdriver takes a script result with an `error` key for a failed command
 // (logout.live.js).
 function call(w, cmd, args) {
-  return w.session.executeAsync(
-    (c, a, done) => {
-      window.__TAURI__.core
+  return w.session.execute(
+    async (c, a) => {
+      return window.__TAURI__.core
         .invoke(c, a)
-        .then((value) => done({ value }))
-        .catch((e) => done({ rejected: String((e && e.message) || e) }));
+        .then((value) => ({ value }))
+        .catch((e) => ({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,
@@ -349,17 +351,24 @@ describe('Two installations side by side: Standard at stack A, Kunde B at stack 
         connection: { host: '127.0.0.1', port: binding.localPort },
       });
 
-      // Through the GUI: the card spawns ssh to that port (seen at the target by the orchestrator).
+      // Through the GUI: a double click on the row spawns ssh to that port (seen at the target by the orchestrator).
       const s = w.session;
       await s.$('.sidebar-nav [data-nav="connections"]').click();
-      await s.$('.card').waitForExist({ timeout: 15000 });
+      await s.$(CONN_ROW).waitForExist({ timeout: 15000 });
       // Queried anew on each pass: a render between the listing and the click stales a handle.
       await s.waitUntil(
         async () => {
           try {
-            for (const card of await s.$$('.card')) {
-              if ((await card.$('.card-title').getText()) === CONNECTION) {
-                await card.click();
+            for (const row of await s.$$(CONN_ROW)) {
+              const name = await s.execute(
+                (node) => node.textContent.trim(),
+                await row.$('.conn-name'),
+              );
+              if (name === CONNECTION) {
+                await s.execute(
+                  (node) => node.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })),
+                  row,
+                );
                 return true;
               }
             }
@@ -368,7 +377,7 @@ describe('Two installations side by side: Standard at stack A, Kunde B at stack 
           }
           return false;
         },
-        { timeout: 15000, timeoutMsg: `${w.label}: no card "${CONNECTION}" to click` },
+        { timeout: 15000, timeoutMsg: `${w.label}: no row "${CONNECTION}" to connect` },
       );
     }
     // Let both ssh reach their targets before the sessions end.

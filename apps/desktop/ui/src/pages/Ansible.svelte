@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { FileCode, Pencil, Play, Plus } from '@lucide/svelte';
   import {
     ansiblePlaybooks,
     ansibleServers,
@@ -25,8 +26,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     toggleServer,
     toggleTag,
     runPlaybook,
+    type AnsibleTargetMode,
   } from '$lib/stores/ansible';
   import { t } from '$lib/i18n';
+  import Button from '../components/ui/Button.svelte';
+  import Checkbox from '../components/ui/Checkbox.svelte';
+  import Segmented from '../components/ui/Segmented.svelte';
+  import Tag from '../components/ui/Tag.svelte';
   import PlaybookModal from '../components/ansible/PlaybookModal.svelte';
   import type { Playbook } from '$lib/api/types';
 
@@ -47,153 +53,150 @@ SPDX-License-Identifier: GPL-3.0-or-later
     modalOpen = true;
   }
 
-  function isServerSelected(id: string, ids: Set<string>): boolean {
-    return ids.has(id);
-  }
-
   function isTagAllSelected(tag: string, ids: Set<string>): boolean {
     const list = $ansibleTagGroups[tag] ?? [];
     return list.length > 0 && list.every((s) => ids.has(s.id));
   }
+
+  const modes = $derived([
+    { value: 'servers', label: $t('ansible.mode.servers') },
+    { value: 'tags', label: $t('ansible.mode.tags') },
+  ]);
 </script>
 
-<section class="ansible-root">
+<div class="ansible-page">
   {#if $ansibleLoading}
     <div class="ansible-empty">{$t('ansible.loading')}</div>
   {:else if $ansibleLoadError}
     <div class="ansible-empty error">{$t('ansible.error', { message: $ansibleLoadError })}</div>
   {:else}
-    <!-- Step 1: Playbook -->
-    <div class="ansible-step active" data-step="playbook">
-      <div class="ansible-step-head">
-        <div class="ansible-step-title">{$t('ansible.step.playbook')}</div>
-        <button type="button" class="btn small" onclick={openCreate}>
-          {$t('ansible.edit.add')}
-        </button>
-      </div>
-      {#if $ansiblePlaybooks.length === 0}
-        <div class="ansible-empty">{$t('ansible.empty.playbooks')}</div>
-      {:else}
-        <div class="ansible-playbook-list">
-          {#each $ansiblePlaybooks as pb (pb.id)}
-            <div class="ansible-playbook-wrap">
-              <button
-                type="button"
-                class="ansible-playbook-card"
-                class:selected={$ansibleSelectedPlaybookId === pb.id}
-                onclick={() => selectPlaybook(pb.id)}
-              >
-                <div class="ansible-playbook-name">{pb.name}</div>
-                {#if pb.description}
-                  <div class="ansible-playbook-desc">{pb.description}</div>
-                {/if}
-                <div class="ansible-playbook-meta">
-                  <span class="ansible-playbook-file">{pb.filename}</span>
-                  {#each pb.tags ?? [] as tag (tag)}
-                    <span class="ansible-tag">{tag}</span>
-                  {/each}
-                </div>
-              </button>
-              <button
-                type="button"
-                class="ansible-playbook-edit"
-                title={$t('ansible.edit.edit')}
-                aria-label={$t('ansible.edit.edit')}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  openEdit(pb);
-                }}
-              >
-                {$t('action.edit')}
-              </button>
-            </div>
-          {/each}
+    <div class="ansible">
+      <aside class="ansible-rail">
+        <div class="ansible-rail-head">
+          <span class="eyebrow">{$t('ansible.playbooks')}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            iconLeft={Plus}
+            data-action="playbook-new"
+            onclick={openCreate}>{$t('ansible.edit.add')}</Button
+          >
         </div>
-      {/if}
-    </div>
-
-    <!-- Step 2: Targets -->
-    <div class="ansible-step" class:active={!!$ansibleSelectedPlaybookId} data-step="targets">
-      <div class="ansible-step-title">{$t('ansible.step.targets')}</div>
-
-      <div class="ansible-target-mode">
-        <button
-          type="button"
-          class="ansible-mode-btn"
-          class:active={$ansibleTargetMode === 'servers'}
-          onclick={() => setTargetMode('servers')}
-        >
-          {$t('ansible.mode.servers')}
-        </button>
-        <button
-          type="button"
-          class="ansible-mode-btn"
-          class:active={$ansibleTargetMode === 'tags'}
-          onclick={() => setTargetMode('tags')}
-        >
-          {$t('ansible.mode.tags')}
-        </button>
-      </div>
-
-      {#if $ansibleTargetMode === 'servers'}
-        {#if $ansibleServers.length === 0}
-          <div class="ansible-empty">{$t('ansible.empty.servers')}</div>
+        {#if $ansiblePlaybooks.length === 0}
+          <div class="ansible-empty">{$t('ansible.empty.playbooks')}</div>
         {:else}
-          <div class="ansible-server-list">
-            {#each $ansibleServers as srv (srv.id)}
-              <label class="ansible-server-row">
-                <input
-                  type="checkbox"
-                  checked={isServerSelected(srv.id, $ansibleSelectedServerIds)}
-                  onchange={() => toggleServer(srv.id)}
-                />
-                <div class="ansible-server-info">
-                  <span class="ansible-server-name">{srv.name}</span>
-                  <span class="ansible-server-host">{srv.hostname}</span>
-                  {#each srv.tags ?? [] as tag (tag)}
-                    <span class="ansible-tag">{tag}</span>
-                  {/each}
-                </div>
-              </label>
-            {/each}
-          </div>
-        {/if}
-      {:else if Object.keys($ansibleTagGroups).length === 0}
-        <div class="ansible-empty">{$t('ansible.empty.tags')}</div>
-      {:else}
-        <div class="ansible-tag-list">
-          {#each Object.keys($ansibleTagGroups).sort() as tag (tag)}
+          {#each $ansiblePlaybooks as pb (pb.id)}
             <button
               type="button"
-              class="ansible-tag-chip"
-              class:active={isTagAllSelected(tag, $ansibleSelectedServerIds)}
-              onclick={() => toggleTag(tag)}
+              class="pb-item"
+              class:active={$ansibleSelectedPlaybookId === pb.id}
+              aria-current={$ansibleSelectedPlaybookId === pb.id ? 'true' : undefined}
+              onclick={() => selectPlaybook(pb.id)}
             >
-              {tag} ({$ansibleTagGroups[tag].length})
+              <span class="pb-item-head">
+                <FileCode size={14} />
+                <span class="pb-item-name">{pb.name}</span>
+              </span>
+              {#if pb.description}
+                <span class="pb-item-desc">{pb.description}</span>
+              {/if}
+              <span class="pb-item-meta">
+                <span class="pb-item-file">{pb.filename}</span>
+                {#each pb.tags ?? [] as tag (tag)}
+                  <Tag size="sm" tone="neutral">{tag}</Tag>
+                {/each}
+              </span>
             </button>
           {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Step 3: Run -->
-    <div class="ansible-step" class:active={$ansibleCanRun || $ansibleRunning} data-step="run">
-      <div class="ansible-step-title">{$t('ansible.step.run')}</div>
-      <div class="ansible-run-summary">
-        {#if $ansibleSelectedPlaybook && $ansibleSelectedServerIds.size > 0}
-          <strong>{$ansibleSelectedPlaybook.name}</strong>
-          {$t('ansible.run.on')} <strong>{$ansibleSelectedServerIds.size}</strong>
-          {$t('ansible.run.servers')}
-        {:else}
-          <span class="ansible-empty">{$t('ansible.hint.select')}</span>
         {/if}
-      </div>
-      <button class="btn primary" disabled={!$ansibleCanRun} onclick={() => void runPlaybook()}>
-        {$ansibleRunning ? $t('ansible.run.running') : $t('ansible.run.button')}
-      </button>
+      </aside>
+
+      <section class="ansible-detail">
+        {#if $ansibleSelectedPlaybook}
+          {@const pb = $ansibleSelectedPlaybook}
+          <header class="pb-head">
+            <div class="pb-head-main">
+              <h2 class="pb-name">{pb.name}</h2>
+              {#if pb.description}<div class="pb-desc">{pb.description}</div>{/if}
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconLeft={Pencil}
+              data-action="playbook-edit"
+              onclick={() => openEdit(pb)}>{$t('action.edit')}</Button
+            >
+            <Button
+              iconLeft={Play}
+              data-action="playbook-run"
+              loading={$ansibleRunning}
+              disabled={!$ansibleCanRun}
+              onclick={() => void runPlaybook()}
+              >{$ansibleRunning ? $t('ansible.run.running') : $t('ansible.run.button')}</Button
+            >
+          </header>
+
+          <div class="pb-targets">
+            <div class="pb-targets-head">
+              <span class="eyebrow">{$t('ansible.targets')}</span>
+              <Segmented
+                options={modes}
+                value={$ansibleTargetMode}
+                label={$t('ansible.targets')}
+                onChange={(v) => setTargetMode(v as AnsibleTargetMode)}
+              />
+            </div>
+
+            {#if $ansibleTargetMode === 'servers'}
+              {#if $ansibleServers.length === 0}
+                <div class="ansible-empty">{$t('ansible.empty.servers')}</div>
+              {:else}
+                <div class="pb-server-list">
+                  {#each $ansibleServers as srv (srv.id)}
+                    <Checkbox
+                      checked={$ansibleSelectedServerIds.has(srv.id)}
+                      label={srv.name}
+                      description={srv.hostname}
+                      onChange={() => toggleServer(srv.id)}
+                    />
+                  {/each}
+                </div>
+              {/if}
+            {:else if Object.keys($ansibleTagGroups).length === 0}
+              <div class="ansible-empty">{$t('ansible.empty.tags')}</div>
+            {:else}
+              <div class="pb-tag-list">
+                {#each Object.keys($ansibleTagGroups).sort() as tag (tag)}
+                  <button
+                    type="button"
+                    class="pb-tag-chip"
+                    class:active={isTagAllSelected(tag, $ansibleSelectedServerIds)}
+                    aria-pressed={isTagAllSelected(tag, $ansibleSelectedServerIds)}
+                    onclick={() => toggleTag(tag)}
+                  >
+                    {tag} ({$ansibleTagGroups[tag].length})
+                  </button>
+                {/each}
+              </div>
+            {/if}
+
+            <div class="pb-summary">
+              {#if $ansibleSelectedServerIds.size > 0}
+                <strong>{pb.name}</strong>
+                {$t('ansible.run.on')} <strong>{$ansibleSelectedServerIds.size}</strong>
+                {$t('ansible.run.servers')}
+              {:else}
+                {$t('ansible.hint.select')}
+              {/if}
+            </div>
+          </div>
+        {:else}
+          <div class="ansible-empty">{$t('ansible.selectPrompt')}</div>
+        {/if}
+      </section>
     </div>
   {/if}
-</section>
+</div>
 
 <PlaybookModal
   open={modalOpen}
@@ -203,214 +206,191 @@ SPDX-License-Identifier: GPL-3.0-or-later
 />
 
 <style>
-  .ansible-root {
-    padding: var(--sp-5);
+  .ansible-page {
+    container-type: inline-size;
+    height: 100%;
+    min-height: 0;
+  }
+  .ansible {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+  }
+  @container (min-width: 1000px) {
+    .ansible {
+      grid-template-columns: 320px minmax(0, 1fr);
+    }
+  }
+  .ansible-rail {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-5);
+    gap: 2px;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+    border-right: 1px solid var(--border);
   }
-  .ansible-step {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--sp-4);
-    background: var(--bg-panel);
-    opacity: 0.55;
-    transition: opacity 0.15s;
-  }
-  .ansible-step.active {
-    opacity: 1;
-  }
-  .ansible-step-title {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin-bottom: var(--sp-3);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .ansible-step-head {
+  .ansible-rail-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-3);
+    padding: 4px 6px 10px;
   }
-  .ansible-step-head .ansible-step-title {
-    margin-bottom: 0;
+  .ansible-rail-head .eyebrow {
+    flex: 1;
+  }
+  .eyebrow {
+    color: var(--text-subtle);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   .ansible-empty {
+    padding: var(--sp-5) var(--sp-3);
     color: var(--text-muted);
-    font-size: 13px;
-    padding: var(--sp-3) 0;
+    font-size: var(--text-sm);
+    text-align: center;
   }
   .ansible-empty.error {
     color: var(--danger);
   }
-
-  /* Step 1 */
-  .ansible-playbook-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: var(--sp-3);
-  }
-  .ansible-playbook-wrap {
-    position: relative;
-    display: flex;
-  }
-  .ansible-playbook-edit {
-    position: absolute;
-    top: var(--sp-2);
-    right: var(--sp-2);
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    padding: 2px 8px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 11px;
-    font-family: inherit;
-    opacity: 0;
-    transition:
-      opacity 0.12s,
-      border-color 0.12s,
-      color 0.12s;
-  }
-  .ansible-playbook-wrap:hover .ansible-playbook-edit,
-  .ansible-playbook-edit:focus-visible {
-    opacity: 1;
-  }
-  .ansible-playbook-edit:hover {
-    border-color: var(--accent);
-    color: var(--text);
-  }
-  .ansible-playbook-card {
-    flex: 1;
-    text-align: left;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--sp-3);
-    cursor: pointer;
-    color: var(--text);
-    font-family: inherit;
+  .pb-item {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1);
-    transition:
-      border-color 0.12s,
-      background 0.12s;
+    gap: 4px;
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
-  .ansible-playbook-card:hover {
-    border-color: var(--accent);
+  .pb-item:hover {
+    background: var(--surface-hover);
   }
-  .ansible-playbook-card.selected {
-    border-color: var(--accent);
-    background: var(--bg-accent, var(--bg-elev));
+  .pb-item.active {
+    border-color: var(--border-strong);
+    background: var(--surface-raised);
   }
-  .ansible-playbook-name {
+  .pb-item-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+  }
+  .pb-item-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pb-item.active .pb-item-name {
     font-weight: 600;
-    font-size: 14px;
   }
-  .ansible-playbook-desc {
+  .pb-item-desc {
     color: var(--text-muted);
     font-size: 12px;
+    line-height: 1.4;
   }
-  .ansible-playbook-meta {
+  .pb-item-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-2);
     align-items: center;
-    margin-top: var(--sp-2);
+    gap: 4px;
   }
-  .ansible-playbook-file {
-    font-family: var(--font-mono, monospace);
-    font-size: 11px;
-    color: var(--text-muted);
+  .pb-item-file {
+    margin-right: 4px;
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
   }
-
-  /* Step 2 */
-  .ansible-target-mode {
-    display: flex;
-    gap: var(--sp-2);
-    margin-bottom: var(--sp-3);
-  }
-  .ansible-mode-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 13px;
-    font-family: inherit;
-  }
-  .ansible-mode-btn.active {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
-  .ansible-server-list {
+  .ansible-detail {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-2);
-    max-height: 320px;
+    min-width: 0;
+    min-height: 0;
     overflow-y: auto;
   }
-  .ansible-server-row {
+  .pb-head {
     display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-  }
-  .ansible-server-info {
-    display: flex;
-    gap: var(--sp-2);
-    align-items: center;
     flex-wrap: wrap;
-    flex: 1;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
   }
-  .ansible-server-name {
+  .pb-head-main {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+  .pb-name {
+    margin: 0;
+    overflow: hidden;
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+    font-size: 18px;
     font-weight: 600;
-    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .ansible-server-host {
+  .pb-desc {
+    margin-top: 4px;
     color: var(--text-muted);
-    font-size: 12px;
-    font-family: var(--font-mono, monospace);
+    font-size: var(--text-sm);
   }
-  .ansible-tag {
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-elev);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
+  .pb-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 24px;
   }
-  .ansible-tag-list {
+  .pb-targets-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .pb-server-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px 18px;
+  }
+  .pb-tag-list {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-2);
+    gap: 8px;
   }
-  .ansible-tag-chip {
-    background: transparent;
+  .pb-tag-chip {
+    padding: 4px 12px;
     border: 1px solid var(--border);
-    color: var(--text-muted);
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-sm);
     cursor: pointer;
-    font-size: 13px;
-    font-family: inherit;
   }
-  .ansible-tag-chip.active {
-    background: var(--accent);
-    color: white;
+  .pb-tag-chip:hover {
+    background: var(--surface-hover);
+  }
+  .pb-tag-chip.active {
     border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--text-strong);
   }
-
-  /* Step 3 */
-  .ansible-run-summary {
-    padding: var(--sp-3) 0;
-    font-size: 14px;
+  .pb-summary {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .pb-summary strong {
+    color: var(--text-strong);
   }
 </style>

@@ -22,13 +22,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings } from '$lib/stores/session';
-  import { connections, searchTerm } from '$lib/stores/connections';
+  import { connections } from '$lib/stores/connections';
   import { initiateConnect, markRdpError } from '$lib/stores/connectFlow';
   import { openEditor } from '$lib/stores/editor';
   import { buildEntries } from '$lib/palette';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import { context, openLauncher } from '$lib/stores/workspace';
-  import { reportError } from '$lib/stores/statusBar';
+  import { reportError, showNotice, type ToastTone } from '$lib/stores/statusBar';
   import { errMsg } from '$lib/utils/errors';
   import { t, tNow } from '$lib/i18n';
   import { theme, toggleTheme } from '$lib/stores/theme';
@@ -37,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Infrastructure from '../pages/Infrastructure.svelte';
   import Monitoring from '../pages/Monitoring.svelte';
   import Ansible from '../pages/Ansible.svelte';
+  import Notifications from '../pages/Notifications.svelte';
   import ConnectionEditor from './ConnectionEditor.svelte';
   import PasswordPrompt from './PasswordPrompt.svelte';
   import SettingsModal from './SettingsModal.svelte';
@@ -60,6 +61,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     setNewNotificationHandler,
   } from '$lib/stores/notifications';
   import { notifyOs } from '$lib/osNotify';
+  import { allows } from '$lib/stores/dnd';
+  import type { NotificationItem } from '$lib/api/types';
 
   interface NavItem {
     id: 'dashboard' | 'connections' | 'infrastructure' | 'monitoring' | 'ansible';
@@ -120,8 +123,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // A server-only page has nothing to show without a server session, in a local or a sync
   // workspace: its route shows the dashboard instead.
   let currentId = $derived(visibleNav.some((n) => n.id === routeId) ? routeId : 'dashboard');
+  // The center page (R-1078) needs a server session and has no sidebar entry: the bell and the
+  // palette lead there.
+  let onNotifications = $derived(isServerMode && $routePath.startsWith('/notifications'));
 
-  let title = $derived($t(navItems.find((n) => n.id === currentId)?.labelKey ?? 'nav.dashboard'));
+  let title = $derived(
+    $t(
+      onNotifications
+        ? 'notifications.title'
+        : (navItems.find((n) => n.id === currentId)?.labelKey ?? 'nav.dashboard'),
+    ),
+  );
   // The workspace this window serves (R-0431); null only when its context did not load.
   let workspace = $derived($context?.workspace ?? null);
 
@@ -135,7 +147,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let paletteEntries = $derived(
     buildEntries({
       connections: $connections,
-      pages: visibleNav.map((n) => ({ id: n.id, label: $t(n.labelKey), href: n.href })),
+      pages: [
+        ...visibleNav.map((n) => ({ id: n.id, label: $t(n.labelKey), href: n.href })),
+        ...(isServerMode
+          ? [{ id: 'notifications', label: $t('notifications.title'), href: '/notifications' }]
+          : []),
+      ],
       actions: [
         { id: 'newConnection', label: $t('connections.new'), run: () => openEditor(null) },
         { id: 'settings', label: $t('settings.label'), run: openSettings },
@@ -173,9 +190,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return () => deactivateNotifications();
   });
 
-  // Route new feed entries to OS notifications only while the user opted in.
+  // New feed entries become toasts and, while the user opted in, OS notifications; do not
+  // disturb holds both back for this window, a critical entry always comes through (R-1078).
+  const NOTICE_TONE: Record<NotificationItem['severity'], ToastTone> = {
+    info: 'info',
+    warning: 'warning',
+    critical: 'danger',
+  };
+  function onNewNotifications(items: NotificationItem[], os: boolean): void {
+    const shown = items.filter((n) => allows(n.severity));
+    for (const n of shown) {
+      showNotice({
+        title: n.title,
+        body: n.body,
+        tone: NOTICE_TONE[n.severity],
+        sticky: n.severity === 'critical',
+        onOpen: () => navigate(`/notifications/${n.id}`),
+      });
+    }
+    if (os && shown.length) void notifyOs(shown);
+  }
   $effect(() => {
-    setNewNotificationHandler($settings?.osNotifications ? notifyOs : null);
+    const os = !!$settings?.osNotifications;
+    setNewNotificationHandler((items) => onNewNotifications(items, os));
   });
 
   function go(item: NavItem): void {
@@ -283,8 +320,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {#each visibleNav as item (item.id)}
         <button
           class="sidebar-item"
-          class:active={currentId === item.id}
-          aria-current={currentId === item.id ? 'page' : undefined}
+          class:active={!onNotifications && currentId === item.id}
+          aria-current={!onNotifications && currentId === item.id ? 'page' : undefined}
           data-nav={item.id}
           onclick={() => go(item)}
           title={$t(item.labelKey)}
@@ -351,12 +388,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <Search size={14} />
         <Kbd>{isMac ? '⌘K' : $t('palette.shortcut')}</Kbd>
       </button>
-      {#if currentId === 'connections'}
-        <label class="search-box">
-          <Search class="search-icon" size={16} />
-          <input type="search" placeholder={$t('search.placeholder')} bind:value={$searchTerm} />
-        </label>
-      {/if}
       {#if $session}
         <NotificationBell />
         <span class="header-user">
@@ -371,7 +402,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   <main class="content-main">
     <section class="content-section">
-      {#if currentId === 'dashboard'}
+      {#if onNotifications}
+        <Notifications />
+      {:else if currentId === 'dashboard'}
         <Dashboard />
       {:else if currentId === 'connections'}
         <Connections />

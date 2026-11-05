@@ -16,7 +16,7 @@
 // nothing listens on the local port of the held tunnel's visitor.
 
 import net from 'node:net';
-import { adminTunnels, login, clickItemByName, jsClick } from '../lib/live.js';
+import { adminTunnels, login, connectByName, CONN_ROW, jsClick } from '../lib/live.js';
 
 const SERVER_URL = process.env.AH_SERVER_URL;
 const ENROLL_TOKEN = process.env.AH_ENROLL_TOKEN;
@@ -34,12 +34,12 @@ const FALLBACK_LAST = 23999;
 // back as { rejected }: webdriver takes a script result with an `error` key for a failed
 // command (logout.live.js).
 async function invoke(cmd, args = {}) {
-  const out = await browser.executeAsync(
-    (c, a, done) => {
-      window.__TAURI__.core
+  const out = await browser.execute(
+    async (c, a) => {
+      return window.__TAURI__.core
         .invoke(c, a)
-        .then((value) => done({ value }))
-        .catch((e) => done({ rejected: String((e && e.message) || e) }));
+        .then((value) => ({ value }))
+        .catch((e) => ({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,
@@ -118,12 +118,12 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
     await $('.login-card').waitForExist({ timeout: 20000 });
 
     // Device enrollment (setup) via the bridge with explicit self-signed trust.
-    const err = await browser.executeAsync(
-      (url, token, done) => {
-        window.__TAURI__.core
+    const err = await browser.execute(
+      async (url, token) => {
+        return window.__TAURI__.core
           .invoke('enroll_with_token', { serverUrl: url, token, allowSelfSigned: true })
-          .then(() => done(null))
-          .catch((e) => done(String((e && e.message) || e)));
+          .then(() => null)
+          .catch((e) => String((e && e.message) || e));
       },
       SERVER_URL,
       ENROLL_TOKEN,
@@ -167,16 +167,16 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
 
     const nav = await $$('.sidebar-nav .sidebar-item');
     await nav[1].click(); // connections
-    await $('.card').waitForExist({ timeout: 15000 });
+    await $(CONN_ROW).waitForExist({ timeout: 15000 });
 
     // SSH over tunnel (no prompt) and Web over tunnel (xdg-open shim).
-    await clickItemByName('.card', '.card-title', 'ssh-tunnel');
+    await connectByName('ssh-tunnel');
     await browser.pause(2000);
-    await clickItemByName('.card', '.card-title', 'web-tunnel');
+    await connectByName('web-tunnel');
     await browser.pause(2000);
 
     // RDP over tunnel — the desktop shows a password prompt first.
-    await clickItemByName('.card', '.card-title', 'rdp-tunnel');
+    await connectByName('rdp-tunnel');
     await $('.pw-panel').waitForExist({ timeout: 10000 });
     await $('.pw-panel input[type="password"]').setValue('e2e');
     await jsClick(await $('.pw-panel .btn.primary'));

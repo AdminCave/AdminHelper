@@ -472,3 +472,26 @@ describe('MonitoringTab template suggestions', () => {
     await waitFor(() => expect(mocks.fetchTemplateSuggestions).toHaveBeenCalledTimes(3));
   });
 });
+
+describe('MonitoringTab design anchors (R-1064)', () => {
+  it('shows the checks with a status dot and the data-action buttons', async () => {
+    mocks.fetchStatus.mockResolvedValueOnce([
+      {
+        id: 'c1',
+        name: 'ping',
+        serverId: 'srv-1',
+        checkType: 'ping',
+        enabled: true,
+        state: { status: 'critical' },
+      },
+      { id: 'c2', name: 'other', serverId: 'srv-2', checkType: 'ping', enabled: true },
+    ]);
+    const { container } = mount();
+    await waitFor(() => expect(container.querySelectorAll('.mon-row')).toHaveLength(1));
+    const row = container.querySelector('.mon-row') as HTMLElement;
+    expect(row.querySelector('.mon-name')?.textContent).toBe('ping');
+    expect(within(row).getByRole('img').getAttribute('aria-label')).toBe('critical');
+    expect(container.querySelector('[data-action="check-new"]')).not.toBeNull();
+    expect(container.querySelector('[data-action="tpl-assign"]')).not.toBeNull();
+  });
+});

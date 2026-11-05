@@ -38,22 +38,22 @@ export async function enrollIfAsked() {
   await $(".login-card").waitForExist({ timeout: 20000 });
   // Ask the app, not this module: `enrolled` only remembers THIS node process,
   // and an enrollment token is one-time — a second redeem of a spent one fails.
-  const already = await browser.executeAsync((done) => {
-    window.__TAURI__.core
+  const already = await browser.execute(async () => {
+    return window.__TAURI__.core
       .invoke("is_device_enrolled")
-      .then((v) => done(v === true))
-      .catch(() => done(false));
+      .then((v) => v === true)
+      .catch(() => false);
   });
   if (already) {
     enrolled = true;
     return;
   }
-  const err = await browser.executeAsync(
-    (url, tok, done) => {
-      window.__TAURI__.core
+  const err = await browser.execute(
+    async (url, tok) => {
+      return window.__TAURI__.core
         .invoke("enroll_with_token", { serverUrl: url, token: tok, allowSelfSigned: true })
-        .then(() => done(null))
-        .catch((e) => done(String((e && e.message) || e)));
+        .then(() => null)
+        .catch((e) => String((e && e.message) || e));
     },
     SERVER_URL,
     token,
@@ -280,8 +280,9 @@ export async function gotoInfrastructure() {
 // monitoring | provisioning), not a positional index a reordered tab list would
 // silently mismap (4.31).
 export async function openServerTab(tabId) {
-  await $(".srv-tab").waitForExist({ timeout: 15000 });
-  await $(`.srv-tab[data-tab="${tabId}"]`).click();
+  const tab = await $(`.srv-detail [role="tab"][data-tab="${tabId}"]`);
+  await tab.waitForExist({ timeout: 15000 });
+  await tab.click();
 }
 
 // JS .click() bypasses the WebDriver hit-test — the fixed status bar overlaps
@@ -303,11 +304,12 @@ export async function textContentOf(el) {
   return browser.execute((node) => node.textContent.trim(), el);
 }
 
-// Text of every element matching `selector`.
+// Text of every element matching `selector`, through textContentOf: the list names
+// (servers, connections, tunnels, checks, alert rules) are cut off with an ellipsis.
 export async function texts(selector) {
   const out = [];
   for (const el of await $$(selector)) {
-    out.push(await el.getText());
+    out.push(await textContentOf(el));
   }
   return out;
 }
@@ -322,7 +324,7 @@ export async function waitForRow(selector, name, present = true) {
   );
 }
 
-// Open the row whose name matches by clicking its edit button (`.btn.small`).
+// Open the row whose name matches by clicking its edit button, the row's only `.ui-btn`.
 export async function openRowByName(rowSel, nameSel, name) {
   // Re-query the list on each pass: a re-render between waitForRow and the click can
   // stale a row handle, so a single iteration throws "stale element reference" (4.97).
@@ -330,8 +332,8 @@ export async function openRowByName(rowSel, nameSel, name) {
     async () => {
       try {
         for (const row of await $$(rowSel)) {
-          if ((await row.$(nameSel).getText()) === name) {
-            await row.$(".btn.small").click();
+          if ((await textContentOf(await row.$(nameSel))) === name) {
+            await row.$(".ui-btn").click();
             return true;
           }
         }
@@ -343,6 +345,36 @@ export async function openRowByName(rowSel, nameSel, name) {
     {
       timeout: 15000,
       timeoutMsg: `row "${name}" not found/clickable (${rowSel})`,
+    },
+  );
+}
+
+// The rows of the connections page; a single click selects, a double click connects.
+export const CONN_ROW = '[data-testid="conn-row"]';
+
+// Connect the connection row whose name matches: a double click, dispatched in the page like
+// jsClick, so WebKitWebDriver's pointer actions play no part.
+export async function connectByName(name) {
+  await browser.waitUntil(
+    async () => {
+      try {
+        for (const row of await $$(CONN_ROW)) {
+          if ((await textContentOf(await row.$(".conn-name"))) === name) {
+            await browser.execute(
+              (node) => node.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+              row,
+            );
+            return true;
+          }
+        }
+      } catch {
+        return false;
+      }
+      return false;
+    },
+    {
+      timeout: 15000,
+      timeoutMsg: `connection "${name}" not found/connectable (${CONN_ROW})`,
     },
   );
 }

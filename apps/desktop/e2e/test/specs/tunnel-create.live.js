@@ -7,7 +7,7 @@
 // api_proxy → nginx gateway → server → Postgres. The orchestrator then re-checks
 // the tunnel via the server API.
 
-import { login, gotoInfrastructure, openServerTab } from '../lib/live.js';
+import { login, gotoInfrastructure, openServerTab, texts } from '../lib/live.js';
 
 const TUNNEL_NAME = 'e2e-ssh';
 
@@ -17,11 +17,11 @@ describe('AdminHelper desktop — create a tunnel against a live server', () => 
     await gotoInfrastructure();
     await openServerTab('tunnels');
     // The "add tunnel" button enables only once the seeded FRP config loads.
-    await $('.tun-toolbar .btn.primary').waitForEnabled({ timeout: 15000 });
+    await $('[data-action="tun-new"]').waitForEnabled({ timeout: 15000 });
   });
 
   it('creates a tunnel via the modal and sees it in the list', async () => {
-    await $('.tun-toolbar .btn.primary').click();
+    await $('[data-action="tun-new"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
 
     // The lone seeded FRP config is preselected; fill name + local port. Select the
@@ -38,10 +38,7 @@ describe('AdminHelper desktop — create a tunnel against a live server', () => 
     // The modal closes and TunnelsTab reloads from the server.
     await browser.waitUntil(
       async () => {
-        for (const n of await $$('.tun-row .tun-name')) {
-          if ((await n.getText()) === TUNNEL_NAME) return true;
-        }
-        return false;
+        return (await texts('.tun-row .tun-name')).includes(TUNNEL_NAME);
       },
       { timeout: 15000, timeoutMsg: 'the created tunnel never appeared in the list' },
     );

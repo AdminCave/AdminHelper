@@ -79,7 +79,10 @@ describe('Certificates page', () => {
       ['web-01', '3', 'Kritisch'],
       ['srv-2', 'abgelaufen', 'Kritisch'],
     ]);
-    expect(section(container, 'agents').querySelector('.light.critical')).not.toBeNull();
+    expect(section(container, 'agents').querySelector('[data-status="critical"]')).not.toBeNull();
+    expect(
+      section(container, 'infrastructure').querySelector('[data-status="warning"]'),
+    ).not.toBeNull();
   });
 
   it('names the limits of the traffic light, the root with its own', async () => {

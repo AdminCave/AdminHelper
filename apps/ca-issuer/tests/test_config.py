@@ -132,3 +132,47 @@ def test_next_root_passphrase_reads_its_own_variables(monkeypatch, tmp_path):
     monkeypatch.setenv("CA_NEXT_ROOT_PASSPHRASE", "")
     assert config.next_root_passphrase() is None
     assert config.root_passphrase() == b"root-secret"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "frps.adminhelper.invalid",
+        "FRPS.AdminHelper.Invalid",
+        " frps.adminhelper.invalid. ",
+        "*.adminhelper.invalid",
+        "*.AdminHelper.invalid.",
+    ],
+)
+def test_gateway_extra_sans_never_cover_the_frps_tls_name(monkeypatch, caplog, extra):
+    # R-1112: only the frps leaf carries the name frpc asks for.
+    monkeypatch.setenv("EXTRA_SANS", f"gw.example,{extra},203.0.113.7")
+    with caplog.at_level("WARNING", logger="ca-issuer"):
+        assert config.gateway_extra_sans() == "gw.example,203.0.113.7"
+    assert "frps.adminhelper.invalid" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "extra", ["*.invalid", "x.frps.adminhelper.invalid", "gw.adminhelper.invalid"]
+)
+def test_gateway_extra_sans_keep_names_that_do_not_cover_the_frps_tls_name(
+    monkeypatch, caplog, extra
+):
+    monkeypatch.setenv("EXTRA_SANS", f"gw.example,{extra}")
+    with caplog.at_level("WARNING", logger="ca-issuer"):
+        assert config.gateway_extra_sans() == f"gw.example,{extra}"
+    assert caplog.text == ""
+
+
+@pytest.mark.parametrize(
+    ("own", "gateway", "expected"),
+    [
+        ("frp.internal", "gw.example", "frp.internal,frps.adminhelper.invalid"),
+        ("", "gw.example", "gw.example,frps.adminhelper.invalid"),
+        ("", "", "frps.adminhelper.invalid"),
+    ],
+)
+def test_the_frps_leaf_sans_carry_the_frps_tls_name(monkeypatch, own, gateway, expected):
+    monkeypatch.setenv("CA_FRPS_EXTRA_SANS", own)
+    monkeypatch.setenv("EXTRA_SANS", gateway)
+    assert config.frps_leaf_sans() == expected

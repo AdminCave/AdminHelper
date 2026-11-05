@@ -11,7 +11,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { frpApi } from '$lib/api/frp';
   import { session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
+  import { Pencil, Plus } from '@lucide/svelte';
   import TunnelModal from '../TunnelModal.svelte';
+  import Button from '../../ui/Button.svelte';
+  import Panel from '../../ui/Panel.svelte';
+  import Pill from '../../ui/Pill.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -54,16 +58,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
   onMount(load);
 </script>
 
-<div class="tun-tab">
+{#snippet toolbar()}
+  <div class="tun-toolbar">
+    <Button
+      size="sm"
+      iconLeft={Plus}
+      data-action="tun-new"
+      onclick={openNew}
+      disabled={configs.length === 0}>{$t('infra.tun.add')}</Button
+    >
+  </div>
+{/snippet}
+
+<Panel title={$t('infra.tab.tunnels')} action={toolbar} pad={6}>
   {#if !loading && configs.length === 0}
     <p class="muted">{$t('infra.tun.noConfig')}</p>
   {/if}
-
-  <div class="tun-toolbar">
-    <button class="btn primary small" onclick={openNew} disabled={configs.length === 0}>
-      + {$t('infra.tun.add')}
-    </button>
-  </div>
 
   {#if loading}
     <p class="muted">{$t('loading.generic')}</p>
@@ -80,14 +90,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
             </div>
           </div>
           {#if !x.enabled}
-            <span class="tun-badge">{$t('infra.tun.disabled')}</span>
+            <Pill tone="warn">{$t('infra.tun.disabled')}</Pill>
           {/if}
-          <button class="btn small" onclick={() => openEdit(x)}>{$t('action.edit')}</button>
+          <Button size="sm" variant="ghost" iconLeft={Pencil} onclick={() => openEdit(x)}
+            >{$t('action.edit')}</Button
+          >
         </div>
       {/each}
     </div>
   {/if}
-</div>
+</Panel>
 
 <TunnelModal
   open={modalOpen}
@@ -99,49 +111,43 @@ SPDX-License-Identifier: GPL-3.0-or-later
 />
 
 <style>
-  .tun-tab {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-  }
   .tun-toolbar {
     display: flex;
-    justify-content: flex-end;
   }
   .muted {
+    margin: 0;
+    padding: 10px;
     color: var(--text-muted);
     font-size: var(--text-sm);
   }
   .tun-list {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1);
   }
   .tun-row {
     display: flex;
     align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    gap: 12px;
+    padding: 12px 10px;
+  }
+  .tun-row + .tun-row {
+    border-top: 1px solid var(--border);
   }
   .tun-info {
     flex: 1;
     min-width: 0;
   }
   .tun-name {
+    overflow: hidden;
+    color: var(--text-strong);
     font-size: var(--text-sm);
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tun-meta {
-    font-size: var(--text-xs);
     color: var(--text-muted);
-  }
-  .tun-badge {
-    font-size: var(--text-xs);
-    color: var(--warning);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 0 var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
   }
 </style>

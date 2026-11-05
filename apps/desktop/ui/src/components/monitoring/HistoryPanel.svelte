@@ -43,7 +43,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   const PERIODS = ['1h', '24h', '7d', '30d'] as const;
   type Period = (typeof PERIODS)[number];
-  type Tab = 'cpu' | 'disk' | 'latency' | 'load';
+  type Tab = 'cpu' | 'disk' | 'latency' | 'load' | 'net';
   const COLORS = ['#38bdf8', '#22c55e', '#f97316', '#a855f7', '#ec4899', '#14b8a6'];
   // The measured value of each latency check type; the check duration is the fallback.
   const LATENCY_NAMES = [
@@ -183,6 +183,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
         },
       ];
     }
+    if (tabName === 'net') {
+      return [
+        {
+          key: 'netIn',
+          label: $t('monitoring.history.netIn'),
+          color: COLORS[0],
+          data: values(s.netIn),
+          area: true,
+        },
+        {
+          key: 'netOut',
+          label: $t('monitoring.history.netOut'),
+          color: COLORS[1],
+          data: values(s.netOut),
+          area: true,
+          neg: true,
+        },
+      ];
+    }
     return [];
   }
 
@@ -239,7 +258,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return Array.from({ length: n }, (_, i) => (history?.start ?? 0) + i * (history?.step ?? 0));
   });
 
-  const unit = $derived<ChartUnit>(tab === 'latency' ? 'ms' : tab === 'load' ? '' : '%');
+  const unit = $derived<ChartUnit>(
+    tab === 'latency' ? 'ms' : tab === 'load' ? '' : tab === 'net' ? 'Mbit/s' : '%',
+  );
   const thresholdKey = $derived(
     tab === 'cpu' ? 'cpu' : tab === 'disk' ? 'disk' : tab === 'load' ? 'load' : '',
   );
@@ -260,8 +281,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       },
     ];
   });
+  // Check events say nothing about traffic; the network tab draws none.
   const events = $derived(
-    (history?.events ?? []).map((e) => ({ at: e.at, status: e.status, label: e.checkName })),
+    (tab === 'net' ? [] : (history?.events ?? [])).map((e) => ({
+      at: e.at,
+      status: e.status,
+      label: e.checkName,
+    })),
   );
   const bands = $derived(
     (history?.maintenance ?? []).map((m) => ({
@@ -317,10 +343,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  // Null while a history loads: a period switch must not throw the user off the tab.
+  const hasNet = $derived(
+    history ? hasData(history.series.netIn) || hasData(history.series.netOut) : null,
+  );
+  $effect(() => {
+    if (tab === 'net' && hasNet === false) setTab('cpu');
+  });
+
   const tabs = $derived.by((): Tab[] => {
     const out: Tab[] = ['cpu', 'disk'];
     if (latencyChecks.length > 0) out.push('latency');
     out.push('load');
+    if (hasNet || (hasNet === null && tab === 'net')) out.push('net');
     return out;
   });
 </script>
@@ -402,6 +437,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {times}
         {unit}
         yMax={unit === '%' ? 100 : undefined}
+        mirror={tab === 'net'}
         {thresholds}
         {events}
         {bands}

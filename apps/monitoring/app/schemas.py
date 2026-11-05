@@ -356,6 +356,8 @@ class HistorySeriesOut(BaseModel):
     ram: HistoryPoints
     swap: HistoryPoints
     loadPerCpu: HistoryPoints
+    netIn: HistoryPoints
+    netOut: HistoryPoints
     disks: dict[str, HistoryPoints]
 
 

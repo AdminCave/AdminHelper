@@ -24,12 +24,12 @@ const REENROLL_TOKEN = process.env.AH_SETTINGS_REENROLL_TOKEN;
 // A Tauri command through the bridge; resolves to { value } or { rejected }. Not { error }:
 // webdriver takes a script result with an `error` key for a failed command (logout.live.js).
 function invoke(cmd, args = {}) {
-  return browser.executeAsync(
-    (c, a, done) => {
-      window.__TAURI__.core
+  return browser.execute(
+    async (c, a) => {
+      return window.__TAURI__.core
         .invoke(c, a)
-        .then((value) => done({ value }))
-        .catch((e) => done({ rejected: String((e && e.message) || e) }));
+        .then((value) => ({ value }))
+        .catch((e) => ({ rejected: String((e && e.message) || e) }));
     },
     cmd,
     args,
@@ -108,12 +108,12 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
     await $('.login-card').waitForExist({ timeout: 20000 });
     // Setup, not the flow under test: clear whatever identity the keyring holds
     // through the bridge: the settings need a session.
-    const err = await browser.executeAsync(
-      (url, done) => {
-        window.__TAURI__.core
+    const err = await browser.execute(
+      async (url) => {
+        return window.__TAURI__.core
           .invoke('reset_device_identity', { serverUrl: url })
-          .then(() => done(null))
-          .catch((e) => done(String((e && e.message) || e)));
+          .then(() => null)
+          .catch((e) => String((e && e.message) || e));
       },
       SERVER_URL,
     );
