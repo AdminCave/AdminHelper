@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-3 · Review: pro Task
 Spec: docs/features/kern-verbindungen-3.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (zwei Alembic-Revisionen, neue Endpunkte) und die Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -115,8 +115,10 @@ Review: approve (.ah-out/review/kern-verbindungen-3/T12.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts -- src/lib/bridge/types.parity.test.ts
 Doku: keine (nur Typnamen und Tests)
 
-### T13 — Server: Schlüssel-Matrix und Antwortform für Sitzungen (R-1068)  [ ]
+### T13 — Server: Schlüssel-Matrix und Antwortform für Sitzungen (R-1068)  [x]
 Komponente: server · Dateien: apps/server/tests/test_api_key_server_binding.py, apps/server/tests/test_response_shapes.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @26fcc86e 2026-11-05T11:52:08+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T13.verdict.json)
 Änderung: Nachtrag aus der PR-CI (#402, Server-Jobs): die Matrix der Schlüssel-Routen nimmt `GET …/sessions` und `POST …/sessions/{session_id}/end` auf (gebundener Schlüssel nur für Verbindungen seines Servers); `test_response_shapes` erwartet für `touch` `ConnectionTouchOut` und `to_dict()` plus `sessionId` (gewollte Änderung aus T5).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py -- tests/test_response_shapes.py
 Doku: keine (nur Tests)

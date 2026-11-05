@@ -14,8 +14,9 @@ so a new key route has to state here what a bound key may do on it.
 import pytest
 
 from app.core.auth import hash_api_key
+from app.core.time import utcnow_naive
 from app.modules.api_keys.models import ApiKey
-from app.modules.connections.models import Connection
+from app.modules.connections.models import Connection, ConnectionSession
 from app.modules.servers.models import Server
 
 from .test_route_auth_gate import _api_methods, _collect_api_routes, _dependency_qualnames
@@ -39,6 +40,10 @@ def _seed(db) -> None:
     db.flush()  # the servers first: keys and connections reference them by foreign key only
     for cid, sid in (("c-a", "srv-a"), ("c-b", "srv-b"), ("c-null", None)):
         db.add(Connection(id=cid, name=f"conn-{cid}", kind="ssh", host="h", port=22, server_id=sid))
+    # Sessions without a user: one on the bound server's connection, one on another.
+    started = utcnow_naive()
+    for sess, cid in (("s-a", "c-a"), ("s-b", "c-b")):
+        db.add(ConnectionSession(id=sess, connection_id=cid, user_id=None, started_at=started))
     for name, (permission, sid) in _KEYS.items():
         db.add(
             ApiKey(
@@ -69,6 +74,8 @@ def _new(server_id="omit") -> dict:
 
 _LIST = ("GET", "/api/connections")
 _TOUCH = ("POST", "/api/connections/{conn_id}/touch")
+_SESSIONS = ("GET", "/api/connections/{conn_id}/sessions")
+_END = ("POST", "/api/connections/{conn_id}/sessions/{session_id}/end")
 _CREATE = ("POST", "/api/connections")
 _UPDATE = ("PUT", "/api/connections/{conn_id}")
 _FRP_CONFIG = ("GET", "/api/frp/provision/{server_id}/config")
@@ -87,6 +94,19 @@ MATRIX = [
     (_TOUCH, "/api/connections/c-null/touch", "bound_read", None, 404),
     (_TOUCH, "/api/connections/c-null/touch", "bound_rw", None, 404),
     (_TOUCH, "/api/connections/c-b/touch", "global_read", None, 200),
+    # The session history follows the same scope as touch.
+    (_SESSIONS, "/api/connections/c-a/sessions", "bound_read", None, 200),
+    (_SESSIONS, "/api/connections/c-b/sessions", "bound_read", None, 404),
+    (_SESSIONS, "/api/connections/c-b/sessions", "bound_rw", None, 404),
+    (_SESSIONS, "/api/connections/c-null/sessions", "bound_read", None, 404),
+    (_SESSIONS, "/api/connections/c-b/sessions", "global_read", None, 200),
+    # A key ends no session, not even one on its own server: only the user who began a
+    # session ends it, and a key carries no user.
+    (_END, "/api/connections/c-a/sessions/s-a/end", "bound_read", None, 404),
+    (_END, "/api/connections/c-a/sessions/s-a/end", "bound_rw", None, 404),
+    (_END, "/api/connections/c-b/sessions/s-b/end", "bound_read", None, 404),
+    (_END, "/api/connections/c-b/sessions/s-b/end", "global_read", None, 404),
+    (_END, "/api/connections/c-b/sessions/s-b/end", "global_rw", None, 404),
     # Writing needs a read_write key.
     (_CREATE, "/api/connections", "bound_read", _new("srv-a"), 403),
     (_CREATE, "/api/connections", "global_read", _new(None), 403),
