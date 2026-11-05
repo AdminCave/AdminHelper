@@ -4,6 +4,7 @@
 
 """The server jobs of ci.yml run in shards; the required checks keep their names (R-0950)."""
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -19,8 +20,17 @@ def _jobs() -> dict:
     return yaml.safe_load(_CI.read_text(encoding="utf-8"))["jobs"]
 
 
+def _step(job: dict, name: str) -> dict:
+    (step,) = (step for step in job["steps"] if step.get("name") == name)
+    return step
+
+
 def _pytest_step(job: dict) -> dict:
-    (step,) = (step for step in job["steps"] if step.get("name") == "Run pytest")
+    return _step(job, "Run pytest")
+
+
+def _uses(job: dict, action: str) -> dict:
+    (step,) = (step for step in job["steps"] if step.get("uses", "").startswith(f"{action}@"))
     return step
 
 
@@ -50,8 +60,10 @@ def test_the_result_jobs_carry_the_names_of_the_legs():
         assert jobs[gate]["needs"] == shards
         # Without always() a red shard skips the gate, and a skipped required check passes.
         assert jobs[gate]["if"] == "always()"
-        (step,) = jobs[gate]["steps"]
+        step = _step(jobs[gate], "Every shard passed")
         assert step["env"]["RESULT"] == f"${{{{ needs.{shards}.result }}}}"
+    # A red leg must not cancel the other one (R-1020).
+    assert result["strategy"]["fail-fast"] is False
 
 
 @pytest.mark.parametrize(
@@ -60,12 +72,81 @@ def test_the_result_jobs_carry_the_names_of_the_legs():
 )
 def test_a_result_job_is_green_only_when_every_shard_passed(tmp_path, result, passes):
     for gate in _SHARDED.values():
-        (step,) = _jobs()[gate]["steps"]
+        step = _step(_jobs()[gate], "Every shard passed")
         script = tmp_path / "step.sh"
         script.write_text(step["run"], encoding="utf-8")
         run = subprocess.run(
             ["bash", "-e", str(script)],
             env={"PATH": "/usr/bin:/bin", "RESULT": result},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert (run.returncode == 0) is passes, (gate, run.stdout, run.stderr)
+
+
+# shard job -> the artifact name its result job downloads, with the leg's matrix in it
+_MANIFEST_NAMES = {
+    "server": (
+        "shard-manifest-server-py${{ matrix.python-version }}-${{ matrix.shard }}",
+        "shard-manifest-server-py${{ matrix.python-version }}-*",
+    ),
+    "python-lock-server": ("shard-manifest-lock-${{ matrix.shard }}", "shard-manifest-lock-*"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_SHARDED))
+def test_every_shard_uploads_its_manifest_and_its_result_job_compares_them(name):
+    jobs = _jobs()
+    job, gate = jobs[name], jobs[_SHARDED[name]]
+    upload_name, pattern = _MANIFEST_NAMES[name]
+    assert '--shard-manifest "$RUNNER_TEMP/shard-manifest.json"' in _pytest_step(job)["run"]
+    upload = _uses(job, "actions/upload-artifact")
+    # Also after a red pytest: the comparison is what names a shard that collected less.
+    assert upload["if"] == "${{ !cancelled() }}"
+    assert upload["with"]["name"] == upload_name
+    assert upload["with"]["path"] == "${{ runner.temp }}/shard-manifest.json"
+    assert upload["with"]["if-no-files-found"] == "error"
+    download = _uses(gate, "actions/download-artifact")
+    assert download["with"]["pattern"] == pattern
+    compare = _step(gate, "The shards collected the same tests")
+    assert compare["env"]["MANIFESTS"] == download["with"]["path"]
+    assert int(compare["env"]["SHARDS"]) == len(job["strategy"]["matrix"]["shard"])
+    names = [step.get("name") or step["uses"].split("@")[0] for step in gate["steps"]]
+    assert names.index("actions/download-artifact") < names.index(compare["name"])
+
+
+def _manifest(shard: str, count: int = 10, sha256: str = "a" * 64) -> dict:
+    return {"shard": shard, "count": count, "sha256": sha256}
+
+
+@pytest.mark.parametrize(
+    ("manifests", "passes"),
+    [
+        ([_manifest("1/2"), _manifest("2/2")], True),
+        ([_manifest("1/2"), _manifest("2/2", sha256="b" * 64)], False),
+        ([_manifest("1/2"), _manifest("2/2", count=9)], False),
+        ([_manifest("1/2")], False),
+        ([], False),
+        ([_manifest("1/2"), _manifest("1/2")], False),
+        ([_manifest("1/2"), _manifest("2/2"), _manifest("2/2")], False),
+    ],
+    ids=["same", "other-hash", "other-count", "one-missing", "none", "twice-1", "extra"],
+)
+def test_the_comparison_is_green_only_for_one_equal_manifest_a_shard(tmp_path, manifests, passes):
+    root = tmp_path / "manifests"
+    for i, manifest in enumerate(manifests):
+        # download-artifact puts each artifact in a directory of its name.
+        (root / f"shard-manifest-{i}").mkdir(parents=True)
+        (root / f"shard-manifest-{i}" / "shard-manifest.json").write_text(json.dumps(manifest))
+    root.mkdir(exist_ok=True)
+    for gate in _SHARDED.values():
+        step = _step(_jobs()[gate], "The shards collected the same tests")
+        script = tmp_path / "step.sh"
+        script.write_text(step["run"], encoding="utf-8")
+        run = subprocess.run(
+            ["bash", "-e", str(script)],
+            env={"PATH": "/usr/bin:/bin", "MANIFESTS": str(root), "SHARDS": step["env"]["SHARDS"]},
             capture_output=True,
             text=True,
             timeout=30,

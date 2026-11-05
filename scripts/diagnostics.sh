@@ -214,15 +214,16 @@ ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
 # tok_exact reads the file as compose does (compose-go dotenv: parse,
 # getStatementStart, locateKeyName, extractVarValue): a quoted value runs on to its
 # closing quote over any number of lines, whatever key it belongs to, and behind it
-# the next statement begins. compose refuses a file with a key it cannot read; such a
-# line is passed over here and the next one read. tok_alone then reads every line
-# start and the place behind every quote as if it began a line, statements one behind
-# the other while each quoted value closes on its line: the text may be a value of
-# another key that only looks like an assignment, or a file compose refuses, and a
-# secret there must still go. A quoted value of a wanted key runs on to its closing
-# quote; with cmt also behind any "#" among the whitespace in front of a statement,
-# and there over the commented-out lines that follow, to its closing quote or to the
-# first line that is no comment.
+# the next statement begins. compose refuses a file with a key it cannot read (it sets
+# tbad) and reads the value of an empty key like any other, then drops it; here a bad
+# key's line is passed over and the next one read, an empty key read like any other.
+# tok_alone then reads every line start and the place behind every quote as if it
+# began a line, statements one behind the other while each quoted value closes on its
+# line: the text may be a value of another key that only looks like an
+# assignment, or a file compose refuses, and a secret there must still go.
+# A quoted value of a wanted key runs on to its closing quote; with cmt also behind any
+# "#" among the whitespace in front of a statement, and there over the commented-out
+# lines that follow, to its closing quote or to the first line that is no comment.
 ENV_TOK='
     function tok_init(sp, sep, cmt) {
         tsp = "^(" sp ")*"
@@ -265,7 +266,10 @@ ENV_TOK='
             c = substr(S, p + RLENGTH, 1)
             p += RLENGTH + 1
             sub("(" hs ")+$", "", k)
-            if (k == "" || index(k, " ") || (c != "=" && c != ":" && c != "\n")) { p = tok_eol(ks) + 1; continue }
+            if (index(k, " ") || (c != "=" && c != ":" && c != "\n")) {
+                tbad = 1
+                p = tok_eol(ks) + 1; continue
+            }
             if (c == "\n") continue
             match(substr(S, p), "^(" hs ")*")
             p += RLENGTH

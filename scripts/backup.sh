@@ -123,15 +123,16 @@ ENV_SEP="([[:space:]]|"$'\xc2[\x85\xa0])'
 # tok_exact reads the file as compose does (compose-go dotenv: parse,
 # getStatementStart, locateKeyName, extractVarValue): a quoted value runs on to its
 # closing quote over any number of lines, whatever key it belongs to, and behind it
-# the next statement begins. compose refuses a file with a key it cannot read; such a
-# line is passed over here and the next one read. tok_alone then reads every line
-# start and the place behind every quote as if it began a line, statements one behind
-# the other while each quoted value closes on its line: the text may be a value of
-# another key that only looks like an assignment, or a file compose refuses, and a
-# secret there must still go. A quoted value of a wanted key runs on to its closing
-# quote; with cmt also behind any "#" among the whitespace in front of a statement,
-# and there over the commented-out lines that follow, to its closing quote or to the
-# first line that is no comment.
+# the next statement begins. compose refuses a file with a key it cannot read (it sets
+# tbad) and reads the value of an empty key like any other, then drops it; here a bad
+# key's line is passed over and the next one read, an empty key read like any other.
+# tok_alone then reads every line start and the place behind every quote as if it
+# began a line, statements one behind the other while each quoted value closes on its
+# line: the text may be a value of another key that only looks like an
+# assignment, or a file compose refuses, and a secret there must still go.
+# A quoted value of a wanted key runs on to its closing quote; with cmt also behind any
+# "#" among the whitespace in front of a statement, and there over the commented-out
+# lines that follow, to its closing quote or to the first line that is no comment.
 ENV_TOK='
     function tok_init(sp, sep, cmt) {
         tsp = "^(" sp ")*"
@@ -174,7 +175,10 @@ ENV_TOK='
             c = substr(S, p + RLENGTH, 1)
             p += RLENGTH + 1
             sub("(" hs ")+$", "", k)
-            if (k == "" || index(k, " ") || (c != "=" && c != ":" && c != "\n")) { p = tok_eol(ks) + 1; continue }
+            if (index(k, " ") || (c != "=" && c != ":" && c != "\n")) {
+                tbad = 1
+                p = tok_eol(ks) + 1; continue
+            }
             if (c == "\n") continue
             match(substr(S, p), "^(" hs ")*")
             p += RLENGTH
@@ -241,19 +245,20 @@ ENV_TOK='
 
 # --- Secrets (passphrase stripped) -----------------------------------------
 if [ -f .env ]; then
-    # Drops every statement of CA_ROOT_PASSPHRASE that ENV_TOK finds (as compose reads
-    # the file, and every line start and the place behind every quote read alone), the
+    # Drops every statement of CA_ROOT_PASSPHRASE that ENV_TOK finds (as compose reads the
+    # file, and every line start and the place behind every quote read alone), the
     # commented-out ones too: in a comment from its '#' to the end of the line its value
     # ends on. A changed line keeps the bytes outside those statements without the
     # whitespace at its end; a commented-out line or one left with whitespace only goes.
-    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. A statement that
-    # starts inside the closed quoted value of another key (as compose reads the file:
-    # the first tok_exact run notes those values) keeps that closing quote and drops
-    # the rest: cut with it, the value would run on over the lines below. LC_ALL=C: awk reads
-    # bytes, so a NUL byte or a byte the caller's locale cannot decode passes unchanged
-    # (grep took such a file for binary and left lines out). Every other line is printed
-    # as is, the last with a newline; any awk error (a write error too) aborts the
-    # backup.
+    # CA_ROOT_PASSPHRASE_OLD and the like are other keys and stay. A statement that starts
+    # inside the closed quoted value of another key (as compose reads the file: the first
+    # tok_exact run notes those values) keeps that closing quote and drops the rest: cut
+    # with it, the value would run on over the lines below. In a file compose refuses
+    # (tbad) those values may be misread, the quote one of the passphrase: there the
+    # statement goes whole. LC_ALL=C: awk reads bytes, so a NUL byte or a byte the
+    # caller's locale cannot decode passes unchanged (grep took such a file for binary and
+    # left lines out). Every other line is printed as is, the last with a newline; any awk
+    # error (a write error too) aborts the backup.
     # shellcheck disable=SC2016 # an awk program, $0 is awk's
     LC_ALL=C awk -v sp="$ENV_SP" -v sep="$ENV_SEP" "$ENV_TOK"'
         BEGIN { tok_init(sp, sep, 1) }
@@ -273,7 +278,7 @@ if [ -f .env ]; then
             N = length(S)
             ex = 1; tok_exact(); ex = 0
             tok_run()
-            n0 = n
+            n0 = tbad ? 0 : n
             for (j = 1; j <= n0; j++)
                 for (i = 1; i <= m; i++)
                     if (QS[i] < A[j] && A[j] < QE[i] && B[j] >= QE[i]) {
