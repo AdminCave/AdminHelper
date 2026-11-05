@@ -5,8 +5,6 @@
 //! Detects a session whose picture stopped (docs/features/arch-rdp-backend.md, "Watchdog").
 //! A pure state machine: the session feeds it the events and the time and acts on its verdict.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "the session in T5 uses it"))]
-
 use std::time::{Duration, Instant};
 
 /// How long a picture may take: the first one after a login, and the one that answers an input.
@@ -51,6 +49,11 @@ impl Watchdog {
         if self.awaiting.is_none() {
             self.awaiting = Some((Awaiting::Answer, now));
         }
+    }
+
+    /// IronRDP reconnects by itself: nothing to wait for until the login of the new connection.
+    pub(crate) fn reconnecting(&mut self) {
+        self.awaiting = None;
     }
 
     pub(crate) fn frame(&mut self) {
@@ -111,6 +114,16 @@ mod tests {
         assert_eq!(watchdog.tick(t0 + STALL + MS), Verdict::Reconnect);
         // The reconnect is under way: nothing to wait for until its login.
         assert_eq!(watchdog.tick(t0 + STALL * 3), Verdict::Ok);
+    }
+
+    #[test]
+    fn watchdog_waits_for_the_login_of_an_automatic_reconnect() {
+        let t0 = Instant::now();
+        let mut watchdog = logged_in(t0);
+        watchdog.reconnecting();
+        assert_eq!(watchdog.tick(t0 + STALL * 3), Verdict::Ok);
+        watchdog.login_complete(t0 + STALL * 3);
+        assert_eq!(watchdog.tick(t0 + STALL * 4 + MS), Verdict::Reconnect);
     }
 
     #[test]

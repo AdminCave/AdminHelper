@@ -18,8 +18,6 @@
 //! the target of its redirection without asking it, and IronRDP's rustls configuration writes the
 //! TLS session keys to the file `SSLKEYLOGFILE` names, if that variable is set.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "the session in T5 uses it"))]
-
 use std::sync::{Arc, Mutex};
 
 use ironrdp_client::config::Destination;
@@ -194,7 +192,7 @@ pub(crate) fn validation_callback(
             }
             Err(None) => {
                 log::warn!(
-                    "refused the RDP certificate of {endpoint}: the session was started for \
+                    "refused the RDP certificate of {endpoint:?}: the session was started for \
                      another target"
                 );
                 false

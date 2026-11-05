@@ -38,7 +38,7 @@ fn pin_mismatch_code(source: Option<&(dyn std::error::Error + 'static)>) -> Opti
 }
 
 /// The first answer of `f` for a rustls error in the chain from `source` on.
-fn find_rustls<T>(
+pub(crate) fn find_rustls<T>(
     mut source: Option<&(dyn std::error::Error + 'static)>,
     f: &dyn Fn(&rustls::Error) -> Option<T>,
 ) -> Option<T> {

@@ -11,8 +11,6 @@
 //! `{"t":"ack"}`; whatever changes in between is merged into one enclosing rectangle, so no
 //! backlog builds up behind a slow webview.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "the session in T5 uses it"))]
-
 use std::io;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
@@ -23,6 +21,7 @@ use ironrdp_client::rdp::DesktopUpdate;
 use serde::Deserialize;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Notify};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
@@ -30,6 +29,9 @@ use tokio_tungstenite::{accept_async_with_config, WebSocketStream};
 
 const TOKEN_BYTES: usize = 32;
 const LOGIN_DEADLINE: Duration = Duration::from_secs(5);
+/// Logins that run side by side. Each ends at the deadline, so a local process that opens
+/// connections and stays silent holds back the webview's login by one deadline at most.
+const MAX_PENDING_LOGINS: usize = 8;
 /// The client sends the token and small JSON messages; anything larger is not ours.
 const MAX_CLIENT_MESSAGE: usize = 4096;
 const FRAME_VERSION: u16 = 1;
@@ -109,15 +111,26 @@ impl FrameServer {
     /// client closes or goes away. Must run inside a tokio runtime.
     pub(crate) async fn serve(self, frames: Frames, input: mpsc::Sender<Input>) -> io::Result<()> {
         let listener = TcpListener::from_std(self.listener)?;
+        // A wrong token, or none in time, closes only that connection, and logins do not wait for
+        // each other: a local process that connects first must not lock the webview out.
+        let mut pending = JoinSet::new();
         let ws = loop {
-            let (tcp, _) = listener.accept().await?;
-            // A wrong token, or none in time, closes only this connection: a local process that
-            // connects first must not lock the webview out.
-            if let Ok(Some(ws)) = timeout(self.login_deadline, login(tcp, &self.token)).await {
-                break ws;
+            tokio::select! {
+                accepted = listener.accept(), if pending.len() < MAX_PENDING_LOGINS => {
+                    let (tcp, _) = accepted?;
+                    let (token, deadline) = (self.token.clone(), self.login_deadline);
+                    pending.spawn(async move { timeout(deadline, login(tcp, &token)).await });
+                }
+                Some(done) = pending.join_next() => {
+                    if let Ok(Ok(Some(ws))) = done {
+                        break ws;
+                    }
+                }
             }
         };
-        // One client per session: a second one finds the port closed.
+        // One client per session: the other logins end here, and a later client finds the port
+        // closed.
+        drop(pending);
         drop(listener);
         stream(ws, frames, input).await;
         Ok(())
@@ -508,6 +521,16 @@ mod tests {
         let mut silent = connect(running.port).await;
         assert_closed(&mut silent).await;
 
+        let mut ws = logged_in(&running).await;
+        assert_eq!(header(&next_frame(&mut ws).await), [1, 0, 0, 4, 3, 4, 3]);
+    }
+
+    #[tokio::test]
+    async fn frame_ws_a_silent_client_does_not_hold_back_the_login() {
+        let running = start(Duration::from_secs(60));
+        running.frames.apply(update(4, 3, (0, 0, 3, 2), 0x00102030));
+
+        let _silent = connect(running.port).await;
         let mut ws = logged_in(&running).await;
         assert_eq!(header(&next_frame(&mut ws).await), [1, 0, 0, 4, 3, 4, 3]);
     }
