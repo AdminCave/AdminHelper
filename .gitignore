@@ -11,7 +11,9 @@
 /src-tauri/gen/
 /apps/desktop/src-tauri/gen/
 /src-tauri/.cargo/
-/apps/desktop/src-tauri/.cargo/
+/apps/desktop/src-tauri/.cargo/*
+# cargo audit (audit.yml) reads its exceptions from here
+!/apps/desktop/src-tauri/.cargo/audit.toml
 /src-tauri/.tauri/
 /apps/desktop/src-tauri/.tauri/
 

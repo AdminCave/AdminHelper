@@ -20,6 +20,7 @@ mod password;
 mod port_registry;
 mod probe;
 mod proxy;
+mod rdp_embedded;
 mod session;
 mod storage;
 mod sync;
@@ -128,6 +129,7 @@ fn main() {
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
         .manage(session::SessionState::default())
+        .manage(rdp_embedded::RdpSessions::default())
         .setup(move |app| {
             let base = storage::app_data_dir(app.handle()).map_err(|e| e.to_string())?;
             // The migration, the workspace's lock, then the workspace: nothing before this
@@ -257,7 +259,10 @@ fn main() {
             save_workspace,
             delete_workspace,
             open_workspace,
-            open_launcher
+            open_launcher,
+            rdp_embedded::tofu::rdp_trust_certificate,
+            rdp_embedded::rdp_session_start,
+            rdp_embedded::rdp_session_stop
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
