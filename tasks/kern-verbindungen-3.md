@@ -99,8 +99,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
 Doku: diese Task
 
-### T11 — Desktop: Windows-Test von write_rdp_file mit Optionen-Argument (R-1066)  [ ]
+### T11 — Desktop: Windows-Test von write_rdp_file mit Optionen-Argument (R-1066)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @7ce6a96b 2026-11-05T11:49:55+01:00
+Review: approve (.ah-out/review/kern-verbindungen-3/T11.verdict.json)
 Änderung: Nachtrag aus der PR-CI (#402, Job „Desktop-Backend (cargo test, Windows)“): der Windows-Test `write_rdp_file_reaps_prior_leftovers` ruft `write_rdp_file` ohne das in T3 ergänzte neunte Argument `own`; er übergibt `None`. Lokal nicht baubar (kein Windows-Target), den Beweis trägt der CI-Job.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp
 Doku: keine (nur Test)

@@ -1489,6 +1489,7 @@ mod rdp_file_tests {
             RdpWindowMode::Fit,
             None,
             RdpPerformanceProfile::Auto,
+            None,
         )
         .unwrap();
 
