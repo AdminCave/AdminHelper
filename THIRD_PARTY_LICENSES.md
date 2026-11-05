@@ -124,10 +124,11 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `serde`, `serde_json`, `tauri`, `reqwest`, `futures-util`, `tokio`, `url`,
 `open`, `keyring-core`, `zbus-secret-service-keyring-store` (Linux), `apple-native-keyring-store` (macOS), `tauri-plugin-shell`, `tauri-plugin-dialog`,
 `tauri-plugin-notification`, `tauri-plugin-log`,
-`tauri-plugin-single-instance` (nur Desktop-Ziele), `log`, `chrono`, `regex`,
+`tauri-plugin-single-instance` (nur Desktop-Ziele), `windows` (nur Windows), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
-`toml`, `zeroize`, `ironrdp-client` und `ironrdp-tls` (eingebettetes RDP, Git-Revision von
-`github.com/Devolutions/IronRDP`), `tokio-tungstenite` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
+`toml`, `zeroize`, `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`, `ironrdp-connector` und `ironrdp-session`
+(eingebettetes RDP, Git-Revision von `github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname`
+(`Apache-2.0`, siehe NOTICE unten) — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
 > Paket ist seit Aug. 2025 archiviert, seine PEM-Parser wanderten in die

@@ -164,10 +164,10 @@ Revision gelesen. Eine Doku-Seite dafür gibt es nicht; die Crates sind 0.x.
 - Den Pin schreibt also nie der Callback selbst. So kann keine Prüfung ein Zertifikat pinnen, das der Nutzer nicht
   gesehen hat.
 
-**`trust_cert` (`models.rs:80`) heißt „ohne Dialog annehmen“** (Bedingung 5): Der Callback nimmt jedes Zertifikat an
-und lässt Pins unberührt, wie heute `/cert:ignore`. `CertificateValidation::DangerouslyAcceptInvalidCertificate`
-nehmen wir dafür nicht: Dann fragt IronRDP keinen Callback mehr, und das Event bekäme keinen Fingerprint für die
-Statuszeile in Stufe 2.
+**`trust_cert` (`models.rs:80`) heißt „ohne Dialog annehmen“** (Bedingung 5): Die Sitzung nimmt jedes Zertifikat an
+und lässt Pins unberührt, wie heute `/cert:ignore`. Gebaut ist das als
+`CertificateValidation::DangerouslyAcceptInvalidCertificate` ohne Callback (Entscheidung T5 im Ledger); das Event
+trägt dann keinen Fingerprint, eine Statuszeile dafür in Stufe 2 braucht einen eigenen Weg.
 
 **Pin-Identität mit Workspace und Tunnelname.**
 - Direkt: `rdp/<workspace>/<host>:<port>` der gespeicherten Verbindung.

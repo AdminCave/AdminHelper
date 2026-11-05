@@ -236,6 +236,22 @@ Abhängt von: T6
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Testkonvention, kein dokumentiertes Verhalten)
 
+### T10 — Lizenzliste und Spec nach der Abschlussprüfung  [x]
+Komponente: scripts · Dateien: THIRD_PARTY_LICENSES.md, docs/features/arch-rdp-backend.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b6b5ace2 2026-11-05T13:29:26+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Task-Review: am Ende
+Abhängt von: T7
+Änderung:
+- Befund der Abschlussprüfung (reviewer, branch, wichtig): Die Liste der direkten Rust-Abhängigkeiten in
+  `THIRD_PARTY_LICENSES.md` Abschnitt 3 nennt `ironrdp-pdu`, `ironrdp-connector`, `ironrdp-session` und `gethostname`
+  nicht, obwohl `Cargo.toml` sie direkt einträgt. Nachgetragen, dazu `windows` (nur Windows; fehlte schon auf `main`,
+  dieselbe Zeile), damit die Liste wieder jede direkte Abhängigkeit nennt.
+- Befund derselben Prüfung (nit): Die Spec beschrieb `trust_cert` noch als Callback, der alles annimmt; gebaut ist
+  `DangerouslyAcceptInvalidCertificate` ohne Callback (Entscheidung T5). Die Spec folgt dem Code.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: THIRD_PARTY_LICENSES.md, docs/features/arch-rdp-backend.md
+
 ## Entscheidungen
 - 2026-11-05 T1: `tokio-tungstenite` 0.29 als direkte Abhängigkeit mit `default-features = false` und `rustls-tls-native-roots` — `ironrdp-client` ruft `client_async_tls` ohne Feature-Gate (RDCleanPath-Transport, `connect_rdcleanpath_transport`) und baut ohne TLS-Feature nicht; rustls ohne Default-Features hält den Provider bei ring, `aws-lc-rs` bleibt draußen (`cargo tree -i`).
 - 2026-11-05 T1: Die Lizenz-Gates fragen `cargo tree --locked --offline -e normal,build -i <crate>`, nicht `Cargo.lock` oder `cargo-license` — beide führen `aws-lc-rs`/`aws-lc-sys` über das Default-Feature `aws-lc-rs` von `sspi` (`rustls?/aws-lc-rs`), obwohl sie nicht gebaut werden; THIRD_PARTY_LICENSES nennt das ausdrücklich.
