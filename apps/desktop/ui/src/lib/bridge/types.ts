@@ -101,6 +101,10 @@ export interface Settings {
   // Where an SSH connection opens: a tab of the app or the terminal of the OS.
   sshConsole: SshConsole;
   terminal: TerminalPrefs;
+  // Open the SSH tabs of the last run again after sign-in; off unless chosen.
+  restoreSessions?: boolean;
+  // Ids of the connections whose SSH tabs were open, in tab order; kept in the workspace.
+  openSessions?: string[];
 }
 
 // Options of the embedded terminal, kept per device like the RDP options.

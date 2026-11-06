@@ -53,10 +53,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- DetachedTerminal SshTe
 Doku: → T10
 Abhängt von: T4
 
-### T6 — Desktop: Einstellungen zum Wiederherstellen der Sitzungen (R-1070)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs
+### T6 — Desktop: Einstellungen zum Wiederherstellen der Sitzungen (R-1070)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @250aa0e0 2026-11-06T10:50:30+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T6.verdict.json)
 Änderung: `Settings.restore_sessions: bool` und `Settings.open_sessions: Vec<String>` (Verbindungs-IDs) mit `serde(default)`; Round-Trip-Test und Laden einer `prefs.json` ohne die Felder.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage models
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage
 Doku: → T10
 
 ### T7 — Desktop-UI: Wiederherstellen beim Start (R-1070)  [ ]
@@ -95,3 +97,4 @@ Task-Review: am Ende
 - T1: Die Wiedergabe des Ringpuffers endet mit `{"replayed":true}`; die UI beantwortet Terminal-Abfragen davor nicht (T4/T5), sonst gingen alte Antworten erneut an das Programm. Eine Sitzung ohne Sink läuft weiter; nur ein zugestelltes Ende oder `terminal_close` entfernt sie.
 - T3: `--check` steht hinter dem Playbook (`-i <inv> <pb> --check`, Ansible nimmt Optionen nach dem Argument), so bleiben die Dateien für beide Wege an ihrer Stelle. Die Sitzung löscht das Run-Verzeichnis über `Spawn::cleanup`, sobald das Programm endet; scheitert der Start, löscht es `launch_ansible_with` wie bisher. `ansible_run` nimmt `check` als `Option<bool>` (fehlt: echter Lauf), damit die UI bis T8 unverändert weiterläuft. `Verify:` ohne Filter: die Tests liegen in `ansible`, `pty` und `capabilities`.
 - Kevin 2026-11-06: Das X der Titelleiste eines abgedockten Fensters dockt die Sitzung an (T4, T5); „Letzte Sitzungen beim Start wiederherstellen“ ist standardmäßig aus (T6, T7).
+- T6: `openSessions` liegt in `workspace.json` (wie `favoriteConnections`), nicht in `prefs.json`: Verbindungs-IDs gehören zu einem Workspace, `prefs.json` gilt für das Gerät. `restoreSessions` liegt in `prefs.json`. Verify `-- storage` statt `-- storage models` (cargo test nimmt einen Filter).

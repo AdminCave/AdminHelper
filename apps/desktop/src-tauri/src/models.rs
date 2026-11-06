@@ -281,6 +281,13 @@ pub struct Settings {
     pub ssh_console: SshConsole,
     #[serde(default)]
     pub terminal: TerminalPrefs,
+    /// Opens the SSH tabs of the last run again after sign-in (R-1070); off unless chosen.
+    #[serde(default)]
+    pub restore_sessions: bool,
+    /// Ids of the connections whose SSH tabs were open, in tab order; kept in the workspace
+    /// (`workspace.json`), as its connections are.
+    #[serde(default)]
+    pub open_sessions: Vec<String>,
 }
 
 impl Default for Settings {
@@ -302,6 +309,8 @@ impl Default for Settings {
             favorite_connections: Vec::new(),
             ssh_console: SshConsole::Embedded,
             terminal: TerminalPrefs::default(),
+            restore_sessions: false,
+            open_sessions: Vec::new(),
         }
     }
 }

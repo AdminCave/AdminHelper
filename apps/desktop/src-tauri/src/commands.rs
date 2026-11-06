@@ -1298,6 +1298,7 @@ mod tests {
             last_username: None,
             legacy_keys: false,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
         }
         .store(&base.join("workspaces").join("w-0a1b2c3d"))
         .unwrap();
@@ -1734,6 +1735,7 @@ mod tests {
                 last_username: user.map(String::from),
                 legacy_keys: false,
                 favorite_connections: Vec::new(),
+                open_sessions: Vec::new(),
             }
             .store(&base.join("workspaces").join(id))
             .unwrap();
@@ -2143,6 +2145,7 @@ mod tests {
             last_username: None,
             legacy_keys: false,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
         }
         .store(&base.join("workspaces").join("w-0000000d"))
         .unwrap();
@@ -2227,6 +2230,7 @@ mod tests {
                 last_username: None,
                 legacy_keys: false,
                 favorite_connections: Vec::new(),
+                open_sessions: Vec::new(),
             }
             .store(&base.join("workspaces").join(id))
             .unwrap();

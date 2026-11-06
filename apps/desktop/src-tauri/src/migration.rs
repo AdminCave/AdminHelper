@@ -118,6 +118,7 @@ impl Planned {
                 last_username,
                 legacy_keys: true,
                 favorite_connections: Vec::new(),
+                open_sessions: Vec::new(),
             },
             connections,
         })
@@ -670,6 +671,7 @@ mod tests {
             last_username: last_username.map(String::from),
             legacy_keys: true,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
         }
     }
 
