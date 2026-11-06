@@ -37,8 +37,10 @@ Review: approve (.ah-out/review/kern-verbindungen-4/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options.py tests/test_openapi_snapshot.py
 Doku: → T5
 
-### T4 — Desktop: dieselbe Jump-Host-Regel beim Start (R-1158)  [ ]
+### T4 — Desktop: dieselbe Jump-Host-Regel beim Start (R-1158)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/validation.rs, apps/desktop/src-tauri/src/connection/ssh.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0b50f76b 2026-11-06T07:52:16+01:00
+Review: approve (.ah-out/review/kern-verbindungen-4/T4.verdict.json)
 Änderung: `JUMP_RE` wie T3 (letzter Hop `HOST`, die davor ohne IPv6-Literal). Tests in `validation.rs`: guter Fall mit IPv6 im letzten Hop, böse mit IPv6 in einem früheren; die Fixture `…,[2001:db8::1],h3` in `validation.rs` umstellen, `connection/ssh.rs` bleibt gültig.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- validation -- ssh
 Doku: → T5
