@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-terminal-1 — Task-Ledger
-Status: erledigt · Branch: feature/kern-terminal-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-terminal-1 · Review: pro Task
 Spec: docs/features/kern-terminal-1.md (Roadmap R-1070, R-1073)
 Heavy: linux-full + windows — linux-full: neue Desktop-Journey (Abdocken und Andocken in `ssh-connect.live.js`, `desktop_e2e_connect.sh` im Sammellauf); windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): ConPTY, Fensterrechte und der Ansible-Start sind auch Windows-Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -109,6 +109,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: die genannten Dateien
 Task-Review: am Ende
+
+### T12 — Desktop: Wire-Form-Tests kennen restoreSessions und openSessions (R-1070, aus der PR-CI)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/workspace.rs
+Änderung: Die PR-CI (cargo test) war rot: zwei Migrationstests vergleichen `prefs.json` und ein Workspace-Test `workspace.json` wörtlich und kannten die Felder aus T6 nicht. Die erwartete Form nimmt `restoreSessions: false` bzw. `openSessions: []` auf; das Verhalten bleibt, wie T6 es baut.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
+Doku: keine (nur Tests)
 
 ## Entscheidungen
 - Ringpuffer 1 MiB je Sitzung im Backend (Spec, Trade-offs); ein Fenster je abgedockter Sitzung, Label `terminal-<id>`.
