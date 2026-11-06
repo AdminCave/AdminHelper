@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-terminal-1 — Task-Ledger
-Status: geplant · Branch: feature/kern-terminal-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-terminal-1 · Review: pro Task
 Spec: docs/features/kern-terminal-1.md (Roadmap R-1070, R-1073)
 Heavy: linux-full + windows — linux-full: neue Desktop-Journey (Abdocken und Andocken in `ssh-connect.live.js`, `desktop_e2e_connect.sh` im Sammellauf); windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): ConPTY, Fensterrechte und der Ansible-Start sind auch Windows-Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
