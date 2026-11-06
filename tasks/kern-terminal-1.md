@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@79878e61`. Mockup AdminCave/DesignSystem@244e890; Kevins Entscheidung vom 2026-11-02 in R-1070 (echtes Tauri-Fenster).
 
-### T1 — Desktop: Ringpuffer, Besitzer und Wiederanhängen einer Terminal-Sitzung (R-1070)  [ ]
+### T1 — Desktop: Ringpuffer, Besitzer und Wiederanhängen einer Terminal-Sitzung (R-1070)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @019ec51d 2026-11-06T09:47:44+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T1.verdict.json)
 Änderung: `PtyRegistry` hält je Sitzung einen Ringpuffer (1 MiB) und das Label des Besitzer-Fensters; der Sink ist austauschbar. `attach(id, owner, sink)` schickt den Puffer, dann die laufende Ausgabe; ein Sink, der scheitert, wird abgehängt, ohne das Programm zu beenden (es puffert weiter). `close_all_of(owner)` ersetzt `close_all` für `terminal_close_all` (beim Exit bleibt `close_all`). Neuer Befehl `terminal_attach(id, output)`; `terminal_open_ssh` merkt sich das aufrufende Fenster. Tests: Puffer läuft über und behält das Ende, Wiederanhängen bekommt Puffer und dann Live-Ausgabe genau einmal, `close_all_of` lässt fremde Sitzungen laufen, Exit nach dem Abhängen kommt beim nächsten Sink an.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: → T10
@@ -21,7 +23,7 @@ Test-Löschung: apps/desktop/src-tauri/src/pty.rs::a_sink_nobody_listens_to_ends
 
 ### T2 — Desktop: abgedocktes Fenster und Rechte je Label (R-1070)  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/capabilities/terminal-window.json, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs
-Änderung: `terminal_detach(id, title)` (nur aus `main`) baut das Fenster `terminal-<id>` mit der UI-Route `#/detached/<id>`; `terminal_dock(id)` schließt es und meldet `terminal-docked {id}` an `main`; das Schließen über die Titelleiste meldet `terminal-window-closed {id}` an `main` (was daraus folgt, entscheidet T4). `build.rs` listet alle App-Befehle (`AppManifest::commands`); `default.json` (main) erlaubt alle, `terminal-window.json` nur `terminal_attach`, `terminal_write`, `terminal_resize`, `terminal_close`, `terminal_dock`, `load_settings` und die Ereignisse; die Terminal-Befehle lehnen aus einem `terminal-*`-Fenster jede andere Sitzung als `<id>` ab. Glob-Form der Fenster-Labels vor dem Bau im Schema von `tauri-utils` nachlesen. Test: die Liste in `build.rs` deckt `generate_handler!` und `default.json` genau (Quelltext-Test, CRLF normalisiert), Label-Prüfung je Befehl. `terminal-window.json` ohne SPDX-Kommentar (JSON), Lizenz über `REUSE.toml` prüfen. Risikopfad: `security`.
+Änderung: `terminal_detach(id, title)` (nur aus `main`) baut das Fenster `terminal-<id>` mit der UI-Route `#/detached/<id>`; `terminal_dock(id)` schließt es und meldet `terminal-docked {id}` an `main`; das Schließen über die Titelleiste meldet `terminal-window-closed {id}` an `main` (was daraus folgt, entscheidet T4). `build.rs` listet alle App-Befehle (`AppManifest::commands`); `default.json` (main) erlaubt alle, `terminal-window.json` nur `terminal_attach`, `terminal_write`, `terminal_resize`, `terminal_close`, `terminal_dock`, `load_settings` und die Ereignisse; die Terminal-Befehle lehnen aus einem `terminal-*`-Fenster jede andere Sitzung als `<id>` ab. Glob-Form der Fenster-Labels vor dem Bau im Schema von `tauri-utils` nachlesen. Test: die Liste in `build.rs` deckt `generate_handler!` und `default.json` genau (Quelltext-Test, CRLF normalisiert), Label-Prüfung je Befehl. Aus dem T1-Review: Logout (`logout`) schließt die abgedockten Fenster und alle Sitzungen (`close_all`); `WindowEvent::Destroyed` eines `terminal-<id>`-Fensters gibt dessen Sitzungen an `main` zurück (Besitzer `main`, ohne Sink, der Ringpuffer hält die Ausgabe), Test dazu. `terminal-window.json` ohne SPDX-Kommentar (JSON), Lizenz über `REUSE.toml` prüfen. Risikopfad: `security`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- terminal
 Doku: → T10
 Abhängt von: T1
@@ -85,3 +87,4 @@ Task-Review: am Ende
 - Ringpuffer 1 MiB je Sitzung im Backend (Spec, Trade-offs); ein Fenster je abgedockter Sitzung, Label `terminal-<id>`.
 - Rechte doppelt: Capability je Label und Label-Prüfung in jedem Terminal-Befehl, weil die Glob-Form der Labels in der Tauri-Doku nicht belegt ist.
 - Wiederherstellen öffnet die Verbindungen neu; eine laufende Sitzung überlebt keinen Neustart der App (Nicht-Ziel).
+- T1: Die Wiedergabe des Ringpuffers endet mit `{"replayed":true}`; die UI beantwortet Terminal-Abfragen davor nicht (T4/T5), sonst gingen alte Antworten erneut an das Programm. Eine Sitzung ohne Sink läuft weiter; nur ein zugestelltes Ende oder `terminal_close` entfernt sie.

@@ -701,7 +701,7 @@ fn ssh_spawn(
 /// a loopback port of another workspace's tunnel, and the launcher opens nothing.
 #[tauri::command]
 pub async fn terminal_open_ssh(
-    app: tauri::AppHandle,
+    window: tauri::Window,
     state: State<'_, frpc::FrpcState>,
     session: State<'_, SessionState>,
     connection: Connection,
@@ -709,6 +709,7 @@ pub async fn terminal_open_ssh(
     rows: u16,
     output: Channel<InvokeResponseBody>,
 ) -> Result<u64, AppError> {
+    let app = window.app_handle().clone();
     let bindings = match session.current().await {
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
         None => Vec::new(),
@@ -718,16 +719,39 @@ pub async fn terminal_open_ssh(
         crate::terminal::which("ssh"),
         app.path().home_dir().ok(),
     )?;
+    let owner = window.label().to_string();
     blocking(move || {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         app.state::<PtyRegistry>()
-            .open(spawn, cols, rows, move |out| match out {
-                pty::Output::Data(bytes) => output.send(InvokeResponseBody::Raw(bytes)).is_ok(),
-                pty::Output::Exit(exit_code) => serde_json::to_string(&TerminalExit { exit_code })
-                    .is_ok_and(|json| output.send(InvokeResponseBody::Json(json)).is_ok()),
-            })
+            .open(spawn, cols, rows, &owner, channel_sink(output))
     })
     .await
+}
+
+/// The sink of a session's channel: output as `Raw` blocks, the end as one `TerminalExit`, and
+/// after the replay of `terminal_attach` `{"replayed": true}` as `Json`.
+fn channel_sink(output: Channel<InvokeResponseBody>) -> impl FnMut(pty::Output) -> bool + Send {
+    move |out| match out {
+        pty::Output::Data(bytes) => output.send(InvokeResponseBody::Raw(bytes)).is_ok(),
+        pty::Output::Replayed => output
+            .send(InvokeResponseBody::Json(r#"{"replayed":true}"#.to_string()))
+            .is_ok(),
+        pty::Output::Exit(exit_code) => serde_json::to_string(&TerminalExit { exit_code })
+            .is_ok_and(|json| output.send(InvokeResponseBody::Json(json)).is_ok()),
+    }
+}
+
+/// Moves session `id` to `output` and the calling window: the kept output first, then
+/// `{"replayed": true}`, then what follows, as `terminal_open_ssh` sends it. The terminal must
+/// not answer the queries in the replay. The channel before gets nothing more.
+#[tauri::command]
+pub fn terminal_attach(
+    window: tauri::Window,
+    registry: State<'_, PtyRegistry>,
+    id: u64,
+    output: Channel<InvokeResponseBody>,
+) -> Result<(), AppError> {
+    registry.attach(id, window.label(), channel_sink(output))
 }
 
 /// Typed input for session `id`, bytes as they are. On a blocking thread: the write waits
@@ -753,11 +777,12 @@ pub fn terminal_close(registry: State<'_, PtyRegistry>, id: u64) {
     registry.close(id);
 }
 
-/// Ends every session: the UI calls it as it starts and before it reloads, since the channels
-/// of a webview that reloaded lead nowhere and their programs would wait for input forever.
+/// Ends the sessions of the calling window: the UI calls it as it starts and before it
+/// reloads, since the channels of a webview that reloaded lead nowhere and their programs
+/// would wait for input forever. Sessions of other windows run on.
 #[tauri::command]
-pub fn terminal_close_all(registry: State<'_, PtyRegistry>) {
-    registry.close_all();
+pub fn terminal_close_all(window: tauri::Window, registry: State<'_, PtyRegistry>) {
+    registry.close_all_of(window.label());
 }
 
 // ── Workspaces (R-0431): the launcher manages them, a workspace brings the launcher up ──

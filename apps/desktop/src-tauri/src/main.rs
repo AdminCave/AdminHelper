@@ -42,8 +42,8 @@ use commands::{
     refresh_tunnel, reset_device_identity, reset_server_cert_pin, resolve_connection,
     save_connections, save_password, save_settings, save_workspace, start_notification_stream,
     start_session, start_tunnel, stop_notification_stream, stop_tunnel, sync_connections,
-    terminal_close, terminal_close_all, terminal_open_ssh, terminal_resize, terminal_write,
-    tunnel_status, workspace_context, write_export_csv,
+    terminal_attach, terminal_close, terminal_close_all, terminal_open_ssh, terminal_resize,
+    terminal_write, tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -273,6 +273,7 @@ fn main() {
             terminal_resize,
             terminal_close,
             terminal_close_all,
+            terminal_attach,
             rdp_embedded::tofu::rdp_trust_certificate,
             rdp_embedded::rdp_session_start,
             rdp_embedded::rdp_session_stop
