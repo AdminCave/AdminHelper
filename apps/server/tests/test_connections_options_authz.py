@@ -211,3 +211,75 @@ def test_a_key_moves_a_connection_without_guarded_options(test_client, db_sessio
         headers=_key(db_session),
     )
     assert r.status_code == 200, r.text
+
+
+def test_a_key_may_not_create_a_trusted_connection(test_client, db_session):
+    r = test_client.post(
+        "/api/connections",
+        json={"name": "c", "kind": "rdp", "trustCert": True},
+        headers=_key(db_session),
+    )
+    assert r.status_code == 403, r.text
+    assert "trustCert" in r.json()["detail"]
+
+
+def test_a_key_creates_an_untrusted_connection(test_client, db_session):
+    r = test_client.post(
+        "/api/connections",
+        json={"name": "c", "kind": "rdp", "trustCert": False},
+        headers=_key(db_session),
+    )
+    assert r.status_code == 201, r.text
+
+
+def test_a_key_may_not_turn_on_trust(test_client, db_session, admin_user):
+    cid = _create(test_client, _admin(test_client)).json()["id"]
+    r = test_client.put(
+        f"/api/connections/{cid}", json={"trustCert": True}, headers=_key(db_session)
+    )
+    assert r.status_code == 403, r.text
+    assert "trustCert" in r.json()["detail"]
+    listed = test_client.get("/api/connections", headers=_admin(test_client)).json()
+    assert next(c for c in listed if c["id"] == cid)["trustCert"] is False
+
+
+@pytest.mark.parametrize("value", [True, False], ids=["unchanged", "off"])
+def test_a_key_sends_back_or_turns_off_trust(test_client, db_session, admin_user, value):
+    body = {"name": "c", "kind": "rdp", "trustCert": True}
+    cid = test_client.post("/api/connections", json=body, headers=_admin(test_client)).json()["id"]
+    r = test_client.put(
+        f"/api/connections/{cid}",
+        json={"trustCert": value, "notes": "n"},
+        headers=_key(db_session),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["trustCert"] is value
+
+
+def test_an_admin_login_turns_on_trust(test_client, db_session, admin_user):
+    h = _admin(test_client)
+    cid = _create(test_client, h).json()["id"]
+    r = test_client.put(f"/api/connections/{cid}", json={"trustCert": True}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["trustCert"] is True
+
+
+@pytest.mark.parametrize(
+    "move",
+    [
+        {"host": "b.example.org"},
+        {"port": 3390},
+        {"kind": "ssh"},
+        {"username": "x"},
+        {"domain": "X"},
+    ],
+    ids=["host", "port", "kind", "username", "domain"],
+)
+def test_a_key_may_not_move_a_trusted_connection(test_client, db_session, admin_user, move):
+    body = {"name": "c", "kind": "rdp", "host": "a.example.org", "port": 3389, "trustCert": True}
+    body.update(username="ops", domain="CORP")
+    cid = test_client.post("/api/connections", json=body, headers=_admin(test_client)).json()["id"]
+    r = test_client.put(f"/api/connections/{cid}", json=move, headers=_key(db_session))
+    assert r.status_code == 403, r.text
+    assert "trustCert" in r.json()["detail"]
+    assert next(iter(move)) in r.json()["detail"]
