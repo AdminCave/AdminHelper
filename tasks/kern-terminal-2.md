@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-terminal-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-terminal-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-terminal-2 · Review: pro Task
 Spec: docs/features/kern-terminal-2.md (Roadmap R-1071, R-1072)
 Heavy: linux-full + windows — linux-full: die Desktop-Journey `ssh-connect.live.js` bekommt Snippet und SFTP über den ControlMaster (`desktop_e2e_connect.sh` im Sammellauf); windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): Broadcast, der SFTP-Kanal ohne ControlMaster und die Dialoge sind auch Windows-Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
