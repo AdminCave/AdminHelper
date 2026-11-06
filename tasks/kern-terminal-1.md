@@ -83,8 +83,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- Ansible ansible termin
 Doku: → T10
 Abhängt von: T3, T4
 
-### T9 — Desktop-E2E: Abdocken und Andocken einer SSH-Sitzung (R-1070)  [ ]
+### T9 — Desktop-E2E: Abdocken und Andocken einer SSH-Sitzung (R-1070)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/ssh-connect.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @3861d8d8 2026-11-06T12:07:04+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T9.verdict.json)
 Änderung: Nach dem Verbinden im eingebetteten Terminal: Abdocken, in das zweite Fenster wechseln (`getWindowHandles`), dort einen Befehl tippen und seine Ausgabe sehen, Andocken, im Tab die Ausgabe von vorher und eine neue sehen. Läuft im Sammellauf (`desktop_e2e_connect.sh`), lokal nur Lint.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T10
@@ -109,3 +111,4 @@ Task-Review: am Ende
 - T5: Das abgedockte Fenster nutzt denselben Store mit einer übernommenen Sitzung (`adoptTerminal`) statt einer eigenen Quelle für `SshTerminal`: Replay, Status und Exit bleiben eine Logik. Es kennt nur die id, den Namen trägt die Titelleiste. Eine Sitzung, die beim Andocken kein Tab kennt (Hauptfenster neu geladen), wird beendet statt verwaist.
 - T7: Das Wiederherstellen öffnet über `initiateConnect` mit Konsole `embedded` (gleicher Weg wie ein Klick, Host-Key-Prüfung inklusive), auch wenn `sshConsole` auf `external` steht: es stellt Tabs wieder her. Nacheinander in der gespeicherten Reihenfolge; eine gelöschte Verbindung oder eine ohne Tab nach dem Start fällt aus der Liste. Gespeichert wird erst, wenn die Verbindungen da sind, und der Logout (`closeAllTerminals`) beendet das Mitschreiben vorher, damit er die Liste nicht leert. Die Abhängigkeiten kommen per Injektion (`SessionKeeping`), weil `connectFlow.ts` den Store importiert. Zwölf Dateien: die vier AppShell-Tests brauchen `connectionsStore` und `setOpenSessions` im Mock; `types.ts` braucht nichts mehr (T6), die i18n-Texte liegen in `dictionaries.ts`, nicht in `de.json`/`en.json` (auch T8 korrigiert).
 - T8: Ein Ansible-Tab ist eine Sitzung mit synthetischer Connection (leere id, Name = Playbook) und `ansible: {check}` statt eines eigenen Tab-Typs: Tabs, Abdocken und Ausgabe bleiben ein Weg; `reconnectTerminal` und `openSessionIds` lassen ihn aus. Eingebettet zeigt der Tab den Start, die Statusmeldung `ansibleStarted` bleibt dem OS-Terminal-Weg.
+- T9: Das Fenster einer abgedockten Sitzung hat kein `.terminal-pane`; die Spec liest dort mit eigenem Helfer (`waitForLineIn`) statt `live.js` zu ändern. Der Schließen-Knopf wird als letztes Kind des Tabs gewählt: seit T6 steht der Abdock-Knopf mit derselben Klasse davor, das alte `$('.session-tab-close')` hätte abgedockt. Ob WebKitWebDriver das zweite Fenster als Handle zeigt, ist lokal nicht verifiziert (kein Display); das zeigt der Sammellauf.
