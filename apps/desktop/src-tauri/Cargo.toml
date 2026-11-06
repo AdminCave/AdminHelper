@@ -105,7 +105,13 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # CreateProcessW from the system directory (terminal.rs, spawn_in_new_console).
 # JobObjects (Security for CreateJobObjectW, Threading for OpenProcess and the limit struct): frpc
 # ends with the desktop process (frpc.rs, end_with_this_process).
-windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects"] }
+# WindowsAndMessaging: the message loop of the embedded RDP session's clipboard thread
+# (rdp_embedded/clipboard_win.rs).
+windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_UI_WindowsAndMessaging"] }
+# The Windows clipboard of the embedded RDP session runs on a thread of its own with a message
+# loop (rdp_embedded/clipboard_win.rs); both crates are in the lockfile through ironrdp-client.
+ironrdp-cliprdr = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
+ironrdp-cliprdr-native = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.

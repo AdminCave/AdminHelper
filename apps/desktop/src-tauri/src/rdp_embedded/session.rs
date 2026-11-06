@@ -415,9 +415,12 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
         // Bulk compression stays off (spec, condition 1); GFX carries the picture (condition 9).
         .with_compression(false)
         .with_graphics_pipeline(true)
-        // No channels in stage 1: no clipboard, no drives.
-        .with_clipboard(ClipboardType::Disable)
-        .with_rdpdr(false);
+        // Text and pictures over the clipboard, no files (docs/features/kern-rdp-2.md). On Windows
+        // start_attempt() brings the backend; elsewhere IronRDP takes the native one.
+        .with_clipboard(ClipboardType::Enable)
+        .with_rdpdr(false)
+        .with_printers(false)
+        .with_ports(false);
     let builder = match &target.domain {
         Some(domain) => builder.with_domain(domain.as_str()),
         None => builder,
@@ -443,6 +446,9 @@ struct Attempt {
     input: RdpInputSender,
     /// `run` finished; its handle must not be polled again.
     done: bool,
+    /// Lives as long as the attempt's client; `None` when the clipboard could not start.
+    #[cfg(windows)]
+    _clipboard: Option<super::clipboard_win::ClipboardThread>,
 }
 
 impl Drop for Attempt {
@@ -458,6 +464,16 @@ fn start_attempt(target: &Target, cert: &CertReport) -> Result<Attempt, String> 
         .with_auto_reconnect(AUTO_RECONNECTS)
         .with_desktop_updates();
     let input = client.input_sender();
+    // Without a factory of its own IronRDP would offer files over the clipboard on Windows.
+    #[cfg(windows)]
+    let (client, _clipboard) = match super::clipboard_win::ClipboardThread::start(input.clone()) {
+        Ok((thread, factory)) => (client.with_cliprdr_backend_factory(factory), Some(thread)),
+        Err(error) => {
+            log::warn!("the clipboard of the RDP session is off: {error}");
+            let factory = ironrdp_cliprdr_native::StubClipboard::new().backend_factory();
+            (client.with_cliprdr_backend_factory(factory), None)
+        }
+    };
     // `RdpClient::run` is not Send: it runs on the session thread's LocalSet.
     let run = tokio::task::spawn_local(client.run());
     Ok(Attempt {
@@ -465,6 +481,8 @@ fn start_attempt(target: &Target, cert: &CertReport) -> Result<Attempt, String> 
         events,
         input,
         done: false,
+        #[cfg(windows)]
+        _clipboard,
     })
 }
 
@@ -995,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn session_configures_tls_gfx_and_no_channels() {
+    fn session_configures_tls_gfx_and_its_channels() {
         let destination = Destination::from_parts("192.0.2.10", 3389);
         let trusted = config(
             &target(destination.clone(), CertPolicy::TrustAll),
@@ -1012,8 +1030,11 @@ mod tests {
         assert!(!connector.enable_standard_rdp_security);
         assert_eq!(connector.compression_type, None);
         assert!(connector.support_dyn_vc_gfx_protocol);
-        assert_eq!(trusted.channels().clipboard, ClipboardType::Disable);
-        assert!(!trusted.channels().rdpdr.enabled);
+        assert_eq!(trusted.channels().clipboard, ClipboardType::Enable);
+        let rdpdr = &trusted.channels().rdpdr;
+        assert!(!rdpdr.enabled);
+        assert!(!rdpdr.printers);
+        assert!(!rdpdr.ports);
         assert_eq!(
             trusted.certificate_validation(),
             CertificateValidation::DangerouslyAcceptInvalidCertificate

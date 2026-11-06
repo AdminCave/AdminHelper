@@ -8,6 +8,8 @@
 //! password does and hands it to a session thread (`session`). The webview hears the phases as
 //! `rdp-session` events and takes the picture from the session's WebSocket (`frame_ws`).
 
+#[cfg(windows)]
+mod clipboard_win;
 pub(crate) mod frame_ws;
 #[cfg(test)]
 mod license_gate;

@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@ddfec795`, IronRDP `f96f664`. Kevins Entscheidung vom 2026-11-06 in R-1099.
 
-### T1 — Desktop: Zwischenablage in der eingebetteten Sitzung (R-1099)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+### T1 — Desktop: Zwischenablage in der eingebetteten Sitzung (R-1099)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/clipboard_win.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @9797d6da 2026-11-06T08:46:24+01:00
+Review: approve (.ah-out/review/kern-rdp-2/T1.verdict.json)
 Änderung: `config()` setzt `ClipboardType::Enable` (Linux: natives Backend, Text und Bilder). Unter Windows setzt `start_attempt()` eine eigene Fabrik (`RdpClient::with_cliprdr_backend_factory`) mit `WinClipboard::new` ohne Dateiübertragung und einem Proxy über `RdpInputSender::send_clipboard`; die Instanz lebt so lange wie die Sitzung. Der Test `session_configures_tls_gfx_and_no_channels` wird zu einem Test der Kanal-Konfiguration (Zwischenablage an, Drucker/Ports/Smartcard aus).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T5
