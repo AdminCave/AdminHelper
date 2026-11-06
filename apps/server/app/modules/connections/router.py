@@ -121,9 +121,9 @@ def _require_login_for_options(auth, sent, stored: dict[str, Any] | None) -> Non
         )
 
 
-# The fields that say where a session goes. Moving a connection whose stored options hold a
-# guarded one would carry that option to the new target, so a key may not do that either.
-_TARGET_FIELDS = ("host", "port", "kind")
+# The fields that say where and as whom a session goes. Moving a connection whose stored options
+# hold a guarded one would carry that option to the new target, so a key may not do that either.
+_TARGET_FIELDS = ("host", "port", "kind", "username", "domain")
 
 
 def _require_login_to_move(auth, conn: Connection, update: ConnectionUpdate) -> None:
@@ -139,7 +139,9 @@ def _require_login_to_move(auth, conn: Connection, update: ConnectionUpdate) -> 
     moved = sorted(
         name
         for name in _TARGET_FIELDS
-        if name in update.model_fields_set and getattr(update, name) != stored.get(name)
+        # to_dict stores an unset name as "", so null and "" are the same value here.
+        if name in update.model_fields_set
+        and (getattr(update, name) or "") != (stored.get(name) or "")
     )
     if moved:
         raise HTTPException(

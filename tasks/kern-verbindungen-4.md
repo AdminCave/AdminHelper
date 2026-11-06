@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-4 · Review: pro Task
 Spec: docs/features/kern-verbindungen-4.md (Roadmap R-1140, R-1143, R-1158)
 Heavy: linux-full — Server-API (neue 403-Antworten an den Verbindungs-Routen); der Sammellauf fährt den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,10 @@ Review: approve (.ah-out/review/kern-verbindungen-4/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts src/components/ConnectionEditor.options.test.ts
 Doku: die genannten Dateien
 
-### T6 — Server: Umzugs-Sperre auch für `username` und `domain` (R-1140, Abschlussprüfung)  [ ]
+### T6 — Server: Umzugs-Sperre auch für `username` und `domain` (R-1140, Abschlussprüfung)  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_options_authz.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-verbindungen-4.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @621e74aa 2026-11-06T08:14:25+01:00
+Review: approve (.ah-out/review/kern-verbindungen-4/T6.verdict.json)
 Änderung: `_TARGET_FIELDS` um `username` und `domain`; Vergleich mit `None` gleich leer, wie `to_dict` speichert. Die Move-Tests laufen über alle fünf Felder, dazu ein Test, dass `username: null` bei leerem gespeichertem Namen durchgeht. API-Referenz DE+EN und Changelog nennen die Felder; der PUT-Satz nimmt das Wiedereinschalten von NLA aus (Nit security T5).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options_authz.py tests/test_connections_authz.py tests/test_openapi_snapshot.py
 Doku: die genannten Dateien

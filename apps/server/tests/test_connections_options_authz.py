@@ -167,14 +167,21 @@ def test_a_key_edits_the_other_fields_without_options(test_client, db_session, a
 
 @pytest.mark.parametrize(
     "move",
-    [{"host": "b.example.org"}, {"port": 2222}, {"kind": "rdp"}],
-    ids=["host", "port", "kind"],
+    [
+        {"host": "b.example.org"},
+        {"port": 2222},
+        {"kind": "rdp"},
+        {"username": "other"},
+        {"domain": "OTHER"},
+    ],
+    ids=["host", "port", "kind", "username", "domain"],
 )
 @pytest.mark.parametrize("name", sorted(GUARDED))
 def test_a_key_may_not_move_a_connection_with_a_guarded_option(
     test_client, db_session, admin_user, name, move
 ):
-    body = {"name": "c", "kind": "ssh", "host": "a.example.org", "port": 22}
+    body = {"name": "c", "kind": "ssh", "host": "a.example.org", "port": 22, "username": "ops"}
+    body["domain"] = "CORP"
     body["options"] = GUARDED[name]
     cid = test_client.post("/api/connections", json=body, headers=_admin(test_client)).json()["id"]
     r = test_client.put(f"/api/connections/{cid}", json=move, headers=_key(db_session))
@@ -183,12 +190,24 @@ def test_a_key_may_not_move_a_connection_with_a_guarded_option(
     assert next(iter(move)) in r.json()["detail"]
 
 
+def test_a_key_sends_back_an_unset_name_as_null(test_client, db_session, admin_user):
+    body = {"name": "c", "kind": "ssh", "host": "a.example.org"}
+    body["options"] = GUARDED["ssh.agentForwarding"]
+    cid = test_client.post("/api/connections", json=body, headers=_admin(test_client)).json()["id"]
+    r = test_client.put(
+        f"/api/connections/{cid}",
+        json={"username": None, "domain": "", "notes": "n"},
+        headers=_key(db_session),
+    )
+    assert r.status_code == 200, r.text
+
+
 def test_a_key_moves_a_connection_without_guarded_options(test_client, db_session, admin_user):
     body = {"name": "c", "kind": "ssh", "host": "a.example.org", "options": FREE}
     cid = test_client.post("/api/connections", json=body, headers=_admin(test_client)).json()["id"]
     r = test_client.put(
         f"/api/connections/{cid}",
-        json={"host": "b.example.org", "port": 2222},
+        json={"host": "b.example.org", "port": 2222, "username": "other"},
         headers=_key(db_session),
     )
     assert r.status_code == 200, r.text
