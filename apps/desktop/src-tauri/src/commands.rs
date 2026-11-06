@@ -706,7 +706,33 @@ fn ssh_spawn(
         cwd: home,
         cleanup: None,
         broadcast: true,
+        control_path: None,
     })
+}
+
+/// `spawn` holding its connection for the SFTP channel of the session (R-1072): the socket in
+/// `dir`, which goes with the end of the session.
+fn with_control_master(mut spawn: pty::Spawn, dir: PathBuf) -> pty::Spawn {
+    let path = dir.join(connection::ssh::CONTROL_SOCKET);
+    let mut args = connection::ssh::control_args(&path, true);
+    args.append(&mut spawn.args);
+    spawn.args = args;
+    spawn.cleanup = Some(dir);
+    spawn.control_path = Some(path);
+    spawn
+}
+
+/// A fresh 0700 directory for the ControlMaster socket of a session; none on Windows, whose
+/// OpenSSH has no ControlMaster.
+fn control_dir() -> Result<Option<PathBuf>, AppError> {
+    if cfg!(windows) {
+        return Ok(None);
+    }
+    let base = connection::ssh::control_dir_base(&std::env::temp_dir());
+    Ok(Some(ansible::create_private_dir(
+        &base,
+        connection::ssh::CONTROL_DIR_PREFIX,
+    )?))
 }
 
 /// Opens `connection`, resolved as for `open_connection`, in the embedded terminal: `ssh` in a
@@ -736,8 +762,19 @@ pub async fn terminal_open_ssh(
     let owner = window.label().to_string();
     blocking(move || {
         reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
+        let spawn = match control_dir()? {
+            Some(dir) => with_control_master(spawn, dir),
+            None => spawn,
+        };
+        // A start that fails leaves the directory to us.
+        let dir = spawn.cleanup.clone();
         app.state::<PtyRegistry>()
             .open(spawn, cols, rows, &owner, channel_sink(output))
+            .inspect_err(|_| {
+                if let Some(dir) = &dir {
+                    let _ = std::fs::remove_dir_all(dir);
+                }
+            })
     })
     .await
 }
@@ -1140,10 +1177,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ansible_run_with, check_server_cert_in, delete_workspace_in, detached_id, detached_label,
-        enroll_with_token_in, list_workspaces_in, may_reach, open_launcher_with, open_workspace_in,
-        reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline,
-        save_workspace_in, sign_in_target, ssh_spawn, sync_source,
+        ansible_run_with, check_server_cert_in, control_dir, delete_workspace_in, detached_id,
+        detached_label, enroll_with_token_in, list_workspaces_in, may_reach, open_launcher_with,
+        open_workspace_in, reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in,
+        run_with_deadline, save_workspace_in, sign_in_target, ssh_spawn, sync_source,
+        with_control_master,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -2381,6 +2419,61 @@ mod tests {
         assert!(spawn.broadcast, "an SSH session takes a broadcast");
         let without_home = ssh_spawn(&connection, Some(ssh), None).expect("it opens");
         assert_eq!(without_home.cwd, None);
+    }
+
+    #[test]
+    fn a_terminal_session_holds_its_connection_for_the_sftp_channel() {
+        let ssh = Some(std::env::temp_dir().join("ssh"));
+        let dir = std::env::temp_dir().join("ah-ssh-probe");
+        let spawn = ssh_spawn(&loopback(2222), ssh, None).expect("it opens");
+        assert_eq!(spawn.control_path, None);
+        let spawn = with_control_master(spawn, dir.clone());
+        let path = dir.join("c");
+        let control = format!("ControlPath={}", path.display());
+        assert_eq!(
+            spawn.args,
+            [
+                "-o",
+                "ControlMaster=yes",
+                "-o",
+                control.as_str(),
+                "-o",
+                "ControlPersist=no",
+                "-p",
+                "2222",
+                "--",
+                "127.0.0.1",
+            ]
+        );
+        assert_eq!(
+            spawn.cleanup,
+            Some(dir),
+            "the directory goes with the session"
+        );
+        assert_eq!(spawn.control_path, Some(path));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_control_master_directory_is_private_and_its_socket_path_short() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = control_dir().unwrap().expect("Unix holds a ControlMaster");
+        let other = control_dir().unwrap().expect("a second one");
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        let socket = dir.join(crate::connection::ssh::CONTROL_SOCKET);
+        std::fs::remove_dir(&dir).unwrap();
+        std::fs::remove_dir(&other).unwrap();
+        assert_eq!(mode & 0o777, 0o700);
+        assert_ne!(dir, other, "each session has its own");
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with("ah-ssh-"), "{name}");
+        assert!(socket.as_os_str().len() <= 80, "{socket:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_holds_no_control_master() {
+        assert_eq!(control_dir().unwrap(), None);
     }
 
     #[test]

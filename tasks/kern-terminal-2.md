@@ -35,8 +35,10 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9
 Abhängt von: T1, T2
 
-### T4 — Desktop: ControlMaster der Terminal-Sitzung und Argumente des SFTP-Kanals (R-1072)  [ ]
+### T4 — Desktop: ControlMaster der Terminal-Sitzung und Argumente des SFTP-Kanals (R-1072)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/pty.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @393d0d95 2026-11-06T15:55:55+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T4.verdict.json)
 Änderung: Unter Unix startet `ssh_spawn` `ssh` mit `-o ControlMaster=yes -o ControlPath=<dir>/c -o ControlPersist=no`; `<dir>` ist ein 0700-Verzeichnis mit kurzem Namen (`create_run_dir` mitbenutzt, Socket-Pfad unter 100 Bytes, sonst Basis `/tmp`), entfernt über `Spawn.cleanup`; die Sitzung merkt sich den ControlPath. Neu `build_sftp_args(connection, control_path: Option<&Path>)`: `-p`, `-i`, `-J`, `-o` ohne `-L/-R/-D` und ohne `ForwardAgent`, dazu `-o BatchMode=yes`, mit Pfad `-o ControlMaster=no -o ControlPath=<p>`, dann `-s -- <ziel> sftp`. Tests der Argumentlisten (mit und ohne Pfad, mit Weiterleitungen, Windows ohne ControlMaster), Pfadlänge und Rechte des Verzeichnisses, Aufräumen nach dem Ende.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T9
@@ -87,6 +89,8 @@ Task-Review: am Ende
 - T3: Snippet-Karten nur bei Status `connected` aktiv (auch nicht während `connecting`, damit kein Befehl in einer Anmeldeabfrage landet); kein Snippets-Knopf in Ansible-Läufen und im abgedockten Fenster, Fußzeile „Broadcast aktiv“ in jeder SSH-Sitzung, auch im abgedockten Fenster, nicht bei Ansible-Läufen.
 - T3: Der Broadcast-Schalter liegt in Rust (`PtyRegistry`, aus beim Start, `terminal_set_broadcast` nur aus `main`, Ereignis `terminal-broadcast` an alle Fenster, `terminal_broadcast_state` auch für `terminal-*`), damit abgedockte Fenster warnen (Prüfer T3); `terminal_broadcast` schreibt bei ausgeschaltetem Broadcast nichts. T3 wird damit Komponente `desktop` (UI und Rust, 19 Dateien: ein Ablauf, gemeinsam getestet). Bearbeiten sucht das Snippet beim Speichern in der aktuellen Liste; ist es weg, landet die Änderung am Ende.
 - T3: Der Broadcast bleibt über ein Abmelden hinweg an (Prüfer-Nit T3): die Spec sagt „bis zum Ende der App“, und die Fußzeile jeder SSH-Sitzung zeigt ihn.
+- T4: Der Socket-Pfad bleibt höchstens 80 Byte lang statt „unter 100“: ssh bindet erst `<ControlPath>.<16 Zeichen>` (OpenSSH mux.c, `muxserver_listen`), `sun_path` hat unter macOS 104 Byte. Ein Temp-Verzeichnis mit Zeichen außer `A-Za-z0-9/._-` weicht ebenfalls auf `/tmp` aus (ssh trennt `-o`-Werte an Leerzeichen und expandiert `%`). Das Verzeichnis entsteht erst in `terminal_open_ssh` nach der Port-Prüfung (`with_control_master`, `control_dir`); scheitert der Start, löscht der Befehl es. `ansible::create_run_dir` wird zu `create_private_dir(base, prefix)` verallgemeinert.
+- T4: Der SFTP-Kanal setzt wie sftp(1) `ClearAllForwardings=yes`, `ForwardAgent=no`, `ForwardX11=no`, `PermitLocalCommand=no` (Prüfer Runde 1): auch Weiterleitungen aus `~/.ssh/config` binden nicht erneut. Nit offen gelassen: scheitert das ControlMaster-Verzeichnis (Temp und `/tmp` nicht beschreibbar), startet das Terminal nicht; ohne beschreibbares Temp scheitern auch Ansible-Läufe, ein stiller Start ohne Master ließe SFTP später rätselhaft scheitern.
 - T3: Broadcast erreicht auch SSH-Sitzungen, die noch an Passwort- oder Hostkey-Abfrage stehen (Rust kennt den Unterschied nicht); das sagt die Doku (T9).
 - T3: Namen und Befehle nur als Text gerendert; Steuerzeichen-Grenzen prüft Rust (T1). Leere Zeilen am Ende eines Befehls fallen weg, damit kein doppeltes Enter entsteht.
 - T5/T6 tragen `sftp.rs` beide: T5 baut den Kanal ohne Tauri (testbar gegen `sftp-server`), T6 die Befehle; so bleibt die neue Abhängigkeit einzeln zurücknehmbar.

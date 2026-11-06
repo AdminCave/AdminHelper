@@ -67,6 +67,8 @@ pub struct Spawn {
     /// Whether a broadcast of the snippet panel reaches the session ([`PtyRegistry::broadcast`]):
     /// an SSH session, not an Ansible run.
     pub broadcast: bool,
+    /// The ControlMaster socket of an SSH session: its SFTP channel goes over it (R-1072).
+    pub control_path: Option<PathBuf>,
 }
 
 /// The label of the main window, which may reach every session.
@@ -113,6 +115,12 @@ struct Session {
     closing: std::sync::atomic::AtomicBool,
     /// [`Spawn::broadcast`].
     broadcast: bool,
+    /// [`Spawn::control_path`].
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the SFTP commands (kern-terminal-2 T6) read it")
+    )]
+    control_path: Option<PathBuf>,
     writer: Mutex<Box<dyn Write + Send>>,
     /// Gone once the program exited: on Windows the pseudo console closes with it, and only
     /// then does the reader get its end.
@@ -217,6 +225,7 @@ impl PtyRegistry {
             }),
             closing: std::sync::atomic::AtomicBool::new(false),
             broadcast: spawn.broadcast,
+            control_path: spawn.control_path,
             writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             killer: Mutex::new(Some(child.clone_killer())),
@@ -401,6 +410,18 @@ impl PtyRegistry {
         }
     }
 
+    /// The ControlMaster socket of session `id` ([`Spawn::control_path`]); `None` for a session
+    /// without one or one that is not there.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the SFTP commands (kern-terminal-2 T6) read it")
+    )]
+    pub fn control_path(&self, id: u64) -> Option<PathBuf> {
+        lock(&self.sessions)
+            .get(&id)
+            .and_then(|session| session.control_path.clone())
+    }
+
     /// Whether session `id` is there.
     pub fn has(&self, id: u64) -> bool {
         lock(&self.sessions).contains_key(&id)
@@ -449,6 +470,7 @@ mod tests {
             cwd: None,
             cleanup: None,
             broadcast: false,
+            control_path: None,
         }
     }
 
@@ -462,6 +484,7 @@ mod tests {
             cwd: None,
             cleanup: None,
             broadcast: false,
+            control_path: None,
         }
     }
 
@@ -920,6 +943,7 @@ mod tests {
             cwd: None,
             cleanup: None,
             broadcast: false,
+            control_path: None,
         };
         let refused = registry.open(spawn, 80, 24, "main", |_| true);
         assert!(refused.is_err());
@@ -958,10 +982,25 @@ mod tests {
             cwd: None,
             cleanup: Some(dir.clone()),
             broadcast: false,
+            control_path: None,
         };
         assert!(registry.open(spawn, 80, 24, "main", |_| true).is_err());
         assert!(dir.exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_session_keeps_its_control_path() {
+        let registry = PtyRegistry::default();
+        let path = std::env::temp_dir().join("ah-pty-control").join("c");
+        let mut spawn = long_running();
+        spawn.control_path = Some(path.clone());
+        let (id, _rx) = open(&registry, spawn);
+        let (other, _rx_other) = open(&registry, long_running());
+        assert_eq!(registry.control_path(id), Some(path));
+        assert_eq!(registry.control_path(other), None);
+        assert_eq!(registry.control_path(other + 1), None);
+        registry.close_all();
     }
 
     #[test]
