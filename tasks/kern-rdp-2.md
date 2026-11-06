@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-rdp-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-2 · Review: pro Task
 Spec: docs/features/kern-rdp-2.md (Roadmap R-1099, R-1092)
 Heavy: linux-full + windows — linux-full: neue Kanäle in der eingebetteten Sitzung, die `desktop_e2e_rdp_embedded` (xrdp-Container) im Sammellauf fährt, und eine neue Laufzeit-Abhängigkeit des Linux-Pakets; windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): Zwischenablage-Fabrik und Laufwerk sind `cfg(windows)`-Code. PR merged Kevin (`.github/workflows/`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: keine (Ergebnis privat)
 Abhängt von: T2
 
-### T5 — Doku und CHANGELOG (R-1099)  [ ]
+### T5 — Doku und CHANGELOG (R-1099)  [x]
 Komponente: desktop-rs · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, THIRD_PARTY_LICENSES.md, changelog.d/kern-rdp-2.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @52a2ce9f 2026-11-06T09:16:31+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt „Eingebettetes RDP (Backend)“ DE+EN: Zwischenablage, Audio (Windows aus), Downloads-Laufwerk statt „keine Kanäle“. `THIRD_PARTY_LICENSES.md` mit `scripts/gen-third-party-licenses.sh` neu erzeugen. Changelog-Fragment (ohne Umlaute) unter `### Added`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- license_gate
 Doku: die genannten Dateien
@@ -57,3 +59,4 @@ Task-Review: am Ende
 - `audio` ungesetzt → lokal, wie der Standard des OS-Clients.
 - T2: `sound` bringt über `ironrdp-rdpsnd-native` den Opus-Decoder (`opus2` mit `bundled`, libopus als C-Quelle per cmake, statisch); Build braucht `cmake` (GitHub-Runner haben es, `bootstrap_linux.sh` und `DEVELOPMENT.md` nennen es), Lizenz der C-Quelle → T5.
 - T2: deb hängt an `libasound2`: Debian 13 und Ubuntu 24.04 liefern `libasound2t64` mit `Provides: libasound2` (lokal geprüft für Debian 13, Ubuntu nicht verifiziert); rpm an `alsa-lib`.
+- T3: Der Hinweis ist ein Code (`Started.notice` = `drive_unavailable`), der Grund steht im Log; die Oberfläche (`kern-rdp-1`) formuliert die Meldung. Geprüft wird das Laufwerk einmal beim Start (`shared_drive`), ein Fehler der Fabrik lässt die Sitzung nie scheitern.
