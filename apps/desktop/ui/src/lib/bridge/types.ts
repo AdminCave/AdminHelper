@@ -105,6 +105,15 @@ export interface Settings {
   restoreSessions?: boolean;
   // Ids of the connections whose SSH tabs were open, in tab order; kept in the workspace.
   openSessions?: string[];
+  // The snippets of the terminal, kept in the workspace; null: never changed, the panel shows
+  // its default list. An empty list stays empty.
+  snippets?: Snippet[] | null;
+}
+
+// A command of the snippet panel of the terminal.
+export interface Snippet {
+  name: string;
+  command: string;
 }
 
 // Options of the embedded terminal, kept per device like the RDP options.

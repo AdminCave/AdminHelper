@@ -1299,6 +1299,7 @@ mod tests {
             legacy_keys: false,
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
+            snippets: None,
         }
         .store(&base.join("workspaces").join("w-0a1b2c3d"))
         .unwrap();
@@ -1736,6 +1737,7 @@ mod tests {
                 legacy_keys: false,
                 favorite_connections: Vec::new(),
                 open_sessions: Vec::new(),
+                snippets: None,
             }
             .store(&base.join("workspaces").join(id))
             .unwrap();
@@ -2146,6 +2148,7 @@ mod tests {
             legacy_keys: false,
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
+            snippets: None,
         }
         .store(&base.join("workspaces").join("w-0000000d"))
         .unwrap();
@@ -2231,6 +2234,7 @@ mod tests {
                 legacy_keys: false,
                 favorite_connections: Vec::new(),
                 open_sessions: Vec::new(),
+                snippets: None,
             }
             .store(&base.join("workspaces").join(id))
             .unwrap();

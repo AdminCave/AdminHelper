@@ -10,8 +10,10 @@ Heavy: linux-full + windows — linux-full: die Desktop-Journey `ssh-connect.liv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Desktop: Snippets im workspace.json und in den Settings (R-1071)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/ui/src/lib/bridge/types.ts
+### T1 — Desktop: Snippets im workspace.json und in den Settings (R-1071)  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/validation.rs
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @a63b6c21 2026-11-06T14:50:13+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T1.verdict.json)
 Änderung: `Snippet {name, command}` und `snippets: Option<Vec<Snippet>>` in `Settings` und `Meta` (`serde(default)`, camelCase), durchgereicht in `storage.rs` und in allen Konstruktoren. `save_settings` lehnt Listen über 200, Namen außerhalb 1–64 Zeichen oder mit Steuerzeichen und Befehle außerhalb 1–4096 Zeichen oder mit Steuerzeichen außer `\n`/`\t` ab. Tests: Rundweg `null`/`[]`/Liste durch `workspace.json`, alte Datei ohne Feld, jede Grenze; Wire-Form-Tests in `migration.rs`/`workspace.rs` nehmen das Feld auf; `types.ts` spiegelt es (Parität).
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9

@@ -119,6 +119,7 @@ impl Planned {
                 legacy_keys: true,
                 favorite_connections: Vec::new(),
                 open_sessions: Vec::new(),
+                snippets: None,
             },
             connections,
         })
@@ -672,6 +673,7 @@ mod tests {
             legacy_keys: true,
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 
