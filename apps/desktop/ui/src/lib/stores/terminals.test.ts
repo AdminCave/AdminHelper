@@ -8,12 +8,14 @@
 // program it replaced, closing ends what still runs, and what is typed reaches the program in
 // order, what came before the start answered once it has. A session detached into its own
 // window (R-1070) keeps its tab and hears nothing more here; docked, it attaches anew, the
-// terminal gets the kept output first and what it answers to that goes nowhere.
+// terminal gets the kept output first and what it answers to that goes nowhere. The SSH tabs of
+// a run are kept for the next (R-1070): opened again only when chosen, saved only once the
+// connections are there, and not wiped by the logout.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { TerminalMessage } from '$lib/bridge';
-import type { Connection, TunnelMapping } from '$lib/bridge/types';
+import type { Connection, Settings, TunnelMapping } from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
@@ -58,7 +60,9 @@ import {
   closeTerminal,
   detachedRoute,
   detachTerminal,
+  keepOpenSessions,
   listenForDocking,
+  openSessionIds,
   openTerminal,
   reconnectTerminal,
   resizeTerminal,
@@ -672,5 +676,106 @@ describe('detach and dock (R-1070)', () => {
     for (const hash of ['', '#/connections', '#/detached/', '#/detached/+1', '#/detached/1x']) {
       expect(detachedRoute(hash)).toBeNull();
     }
+  });
+});
+
+describe('keeping the SSH tabs for the next run (R-1070)', () => {
+  const C2 = { ...CONN, id: 'c2', name: 'web' } as Connection;
+  const RDP = { ...CONN, id: 'r1', kind: 'rdp' } as Connection;
+
+  let settings: ReturnType<typeof writable<Settings | null>>;
+  let list: ReturnType<typeof writable<{ items: Connection[]; loading: boolean }>>;
+  let save: ReturnType<typeof vi.fn<(ids: string[]) => Promise<void>>>;
+  let connect: ReturnType<typeof vi.fn<(c: Connection) => Promise<void>>>;
+  let stop: (() => void) | null;
+
+  function keep(restoreSessions: boolean | undefined, openSessions: string[] | undefined) {
+    settings = writable({ restoreSessions, openSessions } as Settings);
+    stop = keepOpenSessions({ settings, connections: list, save, connect });
+  }
+
+  beforeEach(() => {
+    list = writable({ items: [], loading: true });
+    save = vi.fn(async () => {});
+    // A click on connect, as initiateConnect opens an embedded SSH tab.
+    connect = vi.fn(async (c: Connection) => {
+      await openTerminal(c, c);
+    });
+    stop = null;
+  });
+
+  afterEach(() => stop?.());
+
+  it('opens the saved tabs in their order once the connections are there, a gone one passed over', async () => {
+    keep(true, ['c2', 'gone', 'c1', 'c2', 'r1']);
+    await settle();
+    expect(connect).not.toHaveBeenCalled();
+
+    list.set({ items: [CONN, C2, RDP], loading: false });
+    await settle();
+    expect(connect.mock.calls.map(([c]) => c.id)).toEqual(['c2', 'c1']);
+    expect(get(terminals).sessions.map((s) => s.connection.id)).toEqual(['c2', 'c1']);
+    // What was opened again is what was saved, minus what is gone: nothing new to save.
+    expect(save).toHaveBeenCalledExactlyOnceWith(['c2', 'c1']);
+  });
+
+  it('opens nothing unless chosen, and saves the tabs of this run as they change', async () => {
+    keep(undefined, ['c1']);
+    list.set({ items: [CONN, C2], loading: false });
+    await settle();
+    expect(connect).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledExactlyOnceWith([]);
+
+    await openTerminal(C2, C2);
+    await openTerminal(CONN, CONN);
+    await openTerminal(C2, C2);
+    await settle();
+    expect(save.mock.calls.map(([ids]) => ids)).toEqual([[], ['c2'], ['c2', 'c1']]);
+
+    closeTerminal(get(terminals).sessions[0].key);
+    await settle();
+    expect(save).toHaveBeenLastCalledWith(['c1', 'c2']);
+  });
+
+  it('saves nothing while the connections load or did not load', async () => {
+    keep(true, ['c1']);
+    await openTerminal(C2, C2);
+    list.set({ items: [], loading: false });
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the list through the logout, and stops when told to', async () => {
+    keep(true, []);
+    list.set({ items: [CONN], loading: false });
+    await settle();
+    await openTerminal(CONN, CONN);
+    await settle();
+    expect(save).toHaveBeenLastCalledWith(['c1']);
+
+    await closeAllTerminals();
+    await openTerminal(CONN, CONN);
+    await settle();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a save that failed and saves the next change', async () => {
+    keep(false, []);
+    list.set({ items: [CONN, C2], loading: false });
+    save.mockRejectedValueOnce(new Error('disk full'));
+    await openTerminal(CONN, CONN);
+    await settle();
+    expect(h.reportError).toHaveBeenCalledWith('disk full');
+    await openTerminal(C2, C2);
+    await settle();
+    expect(save).toHaveBeenLastCalledWith(['c1', 'c2']);
+  });
+
+  it('lists each SSH connection with a tab once, in tab order', () => {
+    const tab = (connection: Connection) => ({ connection }) as TerminalSession;
+    expect(
+      openSessionIds([tab(C2), tab(RDP), tab(CONN), tab(C2), tab({ ...CONN, id: '' })]),
+    ).toEqual(['c2', 'c1']);
   });
 });

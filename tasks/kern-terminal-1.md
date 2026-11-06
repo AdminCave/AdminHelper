@@ -65,15 +65,17 @@ Review: approve (.ah-out/review/kern-terminal-1/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage
 Doku: → T10
 
-### T7 — Desktop-UI: Wiederherstellen beim Start (R-1070)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/components/settings/TerminalSection.svelte, apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/i18n/de.json, apps/desktop/ui/src/lib/i18n/en.json
+### T7 — Desktop-UI: Wiederherstellen beim Start (R-1070)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/settings/TerminalSection.svelte, apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/SettingsModal.save.test.ts, apps/desktop/ui/src/components/AppShell.shell.test.ts, apps/desktop/ui/src/components/AppShell.sessions.test.ts, apps/desktop/ui/src/components/AppShell.workspace.test.ts, apps/desktop/ui/src/components/AppShell.notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @980913bf 2026-11-06T11:46:01+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T7.verdict.json)
 Änderung: Schalter in den Terminal-Einstellungen; der Store schreibt die IDs der offenen SSH-Tabs in `openSessions`, sobald sich die Tabs ändern, und öffnet sie nach der Anmeldung neu (über `initiateConnect`, gleiche Reihenfolge, gelöschte Verbindungen übergangen), wenn `restoreSessions` an ist. Tests: an/aus, gelöschte Verbindung, Reihenfolge.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- terminals TerminalSection
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- terminals SettingsModal.save AppShell
 Doku: → T10
 Abhängt von: T6
 
 ### T8 — Desktop-UI: Ansible-Lauf im Tab und Probelauf-Schalter (R-1073)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/ansible.pipeline.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/de.json, apps/desktop/ui/src/lib/i18n/en.json
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/ansible.pipeline.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
 Änderung: Schalter „Probelauf (--check)“ auf der Ansible-Seite; bei `sshConsole = embedded` öffnet „Ausführen“ einen Tab vom Typ `ansible` (Titel = Playbook, `terminal_open_ansible`), sonst `ansible_run` wie bisher, beide mit `check`. Ein Ansible-Tab hat kein „Neu verbinden“ und wird nicht wiederhergestellt (T7). Tests: beide Wege, `check` durchgereicht, Tab-Titel.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- Ansible ansible terminals
 Doku: → T10
@@ -103,3 +105,4 @@ Task-Review: am Ende
 - Kevin 2026-11-06: Das X der Titelleiste eines abgedockten Fensters dockt die Sitzung an (T4, T5); „Letzte Sitzungen beim Start wiederherstellen“ ist standardmäßig aus (T6, T7).
 - T6: `openSessions` liegt in `workspace.json` (wie `favoriteConnections`), nicht in `prefs.json`: Verbindungs-IDs gehören zu einem Workspace, `prefs.json` gilt für das Gerät. `restoreSessions` liegt in `prefs.json`. Verify `-- storage` statt `-- storage models` (cargo test nimmt einen Filter).
 - T5: Das abgedockte Fenster nutzt denselben Store mit einer übernommenen Sitzung (`adoptTerminal`) statt einer eigenen Quelle für `SshTerminal`: Replay, Status und Exit bleiben eine Logik. Es kennt nur die id, den Namen trägt die Titelleiste. Eine Sitzung, die beim Andocken kein Tab kennt (Hauptfenster neu geladen), wird beendet statt verwaist.
+- T7: Das Wiederherstellen öffnet über `initiateConnect` mit Konsole `embedded` (gleicher Weg wie ein Klick, Host-Key-Prüfung inklusive), auch wenn `sshConsole` auf `external` steht: es stellt Tabs wieder her. Nacheinander in der gespeicherten Reihenfolge; eine gelöschte Verbindung oder eine ohne Tab nach dem Start fällt aus der Liste. Gespeichert wird erst, wenn die Verbindungen da sind, und der Logout (`closeAllTerminals`) beendet das Mitschreiben vorher, damit er die Liste nicht leert. Die Abhängigkeiten kommen per Injektion (`SessionKeeping`), weil `connectFlow.ts` den Store importiert. Zwölf Dateien: die vier AppShell-Tests brauchen `connectionsStore` und `setOpenSessions` im Mock; `types.ts` braucht nichts mehr (T6), die i18n-Texte liegen in `dictionaries.ts`, nicht in `de.json`/`en.json` (auch T8 korrigiert).

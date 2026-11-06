@@ -92,7 +92,12 @@ vi.mock('$lib/bridge', () => ({
 }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
-  return { settings: writable(null), session: writable(null), refreshSettings: vi.fn() };
+  return {
+    setOpenSessions: vi.fn(async () => {}),
+    settings: writable(null),
+    session: writable(null),
+    refreshSettings: vi.fn(),
+  };
 });
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (name: string, handler: (e: { payload: unknown }) => void) => {
@@ -126,7 +131,12 @@ vi.mock('$lib/stores/tunnel', async () => {
 vi.mock('$lib/stores/connectFlow', () => ({ markRdpError: vi.fn(), initiateConnect: vi.fn() }));
 vi.mock('$lib/stores/connections', async () => {
   const { writable } = await import('svelte/store');
-  return { searchTerm: writable(''), connections: writable([]) };
+  return {
+    searchTerm: writable(''),
+    // An empty list: the tabs of the last run are neither opened nor saved (R-1070).
+    connectionsStore: writable({ items: [], loading: false }),
+    connections: writable([]),
+  };
 });
 vi.mock('./ui/ConfirmDialog.svelte', async (orig) => ({
   ...(await orig<typeof import('./ui/ConfirmDialog.svelte')>()),

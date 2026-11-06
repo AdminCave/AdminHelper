@@ -22,8 +22,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
-  import { session, settings } from '$lib/stores/session';
-  import { connections } from '$lib/stores/connections';
+  import { session, settings, setOpenSessions } from '$lib/stores/session';
+  import { connections, connectionsStore } from '$lib/stores/connections';
   import { initiateConnect, markRdpError, markRdpExit } from '$lib/stores/connectFlow';
   import { openEditor } from '$lib/stores/editor';
   import { buildEntries } from '$lib/palette';
@@ -37,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     PAGE_TAB,
     closeTerminal,
     detachTerminal,
+    keepOpenSessions,
     listenForDocking,
     showTab,
     terminals,
@@ -274,6 +275,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // instead of a hand-maintained string that silently drifts (audit 2.17).
   let appVersion = $state('');
 
+  // Only the main window keeps the tabs: a detached one holds a single session of them.
+  const stopKeeping = keepOpenSessions({
+    settings,
+    connections: connectionsStore,
+    save: setOpenSessions,
+    connect: (c) => initiateConnect(c, false, 'embedded'),
+  });
+
   onMount(async () => {
     getVersion()
       .then((v) => (appVersion = v))
@@ -315,6 +324,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   onDestroy(() => {
     destroyed = true;
+    stopKeeping();
     stopSyncTimer();
     unlisteners.forEach((fn) => {
       try {

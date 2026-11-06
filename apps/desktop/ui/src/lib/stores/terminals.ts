@@ -10,11 +10,11 @@
 // (R-1070) keeps its tab, without a terminal; docked again, it attaches anew and the terminal
 // gets the output Rust kept first. The window it is detached into holds it as its only session.
 
-import { get, writable } from 'svelte/store';
+import { get, writable, type Readable } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import type { TerminalMessage } from '$lib/bridge';
-import type { Connection } from '$lib/bridge/types';
+import type { Connection, Settings } from '$lib/bridge/types';
 import { errMsg } from '$lib/utils/errors';
 import { reportError } from './statusBar';
 import { getMappings } from './tunnel';
@@ -177,10 +177,6 @@ async function start(
   return true;
 }
 
-/**
- * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
- * not start: the tab then shows the session disconnected, the status bar why.
- */
 function newRuntime(key: string): Runtime {
   const runtime: Runtime = {
     attempt: 0,
@@ -197,6 +193,10 @@ function newRuntime(key: string): Runtime {
   return runtime;
 }
 
+/**
+ * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
+ * not start: the tab then shows the session disconnected, the status bar why.
+ */
 export function openTerminal(connection: Connection, resolved: Connection): Promise<boolean> {
   opened += 1;
   const key = `terminal-${opened}`;
@@ -388,6 +388,8 @@ export async function listenForDocking(): Promise<UnlistenFn> {
  * their tabs: as the UI starts and before the logout reloads it.
  */
 export async function closeAllTerminals(): Promise<void> {
+  // The logout ends the tabs, not the run: what was open is opened again after the next sign-in.
+  stopKeeping?.();
   runtimes.clear();
   state.set({ sessions: [], active: PAGE_TAB });
   await bridge.terminalCloseAll();
@@ -458,4 +460,77 @@ export function resizeTerminal(key: string, cols: number, rows: number): void {
   runtime.rows = rows;
   const id = runningId(session);
   if (id !== null) resizeBackend(id, cols, rows);
+}
+
+/** What keepOpenSessions works with; passed in, as connectFlow.ts imports this store. */
+export interface SessionKeeping {
+  settings: Readable<Settings | null>;
+  connections: Readable<{ items: Connection[]; loading: boolean }>;
+  /** Saves the ids of the open SSH tabs. */
+  save: (ids: string[]) => Promise<void>;
+  /** Opens `connection` the way a click on connect does. */
+  connect: (connection: Connection) => Promise<void>;
+}
+
+let stopKeeping: (() => void) | null = null;
+
+/** The ids of the connections with an SSH tab, in tab order, each once. */
+export function openSessionIds(sessions: TerminalSession[]): string[] {
+  const ids: string[] = [];
+  for (const s of sessions) {
+    if (s.connection.kind === 'ssh' && s.connection.id && !ids.includes(s.connection.id)) {
+      ids.push(s.connection.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Keeps the open SSH tabs in the settings (R-1070). Once the connections are there it opens the
+ * tabs of the last run again if restoreSessions is on, one after the other in their order, and
+ * passes over a connection that is gone; then it saves the ids whenever the tabs change. Nothing
+ * is saved before, so a list that is still loading does not wipe the last run. The function it
+ * returns stops it.
+ */
+export function keepOpenSessions(k: SessionKeeping): () => void {
+  let stopped = false;
+  let stopTabs: (() => void) | null = null;
+  const stop = () => {
+    stopped = true;
+    stopConnections?.();
+    stopTabs?.();
+    if (stopKeeping === stop) stopKeeping = null;
+  };
+  stopKeeping = stop;
+
+  async function start(items: Connection[]): Promise<void> {
+    const current = get(k.settings);
+    const saved = current?.openSessions ?? [];
+    if (current?.restoreSessions) {
+      for (const id of [...new Set(saved)]) {
+        const connection = items.find((c) => c.id === id && c.kind === 'ssh');
+        if (stopped) return;
+        if (connection) await k.connect(connection);
+      }
+    }
+    if (stopped) return;
+    let last = saved.join('\n');
+    let saving = Promise.resolve();
+    stopTabs = state.subscribe(({ sessions }) => {
+      const ids = openSessionIds(sessions);
+      if (ids.join('\n') === last) return;
+      last = ids.join('\n');
+      saving = saving.then(() => k.save(ids)).catch((err) => reportError(errMsg(err)));
+    });
+  }
+
+  let started = false;
+  let stopConnections: (() => void) | null = null;
+  stopConnections = k.connections.subscribe(({ items, loading }) => {
+    if (started || loading || items.length === 0) return;
+    started = true;
+    queueMicrotask(() => stopConnections?.());
+    void start(items);
+  });
+  return stop;
 }

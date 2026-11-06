@@ -163,6 +163,15 @@ export async function setFavoriteConnections(ids: string[]): Promise<void> {
   _state.update((s) => ({ ...s, settings: next }));
 }
 
+/** Keeps the ids of the open SSH tabs (R-1070) for the next sign-in. */
+export async function setOpenSessions(ids: string[]): Promise<void> {
+  const current = get(_state);
+  if (!current.settings) return;
+  const next = { ...current.settings, openSessions: ids };
+  await bridge.saveSettings(next);
+  _state.update((s) => ({ ...s, settings: next }));
+}
+
 export async function refreshSettings(): Promise<void> {
   const s = await bridge.loadSettings();
   _state.update((st) => ({ ...st, settings: s }));

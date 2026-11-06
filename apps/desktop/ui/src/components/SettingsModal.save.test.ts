@@ -272,6 +272,23 @@ describe('SettingsModal — the section Terminal (R-1069)', () => {
     });
     expect(h.saveSettings).toHaveBeenCalledTimes(2);
   });
+
+  // Reopening the SSH tabs of the last run (R-1070) is off unless chosen; unset stays unset.
+  it('saves the choice to reopen the SSH tabs of the last run', async () => {
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+    await fireEvent.click(container.querySelector('[role="tab"][data-section="terminal"]')!);
+    const box = within(container.querySelector<HTMLElement>('[data-pane="terminal"]')!).getByRole(
+      'checkbox',
+      { name: tNow('settings.terminal.restoreSessions') },
+    ) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await fireEvent.click(box);
+    await fireEvent.click(saveButton(container));
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect('restoreSessions' in h.stored).toBe(false);
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({ ...h.stored, restoreSessions: true });
+  });
 });
 
 // A live spec saved through the first `.sm-panel .btn.primary`. With a session the
