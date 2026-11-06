@@ -1,0 +1,17 @@
+{
+  "identifier": "terminal-window",
+  "description": "A detached terminal window: its own session, the settings and listening to events",
+  "windows": [
+    "terminal-*"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-load-settings",
+    "allow-terminal-attach",
+    "allow-terminal-write",
+    "allow-terminal-resize",
+    "allow-terminal-close",
+    "allow-terminal-dock"
+  ]
+}

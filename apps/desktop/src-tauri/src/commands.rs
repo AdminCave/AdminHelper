@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::ansible;
 use crate::auth;
@@ -575,8 +575,20 @@ pub async fn login(
     .await
 }
 
+/// Signs out; no terminal session and no detached window outlives the sign-in.
 #[tauri::command]
-pub async fn logout(session: State<'_, SessionState>) -> Result<(), AppError> {
+pub async fn logout(
+    app: tauri::AppHandle,
+    session: State<'_, SessionState>,
+) -> Result<(), AppError> {
+    // destroy, not close: close raises CloseRequested, which main would take for the user
+    // closing the window through its title bar.
+    for (label, window) in app.webview_windows() {
+        if detached_id(&label).is_some() {
+            let _ = window.destroy();
+        }
+    }
+    app.state::<PtyRegistry>().close_all();
     auth::logout(session.inner()).await
 }
 
@@ -751,30 +763,142 @@ pub fn terminal_attach(
     id: u64,
     output: Channel<InvokeResponseBody>,
 ) -> Result<(), AppError> {
+    may_reach(window.label(), id)?;
     registry.attach(id, window.label(), channel_sink(output))
+}
+
+/// The label of the window session `id` is detached into.
+pub fn detached_label(id: u64) -> String {
+    format!("terminal-{id}")
+}
+
+/// The session a detached window's `label` shows; `None` for any other window.
+pub fn detached_id(label: &str) -> Option<u64> {
+    let id = label.strip_prefix("terminal-")?;
+    // `u64::from_str` would also take "+5", a label no detached window has.
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    id.parse().ok()
+}
+
+/// Main reaches every session, a detached window its own one only, any other window none.
+/// The capability of `terminal-*` windows limits the commands; this limits the sessions.
+fn may_reach(label: &str, id: u64) -> Result<(), AppError> {
+    if label == pty::MAIN || detached_id(label) == Some(id) {
+        Ok(())
+    } else {
+        Err(AppError::Validation(format!(
+            "this window cannot reach terminal session {id}"
+        )))
+    }
+}
+
+#[derive(Clone, serde::Serialize)]
+struct TerminalWindow {
+    id: u64,
+}
+
+/// Opens session `id` in a window of its own, `terminal-<id>`, at the UI route
+/// `#/detached/<id>`; that window attaches itself. An open one comes to the front. Async: on
+/// Windows a window built from a sync command waits on the event loop it runs in.
+#[tauri::command]
+pub async fn terminal_detach(
+    window: tauri::Window,
+    id: u64,
+    title: String,
+) -> Result<(), AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window detaches a session".into(),
+        ));
+    }
+    let app = window.app_handle();
+    if !app.state::<PtyRegistry>().has(id) {
+        return Err(AppError::Validation(format!("no terminal session {id}")));
+    }
+    let label = detached_label(id);
+    if let Some(open) = app.get_webview_window(&label) {
+        return open.set_focus().map_err(window_error);
+    }
+    let url = tauri::WebviewUrl::App(format!("index.html#/detached/{id}").into());
+    tauri::WebviewWindowBuilder::new(app, label, url)
+        .title(title)
+        .inner_size(900.0, 560.0)
+        .resizable(true)
+        .build()
+        .map(|_| ())
+        .map_err(window_error)
+}
+
+/// Closes the detached window of session `id` and tells main, which attaches it as a tab.
+#[tauri::command]
+pub fn terminal_dock(window: tauri::Window, id: u64) -> Result<(), AppError> {
+    may_reach(window.label(), id)?;
+    let app = window.app_handle();
+    let label = detached_label(id);
+    if let Some(detached) = app.get_webview_window(&label) {
+        // destroy raises no window event (unlike close, whose CloseRequested main takes for the
+        // title bar), so the session goes back to main here.
+        detached.destroy().map_err(window_error)?;
+        app.state::<PtyRegistry>().hand_back(&label);
+    }
+    app.emit_to(pty::MAIN, "terminal-docked", TerminalWindow { id })
+        .map_err(window_error)
+}
+
+/// The window events of a detached window: closing it through its title bar is reported to
+/// main (`terminal-window-closed`); once it is gone, main holds its session, without a sink.
+pub fn on_detached_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    let Some(id) = detached_id(window.label()) else {
+        return;
+    };
+    match event {
+        tauri::WindowEvent::CloseRequested { .. } => {
+            let _ = window.emit_to(pty::MAIN, "terminal-window-closed", TerminalWindow { id });
+        }
+        tauri::WindowEvent::Destroyed => {
+            window.state::<PtyRegistry>().hand_back(window.label());
+        }
+        _ => {}
+    }
+}
+
+fn window_error(error: tauri::Error) -> AppError {
+    AppError::Io(std::io::Error::other(error.to_string()))
 }
 
 /// Typed input for session `id`, bytes as they are. On a blocking thread: the write waits
 /// while the program does not read.
 #[tauri::command]
-pub async fn terminal_write(app: tauri::AppHandle, id: u64, data: Vec<u8>) -> Result<(), AppError> {
+pub async fn terminal_write(window: tauri::Window, id: u64, data: Vec<u8>) -> Result<(), AppError> {
+    may_reach(window.label(), id)?;
+    let app = window.app_handle().clone();
     blocking(move || app.state::<PtyRegistry>().write(id, &data)).await
 }
 
 #[tauri::command]
 pub fn terminal_resize(
+    window: tauri::Window,
     registry: State<'_, PtyRegistry>,
     id: u64,
     cols: u16,
     rows: u16,
 ) -> Result<(), AppError> {
+    may_reach(window.label(), id)?;
     registry.resize(id, cols, rows)
 }
 
 /// Ends the program of session `id`; its `TerminalExit` follows on the session's channel.
 #[tauri::command]
-pub fn terminal_close(registry: State<'_, PtyRegistry>, id: u64) {
+pub fn terminal_close(
+    window: tauri::Window,
+    registry: State<'_, PtyRegistry>,
+    id: u64,
+) -> Result<(), AppError> {
+    may_reach(window.label(), id)?;
     registry.close(id);
+    Ok(())
 }
 
 /// Ends the sessions of the calling window: the UI calls it as it starts and before it
@@ -933,10 +1057,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ansible_run_with, check_server_cert_in, delete_workspace_in, enroll_with_token_in,
-        list_workspaces_in, open_launcher_with, open_workspace_in, reject_foreign_port,
-        reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
-        sign_in_target, ssh_spawn, sync_source,
+        ansible_run_with, check_server_cert_in, delete_workspace_in, detached_id, detached_label,
+        enroll_with_token_in, list_workspaces_in, may_reach, open_launcher_with, open_workspace_in,
+        reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline,
+        save_workspace_in, sign_in_target, ssh_spawn, sync_source,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -2239,5 +2363,70 @@ mod tests {
             let body = &body[..body.find("\n}\n").expect("end of the command")];
             assert!(body.contains("blocking("), "{name} does not use blocking");
         }
+    }
+
+    /// The label check is the half of the window boundary the capability files do not carry;
+    /// a command that drops it would let a detached window reach any session.
+    #[test]
+    fn terminal_commands_check_the_window_that_calls_them() {
+        let source = include_str!("commands.rs").replace("\r\n", "\n");
+        let body = |name: &str| -> String {
+            let start = [
+                format!("#[tauri::command]\npub fn {name}("),
+                format!("#[tauri::command]\npub async fn {name}("),
+            ]
+            .iter()
+            .find_map(|head| source.find(head.as_str()))
+            .unwrap_or_else(|| panic!("{name} is not a command"));
+            let body = &source[start..];
+            body[..body.find("\n}\n").expect("end of the command")].to_string()
+        };
+        for name in [
+            "terminal_attach",
+            "terminal_write",
+            "terminal_resize",
+            "terminal_close",
+            "terminal_dock",
+        ] {
+            assert!(
+                body(name).contains("may_reach(window.label(), id)?;"),
+                "{name} does not check the calling window"
+            );
+        }
+        assert!(
+            body("terminal_detach").contains("if window.label() != pty::MAIN {"),
+            "terminal_detach does not check for main"
+        );
+        // close would report every dock and every sign-out as a close through the title bar.
+        for name in ["terminal_dock", "logout"] {
+            let body = body(name);
+            assert!(
+                body.contains(".destroy()"),
+                "{name} does not destroy the window"
+            );
+            assert!(!body.contains(".close()"), "{name} closes the window");
+        }
+    }
+
+    #[test]
+    fn a_detached_window_reaches_its_own_session_only() {
+        assert_eq!(detached_label(7), "terminal-7");
+        assert_eq!(detached_id("terminal-7"), Some(7));
+        for label in [
+            "main",
+            "terminal-",
+            "terminal-+7",
+            "terminal-7x",
+            "terminalx-7",
+            "launcher",
+        ] {
+            assert_eq!(detached_id(label), None, "{label}");
+        }
+        assert!(may_reach("main", 7).is_ok());
+        assert!(may_reach("main", 8).is_ok());
+        assert!(may_reach("terminal-7", 7).is_ok());
+        assert!(may_reach("terminal-7", 8).is_err());
+        assert!(may_reach("terminal-+7", 7).is_err());
+        assert!(may_reach("launcher", 7).is_err());
     }
 }

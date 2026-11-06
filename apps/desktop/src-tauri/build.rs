@@ -2,6 +2,72 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/// Every command of `generate_handler!` in `src/main.rs`. Listing them makes each one need
+/// its `allow-<command>` in the capability of the calling window (capabilities/); a command
+/// missing here is allowed nowhere, one missing in `default.json` not in the main window.
+/// `src/capabilities.rs` holds the three lists together.
+const COMMANDS: &[&str] = &[
+    "load_connections",
+    "load_settings",
+    "save_settings",
+    "password_state",
+    "save_password",
+    "delete_password",
+    "sync_connections",
+    "save_connections",
+    "open_connection",
+    "open_connection_stored",
+    "start_session",
+    "end_session",
+    "list_sessions",
+    "device_name",
+    "login",
+    "logout",
+    "fetch_connections_jwt",
+    "start_tunnel",
+    "refresh_tunnel",
+    "stop_tunnel",
+    "tunnel_status",
+    "fetch_tunnels",
+    "generate_diagnostics",
+    "resolve_connection",
+    "api_proxy",
+    "check_server_cert",
+    "reset_server_cert_pin",
+    "is_device_enrolled",
+    "device_identity",
+    "pinned_ca_fingerprint",
+    "reset_device_identity",
+    "enroll_with_token",
+    "export_browser_p12",
+    "write_export_csv",
+    "probe_targets",
+    "ansible_run",
+    "start_notification_stream",
+    "stop_notification_stream",
+    "workspace_context",
+    "list_workspaces",
+    "save_workspace",
+    "delete_workspace",
+    "open_workspace",
+    "open_launcher",
+    "terminal_open_ssh",
+    "terminal_write",
+    "terminal_resize",
+    "terminal_close",
+    "terminal_close_all",
+    "terminal_attach",
+    "terminal_detach",
+    "terminal_dock",
+    "rdp_trust_certificate",
+    "rdp_session_start",
+    "rdp_session_stop",
+];
+
 fn main() {
-    tauri_build::build()
+    tauri_build::try_build(
+        tauri_build::Attributes::new()
+            .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
+    )
+    .expect("failed to run tauri-build");
 }

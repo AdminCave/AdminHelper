@@ -63,6 +63,9 @@ pub struct Spawn {
     pub cwd: Option<PathBuf>,
 }
 
+/// The label of the main window, which may reach every session.
+pub const MAIN: &str = "main";
+
 /// Where the output of a session goes; false once nobody listens.
 type Sink = Box<dyn FnMut(Output) -> bool + Send>;
 
@@ -345,11 +348,29 @@ impl PtyRegistry {
         }
     }
 
-    /// Ends the programs of all sessions, as the app exits.
+    /// Whether session `id` is there.
+    pub fn has(&self, id: u64) -> bool {
+        lock(&self.sessions).contains_key(&id)
+    }
+
+    /// Gives the sessions of a window that is gone to `main`, without a sink: their programs
+    /// run on and the ring keeps their output until `main` attaches or closes them.
+    pub fn hand_back(&self, owner: &str) {
+        for session in lock(&self.sessions).values() {
+            let mut stream = lock(&session.stream);
+            if stream.owner == owner {
+                stream.owner = MAIN.to_string();
+                stream.sink = None;
+            }
+        }
+    }
+
+    /// Ends the programs of all sessions, as the app exits and as the user signs out; ended
+    /// ones nobody listens to go at once.
     pub fn close_all(&self) {
-        let sessions: Vec<Arc<Session>> = lock(&self.sessions).values().cloned().collect();
-        for session in sessions {
-            session.close();
+        let ids: Vec<u64> = lock(&self.sessions).keys().copied().collect();
+        for id in ids {
+            self.close(id);
         }
     }
 
@@ -715,6 +736,31 @@ mod tests {
         nothing_after(&theirs_rx);
         registry.close_all_of("main");
         until_exit(&registry, theirs, &theirs_rx2, Vec::new());
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn a_window_that_is_gone_hands_its_sessions_back_to_main() {
+        let registry = PtyRegistry::default();
+        let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-3");
+        let (mine, _mine_rx) = open_for(&registry, long_running(), "terminal-4");
+        registry.hand_back("terminal-3");
+        nothing_after(&theirs_rx);
+        // Main's close takes the handed back session, not the other window's.
+        registry.close_all_of(MAIN);
+        let deadline = Instant::now() + WAIT;
+        while registry.write(theirs, b"").is_ok() || registry.len() != 1 {
+            assert!(
+                Instant::now() < deadline,
+                "the handed back session does not end"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            registry.write(mine, b"").is_ok(),
+            "the other window's runs on"
+        );
+        registry.close_all();
         until_gone(&registry);
     }
 
