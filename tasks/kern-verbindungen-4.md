@@ -29,23 +29,24 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sess
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Server: IPv6-Literal im Jump-Host nur im ersten Hop (R-1158)  [ ]
+### T3 — Server: IPv6-Literal im Jump-Host nur im letzten Hop (R-1158)  [ ]
 Komponente: server · Dateien: apps/server/app/modules/connections/schemas.py, apps/server/tests/test_connections_options.py
-Änderung: `_JUMP_RE`: der erste Hop nimmt `_HOST`, jeder weitere einen Hostnamen ohne `[…]`. Tests: `[2001:db8::1],h2` gut, `h1,[2001:db8::1]` → `422`; die bestehende gute Fixture mit IPv6 im zweiten Hop auf den ersten Hop umstellen.
+Änderung: `_JUMP_RE`: der letzte Hop nimmt `_HOST`, jeder davor einen Hostnamen ohne `[…]`. Tests: `h1,[2001:db8::1]` gut (die bestehende Fixture), `[2001:db8::1],h2` und `h1,[2001:db8::1],h3` → `422`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options.py tests/test_openapi_snapshot.py
 Doku: → T5
 
 ### T4 — Desktop: dieselbe Jump-Host-Regel beim Start (R-1158)  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/validation.rs, apps/desktop/src-tauri/src/connection/ssh.rs
-Änderung: `JUMP_RE` wie T3 (erster Hop `HOST`, weitere ohne IPv6-Literal). Tests in `validation.rs`: guter Fall mit IPv6 im ersten Hop, böser mit IPv6 im zweiten; die Fixtures in `validation.rs` und `connection/ssh.rs` mit IPv6 im zweiten Hop umstellen.
+Änderung: `JUMP_RE` wie T3 (letzter Hop `HOST`, die davor ohne IPv6-Literal). Tests in `validation.rs`: guter Fall mit IPv6 im letzten Hop, böse mit IPv6 in einem früheren; die Fixture `…,[2001:db8::1],h3` in `validation.rs` umstellen, `connection/ssh.rs` bleibt gültig.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- validation -- ssh
 Doku: → T5
 
 ### T5 — Hinweis am Jump-Host-Feld, Doku und CHANGELOG (R-1140, R-1143, R-1158)  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-verbindungen-4.md
-Änderung: `editor.field.jumpHost.hint` DE/EN um „IPv6-Adresse in eckigen Klammern nur im ersten Hop“ / „an IPv6 address in brackets only in the first hop“. API-Referenz DE+EN: `403` für API-Keys bei den Optionen aus T1 und bei `GET …/sessions`, Jump-Host-Regel aus T3. Admin-Doku DE+EN: Jump-Host-Format im Reiter *Optionen*. Changelog-Fragment (ohne Umlaute) unter `### Changed`.
+Änderung: `editor.field.jumpHost.hint` DE/EN um „IPv6-Adresse in eckigen Klammern nur im letzten Hop“ / „an IPv6 address in brackets only in the last hop“. API-Referenz DE+EN: `403` für API-Keys bei den Optionen aus T1 und bei `GET …/sessions`, Jump-Host-Regel aus T3. Admin-Doku DE+EN: Jump-Host-Format im Reiter *Optionen*. Changelog-Fragment (ohne Umlaute) unter `### Changed`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts src/components/ConnectionEditor.options.test.ts
 Doku: die genannten Dateien
 
 ## Entscheidungen
 - T1: Ein API-Key darf auch `host`, `port` und `kind` nicht ändern, solange die gespeicherte Verbindung eine geschützte Option trägt (sonst wanderte die Option mit zum neuen Ziel); Folge aus Kevins Regel in R-1140, Kevin gemeldet.
+- T3/T4: IPv6-Literal nur im **letzten** Hop statt im ersten. Gemessen mit OpenSSH 10.0p2: nur der letzte Hop wird von ssh selbst zerlegt, die davor gehen unverändert in den ProxyCommand; „erster Hop“ hätte genau den Fall erlaubt, den R-1158 sperren will. Kevins Absicht übernommen, Kevin gemeldet.

@@ -18,8 +18,10 @@ Stand `origin/main@ddfec795`.
 - **R-1143:** `GET /api/connections/{id}/sessions` (`router.py:267`) liefert den Verlauf jedem Lesezugriff im
   Scope der Liste, auch API-Keys. Verlauf und Gerätenamen sind für Nutzer-Konten gedacht.
 - **R-1158:** Der Jump-Host nimmt IPv6-Literale (`[2001:db8::1]`) in jedem Hop an (Server
-  `apps/server/app/modules/connections/schemas.py:58`, Desktop `apps/desktop/src-tauri/src/validation.rs:95`). Ab dem
-  zweiten Hop gibt OpenSSH den Hop nicht so weiter, wie er geschrieben steht. Kevin: IPv6 nur im ersten Hop.
+  `apps/server/app/modules/connections/schemas.py:58`, Desktop `apps/desktop/src-tauri/src/validation.rs:95`). Nur den
+  letzten Hop nimmt OpenSSH selbst auseinander; die Hops davor gibt es unverändert weiter, und dort bleibt ein
+  Literal in Klammern nicht so, wie es geschrieben steht (geprüft mit OpenSSH 10.0p2, `ssh -vvv -J`). Kevin wollte
+  IPv6 nur dort, wo OpenSSH es richtig weitergibt; das ist der letzte Hop.
 
 ## Ziel & Nicht-Ziele
 Ziel:
@@ -27,7 +29,7 @@ Ziel:
   (beim Anlegen: als ungesetzt). Unverändert mitgesendete Werte gehen durch, damit ein Key eine Verbindung lesen,
   ändern und zurückschreiben kann.
 - Ein API-Key bekommt auf `GET …/sessions` `403`, unabhängig vom Scope.
-- Ein IPv6-Literal steht im Jump-Host nur im ersten Hop; Server und Desktop prüfen das gleich.
+- Ein IPv6-Literal steht im Jump-Host nur im letzten Hop; Server und Desktop prüfen das gleich.
 
 Jede Änderung kommt mit einem Test, der ohne sie rot ist.
 
@@ -55,9 +57,9 @@ Keine Migration und kein neues Feld. Neu sind zwei `403`-Antworten, beide mit en
 Docstrings nicht geändert werden (Snapshot).
 
 ## Externe Integrationen
-OpenSSH `ssh(1)` `-J` / `ProxyJump` (<https://man.openbsd.org/ssh_config#ProxyJump>): Die Hops nach dem ersten
-gibt `ssh` als `ProxyCommand` weiter. Den Rest von Kevins Entscheidung in R-1158 übernimmt das Vorhaben, ohne neu zu
-messen.
+OpenSSH `ssh(1)` `-J` / `ProxyJump` (<https://man.openbsd.org/ssh_config#ProxyJump>): `ssh` verbindet zum letzten
+Hop über einen `ProxyCommand`, der die Hops davor unverändert als `-J` weitergibt. Gemessen mit OpenSSH 10.0p2
+(`debug1: Setting implicit ProxyCommand from ProxyJump`).
 
 ## Trade-offs & Alternativen
 - **Vergleich mit dem gespeicherten Wert statt Verbot jedes Mitsendens:** Ein Key, der eine Verbindung mit
