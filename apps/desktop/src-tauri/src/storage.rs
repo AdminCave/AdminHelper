@@ -382,6 +382,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         os_notifications,
         ssh_console,
         terminal,
+        restore_sessions,
     } = prefs;
     Settings {
         mode: meta.map_or(defaults.mode, |meta| meta.kind.clone()),
@@ -402,6 +403,8 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         favorite_connections: meta.map_or_else(Vec::new, |meta| meta.favorite_connections.clone()),
         ssh_console,
         terminal,
+        restore_sessions,
+        open_sessions: meta.map_or_else(Vec::new, |meta| meta.open_sessions.clone()),
     }
 }
 
@@ -463,6 +466,7 @@ fn meta_with(
         allow_self_signed_certs: settings.allow_self_signed_certs,
         last_username: settings.last_username.clone(),
         favorite_connections: settings.favorite_connections.clone(),
+        open_sessions: settings.open_sessions.clone(),
         ..meta.clone()
     })
 }
@@ -550,6 +554,9 @@ pub(crate) struct Prefs {
     pub ssh_console: SshConsole,
     #[serde(default)]
     pub terminal: TerminalPrefs,
+    // Absent in a prefs.json of 0.46 and before.
+    #[serde(default)]
+    pub restore_sessions: bool,
 }
 
 impl From<&Settings> for Prefs {
@@ -564,6 +571,7 @@ impl From<&Settings> for Prefs {
             os_notifications: settings.os_notifications,
             ssh_console: settings.ssh_console,
             terminal: settings.terminal,
+            restore_sessions: settings.restore_sessions,
         }
     }
 }
@@ -594,6 +602,7 @@ impl Prefs {
             os_notifications,
             ssh_console,
             terminal,
+            restore_sessions,
         } = mine;
         take_changed(&mut self.language, &seen.language, language);
         take_changed(
@@ -629,6 +638,11 @@ impl Prefs {
         take_changed(&mut self.ssh_console, &seen.ssh_console, ssh_console);
         // As a whole: two windows changing different options at once, the last one wins.
         take_changed(&mut self.terminal, &seen.terminal, terminal);
+        take_changed(
+            &mut self.restore_sessions,
+            &seen.restore_sessions,
+            restore_sessions,
+        );
         self
     }
 }
@@ -966,6 +980,7 @@ mod settings_tests {
             last_username: None,
             legacy_keys: false,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
         }
     }
 
@@ -1042,6 +1057,8 @@ mod settings_tests {
             right_click_paste: false,
             confirm_close: false,
         };
+        settings.restore_sessions = true;
+        settings.open_sessions = vec!["c2".to_string(), "c1".to_string()];
         save_settings_in(base, &process, &settings).unwrap();
 
         // The next process of the workspace reads what this one saved.
@@ -1070,6 +1087,7 @@ mod settings_tests {
                     "rightClickPaste": false,
                     "confirmClose": false,
                 },
+                "restoreSessions": true,
             })
         );
         assert_eq!(
@@ -1080,6 +1098,7 @@ mod settings_tests {
                 allow_self_signed_certs: true,
                 last_username: Some("admin".to_string()),
                 favorite_connections: vec!["c1".to_string(), "c2".to_string()],
+                open_sessions: vec!["c2".to_string(), "c1".to_string()],
                 ..meta(SyncMode::Server, None)
             }
         );
@@ -1120,6 +1139,49 @@ mod settings_tests {
         let prefs = json_of(&base.join(PREFS_FILE));
         assert_eq!(prefs["language"], "en");
         assert!(prefs.get("favoriteConnections").is_none());
+    }
+
+    #[test]
+    fn open_sessions_belong_to_their_workspace_and_old_files_have_none() {
+        let scratch = Scratch::new("settings-open-sessions");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        // A workspace.json and a prefs.json written before R-1070.
+        let dir_b = workspace("b").data_dir(base);
+        fs::create_dir_all(&dir_b).unwrap();
+        let mut old = serde_json::to_value(meta(SyncMode::Local, None)).unwrap();
+        old.as_object_mut().unwrap().remove("openSessions");
+        fs::write(dir_b.join("workspace.json"), old.to_string()).unwrap();
+        let mut old_prefs = serde_json::to_value(Prefs::default()).unwrap();
+        old_prefs.as_object_mut().unwrap().remove("restoreSessions");
+        fs::write(base.join(PREFS_FILE), old_prefs.to_string()).unwrap();
+        {
+            let _b = enter("b");
+            let settings = load_settings_in(base, None).unwrap();
+            assert!(!settings.restore_sessions, "restoring is off unless chosen");
+            assert!(settings.open_sessions.is_empty());
+        }
+        {
+            let _a = enter("a");
+            let process = SeenPrefs::new();
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.open_sessions = vec!["s2".to_string(), "s1".to_string()];
+            settings.restore_sessions = true;
+            save_settings_in(base, &process, &settings).unwrap();
+        }
+        assert_eq!(
+            meta_in(base, "a").open_sessions,
+            vec!["s2".to_string(), "s1".to_string()],
+            "the tab order is kept"
+        );
+        // The switch is the device's, the tabs are the workspace's.
+        let prefs = json_of(&base.join(PREFS_FILE));
+        assert_eq!(prefs["restoreSessions"], true);
+        assert!(prefs.get("openSessions").is_none());
+        let _b = enter("b");
+        let in_b = load_settings_in(base, None).unwrap();
+        assert!(in_b.restore_sessions);
+        assert!(in_b.open_sessions.is_empty());
     }
 
     #[test]

@@ -4,7 +4,8 @@
 
 // The tab bar of the embedded terminal (R-1069): only with a session, the page first, then each
 // session with its name and status; a click or the arrow keys bring a tab to the front, the cross
-// and Delete close a session.
+// and Delete close a session. A running session detaches by its button, a double click or a
+// pull downwards (R-1070); its tab stays in italics, and a click brings its window forward.
 
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
@@ -13,7 +14,12 @@ import { setLanguage, tNow } from '$lib/i18n';
 import { PAGE_TAB, type TerminalSession, type TerminalStatus } from '$lib/stores/terminals';
 import SessionTabs from './SessionTabs.svelte';
 
-function session(key: string, name: string, status: TerminalStatus): TerminalSession {
+function session(
+  key: string,
+  name: string,
+  status: TerminalStatus,
+  more: Partial<TerminalSession> = {},
+): TerminalSession {
   const connection = { id: key, name, kind: 'ssh', host: `${name}.example` } as Connection;
   return {
     key,
@@ -23,6 +29,7 @@ function session(key: string, name: string, status: TerminalStatus): TerminalSes
     exitCode: null,
     connectedAt: null,
     backendId: null,
+    ...more,
   };
 }
 
@@ -33,8 +40,9 @@ const OLD = session('terminal-3', 'old', 'disconnected');
 function setup(active: string, sessions = [WEB, DB, OLD]) {
   const onSelect = vi.fn();
   const onClose = vi.fn();
-  render(SessionTabs, { sessions, active, pageLabel: 'Connections', onSelect, onClose });
-  return { onSelect, onClose };
+  const onDetach = vi.fn();
+  render(SessionTabs, { sessions, active, pageLabel: 'Connections', onSelect, onClose, onDetach });
+  return { onSelect, onClose, onDetach };
 }
 
 const tabs = () => screen.queryAllByRole('tab');
@@ -111,5 +119,68 @@ describe('SessionTabs', () => {
     await fireEvent.keyDown(web, { key: 'Delete' });
     expect(onClose).toHaveBeenCalledExactlyOnceWith(WEB);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  describe('detach (R-1070)', () => {
+    const RUN = session('terminal-4', 'run', 'connected', { backendId: 4 });
+    const AWAY = session('terminal-5', 'away', 'connected', { backendId: 5, detached: true });
+    const detachButton = (name: string) =>
+      screen.queryByRole('button', { name: tNow('terminal.tabs.detach', { name }) });
+
+    it('offers its button only on a running session, and it brings no tab to the front', async () => {
+      const { onSelect, onDetach } = setup(PAGE_TAB, [WEB, OLD, RUN, AWAY]);
+      // Not started yet, ended, or detached already: nothing to detach.
+      expect(detachButton('web')).toBeNull();
+      expect(detachButton('old')).toBeNull();
+      expect(detachButton('away')).toBeNull();
+      await fireEvent.click(detachButton('run')!);
+      expect(onDetach).toHaveBeenCalledExactlyOnceWith(RUN);
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('detaches with a double click', async () => {
+      const { onDetach } = setup(PAGE_TAB, [WEB, RUN]);
+      await fireEvent.dblClick(screen.getByRole('tab', { name: /web/ }));
+      expect(onDetach).not.toHaveBeenCalled();
+      await fireEvent.dblClick(screen.getByRole('tab', { name: /run/ }));
+      expect(onDetach).toHaveBeenCalledExactlyOnceWith(RUN);
+    });
+
+    it('detaches when pulled 46 px down, and the click that ends the pull selects nothing', async () => {
+      const { onSelect, onDetach } = setup(PAGE_TAB, [RUN]);
+      const tab = screen.getByRole('tab', { name: /run/ });
+      await fireEvent.pointerDown(tab, { button: 0, pointerId: 1, clientY: 10 });
+      await fireEvent.pointerMove(tab, { pointerId: 1, clientY: 55 });
+      expect(onDetach).not.toHaveBeenCalled();
+      await fireEvent.pointerMove(tab, { pointerId: 1, clientY: 56 });
+      await fireEvent.pointerMove(tab, { pointerId: 1, clientY: 90 });
+      expect(onDetach).toHaveBeenCalledExactlyOnceWith(RUN);
+      await fireEvent.pointerUp(tab, { pointerId: 1 });
+      await fireEvent.click(tab);
+      expect(onSelect).not.toHaveBeenCalled();
+
+      // Let go before the mark: a plain click, nothing detached.
+      await fireEvent.pointerDown(tab, { button: 0, pointerId: 2, clientY: 10 });
+      await fireEvent.pointerMove(tab, { pointerId: 2, clientY: 40 });
+      await fireEvent.pointerUp(tab, { pointerId: 2 });
+      await fireEvent.click(tab);
+      expect(onDetach).toHaveBeenCalledTimes(1);
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith(RUN.key);
+    });
+
+    it('shows a detached tab in italics; a click brings its window, the arrows pass over it', async () => {
+      const { onSelect, onDetach } = setup(PAGE_TAB, [AWAY, RUN]);
+      const [page, away] = tabs();
+      expect(away.getAttribute('title')).toBe(tNow('terminal.tabs.detached'));
+      expect(away.closest('.detached')).not.toBeNull();
+      expect(tabs()[2].closest('.detached')).toBeNull();
+      await fireEvent.click(away);
+      expect(onDetach).toHaveBeenCalledExactlyOnceWith(AWAY);
+      expect(onSelect).not.toHaveBeenCalled();
+      await fireEvent.keyDown(page, { key: 'ArrowRight' });
+      expect(document.activeElement).toBe(away);
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onDetach).toHaveBeenCalledTimes(1);
+    });
   });
 });

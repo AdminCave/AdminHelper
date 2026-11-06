@@ -7,7 +7,7 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 ## Highlights
 
 - **SSH / RDP / Web** connections in a single app
-- **Embedded SSH terminal**: SSH sessions as tabs beside the page, with search in the scrollback and reconnect; the OS terminal stays one setting away
+- **Embedded SSH terminal**: SSH sessions as tabs beside the page, with search in the scrollback and reconnect; a tab detaches into a window of its own and docks back; the OS terminal stays one setting away
 - **Filters**:
   - `Einzeln` (single connections)
   - `Zusammengefasst` (grouped by host/IP)
@@ -26,6 +26,7 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 
 - **SSH**
   - By default opens in a session tab of the **AdminHelper terminal**: `ssh` runs in a pseudo console of the app (ConPTY on Windows) with the same arguments, through the tunnel too
+  - A tab detaches into a window of its own (button on the tab, double click or dragging it down) and docks back with *Dock* or the window's close button; the session keeps running
   - In the OS terminal via the *Console for SSH* setting, or for one start via the arrow of the *Connect* button:
     - Windows: opens Windows Terminal (or cmd) and runs `ssh`
     - Linux: opens the first available terminal (gnome-terminal, konsole, xfce4-terminal, xterm, alacritty, kitty, wezterm, ...)
@@ -104,7 +105,8 @@ device:
   sign-out, and the **interval** of a sync workspace
 - **RDP**: **scaling mode** `auto`, `normal`, `hdpi`, window, performance
 - **Terminal**: **console for SSH** (AdminHelper terminal or OS terminal), and the terminal options: font size,
-  colour scheme, cursor, scrollback, copy on select, right-click pastes, confirm close
+  colour scheme, cursor, scrollback, copy on select, right-click pastes, confirm close, and **reopen the SSH tabs of
+  the last run** (off by default; opens new connections in the same order)
 - **Notifications**: OS notifications, and the notification rules of this workspace
 - **Device**: device identity and enrollment token, the pinned certificate and the browser certificate of this
   workspace, diagnostics
@@ -442,7 +444,7 @@ PUT    /api/ansible/playbooks/{id}         # Update playbook (admin)
 DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)
 ```
 
-The desktop client automatically generates an INI inventory from the selected servers and launches `ansible-playbook` in a native terminal.
+The desktop client automatically generates an INI inventory from the selected servers and runs `ansible-playbook` in a session tab of the AdminHelper terminal, or in a native terminal when *Console for SSH* is the OS terminal. *Dry run* adds `--check` on both ways.
 
 ---
 

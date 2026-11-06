@@ -6,31 +6,50 @@
 // program (connecting, connected with its first output, disconnected with its exit code), output
 // waits for the terminal, a reconnect resolves anew in the same tab and no longer hears the
 // program it replaced, closing ends what still runs, and what is typed reaches the program in
-// order, what came before the start answered once it has.
+// order, what came before the start answered once it has. A session detached into its own
+// window (R-1070) keeps its tab and hears nothing more here; docked, it attaches anew, the
+// terminal gets the kept output first and what it answers to that goes nowhere. The SSH tabs of
+// a run are kept for the next (R-1070): opened again only when chosen, saved only once the
+// connections are there, and not wiped by the logout.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { TerminalMessage } from '$lib/bridge';
-import type { Connection, TunnelMapping } from '$lib/bridge/types';
+import type { Connection, Settings, TunnelMapping } from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
+  terminalOpenAnsible: vi.fn(async (..._a: unknown[]) => 99),
   terminalClose: vi.fn(async () => {}),
   terminalCloseAll: vi.fn(async () => {}),
   terminalWrite: vi.fn(async () => {}),
   terminalResize: vi.fn(async () => {}),
   resolveConnection: vi.fn(async (connection: unknown) => ({ connection })),
+  terminalAttach: vi.fn(),
+  terminalDetach: vi.fn(async () => {}),
+  terminalDock: vi.fn(async () => {}),
+  listeners: new Map<string, (e: { payload: { id: number } }) => void>(),
   reportError: vi.fn(),
   mappings: [] as unknown[],
 }));
 
 vi.mock('$lib/bridge', () => ({
   terminalOpenSsh: h.terminalOpenSsh,
+  terminalOpenAnsible: h.terminalOpenAnsible,
   terminalClose: h.terminalClose,
   terminalCloseAll: h.terminalCloseAll,
   terminalWrite: h.terminalWrite,
   terminalResize: h.terminalResize,
   resolveConnection: h.resolveConnection,
+  terminalAttach: h.terminalAttach,
+  terminalDetach: h.terminalDetach,
+  terminalDock: h.terminalDock,
+}));
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async (name: string, handler: (e: { payload: { id: number } }) => void) => {
+    h.listeners.set(name, handler);
+    return () => h.listeners.delete(name);
+  }),
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError }));
 vi.mock('./tunnel', () => ({ getMappings: () => h.mappings }));
@@ -39,7 +58,14 @@ import {
   PAGE_TAB,
   attachTerminal,
   closeAllTerminals,
+  adoptTerminal,
   closeTerminal,
+  detachedRoute,
+  detachTerminal,
+  keepOpenSessions,
+  listenForDocking,
+  openAnsible,
+  openSessionIds,
   openTerminal,
   reconnectTerminal,
   resizeTerminal,
@@ -443,5 +469,347 @@ describe('input and size (R-1069)', () => {
     // A running program gets a new size right away.
     resizeTerminal(key, 100, 30);
     expect(h.terminalResize).toHaveBeenLastCalledWith(1, 100, 30);
+  });
+});
+
+describe('detach and dock (R-1070)', () => {
+  // The channels of terminalAttach, in the order attached.
+  let attached: Program['send'][];
+
+  beforeEach(() => {
+    attached = [];
+    h.terminalAttach.mockImplementation(async (_id: number, send: Program['send']) => {
+      attached.push(send);
+    });
+  });
+
+  async function detached(): Promise<string> {
+    await openTerminal(CONN, RESOLVED);
+    programs[0].send(out('$ '));
+    const { key } = only();
+    await detachTerminal(key);
+    return key;
+  }
+
+  function event(name: string, id: number): void {
+    h.listeners.get(name)!({ payload: { id } });
+  }
+
+  it('moves a running session into its window; the tab stays, leaves the front and hears nothing more', async () => {
+    const key = await detached();
+    expect(h.terminalDetach).toHaveBeenCalledWith(1, 'db');
+    expect(only()).toMatchObject({ key, detached: true, status: 'connected' });
+    expect(get(terminals).active).toBe(PAGE_TAB);
+
+    // What this window's channel still brings, and what is typed here, go nowhere.
+    programs[0].send(out('late'));
+    const got: string[] = [];
+    attachTerminal(key, (data) => got.push(text(data)));
+    writeTerminal(key, bytes('a'));
+    await settle();
+    expect(got).toEqual([]);
+    expect(h.terminalWrite).not.toHaveBeenCalled();
+
+    // Detached already: its window comes to the front, nothing else changes.
+    await detachTerminal(key);
+    expect(h.terminalDetach).toHaveBeenCalledTimes(2);
+    expect(only()).toMatchObject({ detached: true });
+  });
+
+  it('detaches nothing that does not run, and stays when the window could not open', async () => {
+    const started = startLater();
+    void openTerminal(CONN, RESOLVED);
+    await detachTerminal(only().key);
+    expect(h.terminalDetach).not.toHaveBeenCalled();
+    started(1);
+    await settle();
+
+    h.terminalDetach.mockRejectedValueOnce(new Error('no window'));
+    await detachTerminal(only().key);
+    expect(only().detached).toBeFalsy();
+    expect(h.reportError).toHaveBeenCalledWith('no window');
+    expect(get(terminals).active).toBe(only().key);
+
+    programs[0].send({ exitCode: 0 });
+    h.terminalDetach.mockClear();
+    await detachTerminal(only().key);
+    expect(h.terminalDetach).not.toHaveBeenCalled();
+  });
+
+  it('docks on terminal-docked: the tab comes to the front, the kept output first, then the live one', async () => {
+    const stop = await listenForDocking();
+    const key = await detached();
+    event('terminal-docked', 1);
+    await settle();
+    expect(h.terminalAttach).toHaveBeenCalledWith(1, expect.any(Function));
+    expect(only()).toMatchObject({ detached: false });
+    expect(get(terminals).active).toBe(key);
+
+    // Replay before the new terminal attached; the end of it waits in order.
+    attached[0](out('$ ls\r\n'));
+    attached[0](out('\x1b[6n'));
+    attached[0]({ replayed: true });
+    attached[0](out('live'));
+    const got: string[] = [];
+    let parsed: (() => void) | undefined;
+    attachTerminal(key, (data, done) => {
+      got.push(text(data));
+      if (done) parsed = done;
+    });
+    expect(got).toEqual(['$ ls\r\n', '\x1b[6n', '', 'live']);
+
+    // What the terminal answers while it works through the replay goes nowhere; after it, all.
+    writeTerminal(key, bytes('\x1b[1;1R'));
+    await settle();
+    expect(h.terminalWrite).not.toHaveBeenCalled();
+    parsed!();
+    writeTerminal(key, bytes('a'));
+    await settle();
+    expect(h.terminalWrite.mock.calls).toEqual([[1, bytes('a')]]);
+
+    // The channel of the window before is not heard any more, the new one is.
+    programs[0].send(out('old'));
+    attached[0](out('new'));
+    expect(got.slice(4)).toEqual(['new']);
+    stop();
+    expect(h.listeners.size).toBe(0);
+  });
+
+  it('docks when the window is closed from its title bar, once, and not a session never detached', async () => {
+    await listenForDocking();
+    await openTerminal(CONN, RESOLVED);
+    programs[0].send(out('$ '));
+    const { key } = only();
+    event('terminal-window-closed', 1);
+    await settle();
+    expect(h.terminalAttach).not.toHaveBeenCalled();
+    expect(h.terminalClose).not.toHaveBeenCalled();
+
+    await detachTerminal(key);
+    const got: string[] = [];
+    attachTerminal(key, (data, done) => {
+      got.push(text(data));
+      done?.();
+    });
+    event('terminal-window-closed', 1);
+    event('terminal-docked', 1);
+    await settle();
+    expect(h.terminalAttach).toHaveBeenCalledTimes(1);
+    // The second event finds the tab docked: it ends nothing.
+    expect(h.terminalClose).not.toHaveBeenCalled();
+    attached[0]({ replayed: true });
+    expect(got).toEqual(['']);
+    writeTerminal(key, bytes('a'));
+    await settle();
+    expect(h.terminalWrite).toHaveBeenCalledWith(1, bytes('a'));
+  });
+
+  it('a session that ended in its window shows disconnected once docked', async () => {
+    await listenForDocking();
+    await detached();
+    h.terminalAttach.mockRejectedValueOnce(new Error('no terminal session 1'));
+    event('terminal-docked', 1);
+    await settle();
+    expect(only()).toMatchObject({ detached: false, status: 'disconnected' });
+    expect(h.reportError).toHaveBeenCalledWith('no terminal session 1');
+  });
+
+  it('closing a detached tab ends its program and closes its window', async () => {
+    const key = await detached();
+    closeTerminal(key);
+    await settle();
+    expect(h.terminalClose).toHaveBeenCalledWith(1);
+    expect(h.terminalDock).toHaveBeenCalledWith(1);
+    expect(get(terminals).sessions).toEqual([]);
+
+    // Its window docks after it: nothing to take back, and nothing to report.
+    await listenForDocking();
+    event('terminal-docked', 1);
+    await settle();
+    expect(h.terminalAttach).not.toHaveBeenCalled();
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('ends a session docked that no tab knows: detached before this window loaded again', async () => {
+    await listenForDocking();
+    h.terminalClose.mockRejectedValueOnce(new Error('no terminal session 7'));
+    event('terminal-window-closed', 7);
+    await settle();
+    expect(h.terminalClose).toHaveBeenCalledExactlyOnceWith(7);
+    expect(h.terminalAttach).not.toHaveBeenCalled();
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('a detached window takes its session as the only one: replay, then live, then the exit', async () => {
+    await openTerminal(CONN, RESOLVED);
+    const key = adoptTerminal(5);
+    expect(get(terminals)).toEqual({ sessions: [only()], active: key });
+    expect(only()).toMatchObject({ key, backendId: 5, status: 'connected', connectedAt: null });
+    expect(h.terminalAttach).toHaveBeenCalledExactlyOnceWith(5, expect.any(Function));
+
+    await settle();
+    attached[0](out('kept'));
+    attached[0]({ replayed: true });
+    const got: string[] = [];
+    let parsed: (() => void) | undefined;
+    attachTerminal(key, (data, done) => {
+      got.push(text(data));
+      if (done) parsed = done;
+    });
+    writeTerminal(key, bytes('\x1b[1;1R'));
+    await settle();
+    expect(h.terminalWrite).not.toHaveBeenCalled();
+    parsed!();
+    attached[0](out('live'));
+    writeTerminal(key, bytes('a'));
+    resizeTerminal(key, 100, 30);
+    await settle();
+    expect(got).toEqual(['kept', '', 'live']);
+    expect(h.terminalWrite.mock.calls).toEqual([[5, bytes('a')]]);
+    expect(h.terminalResize).toHaveBeenCalledWith(5, 100, 30);
+    // Its output since it was opened here is no new connection.
+    expect(only().connectedAt).toBeNull();
+
+    attached[0]({ exitCode: 0 });
+    expect(only()).toMatchObject({ status: 'disconnected', exitCode: 0 });
+  });
+
+  it('reads the session of a detached window from its route', () => {
+    expect(detachedRoute('#/detached/12')).toBe(12);
+    for (const hash of ['', '#/connections', '#/detached/', '#/detached/+1', '#/detached/1x']) {
+      expect(detachedRoute(hash)).toBeNull();
+    }
+  });
+});
+
+describe('keeping the SSH tabs for the next run (R-1070)', () => {
+  const C2 = { ...CONN, id: 'c2', name: 'web' } as Connection;
+  const RDP = { ...CONN, id: 'r1', kind: 'rdp' } as Connection;
+
+  let settings: ReturnType<typeof writable<Settings | null>>;
+  let list: ReturnType<typeof writable<{ items: Connection[]; loading: boolean }>>;
+  let save: ReturnType<typeof vi.fn<(ids: string[]) => Promise<void>>>;
+  let connect: ReturnType<typeof vi.fn<(c: Connection) => Promise<void>>>;
+  let stop: (() => void) | null;
+
+  function keep(restoreSessions: boolean | undefined, openSessions: string[] | undefined) {
+    settings = writable({ restoreSessions, openSessions } as Settings);
+    stop = keepOpenSessions({ settings, connections: list, save, connect });
+  }
+
+  beforeEach(() => {
+    list = writable({ items: [], loading: true });
+    save = vi.fn(async () => {});
+    // A click on connect, as initiateConnect opens an embedded SSH tab.
+    connect = vi.fn(async (c: Connection) => {
+      await openTerminal(c, c);
+    });
+    stop = null;
+  });
+
+  afterEach(() => stop?.());
+
+  it('opens the saved tabs in their order once the connections are there, a gone one passed over', async () => {
+    keep(true, ['c2', 'gone', 'c1', 'c2', 'r1']);
+    await settle();
+    expect(connect).not.toHaveBeenCalled();
+
+    list.set({ items: [CONN, C2, RDP], loading: false });
+    await settle();
+    expect(connect.mock.calls.map(([c]) => c.id)).toEqual(['c2', 'c1']);
+    expect(get(terminals).sessions.map((s) => s.connection.id)).toEqual(['c2', 'c1']);
+    // What was opened again is what was saved, minus what is gone: nothing new to save.
+    expect(save).toHaveBeenCalledExactlyOnceWith(['c2', 'c1']);
+  });
+
+  it('opens nothing unless chosen, and saves the tabs of this run as they change', async () => {
+    keep(undefined, ['c1']);
+    list.set({ items: [CONN, C2], loading: false });
+    await settle();
+    expect(connect).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledExactlyOnceWith([]);
+
+    await openTerminal(C2, C2);
+    await openTerminal(CONN, CONN);
+    await openTerminal(C2, C2);
+    await settle();
+    expect(save.mock.calls.map(([ids]) => ids)).toEqual([[], ['c2'], ['c2', 'c1']]);
+
+    closeTerminal(get(terminals).sessions[0].key);
+    await settle();
+    expect(save).toHaveBeenLastCalledWith(['c1', 'c2']);
+  });
+
+  it('saves nothing while the connections load or did not load', async () => {
+    keep(true, ['c1']);
+    await openTerminal(C2, C2);
+    list.set({ items: [], loading: false });
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the list through the logout, and stops when told to', async () => {
+    keep(true, []);
+    list.set({ items: [CONN], loading: false });
+    await settle();
+    await openTerminal(CONN, CONN);
+    await settle();
+    expect(save).toHaveBeenLastCalledWith(['c1']);
+
+    await closeAllTerminals();
+    await openTerminal(CONN, CONN);
+    await settle();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a save that failed and saves the next change', async () => {
+    keep(false, []);
+    list.set({ items: [CONN, C2], loading: false });
+    save.mockRejectedValueOnce(new Error('disk full'));
+    await openTerminal(CONN, CONN);
+    await settle();
+    expect(h.reportError).toHaveBeenCalledWith('disk full');
+    await openTerminal(C2, C2);
+    await settle();
+    expect(save).toHaveBeenLastCalledWith(['c1', 'c2']);
+  });
+
+  it('lists each SSH connection with a tab once, in tab order', () => {
+    const tab = (connection: Connection) => ({ connection }) as TerminalSession;
+    expect(
+      openSessionIds([tab(C2), tab(RDP), tab(CONN), tab(C2), tab({ ...CONN, id: '' })]),
+    ).toEqual(['c2', 'c1']);
+  });
+});
+
+describe('a playbook in a tab (R-1073)', () => {
+  const TARGETS = [{ hostname: 'web.lan', groups: ['web'] }];
+
+  it('opens a tab named after the playbook and starts the run with its dry run', async () => {
+    expect(await openAnsible('pb1', 'Deploy', TARGETS, true)).toBe(true);
+    const s = only();
+    expect(s.connection.name).toBe('Deploy');
+    expect(s.ansible).toEqual({ check: true });
+    expect(s.backendId).toBe(99);
+    expect(get(terminals).active).toBe(s.key);
+    expect(h.terminalOpenAnsible).toHaveBeenCalledExactlyOnceWith(
+      'pb1',
+      TARGETS,
+      true,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+  });
+
+  it('is neither reconnected nor kept for the next run', async () => {
+    await openAnsible('pb1', 'Deploy', TARGETS, false);
+    const s = only();
+    expect(await reconnectTerminal(s.key)).toBe(false);
+    expect(h.terminalOpenAnsible).toHaveBeenCalledTimes(1);
+    expect(h.terminalClose).not.toHaveBeenCalled();
+    expect(openSessionIds([s, { ...s, ansible: undefined, connection: CONN }])).toEqual(['c1']);
   });
 });

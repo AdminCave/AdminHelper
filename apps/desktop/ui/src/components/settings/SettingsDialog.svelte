@@ -55,6 +55,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>(stored.rdpPerformanceProfile ?? 'auto');
   let osNotifications = $state(Boolean(stored.osNotifications));
   let sshConsole = $state<SshConsole>(stored.sshConsole ?? getSettingsDefaults().sshConsole);
+  let restoreSessions = $state(Boolean(stored.restoreSessions));
   // What the terminals show, so a change made in one while its save runs is not undone here.
   let terminal = $state<TerminalPrefs>(get(terminalPrefs));
 
@@ -114,6 +115,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       osNotifications,
       sshConsole,
       terminal,
+      // Unset is off, so a dialog saved without touching it writes nothing new.
+      restoreSessions: restoreSessions || undefined,
     };
     await saveSettings(next);
   }
@@ -207,7 +210,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           data-pane="terminal"
           hidden={active !== 'terminal'}
         >
-          <div data-scope="device"><TerminalSection bind:sshConsole bind:terminal /></div>
+          <div data-scope="device">
+            <TerminalSection bind:sshConsole bind:terminal bind:restoreSessions />
+          </div>
         </div>
         <div
           class="sm-pane"

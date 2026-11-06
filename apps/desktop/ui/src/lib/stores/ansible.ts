@@ -3,12 +3,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Ansible store: 3-step wizard (playbook -> targets -> run).
-// Loads playbooks + servers from the server API and starts the local terminal runner.
+// Loads playbooks + servers from the server API and starts the run: in a tab of the embedded
+// terminal when SSH opens there, else in the terminal of the OS (R-1073); either as a dry run
+// (`--check`) when chosen.
 
 import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import { currentSession } from './session';
+import { currentSession, sessionStore } from './session';
+import { openAnsible } from './terminals';
+import { SSH_CONSOLE_DEFAULT } from '$lib/models/settings';
 import { reportError, showStatus } from './statusBar';
 import { ansibleApi } from '$lib/api/ansible';
 import { buildAnsibleTargets, groupServersByTag } from '$lib/models/ansible';
@@ -25,6 +29,8 @@ interface AnsibleState {
   targetMode: AnsibleTargetMode;
   loading: boolean;
   running: boolean;
+  /** Run as a dry run (`--check`). */
+  check: boolean;
   loadError: string | null;
 }
 
@@ -36,6 +42,7 @@ const initial: AnsibleState = {
   targetMode: 'servers',
   loading: false,
   running: false,
+  check: false,
   loadError: null,
 };
 
@@ -50,6 +57,7 @@ export const ansibleTargetMode = derived(_state, ($s) => $s.targetMode);
 export const ansibleLoading = derived(_state, ($s) => $s.loading);
 export const ansibleRunning = derived(_state, ($s) => $s.running);
 export const ansibleLoadError = derived(_state, ($s) => $s.loadError);
+export const ansibleCheck = derived(_state, ($s) => $s.check);
 
 export const ansibleTagGroups = derived(_state, ($s) => groupServersByTag($s.servers));
 export const ansibleSelectedPlaybook = derived(
@@ -124,6 +132,10 @@ export function toggleTag(tag: string): void {
   });
 }
 
+export function setCheck(check: boolean): void {
+  _state.update((s) => ({ ...s, check }));
+}
+
 export function clearSelection(): void {
   _state.set({ ...initial, selectedServerIds: new Set() });
 }
@@ -139,9 +151,17 @@ export async function runPlaybook(): Promise<void> {
   const selectedServers = state.servers.filter((s) => state.selectedServerIds.has(s.id));
   const targets = buildAnsibleTargets(selectedServers);
 
+  const { check } = state;
+  const sshConsole = get(sessionStore).settings?.sshConsole ?? SSH_CONSOLE_DEFAULT;
+  if (sshConsole === 'embedded') {
+    // The tab shows how the start goes; a failure is in the status bar already.
+    await openAnsible(playbook.id, playbook.name, targets, check);
+    return;
+  }
+
   _state.update((s) => ({ ...s, running: true }));
   try {
-    await bridge.ansibleRun(playbook.id, targets);
+    await bridge.ansibleRun(playbook.id, targets, check);
     showStatus(tNow('status.ansibleStarted', { name: playbook.name }));
   } catch (err) {
     reportError(errMsg(err));

@@ -5,6 +5,10 @@
 //! Pseudo consoles of the embedded terminal (R-1069): one program per session, in a pty on Unix
 //! and a ConPTY on Windows. Its output goes to a sink in blocks, then exactly one end. The
 //! registry knows program, argv, environment and working directory only; SSH is one caller.
+//!
+//! A session outlives its sink (R-1070): a window that docks a session off or back attaches a
+//! new one, which gets the last output from the session's ring buffer first. A session belongs
+//! to the window that attached it last, so a window that loads anew ends only its own.
 
 // Keystrokes pass through here, passwords among them: nothing in this module logs input or
 // output, and none of it needs more than safe Rust.
@@ -23,6 +27,9 @@ use crate::error::AppError;
 /// The most a session reads, and so sends, at once.
 const READ_BLOCK: usize = 64 * 1024;
 
+/// The output a session keeps for the next sink: well over the default scrollback at 80 columns.
+const RING: usize = 1024 * 1024;
+
 /// On Windows the pseudo console asks its terminal where the cursor is (portable-pty creates it
 /// with PSEUDOCONSOLE_INHERIT_CURSOR) and does not close before the answer: xterm.js answers in
 /// the app, the session itself once nobody listens.
@@ -40,6 +47,9 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Output {
     Data(Vec<u8>),
+    /// After the kept output an attached sink gets first: what came before is a replay, and
+    /// the terminal queries in it were answered back then (a second answer would be input).
+    Replayed,
     /// The exit code of the program; `None` when waiting for it failed.
     Exit(Option<u32>),
 }
@@ -51,9 +61,53 @@ pub struct Spawn {
     /// Set on top of the environment of this process.
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
+    /// A directory of the run, removed with all it holds once the program has ended; a start
+    /// that fails leaves it to the caller.
+    pub cleanup: Option<PathBuf>,
+}
+
+/// The label of the main window, which may reach every session.
+pub const MAIN: &str = "main";
+
+/// Where the output of a session goes; false once nobody listens.
+type Sink = Box<dyn FnMut(Output) -> bool + Send>;
+
+/// What a session sent and to whom it sends now.
+struct Stream {
+    /// The last [`RING`] bytes of output.
+    ring: std::collections::VecDeque<u8>,
+    sink: Option<Sink>,
+    /// The label of the window the session belongs to.
+    owner: String,
+    /// The exit code once the program ended, for a sink that attaches after the end.
+    ended: Option<Option<u32>>,
+}
+
+impl Stream {
+    fn keep(&mut self, bytes: &[u8]) {
+        let bytes = &bytes[bytes.len().saturating_sub(RING)..];
+        let over = (self.ring.len() + bytes.len()).saturating_sub(RING);
+        self.ring.drain(..over);
+        self.ring.extend(bytes);
+    }
+
+    /// Hands `out` to the sink and lets a sink go that nobody listens to; true when it took it.
+    fn send(&mut self, out: Output) -> bool {
+        let Some(sink) = self.sink.as_mut() else {
+            return false;
+        };
+        if sink(out) {
+            return true;
+        }
+        self.sink = None;
+        false
+    }
 }
 
 struct Session {
+    stream: Mutex<Stream>,
+    /// Set by a close: the session then leaves the registry at its end, listened to or not.
+    closing: std::sync::atomic::AtomicBool,
     writer: Mutex<Box<dyn Write + Send>>,
     /// Gone once the program exited: on Windows the pseudo console closes with it, and only
     /// then does the reader get its end.
@@ -68,6 +122,12 @@ impl Session {
         if let Some(killer) = lock(&self.killer).as_mut() {
             let _ = killer.kill();
         }
+    }
+
+    /// Ends the program, and the session with it once its end is in.
+    fn close(&self) {
+        self.closing.store(true, Ordering::SeqCst);
+        self.kill();
     }
 }
 
@@ -98,10 +158,18 @@ fn failed(what: &str, err: impl std::fmt::Display) -> AppError {
 }
 
 impl PtyRegistry {
-    /// Starts `spawn` in a pseudo console of `cols`×`rows` and returns the id of the session.
-    /// `sink` gets every block of output and then one `Exit`; when it returns false (nobody
-    /// listens any more), the session ends the program and sends nothing more.
-    pub fn open<F>(&self, spawn: Spawn, cols: u16, rows: u16, mut sink: F) -> Result<u64, AppError>
+    /// Starts `spawn` in a pseudo console of `cols`×`rows` for the window `owner` and returns
+    /// the id of the session. `sink` gets every block of output and then one `Exit`; when it
+    /// returns false (nobody listens any more), it is let go and the program runs on, its output
+    /// kept for the next sink ([`PtyRegistry::attach`]).
+    pub fn open<F>(
+        &self,
+        spawn: Spawn,
+        cols: u16,
+        rows: u16,
+        owner: &str,
+        sink: F,
+    ) -> Result<u64, AppError>
     where
         F: FnMut(Output) -> bool + Send + 'static,
     {
@@ -133,6 +201,13 @@ impl PtyRegistry {
         drop(pair.slave);
 
         let session = Arc::new(Session {
+            stream: Mutex::new(Stream {
+                ring: std::collections::VecDeque::new(),
+                sink: Some(Box::new(sink)),
+                owner: owner.to_string(),
+                ended: None,
+            }),
+            closing: std::sync::atomic::AtomicBool::new(false),
             writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             killer: Mutex::new(Some(child.clone_killer())),
@@ -142,8 +217,12 @@ impl PtyRegistry {
 
         let (exited, exit_code) = mpsc::channel();
         let waited = session.clone();
+        let cleanup = spawn.cleanup;
         std::thread::spawn(move || {
             let code = child.wait().ok().map(|status| status.exit_code());
+            if let Some(dir) = &cleanup {
+                let _ = std::fs::remove_dir_all(dir);
+            }
             lock(&waited.killer).take();
             let master = lock(&waited.master).take();
             drop(master);
@@ -153,17 +232,17 @@ impl PtyRegistry {
         let sessions = self.sessions.clone();
         std::thread::spawn(move || {
             let mut block = vec![0u8; READ_BLOCK];
-            let mut listening = true;
             loop {
                 match reader.read(&mut block) {
                     Ok(0) => break,
                     Ok(n) => {
-                        // Read on to the end even when nobody listens: on Windows the pseudo
-                        // console may only close once its output is drained.
-                        if listening && !sink(Output::Data(block[..n].to_vec())) {
-                            listening = false;
-                            session.kill();
-                        }
+                        let listening = {
+                            let mut stream = lock(&session.stream);
+                            stream.keep(&block[..n]);
+                            stream.send(Output::Data(block[..n].to_vec()))
+                        };
+                        #[cfg(not(windows))]
+                        let _ = listening;
                         #[cfg(windows)]
                         if !listening && contains(&block[..n], CURSOR_QUERY) {
                             let mut writer = lock(&session.writer);
@@ -178,10 +257,15 @@ impl PtyRegistry {
                 }
             }
             let code = exit_code.recv().ok().flatten();
-            if listening {
-                sink(Output::Exit(code));
+            let delivered = {
+                let mut stream = lock(&session.stream);
+                stream.ended = Some(code);
+                stream.send(Output::Exit(code))
+            };
+            // An end nobody heard waits for the next sink, unless the session was closed.
+            if delivered || session.closing.load(Ordering::SeqCst) {
+                lock(&sessions).remove(&id);
             }
-            lock(&sessions).remove(&id);
         });
         Ok(id)
     }
@@ -190,11 +274,42 @@ impl PtyRegistry {
         lock(&self.sessions).get(&id).cloned()
     }
 
+    /// Makes `sink` the sink of session `id`, for the window `owner`: it gets the kept output as
+    /// one block (none when nothing was kept), then `Replayed`, then what follows; for a session
+    /// that has ended, its end after `Replayed`. The sink before is let go.
+    pub fn attach<F>(&self, id: u64, owner: &str, mut sink: F) -> Result<(), AppError>
+    where
+        F: FnMut(Output) -> bool + Send + 'static,
+    {
+        let session = self
+            .session(id)
+            .ok_or_else(|| AppError::Connection("the terminal session has ended".to_string()))?;
+        let mut stream = lock(&session.stream);
+        stream.owner = owner.to_string();
+        let kept =
+            stream.ring.is_empty() || sink(Output::Data(stream.ring.iter().copied().collect()));
+        if !kept || !sink(Output::Replayed) {
+            stream.sink = None;
+            return Ok(());
+        }
+        if let Some(code) = stream.ended {
+            stream.sink = None;
+            if sink(Output::Exit(code)) {
+                drop(stream);
+                lock(&self.sessions).remove(&id);
+            }
+            return Ok(());
+        }
+        stream.sink = Some(Box::new(sink));
+        Ok(())
+    }
+
     /// Writes `data` to the program of session `id` as typed. May wait while the program does
     /// not read: not on the main thread.
     pub fn write(&self, id: u64, data: &[u8]) -> Result<(), AppError> {
         let session = self
             .session(id)
+            .filter(|session| lock(&session.stream).ended.is_none())
             .ok_or_else(|| AppError::Connection("the terminal session has ended".to_string()))?;
         let mut writer = lock(&session.writer);
         writer.write_all(data)?;
@@ -216,19 +331,53 @@ impl PtyRegistry {
     }
 
     /// Ends the program of session `id` (SIGHUP on Unix, as when a terminal closes); its end
-    /// follows through the sink. Nothing for a session that has ended.
+    /// follows through the sink. A session whose end nobody heard leaves the registry.
     pub fn close(&self, id: u64) {
-        if let Some(session) = self.session(id) {
-            session.kill();
+        let Some(session) = self.session(id) else {
+            return;
+        };
+        session.close();
+        if lock(&session.stream).ended.is_some() {
+            lock(&self.sessions).remove(&id);
         }
     }
 
-    /// Ends the programs of all sessions: those of a webview that reloaded have nobody left to
-    /// listen and would wait for input forever.
+    /// Ends the sessions of the window `owner`: those of a webview that reloaded have nobody
+    /// left to listen and would wait for input forever. Those of other windows run on.
+    pub fn close_all_of(&self, owner: &str) {
+        let ids: Vec<u64> = lock(&self.sessions)
+            .iter()
+            .filter(|(_, session)| lock(&session.stream).owner == owner)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            self.close(id);
+        }
+    }
+
+    /// Whether session `id` is there.
+    pub fn has(&self, id: u64) -> bool {
+        lock(&self.sessions).contains_key(&id)
+    }
+
+    /// Gives the sessions of a window that is gone to `main`, without a sink: their programs
+    /// run on and the ring keeps their output until `main` attaches or closes them.
+    pub fn hand_back(&self, owner: &str) {
+        for session in lock(&self.sessions).values() {
+            let mut stream = lock(&session.stream);
+            if stream.owner == owner {
+                stream.owner = MAIN.to_string();
+                stream.sink = None;
+            }
+        }
+    }
+
+    /// Ends the programs of all sessions, as the app exits and as the user signs out; ended
+    /// ones nobody listens to go at once.
     pub fn close_all(&self) {
-        let sessions: Vec<Arc<Session>> = lock(&self.sessions).values().cloned().collect();
-        for session in sessions {
-            session.kill();
+        let ids: Vec<u64> = lock(&self.sessions).keys().copied().collect();
+        for id in ids {
+            self.close(id);
         }
     }
 
@@ -252,6 +401,7 @@ mod tests {
             args: vec!["-c".to_string(), script.to_string()],
             env: Vec::new(),
             cwd: None,
+            cleanup: None,
         }
     }
 
@@ -263,6 +413,7 @@ mod tests {
             args: vec!["/v:on".to_string(), "/c".to_string(), script.to_string()],
             env: Vec::new(),
             cwd: None,
+            cleanup: None,
         }
     }
 
@@ -277,11 +428,54 @@ mod tests {
     }
 
     fn open(registry: &PtyRegistry, spawn: Spawn) -> (u64, mpsc::Receiver<Output>) {
+        open_for(registry, spawn, "main")
+    }
+
+    fn open_for(
+        registry: &PtyRegistry,
+        spawn: Spawn,
+        owner: &str,
+    ) -> (u64, mpsc::Receiver<Output>) {
         let (tx, rx) = mpsc::channel();
         let id = registry
-            .open(spawn, 80, 24, move |out| tx.send(out).is_ok())
+            .open(spawn, 80, 24, owner, move |out| tx.send(out).is_ok())
             .expect("the session starts");
         (id, rx)
+    }
+
+    /// A new sink for session `id`: the kept output up to `Replayed`, its queries unanswered as
+    /// they were answered back then, and the receiver of what follows.
+    fn attach(registry: &PtyRegistry, id: u64, owner: &str) -> (Vec<u8>, mpsc::Receiver<Output>) {
+        let (tx, rx) = mpsc::channel();
+        registry
+            .attach(id, owner, move |out| tx.send(out).is_ok())
+            .expect("the session takes the sink");
+        let mut kept = Vec::new();
+        loop {
+            match rx.recv_timeout(WAIT).expect("the replay ends in time") {
+                Output::Data(bytes) => kept.extend_from_slice(&bytes),
+                Output::Replayed => return (kept, rx),
+                Output::Exit(code) => panic!("an end before the replay ended: {code:?}"),
+            }
+        }
+    }
+
+    /// The output that comes until `needle` is in it.
+    fn until_text(
+        registry: &PtyRegistry,
+        id: u64,
+        rx: &mpsc::Receiver<Output>,
+        needle: &str,
+    ) -> String {
+        let mut text = Vec::new();
+        while !String::from_utf8_lossy(&text).contains(needle) {
+            match next(registry, id, rx) {
+                Output::Data(bytes) => text.extend_from_slice(&bytes),
+                Output::Exit(code) => panic!("ended before {needle:?}: {code:?}"),
+                Output::Replayed => panic!("a replay to a sink that did not attach"),
+            }
+        }
+        String::from_utf8_lossy(&text).into_owned()
     }
 
     /// The next message, answering a cursor query in it as xterm.js would; fails when none
@@ -311,6 +505,7 @@ mod tests {
                         text.extend_from_slice(&bytes);
                     }
                     Ok(Output::Exit(code)) => panic!("ended before any input: {code:?}"),
+                    Ok(Output::Replayed) => panic!("a replay on a sink that was never swapped"),
                     Err(_) => break,
                 }
             }
@@ -329,6 +524,7 @@ mod tests {
             match next(registry, id, rx) {
                 Output::Data(bytes) => text.extend_from_slice(&bytes),
                 Output::Exit(code) => return (String::from_utf8_lossy(&text).into_owned(), code),
+                Output::Replayed => panic!("a replay to a sink that did not attach"),
             }
         }
     }
@@ -431,33 +627,173 @@ mod tests {
     }
 
     #[test]
-    fn a_sink_nobody_listens_to_ends_the_program() {
+    fn a_sink_nobody_listens_to_is_let_go_and_the_program_runs_on() {
         let registry = PtyRegistry::default();
         #[cfg(unix)]
-        let script = "printf x; sleep 30";
+        let script = "printf x; read y; printf got:%s \"$y\"";
         #[cfg(windows)]
-        let script = "echo x & ping -n 31 127.0.0.1 >nul";
+        let script = "echo x & set /p y=&echo got:!y!";
         let (tx, rx) = mpsc::channel::<()>();
-        registry
-            .open(shell(script), 80, 24, move |_| {
+        let id = registry
+            .open(shell(script), 80, 24, "main", move |_| {
                 let _ = tx.send(());
                 false
             })
             .expect("the session starts");
         rx.recv_timeout(WAIT).expect("the first output comes");
-        // Without the kill the program would run its 30 s and keep the session; on Windows,
-        // without the session's own answer to the cursor query, the pseudo console would.
-        let started = Instant::now();
-        until_gone(&registry);
-        assert!(
-            started.elapsed() < Duration::from_secs(10),
-            "the kill ends it"
-        );
-        // The sink was called once: not again for output, not for the end.
+        // The sink was called once and let go: not again for output.
         assert_eq!(
-            rx.recv_timeout(WAIT),
+            rx.recv_timeout(Duration::from_millis(500)),
             Err(mpsc::RecvTimeoutError::Disconnected)
         );
+        // The program waits for input, and a new sink gets it to the end; on Windows the
+        // session answered the cursor query itself while nobody listened.
+        let line: &[u8] = if cfg!(windows) {
+            b"hello\r"
+        } else {
+            b"hello\n"
+        };
+        registry.write(id, line).expect("the session runs on");
+        let (kept, rx) = attach(&registry, id, "main");
+        let (text, _) = until_exit(&registry, id, &rx, kept);
+        assert!(text.contains("got:hello"), "output: {text:?}");
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn a_new_sink_gets_the_kept_output_then_what_follows() {
+        let registry = PtyRegistry::default();
+        #[cfg(unix)]
+        let script = "printf before; read y; printf after";
+        #[cfg(windows)]
+        let script = "echo before & set /p y=&echo after";
+        let (id, first) = open(&registry, shell(script));
+        until_text(&registry, id, &first, "before");
+        let (kept, second) = attach(&registry, id, "terminal-1");
+        // The first sink is let go as the second takes over.
+        nothing_after(&first);
+        let kept = String::from_utf8_lossy(&kept);
+        assert!(kept.contains("before"), "kept: {kept:?}");
+        let line: &[u8] = if cfg!(windows) { b"\r" } else { b"\n" };
+        registry.write(id, line).expect("the input goes in");
+        let (text, _) = until_exit(&registry, id, &second, Vec::new());
+        assert!(text.contains("after"), "output: {text:?}");
+        assert!(
+            !text.contains("before"),
+            "the kept output came twice: {text:?}"
+        );
+        nothing_after(&second);
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn an_end_nobody_heard_reaches_the_next_sink() {
+        let registry = PtyRegistry::default();
+        #[cfg(unix)]
+        let script = "printf done; exit 4";
+        #[cfg(windows)]
+        let script = "echo done & exit 4";
+        let (tx, rx) = mpsc::channel::<()>();
+        let id = registry
+            .open(shell(script), 80, 24, "main", move |_| {
+                let _ = tx.send(());
+                false
+            })
+            .expect("the session starts");
+        rx.recv_timeout(WAIT).expect("the first output comes");
+        // The program ends without a listener; the session waits in the registry for one.
+        let deadline = Instant::now() + WAIT;
+        while registry.write(id, b"").is_ok() {
+            assert!(Instant::now() < deadline, "the program does not end");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(registry.len(), 1);
+        let (kept, late) = attach(&registry, id, "main");
+        let (text, code) = until_exit(&registry, id, &late, kept);
+        assert!(text.contains("done"), "output: {text:?}");
+        assert_eq!(code, Some(4));
+        nothing_after(&late);
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn closing_an_ended_session_nobody_listens_to_removes_it() {
+        let registry = PtyRegistry::default();
+        let id = registry
+            .open(shell("exit 0"), 80, 24, "main", |_| false)
+            .expect("the session starts");
+        let deadline = Instant::now() + WAIT;
+        while registry.write(id, b"").is_ok() {
+            assert!(Instant::now() < deadline, "the program does not end");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        registry.close(id);
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn close_all_of_a_window_leaves_the_others_running() {
+        let registry = PtyRegistry::default();
+        let (mine, mine_rx) = open_for(&registry, long_running(), "main");
+        let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-9");
+        registry.close_all_of("main");
+        until_exit(&registry, mine, &mine_rx, Vec::new());
+        assert_eq!(registry.len(), 1);
+        assert!(registry.write(theirs, b"").is_ok(), "the other one runs on");
+        // A session taken over by a window belongs to it.
+        let (_, theirs_rx2) = attach(&registry, theirs, "main");
+        nothing_after(&theirs_rx);
+        registry.close_all_of("main");
+        until_exit(&registry, theirs, &theirs_rx2, Vec::new());
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn a_window_that_is_gone_hands_its_sessions_back_to_main() {
+        let registry = PtyRegistry::default();
+        let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-3");
+        let (mine, mine_rx) = open_for(&registry, long_running(), "terminal-4");
+        // Windows: a pseudo console whose cursor query a listening sink never answered does
+        // not close; the windows have answered it, as xterm.js does. Theirs last, right before
+        // the hand back, so that no output of it waits in its sink.
+        until_ready(&registry, mine, &mine_rx);
+        until_ready(&registry, theirs, &theirs_rx);
+        registry.hand_back("terminal-3");
+        nothing_after(&theirs_rx);
+        // Main's close takes the handed back session, not the other window's.
+        registry.close_all_of(MAIN);
+        let deadline = Instant::now() + WAIT;
+        while registry.write(theirs, b"").is_ok() || registry.len() != 1 {
+            assert!(
+                Instant::now() < deadline,
+                "the handed back session does not end"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            registry.write(mine, b"").is_ok(),
+            "the other window's runs on"
+        );
+        registry.close_all();
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn the_ring_keeps_the_last_output() {
+        let mut stream = Stream {
+            ring: std::collections::VecDeque::new(),
+            sink: None,
+            owner: String::new(),
+            ended: None,
+        };
+        stream.keep(&vec![b'a'; RING - 1]);
+        stream.keep(b"bcd");
+        assert_eq!(stream.ring.len(), RING);
+        assert_eq!(stream.ring.front(), Some(&b'a'));
+        assert!(stream.ring.iter().rev().take(3).eq(b"dcb".iter()));
+        stream.keep(&vec![b'z'; RING + 5]);
+        assert_eq!(stream.ring.len(), RING);
+        assert!(stream.ring.iter().all(|b| *b == b'z'));
     }
 
     #[test]
@@ -468,10 +804,48 @@ mod tests {
             args: Vec::new(),
             env: Vec::new(),
             cwd: None,
+            cleanup: None,
         };
-        let refused = registry.open(spawn, 80, 24, |_| true);
+        let refused = registry.open(spawn, 80, 24, "main", |_| true);
         assert!(refused.is_err());
         assert_eq!(registry.len(), 0);
+    }
+
+    /// A fresh directory with one file in it, for `Spawn::cleanup`.
+    fn run_dir(case: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ah-pty-{case}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("inventory.ini"), "x\n").unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_run_directory_goes_once_the_program_has_ended() {
+        let registry = PtyRegistry::default();
+        let dir = run_dir("cleanup-end");
+        let mut spawn = shell("exit 0");
+        spawn.cleanup = Some(dir.clone());
+        let (id, rx) = open(&registry, spawn);
+        let (_, code) = until_exit(&registry, id, &rx, Vec::new());
+        assert_eq!(code, Some(0));
+        assert!(!dir.exists(), "the run directory is left after the end");
+    }
+
+    #[test]
+    fn a_start_that_fails_leaves_the_run_directory_to_the_caller() {
+        let registry = PtyRegistry::default();
+        let dir = run_dir("cleanup-refused");
+        let spawn = Spawn {
+            program: std::env::temp_dir().join("ah-pty-no-such-program"),
+            args: Vec::new(),
+            env: Vec::new(),
+            cwd: None,
+            cleanup: Some(dir.clone()),
+        };
+        assert!(registry.open(spawn, 80, 24, "main", |_| true).is_err());
+        assert!(dir.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
