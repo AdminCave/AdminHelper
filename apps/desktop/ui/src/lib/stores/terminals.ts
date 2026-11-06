@@ -6,9 +6,12 @@
 // status follows the program: connecting until its first output, connected while it runs after
 // that, disconnected with its exit code once it ends or when it did not start. A session keeps
 // its output until its terminal attaches, so nothing the program sends first is lost, a cursor
-// query of the Windows pseudo console among it.
+// query of the Windows pseudo console among it. A session detached into a window of its own
+// (R-1070) keeps its tab, without a terminal; docked again, it attaches anew and the terminal
+// gets the output Rust kept first.
 
 import { get, writable } from 'svelte/store';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import type { TerminalMessage } from '$lib/bridge';
 import type { Connection } from '$lib/bridge/types';
@@ -30,7 +33,15 @@ export interface TerminalSession {
   connectedAt: number | null;
   /** The session in Rust; null until it started. */
   backendId: number | null;
+  /** Shown in a window of its own; its tab has no terminal meanwhile. */
+  detached?: boolean;
 }
+
+/**
+ * Takes the output of a session. `parsed`, given with the end of a replay, is called once the
+ * terminal has worked through everything written before.
+ */
+export type TerminalSink = (data: Uint8Array, parsed?: () => void) => void;
 
 /** The tab of the page the sidebar shows, always the first. */
 export const PAGE_TAB = 'page';
@@ -49,15 +60,19 @@ export const terminals = { subscribe: state.subscribe };
 const START_COLS = 80;
 const START_ROWS = 24;
 
-// What a session holds besides what the tabs show. `attempt` counts the starts: the channel of
-// an earlier program, one a reconnect replaced, is not heard any more. `input` is what was typed
-// before the start answered with the id: the program may already have asked something, the
-// Windows pseudo console its cursor position.
+// What a session holds besides what the tabs show. `attempt` counts the starts and the channels:
+// the channel of an earlier program, one a reconnect replaced, or of this window before a detach
+// is not heard any more. `input` is what was typed before the start answered with the id: the
+// program may already have asked something, the Windows pseudo console its cursor position.
+// `replaying` holds while the terminal works through output Rust kept: it would answer the
+// queries in it again, so what it sends meanwhile is dropped. In `pending`, null marks the end
+// of a replay.
 interface Runtime {
   attempt: number;
   output: boolean;
-  sink: ((data: Uint8Array) => void) | null;
-  pending: Uint8Array[];
+  sink: TerminalSink | null;
+  pending: (Uint8Array | null)[];
+  replaying: boolean;
   input: Uint8Array[];
   cols: number;
   rows: number;
@@ -93,7 +108,21 @@ function end(id: number): void {
   bridge.terminalClose(id).catch((err: unknown) => reportError(errMsg(err)));
 }
 
+const NOTHING = new Uint8Array(0);
+
+/** Hands the end of a replay to `sink`: what the terminal sends after it is meant. */
+function endReplay(runtime: Runtime, sink: TerminalSink): void {
+  sink(NOTHING, () => {
+    if (runtime.sink === sink) runtime.replaying = false;
+  });
+}
+
 function receive(key: string, runtime: Runtime, message: TerminalMessage): void {
+  if ('replayed' in message) {
+    if (runtime.sink) endReplay(runtime, runtime.sink);
+    else runtime.pending.push(null);
+    return;
+  }
   if (message instanceof ArrayBuffer) {
     const data = new Uint8Array(message);
     if (runtime.sink) runtime.sink(data);
@@ -111,6 +140,7 @@ function begin(runtime: Runtime): number {
   runtime.attempt += 1;
   runtime.output = false;
   runtime.input = [];
+  runtime.replaying = false;
   return runtime.attempt;
 }
 
@@ -159,6 +189,7 @@ export function openTerminal(connection: Connection, resolved: Connection): Prom
     output: false,
     sink: null,
     pending: [],
+    replaying: false,
     input: [],
     cols: START_COLS,
     rows: START_ROWS,
@@ -205,9 +236,16 @@ export async function reconnectTerminal(key: string): Promise<boolean> {
   return start(key, runtime, attempt, resolved);
 }
 
+/** The tab in front once `key` leaves the front: the one before it, a session or the page. */
+function before(s: TerminalsState, key: string): string {
+  if (s.active !== key) return s.active;
+  const index = s.sessions.findIndex((x) => x.key === key);
+  return s.sessions[index - 1]?.key ?? PAGE_TAB;
+}
+
 /**
- * Removes the tab of `key` and ends its program if it still runs. Was it in front, the tab
- * before it comes to the front: another session, or the page.
+ * Removes the tab of `key` and ends its program if it still runs, its window with it when it is
+ * detached. Was it in front, the tab before it comes to the front: another session, or the page.
  */
 export function closeTerminal(key: string): void {
   const session = find(key);
@@ -215,12 +253,84 @@ export function closeTerminal(key: string): void {
   runtimes.delete(key);
   const id = runningId(session);
   if (id !== null) end(id);
-  state.update((s) => {
-    const index = s.sessions.findIndex((x) => x.key === key);
-    const sessions = s.sessions.filter((x) => x.key !== key);
-    const active = s.active === key ? (sessions[index - 1]?.key ?? PAGE_TAB) : s.active;
-    return { sessions, active };
-  });
+  if (session.detached && session.backendId !== null) {
+    bridge.terminalDock(session.backendId).catch((err: unknown) => reportError(errMsg(err)));
+  }
+  state.update((s) => ({
+    sessions: s.sessions.filter((x) => x.key !== key),
+    active: before(s, key),
+  }));
+}
+
+/**
+ * Moves the running session `key` into a window of its own; its tab stays, without a terminal,
+ * and leaves the front. Detached already, its window comes to the front.
+ */
+export async function detachTerminal(key: string): Promise<void> {
+  const session = find(key);
+  const runtime = runtimes.get(key);
+  const id = session ? runningId(session) : null;
+  if (!session || !runtime || id === null) return;
+  try {
+    await bridge.terminalDetach(id, session.connection.name);
+  } catch (err) {
+    reportError(errMsg(err));
+    return;
+  }
+  if (session.detached || runtimes.get(key) !== runtime) return;
+  // The window attaches the session itself; this channel hears nothing more, and the terminal
+  // of the tab goes with what it showed.
+  runtime.attempt += 1;
+  runtime.pending = [];
+  runtime.input = [];
+  state.update((s) => ({
+    sessions: s.sessions.map((x) => (x.key === key ? { ...x, detached: true } : x)),
+    active: before(s, key),
+  }));
+}
+
+/**
+ * Takes the detached session `id` back into its tab, in front: the window docked it or was
+ * closed. Its terminal starts anew and gets the output Rust kept first. A session that ended
+ * meanwhile shows disconnected.
+ */
+export async function dockTerminal(id: number): Promise<void> {
+  const session = get(state).sessions.find((s) => s.detached && s.backendId === id);
+  const runtime = session && runtimes.get(session.key);
+  if (!session || !runtime) return;
+  const { key } = session;
+  const attempt = (runtime.attempt += 1);
+  const current = () => runtimes.get(key) === runtime && runtime.attempt === attempt;
+  runtime.pending = [];
+  runtime.replaying = true;
+  state.update((s) => ({
+    sessions: s.sessions.map((x) => (x.key === key ? { ...x, detached: false } : x)),
+    active: key,
+  }));
+  try {
+    await bridge.terminalAttach(id, (message) => {
+      if (current()) receive(key, runtime, message);
+    });
+  } catch (err) {
+    if (current()) {
+      runtime.replaying = false;
+      update(key, { status: 'disconnected' });
+    }
+    reportError(errMsg(err));
+  }
+}
+
+/**
+ * Docks a session when its window says so (`terminal-docked`) and when it is closed from its
+ * title bar (`terminal-window-closed`, Kevin 2026-11-06: docking keeps the program).
+ */
+export async function listenForDocking(): Promise<UnlistenFn> {
+  const dock = (e: { payload: { id: number } }) => void dockTerminal(e.payload.id);
+  const fns = await Promise.all([
+    listen<{ id: number }>('terminal-docked', dock),
+    listen<{ id: number }>('terminal-window-closed', dock),
+  ]);
+  return () => fns.forEach((fn) => fn());
 }
 
 /**
@@ -243,11 +353,14 @@ export function showTab(tab: string): void {
  * Hands the output of session `key` to its terminal, first what came before. The returned
  * function detaches it; output then waits again.
  */
-export function attachTerminal(key: string, sink: (data: Uint8Array) => void): () => void {
+export function attachTerminal(key: string, sink: TerminalSink): () => void {
   const runtime = runtimes.get(key);
   if (!runtime) return () => {};
-  for (const data of runtime.pending.splice(0)) sink(data);
   runtime.sink = sink;
+  for (const data of runtime.pending.splice(0)) {
+    if (data) sink(data);
+    else endReplay(runtime, sink);
+  }
   return () => {
     if (runtime.sink === sink) runtime.sink = null;
   };
@@ -276,6 +389,7 @@ export function writeTerminal(key: string, data: Uint8Array): void {
   const runtime = runtimes.get(key);
   const session = find(key);
   if (!runtime || !session || session.status === 'disconnected') return;
+  if (runtime.replaying || session.detached) return;
   if (session.backendId === null) runtime.input.push(data);
   else send(key, runtime, session.backendId, data);
 }

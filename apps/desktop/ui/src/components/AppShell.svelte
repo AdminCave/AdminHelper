@@ -36,6 +36,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import {
     PAGE_TAB,
     closeTerminal,
+    detachTerminal,
+    listenForDocking,
     showTab,
     terminals,
     type TerminalSession,
@@ -298,6 +300,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           if (e.payload?.correlationId) void markRdpExit(e.payload.correlationId);
         }),
         listenForSessionExpiry(),
+        listenForDocking(),
       ]);
       // Destroyed while awaiting? Unregister immediately instead of leaking the handlers (4.100).
       if (destroyed) {
@@ -444,7 +447,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </header>
 
   <!-- The page and every session stay mounted behind the tab in front: a page keeps its state,
-       a terminal its scrollback and its program. -->
+       a terminal its scrollback and its program. A detached session has its terminal in its own
+       window; docked, it starts a terminal anew, which gets the output first that Rust kept. -->
   <div class="content-area">
     <SessionTabs
       sessions={$terminals.sessions}
@@ -452,6 +456,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       pageLabel={pageTitle}
       onSelect={showTab}
       onClose={(s) => void endSession(s)}
+      onDetach={(s) => void detachTerminal(s.key)}
     />
     <main class="content-main" class:hidden={activeSession !== undefined}>
       <section class="content-section">
@@ -471,9 +476,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </section>
     </main>
     {#each $terminals.sessions as s (s.key)}
-      <div class="terminal-pane" class:hidden={s.key !== $terminals.active} data-session={s.key}>
-        <SshTerminal session={s} onClose={() => void endSession(s)} />
-      </div>
+      {#if !s.detached}
+        <div class="terminal-pane" class:hidden={s.key !== $terminals.active} data-session={s.key}>
+          <SshTerminal session={s} onClose={() => void endSession(s)} />
+        </div>
+      {/if}
     {/each}
   </div>
 

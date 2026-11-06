@@ -39,10 +39,12 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T10
 Abhängt von: T1
 
-### T4 — Desktop-UI: Abdocken und Andocken der Tabs (R-1070)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.sessions.test.ts
+### T4 — Desktop-UI: Abdocken und Andocken der Tabs (R-1070)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.sessions.test.ts, apps/desktop/ui/src/components/terminal/SessionTabs.svelte, apps/desktop/ui/src/components/terminal/SessionTabs.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2c150604 2026-11-06T11:10:02+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T4.verdict.json)
 Änderung: `TerminalSession.detached`; `detachTerminal(key)` hängt das eigene Terminal ab und ruft `terminal_detach`; Tab mit Knopf *Abdocken*, Doppelklick und Ziehen nach unten (Schwelle wie im Mockup, 46 px); ein abgedockter Tab ist kursiv mit Symbol, ein Klick holt das Fenster nach vorn. Auf `terminal-docked` hängt der Store die Sitzung über `terminal_attach` wieder an (Puffer zuerst) und zeigt den Tab; auf `terminal-window-closed` nach Kevins Antwort. Tests je Weg und für Andocken mit Puffer.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- terminals AppShell
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- terminals AppShell SessionTabs
 Doku: → T10
 Abhängt von: T2
 

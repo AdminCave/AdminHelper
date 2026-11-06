@@ -6,7 +6,8 @@
 // session and goes with the last, the page and every session stay mounted behind the tab in
 // front, the sidebar and a route change bring the page back, the header names the session in
 // front, closing a running session asks when the options say so, and Ctrl+K stays with the shell
-// inside a terminal. The real store of the sessions runs on a mocked bridge and a fake xterm.
+// inside a terminal. A detached session keeps its tab but leaves its pane (R-1070); docked, it gets a
+// new terminal. The real store of the sessions runs on a mocked bridge and a fake xterm.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
@@ -63,6 +64,9 @@ const h = vi.hoisted(() => {
     channels: [] as ((message: TerminalMessage) => void)[],
     terminalOpenSsh: vi.fn(),
     terminalClose: vi.fn(async () => {}),
+    terminalAttach: vi.fn(),
+    terminalDetach: vi.fn(async () => {}),
+    listeners: new Map<string, (e: { payload: unknown }) => void>(),
     confirm: vi.fn<(message: string) => Promise<boolean>>(),
   };
 });
@@ -82,12 +86,20 @@ vi.mock('$lib/bridge', () => ({
   terminalCloseAll: vi.fn(async () => {}),
   terminalWrite: vi.fn(async () => {}),
   terminalResize: vi.fn(async () => {}),
+  terminalAttach: h.terminalAttach,
+  terminalDetach: h.terminalDetach,
+  terminalDock: vi.fn(async () => {}),
 }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return { settings: writable(null), session: writable(null), refreshSettings: vi.fn() };
 });
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async (name: string, handler: (e: { payload: unknown }) => void) => {
+    h.listeners.set(name, handler);
+    return () => {};
+  }),
+}));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.0.0') }));
 vi.mock('$lib/stores/settings', () => ({
   openSettings: vi.fn(),
@@ -192,6 +204,9 @@ beforeEach(async () => {
       return id;
     },
   );
+  h.terminalAttach.mockImplementation(async (_id: number, onMessage) => {
+    h.channels.push(onMessage);
+  });
   replace('/connections');
   withPrefs(true);
   await closeAllTerminals();
@@ -351,5 +366,36 @@ describe('AppShell: sessions of the embedded terminal', () => {
     await fireEvent.keyDown(tab(/web/), { key: 'k', code: 'KeyK', ctrlKey: true });
     await tick();
     expect(document.querySelector('.palette')).not.toBeNull();
+  });
+
+  it('leaves the pane of a detached session and makes a new terminal once it docks', async () => {
+    render(AppShell);
+    await open(WEB);
+    await open(DB);
+    await waitFor(() => expect(h.FakeTerminal.all).toHaveLength(2));
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: tNow('terminal.tabs.detach', { name: 'db' }) }),
+    );
+    await waitFor(() => expect(panes()).toHaveLength(1));
+    expect(h.terminalDetach).toHaveBeenCalledExactlyOnceWith(2, 'db');
+    expect(h.FakeTerminal.all[1].dispose).toHaveBeenCalled();
+    // The tab stays, the one before it comes to the front.
+    expect(tab(/db/).getAttribute('title')).toBe(tNow('terminal.tabs.detached'));
+    expect(tab(/web/).getAttribute('aria-selected')).toBe('true');
+
+    // A click on it brings its window to the front and leaves the shell as it is.
+    await fireEvent.click(tab(/db/));
+    expect(h.terminalDetach).toHaveBeenCalledTimes(2);
+    expect(panes()).toHaveLength(1);
+
+    await waitFor(() => expect(h.listeners.has('terminal-docked')).toBe(true));
+    h.listeners.get('terminal-docked')!({ payload: { id: 2 } });
+    await waitFor(() => expect(panes()).toHaveLength(2));
+    await waitFor(() => expect(h.FakeTerminal.all).toHaveLength(3));
+    expect(h.terminalAttach).toHaveBeenCalledExactlyOnceWith(2, expect.any(Function));
+    expect(tab(/db/).getAttribute('aria-selected')).toBe('true');
+    expect(tab(/db/).getAttribute('title')).toBeNull();
+    expect(title()).toBe('db');
   });
 });

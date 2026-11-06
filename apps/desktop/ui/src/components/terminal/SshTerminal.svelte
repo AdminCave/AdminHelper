@@ -267,7 +267,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         }),
       ];
       terminal.attachCustomKeyEventHandler(onKey);
-      const detach = attachTerminal(key, (data) => terminal.write(data));
+      const detach = attachTerminal(key, (data, parsed) => terminal.write(data, parsed));
       const observer =
         typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => refit());
       observer?.observe(host);

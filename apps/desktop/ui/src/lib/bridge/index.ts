@@ -272,8 +272,14 @@ export function deviceName(): Promise<string | null> {
 
 // ─────────────────────────── Embedded terminal (R-1069) ───────────
 
-// What a terminal session sends, in order: its output as raw bytes, then one TerminalExit.
-export type TerminalMessage = ArrayBuffer | TerminalExit;
+// The end of the kept output terminalAttach replays first; what follows is live.
+export interface TerminalReplayed {
+  replayed: true;
+}
+
+// What a terminal session sends, in order: its output as raw bytes, then one TerminalExit; on a
+// channel of terminalAttach the kept output and TerminalReplayed come first.
+export type TerminalMessage = ArrayBuffer | TerminalExit | TerminalReplayed;
 
 // Opens `connection`, resolved as for openConnection, in a pseudo console of cols×rows and
 // returns the id of the session.
@@ -302,9 +308,28 @@ export function terminalClose(id: number): Promise<void> {
   return invoke('terminal_close', { id });
 }
 
-// Ends every session of this process, those of a webview before a reload among them.
+// Ends every session of this window, those of a webview before a reload among them.
 export function terminalCloseAll(): Promise<void> {
   return invoke('terminal_close_all');
+}
+
+// Moves session `id` to this window and `onMessage`; the channel before hears nothing more.
+export function terminalAttach(
+  id: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<void> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke('terminal_attach', { id, output });
+}
+
+// Opens session `id` in a window of its own titled `title`, or brings that window to the front.
+export function terminalDetach(id: number, title: string): Promise<void> {
+  return invoke('terminal_detach', { id, title });
+}
+
+// Closes the window of session `id`; main hears `terminal-docked`.
+export function terminalDock(id: number): Promise<void> {
+  return invoke('terminal_dock', { id });
 }
 
 // ─────────────────────────── Password keychain ───────────────────
