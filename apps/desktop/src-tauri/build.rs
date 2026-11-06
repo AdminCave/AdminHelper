@@ -59,6 +59,7 @@ const COMMANDS: &[&str] = &[
     "terminal_attach",
     "terminal_detach",
     "terminal_dock",
+    "terminal_open_ansible",
     "rdp_trust_certificate",
     "rdp_session_start",
     "rdp_session_stop",

@@ -704,6 +704,7 @@ fn ssh_spawn(
         args: connection::ssh::build_ssh_args(connection)?,
         env: vec![("TERM".to_string(), "xterm-256color".to_string())],
         cwd: home,
+        cleanup: None,
     })
 }
 
@@ -1015,20 +1016,59 @@ pub fn open_launcher() -> Result<(), AppError> {
 }
 
 /// Workspace only: runs the playbook `playbook_id` of the signed-in server on `targets` in a
-/// terminal. File name and content come from the server, not from the webview
-/// ([`ansible::fetch_playbook`], [`ansible_run_with`]).
+/// terminal, with `check` as a dry run (`--check`). File name and content come from the
+/// server, not from the webview ([`ansible::fetch_playbook`], [`ansible_run_with`]). A caller
+/// that sends no `check` gets a real run, as before the switch existed.
 #[tauri::command]
 pub async fn ansible_run(
     session: State<'_, SessionState>,
     playbook_id: String,
     targets: Vec<ansible::AnsibleTarget>,
+    check: Option<bool>,
 ) -> Result<(), AppError> {
+    let check = check.unwrap_or(false);
     let session = session.inner();
     ansible_run_with(
         &playbook_id,
         targets,
         |id| async move { ansible::fetch_playbook(session, &id).await },
-        ansible::launch_ansible,
+        move |inventory, playbook| ansible::launch_ansible(inventory, playbook, check),
+    )
+    .await
+}
+
+/// [`ansible_run`] in the embedded terminal, main window only: `ansible-playbook` in a session
+/// of `cols`×`rows`, whose id it returns; `output` gets what `terminal_open_ssh` sends. The
+/// session removes the run directory once the run has ended.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn terminal_open_ansible(
+    window: tauri::Window,
+    session: State<'_, SessionState>,
+    playbook_id: String,
+    targets: Vec<ansible::AnsibleTarget>,
+    check: bool,
+    cols: u16,
+    rows: u16,
+    output: Channel<InvokeResponseBody>,
+) -> Result<u64, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window starts a playbook".into(),
+        ));
+    }
+    let app = window.app_handle().clone();
+    let session = session.inner();
+    ansible_run_with(
+        &playbook_id,
+        targets,
+        |id| async move { ansible::fetch_playbook(session, &id).await },
+        move |inventory, playbook| {
+            ansible::launch_ansible_in_pty(inventory, playbook, check, |spawn| {
+                app.state::<PtyRegistry>()
+                    .open(spawn, cols, rows, pty::MAIN, channel_sink(output))
+            })
+        },
     )
     .await
 }
@@ -1037,16 +1077,17 @@ pub async fn ansible_run(
 /// before anything goes to the server ([`ansible::check_playbook_id`]); the files are written
 /// and launched on a blocking thread, and a step that fails takes the files written so far
 /// with it ([`ansible::run`]).
-async fn ansible_run_with<F, Fut, L>(
+async fn ansible_run_with<T, F, Fut, L>(
     playbook_id: &str,
     targets: Vec<ansible::AnsibleTarget>,
     fetch: F,
     launch: L,
-) -> Result<(), AppError>
+) -> Result<T, AppError>
 where
+    T: Send + 'static,
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Result<ansible::Playbook, AppError>>,
-    L: FnOnce(&str, &str) -> Result<(), AppError> + Send + 'static,
+    L: FnOnce(&str, &str) -> Result<T, AppError> + Send + 'static,
 {
     only(Side::Workspace)?;
     ansible::check_playbook_id(playbook_id)?;

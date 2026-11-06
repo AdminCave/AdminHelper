@@ -61,6 +61,9 @@ pub struct Spawn {
     /// Set on top of the environment of this process.
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
+    /// A directory of the run, removed with all it holds once the program has ended; a start
+    /// that fails leaves it to the caller.
+    pub cleanup: Option<PathBuf>,
 }
 
 /// The label of the main window, which may reach every session.
@@ -214,8 +217,12 @@ impl PtyRegistry {
 
         let (exited, exit_code) = mpsc::channel();
         let waited = session.clone();
+        let cleanup = spawn.cleanup;
         std::thread::spawn(move || {
             let code = child.wait().ok().map(|status| status.exit_code());
+            if let Some(dir) = &cleanup {
+                let _ = std::fs::remove_dir_all(dir);
+            }
             lock(&waited.killer).take();
             let master = lock(&waited.master).take();
             drop(master);
@@ -394,6 +401,7 @@ mod tests {
             args: vec!["-c".to_string(), script.to_string()],
             env: Vec::new(),
             cwd: None,
+            cleanup: None,
         }
     }
 
@@ -405,6 +413,7 @@ mod tests {
             args: vec!["/v:on".to_string(), "/c".to_string(), script.to_string()],
             env: Vec::new(),
             cwd: None,
+            cleanup: None,
         }
     }
 
@@ -790,10 +799,48 @@ mod tests {
             args: Vec::new(),
             env: Vec::new(),
             cwd: None,
+            cleanup: None,
         };
         let refused = registry.open(spawn, 80, 24, "main", |_| true);
         assert!(refused.is_err());
         assert_eq!(registry.len(), 0);
+    }
+
+    /// A fresh directory with one file in it, for `Spawn::cleanup`.
+    fn run_dir(case: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ah-pty-{case}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("inventory.ini"), "x\n").unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_run_directory_goes_once_the_program_has_ended() {
+        let registry = PtyRegistry::default();
+        let dir = run_dir("cleanup-end");
+        let mut spawn = shell("exit 0");
+        spawn.cleanup = Some(dir.clone());
+        let (id, rx) = open(&registry, spawn);
+        let (_, code) = until_exit(&registry, id, &rx, Vec::new());
+        assert_eq!(code, Some(0));
+        assert!(!dir.exists(), "the run directory is left after the end");
+    }
+
+    #[test]
+    fn a_start_that_fails_leaves_the_run_directory_to_the_caller() {
+        let registry = PtyRegistry::default();
+        let dir = run_dir("cleanup-refused");
+        let spawn = Spawn {
+            program: std::env::temp_dir().join("ah-pty-no-such-program"),
+            args: Vec::new(),
+            env: Vec::new(),
+            cwd: None,
+            cleanup: Some(dir.clone()),
+        };
+        assert!(registry.open(spawn, 80, 24, "main", |_| true).is_err());
+        assert!(dir.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
