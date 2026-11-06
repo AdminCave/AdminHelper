@@ -59,7 +59,7 @@ trap cleanup EXIT
 
 docker rm -f ah-sse-e2e-pg ah-sse-e2e-redis >/dev/null 2>&1 || true
 docker run -d --name ah-sse-e2e-pg -e POSTGRES_USER=adminhelper -e POSTGRES_PASSWORD=adminhelper \
-  -e POSTGRES_DB=adminhelper -p 127.0.0.1:5433:5432 postgres:17-alpine >/dev/null
+  -e POSTGRES_DB=adminhelper -p 127.0.0.1:5433:5432 postgres:18-alpine >/dev/null
 docker run -d --name ah-sse-e2e-redis -p 127.0.0.1:6380:6379 redis:8-alpine >/dev/null
 echo "[stack] waiting for postgres..."
 pg_ok=0

@@ -164,7 +164,7 @@ The optional **AdminHelper Server** enables centralized management and shared ac
 - **FRP tunnel management** with config generation, visitor profiles, and provisioning
 - **Monitoring service** with agent-based resource monitoring, templates, and alerting
 - **Server management** with tags, PKI/TLS management, and auto-connection
-- **PostgreSQL 17** as the shared database for server and monitoring
+- **PostgreSQL 18** as the shared database for server and monitoring
 - **Docker** deployment via GitHub Container Registry (ghcr.io)
 
 ### Quick start (one command)
@@ -249,7 +249,7 @@ The response directly contains `access_token` + `refresh_token` — no additiona
 
 ### Persistent data
 
-The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently by the one-shot service `db-init` on every start of the stack). Each service connects with a Postgres role of its own without superuser rights (`ah_server`, `ah_scheduler`, `ah_monitor`, `ah_ca`); `db-init` creates the roles. The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
+The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 18** (service `postgres`, image `postgres:18-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently by the one-shot service `db-init` on every start of the stack). Each service connects with a Postgres role of its own without superuser rights (`ah_server`, `ah_scheduler`, `ah_monitor`, `ah_ca`); `db-init` creates the roles. The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres18-data` volume (installations from before PostgreSQL 18 move there with their next update, see [Updates](docs/en/admin/installation.html#update)).
 
 File-based server data is stored in the `./data/` directory in the project root (bind mount). This directory is listed in `.gitignore` and is created automatically.
 

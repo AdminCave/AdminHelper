@@ -6,7 +6,8 @@
 # auf, was install.sh/update.sh auf dem Host hinterlassen:
 #   1. Stack stoppen        — Container + Netzwerk des Compose-Projekts
 #   2. Daten-Volumes        — ALLE Named Volumes, inkl. ca-pki (die Root-CA!),
-#                             postgres-data, victoria-data  (unwiederbringlich)
+#                             postgres18-data, victoria-data, das alte
+#                             postgres-data von PostgreSQL 17  (unwiederbringlich)
 #   3. Host-Daten           — die Bind-Mounts ./data und ./certs (uid 10001)
 #   4. Secrets              — .env (+ eine evtl. .env.restored aus einem Restore
 #                             und die Arbeitskopien .env.ah-* der Skripte)

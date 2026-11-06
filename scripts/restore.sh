@@ -351,14 +351,19 @@ compose_names() {
     fi
     rm -f "$STAGE/.compose-err"
 }
-pg_volume_exists() { docker volume inspect "${PROJECT}_postgres-data" </dev/null >/dev/null 2>&1; }
+# postgres18-data is the volume of PostgreSQL 18; postgres-data, the volume of 17,
+# stays after update.sh migrated it, as its rollback, and still marks an installation.
+pg_volume_exists() { docker volume inspect "${PROJECT}_postgres18-data" </dev/null >/dev/null 2>&1; }
+any_pg_volume_exists() {
+    pg_volume_exists || docker volume inspect "${PROJECT}_postgres-data" </dev/null >/dev/null 2>&1
+}
 
 # The staged .env counts only where its project has no database volume yet;
 # otherwise everything runs as today, against the environment and the .env.
 FRESH=0
 if [ -n "$NEW_ENV" ]; then
     compose_names --env-file "$NEW_ENV"
-    pg_volume_exists || FRESH=1
+    any_pg_volume_exists || FRESH=1
 fi
 # The images the stack starts with the .env of the backup, named before the question,
 # one per service. A value of the backup reaches the terminal here, so each must be one
@@ -410,7 +415,7 @@ if [ "$FRESH" = 0 ]; then
         exit 1
     fi
     if [ "$PGVOL" = 1 ] && [ -z "$PG_PW" ]; then
-        echo "[restore] ERROR: the volume ${PROJECT}_postgres-data exists, but POSTGRES_PASSWORD is set neither in the environment nor in .env; pg_restore could not log in. Nothing was changed." >&2
+        echo "[restore] ERROR: the volume ${PROJECT}_postgres18-data exists, but POSTGRES_PASSWORD is set neither in the environment nor in .env; pg_restore could not log in. Nothing was changed." >&2
         exit 1
     fi
 fi

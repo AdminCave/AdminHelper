@@ -545,11 +545,134 @@ stack_up() {
     docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}"
 }
 
+# >>> pg18-migration
+# PostgreSQL 17 -> 18 (docs/features/kern-pg-1.md). A major version does not read
+# the old data directory, so the data move by dump: pg_dumpall of the 18 image
+# against the running 17 (the PostgreSQL docs recommend the dump programs of the
+# newer version), a fresh 18 on the new volume postgres18-data, the dump played
+# in. The old volume postgres-data is never touched: it is the way back, the admin
+# removes it after checking. upgrade_path_test.sh runs this block on its own
+# against real data, so it uses only docker, log and say.
+PG_OLD_VOL=""; PG_NEW_VOL=""; PG_CID=""; PG_DUMP=""; PG_WHY=""
+PG_MIGRATE=0    # the old volume holds a running 17, the new one is not there yet
+PG_MIGRATED=0   # from here on a rollback owns the new volume
+PG_DONE=0       # the dump is in the new cluster
+pg_volume_exists() { docker volume inspect "$1" >/dev/null 2>&1; }
+pg18_names() {
+    local proj
+    proj=$(docker compose config 2>/dev/null | sed -n 's/^name: *//p' | head -n 1)
+    [ -n "$proj" ] || { PG_WHY="the compose project name is unreadable (docker compose config)"; return 1; }
+    PG_OLD_VOL="${proj}_postgres-data"
+    PG_NEW_VOL="${proj}_postgres18-data"
+}
+# Sets PG_MIGRATE=1 when the data still live in the old volume. Returns 1 with
+# PG_WHY when the state is not safe to go on with.
+pg18_detect() {
+    local mounts=" "
+    pg18_names || return 1
+    pg_volume_exists "$PG_OLD_VOL" || return 0
+    PG_CID=$(docker compose ps -q postgres 2>/dev/null | head -n 1)
+    [ -z "$PG_CID" ] || mounts=" $(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$PG_CID" 2>/dev/null) "
+    if pg_volume_exists "$PG_NEW_VOL"; then
+        case "$mounts" in
+            *" $PG_OLD_VOL "*)
+                PG_WHY="volume $PG_NEW_VOL is left from an aborted move to PostgreSQL 18 while PostgreSQL 17 still runs on $PG_OLD_VOL; remove it (docker volume rm $PG_NEW_VOL) and run the update again"
+                return 1 ;;
+        esac
+        return 0
+    fi
+    case "$mounts" in
+        *" $PG_OLD_VOL "*) ;;
+        *)
+            PG_WHY="the data in $PG_OLD_VOL move to PostgreSQL 18 by a dump of the running database, but postgres does not run on it; start the installed stack (docker compose up -d) and run the update again"
+            return 1 ;;
+    esac
+    PG_MIGRATE=1
+}
+# Free KiB and mount point of the filesystem that holds $1, empty if df cannot tell.
+pg18_df() { df -Pk -- "$1" 2>/dev/null | awk 'NR == 2 && $4 ~ /^[0-9]+$/ {print $4, $6}'; }
+# The new cluster needs about the size of the old one, twice that leaves room for
+# the WAL and the indexes the restore builds; the dump lies in backups/. What
+# cannot be measured is a warning only: the old volume stays the way back.
+pg18_space() {
+    local size root="" r="" h need_root need_here
+    size=$(docker exec "$PG_CID" psql -X -U adminhelper -d postgres -tAc \
+        'SELECT sum(pg_database_size(datname)) FROM pg_database' </dev/null 2>/dev/null | tr -d '[:space:]') || size=""
+    root=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null) || root=""
+    [ -z "$root" ] || r=$(pg18_df "$root")
+    h=$(pg18_df .)
+    case "$size" in
+        '' | *[!0-9]*) log "WARN: size of the PostgreSQL 17 cluster unreadable, free space not checked."; return 0 ;;
+    esac
+    if [ -z "$r" ] || [ -z "$h" ]; then
+        log "WARN: free space of the Docker root (${root:-unknown}) or of the install dir unreadable, not checked."
+        return 0
+    fi
+    need_root=$(( size * 2 / 1024 + 1 )); need_here=$(( size / 1024 + 1 ))
+    if [ "${r#* }" = "${h#* }" ]; then need_root=$(( need_root + need_here )); need_here=0; fi
+    if [ "${r%% *}" -lt "$need_root" ] || [ "${h%% *}" -lt "$need_here" ]; then
+        PG_WHY="not enough free space for the move to PostgreSQL 18: the cluster is $(( size / 1048576 )) MiB; needed $(( need_root / 1024 )) MiB under $root (free $(( ${r%% *} / 1024 )) MiB)"
+        [ "$need_here" = 0 ] || PG_WHY+=" and $(( need_here / 1024 )) MiB in $(pwd) for the dump (free $(( ${h%% *} / 1024 )) MiB)"
+        return 1
+    fi
+}
+# One step, like migrate_env: the caller tests the status, so every part returns 1
+# itself. The services but postgres stop first, so the dump is consistent.
+pg18_migrate() {
+    local list img svcs=()
+    PG_MIGRATED=1
+    log "PostgreSQL 17 -> 18: stopping every service but postgres for the dump..."
+    list=$(docker compose config --services) || return 1
+    mapfile -t svcs < <(grep -vx postgres <<<"$list")
+    [ "${#svcs[@]}" = 0 ] || docker compose stop "${svcs[@]}" || return 1
+    img=$(docker compose config --images postgres) || return 1
+    [ -n "$img" ] || return 1
+    PG_DUMP=$(mktemp -p backups pg17-dumpall.XXXXXX) || return 1
+    log "Dumping PostgreSQL 17 with pg_dumpall of ${img%%@*} to ${PG_DUMP}..."
+    docker run --rm --network "container:${PG_CID}" "$img" pg_dumpall -h 127.0.0.1 -U adminhelper \
+        > "$PG_DUMP" || return 1
+    [ -s "$PG_DUMP" ] || return 1
+    log "Starting PostgreSQL 18 on ${PG_NEW_VOL} and restoring the dump..."
+    docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}" postgres || return 1
+    # The fresh cluster already has the role and the database of POSTGRES_USER and
+    # POSTGRES_DB, the dump creates both again: the database goes, the role's
+    # CREATE line (before the first \connect) is left out. ALTER ROLE then carries
+    # its password over.
+    docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U adminhelper -d postgres \
+        -c 'DROP DATABASE adminhelper' </dev/null || return 1
+    awk '!c && /^\\connect / {c = 1} !c && $0 == "CREATE ROLE adminhelper;" {next} {print}' "$PG_DUMP" \
+        | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U adminhelper -d postgres >/dev/null \
+        || return 1
+    PG_DONE=1
+    rm -f -- "$PG_DUMP"; PG_DUMP=""
+    log "PostgreSQL 18 holds the data. ${PG_OLD_VOL} stays untouched as the way back; after checking, remove it: docker volume rm ${PG_OLD_VOL}"
+}
+# The way back of the rollback: the new cluster goes, the old volume never held
+# anything else. A volume left behind stops the next update with the hint above.
+pg18_undo() {
+    [ -z "$PG_DUMP" ] || rm -f -- "$PG_DUMP" || log "WARN: could not remove the dump ${PG_DUMP}."
+    PG_DUMP=""
+    docker compose rm -f -s postgres >/dev/null || log "WARN: could not remove the PostgreSQL 18 container."
+    if pg_volume_exists "$PG_NEW_VOL"; then
+        docker volume rm "$PG_NEW_VOL" >/dev/null \
+            || log "WARN: could not remove ${PG_NEW_VOL}; remove it before the next update: docker volume rm ${PG_NEW_VOL}"
+    fi
+}
+# <<< pg18-migration
+
 # ---------------------------------------------------------------------------
 # Self-heal: re-pull the already-pinned images and recreate. No version move,
 # no file swap — the old bare-update behaviour, now behind an explicit flag.
 # ---------------------------------------------------------------------------
 if [ "$REDEPLOY" = 1 ]; then
+    # A compose file on 18 with the data still in the old volume (an update ended
+    # half way with --no-rollback) would start an empty database.
+    if grep -q 'postgres18-data' docker-compose.yml; then
+        pg18_names || die "${PG_WHY}. Re-Deploy abgebrochen, nichts geaendert."
+        if pg_volume_exists "$PG_OLD_VOL" && ! pg_volume_exists "$PG_NEW_VOL"; then
+            die "the data are still in ${PG_OLD_VOL} (PostgreSQL 17), --redeploy would start an empty PostgreSQL 18. Re-Deploy abgebrochen, nichts geaendert. Move them with: ./scripts/update.sh --ref $(v=$(installed_version); [ "$v" = unknown ] && echo "<release>" || echo "v$v")"
+        fi
+    fi
     if [ "$SKIP_BACKUP" != 1 ]; then log "Backup-first..."; ./scripts/backup.sh "${BACKUP_ARGS[@]}"; fi
     log "Ziehe die gepinnten Images neu..."
     docker compose pull || die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit?) — Re-Deploy abgebrochen, Container unveraendert."
@@ -618,6 +741,22 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
     # exec replaces this process: the EXIT trap won't fire, so $TMP survives for
     # the new updater to run from; AH_UPDATE_PARENT_TMP has it remove $TMP at its end.
     exec env AH_UPDATE_REEXECED=1 AH_UPDATE_PARENT_TMP="$TMP" bash "${TMP}/update-new.sh" "${pass[@]}"
+fi
+
+# --- PostgreSQL 17 -> 18: is the move due, is it safe, is there room? -------
+# Before the backup, so a refusal changes nothing; the move itself runs after the
+# pull (pg18_migrate). Only for a release whose compose file is on 18.
+if grep -q 'postgres18-data' "${EXTRACT}/docker-compose.yml"; then
+    pg18_detect || die "${PG_WHY}. Update abgebrochen, nichts geaendert."
+    if [ "$PG_MIGRATE" = 1 ]; then
+        # An update that stopped half way (--no-rollback) leaves the compose file on
+        # 18 with the data in the old volume; a rollback of this run would bring
+        # back that file and start it on an empty new volume.
+        ! grep -q 'postgres18-data' docker-compose.yml \
+            || die "the installed docker-compose.yml already names postgres18-data while the data are still in ${PG_OLD_VOL} (an earlier update stopped half way); put back the files of the release you came from (./scripts/update.sh --ref <that release>) and run the update again. Update abgebrochen, nichts geaendert."
+        pg18_space || die "${PG_WHY}. Update abgebrochen, nichts geaendert."
+        log "This update moves the data from PostgreSQL 17 (${PG_OLD_VOL}) to PostgreSQL 18 (${PG_NEW_VOL}); ${PG_OLD_VOL} stays as the way back."
+    fi
 fi
 
 # --- Backup-first (data) + snapshot the current runtime files ---------------
@@ -829,7 +968,9 @@ update_agent_repo "$TARGET" "$TMP" \
 # Signals: see rollback_signals.
 rollback_after_deploy() {
     rollback_signals rollback_after_deploy "$@"
-    if [ "$NO_ROLLBACK" = 1 ]; then
+    # An unfinished move to PostgreSQL 18 has nothing to inspect but its log, and a
+    # half filled new volume left in place would count as moved at the next run.
+    if [ "$NO_ROLLBACK" = 1 ] && { [ "$PG_MIGRATED" = 0 ] || [ "$PG_DONE" = 1 ]; }; then
         local back="zurueck mit ./scripts/update.sh --ref v${INSTALLED}"
         [ "$INSTALLED" != "unknown" ] || back="zurueck auf den vorigen Floating-Tag nur von Hand (Image-Pins in .env)"
         die "$1. --no-rollback gesetzt: kaputter Stand bleibt zum Debuggen stehen, .env auf ${TARGET_VER} gepinnt. Danach: ./scripts/update.sh --redeploy (gepinnte Images neu starten); ${back}. Alembic kann die Datenbank beim Start schon migriert haben; Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
@@ -844,6 +985,11 @@ rollback_after_deploy() {
     local settled=1
     docker compose stop server scheduler monitoring \
         || { log "WARN: Stoppen von server/scheduler/monitoring fehlgeschlagen — Migrationsstand unbestaetigt."; settled=0; }
+    if [ "$PG_MIGRATED" = 1 ]; then
+        [ "$NO_ROLLBACK" = 0 ] || log "--no-rollback does not keep an unfinished move to PostgreSQL 18: rolling back."
+        log "Removing PostgreSQL 18 and ${PG_NEW_VOL}; ${PG_OLD_VOL} is untouched..."
+        pg18_undo
+    fi
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..." >&2
     # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
@@ -862,8 +1008,10 @@ rollback_after_deploy() {
             && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
       ) && mv -fT .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
-    local revs_after; revs_after=$(db_revisions)
-    if [ "$settled" = 0 ] || [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; then
+    # After a move to PostgreSQL 18 the new images only ever ran on the new volume,
+    # which is gone: the old one holds the revisions of ${INSTALLED_LABEL} as before.
+    local revs_after=""; [ "$PG_MIGRATED" = 1 ] || revs_after=$(db_revisions)
+    if [ "$PG_MIGRATED" = 0 ] && { [ "$settled" = 0 ] || [ "$revs_after" != "$REVS_BEFORE" ] || grep -q '=unknown$' <<<"$revs_after"; }; then
         log "Alembic revisions before: $(tr '\n' ' ' <<<"$REVS_BEFORE")now: $(tr '\n' ' ' <<<"$revs_after")" >&2
         docker compose stop \
             || { log "WARN: Stoppen des Stacks fehlgeschlagen — bitte manuell pruefen."; incomplete=1; }
@@ -910,5 +1058,8 @@ pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \
     ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
     "$NO_ROLLBACK_STAYS"
 DEPLOY_STARTED=1
+if [ "$PG_MIGRATE" = 1 ]; then
+    pg18_migrate || rollback_after_deploy "the move to PostgreSQL 18 failed (dump or restore, see above)"
+fi
 stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
 log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
