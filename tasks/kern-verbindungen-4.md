@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sess
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Server: IPv6-Literal im Jump-Host nur im letzten Hop (R-1158)  [ ]
+### T3 — Server: IPv6-Literal im Jump-Host nur im letzten Hop (R-1158)  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/schemas.py, apps/server/tests/test_connections_options.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f1bbca7a 2026-11-06T07:44:17+01:00
+Review: approve (.ah-out/review/kern-verbindungen-4/T3.verdict.json)
 Änderung: `_JUMP_RE`: der letzte Hop nimmt `_HOST`, jeder davor einen Hostnamen ohne `[…]`. Tests: `h1,[2001:db8::1]` gut (die bestehende Fixture), `[2001:db8::1],h2` und `h1,[2001:db8::1],h3` → `422`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options.py tests/test_openapi_snapshot.py
 Doku: → T5

@@ -52,11 +52,15 @@ def _reject_snake_spellings(model: str, data: Any) -> Any:
 # boundaries (the desktop checks again): host names, ports 1-65535, no leading "-" (it would
 # read as a flag), no whitespace or control characters. Unknown keys are refused, and a field
 # left out means "the global default".
-_HOST = r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,252}))"
+_NAMED_HOST = r"[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,252})"
+_HOST = rf"(?:\[[0-9A-Fa-f:.]+\]|{_NAMED_HOST})"
 _PORT = r"(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})"
 _USER = r"[A-Za-z0-9_][A-Za-z0-9._-]{0,63}"
 _JUMP_HOP = rf"(?:{_USER}@)?{_HOST}(?::{_PORT})?"
-_JUMP_RE = re.compile(rf"{_JUMP_HOP}(?:,{_JUMP_HOP}){{0,7}}")
+# An IPv6 literal only in the last hop (R-1158): ssh unwraps the last hop itself, but copies
+# the hops before it unchanged into a ProxyCommand that does not keep the brackets as written.
+_EARLIER_HOP = rf"(?:{_USER}@)?{_NAMED_HOST}(?::{_PORT})?"
+_JUMP_RE = re.compile(rf"(?:{_EARLIER_HOP},){{0,7}}{_JUMP_HOP}")
 _LISTEN_RE = re.compile(rf"(?:(?:\*|{_HOST}):)?{_PORT}")
 _TARGET_RE = re.compile(rf"{_HOST}:{_PORT}")
 _GATEWAY_RE = re.compile(rf"{_HOST}(?::{_PORT})?")
